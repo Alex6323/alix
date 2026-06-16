@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- Note rendering moved into a frontend-independent `render` module that emits a
+  structured model (`NoteUnit`: sentence-split prose or verbatim code blocks);
+  the TUI now only paints it. No change to how notes look — this lets a future
+  frontend reuse the same note structuring instead of reimplementing it.
+
 ## [0.1.0] - 2026-06-16
 
 First release of `flash`: a terminal spaced-repetition flashcard trainer with
