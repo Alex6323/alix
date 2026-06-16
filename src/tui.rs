@@ -24,6 +24,7 @@ use crate::{
     choice::{self, ChoiceQuestion},
     config::{AskConfig, Bindings, Key, KeyPattern},
     deck,
+    render::{self, NoteUnit},
     scheduler::Grade,
     session::{Session, SessionStats},
     store::Store,
@@ -1125,92 +1126,46 @@ pub(crate) fn bar(left: &str, right: &str, width: u16) -> Paragraph<'static> {
     Paragraph::new(text).style(HEADER_STYLE)
 }
 
-/// Appends the card's note, if any, as a yellow quoted block with a left
-/// bar. Prose is split into sentences (on `.`), each its own paragraph with
-/// a blank line between them; long rows are word-wrapped and keep the bar.
-/// A ```` ``` ```` fenced block is rendered verbatim — no sentence split, no
-/// wrapping — so code keeps its indentation and reads as written.
+/// Appends the card's note, if any, as a yellow quoted block with a left bar.
+/// The note's structure (sentence-split prose, verbatim code blocks) comes
+/// from [`render::note_units`]; this function only paints it: each unit is
+/// separated by a blank bar line, prose is word-wrapped to the width and
+/// styled yellow, and code is rendered gray and verbatim.
 pub(crate) fn push_note(lines: &mut Vec<Line>, card: &Card, width: u16) {
-    let Some(note) = &card.note else {
+    let units = render::note_units(card);
+    if units.is_empty() {
         return;
-    };
+    }
     lines.push(Line::default());
     const GUTTER: &str = "  │ ";
     const BAR: &str = "  │"; // gutter without the trailing space, for blanks
     let bar_style = Style::new().fg(Color::Yellow);
     let text_width = (width as usize).saturating_sub(GUTTER.chars().count());
 
-    // Prose may be hard-wrapped across several `!` lines, so consecutive
-    // prose lines are joined into one paragraph buffer and only then split
-    // into real sentences — otherwise every wrapped line would look like its
-    // own sentence. A blank bar line separates units (each sentence, and each
-    // code block), owned by the start of a unit so boundaries get one blank.
-    let mut in_code = false;
-    let mut code_started = false; // first line of the current code block seen?
-    let mut emitted = false; // any line pushed for this note yet?
-    let mut prose = String::new(); // prose accumulated since the last flush
-
-    for logical in note.lines() {
-        if logical.trim_start().starts_with("```") {
-            // Fence delimiter: toggle code mode; the ``` line is not rendered.
-            if in_code {
-                in_code = false;
-            } else {
-                flush_prose(lines, &mut prose, text_width, &mut emitted);
-                in_code = true;
-                code_started = false;
-            }
-            continue;
-        }
-        if in_code {
-            if !code_started {
-                if emitted {
-                    lines.push(Line::from(Span::styled(BAR, bar_style)));
-                }
-                code_started = true;
-            }
-            // Verbatim: indentation preserved, no sentence split, no wrap.
-            lines.push(Line::from(vec![
-                Span::styled(GUTTER, bar_style),
-                Span::styled(logical.to_string(), Style::new().fg(Color::Gray)),
-            ]));
-            emitted = true;
-            continue;
-        }
-        let trimmed = logical.trim();
-        if !trimmed.is_empty() {
-            if !prose.is_empty() {
-                prose.push(' ');
-            }
-            prose.push_str(trimmed);
-        }
-    }
-    flush_prose(lines, &mut prose, text_width, &mut emitted);
-}
-
-/// Emits accumulated prose as one paragraph per sentence, separated by a
-/// blank bar line, then clears the buffer. `emitted` tracks whether any note
-/// line has been pushed yet, so the first unit is not preceded by a blank.
-fn flush_prose(lines: &mut Vec<Line>, prose: &mut String, width: usize, emitted: &mut bool) {
-    const GUTTER: &str = "  │ ";
-    const BAR: &str = "  │";
-    let bar_style = Style::new().fg(Color::Yellow);
-    for sentence in split_sentences(prose) {
-        if sentence.is_empty() {
-            continue;
-        }
-        if *emitted {
+    for (i, unit) in units.iter().enumerate() {
+        // One blank bar line between consecutive units, none before the first.
+        if i > 0 {
             lines.push(Line::from(Span::styled(BAR, bar_style)));
         }
-        for row in wrap_text(&sentence, width) {
-            lines.push(Line::from(vec![
-                Span::styled(GUTTER, bar_style),
-                Span::styled(row, bar_style),
-            ]));
+        match unit {
+            NoteUnit::Sentence(sentence) => {
+                for row in render::wrap_text(sentence, text_width) {
+                    lines.push(Line::from(vec![
+                        Span::styled(GUTTER, bar_style),
+                        Span::styled(row, bar_style),
+                    ]));
+                }
+            }
+            NoteUnit::Code(code) => {
+                for line in code {
+                    lines.push(Line::from(vec![
+                        Span::styled(GUTTER, bar_style),
+                        Span::styled(line.clone(), Style::new().fg(Color::Gray)),
+                    ]));
+                }
+            }
         }
-        *emitted = true;
     }
-    prose.clear();
 }
 
 /// Byte offset of the `n`th character in `s`, or `s.len()` if `n` is at or
@@ -1219,72 +1174,9 @@ fn char_byte(s: &str, n: usize) -> usize {
     s.char_indices().nth(n).map_or(s.len(), |(b, _)| b)
 }
 
-/// Splits a note line into sentences, breaking after a period that is
-/// followed by whitespace or the end of the line. A period followed by a
-/// non-space (as in "2.1") does not split, so numbers stay intact. The
-/// terminating period stays attached to its sentence.
-fn split_sentences(text: &str) -> Vec<String> {
-    let chars: Vec<char> = text.chars().collect();
-    let mut sentences = Vec::new();
-    let mut start = 0;
-    for i in 0..chars.len() {
-        let ends_sentence = chars[i] == '.' && chars.get(i + 1).is_none_or(|c| c.is_whitespace());
-        if ends_sentence {
-            let sentence: String = chars[start..=i].iter().collect();
-            if !sentence.trim().is_empty() {
-                sentences.push(sentence.trim().to_string());
-            }
-            start = i + 1;
-        }
-    }
-    if start < chars.len() {
-        let tail: String = chars[start..].iter().collect();
-        if !tail.trim().is_empty() {
-            sentences.push(tail.trim().to_string());
-        }
-    }
-    if sentences.is_empty() {
-        sentences.push(String::new());
-    }
-    sentences
-}
-
-/// Greedy word-wrap to `width` columns (counted in chars). Returns at least
-/// one row, so a blank note line still renders the gutter. A word longer
-/// than `width` (e.g. a long Move type path) is hard-broken across rows.
-fn wrap_text(text: &str, width: usize) -> Vec<String> {
-    let width = width.max(1);
-    let mut rows = Vec::new();
-    let mut line = String::new();
-    for word in text.split_whitespace() {
-        let wlen = word.chars().count();
-        if line.is_empty() {
-            // place `word` below
-        } else if line.chars().count() + 1 + wlen <= width {
-            line.push(' ');
-            line.push_str(word);
-            continue;
-        } else {
-            rows.push(std::mem::take(&mut line));
-        }
-        if wlen <= width {
-            line.push_str(word);
-        } else {
-            for ch in word.chars() {
-                if line.chars().count() == width {
-                    rows.push(std::mem::take(&mut line));
-                }
-                line.push(ch);
-            }
-        }
-    }
-    rows.push(line);
-    rows
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{char_byte, wrap_text};
+    use super::char_byte;
 
     #[test]
     fn char_byte_maps_caret_to_utf8_offset() {
@@ -1297,34 +1189,5 @@ mod tests {
         assert_eq!(char_byte("héllo", 1), 1);
         assert_eq!(char_byte("héllo", 2), 3);
         assert_eq!(char_byte("héllo", 5), 6);
-    }
-
-    #[test]
-    fn short_line_is_one_row() {
-        assert_eq!(wrap_text("a short note", 40), vec!["a short note"]);
-    }
-
-    #[test]
-    fn wraps_on_word_boundaries() {
-        assert_eq!(wrap_text("a bb ccc", 4), vec!["a bb", "ccc"]);
-    }
-
-    #[test]
-    fn hard_breaks_a_word_longer_than_width() {
-        assert_eq!(wrap_text("ab supercali", 5), vec!["ab", "super", "cali"]);
-    }
-
-    #[test]
-    fn empty_line_yields_one_empty_row() {
-        // Keeps blank lines inside a multi-paragraph note as gutter-only rows.
-        assert_eq!(wrap_text("", 10), vec![""]);
-    }
-
-    #[test]
-    fn zero_width_does_not_panic() {
-        assert_eq!(
-            wrap_text("hi there", 0),
-            vec!["h", "i", "t", "h", "e", "r", "e"]
-        );
     }
 }

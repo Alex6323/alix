@@ -17,6 +17,7 @@ pub mod generate;
 pub mod parser;
 pub mod picker;
 pub mod recent;
+pub mod render;
 pub mod scheduler;
 pub mod session;
 pub mod store;
