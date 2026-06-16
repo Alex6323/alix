@@ -99,6 +99,7 @@ async function api(path, opts) {
 function load()       { api("/api/state").then(apply); }
 function grade(g)     { api("/api/grade", post({ grade: g })).then(apply); }
 function skip()       { api("/api/skip", post({})).then(apply); }
+function remove()     { api("/api/remove", post({})).then(apply); }
 function restart()    { api("/api/restart", post({})).then(apply); }
 function post(body)   { return { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }; }
 
@@ -143,6 +144,7 @@ function renderCard() {
     main.appendChild(el("div", "hint", `[ space / tap reveal to ${more} ]`));
     addButton("Reveal", "easy", reveal);
     addButton("Skip", "ghost", skip);
+    addButton("Remove", "ghost", remove);
     return;
   }
 
@@ -150,6 +152,7 @@ function renderCard() {
   addButton("Again", "again", () => grade("again"));
   addButton("Good", "good", () => grade("good"));
   addButton("Easy", "easy", () => grade("easy"));
+  addButton("Remove", "ghost", remove);
 }
 
 function renderNote(units) {
@@ -199,6 +202,7 @@ function addButton(text, cls, onClick) {
 document.addEventListener("keydown", (e) => {
   if (!state) return;
   if (state.finished) { if (e.key === "r") restart(); return; }
+  if (e.key === "x" || e.key === "Delete") { remove(); return; }
   if (e.key === "s") { skip(); return; }
   if (!fullyRevealed()) {
     if (e.key === " " || e.key === "Enter") { e.preventDefault(); reveal(); }

@@ -192,6 +192,29 @@ pub fn remove_cards(path: &Path, front_lines: &[usize]) -> Result<(), DeckError>
     Ok(())
 }
 
+/// Rewrites `path` to `original` with the card blocks at `front_lines` removed.
+/// Unlike [`remove_cards`], the caller supplies the file's *original* content,
+/// so the line numbers stay valid however many cards were removed before. The
+/// web server uses this: it removes cards immediately but keeps each deck's
+/// original text in memory and re-derives the file from the growing set of
+/// removed lines, sidestepping the line shifts that repeated in-place edits
+/// would cause. Written atomically (temp + rename).
+pub fn rewrite_without_cards(
+    path: &Path,
+    original: &str,
+    front_lines: &[usize],
+) -> Result<(), DeckError> {
+    let io_err = |source| DeckError::Io {
+        path: path.to_path_buf(),
+        source,
+    };
+    let new_text = remove_card_blocks(original, front_lines);
+    let tmp = path.with_extension("txt.tmp");
+    std::fs::write(&tmp, new_text).map_err(io_err)?;
+    std::fs::rename(&tmp, path).map_err(io_err)?;
+    Ok(())
+}
+
 /// Returns `text` with the card blocks starting at the given 1-based front
 /// lines removed. A card front is a column-0 `#` line; its block extends to the
 /// next column-0 `#` (or end of file), so the front, back lines, notes and the

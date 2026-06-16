@@ -196,26 +196,29 @@ decks from the same picker `flash` uses.
 
 ## Web frontend
 
-`flash serve <deck>...` reviews in a browser instead of the terminal — useful
-on a tablet or phone, where touch and (later) images beat a TUI. It runs the
-same session logic and writes to the same progress store, so a card you grade
-in the browser is reflected on the command line and vice versa.
+Add `--serve` to `review` or `browse` to run it in the browser instead of the
+terminal — useful on a tablet or phone, where touch (and, later, images) beats
+a TUI. It runs the same session logic and writes to the same progress store, so
+a card you grade or remove in the browser shows up on the command line and vice
+versa.
 
 ```
-flash serve rust.txt          # open http://127.0.0.1:7777
-flash serve --port 8080 rust.txt
-flash serve --lan rust.txt     # reachable from other devices on your network
-flash serve --browse rust.txt  # read-only browse view (no grading)
+flash review rust.txt --serve              # open http://127.0.0.1:7777
+flash review rust.txt --serve --port 8080
+flash review rust.txt --serve --lan        # reachable from other devices on your network
+flash browse rust.txt --serve              # the browse view in the browser
 ```
 
 Reveal a card with the button or `Space`, then grade with the **Again** /
 **Good** / **Easy** buttons (or `1`/`2`/`3`); `line`-mode decks reveal one line
-at a time. It is deliberately local-only — no accounts, no database. By default
-it binds to `127.0.0.1` (this machine only); `--lan` binds all interfaces so a
-device on the same network can reach it at `http://<your-machine-ip>:<port>`.
-There is no authentication, so only use `--lan` on a network you trust. The
-default port lives in the `[serve]` section of the config file; `--port`
-overrides it.
+at a time. The **Remove** button (or the `x` key) throws the current card away
+— deleting it from the deck file and pruning its progress — immediately, since
+a server has no end-of-session to defer to. It is deliberately local-only — no
+accounts, no database. By default it binds to `127.0.0.1` (this machine only);
+`--lan` binds all interfaces so a device on the same network can reach it at
+`http://<your-machine-ip>:<port>` (no authentication, so only use `--lan` on a
+network you trust). `--port` and `--lan` require `--serve`; the default port
+lives in the `[serve]` section of the config file and `--port` overrides it.
 
 ## Ask Claude about a card
 

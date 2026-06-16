@@ -13,7 +13,11 @@
 //! the same network can reach it (there is no authentication, so that is
 //! opt-in).
 
-use std::net::SocketAddr;
+use std::{
+    collections::{BTreeSet, HashMap},
+    net::SocketAddr,
+    path::PathBuf,
+};
 
 use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
@@ -22,11 +26,58 @@ use tiny_http::{Header, Method, Request, Response, Server};
 use crate::{
     answer::Mode,
     card::Card,
+    deck,
     render::{self, NoteUnit},
     scheduler::Grade,
     session::{Session, now_ms},
     store::Store,
 };
+
+/// Per-deck data the server needs to apply a removal: the file path, plus the
+/// file's original text so removals can be re-derived from a fixed snapshot
+/// (see [`deck::rewrite_without_cards`]).
+struct DeckFiles {
+    /// Subject → file path.
+    paths: HashMap<String, PathBuf>,
+    /// Subject → original file text (decks whose text could not be read are
+    /// absent, and simply cannot have cards removed).
+    snapshots: HashMap<String, String>,
+    /// Subject → the 1-based front lines removed so far this run.
+    removed: HashMap<String, BTreeSet<usize>>,
+}
+
+impl DeckFiles {
+    fn new(paths: HashMap<String, PathBuf>) -> Self {
+        let snapshots = paths
+            .iter()
+            .filter_map(|(subject, path)| {
+                std::fs::read_to_string(path)
+                    .ok()
+                    .map(|text| (subject.clone(), text))
+            })
+            .collect();
+        Self {
+            paths,
+            snapshots,
+            removed: HashMap::new(),
+        }
+    }
+
+    /// Records that the card block at `line` of `subject` was removed and
+    /// rewrites the deck file from its snapshot. Best-effort.
+    fn remove_block(&mut self, subject: &str, line: usize) {
+        let lines = self.removed.entry(subject.to_string()).or_default();
+        lines.insert(line);
+        if let (Some(path), Some(original)) =
+            (self.paths.get(subject), self.snapshots.get(subject))
+        {
+            let lines: Vec<usize> = lines.iter().copied().collect();
+            if let Err(e) = deck::rewrite_without_cards(path, original, &lines) {
+                eprintln!("warning: could not update {}: {e}", path.display());
+            }
+        }
+    }
+}
 
 const REVIEW_HTML: &str = include_str!("../assets/serve/review.html");
 const BROWSE_HTML: &str = include_str!("../assets/serve/browse.html");
@@ -78,22 +129,27 @@ struct StateDto {
     label: String,
 }
 
-/// The payload of the read-only browse view: every card, in deck order.
+/// The payload of the browse view: every (remaining) card, in deck order.
 #[derive(Debug, Serialize)]
-struct BrowseDto<'a> {
-    label: &'a str,
-    cards: &'a [CardDto],
+struct BrowseDto {
+    label: String,
+    cards: Vec<CardDto>,
 }
 
 /// Serves a review session at `addr` until the process is stopped. Grades are
-/// applied to `session` and saved to `store` after each one.
+/// applied to `session` and saved to `store` after each one. `decks` (subject →
+/// file path) lets the remove action delete a card from its deck file and prune
+/// its progress; unlike the TUI, removal is immediate, since the server has no
+/// clean end-of-session.
 pub fn run_review(
     mut session: Session,
     mut store: Store,
     mode: Mode,
     label: String,
     addr: SocketAddr,
+    decks: HashMap<String, PathBuf>,
 ) -> Result<()> {
+    let mut files = DeckFiles::new(decks);
     let server = Server::http(addr).map_err(|e| anyhow!("cannot start server on {addr}: {e}"))?;
     for mut request in server.incoming_requests() {
         let method = request.method().clone();
@@ -117,6 +173,19 @@ pub fn run_review(
                 session.skip();
                 respond_json(request, &state_dto(&session, &store, mode, &label));
             }
+            (Method::Post, "/api/remove") => {
+                let dropped = session.remove_current();
+                if let Some(first) = dropped.first() {
+                    let subject = first.subject.to_string();
+                    let line = first.line;
+                    for card in &dropped {
+                        store.remove(card.id());
+                    }
+                    let _ = store.save();
+                    files.remove_block(&subject, line);
+                }
+                respond_json(request, &state_dto(&session, &store, mode, &label));
+            }
             (Method::Post, "/api/restart") => {
                 session.restart(&store, now_ms());
                 respond_json(request, &state_dto(&session, &store, mode, &label));
@@ -127,27 +196,57 @@ pub fn run_review(
     Ok(())
 }
 
-/// Serves a read-only walk through `cards` at `addr`. Writes nothing: there is
-/// no session and no store.
-pub fn run_browse(cards: Vec<Card>, label: String, addr: SocketAddr) -> Result<()> {
-    let dtos: Vec<CardDto> = cards.iter().map(card_dto).collect();
+/// Serves a walk through `cards` at `addr`. The only thing it writes is card
+/// removal: the remove action deletes the card from its deck file (`decks` maps
+/// subject → path) and prunes its progress in `store`.
+pub fn run_browse(
+    cards: Vec<Card>,
+    label: String,
+    addr: SocketAddr,
+    decks: HashMap<String, PathBuf>,
+    mut store: Store,
+) -> Result<()> {
+    let mut cards = cards;
+    let mut files = DeckFiles::new(decks);
     let server = Server::http(addr).map_err(|e| anyhow!("cannot start server on {addr}: {e}"))?;
-    for request in server.incoming_requests() {
+    for mut request in server.incoming_requests() {
         let method = request.method().clone();
         let path = request_path(&request);
         match (&method, path.as_str()) {
             (Method::Get, "/") => respond_html(request, BROWSE_HTML),
-            (Method::Get, "/api/cards") => respond_json(
-                request,
-                &BrowseDto {
-                    label: &label,
-                    cards: &dtos,
-                },
-            ),
+            (Method::Get, "/api/cards") => respond_json(request, &browse_payload(&label, &cards)),
+            (Method::Post, "/api/remove") => {
+                if let Some(index) = read_index(&mut request)
+                    && index < cards.len()
+                {
+                    let subject = cards[index].subject.to_string();
+                    let line = cards[index].line;
+                    // Drop the card and any cloze siblings, pruning their
+                    // progress as they go.
+                    cards.retain(|card| {
+                        let sibling = card.subject.as_ref() == subject && card.line == line;
+                        if sibling {
+                            store.remove(card.id());
+                        }
+                        !sibling
+                    });
+                    let _ = store.save();
+                    files.remove_block(&subject, line);
+                }
+                respond_json(request, &browse_payload(&label, &cards));
+            }
             _ => respond_status(request, 404),
         }
     }
     Ok(())
+}
+
+/// Serializes the current browse cards for the page.
+fn browse_payload(label: &str, cards: &[Card]) -> BrowseDto {
+    BrowseDto {
+        label: label.to_string(),
+        cards: cards.iter().map(card_dto).collect(),
+    }
 }
 
 /// The path part of a request URL, without any `?query`.
@@ -214,6 +313,16 @@ fn read_grade(request: &mut Request) -> Option<Grade> {
         "easy" => Some(Grade::Easy),
         _ => None,
     }
+}
+
+/// Parses a `{"index": n}` POST body (the browse card to remove).
+fn read_index(request: &mut Request) -> Option<usize> {
+    #[derive(Deserialize)]
+    struct Body {
+        index: usize,
+    }
+    let body: Body = serde_json::from_reader(request.as_reader()).ok()?;
+    Some(body.index)
 }
 
 fn respond_json<T: Serialize>(request: Request, value: &T) {

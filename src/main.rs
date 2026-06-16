@@ -53,12 +53,7 @@ enum Command {
         decks: Vec<PathBuf>,
     },
     /// Read through decks card by card without grading (no progress is saved).
-    Browse {
-        /// Deck files to browse (omit to pick interactively).
-        decks: Vec<PathBuf>,
-    },
-    /// Serve a review session (or browse view) as a local web page.
-    Serve(ServeArgs),
+    Browse(BrowseArgs),
     /// Generate a deck from a web page using the Claude CLI.
     #[command(visible_alias = "gen")]
     Generate(GenerateArgs),
@@ -108,26 +103,33 @@ struct GenerateArgs {
     config: Option<PathBuf>,
 }
 
+/// Options for serving an activity in the browser instead of the terminal.
+/// Flattened into `review` and `browse`. `--port`/`--lan` require `--serve`, so
+/// they cannot be given without it.
 #[derive(Args)]
-struct ServeArgs {
-    /// Deck selection and review settings (decks, mode, scheduler, order,
-    /// --new, --limit, --cram, --store, --config), same as `flash review`.
-    #[command(flatten)]
-    review: ReviewArgs,
-
-    /// Port to listen on (default: the `[serve]` config port, 7777).
+struct ServeOpts {
+    /// Run in the browser (a local web page) instead of the terminal.
     #[arg(long)]
+    serve: bool,
+
+    /// Port to listen on with `--serve` (default: the `[serve]` config port,
+    /// 7777).
+    #[arg(long, requires = "serve")]
     port: Option<u16>,
 
-    /// Listen on all network interfaces (not just localhost) so phones and
-    /// tablets on the same network can reach it. There is no authentication,
-    /// so this is opt-in.
-    #[arg(long)]
+    /// With `--serve`, listen on all network interfaces so phones and tablets
+    /// on the same network can reach it (no authentication — opt-in).
+    #[arg(long, requires = "serve")]
     lan: bool,
+}
 
-    /// Serve a read-only browse view (no grading) instead of a review session.
-    #[arg(long)]
-    browse: bool,
+#[derive(Args)]
+struct BrowseArgs {
+    /// Deck files to browse (omit to pick interactively).
+    decks: Vec<PathBuf>,
+
+    #[command(flatten)]
+    serve: ServeOpts,
 }
 
 #[derive(Args)]
@@ -188,6 +190,9 @@ struct ReviewArgs {
     /// Path of the config file (default: platform config dir).
     #[arg(long)]
     config: Option<PathBuf>,
+
+    #[command(flatten)]
+    serve: ServeOpts,
 }
 
 fn main() -> Result<()> {
@@ -198,8 +203,7 @@ fn main() -> Result<()> {
         Some(Command::Stats(args)) => stats(args),
         Some(Command::List(args)) => list(args),
         Some(Command::Check { decks }) => check(decks),
-        Some(Command::Browse { decks }) => browse(decks),
-        Some(Command::Serve(args)) => serve_cmd(args),
+        Some(Command::Browse(args)) => browse(args),
         Some(Command::Generate(args)) => generate_cmd(args),
         Some(Command::Deps { deck }) => deps_cmd(deck),
         Some(Command::Config { init }) => config_cmd(init),
@@ -487,6 +491,25 @@ fn load_review_session(args: &ReviewArgs) -> Result<Option<ReviewSession>> {
     }))
 }
 
+/// The IP/port to serve on: localhost unless `--lan`, and the `--port` flag or
+/// the configured `[serve]` port.
+fn serve_addr(port: Option<u16>, lan: bool, config: &Config) -> SocketAddr {
+    let ip = if lan {
+        Ipv4Addr::UNSPECIFIED // 0.0.0.0 — reachable from the local network
+    } else {
+        Ipv4Addr::LOCALHOST // 127.0.0.1 — this machine only
+    };
+    SocketAddr::from((ip, port.unwrap_or(config.serve.port)))
+}
+
+/// Subject → deck file path, for the web frontend's card removal.
+fn subject_paths(decks: HashMap<String, tui::DeckInfo>) -> HashMap<String, PathBuf> {
+    decks
+        .into_iter()
+        .map(|(subject, info)| (subject, info.path))
+        .collect()
+}
+
 fn review(args: ReviewArgs) -> Result<()> {
     let Some(rs) = load_review_session(&args)? else {
         return Ok(());
@@ -499,6 +522,14 @@ fn review(args: ReviewArgs) -> Result<()> {
         decks,
         config,
     } = rs;
+
+    // Serve in the browser instead of the terminal. The session still starts
+    // even if nothing is due — the page shows that state itself.
+    if args.serve.serve {
+        let addr = serve_addr(args.serve.port, args.serve.lan, &config);
+        announce(addr, args.serve.lan, &label);
+        return serve::run_review(session, store, mode, label, addr, subject_paths(decks));
+    }
 
     if session.is_finished() {
         println!("Nothing to review right now — all cards are on cooldown.");
@@ -525,51 +556,10 @@ fn review(args: ReviewArgs) -> Result<()> {
     Ok(())
 }
 
-fn serve_cmd(args: ServeArgs) -> Result<()> {
-    let config = Config::load(args.review.config.as_deref())?;
-    let port = args.port.unwrap_or(config.serve.port);
-    let ip = if args.lan {
-        Ipv4Addr::UNSPECIFIED // 0.0.0.0 — reachable from the local network
-    } else {
-        Ipv4Addr::LOCALHOST // 127.0.0.1 — this machine only
-    };
-    let addr = SocketAddr::from((ip, port));
-
-    if args.browse {
-        let mut recent = RecentDecks::load(
-            recent::default_recent_path().context("cannot determine the data directory")?,
-        );
-        let Some(deck_paths) = pick_decks_if_empty(args.review.decks.clone(), &config, &recent)?
-        else {
-            return Ok(());
-        };
-        let (cards, label, _, _) = load_decks(&deck_paths)?;
-        recent.record(&deck_paths, now_ms());
-        let _ = recent.save();
-        announce(addr, args.lan, &format!("{label} (browse)"));
-        return serve::run_browse(cards, label, addr);
-    }
-
-    let Some(rs) = load_review_session(&args.review)? else {
-        return Ok(());
-    };
-    // Unlike the TUI, an empty session still starts the server — the page
-    // shows the "session complete / nothing due" state in the browser.
-    let ReviewSession {
-        session,
-        store,
-        mode,
-        label,
-        ..
-    } = rs;
-    announce(addr, args.lan, &label);
-    serve::run_review(session, store, mode, label, addr)
-}
-
 /// Prints where the web frontend is reachable, and a warning when it is
 /// exposed to the network.
 fn announce(addr: SocketAddr, lan: bool, label: &str) {
-    println!("flash serve — {label}");
+    println!("Serving {label} in the browser.");
     if lan {
         println!(
             "Listening on all interfaces, port {}. On another device open",
@@ -653,15 +643,17 @@ fn list(args: DeckArgs) -> Result<()> {
     Ok(())
 }
 
-fn browse(decks: Vec<PathBuf>) -> Result<()> {
-    if !std::io::stdout().is_terminal() {
+fn browse(args: BrowseArgs) -> Result<()> {
+    // The terminal browser needs a TTY; the web one only needs it for the
+    // interactive picker (when no decks are given).
+    if !args.serve.serve && !std::io::stdout().is_terminal() {
         bail!("`flash browse` needs a terminal");
     }
     let config = Config::load(None)?;
     let mut recent = RecentDecks::load(
         recent::default_recent_path().context("cannot determine the data directory")?,
     );
-    let Some(deck_paths) = pick_decks_if_empty(decks, &config, &recent)? else {
+    let Some(deck_paths) = pick_decks_if_empty(args.decks.clone(), &config, &recent)? else {
         return Ok(()); // picker cancelled or nothing selected
     };
 
@@ -672,11 +664,14 @@ fn browse(decks: Vec<PathBuf>) -> Result<()> {
     // Browse only writes if the user removes a card: it then deletes it from
     // the deck file and prunes its progress. Provide the per-subject paths and
     // the store for that.
-    let paths: HashMap<String, PathBuf> = decks_info
-        .into_iter()
-        .map(|(subject, info)| (subject, info.path))
-        .collect();
+    let paths = subject_paths(decks_info);
     let store = open_store(None)?;
+
+    if args.serve.serve {
+        let addr = serve_addr(args.serve.port, args.serve.lan, &config);
+        announce(addr, args.serve.lan, &format!("{label} (browse)"));
+        return serve::run_browse(cards, label, addr, paths, store);
+    }
     browse::run(cards, label, config.browse, paths, store)
 }
 
