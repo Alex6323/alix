@@ -1,0 +1,30 @@
+[package]
+name = "flash"
+version = "0.1.0"
+authors = ["Alex6323 <Al3k5@protonmail.com>"]
+edition = "2024"
+description = "A spaced-repetition flashcard trainer for the terminal."
+keywords = ["learning", "flashcards", "spaced-repetition", "tui"]
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+directories = "6"
+ratatui = "0.30"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+strsim = "0.11"
+thiserror = "2"
+toml = "1"
+twox-hash = "2"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lib]
+name = "flash"
+path = "src/lib.rs"
+
+[[bin]]
+name = "flash"
+path = "src/main.rs"

@@ -1,0 +1,548 @@
+//! Parser for the plain-text deck format.
+//!
+//! The format, line by line (each line is trimmed first, empty lines are
+//! skipped):
+//!
+//! - `# <text>`  at column 0 starts a new card; the text is the front side.
+//!   An *indented* `#` is answer content (code comments, Rust attributes,
+//!   markdown headers), not a card front.
+//! - `#? <text>` at column 0 starts a cloze card; `{...}` in its answer
+//!   lines are holes (see the [`cloze`](crate::cloze) module).
+//! - `% <text>`  is a comment and ignored (any indentation).
+//! - `% link: <url>` is still a comment to the card parser, but the URL is
+//!   collected as a deck-level reference link (see [`parse_links`]); the
+//!   ask-Claude view offers these to Claude as background material.
+//! - `! <text>`  is a note attached to the current card (any indentation,
+//!   after its back). Several consecutive `!` lines form one multi-line
+//!   note.
+//! - any other line is a back line of the current card.
+//! - a leading `\` escapes a markup character (`#`, `%`, `!`) so a back line
+//!   can start with one; the backslash is stripped.
+//!
+//! A card consists of one front line, one or more back lines, and an
+//! optional note after the back lines. The original parser panicked on
+//! malformed files; this one returns errors with line numbers instead, and
+//! accepts every file the original accepted.
+
+use std::sync::Arc;
+
+use thiserror::Error;
+
+use crate::card::Card;
+use crate::cloze;
+
+/// Markup indicating the front side of a card.
+const MARKUP_FRONT: char = '#';
+/// Second markup character turning a front into a cloze card (`#?`).
+const MARKUP_CLOZE: char = '?';
+/// Markup indicating a comment line.
+const MARKUP_COMMENT: char = '%';
+/// Markup indicating a note.
+const MARKUP_NOTE: char = '!';
+/// Escape character in case markup and card data collide.
+const MARKUP_ESCAPE: char = '\\';
+/// All markup characters that can be escaped.
+const MARKUP: [char; 3] = [MARKUP_FRONT, MARKUP_COMMENT, MARKUP_NOTE];
+
+/// A parse error, pointing at the offending line of the deck file.
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum ParseError {
+    #[error("line {0}: answer line appears before any '#' card front")]
+    BackBeforeFront(usize),
+    #[error("line {0}: note appears before any '#' card front")]
+    NoteBeforeFront(usize),
+    #[error("line {0}: note must come after the card's answer lines")]
+    NoteBeforeBack(usize),
+    #[error("line {0}: answer lines are not allowed after a note")]
+    BackAfterNote(usize),
+    #[error("line {0}: card front without an answer")]
+    FrontWithoutBack(usize),
+    #[error("line {0}: card front is empty")]
+    EmptyFront(usize),
+    #[error("line {0}: cloze card ('#?') has no {{...}} holes in its answer")]
+    ClozeWithoutHoles(usize),
+    #[error("line {0}: empty cloze hole '{{}}'")]
+    EmptyClozeHole(usize),
+    #[error("line {0}: unclosed cloze hole (missing '}}'; use \\{{ for a literal brace)")]
+    UnclosedClozeHole(usize),
+    #[error("line {0}: nested cloze hole")]
+    NestedClozeHole(usize),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum State {
+    /// Nothing parsed yet for the current card.
+    Init,
+    /// A front line has been parsed.
+    Front,
+    /// At least one back line has been parsed.
+    Back,
+    /// At least one note line has been parsed; further `!` lines extend the
+    /// note, but no more answer lines may follow.
+    Note,
+}
+
+struct PartialCard {
+    front: String,
+    /// Answer lines with their 1-based line numbers in the deck file.
+    back: Vec<(usize, String)>,
+    note: Option<String>,
+    line: usize,
+    cloze: bool,
+}
+
+impl PartialCard {
+    /// Turns the finished partial into one card (plain) or several (cloze).
+    fn build(self, subject: &Arc<str>, cards: &mut Vec<Card>) -> Result<(), ParseError> {
+        if self.cloze {
+            cards.extend(cloze::expand(
+                subject,
+                &self.front,
+                &self.back,
+                self.note.as_deref(),
+                self.line,
+            )?);
+        } else {
+            cards.push(Card::plain(
+                Arc::clone(subject),
+                self.front,
+                self.back.into_iter().map(|(_, text)| text).collect(),
+                self.note,
+                self.line,
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// Collects deck-level reference links: comment lines of the form
+/// `% link: <url>`. They are invisible to the card parser (every `%` line
+/// is), so they affect neither old tools nor card hashes.
+pub fn parse_links(text: &str) -> Vec<String> {
+    text.lines()
+        .filter_map(|raw| {
+            let line = raw.trim();
+            let rest = line.strip_prefix(MARKUP_COMMENT)?;
+            let url = rest.trim().strip_prefix("link:")?.trim();
+            (!url.is_empty()).then(|| url.to_string())
+        })
+        .collect()
+}
+
+/// Collects a deck's prerequisite decks: comment lines `% requires: <deck>`
+/// (repeatable). Like links, they are invisible to the card parser and to old
+/// tools. The value is a deck name or path, resolved by the caller.
+pub fn parse_requires(text: &str) -> Vec<String> {
+    text.lines()
+        .filter_map(|raw| {
+            let rest = raw.trim().strip_prefix(MARKUP_COMMENT)?;
+            let dep = rest.trim().strip_prefix("requires:")?.trim();
+            (!dep.is_empty()).then(|| dep.to_string())
+        })
+        .collect()
+}
+
+/// Collects deck-level `% key: value` directives (e.g. `% mode: line`). The
+/// key must be a single token; lines whose "key" contains whitespace are
+/// treated as ordinary prose comments and ignored (so `% Then learn with:`
+/// is not a directive). Keys are lower-cased. Like links, these are invisible
+/// to the card parser and to old tools, and do not affect card hashes. The
+/// `link:` directive is excluded — it is handled by [`parse_links`].
+pub fn parse_directives(text: &str) -> Vec<(String, String)> {
+    text.lines()
+        .filter_map(|raw| {
+            let rest = raw.trim().strip_prefix(MARKUP_COMMENT)?;
+            let (key, value) = rest.split_once(':')?;
+            let key = key.trim().to_ascii_lowercase();
+            if key.is_empty() || key.contains(char::is_whitespace) || key == "link" {
+                return None;
+            }
+            let value = value.trim();
+            (!value.is_empty()).then(|| (key, value.to_string()))
+        })
+        .collect()
+}
+
+/// Parses deck text into cards. `subject` is the deck's file name and becomes
+/// part of every card's identity hash.
+pub fn parse_str(subject: &str, text: &str) -> Result<Vec<Card>, ParseError> {
+    let subject: Arc<str> = Arc::from(subject);
+    let mut cards = Vec::new();
+    let mut state = State::Init;
+    let mut partial: Option<PartialCard> = None;
+
+    for (lineno, raw) in text.lines().enumerate() {
+        let lineno = lineno + 1;
+        let line = raw.trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        // The line is non-empty, so a first character exists.
+        let first = line.chars().next().unwrap();
+
+        // A front marker only counts at column 0 of the raw line; indented
+        // `#` lines are answer content (shell comments, Rust attributes...).
+        let is_front = first == MARKUP_FRONT && raw.starts_with(MARKUP_FRONT);
+
+        match first {
+            MARKUP_FRONT if is_front => {
+                match state {
+                    State::Front => {
+                        // Point at the front line that lacks an answer.
+                        return Err(ParseError::FrontWithoutBack(partial.unwrap().line));
+                    }
+                    State::Back | State::Note => {
+                        partial.take().unwrap().build(&subject, &mut cards)?;
+                    }
+                    State::Init => {}
+                }
+                // `#?` (no space in between) marks a cloze card.
+                let rest = &line[MARKUP_FRONT.len_utf8()..];
+                let (cloze, rest) = match rest.strip_prefix(MARKUP_CLOZE) {
+                    Some(rest) => (true, rest),
+                    None => (false, rest),
+                };
+                let front = rest.trim();
+                if front.is_empty() {
+                    return Err(ParseError::EmptyFront(lineno));
+                }
+                partial = Some(PartialCard {
+                    front: front.to_string(),
+                    back: Vec::new(),
+                    note: None,
+                    line: lineno,
+                    cloze,
+                });
+                state = State::Front;
+            }
+            MARKUP_NOTE => {
+                match state {
+                    State::Init => return Err(ParseError::NoteBeforeFront(lineno)),
+                    State::Front => return Err(ParseError::NoteBeforeBack(lineno)),
+                    State::Back | State::Note => {}
+                }
+                // Strip the marker and one separating space, but keep any
+                // further leading whitespace so indented note content (e.g.
+                // code inside a ``` fence) survives. Trailing space is dropped.
+                let after = &line[MARKUP_NOTE.len_utf8()..];
+                let text = after.strip_prefix(' ').unwrap_or(after).trim_end();
+                // `partial` is Some whenever state is Back or Note. Further
+                // `!` lines extend the note by one line each.
+                let note = &mut partial.as_mut().unwrap().note;
+                match note {
+                    Some(note) => {
+                        note.push('\n');
+                        note.push_str(text);
+                    }
+                    None => *note = Some(text.to_string()),
+                }
+                state = State::Note;
+            }
+            MARKUP_COMMENT => {} // ignore
+            _ => {
+                match state {
+                    State::Init => return Err(ParseError::BackBeforeFront(lineno)),
+                    State::Note => return Err(ParseError::BackAfterNote(lineno)),
+                    State::Front | State::Back => {}
+                }
+                // COMPATIBILITY: strip a leading backslash only when it
+                // escapes a markup character, exactly like the original.
+                let second = line.chars().nth(1);
+                let back_line = if first == MARKUP_ESCAPE
+                    && second.is_some_and(|c| MARKUP.contains(&c))
+                {
+                    &line[MARKUP_ESCAPE.len_utf8()..]
+                } else {
+                    line
+                };
+                partial.as_mut().unwrap().back.push((lineno, back_line.to_string()));
+                state = State::Back;
+            }
+        }
+    }
+
+    if state == State::Front {
+        // A trailing front without an answer; point at its line.
+        return Err(ParseError::FrontWithoutBack(partial.unwrap().line));
+    }
+    if let Some(p) = partial.take() {
+        p.build(&subject, &mut cards)?;
+    }
+
+    Ok(cards)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn single_card() {
+        let cards = parse_str("s", "# front\n\tback").unwrap();
+        assert_eq!(1, cards.len());
+        assert_eq!("front", cards[0].front);
+        assert_eq!(vec!["back"], cards[0].back);
+        assert_eq!(None, cards[0].note);
+        assert_eq!(1, cards[0].line);
+    }
+
+    #[test]
+    fn multi_line_back_is_trimmed_per_line() {
+        let text = "# front\n\tvar (\n   \t a = 1\n\t)\n";
+        let cards = parse_str("s", text).unwrap();
+        assert_eq!(vec!["var (", "a = 1", ")"], cards[0].back);
+    }
+
+    #[test]
+    fn note_after_back() {
+        let cards = parse_str("s", "# front\n\tback\n\t! a note").unwrap();
+        assert_eq!(Some("a note".to_string()), cards[0].note);
+    }
+
+    #[test]
+    fn comments_and_blank_lines_ignored() {
+        let text = "% header comment\n\n# front\n\nback\n\n% trailing\n";
+        let cards = parse_str("s", text).unwrap();
+        assert_eq!(1, cards.len());
+        assert_eq!(vec!["back"], cards[0].back);
+    }
+
+    #[test]
+    fn escaped_markup_in_back() {
+        let cards = parse_str("s", "# front\n\t\\%\n\t\\#\n\t\\!").unwrap();
+        assert_eq!(vec!["%", "#", "!"], cards[0].back);
+    }
+
+    #[test]
+    fn backslash_without_markup_kept_verbatim() {
+        let cards = parse_str("s", "# front\n\t\\n is a newline").unwrap();
+        assert_eq!(vec!["\\n is a newline"], cards[0].back);
+    }
+
+    #[test]
+    fn several_cards() {
+        let text = "# a\n1\n# b\n2\n3\n! note b\n# c\n4\n";
+        let cards = parse_str("s", text).unwrap();
+        assert_eq!(3, cards.len());
+        assert_eq!("a", cards[0].front);
+        assert_eq!(vec!["2", "3"], cards[1].back);
+        assert_eq!(Some("note b".to_string()), cards[1].note);
+        assert_eq!("c", cards[2].front);
+        assert_eq!(7, cards[2].line);
+    }
+
+    #[test]
+    fn parses_the_original_sample_box() {
+        let text = std::fs::read_to_string(
+            "/home/me/dev/developer/alex6323/projects/flashcard/sample_box.txt",
+        );
+        // Only run when the old project is present on this machine.
+        if let Ok(text) = text {
+            let cards = parse_str("sample_box.txt", &text).unwrap();
+            assert_eq!(31, cards.len());
+        }
+    }
+
+    #[test]
+    fn error_back_before_front() {
+        assert_eq!(Err(ParseError::BackBeforeFront(1)), parse_str("s", "back"));
+    }
+
+    #[test]
+    fn error_front_without_back() {
+        assert_eq!(
+            Err(ParseError::FrontWithoutBack(1)),
+            parse_str("s", "# a\n# b\nback")
+        );
+        assert_eq!(Err(ParseError::FrontWithoutBack(2)), parse_str("s", "% x\n# a\n"));
+    }
+
+    #[test]
+    fn error_note_placement() {
+        assert_eq!(Err(ParseError::NoteBeforeFront(1)), parse_str("s", "! note"));
+        assert_eq!(Err(ParseError::NoteBeforeBack(2)), parse_str("s", "# a\n! note"));
+        assert_eq!(
+            Err(ParseError::BackAfterNote(4)),
+            parse_str("s", "# a\nback\n! note\nmore back")
+        );
+    }
+
+    #[test]
+    fn links_are_collected_and_stay_comments() {
+        let text = "% link: https://docs.rs/tokio\n\
+                    % a normal comment\n\
+                    %link:https://example.org/spec\n\
+                    # front\n\
+                    \tback\n\
+                    % link:\n";
+        assert_eq!(
+            vec!["https://docs.rs/tokio", "https://example.org/spec"],
+            parse_links(text)
+        );
+        // The card parser is unaffected.
+        let cards = parse_str("s", text).unwrap();
+        assert_eq!(1, cards.len());
+        assert_eq!(vec!["back"], cards[0].back);
+    }
+
+    #[test]
+    fn multi_line_note() {
+        let cards = parse_str("s", "# a\nback\n! one\n! two\n! three").unwrap();
+        assert_eq!(Some("one\ntwo\nthree".to_string()), cards[0].note);
+    }
+
+    #[test]
+    fn requires_are_collected() {
+        let text = "% requires: basics\n\
+                    %requires:more.txt\n\
+                    % link: https://example.org\n\
+                    % a normal comment\n\
+                    # front\n\tback\n";
+        assert_eq!(vec!["basics", "more.txt"], parse_requires(text));
+    }
+
+    #[test]
+    fn directives_are_collected() {
+        let text = "% mode: line\n\
+                    %  Scheduler:SM2 \n\
+                    % link: https://example.org\n\
+                    % Then learn it with: fc\n\
+                    % a plain comment\n\
+                    # front\n\tback\n";
+        assert_eq!(
+            vec![
+                ("mode".to_string(), "line".to_string()),
+                // Key is lower-cased; value keeps its case.
+                ("scheduler".to_string(), "SM2".to_string()),
+            ],
+            parse_directives(text)
+        );
+        // The card parser is unaffected by directive lines.
+        let cards = parse_str("s", text).unwrap();
+        assert_eq!(1, cards.len());
+    }
+
+    #[test]
+    fn note_preserves_interior_indentation() {
+        // Only the marker and one separating space are stripped; further
+        // leading whitespace (e.g. indented code in a fence) is kept.
+        let text = "# a\nback\n! ```rust\n! fn main() {\n!     let x = 1;\n! }\n! ```";
+        let cards = parse_str("s", text).unwrap();
+        assert_eq!(
+            Some("```rust\nfn main() {\n    let x = 1;\n}\n```".to_string()),
+            cards[0].note
+        );
+    }
+
+    #[test]
+    fn note_lines_may_be_separated_by_blanks_and_comments() {
+        let text = "# a\nback\n! one\n\n% comment\n! two\n# b\nback b\n";
+        let cards = parse_str("s", text).unwrap();
+        assert_eq!(2, cards.len());
+        assert_eq!(Some("one\ntwo".to_string()), cards[0].note);
+        assert_eq!(None, cards[1].note);
+    }
+
+    #[test]
+    fn multi_line_note_on_cloze_cards() {
+        let cards = parse_str("s", "#? f\n{a} b\n! one\n! two").unwrap();
+        assert_eq!(Some("one\ntwo".to_string()), cards[0].note);
+    }
+
+    #[test]
+    fn error_empty_front() {
+        assert_eq!(Err(ParseError::EmptyFront(1)), parse_str("s", "#\nback"));
+        assert_eq!(Err(ParseError::EmptyFront(1)), parse_str("s", "#?\nback"));
+    }
+
+    #[test]
+    fn indented_hash_is_answer_content() {
+        // Code answers contain '#' lines (shell comments, Rust attributes);
+        // only a '#' at column 0 starts a new card.
+        let text = "# Dockerfile for a bin project\n\
+                    \tFROM rust\n\
+                    \t# Pre-built dependencies\n\
+                    \tRUN cargo build\n\
+                    # Which attribute exports an async fn?\n\
+                    \t#[uniffi::export(async_runtime = \"tokio\")]\n";
+        let cards = parse_str("s", text).unwrap();
+        assert_eq!(2, cards.len());
+        assert_eq!(
+            vec!["FROM rust", "# Pre-built dependencies", "RUN cargo build"],
+            cards[0].back
+        );
+        assert_eq!(vec!["#[uniffi::export(async_runtime = \"tokio\")]"], cards[1].back);
+    }
+
+    #[test]
+    fn indented_hash_before_any_front_is_an_error() {
+        assert_eq!(Err(ParseError::BackBeforeFront(1)), parse_str("s", "\t# comment\n"));
+    }
+
+    #[test]
+    fn escaped_hash_and_indented_hash_yield_the_same_back_line() {
+        // Both spellings must produce identical content (and therefore the
+        // same card hash), so old decks using the escape stay compatible.
+        let escaped = parse_str("s", "# f\n\t\\# x\n").unwrap();
+        let indented = parse_str("s", "# f\n\t# x\n").unwrap();
+        assert_eq!(escaped[0].back, indented[0].back);
+        assert_eq!(escaped[0].id(), indented[0].id());
+    }
+
+    #[test]
+    fn indented_cloze_marker_is_answer_content() {
+        let cards = parse_str("s", "# f\n\t#? not a cloze front\n").unwrap();
+        assert_eq!(vec!["#? not a cloze front"], cards[0].back);
+    }
+
+    #[test]
+    fn cloze_front_expands_to_sub_cards() {
+        let text = "#? Complete the quote\n\tTo {be} or not to {be}\n\t! Hamlet\n";
+        let cards = parse_str("s", text).unwrap();
+        assert_eq!(2, cards.len());
+        assert_eq!("Complete the quote (1/2)", cards[0].front);
+        assert_eq!(vec!["To ____ or not to […]"], cards[0].context);
+        assert_eq!(vec!["be"], cards[0].back);
+        assert_eq!(Some("Hamlet".to_string()), cards[0].note);
+        assert_eq!(vec!["To […] or not to ____"], cards[1].context);
+        assert_ne!(cards[0].id(), cards[1].id());
+    }
+
+    #[test]
+    fn cloze_marker_requires_no_space() {
+        // "# ? ..." is a plain card whose front starts with '?'.
+        let cards = parse_str("s", "# ? matches one char\n\tglob\n").unwrap();
+        assert_eq!(1, cards.len());
+        assert_eq!("? matches one char", cards[0].front);
+        assert!(cards[0].context.is_empty());
+    }
+
+    #[test]
+    fn braces_in_plain_cards_stay_literal() {
+        // Code answers contain braces; without the '#?' marker they are never
+        // treated as cloze holes, and the identity hash (over the back lines
+        // verbatim) is unaffected.
+        let cards =
+            parse_str("s", "# main\n\tfunc main() {}\n\tx := T{ a, b }\n").unwrap();
+        assert_eq!(1, cards.len());
+        assert_eq!(vec!["func main() {}", "x := T{ a, b }"], cards[0].back);
+        assert!(cards[0].hash_lines.is_none());
+    }
+
+    #[test]
+    fn cloze_errors_carry_line_numbers() {
+        assert_eq!(
+            Err(ParseError::ClozeWithoutHoles(1)),
+            parse_str("s", "#? front\n\tno holes\n")
+        );
+        assert_eq!(
+            Err(ParseError::UnclosedClozeHole(3)),
+            parse_str("s", "#? front\n\tok {fine}\n\tbad {oops\n")
+        );
+        assert_eq!(
+            Err(ParseError::EmptyClozeHole(2)),
+            parse_str("s", "#? front\n\tbad {} here\n")
+        );
+    }
+}

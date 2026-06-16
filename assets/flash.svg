@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="face" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0E2832"/>
+      <stop offset="1" stop-color="#07141A"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6FF0DA"/>
+      <stop offset="0.55" stop-color="#22D3EE"/>
+      <stop offset="1" stop-color="#0A8FB0"/>
+    </linearGradient>
+    <linearGradient id="bolt" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#A6FFEF"/>
+      <stop offset="0.5" stop-color="#6FF0DA"/>
+      <stop offset="1" stop-color="#22D3EE"/>
+    </linearGradient>
+    <filter id="ambient" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="22"/>
+    </filter>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- ambient cyan glow behind the stack -->
+  <rect x="150" y="96" width="240" height="320" rx="34"
+        fill="#22D3EE" opacity="0.20" filter="url(#ambient)"/>
+
+  <!-- two cards peeking out behind, offset up and to the right -->
+  <g opacity="0.40">
+    <rect x="186" y="74" width="220" height="300" rx="26"
+          fill="url(#face)" stroke="url(#edge)" stroke-width="7"/>
+  </g>
+  <g opacity="0.70">
+    <rect x="166" y="90" width="220" height="300" rx="26"
+          fill="url(#face)" stroke="url(#edge)" stroke-width="8"/>
+  </g>
+
+  <!-- front card: a card BACK — inset border frame + centered bolt -->
+  <rect x="146" y="106" width="220" height="300" rx="26"
+        fill="url(#face)" stroke="url(#edge)" stroke-width="9"/>
+  <rect x="166" y="126" width="180" height="260" rx="16"
+        fill="none" stroke="#6FF0DA" stroke-width="4" opacity="0.45"/>
+
+  <!-- lightning bolt, centered on the front card -->
+  <g filter="url(#glow)">
+    <path d="M 269 168 L 221 254 L 253 254 L 237 348 L 297 246 L 263 246 L 285 168 Z"
+          fill="url(#bolt)" stroke="#0E2832" stroke-width="6"
+          stroke-linejoin="round"/>
+  </g>
+</svg>
