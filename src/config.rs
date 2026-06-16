@@ -146,7 +146,7 @@ impl Bindings {
     }
 }
 
-/// Key bindings for the read-only browser (`fc browse`), configured in the
+/// Key bindings for the read-only browser (`flash browse`), configured in the
 /// `[browse]` section. Jumping to the first/last card stays fixed at
 /// `g`/`G`/Home/End — letter bindings are case-insensitive, so `g` and `G`
 /// cannot be told apart — and the arrow keys always work for next/previous.
@@ -203,7 +203,7 @@ impl Default for AskConfig {
     }
 }
 
-/// Settings for AI deck generation (`fc generate`, the `[generate]` section).
+/// Settings for AI deck generation (`flash generate`, the `[generate]` section).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GenerateConfig {
     /// Model passed as `--model`; `None` falls back to the `[ask]` model, then
@@ -238,15 +238,30 @@ impl Default for GenerateConfig {
     }
 }
 
+/// Settings for the local web frontend (`flash serve`, the `[serve]` section).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ServeConfig {
+    /// Default port to listen on (overridden by `--port`).
+    pub port: u16,
+}
+
+impl Default for ServeConfig {
+    fn default() -> Self {
+        Self { port: 7777 }
+    }
+}
+
 /// The whole user configuration.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Config {
     pub keys: Bindings,
-    /// Key bindings for `fc browse`.
+    /// Key bindings for `flash browse`.
     pub browse: BrowseBindings,
     pub ask: AskConfig,
     /// AI deck generation settings.
     pub generate: GenerateConfig,
+    /// Local web frontend settings.
+    pub serve: ServeConfig,
     /// Directory the startup picker lists decks from, and resolves bare deck
     /// names against. `None` uses [`default_decks_dir`].
     pub decks_dir: Option<PathBuf>,
@@ -270,7 +285,15 @@ struct RawConfig {
     ask: RawAsk,
     #[serde(default)]
     generate: RawGenerate,
+    #[serde(default)]
+    serve: RawServe,
     decks_dir: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct RawServe {
+    port: Option<u16>,
 }
 
 #[derive(Deserialize, Default)]
@@ -391,6 +414,11 @@ impl Config {
             generate.review = review;
         }
 
+        let mut serve = ServeConfig::default();
+        if let Some(port) = raw.serve.port {
+            serve.port = port;
+        }
+
         let decks_dir = raw.decks_dir.map(|s| expand_tilde(&s));
 
         Ok(Self {
@@ -398,6 +426,7 @@ impl Config {
             browse,
             ask,
             generate,
+            serve,
             decks_dir,
         })
     }
@@ -455,7 +484,8 @@ pub fn default_config_toml() -> &'static str {
 # reference. Uncomment a line and edit it to override that default; lines you
 # leave commented keep the built-in default, so improvements to the defaults
 # in newer versions still reach you. Keep the section headers ([keys],
-# [browse], [ask]) so an uncommented line lands in the right section.
+# [browse], [ask], [generate], [serve]) so an uncommented line lands in the
+# right section.
 #
 # Keys are written as a single character ("j"), a special key name
 # ("space", "enter", "tab", "esc", "backspace"), or either with a "ctrl-"
@@ -465,7 +495,7 @@ pub fn default_config_toml() -> &'static str {
 # character bindings are ignored so they cannot shadow text input; use
 # ctrl-/special keys for hint, skip and quit.
 
-# Directory the startup picker lists decks from (when `fc` is launched
+# Directory the startup picker lists decks from (when `flash` is launched
 # without deck arguments). A leading ~ is expanded. Defaults to ~/decks.
 # decks_dir = "~/decks"
 
@@ -484,7 +514,7 @@ pub fn default_config_toml() -> &'static str {
 # save_note = ["ctrl-n"]        # ask view: save a condensed note to the deck
 # quit = ["esc", "ctrl-c"]      # quit the session
 
-# Key bindings for `fc browse` (the read-only reader). Jumping to the first
+# Key bindings for `flash browse` (the read-only reader). Jumping to the first
 # and last card is fixed to g / G / Home / End, and the arrow keys always
 # move next/previous; these three are configurable:
 [browse]
@@ -507,7 +537,7 @@ pub fn default_config_toml() -> &'static str {
 # allowlist; the defaults let it consult deck links but nothing else.
 # allowed_tools = ["WebFetch", "WebSearch"]
 
-# AI deck generation (`fc generate <url>`). Reuses the [ask] command,
+# AI deck generation (`flash generate <url>`). Reuses the [ask] command,
 # permission mode and tool allowlist (WebFetch reads the page).
 [generate]
 # model = ""                    # --model override; empty = use [ask] / CLI default
@@ -516,6 +546,11 @@ pub fn default_config_toml() -> &'static str {
 # extra = ""                    # extra guidance appended to the prompt
 # prompt = ""                   # full prompt override; may use {url} and {max_cards}
 # review = false                # run a second pass to drop redundant cards (--review)
+
+# Local web frontend (`flash serve`). Binds to localhost by default; `--lan`
+# exposes it to the network and `--port` overrides the port set here.
+[serve]
+# port = 7777                   # default port for `flash serve`
 "#
 }
 

@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     io::IsTerminal,
+    net::{Ipv4Addr, SocketAddr},
     path::{Path, PathBuf},
 };
 
@@ -15,6 +16,7 @@ use flash::{
     generate, parser, picker,
     recent::{self, RecentDecks},
     scheduler::SchedulerKind,
+    serve,
     session::{Order, Session, SessionOptions, histogram},
     store::{Store, default_store_path},
     time::{humanize_ms, now_ms},
@@ -55,6 +57,8 @@ enum Command {
         /// Deck files to browse (omit to pick interactively).
         decks: Vec<PathBuf>,
     },
+    /// Serve a review session (or browse view) as a local web page.
+    Serve(ServeArgs),
     /// Generate a deck from a web page using the Claude CLI.
     #[command(visible_alias = "gen")]
     Generate(GenerateArgs),
@@ -102,6 +106,28 @@ struct GenerateArgs {
     /// Path of the config file (default: platform config dir).
     #[arg(long)]
     config: Option<PathBuf>,
+}
+
+#[derive(Args)]
+struct ServeArgs {
+    /// Deck selection and review settings (decks, mode, scheduler, order,
+    /// --new, --limit, --cram, --store, --config), same as `flash review`.
+    #[command(flatten)]
+    review: ReviewArgs,
+
+    /// Port to listen on (default: the `[serve]` config port, 7777).
+    #[arg(long)]
+    port: Option<u16>,
+
+    /// Listen on all network interfaces (not just localhost) so phones and
+    /// tablets on the same network can reach it. There is no authentication,
+    /// so this is opt-in.
+    #[arg(long)]
+    lan: bool,
+
+    /// Serve a read-only browse view (no grading) instead of a review session.
+    #[arg(long)]
+    browse: bool,
 }
 
 #[derive(Args)]
@@ -173,6 +199,7 @@ fn main() -> Result<()> {
         Some(Command::List(args)) => list(args),
         Some(Command::Check { decks }) => check(decks),
         Some(Command::Browse { decks }) => browse(decks),
+        Some(Command::Serve(args)) => serve_cmd(args),
         Some(Command::Generate(args)) => generate_cmd(args),
         Some(Command::Deps { deck }) => deps_cmd(deck),
         Some(Command::Config { init }) => config_cmd(init),
@@ -263,7 +290,7 @@ fn pick_decks_if_empty(
         return Ok(Some(decks));
     }
     if !std::io::stdout().is_terminal() {
-        bail!("no deck files given; try `fc <deck.txt>...` or `fc --help`");
+        bail!("no deck files given; try `flash <deck.txt>...` or `flash --help`");
     }
     let decks_dir = config.decks_dir().context("cannot determine ~/decks")?;
     let picked = picker::pick(&decks_dir, recent)?;
@@ -350,14 +377,30 @@ fn resolve_dep(
     candidates.into_iter().find(|p| p.is_file())
 }
 
-fn review(args: ReviewArgs) -> Result<()> {
+/// A review session built from the deck selection and settings, ready to be
+/// driven by either the TUI or the web frontend. `decks` and `config` are only
+/// needed by the TUI (key bindings, ask-Claude, reference links).
+struct ReviewSession {
+    session: Session,
+    store: Store,
+    mode: Mode,
+    label: String,
+    decks: HashMap<String, tui::DeckInfo>,
+    config: Config,
+}
+
+/// Loads the decks named (or picked) for a review, resolves prerequisites and
+/// the mode/scheduler/order settings, and builds the session and store. Shared
+/// by `flash review` (TUI) and `flash serve` (web). Returns `Ok(None)` when the
+/// picker was cancelled.
+fn load_review_session(args: &ReviewArgs) -> Result<Option<ReviewSession>> {
     let config = Config::load(args.config.as_deref())?;
 
     let mut recent = RecentDecks::load(
         recent::default_recent_path().context("cannot determine the data directory")?,
     );
     let Some(deck_paths) = pick_decks_if_empty(args.decks.clone(), &config, &recent)? else {
-        return Ok(()); // picker cancelled or nothing selected
+        return Ok(None); // picker cancelled or nothing selected
     };
 
     // Pull in prerequisite decks (`% requires:`), foundations first.
@@ -365,7 +408,7 @@ fn review(args: ReviewArgs) -> Result<()> {
     let (resolved, deps_used) = resolve_deck_order(&deck_paths, decks_dir.as_deref())?;
 
     let (cards, label, decks, settings) = load_decks(&resolved)?;
-    let store = open_store(args.store)?;
+    let store = open_store(args.store.clone())?;
 
     // Directives (mode/scheduler/order) come from the requested deck(s) only,
     // not the pulled-in prerequisites — a prerequisite must not override the
@@ -430,15 +473,41 @@ fn review(args: ReviewArgs) -> Result<()> {
     };
     let session = Session::new_with_deps(cards, &store, scheduler, options, dep_ranks, now_ms());
 
-    if session.is_finished() {
-        println!("Nothing to review right now — all cards are on cooldown.");
-        print_due_forecast(&resolved, scheduler, store)?;
-        return Ok(());
-    }
-
     // Remember these decks for next time's picker.
     recent.record(&deck_paths, now_ms());
     let _ = recent.save();
+
+    Ok(Some(ReviewSession {
+        session,
+        store,
+        mode,
+        label,
+        decks,
+        config,
+    }))
+}
+
+fn review(args: ReviewArgs) -> Result<()> {
+    let Some(rs) = load_review_session(&args)? else {
+        return Ok(());
+    };
+    let ReviewSession {
+        session,
+        store,
+        mode,
+        label,
+        decks,
+        config,
+    } = rs;
+
+    if session.is_finished() {
+        println!("Nothing to review right now — all cards are on cooldown.");
+        let now = now_ms();
+        if let Some(due) = session.next_due_at(&store).filter(|&due| due > now) {
+            println!("Next card is due in {}.", humanize_ms(due - now));
+        }
+        return Ok(());
+    }
 
     let ui_options = flash::tui::Options {
         mode,
@@ -456,21 +525,62 @@ fn review(args: ReviewArgs) -> Result<()> {
     Ok(())
 }
 
-/// Prints when the next card becomes due.
-fn print_due_forecast(decks: &[PathBuf], kind: SchedulerKind, store: Store) -> Result<()> {
-    let (cards, _, _, _) = load_decks(decks)?;
-    let scheduler = kind.scheduler();
-    let now = now_ms();
-    let next = cards
-        .iter()
-        .filter_map(|c| store.get(c.id()))
-        .map(|s| scheduler.due_at(s))
-        .filter(|&due| due > now)
-        .min();
-    if let Some(due) = next {
-        println!("Next card is due in {}.", humanize_ms(due - now));
+fn serve_cmd(args: ServeArgs) -> Result<()> {
+    let config = Config::load(args.review.config.as_deref())?;
+    let port = args.port.unwrap_or(config.serve.port);
+    let ip = if args.lan {
+        Ipv4Addr::UNSPECIFIED // 0.0.0.0 — reachable from the local network
+    } else {
+        Ipv4Addr::LOCALHOST // 127.0.0.1 — this machine only
+    };
+    let addr = SocketAddr::from((ip, port));
+
+    if args.browse {
+        let mut recent = RecentDecks::load(
+            recent::default_recent_path().context("cannot determine the data directory")?,
+        );
+        let Some(deck_paths) = pick_decks_if_empty(args.review.decks.clone(), &config, &recent)?
+        else {
+            return Ok(());
+        };
+        let (cards, label, _, _) = load_decks(&deck_paths)?;
+        recent.record(&deck_paths, now_ms());
+        let _ = recent.save();
+        announce(addr, args.lan, &format!("{label} (browse)"));
+        return serve::run_browse(cards, label, addr);
     }
-    Ok(())
+
+    let Some(rs) = load_review_session(&args.review)? else {
+        return Ok(());
+    };
+    // Unlike the TUI, an empty session still starts the server — the page
+    // shows the "session complete / nothing due" state in the browser.
+    let ReviewSession {
+        session,
+        store,
+        mode,
+        label,
+        ..
+    } = rs;
+    announce(addr, args.lan, &label);
+    serve::run_review(session, store, mode, label, addr)
+}
+
+/// Prints where the web frontend is reachable, and a warning when it is
+/// exposed to the network.
+fn announce(addr: SocketAddr, lan: bool, label: &str) {
+    println!("flash serve — {label}");
+    if lan {
+        println!(
+            "Listening on all interfaces, port {}. On another device open",
+            addr.port()
+        );
+        println!("  http://<this-machine's-IP>:{}", addr.port());
+        println!("warning: no authentication — anyone on your network can reach this.");
+    } else {
+        println!("Open http://127.0.0.1:{} in your browser.", addr.port());
+    }
+    println!("Press Ctrl-C to stop.");
 }
 
 fn stats(args: DeckArgs) -> Result<()> {
@@ -545,7 +655,7 @@ fn list(args: DeckArgs) -> Result<()> {
 
 fn browse(decks: Vec<PathBuf>) -> Result<()> {
     if !std::io::stdout().is_terminal() {
-        bail!("`fc browse` needs a terminal");
+        bail!("`flash browse` needs a terminal");
     }
     let config = Config::load(None)?;
     let mut recent = RecentDecks::load(
@@ -634,7 +744,7 @@ fn generate_cmd(args: GenerateArgs) -> Result<()> {
         // Saved, but not yet valid: tell the user exactly what to fix.
         Err(e) => bail!(
             "Saved the generated deck to {}, but it does not parse yet:\n  {e}\n\
-             Fix that line and run `fc check {}`.",
+             Fix that line and run `flash check {}`.",
             path.display(),
             path.display()
         ),
@@ -643,7 +753,7 @@ fn generate_cmd(args: GenerateArgs) -> Result<()> {
 
 fn deps_cmd(deck_path: PathBuf) -> Result<()> {
     if !std::io::stdout().is_terminal() {
-        bail!("`fc deps` needs a terminal");
+        bail!("`flash deps` needs a terminal");
     }
     let config = Config::load(None)?;
     let decks_dir = config
@@ -748,7 +858,7 @@ fn config_cmd(init: bool) -> Result<()> {
     } else {
         println!(
             "no config file at {} — using defaults; create one with \
-             `fc config --init`",
+             `flash config --init`",
             path.display()
         );
     }

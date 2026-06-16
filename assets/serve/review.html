@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>flash</title>
+<style>
+  :root {
+    --bg: #07141a;
+    --panel: #0e2832;
+    --fg: #e6f3f4;
+    --dim: #6b8a93;
+    --cyan: #22d3ee;
+    --green: #4ade80;
+    --red: #f87171;
+    --yellow: #facc15;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font: 17px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex; flex-direction: column; min-height: 100%;
+  }
+  header {
+    background: var(--cyan); color: #07141a;
+    padding: 8px 14px; font-weight: 600;
+    display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  }
+  header .stats { font-weight: 500; font-variant-numeric: tabular-nums; }
+  main {
+    flex: 1; width: 100%; max-width: 720px; margin: 0 auto;
+    padding: 22px 18px 120px; display: flex; flex-direction: column;
+  }
+  .front { font-size: 1.5rem; font-weight: 700; margin: 8px 0 4px; }
+  .context { color: var(--cyan); margin: 2px 0; white-space: pre-wrap; }
+  .back {
+    color: var(--green); font-size: 1.25rem; margin: 14px 0 2px;
+    white-space: pre-wrap;
+  }
+  .note {
+    margin: 20px 0 0; padding: 2px 0 2px 16px;
+    border-left: 3px solid var(--yellow); color: #d8c98f;
+  }
+  .note p { margin: 0 0 12px; }
+  .note p:last-child { margin-bottom: 0; }
+  .note pre {
+    margin: 0 0 12px; padding: 10px 12px; overflow-x: auto;
+    background: #061016; border-radius: 8px; color: #c7d3d6;
+    font: 14px/1.45 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  .hint { color: var(--dim); font-style: italic; margin: 18px 0; }
+  .summary h2 { margin: 4px 0 14px; }
+  .summary .row { margin: 4px 0; color: var(--dim); }
+  .summary .row b { color: var(--fg); font-variant-numeric: tabular-nums; }
+  footer {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: var(--panel); padding: 12px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;
+  }
+  button {
+    flex: 1 1 auto; min-width: 96px; max-width: 220px;
+    padding: 16px 18px; font-size: 1rem; font-weight: 600;
+    border: 0; border-radius: 12px; cursor: pointer;
+    color: #07141a; background: var(--cyan);
+    -webkit-tap-highlight-color: transparent;
+  }
+  button:active { filter: brightness(0.9); }
+  button.again { background: var(--red); }
+  button.good { background: var(--green); }
+  button.easy { background: var(--cyan); }
+  button.ghost { background: #1b3a45; color: var(--fg); flex: 0 0 auto; min-width: 72px; }
+  .msg { color: var(--dim); padding: 30px 0; text-align: center; }
+</style>
+</head>
+<body>
+  <header>
+    <span id="label">flash</span>
+    <span class="stats" id="stats"></span>
+  </header>
+  <main id="main"><div class="msg">Loading…</div></main>
+  <footer id="footer"></footer>
+
+<script>
+"use strict";
+let state = null;     // last StateDto from the server
+let revealed = 0;     // number of back lines shown for the current card
+
+const main = document.getElementById("main");
+const footer = document.getElementById("footer");
+const stats = document.getElementById("stats");
+const labelEl = document.getElementById("label");
+
+async function api(path, opts) {
+  const res = await fetch(path, opts);
+  return res.json();
+}
+function load()       { api("/api/state").then(apply); }
+function grade(g)     { api("/api/grade", post({ grade: g })).then(apply); }
+function skip()       { api("/api/skip", post({})).then(apply); }
+function restart()    { api("/api/restart", post({})).then(apply); }
+function post(body)   { return { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }; }
+
+function apply(s) { state = s; revealed = 0; render(); }
+
+function fullyRevealed() {
+  const n = state.card ? state.card.back.length : 0;
+  return n === 0 || revealed >= n;
+}
+
+function render() {
+  labelEl.textContent = "flash — " + state.label;
+  const h = state.histogram;
+  stats.textContent = state.finished
+    ? `${state.reviews}✓ done`
+    : `${state.remaining} left · ${state.passed}✓ ${state.failed}✗`;
+
+  main.innerHTML = "";
+  footer.innerHTML = "";
+
+  if (state.finished) { renderSummary(); return; }
+  renderCard();
+}
+
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined) n.textContent = text;
+  return n;
+}
+
+function renderCard() {
+  const c = state.card;
+  main.appendChild(el("div", "front", c.front));
+  for (const ctx of c.context) main.appendChild(el("div", "context", ctx));
+
+  const shown = fullyRevealed() ? c.back.length : revealed;
+  for (let i = 0; i < shown; i++) main.appendChild(el("div", "back", c.back[i]));
+
+  if (!fullyRevealed()) {
+    const more = state.mode === "line" && revealed > 0 ? "reveal next line" : "reveal";
+    main.appendChild(el("div", "hint", `[ space / tap reveal to ${more} ]`));
+    addButton("Reveal", "easy", reveal);
+    addButton("Skip", "ghost", skip);
+    return;
+  }
+
+  renderNote(c.note);
+  addButton("Again", "again", () => grade("again"));
+  addButton("Good", "good", () => grade("good"));
+  addButton("Easy", "easy", () => grade("easy"));
+}
+
+function renderNote(units) {
+  if (!units || units.length === 0) return;
+  const note = el("div", "note");
+  for (const u of units) {
+    if (u.kind === "sentence") {
+      note.appendChild(el("p", null, u.text));
+    } else if (u.kind === "code") {
+      const pre = el("pre");
+      pre.appendChild(el("code", null, u.lines.join("\n")));
+      note.appendChild(pre);
+    }
+  }
+  main.appendChild(note);
+}
+
+function renderSummary() {
+  const wrap = el("div", "summary");
+  wrap.appendChild(el("h2", null, "Session complete!"));
+  const acc = state.reviews > 0 ? Math.round(100 * state.passed / state.reviews) + "%" : "–";
+  const row = (label, value) => {
+    const r = el("div", "row", label + " ");
+    r.appendChild(el("b", null, value));
+    wrap.appendChild(r);
+  };
+  row("reviews", `${state.reviews} (${state.passed} passed, ${state.failed} failed)`);
+  row("accuracy", acc);
+  const h = state.histogram;
+  row("stages", `new ${h[0]} · s1 ${h[1]} · s2 ${h[2]} · s3 ${h[3]} · s4 ${h[4]} · s5 ${h[5]}`);
+  main.appendChild(wrap);
+  addButton("New session", "good", restart);
+}
+
+function reveal() {
+  const n = state.card.back.length;
+  revealed = state.mode === "line" ? Math.min(revealed + 1, n) : n;
+  render();
+}
+
+function addButton(text, cls, onClick) {
+  const b = el("button", cls, text);
+  b.addEventListener("click", onClick);
+  footer.appendChild(b);
+}
+
+document.addEventListener("keydown", (e) => {
+  if (!state) return;
+  if (state.finished) { if (e.key === "r") restart(); return; }
+  if (e.key === "s") { skip(); return; }
+  if (!fullyRevealed()) {
+    if (e.key === " " || e.key === "Enter") { e.preventDefault(); reveal(); }
+    return;
+  }
+  if (e.key === "1" || e.key === "a") grade("again");
+  else if (e.key === "2" || e.key === "g") grade("good");
+  else if (e.key === "3" || e.key === "e") grade("easy");
+});
+
+load();
+</script>
+</body>
+</html>

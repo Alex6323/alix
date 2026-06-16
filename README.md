@@ -186,6 +186,29 @@ keys are configurable in the `[browse]` section of the config file (see
 below); first/last stay `g`/`G`. Run `flash browse` with no deck argument to
 choose decks from the same picker `flash` uses.
 
+## Web frontend
+
+`flash serve <deck>...` reviews in a browser instead of the terminal — useful
+on a tablet or phone, where touch and (later) images beat a TUI. It runs the
+same session logic and writes to the same progress store, so a card you grade
+in the browser is reflected on the command line and vice versa.
+
+```
+flash serve rust.txt          # open http://127.0.0.1:7777
+flash serve --port 8080 rust.txt
+flash serve --lan rust.txt     # reachable from other devices on your network
+flash serve --browse rust.txt  # read-only browse view (no grading)
+```
+
+Reveal a card with the button or `Space`, then grade with the **Again** /
+**Good** / **Easy** buttons (or `1`/`2`/`3`); `line`-mode decks reveal one line
+at a time. It is deliberately local-only — no accounts, no database. By default
+it binds to `127.0.0.1` (this machine only); `--lan` binds all interfaces so a
+device on the same network can reach it at `http://<your-machine-ip>:<port>`.
+There is no authentication, so only use `--lan` on a network you trust. The
+default port lives in the `[serve]` section of the config file; `--port`
+overrides it.
+
 ## Ask Claude about a card
 
 On any post-answer screen (feedback, revealed flip card, answered choice),
@@ -209,8 +232,8 @@ Decks can carry reference links as comment lines:
 ```
 
 They are handed to Claude with the first question as background material to
-consult when useful — fetched once, remembered for the rest of the run. Old
-tools ignore these lines, and card hashes are unaffected.
+consult when useful — fetched once, remembered for the rest of the run. These
+lines do not affect card hashes.
 
 Because the CLI runs headless (`-p`), it cannot show interactive permission
 prompts — an unanswerable prompt would hang the call. flash therefore
@@ -297,6 +320,14 @@ quit = ["q", "esc", "ctrl-c"]
 
 Letter bindings are case-insensitive, so jump-to-first/last stays fixed at
 `g`/`G` (and Home/End); the arrow keys always move next/previous too.
+
+The web frontend (`flash serve`) reads its default port from a `[serve]`
+section; `--port` overrides it:
+
+```toml
+[serve]
+port = 7777
+```
 
 ## Card identity and storage
 

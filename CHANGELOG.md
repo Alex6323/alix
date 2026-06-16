@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- `flash serve` — an optional local web frontend. Reviews (flip + line-by-line
+  reveal, Again/Good/Easy) or browses decks in the browser, reusing the same
+  session logic and writing to the same progress store, so browser and CLI
+  share one history. Touch-friendly; binds to localhost by default, `--lan`
+  exposes it to the network (no auth), `--port`/`[serve]` set the port,
+  `--browse` serves the read-only view. Built on `tiny_http`.
+
 ### Changed
 - Note rendering moved into a frontend-independent `render` module that emits a
   structured model (`NoteUnit`: sentence-split prose or verbatim code blocks);

@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>flash — browse</title>
+<style>
+  :root {
+    --bg: #07141a;
+    --panel: #0e2832;
+    --fg: #e6f3f4;
+    --dim: #6b8a93;
+    --cyan: #22d3ee;
+    --green: #4ade80;
+    --yellow: #facc15;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font: 17px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex; flex-direction: column; min-height: 100%;
+  }
+  header {
+    background: var(--cyan); color: #07141a;
+    padding: 8px 14px; font-weight: 600;
+    display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  }
+  header .stats { font-weight: 500; font-variant-numeric: tabular-nums; }
+  main {
+    flex: 1; width: 100%; max-width: 720px; margin: 0 auto;
+    padding: 22px 18px 120px; display: flex; flex-direction: column;
+  }
+  .front { font-size: 1.5rem; font-weight: 700; margin: 8px 0 4px; }
+  .context { color: var(--cyan); margin: 2px 0; white-space: pre-wrap; }
+  .back { color: var(--green); font-size: 1.25rem; margin: 14px 0 2px; white-space: pre-wrap; }
+  .note {
+    margin: 20px 0 0; padding: 2px 0 2px 16px;
+    border-left: 3px solid var(--yellow); color: #d8c98f;
+  }
+  .note p { margin: 0 0 12px; }
+  .note p:last-child { margin-bottom: 0; }
+  .note pre {
+    margin: 0 0 12px; padding: 10px 12px; overflow-x: auto;
+    background: #061016; border-radius: 8px; color: #c7d3d6;
+    font: 14px/1.45 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  footer {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: var(--panel); padding: 12px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    display: flex; gap: 10px; justify-content: center;
+  }
+  button {
+    flex: 1 1 auto; max-width: 220px;
+    padding: 16px 18px; font-size: 1rem; font-weight: 600;
+    border: 0; border-radius: 12px; cursor: pointer;
+    color: #07141a; background: var(--cyan);
+    -webkit-tap-highlight-color: transparent;
+  }
+  button:active { filter: brightness(0.9); }
+  button:disabled { opacity: 0.4; cursor: default; }
+  .msg { color: var(--dim); padding: 30px 0; text-align: center; }
+</style>
+</head>
+<body>
+  <header>
+    <span id="label">flash — browse</span>
+    <span class="stats" id="stats"></span>
+  </header>
+  <main id="main"><div class="msg">Loading…</div></main>
+  <footer id="footer"></footer>
+
+<script>
+"use strict";
+let cards = [];
+let label = "";
+let i = 0;
+
+const main = document.getElementById("main");
+const footer = document.getElementById("footer");
+const stats = document.getElementById("stats");
+const labelEl = document.getElementById("label");
+
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined) n.textContent = text;
+  return n;
+}
+
+function render() {
+  labelEl.textContent = "flash — " + label + " (browse)";
+  if (cards.length === 0) { main.innerHTML = '<div class="msg">No cards.</div>'; return; }
+  stats.textContent = `card ${i + 1} / ${cards.length}`;
+
+  const c = cards[i];
+  main.innerHTML = "";
+  main.appendChild(el("div", "front", c.front));
+  for (const ctx of c.context) main.appendChild(el("div", "context", ctx));
+  for (const b of c.back) main.appendChild(el("div", "back", b));
+  renderNote(c.note);
+
+  footer.innerHTML = "";
+  const prev = el("button", null, "Prev"); prev.disabled = i === 0;
+  prev.addEventListener("click", () => { go(i - 1); });
+  const next = el("button", null, "Next"); next.disabled = i === cards.length - 1;
+  next.addEventListener("click", () => { go(i + 1); });
+  footer.appendChild(prev);
+  footer.appendChild(next);
+}
+
+function renderNote(units) {
+  if (!units || units.length === 0) return;
+  const note = el("div", "note");
+  for (const u of units) {
+    if (u.kind === "sentence") {
+      note.appendChild(el("p", null, u.text));
+    } else if (u.kind === "code") {
+      const pre = el("pre");
+      pre.appendChild(el("code", null, u.lines.join("\n")));
+      note.appendChild(pre);
+    }
+  }
+  main.appendChild(note);
+}
+
+function go(n) { i = Math.max(0, Math.min(cards.length - 1, n)); render(); }
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "ArrowRight" || e.key === "l" || e.key === "n" || e.key === " ") { e.preventDefault(); go(i + 1); }
+  else if (e.key === "ArrowLeft" || e.key === "h" || e.key === "p") go(i - 1);
+  else if (e.key === "g" || e.key === "Home") go(0);
+  else if (e.key === "G" || e.key === "End") go(cards.length - 1);
+});
+
+fetch("/api/cards").then(r => r.json()).then(d => {
+  label = d.label; cards = d.cards; i = 0; render();
+});
+</script>
+</body>
+</html>
