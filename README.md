@@ -165,6 +165,12 @@ yourself again / good / easy, exactly like flip mode. Pair it with
 `--order sequential` (or `% order: sequential` in the deck) to walk the
 sections top to bottom — e.g. one card per verse/chorus of a song.
 
+To throw a card away, press the **remove** key (`Ctrl-X` by default) on it
+instead of grading — it is dropped from the session without being asked again
+(cloze siblings go too). The marked cards are deleted from their deck files,
+and their progress is pruned, when the session ends. The same key works in
+`flash browse`.
+
 Schedulers:
 
 - **leitner** (default): a 6-stage box system with cooldowns
@@ -176,15 +182,17 @@ Schedulers:
 
 ## Browse
 
-`flash browse <deck>...` is a read-only walk through every card — front and back
-shown together, in file order — with no grading and no writes to the progress
-store. It is for a first read-through of a new deck or just checking its
-contents, without any of it affecting your schedule. Navigate with `l`/`h`
-(next/previous, vim-style — `n`/`p`, the arrow keys, and `Space` also work),
-`g`/`G` (first/last, also Home/End), and `q` to quit. The next/previous/quit
-keys are configurable in the `[browse]` section of the config file (see
-below); first/last stay `g`/`G`. Run `flash browse` with no deck argument to
-choose decks from the same picker `flash` uses.
+`flash browse <deck>...` is a walk through every card — front and back shown
+together, in file order — without grading or scheduling. It is for a first
+read-through of a new deck or just checking its contents, without affecting
+your schedule. Navigate with `l`/`h` (next/previous, vim-style — `n`/`p`, the
+arrow keys, and `Space` also work), `g`/`G` (first/last, also Home/End), and
+`q` to quit. Pressing the remove key (`x` by default) marks the current card;
+on quit the marked cards are deleted from their deck files and their progress
+is pruned — the only thing browsing ever writes. The next/previous/remove/quit
+keys are configurable in the `[browse]` section of the config file (see below);
+first/last stay `g`/`G`. Run `flash browse` with no deck argument to choose
+decks from the same picker `flash` uses.
 
 ## Web frontend
 
@@ -303,8 +311,9 @@ easy = ["l"]
 Keys are written as a single character (`"j"`), a special key name
 (`"space"`, `"enter"`, `"tab"`, `"esc"`, `"backspace"`), or either with a
 `ctrl-` prefix (`"ctrl-s"`). Rebindable actions: `again`, `good`, `easy`,
-`reveal`, `hint`, `submit`, `skip`, `continue`, `restart` (start a new
-session from the summary screen, default `r`), `quit`. While you are typing
+`reveal`, `hint`, `submit`, `skip`, `remove` (mark the card for deletion from
+its deck file, default `ctrl-x`), `continue`, `restart` (start a new session
+from the summary screen, default `r`), `quit`. While you are typing
 an answer (typing and fuzzy mode), plain character bindings are ignored so
 they cannot shadow text input — use `ctrl-`/special keys for `hint`, `skip`
 and `quit`. A different config file can be passed with `--config <path>`.
@@ -315,6 +324,7 @@ The browser (`flash browse`) has its own bindings in a `[browse]` section:
 [browse]
 next = ["l", "n", "space"]    # default vim-style l, plus n and space
 prev = ["h", "p"]
+remove = ["x"]                # mark the current card for removal
 quit = ["q", "esc", "ctrl-c"]
 ```
 

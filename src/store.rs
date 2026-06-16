@@ -206,6 +206,12 @@ impl Store {
             .or_insert_with(|| CardState::new(now_ms))
     }
 
+    /// Drops a card's stored state, e.g. when the card is deleted from its
+    /// deck. Returns whether an entry was present. Does not save.
+    pub fn remove(&mut self, card_id: u64) -> bool {
+        self.cards.remove(&card_id).is_some()
+    }
+
     /// The number of cards tracked by this store.
     pub fn len(&self) -> usize {
         self.cards.len()
@@ -264,6 +270,17 @@ mod tests {
             }],
             state.history
         );
+    }
+
+    #[test]
+    fn remove_drops_the_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        store.get_or_insert(42, 1000);
+        assert!(store.remove(42));
+        assert!(store.get(42).is_none());
+        // Removing again reports nothing was there.
+        assert!(!store.remove(42));
     }
 
     #[test]

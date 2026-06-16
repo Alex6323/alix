@@ -105,6 +105,9 @@ pub struct Bindings {
     pub submit: Vec<KeyPattern>,
     /// Put the current card at the end of the queue without grading.
     pub skip: Vec<KeyPattern>,
+    /// Mark the current card for removal from its deck file (applied when the
+    /// session ends).
+    pub remove: Vec<KeyPattern>,
     /// Leave the feedback screen.
     pub cont: Vec<KeyPattern>,
     /// Start a new session from the summary screen.
@@ -128,6 +131,7 @@ impl Default for Bindings {
             hint: keys(&["tab", "ctrl-h", "ctrl-backspace"]),
             submit: keys(&["enter"]),
             skip: keys(&["ctrl-s"]),
+            remove: keys(&["ctrl-x"]),
             cont: keys(&["enter", "space"]),
             restart: keys(&["r"]),
             ask: keys(&["?"]),
@@ -156,6 +160,8 @@ pub struct BrowseBindings {
     pub next: Vec<KeyPattern>,
     /// Move to the previous card.
     pub prev: Vec<KeyPattern>,
+    /// Mark the current card for removal from its deck file (applied on quit).
+    pub remove: Vec<KeyPattern>,
     /// Leave the browser.
     pub quit: Vec<KeyPattern>,
 }
@@ -166,6 +172,7 @@ impl Default for BrowseBindings {
         Self {
             next: keys(&["l", "n", "space"]),
             prev: keys(&["h", "p"]),
+            remove: keys(&["x"]),
             quit: keys(&["q", "esc", "ctrl-c"]),
         }
     }
@@ -312,6 +319,7 @@ struct RawGenerate {
 struct RawBrowse {
     next: Option<Vec<String>>,
     prev: Option<Vec<String>>,
+    remove: Option<Vec<String>>,
     quit: Option<Vec<String>>,
 }
 
@@ -335,6 +343,7 @@ struct RawKeys {
     hint: Option<Vec<String>>,
     submit: Option<Vec<String>>,
     skip: Option<Vec<String>>,
+    remove: Option<Vec<String>>,
     r#continue: Option<Vec<String>>,
     restart: Option<Vec<String>>,
     ask: Option<Vec<String>>,
@@ -369,6 +378,7 @@ impl Config {
         assign(&mut keys.hint, raw.keys.hint, "hint")?;
         assign(&mut keys.submit, raw.keys.submit, "submit")?;
         assign(&mut keys.skip, raw.keys.skip, "skip")?;
+        assign(&mut keys.remove, raw.keys.remove, "remove")?;
         assign(&mut keys.cont, raw.keys.r#continue, "continue")?;
         assign(&mut keys.restart, raw.keys.restart, "restart")?;
         assign(&mut keys.ask, raw.keys.ask, "ask")?;
@@ -378,6 +388,7 @@ impl Config {
         let mut browse = BrowseBindings::default();
         assign(&mut browse.next, raw.browse.next, "browse.next")?;
         assign(&mut browse.prev, raw.browse.prev, "browse.prev")?;
+        assign(&mut browse.remove, raw.browse.remove, "browse.remove")?;
         assign(&mut browse.quit, raw.browse.quit, "browse.quit")?;
 
         let mut ask = AskConfig::default();
@@ -508,6 +519,7 @@ pub fn default_config_toml() -> &'static str {
 # hint = ["tab", "ctrl-h", "ctrl-backspace"]  # typing mode (fails the card)
 # submit = ["enter"]            # fuzzy mode: submit the current line
 # skip = ["ctrl-s"]             # requeue the current card without grading
+# remove = ["ctrl-x"]           # mark the card for removal from the deck file
 # continue = ["enter", "space"] # leave the feedback screen
 # restart = ["r"]               # start a new session from the summary screen
 # ask = ["?"]                   # ask Claude about an answered card
@@ -520,6 +532,7 @@ pub fn default_config_toml() -> &'static str {
 [browse]
 # next = ["l", "n", "space"]    # next card
 # prev = ["h", "p"]             # previous card
+# remove = ["x"]                # mark the card for removal from the deck file
 # quit = ["q", "esc", "ctrl-c"] # leave the browser
 
 # Settings for the ask-Claude integration. Questions are sent to the

@@ -218,6 +218,30 @@ impl Session {
         }
     }
 
+    /// Drops the current card from the queue without grading it, along with any
+    /// remaining cards in the same sibling group (cloze sub-cards of one source
+    /// card) so a card marked for removal is not asked again in any form.
+    /// Returns clones of every dropped card (the current one first), or an empty
+    /// vec if the queue was empty. The store is left untouched; pruning the
+    /// cards' progress is the caller's job once the deck file is rewritten.
+    pub fn remove_current(&mut self) -> Vec<Card> {
+        let Some(index) = self.queue.pop_front() else {
+            return Vec::new();
+        };
+        let group = sibling_group(&self.cards[index]);
+        let mut removed = vec![self.cards[index].clone()];
+        let mut kept = VecDeque::with_capacity(self.queue.len());
+        for &i in &self.queue {
+            if sibling_group(&self.cards[i]) == group {
+                removed.push(self.cards[i].clone());
+            } else {
+                kept.push_back(i);
+            }
+        }
+        self.queue = kept;
+        removed
+    }
+
     /// Per-stage counts over all cards of this session's decks (stage 0 =
     /// never seen).
     pub fn stage_histogram(&self, store: &Store) -> StageHistogram {
@@ -585,6 +609,47 @@ mod tests {
         // Skipping must not touch the store.
         assert!(store.is_empty());
         let _ = &mut store;
+    }
+
+    #[test]
+    fn remove_current_drops_card_without_grading() {
+        let (mut store, _dir) = empty_store();
+        let mut session = Session::new(
+            cards(2),
+            &store,
+            SchedulerKind::Leitner,
+            SessionOptions::default(),
+            1000,
+        );
+        let removed = session.remove_current();
+        assert_eq!(1, removed.len());
+        assert_eq!(1, session.remaining());
+        assert_ne!(removed[0].front, session.current().unwrap().front);
+        // The store is untouched by a removal.
+        assert!(store.is_empty());
+        let _ = &mut store;
+    }
+
+    #[test]
+    fn remove_current_also_drops_cloze_siblings() {
+        let (store, _dir) = empty_store();
+        // Two sub-cards of one source card (same line) plus one other card.
+        let mut all = vec![card("deck.txt", 1), card("deck.txt", 1), card("deck.txt", 2)];
+        all[0].back = vec!["hole a".into()];
+        all[1].back = vec!["hole b".into()];
+        let mut session = Session::new(
+            all,
+            &store,
+            SchedulerKind::Leitner,
+            SessionOptions::default(),
+            0,
+        );
+        assert_eq!(3, session.remaining());
+        // Removing one sub-card removes its sibling too, leaving only card 2.
+        let removed = session.remove_current();
+        assert_eq!(2, removed.len());
+        assert_eq!(1, session.remaining());
+        assert_eq!(2, session.current().unwrap().line);
     }
 
     /// Cards sharing a front line (cloze sub-cards) must not sit next to

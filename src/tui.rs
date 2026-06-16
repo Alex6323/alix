@@ -1,7 +1,7 @@
 //! The interactive review TUI built on ratatui.
 
 use std::{
-    collections::HashMap,
+    collections::{BTreeSet, HashMap, HashSet},
     path::PathBuf,
     sync::mpsc::{Receiver, TryRecvError},
     time::Duration,
@@ -142,6 +142,11 @@ pub struct App {
     /// The CLI conversation spanning this run; created lazily, reset on
     /// errors.
     ask_session: ask::CliSession,
+    /// Cards marked for removal: deck subject → front line numbers, applied to
+    /// the deck files when the run ends.
+    removed_lines: HashMap<String, BTreeSet<usize>>,
+    /// Identity hashes of removed cards, pruned from the store at the end.
+    removed_ids: HashSet<u64>,
     quit: bool,
 }
 
@@ -157,6 +162,8 @@ impl App {
             nothing_due: false,
             ask_max_scroll: std::cell::Cell::new(0),
             ask_session: ask::CliSession::new(),
+            removed_lines: HashMap::new(),
+            removed_ids: HashSet::new(),
             quit: false,
         };
         app.start_card();
@@ -169,8 +176,11 @@ impl App {
         let mut terminal = ratatui::init();
         let result = self.event_loop(&mut terminal);
         ratatui::restore();
+        // Apply pending card removals to the deck files now that the terminal
+        // is back, so any message is visible. This also prunes their progress.
+        self.flush_removals();
         // Progress is saved after every grade, but save once more in case
-        // the loop exited between grades.
+        // the loop exited between grades (and to persist the prunes above).
         self.store.save()?;
         result?;
         Ok(self.totals)
@@ -333,6 +343,55 @@ impl App {
         Ok(())
     }
 
+    /// Marks the current card (and any cloze siblings) for removal from its
+    /// deck file, drops it from the queue, and moves on. The file edits and
+    /// progress pruning happen together when the run ends, in [`flush_removals`].
+    fn remove_card(&mut self) {
+        let removed = self.session.remove_current();
+        let Some(first) = removed.first() else {
+            return;
+        };
+        // All removed cards share one source block (same subject and line).
+        self.removed_lines
+            .entry(first.subject.to_string())
+            .or_default()
+            .insert(first.line);
+        for card in &removed {
+            self.removed_ids.insert(card.id());
+        }
+        self.start_card();
+    }
+
+    /// Deletes every card marked for removal from its deck file and prunes the
+    /// matching progress entries. Best-effort: a file that cannot be rewritten
+    /// is reported but does not abort the others. Called once, after the
+    /// terminal is restored.
+    fn flush_removals(&mut self) {
+        if self.removed_lines.is_empty() {
+            return;
+        }
+        let mut cards = 0;
+        let mut files = 0;
+        for (subject, lines) in &self.removed_lines {
+            let Some(info) = self.options.decks.get(subject) else {
+                eprintln!("warning: no deck file known for {subject}; cannot remove cards");
+                continue;
+            };
+            let lines: Vec<usize> = lines.iter().copied().collect();
+            cards += lines.len();
+            match deck::remove_cards(&info.path, &lines) {
+                Ok(()) => files += 1,
+                Err(e) => eprintln!("warning: could not update {}: {e}", info.path.display()),
+            }
+        }
+        for id in &self.removed_ids {
+            self.store.remove(*id);
+        }
+        if files > 0 {
+            eprintln!("Removed {cards} card(s) from {files} deck file(s).");
+        }
+    }
+
     fn handle_key(&mut self, key: KeyEvent) -> Result<()> {
         // The ask view has its own key handling (free-text input, and Esc
         // means "back", not "quit").
@@ -357,6 +416,7 @@ impl App {
         // Bindings that apply across phases.
         let quit_hit = hit(&self.options.keys.quit);
         let skip_hit = hit(&self.options.keys.skip);
+        let remove_hit = hit(&self.options.keys.remove);
         let restart_hit = hit(&self.options.keys.restart);
         let ask_hit = hit(&self.options.keys.ask);
         let hint_hit = hit(&self.options.keys.hint);
@@ -384,6 +444,11 @@ impl App {
         if skip_hit && answerable {
             self.session.skip();
             self.start_card();
+            return Ok(());
+        }
+        // Marking for removal makes sense on the card you'd otherwise answer.
+        if remove_hit && answerable {
+            self.remove_card();
             return Ok(());
         }
 
@@ -689,31 +754,35 @@ impl App {
         let keys = match &self.phase {
             Phase::Typing { .. } => {
                 format!(
-                    "{} hint │ {} skip │ {} quit",
+                    "{} hint │ {} skip │ {} remove │ {} quit",
                     l(&k.hint),
                     l(&k.skip),
+                    l(&k.remove),
                     l(&k.quit)
                 )
             }
             Phase::Fuzzy { .. } => format!(
-                "{} submit line │ {} skip │ {} quit",
+                "{} submit line │ {} skip │ {} remove │ {} quit",
                 l(&k.submit),
                 l(&k.skip),
+                l(&k.remove),
                 l(&k.quit)
             ),
             Phase::Flip { revealed: false } => {
                 format!(
-                    "{} reveal │ {} skip │ {} quit",
+                    "{} reveal │ {} skip │ {} remove │ {} quit",
                     l(&k.reveal),
                     l(&k.skip),
+                    l(&k.remove),
                     l(&k.quit)
                 )
             }
             Phase::Flip { revealed: true } => format!(
-                "{} again │ {} good │ {} easy │ {} ask │ {} quit",
+                "{} again │ {} good │ {} easy │ {} remove │ {} ask │ {} quit",
                 l(&k.again),
                 l(&k.good),
                 l(&k.easy),
+                l(&k.remove),
                 l(&k.ask),
                 l(&k.quit)
             ),
@@ -721,17 +790,19 @@ impl App {
                 let total = self.session.current().map_or(0, |c| c.back.len());
                 if *revealed < total {
                     format!(
-                        "{} reveal next │ {} skip │ {} quit",
+                        "{} reveal next │ {} skip │ {} remove │ {} quit",
                         l(&k.reveal),
                         l(&k.skip),
+                        l(&k.remove),
                         l(&k.quit)
                     )
                 } else {
                     format!(
-                        "{} again │ {} good │ {} easy │ {} ask │ {} quit",
+                        "{} again │ {} good │ {} easy │ {} remove │ {} ask │ {} quit",
                         l(&k.again),
                         l(&k.good),
                         l(&k.easy),
+                        l(&k.remove),
                         l(&k.ask),
                         l(&k.quit)
                     )
@@ -743,9 +814,10 @@ impl App {
                 ..
             } => {
                 format!(
-                    "1-{} select │ {} skip │ {} quit",
+                    "1-{} select │ {} skip │ {} remove │ {} quit",
                     question.options.len(),
                     l(&k.skip),
+                    l(&k.remove),
                     l(&k.quit)
                 )
             }

@@ -168,6 +168,68 @@ pub fn set_requires(path: &Path, deps: &[String]) -> Result<(), DeckError> {
     Ok(())
 }
 
+/// Removes whole card blocks from a deck file: every card whose front sits at
+/// one of the 1-based `front_lines` is deleted along with its back lines, notes
+/// and trailing blank separator. The block runs from the front (a column-0 `#`
+/// line) to the next card's front, or the end of the file. Passing the front
+/// line of any cloze sub-card removes the whole `#?` source block, since all of
+/// its holes share that line. The file is rewritten atomically (temp + rename).
+/// An empty `front_lines` is a no-op.
+pub fn remove_cards(path: &Path, front_lines: &[usize]) -> Result<(), DeckError> {
+    if front_lines.is_empty() {
+        return Ok(());
+    }
+    let io_err = |source| DeckError::Io {
+        path: path.to_path_buf(),
+        source,
+    };
+    let text = std::fs::read_to_string(path).map_err(io_err)?;
+    let new_text = remove_card_blocks(&text, front_lines);
+
+    let tmp = path.with_extension("txt.tmp");
+    std::fs::write(&tmp, new_text).map_err(io_err)?;
+    std::fs::rename(&tmp, path).map_err(io_err)?;
+    Ok(())
+}
+
+/// Returns `text` with the card blocks starting at the given 1-based front
+/// lines removed. A card front is a column-0 `#` line; its block extends to the
+/// next column-0 `#` (or end of file), so the front, back lines, notes and the
+/// blank line after it all go. A `front_line` that does not land on a card
+/// front is ignored, so a stale line number can never corrupt the file.
+fn remove_card_blocks(text: &str, front_lines: &[usize]) -> String {
+    let lines: Vec<&str> = text.lines().collect();
+    // A column-0 `#` starts a card; an indented `#` is back content, a `%` is a
+    // comment — neither starts a block.
+    let is_front = |line: &str| line.starts_with('#');
+    let targets: std::collections::HashSet<usize> =
+        front_lines.iter().map(|n| n.saturating_sub(1)).collect();
+
+    let mut drop = vec![false; lines.len()];
+    for (i, line) in lines.iter().enumerate() {
+        if targets.contains(&i) && is_front(line) {
+            drop[i] = true;
+            let mut j = i + 1;
+            while j < lines.len() && !is_front(lines[j]) {
+                drop[j] = true;
+                j += 1;
+            }
+        }
+    }
+
+    let kept: Vec<&str> = lines
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !drop[*i])
+        .map(|(_, line)| *line)
+        .collect();
+    let mut result = kept.join("\n");
+    if text.ends_with('\n') && !result.is_empty() && !result.ends_with('\n') {
+        result.push('\n');
+    }
+    result
+}
+
 /// `true` if `line` is a `% requires:` directive.
 fn is_requires_line(line: &str) -> bool {
     line.trim()
@@ -288,6 +350,54 @@ mod tests {
         assert_eq!(Some("explained".to_string()), after.cards[0].note);
         // Notes are not hashed: progress stays attached.
         assert_eq!(before.cards[0].id(), after.cards[0].id());
+    }
+
+    #[test]
+    fn remove_card_block_drops_front_back_and_trailing_blank() {
+        let text = "# one\n\tback 1\n\t! a note\n\n# two\n\tback 2\n";
+        // Removing the first card takes its note and the blank separator too.
+        assert_eq!("# two\n\tback 2\n", remove_card_blocks(text, &[1]));
+        // Removing the last card leaves the first intact.
+        assert_eq!("# one\n\tback 1\n\t! a note\n", remove_card_blocks(text, &[5]));
+    }
+
+    #[test]
+    fn remove_card_block_keeps_header_and_neighbors() {
+        let text = "% requires: base\n% link: https://x\n# a\n\tx\n# b\n\ty\n# c\n\tz\n";
+        // The middle card goes; the header and the other two stay.
+        assert_eq!(
+            "% requires: base\n% link: https://x\n# a\n\tx\n# c\n\tz\n",
+            remove_card_blocks(text, &[5])
+        );
+    }
+
+    #[test]
+    fn remove_card_block_handles_indented_hash_back_line() {
+        // An indented `#` is back content, not a new card, so it is part of the
+        // block and does not end it.
+        let text = "# q\n\t# answer with a hash\n# next\n\tb\n";
+        assert_eq!("# next\n\tb\n", remove_card_blocks(text, &[1]));
+    }
+
+    #[test]
+    fn remove_multiple_and_stale_line_is_ignored() {
+        let text = "# a\n\tx\n# b\n\ty\n# c\n\tz\n";
+        // Remove a and c; a line that isn't a front (2) is ignored.
+        assert_eq!("# b\n\ty\n", remove_card_blocks(text, &[1, 2, 5]));
+        // Removing everything yields an empty file (no stray newline).
+        assert_eq!("", remove_card_blocks(text, &[1, 3, 5]));
+    }
+
+    #[test]
+    fn remove_cards_rewrites_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.txt");
+        std::fs::write(&path, "# one\n\tback 1\n\n# two\n\tback 2\n").unwrap();
+
+        remove_cards(&path, &[1]).unwrap();
+        let deck = Deck::load(&path).unwrap();
+        assert_eq!(1, deck.cards.len());
+        assert_eq!("two", deck.cards[0].front);
     }
 
     #[test]

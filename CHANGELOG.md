@@ -7,6 +7,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Mark a card for removal during review or browse with the new `remove` key
+  (default `Ctrl-X` in review, `x` in browse). It is dropped from the session
+  without being asked again (cloze siblings too); when the session ends the
+  marked cards are deleted from their deck files and their progress is pruned.
 - `flash serve` — an optional local web frontend. Reviews (flip + line-by-line
   reveal, Again/Good/Easy) or browses decks in the browser, reusing the same
   session logic and writing to the same progress store, so browser and CLI

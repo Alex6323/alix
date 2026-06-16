@@ -665,12 +665,19 @@ fn browse(decks: Vec<PathBuf>) -> Result<()> {
         return Ok(()); // picker cancelled or nothing selected
     };
 
-    let (cards, label, _, _) = load_decks(&deck_paths)?;
-    // Remember these decks for next time's picker (browse writes nothing to
-    // the progress store, but the recent-decks list is a separate convenience).
+    let (cards, label, decks_info, _) = load_decks(&deck_paths)?;
     recent.record(&deck_paths, now_ms());
     let _ = recent.save();
-    browse::run(cards, label, config.browse)
+
+    // Browse only writes if the user removes a card: it then deletes it from
+    // the deck file and prunes its progress. Provide the per-subject paths and
+    // the store for that.
+    let paths: HashMap<String, PathBuf> = decks_info
+        .into_iter()
+        .map(|(subject, info)| (subject, info.path))
+        .collect();
+    let store = open_store(None)?;
+    browse::run(cards, label, config.browse, paths, store)
 }
 
 fn generate_cmd(args: GenerateArgs) -> Result<()> {
@@ -877,6 +884,7 @@ fn config_cmd(init: bool) -> Result<()> {
     show("hint", &keys.hint);
     show("submit", &keys.submit);
     show("skip", &keys.skip);
+    show("remove", &keys.remove);
     show("continue", &keys.cont);
     show("restart", &keys.restart);
     show("ask", &keys.ask);
@@ -885,6 +893,7 @@ fn config_cmd(init: bool) -> Result<()> {
     println!("browse bindings (first/last fixed: g/G/Home/End):");
     show("next", &config.browse.next);
     show("prev", &config.browse.prev);
+    show("remove", &config.browse.remove);
     show("quit", &config.browse.quit);
     println!("ask:");
     println!("  command     {}", config.ask.command);
