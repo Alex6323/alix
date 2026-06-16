@@ -528,7 +528,15 @@ fn review(args: ReviewArgs) -> Result<()> {
     if args.serve.serve {
         let addr = serve_addr(args.serve.port, args.serve.lan, &config);
         announce(addr, args.serve.lan, &label);
-        return serve::run_review(session, store, mode, label, addr, subject_paths(decks));
+        return serve::run_review(
+            session,
+            store,
+            mode,
+            label,
+            addr,
+            subject_paths(decks),
+            config.keys,
+        );
     }
 
     if session.is_finished() {
@@ -670,7 +678,7 @@ fn browse(args: BrowseArgs) -> Result<()> {
     if args.serve.serve {
         let addr = serve_addr(args.serve.port, args.serve.lan, &config);
         announce(addr, args.serve.lan, &format!("{label} (browse)"));
-        return serve::run_browse(cards, label, addr, paths, store);
+        return serve::run_browse(cards, label, addr, paths, store, config.browse);
     }
     browse::run(cards, label, config.browse, paths, store)
 }

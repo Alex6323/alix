@@ -504,7 +504,7 @@ mod tests {
         let text = "#? Complete the quote\n\tTo {be} or not to {be}\n\t! Hamlet\n";
         let cards = parse_str("s", text).unwrap();
         assert_eq!(2, cards.len());
-        assert_eq!("Complete the quote (1/2)", cards[0].front);
+        assert_eq!("Complete the quote", cards[0].front);
         assert_eq!(vec!["To ____ or not to […]"], cards[0].context);
         assert_eq!(vec!["be"], cards[0].back);
         assert_eq!(Some("Hamlet".to_string()), cards[0].note);

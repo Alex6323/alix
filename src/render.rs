@@ -14,7 +14,10 @@
 //! it), as is anything reveal-state-dependent (typing progress, line-by-line,
 //! cloze holes), which belongs with the interactive layer.
 
-use crate::card::Card;
+use crate::{
+    card::Card,
+    cloze::{BLANK, HIDDEN},
+};
 
 /// A note decomposed into ordered display units.
 ///
@@ -123,6 +126,51 @@ pub fn split_sentences(text: &str) -> Vec<String> {
         }
     }
     sentences
+}
+
+/// A piece of a cloze context line, so frontends can highlight the hole the
+/// sub-card is asking and dim the hidden sibling holes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ContextSpan {
+    /// Ordinary surrounding text.
+    Text(String),
+    /// The active hole — the blank this sub-card is asking for ([`BLANK`]).
+    Blank(String),
+    /// A hidden sibling hole, masked so it doesn't spoil itself ([`HIDDEN`]).
+    Hidden(String),
+}
+
+/// Splits a cloze context line into [`ContextSpan`]s by its hole markers. A
+/// line with no markers yields a single [`ContextSpan::Text`].
+pub fn context_spans(line: &str) -> Vec<ContextSpan> {
+    let mut spans = Vec::new();
+    let mut rest = line;
+    while !rest.is_empty() {
+        // The earliest of the two markers wins this iteration.
+        let blank = rest.find(BLANK);
+        let hidden = rest.find(HIDDEN);
+        let (pos, marker, is_blank) = match (blank, hidden) {
+            (None, None) => {
+                spans.push(ContextSpan::Text(rest.to_string()));
+                break;
+            }
+            (Some(b), None) => (b, BLANK, true),
+            (None, Some(h)) => (h, HIDDEN, false),
+            (Some(b), Some(h)) if b <= h => (b, BLANK, true),
+            (Some(_), Some(h)) => (h, HIDDEN, false),
+        };
+        if pos > 0 {
+            spans.push(ContextSpan::Text(rest[..pos].to_string()));
+        }
+        let seg = marker.to_string();
+        spans.push(if is_blank {
+            ContextSpan::Blank(seg)
+        } else {
+            ContextSpan::Hidden(seg)
+        });
+        rest = &rest[pos + marker.len()..];
+    }
+    spans
 }
 
 /// Greedy word-wrap to `width` columns (counted in chars). Returns at least
@@ -244,6 +292,26 @@ mod tests {
         assert_eq!(
             units,
             vec![NoteUnit::Sentence("See section 2.1 for details.".into())]
+        );
+    }
+
+    #[test]
+    fn context_spans_split_holes() {
+        use ContextSpan::*;
+        assert_eq!(context_spans("plain text"), vec![Text("plain text".into())]);
+        assert_eq!(
+            context_spans("To ____ or not to […]"),
+            vec![
+                Text("To ".into()),
+                Blank("____".into()),
+                Text(" or not to ".into()),
+                Hidden("[…]".into()),
+            ]
+        );
+        // A hole at the very start, no leading text.
+        assert_eq!(
+            context_spans("____ here"),
+            vec![Blank("____".into()), Text(" here".into())]
         );
     }
 

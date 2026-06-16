@@ -18,8 +18,8 @@
     --again: #ff6b6b;
     --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
     --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    --card-w: min(92vw, 460px);
-    --card-h: min(64vh, 580px);
+    --card-w: min(94vw, 720px);
+    --card-h: min(70vh, 600px);
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; }
@@ -44,7 +44,7 @@
   .bar .pos { color: var(--ink); }
 
   .stage { flex: 1; display: grid; place-items: center; padding: 24px 16px; min-height: 0; }
-  .deck {
+  .stack {
     position: relative; width: var(--card-w); height: var(--card-h);
     animation: deal 0.28s cubic-bezier(0.2,0.7,0.2,1) both;
   }
@@ -52,40 +52,69 @@
   .peek { position: absolute; inset: 0; border-radius: 20px; background: var(--panel-bot); border: 1px solid var(--line); }
   .peek.p1 { transform: translate(7px,-7px); opacity: 0.7; }
   .peek.p2 { transform: translate(14px,-14px); opacity: 0.4; }
-  .deck[data-depth="1"] .peek { display: none; }
-  .deck[data-depth="2"] .peek.p2 { display: none; }
+  .stack[data-depth="1"] .peek { display: none; }
+  .stack[data-depth="2"] .peek.p2 { display: none; }
 
   .card {
     position: absolute; inset: 0; border-radius: 20px;
     background: linear-gradient(160deg, var(--panel-top), var(--panel-bot));
     border: 1px solid var(--line); box-shadow: 0 18px 50px -20px rgba(0,0,0,0.8);
-    padding: 26px 24px; overflow: auto;
+    padding: 30px 26px; overflow: auto;
+    display: flex; flex-direction: column; justify-content: safe center; text-align: center;
   }
   .card::after { content: ""; position: absolute; inset: 12px; border-radius: 12px; border: 1px solid rgba(125,249,232,0.10); pointer-events: none; }
-  .eyebrow { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.24em; text-transform: uppercase; color: var(--bolt); opacity: 0.85; margin-bottom: 14px; }
-  .front-text { font-size: clamp(1.3rem, 4vw, 1.9rem); font-weight: 600; line-height: 1.28; letter-spacing: -0.01em; }
+  .front-text { font-size: clamp(1.35rem, 4.2vw, 2rem); font-weight: 600; line-height: 1.28; letter-spacing: -0.01em; }
   .context { color: var(--bolt); font-family: var(--mono); font-size: 0.95rem; margin-top: 12px; white-space: pre-wrap; }
-  .divider { height: 1px; background: var(--line); margin: 22px 0; }
-  .answer { color: var(--good); font-size: clamp(1.05rem, 3.2vw, 1.35rem); line-height: 1.4; margin: 0 0 6px; white-space: pre-wrap; }
-  .note { margin-top: 18px; padding-left: 15px; border-left: 2px solid rgba(34,211,238,0.5); color: #bcd6db; font-size: 0.95rem; }
-  .note p { margin: 0 0 10px; } .note p:last-child { margin-bottom: 0; }
-  .note pre { margin: 0 0 10px; padding: 10px 12px; overflow-x: auto; background: rgba(0,0,0,0.35); border-radius: 8px; font: 0.82rem/1.45 var(--mono); color: #cfe0e3; }
-
-  .actions { display: flex; gap: 10px; justify-content: center; padding: 14px 16px calc(14px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
-  button {
-    font-family: var(--sans); font-size: 0.95rem; font-weight: 600;
-    padding: 14px 18px; min-height: 52px; border-radius: 13px; border: 1px solid transparent;
-    cursor: pointer; color: var(--void); background: var(--bolt);
-    transition: transform 0.08s, filter 0.15s; -webkit-tap-highlight-color: transparent; flex: 1; max-width: 160px;
+  .context .hole { color: var(--bolt-hi); font-weight: 700; }
+  .context .muted-hole { color: var(--dim); }
+  .divider { height: 1px; background: linear-gradient(90deg, transparent, var(--line) 18%, var(--line) 82%, transparent); margin: 22px auto; width: 70%; }
+  .answer { color: var(--good); font-size: clamp(1.1rem, 3.4vw, 1.4rem); line-height: 1.4; margin: 0 0 6px; white-space: pre-wrap; }
+  .note {
+    text-align: left; margin: 18px auto 0; max-width: 600px;
+    background: rgba(245, 213, 122, 0.09); border: 1px solid rgba(245, 213, 122, 0.18);
+    border-left: 3px solid #e7c66b; border-radius: 10px;
+    padding: 12px 15px; color: #ecdca6; font-size: 0.93rem;
   }
-  button:hover { filter: brightness(1.08); }
-  button:active { transform: translateY(1px); }
-  button:focus-visible { outline: 2px solid var(--bolt-hi); outline-offset: 2px; }
-  button:disabled { opacity: 0.35; cursor: default; }
-  button.ghost { background: transparent; color: var(--dim); border-color: var(--line); max-width: 130px; }
+  .note p { margin: 0 0 10px; } .note p:last-child { margin-bottom: 0; }
+  .note pre { margin: 8px 0; padding: 10px 12px; overflow-x: auto; background: rgba(0,0,0,0.32); border-radius: 8px; font: 0.82rem/1.45 var(--mono); color: #cfe0e3; }
+
+  .legend { display: flex; gap: 8px; justify-content: center; align-items: center; flex-wrap: wrap; padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
+  .chip {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: none; color: var(--ink); border: 1px solid var(--line);
+    border-radius: 11px; padding: 8px 13px; min-height: 42px;
+    font-family: var(--sans); font-size: 0.9rem; font-weight: 500; cursor: pointer;
+    transition: border-color 0.12s, color 0.12s;
+  }
+  .chip .k { font-family: var(--mono); font-size: 0.68rem; color: var(--dim); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; }
+  .chip:hover { border-color: var(--bolt); color: var(--bolt-hi); }
+  .chip:focus-visible { outline: 2px solid var(--bolt-hi); outline-offset: 2px; }
+  .chip:disabled { opacity: 0.35; cursor: default; border-color: var(--line); color: var(--ink); }
   .msg { color: var(--dim); font-family: var(--mono); }
 
-  @media (prefers-reduced-motion: reduce) { .deck { animation: none; } .bar .charge i { transition: none; } }
+  .menu-wrap { position: relative; flex: none; }
+  .kebab {
+    background: none; border: 0; color: var(--dim); cursor: pointer;
+    font-size: 1.15rem; line-height: 1; padding: 4px 8px; min-height: auto;
+    border-radius: 8px; max-width: none;
+  }
+  .kebab:hover { color: var(--ink); background: rgba(255,255,255,0.06); }
+  .menu {
+    position: absolute; right: 0; top: calc(100% + 8px); z-index: 20;
+    display: none; min-width: 168px; padding: 6px;
+    background: #0b2531; border: 1px solid var(--line); border-radius: 11px;
+    box-shadow: 0 14px 34px -12px rgba(0,0,0,0.8);
+  }
+  .menu.open { display: block; }
+  .menu button {
+    display: block; width: 100%; text-align: left; background: none;
+    color: var(--again); border: 0; border-radius: 7px; cursor: pointer;
+    padding: 11px 12px; font-size: 0.92rem; font-weight: 500;
+  }
+  .menu button:hover { background: rgba(255,255,255,0.07); }
+  .menu .mk { font-family: var(--mono); font-size: 0.72rem; color: var(--dim); float: right; }
+
+  @media (prefers-reduced-motion: reduce) { .stack { animation: none; } .bar .charge i { transition: none; } }
 </style>
 </head>
 <body>
@@ -100,24 +129,40 @@
     <span class="spacer"></span>
     <span class="charge"><i id="charge"></i></span>
     <span class="pos" id="pos"></span>
+    <span class="menu-wrap" id="menuWrap">
+      <button class="kebab" id="kebab" aria-label="More actions" aria-haspopup="true">⋮</button>
+      <div class="menu" id="menu" role="menu">
+        <button id="mRemove" role="menuitem">Remove card <span class="mk">x</span></button>
+      </div>
+    </span>
   </div>
   <main class="stage" id="stage"></main>
-  <div class="actions" id="actions"></div>
+  <div class="legend" id="legend"></div>
 
 <script>
 "use strict";
 let cards = [];
 let label = "";
 let i = 0;
+let KEYS = {};        // configured [browse] key bindings, from /api/keys
 
 const stage = document.getElementById("stage");
-const actions = document.getElementById("actions");
+const legend = document.getElementById("legend");
 const deckEl = document.getElementById("deck");
 const posEl = document.getElementById("pos");
 const chargeEl = document.getElementById("charge");
+const menuWrap = document.getElementById("menuWrap");
+const menu = document.getElementById("menu");
 
 function post(body) { return { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }; }
 function el(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; }
+function hit(e, binds) { return (binds || []).some(b => b.ctrl === e.ctrlKey && e.key.toLowerCase() === b.k.toLowerCase()); }
+function keyLabel(binds) {
+  if (!binds || !binds.length) return "";
+  const b = binds[0];
+  const name = b.k === " " ? "space" : b.k === "Enter" ? "enter" : b.k === "Escape" ? "esc" : b.k === "Backspace" ? "bksp" : b.k;
+  return (b.ctrl ? "ctrl-" : "") + name;
+}
 
 function remove() {
   if (cards.length === 0) return;
@@ -131,36 +176,47 @@ function go(n) { i = Math.max(0, Math.min(cards.length - 1, n)); render(); }
 
 function render() {
   deckEl.textContent = label;
+  menu.classList.remove("open");
   stage.innerHTML = "";
-  actions.innerHTML = "";
+  legend.innerHTML = "";
   if (cards.length === 0) {
     posEl.textContent = "";
     chargeEl.style.width = "0%";
+    menuWrap.style.display = "none";
     stage.appendChild(el("div", "msg", "No cards."));
     return;
   }
+  menuWrap.style.display = "";
   posEl.textContent = `${i + 1} / ${cards.length}`;
   chargeEl.style.width = ((i + 1) / cards.length * 100) + "%";
 
   const c = cards[i];
   const depth = Math.min(3, cards.length);
-  const deck = el("div"); deck.className = "deck"; deck.dataset.depth = depth;
+  const deck = el("div", "stack"); deck.dataset.depth = depth;
   deck.appendChild(el("div", "peek p2"));
   deck.appendChild(el("div", "peek p1"));
   const card = el("div", "card");
-  card.appendChild(el("div", "eyebrow", "question"));
   card.appendChild(el("div", "front-text", c.front));
-  for (const ctx of c.context) card.appendChild(el("div", "context", ctx));
+  for (const ctx of c.context) card.appendChild(contextLine(ctx));
   card.appendChild(el("div", "divider"));
-  card.appendChild(el("div", "eyebrow", "answer"));
   for (const b of c.back) card.appendChild(el("div", "answer", b));
   renderNote(card, c.note);
   deck.appendChild(card);
   stage.appendChild(deck);
 
-  add("Prev", "", () => go(i - 1), i === 0);
-  add("Next", "", () => go(i + 1), i === cards.length - 1);
-  add("Remove", "ghost", remove, false);
+  chip("Prev", () => go(i - 1), i === 0, keyLabel(KEYS.prev) || "←");
+  chip("Next", () => go(i + 1), i === cards.length - 1, keyLabel(KEYS.next) || "→");
+}
+
+function contextLine(text) {
+  const div = el("div", "context");
+  div.innerHTML = escapeHtml(text)
+    .split("____").join('<span class="hole">____</span>')
+    .split("[…]").join('<span class="muted-hole">[…]</span>');
+  return div;
+}
+function escapeHtml(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 function renderNote(parent, units) {
@@ -177,23 +233,35 @@ function renderNote(parent, units) {
   parent.appendChild(note);
 }
 
-function add(text, cls, onClick, disabled) {
-  const b = el("button", cls, text);
+function chip(text, onClick, disabled, key) {
+  const b = el("button", "chip", text);
+  if (key) b.appendChild(el("span", "k", key));
   b.disabled = !!disabled;
   b.addEventListener("click", onClick);
-  actions.appendChild(b);
+  legend.appendChild(b);
 }
 
 document.addEventListener("keydown", (e) => {
-  if (e.metaKey || e.ctrlKey || e.altKey) return;
-  if (e.key === "x" || e.key === "Delete") { remove(); }
-  else if (e.key === "ArrowRight" || e.key === "l" || e.key === "n" || e.key === " ") { e.preventDefault(); go(i + 1); }
-  else if (e.key === "ArrowLeft" || e.key === "h" || e.key === "p") go(i - 1);
+  if (e.altKey || e.metaKey) return; // ctrl handled per-binding below
+  // first/last stay fixed at g/G/Home/End, like the TUI; arrows always move
+  if (hit(e, KEYS.remove)) { e.preventDefault(); remove(); }
+  else if (hit(e, KEYS.next) || e.key === "ArrowRight" || e.key === "ArrowDown") { e.preventDefault(); go(i + 1); }
+  else if (hit(e, KEYS.prev) || e.key === "ArrowLeft" || e.key === "ArrowUp") { e.preventDefault(); go(i - 1); }
   else if (e.key === "g" || e.key === "Home") go(0);
   else if (e.key === "G" || e.key === "End") go(cards.length - 1);
 });
 
-fetch("/api/cards").then(r => r.json()).then(d => { label = d.label; cards = d.cards; i = 0; render(); });
+document.getElementById("kebab").addEventListener("click", (e) => { e.stopPropagation(); menu.classList.toggle("open"); });
+menu.addEventListener("click", (e) => e.stopPropagation());
+document.getElementById("mRemove").addEventListener("click", () => { menu.classList.remove("open"); remove(); });
+document.addEventListener("click", () => menu.classList.remove("open"));
+
+// Load the configured key bindings first, then the cards.
+fetch("/api/keys").then(r => r.json()).then(k => {
+  KEYS = k;
+  document.querySelector("#mRemove .mk").textContent = keyLabel(KEYS.remove);
+  return fetch("/api/cards");
+}).then(r => r.json()).then(d => { label = d.label; cards = d.cards; i = 0; render(); });
 </script>
 </body>
 </html>

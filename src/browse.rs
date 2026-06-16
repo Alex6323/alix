@@ -26,7 +26,7 @@ use crate::{
     config::{Bindings, BrowseBindings},
     deck,
     store::Store,
-    tui::{bar, key_pattern, push_note},
+    tui::{bar, context_line, key_pattern, push_note},
 };
 
 /// Browses `cards` (already in deck order) until the user quits. `label` is the
@@ -192,10 +192,7 @@ fn draw(frame: &mut Frame, cards: &[Card], label: &str, current: usize, keys: &B
     lines.push(Line::from(card.front.clone().bold()));
     // Cloze cards carry their masked answer text as context below the front.
     for ctx in &card.context {
-        lines.push(Line::from(Span::styled(
-            format!("  {ctx}"),
-            Style::new().fg(Color::Cyan),
-        )));
+        lines.push(context_line(ctx));
     }
     lines.push(Line::default());
     for back in &card.back {

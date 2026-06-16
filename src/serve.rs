@@ -26,6 +26,7 @@ use tiny_http::{Header, Method, Request, Response, Server};
 use crate::{
     answer::Mode,
     card::Card,
+    config::{Bindings, BrowseBindings, Key, KeyPattern},
     deck,
     render::{self, NoteUnit},
     scheduler::Grade,
@@ -136,6 +137,74 @@ struct BrowseDto {
     cards: Vec<CardDto>,
 }
 
+/// One configured key, as the browser sees it: `k` is the `KeyboardEvent.key`
+/// value (`" "`, `"Enter"`, `"j"`, …) and `ctrl` whether Ctrl must be held.
+#[derive(Debug, Serialize)]
+struct KeyDto {
+    k: String,
+    ctrl: bool,
+}
+
+fn key_dto(p: &KeyPattern) -> KeyDto {
+    let k = match p.key {
+        Key::Char(' ') => " ".to_string(),
+        Key::Char(c) => c.to_string(),
+        Key::Enter => "Enter".to_string(),
+        Key::Tab => "Tab".to_string(),
+        Key::Esc => "Escape".to_string(),
+        Key::Backspace => "Backspace".to_string(),
+    };
+    KeyDto { k, ctrl: p.ctrl }
+}
+
+fn key_list(list: &[KeyPattern]) -> Vec<KeyDto> {
+    list.iter().map(key_dto).collect()
+}
+
+/// The review actions the web page binds, mirroring the configured `[keys]`.
+#[derive(Debug, Serialize)]
+struct ReviewKeys {
+    reveal: Vec<KeyDto>,
+    again: Vec<KeyDto>,
+    good: Vec<KeyDto>,
+    easy: Vec<KeyDto>,
+    skip: Vec<KeyDto>,
+    remove: Vec<KeyDto>,
+    restart: Vec<KeyDto>,
+}
+
+impl ReviewKeys {
+    fn from(b: &Bindings) -> Self {
+        Self {
+            reveal: key_list(&b.reveal),
+            again: key_list(&b.again),
+            good: key_list(&b.good),
+            easy: key_list(&b.easy),
+            skip: key_list(&b.skip),
+            remove: key_list(&b.remove),
+            restart: key_list(&b.restart),
+        }
+    }
+}
+
+/// The browse actions the web page binds, mirroring the configured `[browse]`.
+#[derive(Debug, Serialize)]
+struct BrowseKeys {
+    next: Vec<KeyDto>,
+    prev: Vec<KeyDto>,
+    remove: Vec<KeyDto>,
+}
+
+impl BrowseKeys {
+    fn from(b: &BrowseBindings) -> Self {
+        Self {
+            next: key_list(&b.next),
+            prev: key_list(&b.prev),
+            remove: key_list(&b.remove),
+        }
+    }
+}
+
 /// Serves a review session at `addr` until the process is stopped. Grades are
 /// applied to `session` and saved to `store` after each one. `decks` (subject →
 /// file path) lets the remove action delete a card from its deck file and prune
@@ -148,14 +217,17 @@ pub fn run_review(
     label: String,
     addr: SocketAddr,
     decks: HashMap<String, PathBuf>,
+    bindings: Bindings,
 ) -> Result<()> {
     let mut files = DeckFiles::new(decks);
+    let keys = ReviewKeys::from(&bindings);
     let server = Server::http(addr).map_err(|e| anyhow!("cannot start server on {addr}: {e}"))?;
     for mut request in server.incoming_requests() {
         let method = request.method().clone();
         let path = request_path(&request);
         match (&method, path.as_str()) {
             (Method::Get, "/") => respond_html(request, REVIEW_HTML),
+            (Method::Get, "/api/keys") => respond_json(request, &keys),
             (Method::Get, "/api/state") => {
                 respond_json(request, &state_dto(&session, &store, mode, &label))
             }
@@ -205,15 +277,18 @@ pub fn run_browse(
     addr: SocketAddr,
     decks: HashMap<String, PathBuf>,
     mut store: Store,
+    bindings: BrowseBindings,
 ) -> Result<()> {
     let mut cards = cards;
     let mut files = DeckFiles::new(decks);
+    let keys = BrowseKeys::from(&bindings);
     let server = Server::http(addr).map_err(|e| anyhow!("cannot start server on {addr}: {e}"))?;
     for mut request in server.incoming_requests() {
         let method = request.method().clone();
         let path = request_path(&request);
         match (&method, path.as_str()) {
             (Method::Get, "/") => respond_html(request, BROWSE_HTML),
+            (Method::Get, "/api/keys") => respond_json(request, &keys),
             (Method::Get, "/api/cards") => respond_json(request, &browse_payload(&label, &cards)),
             (Method::Post, "/api/remove") => {
                 if let Some(index) = read_index(&mut request)

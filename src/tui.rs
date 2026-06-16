@@ -12,7 +12,7 @@ use ratatui::{
     Frame,
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     layout::{Constraint, Layout, Position, Rect},
-    style::{Color, Style, Stylize},
+    style::{Color, Modifier, Style, Stylize},
     text::{Line, Span},
     widgets::{Paragraph, Wrap},
 };
@@ -24,7 +24,7 @@ use crate::{
     choice::{self, ChoiceQuestion},
     config::{AskConfig, Bindings, Key, KeyPattern},
     deck,
-    render::{self, NoteUnit},
+    render::{self, ContextSpan, NoteUnit},
     scheduler::Grade,
     session::{Session, SessionStats},
     store::Store,
@@ -868,10 +868,7 @@ impl App {
         lines.push(Line::from(card.front.clone().bold()));
         // Cloze cards show their masked answer text below the front.
         for ctx in &card.context {
-            lines.push(Line::from(Span::styled(
-                format!("  {ctx}"),
-                Style::new().fg(Color::Cyan),
-            )));
+            lines.push(context_line(ctx));
         }
         lines.push(Line::default());
 
@@ -1060,10 +1057,7 @@ impl App {
         // Compact card recap.
         let mut lines = vec![Line::from(card.front.clone().bold())];
         for ctx in &card.context {
-            lines.push(Line::from(Span::styled(
-                format!("  {ctx}"),
-                Style::new().fg(Color::Cyan),
-            )));
+            lines.push(context_line(ctx));
         }
         for back in &card.back {
             lines.push(Line::from(Span::styled(
@@ -1238,6 +1232,24 @@ pub(crate) fn push_note(lines: &mut Vec<Line>, card: &Card, width: u16) {
             }
         }
     }
+}
+
+/// Builds the styled line for a cloze context string (indented two spaces):
+/// the active blank is bright and bold, hidden sibling holes are dim, the rest
+/// is cyan — matching the web frontend.
+pub(crate) fn context_line(ctx: &str) -> Line<'static> {
+    let mut spans = vec![Span::raw("  ")];
+    for seg in render::context_spans(ctx) {
+        let (text, style) = match seg {
+            ContextSpan::Text(t) => (t, Style::new().fg(Color::Cyan)),
+            ContextSpan::Blank(t) => {
+                (t, Style::new().fg(Color::LightCyan).add_modifier(Modifier::BOLD))
+            }
+            ContextSpan::Hidden(t) => (t, Style::new().fg(Color::DarkGray)),
+        };
+        spans.push(Span::styled(text, style));
+    }
+    Line::from(spans)
 }
 
 /// Byte offset of the `n`th character in `s`, or `s.len()` if `n` is at or

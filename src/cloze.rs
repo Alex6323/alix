@@ -144,11 +144,10 @@ pub fn expand(
             })
             .collect();
 
-        let front = if total > 1 {
-            format!("{front} ({}/{total})", hole_index + 1)
-        } else {
-            front.to_string()
-        };
+        // The front is the author's prompt as written; which hole is being
+        // asked is shown by the blanked-out (`____`) position in the context,
+        // not by a counter.
+        let front = front.to_string();
 
         let mut hash_lines = raw_lines.clone();
         hash_lines.push(format!("#cloze:{hole_index}"));
@@ -245,7 +244,7 @@ mod tests {
         let back = vec![(2, "To be or not to {be}".to_string())];
         let cards = expand(&subject(), "Complete the quote", &back, None, 1).unwrap();
         assert_eq!(1, cards.len());
-        // No (1/1) suffix for a single hole.
+        // The front is the author's prompt, unchanged.
         assert_eq!("Complete the quote", cards[0].front);
         assert_eq!(vec!["To be or not to ____"], cards[0].context);
         assert_eq!(vec!["be"], cards[0].back);
@@ -257,12 +256,14 @@ mod tests {
         let cards = expand(&subject(), "Quote", &back, Some("n"), 1).unwrap();
         assert_eq!(2, cards.len());
 
-        assert_eq!("Quote (1/2)", cards[0].front);
+        // The front is the same prompt for each sub-card; the active hole is
+        // shown by the `____` position, not a counter.
+        assert_eq!("Quote", cards[0].front);
         assert_eq!(vec!["To ____ or not to […]"], cards[0].context);
         assert_eq!(vec!["be"], cards[0].back);
         assert_eq!(Some("n".to_string()), cards[0].note);
 
-        assert_eq!("Quote (2/2)", cards[1].front);
+        assert_eq!("Quote", cards[1].front);
         assert_eq!(vec!["To […] or not to ____"], cards[1].context);
         assert_eq!(vec!["bee"], cards[1].back);
     }
