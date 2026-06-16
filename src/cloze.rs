@@ -17,8 +17,7 @@
 
 use std::sync::Arc;
 
-use crate::card::Card;
-use crate::parser::ParseError;
+use crate::{card::Card, parser::ParseError};
 
 /// What a hole is replaced with when it is the one being asked.
 pub const BLANK: &str = "____";
@@ -103,8 +102,11 @@ pub fn expand(
         .map(|(lineno, text)| parse_line(text, *lineno))
         .collect::<Result<_, _>>()?;
 
-    let total: usize =
-        lines.iter().flatten().filter(|s| matches!(s, Segment::Hole(_))).count();
+    let total: usize = lines
+        .iter()
+        .flatten()
+        .filter(|s| matches!(s, Segment::Hole(_)))
+        .count();
     if total == 0 {
         return Err(ParseError::ClozeWithoutHoles(line));
     }
@@ -115,10 +117,13 @@ pub fn expand(
     let mut cards = Vec::with_capacity(total);
 
     let holes = lines.iter().enumerate().flat_map(|(li, segments)| {
-        segments.iter().enumerate().filter_map(move |(si, seg)| match seg {
-            Segment::Hole(h) => Some((li, si, h.clone())),
-            Segment::Text(_) => None,
-        })
+        segments
+            .iter()
+            .enumerate()
+            .filter_map(move |(si, seg)| match seg {
+                Segment::Hole(h) => Some((li, si, h.clone())),
+                Segment::Text(_) => None,
+            })
     });
     for (hole_index, (target_line, target_seg, answer)) in holes.enumerate() {
         let context: Vec<String> = lines
@@ -175,7 +180,10 @@ mod tests {
 
     #[test]
     fn parse_line_without_holes() {
-        assert_eq!(vec![text("plain text")], parse_line("plain text", 1).unwrap());
+        assert_eq!(
+            vec![text("plain text")],
+            parse_line("plain text", 1).unwrap()
+        );
     }
 
     #[test]
@@ -214,8 +222,14 @@ mod tests {
             Err(ParseError::UnclosedClozeHole(7)),
             parse_line("oops {unclosed", 7)
         );
-        assert_eq!(Err(ParseError::EmptyClozeHole(7)), parse_line("an {} empty", 7));
-        assert_eq!(Err(ParseError::EmptyClozeHole(7)), parse_line("a {  } blank", 7));
+        assert_eq!(
+            Err(ParseError::EmptyClozeHole(7)),
+            parse_line("an {} empty", 7)
+        );
+        assert_eq!(
+            Err(ParseError::EmptyClozeHole(7)),
+            parse_line("a {  } blank", 7)
+        );
         assert_eq!(
             Err(ParseError::NestedClozeHole(7)),
             parse_line("a {nested {hole}}", 7)

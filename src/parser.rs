@@ -3,18 +3,17 @@
 //! The format, line by line (each line is trimmed first, empty lines are
 //! skipped):
 //!
-//! - `# <text>`  at column 0 starts a new card; the text is the front side.
-//!   An *indented* `#` is answer content (code comments, Rust attributes,
-//!   markdown headers), not a card front.
-//! - `#? <text>` at column 0 starts a cloze card; `{...}` in its answer
-//!   lines are holes (see the [`cloze`](crate::cloze) module).
+//! - `# <text>`  at column 0 starts a new card; the text is the front side. An
+//!   *indented* `#` is answer content (code comments, Rust attributes, markdown
+//!   headers), not a card front.
+//! - `#? <text>` at column 0 starts a cloze card; `{...}` in its answer lines
+//!   are holes (see the [`cloze`](crate::cloze) module).
 //! - `% <text>`  is a comment and ignored (any indentation).
 //! - `% link: <url>` is still a comment to the card parser, but the URL is
 //!   collected as a deck-level reference link (see [`parse_links`]); the
 //!   ask-Claude view offers these to Claude as background material.
-//! - `! <text>`  is a note attached to the current card (any indentation,
-//!   after its back). Several consecutive `!` lines form one multi-line
-//!   note.
+//! - `! <text>`  is a note attached to the current card (any indentation, after
+//!   its back). Several consecutive `!` lines form one multi-line note.
 //! - any other line is a back line of the current card.
 //! - a leading `\` escapes a markup character (`#`, `%`, `!`) so a back line
 //!   can start with one; the backslash is stripped.
@@ -28,8 +27,7 @@ use std::sync::Arc;
 
 use thiserror::Error;
 
-use crate::card::Card;
-use crate::cloze;
+use crate::{card::Card, cloze};
 
 /// Markup indicating the front side of a card.
 const MARKUP_FRONT: char = '#';
@@ -249,14 +247,17 @@ pub fn parse_str(subject: &str, text: &str) -> Result<Vec<Card>, ParseError> {
                 // COMPATIBILITY: strip a leading backslash only when it
                 // escapes a markup character, exactly like the original.
                 let second = line.chars().nth(1);
-                let back_line = if first == MARKUP_ESCAPE
-                    && second.is_some_and(|c| MARKUP.contains(&c))
-                {
-                    &line[MARKUP_ESCAPE.len_utf8()..]
-                } else {
-                    line
-                };
-                partial.as_mut().unwrap().back.push((lineno, back_line.to_string()));
+                let back_line =
+                    if first == MARKUP_ESCAPE && second.is_some_and(|c| MARKUP.contains(&c)) {
+                        &line[MARKUP_ESCAPE.len_utf8()..]
+                    } else {
+                        line
+                    };
+                partial
+                    .as_mut()
+                    .unwrap()
+                    .back
+                    .push((lineno, back_line.to_string()));
                 state = State::Back;
             }
         }
@@ -355,13 +356,22 @@ mod tests {
             Err(ParseError::FrontWithoutBack(1)),
             parse_str("s", "# a\n# b\nback")
         );
-        assert_eq!(Err(ParseError::FrontWithoutBack(2)), parse_str("s", "% x\n# a\n"));
+        assert_eq!(
+            Err(ParseError::FrontWithoutBack(2)),
+            parse_str("s", "% x\n# a\n")
+        );
     }
 
     #[test]
     fn error_note_placement() {
-        assert_eq!(Err(ParseError::NoteBeforeFront(1)), parse_str("s", "! note"));
-        assert_eq!(Err(ParseError::NoteBeforeBack(2)), parse_str("s", "# a\n! note"));
+        assert_eq!(
+            Err(ParseError::NoteBeforeFront(1)),
+            parse_str("s", "! note")
+        );
+        assert_eq!(
+            Err(ParseError::NoteBeforeBack(2)),
+            parse_str("s", "# a\n! note")
+        );
         assert_eq!(
             Err(ParseError::BackAfterNote(4)),
             parse_str("s", "# a\nback\n! note\nmore back")
@@ -472,12 +482,18 @@ mod tests {
             vec!["FROM rust", "# Pre-built dependencies", "RUN cargo build"],
             cards[0].back
         );
-        assert_eq!(vec!["#[uniffi::export(async_runtime = \"tokio\")]"], cards[1].back);
+        assert_eq!(
+            vec!["#[uniffi::export(async_runtime = \"tokio\")]"],
+            cards[1].back
+        );
     }
 
     #[test]
     fn indented_hash_before_any_front_is_an_error() {
-        assert_eq!(Err(ParseError::BackBeforeFront(1)), parse_str("s", "\t# comment\n"));
+        assert_eq!(
+            Err(ParseError::BackBeforeFront(1)),
+            parse_str("s", "\t# comment\n")
+        );
     }
 
     #[test]
@@ -523,8 +539,7 @@ mod tests {
         // Code answers contain braces; without the '#?' marker they are never
         // treated as cloze holes, and the identity hash (over the back lines
         // verbatim) is unaffected.
-        let cards =
-            parse_str("s", "# main\n\tfunc main() {}\n\tx := T{ a, b }\n").unwrap();
+        let cards = parse_str("s", "# main\n\tfunc main() {}\n\tx := T{ a, b }\n").unwrap();
         assert_eq!(1, cards.len());
         assert_eq!(vec!["func main() {}", "x := T{ a, b }"], cards[0].back);
         assert!(cards[0].hash_lines.is_none());

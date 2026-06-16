@@ -49,8 +49,13 @@ impl RecentDecks {
         // Insert in reverse so the first given path ends up frontmost.
         for path in paths.iter().rev() {
             self.entries.retain(|e| e.path != *path);
-            self.entries
-                .insert(0, RecentEntry { path: path.clone(), last_used_ms: now_ms });
+            self.entries.insert(
+                0,
+                RecentEntry {
+                    path: path.clone(),
+                    last_used_ms: now_ms,
+                },
+            );
         }
         self.entries.truncate(CAP);
     }
@@ -60,8 +65,7 @@ impl RecentDecks {
         if let Some(dir) = self.path.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        let json = serde_json::to_string_pretty(&self.entries)
-            .expect("recent entries serialize");
+        let json = serde_json::to_string_pretty(&self.entries).expect("recent entries serialize");
         let tmp = self.path.with_extension("json.tmp");
         std::fs::write(&tmp, json)?;
         std::fs::rename(&tmp, &self.path)
@@ -71,8 +75,7 @@ impl RecentDecks {
 /// The default location of the recent-decks file
 /// (`~/.local/share/flash/recent.json` on Linux).
 pub fn default_recent_path() -> Option<PathBuf> {
-    directories::ProjectDirs::from("", "", "flash")
-        .map(|dirs| dirs.data_dir().join("recent.json"))
+    directories::ProjectDirs::from("", "", "flash").map(|dirs| dirs.data_dir().join("recent.json"))
 }
 
 #[cfg(test)]
@@ -110,7 +113,10 @@ mod tests {
         }
         assert_eq!(CAP, r.entries().len());
         // The most recent (highest i) is at the front.
-        assert_eq!(PathBuf::from(format!("{}.txt", CAP + 9)), r.entries()[0].path);
+        assert_eq!(
+            PathBuf::from(format!("{}.txt", CAP + 9)),
+            r.entries()[0].path
+        );
     }
 
     #[test]

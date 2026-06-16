@@ -11,8 +11,10 @@
 //! (typing and fuzzy mode), so they cannot shadow text input; use `ctrl-` or
 //! special keys for actions that must be reachable there (hint, skip, quit).
 
-use std::fmt;
-use std::path::{Path, PathBuf};
+use std::{
+    fmt,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
@@ -138,7 +140,9 @@ impl Default for Bindings {
 impl Bindings {
     /// The key shown in the footer for an action (its first binding).
     pub fn label(list: &[KeyPattern]) -> String {
-        list.first().map(|p| p.to_string()).unwrap_or_else(|| "?".to_string())
+        list.first()
+            .map(|p| p.to_string())
+            .unwrap_or_else(|| "?".to_string())
     }
 }
 
@@ -329,9 +333,7 @@ impl Config {
             if let Some(list) = source {
                 *target = list
                     .iter()
-                    .map(|s| {
-                        parse_key(s).with_context(|| format!("in binding for {action:?}"))
-                    })
+                    .map(|s| parse_key(s).with_context(|| format!("in binding for {action:?}")))
                     .collect::<Result<_>>()?;
             }
             Ok(())
@@ -391,7 +393,13 @@ impl Config {
 
         let decks_dir = raw.decks_dir.map(|s| expand_tilde(&s));
 
-        Ok(Self { keys, browse, ask, generate, decks_dir })
+        Ok(Self {
+            keys,
+            browse,
+            ask,
+            generate,
+            decks_dir,
+        })
     }
 
     /// Loads the configuration.
@@ -409,8 +417,7 @@ impl Config {
         };
         let text = std::fs::read_to_string(&path)
             .with_context(|| format!("cannot read config file {}", path.display()))?;
-        Self::from_toml(&text)
-            .with_context(|| format!("in config file {}", path.display()))
+        Self::from_toml(&text).with_context(|| format!("in config file {}", path.display()))
     }
 }
 
@@ -519,11 +526,17 @@ mod tests {
     #[test]
     fn parse_single_chars() {
         assert_eq!(
-            KeyPattern { key: Key::Char('j'), ctrl: false },
+            KeyPattern {
+                key: Key::Char('j'),
+                ctrl: false
+            },
             parse_key("j").unwrap()
         );
         assert_eq!(
-            KeyPattern { key: Key::Char('1'), ctrl: false },
+            KeyPattern {
+                key: Key::Char('1'),
+                ctrl: false
+            },
             parse_key("1").unwrap()
         );
     }
@@ -541,11 +554,17 @@ mod tests {
     #[test]
     fn parse_ctrl_combinations() {
         assert_eq!(
-            KeyPattern { key: Key::Char('s'), ctrl: true },
+            KeyPattern {
+                key: Key::Char('s'),
+                ctrl: true
+            },
             parse_key("ctrl-s").unwrap()
         );
         assert_eq!(
-            KeyPattern { key: Key::Backspace, ctrl: true },
+            KeyPattern {
+                key: Key::Backspace,
+                ctrl: true
+            },
             parse_key("ctrl-backspace").unwrap()
         );
     }
@@ -576,10 +595,8 @@ mod tests {
 
     #[test]
     fn rebind_grades_to_jkl() {
-        let config = Config::from_toml(
-            "[keys]\nagain = [\"j\"]\ngood = [\"k\"]\neasy = [\"l\"]\n",
-        )
-        .unwrap();
+        let config =
+            Config::from_toml("[keys]\nagain = [\"j\"]\ngood = [\"k\"]\neasy = [\"l\"]\n").unwrap();
         assert_eq!(vec![parse_key("j").unwrap()], config.keys.again);
         assert_eq!(vec![parse_key("k").unwrap()], config.keys.good);
         assert_eq!(vec![parse_key("l").unwrap()], config.keys.easy);
@@ -700,8 +717,7 @@ mod tests {
         assert_eq!(parse_key("l").unwrap(), defaults.next[0]);
         assert_eq!(parse_key("h").unwrap(), defaults.prev[0]);
 
-        let config =
-            Config::from_toml("[browse]\nnext = [\"j\"]\nprev = [\"k\"]\n").unwrap();
+        let config = Config::from_toml("[browse]\nnext = [\"j\"]\nprev = [\"k\"]\n").unwrap();
         assert_eq!(vec![parse_key("j").unwrap()], config.browse.next);
         assert_eq!(vec![parse_key("k").unwrap()], config.browse.prev);
         // Unmentioned browse actions keep their defaults.

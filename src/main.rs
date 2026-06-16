@@ -1,24 +1,25 @@
-use std::collections::{HashMap, HashSet};
-use std::io::IsTerminal;
-use std::path::{Path, PathBuf};
+use std::{
+    collections::{HashMap, HashSet},
+    io::IsTerminal,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Args, Parser, Subcommand};
-
-use flash::answer::Mode;
-use flash::browse;
-use flash::card::Card;
-use flash::config::{self, Config};
-use flash::deck::{Deck, DeckSettings};
-use flash::generate;
-use flash::parser;
-use flash::picker;
-use flash::recent::{self, RecentDecks};
-use flash::scheduler::SchedulerKind;
-use flash::session::{Order, Session, SessionOptions, histogram};
-use flash::store::{Store, default_store_path};
-use flash::time::{humanize_ms, now_ms};
-use flash::tui::{self, App};
+use flash::{
+    answer::Mode,
+    browse,
+    card::Card,
+    config::{self, Config},
+    deck::{Deck, DeckSettings},
+    generate, parser, picker,
+    recent::{self, RecentDecks},
+    scheduler::SchedulerKind,
+    session::{Order, Session, SessionOptions, histogram},
+    store::{Store, default_store_path},
+    time::{humanize_ms, now_ms},
+    tui::{self, App},
+};
 
 /// A spaced-repetition flashcard trainer for the terminal.
 ///
@@ -209,7 +210,10 @@ fn load_decks(paths: &[PathBuf]) -> Result<LoadedDecks> {
         names.push(deck.subject.clone());
         decks.insert(
             deck.subject.clone(),
-            tui::DeckInfo { path: deck.path.clone(), links: deck.links.clone() },
+            tui::DeckInfo {
+                path: deck.path.clone(),
+                links: deck.links.clone(),
+            },
         );
         settings.push(deck.settings);
         cards.extend(deck.cards);
@@ -314,9 +318,8 @@ fn visit_dep(
     }
     let parent = path.parent();
     for req in &deck.requires {
-        let dep = resolve_dep(req, decks_dir, parent).ok_or_else(|| {
-            anyhow!("{} requires '{}', which was not found", deck.subject, req)
-        })?;
+        let dep = resolve_dep(req, decks_dir, parent)
+            .ok_or_else(|| anyhow!("{} requires '{}', which was not found", deck.subject, req))?;
         visit_dep(&dep, decks_dir, ordered, done, on_stack, any_requires)?;
     }
     on_stack.remove(&key);
@@ -333,7 +336,11 @@ fn resolve_dep(
     requiring_dir: Option<&Path>,
 ) -> Option<PathBuf> {
     let with_txt = |p: &Path| -> PathBuf {
-        if p.extension().is_some() { p.to_path_buf() } else { p.with_extension("txt") }
+        if p.extension().is_some() {
+            p.to_path_buf()
+        } else {
+            p.with_extension("txt")
+        }
     };
     let mut candidates = vec![PathBuf::from(req), with_txt(Path::new(req))];
     for dir in [requiring_dir, decks_dir].into_iter().flatten() {
@@ -349,8 +356,7 @@ fn review(args: ReviewArgs) -> Result<()> {
     let mut recent = RecentDecks::load(
         recent::default_recent_path().context("cannot determine the data directory")?,
     );
-    let Some(deck_paths) = pick_decks_if_empty(args.decks.clone(), &config, &recent)?
-    else {
+    let Some(deck_paths) = pick_decks_if_empty(args.decks.clone(), &config, &recent)? else {
         return Ok(()); // picker cancelled or nothing selected
     };
 
@@ -408,15 +414,21 @@ fn review(args: ReviewArgs) -> Result<()> {
                 rank_of.entry(name.to_string()).or_insert(rank);
             }
         }
-        cards.iter().map(|c| *rank_of.get(&*c.subject).unwrap_or(&0)).collect()
+        cards
+            .iter()
+            .map(|c| *rank_of.get(&*c.subject).unwrap_or(&0))
+            .collect()
     } else {
         Vec::new()
     };
 
-    let options =
-        SessionOptions { max_new: args.new, limit: args.limit, cram: args.cram, order };
-    let session =
-        Session::new_with_deps(cards, &store, scheduler, options, dep_ranks, now_ms());
+    let options = SessionOptions {
+        max_new: args.new,
+        limit: args.limit,
+        cram: args.cram,
+        order,
+    };
+    let session = Session::new_with_deps(cards, &store, scheduler, options, dep_ranks, now_ms());
 
     if session.is_finished() {
         println!("Nothing to review right now — all cards are on cooldown.");
@@ -445,11 +457,7 @@ fn review(args: ReviewArgs) -> Result<()> {
 }
 
 /// Prints when the next card becomes due.
-fn print_due_forecast(
-    decks: &[PathBuf],
-    kind: SchedulerKind,
-    store: Store,
-) -> Result<()> {
+fn print_due_forecast(decks: &[PathBuf], kind: SchedulerKind, store: Store) -> Result<()> {
     let (cards, _, _, _) = load_decks(decks)?;
     let scheduler = kind.scheduler();
     let now = now_ms();
@@ -562,7 +570,10 @@ fn generate_cmd(args: GenerateArgs) -> Result<()> {
         gen_cfg.max_cards = cards;
     }
 
-    eprintln!("Generating a deck from {} (this can take a minute)…", args.url);
+    eprintln!(
+        "Generating a deck from {} (this can take a minute)…",
+        args.url
+    );
     let mut text = generate::generate_deck(&args.url, &gen_cfg, &config.ask)?;
 
     if args.review || gen_cfg.review {
@@ -578,7 +589,11 @@ fn generate_cmd(args: GenerateArgs) -> Result<()> {
         Some(name) => name.clone(),
         None => generate::slug_from_url(&args.url),
     };
-    let name = if name.ends_with(".txt") { name } else { format!("{name}.txt") };
+    let name = if name.ends_with(".txt") {
+        name
+    } else {
+        format!("{name}.txt")
+    };
     let parsed = parser::parse_str(&name, &text);
 
     if args.print {
@@ -593,16 +608,23 @@ fn generate_cmd(args: GenerateArgs) -> Result<()> {
         return Ok(());
     }
 
-    let dir = config.decks_dir().context("cannot determine the decks directory")?;
+    let dir = config
+        .decks_dir()
+        .context("cannot determine the decks directory")?;
     let path = dir.join(&name);
     if path.exists() && !args.force {
-        bail!("{} already exists; pass --force to overwrite", path.display());
+        bail!(
+            "{} already exists; pass --force to overwrite",
+            path.display()
+        );
     }
-    std::fs::create_dir_all(&dir)
-        .with_context(|| format!("cannot create {}", dir.display()))?;
-    let body = if text.ends_with('\n') { text } else { format!("{text}\n") };
-    std::fs::write(&path, body)
-        .with_context(|| format!("cannot write {}", path.display()))?;
+    std::fs::create_dir_all(&dir).with_context(|| format!("cannot create {}", dir.display()))?;
+    let body = if text.ends_with('\n') {
+        text
+    } else {
+        format!("{text}\n")
+    };
+    std::fs::write(&path, body).with_context(|| format!("cannot write {}", path.display()))?;
 
     match parsed {
         Ok(cards) => {
@@ -624,12 +646,12 @@ fn deps_cmd(deck_path: PathBuf) -> Result<()> {
         bail!("`fc deps` needs a terminal");
     }
     let config = Config::load(None)?;
-    let decks_dir = config.decks_dir().context("cannot determine the decks directory")?;
+    let decks_dir = config
+        .decks_dir()
+        .context("cannot determine the decks directory")?;
     let deck = Deck::load(&deck_path)?;
 
-    let Some(selected) =
-        picker::edit_dependencies(&decks_dir, &deck_path, &deck.requires)?
-    else {
+    let Some(selected) = picker::edit_dependencies(&decks_dir, &deck_path, &deck.requires)? else {
         return Ok(()); // cancelled — leave the file untouched
     };
 
@@ -647,7 +669,11 @@ fn deps_cmd(deck_path: PathBuf) -> Result<()> {
     if names.is_empty() {
         println!("Cleared all prerequisites of {}.", deck.subject);
     } else {
-        println!("Set prerequisites of {}: {}", deck.subject, names.join(", "));
+        println!(
+            "Set prerequisites of {}: {}",
+            deck.subject,
+            names.join(", ")
+        );
     }
     Ok(())
 }
@@ -655,7 +681,10 @@ fn deps_cmd(deck_path: PathBuf) -> Result<()> {
 /// The canonical CLI name of a value-enum value (e.g. `Mode::LineByLine` →
 /// `"line"`), for echoing a deck's declared settings.
 fn val_name<T: clap::ValueEnum>(value: T) -> String {
-    value.to_possible_value().map(|p| p.get_name().to_string()).unwrap_or_default()
+    value
+        .to_possible_value()
+        .map(|p| p.get_name().to_string())
+        .unwrap_or_default()
 }
 
 fn check(decks: Vec<PathBuf>) -> Result<()> {
@@ -698,8 +727,7 @@ fn check(decks: Vec<PathBuf>) -> Result<()> {
 }
 
 fn config_cmd(init: bool) -> Result<()> {
-    let path =
-        config::default_config_path().context("cannot determine the config directory")?;
+    let path = config::default_config_path().context("cannot determine the config directory")?;
 
     if init {
         if path.exists() {
@@ -750,18 +778,24 @@ fn config_cmd(init: bool) -> Result<()> {
     show("quit", &config.browse.quit);
     println!("ask:");
     println!("  command     {}", config.ask.command);
-    println!("  model       {}", config.ask.model.as_deref().unwrap_or("(CLI default)"));
+    println!(
+        "  model       {}",
+        config.ask.model.as_deref().unwrap_or("(CLI default)")
+    );
     println!("  timeout     {}s", config.ask.timeout_secs);
     println!("  permission  {}", config.ask.permission_mode);
     println!("  tools       {}", config.ask.allowed_tools.join(", "));
     println!("generate:");
     println!(
         "  model       {}",
-        config.generate.model.as_deref().unwrap_or("(ask / CLI default)")
+        config
+            .generate
+            .model
+            .as_deref()
+            .unwrap_or("(ask / CLI default)")
     );
     println!("  timeout     {}s", config.generate.timeout_secs);
     println!("  max_cards   {}", config.generate.max_cards);
     println!("  review      {}", config.generate.review);
     Ok(())
 }
-

@@ -37,14 +37,20 @@ fn answer_text(card: &Card) -> String {
 
 /// Crude check whether an answer is "number-like" (years, sizes, ...).
 fn is_numeric(s: &str) -> bool {
-    !s.is_empty() && s.chars().all(|c| c.is_ascii_digit() || ",.%/- ".contains(c))
+    !s.is_empty()
+        && s.chars()
+            .all(|c| c.is_ascii_digit() || ",.%/- ".contains(c))
 }
 
 /// How unlike two answers are; lower means a more tempting distractor.
 /// Mixing number-like and word-like answers makes elimination trivial, so
 /// that mismatch dominates the edit distance.
 fn dissimilarity(a: &str, b: &str) -> usize {
-    let penalty = if is_numeric(a) != is_numeric(b) { 1000 } else { 0 };
+    let penalty = if is_numeric(a) != is_numeric(b) {
+        1000
+    } else {
+        0
+    };
     penalty + strsim::levenshtein(a, b)
 }
 
@@ -123,8 +129,9 @@ fn shuffle<T>(items: &mut [T], rng: &mut Rng) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::sync::Arc;
+
+    use super::*;
 
     fn card(line: usize, back: &str) -> Card {
         Card::plain(
@@ -137,7 +144,11 @@ mod tests {
     }
 
     fn pool(backs: &[&str]) -> Vec<Card> {
-        backs.iter().enumerate().map(|(i, b)| card(i + 1, b)).collect()
+        backs
+            .iter()
+            .enumerate()
+            .map(|(i, b)| card(i + 1, b))
+            .collect()
     }
 
     #[test]
@@ -215,10 +226,12 @@ mod tests {
 
     #[test]
     fn different_seeds_vary_the_options() {
-        let cards =
-            pool(&["alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta"]);
-        let questions: HashSet<Vec<String>> =
-            (0..10).map(|seed| build(&cards[0], &cards, seed).unwrap().options).collect();
+        let cards = pool(&[
+            "alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta",
+        ]);
+        let questions: HashSet<Vec<String>> = (0..10)
+            .map(|seed| build(&cards[0], &cards, seed).unwrap().options)
+            .collect();
         assert!(questions.len() > 1, "options never varied across seeds");
     }
 

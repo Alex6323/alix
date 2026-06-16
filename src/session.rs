@@ -7,10 +7,12 @@
 
 use std::collections::VecDeque;
 
-use crate::card::Card;
-use crate::scheduler::{Grade, Scheduler, SchedulerKind};
-use crate::store::Store;
-use crate::time;
+use crate::{
+    card::Card,
+    scheduler::{Grade, Scheduler, SchedulerKind},
+    store::Store,
+    time,
+};
 
 /// The order in which the due/new cards of a session are presented.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
@@ -40,7 +42,12 @@ pub struct SessionOptions {
 
 impl Default for SessionOptions {
     fn default() -> Self {
-        Self { max_new: 10, limit: None, cram: false, order: Order::Scheduled }
+        Self {
+            max_new: 10,
+            limit: None,
+            cram: false,
+            order: Order::Scheduled,
+        }
     }
 }
 
@@ -106,8 +113,15 @@ impl Session {
         now_ms: u64,
     ) -> Self {
         let scheduler = kind.scheduler();
-        let queue =
-            build_queue(&cards, store, &*scheduler, kind, options, &dep_ranks, now_ms);
+        let queue = build_queue(
+            &cards,
+            store,
+            &*scheduler,
+            kind,
+            options,
+            &dep_ranks,
+            now_ms,
+        );
         let initial_size = queue.len();
 
         Self {
@@ -322,9 +336,10 @@ pub fn now_ms() -> u64 {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
     use crate::store::Store;
-    use std::sync::Arc;
 
     fn card(subject: &str, n: usize) -> Card {
         Card::plain(
@@ -353,7 +368,10 @@ mod tests {
             cards(20),
             &store,
             SchedulerKind::Leitner,
-            SessionOptions { max_new: 5, ..Default::default() },
+            SessionOptions {
+                max_new: 5,
+                ..Default::default()
+            },
             1000,
         );
         assert_eq!(5, session.initial_size);
@@ -422,7 +440,10 @@ mod tests {
             all,
             &store,
             SchedulerKind::Leitner,
-            SessionOptions { order: Order::Sequential, ..Default::default() },
+            SessionOptions {
+                order: Order::Sequential,
+                ..Default::default()
+            },
             now,
         );
         // File order, regardless of stage.
@@ -449,7 +470,10 @@ mod tests {
             all,
             &store,
             SchedulerKind::Leitner,
-            SessionOptions { max_new: 10, ..Default::default() },
+            SessionOptions {
+                max_new: 10,
+                ..Default::default()
+            },
             ranks,
             1000,
         );
@@ -473,7 +497,10 @@ mod tests {
             all.clone(),
             &store,
             SchedulerKind::Leitner,
-            SessionOptions { max_new: 0, ..Default::default() },
+            SessionOptions {
+                max_new: 0,
+                ..Default::default()
+            },
             now + 1,
         );
         assert!(session.is_finished());
@@ -627,7 +654,10 @@ mod tests {
             cards(4),
             &store,
             SchedulerKind::Leitner,
-            SessionOptions { max_new: 2, ..Default::default() },
+            SessionOptions {
+                max_new: 2,
+                ..Default::default()
+            },
             1000,
         );
         assert_eq!(2, session.initial_size);

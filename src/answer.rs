@@ -2,8 +2,8 @@
 //!
 //! - **Typing**: the answer must be typed character by character with live
 //!   feedback ([`TypingValidator`]). Revealing hints marks the card failed.
-//! - **Fuzzy**: a whole line is typed and submitted, then compared with a
-//!   typo tolerance ([`grade_fuzzy`]).
+//! - **Fuzzy**: a whole line is typed and submitted, then compared with a typo
+//!   tolerance ([`grade_fuzzy`]).
 //! - **Flip**: the user reveals the answer and grades themselves; no checking
 //!   happens here.
 //! - **Choice**: the user picks the answer out of four options (see the
@@ -102,7 +102,11 @@ impl TypingValidator {
         if let Some(first_bad) = self.typed.iter().position(|t| !t.correct) {
             self.typed.truncate(first_bad);
         }
-        self.expected.iter().skip(self.typed.len()).take(HINT_CHARS).collect()
+        self.expected
+            .iter()
+            .skip(self.typed.len())
+            .take(HINT_CHARS)
+            .collect()
     }
 
     /// The not-yet-typed remainder of the expected line.

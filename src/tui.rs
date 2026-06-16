@@ -1,30 +1,34 @@
 //! The interactive review TUI built on ratatui.
 
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::mpsc::{Receiver, TryRecvError};
-use std::time::Duration;
+use std::{
+    collections::HashMap,
+    path::PathBuf,
+    sync::mpsc::{Receiver, TryRecvError},
+    time::Duration,
+};
 
 use anyhow::Result;
-use ratatui::Frame;
-use ratatui::crossterm::event::{
-    self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers,
+use ratatui::{
+    Frame,
+    crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
+    layout::{Constraint, Layout, Position, Rect},
+    style::{Color, Style, Stylize},
+    text::{Line, Span},
+    widgets::{Paragraph, Wrap},
 };
-use ratatui::layout::{Constraint, Layout, Position, Rect};
-use ratatui::style::{Color, Style, Stylize};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{Paragraph, Wrap};
 
-use crate::answer::{FuzzyResult, Mode, TypingValidator, grade_fuzzy};
-use crate::ask;
-use crate::card::Card;
-use crate::choice::{self, ChoiceQuestion};
-use crate::config::{AskConfig, Bindings, Key, KeyPattern};
-use crate::deck;
-use crate::scheduler::Grade;
-use crate::session::{Session, SessionStats};
-use crate::store::Store;
-use crate::time;
+use crate::{
+    answer::{FuzzyResult, Mode, TypingValidator, grade_fuzzy},
+    ask,
+    card::Card,
+    choice::{self, ChoiceQuestion},
+    config::{AskConfig, Bindings, Key, KeyPattern},
+    deck,
+    scheduler::Grade,
+    session::{Session, SessionStats},
+    store::Store,
+    time,
+};
 
 pub(crate) const HEADER_STYLE: Style = Style::new().fg(Color::Black).bg(Color::Cyan);
 
@@ -38,7 +42,10 @@ enum Phase {
         hint: Option<String>,
     },
     /// Typing whole lines, submitted with Enter and graded fuzzily.
-    Fuzzy { results: Vec<FuzzyResult>, input: String },
+    Fuzzy {
+        results: Vec<FuzzyResult>,
+        input: String,
+    },
     /// Looking at the front, answer hidden until revealed.
     Flip { revealed: bool },
     /// Revealing the back one line at a time. `revealed` is the number of
@@ -48,9 +55,17 @@ enum Phase {
     /// Picking one of several offered answers. `selected` is set once the
     /// user chose (the grade is applied at that moment); the card is a
     /// snapshot because the session advances on grading.
-    Choice { card: Card, question: ChoiceQuestion, selected: Option<usize> },
+    Choice {
+        card: Card,
+        question: ChoiceQuestion,
+        selected: Option<usize>,
+    },
     /// Showing the result of the answered card.
-    Feedback { card: Card, grade: Grade, fuzzy: Vec<FuzzyResult> },
+    Feedback {
+        card: Card,
+        grade: Grade,
+        fuzzy: Vec<FuzzyResult>,
+    },
     /// Asking Claude about a card; entered from a post-answer screen and
     /// returned from with Esc. `return_to` restores that screen.
     Ask {
@@ -189,8 +204,14 @@ impl App {
 
     /// Checks whether a pending ask-Claude call has delivered its reply.
     fn poll_ask(&mut self) {
-        let Phase::Ask { card, transcript, waiting, scroll, status, .. } =
-            &mut self.phase
+        let Phase::Ask {
+            card,
+            transcript,
+            waiting,
+            scroll,
+            status,
+            ..
+        } = &mut self.phase
         else {
             return;
         };
@@ -260,14 +281,19 @@ impl App {
                 line: 0,
                 hint: None,
             },
-            Mode::Fuzzy => Phase::Fuzzy { results: Vec::new(), input: String::new() },
+            Mode::Fuzzy => Phase::Fuzzy {
+                results: Vec::new(),
+                input: String::new(),
+            },
             Mode::Flip => Phase::Flip { revealed: false },
             Mode::LineByLine => Phase::LineByLine { revealed: 0 },
             Mode::Choice => {
                 match choice::build(card, self.session.cards(), time::now_ms()) {
-                    Some(question) => {
-                        Phase::Choice { card: card.clone(), question, selected: None }
-                    }
+                    Some(question) => Phase::Choice {
+                        card: card.clone(),
+                        question,
+                        selected: None,
+                    },
                     // Not enough distinct answers in the session to build
                     // distractors; fall back to flip mode for this card.
                     None => Phase::Flip { revealed: false },
@@ -322,7 +348,8 @@ impl App {
         let text_input = matches!(self.phase, Phase::Typing { .. } | Phase::Fuzzy { .. });
         let hit = |list: &[KeyPattern]| {
             pattern.is_some_and(|p| {
-                list.iter().any(|b| *b == p && !(text_input && b.is_plain_char()))
+                list.iter()
+                    .any(|b| *b == p && !(text_input && b.is_plain_char()))
             })
         };
 
@@ -348,7 +375,10 @@ impl App {
             self.phase,
             Phase::Summary
                 | Phase::Feedback { .. }
-                | Phase::Choice { selected: Some(_), .. }
+                | Phase::Choice {
+                    selected: Some(_),
+                    ..
+                }
         );
         if skip_hit && answerable {
             self.session.skip();
@@ -357,7 +387,11 @@ impl App {
         }
 
         match &mut self.phase {
-            Phase::Typing { validators, line, hint } => {
+            Phase::Typing {
+                validators,
+                line,
+                hint,
+            } => {
                 let v = &mut validators[*line];
                 if hint_hit {
                     // Default bindings: Tab, Ctrl-H, and Ctrl-Backspace
@@ -378,8 +412,7 @@ impl App {
                                 *line += 1;
                             } else {
                                 let passed = validators.iter().all(|v| v.passed());
-                                let grade =
-                                    if passed { Grade::Pass } else { Grade::Fail };
+                                let grade = if passed { Grade::Pass } else { Grade::Fail };
                                 self.finish_card(grade, Vec::new())?;
                             }
                         }
@@ -440,7 +473,9 @@ impl App {
                     self.enter_ask();
                 }
             }
-            Phase::Choice { question, selected, .. } => {
+            Phase::Choice {
+                question, selected, ..
+            } => {
                 if selected.is_none() {
                     if let KeyCode::Char(c @ '1'..='9') = key.code {
                         let index = c as usize - '1' as usize;
@@ -485,12 +520,10 @@ impl App {
     fn enter_ask(&mut self) {
         let card = match &self.phase {
             Phase::Feedback { card, .. } | Phase::Choice { card, .. } => card.clone(),
-            Phase::Flip { .. } | Phase::LineByLine { .. } => {
-                match self.session.current() {
-                    Some(card) => card.clone(),
-                    None => return,
-                }
-            }
+            Phase::Flip { .. } | Phase::LineByLine { .. } => match self.session.current() {
+                Some(card) => card.clone(),
+                None => return,
+            },
             _ => return,
         };
         let return_to = Box::new(std::mem::replace(&mut self.phase, Phase::Summary));
@@ -520,8 +553,7 @@ impl App {
         // Esc leaves the ask view (abandoning a pending call); Ctrl-C still
         // quits the whole app.
         if key.code == KeyCode::Esc {
-            if let Phase::Ask { return_to, .. } =
-                std::mem::replace(&mut self.phase, Phase::Summary)
+            if let Phase::Ask { return_to, .. } = std::mem::replace(&mut self.phase, Phase::Summary)
             {
                 self.phase = *return_to;
             }
@@ -533,7 +565,14 @@ impl App {
         }
 
         let Phase::Ask {
-            card, transcript, input, cursor, waiting, scroll, status, ..
+            card,
+            transcript,
+            input,
+            cursor,
+            waiting,
+            scroll,
+            status,
+            ..
         } = &mut self.phase
         else {
             return;
@@ -544,11 +583,7 @@ impl App {
                 let prompt = ask::condense_prompt(card, transcript);
                 *status = None;
                 *waiting = Some(Waiting {
-                    rx: ask::spawn(
-                        self.options.ask.clone(),
-                        prompt,
-                        self.ask_session.args(),
-                    ),
+                    rx: ask::spawn(self.options.ask.clone(), prompt, self.ask_session.args()),
                     purpose: Purpose::Condense,
                 });
             }
@@ -565,19 +600,11 @@ impl App {
                     .get(&*card.subject)
                     .map(|info| info.links.as_slice())
                     .unwrap_or(&[]);
-                let prompt = ask::question_prompt(
-                    card,
-                    links,
-                    &question,
-                    !self.ask_session.started,
-                );
+                let prompt =
+                    ask::question_prompt(card, links, &question, !self.ask_session.started);
                 *status = None;
                 *waiting = Some(Waiting {
-                    rx: ask::spawn(
-                        self.options.ask.clone(),
-                        prompt,
-                        self.ask_session.args(),
-                    ),
+                    rx: ask::spawn(self.options.ask.clone(), prompt, self.ask_session.args()),
                     purpose: Purpose::Question(question),
                 });
             }
@@ -603,12 +630,8 @@ impl App {
             KeyCode::Char('e') if ctrl => *cursor = input.chars().count(),
             KeyCode::PageUp => *scroll = (*scroll).min(max_scroll).saturating_sub(5),
             KeyCode::PageDown => *scroll = (*scroll).saturating_add(5).min(max_scroll),
-            KeyCode::Char('u') if ctrl => {
-                *scroll = (*scroll).min(max_scroll).saturating_sub(5)
-            }
-            KeyCode::Char('d') if ctrl => {
-                *scroll = (*scroll).saturating_add(5).min(max_scroll)
-            }
+            KeyCode::Char('u') if ctrl => *scroll = (*scroll).min(max_scroll).saturating_sub(5),
+            KeyCode::Char('d') if ctrl => *scroll = (*scroll).saturating_add(5).min(max_scroll),
             KeyCode::Char(c) if !ctrl => {
                 // Insert at the caret and step over it.
                 let byte = char_byte(input, *cursor);
@@ -664,7 +687,12 @@ impl App {
         let l = Bindings::label;
         let keys = match &self.phase {
             Phase::Typing { .. } => {
-                format!("{} hint │ {} skip │ {} quit", l(&k.hint), l(&k.skip), l(&k.quit))
+                format!(
+                    "{} hint │ {} skip │ {} quit",
+                    l(&k.hint),
+                    l(&k.skip),
+                    l(&k.quit)
+                )
             }
             Phase::Fuzzy { .. } => format!(
                 "{} submit line │ {} skip │ {} quit",
@@ -672,12 +700,14 @@ impl App {
                 l(&k.skip),
                 l(&k.quit)
             ),
-            Phase::Flip { revealed: false } => format!(
-                "{} reveal │ {} skip │ {} quit",
-                l(&k.reveal),
-                l(&k.skip),
-                l(&k.quit)
-            ),
+            Phase::Flip { revealed: false } => {
+                format!(
+                    "{} reveal │ {} skip │ {} quit",
+                    l(&k.reveal),
+                    l(&k.skip),
+                    l(&k.quit)
+                )
+            }
             Phase::Flip { revealed: true } => format!(
                 "{} again │ {} good │ {} easy │ {} ask │ {} quit",
                 l(&k.again),
@@ -706,19 +736,32 @@ impl App {
                     )
                 }
             }
-            Phase::Choice { question, selected: None, .. } => format!(
-                "1-{} select │ {} skip │ {} quit",
-                question.options.len(),
-                l(&k.skip),
-                l(&k.quit)
-            ),
-            Phase::Choice { selected: Some(_), .. } | Phase::Feedback { .. } => format!(
-                "{} continue │ {} ask │ {} quit",
-                l(&k.cont),
-                l(&k.ask),
-                l(&k.quit)
-            ),
-            Phase::Ask { waiting: Some(_), .. } => "thinking… │ ESC back".to_string(),
+            Phase::Choice {
+                question,
+                selected: None,
+                ..
+            } => {
+                format!(
+                    "1-{} select │ {} skip │ {} quit",
+                    question.options.len(),
+                    l(&k.skip),
+                    l(&k.quit)
+                )
+            }
+            Phase::Choice {
+                selected: Some(_), ..
+            }
+            | Phase::Feedback { .. } => {
+                format!(
+                    "{} continue │ {} ask │ {} quit",
+                    l(&k.cont),
+                    l(&k.ask),
+                    l(&k.quit)
+                )
+            }
+            Phase::Ask {
+                waiting: Some(_), ..
+            } => "thinking… │ ESC back".to_string(),
             Phase::Ask { .. } => format!(
                 "ENTER send │ {} save note │ PgUp/PgDn scroll │ ESC back",
                 l(&k.save_note)
@@ -728,8 +771,10 @@ impl App {
             }
         };
         let left = format!(" {keys}");
-        let right =
-            format!("{}✓ {}✗ ", self.session.stats.passed, self.session.stats.failed);
+        let right = format!(
+            "{}✓ {}✗ ",
+            self.session.stats.passed, self.session.stats.failed
+        );
         frame.render_widget(bar(&left, &right, area.width), area);
     }
 
@@ -758,23 +803,23 @@ impl App {
         lines.push(Line::default());
 
         match &self.phase {
-            Phase::Typing { validators, line, hint } => {
+            Phase::Typing {
+                validators,
+                line,
+                hint,
+            } => {
                 for (i, v) in validators.iter().enumerate() {
                     let mut spans = vec![Span::raw("> ")];
                     let mut width = 2u16;
                     for t in v.typed() {
                         let color = if t.correct { Color::Green } else { Color::Red };
-                        spans
-                            .push(Span::styled(t.ch.to_string(), Style::new().fg(color)));
+                        spans.push(Span::styled(t.ch.to_string(), Style::new().fg(color)));
                         width += 1;
                     }
                     if i == *line {
                         cursor = Some((area.x + width, area.y + lines.len() as u16));
                         if let Some(hint) = hint {
-                            spans.push(Span::styled(
-                                hint.clone(),
-                                Style::new().fg(Color::Yellow),
-                            ));
+                            spans.push(Span::styled(hint.clone(), Style::new().fg(Color::Yellow)));
                         }
                     }
                     if i <= *line {
@@ -845,7 +890,9 @@ impl App {
                     lines.push(Line::from("How well did you know it?".italic()));
                 }
             }
-            Phase::Choice { question, selected, .. } => {
+            Phase::Choice {
+                question, selected, ..
+            } => {
                 for (i, option) in question.options.iter().enumerate() {
                     let style = match selected {
                         None => Style::new(),
@@ -859,10 +906,7 @@ impl App {
                         } else {
                             "     ".into()
                         };
-                        lines.push(Line::from(Span::styled(
-                            format!("{prefix}{text}"),
-                            style,
-                        )));
+                        lines.push(Line::from(Span::styled(format!("{prefix}{text}"), style)));
                     }
                 }
                 if let Some(selected) = selected {
@@ -924,7 +968,14 @@ impl App {
 
     fn draw_ask(&self, frame: &mut Frame, area: Rect) {
         let Phase::Ask {
-            card, transcript, input, cursor, waiting, scroll, status, ..
+            card,
+            transcript,
+            input,
+            cursor,
+            waiting,
+            scroll,
+            status,
+            ..
         } = &self.phase
         else {
             return;
@@ -952,7 +1003,9 @@ impl App {
         lines.push(Line::default());
 
         for (question, answer) in transcript {
-            lines.push(Line::from(format!("You: {question}").fg(Color::Cyan).bold()));
+            lines.push(Line::from(
+                format!("You: {question}").fg(Color::Cyan).bold(),
+            ));
             lines.push(Line::default());
             for l in answer.lines() {
                 lines.push(Line::from(l.to_string()));
@@ -976,8 +1029,10 @@ impl App {
         // can clamp paging. The wrapped height is estimated conservatively
         // (word wrap may break lines a bit earlier than the full width).
         let usable = content.width.saturating_sub(5).max(1) as usize;
-        let total: usize =
-            lines.iter().map(|line| line.width().div_ceil(usable).max(1)).sum();
+        let total: usize = lines
+            .iter()
+            .map(|line| line.width().div_ceil(usable).max(1))
+            .sum();
         let max_scroll = (total as u16).saturating_sub(content.height);
         let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
         self.ask_max_scroll.set(max_scroll);
@@ -1136,12 +1191,7 @@ pub(crate) fn push_note(lines: &mut Vec<Line>, card: &Card, width: u16) {
 /// Emits accumulated prose as one paragraph per sentence, separated by a
 /// blank bar line, then clears the buffer. `emitted` tracks whether any note
 /// line has been pushed yet, so the first unit is not preceded by a blank.
-fn flush_prose(
-    lines: &mut Vec<Line>,
-    prose: &mut String,
-    width: usize,
-    emitted: &mut bool,
-) {
+fn flush_prose(lines: &mut Vec<Line>, prose: &mut String, width: usize, emitted: &mut bool) {
     const GUTTER: &str = "  │ ";
     const BAR: &str = "  │";
     let bar_style = Style::new().fg(Color::Yellow);
@@ -1178,8 +1228,7 @@ fn split_sentences(text: &str) -> Vec<String> {
     let mut sentences = Vec::new();
     let mut start = 0;
     for i in 0..chars.len() {
-        let ends_sentence =
-            chars[i] == '.' && chars.get(i + 1).is_none_or(|c| c.is_whitespace());
+        let ends_sentence = chars[i] == '.' && chars.get(i + 1).is_none_or(|c| c.is_whitespace());
         if ends_sentence {
             let sentence: String = chars[start..=i].iter().collect();
             if !sentence.trim().is_empty() {
@@ -1273,6 +1322,9 @@ mod tests {
 
     #[test]
     fn zero_width_does_not_panic() {
-        assert_eq!(wrap_text("hi there", 0), vec!["h", "i", "t", "h", "e", "r", "e"]);
+        assert_eq!(
+            wrap_text("hi there", 0),
+            vec!["h", "i", "t", "h", "e", "r", "e"]
+        );
     }
 }

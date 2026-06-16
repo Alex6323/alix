@@ -2,9 +2,9 @@
 //!
 //! Two schedulers are available:
 //!
-//! - [`Leitner`]: a 6-stage box system. Stage cooldowns are
-//!   0 / 1h / 6h / 24h / 1w. Passing moves a card up one stage (it stays in
-//!   stage 5 once there), failing sends it back to stage 1.
+//! - [`Leitner`]: a 6-stage box system. Stage cooldowns are 0 / 1h / 6h / 24h /
+//!   1w. Passing moves a card up one stage (it stays in stage 5 once there),
+//!   failing sends it back to stage 1.
 //! - [`Sm2`]: a SuperMemo-2 style scheduler with per-card ease factors and
 //!   growing intervals.
 //!
@@ -84,7 +84,9 @@ pub struct Leitner;
 
 impl Scheduler for Leitner {
     fn due_at(&self, state: &CardState) -> u64 {
-        state.stage_entered_ms.saturating_add(stage_cooldown_ms(state.stage))
+        state
+            .stage_entered_ms
+            .saturating_add(stage_cooldown_ms(state.stage))
     }
 
     fn apply(&self, state: &mut CardState, grade: Grade, now_ms: u64) {

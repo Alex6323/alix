@@ -1,7 +1,6 @@
 //! The flashcard model and its identity hash.
 
-use std::hash::Hasher;
-use std::sync::Arc;
+use std::{hash::Hasher, sync::Arc};
 
 use twox_hash::XxHash64;
 
@@ -38,7 +37,15 @@ impl Card {
         note: Option<String>,
         line: usize,
     ) -> Self {
-        Self { subject, front, context: Vec::new(), back, note, line, hash_lines: None }
+        Self {
+            subject,
+            front,
+            context: Vec::new(),
+            back,
+            note,
+            line,
+            hash_lines: None,
+        }
     }
 
     /// Returns the identity hash of this card.
@@ -106,8 +113,10 @@ mod tests {
     fn id_uses_hash_lines_when_present() {
         let mut a = card("s", "front", &["typed answer"], None);
         let b = card("s", "front", &["typed answer"], None);
-        a.hash_lines =
-            Some(vec!["raw {typed answer}".to_string(), "#cloze:0".to_string()]);
+        a.hash_lines = Some(vec![
+            "raw {typed answer}".to_string(),
+            "#cloze:0".to_string(),
+        ]);
         assert_ne!(a.id(), b.id());
     }
 

@@ -6,16 +6,20 @@
 //! checking a deck's contents. Navigation only: next/previous/first/last.
 
 use anyhow::Result;
-use ratatui::Frame;
-use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind};
-use ratatui::layout::{Constraint, Layout};
-use ratatui::style::{Color, Style, Stylize};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{Paragraph, Wrap};
+use ratatui::{
+    Frame,
+    crossterm::event::{self, Event, KeyCode, KeyEventKind},
+    layout::{Constraint, Layout},
+    style::{Color, Style, Stylize},
+    text::{Line, Span},
+    widgets::{Paragraph, Wrap},
+};
 
-use crate::card::Card;
-use crate::config::{Bindings, BrowseBindings};
-use crate::tui::{bar, key_pattern, push_note};
+use crate::{
+    card::Card,
+    config::{Bindings, BrowseBindings},
+    tui::{bar, key_pattern, push_note},
+};
 
 /// Browses `cards` (already in deck order) until the user quits. `label` is
 /// the deck name(s) shown in the header; `keys` are the browse bindings.
@@ -48,9 +52,7 @@ fn event_loop(
             continue;
         }
         let pattern = key_pattern(&key);
-        let hit = |list: &[crate::config::KeyPattern]| {
-            pattern.is_some_and(|p| list.contains(&p))
-        };
+        let hit = |list: &[crate::config::KeyPattern]| pattern.is_some_and(|p| list.contains(&p));
         if hit(&keys.quit) {
             break;
         } else if hit(&keys.next) || matches!(key.code, KeyCode::Right | KeyCode::Down) {
@@ -66,13 +68,7 @@ fn event_loop(
     Ok(())
 }
 
-fn draw(
-    frame: &mut Frame,
-    cards: &[Card],
-    label: &str,
-    current: usize,
-    keys: &BrowseBindings,
-) {
+fn draw(frame: &mut Frame, cards: &[Card], label: &str, current: usize, keys: &BrowseBindings) {
     let [header, _, body, footer] = Layout::vertical([
         Constraint::Length(1),
         Constraint::Length(1),

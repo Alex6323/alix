@@ -9,8 +9,10 @@
 
 use anyhow::{Result, bail};
 
-use crate::ask;
-use crate::config::{AskConfig, GenerateConfig};
+use crate::{
+    ask,
+    config::{AskConfig, GenerateConfig},
+};
 
 /// The built-in instruction prompt. `{url}` and `{max_cards}` are substituted.
 const DEFAULT_PROMPT: &str = "\
@@ -100,11 +102,7 @@ The deck to review:
 
 /// Generates a deck from `url` and returns the cleaned deck text (not yet
 /// validated or written). Blocks until the CLI replies or times out.
-pub fn generate_deck(
-    url: &str,
-    cfg: &GenerateConfig,
-    ask_cfg: &AskConfig,
-) -> Result<String> {
+pub fn generate_deck(url: &str, cfg: &GenerateConfig, ask_cfg: &AskConfig) -> Result<String> {
     let prompt = build_prompt(url, cfg);
     let raw = ask::run(&run_config(cfg, ask_cfg), &prompt, &[])?;
     let deck = clean_output(&raw);
@@ -117,11 +115,7 @@ pub fn generate_deck(
 /// Runs a separate review pass over a draft `deck` and returns the cleaned,
 /// improved deck. A fresh CLI call (no shared session) so the reviewer reads
 /// the whole deck with fresh eyes.
-pub fn review_deck(
-    deck: &str,
-    cfg: &GenerateConfig,
-    ask_cfg: &AskConfig,
-) -> Result<String> {
+pub fn review_deck(deck: &str, cfg: &GenerateConfig, ask_cfg: &AskConfig) -> Result<String> {
     let prompt = build_review_prompt(deck);
     let raw = ask::run(&run_config(cfg, ask_cfg), &prompt, &[])?;
     let reviewed = clean_output(&raw);
@@ -151,9 +145,15 @@ fn build_review_prompt(deck: &str) -> String {
 /// Fills the prompt template and appends any extra guidance.
 fn build_prompt(url: &str, cfg: &GenerateConfig) -> String {
     let template = cfg.prompt.as_deref().unwrap_or(DEFAULT_PROMPT);
-    let mut prompt =
-        template.replace("{url}", url).replace("{max_cards}", &cfg.max_cards.to_string());
-    if let Some(extra) = cfg.extra.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    let mut prompt = template
+        .replace("{url}", url)
+        .replace("{max_cards}", &cfg.max_cards.to_string());
+    if let Some(extra) = cfg
+        .extra
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         prompt.push_str("\n\nAdditional instructions:\n");
         prompt.push_str(extra);
     }
@@ -223,7 +223,11 @@ pub fn slug_from_url(url: &str) -> String {
             pending_dash = true;
         }
     }
-    if slug.is_empty() { "deck".to_string() } else { slug }
+    if slug.is_empty() {
+        "deck".to_string()
+    } else {
+        slug
+    }
 }
 
 #[cfg(test)]
@@ -231,7 +235,10 @@ mod tests {
     use super::*;
 
     fn cfg(max_cards: usize) -> GenerateConfig {
-        GenerateConfig { max_cards, ..GenerateConfig::default() }
+        GenerateConfig {
+            max_cards,
+            ..GenerateConfig::default()
+        }
     }
 
     #[test]
@@ -315,9 +322,7 @@ mod tests {
     fn slug_from_typical_urls() {
         assert_eq!(
             "ch04-01-what-is-ownership",
-            slug_from_url(
-                "https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html"
-            )
+            slug_from_url("https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html")
         );
         assert_eq!(
             "rust-programming-language",

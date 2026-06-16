@@ -3,8 +3,10 @@
 //! Progress is kept in a single JSON file (by default
 //! `~/.local/share/flash/progress.json`), created on first save.
 
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -133,13 +135,20 @@ impl Store {
         let path = path.as_ref().to_path_buf();
 
         if !path.exists() {
-            return Ok(Self { path, cards: HashMap::new() });
+            return Ok(Self {
+                path,
+                cards: HashMap::new(),
+            });
         }
 
-        let text = std::fs::read_to_string(&path)
-            .map_err(|source| StoreError::Io { path: path.clone(), source })?;
-        let file: StoreFile = serde_json::from_str(&text)
-            .map_err(|source| StoreError::Format { path: path.clone(), source })?;
+        let text = std::fs::read_to_string(&path).map_err(|source| StoreError::Io {
+            path: path.clone(),
+            source,
+        })?;
+        let file: StoreFile = serde_json::from_str(&text).map_err(|source| StoreError::Format {
+            path: path.clone(),
+            source,
+        })?;
         let mut cards = HashMap::with_capacity(file.cards.len());
         for (key, state) in file.cards {
             let hash = key.parse::<u64>().map_err(|e| StoreError::Format {
@@ -156,7 +165,10 @@ impl Store {
 
     /// Saves the store atomically (write to a temp file, then rename).
     pub fn save(&self) -> Result<(), StoreError> {
-        let io_err = |source| StoreError::Io { path: self.path.clone(), source };
+        let io_err = |source| StoreError::Io {
+            path: self.path.clone(),
+            source,
+        };
 
         if let Some(dir) = self.path.parent() {
             std::fs::create_dir_all(dir).map_err(io_err)?;
@@ -170,8 +182,10 @@ impl Store {
                 .map(|(hash, state)| (hash.to_string(), state.clone()))
                 .collect(),
         };
-        let json = serde_json::to_string_pretty(&file)
-            .map_err(|source| StoreError::Format { path: self.path.clone(), source })?;
+        let json = serde_json::to_string_pretty(&file).map_err(|source| StoreError::Format {
+            path: self.path.clone(),
+            source,
+        })?;
 
         let tmp = self.path.with_extension("json.tmp");
         std::fs::write(&tmp, json).map_err(io_err)?;
@@ -187,7 +201,9 @@ impl Store {
     /// Returns a mutable reference to the state of a card, inserting a fresh
     /// stage-1 state if the card is new.
     pub fn get_or_insert(&mut self, card_id: u64, now_ms: u64) -> &mut CardState {
-        self.cards.entry(card_id).or_insert_with(|| CardState::new(now_ms))
+        self.cards
+            .entry(card_id)
+            .or_insert_with(|| CardState::new(now_ms))
     }
 
     /// The number of cards tracked by this store.
@@ -241,7 +257,13 @@ mod tests {
         let state = reloaded.get(42).unwrap();
         assert_eq!(3, state.stage);
         assert_eq!(1, state.total_reviews);
-        assert_eq!(vec![Review { ts_ms: 1000, passed: true }], state.history);
+        assert_eq!(
+            vec![Review {
+                ts_ms: 1000,
+                passed: true
+            }],
+            state.history
+        );
     }
 
     #[test]

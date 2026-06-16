@@ -8,15 +8,16 @@
 //! `--session-id`, later calls `--resume` it, so Claude remembers earlier
 //! cards, questions, and any deck links it fetched.
 
-use std::io::{Read, Write};
-use std::process::{Command, Stdio};
-use std::sync::mpsc::{Receiver, channel};
-use std::time::{Duration, Instant};
+use std::{
+    io::{Read, Write},
+    process::{Command, Stdio},
+    sync::mpsc::{Receiver, channel},
+    time::{Duration, Instant},
+};
 
 use anyhow::{Context, Result, bail};
 
-use crate::card::Card;
-use crate::config::AskConfig;
+use crate::{card::Card, config::AskConfig};
 
 /// One question/answer exchange.
 pub type Exchange = (String, String);
@@ -38,7 +39,10 @@ pub struct CliSession {
 impl CliSession {
     /// Creates a session with a fresh random ID.
     pub fn new() -> Self {
-        Self { id: random_uuid(), started: false }
+        Self {
+            id: random_uuid(),
+            started: false,
+        }
     }
 
     /// The CLI arguments that create or resume this session.
@@ -107,12 +111,7 @@ fn random_uuid() -> String {
 /// The first message of a session carries the tutoring instructions and the
 /// deck's reference links; follow-ups only need the (possibly new) card and
 /// the question, because the CLI session remembers the rest.
-pub fn question_prompt(
-    card: &Card,
-    links: &[String],
-    question: &str,
-    first: bool,
-) -> String {
+pub fn question_prompt(card: &Card, links: &[String], question: &str, first: bool) -> String {
     let mut p = String::new();
     if first {
         p.push_str(
@@ -184,7 +183,12 @@ fn push_card(p: &mut String, card: &Card) {
 /// bullets/markup, drops empties, keeps at most three.
 pub fn extract_note_lines(text: &str) -> Vec<String> {
     text.lines()
-        .map(|l| l.trim().trim_start_matches(['!', '-', '*', '•']).trim().to_string())
+        .map(|l| {
+            l.trim()
+                .trim_start_matches(['!', '-', '*', '•'])
+                .trim()
+                .to_string()
+        })
         .filter(|l| !l.is_empty())
         .take(3)
         .collect()
@@ -193,11 +197,7 @@ pub fn extract_note_lines(text: &str) -> Vec<String> {
 /// Runs the CLI in a background thread; the reply arrives on the returned
 /// channel. The caller polls it with `try_recv`. `extra_args` carries the
 /// session arguments (`--session-id`/`--resume`).
-pub fn spawn(
-    config: AskConfig,
-    prompt: String,
-    extra_args: Vec<String>,
-) -> Receiver<Reply> {
+pub fn spawn(config: AskConfig, prompt: String, extra_args: Vec<String>) -> Receiver<Reply> {
     let (tx, rx) = channel();
     std::thread::spawn(move || {
         let reply = match run(&config, &prompt, &extra_args) {
@@ -215,11 +215,7 @@ pub fn spawn(
 /// default `dontAsk` + `[WebFetch, WebSearch]` lets Claude consult deck links
 /// without ever blocking on an (unanswerable) permission prompt, while
 /// denying every other tool.
-pub(crate) fn run(
-    config: &AskConfig,
-    prompt: &str,
-    extra_args: &[String],
-) -> Result<String> {
+pub(crate) fn run(config: &AskConfig, prompt: &str, extra_args: &[String]) -> Result<String> {
     let mut cmd = Command::new(&config.command);
     cmd.args(["-p", "--output-format", "text"]);
     if !config.allowed_tools.is_empty() {
@@ -271,7 +267,11 @@ pub(crate) fn run(
         if Instant::now() >= deadline {
             let _ = child.kill();
             let _ = child.wait();
-            bail!("'{}' timed out after {}s", config.command, config.timeout_secs);
+            bail!(
+                "'{}' timed out after {}s",
+                config.command,
+                config.timeout_secs
+            );
         }
         std::thread::sleep(Duration::from_millis(100));
     };
@@ -280,7 +280,11 @@ pub(crate) fn run(
     let stderr = err.join().unwrap_or_default();
     if !status.success() {
         let detail = stderr.trim();
-        let detail = if detail.is_empty() { stdout.trim() } else { detail };
+        let detail = if detail.is_empty() {
+            stdout.trim()
+        } else {
+            detail
+        };
         bail!("'{}' failed: {}", config.command, truncate(detail, 300));
     }
     let answer = stdout.trim().to_string();
@@ -299,9 +303,9 @@ fn truncate(s: &str, max: usize) -> &str {
 
 #[cfg(test)]
 mod tests {
+    use std::{os::unix::fs::PermissionsExt, sync::Arc};
+
     use super::*;
-    use std::os::unix::fs::PermissionsExt;
-    use std::sync::Arc;
 
     fn card() -> Card {
         Card::plain(
@@ -369,7 +373,10 @@ mod tests {
         );
         assert!(a.id.chars().all(|c| c.is_ascii_hexdigit() || c == '-'));
         assert!(parts[2].starts_with('4'));
-        assert!(matches!(parts[3].chars().next(), Some('8' | '9' | 'a' | 'b')));
+        assert!(matches!(
+            parts[3].chars().next(),
+            Some('8' | '9' | 'a' | 'b')
+        ));
     }
 
     #[test]
@@ -435,7 +442,10 @@ mod tests {
         assert!(answer.contains("--allowedTools WebFetch WebSearch"));
         // The permission mode must be passed, or the real CLI hangs in -p
         // mode waiting for an approval it cannot receive.
-        assert!(answer.contains("--permission-mode dontAsk"), "args were: {answer}");
+        assert!(
+            answer.contains("--permission-mode dontAsk"),
+            "args were: {answer}"
+        );
     }
 
     #[test]

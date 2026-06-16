@@ -5,11 +5,13 @@ use std::path::{Path, PathBuf};
 use clap::ValueEnum;
 use thiserror::Error;
 
-use crate::answer::Mode;
-use crate::card::Card;
-use crate::parser::{self, ParseError};
-use crate::scheduler::SchedulerKind;
-use crate::session::Order;
+use crate::{
+    answer::Mode,
+    card::Card,
+    parser::{self, ParseError},
+    scheduler::SchedulerKind,
+    session::Order,
+};
 
 /// Per-deck defaults declared with `% key: value` header directives, e.g.
 /// `% mode: line` or `% order: sequential`. Each is `None` unless the deck
@@ -32,9 +34,7 @@ impl DeckSettings {
         for (key, value) in directives {
             match key.as_str() {
                 "mode" => settings.mode = Mode::from_str(value, true).ok(),
-                "scheduler" => {
-                    settings.scheduler = SchedulerKind::from_str(value, true).ok()
-                }
+                "scheduler" => settings.scheduler = SchedulerKind::from_str(value, true).ok(),
                 "order" => settings.order = Order::from_str(value, true).ok(),
                 _ => {}
             }
@@ -88,14 +88,25 @@ impl Deck {
             .and_then(|n| n.to_str())
             .ok_or_else(|| DeckError::InvalidFileName { path: path.clone() })?
             .to_string();
-        let text = std::fs::read_to_string(&path)
-            .map_err(|source| DeckError::Io { path: path.clone(), source })?;
-        let cards = parser::parse_str(&subject, &text)
-            .map_err(|source| DeckError::Parse { path: path.clone(), source })?;
+        let text = std::fs::read_to_string(&path).map_err(|source| DeckError::Io {
+            path: path.clone(),
+            source,
+        })?;
+        let cards = parser::parse_str(&subject, &text).map_err(|source| DeckError::Parse {
+            path: path.clone(),
+            source,
+        })?;
         let links = parser::parse_links(&text);
         let requires = parser::parse_requires(&text);
         let settings = DeckSettings::from_directives(&parser::parse_directives(&text));
-        Ok(Self { path, subject, cards, links, requires, settings })
+        Ok(Self {
+            path,
+            subject,
+            cards,
+            links,
+            requires,
+            settings,
+        })
     }
 
     /// Returns pairs of cards within this deck that share the same identity
@@ -120,15 +131,14 @@ impl Deck {
 /// (temp file + rename); on reload the parser merges the new lines into the
 /// card's (possibly multi-line) note. Card identities don't change — notes
 /// are not hashed.
-pub fn append_note(
-    path: &Path,
-    front_line: usize,
-    notes: &[String],
-) -> Result<(), DeckError> {
+pub fn append_note(path: &Path, front_line: usize, notes: &[String]) -> Result<(), DeckError> {
     if notes.is_empty() {
         return Ok(());
     }
-    let io_err = |source| DeckError::Io { path: path.to_path_buf(), source };
+    let io_err = |source| DeckError::Io {
+        path: path.to_path_buf(),
+        source,
+    };
 
     let text = std::fs::read_to_string(path).map_err(io_err)?;
     let new_text = insert_note_lines(&text, front_line, notes);
@@ -145,7 +155,10 @@ pub fn append_note(
 /// unaffected — comments are not hashed — so dependencies can be changed
 /// freely without disturbing progress. An empty `deps` clears them.
 pub fn set_requires(path: &Path, deps: &[String]) -> Result<(), DeckError> {
-    let io_err = |source| DeckError::Io { path: path.to_path_buf(), source };
+    let io_err = |source| DeckError::Io {
+        path: path.to_path_buf(),
+        source,
+    };
     let text = std::fs::read_to_string(path).map_err(io_err)?;
     let new_text = rewrite_requires(&text, deps);
 
@@ -212,8 +225,9 @@ fn insert_note_lines(text: &str, front_line: usize, notes: &[String]) -> String 
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::io::Write;
+
+    use super::*;
 
     #[test]
     fn load_deck_subject_is_file_name() {
@@ -329,11 +343,13 @@ mod tests {
     fn requires_parsed_from_header() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("d.txt");
-        std::fs::write(&path, "% requires: basics\n% requires: x.txt\n# f\n\tb\n")
-            .unwrap();
+        std::fs::write(&path, "% requires: basics\n% requires: x.txt\n# f\n\tb\n").unwrap();
 
         let deck = Deck::load(&path).unwrap();
-        assert_eq!(vec!["basics".to_string(), "x.txt".to_string()], deck.requires);
+        assert_eq!(
+            vec!["basics".to_string(), "x.txt".to_string()],
+            deck.requires
+        );
     }
 
     #[test]

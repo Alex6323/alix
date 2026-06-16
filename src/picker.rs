@@ -6,19 +6,22 @@
 //! the decks directory. Type to filter by name, Space to (de)select, Enter
 //! to start.
 
-use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
 
 use anyhow::Result;
-use ratatui::Frame;
-use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
-use ratatui::layout::{Constraint, Layout, Position, Rect};
-use ratatui::style::{Color, Style, Stylize};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::Paragraph;
+use ratatui::{
+    Frame,
+    crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
+    layout::{Constraint, Layout, Position, Rect},
+    style::{Color, Style, Stylize},
+    text::{Line, Span},
+    widgets::Paragraph,
+};
 
-use crate::recent::RecentDecks;
-use crate::time;
+use crate::{recent::RecentDecks, time};
 
 const HEADER_STYLE: Style = Style::new().fg(Color::Black).bg(Color::Cyan);
 
@@ -42,7 +45,11 @@ fn dir_candidates(decks_dir: &Path) -> Vec<Candidate> {
     paths.sort();
     paths
         .into_iter()
-        .map(|path| Candidate { name: file_name(&path), path, last_used_ms: None })
+        .map(|path| Candidate {
+            name: file_name(&path),
+            path,
+            last_used_ms: None,
+        })
         .collect()
 }
 
@@ -72,7 +79,9 @@ fn build_candidates(decks_dir: &Path, recent: &RecentDecks) -> Vec<Candidate> {
 }
 
 fn file_name(path: &Path) -> String {
-    path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+    path.file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default()
 }
 
 /// Runs the startup picker. Returns the chosen deck paths (empty if the user
@@ -170,8 +179,7 @@ impl Picker {
             decks_dir,
             HashSet::new(),
             "select decks".to_string(),
-            " SPACE select │ ENTER start │ ↑↓ move │ type to filter │ ESC cancel"
-                .to_string(),
+            " SPACE select │ ENTER start │ ↑↓ move │ type to filter │ ESC cancel".to_string(),
             false,
         )
     }
@@ -202,10 +210,7 @@ impl Picker {
     }
 
     /// Returns `None` if cancelled, else the chosen paths.
-    fn run(
-        &mut self,
-        terminal: &mut ratatui::DefaultTerminal,
-    ) -> Result<Option<Vec<PathBuf>>> {
+    fn run(&mut self, terminal: &mut ratatui::DefaultTerminal) -> Result<Option<Vec<PathBuf>>> {
         while !self.done {
             terminal.draw(|frame| self.draw(frame))?;
             if let Event::Key(key) = event::read()?
@@ -322,14 +327,10 @@ impl Picker {
             frame.render_widget(
                 Paragraph::new(vec![
                     Line::default(),
-                    Line::from(format!(
-                        "  No decks found in {}.",
-                        self.decks_dir.display()
-                    )),
+                    Line::from(format!("  No decks found in {}.", self.decks_dir.display())),
                     Line::default(),
                     Line::from(
-                        "  Put .txt decks there, or pass deck files on the command line."
-                            .dim(),
+                        "  Put .txt decks there, or pass deck files on the command line.".dim(),
                     ),
                 ]),
                 area,
@@ -347,7 +348,13 @@ impl Picker {
 
         let now = time::now_ms();
         let mut lines = Vec::new();
-        for (row, &i) in self.filtered.iter().enumerate().skip(self.offset).take(height) {
+        for (row, &i) in self
+            .filtered
+            .iter()
+            .enumerate()
+            .skip(self.offset)
+            .take(height)
+        {
             let c = &self.all[i];
             let on_cursor = row == self.cursor;
             let checked = self.selected.contains(&c.path);
