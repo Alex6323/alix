@@ -6,123 +6,218 @@
 <title>flash</title>
 <style>
   :root {
-    --bg: #07141a;
-    --panel: #0e2832;
-    --fg: #e6f3f4;
-    --dim: #6b8a93;
-    --cyan: #22d3ee;
-    --green: #4ade80;
-    --red: #f87171;
-    --yellow: #facc15;
+    --void: #06121a;
+    --panel-top: #103241;
+    --panel-bot: #0a212b;
+    --ink: #e8f4f5;
+    --dim: #6f939d;
+    --line: #173640;
+    --bolt: #22d3ee;
+    --bolt-hi: #7df9e8;
+    --good: #3ee0a0;
+    --again: #ff6b6b;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --card-w: min(92vw, 460px);
+    --card-h: min(62vh, 560px);
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; }
   body {
-    background: var(--bg); color: var(--fg);
-    font: 17px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background:
+      radial-gradient(120% 80% at 50% -10%, #0c2734 0%, var(--void) 60%) fixed;
+    color: var(--ink);
+    font-family: var(--sans);
     display: flex; flex-direction: column; min-height: 100%;
+    overflow: hidden;
   }
-  header {
-    background: var(--cyan); color: #07141a;
-    padding: 8px 14px; font-weight: 600;
-    display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+
+  /* ── status bar: the terminal lineage, in monospace ───────────────── */
+  .bar {
+    display: flex; align-items: center; gap: 14px;
+    padding: 10px 16px; font-family: var(--mono); font-size: 0.78rem;
+    color: var(--dim); border-bottom: 1px solid var(--line);
+    background: rgba(6,18,26,0.6);
   }
-  header .stats { font-weight: 500; font-variant-numeric: tabular-nums; }
-  main {
-    flex: 1; width: 100%; max-width: 720px; margin: 0 auto;
-    padding: 22px 18px 120px; display: flex; flex-direction: column;
+  .bar .brand { display: inline-flex; align-items: center; gap: 7px; color: var(--bolt); font-weight: 600; }
+  .bar .brand svg { width: 13px; height: 16px; filter: drop-shadow(0 0 5px rgba(34,211,238,0.6)); }
+  .bar .deck { color: var(--ink); }
+  .bar .sep { color: var(--line); }
+  .bar .spacer { flex: 1; }
+  .bar .charge {
+    width: 84px; height: 6px; border-radius: 99px;
+    background: var(--line); overflow: hidden;
   }
-  .front { font-size: 1.5rem; font-weight: 700; margin: 8px 0 4px; }
-  .context { color: var(--cyan); margin: 2px 0; white-space: pre-wrap; }
-  .back {
-    color: var(--green); font-size: 1.25rem; margin: 14px 0 2px;
-    white-space: pre-wrap;
+  .bar .charge i {
+    display: block; height: 100%; width: 0%;
+    background: linear-gradient(90deg, var(--bolt), var(--bolt-hi));
+    box-shadow: 0 0 8px rgba(34,211,238,0.7);
+    transition: width 0.4s ease;
   }
+  .bar .score b { color: var(--good); font-weight: 600; }
+  .bar .score s { color: var(--again); text-decoration: none; font-weight: 600; }
+
+  /* ── stage + deck ─────────────────────────────────────────────────── */
+  .stage {
+    flex: 1; display: grid; place-items: center; padding: 24px 16px;
+    min-height: 0;
+  }
+  .deck {
+    position: relative; width: var(--card-w); height: var(--card-h);
+    perspective: 1800px;
+    animation: deal 0.32s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+  @keyframes deal {
+    from { opacity: 0; transform: translateY(14px) scale(0.985); }
+    to   { opacity: 1; transform: none; }
+  }
+  /* cards peeking out behind, like the icon's stack */
+  .peek {
+    position: absolute; inset: 0; border-radius: 20px;
+    background: var(--panel-bot); border: 1px solid var(--line);
+  }
+  .peek.p1 { transform: translate(7px, -7px); opacity: 0.7; }
+  .peek.p2 { transform: translate(14px, -14px); opacity: 0.4; }
+  .deck[data-depth="1"] .peek { display: none; }
+  .deck[data-depth="2"] .peek.p2 { display: none; }
+
+  .card {
+    position: absolute; inset: 0; border-radius: 20px;
+    transform-style: preserve-3d;
+    transition: transform 0.5s cubic-bezier(0.4, 0.15, 0.2, 1);
+  }
+  .card.flipped { transform: rotateY(180deg); }
+
+  .face {
+    position: absolute; inset: 0; border-radius: 20px;
+    backface-visibility: hidden; -webkit-backface-visibility: hidden;
+    background: linear-gradient(160deg, var(--panel-top), var(--panel-bot));
+    border: 1px solid var(--line);
+    box-shadow: 0 18px 50px -20px rgba(0,0,0,0.8);
+    padding: 26px 24px; overflow: auto;
+    display: flex; flex-direction: column;
+  }
+  .face.back { transform: rotateY(180deg); }
+  /* inset frame, echoing the card-back in the icon */
+  .face::after {
+    content: ""; position: absolute; inset: 12px; border-radius: 12px;
+    border: 1px solid rgba(125,249,232,0.10); pointer-events: none;
+  }
+
+  .eyebrow {
+    font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.24em;
+    text-transform: uppercase; color: var(--bolt); opacity: 0.85;
+    margin-bottom: 18px; flex: none;
+  }
+  .front-text {
+    font-size: clamp(1.35rem, 4.2vw, 2rem); font-weight: 600;
+    line-height: 1.28; letter-spacing: -0.01em;
+  }
+  .context { color: var(--bolt); font-family: var(--mono); font-size: 0.95rem; margin-top: 12px; white-space: pre-wrap; }
+  .answer { color: var(--good); font-size: clamp(1.1rem, 3.4vw, 1.45rem); line-height: 1.4; margin: 0 0 6px; white-space: pre-wrap; }
+  .answer.pending { color: var(--dim); }
+
   .note {
-    margin: 20px 0 0; padding: 2px 0 2px 16px;
-    border-left: 3px solid var(--yellow); color: #d8c98f;
+    margin-top: 20px; padding-left: 15px;
+    border-left: 2px solid rgba(34,211,238,0.5);
+    color: #bcd6db; font-size: 0.95rem;
   }
-  .note p { margin: 0 0 12px; }
+  .note p { margin: 0 0 10px; }
   .note p:last-child { margin-bottom: 0; }
   .note pre {
-    margin: 0 0 12px; padding: 10px 12px; overflow-x: auto;
-    background: #061016; border-radius: 8px; color: #c7d3d6;
-    font: 14px/1.45 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    margin: 0 0 10px; padding: 10px 12px; overflow-x: auto;
+    background: rgba(0,0,0,0.35); border-radius: 8px;
+    font: 0.82rem/1.45 var(--mono); color: #cfe0e3;
   }
-  .hint { color: var(--dim); font-style: italic; margin: 18px 0; }
-  .summary h2 { margin: 4px 0 14px; }
-  .summary .row { margin: 4px 0; color: var(--dim); }
-  .summary .row b { color: var(--fg); font-variant-numeric: tabular-nums; }
-  footer {
-    position: fixed; bottom: 0; left: 0; right: 0;
-    background: var(--panel); padding: 12px;
-    padding-bottom: calc(12px + env(safe-area-inset-bottom));
-    display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;
+
+  .prompt { margin-top: auto; padding-top: 16px; font-family: var(--mono); font-size: 0.74rem; color: var(--dim); }
+  .prompt kbd {
+    font: inherit; color: var(--bolt);
+    border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px;
+  }
+
+  /* Easy: a brief electric charge */
+  .card.zap .face.back { animation: zap 0.5s ease-out; }
+  @keyframes zap {
+    0%   { box-shadow: 0 18px 50px -20px rgba(0,0,0,0.8), inset 0 0 0 0 rgba(125,249,232,0); }
+    35%  { box-shadow: 0 18px 50px -20px rgba(0,0,0,0.8), inset 0 0 36px 2px rgba(125,249,232,0.55); }
+    100% { box-shadow: 0 18px 50px -20px rgba(0,0,0,0.8), inset 0 0 0 0 rgba(125,249,232,0); }
+  }
+
+  /* ── summary ──────────────────────────────────────────────────────── */
+  .summary { width: var(--card-w); text-align: left; animation: deal 0.32s both; }
+  .summary h2 { font-size: 1.6rem; margin: 0 0 6px; }
+  .summary .lede { font-family: var(--mono); color: var(--bolt); font-size: 0.74rem; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 22px; }
+  .summary .row { display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--line); color: var(--dim); }
+  .summary .row b { color: var(--ink); font-family: var(--mono); font-weight: 600; }
+
+  /* ── action bar ───────────────────────────────────────────────────── */
+  .actions {
+    display: flex; gap: 10px; justify-content: center; align-items: center;
+    padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--line);
   }
   button {
-    flex: 1 1 auto; min-width: 96px; max-width: 220px;
-    padding: 16px 18px; font-size: 1rem; font-weight: 600;
-    border: 0; border-radius: 12px; cursor: pointer;
-    color: #07141a; background: var(--cyan);
+    font-family: var(--sans); font-size: 0.95rem; font-weight: 600;
+    padding: 14px 18px; min-height: 52px; border-radius: 13px;
+    border: 1px solid transparent; cursor: pointer; color: var(--void);
+    background: var(--bolt); transition: transform 0.08s, filter 0.15s;
     -webkit-tap-highlight-color: transparent;
   }
-  button:active { filter: brightness(0.9); }
-  button.again { background: var(--red); }
-  button.good { background: var(--green); }
-  button.easy { background: var(--cyan); }
-  button.ghost { background: #1b3a45; color: var(--fg); flex: 0 0 auto; min-width: 72px; }
-  .msg { color: var(--dim); padding: 30px 0; text-align: center; }
+  button .k { font-family: var(--mono); font-size: 0.72rem; opacity: 0.6; margin-left: 7px; }
+  button:hover { filter: brightness(1.08); }
+  button:active { transform: translateY(1px); }
+  button:focus-visible { outline: 2px solid var(--bolt-hi); outline-offset: 2px; }
+  button.primary { flex: 1; max-width: 320px; }
+  button.again { background: transparent; color: var(--again); border-color: rgba(255,107,107,0.5); }
+  button.good { background: var(--good); }
+  button.easy { background: linear-gradient(120deg, var(--bolt-hi), var(--bolt)); }
+  button.ghost { background: transparent; color: var(--dim); border-color: var(--line); }
+  button.ghost .k { color: inherit; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .card { transition: none; }
+    .deck, .summary { animation: none; }
+    .card.zap .face.back { animation: none; }
+    .bar .charge i { transition: none; }
+  }
 </style>
 </head>
 <body>
-  <header>
-    <span id="label">flash</span>
-    <span class="stats" id="stats"></span>
-  </header>
-  <main id="main"><div class="msg">Loading…</div></main>
-  <footer id="footer"></footer>
+  <div class="bar">
+    <span class="brand">
+      <svg viewBox="0 0 512 512" aria-hidden="true"><path d="M 269 168 L 221 254 L 253 254 L 237 348 L 297 246 L 263 246 L 285 168 Z" fill="currentColor"/></svg>
+      flash
+    </span>
+    <span class="sep">·</span>
+    <span class="deck" id="deck"></span>
+    <span class="spacer"></span>
+    <span class="charge" title="session progress"><i id="charge"></i></span>
+    <span class="score" id="score"></span>
+  </div>
+  <main class="stage" id="stage"></main>
+  <div class="actions" id="actions"></div>
 
 <script>
 "use strict";
-let state = null;     // last StateDto from the server
-let revealed = 0;     // number of back lines shown for the current card
+let state = null;     // last StateDto
+let revealed = 0;     // back lines shown for the current card
 
-const main = document.getElementById("main");
-const footer = document.getElementById("footer");
-const stats = document.getElementById("stats");
-const labelEl = document.getElementById("label");
+const stage = document.getElementById("stage");
+const actions = document.getElementById("actions");
+const deckEl = document.getElementById("deck");
+const scoreEl = document.getElementById("score");
+const chargeEl = document.getElementById("charge");
 
-async function api(path, opts) {
-  const res = await fetch(path, opts);
-  return res.json();
-}
-function load()       { api("/api/state").then(apply); }
-function grade(g)     { api("/api/grade", post({ grade: g })).then(apply); }
-function skip()       { api("/api/skip", post({})).then(apply); }
-function remove()     { api("/api/remove", post({})).then(apply); }
-function restart()    { api("/api/restart", post({})).then(apply); }
-function post(body)   { return { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }; }
+async function api(path, opts) { return (await fetch(path, opts)).json(); }
+function post(body) { return { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }; }
+function load()    { api("/api/state").then(apply); }
+function grade(g)  { if (g === "easy") zap(); api("/api/grade", post({ grade: g })).then(apply); }
+function skip()    { api("/api/skip", post({})).then(apply); }
+function remove()  { api("/api/remove", post({})).then(apply); }
+function restart() { api("/api/restart", post({})).then(apply); }
 
 function apply(s) { state = s; revealed = 0; render(); }
-
-function fullyRevealed() {
-  const n = state.card ? state.card.back.length : 0;
-  return n === 0 || revealed >= n;
-}
-
-function render() {
-  labelEl.textContent = "flash — " + state.label;
-  const h = state.histogram;
-  stats.textContent = state.finished
-    ? `${state.reviews}✓ done`
-    : `${state.remaining} left · ${state.passed}✓ ${state.failed}✗`;
-
-  main.innerHTML = "";
-  footer.innerHTML = "";
-
-  if (state.finished) { renderSummary(); return; }
-  renderCard();
-}
 
 function el(tag, cls, text) {
   const n = document.createElement(tag);
@@ -130,77 +225,149 @@ function el(tag, cls, text) {
   if (text !== undefined) n.textContent = text;
   return n;
 }
+function backCount() { return state.card ? state.card.back.length : 0; }
+function fullyRevealed() { return backCount() === 0 || revealed >= backCount(); }
+
+function render() {
+  // status bar
+  deckEl.textContent = state.label;
+  const done = state.initial > 0 ? (state.initial - state.remaining) / state.initial : 0;
+  chargeEl.style.width = (state.finished ? 100 : Math.round(done * 100)) + "%";
+  scoreEl.innerHTML = state.finished
+    ? "done"
+    : `<b>${state.passed}✓</b> <s>${state.failed}✗</s> · ${state.remaining} left`;
+
+  stage.innerHTML = "";
+  actions.innerHTML = "";
+  if (state.finished) { renderSummary(); }
+  else { renderCard(); }
+}
 
 function renderCard() {
   const c = state.card;
-  main.appendChild(el("div", "front", c.front));
-  for (const ctx of c.context) main.appendChild(el("div", "context", ctx));
+  const depth = Math.min(3, Math.max(1, state.remaining));
 
-  const shown = fullyRevealed() ? c.back.length : revealed;
-  for (let i = 0; i < shown; i++) main.appendChild(el("div", "back", c.back[i]));
+  const deck = el("div", "deck-card");
+  deck.className = "deck";
+  deck.dataset.depth = depth;
+  deck.appendChild(el("div", "peek p2"));
+  deck.appendChild(el("div", "peek p1"));
 
-  if (!fullyRevealed()) {
-    const more = state.mode === "line" && revealed > 0 ? "reveal next line" : "reveal";
-    main.appendChild(el("div", "hint", `[ space / tap reveal to ${more} ]`));
-    addButton("Reveal", "easy", reveal);
-    addButton("Skip", "ghost", skip);
-    addButton("Remove", "ghost", remove);
-    return;
-  }
+  const card = el("div", "card");
+  card.id = "card";
 
-  renderNote(c.note);
-  addButton("Again", "again", () => grade("again"));
-  addButton("Good", "good", () => grade("good"));
-  addButton("Easy", "easy", () => grade("easy"));
-  addButton("Remove", "ghost", remove);
+  // front
+  const front = el("div", "face front");
+  front.appendChild(el("div", "eyebrow", "question"));
+  const ft = el("div", "front-text", c.front);
+  front.appendChild(ft);
+  for (const ctx of c.context) front.appendChild(el("div", "context", ctx));
+  const prompt = el("div", "prompt");
+  prompt.innerHTML = state.mode === "line"
+    ? 'reveal lines one at a time — <kbd>space</kbd>'
+    : 'recall it, then <kbd>space</kbd> to flip';
+  front.appendChild(prompt);
+
+  // back (filled on reveal)
+  const back = el("div", "face back");
+  card.appendChild(front);
+  card.appendChild(back);
+  deck.appendChild(card);
+  stage.appendChild(deck);
+
+  fillBack();
+  if (revealed > 0) card.classList.add("flipped");
+  renderActions();
 }
 
-function renderNote(units) {
+function fillBack() {
+  const card = document.getElementById("card");
+  if (!card) return;
+  const back = card.querySelector(".face.back");
+  const c = state.card;
+  const shown = state.mode === "line" ? Math.min(revealed, c.back.length) : c.back.length;
+  back.innerHTML = "";
+  const eb = el("div", "eyebrow", state.mode === "line" ? `answer · ${shown}/${c.back.length}` : "answer");
+  back.appendChild(eb);
+  for (let i = 0; i < shown; i++) back.appendChild(el("div", "answer", c.back[i]));
+  if (state.mode === "line" && shown < c.back.length) {
+    back.appendChild(el("div", "answer pending", "···"));
+  }
+  if (fullyRevealed()) renderNote(back, c.note);
+}
+
+function renderNote(parent, units) {
   if (!units || units.length === 0) return;
   const note = el("div", "note");
   for (const u of units) {
-    if (u.kind === "sentence") {
-      note.appendChild(el("p", null, u.text));
-    } else if (u.kind === "code") {
+    if (u.kind === "sentence") note.appendChild(el("p", null, u.text));
+    else if (u.kind === "code") {
       const pre = el("pre");
       pre.appendChild(el("code", null, u.lines.join("\n")));
       note.appendChild(pre);
     }
   }
-  main.appendChild(note);
+  parent.appendChild(note);
+}
+
+function renderActions() {
+  actions.innerHTML = "";
+  if (!fullyRevealed()) {
+    const label = state.mode === "line" && revealed > 0 ? "Reveal next" : "Reveal";
+    add(label, "primary", reveal, "space");
+    add("Skip", "ghost", skip, "s");
+    add("Remove", "ghost", remove, "x");
+  } else {
+    add("Again", "again", () => grade("again"), "1");
+    add("Good", "good", () => grade("good"), "2");
+    add("Easy", "easy", () => grade("easy"), "3");
+    add("Remove", "ghost", remove, "x");
+  }
 }
 
 function renderSummary() {
-  const wrap = el("div", "summary");
-  wrap.appendChild(el("h2", null, "Session complete!"));
   const acc = state.reviews > 0 ? Math.round(100 * state.passed / state.reviews) + "%" : "–";
+  const h = state.histogram;
+  const wrap = el("div", "summary");
+  wrap.appendChild(el("div", "lede", "session complete"));
+  wrap.appendChild(el("h2", null, state.reviews > 0 ? "Nicely charged." : "Nothing due."));
   const row = (label, value) => {
-    const r = el("div", "row", label + " ");
+    const r = el("div", "row");
+    r.appendChild(el("span", null, label));
     r.appendChild(el("b", null, value));
     wrap.appendChild(r);
   };
-  row("reviews", `${state.reviews} (${state.passed} passed, ${state.failed} failed)`);
+  row("reviewed", `${state.reviews}`);
+  row("passed / failed", `${state.passed} / ${state.failed}`);
   row("accuracy", acc);
-  const h = state.histogram;
-  row("stages", `new ${h[0]} · s1 ${h[1]} · s2 ${h[2]} · s3 ${h[3]} · s4 ${h[4]} · s5 ${h[5]}`);
-  main.appendChild(wrap);
-  addButton("New session", "good", restart);
+  row("stages", `${h[1]} · ${h[2]} · ${h[3]} · ${h[4]} · ${h[5]}`);
+  stage.appendChild(wrap);
+  add("New session", "primary good", restart, "r");
 }
 
 function reveal() {
-  const n = state.card.back.length;
+  const n = backCount();
   revealed = state.mode === "line" ? Math.min(revealed + 1, n) : n;
-  render();
+  const card = document.getElementById("card");
+  fillBack();
+  if (card) card.classList.add("flipped");
+  renderActions();
 }
 
-function addButton(text, cls, onClick) {
+function zap() {
+  const card = document.getElementById("card");
+  if (card) card.classList.add("zap");
+}
+
+function add(text, cls, onClick, key) {
   const b = el("button", cls, text);
+  if (key) { const k = el("span", "k", key); b.appendChild(k); }
   b.addEventListener("click", onClick);
-  footer.appendChild(b);
+  actions.appendChild(b);
 }
 
 document.addEventListener("keydown", (e) => {
-  if (!state) return;
+  if (!state || e.metaKey || e.ctrlKey || e.altKey) return;
   if (state.finished) { if (e.key === "r") restart(); return; }
   if (e.key === "x" || e.key === "Delete") { remove(); return; }
   if (e.key === "s") { skip(); return; }
