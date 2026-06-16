@@ -79,8 +79,8 @@ not have to repeat flags on the command line:
   file order, top to bottom (ideal for lyrics with `% mode: line`).
 - `scheduler` — `leitner` (default) or `sm2`.
 
-These are ordinary `%` comments, so old tools ignore them and card hashes are
-unaffected. An explicit CLI flag always wins over a directive, which wins over
+These are ordinary `%` comments, so they don't affect parsing and card hashes
+are unaffected. An explicit CLI flag always wins over a directive, which wins over
 the built-in default. Directives are read only from the deck(s) you ask to
 review — never from prerequisites pulled in via `% requires:` (see below). When
 several requested decks disagree on a setting, the default is used. `flash check
@@ -101,8 +101,8 @@ first**: a prerequisite deck's cards (both due reviews and newly introduced
 ones) come before the cards of the deck that depends on it, while normal
 scheduler order is kept within each deck. A prerequisite name resolves next to
 the requiring deck or in the decks directory, with or without `.txt`. Missing
-prerequisites and dependency cycles are reported as errors. Old tools ignore
-these lines and hashes are unaffected.
+prerequisites and dependency cycles are reported as errors. They are ordinary
+`%` comments, so hashes are unaffected.
 
 A prerequisite contributes only its **cards** to the session, not its
 directives: the `mode`, `order` and `scheduler` come from the deck you asked to
@@ -143,7 +143,7 @@ the affected holes.
 
 The default **flip** mode is Anki-style: you reveal the answer and grade
 yourself (again / good / easy — easy jumps two Leitner stages). The
-original **typing** mode has you type the back of the card character by
+**typing** mode has you type the back of the card character by
 character with instant green/red feedback; `TAB` reveals the next two
 characters as a hint, but a hinted card counts as failed. In **fuzzy** mode
 you submit whole lines with Enter and small typos are tolerated. A wrong
@@ -167,7 +167,7 @@ sections top to bottom — e.g. one card per verse/chorus of a song.
 
 Schedulers:
 
-- **leitner** (default): the original 6 stages with cooldowns
+- **leitner** (default): a 6-stage box system with cooldowns
   0 / 1 h / 6 h / 24 h / 1 week. Pass moves a card up one stage, fail resets
   it to stage 1.
 - **sm2**: SuperMemo-2 style with per-card ease factors and growing
