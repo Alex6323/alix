@@ -334,7 +334,7 @@ quit = ["q", "esc", "ctrl-c"]
 Letter bindings are case-insensitive, so jump-to-first/last stays fixed at
 `g`/`G` (and Home/End); the arrow keys always move next/previous too.
 
-The web frontend (`flash serve`) reads its default port from a `[serve]`
+The web frontend (`--serve`) reads its default port from a `[serve]`
 section; `--port` overrides it:
 
 ```toml
