@@ -34,7 +34,7 @@ impl Grade {
 /// Which scheduling algorithm to use.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
 pub enum SchedulerKind {
-    /// The original 6-stage Leitner box (compatible with the old tool).
+    /// A 6-stage Leitner box (cooldowns 0 / 1h / 6h / 24h / 1w).
     #[default]
     Leitner,
     /// SuperMemo-2 style intervals with per-card ease factors.
@@ -79,7 +79,7 @@ pub fn stage_cooldown_ms(stage: u8) -> u64 {
     STAGE_COOLDOWNS_MS[(stage.clamp(1, MAX_STAGE) - 1) as usize]
 }
 
-/// The original 6-stage Leitner scheduler.
+/// The 6-stage Leitner box scheduler.
 pub struct Leitner;
 
 impl Scheduler for Leitner {
@@ -188,7 +188,7 @@ mod tests {
     }
 
     #[test]
-    fn leitner_cooldowns_match_original() {
+    fn leitner_cooldowns_are_stable() {
         assert_eq!(0, stage_cooldown_ms(1));
         assert_eq!(3_600_000, stage_cooldown_ms(2));
         assert_eq!(21_600_000, stage_cooldown_ms(3));

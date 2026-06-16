@@ -1,5 +1,5 @@
 //! Small time helpers. All timestamps in this crate are Unix time in
-//! milliseconds (`u64`), matching the original progress database format.
+//! milliseconds (`u64`).
 
 use std::time::{SystemTime, UNIX_EPOCH};
 

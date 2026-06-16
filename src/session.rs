@@ -253,8 +253,7 @@ fn build_queue(
     // Order due cards.
     match kind {
         SchedulerKind::Leitner => {
-            // Higher stages first (original behavior), then by how long
-            // they have been waiting.
+            // Higher stages first, then by how long they have been waiting.
             due.sort_by_key(|&i| {
                 let state = store.get(cards[i].id()).unwrap();
                 (std::cmp::Reverse(state.stage), state.stage_entered_ms)

@@ -15,7 +15,7 @@ pub enum Mode {
     /// Reveal the answer and grade yourself (again / good / easy).
     #[default]
     Flip,
-    /// Type the answer exactly, character by character (the original mode).
+    /// Type the answer exactly, character by character.
     Typing,
     /// Type the answer and submit; small typos are tolerated.
     Fuzzy,
@@ -42,7 +42,7 @@ pub struct Typed {
 /// The user can type past mistakes, but the line only completes once every
 /// position holds the correct character, so wrong characters must be removed
 /// with backspace. Asking for a hint reveals upcoming characters; any hint
-/// marks the line as failed (the original allowed 0 hints per line, too).
+/// marks the line as failed.
 #[derive(Clone, Debug)]
 pub struct TypingValidator {
     expected: Vec<char>,

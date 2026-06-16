@@ -1,5 +1,5 @@
 //! Startup deck picker: a small TUI to choose one or more decks to review,
-//! used when `fc` is launched without deck arguments (e.g. from the desktop
+//! used when `flash` is launched without deck arguments (e.g. from the desktop
 //! menu).
 //!
 //! Recently reviewed decks are listed first, then the rest of the decks in

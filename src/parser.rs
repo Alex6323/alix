@@ -19,9 +19,8 @@
 //!   can start with one; the backslash is stripped.
 //!
 //! A card consists of one front line, one or more back lines, and an
-//! optional note after the back lines. The original parser panicked on
-//! malformed files; this one returns errors with line numbers instead, and
-//! accepts every file the original accepted.
+//! optional note after the back lines. Malformed files yield errors with
+//! line numbers rather than panicking.
 
 use std::sync::Arc;
 
@@ -115,7 +114,7 @@ impl PartialCard {
 
 /// Collects deck-level reference links: comment lines of the form
 /// `% link: <url>`. They are invisible to the card parser (every `%` line
-/// is), so they affect neither old tools nor card hashes.
+/// is), so they do not affect card hashes.
 pub fn parse_links(text: &str) -> Vec<String> {
     text.lines()
         .filter_map(|raw| {
@@ -128,8 +127,8 @@ pub fn parse_links(text: &str) -> Vec<String> {
 }
 
 /// Collects a deck's prerequisite decks: comment lines `% requires: <deck>`
-/// (repeatable). Like links, they are invisible to the card parser and to old
-/// tools. The value is a deck name or path, resolved by the caller.
+/// (repeatable). Like links, they are invisible to the card parser. The value
+/// is a deck name or path, resolved by the caller.
 pub fn parse_requires(text: &str) -> Vec<String> {
     text.lines()
         .filter_map(|raw| {
@@ -144,8 +143,8 @@ pub fn parse_requires(text: &str) -> Vec<String> {
 /// key must be a single token; lines whose "key" contains whitespace are
 /// treated as ordinary prose comments and ignored (so `% Then learn with:`
 /// is not a directive). Keys are lower-cased. Like links, these are invisible
-/// to the card parser and to old tools, and do not affect card hashes. The
-/// `link:` directive is excluded — it is handled by [`parse_links`].
+/// to the card parser and do not affect card hashes. The `link:` directive is
+/// excluded — it is handled by [`parse_links`].
 pub fn parse_directives(text: &str) -> Vec<(String, String)> {
     text.lines()
         .filter_map(|raw| {
@@ -244,8 +243,8 @@ pub fn parse_str(subject: &str, text: &str) -> Result<Vec<Card>, ParseError> {
                     State::Note => return Err(ParseError::BackAfterNote(lineno)),
                     State::Front | State::Back => {}
                 }
-                // COMPATIBILITY: strip a leading backslash only when it
-                // escapes a markup character, exactly like the original.
+                // Strip a leading backslash only when it escapes a markup
+                // character, so an ordinary backslash is left untouched.
                 let second = line.chars().nth(1);
                 let back_line =
                     if first == MARKUP_ESCAPE && second.is_some_and(|c| MARKUP.contains(&c)) {
@@ -334,18 +333,6 @@ mod tests {
     }
 
     #[test]
-    fn parses_the_original_sample_box() {
-        let text = std::fs::read_to_string(
-            "/home/me/dev/developer/alex6323/projects/flashcard/sample_box.txt",
-        );
-        // Only run when the old project is present on this machine.
-        if let Ok(text) = text {
-            let cards = parse_str("sample_box.txt", &text).unwrap();
-            assert_eq!(31, cards.len());
-        }
-    }
-
-    #[test]
     fn error_back_before_front() {
         assert_eq!(Err(ParseError::BackBeforeFront(1)), parse_str("s", "back"));
     }
@@ -417,7 +404,7 @@ mod tests {
         let text = "% mode: line\n\
                     %  Scheduler:SM2 \n\
                     % link: https://example.org\n\
-                    % Then learn it with: fc\n\
+                    % Then learn it with: flash\n\
                     % a plain comment\n\
                     # front\n\tback\n";
         assert_eq!(
@@ -499,7 +486,7 @@ mod tests {
     #[test]
     fn escaped_hash_and_indented_hash_yield_the_same_back_line() {
         // Both spellings must produce identical content (and therefore the
-        // same card hash), so old decks using the escape stay compatible.
+        // same card hash), so a deck using the escape keeps its progress.
         let escaped = parse_str("s", "# f\n\t\\# x\n").unwrap();
         let indented = parse_str("s", "# f\n\t# x\n").unwrap();
         assert_eq!(escaped[0].back, indented[0].back);
