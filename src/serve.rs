@@ -26,6 +26,7 @@ use tiny_http::{Header, Method, Request, Response, Server};
 use crate::{
     answer::Mode,
     card::Card,
+    choice,
     config::{Bindings, BrowseBindings, Key, KeyPattern},
     deck,
     render::{self, NoteUnit},
@@ -116,6 +117,10 @@ struct CardDto {
 struct StateDto {
     /// The card up for review, or `null` when the session is finished.
     card: Option<CardDto>,
+    /// For `choice` mode, the multiple-choice options (one is correct); `null`
+    /// otherwise, or when the card has too few distractors (the page then
+    /// falls back to reveal). The correct index is never sent here.
+    choices: Option<Vec<String>>,
     /// The answer mode name (`flip`, `line`, …); the page reveals
     /// line-by-line for `line` and flip-style otherwise.
     mode: &'static str,
@@ -135,6 +140,15 @@ struct StateDto {
 struct BrowseDto {
     label: String,
     cards: Vec<CardDto>,
+}
+
+/// The result of answering a choice card: which option was picked, which is
+/// correct, and whether they match. The page highlights the options with this.
+#[derive(Debug, Serialize)]
+struct ChooseFeedbackDto {
+    chosen: usize,
+    correct: usize,
+    passed: bool,
 }
 
 /// One configured key, as the browser sees it: `k` is the `KeyboardEvent.key`
@@ -245,6 +259,28 @@ pub fn run_review(
                 session.skip();
                 respond_json(request, &state_dto(&session, &store, mode, &label));
             }
+            (Method::Post, "/api/choose") => {
+                // Just reports which option is correct (the question is rebuilt
+                // from the card id, so it matches the one served). The grade is
+                // applied later via /api/grade on Continue, so the session stays
+                // on this card during the result — Remove still works on it.
+                let picked = read_index(&mut request).and_then(|chosen| {
+                    let card = session.current()?.clone();
+                    let correct = choice::build(&card, session.cards(), card.id())?.correct;
+                    Some((chosen, correct))
+                });
+                match picked {
+                    Some((chosen, correct)) => respond_json(
+                        request,
+                        &ChooseFeedbackDto {
+                            chosen,
+                            correct,
+                            passed: chosen == correct,
+                        },
+                    ),
+                    None => respond_status(request, 400),
+                }
+            }
             (Method::Post, "/api/remove") => {
                 let dropped = session.remove_current();
                 if let Some(first) = dropped.first() {
@@ -334,10 +370,19 @@ fn request_path(request: &Request) -> String {
         .to_string()
 }
 
-/// Builds the state payload from the live session and store.
+/// Builds the state payload from the live session and store. For choice mode it
+/// also builds the options, seeded by the card id so they are stable across the
+/// `/api/state` and `/api/choose` requests without any server-side caching.
 fn state_dto(session: &Session, store: &Store, mode: Mode, label: &str) -> StateDto {
+    let card = session.current();
+    let choices = if mode == Mode::Choice {
+        card.and_then(|c| choice::build(c, session.cards(), c.id()).map(|q| q.options))
+    } else {
+        None
+    };
     StateDto {
-        card: session.current().map(card_dto),
+        card: card.map(card_dto),
+        choices,
         mode: mode_name(mode),
         remaining: session.remaining(),
         initial: session.initial_size,
