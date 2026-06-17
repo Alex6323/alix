@@ -369,7 +369,9 @@ port = 7777
   `~/.config/flash/config.toml` (created on first use).
 - `flash reset <deck>...` clears stored progress so cards become "new" again —
   for whole decks, a single card (`--card <id-or-front-text>`), or the entire
-  store (`--all`). It confirms first unless you pass `-y`/`--yes`.
+  store (`--all`). Run it with no decks to pick from the deck list, or add
+  `--cards` to pick individual cards from a checkbox list. It confirms first
+  unless you pass `-y`/`--yes`.
 
 ## Desktop integration
 

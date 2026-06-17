@@ -159,6 +159,11 @@ struct ResetArgs {
     #[arg(long)]
     card: Option<String>,
 
+    /// Pick cards to reset from a checkbox list (over the given decks, or decks
+    /// chosen interactively).
+    #[arg(long, conflicts_with_all = ["card", "all"])]
+    cards: bool,
+
     /// Clear progress for every card in the store.
     #[arg(long, conflicts_with_all = ["decks", "card"])]
     all: bool,
@@ -733,30 +738,112 @@ fn reset(args: ResetArgs) -> Result<()> {
         return Ok(());
     }
 
-    // A numeric `--card` with no decks can be removed without loading anything;
-    // otherwise we load the named decks and match within them.
+    // A numeric `--card` with no decks can be removed without loading anything.
     let numeric_id = args.card.as_deref().and_then(|c| c.parse::<u64>().ok());
-    let (targets, scope): (Vec<(u64, String)>, String) =
-        match numeric_id.filter(|_| args.decks.is_empty()) {
-            Some(id) => (vec![(id, String::new())], format!("card {id}")),
-            None => {
-                if args.decks.is_empty() {
-                    bail!(
-                        "no deck files given; try `flash reset <deck.txt>...`, `--card <id>`, or `--all`"
-                    );
-                }
-                let (cards, label, _, _) = load_decks(&args.decks)?;
-                (select_reset_ids(&cards, args.card.as_deref()), label)
-            }
-        };
+    if let Some(id) = numeric_id.filter(|_| args.decks.is_empty()) {
+        return reset_ids(
+            &mut store,
+            vec![(id, String::new())],
+            format!("card {id}"),
+            args.card.as_deref(),
+            false,
+            args.yes,
+        );
+    }
 
-    // Only ids with stored progress count — the rest are already "new".
+    // Resolve decks: those named, or chosen from the picker when none are given.
+    let (deck_paths, from_deck_picker) = if args.decks.is_empty() {
+        if !std::io::stdout().is_terminal() {
+            bail!(
+                "no deck files given; try `flash reset <deck.txt>...`, `--card <id>`, or `--all`"
+            );
+        }
+        let config = Config::load(None)?;
+        let recent = RecentDecks::load(
+            recent::default_recent_path().context("cannot determine the data directory")?,
+        );
+        let decks_dir = config.decks_dir().context("cannot determine ~/decks")?;
+        let picked = picker::pick_to_reset(&decks_dir, &recent)?;
+        if picked.is_empty() {
+            return Ok(()); // cancelled or nothing selected
+        }
+        (picked, true)
+    } else {
+        (args.decks.clone(), false)
+    };
+
+    let (cards, label, _, _) = load_decks(&deck_paths)?;
+
+    // Choose which cards: a checkbox picker (`--cards`), a direct match
+    // (`--card`), or every card in the decks.
+    let (targets, from_picker): (Vec<(u64, String)>, bool) = if args.cards {
+        if !std::io::stdout().is_terminal() {
+            bail!("the card picker needs a terminal");
+        }
+        // Only cards with stored progress are worth listing.
+        let rows: Vec<(u64, String, Option<String>)> = cards
+            .iter()
+            .filter_map(|c| {
+                store.get(c.id()).map(|state| {
+                    (
+                        c.id(),
+                        card_label(c),
+                        Some(format!("s{} · {}", state.stage, short_id(c.id()))),
+                    )
+                })
+            })
+            .collect();
+        if rows.is_empty() {
+            println!("No stored progress to reset in {label}.");
+            return Ok(());
+        }
+        let chosen: std::collections::HashSet<u64> =
+            picker::pick_cards(rows, &format!("select cards to reset — {label}"))?
+                .into_iter()
+                .collect();
+        if chosen.is_empty() {
+            return Ok(()); // cancelled or nothing selected
+        }
+        let targets = cards
+            .iter()
+            .filter(|c| chosen.contains(&c.id()))
+            .map(|c| (c.id(), c.front.clone()))
+            .collect();
+        (targets, true)
+    } else {
+        (
+            select_reset_ids(&cards, args.card.as_deref()),
+            from_deck_picker,
+        )
+    };
+
+    reset_ids(
+        &mut store,
+        targets,
+        label,
+        args.card.as_deref(),
+        from_picker,
+        args.yes,
+    )
+}
+
+/// Removes the `(id, front)` targets that have stored progress, after a `y/N`
+/// confirmation — unless `from_picker` (the picker's Enter already confirmed)
+/// or `yes`. Saves and reports the count.
+fn reset_ids(
+    store: &mut Store,
+    targets: Vec<(u64, String)>,
+    scope: String,
+    card_query: Option<&str>,
+    from_picker: bool,
+    yes: bool,
+) -> Result<()> {
     let present: Vec<(u64, String)> = targets
         .into_iter()
         .filter(|(id, _)| store.get(*id).is_some())
         .collect();
     if present.is_empty() {
-        match &args.card {
+        match card_query {
             Some(query) => println!("No stored progress matching {query:?}."),
             None => println!("No stored progress to reset in {scope}."),
         }
@@ -764,23 +851,25 @@ fn reset(args: ResetArgs) -> Result<()> {
     }
 
     let n = present.len();
-    let what = if args.card.is_some() {
-        let fronts: Vec<String> = present
-            .iter()
-            .map(|(_, f)| f.chars().take(60).collect())
-            .filter(|f: &String| !f.is_empty())
-            .collect();
-        if fronts.is_empty() {
-            scope
+    if !from_picker {
+        let what = if card_query.is_some() {
+            let fronts: Vec<String> = present
+                .iter()
+                .map(|(_, f)| f.chars().take(60).collect())
+                .filter(|f: &String| !f.is_empty())
+                .collect();
+            if fronts.is_empty() {
+                scope
+            } else {
+                fronts.join("; ")
+            }
         } else {
-            fronts.join("; ")
+            format!("{n} card(s) in {scope}")
+        };
+        if !confirm(&format!("Reset progress for {what}?"), yes)? {
+            println!("Cancelled.");
+            return Ok(());
         }
-    } else {
-        format!("{n} card(s) in {scope}")
-    };
-    if !confirm(&format!("Reset progress for {what}?"), args.yes)? {
-        println!("Cancelled.");
-        return Ok(());
     }
 
     for (id, _) in &present {
@@ -789,6 +878,27 @@ fn reset(args: ResetArgs) -> Result<()> {
     store.save()?;
     println!("Reset {n} card(s).");
     Ok(())
+}
+
+/// A picker label for a card: its front, or — for cloze sub-cards — the masked
+/// context, so siblings (which share a front) are distinguishable. Truncated.
+fn card_label(card: &Card) -> String {
+    let text = if card.context.is_empty() {
+        card.front.clone()
+    } else {
+        card.context.join(" ")
+    };
+    text.chars().take(70).collect()
+}
+
+/// A shortened card id for display, e.g. `9836…4569`.
+fn short_id(id: u64) -> String {
+    let s = id.to_string();
+    if s.len() > 9 {
+        format!("{}…{}", &s[..4], &s[s.len() - 4..])
+    } else {
+        s
+    }
 }
 
 fn browse(args: BrowseArgs) -> Result<()> {

@@ -30,7 +30,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `line by line` — so typing vs fuzzy (otherwise identical input prompts) is
   clear at a glance.
 - `flash reset` clears stored progress: for one or more decks, a single card
-  (`--card <id-or-front-text>`), or everything (`--all`). Confirms first unless
+  (`--card <id-or-front-text>`), or everything (`--all`). With no decks it opens
+  the same checkbox picker as `review`/`browse` to choose them; `--cards` opens
+  a picker over a deck's cards (those with progress). Confirms first unless
   `-y`/`--yes`, and refuses to act without a terminal rather than wiping
   silently.
 

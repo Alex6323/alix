@@ -1,13 +1,14 @@
-//! Startup deck picker: a small TUI to choose one or more decks to review,
-//! used when `flash` is launched without deck arguments (e.g. from the desktop
-//! menu).
+//! A small checkbox TUI for picking one or more items: decks to review (the
+//! startup picker, used when `flash` is launched without deck arguments), a
+//! deck's prerequisites (the `deps` editor), or cards to reset.
 //!
-//! Recently reviewed decks are listed first, then the rest of the decks in
-//! the decks directory. Type to filter by name, Space to (de)select, Enter
-//! to start.
+//! Type to filter, Space to (de)select, Enter to confirm, Esc to cancel. The
+//! widget is generic over the item key (`PathBuf` for decks, `u64` card id for
+//! cards); the deck-specific candidate building lives below.
 
 use std::{
     collections::HashSet,
+    hash::Hash,
     path::{Path, PathBuf},
 };
 
@@ -25,7 +26,17 @@ use crate::{recent::RecentDecks, time};
 
 const HEADER_STYLE: Style = Style::new().fg(Color::Black).bg(Color::Cyan);
 
-/// A selectable deck.
+/// One selectable row: identified by `key`, matched/displayed by `label`, with
+/// an optional dim `meta` suffix (a deck's last-used age, a card's stage/id).
+struct Item<K> {
+    key: K,
+    label: String,
+    meta: Option<String>,
+}
+
+// ---- deck candidates ----------------------------------------------------
+
+/// A selectable deck, before it becomes a picker `Item`.
 struct Candidate {
     path: PathBuf,
     name: String,
@@ -78,21 +89,88 @@ fn build_candidates(decks_dir: &Path, recent: &RecentDecks) -> Vec<Candidate> {
     out
 }
 
+/// Turns a deck candidate into a picker item, formatting the last-used age as
+/// the meta suffix.
+fn deck_item(c: Candidate, now: u64) -> Item<PathBuf> {
+    let meta = match c.last_used_ms {
+        Some(ts) if ts <= now => Some(format!("· {} ago", time::humanize_ms(now - ts))),
+        Some(_) => Some("· recent".to_string()),
+        None => None,
+    };
+    Item {
+        key: c.path,
+        label: c.name,
+        meta,
+    }
+}
+
 fn file_name(path: &Path) -> String {
     path.file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default()
 }
 
+/// A deck name without its `.txt` extension, for matching.
+fn stem(name: &str) -> String {
+    name.strip_suffix(".txt").unwrap_or(name).to_string()
+}
+
+// ---- public entry points ------------------------------------------------
+
 /// Runs the startup picker. Returns the chosen deck paths (empty if the user
 /// cancelled or there is nothing to pick).
 pub fn pick(decks_dir: &Path, recent: &RecentDecks) -> Result<Vec<PathBuf>> {
-    let candidates = build_candidates(decks_dir, recent);
-    let mut picker = Picker::new(candidates, decks_dir.to_path_buf());
-    let mut terminal = ratatui::init();
-    let result = picker.run(&mut terminal);
-    ratatui::restore();
-    Ok(result?.unwrap_or_default())
+    let now = time::now_ms();
+    let items = build_candidates(decks_dir, recent)
+        .into_iter()
+        .map(|c| deck_item(c, now))
+        .collect();
+    let picker = Picker::new(
+        items,
+        HashSet::new(),
+        "select decks".to_string(),
+        " SPACE select │ ENTER start │ ↑↓ move │ type to filter │ ESC cancel".to_string(),
+        false,
+        no_decks_message(decks_dir),
+    );
+    Ok(launch(picker)?.unwrap_or_default())
+}
+
+/// Runs the deck picker for `reset`: the same checkbox UI, but `exact` (an empty
+/// tick set means "nothing", never the card under the cursor) and reset wording.
+pub fn pick_to_reset(decks_dir: &Path, recent: &RecentDecks) -> Result<Vec<PathBuf>> {
+    let now = time::now_ms();
+    let items = build_candidates(decks_dir, recent)
+        .into_iter()
+        .map(|c| deck_item(c, now))
+        .collect();
+    let picker = Picker::new(
+        items,
+        HashSet::new(),
+        "select decks to reset".to_string(),
+        " SPACE select │ ENTER reset │ ↑↓ move │ type to filter │ ESC cancel".to_string(),
+        true,
+        no_decks_message(decks_dir),
+    );
+    Ok(launch(picker)?.unwrap_or_default())
+}
+
+/// Picks cards to act on from a pre-built `(id, label, meta)` list. Returns the
+/// chosen ids (empty if cancelled or nothing ticked).
+pub fn pick_cards(items: Vec<(u64, String, Option<String>)>, title: &str) -> Result<Vec<u64>> {
+    let items = items
+        .into_iter()
+        .map(|(key, label, meta)| Item { key, label, meta })
+        .collect();
+    let picker = Picker::new(
+        items,
+        HashSet::new(),
+        title.to_string(),
+        " SPACE select │ ENTER reset │ ↑↓ move │ type to filter │ ESC cancel".to_string(),
+        true,
+        vec![Line::from("  No cards.")],
+    );
+    Ok(launch(picker)?.unwrap_or_default())
 }
 
 /// Runs the dependency editor for `target`: the same checkbox UI over the
@@ -129,28 +207,50 @@ pub fn edit_dependencies(
         .map(|c| c.path.clone())
         .collect();
 
-    let mut picker = Picker::with(
-        candidates,
-        decks_dir.to_path_buf(),
+    let items = candidates
+        .into_iter()
+        .map(|c| Item {
+            key: c.path,
+            label: c.name,
+            meta: None,
+        })
+        .collect();
+    let picker = Picker::new(
+        items,
         preselected,
         format!("prerequisites for {target_name}"),
         " SPACE toggle │ ENTER save │ ↑↓ move │ type to filter │ ESC cancel".to_string(),
         true,
+        vec![
+            Line::default(),
+            Line::from(format!("  No other decks in {}.", decks_dir.display())),
+        ],
     );
+    launch(picker)
+}
+
+/// The empty-state shown when there are no decks to list.
+fn no_decks_message(decks_dir: &Path) -> Vec<Line<'static>> {
+    vec![
+        Line::default(),
+        Line::from(format!("  No decks found in {}.", decks_dir.display())),
+        Line::default(),
+        Line::from("  Put .txt decks there, or pass deck files on the command line.".dim()),
+    ]
+}
+
+/// Sets up the terminal, runs the picker, and restores the terminal.
+fn launch<K: Clone + Eq + Hash>(mut picker: Picker<K>) -> Result<Option<Vec<K>>> {
     let mut terminal = ratatui::init();
     let result = picker.run(&mut terminal);
     ratatui::restore();
     result
 }
 
-/// A deck name without its `.txt` extension, for matching.
-fn stem(name: &str) -> String {
-    name.strip_suffix(".txt").unwrap_or(name).to_string()
-}
+// ---- the widget ---------------------------------------------------------
 
-struct Picker {
-    decks_dir: PathBuf,
-    all: Vec<Candidate>,
+struct Picker<K> {
+    all: Vec<Item<K>>,
     filter: String,
     /// Indices into `all` matching the filter.
     filtered: Vec<usize>,
@@ -158,43 +258,32 @@ struct Picker {
     cursor: usize,
     /// Scroll offset within `filtered`.
     offset: usize,
-    selected: HashSet<PathBuf>,
+    selected: HashSet<K>,
     /// Header label (after "flash — ").
     title: String,
     /// Footer key hints.
     footer: String,
     /// When true, Enter returns exactly the ticked set (possibly empty); when
-    /// false (startup picker), an empty tick set falls back to the card under
+    /// false (startup picker), an empty tick set falls back to the item under
     /// the cursor.
     exact: bool,
+    /// Lines shown when there are no items.
+    empty: Vec<Line<'static>>,
     done: bool,
     cancelled: bool,
 }
 
-impl Picker {
-    /// The startup picker: nothing pre-selected, cursor fallback on Enter.
-    fn new(all: Vec<Candidate>, decks_dir: PathBuf) -> Self {
-        Self::with(
-            all,
-            decks_dir,
-            HashSet::new(),
-            "select decks".to_string(),
-            " SPACE select │ ENTER start │ ↑↓ move │ type to filter │ ESC cancel".to_string(),
-            false,
-        )
-    }
-
-    fn with(
-        all: Vec<Candidate>,
-        decks_dir: PathBuf,
-        selected: HashSet<PathBuf>,
+impl<K: Clone + Eq + Hash> Picker<K> {
+    fn new(
+        all: Vec<Item<K>>,
+        selected: HashSet<K>,
         title: String,
         footer: String,
         exact: bool,
+        empty: Vec<Line<'static>>,
     ) -> Self {
         let filtered = (0..all.len()).collect();
         Self {
-            decks_dir,
             all,
             filter: String::new(),
             filtered,
@@ -204,13 +293,14 @@ impl Picker {
             title,
             footer,
             exact,
+            empty,
             done: false,
             cancelled: false,
         }
     }
 
-    /// Returns `None` if cancelled, else the chosen paths.
-    fn run(&mut self, terminal: &mut ratatui::DefaultTerminal) -> Result<Option<Vec<PathBuf>>> {
+    /// Returns `None` if cancelled, else the chosen keys.
+    fn run(&mut self, terminal: &mut ratatui::DefaultTerminal) -> Result<Option<Vec<K>>> {
         while !self.done {
             terminal.draw(|frame| self.draw(frame))?;
             if let Event::Key(key) = event::read()?
@@ -242,21 +332,21 @@ impl Picker {
         if self.cancelled {
             return Ok(None);
         }
-        // Selected decks, in candidate order.
-        let chosen: Vec<PathBuf> = self
+        // Ticked items, in list order.
+        let chosen: Vec<K> = self
             .all
             .iter()
-            .filter(|c| self.selected.contains(&c.path))
-            .map(|c| c.path.clone())
+            .filter(|item| self.selected.contains(&item.key))
+            .map(|item| item.key.clone())
             .collect();
         if self.exact || !chosen.is_empty() {
             return Ok(Some(chosen));
         }
-        // Startup picker with nothing ticked: use the card under the cursor.
+        // Startup picker with nothing ticked: use the item under the cursor.
         Ok(Some(
             self.filtered
                 .get(self.cursor)
-                .map(|&i| vec![self.all[i].path.clone()])
+                .map(|&i| vec![self.all[i].key.clone()])
                 .unwrap_or_default(),
         ))
     }
@@ -276,9 +366,9 @@ impl Picker {
 
     fn toggle(&mut self) {
         if let Some(&i) = self.filtered.get(self.cursor) {
-            let path = &self.all[i].path;
-            if !self.selected.remove(path) {
-                self.selected.insert(path.clone());
+            let key = &self.all[i].key;
+            if !self.selected.remove(key) {
+                self.selected.insert(key.clone());
             }
         }
     }
@@ -289,7 +379,7 @@ impl Picker {
             .all
             .iter()
             .enumerate()
-            .filter(|(_, c)| c.name.to_lowercase().contains(&needle))
+            .filter(|(_, item)| item.label.to_lowercase().contains(&needle))
             .map(|(i, _)| i)
             .collect();
         self.cursor = self.cursor.min(self.filtered.len().saturating_sub(1));
@@ -324,17 +414,7 @@ impl Picker {
 
     fn draw_list(&mut self, frame: &mut Frame, area: Rect) {
         if self.all.is_empty() {
-            frame.render_widget(
-                Paragraph::new(vec![
-                    Line::default(),
-                    Line::from(format!("  No decks found in {}.", self.decks_dir.display())),
-                    Line::default(),
-                    Line::from(
-                        "  Put .txt decks there, or pass deck files on the command line.".dim(),
-                    ),
-                ]),
-                area,
-            );
+            frame.render_widget(Paragraph::new(self.empty.clone()), area);
             return;
         }
 
@@ -346,7 +426,6 @@ impl Picker {
             self.offset = self.cursor + 1 - height;
         }
 
-        let now = time::now_ms();
         let mut lines = Vec::new();
         for (row, &i) in self
             .filtered
@@ -355,20 +434,18 @@ impl Picker {
             .skip(self.offset)
             .take(height)
         {
-            let c = &self.all[i];
+            let item = &self.all[i];
             let on_cursor = row == self.cursor;
-            let checked = self.selected.contains(&c.path);
+            let checked = self.selected.contains(&item.key);
 
             let marker = if on_cursor { "›" } else { " " };
             let check = if checked { "[x]" } else { "[ ]" };
-            let age = match c.last_used_ms {
-                Some(ts) if ts <= now => {
-                    format!("  · {} ago", time::humanize_ms(now - ts))
-                }
-                Some(_) => "  · recent".to_string(),
-                None => String::new(),
-            };
-            let text = format!("{marker} {check} {}{age}", c.name);
+            let meta = item
+                .meta
+                .as_deref()
+                .map(|m| format!("  {m}"))
+                .unwrap_or_default();
+            let text = format!("{marker} {check} {}{meta}", item.label);
 
             let mut style = Style::new();
             if on_cursor {
@@ -394,17 +471,23 @@ fn bar(left: &str, right: &str, width: u16) -> Paragraph<'static> {
 mod tests {
     use super::*;
 
-    fn candidate(name: &str, recent: Option<u64>) -> Candidate {
-        Candidate {
-            path: PathBuf::from(name),
-            name: name.to_string(),
-            last_used_ms: recent,
-        }
-    }
-
-    fn picker_with(names: &[&str]) -> Picker {
-        let all = names.iter().map(|n| candidate(n, None)).collect();
-        Picker::new(all, PathBuf::from("/decks"))
+    fn picker_with(labels: &[&str]) -> Picker<PathBuf> {
+        let all = labels
+            .iter()
+            .map(|n| Item {
+                key: PathBuf::from(n),
+                label: n.to_string(),
+                meta: None,
+            })
+            .collect();
+        Picker::new(
+            all,
+            HashSet::new(),
+            "t".to_string(),
+            "f".to_string(),
+            false,
+            Vec::new(),
+        )
     }
 
     #[test]
@@ -445,8 +528,8 @@ mod tests {
         let chosen: Vec<PathBuf> = p
             .all
             .iter()
-            .filter(|c| p.selected.contains(&c.path))
-            .map(|c| c.path.clone())
+            .filter(|item| p.selected.contains(&item.key))
+            .map(|item| item.key.clone())
             .collect();
         assert_eq!(vec![PathBuf::from("a.txt"), PathBuf::from("c.txt")], chosen);
     }
