@@ -212,6 +212,14 @@ impl Store {
         self.cards.remove(&card_id).is_some()
     }
 
+    /// Clears all stored progress, returning how many cards were removed (e.g.
+    /// for `flash reset --all`). Does not save.
+    pub fn clear(&mut self) -> usize {
+        let n = self.cards.len();
+        self.cards.clear();
+        n
+    }
+
     /// The number of cards tracked by this store.
     pub fn len(&self) -> usize {
         self.cards.len()
@@ -281,6 +289,17 @@ mod tests {
         assert!(store.get(42).is_none());
         // Removing again reports nothing was there.
         assert!(!store.remove(42));
+    }
+
+    #[test]
+    fn clear_empties_and_counts() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        store.get_or_insert(1, 0);
+        store.get_or_insert(2, 0);
+        assert_eq!(2, store.clear());
+        assert!(store.is_empty());
+        assert_eq!(0, store.clear()); // already empty
     }
 
     #[test]

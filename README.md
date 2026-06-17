@@ -24,6 +24,7 @@ flash deps mydeck.txt            # edit a deck's prerequisites (checkbox picker)
 flash stats mydeck.txt           # progress overview
 flash list mydeck.txt            # every card with stage and due time
 flash check mydeck.txt           # lint a deck (syntax, duplicates)
+flash reset mydeck.txt           # clear stored progress (also --card / --all)
 ```
 
 Several decks can be given at once; their due cards are merged into one
@@ -65,8 +66,9 @@ Notes (`!`) and comments (`%`) work at any indentation.
 
 ### Deck directives
 
-A deck can set its own defaults with `% key: value` comment lines, so you do
-not have to repeat flags on the command line:
+A deck can set its own defaults with `% key: value` comment lines in the deck
+header (before the first card), so you do not have to repeat flags on the
+command line:
 
 ```
 % mode: line
@@ -74,7 +76,8 @@ not have to repeat flags on the command line:
 % scheduler: sm2
 ```
 
-- `mode` — default answer mode (`flip`, `typing`, `fuzzy`, `choice`, `line`).
+- `mode` — default answer mode (`flip`, `typing`, `fuzzy`, `choice`, `line`);
+  can also be overridden per card (see below).
 - `order` — `scheduled` (the default) or `sequential` to walk the deck in
   file order, top to bottom (ideal for lyrics with `% mode: line`).
 - `scheduler` — `leitner` (default) or `sm2`.
@@ -85,6 +88,13 @@ the built-in default. Directives are read only from the deck(s) you ask to
 review — never from prerequisites pulled in via `% requires:` (see below). When
 several requested decks disagree on a setting, the default is used. `flash check
 <deck>` prints a deck's directives.
+
+**Per-card mode.** A `% mode:` directive placed *after* a card's front (and
+before the next one) overrides the deck's mode for that card only, so one deck
+can mix modes — e.g. a `line` lyrics card among `flip` cards. The effective mode
+is resolved per card: CLI `--mode` > the card's `% mode:` > the deck's
+`% mode:` > the default (so `--mode` still forces every card). Other directives
+(`order`, `scheduler`) stay deck-level.
 
 ### Deck dependencies
 
@@ -148,7 +158,8 @@ character with instant green/red feedback; `TAB` reveals the next two
 characters as a hint, but a hinted card counts as failed. In **fuzzy** mode
 you submit whole lines with Enter and small typos are tolerated. A wrong
 card goes back to stage 1 and reappears later in the same session until you
-get it right.
+get it right. Whichever mode a card uses is shown as a small badge above the
+answer (`flip`, `typing exact`, `typing fuzzy`, `choice`, `line by line`).
 
 In **choice** mode you pick the answer out of four options with `1`–`4`.
 The three wrong options are sampled from the answers of the other cards in
@@ -356,6 +367,9 @@ port = 7777
   cards.
 - Progress is stored at `~/.local/share/flash/progress.json` and config at
   `~/.config/flash/config.toml` (created on first use).
+- `flash reset <deck>...` clears stored progress so cards become "new" again —
+  for whole decks, a single card (`--card <id-or-front-text>`), or the entire
+  store (`--all`). It confirms first unless you pass `-y`/`--yes`.
 
 ## Desktop integration
 

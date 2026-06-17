@@ -21,12 +21,33 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   by default; `--lan` exposes it to the network (no auth), `--port`/`[serve]`
   set the port (both `--port` and `--lan` require `--serve`). Built on
   `tiny_http`.
+- Per-card answer mode: a `% mode:` directive placed after a card's front
+  overrides the deck's `% mode:` for that card only, so one deck can mix modes
+  (e.g. a `line` lyrics card among `flip` cards). Cloze sub-cards inherit their
+  source card's mode.
+- A mode badge at the top of the answer section on every card, in both the TUI
+  and the web app — `flip`, `typing exact`, `typing fuzzy`, `choice`,
+  `line by line` — so typing vs fuzzy (otherwise identical input prompts) is
+  clear at a glance.
+- `flash reset` clears stored progress: for one or more decks, a single card
+  (`--card <id-or-front-text>`), or everything (`--all`). Confirms first unless
+  `-y`/`--yes`, and refuses to act without a terminal rather than wiping
+  silently.
 
 ### Changed
 - Note rendering moved into a frontend-independent `render` module that emits a
   structured model (`NoteUnit`: sentence-split prose or verbatim code blocks);
   the TUI now only paints it. No change to how notes look — this lets a future
   frontend reuse the same note structuring instead of reimplementing it.
+- The answer mode is now resolved per card instead of once per session:
+  CLI `--mode` > the card's `% mode:` > the deck's `% mode:` > the built-in
+  default. `--mode` still forces every card.
+- Deck-level directives (`% mode/order/scheduler`) must now sit in the deck
+  header, before the first card; a `% key: value` after a card front is treated
+  as a per-card override.
+- Web review now shows the expected answer whenever a typed line differed —
+  including a fuzzy pass within tolerance — matching the TUI, so typos aren't
+  reinforced.
 
 ## [0.1.0] - 2026-06-16
 

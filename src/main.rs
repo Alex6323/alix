@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    io::IsTerminal,
+    io::{IsTerminal, Write},
     net::{Ipv4Addr, SocketAddr},
     path::{Path, PathBuf},
 };
@@ -46,6 +46,8 @@ enum Command {
     Stats(DeckArgs),
     /// List all cards of decks with their stage and due time.
     List(DeckArgs),
+    /// Clear stored progress for decks, a single card, or everything.
+    Reset(ResetArgs),
     /// Check deck files for syntax errors and duplicate cards.
     Check {
         /// Deck files to check.
@@ -148,6 +150,29 @@ struct DeckArgs {
 }
 
 #[derive(Args)]
+struct ResetArgs {
+    /// Deck files whose card progress to clear.
+    decks: Vec<PathBuf>,
+
+    /// Reset one card: its numeric id, or text matching its front (searched
+    /// within the given decks).
+    #[arg(long)]
+    card: Option<String>,
+
+    /// Clear progress for every card in the store.
+    #[arg(long, conflicts_with_all = ["decks", "card"])]
+    all: bool,
+
+    /// Skip the confirmation prompt (for scripts / test loops).
+    #[arg(short = 'y', long)]
+    yes: bool,
+
+    /// Path of the progress store (default: platform data dir).
+    #[arg(long)]
+    store: Option<PathBuf>,
+}
+
+#[derive(Args)]
 struct ReviewArgs {
     /// Deck files to review.
     decks: Vec<PathBuf>,
@@ -202,6 +227,7 @@ fn main() -> Result<()> {
         Some(Command::Review(args)) => review(args),
         Some(Command::Stats(args)) => stats(args),
         Some(Command::List(args)) => list(args),
+        Some(Command::Reset(args)) => reset(args),
         Some(Command::Check { decks }) => check(decks),
         Some(Command::Browse(args)) => browse(args),
         Some(Command::Generate(args)) => generate_cmd(args),
@@ -651,6 +677,120 @@ fn list(args: DeckArgs) -> Result<()> {
     Ok(())
 }
 
+/// `(id, front)` pairs to reset from `cards`: all of them when `card` is
+/// `None`, otherwise only the matches. A numeric `card` matches by `Card::id()`;
+/// any other text matches cards whose front contains it (case-insensitive) — a
+/// cloze card's holes share a front, so that resets the whole card.
+fn select_reset_ids(cards: &[Card], card: Option<&str>) -> Vec<(u64, String)> {
+    let by_id = card.and_then(|c| c.parse::<u64>().ok());
+    let needle = card.map(str::to_lowercase);
+    cards
+        .iter()
+        .filter(|c| match (by_id, &needle) {
+            (Some(id), _) => c.id() == id,
+            (None, Some(text)) => c.front.to_lowercase().contains(text),
+            (None, None) => true,
+        })
+        .map(|c| (c.id(), c.front.clone()))
+        .collect()
+}
+
+/// Asks the user to confirm a destructive action. Returns `true` when `yes` is
+/// set or the user types y/yes. Errors (rather than acting silently) when there
+/// is no terminal and `yes` was not given.
+fn confirm(prompt: &str, yes: bool) -> Result<bool> {
+    if yes {
+        return Ok(true);
+    }
+    if !std::io::stdin().is_terminal() {
+        bail!("{prompt} (refusing without a terminal — pass --yes to proceed)");
+    }
+    print!("{prompt} [y/N] ");
+    std::io::stdout().flush().ok();
+    let mut line = String::new();
+    std::io::stdin().read_line(&mut line)?;
+    let answer = line.trim().to_lowercase();
+    Ok(answer == "y" || answer == "yes")
+}
+
+fn reset(args: ResetArgs) -> Result<()> {
+    let mut store = open_store(args.store)?;
+
+    // `--all`: wipe everything; no decks needed, count up front for the prompt.
+    if args.all {
+        let n = store.len();
+        if n == 0 {
+            println!("No stored progress to reset.");
+            return Ok(());
+        }
+        if !confirm(&format!("Reset progress for all {n} card(s)?"), args.yes)? {
+            println!("Cancelled.");
+            return Ok(());
+        }
+        store.clear();
+        store.save()?;
+        println!("Reset {n} card(s).");
+        return Ok(());
+    }
+
+    // A numeric `--card` with no decks can be removed without loading anything;
+    // otherwise we load the named decks and match within them.
+    let numeric_id = args.card.as_deref().and_then(|c| c.parse::<u64>().ok());
+    let (targets, scope): (Vec<(u64, String)>, String) =
+        match numeric_id.filter(|_| args.decks.is_empty()) {
+            Some(id) => (vec![(id, String::new())], format!("card {id}")),
+            None => {
+                if args.decks.is_empty() {
+                    bail!(
+                        "no deck files given; try `flash reset <deck.txt>...`, `--card <id>`, or `--all`"
+                    );
+                }
+                let (cards, label, _, _) = load_decks(&args.decks)?;
+                (select_reset_ids(&cards, args.card.as_deref()), label)
+            }
+        };
+
+    // Only ids with stored progress count — the rest are already "new".
+    let present: Vec<(u64, String)> = targets
+        .into_iter()
+        .filter(|(id, _)| store.get(*id).is_some())
+        .collect();
+    if present.is_empty() {
+        match &args.card {
+            Some(query) => println!("No stored progress matching {query:?}."),
+            None => println!("No stored progress to reset in {scope}."),
+        }
+        return Ok(());
+    }
+
+    let n = present.len();
+    let what = if args.card.is_some() {
+        let fronts: Vec<String> = present
+            .iter()
+            .map(|(_, f)| f.chars().take(60).collect())
+            .filter(|f: &String| !f.is_empty())
+            .collect();
+        if fronts.is_empty() {
+            scope
+        } else {
+            fronts.join("; ")
+        }
+    } else {
+        format!("{n} card(s) in {scope}")
+    };
+    if !confirm(&format!("Reset progress for {what}?"), args.yes)? {
+        println!("Cancelled.");
+        return Ok(());
+    }
+
+    for (id, _) in &present {
+        store.remove(*id);
+    }
+    store.save()?;
+    println!("Reset {n} card(s).");
+    Ok(())
+}
+
 fn browse(args: BrowseArgs) -> Result<()> {
     // The terminal browser needs a TTY; the web one only needs it for the
     // interactive picker (when no decks are given).
@@ -920,4 +1060,44 @@ fn config_cmd(init: bool) -> Result<()> {
     println!("  max_cards   {}", config.generate.max_cards);
     println!("  review      {}", config.generate.review);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    fn card(front: &str, back: &str) -> Card {
+        Card::plain(Arc::from("d.txt"), front.into(), vec![back.into()], None, 1)
+    }
+
+    #[test]
+    fn reset_selects_all_without_a_filter() {
+        let cards = vec![card("A", "1"), card("B", "2")];
+        assert_eq!(2, select_reset_ids(&cards, None).len());
+    }
+
+    #[test]
+    fn reset_matches_front_substring_case_insensitively() {
+        let cards = vec![card("Capital of Japan?", "Tokyo"), card("Largest planet?", "Jupiter")];
+        let got = select_reset_ids(&cards, Some("japan"));
+        assert_eq!(1, got.len());
+        assert_eq!("Capital of Japan?", got[0].1);
+    }
+
+    #[test]
+    fn reset_matches_a_numeric_id_exactly() {
+        let cards = vec![card("A", "1"), card("B", "2")];
+        let id = cards[1].id();
+        assert_eq!(vec![(id, "B".to_string())], select_reset_ids(&cards, Some(&id.to_string())));
+    }
+
+    #[test]
+    fn reset_front_match_resets_all_cards_sharing_it() {
+        // Cloze holes share a front but have distinct ids; one match clears all.
+        let cards = vec![card("verb forms", "a"), card("verb forms", "b"), card("noun", "c")];
+        let got = select_reset_ids(&cards, Some("verb forms"));
+        assert_eq!(2, got.len());
+        assert_ne!(got[0].0, got[1].0);
+    }
 }
