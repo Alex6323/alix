@@ -26,7 +26,9 @@ use std::sync::Arc;
 
 use thiserror::Error;
 
-use crate::{card::Card, cloze};
+use clap::ValueEnum;
+
+use crate::{answer::Mode, card::Card, cloze};
 
 /// Markup indicating the front side of a card.
 const MARKUP_FRONT: char = '#';
@@ -86,27 +88,31 @@ struct PartialCard {
     note: Option<String>,
     line: usize,
     cloze: bool,
+    /// Per-card `% mode:` override, if the card declares one.
+    mode: Option<Mode>,
 }
 
 impl PartialCard {
     /// Turns the finished partial into one card (plain) or several (cloze).
     fn build(self, subject: &Arc<str>, cards: &mut Vec<Card>) -> Result<(), ParseError> {
         if self.cloze {
-            cards.extend(cloze::expand(
-                subject,
-                &self.front,
-                &self.back,
-                self.note.as_deref(),
-                self.line,
-            )?);
+            // A cloze card's per-card mode applies to each of its sub-cards.
+            for mut card in
+                cloze::expand(subject, &self.front, &self.back, self.note.as_deref(), self.line)?
+            {
+                card.mode = self.mode;
+                cards.push(card);
+            }
         } else {
-            cards.push(Card::plain(
+            let mut card = Card::plain(
                 Arc::clone(subject),
                 self.front,
                 self.back.into_iter().map(|(_, text)| text).collect(),
                 self.note,
                 self.line,
-            ));
+            );
+            card.mode = self.mode;
+            cards.push(card);
         }
         Ok(())
     }
@@ -139,24 +145,30 @@ pub fn parse_requires(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// Collects deck-level `% key: value` directives (e.g. `% mode: line`). The
-/// key must be a single token; lines whose "key" contains whitespace are
-/// treated as ordinary prose comments and ignored (so `% Then learn with:`
-/// is not a directive). Keys are lower-cased. Like links, these are invisible
-/// to the card parser and do not affect card hashes. The `link:` directive is
-/// excluded — it is handled by [`parse_links`].
+/// Parses a single `% key: value` directive line into a lower-cased key and
+/// trimmed value. Returns `None` for non-directive `%` lines: prose comments
+/// (key contains whitespace, like `% Then learn with:`), empty key/value, and
+/// `link` (handled by [`parse_links`]).
+fn directive(raw: &str) -> Option<(String, String)> {
+    let rest = raw.trim().strip_prefix(MARKUP_COMMENT)?;
+    let (key, value) = rest.split_once(':')?;
+    let key = key.trim().to_ascii_lowercase();
+    if key.is_empty() || key.contains(char::is_whitespace) || key == "link" {
+        return None;
+    }
+    let value = value.trim();
+    (!value.is_empty()).then(|| (key, value.to_string()))
+}
+
+/// Collects deck-level `% key: value` directives (e.g. `% mode: line`) from the
+/// header — the lines before the first card. Directives after a card front are
+/// per-card overrides (handled while parsing the card), so deck-level ones must
+/// sit at the top. These are invisible to the card parser and don't affect
+/// hashes.
 pub fn parse_directives(text: &str) -> Vec<(String, String)> {
     text.lines()
-        .filter_map(|raw| {
-            let rest = raw.trim().strip_prefix(MARKUP_COMMENT)?;
-            let (key, value) = rest.split_once(':')?;
-            let key = key.trim().to_ascii_lowercase();
-            if key.is_empty() || key.contains(char::is_whitespace) || key == "link" {
-                return None;
-            }
-            let value = value.trim();
-            (!value.is_empty()).then(|| (key, value.to_string()))
-        })
+        .take_while(|raw| !raw.starts_with(MARKUP_FRONT))
+        .filter_map(directive)
         .collect()
 }
 
@@ -210,6 +222,7 @@ pub fn parse_str(subject: &str, text: &str) -> Result<Vec<Card>, ParseError> {
                     note: None,
                     line: lineno,
                     cloze,
+                    mode: None,
                 });
                 state = State::Front;
             }
@@ -236,7 +249,19 @@ pub fn parse_str(subject: &str, text: &str) -> Result<Vec<Card>, ParseError> {
                 }
                 state = State::Note;
             }
-            MARKUP_COMMENT => {} // ignore
+            MARKUP_COMMENT => {
+                // A `% key: value` directive inside a card is a per-card
+                // override (currently only `mode`); unrecognized keys are
+                // ignored, like deck-level directives. `%` lines before the
+                // first card are deck-level (handled by parse_directives).
+                if state != State::Init
+                    && let Some((key, value)) = directive(line)
+                    && key == "mode"
+                    && let Ok(m) = Mode::from_str(&value, true)
+                {
+                    partial.as_mut().unwrap().mode = Some(m);
+                }
+            }
             _ => {
                 match state {
                     State::Init => return Err(ParseError::BackBeforeFront(lineno)),
@@ -418,6 +443,25 @@ mod tests {
         // The card parser is unaffected by directive lines.
         let cards = parse_str("s", text).unwrap();
         assert_eq!(1, cards.len());
+    }
+
+    #[test]
+    fn per_card_mode_directive_is_parsed() {
+        let text = "# a\n% mode: choice\n\tx\n# b\n\ty\n";
+        let cards = parse_str("s", text).unwrap();
+        assert_eq!(Some(Mode::Choice), cards[0].mode);
+        assert_eq!(None, cards[1].mode); // no per-card directive
+    }
+
+    #[test]
+    fn directives_are_header_only() {
+        // A `% mode:` after a card front is a per-card override, not deck-level.
+        assert!(parse_directives("# a\n% mode: choice\n\tx\n").is_empty());
+        // In the header it is collected.
+        assert_eq!(
+            vec![("mode".to_string(), "line".to_string())],
+            parse_directives("% mode: line\n# a\n\tx\n")
+        );
     }
 
     #[test]

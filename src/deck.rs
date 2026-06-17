@@ -92,13 +92,18 @@ impl Deck {
             path: path.clone(),
             source,
         })?;
-        let cards = parser::parse_str(&subject, &text).map_err(|source| DeckError::Parse {
+        let mut cards = parser::parse_str(&subject, &text).map_err(|source| DeckError::Parse {
             path: path.clone(),
             source,
         })?;
         let links = parser::parse_links(&text);
         let requires = parser::parse_requires(&text);
         let settings = DeckSettings::from_directives(&parser::parse_directives(&text));
+        // A card without its own `% mode:` inherits the deck's mode, so each
+        // card carries its effective declared mode (card override, else deck).
+        for card in &mut cards {
+            card.mode = card.mode.or(settings.mode);
+        }
         Ok(Self {
             path,
             subject,
@@ -483,6 +488,29 @@ mod tests {
             vec!["basics".to_string(), "x.txt".to_string()],
             deck.requires
         );
+    }
+
+    #[test]
+    fn card_mode_is_card_override_else_deck_mode() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.txt");
+        std::fs::write(
+            &path,
+            "% mode: flip\n# a\n% mode: choice\n\tx\n# b\n\ty\n",
+        )
+        .unwrap();
+
+        let deck = Deck::load(&path).unwrap();
+        assert_eq!(Some(Mode::Choice), deck.cards[0].mode); // card override wins
+        assert_eq!(Some(Mode::Flip), deck.cards[1].mode); // inherits the deck's
+    }
+
+    #[test]
+    fn cards_have_no_mode_without_directives() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.txt");
+        std::fs::write(&path, "# a\n\tx\n").unwrap();
+        assert_eq!(None, Deck::load(&path).unwrap().cards[0].mode);
     }
 
     #[test]

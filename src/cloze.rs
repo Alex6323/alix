@@ -160,6 +160,7 @@ pub fn expand(
             note: note.map(String::from),
             line,
             hash_lines: Some(hash_lines),
+            mode: None,
         });
     }
 

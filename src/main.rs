@@ -387,7 +387,8 @@ fn resolve_dep(
 struct ReviewSession {
     session: Session,
     store: Store,
-    mode: Mode,
+    /// CLI `--mode` override (each card otherwise uses its own mode).
+    mode_override: Option<Mode>,
     label: String,
     decks: HashMap<String, tui::DeckInfo>,
     config: Config,
@@ -432,13 +433,9 @@ fn load_review_session(args: &ReviewArgs) -> Result<Option<ReviewSession>> {
         .map(|(_, s)| s)
         .collect();
 
-    // Resolve mode/scheduler/order: CLI flag > deck directive > default.
-    let mode = resolve(
-        "mode",
-        args.mode,
-        target_settings.iter().map(|s| s.mode),
-        Mode::default(),
-    );
+    // scheduler/order are deck/session-level: CLI flag > deck directive >
+    // default. `mode` is now per-card (resolved at review time from the card's
+    // own `% mode:`), so only the CLI override is carried here.
     let scheduler = resolve(
         "scheduler",
         args.scheduler,
@@ -484,7 +481,7 @@ fn load_review_session(args: &ReviewArgs) -> Result<Option<ReviewSession>> {
     Ok(Some(ReviewSession {
         session,
         store,
-        mode,
+        mode_override: args.mode,
         label,
         decks,
         config,
@@ -517,7 +514,7 @@ fn review(args: ReviewArgs) -> Result<()> {
     let ReviewSession {
         session,
         store,
-        mode,
+        mode_override,
         label,
         decks,
         config,
@@ -533,7 +530,7 @@ fn review(args: ReviewArgs) -> Result<()> {
             store,
             addr,
             serve::ReviewOptions {
-                mode,
+                mode_override,
                 label,
                 decks: subject_paths(decks),
                 keys: config.keys,
@@ -552,7 +549,7 @@ fn review(args: ReviewArgs) -> Result<()> {
     }
 
     let ui_options = flash::tui::Options {
-        mode,
+        mode_override,
         max_typos: args.max_typos,
         deck_label: label,
         keys: config.keys,

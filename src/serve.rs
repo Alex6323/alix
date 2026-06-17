@@ -243,7 +243,8 @@ impl BrowseKeys {
 /// clean end-of-session.
 /// Everything a served review session needs besides the session and store.
 pub struct ReviewOptions {
-    pub mode: Mode,
+    /// CLI `--mode` override; `None` lets each card use its own mode.
+    pub mode_override: Option<Mode>,
     pub label: String,
     /// Subject → deck file path, for card removal.
     pub decks: HashMap<String, PathBuf>,
@@ -259,7 +260,7 @@ pub fn run_review(
     opts: ReviewOptions,
 ) -> Result<()> {
     let ReviewOptions {
-        mode,
+        mode_override,
         label,
         decks,
         keys: bindings,
@@ -275,7 +276,7 @@ pub fn run_review(
             (Method::Get, "/") => respond_html(request, REVIEW_HTML),
             (Method::Get, "/api/keys") => respond_json(request, &keys),
             (Method::Get, "/api/state") => {
-                respond_json(request, &state_dto(&session, &store, mode, &label))
+                respond_json(request, &state_dto(&session, &store, mode_override, &label))
             }
             (Method::Post, "/api/grade") => match read_grade(&mut request) {
                 Some(grade) => {
@@ -283,13 +284,13 @@ pub fn run_review(
                     if let Err(e) = store.save() {
                         eprintln!("warning: could not save progress: {e}");
                     }
-                    respond_json(request, &state_dto(&session, &store, mode, &label));
+                    respond_json(request, &state_dto(&session, &store, mode_override, &label));
                 }
                 None => respond_status(request, 400),
             },
             (Method::Post, "/api/skip") => {
                 session.skip();
-                respond_json(request, &state_dto(&session, &store, mode, &label));
+                respond_json(request, &state_dto(&session, &store, mode_override, &label));
             }
             (Method::Post, "/api/check") => {
                 // Grade the typed lines against the current card — exact for
@@ -302,6 +303,7 @@ pub fn run_review(
                 let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
                 let result = body.and_then(|body| {
                     let card = session.current()?;
+                    let mode = mode_override.or(card.mode).unwrap_or_default();
                     let tol = if mode == Mode::Typing { 0 } else { max_typos };
                     let results: Vec<LineResultDto> = card
                         .back
@@ -359,11 +361,11 @@ pub fn run_review(
                     let _ = store.save();
                     files.remove_block(&subject, line);
                 }
-                respond_json(request, &state_dto(&session, &store, mode, &label));
+                respond_json(request, &state_dto(&session, &store, mode_override, &label));
             }
             (Method::Post, "/api/restart") => {
                 session.restart(&store, now_ms());
-                respond_json(request, &state_dto(&session, &store, mode, &label));
+                respond_json(request, &state_dto(&session, &store, mode_override, &label));
             }
             _ => respond_status(request, 404),
         }
@@ -440,8 +442,10 @@ fn request_path(request: &Request) -> String {
 /// Builds the state payload from the live session and store. For choice mode it
 /// also builds the options, seeded by the card id so they are stable across the
 /// `/api/state` and `/api/choose` requests without any server-side caching.
-fn state_dto(session: &Session, store: &Store, mode: Mode, label: &str) -> StateDto {
+fn state_dto(session: &Session, store: &Store, mode_override: Option<Mode>, label: &str) -> StateDto {
     let card = session.current();
+    // CLI override wins; otherwise the current card's own mode, else default.
+    let mode = mode_override.or(card.and_then(|c| c.mode)).unwrap_or_default();
     let choices = if mode == Mode::Choice {
         card.and_then(|c| choice::build(c, session.cards(), c.id()).map(|q| q.options))
     } else {

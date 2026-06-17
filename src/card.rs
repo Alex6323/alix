@@ -4,6 +4,8 @@ use std::{hash::Hasher, sync::Arc};
 
 use twox_hash::XxHash64;
 
+use crate::answer::Mode;
+
 /// A single flashcard.
 #[derive(Clone, Debug)]
 pub struct Card {
@@ -26,6 +28,10 @@ pub struct Card {
     /// marked-up lines plus a hole index so their identity survives rewording
     /// the front and stays unique even when two holes contain the same text.
     pub hash_lines: Option<Vec<String>>,
+    /// Per-card answer-mode override (`% mode:` on the card, else the deck's
+    /// `% mode:`). `None` falls back to the CLI flag / built-in default. Not
+    /// part of the identity hash — mode is a review property, not content.
+    pub mode: Option<Mode>,
 }
 
 impl Card {
@@ -45,6 +51,7 @@ impl Card {
             note,
             line,
             hash_lines: None,
+            mode: None,
         }
     }
 
@@ -90,6 +97,15 @@ mod tests {
     fn id_ignores_front_and_note() {
         let a = card("subject1", "hello", &["world"], None);
         let b = card("subject1", "hi there", &["world"], Some("a note"));
+        assert_eq!(a.id(), b.id());
+    }
+
+    #[test]
+    fn id_ignores_mode() {
+        // Mode is a review property, not content — it must not change identity.
+        let mut a = card("subject1", "hello", &["world"], None);
+        let b = card("subject1", "hello", &["world"], None);
+        a.mode = Some(Mode::Typing);
         assert_eq!(a.id(), b.id());
     }
 

@@ -113,8 +113,9 @@ pub struct DeckInfo {
 
 /// Static settings of a review run.
 pub struct Options {
-    /// The answer mode.
-    pub mode: Mode,
+    /// CLI `--mode` override, applied to every card. `None` lets each card use
+    /// its own mode (card `% mode:` > deck `% mode:` > built-in default).
+    pub mode_override: Option<Mode>,
     /// Fuzzy-mode typo tolerance per line.
     pub max_typos: usize,
     /// Deck names shown in the header.
@@ -286,7 +287,10 @@ impl App {
             self.phase = Phase::Summary;
             return;
         };
-        self.phase = match self.options.mode {
+        // CLI override wins; otherwise the card's own mode (card > deck), else
+        // the built-in default.
+        let mode = self.options.mode_override.or(card.mode).unwrap_or_default();
+        self.phase = match mode {
             Mode::Typing => Phase::Typing {
                 validators: card.back.iter().map(|l| TypingValidator::new(l)).collect(),
                 line: 0,
