@@ -1,19 +1,20 @@
 //! Cloze (fill-in-the-blank) cards.
 //!
 //! A card whose front marker is `#?` (instead of `#`) is a cloze card: every
-//! `{...}` in its answer lines is a hole, and the card expands into one
+//! `{{...}}` in its answer lines is a hole, and the card expands into one
 //! sub-card per hole. Each sub-card shows the answer text with its hole
 //! blanked out (`____`) while the other holes are hidden (`[…]`), so no
 //! sub-card reveals its siblings' answers. The user produces only the
 //! blanked text.
 //!
-//! Braces are only special inside `#?` cards, so existing decks full of code
-//! like `func main() {}` are unaffected. Inside a cloze card, literal braces
-//! are written `\{` and `\}`.
+//! Only the doubled `{{` / `}}` are special; a lone `{` or `}` is literal, so a
+//! cloze card can hold code like `let p = Foo {};` untouched. A literal `{{`
+//! can be written `\{\{` if ever needed.
 //!
-//! Identity: a sub-card hashes the raw marked-up answer lines plus its hole
-//! index (see [`Card::hash_lines`]), so progress survives rewording the
-//! front, and two holes with identical text get distinct identities.
+//! Identity: a sub-card hashes the parsed structure of its answer lines (text
+//! plus hole contents, with the delimiters removed) plus its hole index (see
+//! [`Card::hash_lines`]), so progress survives rewording the front or changing
+//! the hole markup, and two holes with identical text get distinct identities.
 
 use std::sync::Arc;
 
@@ -51,25 +52,27 @@ pub fn parse_line(line: &str, lineno: usize) -> Result<Vec<Segment>, ParseError>
                     None => text.push(escaped),
                 }
             }
-            '{' => match hole {
-                Some(_) => return Err(ParseError::NestedClozeHole(lineno)),
-                None => {
-                    if !text.is_empty() {
-                        segments.push(Segment::Text(std::mem::take(&mut text)));
-                    }
-                    hole = Some(String::new());
+            // `{{` opens a hole; a lone `{` is literal.
+            '{' if chars.peek() == Some(&'{') => {
+                chars.next();
+                if hole.is_some() {
+                    return Err(ParseError::NestedClozeHole(lineno));
                 }
-            },
-            '}' => match hole.take() {
-                Some(h) => {
-                    if h.trim().is_empty() {
-                        return Err(ParseError::EmptyClozeHole(lineno));
-                    }
-                    segments.push(Segment::Hole(h));
+                if !text.is_empty() {
+                    segments.push(Segment::Text(std::mem::take(&mut text)));
                 }
-                // A stray closing brace outside a hole is literal text.
-                None => text.push('}'),
-            },
+                hole = Some(String::new());
+            }
+            // `}}` closes the open hole; a lone `}` (or `}}` outside a hole) is
+            // literal.
+            '}' if hole.is_some() && chars.peek() == Some(&'}') => {
+                chars.next();
+                let h = hole.take().unwrap();
+                if h.trim().is_empty() {
+                    return Err(ParseError::EmptyClozeHole(lineno));
+                }
+                segments.push(Segment::Hole(h));
+            }
             c => match &mut hole {
                 Some(h) => h.push(c),
                 None => text.push(c),
@@ -84,6 +87,25 @@ pub fn parse_line(line: &str, lineno: usize) -> Result<Vec<Segment>, ParseError>
         segments.push(Segment::Text(text));
     }
     Ok(segments)
+}
+
+/// The delimiter-free representation of a parsed line used for identity: text
+/// runs verbatim, each hole's content fenced by a unit-separator byte that
+/// can't occur in deck input. Hashing this instead of the raw `{{...}}` text
+/// means the hole markup can change without orphaning progress.
+fn hash_repr(segments: &[Segment]) -> String {
+    let mut out = String::new();
+    for segment in segments {
+        match segment {
+            Segment::Text(t) => out.push_str(t),
+            Segment::Hole(h) => {
+                out.push('\u{1f}');
+                out.push_str(h);
+                out.push('\u{1f}');
+            }
+        }
+    }
+    out
 }
 
 /// Expands a cloze card into one sub-card per hole.
@@ -111,8 +133,9 @@ pub fn expand(
         return Err(ParseError::ClozeWithoutHoles(line));
     }
 
-    // The raw marked-up lines are part of every sub-card's identity.
-    let raw_lines: Vec<String> = back.iter().map(|(_, text)| text.clone()).collect();
+    // Identity hashes the parsed structure of each line (text + hole contents,
+    // delimiters removed), so changing the hole markup never reshuffles ids.
+    let structure: Vec<String> = lines.iter().map(|segments| hash_repr(segments)).collect();
 
     let mut cards = Vec::with_capacity(total);
 
@@ -149,7 +172,7 @@ pub fn expand(
         // not by a counter.
         let front = front.to_string();
 
-        let mut hash_lines = raw_lines.clone();
+        let mut hash_lines = structure.clone();
         hash_lines.push(format!("#cloze:{hole_index}"));
 
         cards.push(Card {
@@ -190,7 +213,7 @@ mod tests {
     fn parse_line_with_holes() {
         assert_eq!(
             vec![text("To "), hole("be"), text(" or not to "), hole("be")],
-            parse_line("To {be} or not to {be}", 1).unwrap()
+            parse_line("To {{be}} or not to {{be}}", 1).unwrap()
         );
     }
 
@@ -198,17 +221,27 @@ mod tests {
     fn parse_line_hole_at_edges() {
         assert_eq!(
             vec![hole("a"), text(" mid "), hole("b")],
-            parse_line("{a} mid {b}", 1).unwrap()
+            parse_line("{{a}} mid {{b}}", 1).unwrap()
         );
     }
 
     #[test]
-    fn escaped_braces_are_literal() {
+    fn single_braces_are_literal() {
+        // Code with single braces needs no escaping in a cloze card.
         assert_eq!(
             vec![text("fn main() {}")],
-            parse_line("fn main() \\{\\}", 1).unwrap()
+            parse_line("fn main() {}", 1).unwrap()
         );
-        assert_eq!(vec![hole("a{b}c")], parse_line("{a\\{b\\}c}", 1).unwrap());
+        assert_eq!(
+            vec![text("let p = Foo { x: "), hole("1"), text(" };")],
+            parse_line("let p = Foo { x: {{1}} };", 1).unwrap()
+        );
+    }
+
+    #[test]
+    fn escaped_double_brace_is_literal() {
+        // `\{` escapes a brace, so a literal `{{` can still be written.
+        assert_eq!(vec![text("a {{ b")], parse_line("a \\{\\{ b", 1).unwrap());
     }
 
     #[test]
@@ -220,19 +253,19 @@ mod tests {
     fn parse_line_errors() {
         assert_eq!(
             Err(ParseError::UnclosedClozeHole(7)),
-            parse_line("oops {unclosed", 7)
+            parse_line("oops {{unclosed", 7)
         );
         assert_eq!(
             Err(ParseError::EmptyClozeHole(7)),
-            parse_line("an {} empty", 7)
+            parse_line("an {{}} empty", 7)
         );
         assert_eq!(
             Err(ParseError::EmptyClozeHole(7)),
-            parse_line("a {  } blank", 7)
+            parse_line("a {{  }} blank", 7)
         );
         assert_eq!(
             Err(ParseError::NestedClozeHole(7)),
-            parse_line("a {nested {hole}}", 7)
+            parse_line("a {{nested {{hole}}}}", 7)
         );
     }
 
@@ -242,7 +275,7 @@ mod tests {
 
     #[test]
     fn expand_single_hole() {
-        let back = vec![(2, "To be or not to {be}".to_string())];
+        let back = vec![(2, "To be or not to {{be}}".to_string())];
         let cards = expand(&subject(), "Complete the quote", &back, None, 1).unwrap();
         assert_eq!(1, cards.len());
         // The front is the author's prompt, unchanged.
@@ -253,7 +286,7 @@ mod tests {
 
     #[test]
     fn expand_multiple_holes() {
-        let back = vec![(2, "To {be} or not to {bee}".to_string())];
+        let back = vec![(2, "To {{be}} or not to {{bee}}".to_string())];
         let cards = expand(&subject(), "Quote", &back, Some("n"), 1).unwrap();
         assert_eq!(2, cards.len());
 
@@ -273,7 +306,7 @@ mod tests {
     /// otherwise reviewing one sub-card spoils the others.
     #[test]
     fn sibling_hole_content_never_leaks() {
-        let back = vec![(2, "a {alpha} b {beta} c {gamma}".to_string())];
+        let back = vec![(2, "a {{alpha}} b {{beta}} c {{gamma}}".to_string())];
         let cards = expand(&subject(), "f", &back, None, 1).unwrap();
         for card in &cards {
             let answer = &card.back[0];
@@ -291,8 +324,8 @@ mod tests {
     #[test]
     fn expand_across_lines() {
         let back = vec![
-            (2, "first {alpha} line".to_string()),
-            (3, "second {beta} line".to_string()),
+            (2, "first {{alpha}} line".to_string()),
+            (3, "second {{beta}} line".to_string()),
         ];
         let cards = expand(&subject(), "f", &back, None, 1).unwrap();
         assert_eq!(2, cards.len());
@@ -303,7 +336,7 @@ mod tests {
 
     #[test]
     fn identical_hole_texts_get_distinct_ids() {
-        let back = vec![(2, "To {be} or not to {be}".to_string())];
+        let back = vec![(2, "To {{be}} or not to {{be}}".to_string())];
         let cards = expand(&subject(), "Quote", &back, None, 1).unwrap();
         assert_eq!(2, cards.len());
         assert_ne!(cards[0].id(), cards[1].id());
@@ -311,12 +344,12 @@ mod tests {
 
     #[test]
     fn ids_survive_front_rewording_but_not_text_changes() {
-        let back = vec![(2, "a {b} c".to_string())];
+        let back = vec![(2, "a {{b}} c".to_string())];
         let v1 = expand(&subject(), "front one", &back, None, 1).unwrap();
         let v2 = expand(&subject(), "front two", &back, None, 5).unwrap();
         assert_eq!(v1[0].id(), v2[0].id());
 
-        let changed = vec![(2, "a {b} d".to_string())];
+        let changed = vec![(2, "a {{b}} d".to_string())];
         let v3 = expand(&subject(), "front one", &changed, None, 1).unwrap();
         assert_ne!(v1[0].id(), v3[0].id());
     }
@@ -324,6 +357,17 @@ mod tests {
     #[test]
     fn expand_without_holes_is_an_error() {
         let back = vec![(2, "no holes here".to_string())];
+        assert_eq!(
+            Err(ParseError::ClozeWithoutHoles(1)),
+            expand(&subject(), "f", &back, None, 1)
+        );
+    }
+
+    /// Single braces no longer make holes, so an old-style cloze answer now has
+    /// none (the hard switch — such decks must be migrated to `{{ }}`).
+    #[test]
+    fn single_brace_answer_has_no_holes() {
+        let back = vec![(2, "the {old} style".to_string())];
         assert_eq!(
             Err(ParseError::ClozeWithoutHoles(1)),
             expand(&subject(), "f", &back, None, 1)

@@ -130,24 +130,24 @@ never affects card progress.
 ### Cloze cards (fill in the blank)
 
 A front marked `#?` (no space) turns the card into a cloze card: every
-`{...}` in its answer lines is a hole, and the card expands into one card
+`{{...}}` in its answer lines is a hole, and the card expands into one card
 per hole. Each one shows the answer with that hole blanked out and the
 others filled in, and you only produce the hidden text:
 
 ```
 #? Complete the Rust declaration
-    let {mut} x: {u64} = 0;
+    let {{mut}} x: {{u64}} = 0;
 ```
 
 This makes two cards: `let ____ x: […] = 0;` (type `mut`) and
 `let […] x: ____ = 0;` (type `u64`). The asked hole shows `____`; the other
 holes are hidden as `[…]` so no card reveals its siblings' answers, and the
 session queue keeps sub-cards of the same source card apart whenever other
-cards are available. Braces are only special inside `#?` cards — code
-answers in plain cards like `func main() {}` are untouched.
-Inside a cloze card, write a literal brace as `\{` or `\}`. Progress of a
-cloze card survives rewording its front, but editing its answer text resets
-the affected holes.
+cards are available. Only the doubled `{{` / `}}` are special — a lone `{` or
+`}` is literal, so code like `let p = Foo {};` is fine in a cloze answer (write
+a literal `{{` as `\{\{` if you ever need one). Progress of a cloze card
+survives rewording its front and even a future change to the hole markup, but
+editing its answer text or hole contents resets the affected holes.
 
 ## Review
 

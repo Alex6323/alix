@@ -32,7 +32,8 @@ cards: a brief elaboration, a concrete example, a mnemonic, or why it matters \
 on its own `! ` line, after the answer lines.
 - A fill-in-the-blank (cloze) card starts with `#?` instead of `#`. The `#?` \
 line is a short instruction; the INDENTED answer line(s) below it hold the \
-full sentence, with each hidden span wrapped in {single curly braces}. The \
+full sentence, with each hidden span wrapped in {{double curly braces}}. A lone \
+single brace is literal, so code with `{}` is fine in a cloze answer. The \
 blanks live in the answer line, NEVER on the `#?` line. Use `#?` only when \
 there is a natural word to blank out; otherwise use a plain `#` card. Example \
 of one plain card followed by one cloze card:
@@ -41,7 +42,7 @@ of one plain card followed by one cloze card:
           ! This is what lets Rust free memory deterministically, with no
           ! garbage collector.
       #? Fill in the ownership rule about scope.
-          When the owner goes out of scope, the value is {dropped}.
+          When the owner goes out of scope, the value is {{dropped}}.
           ! \"Dropped\" means its destructor runs and its memory is freed.
 - `% ` lines are comments, ignored by the trainer.
 - To begin an answer line with a literal #, %, or !, escape it with a \
@@ -91,7 +92,7 @@ card must test something distinct. This is the most important fix.
 the answer.
 - Keep the EXACT same file format: the leading `%` comment lines, `# ` and \
 `#?` card fronts at column 0, indented answer lines, and indented `! ` notes. \
-A `#?` cloze card keeps its blanks ({like this}) in its indented answer line.
+A `#?` cloze card keeps its blanks ({{like this}}) in its indented answer line.
 - Preserve the good cards and their order; do not invent filler to hit a count.
 
 Output ONLY the improved deck — no commentary, no markdown code fences.
@@ -252,10 +253,10 @@ mod tests {
         assert!(p.contains("four layers"));
         assert!(!p.contains("{url}"));
         assert!(!p.contains("{max_cards}"));
-        // Cloze guidance must use single braces and keep the blank in the
+        // Cloze guidance must use double braces and keep the blank in the
         // answer, not on the `#?` line (the bug that broke real generations).
-        assert!(!p.contains("{{"));
-        assert!(p.contains("{dropped}"));
+        assert!(p.contains("{{double curly braces}}"));
+        assert!(p.contains("{{dropped}}"));
         assert!(p.contains("NEVER on the `#?` line"));
         assert!(p.contains("never write a front with no answer"));
         // Notes must be actively requested, not just described as optional.

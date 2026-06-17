@@ -6,7 +6,7 @@
 //! - `# <text>`  at column 0 starts a new card; the text is the front side. An
 //!   *indented* `#` is answer content (code comments, Rust attributes, markdown
 //!   headers), not a card front.
-//! - `#? <text>` at column 0 starts a cloze card; `{...}` in its answer lines
+//! - `#? <text>` at column 0 starts a cloze card; `{{...}}` in its answer lines
 //!   are holes (see the [`cloze`](crate::cloze) module).
 //! - `% <text>`  is a comment and ignored (any indentation).
 //! - `% link: <url>` is still a comment to the card parser, but the URL is
@@ -58,11 +58,11 @@ pub enum ParseError {
     FrontWithoutBack(usize),
     #[error("line {0}: card front is empty")]
     EmptyFront(usize),
-    #[error("line {0}: cloze card ('#?') has no {{...}} holes in its answer")]
+    #[error("line {0}: cloze card ('#?') has no {{{{...}}}} holes in its answer")]
     ClozeWithoutHoles(usize),
-    #[error("line {0}: empty cloze hole '{{}}'")]
+    #[error("line {0}: empty cloze hole '{{{{}}}}'")]
     EmptyClozeHole(usize),
-    #[error("line {0}: unclosed cloze hole (missing '}}'; use \\{{ for a literal brace)")]
+    #[error("line {0}: unclosed cloze hole (missing the closing '}}}}')")]
     UnclosedClozeHole(usize),
     #[error("line {0}: nested cloze hole")]
     NestedClozeHole(usize),
@@ -487,7 +487,7 @@ mod tests {
 
     #[test]
     fn multi_line_note_on_cloze_cards() {
-        let cards = parse_str("s", "#? f\n{a} b\n! one\n! two").unwrap();
+        let cards = parse_str("s", "#? f\n{{a}} b\n! one\n! two").unwrap();
         assert_eq!(Some("one\ntwo".to_string()), cards[0].note);
     }
 
@@ -545,7 +545,7 @@ mod tests {
 
     #[test]
     fn cloze_front_expands_to_sub_cards() {
-        let text = "#? Complete the quote\n\tTo {be} or not to {be}\n\t! Hamlet\n";
+        let text = "#? Complete the quote\n\tTo {{be}} or not to {{be}}\n\t! Hamlet\n";
         let cards = parse_str("s", text).unwrap();
         assert_eq!(2, cards.len());
         assert_eq!("Complete the quote", cards[0].front);
@@ -584,11 +584,11 @@ mod tests {
         );
         assert_eq!(
             Err(ParseError::UnclosedClozeHole(3)),
-            parse_str("s", "#? front\n\tok {fine}\n\tbad {oops\n")
+            parse_str("s", "#? front\n\tok {{fine}}\n\tbad {{oops\n")
         );
         assert_eq!(
             Err(ParseError::EmptyClozeHole(2)),
-            parse_str("s", "#? front\n\tbad {} here\n")
+            parse_str("s", "#? front\n\tbad {{}} here\n")
         );
     }
 }

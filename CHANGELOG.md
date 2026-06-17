@@ -37,6 +37,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   silently.
 
 ### Changed
+- **Breaking — cloze hole syntax is now `{{ }}`** (was `{ }`). A lone `{` or `}`
+  is literal inside `#?` cards, so code with braces needs no escaping. Cloze
+  identity is now hashed from the parsed structure (delimiters removed) rather
+  than the raw braced text, so existing cloze cards' progress is reset once — but
+  future markup changes won't cost progress again. Existing `#?` decks must be
+  rewritten `{x}` → `{{x}}` or they fail to load (they'd have no holes).
 - Note rendering moved into a frontend-independent `render` module that emits a
   structured model (`NoteUnit`: sentence-split prose or verbatim code blocks);
   the TUI now only paints it. No change to how notes look — this lets a future
@@ -47,6 +53,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Deck-level directives (`% mode/order/scheduler`) must now sit in the deck
   header, before the first card; a `% key: value` after a card front is treated
   as a per-card override.
+- `flash check` no longer fails on warnings: duplicate-answer warnings are
+  advisory, so it exits non-zero only when a deck won't parse, and prints a
+  `N error(s), M warning(s)` summary.
 - Web review now shows the expected answer whenever a typed line differed —
   including a fuzzy pass within tolerance — matching the TUI, so typos aren't
   reinforced.

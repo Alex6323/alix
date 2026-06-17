@@ -1058,11 +1058,12 @@ fn val_name<T: clap::ValueEnum>(value: T) -> String {
 }
 
 fn check(decks: Vec<PathBuf>) -> Result<()> {
-    let mut problems = 0usize;
+    let mut errors = 0usize;
+    let mut warnings = 0usize;
     for path in &decks {
         match Deck::load(path) {
             Err(e) => {
-                problems += 1;
+                errors += 1;
                 eprintln!("error: {e}");
             }
             Ok(deck) => {
@@ -1080,7 +1081,7 @@ fn check(decks: Vec<PathBuf>) -> Result<()> {
                     println!("  settings: {}", declared.join(", "));
                 }
                 for (a, b) in deck.duplicates() {
-                    problems += 1;
+                    warnings += 1;
                     eprintln!(
                         "warning: {}: cards at lines {} and {} have identical answers \
                          and share their learning progress",
@@ -1090,8 +1091,13 @@ fn check(decks: Vec<PathBuf>) -> Result<()> {
             }
         }
     }
-    if problems > 0 {
-        bail!("{problems} problem(s) found");
+    // Warnings (e.g. duplicate answers) are advisory and don't fail the check;
+    // only a deck that won't parse is an error.
+    if errors > 0 || warnings > 0 {
+        eprintln!("{errors} error(s), {warnings} warning(s)");
+    }
+    if errors > 0 {
+        bail!("{errors} error(s) found");
     }
     Ok(())
 }
