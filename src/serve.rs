@@ -31,10 +31,13 @@ use crate::{
     choice,
     config::{Bindings, BrowseBindings, Key, KeyPattern},
     deck,
+    picker,
+    recent::RecentDecks,
     render::{self, NoteUnit},
     scheduler::Grade,
     session::{Session, now_ms},
     store::Store,
+    time::humanize_ms,
 };
 
 /// Per-deck data the server needs to apply a removal: the file path, plus the
@@ -121,7 +124,9 @@ struct CardDto {
 /// The current review state sent to the browser after every action.
 #[derive(Debug, Serialize)]
 struct StateDto {
-    /// The card up for review, or `null` when the session is finished.
+    /// `"select"` while choosing decks (no session yet), else `"review"`.
+    phase: &'static str,
+    /// The card up for review, or `null` when finished or in the select phase.
     card: Option<CardDto>,
     /// For `choice` mode, the multiple-choice options (one is correct); `null`
     /// otherwise, or when the card has too few distractors (the page then
@@ -141,11 +146,28 @@ struct StateDto {
     label: String,
 }
 
-/// The payload of the browse view: every (remaining) card, in deck order.
+/// The payload of the browse view: every (remaining) card, in deck order, or
+/// an empty list in the `select` phase.
 #[derive(Debug, Serialize)]
 struct BrowseDto {
+    /// `"select"` while choosing decks, else `"browse"`.
+    phase: &'static str,
     label: String,
     cards: Vec<CardDto>,
+}
+
+/// The deck-selection catalog sent to the browser picker.
+#[derive(Debug, Serialize)]
+struct DeckListDto {
+    decks: Vec<DeckItemDto>,
+}
+
+/// One deck offered in the selection screen: its file name and a dim meta suffix
+/// (last-used age), mirroring the TUI picker rows.
+#[derive(Debug, Serialize)]
+struct DeckItemDto {
+    name: String,
+    meta: Option<String>,
 }
 
 /// The result of answering a choice card: which option was picked, which is
@@ -242,67 +264,145 @@ impl BrowseKeys {
     }
 }
 
-/// Serves a review session at `addr` until the process is stopped. Grades are
-/// applied to `session` and saved to `store` after each one. `decks` (subject →
-/// file path) lets the remove action delete a card from its deck file and prune
-/// its progress; unlike the TUI, removal is immediate, since the server has no
-/// clean end-of-session.
-/// Everything a served review session needs besides the session and store.
+/// Global options for a served review, independent of which decks are chosen
+/// (the per-session label and deck paths come from [`SessionBuild`]).
 pub struct ReviewOptions {
     /// CLI `--mode` override; `None` lets each card use its own mode.
     pub mode_override: Option<Mode>,
-    pub label: String,
-    /// Subject → deck file path, for card removal.
-    pub decks: HashMap<String, PathBuf>,
     pub keys: Bindings,
     /// Fuzzy-mode typo tolerance per line.
     pub max_typos: usize,
 }
 
+/// A review session ready to serve: the session, its header label, and the
+/// subject → deck file path map used for card removal. Produced by the caller's
+/// builder closure when decks are chosen (on the CLI or in the browser picker).
+pub struct SessionBuild {
+    pub session: Session,
+    pub label: String,
+    pub decks: HashMap<String, PathBuf>,
+}
+
+/// A browse card list ready to serve, with its label and deck paths.
+pub struct CardsBuild {
+    pub cards: Vec<Card>,
+    pub label: String,
+    pub decks: HashMap<String, PathBuf>,
+}
+
+/// The server's live review state once decks are chosen. Its absence (`None`)
+/// means the page is in the deck-selection phase.
+struct Reviewing {
+    session: Session,
+    label: String,
+    files: DeckFiles,
+    images: HashMap<String, PathBuf>,
+}
+
+impl Reviewing {
+    fn new(build: SessionBuild) -> Self {
+        let images = collect_images(build.session.cards());
+        Self {
+            session: build.session,
+            label: build.label,
+            files: DeckFiles::new(build.decks),
+            images,
+        }
+    }
+}
+
+/// Serves review at `addr` until the process is stopped. When `initial` is
+/// `None` the server opens at the in-browser deck-selection screen; picking
+/// decks (`POST /api/select`) calls `build` to construct a session in place.
+/// `build` borrows the shared `store` and `recent`, so all sessions write one
+/// history and update the recent-decks list, exactly like the CLI.
 pub fn run_review(
-    mut session: Session,
+    initial: Option<SessionBuild>,
     mut store: Store,
+    mut recent: RecentDecks,
+    decks_dir: PathBuf,
     addr: SocketAddr,
     opts: ReviewOptions,
+    mut build: impl FnMut(Vec<PathBuf>, &Store, &mut RecentDecks) -> Result<SessionBuild>,
 ) -> Result<()> {
     let ReviewOptions {
         mode_override,
-        label,
-        decks,
         keys: bindings,
         max_typos,
     } = opts;
-    let mut files = DeckFiles::new(decks);
     let keys = ReviewKeys::from(&bindings);
-    let images = collect_images(session.cards());
+    let mut reviewing = initial.map(Reviewing::new);
     let server = Server::http(addr).map_err(|e| anyhow!("cannot start server on {addr}: {e}"))?;
     for mut request in server.incoming_requests() {
         let method = request.method().clone();
         let path = request_path(&request);
         match (&method, path.as_str()) {
             (Method::Get, "/") => respond_html(request, REVIEW_HTML),
-            (Method::Get, key) if key.starts_with("/img/") => {
-                serve_image(request, &images, &key["/img/".len()..])
-            }
             (Method::Get, "/api/keys") => respond_json(request, &keys),
-            (Method::Get, "/api/state") => {
-                respond_json(request, &state_dto(&session, &store, mode_override, &label))
+            (Method::Get, "/api/decks") => {
+                respond_json(request, &deck_catalog(&decks_dir, &recent))
             }
-            (Method::Post, "/api/grade") => match read_grade(&mut request) {
-                Some(grade) => {
-                    session.grade(&mut store, grade, now_ms());
-                    if let Err(e) = store.save() {
-                        eprintln!("warning: could not save progress: {e}");
-                    }
-                    respond_json(request, &state_dto(&session, &store, mode_override, &label));
-                }
-                None => respond_status(request, 400),
+            (Method::Get, key) if key.starts_with("/img/") => match &reviewing {
+                Some(r) => serve_image(request, &r.images, &key["/img/".len()..]),
+                None => respond_status(request, 404),
             },
+            (Method::Get, "/api/state") => {
+                respond_json(request, &review_state(reviewing.as_ref(), &store, mode_override))
+            }
+            (Method::Post, "/api/select") => {
+                match select_decks(&mut request, &decks_dir, &recent) {
+                    Some(paths) => match build(paths, &store, &mut recent) {
+                        Ok(b) => {
+                            reviewing = Some(Reviewing::new(b));
+                            respond_json(
+                                request,
+                                &review_state(reviewing.as_ref(), &store, mode_override),
+                            );
+                        }
+                        Err(e) => {
+                            eprintln!("warning: could not load the selected decks: {e}");
+                            respond_status(request, 400);
+                        }
+                    },
+                    None => respond_status(request, 400),
+                }
+            }
+            (Method::Post, "/api/deselect") => {
+                reviewing = None;
+                respond_json(request, &review_state(reviewing.as_ref(), &store, mode_override));
+            }
+            (Method::Post, "/api/grade") => {
+                let Some(r) = reviewing.as_mut() else {
+                    respond_status(request, 409);
+                    continue;
+                };
+                match read_grade(&mut request) {
+                    Some(grade) => {
+                        r.session.grade(&mut store, grade, now_ms());
+                        if let Err(e) = store.save() {
+                            eprintln!("warning: could not save progress: {e}");
+                        }
+                        respond_json(
+                            request,
+                            &review_state(reviewing.as_ref(), &store, mode_override),
+                        );
+                    }
+                    None => respond_status(request, 400),
+                }
+            }
             (Method::Post, "/api/skip") => {
-                session.skip();
-                respond_json(request, &state_dto(&session, &store, mode_override, &label));
+                let Some(r) = reviewing.as_mut() else {
+                    respond_status(request, 409);
+                    continue;
+                };
+                r.session.skip();
+                respond_json(request, &review_state(reviewing.as_ref(), &store, mode_override));
             }
             (Method::Post, "/api/check") => {
+                let Some(r) = reviewing.as_ref() else {
+                    respond_status(request, 409);
+                    continue;
+                };
                 // Grade the typed lines against the current card — exact for
                 // typing (tolerance 0), typo-tolerant for fuzzy. Like choose,
                 // this only checks; the grade is applied on Continue.
@@ -312,7 +412,7 @@ pub fn run_review(
                 }
                 let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
                 let result = body.and_then(|body| {
-                    let card = session.current()?;
+                    let card = r.session.current()?;
                     let mode = mode_override.or(card.mode).unwrap_or_default();
                     let tol = if mode == Mode::Typing { 0 } else { max_typos };
                     let results: Vec<LineResultDto> = card
@@ -339,13 +439,17 @@ pub fn run_review(
                 }
             }
             (Method::Post, "/api/choose") => {
+                let Some(r) = reviewing.as_ref() else {
+                    respond_status(request, 409);
+                    continue;
+                };
                 // Just reports which option is correct (the question is rebuilt
                 // from the card id, so it matches the one served). The grade is
                 // applied later via /api/grade on Continue, so the session stays
                 // on this card during the result — Remove still works on it.
                 let picked = read_index(&mut request).and_then(|chosen| {
-                    let card = session.current()?.clone();
-                    let correct = choice::build(&card, session.cards(), card.id())?.correct;
+                    let card = r.session.current()?.clone();
+                    let correct = choice::build(&card, r.session.cards(), card.id())?.correct;
                     Some((chosen, correct))
                 });
                 match picked {
@@ -361,7 +465,11 @@ pub fn run_review(
                 }
             }
             (Method::Post, "/api/remove") => {
-                let dropped = session.remove_current();
+                let Some(r) = reviewing.as_mut() else {
+                    respond_status(request, 409);
+                    continue;
+                };
+                let dropped = r.session.remove_current();
                 if let Some(first) = dropped.first() {
                     let subject = first.subject.to_string();
                     let line = first.line;
@@ -369,13 +477,17 @@ pub fn run_review(
                         store.remove(card.id());
                     }
                     let _ = store.save();
-                    files.remove_block(&subject, line);
+                    r.files.remove_block(&subject, line);
                 }
-                respond_json(request, &state_dto(&session, &store, mode_override, &label));
+                respond_json(request, &review_state(reviewing.as_ref(), &store, mode_override));
             }
             (Method::Post, "/api/restart") => {
-                session.restart(&store, now_ms());
-                respond_json(request, &state_dto(&session, &store, mode_override, &label));
+                let Some(r) = reviewing.as_mut() else {
+                    respond_status(request, 409);
+                    continue;
+                };
+                r.session.restart(&store, now_ms());
+                respond_json(request, &review_state(reviewing.as_ref(), &store, mode_override));
             }
             _ => respond_status(request, 404),
         }
@@ -383,41 +495,89 @@ pub fn run_review(
     Ok(())
 }
 
-/// Serves a walk through `cards` at `addr`. The only thing it writes is card
-/// removal: the remove action deletes the card from its deck file (`decks` maps
-/// subject → path) and prunes its progress in `store`.
-pub fn run_browse(
+/// The server's live browse state once decks are chosen. Its absence (`None`)
+/// means the deck-selection phase.
+struct Browsing {
     cards: Vec<Card>,
     label: String,
-    addr: SocketAddr,
-    decks: HashMap<String, PathBuf>,
+    files: DeckFiles,
+    images: HashMap<String, PathBuf>,
+}
+
+impl Browsing {
+    fn new(build: CardsBuild) -> Self {
+        let images = collect_images(&build.cards);
+        Self {
+            cards: build.cards,
+            label: build.label,
+            files: DeckFiles::new(build.decks),
+            images,
+        }
+    }
+}
+
+/// Serves a read-only walk through cards at `addr`. Like [`run_review`], with
+/// `initial` `None` it opens at the deck-selection screen; `POST /api/select`
+/// builds the card list via `build`. The only thing it writes is card removal
+/// (deletes the card from its deck file and prunes its progress in `store`).
+pub fn run_browse(
+    initial: Option<CardsBuild>,
     mut store: Store,
+    mut recent: RecentDecks,
+    decks_dir: PathBuf,
+    addr: SocketAddr,
     bindings: BrowseBindings,
+    mut build: impl FnMut(Vec<PathBuf>, &mut RecentDecks) -> Result<CardsBuild>,
 ) -> Result<()> {
-    let mut cards = cards;
-    let mut files = DeckFiles::new(decks);
     let keys = BrowseKeys::from(&bindings);
-    let images = collect_images(&cards);
+    let mut browsing = initial.map(Browsing::new);
     let server = Server::http(addr).map_err(|e| anyhow!("cannot start server on {addr}: {e}"))?;
     for mut request in server.incoming_requests() {
         let method = request.method().clone();
         let path = request_path(&request);
         match (&method, path.as_str()) {
             (Method::Get, "/") => respond_html(request, BROWSE_HTML),
-            (Method::Get, key) if key.starts_with("/img/") => {
-                serve_image(request, &images, &key["/img/".len()..])
-            }
             (Method::Get, "/api/keys") => respond_json(request, &keys),
-            (Method::Get, "/api/cards") => respond_json(request, &browse_payload(&label, &cards)),
+            (Method::Get, "/api/decks") => {
+                respond_json(request, &deck_catalog(&decks_dir, &recent))
+            }
+            (Method::Get, key) if key.starts_with("/img/") => match &browsing {
+                Some(b) => serve_image(request, &b.images, &key["/img/".len()..]),
+                None => respond_status(request, 404),
+            },
+            (Method::Get, "/api/cards") => respond_json(request, &browse_payload(browsing.as_ref())),
+            (Method::Post, "/api/select") => {
+                match select_decks(&mut request, &decks_dir, &recent) {
+                    Some(paths) => match build(paths, &mut recent) {
+                        Ok(b) => {
+                            browsing = Some(Browsing::new(b));
+                            respond_json(request, &browse_payload(browsing.as_ref()));
+                        }
+                        Err(e) => {
+                            eprintln!("warning: could not load the selected decks: {e}");
+                            respond_status(request, 400);
+                        }
+                    },
+                    None => respond_status(request, 400),
+                }
+            }
+            (Method::Post, "/api/deselect") => {
+                browsing = None;
+                respond_json(request, &browse_payload(browsing.as_ref()));
+            }
             (Method::Post, "/api/remove") => {
+                let Some(b) = browsing.as_mut() else {
+                    respond_status(request, 409);
+                    continue;
+                };
                 if let Some(index) = read_index(&mut request)
-                    && index < cards.len()
+                    && index < b.cards.len()
                 {
-                    let subject = cards[index].subject.to_string();
-                    let line = cards[index].line;
+                    let subject = b.cards[index].subject.to_string();
+                    let line = b.cards[index].line;
                     // Drop the card and any cloze siblings, pruning their
                     // progress as they go.
-                    cards.retain(|card| {
+                    b.cards.retain(|card| {
                         let sibling = card.subject.as_ref() == subject && card.line == line;
                         if sibling {
                             store.remove(card.id());
@@ -425,9 +585,9 @@ pub fn run_browse(
                         !sibling
                     });
                     let _ = store.save();
-                    files.remove_block(&subject, line);
+                    b.files.remove_block(&subject, line);
                 }
-                respond_json(request, &browse_payload(&label, &cards));
+                respond_json(request, &browse_payload(browsing.as_ref()));
             }
             _ => respond_status(request, 404),
         }
@@ -435,11 +595,20 @@ pub fn run_browse(
     Ok(())
 }
 
-/// Serializes the current browse cards for the page.
-fn browse_payload(label: &str, cards: &[Card]) -> BrowseDto {
-    BrowseDto {
-        label: label.to_string(),
-        cards: cards.iter().map(card_dto).collect(),
+/// Serializes the current browse phase for the page: the cards in browse phase,
+/// or an empty list flagged `phase: "select"` for the deck-selection screen.
+fn browse_payload(browsing: Option<&Browsing>) -> BrowseDto {
+    match browsing {
+        Some(b) => BrowseDto {
+            phase: "browse",
+            label: b.label.clone(),
+            cards: b.cards.iter().map(card_dto).collect(),
+        },
+        None => BrowseDto {
+            phase: "select",
+            label: "select decks".to_string(),
+            cards: Vec::new(),
+        },
     }
 }
 
@@ -453,10 +622,29 @@ fn request_path(request: &Request) -> String {
         .to_string()
 }
 
-/// Builds the state payload from the live session and store. For choice mode it
-/// also builds the options, seeded by the card id so they are stable across the
-/// `/api/state` and `/api/choose` requests without any server-side caching.
-fn state_dto(session: &Session, store: &Store, mode_override: Option<Mode>, label: &str) -> StateDto {
+/// Builds the state payload. In the select phase (`reviewing` is `None`) it
+/// reports `phase: "select"` with no card; otherwise it serializes the live
+/// session and store. For choice mode it also builds the options, seeded by the
+/// card id so they are stable across the `/api/state` and `/api/choose` requests
+/// without any server-side caching.
+fn review_state(reviewing: Option<&Reviewing>, store: &Store, mode_override: Option<Mode>) -> StateDto {
+    let Some(r) = reviewing else {
+        return StateDto {
+            phase: "select",
+            card: None,
+            choices: None,
+            mode: mode_name(Mode::default()),
+            remaining: 0,
+            initial: 0,
+            reviews: 0,
+            passed: 0,
+            failed: 0,
+            histogram: [0; 6],
+            finished: false,
+            label: "select decks".to_string(),
+        };
+    };
+    let session = &r.session;
     let card = session.current();
     // CLI override wins; otherwise the current card's own mode, else default.
     let mode = mode_override.or(card.and_then(|c| c.mode)).unwrap_or_default();
@@ -466,6 +654,7 @@ fn state_dto(session: &Session, store: &Store, mode_override: Option<Mode>, labe
         None
     };
     StateDto {
+        phase: "review",
         card: card.map(card_dto),
         choices,
         mode: mode_name(mode),
@@ -476,8 +665,57 @@ fn state_dto(session: &Session, store: &Store, mode_override: Option<Mode>, labe
         failed: session.stats.failed,
         histogram: session.stage_histogram(store),
         finished: session.is_finished(),
-        label: label.to_string(),
+        label: r.label.clone(),
     }
+}
+
+/// Builds the deck-selection catalog (recent decks first, then `decks_dir`),
+/// formatting the last-used age like the TUI picker meta.
+fn deck_catalog(decks_dir: &Path, recent: &RecentDecks) -> DeckListDto {
+    let now = now_ms();
+    let decks = picker::catalog(decks_dir, recent)
+        .into_iter()
+        .map(|e| DeckItemDto {
+            name: e.name,
+            meta: match e.last_used_ms {
+                Some(ts) if ts <= now => Some(format!("· {} ago", humanize_ms(now - ts))),
+                Some(_) => Some("· recent".to_string()),
+                None => None,
+            },
+        })
+        .collect();
+    DeckListDto { decks }
+}
+
+/// Parses a `{"decks":[name,…]}` selection and resolves each name to its deck
+/// path via the live catalog. Returns `None` (→ 400) for an empty or malformed
+/// body, or any name not in the catalog — so no filesystem path is ever built
+/// from request input, keeping selection safe under `--lan`.
+fn select_decks(
+    request: &mut Request,
+    decks_dir: &Path,
+    recent: &RecentDecks,
+) -> Option<Vec<PathBuf>> {
+    #[derive(Deserialize)]
+    struct Body {
+        decks: Vec<String>,
+    }
+    let body: Body = serde_json::from_reader(request.as_reader()).ok()?;
+    if body.decks.is_empty() {
+        return None;
+    }
+    let known: HashMap<String, PathBuf> = picker::catalog(decks_dir, recent)
+        .into_iter()
+        .map(|e| (e.name, e.path))
+        .collect();
+    resolve_names(body.decks, &known)
+}
+
+/// Maps each requested deck name to its catalog path. Returns `None` if any name
+/// is not in the catalog, so an unknown or crafted name is rejected wholesale
+/// rather than reaching the filesystem.
+fn resolve_names(names: Vec<String>, known: &HashMap<String, PathBuf>) -> Option<Vec<PathBuf>> {
+    names.into_iter().map(|n| known.get(&n).cloned()).collect()
 }
 
 /// Serializes a card for the browser, structuring its note via the shared
@@ -684,6 +922,43 @@ mod tests {
         assert_eq!(content_type(Path::new("a.jpeg")), "image/jpeg");
         assert_eq!(content_type(Path::new("a.svg")), "image/svg+xml");
         assert_eq!(content_type(Path::new("a.bin")), "application/octet-stream");
+    }
+
+    #[test]
+    fn resolve_names_rejects_unknown_deck() {
+        let mut known = HashMap::new();
+        known.insert("a.txt".to_string(), PathBuf::from("/decks/a.txt"));
+        known.insert("b.txt".to_string(), PathBuf::from("/decks/b.txt"));
+        // All known -> resolves to their catalog paths.
+        assert_eq!(
+            resolve_names(vec!["b.txt".to_string(), "a.txt".to_string()], &known),
+            Some(vec![
+                PathBuf::from("/decks/b.txt"),
+                PathBuf::from("/decks/a.txt")
+            ])
+        );
+        // One unknown name (e.g. a traversal attempt) rejects the whole request.
+        assert_eq!(
+            resolve_names(vec!["a.txt".to_string(), "../etc/passwd".to_string()], &known),
+            None
+        );
+    }
+
+    #[test]
+    fn browse_payload_select_phase_has_no_cards() {
+        let dto = browse_payload(None);
+        assert_eq!(dto.phase, "select");
+        assert!(dto.cards.is_empty());
+    }
+
+    #[test]
+    fn review_state_select_phase_has_no_card() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path().join("p.json")).unwrap();
+        let dto = review_state(None, &store, None);
+        assert_eq!(dto.phase, "select");
+        assert!(dto.card.is_none());
+        assert!(!dto.finished);
     }
 
     #[test]

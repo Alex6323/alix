@@ -187,6 +187,27 @@
   .summary .row { display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--line); color: var(--dim); }
   .summary .row b { color: var(--ink); font-family: var(--mono); font-weight: 600; }
 
+  /* ── deck-selection screen ────────────────────────────────────────── */
+  .select { width: var(--card-w); text-align: left; animation: deal 0.3s both; }
+  .select .lede { font-family: var(--mono); color: var(--bolt); font-size: 0.7rem; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 16px; }
+  .select .msg { color: var(--dim); }
+  .deck-filter { width: 100%; box-sizing: border-box; margin-bottom: 12px; padding: 11px 14px; background: rgba(0,0,0,0.25); border: 1px solid var(--line); border-radius: 11px; color: var(--ink); font: inherit; font-size: 0.95rem; }
+  .deck-filter::placeholder { color: var(--dim); }
+  .deck-filter:focus { outline: none; border-color: var(--bolt); }
+  .decklist { display: flex; flex-direction: column; gap: 8px; max-height: 62vh; overflow-y: auto; scrollbar-width: none; }
+  .decklist::-webkit-scrollbar { width: 0; }
+  .deckrow { display: flex; align-items: center; gap: 12px; padding: 12px 14px; min-height: 48px; border: 1px solid var(--line); border-radius: 11px; cursor: pointer; transition: border-color 0.12s, background 0.12s; }
+  .deckrow:hover { border-color: var(--bolt); }
+  .deckrow:focus { outline: none; border-color: var(--bolt); box-shadow: 0 0 0 2px rgba(125,249,232,0.35); }
+  .deckrow .box { flex: none; width: 18px; height: 18px; border: 1px solid var(--dim); border-radius: 5px; }
+  .deckrow.on { border-color: var(--bolt); background: rgba(125,249,232,0.06); }
+  .deckrow.on .box { background: var(--bolt); border-color: var(--bolt); position: relative; }
+  .deckrow.on .box::after { content: "✓"; position: absolute; inset: 0; display: grid; place-items: center; color: var(--void); font-size: 0.8rem; font-weight: 700; }
+  .deckrow .name { flex: 1; }
+  .deckrow .meta { font-family: var(--mono); font-size: 0.74rem; color: var(--dim); }
+  .chip:disabled { opacity: 0.4; cursor: default; }
+  .leave-msg { align-self: center; color: var(--again); font-size: 0.85rem; }
+
   /* ── legend: compact, tappable, doubles as the keymap ─────────────── */
   .legend { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
   /* chips centered on the viewport (= card) centerline; score pinned right */
@@ -245,6 +266,7 @@
 let state = null;     // last StateDto
 let revealed = 0;     // back lines shown for the current card
 let feedback = null;  // choice result being shown ({chosen, correct, passed})
+let confirmingLeave = false; // showing the "session not finished" leave prompt
 let KEYS = {};        // configured key bindings, from /api/keys
 
 const stage = document.getElementById("stage");
@@ -262,6 +284,23 @@ function grade(g)  { if (g === "easy") zap(); api("/api/grade", post({ grade: g 
 function skip()    { api("/api/skip", post({})).then(apply); }
 function remove()  { api("/api/remove", post({})).then(apply); }
 function restart() { api("/api/restart", post({})).then(apply); }
+function select(names) { api("/api/select", post({ decks: names })).then(apply); }
+function deselect() { confirmingLeave = false; menu.classList.remove("open"); api("/api/deselect", post({})).then(apply); }
+
+// Returning to the picker mid-session abandons the cards still queued, so warn
+// first; a finished session (or the select phase) leaves straight away.
+function leaveSession() {
+  if (!state || state.phase !== "review" || state.finished) { deselect(); return; }
+  confirmingLeave = true;
+  renderLeaveConfirm();
+}
+function cancelLeave() { confirmingLeave = false; render(); }
+function renderLeaveConfirm() {
+  legend.innerHTML = "";
+  legend.appendChild(el("span", "leave-msg", `Session not finished — ${state.remaining} card${state.remaining === 1 ? "" : "s"} left.`));
+  chip("Leave anyway", "again", deselect, "enter");
+  chip("Stay", "primary", cancelLeave, "esc");
+}
 
 function apply(s) { state = s; revealed = 0; feedback = null; render(); }
 function isChoice() { return state.mode === "choice" && state.choices; }
@@ -300,17 +339,94 @@ function label(binds) {
 }
 
 function render() {
+  stage.innerHTML = "";
+  legend.innerHTML = "";
+  menu.classList.remove("open");
+
+  if (state.phase === "select") { renderSelect(); return; }
+
   deckEl.textContent = state.label;
   histEl.textContent = state.histogram.join("|");
   scoreEl.innerHTML = `<b>${state.passed}✓</b> <s>${state.failed}✗</s><span class="left">${state.remaining}↓</span>`;
-
-  menu.classList.remove("open");
   menuWrap.style.display = state.finished ? "none" : "";
 
-  stage.innerHTML = "";
-  legend.innerHTML = "";
   if (state.finished) renderSummary();
   else renderCard();
+}
+
+// The deck-selection screen: a checklist of available decks + a Start button.
+async function renderSelect() {
+  deckEl.textContent = "select decks";
+  histEl.textContent = "";
+  scoreEl.innerHTML = "";
+  menuWrap.style.display = "none";
+
+  const data = await api("/api/decks");
+  const wrap = el("div", "select");
+  wrap.appendChild(el("div", "lede", "choose decks to study"));
+  if (!data.decks.length) {
+    wrap.appendChild(el("div", "msg", "No decks found. Add .txt decks to your decks folder."));
+    stage.appendChild(wrap);
+    return;
+  }
+
+  const filter = el("input", "deck-filter");
+  filter.type = "text";
+  filter.placeholder = "filter decks…";
+  filter.autocomplete = "off";
+  wrap.appendChild(filter);
+
+  const chosen = new Set();
+  const startChip = el("button", "chip primary", "Start");
+  startChip.appendChild(el("span", "k", "enter"));
+  startChip.disabled = true;
+  startChip.addEventListener("click", () => { if (chosen.size) select([...chosen]); });
+  const toggle = (row, name) => {
+    if (chosen.has(name)) chosen.delete(name); else chosen.add(name);
+    row.classList.toggle("on");
+    startChip.disabled = chosen.size === 0;
+  };
+
+  const list = el("div", "decklist");
+  const rows = [];
+  for (const d of data.decks) {
+    const row = el("div", "deckrow");
+    row.tabIndex = 0;
+    row.appendChild(el("span", "box"));
+    row.appendChild(el("span", "name", d.name));
+    if (d.meta) row.appendChild(el("span", "meta", d.meta));
+    row.addEventListener("click", () => toggle(row, d.name));
+    rows.push({ row, name: d.name.toLowerCase() });
+    list.appendChild(row);
+  }
+  wrap.appendChild(list);
+  stage.appendChild(wrap);
+  legend.appendChild(startChip);
+
+  const visible = () => rows.filter(r => r.row.style.display !== "none");
+
+  // Substring filter, like the TUI picker; toggled selections survive hiding.
+  filter.addEventListener("input", () => {
+    const q = filter.value.trim().toLowerCase();
+    for (const { row, name } of rows) row.style.display = !q || name.includes(q) ? "" : "none";
+  });
+
+  // ↑/↓ move between the filter box and the visible rows; Space toggles a
+  // focused row (Enter still starts, handled globally).
+  filter.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown") { e.preventDefault(); const v = visible(); if (v.length) v[0].row.focus(); }
+  });
+  list.addEventListener("keydown", (e) => {
+    const row = e.target.closest(".deckrow");
+    if (!row) return;
+    const v = visible();
+    const idx = v.findIndex(r => r.row === row);
+    if (e.key === "ArrowDown") { e.preventDefault(); if (idx < v.length - 1) v[idx + 1].row.focus(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); if (idx > 0) v[idx - 1].row.focus(); else filter.focus(); }
+    else if (e.key === " ") { e.preventDefault(); toggle(row, row.querySelector(".name").textContent); }
+  });
+
+  filter.focus(); // ready to type-to-filter immediately
 }
 
 function renderCard() {
@@ -507,18 +623,12 @@ function renderLegend() {
   legend.innerHTML = "";
   if (feedback) {
     chip("Continue", "primary", continueAfter, label(KEYS.reveal));
-    return;
-  }
-  if (isChoice()) {
+  } else if (isChoice()) {
     chip("Skip", "", skip, label(KEYS.skip));
-    return;
-  }
-  if (isInput()) {
+  } else if (isInput()) {
     chip("Submit", "primary", submitCheck, "enter");
     chip("Skip", "", skip, label(KEYS.skip));
-    return;
-  }
-  if (!fullyRevealed()) {
+  } else if (!fullyRevealed()) {
     chip(state.mode === "line" && revealed > 0 ? "Reveal next" : "Reveal", "primary", reveal, label(KEYS.reveal));
     chip("Skip", "", skip, label(KEYS.skip));
   } else {
@@ -526,6 +636,7 @@ function renderLegend() {
     chip("Good", "good", () => grade("good"), label(KEYS.good));
     chip("Easy", "easy", () => grade("easy"), label(KEYS.easy));
   }
+  chip("Decks", "", leaveSession, "esc"); // return to the deck picker
 }
 
 function renderSummary() {
@@ -546,6 +657,7 @@ function renderSummary() {
   row("stages", `${h[1]} · ${h[2]} · ${h[3]} · ${h[4]} · ${h[5]}`);
   stage.appendChild(wrap);
   chip("New session", "primary", restart, label(KEYS.restart));
+  chip("Back to Decks", "", deselect, "esc");
 }
 
 function reveal() {
@@ -568,6 +680,22 @@ function chip(text, cls, onClick, key) {
 
 document.addEventListener("keydown", (e) => {
   if (!state || e.altKey || e.metaKey) return; // ctrl handled per-binding below
+  if (state.phase === "select") {
+    if (e.key === "Enter") {
+      const b = legend.querySelector(".chip.primary");
+      if (b && !b.disabled) { e.preventDefault(); b.click(); }
+    }
+    return;
+  }
+  // While the leave prompt is up: Enter confirms leaving, Esc stays; other keys
+  // are inert (so a stray Esc can never blow through the guard).
+  if (confirmingLeave) {
+    if (e.key === "Enter") { e.preventDefault(); deselect(); }
+    else if (e.key === "Escape") { e.preventDefault(); cancelLeave(); }
+    return;
+  }
+  // Esc returns to the deck picker (with a confirm when the session isn't done).
+  if (e.key === "Escape") { e.preventDefault(); leaveSession(); return; }
   if (state.finished) { if (hit(e, KEYS.restart)) { e.preventDefault(); restart(); } return; }
   if (feedback) {
     if (hit(e, KEYS.remove)) { e.preventDefault(); remove(); return; }

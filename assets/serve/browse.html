@@ -117,6 +117,26 @@
   .menu button:hover { background: rgba(255,255,255,0.07); }
   .menu .mk { font-family: var(--mono); font-size: 0.72rem; color: var(--dim); float: right; }
 
+  /* ── deck-selection screen ────────────────────────────────────────── */
+  .select { width: var(--card-w); text-align: left; animation: deal 0.3s both; }
+  .select .lede { font-family: var(--mono); color: var(--bolt); font-size: 0.7rem; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 16px; }
+  .deck-filter { width: 100%; box-sizing: border-box; margin-bottom: 12px; padding: 11px 14px; background: rgba(0,0,0,0.25); border: 1px solid var(--line); border-radius: 11px; color: var(--ink); font: inherit; font-size: 0.95rem; }
+  .deck-filter::placeholder { color: var(--dim); }
+  .deck-filter:focus { outline: none; border-color: var(--bolt); }
+  .decklist { display: flex; flex-direction: column; gap: 8px; max-height: 62vh; overflow-y: auto; scrollbar-width: none; }
+  .decklist::-webkit-scrollbar { width: 0; }
+  .deckrow { display: flex; align-items: center; gap: 12px; padding: 12px 14px; min-height: 48px; border: 1px solid var(--line); border-radius: 11px; cursor: pointer; transition: border-color 0.12s, background 0.12s; }
+  .deckrow:hover { border-color: var(--bolt); }
+  .deckrow:focus { outline: none; border-color: var(--bolt); box-shadow: 0 0 0 2px rgba(125,249,232,0.35); }
+  .deckrow .box { flex: none; width: 18px; height: 18px; border: 1px solid var(--dim); border-radius: 5px; }
+  .deckrow.on { border-color: var(--bolt); background: rgba(125,249,232,0.06); }
+  .deckrow.on .box { background: var(--bolt); border-color: var(--bolt); position: relative; }
+  .deckrow.on .box::after { content: "✓"; position: absolute; inset: 0; display: grid; place-items: center; color: var(--void); font-size: 0.8rem; font-weight: 700; }
+  .deckrow .name { flex: 1; }
+  .deckrow .meta { font-family: var(--mono); font-size: 0.74rem; color: var(--dim); }
+  .chip.primary { background: var(--bolt); color: var(--void); border-color: var(--bolt); }
+  .chip.primary .k { color: rgba(6,18,26,0.55); border-color: rgba(6,18,26,0.3); }
+
   @media (prefers-reduced-motion: reduce) { .stack { animation: none; } .bar .charge i { transition: none; } }
 </style>
 </head>
@@ -146,6 +166,7 @@
 "use strict";
 let cards = [];
 let label = "";
+let phase = "browse"; // "select" while choosing decks
 let i = 0;
 let KEYS = {};        // configured [browse] key bindings, from /api/keys
 
@@ -168,6 +189,10 @@ function keyLabel(binds) {
   return (b.ctrl ? "ctrl-" : "") + name;
 }
 
+function apply(d) { phase = d.phase; label = d.label; cards = d.cards || []; i = 0; render(); }
+function select(names) { fetch("/api/select", post({ decks: names })).then(r => r.json()).then(apply); }
+function deselect() { menu.classList.remove("open"); fetch("/api/deselect", post({})).then(r => r.json()).then(apply); }
+
 function remove() {
   if (cards.length === 0) return;
   fetch("/api/remove", post({ index: i })).then(r => r.json()).then(d => {
@@ -179,15 +204,17 @@ function remove() {
 function go(n) { i = Math.max(0, Math.min(cards.length - 1, n)); render(); }
 
 function render() {
-  deckEl.textContent = label;
   menu.classList.remove("open");
   stage.innerHTML = "";
   legend.innerHTML = "";
+  if (phase === "select") { renderSelect(); return; }
+  deckEl.textContent = label;
   if (cards.length === 0) {
     posEl.textContent = "";
     chargeEl.style.width = "0%";
     menuWrap.style.display = "none";
     stage.appendChild(el("div", "msg", "No cards."));
+    chip("Back to Decks", deselect, false, "esc");
     return;
   }
   menuWrap.style.display = "";
@@ -212,6 +239,82 @@ function render() {
 
   chip("Prev", () => go(i - 1), i === 0, keyLabel(KEYS.prev) || "←");
   chip("Next", () => go(i + 1), i === cards.length - 1, keyLabel(KEYS.next) || "→");
+  chip("Decks", deselect, false, "esc");
+}
+
+// The deck-selection screen: a checklist of available decks + a Start button.
+async function renderSelect() {
+  deckEl.textContent = "select decks";
+  posEl.textContent = "";
+  chargeEl.style.width = "0%";
+  menuWrap.style.display = "none";
+
+  const data = await (await fetch("/api/decks")).json();
+  const wrap = el("div", "select");
+  wrap.appendChild(el("div", "lede", "choose decks to browse"));
+  if (!data.decks.length) {
+    wrap.appendChild(el("div", "msg", "No decks found. Add .txt decks to your decks folder."));
+    stage.appendChild(wrap);
+    return;
+  }
+
+  const filter = el("input", "deck-filter");
+  filter.type = "text";
+  filter.placeholder = "filter decks…";
+  filter.autocomplete = "off";
+  wrap.appendChild(filter);
+
+  const chosen = new Set();
+  const startChip = el("button", "chip primary", "Start");
+  startChip.appendChild(el("span", "k", "enter"));
+  startChip.disabled = true;
+  startChip.addEventListener("click", () => { if (chosen.size) select([...chosen]); });
+  const toggle = (row, name) => {
+    if (chosen.has(name)) chosen.delete(name); else chosen.add(name);
+    row.classList.toggle("on");
+    startChip.disabled = chosen.size === 0;
+  };
+
+  const list = el("div", "decklist");
+  const rows = [];
+  for (const d of data.decks) {
+    const row = el("div", "deckrow");
+    row.tabIndex = 0;
+    row.appendChild(el("span", "box"));
+    row.appendChild(el("span", "name", d.name));
+    if (d.meta) row.appendChild(el("span", "meta", d.meta));
+    row.addEventListener("click", () => toggle(row, d.name));
+    rows.push({ row, name: d.name.toLowerCase() });
+    list.appendChild(row);
+  }
+  wrap.appendChild(list);
+  stage.appendChild(wrap);
+  legend.appendChild(startChip);
+
+  const visible = () => rows.filter(r => r.row.style.display !== "none");
+
+  // Substring filter, like the TUI picker; toggled selections survive hiding.
+  filter.addEventListener("input", () => {
+    const q = filter.value.trim().toLowerCase();
+    for (const { row, name } of rows) row.style.display = !q || name.includes(q) ? "" : "none";
+  });
+
+  // ↑/↓ move between the filter box and the visible rows; Space toggles a
+  // focused row (Enter still starts, handled globally).
+  filter.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown") { e.preventDefault(); const v = visible(); if (v.length) v[0].row.focus(); }
+  });
+  list.addEventListener("keydown", (e) => {
+    const row = e.target.closest(".deckrow");
+    if (!row) return;
+    const v = visible();
+    const idx = v.findIndex(r => r.row === row);
+    if (e.key === "ArrowDown") { e.preventDefault(); if (idx < v.length - 1) v[idx + 1].row.focus(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); if (idx > 0) v[idx - 1].row.focus(); else filter.focus(); }
+    else if (e.key === " ") { e.preventDefault(); toggle(row, row.querySelector(".name").textContent); }
+  });
+
+  filter.focus(); // ready to type-to-filter immediately
 }
 
 function contextLine(text) {
@@ -249,6 +352,15 @@ function chip(text, onClick, disabled, key) {
 
 document.addEventListener("keydown", (e) => {
   if (e.altKey || e.metaKey) return; // ctrl handled per-binding below
+  if (phase === "select") {
+    if (e.key === "Enter") {
+      const b = legend.querySelector(".chip.primary");
+      if (b && !b.disabled) { e.preventDefault(); b.click(); }
+    }
+    return;
+  }
+  // Esc returns to the deck picker.
+  if (e.key === "Escape") { e.preventDefault(); deselect(); return; }
   // first/last stay fixed at g/G/Home/End, like the TUI; arrows always move
   if (hit(e, KEYS.remove)) { e.preventDefault(); remove(); }
   else if (hit(e, KEYS.next) || e.key === "ArrowRight" || e.key === "ArrowDown") { e.preventDefault(); go(i + 1); }
@@ -262,12 +374,12 @@ menu.addEventListener("click", (e) => e.stopPropagation());
 document.getElementById("mRemove").addEventListener("click", () => { menu.classList.remove("open"); remove(); });
 document.addEventListener("click", () => menu.classList.remove("open"));
 
-// Load the configured key bindings first, then the cards.
+// Load the configured key bindings first, then the cards (or the picker).
 fetch("/api/keys").then(r => r.json()).then(k => {
   KEYS = k;
   document.querySelector("#mRemove .mk").textContent = keyLabel(KEYS.remove);
   return fetch("/api/cards");
-}).then(r => r.json()).then(d => { label = d.label; cards = d.cards; i = 0; render(); });
+}).then(r => r.json()).then(apply);
 </script>
 </body>
 </html>

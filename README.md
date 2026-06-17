@@ -262,8 +262,8 @@ decks from the same picker `flash` uses.
 ## Web frontend
 
 Add `--serve` to `review` or `browse` to run it in the browser instead of the
-terminal — useful on a tablet or phone, where touch (and, later, images) beats
-a TUI. It runs the same session logic and writes to the same progress store, so
+terminal — useful on a tablet or phone, where touch (and images) beats a TUI.
+It runs the same session logic and writes to the same progress store, so
 a card you grade or remove in the browser shows up on the command line and vice
 versa.
 
@@ -272,7 +272,16 @@ flash review rust.txt --serve              # open http://127.0.0.1:7777
 flash review rust.txt --serve --port 8080
 flash review rust.txt --serve --lan        # reachable from other devices on your network
 flash browse rust.txt --serve              # the browse view in the browser
+flash --serve                              # no decks -> pick them in the browser
 ```
+
+Run `--serve` **without** naming any decks and the browser opens a
+deck-selection screen — the same list as the terminal picker (recent decks
+first), with a checkbox per deck and a Start button — so you never have to drop
+back to the terminal to choose. When you finish a session, "Choose other decks"
+(on the summary, or in the ⋮ menu) returns to that screen, so you can study a
+different deck without restarting. Naming decks on the command line skips the
+screen and goes straight to review/browse.
 
 Every answer mode works in the browser: **flip** (reveal, then self-grade
 Again / Good / Easy), **line** (reveal a verse one line at a time — it
@@ -282,7 +291,8 @@ line marked ✓/✗ with the correct answer shown), and **choice** (tap one of t
 options). The note appears once the answer is shown. Controls are big tap
 targets and follow your configured key bindings — the page reads them from the
 server, so the chips show your own keys. The overflow menu (⋮) holds **Remove**,
-which deletes the current card from its deck file and prunes its progress.
+which deletes the current card from its deck file and prunes its progress, and
+**Choose decks**, which returns to the deck-selection screen.
 
 It is deliberately local-only — no accounts, no database. By default it binds
 to `127.0.0.1` (this machine only); `--lan` binds all interfaces so a device on

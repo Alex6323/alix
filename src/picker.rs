@@ -117,6 +117,28 @@ fn stem(name: &str) -> String {
 
 // ---- public entry points ------------------------------------------------
 
+/// One deck offered by [`catalog`]: its file name, full path, and when it was
+/// last reviewed (if it is a recent deck).
+pub struct DeckEntry {
+    pub name: String,
+    pub path: PathBuf,
+    pub last_used_ms: Option<u64>,
+}
+
+/// The deck catalog the pickers show, as plain data: recent decks first (recency
+/// order), then every other `*.txt` in `decks_dir`. Frontend-agnostic, so the
+/// web deck-selection screen can present the same list as the TUI picker.
+pub fn catalog(decks_dir: &Path, recent: &RecentDecks) -> Vec<DeckEntry> {
+    build_candidates(decks_dir, recent)
+        .into_iter()
+        .map(|c| DeckEntry {
+            name: c.name,
+            path: c.path,
+            last_used_ms: c.last_used_ms,
+        })
+        .collect()
+}
+
 /// Runs the startup picker. Returns the chosen deck paths (empty if the user
 /// cancelled or there is nothing to pick).
 pub fn pick(decks_dir: &Path, recent: &RecentDecks) -> Result<Vec<PathBuf>> {
@@ -559,6 +581,22 @@ mod tests {
         assert_eq!(vec!["mid.txt", "alpha.txt", "zeta.txt"], names);
         assert!(cands[0].last_used_ms.is_some());
         assert!(cands[1].last_used_ms.is_none());
+    }
+
+    #[test]
+    fn catalog_mirrors_candidate_order_and_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        for n in ["zeta.txt", "alpha.txt"] {
+            std::fs::write(dir.path().join(n), "# f\n\tb\n").unwrap();
+        }
+        let mut recent = RecentDecks::load(dir.path().join("recent.json"));
+        recent.record(&[dir.path().join("zeta.txt")], 1000);
+
+        let entries = catalog(dir.path(), &recent);
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(vec!["zeta.txt", "alpha.txt"], names); // recent first
+        assert_eq!(dir.path().join("zeta.txt"), entries[0].path);
+        assert!(entries[0].last_used_ms.is_some());
     }
 
     #[test]

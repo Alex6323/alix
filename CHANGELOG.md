@@ -7,6 +7,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- In-browser deck selection: `flash --serve` (and `flash browse --serve`) with no
+  deck files now opens a deck-selection screen in the browser instead of the
+  terminal picker — a checklist of the same decks (recent first), with a Start
+  button that builds the session in place. Passing decks on the CLI still skips
+  it. A running web session can return to the picker via "Choose other decks"
+  (on the summary or the menu) to study a different deck without restarting.
+  Selection only accepts deck names from the live catalog, so no path is built
+  from request input.
 - Mark a card for removal during review or browse with the new `remove` key
   (default `Ctrl-X` in review, `x` in browse, `x`/Remove button in the web UI).
   It is dropped without being asked again (cloze siblings too); the marked

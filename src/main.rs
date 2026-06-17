@@ -432,22 +432,35 @@ struct ReviewSession {
 /// the mode/scheduler/order settings, and builds the session and store. Shared
 /// by `flash review` (TUI) and `flash serve` (web). Returns `Ok(None)` when the
 /// picker was cancelled.
-fn load_review_session(args: &ReviewArgs, target: Frontend) -> Result<Option<ReviewSession>> {
-    let config = Config::load(args.config.as_deref())?;
+/// A review session built from an explicit set of deck paths. Shared by the TUI
+/// path and the web frontend's `/api/select` (via a builder closure).
+struct ReviewBuild {
+    session: Session,
+    label: String,
+    decks: HashMap<String, tui::DeckInfo>,
+    /// Cards dropped because they are not reviewable in the target frontend
+    /// (e.g. image cards excluded from the TUI).
+    hidden: usize,
+}
 
-    let mut recent = RecentDecks::load(
-        recent::default_recent_path().context("cannot determine the data directory")?,
-    );
-    let Some(deck_paths) = pick_decks_if_empty(args.decks.clone(), &config, &recent)? else {
-        return Ok(None); // picker cancelled or nothing selected
-    };
-
+/// Builds a review session from explicit `deck_paths` (no interactive picker):
+/// resolves `% requires:` prerequisites, applies deck directives and the
+/// `target`-frontend filter, builds the `Session`, and records the decks as
+/// recent. The store is borrowed (the caller owns it), so the web server can
+/// reuse one store across repeated selections.
+fn build_review(
+    deck_paths: Vec<PathBuf>,
+    args: &ReviewArgs,
+    config: &Config,
+    store: &Store,
+    recent: &mut RecentDecks,
+    target: Frontend,
+) -> Result<ReviewBuild> {
     // Pull in prerequisite decks (`% requires:`), foundations first.
     let decks_dir = config.decks_dir();
     let (resolved, deps_used) = resolve_deck_order(&deck_paths, decks_dir.as_deref())?;
 
     let (cards, label, decks, settings) = load_decks(&resolved)?;
-    let store = open_store(args.store.clone())?;
 
     // Keep only the cards reviewable in the target frontend; a card declares
     // `Any` (default), or its specific frontend. Image cards are web-only, so
@@ -516,21 +529,69 @@ fn load_review_session(args: &ReviewArgs, target: Frontend) -> Result<Option<Rev
         cram: args.cram,
         order,
     };
-    let session = Session::new_with_deps(cards, &store, scheduler, options, dep_ranks, now_ms());
+    let session = Session::new_with_deps(cards, store, scheduler, options, dep_ranks, now_ms());
 
     // Remember these decks for next time's picker.
     recent.record(&deck_paths, now_ms());
     let _ = recent.save();
 
-    Ok(Some(ReviewSession {
+    Ok(ReviewBuild {
         session,
-        store,
-        mode_override: args.mode,
         label,
         decks,
-        config,
         hidden,
+    })
+}
+
+/// The TUI review path: pick decks if none were given, then build the session.
+fn load_review_session(args: &ReviewArgs, target: Frontend) -> Result<Option<ReviewSession>> {
+    let config = Config::load(args.config.as_deref())?;
+    let mut recent = RecentDecks::load(
+        recent::default_recent_path().context("cannot determine the data directory")?,
+    );
+    let Some(deck_paths) = pick_decks_if_empty(args.decks.clone(), &config, &recent)? else {
+        return Ok(None); // picker cancelled or nothing selected
+    };
+    let store = open_store(args.store.clone())?;
+    let build = build_review(deck_paths, args, &config, &store, &mut recent, target)?;
+    Ok(Some(ReviewSession {
+        session: build.session,
+        store,
+        mode_override: args.mode,
+        label: build.label,
+        decks: build.decks,
+        config,
+        hidden: build.hidden,
     }))
+}
+
+/// Builds the browse card list from explicit `deck_paths` (no picker). Mirrors
+/// [`build_review`] for the read-only browse view: loads decks and applies the
+/// `target`-frontend filter, but builds no scheduler session.
+fn build_browse(
+    deck_paths: Vec<PathBuf>,
+    recent: &mut RecentDecks,
+    target: Frontend,
+) -> Result<BrowseBuild> {
+    let (cards, label, decks, _) = load_decks(&deck_paths)?;
+    let cards: Vec<_> = cards
+        .into_iter()
+        .filter(|c| matches!(c.frontend(), Frontend::Any) || c.frontend() == target)
+        .collect();
+    recent.record(&deck_paths, now_ms());
+    let _ = recent.save();
+    Ok(BrowseBuild {
+        cards,
+        label,
+        decks,
+    })
+}
+
+/// Browse cards built from an explicit set of deck paths.
+struct BrowseBuild {
+    cards: Vec<Card>,
+    label: String,
+    decks: HashMap<String, tui::DeckInfo>,
 }
 
 /// The IP/port to serve on: localhost unless `--lan`, and the `--port` flag or
@@ -553,14 +614,11 @@ fn subject_paths(decks: HashMap<String, tui::DeckInfo>) -> HashMap<String, PathB
 }
 
 fn review(args: ReviewArgs) -> Result<()> {
-    // The target frontend decides which cards are reviewable: image cards are
-    // web-only, so they only survive the load when serving.
-    let target = if args.serve.serve {
-        Frontend::Web
-    } else {
-        Frontend::Tui
-    };
-    let Some(rs) = load_review_session(&args, target)? else {
+    if args.serve.serve {
+        return review_serve(args);
+    }
+
+    let Some(rs) = load_review_session(&args, Frontend::Tui)? else {
         return Ok(());
     };
     let ReviewSession {
@@ -572,25 +630,6 @@ fn review(args: ReviewArgs) -> Result<()> {
         config,
         hidden,
     } = rs;
-
-    // Serve in the browser instead of the terminal. The session still starts
-    // even if nothing is due — the page shows that state itself.
-    if args.serve.serve {
-        let addr = serve_addr(args.serve.port, args.serve.lan, &config);
-        announce(addr, args.serve.lan, &label);
-        return serve::run_review(
-            session,
-            store,
-            addr,
-            serve::ReviewOptions {
-                mode_override,
-                label,
-                decks: subject_paths(decks),
-                keys: config.keys,
-                max_typos: args.max_typos,
-            },
-        );
-    }
 
     // Some cards can't be shown in the terminal (images need the browser).
     if hidden > 0 {
@@ -627,6 +666,60 @@ fn review(args: ReviewArgs) -> Result<()> {
         stats.reviews, stats.passed, stats.failed
     );
     Ok(())
+}
+
+/// The web review path. With no decks given it opens at the in-browser
+/// deck-selection screen; otherwise it goes straight to review. The server
+/// builds new sessions on demand (when the user picks decks) via the builder
+/// closure, reusing one store and recent-decks list.
+fn review_serve(args: ReviewArgs) -> Result<()> {
+    let config = Config::load(args.config.as_deref())?;
+    let mut recent = RecentDecks::load(
+        recent::default_recent_path().context("cannot determine the data directory")?,
+    );
+    let store = open_store(args.store.clone())?;
+    let decks_dir = config.decks_dir().context("cannot determine ~/decks")?;
+    let addr = serve_addr(args.serve.port, args.serve.lan, &config);
+
+    // Adapts a built review session to what the server holds (session + label +
+    // subject→path map for removal).
+    let to_build = |b: ReviewBuild| serve::SessionBuild {
+        session: b.session,
+        label: b.label,
+        decks: subject_paths(b.decks),
+    };
+
+    // Build the first session up front only when decks were named on the CLI;
+    // otherwise start at the selection screen.
+    let initial = if args.decks.is_empty() {
+        None
+    } else {
+        let b = build_review(
+            args.decks.clone(),
+            &args,
+            &config,
+            &store,
+            &mut recent,
+            Frontend::Web,
+        )?;
+        Some(to_build(b))
+    };
+
+    let label = initial
+        .as_ref()
+        .map(|b| b.label.clone())
+        .unwrap_or_else(|| "select decks".to_string());
+    announce(addr, args.serve.lan, &label);
+
+    let opts = serve::ReviewOptions {
+        mode_override: args.mode,
+        keys: config.keys.clone(),
+        max_typos: args.max_typos,
+    };
+    let build = |paths: Vec<PathBuf>, store: &Store, recent: &mut RecentDecks| {
+        build_review(paths, &args, &config, store, recent, Frontend::Web).map(to_build)
+    };
+    serve::run_review(initial, store, recent, decks_dir, addr, opts, build)
 }
 
 /// Prints where the web frontend is reachable, and a warning when it is
@@ -936,9 +1029,10 @@ fn short_id(id: u64) -> String {
 }
 
 fn browse(args: BrowseArgs) -> Result<()> {
-    // The terminal browser needs a TTY; the web one only needs it for the
-    // interactive picker (when no decks are given).
-    if !args.serve.serve && !std::io::stdout().is_terminal() {
+    if args.serve.serve {
+        return browse_serve(args);
+    }
+    if !std::io::stdout().is_terminal() {
         bail!("`flash browse` needs a terminal");
     }
     let config = Config::load(None)?;
@@ -948,23 +1042,53 @@ fn browse(args: BrowseArgs) -> Result<()> {
     let Some(deck_paths) = pick_decks_if_empty(args.decks.clone(), &config, &recent)? else {
         return Ok(()); // picker cancelled or nothing selected
     };
+    let build = build_browse(deck_paths, &mut recent, Frontend::Tui)?;
 
-    let (cards, label, decks_info, _) = load_decks(&deck_paths)?;
-    recent.record(&deck_paths, now_ms());
-    let _ = recent.save();
-
-    // Browse only writes if the user removes a card: it then deletes it from
-    // the deck file and prunes its progress. Provide the per-subject paths and
-    // the store for that.
-    let paths = subject_paths(decks_info);
+    // Browse only writes if the user removes a card: it then deletes it from the
+    // deck file and prunes its progress. Provide the per-subject paths and store.
+    let paths = subject_paths(build.decks);
     let store = open_store(None)?;
+    browse::run(build.cards, build.label, config.browse, paths, store)
+}
 
-    if args.serve.serve {
-        let addr = serve_addr(args.serve.port, args.serve.lan, &config);
-        announce(addr, args.serve.lan, &format!("{label} (browse)"));
-        return serve::run_browse(cards, label, addr, paths, store, config.browse);
-    }
-    browse::run(cards, label, config.browse, paths, store)
+/// The web browse path: opens at the in-browser deck-selection screen when no
+/// decks are given, else browses them directly. New selections rebuild the card
+/// list via the builder closure.
+fn browse_serve(args: BrowseArgs) -> Result<()> {
+    let config = Config::load(None)?;
+    let mut recent = RecentDecks::load(
+        recent::default_recent_path().context("cannot determine the data directory")?,
+    );
+    let store = open_store(None)?;
+    let decks_dir = config.decks_dir().context("cannot determine ~/decks")?;
+    let addr = serve_addr(args.serve.port, args.serve.lan, &config);
+
+    let to_build = |b: BrowseBuild| serve::CardsBuild {
+        cards: b.cards,
+        label: b.label,
+        decks: subject_paths(b.decks),
+    };
+
+    let initial = if args.decks.is_empty() {
+        None
+    } else {
+        Some(to_build(build_browse(
+            args.decks.clone(),
+            &mut recent,
+            Frontend::Web,
+        )?))
+    };
+
+    let label = initial
+        .as_ref()
+        .map(|b| b.label.clone())
+        .unwrap_or_else(|| "select decks".to_string());
+    announce(addr, args.serve.lan, &format!("{label} (browse)"));
+
+    let build = |paths: Vec<PathBuf>, recent: &mut RecentDecks| {
+        build_browse(paths, recent, Frontend::Web).map(to_build)
+    };
+    serve::run_browse(initial, store, recent, decks_dir, addr, config.browse, build)
 }
 
 fn generate_cmd(args: GenerateArgs) -> Result<()> {
@@ -1235,6 +1359,27 @@ mod tests {
 
     fn card(front: &str, back: &str) -> Card {
         Card::plain(Arc::from("d.txt"), front.into(), vec![back.into()], None, 1)
+    }
+
+    #[test]
+    fn build_browse_loads_from_explicit_paths_and_filters_frontend() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.txt");
+        // A normal card and a web-only image card.
+        std::fs::write(
+            &path,
+            "% img-dir: /imgs\n# plain\n\tanswer\n# pic\n% img: a.png\n\tphoto\n",
+        )
+        .unwrap();
+        let mut recent = RecentDecks::load(dir.path().join("recent.json"));
+
+        // Tui target drops the image card; Web target keeps both.
+        let tui = build_browse(vec![path.clone()], &mut recent, Frontend::Tui).unwrap();
+        assert_eq!(1, tui.cards.len());
+        assert_eq!("plain", tui.cards[0].front);
+
+        let web = build_browse(vec![path], &mut recent, Frontend::Web).unwrap();
+        assert_eq!(2, web.cards.len());
     }
 
     #[test]
