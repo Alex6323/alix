@@ -15,13 +15,15 @@
 
 use std::{
     collections::{BTreeSet, HashMap},
+    hash::Hasher,
     net::SocketAddr,
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 use tiny_http::{Header, Method, Request, Response, Server};
+use twox_hash::XxHash64;
 
 use crate::{
     answer::{Mode, grade_fuzzy},
@@ -110,6 +112,10 @@ struct CardDto {
     context: Vec<String>,
     back: Vec<String>,
     note: Vec<NoteUnitDto>,
+    /// `/img/<key>` URL for the question-side image, or `null`.
+    img: Option<String>,
+    /// `/img/<key>` URL for the answer-side image, shown on reveal, or `null`.
+    img_back: Option<String>,
 }
 
 /// The current review state sent to the browser after every action.
@@ -268,12 +274,16 @@ pub fn run_review(
     } = opts;
     let mut files = DeckFiles::new(decks);
     let keys = ReviewKeys::from(&bindings);
+    let images = collect_images(session.cards());
     let server = Server::http(addr).map_err(|e| anyhow!("cannot start server on {addr}: {e}"))?;
     for mut request in server.incoming_requests() {
         let method = request.method().clone();
         let path = request_path(&request);
         match (&method, path.as_str()) {
             (Method::Get, "/") => respond_html(request, REVIEW_HTML),
+            (Method::Get, key) if key.starts_with("/img/") => {
+                serve_image(request, &images, &key["/img/".len()..])
+            }
             (Method::Get, "/api/keys") => respond_json(request, &keys),
             (Method::Get, "/api/state") => {
                 respond_json(request, &state_dto(&session, &store, mode_override, &label))
@@ -387,12 +397,16 @@ pub fn run_browse(
     let mut cards = cards;
     let mut files = DeckFiles::new(decks);
     let keys = BrowseKeys::from(&bindings);
+    let images = collect_images(&cards);
     let server = Server::http(addr).map_err(|e| anyhow!("cannot start server on {addr}: {e}"))?;
     for mut request in server.incoming_requests() {
         let method = request.method().clone();
         let path = request_path(&request);
         match (&method, path.as_str()) {
             (Method::Get, "/") => respond_html(request, BROWSE_HTML),
+            (Method::Get, key) if key.starts_with("/img/") => {
+                serve_image(request, &images, &key["/img/".len()..])
+            }
             (Method::Get, "/api/keys") => respond_json(request, &keys),
             (Method::Get, "/api/cards") => respond_json(request, &browse_payload(&label, &cards)),
             (Method::Post, "/api/remove") => {
@@ -469,6 +483,7 @@ fn state_dto(session: &Session, store: &Store, mode_override: Option<Mode>, labe
 /// Serializes a card for the browser, structuring its note via the shared
 /// [`render`] model.
 fn card_dto(card: &Card) -> CardDto {
+    let img_url = |p: &PathBuf| format!("/img/{}", img_key(p));
     CardDto {
         front: card.front.clone(),
         context: card.context.clone(),
@@ -477,6 +492,48 @@ fn card_dto(card: &Card) -> CardDto {
             .into_iter()
             .map(NoteUnitDto::from)
             .collect(),
+        img: card.image.as_ref().map(img_url),
+        img_back: card.image_back.as_ref().map(img_url),
+    }
+}
+
+/// A stable, opaque URL key for a resolved image path: the hex `XxHash64` of the
+/// path. The card DTO and the image registry derive it the same way, so only
+/// paths a deck actually references resolve — no user input is joined to a path,
+/// which keeps `/img/` safe from traversal even under `--lan`.
+fn img_key(path: &Path) -> String {
+    let mut hasher = XxHash64::default();
+    hasher.write(path.to_string_lossy().as_bytes());
+    format!("{:016x}", hasher.finish())
+}
+
+/// Builds the `key → absolute path` registry the `/img/` route serves from, by
+/// scanning every card's resolved image sides.
+fn collect_images(cards: &[Card]) -> HashMap<String, PathBuf> {
+    let mut images = HashMap::new();
+    for card in cards {
+        for path in [&card.image, &card.image_back].into_iter().flatten() {
+            images.insert(img_key(path), path.clone());
+        }
+    }
+    images
+}
+
+/// The MIME type to serve a card image with, by file extension. Unknown
+/// extensions fall back to a generic binary type (the browser still sniffs it).
+fn content_type(path: &Path) -> &'static str {
+    match path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("png") => "image/png",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        Some("svg") => "image/svg+xml",
+        _ => "application/octet-stream",
     }
 }
 
@@ -533,6 +590,23 @@ fn respond_status(request: Request, code: u16) {
     let _ = request.respond(Response::from_string(String::new()).with_status_code(code));
 }
 
+fn respond_bytes(request: Request, bytes: Vec<u8>, content_type: &str) {
+    let header = Header::from_bytes(&b"Content-Type"[..], content_type.as_bytes()).unwrap();
+    let _ = request.respond(Response::from_data(bytes).with_header(header));
+}
+
+/// Serves the registered image for `key`, or 404 for an unknown key / unreadable
+/// file. Shared by the review and browse routes.
+fn serve_image(request: Request, images: &HashMap<String, PathBuf>, key: &str) {
+    match images.get(key) {
+        Some(path) => match std::fs::read(path) {
+            Ok(bytes) => respond_bytes(request, bytes, content_type(path)),
+            Err(_) => respond_status(request, 404),
+        },
+        None => respond_status(request, 404),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -562,6 +636,54 @@ mod tests {
             NoteUnitDto::Code { lines } => assert_eq!(lines, &vec!["fn main() {}".to_string()]),
             other => panic!("expected a code block, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn card_dto_exposes_image_urls_and_registry_matches() {
+        let mut card = Card::plain(
+            Arc::from("s.txt"),
+            "q".to_string(),
+            vec!["a".to_string()],
+            None,
+            1,
+        );
+        card.image = Some(PathBuf::from("/imgs/moon.png"));
+        card.image_back = Some(PathBuf::from("/imgs/tab.png"));
+
+        let dto = card_dto(&card);
+        let img = dto.img.expect("front image url");
+        let img_back = dto.img_back.expect("back image url");
+        assert!(img.starts_with("/img/"));
+        assert!(img_back.starts_with("/img/") && img_back != img);
+
+        // The registry keys the DTO's URLs derive from, so a request for either
+        // URL resolves to the right file.
+        let images = collect_images(std::slice::from_ref(&card));
+        assert_eq!(
+            images.get(img.strip_prefix("/img/").unwrap()),
+            Some(&PathBuf::from("/imgs/moon.png"))
+        );
+        assert_eq!(
+            images.get(img_back.strip_prefix("/img/").unwrap()),
+            Some(&PathBuf::from("/imgs/tab.png"))
+        );
+    }
+
+    #[test]
+    fn plain_card_has_no_image_urls() {
+        let card = Card::plain(Arc::from("s.txt"), "q".to_string(), vec!["a".to_string()], None, 1);
+        let dto = card_dto(&card);
+        assert!(dto.img.is_none() && dto.img_back.is_none());
+        assert!(collect_images(std::slice::from_ref(&card)).is_empty());
+    }
+
+    #[test]
+    fn content_type_by_extension() {
+        assert_eq!(content_type(Path::new("a.png")), "image/png");
+        assert_eq!(content_type(Path::new("a.JPG")), "image/jpeg");
+        assert_eq!(content_type(Path::new("a.jpeg")), "image/jpeg");
+        assert_eq!(content_type(Path::new("a.svg")), "image/svg+xml");
+        assert_eq!(content_type(Path::new("a.bin")), "application/octet-stream");
     }
 
     #[test]

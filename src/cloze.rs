@@ -185,6 +185,9 @@ pub fn expand(
             hash_lines: Some(hash_lines),
             mode: None,
             direction: None,
+            image: None,
+            image_back: None,
+            frontend: None,
         });
     }
 

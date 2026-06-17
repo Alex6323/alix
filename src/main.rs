@@ -10,7 +10,7 @@ use clap::{Args, Parser, Subcommand};
 use flash::{
     answer::Mode,
     browse,
-    card::Card,
+    card::{Card, Frontend},
     config::{self, Config},
     deck::{Deck, DeckSettings},
     generate, parser, picker,
@@ -423,13 +423,16 @@ struct ReviewSession {
     label: String,
     decks: HashMap<String, tui::DeckInfo>,
     config: Config,
+    /// How many cards were filtered out as not reviewable in the target
+    /// frontend (e.g. image cards excluded from the TUI).
+    hidden: usize,
 }
 
 /// Loads the decks named (or picked) for a review, resolves prerequisites and
 /// the mode/scheduler/order settings, and builds the session and store. Shared
 /// by `flash review` (TUI) and `flash serve` (web). Returns `Ok(None)` when the
 /// picker was cancelled.
-fn load_review_session(args: &ReviewArgs) -> Result<Option<ReviewSession>> {
+fn load_review_session(args: &ReviewArgs, target: Frontend) -> Result<Option<ReviewSession>> {
     let config = Config::load(args.config.as_deref())?;
 
     let mut recent = RecentDecks::load(
@@ -445,6 +448,16 @@ fn load_review_session(args: &ReviewArgs) -> Result<Option<ReviewSession>> {
 
     let (cards, label, decks, settings) = load_decks(&resolved)?;
     let store = open_store(args.store.clone())?;
+
+    // Keep only the cards reviewable in the target frontend; a card declares
+    // `Any` (default), or its specific frontend. Image cards are web-only, so
+    // they drop out of the TUI here (and the caller reports the count).
+    let total = cards.len();
+    let cards: Vec<_> = cards
+        .into_iter()
+        .filter(|c| matches!(c.frontend(), Frontend::Any) || c.frontend() == target)
+        .collect();
+    let hidden = total - cards.len();
 
     // Directives (mode/scheduler/order) come from the requested deck(s) only,
     // not the pulled-in prerequisites — a prerequisite must not override the
@@ -516,6 +529,7 @@ fn load_review_session(args: &ReviewArgs) -> Result<Option<ReviewSession>> {
         label,
         decks,
         config,
+        hidden,
     }))
 }
 
@@ -539,7 +553,14 @@ fn subject_paths(decks: HashMap<String, tui::DeckInfo>) -> HashMap<String, PathB
 }
 
 fn review(args: ReviewArgs) -> Result<()> {
-    let Some(rs) = load_review_session(&args)? else {
+    // The target frontend decides which cards are reviewable: image cards are
+    // web-only, so they only survive the load when serving.
+    let target = if args.serve.serve {
+        Frontend::Web
+    } else {
+        Frontend::Tui
+    };
+    let Some(rs) = load_review_session(&args, target)? else {
         return Ok(());
     };
     let ReviewSession {
@@ -549,6 +570,7 @@ fn review(args: ReviewArgs) -> Result<()> {
         label,
         decks,
         config,
+        hidden,
     } = rs;
 
     // Serve in the browser instead of the terminal. The session still starts
@@ -568,6 +590,18 @@ fn review(args: ReviewArgs) -> Result<()> {
                 max_typos: args.max_typos,
             },
         );
+    }
+
+    // Some cards can't be shown in the terminal (images need the browser).
+    if hidden > 0 {
+        if session.cards().is_empty() {
+            println!(
+                "All {hidden} card(s) in this deck need the browser. \
+                 Run the same command with --serve to review them."
+            );
+            return Ok(());
+        }
+        println!("{hidden} card(s) need the browser — run with --serve to review them.");
     }
 
     if session.is_finished() {
@@ -1087,6 +1121,22 @@ fn check(decks: Vec<PathBuf>) -> Result<()> {
                          and share their learning progress",
                         deck.subject, a.line, b.line
                     );
+                }
+                // Image paths are resolved but never checked at load time, so a
+                // missing file is reported here (advisory: the deck still works,
+                // the web server just 404s the image).
+                for card in &deck.cards {
+                    for image in [&card.image, &card.image_back].into_iter().flatten() {
+                        if !image.exists() {
+                            warnings += 1;
+                            eprintln!(
+                                "warning: {}: card at line {} references a missing image: {}",
+                                deck.subject,
+                                card.line,
+                                image.display()
+                            );
+                        }
+                    }
                 }
             }
         }

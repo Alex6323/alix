@@ -22,7 +22,7 @@
 //! optional note after the back lines. Malformed files yield errors with
 //! line numbers rather than panicking.
 
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
 use thiserror::Error;
 
@@ -30,7 +30,7 @@ use clap::ValueEnum;
 
 use crate::{
     answer::Mode,
-    card::{Card, Direction},
+    card::{Card, Direction, Frontend},
     cloze,
 };
 
@@ -96,6 +96,12 @@ struct PartialCard {
     mode: Option<Mode>,
     /// Per-card `% direction:`, if the card declares one.
     direction: Option<Direction>,
+    /// Per-card `% img:` (question side), raw value as written.
+    image: Option<String>,
+    /// Per-card `% img-back:` (answer side), raw value as written.
+    image_back: Option<String>,
+    /// Per-card `% frontend:`, if the card declares one.
+    frontend: Option<Frontend>,
 }
 
 impl PartialCard {
@@ -119,6 +125,9 @@ impl PartialCard {
             );
             card.mode = self.mode;
             card.direction = self.direction;
+            card.image = self.image.map(PathBuf::from);
+            card.image_back = self.image_back.map(PathBuf::from);
+            card.frontend = self.frontend;
             cards.push(card);
         }
         Ok(())
@@ -231,6 +240,9 @@ pub fn parse_str(subject: &str, text: &str) -> Result<Vec<Card>, ParseError> {
                     cloze,
                     mode: None,
                     direction: None,
+                    image: None,
+                    image_back: None,
+                    frontend: None,
                 });
                 state = State::Front;
             }
@@ -259,9 +271,10 @@ pub fn parse_str(subject: &str, text: &str) -> Result<Vec<Card>, ParseError> {
             }
             MARKUP_COMMENT => {
                 // A `% key: value` directive inside a card is a per-card
-                // override (`mode`, `direction`); unrecognized keys are ignored,
-                // like deck-level directives. `%` lines before the first card
-                // are deck-level (handled by parse_directives).
+                // override (`mode`, `direction`, `img`, `img-back`, `frontend`);
+                // unrecognized keys are ignored, like deck-level directives. `%`
+                // lines before the first card are deck-level (handled by
+                // parse_directives).
                 if state != State::Init
                     && let Some((key, value)) = directive(line)
                 {
@@ -275,6 +288,13 @@ pub fn parse_str(subject: &str, text: &str) -> Result<Vec<Card>, ParseError> {
                         "direction" => {
                             if let Ok(d) = Direction::from_str(&value, true) {
                                 partial.direction = Some(d);
+                            }
+                        }
+                        "img" => partial.image = Some(value),
+                        "img-back" => partial.image_back = Some(value),
+                        "frontend" => {
+                            if let Ok(f) = Frontend::from_str(&value, true) {
+                                partial.frontend = Some(f);
                             }
                         }
                         _ => {}
@@ -478,6 +498,22 @@ mod tests {
         let cards = parse_str("s", "# a\n% direction: both\n\tx\n# b\n\ty\n").unwrap();
         assert_eq!(Some(Direction::Both), cards[0].direction);
         assert_eq!(None, cards[1].direction);
+    }
+
+    #[test]
+    fn per_card_image_and_frontend_directives_are_parsed() {
+        let text = "# q\n% img: moon.png\n% img-back: phase.png\n% frontend: web\n\tWaxing\n";
+        let cards = parse_str("s", text).unwrap();
+        assert_eq!(Some(PathBuf::from("moon.png")), cards[0].image);
+        assert_eq!(Some(PathBuf::from("phase.png")), cards[0].image_back);
+        assert_eq!(Some(Frontend::Web), cards[0].frontend);
+    }
+
+    #[test]
+    fn cloze_card_ignores_image_directive() {
+        // `% img:` is only stamped on plain cards; cloze sub-cards keep None.
+        let cards = parse_str("s", "#? f\n% img: x.png\n{{a}} b\n").unwrap();
+        assert_eq!(None, cards[0].image);
     }
 
     #[test]

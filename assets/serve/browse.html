@@ -67,6 +67,9 @@
   .context { color: var(--bolt); font-family: var(--mono); font-size: 0.95rem; margin-top: 12px; white-space: pre-wrap; }
   .context .hole { color: var(--bolt-hi); font-weight: 700; }
   .context .muted-hole { color: var(--dim); }
+  /* the card is a flex column; bound the image by it (shrink + min-height:0) so
+     it scales to fit, with flex-grow 0 so small images keep their natural size. */
+  .card-img { flex: 0 1 auto; min-height: 0; align-self: center; max-width: 100%; object-fit: contain; margin: 12px auto 0; border-radius: 8px; }
   .divider { height: 1px; background: linear-gradient(90deg, transparent, var(--line) 18%, var(--line) 82%, transparent); margin: 22px auto; width: 70%; }
   .answer { color: var(--good); font-size: clamp(1.1rem, 3.4vw, 1.4rem); line-height: 1.4; margin: 0 0 6px; white-space: pre-wrap; }
   .note {
@@ -156,6 +159,7 @@ const menu = document.getElementById("menu");
 
 function post(body) { return { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }; }
 function el(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; }
+function cardImage(src) { const img = el("img", "card-img"); img.src = src; img.alt = ""; return img; }
 function hit(e, binds) { return (binds || []).some(b => b.ctrl === e.ctrlKey && e.key.toLowerCase() === b.k.toLowerCase()); }
 function keyLabel(binds) {
   if (!binds || !binds.length) return "";
@@ -198,8 +202,10 @@ function render() {
   const card = el("div", "card");
   card.appendChild(el("div", "front-text", c.front));
   for (const ctx of c.context) card.appendChild(contextLine(ctx));
+  if (c.img) card.appendChild(cardImage(c.img));
   card.appendChild(el("div", "divider"));
   for (const b of c.back) card.appendChild(el("div", "answer", b));
+  if (c.img_back) card.appendChild(cardImage(c.img_back));
   renderNote(card, c.note);
   deck.appendChild(card);
   stage.appendChild(deck);

@@ -1,6 +1,6 @@
 //! The flashcard model and its identity hash.
 
-use std::{hash::Hasher, sync::Arc};
+use std::{hash::Hasher, path::PathBuf, sync::Arc};
 
 use twox_hash::XxHash64;
 
@@ -17,6 +17,20 @@ pub enum Direction {
     Reverse,
     /// Both the forward and the reversed card.
     Both,
+}
+
+/// Which frontend a card can be reviewed in. Set per card (or per deck) with
+/// `% frontend:`. A card carrying an image is web-only on its own (the TUI
+/// can't draw images); this directive can also force it explicitly.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
+pub enum Frontend {
+    /// Reviewable in either frontend (the default).
+    #[default]
+    Any,
+    /// Terminal only; the web frontend skips it.
+    Tui,
+    /// Browser only; the TUI skips it.
+    Web,
 }
 
 /// A single flashcard.
@@ -49,6 +63,17 @@ pub struct Card {
     /// loaded to expand `both`/`reverse` into cards. `None` means forward. Not
     /// part of the identity hash.
     pub direction: Option<Direction>,
+    /// Question-side image (`% img:`). Holds the raw value as written after
+    /// parsing; rewritten to an absolute path when the deck is loaded. Rendered
+    /// by the web frontend only. Not part of the identity hash.
+    pub image: Option<PathBuf>,
+    /// Answer-side image (`% img-back:`), shown with the revealed back. Same
+    /// lifecycle as `image`. Not part of the identity hash.
+    pub image_back: Option<PathBuf>,
+    /// Declared frontend (`% frontend:`, card override else deck), folded at
+    /// load. `None` defers to `frontend()` (image cards are web-only). Not part
+    /// of the identity hash.
+    pub frontend: Option<Frontend>,
 }
 
 impl Card {
@@ -70,7 +95,22 @@ impl Card {
             hash_lines: None,
             mode: None,
             direction: None,
+            image: None,
+            image_back: None,
+            frontend: None,
         }
+    }
+
+    /// Which frontend this card can be reviewed in. An explicit `% frontend:`
+    /// wins; otherwise a card with any image is web-only; otherwise `Any`.
+    pub fn frontend(&self) -> Frontend {
+        self.frontend.unwrap_or(
+            if self.image.is_some() || self.image_back.is_some() {
+                Frontend::Web
+            } else {
+                Frontend::Any
+            },
+        )
     }
 
     /// The swapped card for dual-direction review: the question becomes the old
@@ -88,6 +128,11 @@ impl Card {
             self.line,
         );
         card.mode = self.mode;
+        card.frontend = self.frontend;
+        // Swap the image sides: a question-side image becomes the answer's, and
+        // vice versa, so a `direction: both` visual card reverses sensibly.
+        card.image = self.image_back.clone();
+        card.image_back = self.image.clone();
         card
     }
 
@@ -156,6 +201,37 @@ mod tests {
         assert_eq!(fwd.line, rev.line); // same source line -> sibling group
         assert_eq!(fwd.mode, rev.mode);
         assert_ne!(fwd.id(), rev.id()); // distinct identity (hashes new back)
+    }
+
+    #[test]
+    fn frontend_is_web_for_image_cards_unless_overridden() {
+        let mut c = card("s", "f", &["b"], None);
+        assert_eq!(Frontend::Any, c.frontend()); // no image -> any
+        c.image = Some(PathBuf::from("/imgs/a.png"));
+        assert_eq!(Frontend::Web, c.frontend()); // image -> web
+        c.frontend = Some(Frontend::Tui); // explicit override wins
+        assert_eq!(Frontend::Tui, c.frontend());
+    }
+
+    #[test]
+    fn reversed_swaps_image_sides_and_keeps_frontend() {
+        let mut fwd = card("g.txt", "name this chord", &["G major"], None);
+        fwd.image_back = Some(PathBuf::from("/tabs/g.png"));
+        fwd.frontend = Some(Frontend::Web);
+        let rev = fwd.reversed();
+        // The answer-side image becomes the question-side image and vice versa.
+        assert_eq!(Some(PathBuf::from("/tabs/g.png")), rev.image);
+        assert_eq!(None, rev.image_back);
+        assert_eq!(Some(Frontend::Web), rev.frontend);
+    }
+
+    #[test]
+    fn id_ignores_image_and_frontend() {
+        let mut a = card("s", "f", &["b"], None);
+        let b = card("s", "f", &["b"], None);
+        a.image = Some(PathBuf::from("/imgs/a.png"));
+        a.frontend = Some(Frontend::Web);
+        assert_eq!(a.id(), b.id());
     }
 
     #[test]

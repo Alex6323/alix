@@ -34,6 +34,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   card and its swap (e.g. `purported → angeblich` and back). The two get
   distinct progress, are kept apart in the queue, and are removed together;
   cloze cards are unaffected.
+- Image cards: `% img:` (question side) and `% img-back:` (answer side, revealed
+  with the back) attach an image to a card; a deck-level `% img-dir:` sets the
+  folder filenames resolve against (else the deck file's folder; absolute card
+  paths are used as-is). Images render in the web frontend only, so an image card
+  is automatically web-only — the TUI skips such cards (and refuses, pointing at
+  `--serve`, if a whole deck is web-only). A general `% frontend: any|tui|web`
+  directive (per card or deck-wide) controls this explicitly; `flash check` warns
+  about missing image files. `/img/<key>` URLs are opaque hashes of registered
+  deck paths, so the server never joins request input to a filesystem path.
 - `flash reset` clears stored progress: for one or more decks, a single card
   (`--card <id-or-front-text>`), or everything (`--all`). With no decks it opens
   the same checkbox picker as `review`/`browse` to choose them; `--cards` opens

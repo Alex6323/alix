@@ -7,7 +7,7 @@ use thiserror::Error;
 
 use crate::{
     answer::Mode,
-    card::{Card, Direction},
+    card::{Card, Direction, Frontend},
     parser::{self, ParseError},
     scheduler::SchedulerKind,
     session::Order,
@@ -17,7 +17,7 @@ use crate::{
 /// `% mode: line` or `% order: sequential`. Each is `None` unless the deck
 /// sets it; an explicit CLI flag always takes precedence. Unknown keys and
 /// unparseable values are ignored, so the directives never break a deck.
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone)]
 pub struct DeckSettings {
     /// Default answer mode for this deck (`% mode: ...`).
     pub mode: Option<Mode>,
@@ -27,6 +27,11 @@ pub struct DeckSettings {
     pub order: Option<Order>,
     /// Default review direction for this deck (`% direction: ...`).
     pub direction: Option<Direction>,
+    /// Default frontend for this deck (`% frontend: ...`).
+    pub frontend: Option<Frontend>,
+    /// Directory that card `% img:` / `% img-back:` filenames resolve against
+    /// (`% img-dir: ...`). Absolute, or relative to the deck file's folder.
+    pub img_dir: Option<PathBuf>,
 }
 
 impl DeckSettings {
@@ -39,6 +44,8 @@ impl DeckSettings {
                 "scheduler" => settings.scheduler = SchedulerKind::from_str(value, true).ok(),
                 "order" => settings.order = Order::from_str(value, true).ok(),
                 "direction" => settings.direction = Direction::from_str(value, true).ok(),
+                "frontend" => settings.frontend = Frontend::from_str(value, true).ok(),
+                "img-dir" => settings.img_dir = Some(PathBuf::from(value)),
                 _ => {}
             }
         }
@@ -107,6 +114,16 @@ impl Deck {
         for card in &mut cards {
             card.mode = card.mode.or(settings.mode);
         }
+        // Fold the declared frontend (card override, else deck) and resolve each
+        // card's image filenames to absolute paths against the deck's `img-dir`
+        // (or the deck file's own folder when none is set). No filesystem check:
+        // a missing image must not stop the deck from loading.
+        let base_dir = image_base_dir(&path, settings.img_dir.as_deref());
+        for card in &mut cards {
+            card.frontend = card.frontend.or(settings.frontend);
+            card.image = card.image.take().map(|p| resolve_image(&base_dir, p));
+            card.image_back = card.image_back.take().map(|p| resolve_image(&base_dir, p));
+        }
         // Expand the declared direction (card override, else deck) into cards.
         // `reverse` swaps the card, `both` adds the swapped one alongside; the
         // reversed card keeps the source line, so the session treats the pair as
@@ -153,6 +170,28 @@ impl Deck {
             }
         }
         dups
+    }
+}
+
+/// The directory that card image filenames resolve against: the deck's
+/// `% img-dir:` if set (made absolute against the deck file's folder when it is
+/// itself relative), else the deck file's own folder.
+fn image_base_dir(deck_path: &Path, img_dir: Option<&Path>) -> PathBuf {
+    let deck_dir = deck_path.parent().unwrap_or_else(|| Path::new("."));
+    match img_dir {
+        Some(dir) if dir.is_absolute() => dir.to_path_buf(),
+        Some(dir) => deck_dir.join(dir),
+        None => deck_dir.to_path_buf(),
+    }
+}
+
+/// Resolves one card image: an absolute value is used as-is; otherwise it is
+/// joined onto the deck's image base directory.
+fn resolve_image(base: &Path, image: PathBuf) -> PathBuf {
+    if image.is_absolute() {
+        image
+    } else {
+        base.join(image)
     }
 }
 
@@ -579,6 +618,58 @@ mod tests {
         // Deck-level `both` must not reverse a cloze card (one hole -> one card).
         std::fs::write(&path, "% direction: both\n#? fill\n\tThe {{x}} thing.\n").unwrap();
         assert_eq!(1, Deck::load(&path).unwrap().cards.len());
+    }
+
+    #[test]
+    fn image_resolves_against_img_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.txt");
+        std::fs::write(
+            &path,
+            "% img-dir: /assets/imgs\n# q\n% img: moon.png\n\tWaxing\n",
+        )
+        .unwrap();
+        let deck = Deck::load(&path).unwrap();
+        assert_eq!(
+            Some(PathBuf::from("/assets/imgs/moon.png")),
+            deck.cards[0].image
+        );
+        assert_eq!(Frontend::Web, deck.cards[0].frontend()); // image -> web
+    }
+
+    #[test]
+    fn image_resolves_against_deck_dir_without_img_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.txt");
+        std::fs::write(&path, "# q\n% img: moon.png\n\tWaxing\n").unwrap();
+        let deck = Deck::load(&path).unwrap();
+        assert_eq!(Some(dir.path().join("moon.png")), deck.cards[0].image);
+    }
+
+    #[test]
+    fn absolute_card_image_is_used_as_is() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.txt");
+        std::fs::write(
+            &path,
+            "% img-dir: /assets\n# q\n% img: /elsewhere/moon.png\n\tWaxing\n",
+        )
+        .unwrap();
+        let deck = Deck::load(&path).unwrap();
+        assert_eq!(
+            Some(PathBuf::from("/elsewhere/moon.png")),
+            deck.cards[0].image
+        );
+    }
+
+    #[test]
+    fn deck_level_frontend_applies_to_cards() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.txt");
+        std::fs::write(&path, "% frontend: web\n# a\n\tb\n").unwrap();
+        let deck = Deck::load(&path).unwrap();
+        assert_eq!(Some(Frontend::Web), deck.cards[0].frontend);
+        assert_eq!(Frontend::Web, deck.cards[0].frontend());
     }
 
     #[test]

@@ -113,6 +113,10 @@
   .context { color: var(--bolt); font-family: var(--mono); font-size: 0.95rem; white-space: pre-wrap; }
   .context .hole { color: var(--bolt-hi); font-weight: 700; }      /* the active cloze blank */
   .context .muted-hole { color: var(--dim); }                     /* sibling holes, hidden */
+  /* bound the image by its region (flex shrink + min-height:0), so it scales
+     down to fit instead of scrolling; flex-grow 0 keeps small images at their
+     natural size rather than ballooning. */
+  .card-img { flex: 0 1 auto; min-height: 0; align-self: center; max-width: 100%; object-fit: contain; margin: 12px auto 0; border-radius: 8px; }
 
   .divider { flex: none; height: 1px; width: 70%; margin: 0 auto; background: linear-gradient(90deg, transparent, var(--line) 18%, var(--line) 82%, transparent); }
 
@@ -323,6 +327,7 @@ function renderCard() {
   const q = el("div", "region q");
   q.appendChild(el("div", "front-text", c.front));
   for (const ctx of c.context) q.appendChild(contextLine(ctx));
+  if (c.img) q.appendChild(cardImage(c.img));
   card.appendChild(q);
 
   card.appendChild(el("div", "divider"));
@@ -458,6 +463,17 @@ function fillAnswer(a) {
   for (let i = 0; i < shown; i++) sec.appendChild(el("div", "answer", c.back[i]));
   if (state.mode === "line" && shown < c.back.length) sec.appendChild(el("div", "answer pending", "···"));
   a.appendChild(sec);
+  // Attach the answer image to the region itself (a flex column), not to the
+  // `.reveal` block, so it can be bounded by the region and scaled to fit.
+  if (c.img_back) a.appendChild(cardImage(c.img_back));
+}
+
+// An <img> for a card image side. The src is a server `/img/<key>` URL.
+function cardImage(src) {
+  const img = el("img", "card-img");
+  img.src = src;
+  img.alt = "";
+  return img;
 }
 
 // A cloze context line, with the active blank brightened and hidden holes

@@ -83,6 +83,10 @@ command line:
 - `scheduler` — `leitner` (default) or `sm2`.
 - `direction` — `forward` (default), `reverse`, or `both`; per card or deck-wide
   (see below).
+- `frontend` — `any` (default), `tui`, or `web`; restricts a card (or deck) to a
+  frontend. Image cards are `web` automatically (see Images below).
+- `img-dir` — directory that card `% img:` / `% img-back:` filenames resolve
+  against (deck header only; see Images below).
 
 These are ordinary `%` comments, so they don't affect parsing and card hashes
 are unaffected. An explicit CLI flag always wins over a directive, which wins over
@@ -169,6 +173,35 @@ both` before the first card) with per-card overrides — like `mode`. The two
 directions get distinct progress, are kept apart in the queue (you won't see one
 right after the other), and are removed together. The reversed card keeps the
 note. Best for single-line cards; it does not apply to cloze cards.
+
+### Images (`% img:`, `% img-back:`)
+
+A card can show an image on the question side with `% img:`, the answer side
+(revealed with the back) with `% img-back:`, or both:
+
+```
+% img-dir: /home/me/decks/img
+
+# What phase is this?
+    % img: moon-waxing.png
+    Waxing gibbous
+
+# Play this chord
+    G major
+    % img-back: g-major-tab.png
+```
+
+The deck-level `% img-dir:` (header only) is the directory filenames resolve
+against; it may be absolute or relative to the deck file. Without it, filenames
+resolve against the deck file's own folder. A card value that is itself an
+absolute path is used as-is. One image per side.
+
+Images render in the **web frontend only** — the terminal can't draw them — so
+an image card is automatically *web-only* (as if it declared `% frontend: web`).
+In the terminal, `flash review` skips such cards with a note, and if a whole
+deck is web-only it points you at `--serve`. Use `% frontend:` to force a card
+or deck to a frontend explicitly. `flash check` warns about a referenced image
+file that doesn't exist (it doesn't fail the check).
 
 ## Review
 
