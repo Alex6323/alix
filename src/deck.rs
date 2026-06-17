@@ -7,7 +7,7 @@ use thiserror::Error;
 
 use crate::{
     answer::Mode,
-    card::Card,
+    card::{Card, Direction},
     parser::{self, ParseError},
     scheduler::SchedulerKind,
     session::Order,
@@ -25,6 +25,8 @@ pub struct DeckSettings {
     pub scheduler: Option<SchedulerKind>,
     /// Default card order for this deck (`% order: ...`).
     pub order: Option<Order>,
+    /// Default review direction for this deck (`% direction: ...`).
+    pub direction: Option<Direction>,
 }
 
 impl DeckSettings {
@@ -36,6 +38,7 @@ impl DeckSettings {
                 "mode" => settings.mode = Mode::from_str(value, true).ok(),
                 "scheduler" => settings.scheduler = SchedulerKind::from_str(value, true).ok(),
                 "order" => settings.order = Order::from_str(value, true).ok(),
+                "direction" => settings.direction = Direction::from_str(value, true).ok(),
                 _ => {}
             }
         }
@@ -104,6 +107,28 @@ impl Deck {
         for card in &mut cards {
             card.mode = card.mode.or(settings.mode);
         }
+        // Expand the declared direction (card override, else deck) into cards.
+        // `reverse` swaps the card, `both` adds the swapped one alongside; the
+        // reversed card keeps the source line, so the session treats the pair as
+        // siblings. Direction doesn't apply to cloze cards.
+        let mut expanded = Vec::with_capacity(cards.len());
+        for card in cards {
+            let direction = card.direction.or(settings.direction).unwrap_or_default();
+            if card.hash_lines.is_some() || direction == Direction::Forward {
+                expanded.push(card);
+            } else {
+                let reversed = card.reversed();
+                match direction {
+                    Direction::Reverse => expanded.push(reversed),
+                    Direction::Both => {
+                        expanded.push(card);
+                        expanded.push(reversed);
+                    }
+                    Direction::Forward => unreachable!("handled above"),
+                }
+            }
+        }
+        let cards = expanded;
         Ok(Self {
             path,
             subject,
@@ -511,6 +536,49 @@ mod tests {
         let path = dir.path().join("d.txt");
         std::fs::write(&path, "# a\n\tx\n").unwrap();
         assert_eq!(None, Deck::load(&path).unwrap().cards[0].mode);
+    }
+
+    #[test]
+    fn direction_both_expands_to_forward_and_reverse() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.txt");
+        std::fs::write(&path, "# purported\n% direction: both\n\tangeblich\n").unwrap();
+        let deck = Deck::load(&path).unwrap();
+        assert_eq!(2, deck.cards.len());
+        assert_eq!("purported", deck.cards[0].front);
+        assert_eq!(vec!["angeblich"], deck.cards[0].back);
+        assert_eq!("angeblich", deck.cards[1].front);
+        assert_eq!(vec!["purported"], deck.cards[1].back);
+        assert_eq!(deck.cards[0].line, deck.cards[1].line); // sibling group
+        assert_ne!(deck.cards[0].id(), deck.cards[1].id());
+    }
+
+    #[test]
+    fn direction_reverse_keeps_only_the_swapped_card() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.txt");
+        std::fs::write(&path, "# q\n% direction: reverse\n\ta\n").unwrap();
+        let deck = Deck::load(&path).unwrap();
+        assert_eq!(1, deck.cards.len());
+        assert_eq!("a", deck.cards[0].front);
+        assert_eq!(vec!["q"], deck.cards[0].back);
+    }
+
+    #[test]
+    fn deck_level_direction_applies_to_cards() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.txt");
+        std::fs::write(&path, "% direction: both\n# a\n\tb\n").unwrap();
+        assert_eq!(2, Deck::load(&path).unwrap().cards.len());
+    }
+
+    #[test]
+    fn direction_does_not_apply_to_cloze() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.txt");
+        // Deck-level `both` must not reverse a cloze card (one hole -> one card).
+        std::fs::write(&path, "% direction: both\n#? fill\n\tThe {{x}} thing.\n").unwrap();
+        assert_eq!(1, Deck::load(&path).unwrap().cards.len());
     }
 
     #[test]

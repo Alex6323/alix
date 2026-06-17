@@ -28,7 +28,11 @@ use thiserror::Error;
 
 use clap::ValueEnum;
 
-use crate::{answer::Mode, card::Card, cloze};
+use crate::{
+    answer::Mode,
+    card::{Card, Direction},
+    cloze,
+};
 
 /// Markup indicating the front side of a card.
 const MARKUP_FRONT: char = '#';
@@ -90,6 +94,8 @@ struct PartialCard {
     cloze: bool,
     /// Per-card `% mode:` override, if the card declares one.
     mode: Option<Mode>,
+    /// Per-card `% direction:`, if the card declares one.
+    direction: Option<Direction>,
 }
 
 impl PartialCard {
@@ -112,6 +118,7 @@ impl PartialCard {
                 self.line,
             );
             card.mode = self.mode;
+            card.direction = self.direction;
             cards.push(card);
         }
         Ok(())
@@ -223,6 +230,7 @@ pub fn parse_str(subject: &str, text: &str) -> Result<Vec<Card>, ParseError> {
                     line: lineno,
                     cloze,
                     mode: None,
+                    direction: None,
                 });
                 state = State::Front;
             }
@@ -251,15 +259,26 @@ pub fn parse_str(subject: &str, text: &str) -> Result<Vec<Card>, ParseError> {
             }
             MARKUP_COMMENT => {
                 // A `% key: value` directive inside a card is a per-card
-                // override (currently only `mode`); unrecognized keys are
-                // ignored, like deck-level directives. `%` lines before the
-                // first card are deck-level (handled by parse_directives).
+                // override (`mode`, `direction`); unrecognized keys are ignored,
+                // like deck-level directives. `%` lines before the first card
+                // are deck-level (handled by parse_directives).
                 if state != State::Init
                     && let Some((key, value)) = directive(line)
-                    && key == "mode"
-                    && let Ok(m) = Mode::from_str(&value, true)
                 {
-                    partial.as_mut().unwrap().mode = Some(m);
+                    let partial = partial.as_mut().unwrap();
+                    match key.as_str() {
+                        "mode" => {
+                            if let Ok(m) = Mode::from_str(&value, true) {
+                                partial.mode = Some(m);
+                            }
+                        }
+                        "direction" => {
+                            if let Ok(d) = Direction::from_str(&value, true) {
+                                partial.direction = Some(d);
+                            }
+                        }
+                        _ => {}
+                    }
                 }
             }
             _ => {
@@ -451,6 +470,14 @@ mod tests {
         let cards = parse_str("s", text).unwrap();
         assert_eq!(Some(Mode::Choice), cards[0].mode);
         assert_eq!(None, cards[1].mode); // no per-card directive
+    }
+
+    #[test]
+    fn per_card_direction_directive_is_parsed() {
+        // parse_str records the declared direction; expansion happens at load.
+        let cards = parse_str("s", "# a\n% direction: both\n\tx\n# b\n\ty\n").unwrap();
+        assert_eq!(Some(Direction::Both), cards[0].direction);
+        assert_eq!(None, cards[1].direction);
     }
 
     #[test]

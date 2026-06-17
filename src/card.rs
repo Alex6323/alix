@@ -6,6 +6,19 @@ use twox_hash::XxHash64;
 
 use crate::answer::Mode;
 
+/// Which way a card is reviewed. Set per card (or per deck) with
+/// `% direction:`; `both` generates a forward and a reversed card.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
+pub enum Direction {
+    /// The card as written: front asks, back answers (the default).
+    #[default]
+    Forward,
+    /// Only the swapped card: back asks, front answers.
+    Reverse,
+    /// Both the forward and the reversed card.
+    Both,
+}
+
 /// A single flashcard.
 #[derive(Clone, Debug)]
 pub struct Card {
@@ -32,6 +45,10 @@ pub struct Card {
     /// `% mode:`). `None` falls back to the CLI flag / built-in default. Not
     /// part of the identity hash — mode is a review property, not content.
     pub mode: Option<Mode>,
+    /// Declared review direction (`% direction:`), consumed when the deck is
+    /// loaded to expand `both`/`reverse` into cards. `None` means forward. Not
+    /// part of the identity hash.
+    pub direction: Option<Direction>,
 }
 
 impl Card {
@@ -52,7 +69,26 @@ impl Card {
             line,
             hash_lines: None,
             mode: None,
+            direction: None,
         }
+    }
+
+    /// The swapped card for dual-direction review: the question becomes the old
+    /// answer and the answer becomes the old front. It keeps the same source
+    /// `line`, so it shares the forward card's sibling group (the session keeps
+    /// them apart and removes them together). Its identity differs naturally
+    /// because `id()` hashes the new back (the old front). Only meaningful for
+    /// plain cards.
+    pub fn reversed(&self) -> Card {
+        let mut card = Card::plain(
+            Arc::clone(&self.subject),
+            self.back.join("\n"),
+            vec![self.front.clone()],
+            self.note.clone(),
+            self.line,
+        );
+        card.mode = self.mode;
+        card
     }
 
     /// Returns the identity hash of this card.
@@ -107,6 +143,19 @@ mod tests {
         let b = card("subject1", "hello", &["world"], None);
         a.mode = Some(Mode::Typing);
         assert_eq!(a.id(), b.id());
+    }
+
+    #[test]
+    fn reversed_swaps_sides_keeps_note_and_line() {
+        let mut fwd = card("vocab.txt", "purported", &["angeblich"], Some("a note"));
+        fwd.mode = Some(Mode::Typing);
+        let rev = fwd.reversed();
+        assert_eq!("angeblich", rev.front);
+        assert_eq!(vec!["purported"], rev.back);
+        assert_eq!(fwd.note, rev.note);
+        assert_eq!(fwd.line, rev.line); // same source line -> sibling group
+        assert_eq!(fwd.mode, rev.mode);
+        assert_ne!(fwd.id(), rev.id()); // distinct identity (hashes new back)
     }
 
     #[test]

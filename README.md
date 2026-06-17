@@ -81,6 +81,8 @@ command line:
 - `order` — `scheduled` (the default) or `sequential` to walk the deck in
   file order, top to bottom (ideal for lyrics with `% mode: line`).
 - `scheduler` — `leitner` (default) or `sm2`.
+- `direction` — `forward` (default), `reverse`, or `both`; per card or deck-wide
+  (see below).
 
 These are ordinary `%` comments, so they don't affect parsing and card hashes
 are unaffected. An explicit CLI flag always wins over a directive, which wins over
@@ -148,6 +150,25 @@ cards are available. Only the doubled `{{` / `}}` are special — a lone `{` or
 a literal `{{` as `\{\{` if you ever need one). Progress of a cloze card
 survives rewording its front and even a future change to the hole markup, but
 editing its answer text or hole contents resets the affected holes.
+
+### Dual-direction cards (`% direction:`)
+
+A `% direction:` directive reviews a card both ways — useful for vocabulary and
+other reversible facts:
+
+```
+# purported
+    angeblich
+    % direction: both
+```
+
+`both` makes two cards (`purported → angeblich` and `angeblich → purported`);
+`reverse` keeps only the swapped one; `forward` (the default) is the card as
+written. It works per card, or deck-wide as a header directive (`% direction:
+both` before the first card) with per-card overrides — like `mode`. The two
+directions get distinct progress, are kept apart in the queue (you won't see one
+right after the other), and are removed together. The reversed card keeps the
+note. Best for single-line cards; it does not apply to cloze cards.
 
 ## Review
 

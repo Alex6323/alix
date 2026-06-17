@@ -29,6 +29,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and the web app — `flip`, `typing exact`, `typing fuzzy`, `choice`,
   `line by line` — so typing vs fuzzy (otherwise identical input prompts) is
   clear at a glance.
+- Dual-direction cards: a `% direction:` directive (per card or deck-wide,
+  `forward`/`reverse`/`both`) reviews a card both ways — `both` generates the
+  card and its swap (e.g. `purported → angeblich` and back). The two get
+  distinct progress, are kept apart in the queue, and are removed together;
+  cloze cards are unaffected.
 - `flash reset` clears stored progress: for one or more decks, a single card
   (`--card <id-or-front-text>`), or everything (`--all`). With no decks it opens
   the same checkbox picker as `review`/`browse` to choose them; `--cards` opens
