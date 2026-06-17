@@ -876,6 +876,24 @@ impl App {
         }
         lines.push(Line::default());
 
+        // A mode badge at the top of the answer section — typing and fuzzy in
+        // particular look identical without it (both are an input prompt).
+        let mode_tag = match &self.phase {
+            Phase::Typing { .. } => "TYPING EXACT",
+            Phase::Fuzzy { .. } => "TYPING FUZZY",
+            Phase::Flip { .. } => "FLIP",
+            Phase::LineByLine { .. } => "LINE BY LINE",
+            Phase::Choice { .. } => "CHOICE",
+            // Typing finishes with an empty result vec; fuzzy carries its lines.
+            Phase::Feedback { fuzzy, .. } if fuzzy.is_empty() => "TYPING EXACT",
+            Phase::Feedback { .. } => "TYPING FUZZY",
+            _ => "",
+        };
+        if !mode_tag.is_empty() {
+            lines.push(Line::from(mode_tag.dim()));
+            lines.push(Line::default());
+        }
+
         match &self.phase {
             Phase::Typing {
                 validators,

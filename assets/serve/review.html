@@ -133,6 +133,13 @@
     font-family: var(--sans); font-size: 1.1rem; text-align: center; outline: none;
   }
   .field:focus { border-color: var(--bolt); }
+  /* mode badge on every card — typing and fuzzy look identical otherwise */
+  .mode-tag {
+    display: block; width: fit-content; margin: 0 auto 14px;
+    font-family: var(--mono); font-size: 0.6rem;
+    letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim);
+    border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px;
+  }
   /* notes: a warm, clearly-separated block (yellow, like the TUI), as wide as
      the card rather than the answer text */
   .note {
@@ -255,6 +262,9 @@ function restart() { api("/api/restart", post({})).then(apply); }
 function apply(s) { state = s; revealed = 0; feedback = null; render(); }
 function isChoice() { return state.mode === "choice" && state.choices; }
 function isInput() { return state.mode === "typing" || state.mode === "fuzzy"; }
+function modeLabel() {
+  return { typing: "typing exact", fuzzy: "typing fuzzy", line: "line by line" }[state.mode] || state.mode;
+}
 function choose(i) { api("/api/choose", post({ index: i })).then(f => { feedback = f; render(); }); }
 function submitCheck() {
   const lines = Array.from(document.querySelectorAll("#ansRegion input.field")).map(i => i.value);
@@ -339,6 +349,7 @@ function fillBottom() {
   const a = document.getElementById("ansRegion");
   if (!a) return;
   a.innerHTML = "";
+  a.appendChild(el("span", "mode-tag", modeLabel())); // badge heads the answer section
   if (feedback) { (isChoice() ? renderChoiceFeedback : renderCheckFeedback)(a); setNote(true); }
   else if (isChoice()) { renderChoices(a); setNote(false); }
   else if (isInput()) { renderInput(a); setNote(false); }
@@ -412,7 +423,9 @@ function renderCheckFeedback(a) {
     line.appendChild(el("span", "txt", r.input || "—"));
     line.appendChild(el("span", "mark", r.passed ? "✓" : "✗"));
     wrap.appendChild(line);
-    if (!r.passed) wrap.appendChild(el("div", "expected", r.expected));
+    // Show the correct answer whenever the input differed — including a fuzzy
+    // pass within tolerance, so typos don't get memorised.
+    if (r.distance > 0) wrap.appendChild(el("div", "expected", r.expected));
   });
   a.appendChild(wrap);
 }
@@ -436,7 +449,7 @@ function renderChoiceFeedback(a) {
 // Fill the answer region for reveal modes (flip / line / choice fallback).
 function fillAnswer(a) {
   if (!a) return;
-  a.innerHTML = "";
+  // fillBottom already cleared the region and added the mode badge; don't wipe it.
   if (revealed === 0) return; // stays empty until revealed
 
   const c = state.card;
