@@ -209,16 +209,22 @@ flash review rust.txt --serve --lan        # reachable from other devices on you
 flash browse rust.txt --serve              # the browse view in the browser
 ```
 
-Reveal a card with the button or `Space`, then grade with the **Again** /
-**Good** / **Easy** buttons (or `1`/`2`/`3`); `line`-mode decks reveal one line
-at a time. The **Remove** button (or the `x` key) throws the current card away
-— deleting it from the deck file and pruning its progress — immediately, since
-a server has no end-of-session to defer to. It is deliberately local-only — no
-accounts, no database. By default it binds to `127.0.0.1` (this machine only);
-`--lan` binds all interfaces so a device on the same network can reach it at
-`http://<your-machine-ip>:<port>` (no authentication, so only use `--lan` on a
-network you trust). `--port` and `--lan` require `--serve`; the default port
-lives in the `[serve]` section of the config file and `--port` overrides it.
+Every answer mode works in the browser: **flip** (reveal, then self-grade
+Again / Good / Easy), **line** (reveal a verse one line at a time — it
+auto-scrolls to follow the newest line), **typing** / **fuzzy** (type your
+answer and submit; checked exactly or with your configured typo tolerance, each
+line marked ✓/✗ with the correct answer shown), and **choice** (tap one of the
+options). The note appears once the answer is shown. Controls are big tap
+targets and follow your configured key bindings — the page reads them from the
+server, so the chips show your own keys. The overflow menu (⋮) holds **Remove**,
+which deletes the current card from its deck file and prunes its progress.
+
+It is deliberately local-only — no accounts, no database. By default it binds
+to `127.0.0.1` (this machine only); `--lan` binds all interfaces so a device on
+the same network can reach it at `http://<your-machine-ip>:<port>` (no
+authentication, so only use `--lan` on a network you trust). `--port` and
+`--lan` require `--serve`; the default port lives in the `[serve]` section of
+the config file and `--port` overrides it.
 
 ## Ask Claude about a card
 

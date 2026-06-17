@@ -15,10 +15,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   end-of-session).
 - Local web frontend: add `--serve` to `review` or `browse` to run it in the
   browser instead of the terminal, reusing the same session logic and writing
-  to the same progress store, so browser and CLI share one history. Touch-
-  friendly; binds to localhost by default, `--lan` exposes it to the network
-  (no auth), `--port`/`[serve]` set the port (both `--port` and `--lan` require
-  `--serve`). Built on `tiny_http`.
+  to the same progress store, so browser and CLI share one history. All answer
+  modes work (flip, line-by-line, typing, fuzzy, multiple choice); controls are
+  touch-friendly and mirror the configured `[keys]` bindings. Binds to localhost
+  by default; `--lan` exposes it to the network (no auth), `--port`/`[serve]`
+  set the port (both `--port` and `--lan` require `--serve`). Built on
+  `tiny_http`.
 
 ### Changed
 - Note rendering moved into a frontend-independent `render` module that emits a
