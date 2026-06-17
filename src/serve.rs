@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 use tiny_http::{Header, Method, Request, Response, Server};
 
 use crate::{
-    answer::Mode,
+    answer::{Mode, grade_fuzzy},
     card::Card,
     choice,
     config::{Bindings, BrowseBindings, Key, KeyPattern},
@@ -151,6 +151,23 @@ struct ChooseFeedbackDto {
     passed: bool,
 }
 
+/// One typed line graded against the expected answer (typing / fuzzy mode).
+#[derive(Debug, Serialize)]
+struct LineResultDto {
+    input: String,
+    expected: String,
+    passed: bool,
+    distance: usize,
+}
+
+/// The result of submitting a typed answer: a result per back line plus whether
+/// they all passed.
+#[derive(Debug, Serialize)]
+struct CheckFeedbackDto {
+    results: Vec<LineResultDto>,
+    passed: bool,
+}
+
 /// One configured key, as the browser sees it: `k` is the `KeyboardEvent.key`
 /// value (`" "`, `"Enter"`, `"j"`, …) and `ctrl` whether Ctrl must be held.
 #[derive(Debug, Serialize)]
@@ -224,15 +241,30 @@ impl BrowseKeys {
 /// file path) lets the remove action delete a card from its deck file and prune
 /// its progress; unlike the TUI, removal is immediate, since the server has no
 /// clean end-of-session.
+/// Everything a served review session needs besides the session and store.
+pub struct ReviewOptions {
+    pub mode: Mode,
+    pub label: String,
+    /// Subject → deck file path, for card removal.
+    pub decks: HashMap<String, PathBuf>,
+    pub keys: Bindings,
+    /// Fuzzy-mode typo tolerance per line.
+    pub max_typos: usize,
+}
+
 pub fn run_review(
     mut session: Session,
     mut store: Store,
-    mode: Mode,
-    label: String,
     addr: SocketAddr,
-    decks: HashMap<String, PathBuf>,
-    bindings: Bindings,
+    opts: ReviewOptions,
 ) -> Result<()> {
+    let ReviewOptions {
+        mode,
+        label,
+        decks,
+        keys: bindings,
+        max_typos,
+    } = opts;
     let mut files = DeckFiles::new(decks);
     let keys = ReviewKeys::from(&bindings);
     let server = Server::http(addr).map_err(|e| anyhow!("cannot start server on {addr}: {e}"))?;
@@ -258,6 +290,41 @@ pub fn run_review(
             (Method::Post, "/api/skip") => {
                 session.skip();
                 respond_json(request, &state_dto(&session, &store, mode, &label));
+            }
+            (Method::Post, "/api/check") => {
+                // Grade the typed lines against the current card — exact for
+                // typing (tolerance 0), typo-tolerant for fuzzy. Like choose,
+                // this only checks; the grade is applied on Continue.
+                #[derive(Deserialize)]
+                struct Body {
+                    lines: Vec<String>,
+                }
+                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
+                let result = body.and_then(|body| {
+                    let card = session.current()?;
+                    let tol = if mode == Mode::Typing { 0 } else { max_typos };
+                    let results: Vec<LineResultDto> = card
+                        .back
+                        .iter()
+                        .enumerate()
+                        .map(|(i, expected)| {
+                            let input = body.lines.get(i).map(String::as_str).unwrap_or("");
+                            let r = grade_fuzzy(input, expected, tol);
+                            LineResultDto {
+                                input: r.input,
+                                expected: r.expected,
+                                passed: r.passed,
+                                distance: r.distance,
+                            }
+                        })
+                        .collect();
+                    let passed = results.iter().all(|r| r.passed);
+                    Some(CheckFeedbackDto { results, passed })
+                });
+                match result {
+                    Some(f) => respond_json(request, &f),
+                    None => respond_status(request, 400),
+                }
             }
             (Method::Post, "/api/choose") => {
                 // Just reports which option is correct (the question is rebuilt

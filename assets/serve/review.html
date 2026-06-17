@@ -107,6 +107,8 @@
   .region.a { flex: 0 1 auto; max-height: 82%; }
   .region.a.withnote { max-height: 52%; }
   .region.n { flex: 0 0 auto; max-height: 30%; }   /* note */
+  /* keep the note (and its divider) pinned to the bottom of the card */
+  #noteDivider { margin-top: auto; }
   .front-text { font-size: clamp(1.4rem, 4.4vw, 2.05rem); font-weight: 600; line-height: 1.28; letter-spacing: -0.01em; }
   .context { color: var(--bolt); font-family: var(--mono); font-size: 0.95rem; white-space: pre-wrap; }
   .context .hole { color: var(--bolt-hi); font-weight: 700; }      /* the active cloze blank */
@@ -118,6 +120,19 @@
   @keyframes revealIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
   .answer { color: var(--good); font-size: clamp(1.15rem, 3.6vw, 1.5rem); line-height: 1.4; margin: 0 0 4px; white-space: pre-wrap; }
   .answer.pending { color: var(--dim); }
+  /* a wrong typed line recedes (dim + small) so the correct answer leads */
+  .answer.miss { color: var(--again); opacity: 0.5; font-size: clamp(0.92rem, 2.6vw, 1.08rem); }
+  .answer .mark { margin-left: 10px; font-weight: 700; }   /* ✓ / ✗ after the line */
+  .expected { color: var(--good); font-size: clamp(1.15rem, 3.6vw, 1.5rem); line-height: 1.4; margin: 2px 0 8px; }
+
+  /* typing / fuzzy input fields */
+  .inputs { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 520px; margin: 0 auto; }
+  .field {
+    width: 100%; background: rgba(255,255,255,0.04); border: 1px solid var(--line);
+    border-radius: 12px; padding: 13px 16px; min-height: 52px; color: var(--ink);
+    font-family: var(--sans); font-size: 1.1rem; text-align: center; outline: none;
+  }
+  .field:focus { border-color: var(--bolt); }
   /* notes: a warm, clearly-separated block (yellow, like the TUI), as wide as
      the card rather than the answer text */
   .note {
@@ -239,9 +254,14 @@ function restart() { api("/api/restart", post({})).then(apply); }
 
 function apply(s) { state = s; revealed = 0; feedback = null; render(); }
 function isChoice() { return state.mode === "choice" && state.choices; }
+function isInput() { return state.mode === "typing" || state.mode === "fuzzy"; }
 function choose(i) { api("/api/choose", post({ index: i })).then(f => { feedback = f; render(); }); }
-// Continue from a choice result applies the grade (pass/fail) and advances.
-function continueChoice() { grade(feedback.passed ? "good" : "again"); }
+function submitCheck() {
+  const lines = Array.from(document.querySelectorAll("#ansRegion input.field")).map(i => i.value);
+  api("/api/check", post({ lines })).then(f => { feedback = f; render(); });
+}
+// Continue from a result (choice or typed) applies the grade and advances.
+function continueAfter() { grade(feedback.passed ? "good" : "again"); }
 
 function el(tag, cls, text) {
   const n = document.createElement(tag);
@@ -319,8 +339,9 @@ function fillBottom() {
   const a = document.getElementById("ansRegion");
   if (!a) return;
   a.innerHTML = "";
-  if (feedback) { renderChoiceFeedback(a); setNote(true); }
+  if (feedback) { (isChoice() ? renderChoiceFeedback : renderCheckFeedback)(a); setNote(true); }
   else if (isChoice()) { renderChoices(a); setNote(false); }
+  else if (isInput()) { renderInput(a); setNote(false); }
   else { fillAnswer(a); setNote(fullyRevealed()); }
   // keep the newest line in view as a verse is revealed line by line
   if (state.mode === "line" && revealed > 0) a.scrollTop = a.scrollHeight;
@@ -364,6 +385,34 @@ function renderChoices(a) {
     b.appendChild(el("span", "opt", opt));
     b.addEventListener("click", () => choose(i));
     wrap.appendChild(b);
+  });
+  a.appendChild(wrap);
+}
+
+// Typing / fuzzy: an input per answer line, submitted with Enter or the chip.
+function renderInput(a) {
+  const wrap = el("div", "inputs");
+  state.card.back.forEach(() => {
+    const inp = el("input", "field");
+    inp.type = "text"; inp.autocomplete = "off"; inp.spellcheck = false;
+    inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); submitCheck(); } });
+    wrap.appendChild(inp);
+  });
+  a.appendChild(wrap);
+  const first = wrap.querySelector("input");
+  if (first) first.focus();
+}
+
+// The typed answer after submitting: each line gets a trailing ✓ (green) or ✗
+// (red); a wrong line also shows the expected answer beneath it.
+function renderCheckFeedback(a) {
+  const wrap = el("div", "reveal");
+  feedback.results.forEach(r => {
+    const line = el("div", "answer" + (r.passed ? "" : " miss"));
+    line.appendChild(el("span", "txt", r.input || "—"));
+    line.appendChild(el("span", "mark", r.passed ? "✓" : "✗"));
+    wrap.appendChild(line);
+    if (!r.passed) wrap.appendChild(el("div", "expected", r.expected));
   });
   a.appendChild(wrap);
 }
@@ -428,10 +477,15 @@ function renderNote(parent, units) {
 function renderLegend() {
   legend.innerHTML = "";
   if (feedback) {
-    chip("Continue", "primary", continueChoice, label(KEYS.reveal));
+    chip("Continue", "primary", continueAfter, label(KEYS.reveal));
     return;
   }
   if (isChoice()) {
+    chip("Skip", "", skip, label(KEYS.skip));
+    return;
+  }
+  if (isInput()) {
+    chip("Submit", "primary", submitCheck, "enter");
     chip("Skip", "", skip, label(KEYS.skip));
     return;
   }
@@ -488,9 +542,17 @@ document.addEventListener("keydown", (e) => {
   if (state.finished) { if (hit(e, KEYS.restart)) { e.preventDefault(); restart(); } return; }
   if (feedback) {
     if (hit(e, KEYS.remove)) { e.preventDefault(); remove(); return; }
-    if (hit(e, KEYS.reveal) || e.key === "Enter") { e.preventDefault(); continueChoice(); }
+    if (hit(e, KEYS.reveal) || e.key === "Enter") { e.preventDefault(); continueAfter(); }
     return;
   }
+  // While typing in a field, only Ctrl shortcuts act so plain keys stay text;
+  // Enter (submit) is handled by the field itself.
+  if (isInput()) {
+    if (e.ctrlKey && hit(e, KEYS.remove)) { e.preventDefault(); remove(); }
+    else if (e.ctrlKey && hit(e, KEYS.skip)) { e.preventDefault(); skip(); }
+    return;
+  }
+  if (hit(e, KEYS.remove)) { e.preventDefault(); remove(); return; }
   if (isChoice()) {
     if (hit(e, KEYS.skip)) { e.preventDefault(); skip(); return; }
     if (e.key >= "1" && e.key <= "9") {
@@ -499,7 +561,6 @@ document.addEventListener("keydown", (e) => {
     }
     return;
   }
-  if (hit(e, KEYS.remove)) { e.preventDefault(); remove(); return; }
   if (!fullyRevealed()) {
     if (hit(e, KEYS.skip)) { e.preventDefault(); skip(); return; }
     if (hit(e, KEYS.reveal)) { e.preventDefault(); reveal(); return; }

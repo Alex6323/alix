@@ -531,11 +531,14 @@ fn review(args: ReviewArgs) -> Result<()> {
         return serve::run_review(
             session,
             store,
-            mode,
-            label,
             addr,
-            subject_paths(decks),
-            config.keys,
+            serve::ReviewOptions {
+                mode,
+                label,
+                decks: subject_paths(decks),
+                keys: config.keys,
+                max_typos: args.max_typos,
+            },
         );
     }
 
