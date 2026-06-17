@@ -77,19 +77,36 @@
     display: flex; flex-direction: column;
   }
   .card::after { content: ""; position: absolute; inset: 12px; border-radius: 12px; border: 1px solid rgba(125,249,232,0.10); pointer-events: none; }
-  /* the card is split into stacked regions of fixed proportion, so revealing
-     the answer or note never shifts the question or the answer */
+  /* the card stacks content-sized regions from the top: the answer sits right
+     under the question and grows downward, so revealing (incl. line-by-line)
+     and showing the note never shift anything. Each region is capped and
+     scrolls its own overflow, so a long answer doesn't push the note away. */
   .region {
     min-height: 0; overflow: auto;
-    display: flex; flex-direction: column; justify-content: safe center;
+    display: flex; flex-direction: column; justify-content: flex-start;
     text-align: center; gap: 12px; padding: 10px 0;
+    scrollbar-width: none;            /* Firefox: no scrollbar */
   }
-  .region.q { flex: 1 1 0; }   /* question */
-  .region.a { flex: 1 1 0; }   /* answer / options */
-  /* when the card has a note, the note gets its own reserved region and the
-     answer region grows a little so choice options still fit */
-  .region.a.withnote { flex: 1.5 1.5 0; }
-  .region.n { flex: 1 1 0; justify-content: flex-start; }  /* reserved note zone */
+  .region::-webkit-scrollbar { width: 0; height: 0; }   /* WebKit: no scrollbar */
+  /* instead of a scrollbar, fade the edge that has hidden content */
+  .region.a.fade-top {
+    mask-image: linear-gradient(to bottom, transparent, #000 34px);
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 34px);
+  }
+  .region.a.fade-bottom {
+    mask-image: linear-gradient(to top, transparent, #000 34px);
+    -webkit-mask-image: linear-gradient(to top, transparent, #000 34px);
+  }
+  .region.a.fade-top.fade-bottom {
+    mask-image: linear-gradient(to bottom, transparent, #000 34px, #000 calc(100% - 34px), transparent);
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 34px, #000 calc(100% - 34px), transparent);
+  }
+  .region.q { flex: 0 0 auto; max-height: 38%; }   /* question */
+  /* the answer can use almost the whole card; only when the card has a note do
+     we cap it shorter, to leave room for the note below */
+  .region.a { flex: 0 1 auto; max-height: 82%; }
+  .region.a.withnote { max-height: 52%; }
+  .region.n { flex: 0 0 auto; max-height: 30%; }   /* note */
   .front-text { font-size: clamp(1.4rem, 4.4vw, 2.05rem); font-weight: 600; line-height: 1.28; letter-spacing: -0.01em; }
   .context { color: var(--bolt); font-family: var(--mono); font-size: 0.95rem; white-space: pre-wrap; }
   .context .hole { color: var(--bolt-hi); font-weight: 700; }      /* the active cloze blank */
@@ -272,8 +289,6 @@ function renderCard() {
   const card = el("div", "card");
   card.id = "card";
 
-  const hasNote = c.note && c.note.length > 0;
-
   // question region
   const q = el("div", "region q");
   q.appendChild(el("div", "front-text", c.front));
@@ -282,19 +297,14 @@ function renderCard() {
 
   card.appendChild(el("div", "divider"));
 
-  // answer / options region (filled on reveal or answer)
+  // answer / options region (filled on reveal or answer). The note region and
+  // its divider are added only once the note is shown (see setNote); the answer
+  // is capped shorter only when the card has a note, to leave room for it.
+  const hasNote = c.note && c.note.length > 0;
   const a = el("div", "region a" + (hasNote ? " withnote" : ""));
   a.id = "ansRegion";
+  a.addEventListener("scroll", () => updateFade(a));
   card.appendChild(a);
-
-  // reserved note region — present from the start (with its own divider, like
-  // the question/answer one) so the note doesn't shift anything when it appears
-  if (hasNote) {
-    card.appendChild(el("div", "divider"));
-    const n = el("div", "region n");
-    n.id = "noteRegion";
-    card.appendChild(n);
-  }
 
   deck.appendChild(card);
   stage.appendChild(deck);
@@ -303,16 +313,46 @@ function renderCard() {
   renderLegend();
 }
 
-// The answer + note regions depend on the mode and phase.
+// Fills the answer region for the current mode/phase, and shows the note (with
+// its own divider) only when it should be visible.
 function fillBottom() {
   const a = document.getElementById("ansRegion");
   if (!a) return;
-  const n = document.getElementById("noteRegion");
   a.innerHTML = "";
-  if (n) n.innerHTML = "";
-  if (feedback) renderChoiceFeedback(a, n);
-  else if (isChoice()) renderChoices(a);
-  else fillAnswer(a, n);
+  if (feedback) { renderChoiceFeedback(a); setNote(true); }
+  else if (isChoice()) { renderChoices(a); setNote(false); }
+  else { fillAnswer(a); setNote(fullyRevealed()); }
+  // keep the newest line in view as a verse is revealed line by line
+  if (state.mode === "line" && revealed > 0) a.scrollTop = a.scrollHeight;
+  updateFade(a);
+}
+
+// Show a soft fade on whichever edge of the answer region hides content,
+// instead of a scrollbar.
+function updateFade(a) {
+  if (!a) return;
+  a.classList.toggle("fade-top", a.scrollTop > 2);
+  a.classList.toggle("fade-bottom", a.scrollTop + a.clientHeight < a.scrollHeight - 2);
+}
+
+// Adds (or removes) the note region and a divider before it. Because content is
+// top-aligned, adding it on reveal doesn't shift the question or answer, so it
+// only needs to exist while shown — no premature empty zone or stray divider.
+function setNote(show) {
+  const card = document.getElementById("card");
+  if (!card) return;
+  let divider = document.getElementById("noteDivider");
+  let n = document.getElementById("noteRegion");
+  const has = state.card.note && state.card.note.length > 0;
+  if (show && has) {
+    if (!divider) { divider = el("div", "divider"); divider.id = "noteDivider"; card.appendChild(divider); }
+    if (!n) { n = el("div", "region n"); n.id = "noteRegion"; card.appendChild(n); }
+    n.innerHTML = "";
+    renderNote(n, state.card.note);
+  } else {
+    if (divider) divider.remove();
+    if (n) n.remove();
+  }
 }
 
 // Tappable multiple-choice options.
@@ -328,9 +368,8 @@ function renderChoices(a) {
   a.appendChild(wrap);
 }
 
-// The options after answering: correct in green, a wrong pick in red. The
-// note's explanation goes in the reserved note region (now that it's answered).
-function renderChoiceFeedback(a, n) {
+// The options after answering: correct in green, a wrong pick in red.
+function renderChoiceFeedback(a) {
   const wrap = el("div", "options");
   state.choices.forEach((opt, i) => {
     let cls = "option";
@@ -343,16 +382,12 @@ function renderChoiceFeedback(a, n) {
     wrap.appendChild(row);
   });
   a.appendChild(wrap);
-  if (n) renderNote(n, state.card.note);
 }
 
-// Fill the answer region for reveal modes (flip / line / choice fallback);
-// the note goes in its reserved region once fully revealed.
-function fillAnswer(a, n) {
-  a = a || document.getElementById("ansRegion");
+// Fill the answer region for reveal modes (flip / line / choice fallback).
+function fillAnswer(a) {
   if (!a) return;
   a.innerHTML = "";
-  if (n) n.innerHTML = "";
   if (revealed === 0) return; // stays empty until revealed
 
   const c = state.card;
@@ -361,7 +396,6 @@ function fillAnswer(a, n) {
   for (let i = 0; i < shown; i++) sec.appendChild(el("div", "answer", c.back[i]));
   if (state.mode === "line" && shown < c.back.length) sec.appendChild(el("div", "answer pending", "···"));
   a.appendChild(sec);
-  if (fullyRevealed() && n) renderNote(n, c.note);
 }
 
 // A cloze context line, with the active blank brightened and hidden holes
