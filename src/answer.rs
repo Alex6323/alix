@@ -109,6 +109,17 @@ impl TypingValidator {
             .collect()
     }
 
+    /// Retargets the validator to a different expected line, re-evaluating the
+    /// already-typed characters against it (position by position). Hints and
+    /// the typo counter are kept. Used by order-independent multi-line typing,
+    /// where the line a row is graded against is chosen as the user types.
+    pub fn set_expected(&mut self, expected: &str) {
+        self.expected = expected.chars().collect();
+        for (i, t) in self.typed.iter_mut().enumerate() {
+            t.correct = self.expected.get(i) == Some(&t.ch);
+        }
+    }
+
     /// The not-yet-typed remainder of the expected line.
     pub fn remaining(&self) -> String {
         self.expected.iter().skip(self.typed.len()).collect()
@@ -146,6 +157,56 @@ pub struct FuzzyResult {
     pub distance: usize,
     /// Whether the line counts as correct under the given tolerance.
     pub passed: bool,
+}
+
+/// Grades typed lines against the expected lines **without** regard to order:
+/// each input is matched to its closest still-unclaimed expected line (smallest
+/// Levenshtein distance), so a multi-item answer can be entered in any order.
+/// Returns one [`FuzzyResult`] per input, in input order, each paired with the
+/// expected line it was matched to. `max_typos` is the per-line tolerance (`0`
+/// for exact typing). A single-line answer matches trivially.
+pub fn grade_lines_unordered(
+    inputs: &[String],
+    expected: &[String],
+    max_typos: usize,
+) -> Vec<FuzzyResult> {
+    let mut claimed = vec![false; expected.len()];
+    let mut results = Vec::with_capacity(inputs.len());
+    for input in inputs {
+        let best = expected
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| !claimed[*i])
+            .map(|(i, exp)| (i, grade_fuzzy(input, exp, max_typos)))
+            .min_by_key(|(_, r)| r.distance);
+        match best {
+            Some((i, r)) => {
+                claimed[i] = true;
+                results.push(r);
+            }
+            // More inputs than expected lines: an extra input matches nothing.
+            None => results.push(grade_fuzzy(input, "", max_typos)),
+        }
+    }
+    results
+}
+
+/// Index of the candidate that best continues `typed` as a prefix: the one
+/// sharing the longest run of leading characters with `typed` wins; ties go to
+/// the shorter candidate, then the earliest. `None` if there are no candidates.
+/// Used by order-independent typing to pick which remaining answer line a
+/// partially typed row is heading toward, so its characters can be colored
+/// against a concrete target.
+pub fn best_prefix_match(typed: &str, candidates: &[&str]) -> Option<usize> {
+    (0..candidates.len()).min_by_key(|&i| {
+        let cand = candidates[i];
+        let shared = typed
+            .chars()
+            .zip(cand.chars())
+            .take_while(|(a, b)| a == b)
+            .count();
+        (std::cmp::Reverse(shared), cand.chars().count(), i)
+    })
 }
 
 /// Grades a fuzzily typed line. `max_typos` is the maximum tolerated
@@ -293,5 +354,69 @@ mod tests {
     fn fuzzy_input_is_trimmed() {
         let r = grade_fuzzy("  hello  ", "hello", 0);
         assert!(r.passed);
+    }
+
+    fn lines(items: &[&str]) -> Vec<String> {
+        items.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn unordered_lines_pass_in_any_order() {
+        let expected = lines(&["red", "green", "blue"]);
+        let inputs = lines(&["blue", "red", "green"]);
+        let results = grade_lines_unordered(&inputs, &expected, 0);
+        assert!(results.iter().all(|r| r.passed));
+        // Each input is paired with the matching expected line.
+        assert_eq!("blue", results[0].expected);
+        assert_eq!("red", results[1].expected);
+        assert_eq!("green", results[2].expected);
+    }
+
+    #[test]
+    fn unordered_one_wrong_line_maps_to_its_nearest_expected() {
+        let expected = lines(&["red", "green", "blue"]);
+        // "gren" is closest to "green"; the other two are exact.
+        let inputs = lines(&["blue", "gren", "red"]);
+        let results = grade_lines_unordered(&inputs, &expected, 0);
+        assert!(results[0].passed); // blue
+        assert!(!results[1].passed); // gren vs green
+        assert_eq!("green", results[1].expected);
+        assert!(results[2].passed); // red
+    }
+
+    #[test]
+    fn unordered_does_not_claim_one_expected_twice() {
+        let expected = lines(&["aa", "ab"]);
+        // Both inputs are equidistant-ish; each expected line is claimed once.
+        let inputs = lines(&["ab", "aa"]);
+        let results = grade_lines_unordered(&inputs, &expected, 0);
+        let mut matched: Vec<&str> = results.iter().map(|r| r.expected.as_str()).collect();
+        matched.sort_unstable();
+        assert_eq!(vec!["aa", "ab"], matched);
+        assert!(results.iter().all(|r| r.passed));
+    }
+
+    #[test]
+    fn best_prefix_match_prefers_longest_shared_prefix() {
+        let cands = ["green", "grape", "blue"];
+        assert_eq!(Some(0), best_prefix_match("gre", &cands));
+        assert_eq!(Some(1), best_prefix_match("gra", &cands));
+        assert_eq!(Some(2), best_prefix_match("b", &cands));
+        // No shared prefix: ties broken toward the shorter, earliest candidate.
+        assert_eq!(Some(2), best_prefix_match("x", &cands));
+        assert_eq!(None, best_prefix_match("x", &[]));
+    }
+
+    #[test]
+    fn set_expected_re_evaluates_typed_chars() {
+        let mut v = TypingValidator::new("cat");
+        for c in "car".chars() {
+            v.type_char(c);
+        }
+        assert!(!v.is_complete()); // 'r' != 't'
+        // Retarget to a line the typed text matches exactly.
+        v.set_expected("car");
+        assert!(v.is_complete());
+        assert!(v.passed());
     }
 }

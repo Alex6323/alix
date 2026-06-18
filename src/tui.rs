@@ -18,7 +18,7 @@ use ratatui::{
 };
 
 use crate::{
-    answer::{FuzzyResult, Mode, TypingValidator, grade_fuzzy},
+    answer::{FuzzyResult, Mode, TypingValidator, best_prefix_match, grade_fuzzy},
     ask,
     card::Card,
     choice::{self, ChoiceQuestion},
@@ -35,10 +35,19 @@ pub(crate) const HEADER_STYLE: Style = Style::new().fg(Color::Black).bg(Color::C
 
 /// What the user is currently doing.
 enum Phase {
-    /// Typing the answer character by character.
+    /// Typing the answer character by character. Multi-line answers are graded
+    /// order-independently: a row is matched to whichever expected line it
+    /// completes, so the items can be typed in any order.
     Typing {
-        validators: Vec<TypingValidator>,
-        line: usize,
+        /// The expected back lines.
+        expected: Vec<String>,
+        /// Which expected lines a completed row has already claimed (parallel
+        /// to `expected`).
+        claimed: Vec<bool>,
+        /// Completed rows, in entry order — for grading and the feedback view.
+        done: Vec<FuzzyResult>,
+        /// The row being typed; its target is re-chosen as the user types.
+        current: TypingValidator,
         /// Currently displayed hint text, cleared on the next keystroke.
         hint: Option<String>,
     },
@@ -298,11 +307,17 @@ impl App {
         // the built-in default.
         let mode = self.options.mode_override.or(card.mode).unwrap_or_default();
         self.phase = match mode {
-            Mode::Typing => Phase::Typing {
-                validators: card.back.iter().map(|l| TypingValidator::new(l)).collect(),
-                line: 0,
-                hint: None,
-            },
+            Mode::Typing => {
+                let expected = card.back.clone();
+                let first = expected.first().cloned().unwrap_or_default();
+                Phase::Typing {
+                    claimed: vec![false; expected.len()],
+                    current: TypingValidator::new(&first),
+                    done: Vec::new(),
+                    expected,
+                    hint: None,
+                }
+            }
             Mode::Fuzzy => Phase::Fuzzy {
                 results: Vec::new(),
                 input: String::new(),
@@ -470,34 +485,52 @@ impl App {
 
         match &mut self.phase {
             Phase::Typing {
-                validators,
-                line,
+                expected,
+                claimed,
+                done,
+                current,
                 hint,
             } => {
-                let v = &mut validators[*line];
                 if hint_hit {
                     // Default bindings: Tab, Ctrl-H, and Ctrl-Backspace
                     // (legacy terminals deliver Ctrl-H as the latter).
-                    *hint = Some(v.hint());
+                    *hint = Some(current.hint());
                     return Ok(());
                 }
                 match key.code {
                     KeyCode::Backspace if !ctrl => {
                         *hint = None;
-                        v.backspace();
+                        current.backspace();
+                        retarget(current, expected, claimed);
                     }
                     KeyCode::Char(c) if !ctrl => {
                         *hint = None;
-                        v.type_char(c);
-                        if v.is_complete() {
-                            if *line + 1 < validators.len() {
-                                *line += 1;
-                            } else {
-                                let results: Vec<FuzzyResult> =
-                                    validators.iter().map(typing_result).collect();
+                        current.type_char(c);
+                        retarget(current, expected, claimed);
+                        if current.is_complete() {
+                            // Claim the (still-unclaimed) expected line this row
+                            // matched.
+                            let target = current.expected();
+                            if let Some(idx) =
+                                (0..expected.len()).find(|&i| !claimed[i] && expected[i] == target)
+                            {
+                                claimed[idx] = true;
+                            }
+                            done.push(typing_result(current));
+                            if claimed.iter().all(|&c| c) {
+                                let results = std::mem::take(done);
                                 let passed = results.iter().all(|r| r.passed);
                                 let grade = if passed { Grade::Pass } else { Grade::Fail };
                                 self.finish_card(grade, Mode::Typing, results)?;
+                            } else {
+                                // Begin the next row on a still-unclaimed line.
+                                let next = expected
+                                    .iter()
+                                    .enumerate()
+                                    .find(|(i, _)| !claimed[*i])
+                                    .map(|(_, e)| e.clone())
+                                    .unwrap_or_default();
+                                *current = TypingValidator::new(&next);
                             }
                         }
                     }
@@ -914,29 +947,38 @@ impl App {
 
         match &self.phase {
             Phase::Typing {
-                validators,
-                line,
+                claimed,
+                done,
+                current,
                 hint,
+                ..
             } => {
-                for (i, v) in validators.iter().enumerate() {
-                    let mut spans = vec![Span::raw("> ")];
-                    let mut width = 2u16;
-                    for t in v.typed() {
-                        let color = if t.correct { Color::Green } else { Color::Red };
-                        spans.push(Span::styled(t.ch.to_string(), Style::new().fg(color)));
-                        width += 1;
-                    }
-                    if i == *line {
-                        cursor = Some((area.x + width, area.y + lines.len() as u16));
-                        if let Some(hint) = hint {
-                            spans.push(Span::styled(hint.clone(), Style::new().fg(Color::Yellow)));
-                        }
-                    }
-                    if i <= *line {
-                        lines.push(Line::from(spans));
-                    } else {
-                        lines.push(Line::from("> ".to_string()));
-                    }
+                // Already-completed rows, in entry order.
+                for r in done {
+                    let color = if r.passed { Color::Green } else { Color::Red };
+                    lines.push(Line::from(vec![
+                        Span::raw("> "),
+                        Span::styled(r.input.clone(), Style::new().fg(color)),
+                    ]));
+                }
+                // The row being typed, with per-character feedback and cursor.
+                let mut spans = vec![Span::raw("> ")];
+                let mut width = 2u16;
+                for t in current.typed() {
+                    let color = if t.correct { Color::Green } else { Color::Red };
+                    spans.push(Span::styled(t.ch.to_string(), Style::new().fg(color)));
+                    width += 1;
+                }
+                cursor = Some((area.x + width, area.y + lines.len() as u16));
+                if let Some(hint) = hint {
+                    spans.push(Span::styled(hint.clone(), Style::new().fg(Color::Yellow)));
+                }
+                lines.push(Line::from(spans));
+                // Placeholder prompts for the remaining unclaimed lines (the one
+                // being typed is already shown above).
+                let remaining = claimed.iter().filter(|&&c| !c).count();
+                for _ in 1..remaining {
+                    lines.push(Line::from("> ".to_string()));
                 }
             }
             Phase::Fuzzy { results, input } => {
@@ -1292,6 +1334,23 @@ pub(crate) fn context_line(ctx: &str) -> Line<'static> {
         spans.push(Span::styled(text, style));
     }
     Line::from(spans)
+}
+
+/// Points the current typing row at whichever still-unclaimed expected line it
+/// best matches as a prefix, so its characters are colored against a concrete
+/// target. With a single answer line this always picks that line; with several
+/// it lets the user type the items in any order.
+fn retarget(current: &mut TypingValidator, expected: &[String], claimed: &[bool]) {
+    let typed: String = current.typed().iter().map(|t| t.ch).collect();
+    let candidates: Vec<&str> = expected
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !claimed[*i])
+        .map(|(_, e)| e.as_str())
+        .collect();
+    if let Some(rel) = best_prefix_match(&typed, &candidates) {
+        current.set_expected(candidates[rel]);
+    }
 }
 
 /// Builds a feedback line for a completed typing-mode line from its validator:

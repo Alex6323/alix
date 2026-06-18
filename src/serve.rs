@@ -26,7 +26,7 @@ use tiny_http::{Header, Method, Request, Response, Server};
 use twox_hash::XxHash64;
 
 use crate::{
-    answer::{Mode, grade_fuzzy},
+    answer::{Mode, grade_lines_unordered},
     card::Card,
     choice,
     config::{Bindings, BrowseBindings, Key, KeyPattern},
@@ -418,21 +418,18 @@ pub fn run_review(
                     let card = r.session.current()?;
                     let mode = mode_override.or(card.mode).unwrap_or_default();
                     let tol = if mode == Mode::Typing { 0 } else { max_typos };
-                    let results: Vec<LineResultDto> = card
-                        .back
-                        .iter()
-                        .enumerate()
-                        .map(|(i, expected)| {
-                            let input = body.lines.get(i).map(String::as_str).unwrap_or("");
-                            let r = grade_fuzzy(input, expected, tol);
-                            LineResultDto {
+                    // Order-independent: a multi-item answer can be typed in any
+                    // order, each line matched to its closest expected line.
+                    let results: Vec<LineResultDto> =
+                        grade_lines_unordered(&body.lines, &card.back, tol)
+                            .into_iter()
+                            .map(|r| LineResultDto {
                                 input: r.input,
                                 expected: r.expected,
                                 passed: r.passed,
                                 distance: r.distance,
-                            }
-                        })
-                        .collect();
+                            })
+                            .collect();
                     let passed = results.iter().all(|r| r.passed);
                     Some(CheckFeedbackDto { results, passed })
                 });
