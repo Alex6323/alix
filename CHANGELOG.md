@@ -7,6 +7,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- The remaining-card count now also appears bottom-right in the TUI footer
+  (it was already top-right in the header).
 - In-browser deck selection: `flash --serve` (and `flash browse --serve`) with no
   deck files now opens a deck-selection screen in the browser instead of the
   terminal picker — a checklist of the same decks (recent first), with a Start
@@ -59,6 +61,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   silently.
 
 ### Changed
+- Typing mode grades multi-line answers **order-independently**: a card whose
+  answer is several items can be typed in any order, each completed line matched
+  to whichever expected line it best fits (TUI and web). Single-line answers are
+  unchanged.
+- Typing feedback now keeps the typed text on screen and, on a wrong line, shows
+  the correct answer underneath with a check mark (the TUI previously discarded
+  the input and repainted only the answer; the web already did this).
+- "New session" on the summary is disabled when nothing is due: the TUI omits
+  the hint and makes the key inert, the web disables the button and shows a
+  "nothing due" note — instead of only reacting after the key is pressed.
 - **Breaking — cloze hole syntax is now `{{ }}`** (was `{ }`). A lone `{` or `}`
   is literal inside `#?` cards, so code with braces needs no escaping. Cloze
   identity is now hashed from the parsed structure (delimiters removed) rather
