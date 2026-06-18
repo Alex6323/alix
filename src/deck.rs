@@ -1,6 +1,9 @@
 //! A deck is a parsed flashcard file.
 
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
 
 use clap::ValueEnum;
 use thiserror::Error;
@@ -10,7 +13,8 @@ use crate::{
     card::{Card, Direction, Frontend},
     parser::{self, ParseError},
     scheduler::SchedulerKind,
-    session::Order,
+    session::{self, Order},
+    store::Store,
 };
 
 /// Per-deck defaults declared with `% key: value` header directives, e.g.
@@ -51,6 +55,17 @@ impl DeckSettings {
         }
         settings
     }
+}
+
+/// How far through a deck the user is, derived from its cards' current stages.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DeckState {
+    /// No card has been reviewed yet.
+    NotStarted,
+    /// Some cards reviewed, but not all are at the top stage.
+    Started,
+    /// Every card is at the top Leitner stage.
+    Finished,
 }
 
 /// A deck of flashcards loaded from a file.
@@ -156,6 +171,26 @@ impl Deck {
         })
     }
 
+    /// The deck's completion state, derived from its cards' current stages:
+    /// `Finished` once every card is at the top stage, `NotStarted` while no
+    /// card has been reviewed, `Started` in between. An empty deck is
+    /// `NotStarted`.
+    pub fn state(&self, store: &Store) -> DeckState {
+        let total = self.cards.len();
+        if total == 0 {
+            return DeckState::NotStarted;
+        }
+        // histogram = [unseen, stage1, .., stage5]; stage 5 is the top stage.
+        let h = session::histogram(&self.cards, store);
+        if h[5] == total {
+            DeckState::Finished
+        } else if h[0] == total {
+            DeckState::NotStarted
+        } else {
+            DeckState::Started
+        }
+    }
+
     /// Returns pairs of cards within this deck that share the same identity
     /// hash (i.e. same back lines). Such cards are indistinguishable to the
     /// progress store, so the `check` command warns about them.
@@ -171,6 +206,62 @@ impl Deck {
         }
         dups
     }
+}
+
+/// Finds the file a `% requires:` value refers to: as given, next to the
+/// requiring deck, or in the decks directory; with or without a `.txt` suffix.
+pub fn resolve_dep(
+    req: &str,
+    decks_dir: Option<&Path>,
+    requiring_dir: Option<&Path>,
+) -> Option<PathBuf> {
+    let with_txt = |p: &Path| -> PathBuf {
+        if p.extension().is_some() {
+            p.to_path_buf()
+        } else {
+            p.with_extension("txt")
+        }
+    };
+    let mut candidates = vec![PathBuf::from(req), with_txt(Path::new(req))];
+    for dir in [requiring_dir, decks_dir].into_iter().flatten() {
+        candidates.push(dir.join(req));
+        candidates.push(with_txt(&dir.join(req)));
+    }
+    candidates.into_iter().find(|p| p.is_file())
+}
+
+/// Whether `deck` is "locked": any of its transitive `% requires:` prerequisites
+/// is not yet [`Finished`](DeckState::Finished). `decks_dir` resolves prerequisite
+/// names. A missing prerequisite, an unreadable file, or a dependency cycle is
+/// treated as non-blocking (a broken graph never hides a deck — those problems
+/// surface when you actually review it).
+pub fn is_locked(deck: &Deck, decks_dir: Option<&Path>, store: &Store) -> bool {
+    fn prereqs_finished(
+        deck: &Deck,
+        decks_dir: Option<&Path>,
+        store: &Store,
+        visited: &mut HashSet<PathBuf>,
+    ) -> bool {
+        for req in &deck.requires {
+            let Some(path) = resolve_dep(req, decks_dir, deck.path.parent()) else {
+                continue; // missing prerequisite: don't lock on it
+            };
+            let key = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+            if !visited.insert(key) {
+                continue; // already checked, or a cycle: stop recursing
+            }
+            let Ok(prereq) = Deck::load(&path) else {
+                continue; // unreadable prerequisite: don't lock on it
+            };
+            if prereq.state(store) != DeckState::Finished
+                || !prereqs_finished(&prereq, decks_dir, store, visited)
+            {
+                return false;
+            }
+        }
+        true
+    }
+    !prereqs_finished(deck, decks_dir, store, &mut HashSet::new())
 }
 
 /// The directory that card image filenames resolve against: the deck's
@@ -382,6 +473,101 @@ mod tests {
     use std::io::Write;
 
     use super::*;
+    use crate::store::MAX_STAGE;
+
+    fn write_deck(dir: &Path, name: &str, body: &str) -> PathBuf {
+        let path = dir.join(name);
+        std::fs::write(&path, body).unwrap();
+        path
+    }
+
+    fn empty_store() -> (Store, tempfile::TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path().join("p.json")).unwrap();
+        (store, dir)
+    }
+
+    #[test]
+    fn deck_state_reflects_card_stages() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_deck(dir.path(), "d.txt", "# a\n\t1\n# b\n\t2\n");
+        let deck = Deck::load(&path).unwrap();
+        let (mut store, _s) = empty_store();
+
+        assert_eq!(DeckState::NotStarted, deck.state(&store));
+
+        // One card seen but not maxed -> started.
+        store.get_or_insert(deck.cards[0].id(), 0).stage = 2;
+        assert_eq!(DeckState::Started, deck.state(&store));
+
+        // Every card at the top stage -> finished.
+        store.get_or_insert(deck.cards[0].id(), 0).stage = MAX_STAGE;
+        store.get_or_insert(deck.cards[1].id(), 0).stage = MAX_STAGE;
+        assert_eq!(DeckState::Finished, deck.state(&store));
+    }
+
+    #[test]
+    fn empty_deck_is_not_started() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_deck(dir.path(), "e.txt", "% only a comment\n");
+        let deck = Deck::load(&path).unwrap();
+        let (store, _s) = empty_store();
+        assert!(deck.cards.is_empty());
+        assert_eq!(DeckState::NotStarted, deck.state(&store));
+    }
+
+    #[test]
+    fn locked_until_prerequisite_finished() {
+        let dir = tempfile::tempdir().unwrap();
+        write_deck(dir.path(), "basics.txt", "# a\n\t1\n");
+        let adv = write_deck(dir.path(), "advanced.txt", "% requires: basics\n# x\n\ty\n");
+        let advanced = Deck::load(&adv).unwrap();
+        let basics = Deck::load(dir.path().join("basics.txt")).unwrap();
+        let (mut store, _s) = empty_store();
+        let dd = Some(dir.path());
+
+        // basics not started -> advanced locked.
+        assert!(is_locked(&advanced, dd, &store));
+        // basics started but not finished -> still locked.
+        store.get_or_insert(basics.cards[0].id(), 0).stage = 2;
+        assert!(is_locked(&advanced, dd, &store));
+        // basics finished -> advanced unlocked.
+        store.get_or_insert(basics.cards[0].id(), 0).stage = MAX_STAGE;
+        assert!(!is_locked(&advanced, dd, &store));
+        // A deck without prerequisites is never locked.
+        assert!(!is_locked(&basics, dd, &store));
+    }
+
+    #[test]
+    fn locking_is_transitive() {
+        let dir = tempfile::tempdir().unwrap();
+        write_deck(dir.path(), "a.txt", "# a\n\t1\n");
+        write_deck(dir.path(), "b.txt", "% requires: a\n# b\n\t2\n");
+        let cpath = write_deck(dir.path(), "c.txt", "% requires: b\n# c\n\t3\n");
+        let c = Deck::load(&cpath).unwrap();
+        let a = Deck::load(dir.path().join("a.txt")).unwrap();
+        let b = Deck::load(dir.path().join("b.txt")).unwrap();
+        let (mut store, _s) = empty_store();
+        let dd = Some(dir.path());
+
+        assert!(is_locked(&c, dd, &store));
+        // Finishing only the direct prerequisite is not enough — its own
+        // prerequisite is still unfinished.
+        store.get_or_insert(b.cards[0].id(), 0).stage = MAX_STAGE;
+        assert!(is_locked(&c, dd, &store));
+        // Finish the foundation too -> unlocked.
+        store.get_or_insert(a.cards[0].id(), 0).stage = MAX_STAGE;
+        assert!(!is_locked(&c, dd, &store));
+    }
+
+    #[test]
+    fn missing_prerequisite_does_not_lock() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_deck(dir.path(), "d.txt", "% requires: nope\n# a\n\t1\n");
+        let deck = Deck::load(&path).unwrap();
+        let (store, _s) = empty_store();
+        assert!(!is_locked(&deck, Some(dir.path()), &store));
+    }
 
     #[test]
     fn load_deck_subject_is_file_name() {

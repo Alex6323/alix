@@ -380,7 +380,7 @@ fn visit_dep(
     }
     let parent = path.parent();
     for req in &deck.requires {
-        let dep = resolve_dep(req, decks_dir, parent)
+        let dep = flash::deck::resolve_dep(req, decks_dir, parent)
             .ok_or_else(|| anyhow!("{} requires '{}', which was not found", deck.subject, req))?;
         visit_dep(&dep, decks_dir, ordered, done, on_stack, any_requires)?;
     }
@@ -388,28 +388,6 @@ fn visit_dep(
     done.insert(key.clone());
     ordered.push(key);
     Ok(())
-}
-
-/// Finds the file a `% requires:` value refers to: as given, next to the
-/// requiring deck, or in the decks directory; with or without a `.txt` suffix.
-fn resolve_dep(
-    req: &str,
-    decks_dir: Option<&Path>,
-    requiring_dir: Option<&Path>,
-) -> Option<PathBuf> {
-    let with_txt = |p: &Path| -> PathBuf {
-        if p.extension().is_some() {
-            p.to_path_buf()
-        } else {
-            p.with_extension("txt")
-        }
-    };
-    let mut candidates = vec![PathBuf::from(req), with_txt(Path::new(req))];
-    for dir in [requiring_dir, decks_dir].into_iter().flatten() {
-        candidates.push(dir.join(req));
-        candidates.push(with_txt(&dir.join(req)));
-    }
-    candidates.into_iter().find(|p| p.is_file())
 }
 
 /// A review session built from the deck selection and settings, ready to be
