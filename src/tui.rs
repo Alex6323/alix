@@ -61,11 +61,14 @@ enum Phase {
         question: ChoiceQuestion,
         selected: Option<usize>,
     },
-    /// Showing the result of the answered card.
+    /// Showing the result of the answered card (typing or fuzzy mode). `mode`
+    /// is the mode the card was answered in, so the view can label and render
+    /// the lines correctly; `results` holds one graded line per back line.
     Feedback {
         card: Card,
         grade: Grade,
-        fuzzy: Vec<FuzzyResult>,
+        mode: Mode,
+        results: Vec<FuzzyResult>,
     },
     /// Asking Claude about a card; entered from a post-answer screen and
     /// returned from with Esc. `return_to` restores that screen.
@@ -335,10 +338,15 @@ impl App {
 
     /// Grades the current card and moves to the feedback view (typing and
     /// fuzzy mode).
-    fn finish_card(&mut self, grade: Grade, fuzzy: Vec<FuzzyResult>) -> Result<()> {
+    fn finish_card(&mut self, grade: Grade, mode: Mode, results: Vec<FuzzyResult>) -> Result<()> {
         let card = self.session.current().expect("a card is active").clone();
         self.apply_grade(grade)?;
-        self.phase = Phase::Feedback { card, grade, fuzzy };
+        self.phase = Phase::Feedback {
+            card,
+            grade,
+            mode,
+            results,
+        };
         Ok(())
     }
 
@@ -485,9 +493,11 @@ impl App {
                             if *line + 1 < validators.len() {
                                 *line += 1;
                             } else {
-                                let passed = validators.iter().all(|v| v.passed());
+                                let results: Vec<FuzzyResult> =
+                                    validators.iter().map(typing_result).collect();
+                                let passed = results.iter().all(|r| r.passed);
                                 let grade = if passed { Grade::Pass } else { Grade::Fail };
-                                self.finish_card(grade, Vec::new())?;
+                                self.finish_card(grade, Mode::Typing, results)?;
                             }
                         }
                     }
@@ -504,7 +514,7 @@ impl App {
                         let passed = results.iter().all(|r| r.passed);
                         let grade = if passed { Grade::Pass } else { Grade::Fail };
                         let results = std::mem::take(results);
-                        self.finish_card(grade, results)?;
+                        self.finish_card(grade, Mode::Fuzzy, results)?;
                     }
                     return Ok(());
                 }
@@ -893,9 +903,8 @@ impl App {
             Phase::Flip { .. } => "FLIP",
             Phase::LineByLine { .. } => "LINE BY LINE",
             Phase::Choice { .. } => "CHOICE",
-            // Typing finishes with an empty result vec; fuzzy carries its lines.
-            Phase::Feedback { fuzzy, .. } if fuzzy.is_empty() => "TYPING EXACT",
-            Phase::Feedback { .. } => "TYPING FUZZY",
+            Phase::Feedback { mode: Mode::Fuzzy, .. } => "TYPING FUZZY",
+            Phase::Feedback { .. } => "TYPING EXACT",
             _ => "",
         };
         if !mode_tag.is_empty() {
@@ -1020,28 +1029,30 @@ impl App {
                     });
                 }
             }
-            Phase::Feedback { card, grade, fuzzy } => {
-                if fuzzy.is_empty() {
-                    for back in &card.back {
+            Phase::Feedback {
+                card,
+                grade,
+                mode,
+                results,
+            } => {
+                for r in results {
+                    let color = if r.passed { Color::Green } else { Color::Red };
+                    lines.push(Line::from(vec![
+                        Span::raw("> "),
+                        Span::styled(r.input.clone(), Style::new().fg(color)),
+                    ]));
+                    // On a wrong line, show the correct answer underneath with a
+                    // check mark so the right text — not the mistake — is what
+                    // stays on screen.
+                    if !r.passed {
+                        let correction = match mode {
+                            Mode::Fuzzy => format!("  (expected: {})", r.expected),
+                            _ => format!("  ✓ {}", r.expected),
+                        };
                         lines.push(Line::from(Span::styled(
-                            format!("> {back}"),
+                            correction,
                             Style::new().fg(Color::Green),
                         )));
-                    }
-                } else {
-                    for r in fuzzy {
-                        let color = if r.passed { Color::Green } else { Color::Red };
-                        let mut spans = vec![
-                            Span::raw("> "),
-                            Span::styled(r.input.clone(), Style::new().fg(color)),
-                        ];
-                        if !r.passed {
-                            spans.push(Span::styled(
-                                format!("  (expected: {})", r.expected),
-                                Style::new().fg(Color::Yellow),
-                            ));
-                        }
-                        lines.push(Line::from(spans));
                     }
                 }
                 push_note(&mut lines, card, area.width);
@@ -1281,6 +1292,20 @@ pub(crate) fn context_line(ctx: &str) -> Line<'static> {
         spans.push(Span::styled(text, style));
     }
     Line::from(spans)
+}
+
+/// Builds a feedback line for a completed typing-mode line from its validator:
+/// the text the user typed, the expected text, and whether it passed (a line
+/// completed without a hint). `distance` is only a pass/fail flag here.
+fn typing_result(v: &TypingValidator) -> FuzzyResult {
+    let input: String = v.typed().iter().map(|t| t.ch).collect();
+    let passed = v.passed();
+    FuzzyResult {
+        input,
+        expected: v.expected(),
+        distance: usize::from(!passed),
+        passed,
+    }
 }
 
 /// Byte offset of the `n`th character in `s`, or `s.len()` if `n` is at or
