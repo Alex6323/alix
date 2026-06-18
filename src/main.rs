@@ -320,6 +320,7 @@ fn pick_decks_if_empty(
     decks: Vec<PathBuf>,
     config: &Config,
     recent: &RecentDecks,
+    store: &Store,
 ) -> Result<Option<Vec<PathBuf>>> {
     if !decks.is_empty() {
         return Ok(Some(decks));
@@ -328,7 +329,7 @@ fn pick_decks_if_empty(
         bail!("no deck files given; try `flash <deck.txt>...` or `flash --help`");
     }
     let decks_dir = config.decks_dir().context("cannot determine ~/decks")?;
-    let picked = picker::pick(&decks_dir, recent)?;
+    let picked = picker::pick(&decks_dir, recent, store)?;
     Ok((!picked.is_empty()).then_some(picked))
 }
 
@@ -527,10 +528,10 @@ fn load_review_session(args: &ReviewArgs, target: Frontend) -> Result<Option<Rev
     let mut recent = RecentDecks::load(
         recent::default_recent_path().context("cannot determine the data directory")?,
     );
-    let Some(deck_paths) = pick_decks_if_empty(args.decks.clone(), &config, &recent)? else {
+    let store = open_store(args.store.clone())?;
+    let Some(deck_paths) = pick_decks_if_empty(args.decks.clone(), &config, &recent, &store)? else {
         return Ok(None); // picker cancelled or nothing selected
     };
-    let store = open_store(args.store.clone())?;
     let build = build_review(deck_paths, args, &config, &store, &mut recent, target)?;
     Ok(Some(ReviewSession {
         session: build.session,
@@ -868,7 +869,7 @@ fn reset(args: ResetArgs) -> Result<()> {
             recent::default_recent_path().context("cannot determine the data directory")?,
         );
         let decks_dir = config.decks_dir().context("cannot determine ~/decks")?;
-        let picked = picker::pick_to_reset(&decks_dir, &recent)?;
+        let picked = picker::pick_to_reset(&decks_dir, &recent, &store)?;
         if picked.is_empty() {
             return Ok(()); // cancelled or nothing selected
         }
@@ -1017,7 +1018,8 @@ fn browse(args: BrowseArgs) -> Result<()> {
     let mut recent = RecentDecks::load(
         recent::default_recent_path().context("cannot determine the data directory")?,
     );
-    let Some(deck_paths) = pick_decks_if_empty(args.decks.clone(), &config, &recent)? else {
+    let store = open_store(None)?;
+    let Some(deck_paths) = pick_decks_if_empty(args.decks.clone(), &config, &recent, &store)? else {
         return Ok(()); // picker cancelled or nothing selected
     };
     let build = build_browse(deck_paths, &mut recent, Frontend::Tui)?;
@@ -1025,7 +1027,6 @@ fn browse(args: BrowseArgs) -> Result<()> {
     // Browse only writes if the user removes a card: it then deletes it from the
     // deck file and prunes its progress. Provide the per-subject paths and store.
     let paths = subject_paths(build.decks);
-    let store = open_store(None)?;
     browse::run(build.cards, build.label, config.browse, paths, store)
 }
 

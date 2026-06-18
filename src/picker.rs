@@ -22,7 +22,11 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use crate::{recent::RecentDecks, time};
+use crate::{
+    deck::{self, Deck, DeckState},
+    recent::RecentDecks,
+    store::{MAX_STAGE, Store},
+};
 
 const HEADER_STYLE: Style = Style::new().fg(Color::Black).bg(Color::Cyan);
 
@@ -32,6 +36,9 @@ struct Item<K> {
     key: K,
     label: String,
     meta: Option<String>,
+    /// Deck rows: locked because a `% requires:` prerequisite isn't finished.
+    /// Shown dimmed with a lock glyph, but still selectable (advisory).
+    locked: bool,
 }
 
 // ---- deck candidates ----------------------------------------------------
@@ -89,18 +96,34 @@ fn build_candidates(decks_dir: &Path, recent: &RecentDecks) -> Vec<Candidate> {
     out
 }
 
-/// Turns a deck candidate into a picker item, formatting the last-used age as
-/// the meta suffix.
-fn deck_item(c: Candidate, now: u64) -> Item<PathBuf> {
-    let meta = match c.last_used_ms {
-        Some(ts) if ts <= now => Some(format!("· {} ago", time::humanize_ms(now - ts))),
-        Some(_) => Some("· recent".to_string()),
-        None => None,
+/// Turns a deck candidate into a picker item, deriving its completion-state
+/// meta (`new` / `m/total` at the top stage / `done ✓`) and lock status (a
+/// `% requires:` prerequisite not yet finished) from the progress store. A deck
+/// that fails to load shows a plain row.
+fn deck_item(c: Candidate, store: &Store, decks_dir: &Path) -> Item<PathBuf> {
+    let (meta, locked) = match Deck::load(&c.path) {
+        Ok(deck) => {
+            let total = deck.cards.len();
+            let maxed = deck
+                .cards
+                .iter()
+                .filter(|card| store.get(card.id()).is_some_and(|s| s.stage >= MAX_STAGE))
+                .count();
+            let label = match deck.state(store) {
+                DeckState::Finished => "done ✓".to_string(),
+                DeckState::NotStarted => "new".to_string(),
+                DeckState::Started => format!("{maxed}/{total}"),
+            };
+            let locked = deck::is_locked(&deck, Some(decks_dir), store);
+            (Some(format!("· {label}")), locked)
+        }
+        Err(_) => (None, false),
     };
     Item {
         key: c.path,
         label: c.name,
         meta,
+        locked,
     }
 }
 
@@ -141,11 +164,10 @@ pub fn catalog(decks_dir: &Path, recent: &RecentDecks) -> Vec<DeckEntry> {
 
 /// Runs the startup picker. Returns the chosen deck paths (empty if the user
 /// cancelled or there is nothing to pick).
-pub fn pick(decks_dir: &Path, recent: &RecentDecks) -> Result<Vec<PathBuf>> {
-    let now = time::now_ms();
+pub fn pick(decks_dir: &Path, recent: &RecentDecks, store: &Store) -> Result<Vec<PathBuf>> {
     let items = build_candidates(decks_dir, recent)
         .into_iter()
-        .map(|c| deck_item(c, now))
+        .map(|c| deck_item(c, store, decks_dir))
         .collect();
     let picker = Picker::new(
         items,
@@ -160,11 +182,14 @@ pub fn pick(decks_dir: &Path, recent: &RecentDecks) -> Result<Vec<PathBuf>> {
 
 /// Runs the deck picker for `reset`: the same checkbox UI, but `exact` (an empty
 /// tick set means "nothing", never the card under the cursor) and reset wording.
-pub fn pick_to_reset(decks_dir: &Path, recent: &RecentDecks) -> Result<Vec<PathBuf>> {
-    let now = time::now_ms();
+pub fn pick_to_reset(
+    decks_dir: &Path,
+    recent: &RecentDecks,
+    store: &Store,
+) -> Result<Vec<PathBuf>> {
     let items = build_candidates(decks_dir, recent)
         .into_iter()
-        .map(|c| deck_item(c, now))
+        .map(|c| deck_item(c, store, decks_dir))
         .collect();
     let picker = Picker::new(
         items,
@@ -182,7 +207,12 @@ pub fn pick_to_reset(decks_dir: &Path, recent: &RecentDecks) -> Result<Vec<PathB
 pub fn pick_cards(items: Vec<(u64, String, Option<String>)>, title: &str) -> Result<Vec<u64>> {
     let items = items
         .into_iter()
-        .map(|(key, label, meta)| Item { key, label, meta })
+        .map(|(key, label, meta)| Item {
+            key,
+            label,
+            meta,
+            locked: false,
+        })
         .collect();
     let picker = Picker::new(
         items,
@@ -235,6 +265,7 @@ pub fn edit_dependencies(
             key: c.path,
             label: c.name,
             meta: None,
+            locked: false,
         })
         .collect();
     let picker = Picker::new(
@@ -462,18 +493,22 @@ impl<K: Clone + Eq + Hash> Picker<K> {
 
             let marker = if on_cursor { "›" } else { " " };
             let check = if checked { "[x]" } else { "[ ]" };
+            let lock = if item.locked { "🔒 " } else { "" };
             let meta = item
                 .meta
                 .as_deref()
                 .map(|m| format!("  {m}"))
                 .unwrap_or_default();
-            let text = format!("{marker} {check} {}{meta}", item.label);
+            let text = format!("{marker} {check} {lock}{}{meta}", item.label);
 
             let mut style = Style::new();
             if on_cursor {
                 style = style.fg(Color::Black).bg(Color::Cyan);
             } else if checked {
                 style = style.fg(Color::Cyan);
+            } else if item.locked {
+                // Advisory: locked decks are dimmed but still selectable.
+                style = style.fg(Color::DarkGray);
             }
             lines.push(Line::from(Span::styled(text, style)));
         }
@@ -500,6 +535,7 @@ mod tests {
                 key: PathBuf::from(n),
                 label: n.to_string(),
                 meta: None,
+                locked: false,
             })
             .collect();
         Picker::new(
