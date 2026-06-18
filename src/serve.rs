@@ -30,14 +30,13 @@ use crate::{
     card::Card,
     choice,
     config::{Bindings, BrowseBindings, Key, KeyPattern},
-    deck,
+    deck::{self, Deck, DeckState},
     picker,
     recent::RecentDecks,
     render::{self, NoteUnit},
     scheduler::Grade,
     session::{Session, now_ms},
-    store::Store,
-    time::humanize_ms,
+    store::{MAX_STAGE, Store},
 };
 
 /// Per-deck data the server needs to apply a removal: the file path, plus the
@@ -165,12 +164,16 @@ struct DeckListDto {
     decks: Vec<DeckItemDto>,
 }
 
-/// One deck offered in the selection screen: its file name and a dim meta suffix
-/// (last-used age), mirroring the TUI picker rows.
+/// One deck offered in the selection screen: its file name, a completion-state
+/// label (`new` / `m/total` / `done ✓`), a machine-readable `state`
+/// (`new`/`started`/`finished`) for styling, and whether it is locked by an
+/// unfinished `% requires:` prerequisite. Mirrors the TUI picker rows.
 #[derive(Debug, Serialize)]
 struct DeckItemDto {
     name: String,
     meta: Option<String>,
+    state: &'static str,
+    locked: bool,
 }
 
 /// The result of answering a choice card: which option was picked, which is
@@ -343,7 +346,7 @@ pub fn run_review(
             (Method::Get, "/") => respond_html(request, REVIEW_HTML),
             (Method::Get, "/api/keys") => respond_json(request, &keys),
             (Method::Get, "/api/decks") => {
-                respond_json(request, &deck_catalog(&decks_dir, &recent))
+                respond_json(request, &deck_catalog(&decks_dir, &recent, &store))
             }
             (Method::Get, key) if key.starts_with("/img/") => match &reviewing {
                 Some(r) => serve_image(request, &r.images, &key["/img/".len()..]),
@@ -539,7 +542,7 @@ pub fn run_browse(
             (Method::Get, "/") => respond_html(request, BROWSE_HTML),
             (Method::Get, "/api/keys") => respond_json(request, &keys),
             (Method::Get, "/api/decks") => {
-                respond_json(request, &deck_catalog(&decks_dir, &recent))
+                respond_json(request, &deck_catalog(&decks_dir, &recent, &store))
             }
             (Method::Get, key) if key.starts_with("/img/") => match &browsing {
                 Some(b) => serve_image(request, &b.images, &key["/img/".len()..]),
@@ -672,18 +675,36 @@ fn review_state(reviewing: Option<&Reviewing>, store: &Store, mode_override: Opt
 }
 
 /// Builds the deck-selection catalog (recent decks first, then `decks_dir`),
-/// formatting the last-used age like the TUI picker meta.
-fn deck_catalog(decks_dir: &Path, recent: &RecentDecks) -> DeckListDto {
-    let now = now_ms();
+/// with each deck's completion state and lock status derived from `store` —
+/// mirroring the TUI picker rows.
+fn deck_catalog(decks_dir: &Path, recent: &RecentDecks, store: &Store) -> DeckListDto {
     let decks = picker::catalog(decks_dir, recent)
         .into_iter()
-        .map(|e| DeckItemDto {
-            name: e.name,
-            meta: match e.last_used_ms {
-                Some(ts) if ts <= now => Some(format!("· {} ago", humanize_ms(now - ts))),
-                Some(_) => Some("· recent".to_string()),
-                None => None,
-            },
+        .map(|e| {
+            let (state, meta, locked) = match Deck::load(&e.path) {
+                Ok(deck) => {
+                    let total = deck.cards.len();
+                    let maxed = deck
+                        .cards
+                        .iter()
+                        .filter(|c| store.get(c.id()).is_some_and(|s| s.stage >= MAX_STAGE))
+                        .count();
+                    let (state, label) = match deck.state(store) {
+                        DeckState::Finished => ("finished", "done ✓".to_string()),
+                        DeckState::NotStarted => ("new", "new".to_string()),
+                        DeckState::Started => ("started", format!("{maxed}/{total}")),
+                    };
+                    let locked = deck::is_locked(&deck, Some(decks_dir), store);
+                    (state, Some(label), locked)
+                }
+                Err(_) => ("new", None, false),
+            };
+            DeckItemDto {
+                name: e.name,
+                meta,
+                state,
+                locked,
+            }
         })
         .collect();
     DeckListDto { decks }

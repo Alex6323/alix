@@ -204,7 +204,12 @@
   .deckrow.on .box { background: var(--bolt); border-color: var(--bolt); position: relative; }
   .deckrow.on .box::after { content: "✓"; position: absolute; inset: 0; display: grid; place-items: center; color: var(--void); font-size: 0.8rem; font-weight: 700; }
   .deckrow .name { flex: 1; }
+  .deckrow .name .lock { color: var(--dim); }
   .deckrow .meta { font-family: var(--mono); font-size: 0.74rem; color: var(--dim); }
+  .deckrow .meta.state-finished { color: var(--good); }
+  .deckrow .meta.state-started { color: var(--bolt); }
+  .deckrow.locked { opacity: 0.55; }
+  .deckrow.locked:hover { border-color: var(--bolt); }
   .chip:disabled { opacity: 0.4; cursor: default; }
   .leave-msg { align-self: center; color: var(--again); font-size: 0.85rem; }
 
@@ -390,11 +395,14 @@ async function renderSelect() {
   const list = el("div", "decklist");
   const rows = [];
   for (const d of data.decks) {
-    const row = el("div", "deckrow");
+    const row = el("div", "deckrow" + (d.locked ? " locked" : ""));
     row.tabIndex = 0;
     row.appendChild(el("span", "box"));
-    row.appendChild(el("span", "name", d.name));
-    if (d.meta) row.appendChild(el("span", "meta", d.meta));
+    const name = el("span", "name", d.name);
+    if (d.locked) name.appendChild(el("span", "lock", " \u{1F512}"));
+    row.appendChild(name);
+    if (d.meta) row.appendChild(el("span", "meta state-" + d.state, d.meta));
+    // Locked is advisory: the row is dimmed but still selectable.
     row.addEventListener("click", () => toggle(row, d.name));
     rows.push({ row, name: d.name.toLowerCase() });
     list.appendChild(row);
