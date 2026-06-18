@@ -12,7 +12,7 @@ use flash::{
     browse,
     card::{Card, Frontend},
     config::{self, Config},
-    deck::{Deck, DeckSettings},
+    deck::{Deck, DeckSettings, DeckState},
     generate, parser, picker,
     recent::{self, RecentDecks},
     scheduler::SchedulerKind,
@@ -744,7 +744,13 @@ fn stats(args: DeckArgs) -> Result<()> {
             }
         }
 
+        let state = match deck.state(&store) {
+            DeckState::NotStarted => "not started",
+            DeckState::Started => "in progress",
+            DeckState::Finished => "finished ✓",
+        };
         println!("{} ({} cards)", deck.subject, deck.cards.len());
+        println!("  state:   {state}");
         println!(
             "  stages:  new {} │ s1 {} │ s2 {} │ s3 {} │ s4 {} │ s5 {}",
             h[0], h[1], h[2], h[3], h[4], h[5]

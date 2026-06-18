@@ -7,6 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Deck completion states and unlocks. Each deck has a state derived from its
+  cards' stages — not started / started / finished (all cards at the top stage)
+  — shown in the deck picker (terminal and web) and `flash stats`. A deck is
+  **locked** while any of its `% requires:` prerequisites isn't finished
+  (finishing a foundation unlocks what builds on it); locked decks are dimmed
+  with a 🔒 but stay selectable (advisory). Derived live from progress, with no
+  new directive or storage.
 - Repeated `TAB` in typing mode progressively reveals the answer: each press
   uncovers two more characters until the line is fully shown (still counts the
   card as failed); typing or deleting resets the reveal.

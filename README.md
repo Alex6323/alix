@@ -133,6 +133,21 @@ decks directory, pre-ticked to the current prerequisites. `Space` toggles,
 everything clears them. Since the lines are comments, editing dependencies
 never affects card progress.
 
+### Completion states & unlocks
+
+Every deck has a **completion state**, derived from its cards' stages:
+*not started* (no card reviewed), *finished* (every card at the top stage), or
+*started* (in between). The deck picker (terminal and web) shows it on each row
+— `new`, `m/total` (cards at the top stage), or `done ✓` — and `flash stats`
+prints it too.
+
+Completion drives **unlocks**, with no extra syntax: a deck is **locked** while
+any of its `% requires:` prerequisites isn't finished, so finishing a foundation
+unlocks the decks that build on it. Locked decks are shown dimmed with a 🔒, but
+the lock is **advisory** — you can still pick one (its prerequisite cards are
+pulled in foundations-first anyway). State and locks are recomputed live, so if a
+finished deck later lapses below the top stage, its dependents lock again.
+
 ### Cloze cards (fill in the blank)
 
 A front marked `#?` (no space) turns the card into a cloze card: every
