@@ -14,7 +14,7 @@ use crate::{
     parser::{self, ParseError},
     scheduler::SchedulerKind,
     session::{self, Order},
-    store::Store,
+    store::{MAX_STAGE, Store},
 };
 
 /// Per-deck defaults declared with `% key: value` header directives, e.g.
@@ -36,6 +36,9 @@ pub struct DeckSettings {
     /// Directory that card `% img:` / `% img-back:` filenames resolve against
     /// (`% img-dir: ...`). Absolute, or relative to the deck file's folder.
     pub img_dir: Option<PathBuf>,
+    /// Top Leitner stage for this deck (`% max-stage: 1..=5`). `None` uses the
+    /// global [`MAX_STAGE`]. Reaching it retires the card.
+    pub max_stage: Option<u8>,
 }
 
 impl DeckSettings {
@@ -50,6 +53,9 @@ impl DeckSettings {
                 "direction" => settings.direction = Direction::from_str(value, true).ok(),
                 "frontend" => settings.frontend = Frontend::from_str(value, true).ok(),
                 "img-dir" => settings.img_dir = Some(PathBuf::from(value)),
+                "max-stage" => {
+                    settings.max_stage = value.trim().parse::<u8>().ok().map(|n| n.clamp(1, MAX_STAGE))
+                }
                 _ => {}
             }
         }
@@ -138,6 +144,8 @@ impl Deck {
             card.frontend = card.frontend.or(settings.frontend);
             card.image = card.image.take().map(|p| resolve_image(&base_dir, p));
             card.image_back = card.image_back.take().map(|p| resolve_image(&base_dir, p));
+            // Deck-wide top stage (`% max-stage:`); reaching it retires the card.
+            card.max_stage = settings.max_stage;
         }
         // Expand the declared direction (card override, else deck) into cards.
         // `reverse` swaps the card, `both` adds the swapped one alongside; the
@@ -171,20 +179,23 @@ impl Deck {
         })
     }
 
-    /// The deck's completion state, derived from its cards' current stages:
-    /// `Finished` once every card is at the top stage, `NotStarted` while no
-    /// card has been reviewed, `Started` in between. An empty deck is
+    /// The deck's completion state: `Finished` once every card is retired
+    /// (reached its top stage; see [`session::is_retired`]), `NotStarted` while
+    /// no card has been reviewed, `Started` in between. An empty deck is
     /// `NotStarted`.
     pub fn state(&self, store: &Store) -> DeckState {
         let total = self.cards.len();
         if total == 0 {
             return DeckState::NotStarted;
         }
-        // histogram = [unseen, stage1, .., stage5]; stage 5 is the top stage.
-        let h = session::histogram(&self.cards, store);
-        if h[5] == total {
+        let retired = self
+            .cards
+            .iter()
+            .filter(|c| session::is_retired(c, store))
+            .count();
+        if retired == total {
             DeckState::Finished
-        } else if h[0] == total {
+        } else if self.cards.iter().all(|c| store.get(c.id()).is_none()) {
             DeckState::NotStarted
         } else {
             DeckState::Started
@@ -487,6 +498,13 @@ mod tests {
         (store, dir)
     }
 
+    /// Drives a card to retirement: top stage, reached by passing (streak ≥ 1).
+    fn retire(store: &mut Store, id: u64) {
+        let s = store.get_or_insert(id, 0);
+        s.stage = MAX_STAGE;
+        s.streak = 1;
+    }
+
     #[test]
     fn deck_state_reflects_card_stages() {
         let dir = tempfile::tempdir().unwrap();
@@ -496,13 +514,16 @@ mod tests {
 
         assert_eq!(DeckState::NotStarted, deck.state(&store));
 
-        // One card seen but not maxed -> started.
+        // One card seen but not retired -> started.
         store.get_or_insert(deck.cards[0].id(), 0).stage = 2;
         assert_eq!(DeckState::Started, deck.state(&store));
 
-        // Every card at the top stage -> finished.
-        store.get_or_insert(deck.cards[0].id(), 0).stage = MAX_STAGE;
-        store.get_or_insert(deck.cards[1].id(), 0).stage = MAX_STAGE;
+        // Every card retired (top stage, reached by passing) -> finished.
+        for card in &deck.cards {
+            let s = store.get_or_insert(card.id(), 0);
+            s.stage = MAX_STAGE;
+            s.streak = 1;
+        }
         assert_eq!(DeckState::Finished, deck.state(&store));
     }
 
@@ -514,6 +535,22 @@ mod tests {
         let (store, _s) = empty_store();
         assert!(deck.cards.is_empty());
         assert_eq!(DeckState::NotStarted, deck.state(&store));
+    }
+
+    #[test]
+    fn max_stage_directive_finishes_deck_at_lower_stage() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_deck(dir.path(), "d.txt", "% max-stage: 2\n# a\n\t1\n");
+        let deck = Deck::load(&path).unwrap();
+        assert_eq!(Some(2), deck.settings.max_stage);
+        assert_eq!(Some(2), deck.cards[0].max_stage); // stamped onto the card
+        let (mut store, _s) = empty_store();
+
+        // Stage 2 reached by passing -> retired -> finished, below MAX_STAGE.
+        let s = store.get_or_insert(deck.cards[0].id(), 0);
+        s.stage = 2;
+        s.streak = 1;
+        assert_eq!(DeckState::Finished, deck.state(&store));
     }
 
     #[test]
@@ -532,7 +569,7 @@ mod tests {
         store.get_or_insert(basics.cards[0].id(), 0).stage = 2;
         assert!(is_locked(&advanced, dd, &store));
         // basics finished -> advanced unlocked.
-        store.get_or_insert(basics.cards[0].id(), 0).stage = MAX_STAGE;
+        retire(&mut store, basics.cards[0].id());
         assert!(!is_locked(&advanced, dd, &store));
         // A deck without prerequisites is never locked.
         assert!(!is_locked(&basics, dd, &store));
@@ -553,10 +590,10 @@ mod tests {
         assert!(is_locked(&c, dd, &store));
         // Finishing only the direct prerequisite is not enough — its own
         // prerequisite is still unfinished.
-        store.get_or_insert(b.cards[0].id(), 0).stage = MAX_STAGE;
+        retire(&mut store, b.cards[0].id());
         assert!(is_locked(&c, dd, &store));
         // Finish the foundation too -> unlocked.
-        store.get_or_insert(a.cards[0].id(), 0).stage = MAX_STAGE;
+        retire(&mut store, a.cards[0].id());
         assert!(!is_locked(&c, dd, &store));
     }
 

@@ -7,6 +7,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- `% max-stage: N` deck directive (1–5, default 5): the deck's top Leitner
+  stage. A card that reaches it **retires** — it rests and is no longer
+  scheduled (not even under `--cram`) until `flash reset` — so material you only
+  need a couple of times (e.g. code review) drops out instead of recurring
+  forever. `% max-stage: 1` = "get it right once and it's done." A deck is
+  *finished* once all its cards retire. `flash list` shows retired cards as
+  `resting`, and stage histograms (picker, summary, `flash stats`) render
+  unreachable stages above the cap as a dim `–` instead of `0`.
 - Deck completion states and unlocks. Each deck has a state derived from its
   cards' stages — not started / started / finished (all cards at the top stage)
   — shown in the deck picker (terminal and web) and `flash stats`. A deck is
@@ -69,6 +77,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   silently.
 
 ### Changed
+- **A card that reaches the top Leitner stage now retires** (rests, no longer
+  scheduled until `flash reset`) instead of recurring at the stage-5 weekly
+  cooldown. This is the default even without `% max-stage:`, and makes a
+  *finished* deck stay finished.
 - The TUI's remaining-card count moved from the header to the bottom-right of
   the footer, shown as `N↓` after the pass/fail tally — matching the web
   frontend's score line (the header now carries only the stage histogram).

@@ -87,6 +87,12 @@ command line:
   frontend. Image cards are `web` automatically (see Images below).
 - `img-dir` — directory that card `% img:` / `% img-back:` filenames resolve
   against (deck header only; see Images below).
+- `max-stage` — the deck's top Leitner stage, `1`–`5` (default `5`). A card that
+  reaches it **retires**: it rests and is no longer scheduled (not even under
+  `--cram`) until `flash reset`. Use it for material you only need a couple of
+  times — `% max-stage: 1` means "get it right once and it's done." With the
+  default `5`, a card still retires once it climbs to stage 5. A deck counts as
+  *finished* (see Completion states) once all its cards have retired.
 
 These are ordinary `%` comments, so they don't affect parsing and card hashes
 are unaffected. An explicit CLI flag always wins over a directive, which wins over

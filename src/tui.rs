@@ -790,7 +790,10 @@ impl App {
         let h = self.session.stage_histogram(&self.store);
         // The remaining-card count lives in the footer now (bottom-right),
         // mirroring the web frontend; the header keeps just the stage histogram.
-        let right = format!("{}|{}|{}|{}|{}|{} ", h[0], h[1], h[2], h[3], h[4], h[5]);
+        // Stages above the session's top stage are unreachable (every card caps
+        // below them via `% max-stage:`), shown as `–` instead of a `0`.
+        let c = hist_cells(&h, self.session.top_stage());
+        let right = format!("{}|{}|{}|{}|{}|{} ", c[0], c[1], c[2], c[3], c[4], c[5]);
         frame.render_widget(bar(&left, &right, area.width), area);
     }
 
@@ -1208,6 +1211,24 @@ impl App {
         };
         let h = self.session.stage_histogram(&self.store);
 
+        // Stages above the session's top stage are unreachable (capped by
+        // `% max-stage:`), shown dim as `–`.
+        let top = self.session.top_stage();
+        let mut stage_spans = vec![Span::raw(format!("  stages:   new {} │", h[0]))];
+        for s in 1..=5u8 {
+            if s > top {
+                stage_spans.push(Span::styled(
+                    format!(" s{s} –"),
+                    Style::new().fg(Color::DarkGray),
+                ));
+            } else {
+                stage_spans.push(Span::raw(format!(" s{s} {}", h[s as usize])));
+            }
+            if s < 5 {
+                stage_spans.push(Span::raw(" │"));
+            }
+        }
+
         let mut lines = vec![
             Line::from("Session complete!".bold()),
             Line::default(),
@@ -1217,10 +1238,7 @@ impl App {
             )),
             Line::from(format!("  accuracy: {accuracy}")),
             Line::default(),
-            Line::from(format!(
-                "  stages:   new {} │ s1 {} │ s2 {} │ s3 {} │ s4 {} │ s5 {}",
-                h[0], h[1], h[2], h[3], h[4], h[5]
-            )),
+            Line::from(stage_spans),
         ];
 
         if self.nothing_due {
@@ -1329,6 +1347,19 @@ pub(crate) fn context_line(ctx: &str) -> Line<'static> {
         spans.push(Span::styled(text, style));
     }
     Line::from(spans)
+}
+
+/// The six stage-histogram cells (new, s1..s5) as strings, with stages above
+/// `top_stage` shown as `–` — they are unreachable because every card caps
+/// below them via `% max-stage:`.
+fn hist_cells(h: &[usize; 6], top_stage: u8) -> [String; 6] {
+    std::array::from_fn(|i| {
+        if i >= 1 && i as u8 > top_stage {
+            "–".to_string()
+        } else {
+            h[i].to_string()
+        }
+    })
 }
 
 /// Points the current typing row at whichever still-unclaimed expected line it

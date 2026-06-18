@@ -25,7 +25,8 @@ use ratatui::{
 use crate::{
     deck::{self, Deck, DeckState},
     recent::RecentDecks,
-    store::{MAX_STAGE, Store},
+    session,
+    store::Store,
 };
 
 const HEADER_STYLE: Style = Style::new().fg(Color::Black).bg(Color::Cyan);
@@ -104,15 +105,15 @@ fn deck_item(c: Candidate, store: &Store, decks_dir: &Path) -> Item<PathBuf> {
     let (meta, locked) = match Deck::load(&c.path) {
         Ok(deck) => {
             let total = deck.cards.len();
-            let maxed = deck
+            let retired = deck
                 .cards
                 .iter()
-                .filter(|card| store.get(card.id()).is_some_and(|s| s.stage >= MAX_STAGE))
+                .filter(|card| session::is_retired(card, store))
                 .count();
             let label = match deck.state(store) {
                 DeckState::Finished => "done ✓".to_string(),
                 DeckState::NotStarted => "new".to_string(),
-                DeckState::Started => format!("{maxed}/{total}"),
+                DeckState::Started => format!("{retired}/{total}"),
             };
             let locked = deck::is_locked(&deck, Some(decks_dir), store);
             (Some(format!("· {label}")), locked)

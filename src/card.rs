@@ -74,6 +74,10 @@ pub struct Card {
     /// load. `None` defers to `frontend()` (image cards are web-only). Not part
     /// of the identity hash.
     pub frontend: Option<Frontend>,
+    /// Deck-wide top Leitner stage (`% max-stage:`), folded at load. `None`
+    /// means the global `MAX_STAGE`. Reaching it retires the card (it rests
+    /// until `flash reset`). A review property, not part of the identity hash.
+    pub max_stage: Option<u8>,
 }
 
 impl Card {
@@ -98,6 +102,7 @@ impl Card {
             image: None,
             image_back: None,
             frontend: None,
+            max_stage: None,
         }
     }
 
@@ -129,6 +134,7 @@ impl Card {
         );
         card.mode = self.mode;
         card.frontend = self.frontend;
+        card.max_stage = self.max_stage;
         // Swap the image sides: a question-side image becomes the answer's, and
         // vice versa, so a `direction: both` visual card reverses sensibly.
         card.image = self.image_back.clone();
@@ -231,6 +237,7 @@ mod tests {
         let b = card("s", "f", &["b"], None);
         a.image = Some(PathBuf::from("/imgs/a.png"));
         a.frontend = Some(Frontend::Web);
+        a.max_stage = Some(2);
         assert_eq!(a.id(), b.id());
     }
 

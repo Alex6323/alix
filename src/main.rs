@@ -733,11 +733,15 @@ fn stats(args: DeckArgs) -> Result<()> {
         let mut passes = 0u32;
         for card in &deck.cards {
             if let Some(state) = store.get(card.id()) {
-                let due = scheduler.due_at(state);
-                if due <= now {
-                    due_now += 1;
-                } else if due <= now + 86_400_000 {
-                    due_24h += 1;
+                // Retired cards are resting, so they don't count as due (they
+                // still count toward the review totals below).
+                if !flash::session::is_retired(card, &store) {
+                    let due = scheduler.due_at(state);
+                    if due <= now {
+                        due_now += 1;
+                    } else if due <= now + 86_400_000 {
+                        due_24h += 1;
+                    }
                 }
                 reviews += state.total_reviews;
                 passes += state.total_passes;
@@ -749,11 +753,25 @@ fn stats(args: DeckArgs) -> Result<()> {
             DeckState::Started => "in progress",
             DeckState::Finished => "finished ✓",
         };
+        // Stages above the deck's `% max-stage:` are unreachable, shown as `–`.
+        let top = flash::session::max_reachable_stage(&deck.cards);
+        let cell = |s: usize| {
+            if s as u8 > top {
+                "–".to_string()
+            } else {
+                h[s].to_string()
+            }
+        };
         println!("{} ({} cards)", deck.subject, deck.cards.len());
         println!("  state:   {state}");
         println!(
             "  stages:  new {} │ s1 {} │ s2 {} │ s3 {} │ s4 {} │ s5 {}",
-            h[0], h[1], h[2], h[3], h[4], h[5]
+            h[0],
+            cell(1),
+            cell(2),
+            cell(3),
+            cell(4),
+            cell(5)
         );
         println!("  due:     {due_now} now, {due_24h} within 24h");
         if reviews > 0 {
@@ -777,11 +795,17 @@ fn list(args: DeckArgs) -> Result<()> {
         for card in &deck.cards {
             let (stage, due) = match store.get(card.id()) {
                 Some(state) => {
-                    let due = scheduler.due_at(state);
-                    let due = if due <= now {
-                        "due now".to_string()
+                    // Retired cards rest until `flash reset`; their due time is
+                    // moot, so say so instead of showing a misleading interval.
+                    let due = if flash::session::is_retired(card, &store) {
+                        "resting".to_string()
                     } else {
-                        format!("due in {}", humanize_ms(due - now))
+                        let due = scheduler.due_at(state);
+                        if due <= now {
+                            "due now".to_string()
+                        } else {
+                            format!("due in {}", humanize_ms(due - now))
+                        }
                     };
                     (format!("s{}", state.stage), due)
                 }

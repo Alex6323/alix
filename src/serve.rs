@@ -35,8 +35,8 @@ use crate::{
     recent::RecentDecks,
     render::{self, NoteUnit},
     scheduler::Grade,
-    session::{Session, now_ms},
-    store::{MAX_STAGE, Store},
+    session::{Session, is_retired, now_ms},
+    store::Store,
 };
 
 /// Per-deck data the server needs to apply a removal: the file path, plus the
@@ -145,6 +145,9 @@ struct StateDto {
     /// Whether a restart would find any due/new cards right now. The summary
     /// disables "New session" and shows a "nothing due" note when this is false.
     can_restart: bool,
+    /// The highest reachable stage (1–5); the page renders stages above it as a
+    /// muted `–` since every card caps below them via `% max-stage:`.
+    top_stage: u8,
     label: String,
 }
 
@@ -645,6 +648,7 @@ fn review_state(reviewing: Option<&Reviewing>, store: &Store, mode_override: Opt
             histogram: [0; 6],
             finished: false,
             can_restart: false,
+            top_stage: crate::store::MAX_STAGE,
             label: "select decks".to_string(),
         };
     };
@@ -670,6 +674,7 @@ fn review_state(reviewing: Option<&Reviewing>, store: &Store, mode_override: Opt
         histogram: session.stage_histogram(store),
         finished: session.is_finished(),
         can_restart: session.has_due_now(store, now_ms()),
+        top_stage: session.top_stage(),
         label: r.label.clone(),
     }
 }
@@ -684,15 +689,15 @@ fn deck_catalog(decks_dir: &Path, recent: &RecentDecks, store: &Store) -> DeckLi
             let (state, meta, locked) = match Deck::load(&e.path) {
                 Ok(deck) => {
                     let total = deck.cards.len();
-                    let maxed = deck
+                    let retired = deck
                         .cards
                         .iter()
-                        .filter(|c| store.get(c.id()).is_some_and(|s| s.stage >= MAX_STAGE))
+                        .filter(|c| is_retired(c, store))
                         .count();
                     let (state, label) = match deck.state(store) {
                         DeckState::Finished => ("finished", "done ✓".to_string()),
                         DeckState::NotStarted => ("new", "new".to_string()),
-                        DeckState::Started => ("started", format!("{maxed}/{total}")),
+                        DeckState::Started => ("started", format!("{retired}/{total}")),
                     };
                     let locked = deck::is_locked(&deck, Some(decks_dir), store);
                     (state, Some(label), locked)

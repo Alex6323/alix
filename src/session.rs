@@ -10,7 +10,7 @@ use std::collections::VecDeque;
 use crate::{
     card::Card,
     scheduler::{Grade, Scheduler, SchedulerKind},
-    store::Store,
+    store::{MAX_STAGE, Store},
     time,
 };
 
@@ -217,6 +217,12 @@ impl Session {
         let card = &self.cards[index];
         let state = store.get_or_insert(card.id(), now_ms);
         self.scheduler.apply(state, grade, now_ms);
+        // Cap the stage at the deck's max, so a low `% max-stage:` (and Easy's
+        // +2 jump) never overshoots; reaching it retires the card.
+        let max = effective_max(card);
+        if state.stage > max {
+            state.stage = max;
+        }
 
         self.stats.reviews += 1;
         if grade.passed() {
@@ -263,6 +269,12 @@ impl Session {
     pub fn stage_histogram(&self, store: &Store) -> StageHistogram {
         histogram(&self.cards, store)
     }
+
+    /// The highest stage reachable by any card in the session; stages above it
+    /// are unavailable (every card caps below them via `% max-stage:`).
+    pub fn top_stage(&self) -> u8 {
+        max_reachable_stage(&self.cards)
+    }
 }
 
 /// Builds the review queue: due cards in scheduler order, then up to
@@ -281,6 +293,9 @@ fn build_queue(
 
     for (i, card) in cards.iter().enumerate() {
         match store.get(card.id()) {
+            // A retired card rests until `flash reset` — never scheduled, not
+            // even under cram.
+            Some(_) if is_retired(card, store) => {}
             Some(state) => {
                 if options.cram || scheduler.is_due(state, now_ms) {
                     due.push(i);
@@ -354,6 +369,31 @@ fn separate_siblings(order: Vec<usize>, cards: &[Card]) -> VecDeque<usize> {
         queue.push_back(index);
     }
     queue
+}
+
+/// The card's effective top Leitner stage: its deck's `% max-stage:` if set
+/// (clamped to the valid range), else the global [`MAX_STAGE`].
+fn effective_max(card: &Card) -> u8 {
+    card.max_stage.unwrap_or(MAX_STAGE).clamp(1, MAX_STAGE)
+}
+
+/// Whether a card is *retired* (resting): it has reached its deck's top stage by
+/// passing, so it is no longer scheduled until `flash reset`. The `streak >= 1`
+/// guard only matters for `max-stage: 1`, where stage 1 is also the failure/entry
+/// stage — a just-failed card (streak 0) keeps coming back. Unseen cards are
+/// never retired.
+pub fn is_retired(card: &Card, store: &Store) -> bool {
+    store
+        .get(card.id())
+        .is_some_and(|s| s.stage >= effective_max(card) && s.streak >= 1)
+}
+
+/// The highest Leitner stage any of these cards can reach: the largest
+/// `% max-stage:` cap among them (the global [`MAX_STAGE`] when none cap it, or
+/// for an empty set). Stages above this are unreachable, so a stage histogram
+/// can render them as unavailable rather than a misleading `0`.
+pub fn max_reachable_stage(cards: &[Card]) -> u8 {
+    cards.iter().map(effective_max).max().unwrap_or(MAX_STAGE)
 }
 
 /// Per-stage counts for a set of cards (stage 0 = never seen).
@@ -819,5 +859,87 @@ mod tests {
 
         let h = histogram(&all, &store);
         assert_eq!([2, 1, 0, 0, 0, 1], h);
+    }
+
+    #[test]
+    fn is_retired_needs_top_stage_reached_by_passing() {
+        let (mut store, _dir) = empty_store();
+        let mut c = card("deck.txt", 0);
+        c.max_stage = Some(2);
+
+        assert!(!is_retired(&c, &store)); // unseen
+        let s = store.get_or_insert(c.id(), 0);
+        s.stage = 2;
+        s.streak = 1;
+        assert!(is_retired(&c, &store)); // at the cap, passed
+        let s = store.get_or_insert(c.id(), 0);
+        s.stage = 1;
+        assert!(!is_retired(&c, &store)); // below the cap
+    }
+
+    #[test]
+    fn max_stage_one_retires_on_pass_not_fail() {
+        let (mut store, _dir) = empty_store();
+        let mut c = card("deck.txt", 0);
+        c.max_stage = Some(1);
+
+        // Just failed: stage 1, streak 0 — stage 1 is also the entry stage, so
+        // it must NOT count as retired.
+        let s = store.get_or_insert(c.id(), 0);
+        s.stage = 1;
+        s.streak = 0;
+        assert!(!is_retired(&c, &store));
+        // Passed once -> retired.
+        store.get_or_insert(c.id(), 0).streak = 1;
+        assert!(is_retired(&c, &store));
+    }
+
+    #[test]
+    fn retired_card_excluded_even_under_cram() {
+        let (mut store, _dir) = empty_store();
+        let all = {
+            let mut v = cards(1);
+            v[0].max_stage = Some(1);
+            v
+        };
+        let s = store.get_or_insert(all[0].id(), 0);
+        s.stage = 1;
+        s.streak = 1; // retired
+
+        let session = Session::new(
+            all,
+            &store,
+            SchedulerKind::Leitner,
+            SessionOptions {
+                max_new: 10,
+                limit: None,
+                cram: true,
+                order: Order::Scheduled,
+            },
+            1000,
+        );
+        // Resting: not queued, even though cram ignores cooldowns.
+        assert!(session.is_finished());
+    }
+
+    #[test]
+    fn grade_clamps_stage_to_max() {
+        let (mut store, _dir) = empty_store();
+        let all = {
+            let mut v = cards(1);
+            v[0].max_stage = Some(2);
+            v
+        };
+        let id = all[0].id();
+        let mut session = Session::new(
+            all,
+            &store,
+            SchedulerKind::Leitner,
+            SessionOptions::default(),
+            1000,
+        );
+        // New card at stage 1; Easy jumps +2 to stage 3, but the cap is 2.
+        session.grade(&mut store, Grade::Easy, 1000);
+        assert_eq!(2, store.get(id).unwrap().stage);
     }
 }

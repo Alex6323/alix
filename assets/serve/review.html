@@ -42,7 +42,7 @@
   .bar .spacer { flex: 1; }
   /* stage histogram (new|s1|s2|s3|s4|s5) + cards left, like the TUI header */
   .bar .hist { color: var(--ink); font-variant-numeric: tabular-nums; }
-  .bar .hist .muted { color: var(--dim); }
+  .muted { color: var(--dim); }
 
   /* overflow menu: only the destructive action lives here */
   .menu-wrap { position: relative; flex: none; }
@@ -327,6 +327,11 @@ function el(tag, cls, text) {
   if (text !== undefined) n.textContent = text;
   return n;
 }
+// Histogram cells [new, s1..s5] as HTML; stages above `top` are unreachable
+// (every card caps below them via % max-stage:), shown as a muted –.
+function histCells(h, top) {
+  return h.map((v, i) => (i >= 1 && i > top) ? '<span class="muted">–</span>' : String(v));
+}
 function backCount() { return state.card ? state.card.back.length : 0; }
 function fullyRevealed() { return backCount() === 0 || revealed >= backCount(); }
 
@@ -351,7 +356,7 @@ function render() {
   if (state.phase === "select") { renderSelect(); return; }
 
   deckEl.textContent = state.label;
-  histEl.textContent = state.histogram.join("|");
+  histEl.innerHTML = histCells(state.histogram, state.top_stage).join("|");
   scoreEl.innerHTML = `<b>${state.passed}✓</b> <s>${state.failed}✗</s><span class="left">${state.remaining}↓</span>`;
   menuWrap.style.display = state.finished ? "none" : "";
 
@@ -662,7 +667,13 @@ function renderSummary() {
   row("reviewed", `${state.reviews}`);
   row("passed / failed", `${state.passed} / ${state.failed}`);
   row("accuracy", acc);
-  row("stages", `${h[1]} · ${h[2]} · ${h[3]} · ${h[4]} · ${h[5]}`);
+  // stages s1..s5, with stages above the reachable top shown as a muted –
+  const stagesRow = el("div", "row");
+  stagesRow.appendChild(el("span", null, "stages"));
+  const stagesVal = el("b");
+  stagesVal.innerHTML = histCells(state.histogram, state.top_stage).slice(1).join(" · ");
+  stagesRow.appendChild(stagesVal);
+  wrap.appendChild(stagesRow);
   if (!state.can_restart) {
     wrap.appendChild(el("div", "note", "Nothing due right now — come back later."));
   }
