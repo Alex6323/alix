@@ -788,16 +788,9 @@ impl App {
             self.options.deck_label
         );
         let h = self.session.stage_histogram(&self.store);
-        let right = format!(
-            "{}|{}|{}|{}|{}|{}  left: {} ",
-            h[0],
-            h[1],
-            h[2],
-            h[3],
-            h[4],
-            h[5],
-            self.session.remaining()
-        );
+        // The remaining-card count lives in the footer now (bottom-right),
+        // mirroring the web frontend; the header keeps just the stage histogram.
+        let right = format!("{}|{}|{}|{}|{}|{} ", h[0], h[1], h[2], h[3], h[4], h[5]);
         frame.render_widget(bar(&left, &right, area.width), area);
     }
 
@@ -898,11 +891,13 @@ impl App {
             }
         };
         let left = format!(" {keys}");
+        // Passed / failed, then the remaining count with a ↓ arrow — same
+        // layout as the web frontend's score line.
         let right = format!(
-            "left: {} │ {}✓ {}✗ ",
-            self.session.remaining(),
+            "{}✓ {}✗ {}↓ ",
             self.session.stats.passed,
-            self.session.stats.failed
+            self.session.stats.failed,
+            self.session.remaining()
         );
         frame.render_widget(bar(&left, &right, area.width), area);
     }
