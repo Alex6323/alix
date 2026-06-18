@@ -40,6 +40,9 @@ struct Item<K> {
     /// Deck rows: locked because a `% requires:` prerequisite isn't finished.
     /// Shown dimmed with a lock glyph, but still selectable (advisory).
     locked: bool,
+    /// Deck rows: completion state, used to tint the meta (finished → green).
+    /// `None` for non-deck pickers (cards, dependency editor).
+    state: Option<DeckState>,
 }
 
 // ---- deck candidates ----------------------------------------------------
@@ -102,29 +105,31 @@ fn build_candidates(decks_dir: &Path, recent: &RecentDecks) -> Vec<Candidate> {
 /// `% requires:` prerequisite not yet finished) from the progress store. A deck
 /// that fails to load shows a plain row.
 fn deck_item(c: Candidate, store: &Store, decks_dir: &Path) -> Item<PathBuf> {
-    let (meta, locked) = match Deck::load(&c.path) {
+    let (meta, locked, state) = match Deck::load(&c.path) {
         Ok(deck) => {
+            let st = deck.state(store);
             let total = deck.cards.len();
             let retired = deck
                 .cards
                 .iter()
                 .filter(|card| session::is_retired(card, store))
                 .count();
-            let label = match deck.state(store) {
+            let label = match st {
                 DeckState::Finished => "done ✓".to_string(),
                 DeckState::NotStarted => "new".to_string(),
                 DeckState::Started => format!("{retired}/{total}"),
             };
             let locked = deck::is_locked(&deck, Some(decks_dir), store);
-            (Some(format!("· {label}")), locked)
+            (Some(format!("· {label}")), locked, Some(st))
         }
-        Err(_) => (None, false),
+        Err(_) => (None, false, None),
     };
     Item {
         key: c.path,
         label: c.name,
         meta,
         locked,
+        state,
     }
 }
 
@@ -213,6 +218,7 @@ pub fn pick_cards(items: Vec<(u64, String, Option<String>)>, title: &str) -> Res
             label,
             meta,
             locked: false,
+            state: None,
         })
         .collect();
     let picker = Picker::new(
@@ -267,6 +273,7 @@ pub fn edit_dependencies(
             label: c.name,
             meta: None,
             locked: false,
+            state: None,
         })
         .collect();
     let picker = Picker::new(
@@ -495,12 +502,7 @@ impl<K: Clone + Eq + Hash> Picker<K> {
             let marker = if on_cursor { "›" } else { " " };
             let check = if checked { "[x]" } else { "[ ]" };
             let lock = if item.locked { "🔒 " } else { "" };
-            let meta = item
-                .meta
-                .as_deref()
-                .map(|m| format!("  {m}"))
-                .unwrap_or_default();
-            let text = format!("{marker} {check} {lock}{}{meta}", item.label);
+            let main = format!("{marker} {check} {lock}{}", item.label);
 
             let mut style = Style::new();
             if on_cursor {
@@ -511,7 +513,21 @@ impl<K: Clone + Eq + Hash> Picker<K> {
                 // Advisory: locked decks are dimmed but still selectable.
                 style = style.fg(Color::DarkGray);
             }
-            lines.push(Line::from(Span::styled(text, style)));
+
+            let mut spans = vec![Span::styled(main, style)];
+            if let Some(meta) = &item.meta {
+                // Tint the state suffix (finished → green), but keep the cursor
+                // and locked styling dominant where they apply.
+                let meta_style = if on_cursor || item.locked {
+                    style
+                } else if item.state == Some(DeckState::Finished) {
+                    Style::new().fg(Color::Green)
+                } else {
+                    style
+                };
+                spans.push(Span::styled(format!("  {meta}"), meta_style));
+            }
+            lines.push(Line::from(spans));
         }
         frame.render_widget(Paragraph::new(lines), area);
     }
@@ -537,6 +553,7 @@ mod tests {
                 label: n.to_string(),
                 meta: None,
                 locked: false,
+                state: None,
             })
             .collect();
         Picker::new(
