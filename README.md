@@ -35,8 +35,11 @@ per line, default 2).
 Run `flash` with no deck arguments (as the desktop launcher does) to open the
 **deck picker**: it lists recently reviewed decks first, then every `*.txt`
 in the decks directory (`~/decks` by default, set `decks_dir` in the
-config). Type to filter by name, `Space` to (de)select one or more, `Enter`
-to start, `Esc` to cancel.
+config). Type to filter by name, `↑`/`↓` to move, and `Enter` to start the
+**focused** deck — `Esc` cancels. A locked deck (see Completion states) can't be
+started. To study several decks at once, `Space` ticks decks; once one is ticked
+the footer offers `Tab` to **confirm**, which shows just the ticked decks and
+starts them as a merged session on `Enter` (`Esc` goes back).
 
 ## Deck format
 
@@ -299,11 +302,14 @@ flash --serve                              # no decks -> pick them in the browse
 
 Run `--serve` **without** naming any decks and the browser opens a
 deck-selection screen — the same list as the terminal picker (recent decks
-first), with a checkbox per deck and a Start button — so you never have to drop
-back to the terminal to choose. When you finish a session, "Choose other decks"
-(on the summary, or in the ⋮ menu) returns to that screen, so you can study a
-different deck without restarting. Naming decks on the command line skips the
-screen and goes straight to review/browse.
+first) — so you never have to drop back to the terminal to choose. **Tap a deck
+to start it** (in review, a locked deck won't start — but `browse` ignores
+locking, so any deck opens there); or tick one or more checkboxes and the Start
+button becomes **Confirm**, which shows just the ticked decks and starts them as
+a merged session. When you finish a session, "Choose other decks" (on the
+summary, or in the ⋮ menu) returns to that screen, so you can study a different
+deck without restarting. Naming decks on the command line skips the screen and
+goes straight to review/browse.
 
 Every answer mode works in the browser: **flip** (reveal, then self-grade
 Again / Good / Easy), **line** (reveal a verse one line at a time — it

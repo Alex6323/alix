@@ -173,6 +173,7 @@ let label = "";
 let phase = "browse"; // "select" while choosing decks
 let i = 0;
 let KEYS = {};        // configured [browse] key bindings, from /api/keys
+let selectEsc = null; // in the deck-select confirm view, Esc returns to browse
 
 const stage = document.getElementById("stage");
 const legend = document.getElementById("legend");
@@ -247,6 +248,8 @@ function render() {
 }
 
 // The deck-selection screen: a checklist of available decks + a Start button.
+// Two phases: Browse (tap a deck name to browse it, or tick several to merge)
+// and Confirm (review the ticked decks, then Start browsing them together).
 async function renderSelect() {
   deckEl.textContent = "select decks";
   posEl.textContent = "";
@@ -254,73 +257,125 @@ async function renderSelect() {
   menuWrap.style.display = "none";
 
   const data = await (await fetch("/api/decks")).json();
-  const wrap = el("div", "select");
-  wrap.appendChild(el("div", "lede", "choose decks to browse"));
   if (!data.decks.length) {
+    const wrap = el("div", "select");
+    wrap.appendChild(el("div", "lede", "choose decks to browse"));
     wrap.appendChild(el("div", "msg", "No decks found. Add .txt decks to your decks folder."));
     stage.appendChild(wrap);
     return;
   }
 
-  const filter = el("input", "deck-filter");
-  filter.type = "text";
-  filter.placeholder = "filter decks…";
-  filter.autocomplete = "off";
-  wrap.appendChild(filter);
+  const chosen = new Set(); // ticked deck names, shared across the two phases
 
-  const chosen = new Set();
-  const startChip = el("button", "chip primary", "Start");
-  startChip.appendChild(el("span", "k", "enter"));
-  startChip.disabled = true;
-  startChip.addEventListener("click", () => { if (chosen.size) select([...chosen]); });
-  const toggle = (row, name) => {
-    if (chosen.has(name)) chosen.delete(name); else chosen.add(name);
-    row.classList.toggle("on");
-    startChip.disabled = chosen.size === 0;
-  };
+  function renderBrowse() {
+    selectEsc = null;
+    stage.innerHTML = ""; legend.innerHTML = "";
+    let focused = null; // the focused, browsable (unlocked) deck name
 
-  const list = el("div", "decklist");
-  const rows = [];
-  for (const d of data.decks) {
-    const row = el("div", "deckrow" + (d.locked ? " locked" : ""));
-    row.tabIndex = 0;
-    row.appendChild(el("span", "box"));
-    const name = el("span", "name", d.name);
-    if (d.locked) name.appendChild(el("span", "lock", " \u{1F512}"));
-    row.appendChild(name);
-    if (d.meta) row.appendChild(el("span", "meta state-" + d.state, d.meta));
-    row.addEventListener("click", () => toggle(row, d.name));
-    rows.push({ row, name: d.name.toLowerCase() });
-    list.appendChild(row);
+    const wrap = el("div", "select");
+    wrap.appendChild(el("div", "lede", "tap a deck to browse — or tick several to merge"));
+
+    const filter = el("input", "deck-filter");
+    filter.type = "text"; filter.placeholder = "filter decks…"; filter.autocomplete = "off";
+    wrap.appendChild(filter);
+
+    function syncPrimary() {
+      legend.innerHTML = "";
+      if (chosen.size) {
+        const b = el("button", "chip primary", "Confirm");
+        b.appendChild(el("span", "k", `${chosen.size} ⏎`));
+        b.addEventListener("click", renderConfirm);
+        legend.appendChild(b);
+      } else {
+        const b = el("button", "chip primary", "Start");
+        b.appendChild(el("span", "k", "enter"));
+        b.disabled = !focused;
+        b.addEventListener("click", () => { if (focused) select([focused]); });
+        legend.appendChild(b);
+      }
+    }
+
+    const toggleTick = (name, row) => {
+      if (chosen.has(name)) chosen.delete(name); else chosen.add(name);
+      row.classList.toggle("on");
+      syncPrimary();
+    };
+
+    const list = el("div", "decklist");
+    const rows = [];
+    for (const d of data.decks) {
+      const row = el("div", "deckrow" + (d.locked ? " locked" : "") + (chosen.has(d.name) ? " on" : ""));
+      row.tabIndex = 0;
+      row.dataset.deck = d.name;
+      if (d.locked) row.dataset.locked = "1";
+      const box = el("span", "box");
+      box.addEventListener("click", (e) => { e.stopPropagation(); if (!d.locked) toggleTick(d.name, row); });
+      row.appendChild(box);
+      const name = el("span", "name", d.name);
+      if (d.locked) name.appendChild(el("span", "lock", " \u{1F512}"));
+      row.appendChild(name);
+      if (d.meta) row.appendChild(el("span", "meta state-" + d.state, d.meta));
+      row.addEventListener("click", () => { if (!d.locked) select([d.name]); });
+      rows.push({ row, name: d.name.toLowerCase() });
+      list.appendChild(row);
+    }
+    wrap.appendChild(list);
+    stage.appendChild(wrap);
+
+    wrap.addEventListener("focusin", (e) => {
+      const t = e.target;
+      if (t.dataset && t.dataset.deck !== undefined) focused = t.dataset.locked ? null : t.dataset.deck;
+      else if (t === filter) focused = null;
+      if (!chosen.size) syncPrimary();
+    });
+
+    const visible = () => rows.filter(r => r.row.style.display !== "none");
+    filter.addEventListener("input", () => {
+      const q = filter.value.trim().toLowerCase();
+      for (const { row, name } of rows) row.style.display = !q || name.includes(q) ? "" : "none";
+    });
+    filter.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowDown") { e.preventDefault(); const v = visible(); if (v.length) v[0].row.focus(); }
+    });
+    list.addEventListener("keydown", (e) => {
+      const row = e.target.closest(".deckrow");
+      if (!row) return;
+      const v = visible();
+      const idx = v.findIndex(r => r.row === row);
+      if (e.key === "ArrowDown") { e.preventDefault(); if (idx < v.length - 1) v[idx + 1].row.focus(); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); if (idx > 0) v[idx - 1].row.focus(); else filter.focus(); }
+      else if (e.key === " ") { e.preventDefault(); if (!row.dataset.locked) toggleTick(row.dataset.deck, row); }
+    });
+
+    syncPrimary();
+    filter.focus();
   }
-  wrap.appendChild(list);
-  stage.appendChild(wrap);
-  legend.appendChild(startChip);
 
-  const visible = () => rows.filter(r => r.row.style.display !== "none");
+  function renderConfirm() {
+    selectEsc = renderBrowse;
+    stage.innerHTML = ""; legend.innerHTML = "";
+    const wrap = el("div", "select");
+    wrap.appendChild(el("div", "lede", "browse these decks together?"));
+    const list = el("div", "decklist");
+    for (const name of chosen) {
+      const row = el("div", "deckrow");
+      row.appendChild(el("span", "name", name));
+      list.appendChild(row);
+    }
+    wrap.appendChild(list);
+    stage.appendChild(wrap);
 
-  // Substring filter, like the TUI picker; toggled selections survive hiding.
-  filter.addEventListener("input", () => {
-    const q = filter.value.trim().toLowerCase();
-    for (const { row, name } of rows) row.style.display = !q || name.includes(q) ? "" : "none";
-  });
+    const start = el("button", "chip primary", "Start");
+    start.appendChild(el("span", "k", "enter"));
+    start.addEventListener("click", () => select([...chosen]));
+    legend.appendChild(start);
+    const cancel = el("button", "chip", "Cancel");
+    cancel.appendChild(el("span", "k", "esc"));
+    cancel.addEventListener("click", renderBrowse);
+    legend.appendChild(cancel);
+  }
 
-  // ↑/↓ move between the filter box and the visible rows; Space toggles a
-  // focused row (Enter still starts, handled globally).
-  filter.addEventListener("keydown", (e) => {
-    if (e.key === "ArrowDown") { e.preventDefault(); const v = visible(); if (v.length) v[0].row.focus(); }
-  });
-  list.addEventListener("keydown", (e) => {
-    const row = e.target.closest(".deckrow");
-    if (!row) return;
-    const v = visible();
-    const idx = v.findIndex(r => r.row === row);
-    if (e.key === "ArrowDown") { e.preventDefault(); if (idx < v.length - 1) v[idx + 1].row.focus(); }
-    else if (e.key === "ArrowUp") { e.preventDefault(); if (idx > 0) v[idx - 1].row.focus(); else filter.focus(); }
-    else if (e.key === " ") { e.preventDefault(); toggle(row, row.querySelector(".name").textContent); }
-  });
-
-  filter.focus(); // ready to type-to-filter immediately
+  renderBrowse();
 }
 
 function contextLine(text) {
@@ -362,6 +417,8 @@ document.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       const b = legend.querySelector(".chip.primary");
       if (b && !b.disabled) { e.preventDefault(); b.click(); }
+    } else if (e.key === "Escape" && selectEsc) {
+      e.preventDefault(); selectEsc();
     }
     return;
   }

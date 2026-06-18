@@ -321,6 +321,7 @@ fn pick_decks_if_empty(
     config: &Config,
     recent: &RecentDecks,
     store: &Store,
+    enforce_locks: bool,
 ) -> Result<Option<Vec<PathBuf>>> {
     if !decks.is_empty() {
         return Ok(Some(decks));
@@ -329,7 +330,7 @@ fn pick_decks_if_empty(
         bail!("no deck files given; try `flash <deck.txt>...` or `flash --help`");
     }
     let decks_dir = config.decks_dir().context("cannot determine ~/decks")?;
-    let picked = picker::pick(&decks_dir, recent, store)?;
+    let picked = picker::pick(&decks_dir, recent, store, enforce_locks)?;
     Ok((!picked.is_empty()).then_some(picked))
 }
 
@@ -529,7 +530,10 @@ fn load_review_session(args: &ReviewArgs, target: Frontend) -> Result<Option<Rev
         recent::default_recent_path().context("cannot determine the data directory")?,
     );
     let store = open_store(args.store.clone())?;
-    let Some(deck_paths) = pick_decks_if_empty(args.decks.clone(), &config, &recent, &store)? else {
+    // Review enforces locking — a deck whose prerequisites aren't finished
+    // can't be started from the picker.
+    let Some(deck_paths) = pick_decks_if_empty(args.decks.clone(), &config, &recent, &store, true)?
+    else {
         return Ok(None); // picker cancelled or nothing selected
     };
     let build = build_review(deck_paths, args, &config, &store, &mut recent, target)?;
@@ -1049,7 +1053,11 @@ fn browse(args: BrowseArgs) -> Result<()> {
         recent::default_recent_path().context("cannot determine the data directory")?,
     );
     let store = open_store(None)?;
-    let Some(deck_paths) = pick_decks_if_empty(args.decks.clone(), &config, &recent, &store)? else {
+    // Browse is read-only traversal — locking gates review only, so any deck is
+    // browsable (enforce_locks = false).
+    let Some(deck_paths) =
+        pick_decks_if_empty(args.decks.clone(), &config, &recent, &store, false)?
+    else {
         return Ok(()); // picker cancelled or nothing selected
     };
     let build = build_browse(deck_paths, &mut recent, Frontend::Tui)?;

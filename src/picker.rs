@@ -103,8 +103,9 @@ fn build_candidates(decks_dir: &Path, recent: &RecentDecks) -> Vec<Candidate> {
 /// Turns a deck candidate into a picker item, deriving its completion-state
 /// meta (`new` / `m/total` at the top stage / `done ✓`) and lock status (a
 /// `% requires:` prerequisite not yet finished) from the progress store. A deck
-/// that fails to load shows a plain row.
-fn deck_item(c: Candidate, store: &Store, decks_dir: &Path) -> Item<PathBuf> {
+/// that fails to load shows a plain row. `enforce_locks` is false for the browse
+/// picker — locking gates *review* progression only, so any deck is browsable.
+fn deck_item(c: Candidate, store: &Store, decks_dir: &Path, enforce_locks: bool) -> Item<PathBuf> {
     let (meta, locked, state) = match Deck::load(&c.path) {
         Ok(deck) => {
             let st = deck.state(store);
@@ -119,7 +120,7 @@ fn deck_item(c: Candidate, store: &Store, decks_dir: &Path) -> Item<PathBuf> {
                 DeckState::NotStarted => "new".to_string(),
                 DeckState::Started => format!("{retired}/{total}"),
             };
-            let locked = deck::is_locked(&deck, Some(decks_dir), store);
+            let locked = enforce_locks && deck::is_locked(&deck, Some(decks_dir), store);
             (Some(format!("· {label}")), locked, Some(st))
         }
         Err(_) => (None, false, None),
@@ -170,19 +171,29 @@ pub fn catalog(decks_dir: &Path, recent: &RecentDecks) -> Vec<DeckEntry> {
 
 /// Runs the startup picker. Returns the chosen deck paths (empty if the user
 /// cancelled or there is nothing to pick).
-pub fn pick(decks_dir: &Path, recent: &RecentDecks, store: &Store) -> Result<Vec<PathBuf>> {
+/// Runs the startup picker. `enforce_locks` gates launching a deck whose
+/// `% requires:` prerequisites aren't finished — true for `review`, false for
+/// `browse` (any deck is browsable).
+pub fn pick(
+    decks_dir: &Path,
+    recent: &RecentDecks,
+    store: &Store,
+    enforce_locks: bool,
+) -> Result<Vec<PathBuf>> {
     let items = build_candidates(decks_dir, recent)
         .into_iter()
-        .map(|c| deck_item(c, store, decks_dir))
+        .map(|c| deck_item(c, store, decks_dir, enforce_locks))
         .collect();
-    let picker = Picker::new(
+    let mut picker = Picker::new(
         items,
         HashSet::new(),
         "select decks".to_string(),
-        " SPACE select │ ENTER start │ ↑↓ move │ type to filter │ ESC cancel".to_string(),
+        // Footer is computed per launcher state in `draw`.
+        String::new(),
         false,
         no_decks_message(decks_dir),
     );
+    picker.launcher = true;
     Ok(launch(picker)?.unwrap_or_default())
 }
 
@@ -195,7 +206,7 @@ pub fn pick_to_reset(
 ) -> Result<Vec<PathBuf>> {
     let items = build_candidates(decks_dir, recent)
         .into_iter()
-        .map(|c| deck_item(c, store, decks_dir))
+        .map(|c| deck_item(c, store, decks_dir, false))
         .collect();
     let picker = Picker::new(
         items,
@@ -330,6 +341,13 @@ struct Picker<K> {
     exact: bool,
     /// Lines shown when there are no items.
     empty: Vec<Line<'static>>,
+    /// Two-phase deck-launcher mode (the startup picker): Enter launches the
+    /// focused deck; `Space` ticks decks; `Tab` confirms a multi-deck selection.
+    /// Off for the reset / dependency pickers (plain tick + Enter).
+    launcher: bool,
+    /// Launcher review sub-state: the list shows only the ticked decks and Enter
+    /// starts the merged session.
+    confirming: bool,
     done: bool,
     cancelled: bool,
 }
@@ -355,6 +373,8 @@ impl<K: Clone + Eq + Hash> Picker<K> {
             footer,
             exact,
             empty,
+            launcher: false,
+            confirming: false,
             done: false,
             cancelled: false,
         }
@@ -369,19 +389,44 @@ impl<K: Clone + Eq + Hash> Picker<K> {
             {
                 let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
                 match key.code {
+                    // In the launcher's confirm view, Esc steps back to browse;
+                    // everywhere else it cancels the picker.
+                    KeyCode::Esc if self.confirming => {
+                        self.confirming = false;
+                        self.refilter();
+                    }
                     KeyCode::Esc => self.cancel(),
                     KeyCode::Char('c') if ctrl => self.cancel(),
-                    KeyCode::Enter => self.done = true,
+                    KeyCode::Enter => {
+                        // Launcher browse: Enter launches the focused deck, but
+                        // never a locked one. Otherwise (confirm view, or the
+                        // reset/deps pickers) Enter accepts the selection.
+                        if self.launcher && !self.confirming {
+                            if self.focused().is_some_and(|item| !item.locked) {
+                                self.done = true;
+                            }
+                        } else {
+                            self.done = true;
+                        }
+                    }
+                    // Tab confirms a multi-deck selection (a non-letter key, since
+                    // letters are filter input here).
+                    KeyCode::Tab if self.launcher && !self.confirming => {
+                        if !self.selected.is_empty() {
+                            self.enter_confirm();
+                        }
+                    }
                     KeyCode::Up => self.move_cursor(-1),
                     KeyCode::Down => self.move_cursor(1),
                     KeyCode::Char('p') if ctrl => self.move_cursor(-1),
                     KeyCode::Char('n') if ctrl => self.move_cursor(1),
-                    KeyCode::Char(' ') => self.toggle(),
-                    KeyCode::Backspace => {
+                    // Ticking and filtering are disabled in the confirm view.
+                    KeyCode::Char(' ') if !self.confirming => self.toggle(),
+                    KeyCode::Backspace if !self.confirming => {
                         self.filter.pop();
                         self.refilter();
                     }
-                    KeyCode::Char(c) if !ctrl => {
+                    KeyCode::Char(c) if !ctrl && !self.confirming => {
                         self.filter.push(c);
                         self.refilter();
                     }
@@ -393,23 +438,50 @@ impl<K: Clone + Eq + Hash> Picker<K> {
         if self.cancelled {
             return Ok(None);
         }
-        // Ticked items, in list order.
-        let chosen: Vec<K> = self
-            .all
+        Ok(Some(self.result()))
+    }
+
+    /// The item under the cursor, if any.
+    fn focused(&self) -> Option<&Item<K>> {
+        self.filtered.get(self.cursor).map(|&i| &self.all[i])
+    }
+
+    /// The keys of the ticked items, in list order.
+    fn ticked(&self) -> Vec<K> {
+        self.all
             .iter()
             .filter(|item| self.selected.contains(&item.key))
             .map(|item| item.key.clone())
-            .collect();
+            .collect()
+    }
+
+    /// The chosen keys once the picker is done (not cancelled).
+    fn result(&self) -> Vec<K> {
+        if self.launcher {
+            // Confirm view -> the ticked set (merged session); browse -> the
+            // single focused deck that Enter launched.
+            return if self.confirming {
+                self.ticked()
+            } else {
+                self.focused().map(|item| vec![item.key.clone()]).unwrap_or_default()
+            };
+        }
+        let chosen = self.ticked();
         if self.exact || !chosen.is_empty() {
-            return Ok(Some(chosen));
+            return chosen;
         }
         // Startup picker with nothing ticked: use the item under the cursor.
-        Ok(Some(
-            self.filtered
-                .get(self.cursor)
-                .map(|&i| vec![self.all[i].key.clone()])
-                .unwrap_or_default(),
-        ))
+        self.focused().map(|item| vec![item.key.clone()]).unwrap_or_default()
+    }
+
+    /// Enters the launcher's confirm view: the list shows only the ticked decks.
+    fn enter_confirm(&mut self) {
+        self.confirming = true;
+        self.filtered = (0..self.all.len())
+            .filter(|&i| self.selected.contains(&self.all[i].key))
+            .collect();
+        self.cursor = 0;
+        self.offset = 0;
     }
 
     fn cancel(&mut self) {
@@ -427,6 +499,11 @@ impl<K: Clone + Eq + Hash> Picker<K> {
 
     fn toggle(&mut self) {
         if let Some(&i) = self.filtered.get(self.cursor) {
+            // A locked deck can't be ticked (it isn't startable). Non-deck
+            // pickers never set `locked`, so this is a no-op for them.
+            if self.all[i].locked {
+                return;
+            }
             let key = &self.all[i].key;
             if !self.selected.remove(key) {
                 self.selected.insert(key.clone());
@@ -457,20 +534,44 @@ impl<K: Clone + Eq + Hash> Picker<K> {
         ])
         .areas(frame.area());
 
-        let left = format!(" flash — {} ({})", self.title, self.all.len());
+        let title = if self.confirming {
+            "start these decks?"
+        } else {
+            &self.title
+        };
+        let left = format!(" flash — {} ({})", title, self.all.len());
         let right = format!("{} selected ", self.selected.len());
         frame.render_widget(bar(&left, &right, header.width), header);
 
-        // Filter line with a cursor.
-        frame.render_widget(Paragraph::new(format!(" filter: {}", self.filter)), filter);
-        frame.set_cursor_position(Position::new(
-            filter.x + 9 + self.filter.chars().count() as u16,
-            filter.y,
-        ));
+        // Filter line with a cursor — hidden in the confirm view (filtering is
+        // disabled there).
+        if !self.confirming {
+            frame.render_widget(Paragraph::new(format!(" filter: {}", self.filter)), filter);
+            frame.set_cursor_position(Position::new(
+                filter.x + 9 + self.filter.chars().count() as u16,
+                filter.y,
+            ));
+        }
 
         self.draw_list(frame, list);
 
-        frame.render_widget(bar(&self.footer, "", footer.width), footer);
+        let footer_text = self.footer_text();
+        frame.render_widget(bar(&footer_text, "", footer.width), footer);
+    }
+
+    /// The footer hints for the current state. The launcher computes them per
+    /// state; other pickers use their fixed `footer`.
+    fn footer_text(&self) -> String {
+        if !self.launcher {
+            return self.footer.clone();
+        }
+        if self.confirming {
+            " ENTER start merged │ ↑↓ move │ ESC back".to_string()
+        } else if self.selected.is_empty() {
+            " ENTER start │ SPACE tick │ ↑↓ move │ type to filter │ ESC cancel".to_string()
+        } else {
+            " ENTER start │ SPACE tick │ TAB confirm │ ↑↓ move │ ESC cancel".to_string()
+        }
     }
 
     fn draw_list(&mut self, frame: &mut Frame, area: Rect) {
@@ -500,9 +601,15 @@ impl<K: Clone + Eq + Hash> Picker<K> {
             let checked = self.selected.contains(&item.key);
 
             let marker = if on_cursor { "›" } else { " " };
-            let check = if checked { "[x]" } else { "[ ]" };
             let lock = if item.locked { "🔒 " } else { "" };
-            let main = format!("{marker} {check} {lock}{}", item.label);
+            // The confirm view lists only ticked decks, so the checkbox column
+            // is redundant there.
+            let main = if self.confirming {
+                format!("{marker} {lock}{}", item.label)
+            } else {
+                let check = if checked { "[x]" } else { "[ ]" };
+                format!("{marker} {check} {lock}{}", item.label)
+            };
 
             let mut style = Style::new();
             if on_cursor {
@@ -564,6 +671,58 @@ mod tests {
             false,
             Vec::new(),
         )
+    }
+
+    fn launcher_with(items: &[(&str, bool)]) -> Picker<PathBuf> {
+        let all = items
+            .iter()
+            .map(|(n, locked)| Item {
+                key: PathBuf::from(n),
+                label: n.to_string(),
+                meta: None,
+                locked: *locked,
+                state: None,
+            })
+            .collect();
+        let mut p = Picker::new(
+            all,
+            HashSet::new(),
+            "t".to_string(),
+            String::new(),
+            false,
+            Vec::new(),
+        );
+        p.launcher = true;
+        p
+    }
+
+    #[test]
+    fn launcher_enter_returns_focused_deck() {
+        let mut p = launcher_with(&[("a.txt", false), ("b.txt", false)]);
+        p.cursor = 1;
+        assert_eq!(vec![PathBuf::from("b.txt")], p.result());
+    }
+
+    #[test]
+    fn launcher_confirm_returns_ticked_set() {
+        let mut p = launcher_with(&[("a.txt", false), ("b.txt", false), ("c.txt", false)]);
+        p.selected.insert(PathBuf::from("a.txt"));
+        p.selected.insert(PathBuf::from("c.txt"));
+        p.enter_confirm();
+        assert!(p.confirming);
+        assert_eq!(2, p.filtered.len()); // confirm view shows only ticked decks
+        assert_eq!(
+            vec![PathBuf::from("a.txt"), PathBuf::from("c.txt")],
+            p.result()
+        );
+    }
+
+    #[test]
+    fn launcher_does_not_tick_locked_decks() {
+        let mut p = launcher_with(&[("locked.txt", true)]);
+        p.cursor = 0;
+        p.toggle();
+        assert!(p.selected.is_empty());
     }
 
     #[test]

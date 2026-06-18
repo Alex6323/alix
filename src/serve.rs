@@ -349,7 +349,8 @@ pub fn run_review(
             (Method::Get, "/") => respond_html(request, REVIEW_HTML),
             (Method::Get, "/api/keys") => respond_json(request, &keys),
             (Method::Get, "/api/decks") => {
-                respond_json(request, &deck_catalog(&decks_dir, &recent, &store))
+                // Review enforces locking; the picker won't start a locked deck.
+                respond_json(request, &deck_catalog(&decks_dir, &recent, &store, true))
             }
             (Method::Get, key) if key.starts_with("/img/") => match &reviewing {
                 Some(r) => serve_image(request, &r.images, &key["/img/".len()..]),
@@ -545,7 +546,8 @@ pub fn run_browse(
             (Method::Get, "/") => respond_html(request, BROWSE_HTML),
             (Method::Get, "/api/keys") => respond_json(request, &keys),
             (Method::Get, "/api/decks") => {
-                respond_json(request, &deck_catalog(&decks_dir, &recent, &store))
+                // Browse is read-only — any deck is browsable, so no lock gating.
+                respond_json(request, &deck_catalog(&decks_dir, &recent, &store, false))
             }
             (Method::Get, key) if key.starts_with("/img/") => match &browsing {
                 Some(b) => serve_image(request, &b.images, &key["/img/".len()..]),
@@ -681,8 +683,14 @@ fn review_state(reviewing: Option<&Reviewing>, store: &Store, mode_override: Opt
 
 /// Builds the deck-selection catalog (recent decks first, then `decks_dir`),
 /// with each deck's completion state and lock status derived from `store` —
-/// mirroring the TUI picker rows.
-fn deck_catalog(decks_dir: &Path, recent: &RecentDecks, store: &Store) -> DeckListDto {
+/// mirroring the TUI picker rows. `with_lock` is false for the browse screen:
+/// locking gates *review* only, so any deck is browsable.
+fn deck_catalog(
+    decks_dir: &Path,
+    recent: &RecentDecks,
+    store: &Store,
+    with_lock: bool,
+) -> DeckListDto {
     let decks = picker::catalog(decks_dir, recent)
         .into_iter()
         .map(|e| {
@@ -699,7 +707,7 @@ fn deck_catalog(decks_dir: &Path, recent: &RecentDecks, store: &Store) -> DeckLi
                         DeckState::NotStarted => ("new", "new".to_string()),
                         DeckState::Started => ("started", format!("{retired}/{total}")),
                     };
-                    let locked = deck::is_locked(&deck, Some(decks_dir), store);
+                    let locked = with_lock && deck::is_locked(&deck, Some(decks_dir), store);
                     (state, Some(label), locked)
                 }
                 Err(_) => ("new", None, false),

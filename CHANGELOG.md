@@ -77,6 +77,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   silently.
 
 ### Changed
+- The startup deck picker (terminal and web) is now two-phase: `Enter` (or
+  tapping a deck name in the browser) starts the **focused** deck immediately; to
+  study several at once you tick decks (`Space` / checkbox) and **Confirm**
+  (`Tab` in the TUI), which reviews the chosen decks and starts them as a merged
+  session. A **locked** deck can no longer be *started* for review (was
+  advisory) — but it stays fully browsable (`flash browse` ignores locking) and
+  resettable. The `flash reset` / `flash deps` pickers keep their plain
+  multi-select.
 - **A card that reaches the top Leitner stage now retires** (rests, no longer
   scheduled until `flash reset`) instead of recurring at the stage-5 weekly
   cooldown. This is the default even without `% max-stage:`, and makes a
