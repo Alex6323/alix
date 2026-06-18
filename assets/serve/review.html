@@ -237,6 +237,19 @@
   .chip.good:hover { border-color: var(--good); color: var(--good); }
   .chip.easy:hover { border-color: var(--bolt-hi); color: var(--bolt-hi); }
 
+  /* ── ask Claude ── */
+  .ask { width: var(--card-w); max-width: 92vw; display: flex; flex-direction: column; gap: 12px; animation: deal 0.3s both; }
+  .ask-log { display: flex; flex-direction: column; gap: 10px; max-height: 58vh; overflow-y: auto; padding-right: 4px; }
+  .ask-q { align-self: flex-end; max-width: 85%; background: rgba(125,249,232,0.10); border: 1px solid var(--line); border-radius: 12px 12px 4px 12px; padding: 9px 13px; }
+  .ask-a { align-self: flex-start; max-width: 92%; white-space: pre-wrap; line-height: 1.5; border-left: 3px solid var(--bolt); padding: 4px 0 4px 12px; }
+  .ask-thinking { align-self: flex-start; color: var(--dim); font-style: italic; }
+  .ask-status { align-self: flex-start; color: var(--good); font-size: 0.85rem; }
+  .ask-error { align-self: flex-start; color: var(--again); font-size: 0.85rem; }
+  .ask-hint { color: var(--dim); }
+  .ask-input { width: 100%; box-sizing: border-box; resize: vertical; min-height: 52px; padding: 11px 13px; border-radius: 12px; border: 1px solid var(--line); background: rgba(0,0,0,0.25); color: var(--ink); font: inherit; }
+  .ask-input:focus { outline: none; border-color: var(--bolt); }
+  .ask-input:disabled { opacity: 0.6; }
+
   @media (prefers-reduced-motion: reduce) {
     .stack, .summary, .reveal, .card.zap { animation: none; }
   }
@@ -255,6 +268,7 @@
     <span class="menu-wrap" id="menuWrap">
       <button class="kebab" id="kebab" aria-label="More actions" aria-haspopup="true">⋮</button>
       <div class="menu" id="menu" role="menu">
+        <button id="mAsk" role="menuitem">Ask Claude <span class="mk" id="mAskKey">?</span></button>
         <button id="mRemove" role="menuitem">Remove card <span class="mk">x</span></button>
       </div>
     </span>
@@ -272,6 +286,9 @@ let revealed = 0;     // back lines shown for the current card
 let feedback = null;  // choice result being shown ({chosen, correct, passed})
 let confirmingLeave = false; // showing the "session not finished" leave prompt
 let selectEsc = null; // in the deck-select confirm view, Esc returns to browse
+let asking = false;   // the ask-Claude overlay is open
+let askData = { transcript: [], thinking: false, status: null, error: null };
+let askPoll = null;   // setInterval handle while a reply is pending
 let KEYS = {};        // configured key bindings, from /api/keys
 
 const stage = document.getElementById("stage");
@@ -360,8 +377,93 @@ function render() {
   scoreEl.innerHTML = `<b>${state.passed}✓</b> <s>${state.failed}✗</s><span class="left">${state.remaining}↓</span>`;
   menuWrap.style.display = state.finished ? "none" : "";
 
+  if (asking) { renderAsk(); return; }
   if (state.finished) renderSummary();
   else renderCard();
+}
+
+// ── ask Claude ────────────────────────────────────────────────────────
+// Available once a card is answered. Sends run the CLI on the server; we poll
+// /api/ask while it's thinking. One conversation spans the session.
+function isAnswered() {
+  if (!state || state.phase !== "review" || state.finished || !state.card) return false;
+  if (feedback) return true;
+  return !isChoice() && !isInput() && fullyRevealed();
+}
+function openAsk() {
+  asking = true;
+  render(); // builds the panel once (entrance animation runs once)
+  api("/api/ask").then(d => { askData = d; if (asking) syncAsk(); }); // pick up any prior transcript
+}
+function closeAsk() { asking = false; stopAskPoll(); render(); }
+function sendAsk(text) {
+  const q = (text || "").trim();
+  if (!q || askData.thinking) return;
+  const ta = document.querySelector(".ask-input");
+  if (ta) ta.value = ""; // the textarea persists across syncAsk; clear the sent question
+  api("/api/ask", post({ question: q })).then(d => { askData = d; if (asking) syncAsk(); startAskPoll(); });
+}
+function saveAskNote() {
+  if (askData.thinking || !askData.transcript.length) return;
+  api("/api/ask/note", post({})).then(d => { askData = d; if (asking) syncAsk(); startAskPoll(); });
+}
+function startAskPoll() {
+  stopAskPoll();
+  askPoll = setInterval(() => {
+    api("/api/ask").then(d => { askData = d; if (!d.thinking) stopAskPoll(); if (asking) syncAsk(); });
+  }, 400);
+}
+function stopAskPoll() { if (askPoll) { clearInterval(askPoll); askPoll = null; } }
+
+// (Re)fill just the transcript log from askData.
+function fillAskLog(log) {
+  log.innerHTML = "";
+  for (const ex of askData.transcript) {
+    log.appendChild(el("div", "ask-q", ex.q));
+    log.appendChild(el("div", "ask-a", ex.a));
+  }
+  if (askData.thinking) log.appendChild(el("div", "ask-thinking", "Claude is thinking…"));
+  if (askData.status) log.appendChild(el("div", "ask-status", askData.status));
+  if (askData.error) log.appendChild(el("div", "ask-error", askData.error));
+  if (!askData.transcript.length && !askData.thinking && !askData.status && !askData.error)
+    log.appendChild(el("div", "ask-hint", "Ask Claude about this card."));
+  log.scrollTop = log.scrollHeight;
+}
+
+// Update the open panel in place — no rebuild, so the entrance animation
+// doesn't re-run while we poll and the textarea keeps its focus/value.
+function syncAsk() {
+  const wrap = document.querySelector(".ask");
+  if (!wrap) { render(); return; }
+  fillAskLog(wrap.querySelector(".ask-log"));
+  const input = wrap.querySelector(".ask-input");
+  if (input) input.disabled = askData.thinking;
+  const send = legend.querySelector(".chip.primary");
+  if (send) send.disabled = askData.thinking;
+}
+
+function renderAsk() {
+  const wrap = el("div", "ask");
+  const log = el("div", "ask-log");
+  fillAskLog(log);
+  wrap.appendChild(log);
+
+  const input = el("textarea", "ask-input");
+  input.placeholder = "Ask about this card…";
+  input.rows = 2;
+  input.disabled = askData.thinking;
+  input.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendAsk(input.value); }
+  });
+  wrap.appendChild(input);
+  stage.appendChild(wrap);
+
+  legend.innerHTML = "";
+  const send = chip("Send", "primary", () => sendAsk(input.value), "enter");
+  send.disabled = askData.thinking;
+  chip("Save note", "", saveAskNote, label(KEYS.save_note));
+  chip("Close", "", closeAsk, "esc");
+  if (!askData.thinking) input.focus();
 }
 
 // The deck-selection screen. Two phases: Browse (tap a deck name to launch it,
@@ -695,6 +797,7 @@ function renderLegend() {
   legend.innerHTML = "";
   if (feedback) {
     chip("Continue", "primary", continueAfter, label(KEYS.reveal));
+    chip("Ask", "", openAsk, label(KEYS.ask));
   } else if (isChoice()) {
     chip("Skip", "", skip, label(KEYS.skip));
   } else if (isInput()) {
@@ -707,6 +810,7 @@ function renderLegend() {
     chip("Again", "again", () => grade("again"), label(KEYS.again));
     chip("Good", "good", () => grade("good"), label(KEYS.good));
     chip("Easy", "easy", () => grade("easy"), label(KEYS.easy));
+    chip("Ask", "", openAsk, label(KEYS.ask));
   }
   chip("Decks", "", leaveSession, "esc"); // return to the deck picker
 }
@@ -772,6 +876,13 @@ document.addEventListener("keydown", (e) => {
     }
     return;
   }
+  // The ask overlay: Esc closes, the save-note key saves; the textarea handles
+  // typing and Enter-to-send.
+  if (asking) {
+    if (e.key === "Escape") { e.preventDefault(); closeAsk(); return; }
+    if (hit(e, KEYS.save_note)) { e.preventDefault(); saveAskNote(); return; }
+    return;
+  }
   // While the leave prompt is up: Enter confirms leaving, Esc stays; other keys
   // are inert (so a stray Esc can never blow through the guard).
   if (confirmingLeave) {
@@ -783,6 +894,7 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") { e.preventDefault(); leaveSession(); return; }
   if (state.finished) { if (state.can_restart && hit(e, KEYS.restart)) { e.preventDefault(); restart(); } return; }
   if (feedback) {
+    if (hit(e, KEYS.ask)) { e.preventDefault(); openAsk(); return; }
     if (hit(e, KEYS.remove)) { e.preventDefault(); remove(); return; }
     if (hit(e, KEYS.reveal) || e.key === "Enter") { e.preventDefault(); continueAfter(); }
     return;
@@ -808,6 +920,7 @@ document.addEventListener("keydown", (e) => {
     if (hit(e, KEYS.reveal)) { e.preventDefault(); reveal(); return; }
     return;
   }
+  if (hit(e, KEYS.ask)) { e.preventDefault(); openAsk(); return; }
   if (hit(e, KEYS.again)) { e.preventDefault(); grade("again"); }
   else if (hit(e, KEYS.good)) { e.preventDefault(); grade("good"); }
   else if (hit(e, KEYS.easy)) { e.preventDefault(); grade("easy"); }
@@ -815,6 +928,7 @@ document.addEventListener("keydown", (e) => {
 
 document.getElementById("kebab").addEventListener("click", (e) => { e.stopPropagation(); menu.classList.toggle("open"); });
 menu.addEventListener("click", (e) => e.stopPropagation());
+document.getElementById("mAsk").addEventListener("click", () => { menu.classList.remove("open"); if (isAnswered()) openAsk(); });
 document.getElementById("mRemove").addEventListener("click", () => { menu.classList.remove("open"); remove(); });
 document.addEventListener("click", () => menu.classList.remove("open"));
 
@@ -822,6 +936,7 @@ document.addEventListener("click", () => menu.classList.remove("open"));
 api("/api/keys").then(k => {
   KEYS = k;
   document.querySelector("#mRemove .mk").textContent = label(KEYS.remove);
+  document.getElementById("mAskKey").textContent = label(KEYS.ask);
   load();
 });
 </script>

@@ -7,6 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Ask-Claude in the **web frontend** (`--serve`): an "Ask" button / the `?` key
+  on an answered card opens a chat panel (Send / Save note / Close), mirroring
+  the TUI feature. The server runs `claude -p` on a background thread and the
+  page polls for the reply, so the single-threaded server stays responsive; one
+  conversation spans the session (`--session-id`/`--resume`), and Save note
+  appends a condensed note to the deck file. Reachable wherever you serve,
+  including `--lan`.
 - `% max-stage: N` deck directive (1–5, default 5): the deck's top Leitner
   stage. A card that reaches it **retires** — it rests and is no longer
   scheduled (not even under `--cram`) until `flash reset` — so material you only

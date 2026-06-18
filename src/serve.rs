@@ -18,6 +18,7 @@ use std::{
     hash::Hasher,
     net::SocketAddr,
     path::{Path, PathBuf},
+    sync::mpsc::{Receiver, TryRecvError},
 };
 
 use anyhow::{Result, anyhow};
@@ -27,9 +28,10 @@ use twox_hash::XxHash64;
 
 use crate::{
     answer::{Mode, grade_lines_unordered},
+    ask::{self, CliSession, Exchange, Reply},
     card::Card,
     choice,
-    config::{Bindings, BrowseBindings, Key, KeyPattern},
+    config::{AskConfig, Bindings, BrowseBindings, Key, KeyPattern},
     deck::{self, Deck, DeckState},
     picker,
     recent::RecentDecks,
@@ -67,6 +69,21 @@ impl DeckFiles {
             snapshots,
             removed: HashMap::new(),
         }
+    }
+
+    /// Appends condensed note lines to the card block at `line` of `subject`,
+    /// then refreshes the snapshot so a later card removal keeps the new note
+    /// (removals rewrite from the snapshot). Returns a message on failure.
+    fn append_note(&mut self, subject: &str, line: usize, notes: &[String]) -> Result<(), String> {
+        let path = self
+            .paths
+            .get(subject)
+            .ok_or_else(|| format!("no deck file known for {subject}"))?;
+        deck::append_note(path, line, notes).map_err(|e| e.to_string())?;
+        if let Ok(text) = std::fs::read_to_string(path) {
+            self.snapshots.insert(subject.to_string(), text);
+        }
+        Ok(())
     }
 
     /// Records that the card block at `line` of `subject` was removed and
@@ -205,6 +222,23 @@ struct CheckFeedbackDto {
     passed: bool,
 }
 
+/// One ask-Claude exchange, for the browser.
+#[derive(Debug, Serialize)]
+struct ExchangeDto {
+    q: String,
+    a: String,
+}
+
+/// The ask-Claude view state: the conversation so far, whether a call is in
+/// flight (the page polls while `thinking`), and a transient status / error.
+#[derive(Debug, Serialize)]
+struct AskDto {
+    transcript: Vec<ExchangeDto>,
+    thinking: bool,
+    status: Option<String>,
+    error: Option<String>,
+}
+
 /// One configured key, as the browser sees it: `k` is the `KeyboardEvent.key`
 /// value (`" "`, `"Enter"`, `"j"`, …) and `ctrl` whether Ctrl must be held.
 #[derive(Debug, Serialize)]
@@ -239,6 +273,8 @@ struct ReviewKeys {
     skip: Vec<KeyDto>,
     remove: Vec<KeyDto>,
     restart: Vec<KeyDto>,
+    ask: Vec<KeyDto>,
+    save_note: Vec<KeyDto>,
 }
 
 impl ReviewKeys {
@@ -251,6 +287,8 @@ impl ReviewKeys {
             skip: key_list(&b.skip),
             remove: key_list(&b.remove),
             restart: key_list(&b.restart),
+            ask: key_list(&b.ask),
+            save_note: key_list(&b.save_note),
         }
     }
 }
@@ -281,15 +319,19 @@ pub struct ReviewOptions {
     pub keys: Bindings,
     /// Fuzzy-mode typo tolerance per line.
     pub max_typos: usize,
+    /// Ask-Claude settings (command, allowlist, timeout, …).
+    pub ask: AskConfig,
 }
 
-/// A review session ready to serve: the session, its header label, and the
-/// subject → deck file path map used for card removal. Produced by the caller's
+/// A review session ready to serve: the session, its header label, the
+/// subject → deck file path map used for card removal, and the subject → deck
+/// reference links (`% link:`) offered to ask-Claude. Produced by the caller's
 /// builder closure when decks are chosen (on the CLI or in the browser picker).
 pub struct SessionBuild {
     pub session: Session,
     pub label: String,
     pub decks: HashMap<String, PathBuf>,
+    pub links: HashMap<String, Vec<String>>,
 }
 
 /// A browse card list ready to serve, with its label and deck paths.
@@ -306,6 +348,29 @@ struct Reviewing {
     label: String,
     files: DeckFiles,
     images: HashMap<String, PathBuf>,
+    /// Ask-Claude: the CLI conversation spanning this selection, the running
+    /// transcript, the per-subject `% link:` links, and an in-flight CLI call.
+    cli: CliSession,
+    transcript: Vec<Exchange>,
+    links: HashMap<String, Vec<String>>,
+    pending: Option<Pending>,
+}
+
+/// An in-flight ask-Claude call: the channel the background thread answers on,
+/// what it is for, and the card it is about (snapshotted so a late reply still
+/// refers to the right card).
+struct Pending {
+    rx: Receiver<Reply>,
+    purpose: Purpose,
+    card: Card,
+}
+
+/// What a pending CLI call will do with its answer.
+enum Purpose {
+    /// A question; holds the text to record in the transcript on success.
+    Question(String),
+    /// Condense the conversation into note lines appended to the deck file.
+    Condense,
 }
 
 impl Reviewing {
@@ -316,6 +381,99 @@ impl Reviewing {
             label: build.label,
             files: DeckFiles::new(build.decks),
             images,
+            cli: CliSession::new(),
+            transcript: Vec::new(),
+            links: build.links,
+            pending: None,
+        }
+    }
+
+    /// The ask-view payload, with an optional one-shot status/error.
+    fn ask_dto(&self, status: Option<String>, error: Option<String>) -> AskDto {
+        AskDto {
+            transcript: self
+                .transcript
+                .iter()
+                .map(|(q, a)| ExchangeDto {
+                    q: q.clone(),
+                    a: a.clone(),
+                })
+                .collect(),
+            thinking: self.pending.is_some(),
+            status,
+            error,
+        }
+    }
+
+    /// Starts an ask-Claude call about the current card. `question` is the text
+    /// to ask; `None` condenses the conversation into deck notes instead.
+    /// Returns `false` (no-op) if a call is already pending, nothing is
+    /// reviewable, or there is nothing to condense.
+    fn start_ask(&mut self, cfg: &AskConfig, question: Option<String>) -> bool {
+        if self.pending.is_some() {
+            return false;
+        }
+        let Some(card) = self.session.current().cloned() else {
+            return false;
+        };
+        let (prompt, purpose) = match question {
+            Some(q) => {
+                let links = self.links.get(&*card.subject).cloned().unwrap_or_default();
+                let prompt = ask::question_prompt(&card, &links, &q, !self.cli.started);
+                (prompt, Purpose::Question(q))
+            }
+            None => {
+                if self.transcript.is_empty() {
+                    return false;
+                }
+                (ask::condense_prompt(&card, &self.transcript), Purpose::Condense)
+            }
+        };
+        let rx = ask::spawn(cfg.clone(), prompt, self.cli.args());
+        self.pending = Some(Pending { rx, purpose, card });
+        true
+    }
+
+    /// Drains a finished CLI reply into the transcript (a question) or the deck
+    /// file (a condense). Returns a transient `(status, error)` to show once.
+    fn poll_ask(&mut self) -> (Option<String>, Option<String>) {
+        let reply = match &self.pending {
+            None => return (None, None),
+            Some(p) => match p.rx.try_recv() {
+                Ok(reply) => reply,
+                Err(TryRecvError::Empty) => return (None, None),
+                Err(TryRecvError::Disconnected) => {
+                    Reply::Error("the ask helper exited unexpectedly".to_string())
+                }
+            },
+        };
+        let pending = self.pending.take().expect("pending was present");
+        match (reply, pending.purpose) {
+            (Reply::Answer(answer), Purpose::Question(question)) => {
+                self.cli.started = true; // later calls --resume this conversation
+                self.transcript.push((question, answer));
+                (None, None)
+            }
+            (Reply::Answer(text), Purpose::Condense) => {
+                self.cli.started = true;
+                let notes = ask::extract_note_lines(&text);
+                if notes.is_empty() {
+                    return (Some("nothing to save".to_string()), None);
+                }
+                match self
+                    .files
+                    .append_note(&pending.card.subject, pending.card.line, &notes)
+                {
+                    Ok(()) => (Some("note saved".to_string()), None),
+                    Err(e) => (None, Some(e)),
+                }
+            }
+            // Don't resume a session in an unknown state; the next question
+            // starts a fresh one.
+            (Reply::Error(e), _) => {
+                self.cli = CliSession::new();
+                (None, Some(e))
+            }
         }
     }
 }
@@ -338,6 +496,7 @@ pub fn run_review(
         mode_override,
         keys: bindings,
         max_typos,
+        ask: ask_cfg,
     } = opts;
     let keys = ReviewKeys::from(&bindings);
     let mut reviewing = initial.map(Reviewing::new);
@@ -495,6 +654,44 @@ pub fn run_review(
                 };
                 r.session.restart(&store, now_ms());
                 respond_json(request, &review_state(reviewing.as_ref(), &store, mode_override));
+            }
+            // Ask Claude about the current card — runs the CLI on a background
+            // thread (ask::spawn) and returns immediately; the page polls
+            // `GET /api/ask` for the answer so the server loop never blocks.
+            (Method::Post, "/api/ask") => {
+                #[derive(Deserialize)]
+                struct Body {
+                    question: String,
+                }
+                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
+                let question = body.map(|b| b.question).filter(|q| !q.trim().is_empty());
+                let Some(r) = reviewing.as_mut() else {
+                    respond_status(request, 409);
+                    continue;
+                };
+                if let Some(q) = question {
+                    r.start_ask(&ask_cfg, Some(q));
+                }
+                respond_json(request, &r.ask_dto(None, None));
+            }
+            // Condense the conversation into note lines appended to the deck.
+            (Method::Post, "/api/ask/note") => {
+                let Some(r) = reviewing.as_mut() else {
+                    respond_status(request, 409);
+                    continue;
+                };
+                r.start_ask(&ask_cfg, None);
+                respond_json(request, &r.ask_dto(None, None));
+            }
+            // Poll for a pending reply; the page calls this every ~400ms while
+            // `thinking`.
+            (Method::Get, "/api/ask") => {
+                let Some(r) = reviewing.as_mut() else {
+                    respond_status(request, 409);
+                    continue;
+                };
+                let (status, error) = r.poll_ask();
+                respond_json(request, &r.ask_dto(status, error));
             }
             _ => respond_status(request, 404),
         }
@@ -1003,5 +1200,101 @@ mod tests {
         assert!(matches!(Grade::Fail, Grade::Fail));
         assert_eq!(mode_name(Mode::LineByLine), "line");
         assert_eq!(mode_name(Mode::Flip), "flip");
+    }
+
+    // ---- ask-Claude server state machine -------------------------------
+    //
+    // These drive `poll_ask` through a channel we control, so the actual CLI
+    // execution (covered by `ask.rs`'s own tests) isn't involved.
+
+    fn one_card_reviewing(dir: &Path) -> (Reviewing, Card, PathBuf) {
+        let deck = dir.join("d.txt");
+        std::fs::write(&deck, "# front\n\tback\n").unwrap();
+        let store = Store::open(dir.join("p.json")).unwrap();
+        let card = Card::plain(
+            Arc::from("d.txt"),
+            "front".to_string(),
+            vec!["back".to_string()],
+            None,
+            1,
+        );
+        let session = Session::new(
+            vec![card.clone()],
+            &store,
+            crate::scheduler::SchedulerKind::Leitner,
+            crate::session::SessionOptions::default(),
+            now_ms(),
+        );
+        let mut decks = HashMap::new();
+        decks.insert("d.txt".to_string(), deck.clone());
+        let reviewing = Reviewing::new(SessionBuild {
+            session,
+            label: "d.txt".to_string(),
+            decks,
+            links: HashMap::new(),
+        });
+        (reviewing, card, deck)
+    }
+
+    #[test]
+    fn poll_ask_records_answer_in_transcript() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut r, card, _deck) = one_card_reviewing(dir.path());
+        let (tx, rx) = std::sync::mpsc::channel();
+        r.pending = Some(Pending {
+            rx,
+            purpose: Purpose::Question("why is s1 invalid?".to_string()),
+            card,
+        });
+        // Nothing delivered yet: still thinking, no-op poll.
+        assert_eq!((None, None), r.poll_ask());
+        assert!(r.ask_dto(None, None).thinking);
+
+        tx.send(Reply::Answer("because ownership moved".to_string())).unwrap();
+        assert_eq!((None, None), r.poll_ask());
+        assert!(r.pending.is_none());
+        assert_eq!(1, r.transcript.len());
+        assert_eq!("why is s1 invalid?", r.transcript[0].0);
+        assert_eq!("because ownership moved", r.transcript[0].1);
+        assert!(r.cli.started); // later questions --resume
+    }
+
+    #[test]
+    fn poll_ask_condense_appends_note_to_deck() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut r, card, deck) = one_card_reviewing(dir.path());
+        r.transcript.push(("q".to_string(), "a".to_string()));
+        let (tx, rx) = std::sync::mpsc::channel();
+        r.pending = Some(Pending {
+            rx,
+            purpose: Purpose::Condense,
+            card,
+        });
+        tx.send(Reply::Answer("- key insight to reread".to_string())).unwrap();
+        let (status, error) = r.poll_ask();
+        assert_eq!(Some("note saved".to_string()), status);
+        assert!(error.is_none());
+        let text = std::fs::read_to_string(&deck).unwrap();
+        assert!(text.contains("key insight to reread"), "deck:\n{text}");
+    }
+
+    #[test]
+    fn poll_ask_error_resets_session() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut r, card, _deck) = one_card_reviewing(dir.path());
+        r.cli.started = true;
+        let (tx, rx) = std::sync::mpsc::channel();
+        r.pending = Some(Pending {
+            rx,
+            purpose: Purpose::Question("q".to_string()),
+            card,
+        });
+        tx.send(Reply::Error("not logged in".to_string())).unwrap();
+        let (status, error) = r.poll_ask();
+        assert_eq!(Some("not logged in".to_string()), error);
+        assert!(status.is_none());
+        assert!(r.pending.is_none());
+        assert!(!r.cli.started); // a fresh session next time
+        assert!(r.transcript.is_empty());
     }
 }

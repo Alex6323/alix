@@ -340,6 +340,13 @@ first question, `--resume` afterwards), so Claude remembers earlier cards
 and questions. While Claude thinks, the session stays responsive; Esc
 returns exactly where you were.
 
+This works in the **web frontend** too (`--serve`): an "Ask" button (and the
+`?` key) on an answered card opens a chat panel — type a question, **Send**,
+**Save note**, **Close**. The server runs `claude -p` on a background thread and
+the page polls for the reply, so the single-threaded server never blocks. Ask is
+reachable wherever you serve, including `--lan` (the request runs `claude` on the
+host, so — like `--lan` generally — only use it on a network you trust).
+
 While typing a question you can edit it like a normal input line: `←`/`→`
 move the caret, `Home`/`End` (or `Ctrl-A`/`Ctrl-E`) jump to the ends, and
 `Backspace`/`Delete` remove the character before/under it.

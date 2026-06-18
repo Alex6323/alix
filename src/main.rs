@@ -665,11 +665,19 @@ fn review_serve(args: ReviewArgs) -> Result<()> {
     let addr = serve_addr(args.serve.port, args.serve.lan, &config);
 
     // Adapts a built review session to what the server holds (session + label +
-    // subject→path map for removal).
-    let to_build = |b: ReviewBuild| serve::SessionBuild {
-        session: b.session,
-        label: b.label,
-        decks: subject_paths(b.decks),
+    // subject→path map for removal, subject→`% link:` links for ask-Claude).
+    let to_build = |b: ReviewBuild| {
+        let links = b
+            .decks
+            .iter()
+            .map(|(subject, info)| (subject.clone(), info.links.clone()))
+            .collect();
+        serve::SessionBuild {
+            session: b.session,
+            label: b.label,
+            decks: subject_paths(b.decks),
+            links,
+        }
     };
 
     // Build the first session up front only when decks were named on the CLI;
@@ -698,6 +706,7 @@ fn review_serve(args: ReviewArgs) -> Result<()> {
         mode_override: args.mode,
         keys: config.keys.clone(),
         max_typos: args.max_typos,
+        ask: config.ask.clone(),
     };
     let build = |paths: Vec<PathBuf>, store: &Store, recent: &mut RecentDecks| {
         build_review(paths, &args, &config, store, recent, Frontend::Web).map(to_build)
