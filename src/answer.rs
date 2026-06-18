@@ -49,6 +49,10 @@ pub struct TypingValidator {
     typed: Vec<Typed>,
     hints_used: usize,
     typos: usize,
+    /// How many upcoming characters the current hint reveals; grows by
+    /// [`HINT_CHARS`] on each [`hint`](Self::hint) call and resets to 0 when the
+    /// user types or deletes a character.
+    hint_revealed: usize,
 }
 
 /// How many characters a single hint request reveals.
@@ -62,6 +66,7 @@ impl TypingValidator {
             typed: Vec::new(),
             hints_used: 0,
             typos: 0,
+            hint_revealed: 0,
         }
     }
 
@@ -78,6 +83,7 @@ impl TypingValidator {
     /// Types one character. Returns whether it was correct. Input beyond the
     /// expected length is ignored (and reported as incorrect).
     pub fn type_char(&mut self, ch: char) -> bool {
+        self.hint_revealed = 0;
         if self.typed.len() >= self.expected.len() {
             return false;
         }
@@ -91,21 +97,27 @@ impl TypingValidator {
 
     /// Removes the last typed character. Returns `true` if one was removed.
     pub fn backspace(&mut self) -> bool {
+        self.hint_revealed = 0;
         self.typed.pop().is_some()
     }
 
-    /// Reveals the next [`HINT_CHARS`] expected characters. Any incorrectly
-    /// typed tail is removed first, so the hint always shows what should
-    /// follow the correct prefix. Using a hint marks the line failed.
+    /// Reveals more of the answer: each call uncovers [`HINT_CHARS`] additional
+    /// upcoming characters (so repeated requests progressively show the rest of
+    /// the line, capped at its length) until the user types or deletes, which
+    /// resets the reveal. Any incorrectly typed tail is removed first, so the
+    /// hint always follows the correct prefix. Using a hint marks the line
+    /// failed.
     pub fn hint(&mut self) -> String {
         self.hints_used += 1;
         if let Some(first_bad) = self.typed.iter().position(|t| !t.correct) {
             self.typed.truncate(first_bad);
         }
+        let remaining = self.expected.len() - self.typed.len();
+        self.hint_revealed = (self.hint_revealed + HINT_CHARS).min(remaining);
         self.expected
             .iter()
             .skip(self.typed.len())
-            .take(HINT_CHARS)
+            .take(self.hint_revealed)
             .collect()
     }
 
@@ -294,6 +306,18 @@ mod tests {
         assert!(v.is_complete());
         assert!(!v.passed());
         assert_eq!(1, v.hints_used());
+    }
+
+    #[test]
+    fn repeated_hints_reveal_more_until_full() {
+        let mut v = TypingValidator::new("hello");
+        v.type_char('h');
+        assert_eq!("el", v.hint()); // first request: next two
+        assert_eq!("ello", v.hint()); // second: two more
+        assert_eq!("ello", v.hint()); // capped at the rest of the line
+        // Typing resets the reveal back to two from the new position.
+        v.type_char('e');
+        assert_eq!("ll", v.hint());
     }
 
     #[test]

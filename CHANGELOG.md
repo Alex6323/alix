@@ -7,8 +7,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- The remaining-card count now also appears bottom-right in the TUI footer
-  (it was already top-right in the header).
+- Repeated `TAB` in typing mode progressively reveals the answer: each press
+  uncovers two more characters until the line is fully shown (still counts the
+  card as failed); typing or deleting resets the reveal.
 - In-browser deck selection: `flash --serve` (and `flash browse --serve`) with no
   deck files now opens a deck-selection screen in the browser instead of the
   terminal picker — a checklist of the same decks (recent first), with a Start
@@ -61,6 +62,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   silently.
 
 ### Changed
+- The TUI's remaining-card count moved from the header to the bottom-right of
+  the footer, shown as `N↓` after the pass/fail tally — matching the web
+  frontend's score line (the header now carries only the stage histogram).
 - Typing mode grades multi-line answers **order-independently**: a card whose
   answer is several items can be typed in any order, each completed line matched
   to whichever expected line it best fits (TUI and web). Single-line answers are

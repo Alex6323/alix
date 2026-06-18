@@ -209,7 +209,8 @@ The default **flip** mode is Anki-style: you reveal the answer and grade
 yourself (again / good / easy — easy jumps two Leitner stages). The
 **typing** mode has you type the back of the card character by
 character with instant green/red feedback; `TAB` reveals the next two
-characters as a hint, but a hinted card counts as failed. In **fuzzy** mode
+characters as a hint, and pressing it again uncovers two more each time until
+the line is fully shown, but a hinted card counts as failed. In **fuzzy** mode
 you submit whole lines with Enter and small typos are tolerated. A wrong
 card goes back to stage 1 and reappears later in the same session until you
 get it right. Whichever mode a card uses is shown as a small badge above the
