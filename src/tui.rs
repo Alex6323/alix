@@ -849,8 +849,10 @@ impl App {
         };
         let left = format!(" {keys}");
         let right = format!(
-            "{}✓ {}✗ ",
-            self.session.stats.passed, self.session.stats.failed
+            "left: {} │ {}✓ {}✗ ",
+            self.session.remaining(),
+            self.session.stats.passed,
+            self.session.stats.failed
         );
         frame.render_widget(bar(&left, &right, area.width), area);
     }
