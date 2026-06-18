@@ -160,6 +160,22 @@ impl Session {
         true
     }
 
+    /// Whether a [`restart`](Self::restart) right now would find any cards —
+    /// i.e. anything is due (or a new card can be introduced) at `now_ms`.
+    /// Non-mutating; runs the same queue build `restart` would.
+    pub fn has_due_now(&self, store: &Store, now_ms: u64) -> bool {
+        !build_queue(
+            &self.cards,
+            store,
+            &*self.scheduler,
+            self.kind,
+            self.options,
+            &self.dep_ranks,
+            now_ms,
+        )
+        .is_empty()
+    }
+
     /// The earliest upcoming due time over all seen cards of this session's
     /// decks, if any.
     pub fn next_due_at(&self, store: &Store) -> Option<u64> {
@@ -755,6 +771,26 @@ mod tests {
         assert!(!session.restart(&store, 1001));
         assert!(session.is_finished());
         assert_eq!(1, session.stats.reviews);
+    }
+
+    #[test]
+    fn has_due_now_tracks_what_restart_would_find() {
+        let (mut store, _dir) = empty_store();
+        let mut session = Session::new(
+            cards(1),
+            &store,
+            SchedulerKind::Leitner,
+            SessionOptions::default(),
+            1000,
+        );
+        // A new card is available before it is seen.
+        assert!(session.has_due_now(&store, 1000));
+        session.grade(&mut store, Grade::Pass, 1000);
+        // Now at stage 2 (1h cooldown): nothing due, matching restart().
+        assert!(!session.has_due_now(&store, 1001));
+        assert!(!session.restart(&store, 1001));
+        // Once the cooldown elapses it is due again.
+        assert!(session.has_due_now(&store, 1000 + 3_600_000));
     }
 
     #[test]

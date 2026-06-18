@@ -143,6 +143,9 @@ struct StateDto {
     /// Per-stage counts (index 0 = unseen).
     histogram: [usize; 6],
     finished: bool,
+    /// Whether a restart would find any due/new cards right now. The summary
+    /// disables "New session" and shows a "nothing due" note when this is false.
+    can_restart: bool,
     label: String,
 }
 
@@ -641,6 +644,7 @@ fn review_state(reviewing: Option<&Reviewing>, store: &Store, mode_override: Opt
             failed: 0,
             histogram: [0; 6],
             finished: false,
+            can_restart: false,
             label: "select decks".to_string(),
         };
     };
@@ -665,6 +669,7 @@ fn review_state(reviewing: Option<&Reviewing>, store: &Store, mode_override: Opt
         failed: session.stats.failed,
         histogram: session.stage_histogram(store),
         finished: session.is_finished(),
+        can_restart: session.has_due_now(store, now_ms()),
         label: r.label.clone(),
     }
 }

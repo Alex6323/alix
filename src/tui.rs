@@ -284,6 +284,10 @@ impl App {
     /// Sets up the phase for the next card, or the summary if none is left.
     fn start_card(&mut self) {
         let Some(card) = self.session.current() else {
+            // Reaching the summary: flag up front whether a new session could
+            // start, so the screen can say "nothing due" without the user
+            // having to press the restart key first.
+            self.nothing_due = !self.session.has_due_now(&self.store, time::now_ms());
             self.phase = Phase::Summary;
             return;
         };
@@ -575,7 +579,9 @@ impl App {
             // Handled by handle_ask_key before reaching this match.
             Phase::Ask { .. } => {}
             Phase::Summary => {
-                if restart_hit {
+                // With nothing due, the restart key is inert (the footer omits
+                // it); any key exits.
+                if restart_hit && !self.nothing_due {
                     self.try_restart();
                 } else {
                     self.quit = true;
@@ -843,6 +849,7 @@ impl App {
                 "ENTER send │ {} save note │ PgUp/PgDn scroll │ ESC back",
                 l(&k.save_note)
             ),
+            Phase::Summary if self.nothing_due => "any key to exit".to_string(),
             Phase::Summary => {
                 format!("{} new session │ any other key to exit", l(&k.restart))
             }
