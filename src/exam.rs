@@ -378,6 +378,22 @@ impl Sitting {
             *slot = text;
         }
     }
+    /// Appends a character to the current answer (char-by-char TUI input).
+    pub fn push_char(&mut self, c: char) {
+        if self.phase == Phase::Answering
+            && let Some(slot) = self.answers.get_mut(self.current)
+        {
+            slot.push(c);
+        }
+    }
+    /// Removes the last character of the current answer.
+    pub fn pop_char(&mut self) {
+        if self.phase == Phase::Answering
+            && let Some(slot) = self.answers.get_mut(self.current)
+        {
+            slot.pop();
+        }
+    }
     pub fn next(&mut self) {
         if self.current + 1 < self.questions.len() {
             self.current += 1;

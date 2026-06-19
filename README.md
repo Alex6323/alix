@@ -490,25 +490,32 @@ so you don't need to repeat it as a `% link:`. The reverse isn't true: a
 supplementary links (a blog, an SO answer) as `% link:` so the exam ignores them.
 
 Once every card in a `% source:` deck reaches the top stage, the deck is **exam
-due** rather than finished (so it does not yet unlock its dependents). Sit the
-exam:
+due** rather than finished (so it does not yet unlock its dependents).
 
-```sh
-flash exam ownership.txt
-flash exam ownership.txt --questions 8   # override the question count
-flash exam ownership.txt -y              # auto-append remediation cards on a fail
-```
+**Sitting the exam — interactive, in either frontend.** The exam is a guided,
+one-question-at-a-time flow (Back/Next, then a per-question breakdown), the same
+in the terminal and the browser:
+
+- **Terminal**: `flash exam ownership.txt` (or `--questions 8`, `--strictness …`)
+  opens the exam in the TUI. You also reach it by **picking an `exam due` deck**
+  in the launcher (it starts the exam instead of an empty review), or from the
+  **session-end summary** — when you drill a deck's last cards and it turns exam
+  due, the summary offers "press `x` to take it".
+- **Web** (`flash serve`): picking an `exam due` deck in the deck list launches
+  the exam in the page; a finished session likewise offers it at the summary.
 
 flash asks Claude to read the source (URLs via the **WebFetch** tool; local
 files are embedded) and write fresh **open understanding** questions —
 application and connections, not the card facts — each with the key points a
-correct answer must contain. You type your answers (an empty line ends each),
-and a strict examiner grades them Pass / Partial / Fail **against the source's
-rubric, never against your cards** (grading the cards would be circular).
+correct answer must contain. You type a prose answer per question, and a strict
+examiner grades them Pass / Partial / Fail **against the source's rubric, never
+against your cards** (grading the cards would be circular). The Claude calls run
+on a background thread so the UI stays responsive while it thinks.
 
 - **Pass** (every question by default; tune with `pass_threshold`) marks the
-  deck **mastered**. Mastery — not mere drilling — is what unlocks decks that
-  `% requires:` it. Source-less decks are unchanged: finishing = drilled.
+  deck **mastered** (shown as `mastered ✓`). Mastery — not mere drilling — is
+  what unlocks decks that `% requires:` it. Source-less decks are unchanged:
+  finishing = drilled (`done ✓`).
 - **Fail** lists the gaps and offers to turn them into remediation cards
   appended to the deck — the card type is picked per gap (a cloze/plain card for
   a missed fact, a `% mode: explain` card for a missed concept), with overlapping

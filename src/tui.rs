@@ -22,8 +22,9 @@ use crate::{
     ask,
     card::Card,
     choice::{self, ChoiceQuestion},
-    config::{AskConfig, Bindings, Key, KeyPattern},
-    deck,
+    config::{AskConfig, Bindings, ExamConfig, Key, KeyPattern, Strictness},
+    deck::{self, Deck, DeckState},
+    exam,
     render::{self, ContextSpan, NoteUnit},
     scheduler::Grade,
     session::{Session, SessionStats},
@@ -164,6 +165,10 @@ pub struct App {
     removed_lines: HashMap<String, BTreeSet<usize>>,
     /// Identity hashes of removed cards, pruned from the store at the end.
     removed_ids: HashSet<u64>,
+    /// Set at the summary when the user chooses to sit the exam of a deck that
+    /// became `exam due` this session; `run` returns it so `main` launches the
+    /// exam after the review app exits.
+    exam_request: Option<PathBuf>,
     quit: bool,
 }
 
@@ -181,15 +186,17 @@ impl App {
             ask_session: ask::CliSession::new(),
             removed_lines: HashMap::new(),
             removed_ids: HashSet::new(),
+            exam_request: None,
             quit: false,
         };
         app.start_card();
         app
     }
 
-    /// Runs the TUI until the user quits. Returns the counters accumulated
-    /// over all sessions of this run.
-    pub fn run(mut self) -> Result<SessionStats> {
+    /// Runs the TUI until the user quits. Returns the counters accumulated over
+    /// all sessions of this run, plus the deck whose exam the user asked to sit
+    /// at the summary (if any).
+    pub fn run(mut self) -> Result<(SessionStats, Option<PathBuf>)> {
         let mut terminal = ratatui::init();
         let result = self.event_loop(&mut terminal);
         ratatui::restore();
@@ -200,7 +207,7 @@ impl App {
         // the loop exited between grades (and to persist the prunes above).
         self.store.save()?;
         result?;
-        Ok(self.totals)
+        Ok((self.totals, self.exam_request.take()))
     }
 
     /// Starts a new session over the same decks, or flags that nothing is
@@ -212,6 +219,23 @@ impl App {
         } else {
             self.nothing_due = true;
         }
+    }
+
+    /// Decks in this session that are now `exam due` (drilled, `% source:`, not
+    /// yet mastered) — offered at the summary. Sorted by subject.
+    fn exam_due_decks(&self) -> Vec<(String, PathBuf)> {
+        let mut out: Vec<(String, PathBuf)> = self
+            .options
+            .decks
+            .iter()
+            .filter_map(|(subject, info)| {
+                let deck = Deck::load(&info.path).ok()?;
+                (!deck.sources.is_empty() && deck.state(&self.store) == DeckState::ExamDue)
+                    .then(|| (subject.clone(), info.path.clone()))
+            })
+            .collect();
+        out.sort();
+        out
     }
 
     fn event_loop(&mut self, terminal: &mut ratatui::DefaultTerminal) -> Result<()> {
@@ -662,9 +686,14 @@ impl App {
             // Handled by handle_ask_key before reaching this match.
             Phase::Ask { .. } => {}
             Phase::Summary => {
-                // With nothing due, the restart key is inert (the footer omits
-                // it); any key exits.
-                if restart_hit && !self.nothing_due {
+                // `x` sits the exam of a deck that became exam-due this session;
+                // with nothing due the restart key is inert (the footer omits
+                // it); any other key exits.
+                let exam_due = self.exam_due_decks();
+                if key.code == KeyCode::Char('x') && !exam_due.is_empty() {
+                    self.exam_request = Some(exam_due[0].1.clone());
+                    self.quit = true;
+                } else if restart_hit && !self.nothing_due {
                     self.try_restart();
                 } else {
                     self.quit = true;
@@ -949,7 +978,15 @@ impl App {
             ),
             Phase::Summary if self.nothing_due => "any key to exit".to_string(),
             Phase::Summary => {
-                format!("{} new session │ any other key to exit", l(&k.restart))
+                let exam = if self.exam_due_decks().is_empty() {
+                    ""
+                } else {
+                    "x take exam │ "
+                };
+                format!(
+                    "{exam}{} new session │ any other key to exit",
+                    l(&k.restart)
+                )
             }
         };
         let left = format!(" {keys}");
@@ -1347,6 +1384,14 @@ impl App {
                 format!("  Nothing due right now{next}.").fg(Color::Yellow),
             ));
         }
+        // Decks that became exam-due this session: offer the exam (press `x`).
+        for (subject, _) in self.exam_due_decks() {
+            lines.push(Line::default());
+            lines.push(Line::from(
+                format!("  ✦ {subject} is ready for its exam — press x to take it.")
+                    .fg(Color::Yellow),
+            ));
+        }
         frame.render_widget(Paragraph::new(lines), area);
     }
 }
@@ -1493,6 +1538,273 @@ fn typing_result(v: &TypingValidator) -> FuzzyResult {
 /// past the end. Lets a character-based caret edit a UTF-8 string safely.
 fn char_byte(s: &str, n: usize) -> usize {
     s.char_indices().nth(n).map_or(s.len(), |(b, _)| b)
+}
+
+// ── AI exam (interactive TUI) ────────────────────────────────────────────────
+
+/// The interactive exam TUI: a sibling of [`App`] that drives one
+/// [`exam::Sitting`] (generate → answer one question at a time → grade →
+/// results → remediate). It reuses the same background-poll loop and free-text
+/// input as review; the deck's mechanical review stays in [`App`].
+pub struct ExamApp {
+    sitting: exam::Sitting,
+    store: Store,
+    /// The deck under exam (for resolving what a pass unlocks).
+    deck_path: PathBuf,
+    decks_dir: Option<PathBuf>,
+    /// Scroll offset of the results breakdown.
+    scroll: u16,
+    quit: bool,
+}
+
+impl ExamApp {
+    /// Starts an exam for `deck` (the caller has checked it declares a
+    /// `% source:` and is drilled). Question generation spawns immediately.
+    pub fn new(
+        deck: Deck,
+        strictness: Strictness,
+        exam_cfg: ExamConfig,
+        ask_cfg: AskConfig,
+        store: Store,
+        decks_dir: Option<PathBuf>,
+    ) -> Self {
+        let deck_path = deck.path.clone();
+        let sitting = exam::Sitting::start(&deck, strictness, exam_cfg, ask_cfg);
+        Self {
+            sitting,
+            store,
+            deck_path,
+            decks_dir,
+            scroll: 0,
+            quit: false,
+        }
+    }
+
+    /// Runs the exam TUI until the user leaves. The store is saved (the sitting
+    /// also persists "mastered" the moment a pass is graded).
+    pub fn run(mut self) -> Result<()> {
+        let mut terminal = ratatui::init();
+        let result = self.event_loop(&mut terminal);
+        ratatui::restore();
+        let _ = self.store.save();
+        result
+    }
+
+    fn event_loop(&mut self, terminal: &mut ratatui::DefaultTerminal) -> Result<()> {
+        while !self.quit {
+            terminal.draw(|frame| self.draw(frame))?;
+            // Poll so the spinner animates and background calls land while no
+            // key is pressed.
+            if event::poll(Duration::from_millis(100))?
+                && let Event::Key(key) = event::read()?
+                && key.kind == KeyEventKind::Press
+            {
+                self.handle_key(key);
+            }
+            self.sitting.poll(&mut self.store, time::now_ms());
+        }
+        Ok(())
+    }
+
+    fn handle_key(&mut self, key: KeyEvent) {
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        match self.sitting.phase() {
+            exam::Phase::Answering => match key.code {
+                KeyCode::Esc => self.quit = true,
+                // Tab walks forward; on the last question it submits for grading.
+                KeyCode::Tab => {
+                    if self.sitting.on_last() {
+                        self.sitting.submit();
+                    } else {
+                        self.sitting.next();
+                    }
+                }
+                KeyCode::BackTab => self.sitting.prev(),
+                KeyCode::Enter => self.sitting.push_char('\n'),
+                KeyCode::Backspace if !ctrl => self.sitting.pop_char(),
+                KeyCode::Char(c) if !ctrl => self.sitting.push_char(c),
+                _ => {}
+            },
+            exam::Phase::Results => match key.code {
+                KeyCode::Esc | KeyCode::Enter => self.quit = true,
+                KeyCode::Char('r') if self.sitting.can_remediate() => self.sitting.remediate(),
+                KeyCode::Down | KeyCode::Char('j') => self.scroll = self.scroll.saturating_add(1),
+                KeyCode::Up | KeyCode::Char('k') => self.scroll = self.scroll.saturating_sub(1),
+                _ => {}
+            },
+            exam::Phase::Remediated => {
+                if matches!(key.code, KeyCode::Esc | KeyCode::Enter) {
+                    self.quit = true;
+                }
+            }
+            // Generating / Grading / Remediating: only Esc leaves.
+            _ => {
+                if key.code == KeyCode::Esc {
+                    self.quit = true;
+                }
+            }
+        }
+    }
+
+    fn draw(&self, frame: &mut Frame) {
+        let [header, _, body, footer] = Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(1),
+            Constraint::Length(1),
+        ])
+        .areas(frame.area());
+
+        let left = format!(
+            " flash {} │ exam · {}",
+            env!("CARGO_PKG_VERSION"),
+            self.sitting.subject()
+        );
+        let right = format!("{} ", exam_strictness_label(self.sitting.strictness()));
+        frame.render_widget(bar(&left, &right, header.width), header);
+        self.draw_footer(frame, footer);
+        self.draw_body(frame, body);
+    }
+
+    fn draw_footer(&self, frame: &mut Frame, area: Rect) {
+        let keys = match self.sitting.phase() {
+            exam::Phase::Answering if self.sitting.on_last() => {
+                "TAB submit for grading │ SHIFT-TAB back │ ESC quit"
+            }
+            exam::Phase::Answering => "TAB next │ SHIFT-TAB back │ ESC quit",
+            exam::Phase::Results if self.sitting.can_remediate() => {
+                "R add remediation cards │ ↑/↓ scroll │ ESC close"
+            }
+            exam::Phase::Results => "↑/↓ scroll │ ESC close",
+            exam::Phase::Remediated => "ESC close",
+            _ => "ESC cancel",
+        };
+        frame.render_widget(bar(&format!(" {keys}"), "", area.width), area);
+    }
+
+    fn draw_body(&self, frame: &mut Frame, area: Rect) {
+        let mut lines: Vec<Line> = Vec::new();
+        match self.sitting.phase() {
+            exam::Phase::Generating | exam::Phase::Grading | exam::Phase::Remediating => {
+                let msg = match self.sitting.phase() {
+                    exam::Phase::Grading => "Grading your answers…",
+                    exam::Phase::Remediating => "Writing remediation cards…",
+                    _ => "Preparing your exam…",
+                };
+                if self.sitting.thinking() {
+                    lines.push(Line::from(format!("{} {msg}", spinner())));
+                } else {
+                    // Not thinking in a spinner phase means the call failed; the
+                    // error is shown below.
+                    lines.push(Line::from("The exam helper could not complete.".dim()));
+                }
+            }
+            exam::Phase::Answering => {
+                lines.push(Line::from(
+                    format!(
+                        "Question {} / {}",
+                        self.sitting.current_index() + 1,
+                        self.sitting.total()
+                    )
+                    .dim(),
+                ));
+                lines.push(Line::default());
+                if let Some(q) = self.sitting.question() {
+                    lines.push(Line::from(q.prompt.clone().bold()));
+                }
+                lines.push(Line::default());
+                // The answer so far, with a block cursor at the end.
+                let answer = self.sitting.answer();
+                let shown = format!("{answer}▌");
+                for (i, l) in shown.split('\n').enumerate() {
+                    lines.push(Line::from(if i == 0 {
+                        format!("> {l}")
+                    } else {
+                        format!("  {l}")
+                    }));
+                }
+                lines.push(Line::default());
+                lines.push(Line::from(
+                    "(type your answer — ENTER for a new line)".dim(),
+                ));
+            }
+            exam::Phase::Results => {
+                if let Some(r) = self.sitting.result() {
+                    if r.passed {
+                        lines.push(Line::from(
+                            "PASSED — deck mastered ✓".bold().fg(Color::Green),
+                        ));
+                        let unlocks = self.unlocks();
+                        if !unlocks.is_empty() {
+                            lines.push(Line::from(
+                                format!("Unlocks: {}", unlocks.join(", ")).fg(Color::Green),
+                            ));
+                        }
+                    } else {
+                        lines.push(Line::from("FAILED".bold().fg(Color::Red)));
+                    }
+                    lines.push(Line::default());
+                    for (i, (q, g)) in self.sitting.questions().iter().zip(&r.grades).enumerate() {
+                        lines.push(Line::from(format!("Q{}. {}", i + 1, q.prompt)));
+                        let color = match g.verdict {
+                            exam::Verdict::Pass => Color::Green,
+                            exam::Verdict::Partial => Color::Yellow,
+                            exam::Verdict::Fail => Color::Red,
+                        };
+                        lines.push(Line::from(
+                            format!("  {} — {}", g.verdict.label(), g.feedback).fg(color),
+                        ));
+                        if g.verdict != exam::Verdict::Pass {
+                            if !q.points.is_empty() {
+                                lines.push(Line::from("  a complete answer covers:".dim()));
+                                for p in &q.points {
+                                    lines.push(Line::from(format!("    • {p}")));
+                                }
+                            }
+                            for m in &g.missed {
+                                lines.push(Line::from(format!("    ✗ {m}").fg(Color::Red)));
+                            }
+                        }
+                        lines.push(Line::default());
+                    }
+                }
+            }
+            exam::Phase::Remediated => {
+                lines.push(Line::from("Remediation cards added ✓".fg(Color::Green)));
+                lines.push(Line::default());
+                lines.push(Line::from("Re-drill the deck, then re-sit the exam."));
+            }
+        }
+        if let Some(e) = self.sitting.error() {
+            lines.push(Line::default());
+            lines.push(Line::from(format!("error: {e}").fg(Color::Red)));
+        }
+        let scroll = if matches!(self.sitting.phase(), exam::Phase::Results) {
+            self.scroll
+        } else {
+            0
+        };
+        let paragraph = Paragraph::new(lines)
+            .wrap(Wrap { trim: false })
+            .scroll((scroll, 0));
+        frame.render_widget(paragraph, area);
+    }
+
+    /// Decks a pass unlocks (those that `% requires:` this one).
+    fn unlocks(&self) -> Vec<String> {
+        match &self.decks_dir {
+            Some(dir) => deck::dependents(&self.deck_path, dir),
+            None => Vec::new(),
+        }
+    }
+}
+
+fn exam_strictness_label(s: Strictness) -> &'static str {
+    match s {
+        Strictness::Strict => "strict",
+        Strictness::Balanced => "balanced",
+        Strictness::Lenient => "lenient",
+    }
 }
 
 #[cfg(test)]

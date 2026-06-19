@@ -31,8 +31,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reuses the `[ask]` command/permission/tools (WebFetch reads a source URL).
   `flash reset` of a deck also clears its mastered state. A URL `% source:` also
   doubles as an ask-Claude reference link (no duplicate `% link:` needed); a
-  `% link:` never becomes an exam source. (CLI first; a web exam surface is
-  planned.)
+  `% link:` never becomes an exam source.
+  The exam is **fully interactive in both frontends** (rung 3b): answer one
+  question at a time (Back/Next), then see a per-question breakdown — `flash exam`
+  and `flash serve` share one engine (`exam::Sitting`) that runs Claude on a
+  background thread and polls, so neither blocks. You reach it by **picking an
+  `exam due` deck** (it launches the exam instead of an empty review) or from the
+  **session-end summary** when a deck you were drilling just became exam-due.
+  Exam-due decks aren't tickable into a merged review (they have no due cards).
 - `% mode: explain` — **understanding cards**. The front is an open prompt and
   the back lines are the *key points* a good answer should cover (not a string to
   reproduce). You optionally type your explanation, reveal the points, and

@@ -12,8 +12,8 @@ use flash::{
     browse,
     card::{Card, Frontend},
     config::{self, Config, Strictness},
-    deck::{self, Deck, DeckSettings, DeckState},
-    exam, generate, parser, picker,
+    deck::{Deck, DeckSettings, DeckState},
+    generate, parser, picker,
     recent::{self, RecentDecks},
     scheduler::SchedulerKind,
     serve,
@@ -122,10 +122,6 @@ struct ExamArgs {
     /// `[exam]` default): strict, balanced, or lenient.
     #[arg(long, value_enum)]
     strictness: Option<Strictness>,
-
-    /// On a fail, append the proposed remediation cards without confirming.
-    #[arg(short = 'y', long)]
-    yes: bool,
 
     /// Path of the progress store (default: platform data dir).
     #[arg(long)]
@@ -442,6 +438,17 @@ struct ReviewSession {
     hidden: usize,
 }
 
+/// What the TUI picker resolved to: a review session, or — when a single
+/// exam-due deck was chosen — that deck's exam.
+enum Started {
+    Review(Box<ReviewSession>),
+    Exam {
+        deck: Box<Deck>,
+        store: Store,
+        config: Box<Config>,
+    },
+}
+
 /// Loads the decks named (or picked) for a review, resolves prerequisites and
 /// the mode/scheduler/order settings, and builds the session and store. Shared
 /// by `flash review` (TUI) and `flash serve` (web). Returns `Ok(None)` when the
@@ -557,8 +564,10 @@ fn build_review(
     })
 }
 
-/// The TUI review path: pick decks if none were given, then build the session.
-fn load_review_session(args: &ReviewArgs, target: Frontend) -> Result<Option<ReviewSession>> {
+/// The TUI review path: pick decks if none were given, then build the session
+/// — unless a single chosen deck is `exam due`, in which case it resolves to
+/// that deck's exam instead of a (cardless) review.
+fn load_review_session(args: &ReviewArgs, target: Frontend) -> Result<Option<Started>> {
     let config = Config::load(args.config.as_deref())?;
     let mut recent = RecentDecks::load(
         recent::default_recent_path().context("cannot determine the data directory")?,
@@ -570,8 +579,20 @@ fn load_review_session(args: &ReviewArgs, target: Frontend) -> Result<Option<Rev
     else {
         return Ok(None); // picker cancelled or nothing selected
     };
+    // A single exam-due deck launches its exam rather than an empty review.
+    if let [path] = deck_paths.as_slice()
+        && let Ok(deck) = Deck::load(path)
+        && !deck.sources.is_empty()
+        && deck.state(&store) == DeckState::ExamDue
+    {
+        return Ok(Some(Started::Exam {
+            deck: Box::new(deck),
+            store,
+            config: Box::new(config),
+        }));
+    }
     let build = build_review(deck_paths, args, &config, &store, &mut recent, target)?;
-    Ok(Some(ReviewSession {
+    Ok(Some(Started::Review(Box::new(ReviewSession {
         session: build.session,
         store,
         mode_override: args.mode,
@@ -579,7 +600,26 @@ fn load_review_session(args: &ReviewArgs, target: Frontend) -> Result<Option<Rev
         decks: build.decks,
         config,
         hidden: build.hidden,
-    }))
+    }))))
+}
+
+/// Launches the interactive exam TUI for `deck`, resolving strictness from the
+/// deck's `% strictness:` or the `[exam]` default.
+fn run_exam_app(deck: Deck, config: &Config, store: Store) -> Result<()> {
+    let strictness = deck
+        .settings
+        .exam_strictness
+        .unwrap_or(config.exam.strictness);
+    let decks_dir = config.decks_dir();
+    tui::ExamApp::new(
+        deck,
+        strictness,
+        config.exam.clone(),
+        config.ask.clone(),
+        store,
+        decks_dir,
+    )
+    .run()
 }
 
 /// Builds the browse card list from explicit `deck_paths` (no picker). Mirrors
@@ -635,8 +675,15 @@ fn review(args: ReviewArgs) -> Result<()> {
         return review_serve(args);
     }
 
-    let Some(rs) = load_review_session(&args, Frontend::Tui)? else {
-        return Ok(());
+    let started = match load_review_session(&args, Frontend::Tui)? {
+        None => return Ok(()),
+        // A single exam-due deck was chosen: run its exam, not a review.
+        Some(Started::Exam {
+            deck,
+            store,
+            config,
+        }) => return run_exam_app(*deck, &config, store),
+        Some(Started::Review(rs)) => rs,
     };
     let ReviewSession {
         session,
@@ -646,7 +693,7 @@ fn review(args: ReviewArgs) -> Result<()> {
         decks,
         config,
         hidden,
-    } = rs;
+    } = *started;
 
     // Some cards can't be shown in the terminal (images need the browser).
     if hidden > 0 {
@@ -673,15 +720,22 @@ fn review(args: ReviewArgs) -> Result<()> {
         mode_override,
         max_typos: args.max_typos,
         deck_label: label,
-        keys: config.keys,
-        ask: config.ask,
+        keys: config.keys.clone(),
+        ask: config.ask.clone(),
         decks,
     };
-    let stats = App::new(session, store, ui_options).run()?;
+    let (stats, exam_request) = App::new(session, store, ui_options).run()?;
     println!(
         "Reviewed {} cards: {} passed, {} failed.",
         stats.reviews, stats.passed, stats.failed
     );
+    // If a deck became exam-due this session and the user chose to sit it, the
+    // review app saved the store on exit; reopen it for the exam.
+    if let Some(path) = exam_request {
+        let store = open_store(args.store.clone())?;
+        let deck = Deck::load(&path)?;
+        return run_exam_app(deck, &config, store);
+    }
     Ok(())
 }
 
@@ -1256,15 +1310,8 @@ fn exam_cmd(args: ExamArgs) -> Result<()> {
     if let Some(n) = args.questions {
         exam_cfg.num_questions = n;
     }
-    let mut store = open_store(args.store.clone())?;
+    let store = open_store(args.store.clone())?;
     let deck = Deck::load(&args.deck)?;
-
-    // Grading strictness: CLI flag > the deck's `% strictness:` > the `[exam]`
-    // default.
-    let strictness = args
-        .strictness
-        .or(deck.settings.exam_strictness)
-        .unwrap_or(config.exam.strictness);
 
     if deck.sources.is_empty() {
         bail!(
@@ -1273,164 +1320,34 @@ fn exam_cmd(args: ExamArgs) -> Result<()> {
             deck.subject
         );
     }
-
-    // The exam verifies a deck you have already drilled. Until every card is
-    // retired the material isn't loaded yet, so there is nothing to examine.
-    let mut already_mastered = false;
-    match deck.state(&store) {
-        DeckState::NotStarted | DeckState::Started => {
-            let to_go = deck
-                .cards
-                .iter()
-                .filter(|c| !flash::session::is_retired(c, &store))
-                .count();
-            bail!(
-                "drill {}'s cards to the top stage first ({to_go} to go), then sit the exam",
-                deck.subject
-            );
-        }
-        DeckState::Finished => already_mastered = true,
-        DeckState::ExamDue => {}
-    }
-
-    // Past validation, the rest is interactive: we read typed answers.
-    if !std::io::stdin().is_terminal() {
-        bail!("`flash exam` needs a terminal to read your answers");
-    }
-    if already_mastered {
-        println!(
-            "{} is already mastered — re-sitting the exam.\n",
+    // The exam verifies a deck you have already drilled; until every card is
+    // retired there is nothing to examine. A mastered deck may be re-sat.
+    if matches!(
+        deck.state(&store),
+        DeckState::NotStarted | DeckState::Started
+    ) {
+        let to_go = deck
+            .cards
+            .iter()
+            .filter(|c| !flash::session::is_retired(c, &store))
+            .count();
+        bail!(
+            "drill {}'s cards to the top stage first ({to_go} to go), then sit the exam",
             deck.subject
         );
     }
-
-    println!(
-        "Preparing your exam from {} ({} grading; this can take a minute)…\n",
-        deck.sources.join(", "),
-        val_name(strictness),
-    );
-    let questions = exam::generate_questions(&deck, &exam_cfg, &config.ask)?;
-
-    // Ask each question, collecting a free-text (possibly multi-line) answer.
-    let mut answers = Vec::with_capacity(questions.len());
-    for (i, q) in questions.iter().enumerate() {
-        println!("Question {}/{}:", i + 1, questions.len());
-        println!("  {}\n", q.prompt);
-        println!("(type your answer; an empty line ends it)");
-        answers.push(read_answer()?);
-        println!();
+    if !std::io::stdin().is_terminal() {
+        bail!("`flash exam` needs a terminal");
     }
 
-    println!("Grading…\n");
-    let result = exam::grade_answers(&questions, &answers, strictness, &exam_cfg, &config.ask)?;
-
-    // Per-question breakdown: your answer, the verdict and feedback, and — when
-    // it wasn't a clean pass — what a full answer needed and what you missed, all
-    // grouped under the question it belongs to.
-    println!("Results:\n");
-    for (i, ((q, a), g)) in questions
-        .iter()
-        .zip(&answers)
-        .zip(&result.grades)
-        .enumerate()
-    {
-        println!("Question {}/{}: {}", i + 1, questions.len(), q.prompt);
-        let ans = a.trim();
-        if ans.is_empty() {
-            println!("  Your answer: (none)");
-        } else if ans.contains('\n') {
-            println!("  Your answer:");
-            for line in ans.lines() {
-                println!("    {line}");
-            }
-        } else {
-            println!("  Your answer: {ans}");
-        }
-        println!("  Verdict: {} — {}", g.verdict.label(), g.feedback);
-        if g.verdict != exam::Verdict::Pass {
-            println!("  A complete answer covers:");
-            for point in &q.points {
-                println!("    • {point}");
-            }
-            if !g.missed.is_empty() {
-                println!("  You missed:");
-                for point in &g.missed {
-                    println!("    ✗ {point}");
-                }
-            }
-        }
-        println!();
-    }
-
-    if result.passed {
-        store.set_deck_mastered(&deck.subject, now_ms());
-        store.save()?;
-        println!("PASSED — {} is now mastered. ✓", deck.subject);
-        if let Some(dir) = config.decks_dir() {
-            let unlocks = deck::dependents(&args.deck, &dir);
-            if !unlocks.is_empty() {
-                println!("Unlocks: {}", unlocks.join(", "));
-            }
-        }
-        return Ok(());
-    }
-
-    println!("FAILED — review the gaps above and re-sit when ready.");
-    let gaps = result.gaps();
-    if gaps.is_empty() {
-        return Ok(());
-    }
-
-    println!("\nThese gaps (merged across the questions above) will become new cards:");
-    for gap in &gaps {
-        println!("  · {gap}");
-    }
-    if !confirm(
-        "\nGenerate cards for these gaps and append them to the deck?",
-        args.yes,
-    )? {
-        println!("No cards added.");
-        return Ok(());
-    }
-
-    println!("Writing remediation cards…");
-    let cards = exam::remediation_cards(&gaps, &exam_cfg, &config.ask)?;
-    deck::append_cards(&args.deck, &cards)?;
-    // Re-parse so a malformed card is reported rather than silently breaking
-    // the next review (the deck is still saved, like `flash generate`).
-    match parser::parse_str(&deck.subject, &std::fs::read_to_string(&args.deck)?) {
-        Ok(_) => println!(
-            "Appended remediation cards to {}. Re-drill them, then re-sit the exam.",
-            args.deck.display()
-        ),
-        Err(e) => bail!(
-            "Appended remediation cards to {}, but the deck no longer parses:\n  {e}\n\
-             Fix that line and run `flash check {}`.",
-            args.deck.display(),
-            args.deck.display()
-        ),
-    }
-    Ok(())
-}
-
-/// Reads a free-text answer from stdin: lines until a blank line (or EOF).
-/// Trailing whitespace is trimmed; the lines are joined with newlines.
-fn read_answer() -> Result<String> {
-    let mut lines = Vec::new();
-    let stdin = std::io::stdin();
-    loop {
-        let mut line = String::new();
-        let n = stdin.read_line(&mut line)?;
-        if n == 0 {
-            break; // EOF
-        }
-        let line = line.trim_end();
-        if line.is_empty() {
-            break;
-        }
-        lines.push(line.to_string());
-    }
-    Ok(lines.join("\n"))
+    // Grading strictness: CLI flag > the deck's `% strictness:` > the `[exam]`
+    // default.
+    let strictness = args
+        .strictness
+        .or(deck.settings.exam_strictness)
+        .unwrap_or(config.exam.strictness);
+    let decks_dir = config.decks_dir();
+    tui::ExamApp::new(deck, strictness, exam_cfg, config.ask, store, decks_dir).run()
 }
 
 fn deps_cmd(deck_path: PathBuf) -> Result<()> {

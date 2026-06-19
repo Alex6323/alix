@@ -514,9 +514,10 @@ impl<K: Clone + Eq + Hash> Picker<K> {
 
     fn toggle(&mut self) {
         if let Some(&i) = self.filtered.get(self.cursor) {
-            // A locked deck can't be ticked (it isn't startable). Non-deck
-            // pickers never set `locked`, so this is a no-op for them.
-            if self.all[i].locked {
+            // A locked deck can't be ticked (it isn't startable). An exam-due
+            // deck has no reviewable cards — it only launches its own exam, so
+            // it can't join a merged review either. Non-deck pickers set neither.
+            if self.all[i].locked || self.all[i].state == Some(DeckState::ExamDue) {
                 return;
             }
             let key = &self.all[i].key;
