@@ -518,7 +518,14 @@ function closeExam() {
 function startExamPoll() {
   stopExamPoll();
   examPoll = setInterval(() => {
-    api("/api/exam").then(d => { examData = d; if (!d.thinking) stopExamPoll(); render(); });
+    api("/api/exam").then(d => {
+      // Only re-render when something visible changed; otherwise the spinner's
+      // entrance animation would re-run on every poll (flicker).
+      const prev = examData;
+      examData = d;
+      if (!d.thinking) stopExamPoll();
+      if (!prev || prev.phase !== d.phase || prev.error !== d.error) render();
+    });
   }, 600);
 }
 function stopExamPoll() { if (examPoll) { clearInterval(examPoll); examPoll = null; } }
