@@ -97,6 +97,7 @@ card's front. Follow a link for the full explanation.
 | `% requires:` | deck | [Prerequisite deck](#deck-dependencies) that gates unlocks (repeatable). |
 | `% link:` | deck | [ask-Claude reference](#ask-claude-about-a-card) URL — **tutor only** (repeatable). |
 | `% source:` | deck | [Exam ground truth](#the-ai-exam-flash-exam) — a URL or file (repeatable). Also a tutor reference. |
+| `% title:` | deck | [Display name](#workspaces) shown instead of the file name (a workspace sets `title` in its `flash.toml`). |
 
 **`% link:` vs `% source:`** — both point at the material a deck is about, but
 they are not interchangeable. `% source:` is the **exam's ground truth**:
@@ -201,6 +202,41 @@ unlocks the decks that build on it. Locked decks are shown dimmed with a 🔒, b
 the lock is **advisory** — you can still pick one (its prerequisite cards are
 pulled in foundations-first anyway). State and locks are recomputed live, so if a
 finished deck later lapses below the top stage, its dependents lock again.
+
+### Workspaces
+
+A **workspace** is a folder of decks reviewed together with shared directives —
+ideal for a cluster like all your vocabulary decks. Membership is implicit:
+*any folder containing `*.txt` decks is a workspace*, one level deep. Drop a
+`flash.toml` in it — a scoped version of the [config file](#configuration) — to
+set a title and a `[defaults]` table of directives shared by every deck:
+
+```toml
+# ~/decks/english/flash.toml
+title = "English"
+
+[defaults]
+direction = "both"
+mode = "typing"
+```
+
+```
+flash review ~/decks/english/        # review every deck in the folder, together
+```
+
+The `[defaults]` keys are the deck directive names, and they fill in only what a
+deck *doesn't* set itself, so precedence runs **CLI flag > card > deck >
+workspace > default** — set `direction = "both"` once for the whole cluster, and
+an individual deck can still override it with its own `% direction:`. Workspaces
+appear as their own rows in the picker (terminal and web); opening one drills
+into its decks, where you review all of them or tick a subset. The `flash.toml`
+manifest is optional — a bare folder of decks is still a workspace (its title
+defaults to the folder name). Workspaces apply to `review` and `browse`.
+
+**`% title:`** (on a deck) or **`title`** (in a workspace's `flash.toml`) gives a
+display name, shown in the picker, the session header, `flash list` and `flash
+stats` instead of the file name. It's display-only — you still refer to decks by
+file path on the command line — and never affects a card's identity.
 
 ### Cloze cards (fill in the blank)
 

@@ -177,6 +177,17 @@ pub fn parse_sources(text: &str) -> Vec<String> {
         .collect()
 }
 
+/// The deck's display title (`% title: <text>`), if it declares one. A
+/// display-only name independent of the file name; the first such line wins.
+/// Invisible to the card parser, so it never affects card hashes.
+pub fn parse_title(text: &str) -> Option<String> {
+    text.lines().find_map(|raw| {
+        let rest = raw.trim().strip_prefix(MARKUP_COMMENT)?;
+        let title = rest.trim().strip_prefix("title:")?.trim();
+        (!title.is_empty()).then(|| title.to_string())
+    })
+}
+
 /// Parses a single `% key: value` directive line into a lower-cased key and
 /// trimmed value. Returns `None` for non-directive `%` lines: prose comments
 /// (key contains whitespace, like `% Then learn with:`), empty key/value, and
@@ -548,6 +559,16 @@ mod tests {
         // `% img:` is only stamped on plain cards; cloze sub-cards keep None.
         let cards = parse_str("s", "#? f\n% img: x.png\n{{a}} b\n").unwrap();
         assert_eq!(None, cards[0].image);
+    }
+
+    #[test]
+    fn title_is_parsed_keeping_spaces_and_colons() {
+        assert_eq!(
+            Some("Rust: The Book".to_string()),
+            parse_title("% title: Rust: The Book\n# f\n\tb\n")
+        );
+        assert_eq!(None, parse_title("# f\n\tb\n"));
+        assert_eq!(None, parse_title("% title:\n# f\n\tb\n")); // empty
     }
 
     #[test]

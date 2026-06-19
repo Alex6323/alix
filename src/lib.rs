@@ -29,3 +29,4 @@ pub mod session;
 pub mod store;
 pub mod time;
 pub mod tui;
+pub mod workspace;

@@ -47,7 +47,7 @@ pub struct DeckSettings {
 
 impl DeckSettings {
     /// Interprets the recognized directives; ignores the rest.
-    fn from_directives(directives: &[(String, String)]) -> Self {
+    pub fn from_directives(directives: &[(String, String)]) -> Self {
         let mut settings = Self::default();
         for (key, value) in directives {
             match key.as_str() {
@@ -69,6 +69,20 @@ impl DeckSettings {
             }
         }
         settings
+    }
+
+    /// Fills each unset field from `defaults` (a workspace's shared settings),
+    /// so the deck's own directives win and the workspace fills the gaps —
+    /// precedence deck > workspace.
+    fn fill_from(&mut self, defaults: &DeckSettings) {
+        self.mode = self.mode.or(defaults.mode);
+        self.scheduler = self.scheduler.or(defaults.scheduler);
+        self.order = self.order.or(defaults.order);
+        self.direction = self.direction.or(defaults.direction);
+        self.frontend = self.frontend.or(defaults.frontend);
+        self.img_dir = self.img_dir.clone().or_else(|| defaults.img_dir.clone());
+        self.max_stage = self.max_stage.or(defaults.max_stage);
+        self.exam_strictness = self.exam_strictness.or(defaults.exam_strictness);
     }
 }
 
@@ -106,6 +120,9 @@ pub struct Deck {
     pub sources: Vec<String>,
     /// Per-deck defaults from `% key: value` directives.
     pub settings: DeckSettings,
+    /// Display title (`% title:`), independent of the file name. `None` falls
+    /// back to the file name (minus `.txt`). Display-only; not hashed.
+    pub title: Option<String>,
 }
 
 /// An error loading a deck file.
@@ -130,6 +147,18 @@ pub enum DeckError {
 impl Deck {
     /// Loads and parses a deck file.
     pub fn load(path: impl AsRef<Path>) -> Result<Self, DeckError> {
+        Self::load_with_defaults(path, &DeckSettings::default())
+    }
+
+    /// Like [`Deck::load`], but fills any directive the deck leaves unset from
+    /// `defaults` (a workspace's shared settings). The merge happens before the
+    /// per-card folds and direction expansion, so workspace defaults flow into
+    /// the cards exactly as the deck's own directives would. Precedence:
+    /// card > deck > `defaults`.
+    pub fn load_with_defaults(
+        path: impl AsRef<Path>,
+        defaults: &DeckSettings,
+    ) -> Result<Self, DeckError> {
         let path = path.as_ref().to_path_buf();
         let subject = path
             .file_name()
@@ -147,7 +176,10 @@ impl Deck {
         let links = parser::parse_links(&text);
         let requires = parser::parse_requires(&text);
         let sources = parser::parse_sources(&text);
-        let settings = DeckSettings::from_directives(&parser::parse_directives(&text));
+        let title = parser::parse_title(&text);
+        let mut settings = DeckSettings::from_directives(&parser::parse_directives(&text));
+        // Fold the workspace's shared directives in below the deck's own.
+        settings.fill_from(defaults);
         // A card without its own `% mode:` inherits the deck's mode, so each
         // card carries its effective declared mode (card override, else deck).
         for card in &mut cards {
@@ -195,6 +227,18 @@ impl Deck {
             requires,
             sources,
             settings,
+            title,
+        })
+    }
+
+    /// The deck's display name: its `% title:` if set, else the file name with
+    /// the `.txt` extension stripped.
+    pub fn display_name(&self) -> String {
+        self.title.clone().unwrap_or_else(|| {
+            self.subject
+                .strip_suffix(".txt")
+                .unwrap_or(&self.subject)
+                .to_string()
         })
     }
 
@@ -1120,6 +1164,49 @@ mod tests {
         let deck = Deck::load(&path).unwrap();
         assert_eq!(Some(Frontend::Web), deck.cards[0].frontend);
         assert_eq!(Frontend::Web, deck.cards[0].frontend());
+    }
+
+    #[test]
+    fn workspace_defaults_fill_unset_and_reach_cards() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.txt");
+        // Deck declares no direction/mode of its own.
+        std::fs::write(&path, "# purported\n\tangeblich\n").unwrap();
+        let defaults = DeckSettings {
+            direction: Some(Direction::Both),
+            mode: Some(Mode::Typing),
+            ..Default::default()
+        };
+        let deck = Deck::load_with_defaults(&path, &defaults).unwrap();
+        // Workspace `direction: both` reached the cards (expanded the pair)...
+        assert_eq!(2, deck.cards.len());
+        // ...and `mode` folded onto them.
+        assert_eq!(Some(Mode::Typing), deck.cards[0].mode);
+    }
+
+    #[test]
+    fn deck_directive_overrides_workspace_default() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.txt");
+        std::fs::write(&path, "% direction: forward\n# a\n\tb\n").unwrap();
+        let defaults = DeckSettings {
+            direction: Some(Direction::Both),
+            ..Default::default()
+        };
+        let deck = Deck::load_with_defaults(&path, &defaults).unwrap();
+        // The deck's own `forward` wins over the workspace's `both`.
+        assert_eq!(1, deck.cards.len());
+    }
+
+    #[test]
+    fn display_name_uses_title_else_stripped_filename() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("Eng-Sayings.txt");
+        std::fs::write(&path, "# a\n\tb\n").unwrap();
+        assert_eq!("Eng-Sayings", Deck::load(&path).unwrap().display_name());
+
+        std::fs::write(&path, "% title: English Sayings\n# a\n\tb\n").unwrap();
+        assert_eq!("English Sayings", Deck::load(&path).unwrap().display_name());
     }
 
     #[test]

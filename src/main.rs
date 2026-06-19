@@ -21,6 +21,7 @@ use flash::{
     store::{Store, default_store_path},
     time::{humanize_ms, now_ms},
     tui::{self, App},
+    workspace,
 };
 
 /// An AI-augmented spaced-repetition learning tool for the terminal and the
@@ -290,14 +291,23 @@ type LoadedDecks = (
 /// Loads all decks and returns their cards, a label for the header, the
 /// per-subject deck info (file path and reference links) for the TUI, and the
 /// per-deck `% key: value` settings.
-fn load_decks(paths: &[PathBuf]) -> Result<LoadedDecks> {
+fn load_decks(paths: &[PathBuf], defaults: &HashMap<String, DeckSettings>) -> Result<LoadedDecks> {
     let mut cards = Vec::new();
     let mut names = Vec::new();
     let mut decks = std::collections::HashMap::new();
     let mut settings = Vec::new();
     for path in paths {
-        let deck = Deck::load(path)?;
-        names.push(deck.subject.clone());
+        // A deck that belongs to a workspace inherits the workspace's shared
+        // directives (keyed by file name); others load with no defaults.
+        let deck = match path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .and_then(|n| defaults.get(n))
+        {
+            Some(ws) => Deck::load_with_defaults(path, ws)?,
+            None => Deck::load(path)?,
+        };
+        names.push(deck.display_name());
         decks.insert(
             deck.subject.clone(),
             tui::DeckInfo {
@@ -311,6 +321,55 @@ fn load_decks(paths: &[PathBuf]) -> Result<LoadedDecks> {
         cards.extend(deck.cards);
     }
     Ok((cards, names.join(", "), decks, settings))
+}
+
+/// The result of [`expand_workspaces`]: the member deck files to load, the
+/// per-deck workspace directive defaults (keyed by file name), and the session
+/// label when a single workspace was requested.
+struct Expanded {
+    decks: Vec<PathBuf>,
+    defaults: HashMap<String, DeckSettings>,
+    label: Option<String>,
+}
+
+/// Expands any workspace folder in `deck_paths` into its member deck files,
+/// tagging each member (by file name) with the workspace's shared directive
+/// defaults. Plain file paths pass through untagged. When a single workspace
+/// was requested, its display name becomes the session label.
+fn expand_workspaces(deck_paths: &[PathBuf]) -> Result<Expanded> {
+    let mut decks = Vec::new();
+    let mut defaults: HashMap<String, DeckSettings> = HashMap::new();
+    let mut label = None;
+    for path in deck_paths {
+        if workspace::is_workspace(path) {
+            let ws = workspace::Workspace::load(path)?;
+            if deck_paths.len() == 1 {
+                label = Some(ws.display_name());
+            }
+            for member in ws.members {
+                if let Some(name) = member.file_name().and_then(|n| n.to_str()) {
+                    defaults.insert(name.to_string(), ws.settings.clone());
+                }
+                decks.push(member);
+            }
+        } else {
+            // A deck file picked from inside a workspace folder (a subset
+            // selection) still inherits that workspace's shared directives.
+            if let Some(parent) = path.parent()
+                && parent.join(workspace::MANIFEST).is_file()
+                && let Ok(ws) = workspace::Workspace::load(parent)
+                && let Some(name) = path.file_name().and_then(|n| n.to_str())
+            {
+                defaults.insert(name.to_string(), ws.settings);
+            }
+            decks.push(path.clone());
+        }
+    }
+    Ok(Expanded {
+        decks,
+        defaults,
+        label,
+    })
 }
 
 /// Resolves a per-run setting from three sources, most specific first: an
@@ -477,11 +536,16 @@ fn build_review(
     recent: &mut RecentDecks,
     target: Frontend,
 ) -> Result<ReviewBuild> {
-    // Pull in prerequisite decks (`% requires:`), foundations first.
+    // Expand any workspace folder into its member decks (tagged with the
+    // workspace's shared directives), then pull in prerequisites, foundations
+    // first.
+    let expanded = expand_workspaces(&deck_paths)?;
     let decks_dir = config.decks_dir();
-    let (resolved, deps_used) = resolve_deck_order(&deck_paths, decks_dir.as_deref())?;
+    let (resolved, deps_used) = resolve_deck_order(&expanded.decks, decks_dir.as_deref())?;
 
-    let (cards, label, decks, settings) = load_decks(&resolved)?;
+    let (cards, deck_label, decks, settings) = load_decks(&resolved, &expanded.defaults)?;
+    // A single workspace shows its own title as the session label.
+    let label = expanded.label.unwrap_or(deck_label);
 
     // Keep only the cards reviewable in the target frontend; a card declares
     // `Any` (default), or its specific frontend. Image cards are web-only, so
@@ -496,7 +560,8 @@ fn build_review(
     // Directives (mode/scheduler/order) come from the requested deck(s) only,
     // not the pulled-in prerequisites — a prerequisite must not override the
     // mode you chose for the deck you actually want to study.
-    let target_subjects: HashSet<&str> = deck_paths
+    let target_subjects: HashSet<&str> = expanded
+        .decks
         .iter()
         .filter_map(|p| p.file_name().and_then(|n| n.to_str()))
         .collect();
@@ -630,7 +695,9 @@ fn build_browse(
     recent: &mut RecentDecks,
     target: Frontend,
 ) -> Result<BrowseBuild> {
-    let (cards, label, decks, _) = load_decks(&deck_paths)?;
+    let expanded = expand_workspaces(&deck_paths)?;
+    let (cards, deck_label, decks, _) = load_decks(&expanded.decks, &expanded.defaults)?;
+    let label = expanded.label.unwrap_or(deck_label);
     let cards: Vec<_> = cards
         .into_iter()
         .filter(|c| matches!(c.frontend(), Frontend::Any) || c.frontend() == target)
@@ -866,7 +933,7 @@ fn stats(args: DeckArgs) -> Result<()> {
                 h[s].to_string()
             }
         };
-        println!("{} ({} cards)", deck.subject, deck.cards.len());
+        println!("{} ({} cards)", deck.display_name(), deck.cards.len());
         println!("  state:   {state}");
         println!(
             "  stages:  new {} │ s1 {} │ s2 {} │ s3 {} │ s4 {} │ s5 {}",
@@ -895,7 +962,7 @@ fn list(args: DeckArgs) -> Result<()> {
 
     for path in &args.decks {
         let deck = Deck::load(path)?;
-        println!("{}", deck.subject);
+        println!("{}", deck.display_name());
         for card in &deck.cards {
             let (stage, due) = match store.get(card.id()) {
                 Some(state) => {
@@ -1013,7 +1080,7 @@ fn reset(args: ResetArgs) -> Result<()> {
         (args.decks.clone(), false)
     };
 
-    let (cards, label, decks, _) = load_decks(&deck_paths)?;
+    let (cards, label, decks, _) = load_decks(&deck_paths, &HashMap::new())?;
 
     // A full-deck reset (no `--card`/`--cards` subset) also drops the decks'
     // "mastered" exam state, so a re-drilled sourced deck must pass its exam
@@ -1576,6 +1643,25 @@ mod tests {
     fn reset_selects_all_without_a_filter() {
         let cards = vec![card("A", "1"), card("B", "2")];
         assert_eq!(2, select_reset_ids(&cards, None).len());
+    }
+
+    #[test]
+    fn expand_workspaces_member_file_inherits_workspace_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path().join("eng");
+        std::fs::create_dir(&ws).unwrap();
+        std::fs::write(ws.join("a.txt"), "# a\n\tb\n").unwrap();
+        std::fs::write(ws.join("flash.toml"), "[defaults]\ndirection = \"both\"\n").unwrap();
+
+        // A member picked as a bare file (a subset selection) still inherits the
+        // workspace's directives.
+        let exp = expand_workspaces(&[ws.join("a.txt")]).unwrap();
+        assert_eq!(1, exp.decks.len());
+        assert_eq!(
+            Some(flash::card::Direction::Both),
+            exp.defaults.get("a.txt").unwrap().direction
+        );
+        assert!(exp.label.is_none()); // not a single-workspace request
     }
 
     #[test]

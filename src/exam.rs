@@ -833,6 +833,7 @@ mod tests {
             requires: Vec::new(),
             sources: srcs.iter().map(|s| s.to_string()).collect(),
             settings: Default::default(),
+            title: None,
         }
     }
 
@@ -1137,6 +1138,7 @@ mod tests {
             requires: Vec::new(),
             sources: vec!["notes.md".to_string()],
             settings: Default::default(),
+            title: None,
         };
         let section = source_section(&deck.sources, deck.path.parent()).unwrap();
         assert!(section.contains("the ground truth text"));

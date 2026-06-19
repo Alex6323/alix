@@ -7,6 +7,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Workspaces** — a folder of decks reviewed together with shared directives.
+  Membership is folder-implicit (any folder of `*.txt` decks, one level deep); an
+  optional `flash.toml` manifest (a scoped `config.toml`) sets a `title` and a
+  `[defaults]` table of directives that fill in what each deck leaves unset, so
+  precedence is CLI > card > deck > workspace > default. `flash review`/`browse
+  <folder>` reviews the whole cluster; workspaces appear as their own rows in the
+  picker (terminal and web) and, when opened, drill into their decks (review all,
+  or tick a subset). Great for clusters like a vocabulary set that should all be
+  `direction = "both"` without repeating it per file.
+- `% title:` deck directive (also usable in a `workspace.flash` manifest): a
+  display name shown in the picker, session header, `flash list` and `flash stats`
+  instead of the file name. Display-only and never part of card identity.
 - **`flash exam <deck>`** — the AI exam, which *verifies understanding* and
   gates progression (rung 3 of the AI-exam direction). A deck declares its
   ground truth with `% source: <url-or-file>` (repeatable); the exam asks Claude

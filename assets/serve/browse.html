@@ -132,9 +132,10 @@
   .deckrow.on { border-color: var(--bolt); background: rgba(125,249,232,0.06); }
   .deckrow.on .box { background: var(--bolt); border-color: var(--bolt); position: relative; }
   .deckrow.on .box::after { content: "✓"; position: absolute; inset: 0; display: grid; place-items: center; color: var(--void); font-size: 0.8rem; font-weight: 700; }
-  .deckrow .name { flex: 1; }
+  .deckrow .name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .deckrow .name .lock { color: var(--dim); }
-  .deckrow .meta { font-family: var(--mono); font-size: 0.74rem; color: var(--dim); }
+  .deckrow .loc { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 0.72rem; color: var(--dim); }
+  .deckrow .meta { margin-left: auto; padding-left: 10px; font-family: var(--mono); font-size: 0.74rem; color: var(--dim); white-space: nowrap; }
   .deckrow .meta.state-finished { color: var(--good); }
   .deckrow.locked { opacity: 0.55; }
   .deckrow.locked:hover { border-color: var(--bolt); }
@@ -174,6 +175,7 @@ let phase = "browse"; // "select" while choosing decks
 let i = 0;
 let KEYS = {};        // configured [browse] key bindings, from /api/keys
 let selectEsc = null; // in the deck-select confirm view, Esc returns to browse
+let lastWorkspace = null; // name of the workspace you launched from, to return into it
 
 const stage = document.getElementById("stage");
 const legend = document.getElementById("legend");
@@ -286,13 +288,21 @@ async function renderSelect() {
         b.appendChild(el("span", "k", `${chosen.size} ⏎`));
         b.addEventListener("click", renderConfirm);
         legend.appendChild(b);
-      } else {
-        const b = el("button", "chip primary", "Start");
-        b.appendChild(el("span", "k", "enter"));
-        b.disabled = !focused;
-        b.addEventListener("click", () => { if (focused) select([focused]); });
-        legend.appendChild(b);
+        return;
       }
+      const fd = focused && data.decks.find(x => x.name === focused);
+      if (fd && fd.is_workspace) {
+        const b = el("button", "chip primary", "Open");
+        b.appendChild(el("span", "k", "enter"));
+        b.addEventListener("click", () => renderWorkspace(fd));
+        legend.appendChild(b);
+        return;
+      }
+      const b = el("button", "chip primary", "Start");
+      b.appendChild(el("span", "k", "enter"));
+      b.disabled = !focused;
+      b.addEventListener("click", () => { if (focused) select([focused]); });
+      legend.appendChild(b);
     }
 
     const toggleTick = (name, row) => {
@@ -304,19 +314,24 @@ async function renderSelect() {
     const list = el("div", "decklist");
     const rows = [];
     for (const d of data.decks) {
-      const row = el("div", "deckrow" + (d.locked ? " locked" : "") + (chosen.has(d.name) ? " on" : ""));
+      // Workspaces aren't tickable; they open. Disabled tick box (reuse the
+      // examdue styling), tapping the row drills in.
+      const isWs = d.is_workspace;
+      const row = el("div", "deckrow" + (d.locked ? " locked" : "") + (isWs ? " examdue" : "") + (chosen.has(d.name) ? " on" : ""));
       row.tabIndex = 0;
       row.dataset.deck = d.name;
       if (d.locked) row.dataset.locked = "1";
+      if (isWs) row.dataset.examdue = "1";
       const box = el("span", "box");
-      box.addEventListener("click", (e) => { e.stopPropagation(); if (!d.locked) toggleTick(d.name, row); });
+      box.addEventListener("click", (e) => { e.stopPropagation(); if (!d.locked && !isWs) toggleTick(d.name, row); });
       row.appendChild(box);
-      const name = el("span", "name", d.name);
+      const name = el("span", "name", d.label || d.name);
       if (d.locked) name.appendChild(el("span", "lock", " \u{1F512}"));
       row.appendChild(name);
+      if (d.path) row.appendChild(el("span", "loc", d.path)); // dim location hint
       if (d.meta) row.appendChild(el("span", "meta state-" + d.state, d.meta));
-      row.addEventListener("click", () => { if (!d.locked) select([d.name]); });
-      rows.push({ row, name: d.name.toLowerCase() });
+      row.addEventListener("click", () => { if (isWs) renderWorkspace(d); else if (!d.locked) select([d.name]); });
+      rows.push({ row, name: (d.label || d.name).toLowerCase() });
       list.appendChild(row);
     }
     wrap.appendChild(list);
@@ -359,7 +374,8 @@ async function renderSelect() {
     const list = el("div", "decklist");
     for (const name of chosen) {
       const row = el("div", "deckrow");
-      row.appendChild(el("span", "name", name));
+      const d = data.decks.find(x => x.name === name);
+      row.appendChild(el("span", "name", (d && d.label) || name));
       list.appendChild(row);
     }
     wrap.appendChild(list);
@@ -375,7 +391,82 @@ async function renderSelect() {
     legend.appendChild(cancel);
   }
 
-  renderBrowse();
+  // Drilled into a workspace: browse all its decks, or tick a subset. Esc/Back
+  // returns to the top list.
+  function renderWorkspace(ws) {
+    const leave = () => { lastWorkspace = null; renderBrowse(); };
+    selectEsc = leave;
+    stage.innerHTML = ""; legend.innerHTML = "";
+    const picked = new Set();
+
+    const wrap = el("div", "select");
+    wrap.appendChild(el("div", "lede", (ws.label || ws.name) + " — browse all, or tick decks"));
+    const filter = el("input", "deck-filter");
+    filter.type = "text"; filter.placeholder = "filter decks…"; filter.autocomplete = "off";
+    wrap.appendChild(filter);
+
+    // Opening anything from inside a workspace remembers it, so leaving the
+    // browse session returns here rather than to the top list.
+    const launch = (names) => { lastWorkspace = ws.name; select(names); };
+    function syncWs() {
+      legend.innerHTML = "";
+      const primary = el("button", "chip primary", picked.size ? `Browse ${picked.size}` : "Browse all");
+      primary.appendChild(el("span", "k", "enter"));
+      primary.addEventListener("click", () => launch(picked.size ? [...picked] : [ws.name]));
+      legend.appendChild(primary);
+      const back = el("button", "chip", "Back");
+      back.appendChild(el("span", "k", "esc"));
+      back.addEventListener("click", leave);
+      legend.appendChild(back);
+    }
+    const toggleM = (name, row) => {
+      if (picked.has(name)) picked.delete(name); else picked.add(name);
+      row.classList.toggle("on");
+      syncWs();
+    };
+
+    const list = el("div", "decklist");
+    const rows = [];
+    for (const m of ws.members) {
+      const row = el("div", "deckrow");
+      row.tabIndex = 0;
+      row.dataset.deck = m.name;
+      const box = el("span", "box");
+      box.addEventListener("click", (e) => { e.stopPropagation(); toggleM(m.name, row); });
+      row.appendChild(box);
+      row.appendChild(el("span", "name", m.label || m.name));
+      row.addEventListener("click", () => launch([m.name]));
+      rows.push({ row, name: (m.label || m.name).toLowerCase() });
+      list.appendChild(row);
+    }
+    wrap.appendChild(list);
+    stage.appendChild(wrap);
+
+    const visible = () => rows.filter(r => r.row.style.display !== "none");
+    filter.addEventListener("input", () => {
+      const q = filter.value.trim().toLowerCase();
+      for (const { row, name } of rows) row.style.display = !q || name.includes(q) ? "" : "none";
+    });
+    filter.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowDown") { e.preventDefault(); const v = visible(); if (v.length) v[0].row.focus(); }
+    });
+    list.addEventListener("keydown", (e) => {
+      const row = e.target.closest(".deckrow");
+      if (!row) return;
+      const v = visible();
+      const idx = v.findIndex(r => r.row === row);
+      if (e.key === "ArrowDown") { e.preventDefault(); if (idx < v.length - 1) v[idx + 1].row.focus(); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); if (idx > 0) v[idx - 1].row.focus(); else filter.focus(); }
+      else if (e.key === " ") { e.preventDefault(); toggleM(row.dataset.deck, row); }
+    });
+
+    syncWs();
+    filter.focus();
+  }
+
+  // Returning from a session launched inside a workspace re-opens that workspace.
+  const reopen = lastWorkspace && data.decks.find(x => x.is_workspace && x.name === lastWorkspace);
+  if (reopen) renderWorkspace(reopen); else renderBrowse();
 }
 
 function contextLine(text) {

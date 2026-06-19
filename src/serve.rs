@@ -194,10 +194,28 @@ struct DeckListDto {
 /// unfinished `% requires:` prerequisite. Mirrors the TUI picker rows.
 #[derive(Debug, Serialize)]
 struct DeckItemDto {
+    /// Stable selection key (file/folder name) sent back on select.
     name: String,
+    /// Display title (`% title:`, else the name without `.txt`, else folder).
+    label: String,
     meta: Option<String>,
     state: &'static str,
     locked: bool,
+    /// `true` for a workspace folder row.
+    is_workspace: bool,
+    /// For a workspace row: its member decks, shown when you open it.
+    members: Vec<MemberDto>,
+    /// Dim location hint (parent dir) for entries outside the decks dir; `null`
+    /// keeps the row clean. Disambiguates same-named decks/workspaces.
+    path: Option<String>,
+}
+
+/// A workspace member deck in the selection list: a qualified selection `name`
+/// (`<workspace>/<file>`) and a display `label`.
+#[derive(Debug, Serialize)]
+struct MemberDto {
+    name: String,
+    label: String,
 }
 
 /// The result of answering a choice card: which option was picked, which is
@@ -1154,11 +1172,33 @@ fn deck_catalog(
     let decks = picker::catalog(decks_dir, recent)
         .into_iter()
         .map(|e| {
+            // A workspace row: its member decks (shown on open), always
+            // selectable, no lock/state of its own.
+            if e.is_workspace {
+                let members: Vec<MemberDto> = e
+                    .members
+                    .iter()
+                    .map(|m| MemberDto {
+                        name: m.name.clone(),
+                        label: m.label.clone(),
+                    })
+                    .collect();
+                return DeckItemDto {
+                    meta: Some(format!("workspace · {} decks", members.len())),
+                    name: e.name,
+                    label: e.label,
+                    state: "workspace",
+                    locked: false,
+                    is_workspace: true,
+                    members,
+                    path: e.path_hint,
+                };
+            }
             let (state, meta, locked) = match Deck::load(&e.path) {
                 Ok(deck) => {
                     let total = deck.cards.len();
                     let retired = deck.cards.iter().filter(|c| is_retired(c, store)).count();
-                    let (state, label) = match deck.state(store) {
+                    let (state, badge) = match deck.state(store) {
                         // Exam-passed decks read "mastered"; plain drilled ones "done".
                         DeckState::Finished if store.deck_mastered(&deck.subject) => {
                             ("finished", "mastered ✓".to_string())
@@ -1169,15 +1209,19 @@ fn deck_catalog(
                         DeckState::Started => ("started", format!("{retired}/{total}")),
                     };
                     let locked = with_lock && deck::is_locked(&deck, Some(decks_dir), store);
-                    (state, Some(label), locked)
+                    (state, Some(badge), locked)
                 }
                 Err(_) => ("new", None, false),
             };
             DeckItemDto {
                 name: e.name,
+                label: e.label,
                 meta,
                 state,
                 locked,
+                is_workspace: false,
+                members: Vec::new(),
+                path: e.path_hint,
             }
         })
         .collect();
@@ -1201,10 +1245,16 @@ fn select_decks(
     if body.decks.is_empty() {
         return None;
     }
-    let known: HashMap<String, PathBuf> = picker::catalog(decks_dir, recent)
-        .into_iter()
-        .map(|e| (e.name, e.path))
-        .collect();
+    // The resolution map includes top-level decks/workspaces and every
+    // workspace's members (by their qualified `<workspace>/<file>` key), so a
+    // subset selection from inside a workspace resolves safely too.
+    let mut known: HashMap<String, PathBuf> = HashMap::new();
+    for e in picker::catalog(decks_dir, recent) {
+        for m in &e.members {
+            known.insert(m.name.clone(), m.path.clone());
+        }
+        known.insert(e.name, e.path);
+    }
     resolve_names(body.decks, &known)
 }
 

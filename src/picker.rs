@@ -24,9 +24,11 @@ use ratatui::{
 
 use crate::{
     deck::{self, Deck, DeckState},
+    parser,
     recent::RecentDecks,
     session,
     store::Store,
+    workspace,
 };
 
 const HEADER_STYLE: Style = Style::new().fg(Color::Black).bg(Color::Cyan);
@@ -43,50 +45,68 @@ struct Item<K> {
     /// Deck rows: completion state, used to tint the meta (finished → green).
     /// `None` for non-deck pickers (cards, dependency editor).
     state: Option<DeckState>,
+    /// A workspace row: it opens (drills in) on Enter rather than being ticked.
+    is_workspace: bool,
+    /// Dim location hint (parent dir) for entries outside the decks dir; `None`
+    /// keeps the row clean.
+    hint: Option<String>,
 }
 
 // ---- deck candidates ----------------------------------------------------
 
-/// A selectable deck, before it becomes a picker `Item`.
+/// A selectable deck or workspace, before it becomes a picker `Item`.
 struct Candidate {
     path: PathBuf,
+    /// File name (deck) or folder name (workspace) — the stable selection key.
     name: String,
-    /// When last reviewed, if it is a recent deck.
+    /// When last reviewed, if it is a recent entry.
     last_used_ms: Option<u64>,
+    /// `true` for a workspace folder, `false` for a single deck file.
+    is_workspace: bool,
 }
 
-/// Every `*.txt` deck in `decks_dir`, sorted by name.
+/// Every `*.txt` deck and every workspace folder directly in `decks_dir`,
+/// sorted by name.
 fn dir_candidates(decks_dir: &Path) -> Vec<Candidate> {
-    let mut paths: Vec<PathBuf> = match std::fs::read_dir(decks_dir) {
+    let mut cands: Vec<Candidate> = match std::fs::read_dir(decks_dir) {
         Ok(read_dir) => read_dir
             .filter_map(|r| r.ok().map(|d| d.path()))
-            .filter(|p| p.extension().is_some_and(|e| e == "txt"))
+            .filter_map(|path| {
+                if path.is_file() && path.extension().is_some_and(|e| e == "txt") {
+                    Some((path, false))
+                } else if workspace::is_workspace(&path) {
+                    Some((path, true))
+                } else {
+                    None
+                }
+            })
+            .map(|(path, is_workspace)| Candidate {
+                name: file_name(&path),
+                path,
+                last_used_ms: None,
+                is_workspace,
+            })
             .collect(),
         Err(_) => Vec::new(),
     };
-    paths.sort();
-    paths
-        .into_iter()
-        .map(|path| Candidate {
-            name: file_name(&path),
-            path,
-            last_used_ms: None,
-        })
-        .collect()
+    cands.sort_by(|a, b| a.name.cmp(&b.name));
+    cands
 }
 
-/// Builds the candidate list: existing recent decks first (recency order),
-/// then every other `*.txt` in `decks_dir`, sorted by name.
+/// Builds the candidate list: existing recent entries first (recency order),
+/// then every other deck/workspace in `decks_dir`, sorted by name.
 fn build_candidates(decks_dir: &Path, recent: &RecentDecks) -> Vec<Candidate> {
     let mut out = Vec::new();
     let mut seen = HashSet::new();
 
     for entry in recent.entries() {
-        if entry.path.is_file() {
+        let is_workspace = workspace::is_workspace(&entry.path);
+        if entry.path.is_file() || is_workspace {
             out.push(Candidate {
                 name: file_name(&entry.path),
                 path: entry.path.clone(),
                 last_used_ms: Some(entry.last_used_ms),
+                is_workspace,
             });
             seen.insert(entry.path.clone());
         }
@@ -107,7 +127,28 @@ fn build_candidates(decks_dir: &Path, recent: &RecentDecks) -> Vec<Candidate> {
 /// browse picker — locking gates *review* progression only, so any deck is
 /// browsable.
 fn deck_item(c: Candidate, store: &Store, decks_dir: &Path, enforce_locks: bool) -> Item<PathBuf> {
-    let (meta, locked, state) = match Deck::load(&c.path) {
+    let hint = location_hint(&c.path, decks_dir);
+    // A workspace row: its title (or folder name) and a deck count; always
+    // selectable, no lock/state of its own.
+    if c.is_workspace {
+        let (label, meta) = match workspace::Workspace::load(&c.path) {
+            Ok(ws) => (
+                ws.display_name(),
+                Some(format!("· workspace · {} decks", ws.members.len())),
+            ),
+            Err(_) => (c.name, Some("· workspace".to_string())),
+        };
+        return Item {
+            key: c.path,
+            label,
+            meta,
+            locked: false,
+            state: None,
+            is_workspace: true,
+            hint,
+        };
+    }
+    let (label, meta, locked, state) = match Deck::load(&c.path) {
         Ok(deck) => {
             let st = deck.state(store);
             let total = deck.cards.len();
@@ -116,7 +157,7 @@ fn deck_item(c: Candidate, store: &Store, decks_dir: &Path, enforce_locks: bool)
                 .iter()
                 .filter(|card| session::is_retired(card, store))
                 .count();
-            let label = match st {
+            let badge = match st {
                 // "mastered" is reserved for passing the exam; a source-less
                 // deck that's merely fully drilled stays "done".
                 DeckState::Finished if store.deck_mastered(&deck.subject) => {
@@ -128,16 +169,23 @@ fn deck_item(c: Candidate, store: &Store, decks_dir: &Path, enforce_locks: bool)
                 DeckState::Started => format!("{retired}/{total}"),
             };
             let locked = enforce_locks && deck::is_locked(&deck, Some(decks_dir), store);
-            (Some(format!("· {label}")), locked, Some(st))
+            (
+                deck.display_name(),
+                Some(format!("· {badge}")),
+                locked,
+                Some(st),
+            )
         }
-        Err(_) => (None, false, None),
+        Err(_) => (c.name, None, false, None),
     };
     Item {
         key: c.path,
-        label: c.name,
+        label,
         meta,
         locked,
         state,
+        is_workspace: false,
+        hint,
     }
 }
 
@@ -152,29 +200,116 @@ fn stem(name: &str) -> String {
     name.strip_suffix(".txt").unwrap_or(name).to_string()
 }
 
-// ---- public entry points ------------------------------------------------
-
-/// One deck offered by [`catalog`]: its file name, full path, and when it was
-/// last reviewed (if it is a recent deck).
-pub struct DeckEntry {
-    pub name: String,
-    pub path: PathBuf,
-    pub last_used_ms: Option<u64>,
+/// A dim location hint for entries that don't live directly in the decks dir
+/// (a recent deck/workspace from elsewhere, or a member nested in a workspace):
+/// the parent directory, abbreviated with `~`. `None` for entries in the decks
+/// dir root, so the common listing stays clean and only the odd ones out —
+/// which is where two same-named entries get told apart — show a path.
+fn location_hint(path: &Path, decks_dir: &Path) -> Option<String> {
+    let parent = path.parent()?;
+    if parent == decks_dir {
+        return None;
+    }
+    Some(abbreviate_home(parent))
 }
 
-/// The deck catalog the pickers show, as plain data: recent decks first
-/// (recency order), then every other `*.txt` in `decks_dir`. Frontend-agnostic,
-/// so the web deck-selection screen can present the same list as the TUI
-/// picker.
+/// `path` with the home directory replaced by `~`, else as-is.
+fn abbreviate_home(path: &Path) -> String {
+    directories::BaseDirs::new()
+        .and_then(|dirs| {
+            path.strip_prefix(dirs.home_dir()).ok().map(|rest| {
+                if rest.as_os_str().is_empty() {
+                    "~".to_string()
+                } else {
+                    format!("~/{}", rest.display())
+                }
+            })
+        })
+        .unwrap_or_else(|| path.display().to_string())
+}
+
+// ---- public entry points ------------------------------------------------
+
+/// One entry offered by [`catalog`]: a deck or a workspace. `name` is the
+/// stable selection key (file/folder name, or `<workspace>/<file>` for a
+/// member); `label` is the display title (`% title:`, else the name without
+/// `.txt`, else the workspace's folder name). A workspace entry carries its
+/// member decks in `members` (each a deck entry with a qualified `name`); decks
+/// have none.
+pub struct DeckEntry {
+    pub name: String,
+    pub label: String,
+    pub path: PathBuf,
+    pub last_used_ms: Option<u64>,
+    pub is_workspace: bool,
+    pub members: Vec<DeckEntry>,
+    /// Dim location hint (parent dir, `~`-abbreviated) when not in the decks
+    /// dir.
+    pub path_hint: Option<String>,
+}
+
+/// The catalog the pickers show, as plain data: recent entries first (recency
+/// order), then every other deck and workspace in `decks_dir`.
+/// Frontend-agnostic, so the web deck-selection screen presents the same list
+/// as the TUI picker.
 pub fn catalog(decks_dir: &Path, recent: &RecentDecks) -> Vec<DeckEntry> {
     build_candidates(decks_dir, recent)
         .into_iter()
-        .map(|c| DeckEntry {
-            name: c.name,
-            path: c.path,
-            last_used_ms: c.last_used_ms,
+        .map(|c| {
+            if c.is_workspace {
+                let (label, members) = match workspace::Workspace::load(&c.path) {
+                    Ok(ws) => {
+                        let members = ws
+                            .members
+                            .iter()
+                            .map(|m| {
+                                let file = file_name(m);
+                                DeckEntry {
+                                    // Qualified key so members never collide with
+                                    // top-level decks in the resolution map.
+                                    name: format!("{}/{}", c.name, file),
+                                    label: deck_title(m).unwrap_or_else(|| stem(&file)),
+                                    path: m.clone(),
+                                    last_used_ms: None,
+                                    is_workspace: false,
+                                    members: Vec::new(),
+                                    path_hint: None, // shown only in the drill-in
+                                }
+                            })
+                            .collect();
+                        (ws.display_name(), members)
+                    }
+                    Err(_) => (c.name.clone(), Vec::new()),
+                };
+                DeckEntry {
+                    path_hint: location_hint(&c.path, decks_dir),
+                    name: c.name,
+                    label,
+                    path: c.path,
+                    last_used_ms: c.last_used_ms,
+                    is_workspace: true,
+                    members,
+                }
+            } else {
+                DeckEntry {
+                    label: deck_title(&c.path).unwrap_or_else(|| stem(&c.name)),
+                    path_hint: location_hint(&c.path, decks_dir),
+                    name: c.name,
+                    path: c.path,
+                    last_used_ms: c.last_used_ms,
+                    is_workspace: false,
+                    members: Vec::new(),
+                }
+            }
         })
         .collect()
+}
+
+/// A deck's `% title:` if it declares one, read without a full parse.
+fn deck_title(path: &Path) -> Option<String> {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|text| parser::parse_title(&text))
 }
 
 /// Runs the startup picker. Returns the chosen deck paths (empty if the user
@@ -188,21 +323,72 @@ pub fn pick(
     store: &Store,
     enforce_locks: bool,
 ) -> Result<Vec<PathBuf>> {
-    let items = build_candidates(decks_dir, recent)
-        .into_iter()
-        .map(|c| deck_item(c, store, decks_dir, enforce_locks))
+    loop {
+        let items = build_candidates(decks_dir, recent)
+            .into_iter()
+            .map(|c| deck_item(c, store, decks_dir, enforce_locks))
+            .collect();
+        let mut picker = Picker::new(
+            items,
+            HashSet::new(),
+            "select decks".to_string(),
+            // Footer is computed per launcher state in `draw`.
+            String::new(),
+            false,
+            no_decks_message(decks_dir),
+        );
+        picker.launcher = true;
+        let Some(chosen) = launch(picker)? else {
+            return Ok(Vec::new()); // cancelled at the top level
+        };
+        // Opening a single workspace drills into a sub-picker of its decks.
+        if let [path] = chosen.as_slice()
+            && workspace::is_workspace(path)
+        {
+            match pick_in_workspace(path, store, decks_dir, enforce_locks)? {
+                Some(decks) => return Ok(decks),
+                None => continue, // Esc inside a workspace returns to the top list
+            }
+        }
+        return Ok(chosen);
+    }
+}
+
+/// The drill-in sub-picker for a workspace: its member decks, all pre-ticked so
+/// Enter reviews the whole cluster by default; untick to narrow. `Esc` returns
+/// `None` to step back to the top list.
+fn pick_in_workspace(
+    folder: &Path,
+    store: &Store,
+    decks_dir: &Path,
+    enforce_locks: bool,
+) -> Result<Option<Vec<PathBuf>>> {
+    let ws = workspace::Workspace::load(folder)?;
+    let items: Vec<Item<PathBuf>> = ws
+        .members
+        .iter()
+        .map(|m| {
+            let c = Candidate {
+                name: file_name(m),
+                path: m.clone(),
+                last_used_ms: None,
+                is_workspace: false,
+            };
+            let mut item = deck_item(c, store, decks_dir, enforce_locks);
+            item.hint = None; // inside the workspace, the folder path is redundant
+            item
+        })
         .collect();
-    let mut picker = Picker::new(
+    let preselected: HashSet<PathBuf> = ws.members.iter().cloned().collect();
+    let picker = Picker::new(
         items,
-        HashSet::new(),
-        "select decks".to_string(),
-        // Footer is computed per launcher state in `draw`.
-        String::new(),
-        false,
-        no_decks_message(decks_dir),
+        preselected,
+        ws.display_name(),
+        " SPACE toggle │ ENTER review │ ↑↓ move │ type to filter │ ESC back".to_string(),
+        true,
+        vec![Line::from("  This workspace has no decks.")],
     );
-    picker.launcher = true;
-    Ok(launch(picker)?.unwrap_or_default())
+    launch(picker)
 }
 
 /// Runs the deck picker for `reset`: the same checkbox UI, but `exact` (an
@@ -239,6 +425,8 @@ pub fn pick_cards(items: Vec<(u64, String, Option<String>)>, title: &str) -> Res
             meta,
             locked: false,
             state: None,
+            is_workspace: false,
+            hint: None,
         })
         .collect();
     let picker = Picker::new(
@@ -264,7 +452,8 @@ pub fn edit_dependencies(
 ) -> Result<Option<Vec<PathBuf>>> {
     let target_name = file_name(target);
     let mut candidates = dir_candidates(decks_dir);
-    candidates.retain(|c| c.name != target_name);
+    // Prerequisites are decks, not workspaces.
+    candidates.retain(|c| !c.is_workspace && c.name != target_name);
 
     // Keep any current prerequisite that isn't a deck in the decks dir visible
     // and pre-checked, so saving doesn't silently drop it.
@@ -275,6 +464,7 @@ pub fn edit_dependencies(
                 name: req.clone(),
                 path: PathBuf::from(req),
                 last_used_ms: None,
+                is_workspace: false,
             });
         }
     }
@@ -294,6 +484,8 @@ pub fn edit_dependencies(
             meta: None,
             locked: false,
             state: None,
+            is_workspace: false,
+            hint: None,
         })
         .collect();
     let picker = Picker::new(
@@ -516,8 +708,12 @@ impl<K: Clone + Eq + Hash> Picker<K> {
         if let Some(&i) = self.filtered.get(self.cursor) {
             // A locked deck can't be ticked (it isn't startable). An exam-due
             // deck has no reviewable cards — it only launches its own exam, so
-            // it can't join a merged review either. Non-deck pickers set neither.
-            if self.all[i].locked || self.all[i].state == Some(DeckState::ExamDue) {
+            // it can't join a merged review either. A workspace opens (Enter)
+            // rather than being ticked. Non-deck pickers set none of these.
+            if self.all[i].locked
+                || self.all[i].state == Some(DeckState::ExamDue)
+                || self.all[i].is_workspace
+            {
                 return;
             }
             let key = &self.all[i].key;
@@ -638,6 +834,18 @@ impl<K: Clone + Eq + Hash> Picker<K> {
             }
 
             let mut spans = vec![Span::styled(main, style)];
+            // A dim location hint for out-of-decks-dir entries (disambiguates
+            // same-named decks/workspaces). Follows the row style on the cursor.
+            if let Some(hint) = &item.hint
+                && !self.confirming
+            {
+                let hint_style = if on_cursor {
+                    style
+                } else {
+                    Style::new().fg(Color::DarkGray)
+                };
+                spans.push(Span::styled(format!("  {hint}"), hint_style));
+            }
             if let Some(meta) = &item.meta {
                 // Tint the state suffix (finished → green, exam due → yellow),
                 // but keep the cursor and locked styling dominant where they apply.
@@ -679,6 +887,8 @@ mod tests {
                 meta: None,
                 locked: false,
                 state: None,
+                is_workspace: false,
+                hint: None,
             })
             .collect();
         Picker::new(
@@ -700,6 +910,8 @@ mod tests {
                 meta: None,
                 locked: *locked,
                 state: None,
+                is_workspace: false,
+                hint: None,
             })
             .collect();
         let mut p = Picker::new(
@@ -828,6 +1040,49 @@ mod tests {
         assert_eq!(vec!["zeta.txt", "alpha.txt"], names); // recent first
         assert_eq!(dir.path().join("zeta.txt"), entries[0].path);
         assert!(entries[0].last_used_ms.is_some());
+    }
+
+    #[test]
+    fn location_hint_only_for_entries_outside_the_decks_dir() {
+        let home = directories::BaseDirs::new()
+            .unwrap()
+            .home_dir()
+            .to_path_buf();
+        let decks = home.join("decks");
+        // In the decks dir root → no hint (keeps the common listing clean).
+        assert_eq!(None, location_hint(&decks.join("foo.txt"), &decks));
+        assert_eq!(None, location_hint(&decks.join("english"), &decks));
+        // Elsewhere → the parent dir, home abbreviated to `~`.
+        assert_eq!(
+            Some("~/other".to_string()),
+            location_hint(&home.join("other").join("x.txt"), &decks)
+        );
+        assert_eq!(
+            Some("/tmp".to_string()),
+            location_hint(Path::new("/tmp/x.txt"), &decks)
+        );
+    }
+
+    #[test]
+    fn catalog_surfaces_workspace_with_qualified_members() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path().join("english");
+        std::fs::create_dir(&ws).unwrap();
+        std::fs::write(ws.join("a.txt"), "# a\n\tb\n").unwrap();
+        std::fs::write(ws.join("b.txt"), "# c\n\td\n").unwrap();
+        std::fs::write(ws.join(workspace::MANIFEST), "title = \"English\"\n").unwrap();
+        let recent = RecentDecks::load(dir.path().join("recent.json"));
+
+        let entries = catalog(dir.path(), &recent);
+        let w = entries
+            .iter()
+            .find(|e| e.is_workspace)
+            .expect("workspace entry");
+        assert_eq!("english", w.name); // folder name is the selection key
+        assert_eq!("English", w.label); // manifest title is the display name
+        let members: Vec<&str> = w.members.iter().map(|m| m.name.as_str()).collect();
+        // Members carry qualified keys so they never collide with top-level decks.
+        assert_eq!(vec!["english/a.txt", "english/b.txt"], members);
     }
 
     #[test]
