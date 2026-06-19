@@ -1016,6 +1016,7 @@ fn mode_name(mode: Mode) -> &'static str {
         Mode::Fuzzy => "fuzzy",
         Mode::Choice => "choice",
         Mode::LineByLine => "line",
+        Mode::Explain => "explain",
     }
 }
 
@@ -1200,6 +1201,7 @@ mod tests {
         assert!(matches!(Grade::Fail, Grade::Fail));
         assert_eq!(mode_name(Mode::LineByLine), "line");
         assert_eq!(mode_name(Mode::Flip), "flip");
+        assert_eq!(mode_name(Mode::Explain), "explain");
     }
 
     // ---- ask-Claude server state machine -------------------------------

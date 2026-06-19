@@ -250,6 +250,12 @@
   .ask-input:focus { outline: none; border-color: var(--bolt); }
   .ask-input:disabled { opacity: 0.6; }
 
+  /* ── explain (understanding) cards ── */
+  .explain-input { width: 100%; box-sizing: border-box; resize: vertical; min-height: 64px; padding: 11px 13px; border-radius: 12px; border: 1px solid var(--line); background: rgba(0,0,0,0.25); color: var(--ink); font: inherit; }
+  .explain-input:focus { outline: none; border-color: var(--bolt); }
+  .explain-label { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); margin: 6px 0 4px; }
+  .explain-answer { white-space: pre-wrap; color: var(--ink); opacity: 0.85; margin-bottom: 6px; }
+
   @media (prefers-reduced-motion: reduce) {
     .stack, .summary, .reveal, .card.zap { animation: none; }
   }
@@ -286,6 +292,7 @@ let revealed = 0;     // back lines shown for the current card
 let feedback = null;  // choice result being shown ({chosen, correct, passed})
 let confirmingLeave = false; // showing the "session not finished" leave prompt
 let selectEsc = null; // in the deck-select confirm view, Esc returns to browse
+let explainInput = ""; // the typed reconstruction on an explain card (client-side)
 let asking = false;   // the ask-Claude overlay is open
 let askData = { transcript: [], thinking: false, status: null, error: null };
 let askPoll = null;   // setInterval handle while a reply is pending
@@ -324,11 +331,12 @@ function renderLeaveConfirm() {
   chip("Stay", "primary", cancelLeave, "esc");
 }
 
-function apply(s) { state = s; revealed = 0; feedback = null; render(); }
+function apply(s) { state = s; revealed = 0; feedback = null; explainInput = ""; render(); }
 function isChoice() { return state.mode === "choice" && state.choices; }
 function isInput() { return state.mode === "typing" || state.mode === "fuzzy"; }
+function isExplain() { return state.mode === "explain"; }
 function modeLabel() {
-  return { typing: "typing exact", fuzzy: "typing fuzzy", line: "line by line" }[state.mode] || state.mode;
+  return { typing: "typing exact", fuzzy: "typing fuzzy", line: "line by line", explain: "understanding" }[state.mode] || state.mode;
 }
 function choose(i) { api("/api/choose", post({ index: i })).then(f => { feedback = f; render(); }); }
 function submitCheck() {
@@ -648,6 +656,7 @@ function fillBottom() {
   if (feedback) { (isChoice() ? renderChoiceFeedback : renderCheckFeedback)(a); setNote(true); }
   else if (isChoice()) { renderChoices(a); setNote(false); }
   else if (isInput()) { renderInput(a); setNote(false); }
+  else if (isExplain()) { renderExplain(a); setNote(fullyRevealed()); }
   else { fillAnswer(a); setNote(fullyRevealed()); }
   // keep the newest line in view as a verse is revealed line by line
   if (state.mode === "line" && revealed > 0) a.scrollTop = a.scrollHeight;
@@ -741,6 +750,40 @@ function renderChoiceFeedback(a) {
   a.appendChild(wrap);
 }
 
+// Explain (understanding) cards: before reveal a free textarea (optional); after
+// reveal your answer beside the key points (the back lines). Self-graded — the
+// typed text never leaves the client.
+function renderExplain(a) {
+  if (revealed === 0) {
+    const ta = el("textarea", "explain-input");
+    ta.placeholder = "Type your answer… (optional)";
+    ta.rows = 3;
+    ta.value = explainInput;
+    ta.addEventListener("input", () => { explainInput = ta.value; });
+    ta.addEventListener("keydown", e => {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); explainReveal(); }
+    });
+    a.appendChild(ta);
+    setTimeout(() => ta.focus(), 0);
+    return;
+  }
+  if (explainInput.trim()) {
+    a.appendChild(el("div", "explain-label", "your answer"));
+    a.appendChild(el("div", "explain-answer", explainInput));
+  }
+  a.appendChild(el("div", "explain-label", "your answer should cover"));
+  const pts = el("div", "reveal");
+  for (const p of state.card.back) pts.appendChild(el("div", "answer", "• " + p));
+  a.appendChild(pts);
+}
+function explainReveal() {
+  const ta = document.querySelector(".explain-input");
+  if (ta) explainInput = ta.value;
+  revealed = backCount();
+  fillBottom();
+  renderLegend();
+}
+
 // Fill the answer region for reveal modes (flip / line / choice fallback).
 function fillAnswer(a) {
   if (!a) return;
@@ -802,6 +845,9 @@ function renderLegend() {
     chip("Skip", "", skip, label(KEYS.skip));
   } else if (isInput()) {
     chip("Submit", "primary", submitCheck, "enter");
+    chip("Skip", "", skip, label(KEYS.skip));
+  } else if (isExplain() && !fullyRevealed()) {
+    chip("Reveal points", "primary", explainReveal, "enter");
     chip("Skip", "", skip, label(KEYS.skip));
   } else if (!fullyRevealed()) {
     chip(state.mode === "line" && revealed > 0 ? "Reveal next" : "Reveal", "primary", reveal, label(KEYS.reveal));
@@ -902,6 +948,13 @@ document.addEventListener("keydown", (e) => {
   // While typing in a field, only Ctrl shortcuts act so plain keys stay text;
   // Enter (submit) is handled by the field itself.
   if (isInput()) {
+    if (e.ctrlKey && hit(e, KEYS.remove)) { e.preventDefault(); remove(); }
+    else if (e.ctrlKey && hit(e, KEYS.skip)) { e.preventDefault(); skip(); }
+    return;
+  }
+  // Explain before reveal: the textarea takes plain keys and Enter-to-reveal;
+  // only Ctrl shortcuts act here.
+  if (isExplain() && !fullyRevealed()) {
     if (e.ctrlKey && hit(e, KEYS.remove)) { e.preventDefault(); remove(); }
     else if (e.ctrlKey && hit(e, KEYS.skip)) { e.preventDefault(); skip(); }
     return;

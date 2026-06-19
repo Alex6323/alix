@@ -7,6 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- `% mode: explain` — **understanding cards**. The front is an open prompt and
+  the back lines are the *key points* a good answer should cover (not a string to
+  reproduce). You optionally type your explanation, reveal the points, and
+  self-grade (Again/Good/Easy) on whether you covered them — for cards aimed at
+  understanding over recall. The typing is optional and unchecked (a self-graded
+  mode can't verify it); the web shows your answer beside the points. Works in
+  both frontends and pairs with ask-Claude. (Daily tier of the planned AI exam.)
 - Ask-Claude in the **web frontend** (`--serve`): an "Ask" button / the `?` key
   on an answered card opens a chat panel (Send / Save note / Close), mirroring
   the TUI feature. The server runs `claude -p` on a background thread and the

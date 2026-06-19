@@ -58,6 +58,10 @@ enum Phase {
     },
     /// Looking at the front, answer hidden until revealed.
     Flip { revealed: bool },
+    /// Understanding card: type an explanation (optional, free text — not
+    /// checked), reveal the back lines (the key points), then self-grade on
+    /// whether you covered them. `input` is the typed reconstruction.
+    Explain { input: String, revealed: bool },
     /// Revealing the back one line at a time. `revealed` is the number of
     /// back lines shown so far; once it reaches the line count the card is
     /// fully uncovered and graded like flip mode.
@@ -323,6 +327,10 @@ impl App {
                 input: String::new(),
             },
             Mode::Flip => Phase::Flip { revealed: false },
+            Mode::Explain => Phase::Explain {
+                input: String::new(),
+                revealed: false,
+            },
             Mode::LineByLine => Phase::LineByLine { revealed: 0 },
             Mode::Choice => {
                 match choice::build(card, self.session.cards(), time::now_ms()) {
@@ -436,7 +444,11 @@ impl App {
 
         // While typing an answer, plain character bindings must not shadow
         // text input, so only ctrl-/special-key bindings are honored there.
-        let text_input = matches!(self.phase, Phase::Typing { .. } | Phase::Fuzzy { .. });
+        // Explain mode takes free text only until the points are revealed.
+        let text_input = matches!(
+            self.phase,
+            Phase::Typing { .. } | Phase::Fuzzy { .. } | Phase::Explain { revealed: false, .. }
+        );
         let hit = |list: &[KeyPattern]| {
             pattern.is_some_and(|p| {
                 list.iter()
@@ -574,6 +586,28 @@ impl App {
                     self.enter_ask();
                 }
             }
+            Phase::Explain { input, revealed } => {
+                if !*revealed {
+                    // Free-text reconstruction; Enter reveals the points (a
+                    // plain-char reveal binding would be swallowed by the input).
+                    match key.code {
+                        KeyCode::Enter => *revealed = true,
+                        KeyCode::Backspace if !ctrl => {
+                            input.pop();
+                        }
+                        KeyCode::Char(c) if !ctrl => input.push(c),
+                        _ => {}
+                    }
+                } else if again_hit {
+                    self.finish_card_and_advance(Grade::Fail)?;
+                } else if good_hit {
+                    self.finish_card_and_advance(Grade::Pass)?;
+                } else if easy_hit {
+                    self.finish_card_and_advance(Grade::Easy)?;
+                } else if ask_hit {
+                    self.enter_ask();
+                }
+            }
             Phase::LineByLine { revealed } => {
                 let total = self.session.current().map_or(0, |c| c.back.len());
                 if *revealed < total {
@@ -639,10 +673,12 @@ impl App {
     fn enter_ask(&mut self) {
         let card = match &self.phase {
             Phase::Feedback { card, .. } | Phase::Choice { card, .. } => card.clone(),
-            Phase::Flip { .. } | Phase::LineByLine { .. } => match self.session.current() {
-                Some(card) => card.clone(),
-                None => return,
-            },
+            Phase::Flip { .. } | Phase::LineByLine { .. } | Phase::Explain { .. } => {
+                match self.session.current() {
+                    Some(card) => card.clone(),
+                    None => return,
+                }
+            }
             _ => return,
         };
         let return_to = Box::new(std::mem::replace(&mut self.phase, Phase::Summary));
@@ -835,6 +871,21 @@ impl App {
                 l(&k.ask),
                 l(&k.quit)
             ),
+            Phase::Explain { revealed: false, .. } => format!(
+                "ENTER reveal │ {} skip │ {} remove │ {} quit",
+                l(&k.skip),
+                l(&k.remove),
+                l(&k.quit)
+            ),
+            Phase::Explain { revealed: true, .. } => format!(
+                "{} again │ {} good │ {} easy │ {} remove │ {} ask │ {} quit",
+                l(&k.again),
+                l(&k.good),
+                l(&k.easy),
+                l(&k.remove),
+                l(&k.ask),
+                l(&k.quit)
+            ),
             Phase::LineByLine { revealed } => {
                 let total = self.session.current().map_or(0, |c| c.back.len());
                 if *revealed < total {
@@ -932,6 +983,7 @@ impl App {
             Phase::Typing { .. } => "TYPING EXACT",
             Phase::Fuzzy { .. } => "TYPING FUZZY",
             Phase::Flip { .. } => "FLIP",
+            Phase::Explain { .. } => "EXPLAIN",
             Phase::LineByLine { .. } => "LINE BY LINE",
             Phase::Choice { .. } => "CHOICE",
             Phase::Feedback { mode: Mode::Fuzzy, .. } => "TYPING FUZZY",
@@ -1019,6 +1071,34 @@ impl App {
                     let reveal = Bindings::label(&self.options.keys.reveal);
                     lines.push(Line::from(
                         format!("[ press {reveal} to reveal the answer ]").dim(),
+                    ));
+                }
+            }
+            Phase::Explain { input, revealed } => {
+                if *revealed {
+                    // Your reconstruction (if any), then the points to compare it
+                    // against, then self-grade.
+                    if !input.is_empty() {
+                        lines.push(Line::from("your answer:".dim()));
+                        lines.push(Line::from(format!("  {input}")));
+                        lines.push(Line::default());
+                    }
+                    lines.push(Line::from("your answer should cover:".dim()));
+                    for point in &card.back {
+                        lines.push(Line::from(Span::styled(
+                            format!("  • {point}"),
+                            Style::new().fg(Color::Green),
+                        )));
+                    }
+                    push_note(&mut lines, card, area.width);
+                    lines.push(Line::default());
+                    lines.push(Line::from("How well did you cover them?".italic()));
+                } else {
+                    cursor = Some((area.x + 2 + input.chars().count() as u16, area.y + lines.len() as u16));
+                    lines.push(Line::from(format!("> {input}")));
+                    lines.push(Line::default());
+                    lines.push(Line::from(
+                        "[ type your answer (optional), ENTER to reveal the points ]".dim(),
                     ));
                 }
             }

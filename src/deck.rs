@@ -733,6 +733,16 @@ mod tests {
     }
 
     #[test]
+    fn explain_mode_directive_parses_and_stamps_cards() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("u.txt");
+        std::fs::write(&path, "% mode: explain\n# why?\n\tpoint one\n\tpoint two\n").unwrap();
+        let deck = Deck::load(&path).unwrap();
+        assert_eq!(Some(Mode::Explain), deck.settings.mode);
+        assert_eq!(Some(Mode::Explain), deck.cards[0].mode); // stamped onto the card
+    }
+
+    #[test]
     fn rewrite_requires_replaces_block_at_top() {
         let text = "% requires: old\n# a\n\tb\n";
         let out = rewrite_requires(text, &["x.txt".to_string(), "y.txt".to_string()]);

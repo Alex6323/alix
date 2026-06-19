@@ -26,6 +26,10 @@ pub enum Mode {
     /// grade yourself once the whole card is uncovered.
     #[value(name = "line")]
     LineByLine,
+    /// Understanding cards: an open prompt; type your explanation (optional),
+    /// reveal the back lines (the key points it should cover), then grade
+    /// yourself on whether you covered them.
+    Explain,
 }
 
 /// The state of one typed character.

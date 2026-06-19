@@ -79,7 +79,8 @@ command line:
 % scheduler: sm2
 ```
 
-- `mode` — default answer mode (`flip`, `typing`, `fuzzy`, `choice`, `line`);
+- `mode` — default answer mode (`flip`, `typing`, `fuzzy`, `choice`, `line`,
+  `explain`);
   can also be overridden per card (see below).
 - `order` — `scheduled` (the default) or `sequential` to walk the deck in
   file order, top to bottom (ideal for lyrics with `% mode: line`).
@@ -254,6 +255,16 @@ lyrics, poems, or any ordered list. Once every line is shown you grade
 yourself again / good / easy, exactly like flip mode. Pair it with
 `--order sequential` (or `% order: sequential` in the deck) to walk the
 sections top to bottom — e.g. one card per verse/chorus of a song.
+
+In **explain** mode the card is an open prompt and its back lines are the **key
+points** a good answer should cover (not a string to reproduce). You optionally
+type your explanation, reveal the points, and grade yourself on whether you
+covered them — for cards aimed at *understanding* rather than recall. Set it with
+`% mode: explain` (per card or deck-wide). The typing is optional and never
+checked: a self-graded mode can't verify your answer, so it doesn't pretend to
+(in the web frontend your typed answer is shown next to the points for honest
+comparison). It pairs with the ask-Claude helper, and is the day-to-day tier of
+the planned AI exam.
 
 To throw a card away, press the **remove** key (`Ctrl-X` by default) on it
 instead of grading — it is dropped from the session without being asked again
