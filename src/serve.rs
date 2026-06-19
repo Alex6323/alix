@@ -901,6 +901,7 @@ fn deck_catalog(
                         .count();
                     let (state, label) = match deck.state(store) {
                         DeckState::Finished => ("finished", "done ✓".to_string()),
+                        DeckState::ExamDue => ("examdue", "exam due".to_string()),
                         DeckState::NotStarted => ("new", "new".to_string()),
                         DeckState::Started => ("started", format!("{retired}/{total}")),
                     };

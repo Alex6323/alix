@@ -17,6 +17,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
+use clap::ValueEnum;
 use serde::Deserialize;
 
 /// A key without modifiers.
@@ -245,6 +246,63 @@ impl Default for GenerateConfig {
     }
 }
 
+/// How strictly the AI exam grades a typed answer against a question's rubric
+/// points. This is a per-deck choice (set with `% strictness:`, the `[exam]`
+/// default, or `flash exam --strictness`) because some material demands
+/// recalling everything while other material is about grasping the idea.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, ValueEnum)]
+pub enum Strictness {
+    /// Completeness required: every rubric point must be present, so omitting one
+    /// is a gap. For procedures, exact syntax, security — where knowing most of
+    /// it isn't enough.
+    Strict,
+    /// Judge understanding, not phrasing: a point is covered if the answer shows
+    /// the student grasps it (even briefly, in their own words); only a wrong or
+    /// genuinely-absent idea is a gap.
+    #[default]
+    Balanced,
+    /// Benefit of the doubt: only clearly wrong or unanswered points are gaps.
+    /// For breadth or casual learning.
+    Lenient,
+}
+
+/// Settings for the AI exam (`flash exam`, the `[exam]` section). Like
+/// generate, it reuses the `[ask]` command, permission mode and tool allowlist
+/// (WebFetch reads a `% source:` URL). The exam grades open understanding
+/// questions generated from the deck's `% source:`, never the cards.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ExamConfig {
+    /// Model passed as `--model`; `None` falls back to the `[ask]` model, then
+    /// the CLI's own default.
+    pub model: Option<String>,
+    /// How long to wait for each exam call (question generation, grading and
+    /// remediation are bigger calls than a single question, like generate).
+    pub timeout_secs: u64,
+    /// How many questions a sitting asks.
+    pub num_questions: usize,
+    /// Fraction of questions that must be a full Pass for the exam to pass
+    /// (1.0 = every question, the v1 default).
+    pub pass_threshold: f64,
+    /// How strictly each typed answer is graded against the rubric.
+    pub strictness: Strictness,
+    /// Extra guidance appended to the question-generation prompt (e.g. "focus
+    /// on the borrow checker").
+    pub extra: Option<String>,
+}
+
+impl Default for ExamConfig {
+    fn default() -> Self {
+        Self {
+            model: None,
+            timeout_secs: 300,
+            num_questions: 5,
+            pass_threshold: 1.0,
+            strictness: Strictness::default(),
+            extra: None,
+        }
+    }
+}
+
 /// Settings for the local web frontend (`flash serve`, the `[serve]` section).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ServeConfig {
@@ -259,7 +317,8 @@ impl Default for ServeConfig {
 }
 
 /// The whole user configuration.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+// Not `Eq`: `ExamConfig::pass_threshold` is an `f64`.
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Config {
     pub keys: Bindings,
     /// Key bindings for `flash browse`.
@@ -267,6 +326,8 @@ pub struct Config {
     pub ask: AskConfig,
     /// AI deck generation settings.
     pub generate: GenerateConfig,
+    /// AI exam settings.
+    pub exam: ExamConfig,
     /// Local web frontend settings.
     pub serve: ServeConfig,
     /// Directory the startup picker lists decks from, and resolves bare deck
@@ -293,6 +354,8 @@ struct RawConfig {
     #[serde(default)]
     generate: RawGenerate,
     #[serde(default)]
+    exam: RawExam,
+    #[serde(default)]
     serve: RawServe,
     decks_dir: Option<String>,
 }
@@ -312,6 +375,17 @@ struct RawGenerate {
     extra: Option<String>,
     prompt: Option<String>,
     review: Option<bool>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct RawExam {
+    model: Option<String>,
+    timeout_secs: Option<u64>,
+    num_questions: Option<usize>,
+    pass_threshold: Option<f64>,
+    strictness: Option<String>,
+    extra: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -425,6 +499,29 @@ impl Config {
             generate.review = review;
         }
 
+        let mut exam = ExamConfig::default();
+        if let Some(model) = raw.exam.model.filter(|m| !m.trim().is_empty()) {
+            exam.model = Some(model);
+        }
+        if let Some(secs) = raw.exam.timeout_secs {
+            exam.timeout_secs = secs;
+        }
+        if let Some(n) = raw.exam.num_questions {
+            exam.num_questions = n;
+        }
+        if let Some(t) = raw.exam.pass_threshold {
+            exam.pass_threshold = t;
+        }
+        if let Some(s) = raw.exam.strictness.filter(|s| !s.trim().is_empty()) {
+            match Strictness::from_str(s.trim(), true) {
+                Ok(v) => exam.strictness = v,
+                Err(_) => bail!(
+                    "invalid exam.strictness {s:?}: expected strict, balanced, or lenient"
+                ),
+            }
+        }
+        exam.extra = raw.exam.extra.filter(|s| !s.trim().is_empty());
+
         let mut serve = ServeConfig::default();
         if let Some(port) = raw.serve.port {
             serve.port = port;
@@ -437,6 +534,7 @@ impl Config {
             browse,
             ask,
             generate,
+            exam,
             serve,
             decks_dir,
         })
@@ -495,8 +593,8 @@ pub fn default_config_toml() -> &'static str {
 # reference. Uncomment a line and edit it to override that default; lines you
 # leave commented keep the built-in default, so improvements to the defaults
 # in newer versions still reach you. Keep the section headers ([keys],
-# [browse], [ask], [generate], [serve]) so an uncommented line lands in the
-# right section.
+# [browse], [ask], [generate], [exam], [serve]) so an uncommented line lands
+# in the right section.
 #
 # Keys are written as a single character ("j"), a special key name
 # ("space", "enter", "tab", "esc", "backspace"), or either with a "ctrl-"
@@ -559,6 +657,18 @@ pub fn default_config_toml() -> &'static str {
 # extra = ""                    # extra guidance appended to the prompt
 # prompt = ""                   # full prompt override; may use {url} and {max_cards}
 # review = false                # run a second pass to drop redundant cards (--review)
+
+# AI exam (`flash exam <deck>`). Generates open understanding questions from
+# the deck's `% source:` and grades typed answers; passing marks the deck
+# "mastered" and unlocks its dependents. Reuses the [ask] command, permission
+# mode and tool allowlist (WebFetch reads a source URL).
+[exam]
+# model = ""                    # --model override; empty = use [ask] / CLI default
+# timeout_secs = 300            # each exam call is slower than a single question
+# num_questions = 5             # questions asked per sitting
+# pass_threshold = 1.0          # fraction of questions that must fully pass (1.0 = all)
+# strictness = "balanced"       # answer grading: strict | balanced | lenient
+# extra = ""                    # extra guidance appended to question generation
 
 # Local web frontend (`flash serve`). Binds to localhost by default; `--lan`
 # exposes it to the network and `--port` overrides the port set here.
@@ -756,6 +866,23 @@ mod tests {
     #[test]
     fn unknown_ask_setting_is_rejected() {
         assert!(Config::from_toml("[ask]\ntemperature = 1.0\n").is_err());
+    }
+
+    #[test]
+    fn exam_strictness_defaults_to_balanced_and_parses() {
+        assert_eq!(Strictness::Balanced, Config::default().exam.strictness);
+        let config = Config::from_toml("[exam]\nstrictness = \"strict\"\n").unwrap();
+        assert_eq!(Strictness::Strict, config.exam.strictness);
+        // Case-insensitive, and other [exam] fields keep their defaults.
+        let config = Config::from_toml("[exam]\nstrictness = \"LENIENT\"\n").unwrap();
+        assert_eq!(Strictness::Lenient, config.exam.strictness);
+        assert_eq!(5, config.exam.num_questions);
+    }
+
+    #[test]
+    fn invalid_exam_strictness_is_rejected() {
+        let err = Config::from_toml("[exam]\nstrictness = \"harsh\"\n").unwrap_err();
+        assert!(format!("{err:#}").contains("strictness"));
     }
 
     #[test]

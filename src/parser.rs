@@ -161,6 +161,19 @@ pub fn parse_requires(text: &str) -> Vec<String> {
         .collect()
 }
 
+/// Collects a deck's exam sources: comment lines `% source: <url-or-path>`
+/// (repeatable) — the ground truth the AI exam grades against. Like links and
+/// requires, they are invisible to the card parser.
+pub fn parse_sources(text: &str) -> Vec<String> {
+    text.lines()
+        .filter_map(|raw| {
+            let rest = raw.trim().strip_prefix(MARKUP_COMMENT)?;
+            let src = rest.trim().strip_prefix("source:")?.trim();
+            (!src.is_empty()).then(|| src.to_string())
+        })
+        .collect()
+}
+
 /// Parses a single `% key: value` directive line into a lower-cased key and
 /// trimmed value. Returns `None` for non-directive `%` lines: prose comments
 /// (key contains whitespace, like `% Then learn with:`), empty key/value, and
@@ -461,6 +474,24 @@ mod tests {
                     % a normal comment\n\
                     # front\n\tback\n";
         assert_eq!(vec!["basics", "more.txt"], parse_requires(text));
+    }
+
+    #[test]
+    fn sources_are_collected_and_stay_comments() {
+        let text = "% source: https://doc.rust-lang.org/book/ch04.html\n\
+                    %source:notes.md\n\
+                    % requires: basics\n\
+                    % a normal comment\n\
+                    # front\n\tback\n\
+                    % source:\n";
+        assert_eq!(
+            vec!["https://doc.rust-lang.org/book/ch04.html", "notes.md"],
+            parse_sources(text)
+        );
+        // The card parser is unaffected by source lines.
+        let cards = parse_str("s", text).unwrap();
+        assert_eq!(1, cards.len());
+        assert_eq!(vec!["back"], cards[0].back);
     }
 
     #[test]

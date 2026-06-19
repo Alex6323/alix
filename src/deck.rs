@@ -11,6 +11,7 @@ use thiserror::Error;
 use crate::{
     answer::Mode,
     card::{Card, Direction, Frontend},
+    config::Strictness,
     parser::{self, ParseError},
     scheduler::SchedulerKind,
     session::{self, Order},
@@ -39,6 +40,9 @@ pub struct DeckSettings {
     /// Top Leitner stage for this deck (`% max-stage: 1..=5`). `None` uses the
     /// global [`MAX_STAGE`]. Reaching it retires the card.
     pub max_stage: Option<u8>,
+    /// How strictly this deck's AI exam grades answers (`% strictness: ...`).
+    /// `None` uses the `[exam]` config default.
+    pub exam_strictness: Option<Strictness>,
 }
 
 impl DeckSettings {
@@ -56,6 +60,7 @@ impl DeckSettings {
                 "max-stage" => {
                     settings.max_stage = value.trim().parse::<u8>().ok().map(|n| n.clamp(1, MAX_STAGE))
                 }
+                "strictness" => settings.exam_strictness = Strictness::from_str(value, true).ok(),
                 _ => {}
             }
         }
@@ -70,7 +75,11 @@ pub enum DeckState {
     NotStarted,
     /// Some cards reviewed, but not all are at the top stage.
     Started,
-    /// Every card is at the top Leitner stage.
+    /// Every card is at the top stage, but the deck declares `% source:` and the
+    /// AI exam hasn't been passed yet — drilled, ready to be examined.
+    ExamDue,
+    /// Done: every card at the top stage, and (for a `% source:` deck) the exam
+    /// passed. This is what unlocks dependents.
     Finished,
 }
 
@@ -87,6 +96,10 @@ pub struct Deck {
     pub links: Vec<String>,
     /// Prerequisite decks (`% requires: <deck>` lines), as written.
     pub requires: Vec<String>,
+    /// Exam sources (`% source: <url-or-path>` lines) — the ground truth the AI
+    /// exam grades against. A deck with sources is "mastered" (and unlocks
+    /// dependents) only after passing the exam, not merely drilling its cards.
+    pub sources: Vec<String>,
     /// Per-deck defaults from `% key: value` directives.
     pub settings: DeckSettings,
 }
@@ -129,6 +142,7 @@ impl Deck {
         })?;
         let links = parser::parse_links(&text);
         let requires = parser::parse_requires(&text);
+        let sources = parser::parse_sources(&text);
         let settings = DeckSettings::from_directives(&parser::parse_directives(&text));
         // A card without its own `% mode:` inherits the deck's mode, so each
         // card carries its effective declared mode (card override, else deck).
@@ -175,13 +189,17 @@ impl Deck {
             cards,
             links,
             requires,
+            sources,
             settings,
         })
     }
 
-    /// The deck's completion state: `Finished` once every card is retired
-    /// (reached its top stage; see [`session::is_retired`]), `NotStarted` while
-    /// no card has been reviewed, `Started` in between. An empty deck is
+    /// The deck's completion state, derived from its cards' stages (see
+    /// [`session::is_retired`]) and, for `% source:` decks, its exam result:
+    /// `NotStarted` while no card has been reviewed, `Started` in between, and
+    /// once every card is retired either `ExamDue` (a sourced deck whose exam
+    /// hasn't been passed) or `Finished`. A source-less deck has no exam, so it
+    /// is `Finished` as soon as it is fully drilled. An empty deck is
     /// `NotStarted`.
     pub fn state(&self, store: &Store) -> DeckState {
         let total = self.cards.len();
@@ -194,12 +212,34 @@ impl Deck {
             .filter(|c| session::is_retired(c, store))
             .count();
         if retired == total {
-            DeckState::Finished
+            // Drilled. A sourced deck is only `Finished` (and thus unlocks
+            // dependents) once its exam is passed; otherwise it's `ExamDue`.
+            if self.sources.is_empty() || store.deck_mastered(&self.subject) {
+                DeckState::Finished
+            } else {
+                DeckState::ExamDue
+            }
         } else if self.cards.iter().all(|c| store.get(c.id()).is_none()) {
             DeckState::NotStarted
         } else {
             DeckState::Started
         }
+    }
+
+    /// Reference URLs offered to the ask-Claude tutor for this deck: the
+    /// `% link:` URLs plus any `% source:` that is itself a URL — a source is
+    /// also a reference the tutor may consult, so you needn't repeat it as a
+    /// `% link:`. Links come first, then source URLs not already listed; local
+    /// file sources are omitted (ask-Claude fetches references over the web).
+    /// The reverse does not hold: a `% link:` never becomes an exam source.
+    pub fn reference_links(&self) -> Vec<String> {
+        let mut out = self.links.clone();
+        for src in &self.sources {
+            if is_url(src) && !out.contains(src) {
+                out.push(src.clone());
+            }
+        }
+        out
     }
 
     /// Returns pairs of cards within this deck that share the same identity
@@ -275,6 +315,42 @@ pub fn is_locked(deck: &Deck, decks_dir: Option<&Path>, store: &Store) -> bool {
     !prereqs_finished(deck, decks_dir, store, &mut HashSet::new())
 }
 
+/// Whether `s` looks like an http(s) URL (vs a local file path). Used to tell a
+/// fetchable `% source:`/`% link:` from a file path.
+pub(crate) fn is_url(s: &str) -> bool {
+    s.starts_with("http://") || s.starts_with("https://")
+}
+
+/// Subjects of decks in `decks_dir` that directly `% requires:` the deck at
+/// `target` (its dependents). Used to report what an exam pass unlocks. Decks
+/// that fail to load are skipped; the result is sorted for stable output.
+pub fn dependents(target: &Path, decks_dir: &Path) -> Vec<String> {
+    let canon = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    let target = canon(target);
+    let mut names = Vec::new();
+    let Ok(entries) = std::fs::read_dir(decks_dir) else {
+        return names;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("txt") {
+            continue;
+        }
+        let Ok(deck) = Deck::load(&path) else {
+            continue;
+        };
+        let requires_target = deck.requires.iter().any(|req| {
+            resolve_dep(req, Some(decks_dir), path.parent())
+                .is_some_and(|dep| canon(&dep) == target)
+        });
+        if requires_target {
+            names.push(deck.subject);
+        }
+    }
+    names.sort();
+    names
+}
+
 /// The directory that card image filenames resolve against: the deck's
 /// `% img-dir:` if set (made absolute against the deck file's folder when it is
 /// itself relative), else the deck file's own folder.
@@ -313,6 +389,35 @@ pub fn append_note(path: &Path, front_line: usize, notes: &[String]) -> Result<(
 
     let text = std::fs::read_to_string(path).map_err(io_err)?;
     let new_text = insert_note_lines(&text, front_line, notes);
+
+    let tmp = path.with_extension("txt.tmp");
+    std::fs::write(&tmp, new_text).map_err(io_err)?;
+    std::fs::rename(&tmp, path).map_err(io_err)?;
+    Ok(())
+}
+
+/// Appends deck-format `cards` text to the end of the deck file at `path`,
+/// ensuring a blank line separates them from the existing content. Written
+/// atomically (temp + rename). Used to add AI exam remediation cards; the
+/// deck format is append-safe (a new `# ` front at column 0 starts a new
+/// card), so existing cards and their identities are untouched.
+pub fn append_cards(path: &Path, cards: &str) -> Result<(), DeckError> {
+    let cards = cards.trim_end();
+    if cards.is_empty() {
+        return Ok(());
+    }
+    let io_err = |source| DeckError::Io {
+        path: path.to_path_buf(),
+        source,
+    };
+
+    let existing = std::fs::read_to_string(path).map_err(io_err)?;
+    let mut new_text = existing.trim_end().to_string();
+    if !new_text.is_empty() {
+        new_text.push_str("\n\n");
+    }
+    new_text.push_str(cards);
+    new_text.push('\n');
 
     let tmp = path.with_extension("txt.tmp");
     std::fs::write(&tmp, new_text).map_err(io_err)?;
@@ -528,6 +633,78 @@ mod tests {
     }
 
     #[test]
+    fn sourced_deck_is_examdue_until_mastered() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_deck(dir.path(), "d.txt", "% source: https://x\n# a\n\t1\n");
+        let deck = Deck::load(&path).unwrap();
+        let (mut store, _s) = empty_store();
+
+        // Drilled to retirement, but a sourced deck waits on its exam.
+        retire(&mut store, deck.cards[0].id());
+        assert_eq!(DeckState::ExamDue, deck.state(&store));
+
+        // Passing the exam (mastered) flips it to Finished.
+        store.set_deck_mastered(&deck.subject, 1);
+        assert_eq!(DeckState::Finished, deck.state(&store));
+    }
+
+    #[test]
+    fn sourceless_deck_finishes_on_drill_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_deck(dir.path(), "d.txt", "# a\n\t1\n");
+        let deck = Deck::load(&path).unwrap();
+        let (mut store, _s) = empty_store();
+        retire(&mut store, deck.cards[0].id());
+        // No `% source:` -> no exam -> Finished as soon as it's fully drilled.
+        assert_eq!(DeckState::Finished, deck.state(&store));
+    }
+
+    #[test]
+    fn dependent_stays_locked_until_sourced_prereq_mastered() {
+        let dir = tempfile::tempdir().unwrap();
+        let basics = write_deck(dir.path(), "basics.txt", "% source: https://x\n# a\n\t1\n");
+        let adv = write_deck(dir.path(), "advanced.txt", "% requires: basics\n# x\n\ty\n");
+        let advanced = Deck::load(&adv).unwrap();
+        let basics = Deck::load(&basics).unwrap();
+        let (mut store, _s) = empty_store();
+        let dd = Some(dir.path());
+
+        // Drilling basics is not enough: it's only ExamDue, not Finished.
+        retire(&mut store, basics.cards[0].id());
+        assert_eq!(DeckState::ExamDue, basics.state(&store));
+        assert!(is_locked(&advanced, dd, &store));
+
+        // Passing basics' exam masters it -> dependent unlocks.
+        store.set_deck_mastered(&basics.subject, 1);
+        assert!(!is_locked(&advanced, dd, &store));
+    }
+
+    #[test]
+    fn dependents_lists_requiring_decks() {
+        let dir = tempfile::tempdir().unwrap();
+        let basics = write_deck(dir.path(), "basics.txt", "# a\n\t1\n");
+        write_deck(dir.path(), "advanced.txt", "% requires: basics\n# x\n\ty\n");
+        write_deck(dir.path(), "expert.txt", "% requires: advanced\n# z\n\tw\n");
+        write_deck(dir.path(), "unrelated.txt", "# q\n\tr\n");
+
+        let deps = dependents(&basics, dir.path());
+        assert_eq!(vec!["advanced.txt"], deps);
+    }
+
+    #[test]
+    fn append_cards_appends_with_separation_and_parses() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_deck(dir.path(), "d.txt", "# one\n\t1\n");
+        append_cards(&path, "# two\n% mode: explain\n\tkey point\n").unwrap();
+
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert_eq!("# one\n\t1\n\n# two\n% mode: explain\n\tkey point\n", text);
+        // The original card's identity survives; the new card is added.
+        let cards = crate::parser::parse_str("d.txt", &text).unwrap();
+        assert_eq!(2, cards.len());
+    }
+
+    #[test]
     fn empty_deck_is_not_started() {
         let dir = tempfile::tempdir().unwrap();
         let path = write_deck(dir.path(), "e.txt", "% only a comment\n");
@@ -730,6 +907,43 @@ mod tests {
         assert_eq!(Some(Order::Sequential), deck.settings.order);
         // An unparseable value is ignored, not an error.
         assert_eq!(None, deck.settings.scheduler);
+    }
+
+    #[test]
+    fn reference_links_union_url_sources_excluding_files_and_dupes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_deck(
+            dir.path(),
+            "d.txt",
+            "% link: https://a.example\n\
+             % source: https://b.example\n\
+             % source: notes.md\n\
+             % source: https://a.example\n\
+             # f\n\tb\n",
+        );
+        let deck = Deck::load(&path).unwrap();
+        // Links first, then URL sources not already present. The local-file
+        // source and the source that duplicates a link are dropped.
+        assert_eq!(
+            vec!["https://a.example", "https://b.example"],
+            deck.reference_links()
+        );
+    }
+
+    #[test]
+    fn strictness_directive_parses() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_deck(dir.path(), "d.txt", "% strictness: strict\n# f\n\tb\n");
+        let deck = Deck::load(&path).unwrap();
+        assert_eq!(Some(Strictness::Strict), deck.settings.exam_strictness);
+
+        // Absent directive leaves it unset (the config default applies later).
+        let bare = write_deck(dir.path(), "e.txt", "# f\n\tb\n");
+        assert_eq!(None, Deck::load(&bare).unwrap().settings.exam_strictness);
+
+        // An unparseable value is ignored, not an error.
+        let bad = write_deck(dir.path(), "g.txt", "% strictness: harsh\n# f\n\tb\n");
+        assert_eq!(None, Deck::load(&bad).unwrap().settings.exam_strictness);
     }
 
     #[test]

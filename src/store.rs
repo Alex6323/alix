@@ -96,6 +96,14 @@ impl CardState {
     }
 }
 
+/// Deck-level progress, keyed by deck subject (= file name). Currently records
+/// that the deck's AI exam has been passed ("mastered").
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DeckProgress {
+    /// When the exam was last passed (Unix ms).
+    pub mastered_at_ms: u64,
+}
+
 /// On-disk representation of the store.
 #[derive(Serialize, Deserialize)]
 struct StoreFile {
@@ -103,12 +111,17 @@ struct StoreFile {
     /// Card states keyed by the decimal string of the card's identity hash
     /// (JSON object keys must be strings).
     cards: HashMap<String, CardState>,
+    /// Deck-level progress keyed by subject. Optional: a store written before
+    /// this field existed (or with no mastered decks) simply has no `decks` key.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    decks: HashMap<String, DeckProgress>,
 }
 
 /// The progress store for all decks.
 pub struct Store {
     path: PathBuf,
     cards: HashMap<u64, CardState>,
+    decks: HashMap<String, DeckProgress>,
 }
 
 /// An error loading or saving the store.
@@ -138,6 +151,7 @@ impl Store {
             return Ok(Self {
                 path,
                 cards: HashMap::new(),
+                decks: HashMap::new(),
             });
         }
 
@@ -160,7 +174,11 @@ impl Store {
             })?;
             cards.insert(hash, state);
         }
-        Ok(Self { path, cards })
+        Ok(Self {
+            path,
+            cards,
+            decks: file.decks,
+        })
     }
 
     /// Saves the store atomically (write to a temp file, then rename).
@@ -181,6 +199,7 @@ impl Store {
                 .iter()
                 .map(|(hash, state)| (hash.to_string(), state.clone()))
                 .collect(),
+            decks: self.decks.clone(),
         };
         let json = serde_json::to_string_pretty(&file).map_err(|source| StoreError::Format {
             path: self.path.clone(),
@@ -212,11 +231,33 @@ impl Store {
         self.cards.remove(&card_id).is_some()
     }
 
+    /// Whether the given deck has passed its AI exam ("mastered").
+    pub fn deck_mastered(&self, subject: &str) -> bool {
+        self.decks.contains_key(subject)
+    }
+
+    /// Records that the deck passed its exam at `now_ms`. Does not save.
+    pub fn set_deck_mastered(&mut self, subject: &str, now_ms: u64) {
+        self.decks.insert(
+            subject.to_string(),
+            DeckProgress {
+                mastered_at_ms: now_ms,
+            },
+        );
+    }
+
+    /// Drops a deck's mastered state (e.g. on per-deck reset). Returns whether
+    /// an entry was present. Does not save.
+    pub fn clear_deck_mastered(&mut self, subject: &str) -> bool {
+        self.decks.remove(subject).is_some()
+    }
+
     /// Clears all stored progress, returning how many cards were removed (e.g.
-    /// for `flash reset --all`). Does not save.
+    /// for `flash reset --all`). Also drops all deck-mastered state. Does not save.
     pub fn clear(&mut self) -> usize {
         let n = self.cards.len();
         self.cards.clear();
+        self.decks.clear();
         n
     }
 
@@ -278,6 +319,46 @@ mod tests {
             }],
             state.history
         );
+    }
+
+    #[test]
+    fn deck_mastered_roundtrips_and_clears() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("progress.json");
+
+        let mut store = Store::open(&path).unwrap();
+        assert!(!store.deck_mastered("rust.txt"));
+        store.set_deck_mastered("rust.txt", 1234);
+        assert!(store.deck_mastered("rust.txt"));
+        store.save().unwrap();
+
+        // Survives a save/reload.
+        let mut reloaded = Store::open(&path).unwrap();
+        assert!(reloaded.deck_mastered("rust.txt"));
+        // Per-deck clear drops just that deck.
+        assert!(reloaded.clear_deck_mastered("rust.txt"));
+        assert!(!reloaded.deck_mastered("rust.txt"));
+        assert!(!reloaded.clear_deck_mastered("rust.txt")); // nothing left
+    }
+
+    #[test]
+    fn clear_also_drops_deck_mastered() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        store.set_deck_mastered("a.txt", 1);
+        store.clear();
+        assert!(!store.deck_mastered("a.txt"));
+    }
+
+    #[test]
+    fn loads_store_file_without_decks_field() {
+        // A store written before the `decks` field existed must still load.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("progress.json");
+        std::fs::write(&path, "{\"version\":1,\"cards\":{}}").unwrap();
+        let store = Store::open(&path).unwrap();
+        assert!(store.is_empty());
+        assert!(!store.deck_mastered("anything.txt"));
     }
 
     #[test]

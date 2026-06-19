@@ -117,6 +117,7 @@ fn deck_item(c: Candidate, store: &Store, decks_dir: &Path, enforce_locks: bool)
                 .count();
             let label = match st {
                 DeckState::Finished => "done ✓".to_string(),
+                DeckState::ExamDue => "exam due".to_string(),
                 DeckState::NotStarted => "new".to_string(),
                 DeckState::Started => format!("{retired}/{total}"),
             };
@@ -623,14 +624,16 @@ impl<K: Clone + Eq + Hash> Picker<K> {
 
             let mut spans = vec![Span::styled(main, style)];
             if let Some(meta) = &item.meta {
-                // Tint the state suffix (finished → green), but keep the cursor
-                // and locked styling dominant where they apply.
+                // Tint the state suffix (finished → green, exam due → yellow),
+                // but keep the cursor and locked styling dominant where they apply.
                 let meta_style = if on_cursor || item.locked {
                     style
-                } else if item.state == Some(DeckState::Finished) {
-                    Style::new().fg(Color::Green)
                 } else {
-                    style
+                    match item.state {
+                        Some(DeckState::Finished) => Style::new().fg(Color::Green),
+                        Some(DeckState::ExamDue) => Style::new().fg(Color::Yellow),
+                        _ => style,
+                    }
                 };
                 spans.push(Span::styled(format!("  {meta}"), meta_style));
             }

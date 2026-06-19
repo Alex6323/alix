@@ -20,6 +20,7 @@ flash --scheduler sm2 mydeck.txt # SM-2 intervals instead of Leitner
 flash --cram mydeck.txt          # ignore cooldowns, review everything
 flash browse mydeck.txt          # read through cards, no grading or scheduling
 flash generate <url>             # build a deck from a web page (via Claude)
+flash exam mydeck.txt            # AI exam against the deck's % source: (gates unlocks)
 flash deps mydeck.txt            # edit a deck's prerequisites (checkbox picker)
 flash stats mydeck.txt           # progress overview
 flash list mydeck.txt            # every card with stage and due time
@@ -67,6 +68,40 @@ a new card at column 0 — indented `#` lines are answer content (shell
 comments, Rust attributes, Dockerfile comments...), no escaping needed.
 Notes (`!`) and comments (`%`) work at any indentation.
 
+### Directives at a glance
+
+Every card marker and `% key: value` directive in one place. **Scope** is where
+each may appear — *deck* = the header (before the first card), *card* = after a
+card's front. Follow a link for the full explanation.
+
+| Token | Scope | Meaning |
+| --- | --- | --- |
+| `#` front | card | Starts a card at column 0; the indented lines below are the answer. |
+| `#?` front | card | [Cloze card](#cloze-cards-fill-in-the-blank) — blanks are `{{spans}}` in the answer line. |
+| `!` line | card | A note shown after you answer. |
+| `%` line | anywhere | A comment — ignored, unless it is one of the directives below. |
+| `% mode:` | deck · card | [Answer mode](#deck-directives): `flip`, `typing`, `fuzzy`, `choice`, `line`, `explain`. |
+| `% order:` | deck | [Card order](#deck-directives): `scheduled` (default) or `sequential`. |
+| `% scheduler:` | deck | [Scheduler](#deck-directives): `leitner` (default) or `sm2`. |
+| `% direction:` | deck · card | [Review direction](#dual-direction-cards--direction): `forward`, `reverse`, or `both`. |
+| `% max-stage:` | deck | [Top Leitner stage](#deck-directives) `1`–`5`; reaching it retires the card. |
+| `% frontend:` | deck · card | [Restrict](#deck-directives) a card/deck to `any`, `tui`, or `web`. |
+| `% img:` / `% img-back:` | card | [Image](#images--img--img-back) on the front / back (web frontend). |
+| `% img-dir:` | deck | [Base directory](#images--img--img-back) that image filenames resolve against. |
+| `% strictness:` | deck | [Exam grading rigor](#the-ai-exam-flash-exam): `strict`, `balanced`, or `lenient`. |
+| `% requires:` | deck | [Prerequisite deck](#deck-dependencies) that gates unlocks (repeatable). |
+| `% link:` | deck | [ask-Claude reference](#ask-claude-about-a-card) URL — **tutor only** (repeatable). |
+| `% source:` | deck | [Exam ground truth](#the-ai-exam-flash-exam) — a URL or file (repeatable). Also a tutor reference. |
+
+**`% link:` vs `% source:`** — both point at the material a deck is about, but
+they are not interchangeable. `% source:` is the **exam's ground truth**:
+questions are generated from it and answers graded against it, and a URL source
+*also* doubles as an ask-Claude reference. `% link:` is **only** a tutor
+reference and never becomes exam material — use it for supplementary reading (a
+blog post, a Stack Overflow answer) you don't want the exam to test. The
+implication runs one way: a `% source:` URL is offered to the tutor, but a
+`% link:` is never promoted to an exam source.
+
 ### Deck directives
 
 A deck can set its own defaults with `% key: value` comment lines in the deck
@@ -97,6 +132,8 @@ command line:
   times — `% max-stage: 1` means "get it right once and it's done." With the
   default `5`, a card still retires once it climbs to stage 5. A deck counts as
   *finished* (see Completion states) once all its cards have retired.
+- `strictness` — how strictly the AI exam grades answers (`strict`, `balanced`,
+  `lenient`); only affects `flash exam` (see [the AI exam](#the-ai-exam-flash-exam)).
 
 These are ordinary `%` comments, so they don't affect parsing and card hashes
 are unaffected. An explicit CLI flag always wins over a directive, which wins over
@@ -149,7 +186,9 @@ Every deck has a **completion state**, derived from its cards' stages:
 *not started* (no card reviewed), *finished* (every card at the top stage), or
 *started* (in between). The deck picker (terminal and web) shows it on each row
 — `new`, `m/total` (cards at the top stage), or `done ✓` — and `flash stats`
-prints it too.
+prints it too. A deck that declares a `% source:` adds one more state between
+drilled and finished — *exam due* (`exam due`, tinted) — because drilling alone
+no longer finishes it; see [the AI exam](#the-ai-exam-flash-exam).
 
 Completion drives **unlocks**, with no extra syntax: a deck is **locked** while
 any of its `% requires:` prerequisites isn't finished, so finishing a foundation
@@ -423,6 +462,78 @@ command and permission settings. Review the result before relying on it — it i
 point, not a final deck. Generation needs the `claude` CLI installed and
 logged in, and works best on a single page or chapter (a whole book overruns
 the context budget).
+
+## The AI exam (`flash exam`)
+
+Mechanical review *loads* a deck's material into memory; the **AI exam**
+*verifies you understood it* and is what gates progression. The idea: drilling
+cards proves recall, but not that the ideas connected — so a deck can declare a
+ground-truth **source** and require you to pass an exam against it before it
+counts as done.
+
+Declare one or more sources in the deck header (a URL or a local file path,
+repeatable):
+
+```
+% source: https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html
+% source: notes/ownership.md
+```
+
+A URL `% source:` doubles as an [ask-Claude](#ask-claude-about-a-card) reference,
+so you don't need to repeat it as a `% link:`. The reverse isn't true: a
+`% link:` stays a tutor reference and never becomes exam ground truth — keep
+supplementary links (a blog, an SO answer) as `% link:` so the exam ignores them.
+
+Once every card in a `% source:` deck reaches the top stage, the deck is **exam
+due** rather than finished (so it does not yet unlock its dependents). Sit the
+exam:
+
+```sh
+flash exam ownership.txt
+flash exam ownership.txt --questions 8   # override the question count
+flash exam ownership.txt -y              # auto-append remediation cards on a fail
+```
+
+flash asks Claude to read the source (URLs via the **WebFetch** tool; local
+files are embedded) and write fresh **open understanding** questions —
+application and connections, not the card facts — each with the key points a
+correct answer must contain. You type your answers (an empty line ends each),
+and a strict examiner grades them Pass / Partial / Fail **against the source's
+rubric, never against your cards** (grading the cards would be circular).
+
+- **Pass** (every question by default; tune with `pass_threshold`) marks the
+  deck **mastered**. Mastery — not mere drilling — is what unlocks decks that
+  `% requires:` it. Source-less decks are unchanged: finishing = drilled.
+- **Fail** lists the gaps and offers to turn them into remediation cards
+  appended to the deck — the card type is picked per gap (a cloze/plain card for
+  a missed fact, a `% mode: explain` card for a missed concept), with overlapping
+  gaps merged into one card. Re-drill those and re-sit.
+
+Resetting a deck's progress (`flash reset <deck>`) also clears its mastered
+state, so a re-drilled deck must pass the exam again.
+
+**Grading strictness** is a property of the *material*, so it's per deck. A
+checklist-style topic (a procedure, exact syntax, a security drill) should fail
+you for omitting a step; a conceptual topic shouldn't. Set it with a
+`% strictness:` header directive (or `flash exam --strictness …`, or the
+`[exam]` default):
+
+- `strict` — completeness required: every rubric point must be present, so
+  omitting one is a gap.
+- `balanced` (default) — judges *understanding*, not phrasing: a point counts as
+  covered if your answer shows you grasp it (even briefly), and only a wrong or
+  genuinely-absent idea is a gap.
+- `lenient` — benefit of the doubt: only clearly wrong or unanswered points are
+  gaps.
+
+This dial (how hard each answer is judged) is independent of `pass_threshold`
+(how many answers must pass).
+
+Settings live in the `[exam]` section: `model`, `timeout_secs` (default 300),
+`num_questions` (default 5), `pass_threshold` (default 1.0 = all must pass),
+`strictness` (default `balanced`), and `extra` (guidance appended to question
+generation). It reuses the `[ask]` command, permission mode and tool allowlist,
+and needs the `claude` CLI installed and logged in.
 
 ## Configuration
 

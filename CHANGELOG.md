@@ -7,6 +7,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **`flash exam <deck>`** — the AI exam, which *verifies understanding* and
+  gates progression (rung 3 of the AI-exam direction). A deck declares its
+  ground truth with `% source: <url-or-file>` (repeatable); the exam asks Claude
+  for fresh open questions generated **from that source** (never from the cards,
+  which would be circular), reads your typed answers, and grades them
+  Pass/Partial/Fail against per-question rubric points. Passing marks the deck
+  **mastered**, which is what now unlocks dependent decks — drilling a `% source:`
+  deck to the top stage leaves it *exam due* (a new deck state, shown in the
+  picker and `flash stats`) rather than finished; source-less decks keep the
+  mechanical "finished = drilled" unlock. On a fail, the missed concepts can be
+  turned into remediation cards appended to the deck — the card type is chosen
+  per gap (cloze/plain for a missed fact, `% mode: explain` for a missed
+  concept), and overlapping gaps are consolidated into a single card — then
+  re-drill, re-sit. **Grading strictness is per deck** —
+  `% strictness: strict | balanced | lenient` (or `flash exam --strictness`, or
+  the `[exam]` default) — because some material needs every point recalled while
+  other is about grasping the idea: `strict` treats an omitted rubric point as a
+  gap, `balanced` (default) judges understanding and forgives terse phrasing,
+  `lenient` only flags clearly wrong answers (orthogonal to `pass_threshold`,
+  which sets how many answers must pass). New `[exam]` config section (`model`,
+  `timeout_secs`, `num_questions`, `pass_threshold`, `strictness`, `extra`);
+  reuses the `[ask]` command/permission/tools (WebFetch reads a source URL).
+  `flash reset` of a deck also clears its mastered state. A URL `% source:` also
+  doubles as an ask-Claude reference link (no duplicate `% link:` needed); a
+  `% link:` never becomes an exam source. (CLI first; a web exam surface is
+  planned.)
 - `% mode: explain` — **understanding cards**. The front is an open prompt and
   the back lines are the *key points* a good answer should cover (not a string to
   reproduce). You optionally type your explanation, reveal the points, and
