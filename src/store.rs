@@ -112,7 +112,8 @@ struct StoreFile {
     /// (JSON object keys must be strings).
     cards: HashMap<String, CardState>,
     /// Deck-level progress keyed by subject. Optional: a store written before
-    /// this field existed (or with no mastered decks) simply has no `decks` key.
+    /// this field existed (or with no mastered decks) simply has no `decks`
+    /// key.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     decks: HashMap<String, DeckProgress>,
 }
@@ -253,7 +254,8 @@ impl Store {
     }
 
     /// Clears all stored progress, returning how many cards were removed (e.g.
-    /// for `flash reset --all`). Also drops all deck-mastered state. Does not save.
+    /// for `flash reset --all`). Also drops all deck-mastered state. Does not
+    /// save.
     pub fn clear(&mut self) -> usize {
         let n = self.cards.len();
         self.cards.clear();

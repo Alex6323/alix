@@ -1,4 +1,5 @@
-//! An AI-augmented spaced-repetition learning tool for the terminal and the web.
+//! An AI-augmented spaced-repetition learning tool for the terminal and the
+//! web.
 //!
 //! Decks are plain-text files. On top of the flashcard basics it offers a
 //! ratatui TUI, an optional local web frontend (`flash serve`), Leitner and

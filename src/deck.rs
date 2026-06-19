@@ -58,7 +58,11 @@ impl DeckSettings {
                 "frontend" => settings.frontend = Frontend::from_str(value, true).ok(),
                 "img-dir" => settings.img_dir = Some(PathBuf::from(value)),
                 "max-stage" => {
-                    settings.max_stage = value.trim().parse::<u8>().ok().map(|n| n.clamp(1, MAX_STAGE))
+                    settings.max_stage = value
+                        .trim()
+                        .parse::<u8>()
+                        .ok()
+                        .map(|n| n.clamp(1, MAX_STAGE))
                 }
                 "strictness" => settings.exam_strictness = Strictness::from_str(value, true).ok(),
                 _ => {}
@@ -75,8 +79,8 @@ pub enum DeckState {
     NotStarted,
     /// Some cards reviewed, but not all are at the top stage.
     Started,
-    /// Every card is at the top stage, but the deck declares `% source:` and the
-    /// AI exam hasn't been passed yet — drilled, ready to be examined.
+    /// Every card is at the top stage, but the deck declares `% source:` and
+    /// the AI exam hasn't been passed yet — drilled, ready to be examined.
     ExamDue,
     /// Done: every card at the top stage, and (for a `% source:` deck) the exam
     /// passed. This is what unlocks dependents.
@@ -281,11 +285,11 @@ pub fn resolve_dep(
     candidates.into_iter().find(|p| p.is_file())
 }
 
-/// Whether `deck` is "locked": any of its transitive `% requires:` prerequisites
-/// is not yet [`Finished`](DeckState::Finished). `decks_dir` resolves prerequisite
-/// names. A missing prerequisite, an unreadable file, or a dependency cycle is
-/// treated as non-blocking (a broken graph never hides a deck — those problems
-/// surface when you actually review it).
+/// Whether `deck` is "locked": any of its transitive `% requires:`
+/// prerequisites is not yet [`Finished`](DeckState::Finished). `decks_dir`
+/// resolves prerequisite names. A missing prerequisite, an unreadable file, or
+/// a dependency cycle is treated as non-blocking (a broken graph never hides a
+/// deck — those problems surface when you actually review it).
 pub fn is_locked(deck: &Deck, decks_dir: Option<&Path>, store: &Store) -> bool {
     fn prereqs_finished(
         deck: &Deck,
@@ -850,7 +854,10 @@ mod tests {
         // Removing the first card takes its note and the blank separator too.
         assert_eq!("# two\n\tback 2\n", remove_card_blocks(text, &[1]));
         // Removing the last card leaves the first intact.
-        assert_eq!("# one\n\tback 1\n\t! a note\n", remove_card_blocks(text, &[5]));
+        assert_eq!(
+            "# one\n\tback 1\n\t! a note\n",
+            remove_card_blocks(text, &[5])
+        );
     }
 
     #[test]
@@ -1005,11 +1012,7 @@ mod tests {
     fn card_mode_is_card_override_else_deck_mode() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("d.txt");
-        std::fs::write(
-            &path,
-            "% mode: flip\n# a\n% mode: choice\n\tx\n# b\n\ty\n",
-        )
-        .unwrap();
+        std::fs::write(&path, "% mode: flip\n# a\n% mode: choice\n\tx\n# b\n\ty\n").unwrap();
 
         let deck = Deck::load(&path).unwrap();
         assert_eq!(Some(Mode::Choice), deck.cards[0].mode); // card override wins

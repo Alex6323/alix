@@ -91,8 +91,7 @@ impl DeckFiles {
     fn remove_block(&mut self, subject: &str, line: usize) {
         let lines = self.removed.entry(subject.to_string()).or_default();
         lines.insert(line);
-        if let (Some(path), Some(original)) =
-            (self.paths.get(subject), self.snapshots.get(subject))
+        if let (Some(path), Some(original)) = (self.paths.get(subject), self.snapshots.get(subject))
         {
             let lines: Vec<usize> = lines.iter().copied().collect();
             if let Err(e) = deck::rewrite_without_cards(path, original, &lines) {
@@ -160,7 +159,8 @@ struct StateDto {
     histogram: [usize; 6],
     finished: bool,
     /// Whether a restart would find any due/new cards right now. The summary
-    /// disables "New session" and shows a "nothing due" note when this is false.
+    /// disables "New session" and shows a "nothing due" note when this is
+    /// false.
     can_restart: bool,
     /// The highest reachable stage (1–5); the page renders stages above it as a
     /// muted `–` since every card caps below them via `% max-stage:`.
@@ -426,7 +426,10 @@ impl Reviewing {
                 if self.transcript.is_empty() {
                     return false;
                 }
-                (ask::condense_prompt(&card, &self.transcript), Purpose::Condense)
+                (
+                    ask::condense_prompt(&card, &self.transcript),
+                    Purpose::Condense,
+                )
             }
         };
         let rx = ask::spawn(cfg.clone(), prompt, self.cli.args());
@@ -515,9 +518,10 @@ pub fn run_review(
                 Some(r) => serve_image(request, &r.images, &key["/img/".len()..]),
                 None => respond_status(request, 404),
             },
-            (Method::Get, "/api/state") => {
-                respond_json(request, &review_state(reviewing.as_ref(), &store, mode_override))
-            }
+            (Method::Get, "/api/state") => respond_json(
+                request,
+                &review_state(reviewing.as_ref(), &store, mode_override),
+            ),
             (Method::Post, "/api/select") => {
                 match select_decks(&mut request, &decks_dir, &recent) {
                     Some(paths) => match build(paths, &store, &mut recent) {
@@ -538,7 +542,10 @@ pub fn run_review(
             }
             (Method::Post, "/api/deselect") => {
                 reviewing = None;
-                respond_json(request, &review_state(reviewing.as_ref(), &store, mode_override));
+                respond_json(
+                    request,
+                    &review_state(reviewing.as_ref(), &store, mode_override),
+                );
             }
             (Method::Post, "/api/grade") => {
                 let Some(r) = reviewing.as_mut() else {
@@ -565,7 +572,10 @@ pub fn run_review(
                     continue;
                 };
                 r.session.skip();
-                respond_json(request, &review_state(reviewing.as_ref(), &store, mode_override));
+                respond_json(
+                    request,
+                    &review_state(reviewing.as_ref(), &store, mode_override),
+                );
             }
             (Method::Post, "/api/check") => {
                 let Some(r) = reviewing.as_ref() else {
@@ -645,7 +655,10 @@ pub fn run_review(
                     let _ = store.save();
                     r.files.remove_block(&subject, line);
                 }
-                respond_json(request, &review_state(reviewing.as_ref(), &store, mode_override));
+                respond_json(
+                    request,
+                    &review_state(reviewing.as_ref(), &store, mode_override),
+                );
             }
             (Method::Post, "/api/restart") => {
                 let Some(r) = reviewing.as_mut() else {
@@ -653,7 +666,10 @@ pub fn run_review(
                     continue;
                 };
                 r.session.restart(&store, now_ms());
-                respond_json(request, &review_state(reviewing.as_ref(), &store, mode_override));
+                respond_json(
+                    request,
+                    &review_state(reviewing.as_ref(), &store, mode_override),
+                );
             }
             // Ask Claude about the current card — runs the CLI on a background
             // thread (ask::spawn) and returns immediately; the page polls
@@ -750,7 +766,9 @@ pub fn run_browse(
                 Some(b) => serve_image(request, &b.images, &key["/img/".len()..]),
                 None => respond_status(request, 404),
             },
-            (Method::Get, "/api/cards") => respond_json(request, &browse_payload(browsing.as_ref())),
+            (Method::Get, "/api/cards") => {
+                respond_json(request, &browse_payload(browsing.as_ref()))
+            }
             (Method::Post, "/api/select") => {
                 match select_decks(&mut request, &decks_dir, &recent) {
                     Some(paths) => match build(paths, &mut recent) {
@@ -819,20 +837,19 @@ fn browse_payload(browsing: Option<&Browsing>) -> BrowseDto {
 
 /// The path part of a request URL, without any `?query`.
 fn request_path(request: &Request) -> String {
-    request
-        .url()
-        .split('?')
-        .next()
-        .unwrap_or("")
-        .to_string()
+    request.url().split('?').next().unwrap_or("").to_string()
 }
 
 /// Builds the state payload. In the select phase (`reviewing` is `None`) it
 /// reports `phase: "select"` with no card; otherwise it serializes the live
 /// session and store. For choice mode it also builds the options, seeded by the
-/// card id so they are stable across the `/api/state` and `/api/choose` requests
-/// without any server-side caching.
-fn review_state(reviewing: Option<&Reviewing>, store: &Store, mode_override: Option<Mode>) -> StateDto {
+/// card id so they are stable across the `/api/state` and `/api/choose`
+/// requests without any server-side caching.
+fn review_state(
+    reviewing: Option<&Reviewing>,
+    store: &Store,
+    mode_override: Option<Mode>,
+) -> StateDto {
     let Some(r) = reviewing else {
         return StateDto {
             phase: "select",
@@ -854,7 +871,9 @@ fn review_state(reviewing: Option<&Reviewing>, store: &Store, mode_override: Opt
     let session = &r.session;
     let card = session.current();
     // CLI override wins; otherwise the current card's own mode, else default.
-    let mode = mode_override.or(card.and_then(|c| c.mode)).unwrap_or_default();
+    let mode = mode_override
+        .or(card.and_then(|c| c.mode))
+        .unwrap_or_default();
     let choices = if mode == Mode::Choice {
         card.and_then(|c| choice::build(c, session.cards(), c.id()).map(|q| q.options))
     } else {
@@ -894,11 +913,7 @@ fn deck_catalog(
             let (state, meta, locked) = match Deck::load(&e.path) {
                 Ok(deck) => {
                     let total = deck.cards.len();
-                    let retired = deck
-                        .cards
-                        .iter()
-                        .filter(|c| is_retired(c, store))
-                        .count();
+                    let retired = deck.cards.iter().filter(|c| is_retired(c, store)).count();
                     let (state, label) = match deck.state(store) {
                         DeckState::Finished => ("finished", "done ✓".to_string()),
                         DeckState::ExamDue => ("examdue", "exam due".to_string()),
@@ -945,9 +960,9 @@ fn select_decks(
     resolve_names(body.decks, &known)
 }
 
-/// Maps each requested deck name to its catalog path. Returns `None` if any name
-/// is not in the catalog, so an unknown or crafted name is rejected wholesale
-/// rather than reaching the filesystem.
+/// Maps each requested deck name to its catalog path. Returns `None` if any
+/// name is not in the catalog, so an unknown or crafted name is rejected
+/// wholesale rather than reaching the filesystem.
 fn resolve_names(names: Vec<String>, known: &HashMap<String, PathBuf>) -> Option<Vec<PathBuf>> {
     names.into_iter().map(|n| known.get(&n).cloned()).collect()
 }
@@ -969,10 +984,10 @@ fn card_dto(card: &Card) -> CardDto {
     }
 }
 
-/// A stable, opaque URL key for a resolved image path: the hex `XxHash64` of the
-/// path. The card DTO and the image registry derive it the same way, so only
-/// paths a deck actually references resolve — no user input is joined to a path,
-/// which keeps `/img/` safe from traversal even under `--lan`.
+/// A stable, opaque URL key for a resolved image path: the hex `XxHash64` of
+/// the path. The card DTO and the image registry derive it the same way, so
+/// only paths a deck actually references resolve — no user input is joined to a
+/// path, which keeps `/img/` safe from traversal even under `--lan`.
 fn img_key(path: &Path) -> String {
     let mut hasher = XxHash64::default();
     hasher.write(path.to_string_lossy().as_bytes());
@@ -1048,8 +1063,11 @@ fn read_index(request: &mut Request) -> Option<usize> {
 
 fn respond_json<T: Serialize>(request: Request, value: &T) {
     let body = serde_json::to_string(value).unwrap_or_else(|_| "{}".to_string());
-    let header =
-        Header::from_bytes(&b"Content-Type"[..], &b"application/json; charset=utf-8"[..]).unwrap();
+    let header = Header::from_bytes(
+        &b"Content-Type"[..],
+        &b"application/json; charset=utf-8"[..],
+    )
+    .unwrap();
     let _ = request.respond(Response::from_string(body).with_header(header));
 }
 
@@ -1068,8 +1086,8 @@ fn respond_bytes(request: Request, bytes: Vec<u8>, content_type: &str) {
     let _ = request.respond(Response::from_data(bytes).with_header(header));
 }
 
-/// Serves the registered image for `key`, or 404 for an unknown key / unreadable
-/// file. Shared by the review and browse routes.
+/// Serves the registered image for `key`, or 404 for an unknown key /
+/// unreadable file. Shared by the review and browse routes.
 fn serve_image(request: Request, images: &HashMap<String, PathBuf>, key: &str) {
     match images.get(key) {
         Some(path) => match std::fs::read(path) {
@@ -1144,7 +1162,13 @@ mod tests {
 
     #[test]
     fn plain_card_has_no_image_urls() {
-        let card = Card::plain(Arc::from("s.txt"), "q".to_string(), vec!["a".to_string()], None, 1);
+        let card = Card::plain(
+            Arc::from("s.txt"),
+            "q".to_string(),
+            vec!["a".to_string()],
+            None,
+            1,
+        );
         let dto = card_dto(&card);
         assert!(dto.img.is_none() && dto.img_back.is_none());
         assert!(collect_images(std::slice::from_ref(&card)).is_empty());
@@ -1174,7 +1198,10 @@ mod tests {
         );
         // One unknown name (e.g. a traversal attempt) rejects the whole request.
         assert_eq!(
-            resolve_names(vec!["a.txt".to_string(), "../etc/passwd".to_string()], &known),
+            resolve_names(
+                vec!["a.txt".to_string(), "../etc/passwd".to_string()],
+                &known
+            ),
             None
         );
     }
@@ -1253,7 +1280,8 @@ mod tests {
         assert_eq!((None, None), r.poll_ask());
         assert!(r.ask_dto(None, None).thinking);
 
-        tx.send(Reply::Answer("because ownership moved".to_string())).unwrap();
+        tx.send(Reply::Answer("because ownership moved".to_string()))
+            .unwrap();
         assert_eq!((None, None), r.poll_ask());
         assert!(r.pending.is_none());
         assert_eq!(1, r.transcript.len());
@@ -1273,7 +1301,8 @@ mod tests {
             purpose: Purpose::Condense,
             card,
         });
-        tx.send(Reply::Answer("- key insight to reread".to_string())).unwrap();
+        tx.send(Reply::Answer("- key insight to reread".to_string()))
+            .unwrap();
         let (status, error) = r.poll_ask();
         assert_eq!(Some("note saved".to_string()), status);
         assert!(error.is_none());

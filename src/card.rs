@@ -109,13 +109,12 @@ impl Card {
     /// Which frontend this card can be reviewed in. An explicit `% frontend:`
     /// wins; otherwise a card with any image is web-only; otherwise `Any`.
     pub fn frontend(&self) -> Frontend {
-        self.frontend.unwrap_or(
-            if self.image.is_some() || self.image_back.is_some() {
+        self.frontend
+            .unwrap_or(if self.image.is_some() || self.image_back.is_some() {
                 Frontend::Web
             } else {
                 Frontend::Any
-            },
-        )
+            })
     }
 
     /// The swapped card for dual-direction review: the question becomes the old

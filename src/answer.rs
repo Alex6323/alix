@@ -54,8 +54,8 @@ pub struct TypingValidator {
     hints_used: usize,
     typos: usize,
     /// How many upcoming characters the current hint reveals; grows by
-    /// [`HINT_CHARS`] on each [`hint`](Self::hint) call and resets to 0 when the
-    /// user types or deletes a character.
+    /// [`HINT_CHARS`] on each [`hint`](Self::hint) call and resets to 0 when
+    /// the user types or deletes a character.
     hint_revealed: usize,
 }
 

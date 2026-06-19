@@ -384,7 +384,8 @@ impl App {
 
     /// Marks the current card (and any cloze siblings) for removal from its
     /// deck file, drops it from the queue, and moves on. The file edits and
-    /// progress pruning happen together when the run ends, in [`flush_removals`].
+    /// progress pruning happen together when the run ends, in
+    /// [`flush_removals`].
     fn remove_card(&mut self) {
         let removed = self.session.remove_current();
         let Some(first) = removed.first() else {
@@ -447,7 +448,12 @@ impl App {
         // Explain mode takes free text only until the points are revealed.
         let text_input = matches!(
             self.phase,
-            Phase::Typing { .. } | Phase::Fuzzy { .. } | Phase::Explain { revealed: false, .. }
+            Phase::Typing { .. }
+                | Phase::Fuzzy { .. }
+                | Phase::Explain {
+                    revealed: false,
+                    ..
+                }
         );
         let hit = |list: &[KeyPattern]| {
             pattern.is_some_and(|p| {
@@ -871,7 +877,9 @@ impl App {
                 l(&k.ask),
                 l(&k.quit)
             ),
-            Phase::Explain { revealed: false, .. } => format!(
+            Phase::Explain {
+                revealed: false, ..
+            } => format!(
                 "ENTER reveal │ {} skip │ {} remove │ {} quit",
                 l(&k.skip),
                 l(&k.remove),
@@ -986,7 +994,9 @@ impl App {
             Phase::Explain { .. } => "EXPLAIN",
             Phase::LineByLine { .. } => "LINE BY LINE",
             Phase::Choice { .. } => "CHOICE",
-            Phase::Feedback { mode: Mode::Fuzzy, .. } => "TYPING FUZZY",
+            Phase::Feedback {
+                mode: Mode::Fuzzy, ..
+            } => "TYPING FUZZY",
             Phase::Feedback { .. } => "TYPING EXACT",
             _ => "",
         };
@@ -1094,7 +1104,10 @@ impl App {
                     lines.push(Line::default());
                     lines.push(Line::from("How well did you cover them?".italic()));
                 } else {
-                    cursor = Some((area.x + 2 + input.chars().count() as u16, area.y + lines.len() as u16));
+                    cursor = Some((
+                        area.x + 2 + input.chars().count() as u16,
+                        area.y + lines.len() as u16,
+                    ));
                     lines.push(Line::from(format!("> {input}")));
                     lines.push(Line::default());
                     lines.push(Line::from(
@@ -1419,9 +1432,12 @@ pub(crate) fn context_line(ctx: &str) -> Line<'static> {
     for seg in render::context_spans(ctx) {
         let (text, style) = match seg {
             ContextSpan::Text(t) => (t, Style::new().fg(Color::Cyan)),
-            ContextSpan::Blank(t) => {
-                (t, Style::new().fg(Color::LightCyan).add_modifier(Modifier::BOLD))
-            }
+            ContextSpan::Blank(t) => (
+                t,
+                Style::new()
+                    .fg(Color::LightCyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
             ContextSpan::Hidden(t) => (t, Style::new().fg(Color::DarkGray)),
         };
         spans.push(Span::styled(text, style));

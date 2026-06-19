@@ -24,9 +24,8 @@
 
 use std::{path::PathBuf, sync::Arc};
 
-use thiserror::Error;
-
 use clap::ValueEnum;
+use thiserror::Error;
 
 use crate::{
     answer::Mode,
@@ -109,9 +108,13 @@ impl PartialCard {
     fn build(self, subject: &Arc<str>, cards: &mut Vec<Card>) -> Result<(), ParseError> {
         if self.cloze {
             // A cloze card's per-card mode applies to each of its sub-cards.
-            for mut card in
-                cloze::expand(subject, &self.front, &self.back, self.note.as_deref(), self.line)?
-            {
+            for mut card in cloze::expand(
+                subject,
+                &self.front,
+                &self.back,
+                self.note.as_deref(),
+                self.line,
+            )? {
                 card.mode = self.mode;
                 cards.push(card);
             }

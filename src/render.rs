@@ -246,7 +246,9 @@ mod tests {
         let units = note_units(&card_with_note("A sentence spread\nacross two lines."));
         assert_eq!(
             units,
-            vec![NoteUnit::Sentence("A sentence spread across two lines.".into())]
+            vec![NoteUnit::Sentence(
+                "A sentence spread across two lines.".into()
+            )]
         );
     }
 

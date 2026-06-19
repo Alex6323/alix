@@ -243,9 +243,10 @@ impl Session {
     /// Drops the current card from the queue without grading it, along with any
     /// remaining cards in the same sibling group (cloze sub-cards of one source
     /// card) so a card marked for removal is not asked again in any form.
-    /// Returns clones of every dropped card (the current one first), or an empty
-    /// vec if the queue was empty. The store is left untouched; pruning the
-    /// cards' progress is the caller's job once the deck file is rewritten.
+    /// Returns clones of every dropped card (the current one first), or an
+    /// empty vec if the queue was empty. The store is left untouched;
+    /// pruning the cards' progress is the caller's job once the deck file
+    /// is rewritten.
     pub fn remove_current(&mut self) -> Vec<Card> {
         let Some(index) = self.queue.pop_front() else {
             return Vec::new();
@@ -377,11 +378,11 @@ fn effective_max(card: &Card) -> u8 {
     card.max_stage.unwrap_or(MAX_STAGE).clamp(1, MAX_STAGE)
 }
 
-/// Whether a card is *retired* (resting): it has reached its deck's top stage by
-/// passing, so it is no longer scheduled until `flash reset`. The `streak >= 1`
-/// guard only matters for `max-stage: 1`, where stage 1 is also the failure/entry
-/// stage — a just-failed card (streak 0) keeps coming back. Unseen cards are
-/// never retired.
+/// Whether a card is *retired* (resting): it has reached its deck's top stage
+/// by passing, so it is no longer scheduled until `flash reset`. The `streak >=
+/// 1` guard only matters for `max-stage: 1`, where stage 1 is also the
+/// failure/entry stage — a just-failed card (streak 0) keeps coming back.
+/// Unseen cards are never retired.
 pub fn is_retired(card: &Card, store: &Store) -> bool {
     store
         .get(card.id())
@@ -690,7 +691,11 @@ mod tests {
     fn remove_current_also_drops_cloze_siblings() {
         let (store, _dir) = empty_store();
         // Two sub-cards of one source card (same line) plus one other card.
-        let mut all = vec![card("deck.txt", 1), card("deck.txt", 1), card("deck.txt", 2)];
+        let mut all = vec![
+            card("deck.txt", 1),
+            card("deck.txt", 1),
+            card("deck.txt", 2),
+        ];
         all[0].back = vec!["hole a".into()];
         all[1].back = vec!["hole b".into()];
         let mut session = Session::new(

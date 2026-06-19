@@ -211,7 +211,8 @@ impl Default for AskConfig {
     }
 }
 
-/// Settings for AI deck generation (`flash generate`, the `[generate]` section).
+/// Settings for AI deck generation (`flash generate`, the `[generate]`
+/// section).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GenerateConfig {
     /// Model passed as `--model`; `None` falls back to the `[ask]` model, then
@@ -252,13 +253,13 @@ impl Default for GenerateConfig {
 /// recalling everything while other material is about grasping the idea.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, ValueEnum)]
 pub enum Strictness {
-    /// Completeness required: every rubric point must be present, so omitting one
-    /// is a gap. For procedures, exact syntax, security — where knowing most of
-    /// it isn't enough.
+    /// Completeness required: every rubric point must be present, so omitting
+    /// one is a gap. For procedures, exact syntax, security — where knowing
+    /// most of it isn't enough.
     Strict,
-    /// Judge understanding, not phrasing: a point is covered if the answer shows
-    /// the student grasps it (even briefly, in their own words); only a wrong or
-    /// genuinely-absent idea is a gap.
+    /// Judge understanding, not phrasing: a point is covered if the answer
+    /// shows the student grasps it (even briefly, in their own words); only
+    /// a wrong or genuinely-absent idea is a gap.
     #[default]
     Balanced,
     /// Benefit of the doubt: only clearly wrong or unanswered points are gaps.
@@ -515,9 +516,9 @@ impl Config {
         if let Some(s) = raw.exam.strictness.filter(|s| !s.trim().is_empty()) {
             match Strictness::from_str(s.trim(), true) {
                 Ok(v) => exam.strictness = v,
-                Err(_) => bail!(
-                    "invalid exam.strictness {s:?}: expected strict, balanced, or lenient"
-                ),
+                Err(_) => {
+                    bail!("invalid exam.strictness {s:?}: expected strict, balanced, or lenient")
+                }
             }
         }
         exam.extra = raw.exam.extra.filter(|s| !s.trim().is_empty());

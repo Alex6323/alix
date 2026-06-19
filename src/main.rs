@@ -23,7 +23,8 @@ use flash::{
     tui::{self, App},
 };
 
-/// An AI-augmented spaced-repetition learning tool for the terminal and the web.
+/// An AI-augmented spaced-repetition learning tool for the terminal and the
+/// web.
 ///
 /// Decks are plain text files: `# question` starts a card, the indented
 /// lines below it are the answer, `! text` adds a note, `% text` is a
@@ -117,8 +118,8 @@ struct ExamArgs {
     #[arg(long)]
     questions: Option<usize>,
 
-    /// Grading strictness (overrides the deck's `% strictness:` and the `[exam]`
-    /// default): strict, balanced, or lenient.
+    /// Grading strictness (overrides the deck's `% strictness:` and the
+    /// `[exam]` default): strict, balanced, or lenient.
     #[arg(long, value_enum)]
     strictness: Option<Strictness>,
 
@@ -866,9 +867,10 @@ fn list(args: DeckArgs) -> Result<()> {
 }
 
 /// `(id, front)` pairs to reset from `cards`: all of them when `card` is
-/// `None`, otherwise only the matches. A numeric `card` matches by `Card::id()`;
-/// any other text matches cards whose front contains it (case-insensitive) — a
-/// cloze card's holes share a front, so that resets the whole card.
+/// `None`, otherwise only the matches. A numeric `card` matches by
+/// `Card::id()`; any other text matches cards whose front contains it
+/// (case-insensitive) — a cloze card's holes share a front, so that resets the
+/// whole card.
 fn select_reset_ids(cards: &[Card], card: Option<&str>) -> Vec<(u64, String)> {
     let by_id = card.and_then(|c| c.parse::<u64>().ok());
     let needle = card.map(str::to_lowercase);
@@ -1157,7 +1159,15 @@ fn browse_serve(args: BrowseArgs) -> Result<()> {
     let build = |paths: Vec<PathBuf>, recent: &mut RecentDecks| {
         build_browse(paths, recent, Frontend::Web).map(to_build)
     };
-    serve::run_browse(initial, store, recent, decks_dir, addr, config.browse, build)
+    serve::run_browse(
+        initial,
+        store,
+        recent,
+        decks_dir,
+        addr,
+        config.browse,
+        build,
+    )
 }
 
 fn generate_cmd(args: GenerateArgs) -> Result<()> {
@@ -1286,7 +1296,10 @@ fn exam_cmd(args: ExamArgs) -> Result<()> {
         bail!("`flash exam` needs a terminal to read your answers");
     }
     if already_mastered {
-        println!("{} is already mastered — re-sitting the exam.\n", deck.subject);
+        println!(
+            "{} is already mastered — re-sitting the exam.\n",
+            deck.subject
+        );
     }
 
     println!(
@@ -1611,8 +1624,9 @@ fn config_cmd(init: bool) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::sync::Arc;
+
+    use super::*;
 
     fn card(front: &str, back: &str) -> Card {
         Card::plain(Arc::from("d.txt"), front.into(), vec![back.into()], None, 1)
@@ -1647,7 +1661,10 @@ mod tests {
 
     #[test]
     fn reset_matches_front_substring_case_insensitively() {
-        let cards = vec![card("Capital of Japan?", "Tokyo"), card("Largest planet?", "Jupiter")];
+        let cards = vec![
+            card("Capital of Japan?", "Tokyo"),
+            card("Largest planet?", "Jupiter"),
+        ];
         let got = select_reset_ids(&cards, Some("japan"));
         assert_eq!(1, got.len());
         assert_eq!("Capital of Japan?", got[0].1);
@@ -1657,13 +1674,20 @@ mod tests {
     fn reset_matches_a_numeric_id_exactly() {
         let cards = vec![card("A", "1"), card("B", "2")];
         let id = cards[1].id();
-        assert_eq!(vec![(id, "B".to_string())], select_reset_ids(&cards, Some(&id.to_string())));
+        assert_eq!(
+            vec![(id, "B".to_string())],
+            select_reset_ids(&cards, Some(&id.to_string()))
+        );
     }
 
     #[test]
     fn reset_front_match_resets_all_cards_sharing_it() {
         // Cloze holes share a front but have distinct ids; one match clears all.
-        let cards = vec![card("verb forms", "a"), card("verb forms", "b"), card("noun", "c")];
+        let cards = vec![
+            card("verb forms", "a"),
+            card("verb forms", "b"),
+            card("noun", "c"),
+        ];
         let got = select_reset_ids(&cards, Some("verb forms"));
         assert_eq!(2, got.len());
         assert_ne!(got[0].0, got[1].0);

@@ -271,7 +271,12 @@ fn questions_prompt(deck: &Deck, cfg: &ExamConfig) -> Result<String> {
          {{\"questions\": [{{\"prompt\": \"...\", \"points\": [\"...\", \"...\"]}}]}}",
         n = cfg.num_questions,
     );
-    if let Some(extra) = cfg.extra.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    if let Some(extra) = cfg
+        .extra
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         prompt.push_str("\n\nAdditional instructions:\n");
         prompt.push_str(extra);
     }
@@ -283,7 +288,8 @@ fn questions_prompt(deck: &Deck, cfg: &ExamConfig) -> Result<String> {
 /// what counts as a `missed` point (which drives remediation).
 fn strictness_criteria(strictness: Strictness) -> &'static str {
     match strictness {
-        Strictness::Strict => "\
+        Strictness::Strict => {
+            "\
 Grade strictly for COMPLETENESS — treat the rubric as a checklist. The answer \
 passes only if it covers EVERY key point (wording may differ, but each point \
 must be present). List in `missed` every key point the answer omits or gets \
@@ -291,8 +297,10 @@ wrong; here an omitted point IS a gap, because this material requires recalling 
 all of it.\n\
 - \"pass\": every key point is present.\n\
 - \"partial\": some present, others missing or wrong.\n\
-- \"fail\": most key points missing or wrong.",
-        Strictness::Balanced => "\
+- \"fail\": most key points missing or wrong."
+        }
+        Strictness::Balanced => {
+            "\
 Grade for UNDERSTANDING, not completeness of phrasing. A key point counts as \
 covered if the answer shows the student grasps it — briefly, in their own \
 words, or by clear implication. Put a point in `missed` ONLY if the answer is \
@@ -300,15 +308,18 @@ wrong about it or shows the student genuinely does not grasp it — NEVER merely
 because they didn't spell it out or skipped a secondary detail.\n\
 - \"pass\": the answer demonstrates the question's core idea.\n\
 - \"partial\": part understood, but something important is wrong or absent.\n\
-- \"fail\": little or no understanding.",
-        Strictness::Lenient => "\
+- \"fail\": little or no understanding."
+        }
+        Strictness::Lenient => {
+            "\
 Grade generously — the goal is only to catch real misunderstandings. Give the \
 student the benefit of the doubt on anything plausibly correct or partially \
 stated. Put a point in `missed` ONLY if the answer is clearly wrong about it or \
 the question was essentially not answered.\n\
 - \"pass\": broadly correct, even if thin.\n\
 - \"partial\": partly right but with a clear error.\n\
-- \"fail\": wrong or essentially unanswered.",
+- \"fail\": wrong or essentially unanswered."
+        }
     }
 }
 
@@ -506,7 +517,11 @@ mod tests {
             prompt: "Why move?".to_string(),
             points: vec!["avoids double free".to_string()],
         }];
-        let p = grade_prompt(&qs, &["because ownership".to_string()], Strictness::Balanced);
+        let p = grade_prompt(
+            &qs,
+            &["because ownership".to_string()],
+            Strictness::Balanced,
+        );
         assert!(p.contains("Question 1: Why move?"));
         assert!(p.contains("avoids double free"));
         assert!(p.contains("because ownership"));
@@ -747,9 +762,12 @@ mod tests {
             dir.path(),
             "printf '%s\\n' '```text' '# Why?' '% mode: explain' '  point' '```'",
         );
-        let cards =
-            remediation_cards(&["the gap".to_string()], &ExamConfig::default(), &ask_config(&cli))
-                .unwrap();
+        let cards = remediation_cards(
+            &["the gap".to_string()],
+            &ExamConfig::default(),
+            &ask_config(&cli),
+        )
+        .unwrap();
         assert_eq!("# Why?\n% mode: explain\n  point", cards);
     }
 

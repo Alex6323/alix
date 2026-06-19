@@ -103,8 +103,9 @@ fn build_candidates(decks_dir: &Path, recent: &RecentDecks) -> Vec<Candidate> {
 /// Turns a deck candidate into a picker item, deriving its completion-state
 /// meta (`new` / `m/total` at the top stage / `done ✓`) and lock status (a
 /// `% requires:` prerequisite not yet finished) from the progress store. A deck
-/// that fails to load shows a plain row. `enforce_locks` is false for the browse
-/// picker — locking gates *review* progression only, so any deck is browsable.
+/// that fails to load shows a plain row. `enforce_locks` is false for the
+/// browse picker — locking gates *review* progression only, so any deck is
+/// browsable.
 fn deck_item(c: Candidate, store: &Store, decks_dir: &Path, enforce_locks: bool) -> Item<PathBuf> {
     let (meta, locked, state) = match Deck::load(&c.path) {
         Ok(deck) => {
@@ -156,9 +157,10 @@ pub struct DeckEntry {
     pub last_used_ms: Option<u64>,
 }
 
-/// The deck catalog the pickers show, as plain data: recent decks first (recency
-/// order), then every other `*.txt` in `decks_dir`. Frontend-agnostic, so the
-/// web deck-selection screen can present the same list as the TUI picker.
+/// The deck catalog the pickers show, as plain data: recent decks first
+/// (recency order), then every other `*.txt` in `decks_dir`. Frontend-agnostic,
+/// so the web deck-selection screen can present the same list as the TUI
+/// picker.
 pub fn catalog(decks_dir: &Path, recent: &RecentDecks) -> Vec<DeckEntry> {
     build_candidates(decks_dir, recent)
         .into_iter()
@@ -198,8 +200,9 @@ pub fn pick(
     Ok(launch(picker)?.unwrap_or_default())
 }
 
-/// Runs the deck picker for `reset`: the same checkbox UI, but `exact` (an empty
-/// tick set means "nothing", never the card under the cursor) and reset wording.
+/// Runs the deck picker for `reset`: the same checkbox UI, but `exact` (an
+/// empty tick set means "nothing", never the card under the cursor) and reset
+/// wording.
 pub fn pick_to_reset(
     decks_dir: &Path,
     recent: &RecentDecks,
@@ -343,11 +346,12 @@ struct Picker<K> {
     /// Lines shown when there are no items.
     empty: Vec<Line<'static>>,
     /// Two-phase deck-launcher mode (the startup picker): Enter launches the
-    /// focused deck; `Space` ticks decks; `Tab` confirms a multi-deck selection.
-    /// Off for the reset / dependency pickers (plain tick + Enter).
+    /// focused deck; `Space` ticks decks; `Tab` confirms a multi-deck
+    /// selection. Off for the reset / dependency pickers (plain tick +
+    /// Enter).
     launcher: bool,
-    /// Launcher review sub-state: the list shows only the ticked decks and Enter
-    /// starts the merged session.
+    /// Launcher review sub-state: the list shows only the ticked decks and
+    /// Enter starts the merged session.
     confirming: bool,
     done: bool,
     cancelled: bool,
@@ -464,7 +468,9 @@ impl<K: Clone + Eq + Hash> Picker<K> {
             return if self.confirming {
                 self.ticked()
             } else {
-                self.focused().map(|item| vec![item.key.clone()]).unwrap_or_default()
+                self.focused()
+                    .map(|item| vec![item.key.clone()])
+                    .unwrap_or_default()
             };
         }
         let chosen = self.ticked();
@@ -472,10 +478,13 @@ impl<K: Clone + Eq + Hash> Picker<K> {
             return chosen;
         }
         // Startup picker with nothing ticked: use the item under the cursor.
-        self.focused().map(|item| vec![item.key.clone()]).unwrap_or_default()
+        self.focused()
+            .map(|item| vec![item.key.clone()])
+            .unwrap_or_default()
     }
 
-    /// Enters the launcher's confirm view: the list shows only the ticked decks.
+    /// Enters the launcher's confirm view: the list shows only the ticked
+    /// decks.
     fn enter_confirm(&mut self) {
         self.confirming = true;
         self.filtered = (0..self.all.len())
