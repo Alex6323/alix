@@ -18,6 +18,11 @@
 //! consumer (`flash exam`) drives the terminal Q&A; a web exam surface can
 //! reuse the same three functions.
 
+use std::{
+    path::{Path, PathBuf},
+    sync::mpsc::{Receiver, TryRecvError, channel},
+};
+
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
@@ -25,6 +30,7 @@ use crate::{
     ask,
     config::{AskConfig, ExamConfig, Strictness},
     deck::{self, Deck},
+    store::Store,
 };
 
 /// Largest embedded local source file, in bytes. Larger files are truncated
@@ -113,7 +119,19 @@ pub fn generate_questions(
     if deck.sources.is_empty() {
         bail!("the deck declares no `% source:` to examine against");
     }
-    let prompt = questions_prompt(deck, cfg)?;
+    generate_questions_from(&deck.sources, deck.path.parent(), cfg, ask_cfg)
+}
+
+/// Owned-input core of [`generate_questions`]: takes the source list and the
+/// base directory directly (not a `&Deck`), so the background
+/// [`spawn_questions`] can run it on a thread without borrowing a deck.
+fn generate_questions_from(
+    sources: &[String],
+    base: Option<&Path>,
+    cfg: &ExamConfig,
+    ask_cfg: &AskConfig,
+) -> Result<Vec<ExamQuestion>> {
+    let prompt = questions_prompt(sources, base, cfg)?;
     let raw = ask::run(&run_config(cfg, ask_cfg), &prompt, &[])?;
     let parsed: QuestionsDto = parse_json(&raw).context("parsing the generated questions")?;
     if parsed.questions.is_empty() {
@@ -177,6 +195,324 @@ pub fn remediation_cards(gaps: &[String], cfg: &ExamConfig, ask_cfg: &AskConfig)
     Ok(cards)
 }
 
+// ── Background runners (for the interactive frontends) ───────────────────────
+//
+// The three engine calls above are synchronous. The single-threaded web server
+// and the TUI event loop run them on a background thread and poll a channel,
+// exactly like [`ask::spawn`]. Inputs are owned so the thread is `'static`.
+
+/// Background variant of [`generate_questions`].
+pub fn spawn_questions(
+    sources: Vec<String>,
+    base: Option<PathBuf>,
+    cfg: ExamConfig,
+    ask_cfg: AskConfig,
+) -> Receiver<Result<Vec<ExamQuestion>, String>> {
+    let (tx, rx) = channel();
+    std::thread::spawn(move || {
+        let r = generate_questions_from(&sources, base.as_deref(), &cfg, &ask_cfg)
+            .map_err(|e| format!("{e:#}"));
+        let _ = tx.send(r);
+    });
+    rx
+}
+
+/// Background variant of [`grade_answers`].
+pub fn spawn_grade(
+    questions: Vec<ExamQuestion>,
+    answers: Vec<String>,
+    strictness: Strictness,
+    cfg: ExamConfig,
+    ask_cfg: AskConfig,
+) -> Receiver<Result<ExamResult, String>> {
+    let (tx, rx) = channel();
+    std::thread::spawn(move || {
+        let r = grade_answers(&questions, &answers, strictness, &cfg, &ask_cfg)
+            .map_err(|e| format!("{e:#}"));
+        let _ = tx.send(r);
+    });
+    rx
+}
+
+/// Background variant of [`remediation_cards`].
+pub fn spawn_remediation(
+    gaps: Vec<String>,
+    cfg: ExamConfig,
+    ask_cfg: AskConfig,
+) -> Receiver<Result<String, String>> {
+    let (tx, rx) = channel();
+    std::thread::spawn(move || {
+        let r = remediation_cards(&gaps, &cfg, &ask_cfg).map_err(|e| format!("{e:#}"));
+        let _ = tx.send(r);
+    });
+    rx
+}
+
+/// The phase of an exam [`Sitting`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Phase {
+    /// Generating questions from the source (background call in flight).
+    Generating,
+    /// The student is working through the questions one at a time.
+    Answering,
+    /// Grading the submitted answers (background call in flight).
+    Grading,
+    /// Showing the graded result; `result().passed` says pass or fail.
+    Results,
+    /// Generating + appending remediation cards (background call in flight).
+    Remediating,
+    /// Remediation cards were appended — re-drill the deck and re-sit.
+    Remediated,
+}
+
+/// The in-flight background call for a [`Sitting`].
+enum Pending {
+    Questions(Receiver<Result<Vec<ExamQuestion>, String>>),
+    Grade(Receiver<Result<ExamResult, String>>),
+    Remediation(Receiver<Result<String, String>>),
+}
+
+/// One in-progress exam sitting — a frontend-agnostic state machine shared by
+/// the web server (`serve.rs`) and the TUI (`tui.rs`); the CLI keeps its own
+/// linear flow. It owns the exam state and the in-flight background call,
+/// spawns each engine step, and on [`poll`](Sitting::poll) transitions and
+/// applies the side effects (persist "mastered" on a pass, append remediation
+/// cards on confirm). Frontends drive entry/navigation/submit/remediate, call
+/// `poll` each tick, and render off `phase()`.
+pub struct Sitting {
+    subject: String,
+    deck_path: PathBuf,
+    strictness: Strictness,
+    cfg: ExamConfig,
+    ask_cfg: AskConfig,
+    phase: Phase,
+    questions: Vec<ExamQuestion>,
+    answers: Vec<String>,
+    current: usize,
+    result: Option<ExamResult>,
+    pending: Option<Pending>,
+    error: Option<String>,
+}
+
+impl Sitting {
+    /// Starts a sitting for `deck` and spawns question generation. The deck
+    /// must declare at least one `% source:` (the caller also checks it is
+    /// drilled).
+    pub fn start(deck: &Deck, strictness: Strictness, cfg: ExamConfig, ask_cfg: AskConfig) -> Self {
+        let pending = Pending::Questions(spawn_questions(
+            deck.sources.clone(),
+            deck.path.parent().map(Path::to_path_buf),
+            cfg.clone(),
+            ask_cfg.clone(),
+        ));
+        Self {
+            subject: deck.subject.clone(),
+            deck_path: deck.path.clone(),
+            strictness,
+            cfg,
+            ask_cfg,
+            phase: Phase::Generating,
+            questions: Vec::new(),
+            answers: Vec::new(),
+            current: 0,
+            result: None,
+            pending: Some(pending),
+            error: None,
+        }
+    }
+
+    pub fn phase(&self) -> &Phase {
+        &self.phase
+    }
+    pub fn subject(&self) -> &str {
+        &self.subject
+    }
+    pub fn strictness(&self) -> Strictness {
+        self.strictness
+    }
+    /// A transient error from the last background call, if any.
+    pub fn error(&self) -> Option<&str> {
+        self.error.as_deref()
+    }
+    /// Whether a background call is in flight.
+    pub fn thinking(&self) -> bool {
+        self.pending.is_some()
+    }
+    pub fn total(&self) -> usize {
+        self.questions.len()
+    }
+    pub fn current_index(&self) -> usize {
+        self.current
+    }
+    pub fn questions(&self) -> &[ExamQuestion] {
+        &self.questions
+    }
+    pub fn answers(&self) -> &[String] {
+        &self.answers
+    }
+    pub fn result(&self) -> Option<&ExamResult> {
+        self.result.as_ref()
+    }
+    /// The current question (in [`Phase::Answering`]).
+    pub fn question(&self) -> Option<&ExamQuestion> {
+        self.questions.get(self.current)
+    }
+    /// The answer typed for the current question so far.
+    pub fn answer(&self) -> &str {
+        self.answers
+            .get(self.current)
+            .map(String::as_str)
+            .unwrap_or("")
+    }
+    /// `true` if the current question is the last one.
+    pub fn on_last(&self) -> bool {
+        !self.questions.is_empty() && self.current + 1 == self.questions.len()
+    }
+
+    /// Replaces the current question's answer (no-op outside
+    /// [`Phase::Answering`]).
+    pub fn set_answer(&mut self, text: String) {
+        if self.phase == Phase::Answering
+            && let Some(slot) = self.answers.get_mut(self.current)
+        {
+            *slot = text;
+        }
+    }
+    pub fn next(&mut self) {
+        if self.current + 1 < self.questions.len() {
+            self.current += 1;
+        }
+    }
+    pub fn prev(&mut self) {
+        self.current = self.current.saturating_sub(1);
+    }
+    pub fn goto(&mut self, i: usize) {
+        if i < self.questions.len() {
+            self.current = i;
+        }
+    }
+
+    /// Submits all answers for grading ([`Phase::Answering`] →
+    /// [`Phase::Grading`]).
+    pub fn submit(&mut self) {
+        if self.phase != Phase::Answering {
+            return;
+        }
+        self.error = None;
+        self.pending = Some(Pending::Grade(spawn_grade(
+            self.questions.clone(),
+            self.answers.clone(),
+            self.strictness,
+            self.cfg.clone(),
+            self.ask_cfg.clone(),
+        )));
+        self.phase = Phase::Grading;
+    }
+
+    /// The missed gaps from the result (empty until graded).
+    pub fn gaps(&self) -> Vec<String> {
+        self.result
+            .as_ref()
+            .map(ExamResult::gaps)
+            .unwrap_or_default()
+    }
+
+    /// Whether remediation is offerable (failed result with gaps to fix).
+    pub fn can_remediate(&self) -> bool {
+        self.phase == Phase::Results
+            && self.result.as_ref().is_some_and(|r| !r.passed)
+            && !self.gaps().is_empty()
+    }
+
+    /// Generates remediation cards for the gaps and appends them to the deck
+    /// ([`Phase::Results`] → [`Phase::Remediating`]). No-op if nothing to fix.
+    pub fn remediate(&mut self) {
+        if !self.can_remediate() {
+            return;
+        }
+        self.error = None;
+        self.pending = Some(Pending::Remediation(spawn_remediation(
+            self.gaps(),
+            self.cfg.clone(),
+            self.ask_cfg.clone(),
+        )));
+        self.phase = Phase::Remediating;
+    }
+
+    /// Drains a finished background call and advances the phase, applying side
+    /// effects: on a passing grade, persist "mastered" and save `store`; on
+    /// remediation, append the cards to the deck file. Returns `true` when the
+    /// phase advanced.
+    pub fn poll(&mut self, store: &mut Store, now_ms: u64) -> bool {
+        let reply = match &self.pending {
+            None => return false,
+            Some(Pending::Questions(rx)) => match rx.try_recv() {
+                Ok(r) => Reply::Questions(r),
+                Err(TryRecvError::Empty) => return false,
+                Err(TryRecvError::Disconnected) => Reply::Questions(Err(thread_gone())),
+            },
+            Some(Pending::Grade(rx)) => match rx.try_recv() {
+                Ok(r) => Reply::Grade(r),
+                Err(TryRecvError::Empty) => return false,
+                Err(TryRecvError::Disconnected) => Reply::Grade(Err(thread_gone())),
+            },
+            Some(Pending::Remediation(rx)) => match rx.try_recv() {
+                Ok(r) => Reply::Remediation(r),
+                Err(TryRecvError::Empty) => return false,
+                Err(TryRecvError::Disconnected) => Reply::Remediation(Err(thread_gone())),
+            },
+        };
+        self.pending = None;
+        match reply {
+            Reply::Questions(Ok(qs)) => {
+                self.answers = vec![String::new(); qs.len()];
+                self.questions = qs;
+                self.current = 0;
+                self.phase = Phase::Answering;
+            }
+            // Generation failed before any questions: stays Generating, but with
+            // an error and nothing in flight; the frontend offers to close.
+            Reply::Questions(Err(e)) => self.error = Some(e),
+            Reply::Grade(Ok(result)) => {
+                if result.passed {
+                    store.set_deck_mastered(&self.subject, now_ms);
+                    let _ = store.save();
+                }
+                self.result = Some(result);
+                self.phase = Phase::Results;
+            }
+            // Grading failed: back to answering so the student can resubmit.
+            Reply::Grade(Err(e)) => {
+                self.error = Some(e);
+                self.phase = Phase::Answering;
+            }
+            Reply::Remediation(Ok(cards)) => match deck::append_cards(&self.deck_path, &cards) {
+                Ok(()) => self.phase = Phase::Remediated,
+                Err(e) => {
+                    self.error = Some(format!("{e}"));
+                    self.phase = Phase::Results;
+                }
+            },
+            Reply::Remediation(Err(e)) => {
+                self.error = Some(e);
+                self.phase = Phase::Results;
+            }
+        }
+        true
+    }
+}
+
+/// A drained background reply, used inside [`Sitting::poll`].
+enum Reply {
+    Questions(Result<Vec<ExamQuestion>, String>),
+    Grade(Result<ExamResult, String>),
+    Remediation(Result<String, String>),
+}
+
+fn thread_gone() -> String {
+    "the exam helper exited unexpectedly".to_string()
+}
+
 /// `true` when the fraction of full passes meets the threshold.
 fn passed(grades: &[AnswerGrade], threshold: f64) -> bool {
     if grades.is_empty() {
@@ -201,11 +537,10 @@ fn run_config(cfg: &ExamConfig, ask_cfg: &AskConfig) -> AskConfig {
 /// Renders the deck's sources into a prompt section: URLs become WebFetch
 /// instructions, local files are read and embedded (bounded). Relative file
 /// paths resolve against the deck file's folder.
-fn source_section(deck: &Deck) -> Result<String> {
-    let base = deck.path.parent();
+fn source_section(sources: &[String], base: Option<&Path>) -> Result<String> {
     let mut urls = Vec::new();
     let mut files = Vec::new();
-    for src in &deck.sources {
+    for src in sources {
         if deck::is_url(src) {
             urls.push(src.clone());
         } else {
@@ -252,9 +587,9 @@ fn truncate(text: &str) -> String {
     format!("{}\n[... source truncated ...]", &text[..end])
 }
 
-/// Builds the question-generation prompt.
-fn questions_prompt(deck: &Deck, cfg: &ExamConfig) -> Result<String> {
-    let sources = source_section(deck)?;
+/// Builds the question-generation prompt from the deck's sources.
+fn questions_prompt(sources: &[String], base: Option<&Path>, cfg: &ExamConfig) -> Result<String> {
+    let sources = source_section(sources, base)?;
     let mut prompt = format!(
         "You are a strict examiner writing an oral exam that verifies a student \
          truly UNDERSTANDS a topic — not whether they memorized isolated facts.\n\n\
@@ -488,7 +823,8 @@ mod tests {
     #[test]
     fn questions_prompt_carries_source_strictness_and_json_shape() {
         let deck = deck_with_sources(&["https://example.org/ownership"]);
-        let p = questions_prompt(&deck, &ExamConfig::default()).unwrap();
+        let p =
+            questions_prompt(&deck.sources, deck.path.parent(), &ExamConfig::default()).unwrap();
         assert!(p.contains("https://example.org/ownership"));
         assert!(p.contains("WebFetch"));
         assert!(p.contains("strict examiner"));
@@ -505,7 +841,7 @@ mod tests {
             extra: Some("Focus on lifetimes.".to_string()),
             ..ExamConfig::default()
         };
-        let p = questions_prompt(&deck, &cfg).unwrap();
+        let p = questions_prompt(&deck.sources, deck.path.parent(), &cfg).unwrap();
         assert!(p.contains("exactly 3 open-ended questions"));
         assert!(p.contains("Additional instructions:"));
         assert!(p.contains("Focus on lifetimes."));
@@ -786,9 +1122,124 @@ mod tests {
             sources: vec!["notes.md".to_string()],
             settings: Default::default(),
         };
-        let section = source_section(&deck).unwrap();
+        let section = source_section(&deck.sources, deck.path.parent()).unwrap();
         assert!(section.contains("the ground truth text"));
         assert!(section.contains("notes.md"));
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Polls a sitting until its in-flight background call lands (or times
+    /// out).
+    fn drain(s: &mut Sitting, store: &mut Store) {
+        for _ in 0..500 {
+            if s.poll(store, 0) {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        panic!("exam background call did not complete");
+    }
+
+    /// A fake CLI that answers the three exam calls by branching on the
+    /// prompt's JSON-shape marker (`"grades"` / `"questions"`), else emits
+    /// a deck.
+    fn branching_cli(dir: &std::path::Path, grades: &str) -> std::path::PathBuf {
+        let body = format!(
+            "input=$(cat)\n\
+             case \"$input\" in\n\
+             *'\"grades\"'*) printf '%s' '{grades}' ;;\n\
+             *'\"questions\"'*) printf '%s' '{{\"questions\":[{{\"prompt\":\"Q1\",\"points\":[\"p1\"]}},{{\"prompt\":\"Q2\",\"points\":[\"p2\"]}}]}}' ;;\n\
+             *) printf '# Why does X?\\n%% mode: explain\\n\\tpoint one\\n' ;;\n\
+             esac"
+        );
+        fake_cli(dir, &body)
+    }
+
+    fn sourced_deck(dir: &std::path::Path) -> Deck {
+        let path = dir.join("d.txt");
+        std::fs::write(&path, "% source: https://x\n# c\n\ta\n").unwrap();
+        Deck::load(&path).unwrap()
+    }
+
+    #[test]
+    fn sitting_drives_generate_answer_grade_remediate_on_fail() {
+        let _lock = EXEC_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        // One fail, one pass -> overall fail (default threshold = all pass).
+        let cli = branching_cli(
+            dir.path(),
+            "{\"grades\":[{\"verdict\":\"fail\",\"feedback\":\"no\",\"missed\":[\"the move rule\"]},\
+             {\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]}]}",
+        );
+        let deck = sourced_deck(dir.path());
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+
+        let mut s = Sitting::start(
+            &deck,
+            Strictness::Balanced,
+            ExamConfig::default(),
+            ask_config(&cli),
+        );
+        assert_eq!(&Phase::Generating, s.phase());
+        drain(&mut s, &mut store);
+        assert_eq!(&Phase::Answering, s.phase());
+        assert_eq!(2, s.total());
+
+        // Navigation + per-question answers.
+        assert!(!s.on_last());
+        s.set_answer("a1".to_string());
+        s.next();
+        assert!(s.on_last());
+        s.set_answer("a2".to_string());
+        s.prev();
+        assert_eq!("a1", s.answer());
+        s.next();
+
+        s.submit();
+        assert_eq!(&Phase::Grading, s.phase());
+        drain(&mut s, &mut store);
+        assert_eq!(&Phase::Results, s.phase());
+        assert!(!s.result().unwrap().passed);
+        assert_eq!(vec!["the move rule"], s.gaps());
+        assert!(!store.deck_mastered("d.txt")); // failed -> not mastered
+
+        assert!(s.can_remediate());
+        s.remediate();
+        assert_eq!(&Phase::Remediating, s.phase());
+        drain(&mut s, &mut store);
+        assert_eq!(&Phase::Remediated, s.phase());
+        // The remediation card was appended to the deck file.
+        let text = std::fs::read_to_string(dir.path().join("d.txt")).unwrap();
+        assert!(text.contains("% mode: explain"));
+    }
+
+    #[test]
+    fn sitting_pass_marks_mastered() {
+        let _lock = EXEC_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = branching_cli(
+            dir.path(),
+            "{\"grades\":[{\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]},\
+             {\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]}]}",
+        );
+        let deck = sourced_deck(dir.path());
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+
+        let mut s = Sitting::start(
+            &deck,
+            Strictness::Strict,
+            ExamConfig::default(),
+            ask_config(&cli),
+        );
+        drain(&mut s, &mut store);
+        s.set_answer("a".to_string());
+        s.next();
+        s.set_answer("b".to_string());
+        s.submit();
+        drain(&mut s, &mut store);
+        assert_eq!(&Phase::Results, s.phase());
+        assert!(s.result().unwrap().passed);
+        assert!(store.deck_mastered("d.txt")); // pass -> mastered + saved
+        assert!(!s.can_remediate());
     }
 }

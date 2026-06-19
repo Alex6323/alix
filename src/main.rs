@@ -741,6 +741,7 @@ fn review_serve(args: ReviewArgs) -> Result<()> {
         keys: config.keys.clone(),
         max_typos: args.max_typos,
         ask: config.ask.clone(),
+        exam: config.exam.clone(),
     };
     let build = |paths: Vec<PathBuf>, store: &Store, recent: &mut RecentDecks| {
         build_review(paths, &args, &config, store, recent, Frontend::Web).map(to_build)

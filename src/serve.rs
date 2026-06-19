@@ -31,9 +31,9 @@ use crate::{
     ask::{self, CliSession, Exchange, Reply},
     card::Card,
     choice,
-    config::{AskConfig, Bindings, BrowseBindings, Key, KeyPattern},
+    config::{AskConfig, Bindings, BrowseBindings, ExamConfig, Key, KeyPattern, Strictness},
     deck::{self, Deck, DeckState},
-    picker,
+    exam, picker,
     recent::RecentDecks,
     render::{self, NoteUnit},
     scheduler::Grade,
@@ -158,6 +158,10 @@ struct StateDto {
     /// Per-stage counts (index 0 = unseen).
     histogram: [usize; 6],
     finished: bool,
+    /// Subjects of decks in this (finished) session that are now `ExamDue` —
+    /// drilled, sourced, and not yet mastered. The summary offers to sit each.
+    /// Empty until the session is finished.
+    exam_due: Vec<String>,
     /// Whether a restart would find any due/new cards right now. The summary
     /// disables "New session" and shows a "nothing due" note when this is
     /// false.
@@ -321,6 +325,8 @@ pub struct ReviewOptions {
     pub max_typos: usize,
     /// Ask-Claude settings (command, allowlist, timeout, …).
     pub ask: AskConfig,
+    /// AI-exam settings (model, question count, default strictness, …).
+    pub exam: ExamConfig,
 }
 
 /// A review session ready to serve: the session, its header label, the
@@ -481,6 +487,112 @@ impl Reviewing {
     }
 }
 
+/// The server's live AI-exam state: one in-progress [`exam::Sitting`] plus the
+/// path of the deck under exam (to resolve what a pass unlocks).
+struct Examining {
+    sitting: exam::Sitting,
+    deck_path: PathBuf,
+}
+
+/// The exam payload sent to the browser. The page renders sub-views off `phase`
+/// and polls `GET /api/exam` while `thinking`.
+#[derive(Serialize)]
+struct ExamDto {
+    phase: &'static str,
+    deck: String,
+    strictness: &'static str,
+    total: usize,
+    current: usize,
+    /// The current question's prompt (in the answering phase).
+    question: Option<String>,
+    /// The answer saved for the current question so far.
+    answer: String,
+    on_last: bool,
+    /// Per-question breakdown (results phase).
+    grades: Vec<ExamGradeDto>,
+    passed: Option<bool>,
+    gaps: Vec<String>,
+    /// Decks a pass unlocks.
+    unlocks: Vec<String>,
+    thinking: bool,
+    error: Option<String>,
+}
+
+#[derive(Serialize)]
+struct ExamGradeDto {
+    question: String,
+    points: Vec<String>,
+    answer: String,
+    verdict: &'static str,
+    feedback: String,
+    missed: Vec<String>,
+}
+
+fn exam_phase_name(phase: &exam::Phase) -> &'static str {
+    match phase {
+        exam::Phase::Generating => "generating",
+        exam::Phase::Answering => "answering",
+        exam::Phase::Grading => "grading",
+        exam::Phase::Results => "results",
+        exam::Phase::Remediating => "remediating",
+        exam::Phase::Remediated => "remediated",
+    }
+}
+
+fn strictness_name(s: Strictness) -> &'static str {
+    match s {
+        Strictness::Strict => "strict",
+        Strictness::Balanced => "balanced",
+        Strictness::Lenient => "lenient",
+    }
+}
+
+/// Serializes an exam sitting for the browser; `decks_dir` resolves the
+/// dependent decks shown on a pass.
+fn exam_dto(ex: &Examining, decks_dir: &Path) -> ExamDto {
+    let s = &ex.sitting;
+    let result = s.result();
+    let grades = result
+        .map(|r| {
+            s.questions()
+                .iter()
+                .zip(s.answers())
+                .zip(&r.grades)
+                .map(|((q, a), g)| ExamGradeDto {
+                    question: q.prompt.clone(),
+                    points: q.points.clone(),
+                    answer: a.clone(),
+                    verdict: g.verdict.label(),
+                    feedback: g.feedback.clone(),
+                    missed: g.missed.clone(),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let passed = result.map(|r| r.passed);
+    let unlocks = if passed == Some(true) {
+        deck::dependents(&ex.deck_path, decks_dir)
+    } else {
+        Vec::new()
+    };
+    ExamDto {
+        phase: exam_phase_name(s.phase()),
+        deck: s.subject().to_string(),
+        strictness: strictness_name(s.strictness()),
+        total: s.total(),
+        current: s.current_index(),
+        question: s.question().map(|q| q.prompt.clone()),
+        answer: s.answer().to_string(),
+        on_last: s.on_last(),
+        grades,
+        passed,
+        gaps: s.gaps(),
+        unlocks,
+        thinking: s.thinking(),
+        error: s.error().map(str::to_string),
+    }
+}
+
 /// Serves review at `addr` until the process is stopped. When `initial` is
 /// `None` the server opens at the in-browser deck-selection screen; picking
 /// decks (`POST /api/select`) calls `build` to construct a session in place.
@@ -500,9 +612,11 @@ pub fn run_review(
         keys: bindings,
         max_typos,
         ask: ask_cfg,
+        exam: exam_cfg,
     } = opts;
     let keys = ReviewKeys::from(&bindings);
     let mut reviewing = initial.map(Reviewing::new);
+    let mut examining: Option<Examining> = None;
     let server = Server::http(addr).map_err(|e| anyhow!("cannot start server on {addr}: {e}"))?;
     for mut request in server.incoming_requests() {
         let method = request.method().clone();
@@ -709,6 +823,114 @@ pub fn run_review(
                 let (status, error) = r.poll_ask();
                 respond_json(request, &r.ask_dto(status, error));
             }
+            // ── AI exam ───────────────────────────────────────────────────
+            // Start an exam for one `% source:` deck: validate the name and
+            // drill state, then spawn question generation on a background
+            // thread; the page polls `GET /api/exam`.
+            (Method::Post, "/api/exam/start") => {
+                #[derive(Deserialize)]
+                struct Body {
+                    deck: String,
+                }
+                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
+                let known: HashMap<String, PathBuf> = picker::catalog(&decks_dir, &recent)
+                    .into_iter()
+                    .map(|e| (e.name, e.path))
+                    .collect();
+                let Some(path) = body.and_then(|b| known.get(&b.deck).cloned()) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                match Deck::load(&path) {
+                    Ok(deck)
+                        if !deck.sources.is_empty()
+                            && matches!(
+                                deck.state(&store),
+                                DeckState::ExamDue | DeckState::Finished
+                            ) =>
+                    {
+                        let strictness =
+                            deck.settings.exam_strictness.unwrap_or(exam_cfg.strictness);
+                        let sitting = exam::Sitting::start(
+                            &deck,
+                            strictness,
+                            exam_cfg.clone(),
+                            ask_cfg.clone(),
+                        );
+                        let ex = Examining {
+                            sitting,
+                            deck_path: path,
+                        };
+                        let dto = exam_dto(&ex, &decks_dir);
+                        examining = Some(ex);
+                        respond_json(request, &dto);
+                    }
+                    _ => respond_status(request, 409),
+                }
+            }
+            // Poll the exam: advance any finished background call, return state.
+            (Method::Get, "/api/exam") => {
+                let Some(ex) = examining.as_mut() else {
+                    respond_status(request, 409);
+                    continue;
+                };
+                ex.sitting.poll(&mut store, now_ms());
+                respond_json(request, &exam_dto(ex, &decks_dir));
+            }
+            // Save the current answer and (optionally) navigate to another question.
+            (Method::Post, "/api/exam/answer") => {
+                #[derive(Deserialize)]
+                struct Body {
+                    text: String,
+                    goto: Option<usize>,
+                }
+                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
+                let Some(ex) = examining.as_mut() else {
+                    respond_status(request, 409);
+                    continue;
+                };
+                if let Some(b) = body {
+                    ex.sitting.set_answer(b.text);
+                    if let Some(i) = b.goto {
+                        ex.sitting.goto(i);
+                    }
+                }
+                respond_json(request, &exam_dto(ex, &decks_dir));
+            }
+            // Save the last answer and submit everything for grading.
+            (Method::Post, "/api/exam/grade") => {
+                #[derive(Deserialize)]
+                struct Body {
+                    text: String,
+                }
+                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
+                let Some(ex) = examining.as_mut() else {
+                    respond_status(request, 409);
+                    continue;
+                };
+                if let Some(b) = body {
+                    ex.sitting.set_answer(b.text);
+                }
+                ex.sitting.submit();
+                respond_json(request, &exam_dto(ex, &decks_dir));
+            }
+            // On a fail, generate + append remediation cards to the deck.
+            (Method::Post, "/api/exam/remediate") => {
+                let Some(ex) = examining.as_mut() else {
+                    respond_status(request, 409);
+                    continue;
+                };
+                ex.sitting.remediate();
+                respond_json(request, &exam_dto(ex, &decks_dir));
+            }
+            // Leave the exam, back to the deck list / summary.
+            (Method::Post, "/api/exam/close") => {
+                examining = None;
+                respond_json(
+                    request,
+                    &review_state(reviewing.as_ref(), &store, mode_override),
+                );
+            }
             _ => respond_status(request, 404),
         }
     }
@@ -863,6 +1085,7 @@ fn review_state(
             failed: 0,
             histogram: [0; 6],
             finished: false,
+            exam_due: Vec::new(),
             can_restart: false,
             top_stage: crate::store::MAX_STAGE,
             label: "select decks".to_string(),
@@ -879,6 +1102,26 @@ fn review_state(
     } else {
         None
     };
+    // On a finished session, surface any deck that just reached "exam due" so the
+    // summary can offer to sit it. Only computed when finished (it reloads decks).
+    let finished = session.is_finished();
+    let exam_due = if finished {
+        let mut due: Vec<String> = r
+            .files
+            .paths
+            .iter()
+            .filter_map(|(subject, path)| {
+                Deck::load(path)
+                    .ok()
+                    .filter(|d| d.state(store) == DeckState::ExamDue)
+                    .map(|_| subject.clone())
+            })
+            .collect();
+        due.sort();
+        due
+    } else {
+        Vec::new()
+    };
     StateDto {
         phase: "review",
         card: card.map(card_dto),
@@ -890,7 +1133,8 @@ fn review_state(
         passed: session.stats.passed,
         failed: session.stats.failed,
         histogram: session.stage_histogram(store),
-        finished: session.is_finished(),
+        finished,
+        exam_due,
         can_restart: session.has_due_now(store, now_ms()),
         top_stage: session.top_stage(),
         label: r.label.clone(),

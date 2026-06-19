@@ -258,6 +258,28 @@
   .explain-label { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); margin: 6px 0 4px; }
   .explain-answer { white-space: pre-wrap; color: var(--ink); opacity: 0.85; margin-bottom: 6px; }
 
+  /* ── AI exam ── */
+  .exam { width: var(--card-w); max-width: 92vw; display: flex; flex-direction: column; gap: 12px; animation: deal 0.3s both; max-height: 78vh; overflow-y: auto; padding-right: 4px; }
+  .exam-wait { color: var(--dim); font-style: italic; }
+  .exam-progress { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); }
+  .exam-q { font-size: clamp(1.1rem, 3.4vw, 1.4rem); line-height: 1.4; color: var(--ink); }
+  .exam-input { width: 100%; box-sizing: border-box; resize: vertical; min-height: 120px; padding: 11px 13px; border-radius: 12px; border: 1px solid var(--line); background: rgba(0,0,0,0.25); color: var(--ink); font: inherit; }
+  .exam-input:focus { outline: none; border-color: var(--bolt); }
+  .exam-pass { color: var(--good); font-weight: 700; font-size: 1.1rem; }
+  .exam-fail { color: var(--again); font-weight: 700; font-size: 1.1rem; }
+  .exam-unlocks { color: var(--good); font-size: 0.9rem; }
+  .exam-result { border-left: 3px solid var(--line); padding: 2px 0 4px 12px; }
+  .exam-rq { color: var(--ink); margin-bottom: 2px; }
+  .exam-verdict { font-size: 0.92rem; }
+  .exam-verdict.v-pass { color: var(--good); }
+  .exam-verdict.v-partial { color: var(--warn); }
+  .exam-verdict.v-fail { color: var(--again); }
+  .exam-label { font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); margin: 6px 0 2px; }
+  .exam-points, .exam-missed { margin: 0 0 4px; padding-left: 18px; }
+  .exam-points li { color: var(--ink); opacity: 0.85; }
+  .exam-missed li { color: var(--again); opacity: 0.8; }
+  .exam-ready { color: var(--warn); margin-top: 8px; }
+
   @media (prefers-reduced-motion: reduce) {
     .stack, .summary, .reveal, .card.zap { animation: none; }
   }
@@ -298,6 +320,8 @@ let explainInput = ""; // the typed reconstruction on an explain card (client-si
 let asking = false;   // the ask-Claude overlay is open
 let askData = { transcript: [], thinking: false, status: null, error: null };
 let askPoll = null;   // setInterval handle while a reply is pending
+let examData = null;  // the ExamDto while an exam is active (null otherwise)
+let examPoll = null;  // setInterval handle while an exam call is in flight
 let KEYS = {};        // configured key bindings, from /api/keys
 
 const stage = document.getElementById("stage");
@@ -380,6 +404,7 @@ function render() {
   legend.innerHTML = "";
   menu.classList.remove("open");
 
+  if (examData) { renderExam(); return; }
   if (state.phase === "select") { renderSelect(); return; }
 
   deckEl.textContent = state.label;
@@ -476,6 +501,119 @@ function renderAsk() {
   if (!askData.thinking) input.focus();
 }
 
+// ── AI exam ───────────────────────────────────────────────────────────
+// A self-contained overlay (like ask): the server runs the three Claude calls
+// on a background thread and we poll /api/exam while `thinking`. Answers are
+// entered one question at a time; grading is a single batch call.
+function startExam(deck) {
+  api("/api/exam/start", post({ deck })).then(d => {
+    if (d && d.phase) { examData = d; render(); if (d.thinking) startExamPoll(); }
+  });
+}
+function closeExam() {
+  stopExamPoll();
+  api("/api/exam/close", post({})).then(s => { examData = null; apply(s); });
+}
+function startExamPoll() {
+  stopExamPoll();
+  examPoll = setInterval(() => {
+    api("/api/exam").then(d => { examData = d; if (!d.thinking) stopExamPoll(); render(); });
+  }, 600);
+}
+function stopExamPoll() { if (examPoll) { clearInterval(examPoll); examPoll = null; } }
+// Save the current answer, then move to question `goto`.
+function examNav(goto) {
+  const ta = document.querySelector(".exam-input");
+  api("/api/exam/answer", post({ text: ta ? ta.value : "", goto })).then(d => { examData = d; render(); });
+}
+// Save the last answer and submit all answers for grading.
+function examSubmit() {
+  const ta = document.querySelector(".exam-input");
+  api("/api/exam/grade", post({ text: ta ? ta.value : "" })).then(d => {
+    examData = d; render(); if (d.thinking) startExamPoll();
+  });
+}
+function examRemediate() {
+  api("/api/exam/remediate", post({})).then(d => { examData = d; render(); if (d.thinking) startExamPoll(); });
+}
+
+function renderExam() {
+  const d = examData;
+  deckEl.textContent = "exam · " + d.deck;
+  histEl.textContent = d.strictness;
+  scoreEl.innerHTML = "";
+  menuWrap.style.display = "none";
+  const wrap = el("div", "exam");
+
+  if (d.phase === "generating" || d.phase === "grading" || d.phase === "remediating") {
+    const msg = { generating: "Preparing your exam…", grading: "Grading your answers…",
+                  remediating: "Writing remediation cards…" }[d.phase];
+    wrap.appendChild(el("div", "exam-wait", msg));
+    if (d.error) wrap.appendChild(el("div", "ask-error", d.error));
+    stage.appendChild(wrap);
+    if (d.error || d.phase === "generating") chip("Close", "", closeExam, "esc");
+    return;
+  }
+
+  if (d.phase === "answering") {
+    wrap.appendChild(el("div", "exam-progress", `Question ${d.current + 1} / ${d.total}`));
+    wrap.appendChild(el("div", "exam-q", d.question || ""));
+    const ta = el("textarea", "exam-input");
+    ta.placeholder = "Type your answer…";
+    ta.value = d.answer || "";
+    ta.rows = 6;
+    wrap.appendChild(ta);
+    if (d.error) wrap.appendChild(el("div", "ask-error", d.error));
+    stage.appendChild(wrap);
+    ta.focus();
+    if (d.current > 0) chip("Back", "", () => examNav(d.current - 1));
+    if (d.on_last) chip("Submit for grading", "primary", examSubmit);
+    else chip("Next", "primary", () => examNav(d.current + 1));
+    chip("Quit", "", closeExam, "esc");
+    return;
+  }
+
+  if (d.phase === "results") {
+    wrap.appendChild(el("div", d.passed ? "exam-pass" : "exam-fail",
+      d.passed ? "PASSED — deck mastered ✓" : "FAILED"));
+    if (d.passed && d.unlocks.length)
+      wrap.appendChild(el("div", "exam-unlocks", "Unlocks: " + d.unlocks.join(", ")));
+    d.grades.forEach((g, i) => {
+      const q = el("div", "exam-result");
+      q.appendChild(el("div", "exam-rq", `Q${i + 1}. ${g.question}`));
+      q.appendChild(el("div", "exam-verdict v-" + g.verdict.toLowerCase(), `${g.verdict} — ${g.feedback}`));
+      if (g.verdict !== "PASS") {
+        if (g.points.length) {
+          q.appendChild(el("div", "exam-label", "A complete answer covers:"));
+          const ul = el("ul", "exam-points");
+          g.points.forEach(p => ul.appendChild(el("li", null, p)));
+          q.appendChild(ul);
+        }
+        if (g.missed.length) {
+          q.appendChild(el("div", "exam-label", "You missed:"));
+          const ul = el("ul", "exam-missed");
+          g.missed.forEach(m => ul.appendChild(el("li", null, m)));
+          q.appendChild(ul);
+        }
+      }
+      wrap.appendChild(q);
+    });
+    if (d.error) wrap.appendChild(el("div", "ask-error", d.error));
+    stage.appendChild(wrap);
+    if (!d.passed && d.gaps.length) chip("Add remediation cards", "primary", examRemediate);
+    chip("Close", "", closeExam, "esc");
+    return;
+  }
+
+  if (d.phase === "remediated") {
+    wrap.appendChild(el("div", "exam-pass", "Remediation cards added ✓"));
+    wrap.appendChild(el("div", "exam-wait", "Re-drill the deck, then re-sit the exam."));
+    stage.appendChild(wrap);
+    chip("Close", "", closeExam, "esc");
+    return;
+  }
+}
+
 // The deck-selection screen. Two phases: Browse (tap a deck name to launch it,
 // or tick checkboxes to pick several) and Confirm (review the ticked decks, then
 // Start the merged session).
@@ -501,6 +639,14 @@ async function renderSelect() {
     stage.innerHTML = ""; legend.innerHTML = "";
     let focused = null; // the focused, startable (unlocked) deck name
 
+    // Launch a single deck: an exam-due deck starts its exam, anything else a
+    // review session.
+    const launch = (name) => {
+      const deck = data.decks.find(x => x.name === name);
+      if (deck && deck.state === "examdue") startExam(name);
+      else select([name]);
+    };
+
     const wrap = el("div", "select");
     wrap.appendChild(el("div", "lede", "tap a deck to start — or tick several to merge"));
 
@@ -521,7 +667,7 @@ async function renderSelect() {
         const b = el("button", "chip primary", "Start");
         b.appendChild(el("span", "k", "enter"));
         b.disabled = !focused; // only when an unlocked deck row is focused
-        b.addEventListener("click", () => { if (focused) select([focused]); });
+        b.addEventListener("click", () => { if (focused) launch(focused); });
         legend.appendChild(b);
       }
     }
@@ -547,7 +693,7 @@ async function renderSelect() {
       row.appendChild(name);
       if (d.meta) row.appendChild(el("span", "meta state-" + d.state, d.meta));
       // Tapping the row launches that deck (locked decks can't start).
-      row.addEventListener("click", () => { if (!d.locked) select([d.name]); });
+      row.addEventListener("click", () => { if (!d.locked) launch(d.name); });
       rows.push({ row, name: d.name.toLowerCase() });
       list.appendChild(row);
     }
@@ -888,8 +1034,16 @@ function renderSummary() {
   if (!state.can_restart) {
     wrap.appendChild(el("div", "note", "Nothing due right now — come back later."));
   }
+  const examDue = state.exam_due || [];
+  examDue.forEach(name => {
+    wrap.appendChild(el("div", "exam-ready", `✦ ${name} is ready for its exam.`));
+  });
   stage.appendChild(wrap);
-  const newSession = chip("New session", "primary", restart, label(KEYS.restart));
+  // An exam-due deck takes the primary action; otherwise "New session" does.
+  examDue.forEach((name, i) => {
+    chip(examDue.length === 1 ? "Take the exam" : `Exam: ${name}`, i === 0 ? "primary" : "", () => startExam(name));
+  });
+  const newSession = chip("New session", examDue.length ? "" : "primary", restart, label(KEYS.restart));
   newSession.disabled = !state.can_restart;
   chip("Back to Decks", "", deselect, "esc");
 }
@@ -915,6 +1069,11 @@ function chip(text, cls, onClick, key) {
 
 document.addEventListener("keydown", (e) => {
   if (!state || e.altKey || e.metaKey) return; // ctrl handled per-binding below
+  // The exam overlay takes priority; Esc leaves it, the textarea handles typing.
+  if (examData) {
+    if (e.key === "Escape") { e.preventDefault(); closeExam(); }
+    return;
+  }
   if (state.phase === "select") {
     if (e.key === "Enter") {
       const b = legend.querySelector(".chip.primary");
@@ -940,7 +1099,16 @@ document.addEventListener("keydown", (e) => {
   }
   // Esc returns to the deck picker (with a confirm when the session isn't done).
   if (e.key === "Escape") { e.preventDefault(); leaveSession(); return; }
-  if (state.finished) { if (state.can_restart && hit(e, KEYS.restart)) { e.preventDefault(); restart(); } return; }
+  if (state.finished) {
+    // Enter takes the primary action (the exam, when a deck is exam due).
+    if (state.exam_due && state.exam_due.length && e.key === "Enter") {
+      const b = legend.querySelector(".chip.primary");
+      if (b) { e.preventDefault(); b.click(); }
+      return;
+    }
+    if (state.can_restart && hit(e, KEYS.restart)) { e.preventDefault(); restart(); }
+    return;
+  }
   if (feedback) {
     if (hit(e, KEYS.ask)) { e.preventDefault(); openAsk(); return; }
     if (hit(e, KEYS.remove)) { e.preventDefault(); remove(); return; }
