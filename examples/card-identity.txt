@@ -1,0 +1,32 @@
+% A trace: a guided predict-and-verify walk through real source.
+% Walk it with:  flash trace examples/card-identity.txt
+% goal: How does a flashcard keep your progress when you reword its question?
+% source: ../src/card.rs
+
+# You fix a typo in a card's question and reload the deck. Does its saved progress survive? Predict what a card's *identity* actually depends on.
+	`id()` hashes the subject and the back (answer) lines.
+	The front and the note are deliberately left out of the hash.
+	So rewording the front keeps the same id — progress stays attached.
+	% at: 152-156
+	! Identity is the card's content (its answer), not how you happen to ask it.
+
+# Two cards in *different* decks happen to share the exact same answer line. Same identity, or different? Predict why.
+	The subject (the deck's file name) is hashed first, before the back lines.
+	So the same answer in two decks hashes to two different ids.
+	The deck name namespaces every card it contains.
+	% at: 158-159
+	! Move a card to another file and it reads as a new card — same text, new id.
+
+# A cloze card hashes something other than its visible answer. Predict what it hashes, and why that's necessary.
+	When `hash_lines` is `Some`, those lines are hashed instead of `back`.
+	A cloze sub-card hashes the raw marked-up line plus its hole index.
+	That keeps each hole's id stable across rewording, and unique per hole.
+	% at: 54-57,160
+	! Two holes with identical answer text still get distinct ids via the index.
+
+# The comment insists id() "must stay stable across versions." Predict what actually breaks if the hash ever changes.
+	The id is the key under which each card's progress is stored.
+	Change the hash and every stored key stops matching its card.
+	All existing progress would be orphaned — silently reset to new.
+	% at: 154-156
+	! That risk is why a test pins id() to a fixed number (`id_is_stable`).

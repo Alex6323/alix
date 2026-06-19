@@ -26,6 +26,7 @@ flash --cram mydeck.txt          # ignore cooldowns, review everything
 flash browse mydeck.txt          # read through cards, no grading or scheduling
 flash generate <url>             # build a deck from a web page (via Claude)
 flash exam mydeck.txt            # AI exam against the deck's % source: (gates unlocks)
+flash trace mytrace.txt          # walk a predict-and-verify path through a % source:
 flash deps mydeck.txt            # edit a deck's prerequisites (checkbox picker)
 flash stats mydeck.txt           # progress overview
 flash list mydeck.txt            # every card with stage and due time
@@ -96,7 +97,9 @@ card's front. Follow a link for the full explanation.
 | `% strictness:` | deck | [Exam grading rigor](#the-ai-exam-flash-exam): `strict`, `balanced`, or `lenient`. |
 | `% requires:` | deck | [Prerequisite deck](#deck-dependencies) that gates unlocks (repeatable). |
 | `% link:` | deck | [ask-Claude reference](#ask-claude-about-a-card) URL — **tutor only** (repeatable). |
-| `% source:` | deck | [Exam ground truth](#the-ai-exam-flash-exam) — a URL or file (repeatable). Also a tutor reference. |
+| `% source:` | deck | [Exam ground truth](#the-ai-exam-flash-exam) — a URL or file (repeatable). For a [trace](#traces-flash-trace), the source the path runs through. Also a tutor reference. |
+| `% goal:` | deck | The question a [trace](#traces-flash-trace) answers — its presence makes the deck a trace. |
+| `% at:` | card | A [trace checkpoint's](#traces-flash-trace) locator into the `% source:` (`file:lines`, or just `lines` for a single-file source). |
 | `% title:` | deck | [Display name](#workspaces) shown instead of the file name (a workspace sets `title` in its `flash.toml`). |
 
 **`% link:` vs `% source:`** — both point at the material a deck is about, but
@@ -582,6 +585,66 @@ Settings live in the `[exam]` section: `model`, `timeout_secs` (default 300),
 `strictness` (default `balanced`), and `extra` (guidance appended to question
 generation). It reuses the `[ask]` command, permission mode and tool allowlist,
 and needs the `claude` CLI installed and logged in.
+
+## Traces (`flash trace`)
+
+> **Experimental.** Traces are a new, evolving feature — the deck format and the
+> flow may still change.
+
+Cards drill *facts* (the nodes of what you know); a **trace** drills the
+*connections between them* (the edges) by walking a **path** through a real
+source and making you **predict each hop before it's revealed**. Where the
+[AI exam](#the-ai-exam-flash-exam) verifies a *set* of independent answers, a
+trace verifies that you can follow one chain of reasoning — and the gap between
+your prediction and the truth is where the understanding forms.
+
+A trace is just a deck with a `% goal:` (which marks it a trace) and a
+`% source:` (the path's origin), then a sequence of **checkpoint** cards. Each
+checkpoint is an `explain`-style card — an open *predict* prompt, the key points
+a good prediction should hit — plus a `% at:` locator pointing at the real lines
+in the source:
+
+```
+% goal: How does a flashcard keep your progress when you reword its question?
+% source: ../src/card.rs
+
+# You fix a typo in a card's question. Predict what its identity depends on.
+	id() hashes the subject and the back (answer) lines.
+	The front and note are left out, so rewording the front keeps the same id.
+	% at: 152-156
+	! Identity is the card's content, not how you happen to ask it.
+```
+
+The locator is `file:lines` (e.g. `src/card.rs:152-156`), or — when `% source:`
+is a single file — just the line numbers (`152-156`, `158-159`, `54-57,160` for
+several ranges). The lines are **read live from the source** each time you walk,
+so the excerpt is always current and the deck stays small; the source is the
+oracle, not an invented answer.
+
+**Walking it** (`flash trace card-identity.txt`, needs a terminal) goes hop by
+hop:
+
+1. **Predict** — you type a guess before anything reveals (committing is the
+   point).
+2. **Reveal** — flash prints the real excerpt from the source, then the
+   checkpoint's key points and note.
+3. **Gap** — you judge yourself **Got it / Partial / Missed**. Grading is
+   self-judged and offline (no model call); a Partial or Missed is a **weak
+   edge** that resets so it resurfaces sooner, while a nailed hop advances and
+   fades. Each checkpoint is an ordinary card under the hood, so this scheduling
+   is the normal per-card SRS.
+4. **Compress** — after the last hop you restate the whole path in two
+   sentences: if you can re-derive it, you understood it.
+
+`flash trace <deck> --map` prints the path (every prompt, its key points and
+locator) without quizzing — a quick "just show me the route". The generic AI
+exam refuses a trace (`flash exam <trace>` points you here): a trace's
+verification *is* its predict-verify walk plus the compression, correctly scoped
+to the path.
+
+A trace deck degrades gracefully — even without `flash trace` it is a valid deck
+of `explain` cards. See `examples/card-identity.txt` for a complete trace over
+this repo's own source.
 
 ## Configuration
 

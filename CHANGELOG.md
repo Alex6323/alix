@@ -7,6 +7,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Traces (`flash trace`, experimental)** — a guided predict-and-verify walk
+  along a *path* through a `% source:`, drilling the connections between facts
+  (the edges) rather than isolated facts. A trace deck declares a `% goal:`
+  (which marks it a trace) and a sequence of `explain`-style checkpoint cards,
+  each with a `% at:` locator (`file:lines`, or just `lines` for a single-file
+  source) into the real source. Walking it goes hop by hop: you **predict**
+  before anything reveals, the real excerpt is **read live** from the source and
+  shown with the key points, you self-judge the **gap** (Got / Partial / Missed
+  — a weak edge resets so it resurfaces sooner, via the normal per-checkpoint
+  SRS), and after the last hop you **compress** the whole path into two
+  sentences. Self-judged and offline (no model call). `flash trace <deck> --map`
+  prints the path without quizzing; the generic AI exam refuses a trace (its
+  verification is the walk itself). See `examples/card-identity.txt`.
 - **Workspaces** — a folder of decks reviewed together with shared directives.
   Membership is folder-implicit (any folder of `*.txt` decks, one level deep); an
   optional `flash.toml` manifest (a scoped `config.toml`) sets a `title` and a

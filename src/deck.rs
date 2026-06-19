@@ -123,6 +123,11 @@ pub struct Deck {
     /// Display title (`% title:`), independent of the file name. `None` falls
     /// back to the file name (minus `.txt`). Display-only; not hashed.
     pub title: Option<String>,
+    /// The trace goal (`% goal:`), if any. Its presence makes this deck a
+    /// **trace** — a predict-and-verify walk (see [`crate::trace`]) rather than
+    /// a card deck — which is what `flash trace` walks and what makes the
+    /// generic AI exam refuse it. `None` for an ordinary deck.
+    pub goal: Option<String>,
 }
 
 /// An error loading a deck file.
@@ -177,6 +182,7 @@ impl Deck {
         let requires = parser::parse_requires(&text);
         let sources = parser::parse_sources(&text);
         let title = parser::parse_title(&text);
+        let goal = parser::parse_goal(&text);
         let mut settings = DeckSettings::from_directives(&parser::parse_directives(&text));
         // Fold the workspace's shared directives in below the deck's own.
         settings.fill_from(defaults);
@@ -228,7 +234,15 @@ impl Deck {
             sources,
             settings,
             title,
+            goal,
         })
+    }
+
+    /// Whether this deck is a **trace** (it declares a `% goal:`): a guided
+    /// predict-and-verify walk rather than a card deck. The generic AI exam
+    /// refuses a trace — its verification is the walk + compression itself.
+    pub fn is_trace(&self) -> bool {
+        self.goal.is_some()
     }
 
     /// The deck's display name: its `% title:` if set, else the file name with

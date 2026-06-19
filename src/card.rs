@@ -78,6 +78,11 @@ pub struct Card {
     /// means the global `MAX_STAGE`. Reaching it retires the card (it rests
     /// until `flash reset`). A review property, not part of the identity hash.
     pub max_stage: Option<u8>,
+    /// Source locator for a trace checkpoint (`% at:`): where in the
+    /// `% source:` the revealed ground truth lives (e.g. `card.rs:151-158`).
+    /// Read live when walking a trace; see [`crate::trace`]. Not part of the
+    /// identity hash — it points at the source, it is not card content.
+    pub at: Option<String>,
 }
 
 impl Card {
@@ -103,6 +108,7 @@ impl Card {
             image_back: None,
             frontend: None,
             max_stage: None,
+            at: None,
         }
     }
 
@@ -237,6 +243,7 @@ mod tests {
         a.image = Some(PathBuf::from("/imgs/a.png"));
         a.frontend = Some(Frontend::Web);
         a.max_stage = Some(2);
+        a.at = Some("card.rs:1-9".to_string());
         assert_eq!(a.id(), b.id());
     }
 

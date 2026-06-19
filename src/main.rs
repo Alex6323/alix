@@ -20,6 +20,7 @@ use flash::{
     session::{Order, Session, SessionOptions, histogram},
     store::{Store, default_store_path},
     time::{humanize_ms, now_ms},
+    trace::{Phase, Trace, Walk},
     tui::{self, App},
     workspace,
 };
@@ -64,6 +65,11 @@ enum Command {
     /// Sit the AI exam for a deck: open questions from its `% source:`, graded
     /// by Claude. Passing marks the deck mastered and unlocks its dependents.
     Exam(ExamArgs),
+    /// Walk a trace: a predict-and-verify path through a `% source:` that
+    /// builds understanding. At each checkpoint you predict, then the real
+    /// excerpt is revealed and you judge the gap; the path ends with a
+    /// compression.
+    Trace(TraceArgs),
     /// Edit a deck's prerequisite decks (`% requires:`) with a checkbox picker.
     #[command(visible_alias = "require")]
     Deps {
@@ -123,6 +129,30 @@ struct ExamArgs {
     /// `[exam]` default): strict, balanced, or lenient.
     #[arg(long, value_enum)]
     strictness: Option<Strictness>,
+
+    /// Path of the progress store (default: platform data dir).
+    #[arg(long)]
+    store: Option<PathBuf>,
+
+    /// Path of the config file (default: platform config dir).
+    #[arg(long)]
+    config: Option<PathBuf>,
+}
+
+#[derive(Args)]
+struct TraceArgs {
+    /// The trace deck to walk (must declare a `% goal:`).
+    deck: PathBuf,
+
+    /// Print the path — each checkpoint's prompt, key points and locator —
+    /// without quizzing, then exit.
+    #[arg(long)]
+    map: bool,
+
+    /// Scheduler used to schedule the checkpoints. Overrides the deck's
+    /// `% scheduler:` directive; defaults to leitner.
+    #[arg(short, long, value_enum)]
+    scheduler: Option<SchedulerKind>,
 
     /// Path of the progress store (default: platform data dir).
     #[arg(long)]
@@ -265,6 +295,7 @@ fn main() -> Result<()> {
         Some(Command::Browse(args)) => browse(args),
         Some(Command::Generate(args)) => generate_cmd(args),
         Some(Command::Exam(args)) => exam_cmd(args),
+        Some(Command::Trace(args)) => trace_cmd(args),
         Some(Command::Deps { deck }) => deps_cmd(deck),
         Some(Command::Config { init }) => config_cmd(init),
     }
@@ -1380,6 +1411,16 @@ fn exam_cmd(args: ExamArgs) -> Result<()> {
     let store = open_store(args.store.clone())?;
     let deck = Deck::load(&args.deck)?;
 
+    // A trace's verification is its own predict-verify walk + compression, not
+    // the source-wide AI exam; the generic exam refuses it (its `% source:` is a
+    // locator base, not an exam corpus). Point the user at `flash trace`.
+    if deck.is_trace() {
+        bail!(
+            "{} is a trace (it declares a `% goal:`) — walk it with `flash trace`, \
+             not the AI exam",
+            deck.subject
+        );
+    }
     if deck.sources.is_empty() {
         bail!(
             "{} declares no `% source:` — add one (a URL or a file path) to \
@@ -1415,6 +1456,194 @@ fn exam_cmd(args: ExamArgs) -> Result<()> {
         .unwrap_or(config.exam.strictness);
     let decks_dir = config.decks_dir();
     tui::ExamApp::new(deck, strictness, exam_cfg, config.ask, store, decks_dir).run()
+}
+
+// ANSI styling for the linear `flash trace` flow (it requires a terminal).
+const BOLD: &str = "\x1b[1m";
+const DIM: &str = "\x1b[2m";
+const RESET: &str = "\x1b[0m";
+
+fn trace_cmd(args: TraceArgs) -> Result<()> {
+    let deck = Deck::load(&args.deck)?;
+    let trace = Trace::from_deck(&deck)?;
+
+    // `--map`: just print the path, no quiz, no terminal needed.
+    if args.map {
+        return print_trace_map(&trace);
+    }
+    if !std::io::stdin().is_terminal() {
+        bail!("`flash trace` needs a terminal");
+    }
+
+    let scheduler = args
+        .scheduler
+        .or(deck.settings.scheduler)
+        .unwrap_or_default();
+    let mut store = open_store(args.store.clone())?;
+    let mut walk = Walk::new(trace, scheduler);
+
+    let total = walk.total();
+    println!("{BOLD}Trace{RESET}  {}", walk.trace().goal);
+    if let Some(src) = &walk.trace().source {
+        println!("{DIM}source: {src}  ·  {total} checkpoints{RESET}");
+    }
+    println!(
+        "{DIM}At each hop, predict before you reveal. Be honest about the gap — \
+         it's where the learning is.{RESET}"
+    );
+
+    'walk: loop {
+        match walk.phase() {
+            Phase::Predict => {
+                let i = walk.current_index();
+                let checkpoint = walk
+                    .checkpoint()
+                    .cloned()
+                    .expect("predict has a checkpoint");
+                println!("\n{BOLD}── Checkpoint {}/{} ──{RESET}", i + 1, total);
+                println!("{}", checkpoint.prompt);
+                match read_line(&format!("{DIM}predict >{RESET} "))? {
+                    None => break 'walk, // EOF (Ctrl-D)
+                    Some(text) => walk.predict(text),
+                }
+            }
+            Phase::Reveal => {
+                let checkpoint = walk.checkpoint().cloned().expect("reveal has a checkpoint");
+                println!("\n{BOLD}Reveal{RESET}");
+                match walk.trace().excerpt(&checkpoint) {
+                    Ok(excerpt) => print_excerpt(&excerpt),
+                    Err(e) => {
+                        let loc = checkpoint.locator.as_deref().unwrap_or("(none)");
+                        println!("{DIM}  (couldn't read the source — {e})  at: {loc}{RESET}");
+                    }
+                }
+                if !checkpoint.points.is_empty() {
+                    println!("{BOLD}  key points{RESET}");
+                    for point in &checkpoint.points {
+                        println!("    • {point}");
+                    }
+                }
+                if let Some(note) = &checkpoint.note {
+                    println!("{DIM}  ! {note}{RESET}");
+                }
+                match read_delta()? {
+                    Some(delta) => walk.grade(&mut store, delta, now_ms()),
+                    None => break 'walk, // quit
+                }
+            }
+            Phase::Compress => {
+                println!("\n{BOLD}── Compress ──{RESET}");
+                println!(
+                    "Restate the whole path in two sentences — if you can re-derive \
+                     it, you understood it."
+                );
+                match read_line(&format!("{DIM}compress >{RESET} "))? {
+                    None => break 'walk,
+                    Some(text) => walk.compress(text),
+                }
+            }
+            Phase::Done => break 'walk,
+        }
+    }
+
+    store.save().context("cannot save progress")?;
+    print_trace_summary(&walk);
+    Ok(())
+}
+
+/// Prints a trace's path (prompts, key points, locators) without quizzing.
+fn print_trace_map(trace: &Trace) -> Result<()> {
+    println!("{BOLD}Trace{RESET}  {}", trace.goal);
+    if let Some(src) = &trace.source {
+        println!("{DIM}source: {src}{RESET}");
+    }
+    for (i, checkpoint) in trace.checkpoints.iter().enumerate() {
+        println!("\n{BOLD}{}.{RESET} {}", i + 1, checkpoint.prompt);
+        for point in &checkpoint.points {
+            println!("   • {point}");
+        }
+        if let Some(loc) = &checkpoint.locator {
+            println!("   {DIM}at {loc}{RESET}");
+        }
+        if let Some(note) = &checkpoint.note {
+            println!("   {DIM}! {note}{RESET}");
+        }
+    }
+    Ok(())
+}
+
+/// Renders an excerpt with a line-number gutter, marking gaps between
+/// non-contiguous ranges.
+fn print_excerpt(excerpt: &flash::trace::Excerpt) {
+    println!("{DIM}  {}{RESET}", excerpt.path.display());
+    let mut prev: Option<usize> = None;
+    for (no, text) in &excerpt.lines {
+        if prev.is_some_and(|p| *no > p + 1) {
+            println!("       {DIM}⋮{RESET}");
+        }
+        println!("  {DIM}{no:>5}{RESET}  {text}");
+        prev = Some(*no);
+    }
+    if excerpt.truncated {
+        println!("       {DIM}… (truncated){RESET}");
+    }
+}
+
+/// Prints the end-of-walk tally and which checkpoints came out weak.
+fn print_trace_summary(walk: &Walk) {
+    let s = walk.summary();
+    let graded = s.got + s.partial + s.missed;
+    if graded == 0 {
+        println!("\n{DIM}Left the trace early — no checkpoints recorded.{RESET}");
+        return;
+    }
+    println!(
+        "\n{BOLD}Walk complete{RESET}  {} got · {} partial · {} missed",
+        s.got, s.partial, s.missed
+    );
+    if s.weak.is_empty() {
+        println!("{DIM}Every hop landed — the path will fade gently.{RESET}");
+    } else {
+        let hops: Vec<String> = s.weak.iter().map(|i| (i + 1).to_string()).collect();
+        println!(
+            "{DIM}Weak edges (resurface sooner): checkpoint {}{RESET}",
+            hops.join(", ")
+        );
+    }
+}
+
+/// Reads one line from stdin after printing `prompt`. Returns `None` on EOF
+/// (Ctrl-D), which ends the walk.
+fn read_line(prompt: &str) -> Result<Option<String>> {
+    print!("{prompt}");
+    std::io::stdout().flush().ok();
+    let mut line = String::new();
+    if std::io::stdin().read_line(&mut line)? == 0 {
+        println!();
+        return Ok(None);
+    }
+    Ok(Some(line.trim_end().to_string()))
+}
+
+/// Prompts for the self-judged delta, re-asking until it gets `g`/`p`/`m`.
+/// Returns `None` to quit (a leading `q`, or EOF).
+fn read_delta() -> Result<Option<flash::trace::Delta>> {
+    loop {
+        let prompt = format!("{DIM}  gap?  [g]ot · [p]artial · [m]issed  (q to quit) >{RESET} ");
+        let Some(answer) = read_line(&prompt)? else {
+            return Ok(None);
+        };
+        match answer.trim().chars().next() {
+            Some('q') | Some('Q') => return Ok(None),
+            Some(c) => {
+                if let Some(delta) = flash::trace::Delta::from_key(c) {
+                    return Ok(Some(delta));
+                }
+            }
+            None => {}
+        }
+        println!("{DIM}  answer g, p, or m (or q to quit).{RESET}");
+    }
 }
 
 fn deps_cmd(deck_path: PathBuf) -> Result<()> {

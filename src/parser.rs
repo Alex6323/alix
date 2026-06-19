@@ -101,6 +101,9 @@ struct PartialCard {
     image_back: Option<String>,
     /// Per-card `% frontend:`, if the card declares one.
     frontend: Option<Frontend>,
+    /// Per-card `% at:` trace locator (a source position), raw value as
+    /// written.
+    at: Option<String>,
 }
 
 impl PartialCard {
@@ -131,6 +134,7 @@ impl PartialCard {
             card.image = self.image.map(PathBuf::from);
             card.image_back = self.image_back.map(PathBuf::from);
             card.frontend = self.frontend;
+            card.at = self.at;
             cards.push(card);
         }
         Ok(())
@@ -185,6 +189,18 @@ pub fn parse_title(text: &str) -> Option<String> {
         let rest = raw.trim().strip_prefix(MARKUP_COMMENT)?;
         let title = rest.trim().strip_prefix("title:")?.trim();
         (!title.is_empty()).then(|| title.to_string())
+    })
+}
+
+/// The trace's goal (`% goal: <question>`), if the deck declares one. A
+/// `% goal:` marks the deck as a **trace** — a guided predict-and-verify walk
+/// (see [`crate::trace`]) rather than a plain card deck. The first such line
+/// wins. Invisible to the card parser, so it never affects card hashes.
+pub fn parse_goal(text: &str) -> Option<String> {
+    text.lines().find_map(|raw| {
+        let rest = raw.trim().strip_prefix(MARKUP_COMMENT)?;
+        let goal = rest.trim().strip_prefix("goal:")?.trim();
+        (!goal.is_empty()).then(|| goal.to_string())
     })
 }
 
@@ -270,6 +286,7 @@ pub fn parse_str(subject: &str, text: &str) -> Result<Vec<Card>, ParseError> {
                     image: None,
                     image_back: None,
                     frontend: None,
+                    at: None,
                 });
                 state = State::Front;
             }
@@ -319,6 +336,7 @@ pub fn parse_str(subject: &str, text: &str) -> Result<Vec<Card>, ParseError> {
                         }
                         "img" => partial.image = Some(value),
                         "img-back" => partial.image_back = Some(value),
+                        "at" => partial.at = Some(value),
                         "frontend" => {
                             if let Ok(f) = Frontend::from_str(&value, true) {
                                 partial.frontend = Some(f);
@@ -559,6 +577,26 @@ mod tests {
         // `% img:` is only stamped on plain cards; cloze sub-cards keep None.
         let cards = parse_str("s", "#? f\n% img: x.png\n{{a}} b\n").unwrap();
         assert_eq!(None, cards[0].image);
+    }
+
+    #[test]
+    fn per_card_at_locator_is_parsed_verbatim() {
+        // The trace locator keeps its colons and ranges as written.
+        let cards = parse_str("s", "# predict\n% at: src/card.rs:151-158\n\tpoint\n").unwrap();
+        assert_eq!(Some("src/card.rs:151-158".to_string()), cards[0].at);
+        // A card without one stays None.
+        let bare = parse_str("s", "# q\n\ta\n").unwrap();
+        assert_eq!(None, bare[0].at);
+    }
+
+    #[test]
+    fn goal_marks_a_trace_and_keeps_the_question() {
+        assert_eq!(
+            Some("How does a keypress become a saved grade?".to_string()),
+            parse_goal("% goal: How does a keypress become a saved grade?\n# f\n\tb\n")
+        );
+        assert_eq!(None, parse_goal("# f\n\tb\n"));
+        assert_eq!(None, parse_goal("% goal:\n# f\n\tb\n")); // empty
     }
 
     #[test]
