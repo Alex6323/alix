@@ -800,6 +800,7 @@ fn stats(args: DeckArgs) -> Result<()> {
             DeckState::NotStarted => "not started",
             DeckState::Started => "in progress",
             DeckState::ExamDue => "exam due",
+            DeckState::Finished if store.deck_mastered(&deck.subject) => "mastered ✓",
             DeckState::Finished => "finished ✓",
         };
         // Stages above the deck's `% max-stage:` are unreachable, shown as `–`.

@@ -117,6 +117,11 @@ fn deck_item(c: Candidate, store: &Store, decks_dir: &Path, enforce_locks: bool)
                 .filter(|card| session::is_retired(card, store))
                 .count();
             let label = match st {
+                // "mastered" is reserved for passing the exam; a source-less
+                // deck that's merely fully drilled stays "done".
+                DeckState::Finished if store.deck_mastered(&deck.subject) => {
+                    "mastered ✓".to_string()
+                }
                 DeckState::Finished => "done ✓".to_string(),
                 DeckState::ExamDue => "exam due".to_string(),
                 DeckState::NotStarted => "new".to_string(),

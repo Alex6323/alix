@@ -1159,6 +1159,10 @@ fn deck_catalog(
                     let total = deck.cards.len();
                     let retired = deck.cards.iter().filter(|c| is_retired(c, store)).count();
                     let (state, label) = match deck.state(store) {
+                        // Exam-passed decks read "mastered"; plain drilled ones "done".
+                        DeckState::Finished if store.deck_mastered(&deck.subject) => {
+                            ("finished", "mastered ✓".to_string())
+                        }
                         DeckState::Finished => ("finished", "done ✓".to_string()),
                         DeckState::ExamDue => ("examdue", "exam due".to_string()),
                         DeckState::NotStarted => ("new", "new".to_string()),
