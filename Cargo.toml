@@ -3,7 +3,7 @@ name = "flash"
 version = "0.1.0"
 authors = ["Alex6323 <Al3k5@protonmail.com>"]
 edition = "2024"
-description = "A spaced-repetition flashcard trainer for the terminal."
+description = "An AI-augmented spaced-repetition learning tool for the terminal and the web."
 keywords = ["learning", "flashcards", "spaced-repetition", "tui"]
 
 [dependencies]

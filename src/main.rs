@@ -23,7 +23,7 @@ use flash::{
     tui::{self, App},
 };
 
-/// A spaced-repetition flashcard trainer for the terminal.
+/// An AI-augmented spaced-repetition learning tool for the terminal and the web.
 ///
 /// Decks are plain text files: `# question` starts a card, the indented
 /// lines below it are the answer, `! text` adds a note, `% text` is a

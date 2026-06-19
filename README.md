@@ -1,9 +1,14 @@
 # flash
 
-A spaced-repetition flashcard trainer for the terminal. Decks are simple
-plain-text files; it adds a ratatui-based UI, Leitner and SM-2 schedulers,
-several answer modes, cloze cards, deck dependencies, an ask-Claude helper,
-AI deck generation, and per-card review statistics.
+An **AI-augmented spaced-repetition learning tool** for the terminal and the
+web. At its core it's a fast, plain-text flashcard trainer — Leitner and SM-2
+scheduling, several answer modes, cloze and dual-direction cards, images, and
+deck dependencies. What sets it apart is the **Claude integration**: an
+*ask-Claude tutor* on any card, *AI deck generation* from a web page,
+*understanding cards*, and an **AI exam** (`flash exam`) that verifies you
+actually grasped the material and gates your progress on passing it — so you're
+not just memorizing, you're being checked. Decks stay simple plain-text files
+you own, reviewable in a ratatui terminal UI or a local web app.
 
 ## Usage
 
