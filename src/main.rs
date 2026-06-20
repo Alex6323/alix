@@ -74,6 +74,9 @@ enum Command {
     /// learning plan toward a goal: the fact decks and traces worth authoring,
     /// each tagged and dependency-ordered. Read-only; writes nothing.
     Explore(ExploreArgs),
+    /// Open a workspace folder: pick a fact deck (→ review) or a trace deck
+    /// (→ walk) from its members; you return to the picker when done.
+    Workspace(WorkspaceArgs),
     /// Edit a deck's prerequisite decks (`% requires:`) with a checkbox picker.
     #[command(visible_alias = "require")]
     Deps {
@@ -86,6 +89,20 @@ enum Command {
         #[arg(long)]
         init: bool,
     },
+}
+
+#[derive(Args)]
+struct WorkspaceArgs {
+    /// The workspace folder to open.
+    dir: PathBuf,
+
+    /// Path of the progress store (default: platform data dir).
+    #[arg(long)]
+    store: Option<PathBuf>,
+
+    /// Path of the config file (default: platform config dir).
+    #[arg(long)]
+    config: Option<PathBuf>,
 }
 
 #[derive(Args)]
@@ -355,6 +372,7 @@ fn main() -> Result<()> {
         Some(Command::Exam(args)) => exam_cmd(args),
         Some(Command::Trace(args)) => trace_cmd(args),
         Some(Command::Explore(args)) => explore_cmd(args),
+        Some(Command::Workspace(args)) => workspace_cmd(args),
         Some(Command::Deps { deck }) => deps_cmd(deck),
         Some(Command::Config { init }) => config_cmd(init),
     }
@@ -431,7 +449,9 @@ fn expand_workspaces(deck_paths: &[PathBuf]) -> Result<Expanded> {
     let mut defaults: HashMap<String, DeckSettings> = HashMap::new();
     let mut label = None;
     for path in deck_paths {
-        if workspace::is_workspace(path) {
+        // Any folder of decks expands (a workspace applies its `flash.toml`
+        // defaults; a plain folder loads with defaults).
+        if workspace::has_decks(path) {
             let ws = workspace::Workspace::load(path)?;
             if deck_paths.len() == 1 {
                 label = Some(ws.display_name());
@@ -1805,6 +1825,67 @@ fn explore_walk(args: &ExploreArgs, config: &Config, source: &str, goal: &str) -
     let scheduler = deck.settings.scheduler.unwrap_or_default();
     let mut store = open_store(None)?;
     run_walk(trace, scheduler, &mut store)
+}
+
+/// `flash workspace <dir>`: open a workspace into its member picker. Pick a fact
+/// deck → review it; pick a trace deck → walk it; back to the picker when done,
+/// until you quit. Unlike `flash review <dir>`, which flattens the whole
+/// workspace into one review (trace decks degrade to flat cards), this routes
+/// each member to the right experience.
+fn workspace_cmd(args: WorkspaceArgs) -> Result<()> {
+    if !std::io::stdin().is_terminal() {
+        bail!("`flash workspace` needs a terminal");
+    }
+    if !workspace::is_workspace(&args.dir) {
+        if workspace::has_decks(&args.dir) {
+            bail!(
+                "{} is a folder of decks, not a workspace — add a `flash.toml` to \
+                 make it one, or `flash review {}` to review its decks.",
+                args.dir.display(),
+                args.dir.display(),
+            );
+        }
+        bail!("{} is not a workspace (no `flash.toml`)", args.dir.display());
+    }
+    loop {
+        let store = open_store(args.store.clone())?;
+        let Some(picked) = picker::pick_workspace(&args.dir, &store, true)? else {
+            return Ok(()); // quit the workspace
+        };
+        if picked.is_empty() {
+            return Ok(());
+        }
+        drop(store); // review / walk reopen the store themselves
+
+        // A single trace deck is walked; anything else is a fact-deck review.
+        if let [only] = picked.as_slice() {
+            let deck = Deck::load(only)?;
+            if deck.is_trace() {
+                let trace = Trace::from_deck(&deck)?;
+                let scheduler = deck.settings.scheduler.unwrap_or_default();
+                let mut store = open_store(args.store.clone())?;
+                run_walk(trace, scheduler, &mut store)?;
+                continue;
+            }
+        }
+        review(ReviewArgs {
+            decks: picked,
+            mode: None,
+            scheduler: None,
+            order: None,
+            new: 10,
+            limit: None,
+            cram: false,
+            max_typos: 2,
+            store: args.store.clone(),
+            config: args.config.clone(),
+            serve: ServeOpts {
+                serve: false,
+                port: None,
+                lan: false,
+            },
+        })?;
+    }
 }
 
 /// Prints a trace's path (prompts, key points, locators) without quizzing.

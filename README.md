@@ -214,10 +214,10 @@ finished deck later lapses below the top stage, its dependents lock again.
 ### Workspaces
 
 A **workspace** is a folder of decks reviewed together with shared directives —
-ideal for a cluster like all your vocabulary decks. Membership is implicit:
-*any folder containing `*.txt` decks is a workspace*, one level deep. Drop a
-`flash.toml` in it — a scoped version of the [config file](#configuration) — to
-set a title and a `[defaults]` table of directives shared by every deck:
+ideal for a cluster like all your vocabulary decks. A folder becomes a workspace
+when you drop a **`flash.toml`** in it — a scoped version of the
+[config file](#configuration) — setting a title and a `[defaults]` table of
+directives shared by every deck:
 
 ```toml
 # ~/decks/english/flash.toml
@@ -235,11 +235,19 @@ flash review ~/decks/english/        # review every deck in the folder, together
 The `[defaults]` keys are the deck directive names, and they fill in only what a
 deck *doesn't* set itself, so precedence runs **CLI flag > card > deck >
 workspace > default** — set `direction = "both"` once for the whole cluster, and
-an individual deck can still override it with its own `% direction:`. Workspaces
-appear as their own rows in the picker (terminal and web); opening one drills
-into its decks, where you review all of them or tick a subset. The `flash.toml`
-manifest is optional — a bare folder of decks is still a workspace (its title
-defaults to the folder name). Workspaces apply to `review` and `browse`.
+an individual deck can still override it with its own `% direction:`.
+
+Workspaces — and plain folders — appear as their own rows in the picker (terminal
+and web): a folder *with* a `flash.toml` shows as a **workspace**, one *without*
+as a plain **folder**. Both open (drill in) to their decks, where you review all
+or tick a subset; a manifest-less folder is still reviewable
+(`flash review <folder>`), it just applies no shared directives.
+
+**`flash workspace <dir>`** opens a workspace into its own picker and routes each
+member to the right experience — a **fact deck** starts a review, a **trace
+deck** starts a [predict-verify walk](#traces-flash-trace) — returning you to the
+picker when done. (`flash review <dir>` instead flattens the whole folder into one
+review, so trace decks get quizzed as flat cards.)
 
 **`% title:`** (on a deck) or **`title`** (in a workspace's `flash.toml`) gives a
 display name, shown in the picker, the session header, `flash list` and `flash

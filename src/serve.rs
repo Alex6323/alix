@@ -1183,11 +1183,18 @@ fn deck_catalog(
                         label: m.label.clone(),
                     })
                     .collect();
+                // A folder with a `flash.toml` is a workspace; without one it's a
+                // plain folder. Both open into their members.
+                let kind = if crate::workspace::is_workspace(&e.path) {
+                    "workspace"
+                } else {
+                    "folder"
+                };
                 return DeckItemDto {
-                    meta: Some(format!("workspace · {} decks", members.len())),
+                    meta: Some(format!("{kind} · {} decks", members.len())),
                     name: e.name,
                     label: e.label,
-                    state: "workspace",
+                    state: kind,
                     locked: false,
                     is_workspace: true,
                     members,

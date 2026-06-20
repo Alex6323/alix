@@ -45,7 +45,9 @@ struct Item<K> {
     /// Deck rows: completion state, used to tint the meta (finished → green).
     /// `None` for non-deck pickers (cards, dependency editor).
     state: Option<DeckState>,
-    /// A workspace row: it opens (drills in) on Enter rather than being ticked.
+    /// A folder/workspace row: it opens (drills in) on Enter rather than being
+    /// ticked. A folder with a `flash.toml` is a workspace; without one it's a
+    /// plain folder — both drill in.
     is_workspace: bool,
     /// Dim location hint (parent dir) for entries outside the decks dir; `None`
     /// keeps the row clean.
@@ -61,7 +63,8 @@ struct Candidate {
     name: String,
     /// When last reviewed, if it is a recent entry.
     last_used_ms: Option<u64>,
-    /// `true` for a workspace folder, `false` for a single deck file.
+    /// `true` for a drillable folder (a workspace if it has a `flash.toml`, else
+    /// a plain folder), `false` for a single deck file.
     is_workspace: bool,
 }
 
@@ -74,7 +77,7 @@ fn dir_candidates(decks_dir: &Path) -> Vec<Candidate> {
             .filter_map(|path| {
                 if path.is_file() && path.extension().is_some_and(|e| e == "txt") {
                     Some((path, false))
-                } else if workspace::is_workspace(&path) {
+                } else if workspace::has_decks(&path) {
                     Some((path, true))
                 } else {
                     None
@@ -100,7 +103,7 @@ fn build_candidates(decks_dir: &Path, recent: &RecentDecks) -> Vec<Candidate> {
     let mut seen = HashSet::new();
 
     for entry in recent.entries() {
-        let is_workspace = workspace::is_workspace(&entry.path);
+        let is_workspace = workspace::has_decks(&entry.path);
         if entry.path.is_file() || is_workspace {
             out.push(Candidate {
                 name: file_name(&entry.path),
@@ -128,15 +131,21 @@ fn build_candidates(decks_dir: &Path, recent: &RecentDecks) -> Vec<Candidate> {
 /// browsable.
 fn deck_item(c: Candidate, store: &Store, decks_dir: &Path, enforce_locks: bool) -> Item<PathBuf> {
     let hint = location_hint(&c.path, decks_dir);
-    // A workspace row: its title (or folder name) and a deck count; always
-    // selectable, no lock/state of its own.
+    // A folder row: its title (or folder name) and a deck count; always
+    // selectable, no lock/state of its own. A folder with a `flash.toml` is a
+    // "workspace" (shared directives apply); without one it's a plain "folder".
     if c.is_workspace {
+        let kind = if workspace::is_workspace(&c.path) {
+            "workspace"
+        } else {
+            "folder"
+        };
         let (label, meta) = match workspace::Workspace::load(&c.path) {
             Ok(ws) => (
                 ws.display_name(),
-                Some(format!("· workspace · {} decks", ws.members.len())),
+                Some(format!("· {kind} · {} decks", ws.members.len())),
             ),
-            Err(_) => (c.name, Some("· workspace".to_string())),
+            Err(_) => (c.name, Some(format!("· {kind}"))),
         };
         return Item {
             key: c.path,
@@ -169,9 +178,12 @@ fn deck_item(c: Candidate, store: &Store, decks_dir: &Path, enforce_locks: bool)
                 DeckState::Started => format!("{retired}/{total}"),
             };
             let locked = enforce_locks && deck::is_locked(&deck, Some(decks_dir), store);
+            // Mark whether this is a trace deck (walked) or a fact deck
+            // (reviewed) so an opened workspace can tell them apart.
+            let kind = if deck.is_trace() { "trace" } else { "deck" };
             (
                 deck.display_name(),
-                Some(format!("· {badge}")),
+                Some(format!("· {kind} · {badge}")),
                 locked,
                 Some(st),
             )
@@ -341,9 +353,9 @@ pub fn pick(
         let Some(chosen) = launch(picker)? else {
             return Ok(Vec::new()); // cancelled at the top level
         };
-        // Opening a single workspace drills into a sub-picker of its decks.
+        // Opening a single folder/workspace drills into a sub-picker of its decks.
         if let [path] = chosen.as_slice()
-            && workspace::is_workspace(path)
+            && workspace::has_decks(path)
         {
             match pick_in_workspace(path, store, decks_dir, enforce_locks)? {
                 Some(decks) => return Ok(decks),
@@ -352,6 +364,17 @@ pub fn pick(
         }
         return Ok(chosen);
     }
+}
+
+/// Opens a workspace directly into its member sub-picker (for `flash workspace
+/// <dir>`): the same drill-in list, with the folder itself as the lookup root so
+/// sibling `% requires:` and locks resolve within it. `None` if cancelled.
+pub fn pick_workspace(
+    folder: &Path,
+    store: &Store,
+    enforce_locks: bool,
+) -> Result<Option<Vec<PathBuf>>> {
+    pick_in_workspace(folder, store, folder, enforce_locks)
 }
 
 /// The drill-in sub-picker for a workspace: its member decks, all pre-ticked so

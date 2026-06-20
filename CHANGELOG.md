@@ -57,14 +57,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`-o`, default `explore.txt`) and walked immediately, reusing the `flash trace`
   walk; re-walk later with `flash trace <file>`.
 - **Workspaces** — a folder of decks reviewed together with shared directives.
-  Membership is folder-implicit (any folder of `*.txt` decks, one level deep); an
-  optional `flash.toml` manifest (a scoped `config.toml`) sets a `title` and a
-  `[defaults]` table of directives that fill in what each deck leaves unset, so
-  precedence is CLI > card > deck > workspace > default. `flash review`/`browse
-  <folder>` reviews the whole cluster; workspaces appear as their own rows in the
-  picker (terminal and web) and, when opened, drill into their decks (review all,
-  or tick a subset). Great for clusters like a vocabulary set that should all be
-  `direction = "both"` without repeating it per file.
+  A folder is a **workspace** when it has a `flash.toml` manifest (a scoped
+  `config.toml`) setting a `title` and a `[defaults]` table of directives that
+  fill in what each deck leaves unset (precedence CLI > card > deck > workspace >
+  default); a folder of decks *without* a manifest is a plain **folder** — still
+  reviewable, but not a workspace. Both appear as their own rows in the picker
+  (terminal and web, labeled "workspace" vs "folder") and drill into their decks
+  (review all, or tick a subset); `flash review`/`browse <folder>` reviews the
+  whole cluster. **`flash workspace <dir>`** opens a workspace into its own picker
+  and routes each member to the right thing — a **fact deck** → review, a **trace
+  deck** → predict-verify walk — returning to the picker when done. Great for
+  clusters like a vocabulary set that should all be `direction = "both"` without
+  repeating it per file.
 - `% title:` deck directive (also usable in a `workspace.flash` manifest): a
   display name shown in the picker, session header, `flash list` and `flash stats`
   instead of the file name. Display-only and never part of card identity.

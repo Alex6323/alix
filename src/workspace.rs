@@ -118,9 +118,16 @@ fn members(dir: &Path) -> io::Result<Vec<PathBuf>> {
     Ok(paths)
 }
 
-/// `true` if `path` is a directory holding at least one `*.txt` deck — i.e. a
-/// reviewable workspace (used to surface workspaces in the deck pickers).
+/// `true` if `path` is an **explicit workspace**: a directory with a `flash.toml`
+/// manifest *and* at least one `*.txt` deck. A folder of decks without a manifest
+/// is a plain "folder" (see [`has_decks`]) — reviewable, but not a workspace.
 pub fn is_workspace(path: &Path) -> bool {
+    has_decks(path) && path.join(MANIFEST).is_file()
+}
+
+/// `true` if `path` is a directory holding at least one `*.txt` deck — a
+/// drillable folder in the pickers, whether or not it is a workspace.
+pub fn has_decks(path: &Path) -> bool {
     path.is_dir() && members(path).map(|m| !m.is_empty()).unwrap_or(false)
 }
 
@@ -191,11 +198,16 @@ mod tests {
         assert!(!is_workspace(&empty)); // no decks
 
         write(&empty.join("a.txt"), "# a\n\t1\n");
-        assert!(is_workspace(&empty));
+        assert!(has_decks(&empty)); // a drillable folder...
+        assert!(!is_workspace(&empty)); // ...but not a workspace without a manifest
 
-        // A plain file is not a workspace.
+        write(&empty.join(MANIFEST), "title = \"x\"\n");
+        assert!(is_workspace(&empty)); // manifest present → an explicit workspace
+
+        // A plain file is neither.
         let file = dir.path().join("loose.txt");
         write(&file, "# a\n\t1\n");
         assert!(!is_workspace(&file));
+        assert!(!has_decks(&file));
     }
 }
