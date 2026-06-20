@@ -97,6 +97,52 @@ checkpoints back into the deck file (cached, version-controlled, editable). The
 specific files surface per-checkpoint; you never told it the file set or hop
 count. Re-build explicitly (`--build`) when the source changes (stale → flag).
 
+### Generation-prompt spec — a chain, not a set
+
+This is the rubric the `--build` prompt must encode. It is **not** optional
+polish: it is the difference between a trace and a themed quiz, and it was
+learned by hand-authoring (then dogfooding) the first examples — a deck that was
+a *set* of facts about one function felt hollow, and a path with a broken
+*return* felt disconnected. Bake every rule below into the generation prompt so
+each generated trace is a chain *by construction*, not by luck:
+
+1. **One path, not a set.** Trace a real **sequence** — a data flow, a control
+   flow, a causal chain, or a derivation — that runs from a *trigger* to the
+   *outcome named in the `% goal:`*. If the candidate checkpoints are independent
+   facts hanging off one node (a hub with facets), that is a card deck, not a
+   trace: pick a different spine, or refuse and say so. The litmus test: if you
+   can **reorder two checkpoints** without anything breaking, it's a set.
+2. **Every prompt opens on the previous reveal.** Checkpoint *N+1*'s prompt must
+   restate the **conclusion just revealed at *N***, then ask the next prediction
+   (e.g. "the request carries no card id — predict how the server knows which
+   card…"). If a prompt is answerable without having seen the prior reveal, the
+   link is broken — rewrite it so the prior reveal is its premise.
+3. **Prompts predict forward; they don't quiz.** Each front asks the learner to
+   *predict what happens next* ("predict what X sends / does / returns"),
+   answerable by reasoning forward from the prior reveal — never by outside
+   recall of a fact.
+4. **Dives must return.** When a hop calls into another function or file, the
+   next hop may **dive into** the callee — but you must then **climb back to the
+   call site** before continuing past it, or the chain snaps (a reveal deep in a
+   callee followed by a hop about the caller's *next* line, with nothing
+   bridging the return). Reuse the call-site line in **both** the caller hop and
+   the return hop (overlapping `% at:` ranges) to stitch the seam. A clean shape
+   is symmetric: *caller calls X → dive into X → return to caller → caller calls
+   Y → dive into Y …*.
+5. **The reveal is the real source.** Ground truth is a **live excerpt** via
+   `% at:`, never invented. The key points must paraphrase *exactly those lines*,
+   and the prompt must be answerable *from* them — the model selects the path and
+   the locator; the source is the oracle.
+6. **The last hop lands the goal.** The final reveal is the **payoff that answers
+   `% goal:`**; the compression step then retraces the whole path *as that
+   answer*. If the last checkpoint doesn't close the question the goal opened, the
+   path stopped short.
+
+A useful self-check for the builder to run before emitting the deck: read the
+checkpoints in order using **only each prompt + the prior reveal**; if any hop
+needs information that wasn't established by an earlier hop (or by the excerpt it
+points at), that hop is either out of order or off the path.
+
 ## The trace deck format — it's a normal deck
 
 A trace deck reuses the existing plain-text format: a sequence of **`explain`-style
@@ -230,7 +276,9 @@ but a chat ≠ the tool). So validate the mechanic cheaply before heavy plumbing
 1. **Atom / single-source trace:** `flash trace` over one explicit `% source:`,
    predict→reveal→delta→compress, self-graded, on a feature branch. Prove it's
    good.
-2. **Build (path discovery)** from a scope; cached trace artifact.
+2. **Build (path discovery)** from a scope; cached trace artifact. Its prompt
+   must encode the [generation-prompt spec](#generation-prompt-spec--a-chain-not-a-set)
+   (chain-not-a-set) so generated traces are paths by construction.
 3. **Orient tier** (`orient` as the top trace + `--map`), producing the workspace
    map + `% requires:`-ordered child traces.
 4. **`--grade`** (live delta), **web surface**, richer `flash.toml [trace]` config.

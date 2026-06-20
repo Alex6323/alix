@@ -33,9 +33,16 @@
 	% at: src/scheduler.rs:92-100
 	! The new stage sets the cooldown before the card is due again.
 
-# That stage change so far lives only in memory. Predict what makes it survive — when, and how, the grade actually reaches disk.
-	Right after grading, the /api/grade handler calls store.save().
-	save() serializes the store, writes a temp file, then renames it.
-	The rename is atomic, so a crash mid-write can't corrupt your progress.
+# Those last two hops dove inside that session.grade(...) call. Back in the /api/grade handler it has now returned, leaving the new stage only in memory. Predict the handler's very next move.
+	The grade call from checkpoint 2 has returned; the store is updated in RAM.
+	The line right after it is store.save() — persisting the change.
+	A save error is only logged, not fatal: the grading already happened.
+	% at: src/serve.rs:689-692
+	! Line 689 is the same r.session.grade(...) from checkpoint 2 — now you see what follows it.
+
+# store.save() is called — but the store is one JSON file. Predict how it writes the update without risking a half-written file if the process dies mid-save.
+	It serializes the whole store, then writes it to a temp file (.json.tmp).
+	Then it atomically renames the temp file over the real one.
+	A rename can't half-happen, so a crash leaves the old file or the new — never a corrupt one.
 	% at: src/store.rs:205-212
-	! Nothing is durable until that rename; that's the real "saved" moment.
+	! That rename is the real "saved" moment — the durable grade the goal asked about.
