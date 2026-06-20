@@ -676,6 +676,14 @@ there, so review it — especially the locators — and edit freely; re-run
 `--build` to regenerate. The build prompt encodes the chain rules below, so a
 generated trace comes out a path, not a quiz.
 
+Because building is one-shot, correctness-critical, and **fails silently** when
+the model is weak (you still get parseable checkpoints, just a loose chain you
+then drill), the `[trace]` config section defaults it to a strong model
+(`model = "opus"`) and high reasoning effort (`effort = "high"`) — slower than
+the other AI features, but it runs once and is amortized over many reviews.
+Override `model`, `effort` (`low`–`max`) and `timeout_secs` there; `--suggest`
+and `--grade` share the same `[trace]` settings.
+
 **Don't know what to trace?** `flash trace --suggest <source>` does a single
 read-only recon pass over a source (a repo `.`, a directory, a file, or a URL)
 and prints a **ranked menu of candidate traces** — each a path-question, a

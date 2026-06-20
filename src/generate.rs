@@ -164,7 +164,11 @@ The deck to review:
 /// path) and returns the cleaned deck text (not yet validated or written). A URL
 /// is fetched with WebFetch; a local source is explored read-only at its root.
 /// Blocks until the CLI replies or times out.
-pub fn generate_deck(source: &str, cfg: &GenerateDeckConfig, ask_cfg: &AskConfig) -> Result<String> {
+pub fn generate_deck(
+    source: &str,
+    cfg: &GenerateDeckConfig,
+    ask_cfg: &AskConfig,
+) -> Result<String> {
     let url = is_url(source);
     let cwd = if url {
         None
@@ -215,6 +219,7 @@ fn run_config(
         permission_mode: ask_cfg.permission_mode.clone(),
         allowed_tools,
         model: cfg.model.clone().or_else(|| ask_cfg.model.clone()),
+        effort: ask_cfg.effort.clone(),
         timeout_secs: cfg.timeout_secs,
         cwd,
     }

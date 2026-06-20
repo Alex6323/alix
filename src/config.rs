@@ -186,6 +186,10 @@ pub struct AskConfig {
     pub command: String,
     /// Model passed as `--model`; `None` uses the CLI's own default.
     pub model: Option<String>,
+    /// `--effort` level (`low`/`medium`/`high`/`xhigh`/`max`); `None` omits the
+    /// flag and uses the CLI's default. Trace operations default this to
+    /// `high`.
+    pub effort: Option<String>,
     /// How long to wait for an answer before giving up.
     pub timeout_secs: u64,
     /// `--permission-mode` for the headless CLI. The default `"dontAsk"`
@@ -208,6 +212,7 @@ impl Default for AskConfig {
         Self {
             command: "claude".to_string(),
             model: None,
+            effort: None,
             timeout_secs: 120,
             permission_mode: "dontAsk".to_string(),
             allowed_tools: vec!["WebFetch".to_string(), "WebSearch".to_string()],
@@ -315,9 +320,13 @@ impl Default for ExamConfig {
 /// working directory. No write or shell tool is ever granted.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TraceConfig {
-    /// Model passed as `--model`; `None` falls back to the `[ask]` model, then
-    /// the CLI's own default.
+    /// Model passed as `--model`. Defaults to `"opus"` — trace building is an
+    /// agentic, correctness-critical, one-shot call where quality dominates, so
+    /// it breaks the inherit-the-CLI-default pattern the other AI features use.
     pub model: Option<String>,
+    /// `--effort` level; defaults to `"high"` for the same reason. `None` omits
+    /// the flag. Shared by `--build`, `--suggest` and `--grade`.
+    pub effort: Option<String>,
     /// How long to wait for the build before giving up. Exploring a source and
     /// tracing a path is the biggest call, so this is larger than the others.
     pub timeout_secs: u64,
@@ -329,7 +338,11 @@ pub struct TraceConfig {
 impl Default for TraceConfig {
     fn default() -> Self {
         Self {
-            model: None,
+            // Building runs one-shot and amortized over many reviews, and a weak
+            // model fails silently (a parseable but loose chain), so trace alone
+            // defaults to a strong model + high effort.
+            model: Some("opus".to_string()),
+            effort: Some("high".to_string()),
             timeout_secs: 600,
             extra: None,
         }
@@ -429,6 +442,7 @@ struct RawExam {
 #[serde(deny_unknown_fields)]
 struct RawTrace {
     model: Option<String>,
+    effort: Option<String>,
     timeout_secs: Option<u64>,
     extra: Option<String>,
 }
@@ -447,6 +461,7 @@ struct RawBrowse {
 struct RawAsk {
     command: Option<String>,
     model: Option<String>,
+    effort: Option<String>,
     timeout_secs: Option<u64>,
     permission_mode: Option<String>,
     allowed_tools: Option<Vec<String>>,
@@ -518,6 +533,9 @@ impl Config {
         if let Some(model) = raw.ask.model.filter(|m| !m.trim().is_empty()) {
             ask.model = Some(model);
         }
+        if let Some(effort) = raw.ask.effort.filter(|e| !e.trim().is_empty()) {
+            ask.effort = Some(effort);
+        }
         if let Some(secs) = raw.ask.timeout_secs {
             ask.timeout_secs = secs;
         }
@@ -570,6 +588,9 @@ impl Config {
         let mut trace = TraceConfig::default();
         if let Some(model) = raw.trace.model.filter(|m| !m.trim().is_empty()) {
             trace.model = Some(model);
+        }
+        if let Some(effort) = raw.trace.effort.filter(|e| !e.trim().is_empty()) {
+            trace.effort = Some(effort);
         }
         if let Some(secs) = raw.trace.timeout_secs {
             trace.timeout_secs = secs;
@@ -693,6 +714,7 @@ pub fn default_config_toml() -> &'static str {
 [ask]
 # command = "claude"            # executable to run
 # model = ""                    # --model override; empty = the CLI's default
+# effort = ""                   # --effort: low|medium|high|xhigh|max; empty = CLI default
 # timeout_secs = 120            # give up waiting after this many seconds
 # Permission mode for the headless CLI. "dontAsk" silently denies any tool
 # not listed below — no interactive prompt (which would hang -p mode).
@@ -703,7 +725,7 @@ pub fn default_config_toml() -> &'static str {
 # allowlist; the defaults let it consult deck links but nothing else.
 # allowed_tools = ["WebFetch", "WebSearch"]
 
-# AI deck generation (`flash generate <url>`). Reuses the [ask] command,
+# AI deck generation (`flash deck <source>`). Reuses the [ask] command,
 # permission mode and tool allowlist (WebFetch reads the page).
 [generate]
 # model = ""                    # --model override; empty = use [ask] / CLI default
@@ -730,7 +752,8 @@ pub fn default_config_toml() -> &'static str {
 # but runs with read-only file tools (Read/Glob/Grep, + WebFetch for a URL
 # source) and the source root as the working directory — never a write/shell tool.
 [trace]
-# model = ""                    # --model override; empty = use [ask] / CLI default
+# model = "opus"                # default (correctness-critical); empty = use [ask] / CLI default
+# effort = "high"               # default; --effort: low|medium|high|xhigh|max
 # timeout_secs = 600            # exploring a source is the slowest call
 # extra = ""                    # extra guidance appended to the build prompt
 
@@ -899,6 +922,29 @@ mod tests {
         // Unmentioned fields keep their safe defaults.
         assert_eq!("dontAsk", config.ask.permission_mode);
         assert_eq!(vec!["WebFetch", "WebSearch"], config.ask.allowed_tools);
+    }
+
+    #[test]
+    fn trace_defaults_to_a_strong_model_and_high_effort() {
+        // The one AI feature that breaks the inherit-the-CLI-default pattern:
+        // trace building is correctness-critical and fails silently.
+        let trace = Config::default().trace;
+        assert_eq!(Some("opus".to_string()), trace.model);
+        assert_eq!(Some("high".to_string()), trace.effort);
+    }
+
+    #[test]
+    fn trace_section_overrides_model_and_effort() {
+        let config = Config::from_toml("[trace]\nmodel = \"sonnet\"\neffort = \"max\"\n").unwrap();
+        assert_eq!(Some("sonnet".to_string()), config.trace.model);
+        assert_eq!(Some("max".to_string()), config.trace.effort);
+    }
+
+    #[test]
+    fn ask_effort_is_off_by_default_and_overridable() {
+        assert_eq!(None, Config::default().ask.effort);
+        let config = Config::from_toml("[ask]\neffort = \"medium\"\n").unwrap();
+        assert_eq!(Some("medium".to_string()), config.ask.effort);
     }
 
     #[test]

@@ -256,6 +256,7 @@ pub(crate) fn build_run_config(
         permission_mode: ask_cfg.permission_mode.clone(),
         allowed_tools,
         model: cfg.model.clone().or_else(|| ask_cfg.model.clone()),
+        effort: cfg.effort.clone().or_else(|| ask_cfg.effort.clone()),
         timeout_secs: cfg.timeout_secs,
         cwd,
     }
@@ -520,6 +521,7 @@ pub fn grade_prediction(
         permission_mode: ask_cfg.permission_mode.clone(),
         allowed_tools: Vec::new(), // grading needs no tools, just the text
         model: cfg.model.clone().or_else(|| ask_cfg.model.clone()),
+        effort: cfg.effort.clone().or_else(|| ask_cfg.effort.clone()),
         timeout_secs: cfg.timeout_secs,
         cwd: None,
     };

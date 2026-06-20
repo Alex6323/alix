@@ -228,6 +228,9 @@ pub(crate) fn run(config: &AskConfig, prompt: &str, extra_args: &[String]) -> Re
     if let Some(model) = &config.model {
         cmd.args(["--model", model]);
     }
+    if let Some(effort) = &config.effort {
+        cmd.args(["--effort", effort]);
+    }
     // Trace building runs in the `% source:` root so Claude explores it with
     // relative paths; other callers inherit this process's directory.
     if let Some(dir) = &config.cwd {
@@ -451,6 +454,30 @@ mod tests {
             answer.contains("--permission-mode dontAsk"),
             "args were: {answer}"
         );
+    }
+
+    #[test]
+    fn run_passes_effort_when_set() {
+        let _lock = EXEC_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = fake_cli(dir.path(), "echo \"$@\"; cat > /dev/null");
+        let config = AskConfig {
+            command: cli.to_str().unwrap().to_string(),
+            effort: Some("high".to_string()),
+            timeout_secs: 10,
+            ..AskConfig::default()
+        };
+        let answer = run(&config, "x", &[]).unwrap();
+        assert!(answer.contains("--effort high"), "args were: {answer}");
+    }
+
+    #[test]
+    fn run_omits_effort_when_unset() {
+        let _lock = EXEC_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = fake_cli(dir.path(), "echo \"$@\"; cat > /dev/null");
+        let answer = run(&config(&cli, 10), "x", &[]).unwrap();
+        assert!(!answer.contains("--effort"), "args were: {answer}");
     }
 
     #[test]

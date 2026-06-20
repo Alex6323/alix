@@ -44,7 +44,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   or shell access), traces the single load-bearing path, and writes the
   checkpoints back into the deck. The build prompt encodes the chain rules from
   `docs/traces.md`, so generated traces are paths, not quizzes. Configurable via
-  a new `[trace]` section (model, timeout, extra guidance).
+  a new `[trace]` section (model, effort, timeout, extra guidance) — which,
+  unlike the other AI features, **defaults to a strong model (`opus`) and high
+  effort (`--effort high`)** because building is one-shot, correctness-critical
+  and fails silently on a weak model. A new `effort` knob also exists on `[ask]`
+  (off by default) and is plumbed through to the CLI's `--effort` flag.
   **`flash trace --suggest <source>`** recons a source (read-only, one pass) and
   prints a ranked menu of candidate traces to author — a path-question, a spine
   sketch, and a suggested scope each, no checkpoints — closing the "what's worth
