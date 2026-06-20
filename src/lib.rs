@@ -18,6 +18,7 @@ pub mod cloze;
 pub mod config;
 pub mod deck;
 pub mod exam;
+pub mod explore;
 pub mod generate;
 pub mod parser;
 pub mod picker;

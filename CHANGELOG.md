@@ -33,6 +33,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   prints a ranked menu of candidate traces to author — a path-question, a spine
   sketch, and a suggested scope each, no checkpoints — closing the "what's worth
   tracing?" gap before `--build`.
+- **`flash explore <source>` (experimental, the orient tier)** — goal-driven
+  orientation: prints an ordered **learning plan** toward a `--goal` (default
+  "understand the whole source"), the fact **decks** and **traces** worth
+  authoring. Each item is tagged `[trace]`/`[deck]` (chosen by shape — edges
+  become traces, node-shaped fact tables become decks), carries its `% requires:`
+  prerequisites (the list is a valid topological order, foundations first), and a
+  `% source:` scope. The goal scopes coverage — a broad goal spans every
+  subsystem, a narrow one collapses to its slice (and traces it deeper). Read-only,
+  writes nothing (a first slice; materializing the plan into a workspace is
+  planned).
 - **Workspaces** — a folder of decks reviewed together with shared directives.
   Membership is folder-implicit (any folder of `*.txt` decks, one level deep); an
   optional `flash.toml` manifest (a scoped `config.toml`) sets a `title` and a

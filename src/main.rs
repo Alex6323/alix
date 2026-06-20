@@ -70,6 +70,10 @@ enum Command {
     /// excerpt is revealed and you judge the gap; the path ends with a
     /// compression.
     Trace(TraceArgs),
+    /// Explore a source (a repo, directory, file, or URL) and print an ordered
+    /// learning plan toward a goal: the fact decks and traces worth authoring,
+    /// each tagged and dependency-ordered. Read-only; writes nothing.
+    Explore(ExploreArgs),
     /// Edit a deck's prerequisite decks (`% requires:`) with a checkbox picker.
     #[command(visible_alias = "require")]
     Deps {
@@ -82,6 +86,21 @@ enum Command {
         #[arg(long)]
         init: bool,
     },
+}
+
+#[derive(Args)]
+struct ExploreArgs {
+    /// The source to explore: a repo `.`, a directory, a single file, or a URL.
+    source: PathBuf,
+
+    /// The learning goal that scopes the plan (default: understand the whole
+    /// source). A broad goal covers every subsystem; a narrow one only its parts.
+    #[arg(long)]
+    goal: Option<String>,
+
+    /// Path of the config file (default: platform config dir).
+    #[arg(long)]
+    config: Option<PathBuf>,
 }
 
 #[derive(Args)]
@@ -310,6 +329,7 @@ fn main() -> Result<()> {
         Some(Command::Generate(args)) => generate_cmd(args),
         Some(Command::Exam(args)) => exam_cmd(args),
         Some(Command::Trace(args)) => trace_cmd(args),
+        Some(Command::Explore(args)) => explore_cmd(args),
         Some(Command::Deps { deck }) => deps_cmd(deck),
         Some(Command::Config { init }) => config_cmd(init),
     }
@@ -1634,6 +1654,29 @@ fn trace_suggest(args: &TraceArgs) -> Result<()> {
     println!(
         "\n{DIM}Paste a suggestion into a new deck (its `% trace:` + `% source:`), \
          then:  flash trace --build <deck>{RESET}"
+    );
+    Ok(())
+}
+
+/// `flash explore`: orient over a source and print an ordered learning plan
+/// toward a goal — the decks and traces worth authoring, dependency-ordered.
+/// Read-only exploration; writes nothing (the first slice of the orient tier).
+fn explore_cmd(args: ExploreArgs) -> Result<()> {
+    let config = Config::load(args.config.as_deref())?;
+    let source = args.source.to_string_lossy();
+    let goal = args
+        .goal
+        .as_deref()
+        .unwrap_or("understand the whole source");
+    eprintln!(
+        "Exploring {source} for a learning plan toward \"{goal}\" (one pass — this \
+         can take a minute)…"
+    );
+    let plan = flash::explore::explore(&source, goal, &config.trace, &config.ask)?;
+    println!("{plan}");
+    println!(
+        "\n{DIM}Each item is a deck or trace to author next — `flash trace --build` \
+         a trace, write a deck by hand or with `flash generate`.{RESET}"
     );
     Ok(())
 }

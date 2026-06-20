@@ -238,7 +238,7 @@ pub fn suggest(source: &str, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<S
 /// The CLI runner config for a build: the ask command/permission with trace's
 /// own model and (longer) timeout, **read-only** exploration tools, and the
 /// source root as the working directory.
-fn build_run_config(
+pub(crate) fn build_run_config(
     cfg: &TraceConfig,
     ask_cfg: &AskConfig,
     cwd: Option<PathBuf>,
@@ -666,7 +666,10 @@ pub struct Excerpt {
 /// onto, and the single source file (when the source is one file, so a locator
 /// may omit the filename). A URL or absent source yields the deck's own folder
 /// as the base and no source file.
-fn resolve_source(deck_dir: Option<&Path>, source: Option<&str>) -> (PathBuf, Option<PathBuf>) {
+pub(crate) fn resolve_source(
+    deck_dir: Option<&Path>,
+    source: Option<&str>,
+) -> (PathBuf, Option<PathBuf>) {
     let deck_dir = deck_dir.unwrap_or_else(|| Path::new(".")).to_path_buf();
     let Some(source) = source else {
         return (deck_dir, None);

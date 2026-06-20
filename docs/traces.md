@@ -181,6 +181,48 @@ checkpoints, rank by centrality, narrow scope, menu-only output), then dogfood
 well-scoped spine that roughly matches the traces we already trust
 (`examples/keypress-to-grade.txt`, the scratch deck-text→queue path).
 
+## Exploring a source — `flash explore <source>` (the orient tier)
+
+Where `--suggest` is the flat trace menu, **`flash explore`** is the orient tier:
+goal-driven orientation that manufactures the *ordered set of means* toward a
+goal. It is `--suggest` grown up along the four axes from
+[Goals and orientation](#goals-and-orientation):
+
+1. **Goal as input** — `--goal "<aim>"` (default *understand the whole source*).
+   The goal scopes coverage: a broad goal covers every subsystem; a narrow one
+   (`--goal "how review scheduling works"`) collapses to just that slice — and
+   goes *deeper* there (e.g. it splits Leitner and SM-2 into separate traces
+   rather than one scheduler deck). Saturation is **goal-relative**.
+2. **Means = traces ∪ decks** — it proposes *both*, choosing per part by shape
+   (edges → traces, nodes → fact decks), so the node-shaped subsystems `--suggest`
+   only names-and-skips (the store schema, config knobs) become decks here. Full
+   coverage, the right means each.
+3. **`% requires:` ordering** — every item carries the earlier items it builds on,
+   and the list is a valid **topological order** (foundations → flows → surfaces),
+   so the plan reads as a curriculum, not a bag.
+4. **Saturation, not a count** — covers until one more item would teach no new
+   mechanism the learner hasn't met.
+
+The output is a plan: a `Goal`/`Source`/`Spine` header, then numbered items each
+tagged `[trace]` or `[deck]`, with a title (a path-question for a trace, a fact
+topic for a deck), its `requires:`, and a `% source:` scope.
+
+**This first slice prints the plan and writes nothing** — like `--suggest`, it is
+reviewable before anything hits disk. **Materializing** it — scaffolding a
+workspace folder with a `flash.toml` (the goal + shared directives) and a stub
+deck/trace file per item wired by `% requires:` — is the next slice (a `--into
+<dir>` / `--write`). The walkable *orient-me* trace (predict the system's shape)
+and `--grade` come after.
+
+Plumbing mirrors `--suggest`: `explore::explore(source, goal, cfg, ask_cfg)` runs
+an `explore_prompt` through the same read-only `build_run_config` (reusing the
+`[trace]` model/timeout for now) and returns the plan text; a top-level `flash
+explore <source>` command prints it and writes nothing. The prompt encodes the
+four axes above; a unit test pins them (goal echoed, two kinds of means by shape,
+saturation, `requires:`/topological order, plan-not-built). Dogfooded on this repo
+with both a whole-repo goal (≈19 items across every subsystem) and a narrow one
+(≈8, scheduling only), each a valid topological order.
+
 ## Authoring (what you write) — minimal
 
 You declare only what you actually know: the **goal** — written as a `% trace:`
@@ -487,8 +529,10 @@ but a chat ≠ the tool). So validate the mechanic cheaply before heavy plumbing
    — one read-only pass proposes a ranked menu of candidate traces (path + spine
    sketch + scope), no checkpoints. The cheap precursor that closes the authoring
    bootstrap and de-risks the orient tier by proving the recon prompt it reuses.
-4. **Orient tier** (`orient` as the top trace + `--map`), producing the workspace
-   map + `% requires:`-ordered child traces.
+4. **Orient tier — [`flash explore <source>`](#exploring-a-source--flash-explore-source-the-orient-tier)**:
+   goal-driven, prints a `% requires:`-ordered plan of *means* (traces **and**
+   decks, chosen by shape). **Done (first slice, print-only);** materializing it
+   into a workspace folder is the next step.
 5. **`--grade`** (live delta), **web surface**, richer `flash.toml [trace]` config.
 
 ## Open / deferred decisions

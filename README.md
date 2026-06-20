@@ -29,6 +29,7 @@ flash exam mydeck.txt            # AI exam against the deck's % source: (gates u
 flash trace mytrace.txt          # walk a predict-and-verify path through a % source:
 flash trace --build mytrace.txt  # let Claude discover the path (writes checkpoints back)
 flash trace --suggest .          # recon a source for candidate traces worth authoring
+flash explore .                  # an ordered learning plan (decks + traces) toward a goal
 flash deps mydeck.txt            # edit a deck's prerequisites (checkbox picker)
 flash stats mydeck.txt           # progress overview
 flash list mydeck.txt            # every card with stage and due time
@@ -688,6 +689,27 @@ to the path.
 A trace deck degrades gracefully — even without `flash trace` it is a valid deck
 of `explain` cards. See `examples/keypress-to-grade.txt` for a complete trace
 over this repo's own source.
+
+### Exploring a source — `flash explore` (experimental)
+
+`--suggest` lists central *traces*; **`flash explore <source>`** goes one layer
+up and prints an ordered **learning plan** toward a goal — the fact decks **and**
+traces worth authoring, dependency-ordered:
+
+```
+flash explore .                                      # plan to understand the whole source
+flash explore . --goal "how review scheduling works" # a narrow goal → a focused subset
+```
+
+Each item is tagged `[trace]` or `[deck]` — chosen by the shape of the knowledge
+(a *path* you predict hop by hop becomes a trace; a *table of facts*, like a
+config's knobs or a store's on-disk format, becomes a fact deck) — carries its
+`% requires:` prerequisites (the list is dependency-ordered, foundations first),
+and a `% source:` scope. The `--goal` scopes coverage: a broad goal covers every
+subsystem, a narrow one collapses to just its slice (and traces it in more
+detail). It's **read-only and writes nothing** — pick items and author them
+(`flash trace --build` a trace, write or `flash generate` a deck). Scaffolding the
+plan into a ready-made workspace folder is planned.
 
 ## Configuration
 
