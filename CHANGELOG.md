@@ -29,8 +29,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   SRS), and after the last hop you **compress** the whole path into two
   sentences. Self-judged and offline (no model call) by default; **`flash trace
   --grade`** instead has Claude judge each typed prediction against the key points
-  and return the verdict + one line of feedback (a model call per hop). `flash
-  trace <deck> --map`
+  and return the verdict + one line of feedback (a model call per hop). **`flash
+  trace <deck> --serve`** walks it in the **web frontend** (the same
+  frontend-agnostic `Walk` state machine the terminal uses): a left **path rail**
+  whose nodes color in by Got / Partial / Missed, each checkpoint's source shown
+  in a line-numbered excerpt, and `--serve --grade` running the live grade on a
+  background thread while the page polls; `--port`/`--lan` work as in `review`.
+  `flash trace <deck> --map`
   prints the path without quizzing; the generic AI exam refuses a trace (its
   verification is the walk itself). See `examples/keypress-to-grade.txt`.
   **`flash trace --build <deck>`** discovers the path for you: declare just the

@@ -678,8 +678,7 @@ outcome. If the checkpoints are independent facts that all hang off one thing, y
 written a *set*, which is what cards and the exam already do; reach for a subject
 that has a real sequence.
 
-**Walking it** (`flash trace keypress-to-grade.txt`, needs a terminal) goes hop
-by hop:
+**Walking it** (`flash trace keypress-to-grade.txt`) goes hop by hop:
 
 1. **Predict** — you type a guess before anything reveals (committing is the
    point).
@@ -694,6 +693,14 @@ by hop:
    hood, so this scheduling is the normal per-card SRS.
 4. **Compress** — after the last hop you restate the whole path in two
    sentences: if you can re-derive it, you understood it.
+
+**In the browser** — add **`--serve`** (`flash trace <deck> --serve`) to walk it
+in the web frontend instead of the terminal, the same way `review`/`browse`
+serve. The walk page shows the **path** as a rail you descend (its nodes color in
+by Got / Partial / Missed) and reveals each checkpoint's real source in a
+line-numbered excerpt; `--serve --grade` runs the live grading and the page waits
+on Claude per hop. `--port`/`--lan` work as elsewhere. Progress saves to the same
+store, so a walk started in the terminal continues in the browser.
 
 `flash trace <deck> --map` prints the path (every prompt, its key points and
 locator) without quizzing — a quick "just show me the route". The generic AI

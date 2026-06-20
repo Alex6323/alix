@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>flash · trace</title>
+<style>
+  :root {
+    --void: #06121a;
+    --panel-top: #103241;
+    --panel-bot: #0a212b;
+    --ink: #e8f4f5;
+    --dim: #6f939d;
+    --line: #173640;
+    --bolt: #22d3ee;
+    --bolt-hi: #7df9e8;
+    --good: #3ee0a0;
+    --warn: #f5c451;
+    --again: #ff6b6b;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: radial-gradient(120% 80% at 50% -10%, #0c2734 0%, var(--void) 60%) fixed;
+    color: var(--ink); font-family: var(--sans);
+    display: flex; flex-direction: column; min-height: 100%;
+  }
+
+  /* ── status bar: the terminal lineage, in monospace ───────────────── */
+  .bar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 16px; font-family: var(--mono); font-size: 0.78rem;
+    color: var(--dim); border-bottom: 1px solid var(--line); background: rgba(6,18,26,0.6);
+    flex: none;
+  }
+  .bar .brand { display: inline-flex; align-items: center; gap: 7px; color: var(--bolt); font-weight: 600; }
+  .bar .brand svg { width: 13px; height: 16px; filter: drop-shadow(0 0 5px rgba(34,211,238,0.6)); }
+  .bar .what { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar .sep { color: var(--line); }
+  .bar .spacer { flex: 1; }
+  .bar .hop { color: var(--ink); font-variant-numeric: tabular-nums; flex: none; }
+  .bar .mode { flex: none; letter-spacing: 0.12em; text-transform: uppercase; font-size: 0.62rem; border: 1px solid var(--line); border-radius: 999px; padding: 3px 9px; }
+  .bar .mode.live { color: var(--bolt); border-color: rgba(34,211,238,0.35); }
+
+  /* ── the two-column body: the path spine + the stage ──────────────── */
+  .body { flex: 1; display: flex; min-height: 0; }
+
+  /* the path: a literal vertical spine you walk hop by hop */
+  .rail {
+    flex: none; width: 264px; border-right: 1px solid var(--line);
+    padding: 22px 8px 22px 22px; overflow-y: auto;
+    background: rgba(6,18,26,0.35); scrollbar-width: thin;
+  }
+  .rail h2 {
+    margin: 0 0 16px; font-family: var(--mono); font-size: 0.62rem;
+    letter-spacing: 0.18em; text-transform: uppercase; color: var(--dim); font-weight: 600;
+  }
+  .spine { list-style: none; margin: 0; padding: 0; position: relative; }
+  /* the connecting line behind the nodes */
+  .spine::before {
+    content: ""; position: absolute; left: 6px; top: 8px; bottom: 8px;
+    width: 1px; background: var(--line);
+  }
+  .node {
+    position: relative; padding: 0 0 18px 26px; min-height: 13px;
+    font-size: 0.86rem; line-height: 1.35; color: var(--dim);
+  }
+  .node:last-child { padding-bottom: 0; }
+  .node .dot {
+    position: absolute; left: 0; top: 3px; width: 13px; height: 13px;
+    border-radius: 50%; background: var(--void); border: 2px solid var(--line);
+    transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+  }
+  .node .label { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .node.current { color: var(--ink); }
+  .node.current .dot {
+    border-color: var(--bolt); background: var(--bolt);
+    box-shadow: 0 0 0 4px rgba(34,211,238,0.16), 0 0 12px rgba(34,211,238,0.6);
+  }
+  .node.got .dot     { border-color: var(--good); background: var(--good); }
+  .node.partial .dot { border-color: var(--warn); background: var(--warn); }
+  .node.missed .dot  { border-color: var(--again); background: var(--again); }
+  .node.got .label, .node.partial .label, .node.missed .label { color: var(--ink); opacity: 0.7; }
+  .node .num { font-family: var(--mono); font-size: 0.66rem; color: var(--dim); margin-right: 6px; }
+
+  /* ── the stage where the active phase plays ───────────────────────── */
+  .stage { flex: 1; min-width: 0; overflow-y: auto; display: flex; justify-content: center; padding: 34px 22px 48px; }
+  .panel { width: min(100%, 760px); animation: rise 0.28s cubic-bezier(0.2,0.7,0.2,1) both; }
+  @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+  .eyebrow { font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--bolt); margin-bottom: 14px; }
+  .prompt { font-size: clamp(1.35rem, 3.6vw, 1.9rem); font-weight: 600; line-height: 1.3; letter-spacing: -0.01em; margin: 0 0 4px; }
+  .lede { color: var(--dim); font-size: 0.92rem; margin: 14px 0 0; line-height: 1.5; }
+
+  /* givens: off-screen symbols the question leans on */
+  .givens { margin: 18px 0 0; }
+  .givens .glabel { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); margin-right: 4px; }
+  .chip {
+    display: inline-block; margin: 4px 6px 0 0; padding: 4px 10px;
+    font-family: var(--mono); font-size: 0.8rem; color: var(--bolt-hi);
+    background: rgba(34,211,238,0.07); border: 1px solid rgba(34,211,238,0.2); border-radius: 7px;
+  }
+
+  /* the prediction box, and the recalled prediction on reveal */
+  textarea.field {
+    width: 100%; resize: vertical; min-height: 122px; margin-top: 20px;
+    padding: 14px 16px; border-radius: 13px; border: 1px solid var(--line);
+    background: rgba(0,0,0,0.25); color: var(--ink); font: 1.02rem/1.5 var(--sans); outline: none;
+  }
+  textarea.field:focus { border-color: var(--bolt); box-shadow: 0 0 0 3px rgba(34,211,238,0.12); }
+
+  .recalled {
+    margin: 0 0 26px; padding: 14px 16px; border-radius: 12px;
+    border: 1px solid var(--line); border-left: 3px solid var(--dim);
+    background: rgba(255,255,255,0.02);
+  }
+  .recalled .glabel { display: block; font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); margin-bottom: 6px; }
+  .recalled p { margin: 0; color: var(--ink); opacity: 0.78; white-space: pre-wrap; line-height: 1.45; }
+  .recalled.empty p { font-style: italic; opacity: 0.5; }
+
+  /* the reveal: the real source, the oracle — an editor-style excerpt */
+  .reveal-h { display: flex; align-items: baseline; gap: 10px; margin: 28px 0 10px; }
+  .reveal-h .glabel { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--bolt); }
+  .reveal-h .at { font-family: var(--mono); font-size: 0.78rem; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .excerpt {
+    border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+    background: #071a23; box-shadow: inset 0 0 0 1px rgba(125,249,232,0.04);
+  }
+  .excerpt .file {
+    font-family: var(--mono); font-size: 0.72rem; color: var(--dim);
+    padding: 8px 14px; border-bottom: 1px solid var(--line); background: rgba(0,0,0,0.25);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .code { margin: 0; padding: 10px 0; overflow-x: auto; }
+  .ln {
+    display: flex; font-family: var(--mono); font-size: 0.82rem; line-height: 1.55;
+  }
+  .ln .n { flex: none; width: 3.4em; padding-right: 14px; text-align: right; color: var(--dim); opacity: 0.6; user-select: none; }
+  .ln .t { white-space: pre; color: #cfe7ea; padding-right: 18px; }
+  .trunc { font-family: var(--mono); font-size: 0.72rem; color: var(--dim); padding: 6px 14px 0; }
+  .excerpt-miss { color: var(--dim); font-size: 0.88rem; font-style: italic; padding: 14px 16px; border: 1px dashed var(--line); border-radius: 12px; }
+
+  /* key points the revealed truth makes */
+  .points { margin: 22px 0 0; padding: 0; list-style: none; }
+  .points .glabel { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--good); }
+  .points li.pt { position: relative; padding: 5px 0 5px 20px; color: var(--ink); line-height: 1.45; }
+  .points li.pt::before { content: "▸"; position: absolute; left: 0; color: var(--good); }
+
+  .note {
+    margin: 22px 0 0; padding: 13px 16px; border-radius: 11px;
+    background: rgba(245,213,122,0.09); border: 1px solid rgba(245,213,122,0.18);
+    border-left: 3px solid #e7c66b; color: #ecdca6; font-size: 0.93rem; line-height: 1.5;
+  }
+
+  /* ── grade controls ───────────────────────────────────────────────── */
+  .grade { margin-top: 28px; }
+  .grade .glabel { display: block; font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); margin-bottom: 12px; }
+  .deltas { display: flex; gap: 12px; flex-wrap: wrap; }
+  .delta {
+    flex: 1 1 0; min-width: 132px; padding: 14px 16px; border-radius: 13px; cursor: pointer;
+    background: rgba(255,255,255,0.03); border: 1px solid var(--line); color: var(--ink);
+    text-align: left; transition: border-color 0.12s, background 0.12s, transform 0.06s;
+  }
+  .delta:hover { transform: translateY(-1px); }
+  .delta .dk { font-weight: 700; font-size: 1rem; }
+  .delta .dh { display: block; font-size: 0.78rem; color: var(--dim); margin-top: 3px; }
+  .delta .key { float: right; font-family: var(--mono); font-size: 0.7rem; color: var(--dim); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; }
+  .delta.got:hover     { border-color: var(--good); background: rgba(62,224,160,0.1); }
+  .delta.partial:hover { border-color: var(--warn); background: rgba(245,196,81,0.1); }
+  .delta.missed:hover  { border-color: var(--again); background: rgba(255,107,107,0.1); }
+  .delta:focus-visible { outline: 2px solid var(--bolt-hi); outline-offset: 2px; }
+
+  /* live (Claude) grading */
+  .thinking { display: flex; align-items: center; gap: 10px; color: var(--dim); font-style: italic; padding: 4px 0; }
+  .spinner { width: 13px; height: 13px; border: 2px solid var(--line); border-top-color: var(--bolt); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .verdict { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .badge { font-weight: 700; font-size: 0.82rem; letter-spacing: 0.06em; padding: 5px 12px; border-radius: 999px; }
+  .badge.got     { color: var(--good); background: rgba(62,224,160,0.13); border: 1px solid rgba(62,224,160,0.3); }
+  .badge.partial { color: var(--warn); background: rgba(245,196,81,0.13); border: 1px solid rgba(245,196,81,0.3); }
+  .badge.missed  { color: var(--again); background: rgba(255,107,107,0.13); border: 1px solid rgba(255,107,107,0.3); }
+  .feedback { color: var(--ink); opacity: 0.9; line-height: 1.45; }
+  .grade-err { color: var(--warn); font-size: 0.86rem; margin-bottom: 12px; }
+
+  /* primary action button */
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px; margin-top: 22px;
+    padding: 12px 22px; border-radius: 12px; cursor: pointer; font: 600 0.98rem var(--sans);
+    color: var(--void); background: linear-gradient(160deg, var(--bolt-hi), var(--bolt)); border: 0;
+    box-shadow: 0 8px 22px -10px rgba(34,211,238,0.7);
+  }
+  .btn:hover { filter: brightness(1.06); }
+  .btn:active { transform: translateY(1px); }
+  .btn:disabled { opacity: 0.45; cursor: default; filter: none; }
+  .btn.ghost { background: none; color: var(--bolt); box-shadow: none; border: 1px solid var(--line); }
+  .btn.ghost:hover { border-color: var(--bolt); }
+  .hint { color: var(--dim); font-size: 0.82rem; margin-top: 14px; }
+  .hint kbd { font-family: var(--mono); font-size: 0.74rem; background: rgba(255,255,255,0.05); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; }
+
+  /* ── done summary ─────────────────────────────────────────────────── */
+  .tally { display: flex; gap: 14px; margin: 18px 0 8px; flex-wrap: wrap; }
+  .tally .cell { flex: 1 1 0; min-width: 96px; padding: 16px; border-radius: 14px; border: 1px solid var(--line); background: rgba(255,255,255,0.02); text-align: center; }
+  .tally .cell .big { font-size: 2.1rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
+  .tally .cell .cap { display: block; margin-top: 8px; font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); }
+  .tally .got .big { color: var(--good); }
+  .tally .partial .big { color: var(--warn); }
+  .tally .missed .big { color: var(--again); }
+  .weak { color: var(--dim); font-size: 0.9rem; margin: 12px 0 0; }
+  .weak b { color: var(--warn); font-family: var(--mono); }
+  .compression-echo { margin: 22px 0 0; padding: 16px; border-radius: 12px; border: 1px solid var(--line); border-left: 3px solid var(--bolt); background: rgba(34,211,238,0.04); }
+  .compression-echo .glabel { display: block; font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--bolt); margin-bottom: 6px; }
+  .compression-echo p { margin: 0; line-height: 1.55; white-space: pre-wrap; }
+
+  /* responsive: collapse the spine into a top strip on narrow screens */
+  @media (max-width: 720px) {
+    .body { flex-direction: column; }
+    .rail {
+      width: 100%; border-right: 0; border-bottom: 1px solid var(--line);
+      padding: 12px 14px; display: flex; align-items: center; gap: 6px; overflow-x: auto; overflow-y: hidden;
+    }
+    .rail h2 { display: none; }
+    .spine { display: flex; gap: 0; padding: 4px 0; }
+    .spine::before { left: 6px; right: 6px; top: 9px; bottom: auto; width: auto; height: 1px; }
+    .node { padding: 0 22px 0 0; min-height: 0; }
+    .node .label { display: none; }
+    .node .num { display: none; }
+    .node .dot { top: 2px; position: relative; left: 0; }
+    .stage { padding: 26px 16px 40px; }
+  }
+</style>
+</head>
+<body>
+  <div class="bar">
+    <span class="brand">
+      <svg viewBox="0 0 12 16" aria-hidden="true"><path d="M7 0 0 9h4l-1 7 8-10H6z" fill="currentColor"/></svg>
+      flash
+    </span>
+    <span class="sep">·</span>
+    <span class="what" id="what">trace</span>
+    <span class="spacer"></span>
+    <span class="mode" id="mode">self-grade</span>
+    <span class="hop" id="hop"></span>
+  </div>
+
+  <div class="body">
+    <nav class="rail">
+      <h2>the path</h2>
+      <ul class="spine" id="spine"></ul>
+    </nav>
+    <main class="stage"><div class="panel" id="panel"></div></main>
+  </div>
+
+<script>
+let state = null;     // the latest WalkDto
+let poll = null;      // setInterval handle while a live grade is in flight
+
+const api  = (path, opts) => fetch(path, opts).then(r => r.json());
+const post = body => ({ method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+
+function load()  { api("/api/walk").then(apply); }
+function apply(d) { state = d; if (d.thinking) startPoll(); else stopPoll(); render(); }
+
+function predict(text) { api("/api/walk/predict", post({ text })).then(apply); }
+function grade(delta)  { api("/api/walk/grade", post({ delta })).then(apply); }
+function compress(text){ api("/api/walk/compress", post({ text })).then(apply); }
+function restart()     { api("/api/walk/restart", post({})).then(apply); }
+
+function startPoll() {
+  if (poll) return;
+  poll = setInterval(() => api("/api/walk").then(d => { state = d; if (!d.thinking) stopPoll(); render(); }), 700);
+}
+function stopPoll() { if (poll) { clearInterval(poll); poll = null; } }
+
+// ── the path rail ───────────────────────────────────────────────────────
+function renderSpine() {
+  const spine = document.getElementById("spine");
+  spine.replaceChildren();
+  (state.path || []).forEach((hop, i) => {
+    const li = el("li", "node");
+    if (hop.current) li.classList.add("current");
+    if (hop.delta) li.classList.add(hop.delta);
+    li.appendChild(el("span", "dot"));
+    const label = el("span", "label");
+    label.appendChild(el("span", "num", String(i + 1)));
+    label.appendChild(document.createTextNode(hop.prompt));
+    li.appendChild(label);
+    li.title = hop.prompt;
+    spine.appendChild(li);
+  });
+}
+
+// ── the active phase ────────────────────────────────────────────────────
+function render() {
+  if (!state) return;
+  document.getElementById("what").textContent = state.description || "trace";
+  document.getElementById("what").title = state.description || "";
+  const mode = document.getElementById("mode");
+  mode.textContent = state.auto_grade ? "live grading" : "self-grade";
+  mode.classList.toggle("live", !!state.auto_grade);
+  const hop = document.getElementById("hop");
+  hop.textContent = state.phase === "done" ? "done" : `hop ${state.current}/${state.total}`;
+  renderSpine();
+
+  const panel = document.getElementById("panel");
+  panel.replaceChildren();
+  if (state.phase === "predict")  renderPredict(panel);
+  else if (state.phase === "reveal")   renderReveal(panel);
+  else if (state.phase === "compress") renderCompress(panel);
+  else if (state.phase === "done")     renderDone(panel);
+}
+
+function renderGivens(parent) {
+  if (!state.givens || !state.givens.length) return;
+  const wrap = el("div", "givens");
+  wrap.appendChild(el("span", "glabel", "leans on"));
+  state.givens.forEach(g => wrap.appendChild(el("span", "chip", g)));
+  parent.appendChild(wrap);
+}
+
+function renderPredict(panel) {
+  panel.appendChild(el("div", "eyebrow", `checkpoint ${state.current} / ${state.total}`));
+  panel.appendChild(el("h1", "prompt", state.prompt || ""));
+  renderGivens(panel);
+  const ta = el("textarea", "field");
+  ta.placeholder = "Predict the next hop — even a hunch beats “I don’t know.”";
+  panel.appendChild(ta);
+  const submit = () => { const t = ta.value.trim(); if (t) predict(t); };
+  const btn = el("button", "btn", "Reveal →");
+  btn.onclick = submit;
+  panel.appendChild(btn);
+  const hint = el("p", "hint");
+  hint.append("The gap between your guess and the truth is the learning.  ");
+  const k = el("kbd", null, "⌘ / Ctrl + Enter"); hint.append(k); hint.append(" to reveal.");
+  panel.appendChild(hint);
+  ta.addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); submit(); } });
+  setTimeout(() => ta.focus(), 0);
+}
+
+function renderRecalled(panel) {
+  const box = el("div", "recalled");
+  if (!state.prediction) box.classList.add("empty");
+  box.appendChild(el("span", "glabel", "you predicted"));
+  box.appendChild(el("p", null, state.prediction || "(no prediction)"));
+  panel.appendChild(box);
+}
+
+function renderExcerpt(panel) {
+  const h = el("div", "reveal-h");
+  h.appendChild(el("span", "glabel", "the source"));
+  if (state.locator) h.appendChild(el("span", "at", "at " + state.locator));
+  panel.appendChild(h);
+
+  if (state.excerpt) {
+    const box = el("div", "excerpt");
+    box.appendChild(el("div", "file", state.excerpt.path));
+    const code = el("div", "code");
+    state.excerpt.lines.forEach(ln => {
+      const row = el("div", "ln");
+      row.appendChild(el("span", "n", String(ln.n)));
+      row.appendChild(el("span", "t", ln.text));
+      code.appendChild(row);
+    });
+    box.appendChild(code);
+    if (state.excerpt.truncated) box.appendChild(el("div", "trunc", "… excerpt truncated"));
+    panel.appendChild(box);
+  } else {
+    panel.appendChild(el("div", "excerpt-miss", state.excerpt_error || "no excerpt for this checkpoint"));
+  }
+}
+
+function renderReveal(panel) {
+  panel.appendChild(el("div", "eyebrow", `reveal · hop ${state.current} / ${state.total}`));
+  panel.appendChild(el("h1", "prompt", state.prompt || ""));
+  renderRecalled(panel);
+  renderExcerpt(panel);
+
+  if (state.points && state.points.length) {
+    const ul = el("ul", "points");
+    ul.appendChild(el("li", "glabel", "key points"));
+    state.points.forEach(p => ul.appendChild(el("li", "pt", p)));
+    panel.appendChild(ul);
+  }
+  if (state.note) panel.appendChild(el("div", "note", state.note));
+
+  renderGrade(panel);
+}
+
+const DELTAS = [
+  { key: "g", cls: "got",     label: "Got it",  hint: "covered the key points",  k: "G" },
+  { key: "p", cls: "partial", label: "Partial", hint: "some right, a gap",        k: "P" },
+  { key: "m", cls: "missed",  label: "Missed",  hint: "missed the point",         k: "M" },
+];
+
+function renderSelfGrade(parent) {
+  parent.appendChild(el("span", "glabel", "how close was your prediction?"));
+  const row = el("div", "deltas");
+  DELTAS.forEach(d => {
+    const b = el("button", "delta " + d.cls);
+    b.appendChild(el("span", "key", d.k));
+    b.appendChild(el("span", "dk", d.label));
+    b.appendChild(el("span", "dh", d.hint));
+    b.onclick = () => grade(d.key);
+    row.appendChild(b);
+  });
+  parent.appendChild(row);
+}
+
+function renderGrade(panel) {
+  const g = el("div", "grade");
+  if (state.thinking) {
+    const t = el("div", "thinking");
+    t.appendChild(el("span", "spinner"));
+    t.appendChild(document.createTextNode("Claude is grading your prediction…"));
+    g.appendChild(t);
+    panel.appendChild(g);
+    return;
+  }
+  if (state.verdict) {                 // a resolved live grade
+    const v = el("div", "verdict");
+    const cls = state.verdict.toLowerCase().startsWith("got") ? "got"
+              : state.verdict.toLowerCase().startsWith("partial") ? "partial" : "missed";
+    v.appendChild(el("span", "badge " + cls, state.verdict));
+    g.appendChild(v);
+    if (state.feedback) g.appendChild(el("p", "feedback", state.feedback));
+    const btn = el("button", "btn", state.current < state.total ? "Next hop →" : "Compress →");
+    btn.onclick = () => grade(cls[0]);   // server uses its own grade; body is a fallback
+    g.appendChild(btn);
+    panel.appendChild(g);
+    setTimeout(() => btn.focus(), 0);
+    return;
+  }
+  if (state.grade_error) g.appendChild(el("div", "grade-err", "Live grading failed (" + state.grade_error + ") — grade it yourself."));
+  renderSelfGrade(g);
+  panel.appendChild(g);
+}
+
+function renderCompress(panel) {
+  panel.appendChild(el("div", "eyebrow", "compress · the whole path"));
+  panel.appendChild(el("h1", "prompt", "Retrace it in two sentences."));
+  const lede = el("p", "lede");
+  lede.textContent = "If you can re-derive the whole path — " + (state.description || "") + " — you understood it.";
+  panel.appendChild(lede);
+  const ta = el("textarea", "field");
+  ta.placeholder = "Retrace the path end to end…";
+  panel.appendChild(ta);
+  const submit = () => compress(ta.value.trim());
+  const btn = el("button", "btn", "Finish");
+  btn.onclick = submit;
+  panel.appendChild(btn);
+  const hint = el("p", "hint");
+  hint.append("This compression is the trace’s own exam.  ");
+  hint.appendChild(el("kbd", null, "⌘ / Ctrl + Enter")); hint.append(" to finish.");
+  panel.appendChild(hint);
+  ta.addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); submit(); } });
+  setTimeout(() => ta.focus(), 0);
+}
+
+function renderDone(panel) {
+  panel.appendChild(el("div", "eyebrow", "walk complete"));
+  panel.appendChild(el("h1", "prompt", state.description || "Trace walked."));
+  const s = state.summary || { got: 0, partial: 0, missed: 0, weak: [], total: 0 };
+  const tally = el("div", "tally");
+  [["got", s.got, "got"], ["partial", s.partial, "partial"], ["missed", s.missed, "missed"]].forEach(([cls, n, cap]) => {
+    const cell = el("div", "cell " + cls);
+    cell.appendChild(el("div", "big", String(n)));
+    cell.appendChild(el("span", "cap", cap));
+    tally.appendChild(cell);
+  });
+  panel.appendChild(tally);
+  if (s.weak && s.weak.length) {
+    const w = el("p", "weak");
+    w.append("Weak hops resurface sooner: ");
+    s.weak.forEach((h, i) => { if (i) w.append(", "); w.appendChild(el("b", null, "#" + h)); });
+    panel.appendChild(w);
+  } else if (s.total) {
+    panel.appendChild(el("p", "weak", "Every hop landed — the whole path is scheduled."));
+  }
+  if (state.compression) {
+    const c = el("div", "compression-echo");
+    c.appendChild(el("span", "glabel", "your compression"));
+    c.appendChild(el("p", null, state.compression));
+    panel.appendChild(c);
+  }
+  const again = el("button", "btn ghost", "Walk again");
+  again.onclick = restart;
+  panel.appendChild(again);
+  panel.appendChild(el("p", "hint", "Progress is saved. Close the tab when you’re done."));
+}
+
+// global keys: G/P/M to self-grade on the reveal
+document.addEventListener("keydown", e => {
+  if (!state || state.phase !== "reveal" || state.thinking || state.verdict) return;
+  if (e.target && /^(TEXTAREA|INPUT)$/.test(e.target.tagName)) return;
+  const d = DELTAS.find(x => x.key === e.key.toLowerCase());
+  if (d) { e.preventDefault(); grade(d.key); }
+});
+
+load();
+</script>
+</body>
+</html>

@@ -544,8 +544,14 @@ machinery — a repo becomes a dependency-ordered set of traces you climb.
 
 CLI first (mirrors how `flash exam` shipped), reusing: `% source:`, the
 `claude -p` plumbing, exam's Pass/Partial/Fail + rubric grading, the store +
-scheduling, `% mode: explain` cards. A web trace surface comes later (the web is
-the primary surface per ROADMAP L4).
+scheduling, `% mode: explain` cards. The **web trace surface** then followed
+(`flash trace <deck> --serve`, the web is the primary surface per ROADMAP L4):
+the same frontend-agnostic [`Walk`](../src/trace.rs) state machine drives both,
+so the browser is a thin reader over it exactly like the TUI. The walk page
+(`assets/serve/walk.html`) renders a left **path rail** (the spine you walk, its
+nodes colored by delta) and an editor-style **live excerpt** (the source is the
+oracle); `--grade` runs the per-hop Claude grade on a background thread and the
+page polls `GET /api/walk` while it's `thinking`, just like the exam.
 
 ## Reuse map (existing pieces this builds on)
 
@@ -578,8 +584,11 @@ but a chat ≠ the tool). So validate the mechanic cheaply before heavy plumbing
    folder (a `flash.toml` + a stub deck/trace per item wired by `% requires:`);
    **`--walk`** builds and walks the explore walk over the source's shape.
    **Done.**
-5. **`--grade`** (live Claude grading of each prediction) — **done**; next: a
-   **web surface** for the walk, and richer `flash.toml [trace]` config.
+5. **`--grade`** (live Claude grading of each prediction) — **done**.
+6. **Web walk surface** (`flash trace <deck> --serve`) — **done**; the browser
+   drives the same `Walk` state machine, with `--grade` as the live option. Next:
+   richer `flash.toml [trace]` config, and surfacing trace decks in the web
+   workspace picker.
 
 ## Open / deferred decisions
 

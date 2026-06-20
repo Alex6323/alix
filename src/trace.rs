@@ -16,7 +16,10 @@
 //! self-judged and offline — no model calls — so the mechanic can be validated
 //! cheaply; live Claude grading (`--grade`) is a later layer.
 
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::mpsc::{Receiver, channel},
+};
 
 use anyhow::{Result, anyhow, bail};
 
@@ -524,6 +527,25 @@ pub fn grade_prediction(
     Ok(parse_grade(&raw))
 }
 
+/// Background variant of [`grade_prediction`]: runs the grade on a thread and
+/// delivers `(Delta, feedback)` (or an error string) on the returned channel.
+/// The web walk server polls it while the reveal shows "grading…", exactly like
+/// [`crate::exam::spawn_grade`]; inputs are owned so the thread is `'static`.
+pub fn spawn_grade(
+    checkpoint: Checkpoint,
+    prediction: String,
+    cfg: TraceConfig,
+    ask_cfg: AskConfig,
+) -> Receiver<Result<(Delta, String), String>> {
+    let (tx, rx) = channel();
+    std::thread::spawn(move || {
+        let reply = grade_prediction(&checkpoint, &prediction, &cfg, &ask_cfg)
+            .map_err(|e| format!("{e:#}"));
+        let _ = tx.send(reply);
+    });
+    rx
+}
+
 /// Builds the grading prompt: the question, the key points (the rubric), and the
 /// learner's prediction — asking for a one-line `VERDICT — feedback`.
 fn grade_prompt(checkpoint: &Checkpoint, prediction: &str) -> String {
@@ -679,6 +701,10 @@ impl Walk {
     /// The prediction typed at checkpoint `i`, if any.
     pub fn prediction(&self, i: usize) -> Option<&str> {
         self.predictions.get(i).map(String::as_str)
+    }
+    /// The judged delta for checkpoint `i`, once it has been graded.
+    pub fn delta(&self, i: usize) -> Option<Delta> {
+        self.deltas.get(i).copied().flatten()
     }
     /// The compression text, once the walk is done.
     pub fn compression(&self) -> Option<&str> {

@@ -31,14 +31,17 @@ use crate::{
     ask::{self, CliSession, Exchange, Reply},
     card::Card,
     choice,
-    config::{AskConfig, Bindings, BrowseBindings, ExamConfig, Key, KeyPattern, Strictness},
+    config::{
+        AskConfig, Bindings, BrowseBindings, ExamConfig, Key, KeyPattern, Strictness, TraceConfig,
+    },
     deck::{self, Deck, DeckState},
     exam, picker,
     recent::RecentDecks,
     render::{self, NoteUnit},
-    scheduler::Grade,
+    scheduler::{Grade, SchedulerKind},
     session::{Session, is_retired, now_ms},
     store::Store,
+    trace::{self, Delta, Excerpt, Phase, Walk},
 };
 
 /// Per-deck data the server needs to apply a removal: the file path, plus the
@@ -103,6 +106,7 @@ impl DeckFiles {
 
 const REVIEW_HTML: &str = include_str!("../assets/serve/review.html");
 const BROWSE_HTML: &str = include_str!("../assets/serve/browse.html");
+const WALK_HTML: &str = include_str!("../assets/serve/walk.html");
 
 /// One display unit of a card's note, ready for JSON. Mirrors
 /// [`render::NoteUnit`]; the web page renders `sentence` as a paragraph and
@@ -955,6 +959,370 @@ pub fn run_review(
     Ok(())
 }
 
+// ── Trace walks (`flash trace --serve`) ──────────────────────────────────────
+//
+// A single walk of one trace deck, mirroring the terminal `run_walk`: predict →
+// reveal a live excerpt → grade → compress. There is no deck-selection screen
+// (one deck, one walk). The frontend-agnostic `Walk` state machine carries the
+// logic; this is a thin web reader over it, exactly like the TUI consumer. Live
+// Claude grading (`--grade`) is the only async step, so it runs on a background
+// thread and the page polls `GET /api/walk` while `thinking`, like the exam.
+
+/// The server's live trace-walk state. Holds the [`Walk`], the (optional) live
+/// grading config, and the in-flight/just-finished Claude grade for the current
+/// reveal.
+struct Walking {
+    walk: Walk,
+    scheduler: SchedulerKind,
+    /// `Some` in `--grade` mode: the trace + ask config a background grade
+    /// uses.
+    grade: Option<(TraceConfig, AskConfig)>,
+    /// A background Claude grade in flight for the current reveal.
+    pending: Option<Receiver<Result<(Delta, String), String>>>,
+    /// The resolved Claude grade for the current reveal (verdict + feedback).
+    grade_result: Option<(Delta, String)>,
+    /// A failed Claude grade — the reveal falls back to self-grading.
+    grade_error: Option<String>,
+}
+
+impl Walking {
+    fn new(walk: Walk, scheduler: SchedulerKind, grade: Option<(TraceConfig, AskConfig)>) -> Self {
+        Walking {
+            walk,
+            scheduler,
+            grade,
+            pending: None,
+            grade_result: None,
+            grade_error: None,
+        }
+    }
+
+    /// After a prediction, kick off a background Claude grade — a no-op outside
+    /// `--grade` mode. Clears any prior grade state for the fresh reveal.
+    fn start_grade(&mut self) {
+        self.clear_grade();
+        let Some((cfg, ask_cfg)) = self.grade.as_ref() else {
+            return;
+        };
+        let Some(checkpoint) = self.walk.checkpoint() else {
+            return;
+        };
+        let prediction = self
+            .walk
+            .prediction(self.walk.current_index())
+            .unwrap_or("")
+            .to_string();
+        let rx = trace::spawn_grade(checkpoint.clone(), prediction, cfg.clone(), ask_cfg.clone());
+        self.pending = Some(rx);
+    }
+
+    /// Drains a finished background grade into `grade_result`/`grade_error`.
+    fn poll(&mut self) {
+        let Some(rx) = &self.pending else { return };
+        match rx.try_recv() {
+            Ok(Ok((delta, feedback))) => {
+                self.grade_result = Some((delta, feedback));
+                self.pending = None;
+            }
+            Ok(Err(e)) => {
+                self.grade_error = Some(e);
+                self.pending = None;
+            }
+            Err(TryRecvError::Empty) => {}
+            Err(TryRecvError::Disconnected) => {
+                self.grade_error = Some("the grading thread ended unexpectedly".to_string());
+                self.pending = None;
+            }
+        }
+    }
+
+    /// Clears all grade state when leaving a reveal.
+    fn clear_grade(&mut self) {
+        self.pending = None;
+        self.grade_result = None;
+        self.grade_error = None;
+    }
+}
+
+/// One checkpoint as a node on the path rail.
+#[derive(Serialize)]
+struct HopDto {
+    prompt: String,
+    /// `got` | `partial` | `missed` once judged; `null` while unwalked.
+    delta: Option<&'static str>,
+    /// The hop currently being predicted or revealed.
+    current: bool,
+}
+
+/// A revealed source excerpt for the browser — line-numbered, contiguous.
+#[derive(Serialize)]
+struct ExcerptDto {
+    path: String,
+    lines: Vec<LineDto>,
+    truncated: bool,
+}
+
+#[derive(Serialize)]
+struct LineDto {
+    n: usize,
+    text: String,
+}
+
+/// The walk tally shown on the done screen.
+#[derive(Serialize)]
+struct SummaryDto {
+    got: usize,
+    partial: usize,
+    missed: usize,
+    /// 1-based hop numbers judged Partial or Missed.
+    weak: Vec<usize>,
+    total: usize,
+}
+
+/// The trace-walk payload sent to the browser. The page renders sub-views off
+/// `phase` and polls `GET /api/walk` while `thinking` (a live grade in flight).
+#[derive(Serialize)]
+struct WalkDto {
+    phase: &'static str,
+    description: String,
+    source: Option<String>,
+    total: usize,
+    /// 1-based index of the hop being walked.
+    current: usize,
+    /// The path rail — one node per checkpoint.
+    path: Vec<HopDto>,
+    // predict + reveal
+    prompt: Option<String>,
+    givens: Vec<String>,
+    locator: Option<String>,
+    /// What the learner predicted (shown on reveal).
+    prediction: Option<String>,
+    // reveal
+    excerpt: Option<ExcerptDto>,
+    excerpt_error: Option<String>,
+    points: Vec<String>,
+    note: Option<String>,
+    /// `--grade` mode: Claude judges instead of the learner.
+    auto_grade: bool,
+    /// A live grade is in flight.
+    thinking: bool,
+    verdict: Option<&'static str>,
+    feedback: Option<String>,
+    /// A live grade failed — the reveal offers self-grading instead.
+    grade_error: Option<String>,
+    // done
+    summary: Option<SummaryDto>,
+    compression: Option<String>,
+}
+
+fn walk_phase_name(phase: Phase) -> &'static str {
+    match phase {
+        Phase::Predict => "predict",
+        Phase::Reveal => "reveal",
+        Phase::Compress => "compress",
+        Phase::Done => "done",
+    }
+}
+
+fn delta_name(delta: Delta) -> &'static str {
+    match delta {
+        Delta::Got => "got",
+        Delta::Partial => "partial",
+        Delta::Missed => "missed",
+    }
+}
+
+fn excerpt_dto(excerpt: &Excerpt) -> ExcerptDto {
+    ExcerptDto {
+        path: excerpt.path.display().to_string(),
+        lines: excerpt
+            .lines
+            .iter()
+            .map(|(n, text)| LineDto {
+                n: *n,
+                text: text.clone(),
+            })
+            .collect(),
+        truncated: excerpt.truncated,
+    }
+}
+
+/// Serializes the current walk state for the browser.
+fn walk_dto(w: &Walking) -> WalkDto {
+    let walk = &w.walk;
+    let trace = walk.trace();
+    let phase = walk.phase();
+    let on_a_hop = matches!(phase, Phase::Predict | Phase::Reveal);
+
+    let path = trace
+        .checkpoints
+        .iter()
+        .enumerate()
+        .map(|(i, c)| HopDto {
+            prompt: c.prompt.clone(),
+            delta: walk.delta(i).map(delta_name),
+            current: on_a_hop && i == walk.current_index(),
+        })
+        .collect();
+
+    let mut dto = WalkDto {
+        phase: walk_phase_name(phase),
+        description: trace.description.clone(),
+        source: trace.source.clone(),
+        total: walk.total(),
+        current: walk.current_index() + 1,
+        path,
+        prompt: None,
+        givens: Vec::new(),
+        locator: None,
+        prediction: None,
+        excerpt: None,
+        excerpt_error: None,
+        points: Vec::new(),
+        note: None,
+        auto_grade: w.grade.is_some(),
+        thinking: w.pending.is_some(),
+        verdict: w.grade_result.as_ref().map(|(d, _)| d.label()),
+        feedback: w.grade_result.as_ref().map(|(_, f)| f.clone()),
+        grade_error: w.grade_error.clone(),
+        summary: None,
+        compression: None,
+    };
+
+    match phase {
+        Phase::Predict => {
+            if let Some(c) = walk.checkpoint() {
+                dto.prompt = Some(c.prompt.clone());
+                dto.givens = c.givens.clone();
+                dto.locator = c.locator.clone();
+            }
+        }
+        Phase::Reveal => {
+            if let Some(c) = walk.checkpoint() {
+                dto.prompt = Some(c.prompt.clone());
+                dto.givens = c.givens.clone();
+                dto.locator = c.locator.clone();
+                dto.points = c.points.clone();
+                dto.note = c.note.clone();
+                match trace.excerpt(c) {
+                    Ok(ex) => dto.excerpt = Some(excerpt_dto(&ex)),
+                    Err(e) => dto.excerpt_error = Some(format!("{e:#}")),
+                }
+            }
+            dto.prediction = walk
+                .prediction(walk.current_index())
+                .map(str::to_string)
+                .filter(|p| !p.is_empty());
+        }
+        Phase::Compress => {}
+        Phase::Done => {
+            let s = walk.summary();
+            dto.summary = Some(SummaryDto {
+                got: s.got,
+                partial: s.partial,
+                missed: s.missed,
+                weak: s.weak.iter().map(|i| i + 1).collect(),
+                total: walk.total(),
+            });
+            dto.compression = walk.compression().map(str::to_string);
+        }
+    }
+    dto
+}
+
+/// Parses a `{"delta": "g"|"p"|"m"}` self-grade POST body.
+fn read_delta(request: &mut Request) -> Option<Delta> {
+    #[derive(Deserialize)]
+    struct Body {
+        delta: String,
+    }
+    let body: Body = serde_json::from_reader(request.as_reader()).ok()?;
+    Delta::from_key(body.delta.chars().next()?)
+}
+
+/// Serves a single trace walk at `addr` until the process is stopped. Mirrors
+/// the terminal walk: predict → reveal a live excerpt → grade (self-judged, or
+/// by Claude when `grade` is `Some`) → compress, scheduling each checkpoint in
+/// `store`. One deck, one walk — there is no deck-selection screen.
+pub fn run_walk(
+    walk: Walk,
+    mut store: Store,
+    addr: SocketAddr,
+    scheduler: SchedulerKind,
+    grade: Option<(TraceConfig, AskConfig)>,
+) -> Result<()> {
+    let mut walking = Walking::new(walk, scheduler, grade);
+    let server = Server::http(addr).map_err(|e| anyhow!("cannot start server on {addr}: {e}"))?;
+    for mut request in server.incoming_requests() {
+        let method = request.method().clone();
+        let path = request_path(&request);
+        match (&method, path.as_str()) {
+            (Method::Get, "/") => respond_html(request, WALK_HTML),
+            // Poll: drain any finished background grade, return state.
+            (Method::Get, "/api/walk") => {
+                walking.poll();
+                respond_json(request, &walk_dto(&walking));
+            }
+            // Commit the prediction and move to the reveal (spawning a live grade
+            // in `--grade` mode).
+            (Method::Post, "/api/walk/predict") => {
+                #[derive(Deserialize)]
+                struct Body {
+                    text: String,
+                }
+                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
+                if let Some(b) = body {
+                    walking.walk.predict(b.text);
+                    walking.start_grade();
+                }
+                respond_json(request, &walk_dto(&walking));
+            }
+            // Record the delta (Claude's if present, else the self-grade in the
+            // body), schedule the checkpoint, and advance.
+            (Method::Post, "/api/walk/grade") => {
+                let self_delta = read_delta(&mut request);
+                let delta = walking
+                    .grade_result
+                    .as_ref()
+                    .map(|(d, _)| *d)
+                    .or(self_delta);
+                match delta {
+                    Some(delta) => {
+                        walking.walk.grade(&mut store, delta, now_ms());
+                        if let Err(e) = store.save() {
+                            eprintln!("warning: could not save progress: {e}");
+                        }
+                        walking.clear_grade();
+                        respond_json(request, &walk_dto(&walking));
+                    }
+                    None => respond_status(request, 400),
+                }
+            }
+            // Record the final compression and finish the walk.
+            (Method::Post, "/api/walk/compress") => {
+                #[derive(Deserialize)]
+                struct Body {
+                    text: String,
+                }
+                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
+                if let Some(b) = body {
+                    walking.walk.compress(b.text);
+                }
+                respond_json(request, &walk_dto(&walking));
+            }
+            // Walk the same trace again from the top.
+            (Method::Post, "/api/walk/restart") => {
+                let fresh = Walk::new(walking.walk.trace().clone(), walking.scheduler);
+                let grade = walking.grade.take();
+                walking = Walking::new(fresh, walking.scheduler, grade);
+                respond_json(request, &walk_dto(&walking));
+            }
+            _ => respond_status(request, 404),
+        }
+    }
+    Ok(())
+}
+
 /// The server's live browse state once decks are chosen. Its absence (`None`)
 /// means the deck-selection phase.
 struct Browsing {
@@ -1633,5 +2001,103 @@ mod tests {
         assert!(r.pending.is_none());
         assert!(!r.cli.started); // a fresh session next time
         assert!(r.transcript.is_empty());
+    }
+
+    // ── trace walk ──────────────────────────────────────────────────────
+
+    /// A two-checkpoint trace over a single source file, in `dir`.
+    fn walk_deck(dir: &Path) -> crate::trace::Trace {
+        std::fs::write(dir.join("source.txt"), "first\nsecond\nthird\n").unwrap();
+        let path = dir.join("t.txt");
+        std::fs::write(
+            &path,
+            "% trace: how it works\n\
+             % source: source.txt\n\
+             # Predict the first hop\n\
+             \t% given: line — the input line\n\
+             \tit reads the first line\n\
+             \t% at: 1\n\
+             # Predict the second hop\n\
+             \tit reads line two\n\
+             \t% at: 2\n",
+        )
+        .unwrap();
+        crate::trace::Trace::from_deck(&Deck::load(&path).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn walk_dto_tracks_phase_excerpt_and_rail() {
+        let dir = tempfile::tempdir().unwrap();
+        let trace = walk_deck(dir.path());
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let walk = Walk::new(trace, SchedulerKind::Leitner);
+        let mut w = Walking::new(walk, SchedulerKind::Leitner, None);
+
+        // Predict: prompt + givens, no excerpt yet, the first node is current.
+        let d = walk_dto(&w);
+        assert_eq!("predict", d.phase);
+        assert_eq!(1, d.current);
+        assert_eq!(2, d.total);
+        assert_eq!(Some("Predict the first hop".to_string()), d.prompt);
+        assert_eq!(vec!["line — the input line".to_string()], d.givens);
+        assert!(d.excerpt.is_none());
+        assert!(!d.auto_grade);
+        assert!(d.path[0].current && d.path[0].delta.is_none());
+
+        // Reveal: the live excerpt is read, the prediction is recalled.
+        w.walk.predict("my guess".to_string());
+        let d = walk_dto(&w);
+        assert_eq!("reveal", d.phase);
+        assert_eq!(Some("my guess".to_string()), d.prediction);
+        let ex = d.excerpt.expect("reveal reads the source");
+        assert_eq!(
+            vec![(1, "first".to_string())],
+            ex.lines
+                .iter()
+                .map(|l| (l.n, l.text.clone()))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(vec!["it reads the first line".to_string()], d.points);
+
+        // Grade Got: the rail colors the walked node and advances to hop 2.
+        w.walk.grade(&mut store, Delta::Got, 1000);
+        let d = walk_dto(&w);
+        assert_eq!("predict", d.phase);
+        assert_eq!(2, d.current);
+        assert_eq!(Some("got"), d.path[0].delta);
+        assert!(d.path[1].current);
+
+        // Walk the last hop, then compress → done with a summary.
+        w.walk.predict(String::new());
+        w.walk.grade(&mut store, Delta::Missed, 1001);
+        assert_eq!("compress", walk_dto(&w).phase);
+        w.walk.compress("retraced".to_string());
+        let d = walk_dto(&w);
+        assert_eq!("done", d.phase);
+        let s = d.summary.expect("done has a summary");
+        assert_eq!((1, 0, 1), (s.got, s.partial, s.missed));
+        assert_eq!(vec![2], s.weak); // 1-based: the missed second hop
+        assert_eq!(Some("retraced".to_string()), d.compression);
+    }
+
+    #[test]
+    fn walk_dto_surfaces_a_live_grade_and_clears_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let trace = walk_deck(dir.path());
+        let walk = Walk::new(trace, SchedulerKind::Leitner);
+        let cfg = (TraceConfig::default(), AskConfig::default());
+        let mut w = Walking::new(walk, SchedulerKind::Leitner, Some(cfg));
+
+        w.walk.predict("g".to_string());
+        // Simulate the background grade resolving (no real CLI call in the test).
+        w.grade_result = Some((Delta::Partial, "right idea, missed a detail".to_string()));
+        let d = walk_dto(&w);
+        assert!(d.auto_grade);
+        assert_eq!(Some("PARTIAL"), d.verdict);
+        assert_eq!(Some("right idea, missed a detail".to_string()), d.feedback);
+
+        w.clear_grade();
+        let d = walk_dto(&w);
+        assert!(d.verdict.is_none() && d.feedback.is_none() && !d.thinking);
     }
 }

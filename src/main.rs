@@ -236,6 +236,10 @@ struct TraceArgs {
     #[arg(short, long, value_enum)]
     scheduler: Option<SchedulerKind>,
 
+    /// Walk the trace in the browser instead of the terminal.
+    #[command(flatten)]
+    serve: ServeOpts,
+
     /// Path of the progress store (default: platform data dir).
     #[arg(long)]
     store: Option<PathBuf>,
@@ -1578,18 +1582,43 @@ fn trace_cmd(args: TraceArgs) -> Result<()> {
     if args.map {
         return print_trace_map(&trace);
     }
-    if !std::io::stdin().is_terminal() {
-        bail!("`flash trace` needs a terminal");
-    }
 
     let scheduler = args
         .scheduler
         .or(deck.settings.scheduler)
         .unwrap_or_default();
-    let mut store = open_store(args.store.clone())?;
+    let store = open_store(args.store.clone())?;
     let config = Config::load(args.config.as_deref())?;
+
+    // `--serve`: walk it in the browser; otherwise in the terminal.
+    if args.serve.serve {
+        return trace_serve(trace, scheduler, store, &args, &config);
+    }
+    if !std::io::stdin().is_terminal() {
+        bail!("`flash trace` needs a terminal");
+    }
+    let mut store = store;
     let grade = args.grade.then_some(&config);
     run_walk(trace, scheduler, &mut store, grade)
+}
+
+/// `flash trace --serve`: walk a trace in the browser. Mirrors the terminal
+/// walk (predict → reveal → grade → compress); `--grade` enables live Claude
+/// grading. One deck, one walk — no deck-selection screen.
+fn trace_serve(
+    trace: Trace,
+    scheduler: SchedulerKind,
+    store: Store,
+    args: &TraceArgs,
+    config: &Config,
+) -> Result<()> {
+    let addr = serve_addr(args.serve.port, args.serve.lan, config);
+    announce(addr, args.serve.lan, "a trace walk");
+    let grade = args
+        .grade
+        .then(|| (config.trace.clone(), config.ask.clone()));
+    let walk = Walk::new(trace, scheduler);
+    serve::run_walk(walk, store, addr, scheduler, grade)
 }
 
 /// Runs a trace walk in the terminal — predict → reveal → grade each checkpoint,
