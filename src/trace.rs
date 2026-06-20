@@ -502,6 +502,73 @@ pub(crate) fn clean_to_cards(raw: &str) -> String {
     lines[start..end].join("\n")
 }
 
+/// Grades a learner's prediction at a checkpoint with Claude (`flash trace
+/// --grade`): compares it to the checkpoint's key points and returns the
+/// [`Delta`] plus one line of feedback. Pure reasoning over the supplied text —
+/// no tools. Reuses the ask runner with trace's model/timeout.
+pub fn grade_prediction(
+    checkpoint: &Checkpoint,
+    prediction: &str,
+    cfg: &TraceConfig,
+    ask_cfg: &AskConfig,
+) -> Result<(Delta, String)> {
+    let run_cfg = AskConfig {
+        command: ask_cfg.command.clone(),
+        permission_mode: ask_cfg.permission_mode.clone(),
+        allowed_tools: Vec::new(), // grading needs no tools, just the text
+        model: cfg.model.clone().or_else(|| ask_cfg.model.clone()),
+        timeout_secs: cfg.timeout_secs,
+        cwd: None,
+    };
+    let raw = ask::run(&run_cfg, &grade_prompt(checkpoint, prediction), &[])?;
+    Ok(parse_grade(&raw))
+}
+
+/// Builds the grading prompt: the question, the key points (the rubric), and the
+/// learner's prediction — asking for a one-line `VERDICT — feedback`.
+fn grade_prompt(checkpoint: &Checkpoint, prediction: &str) -> String {
+    let points = checkpoint.points.join("\n- ");
+    format!(
+        "A learner is doing a predict-then-verify walk through a source. At this \
+         hop they were asked:\n\n{}\n\nA correct answer hits these KEY POINTS:\n\
+         - {points}\n\nThe learner PREDICTED:\n\n{prediction}\n\nGrade the \
+         prediction against the key points (minor wording differences are fine; \
+         judge the substance). Reply with EXACTLY ONE line: the verdict word, then \
+         a dash and ONE short sentence of feedback naming what was right or \
+         missing. The verdict is one of:\n\
+         GOT — covers the key points with nothing important wrong\n\
+         PARTIAL — some right, but an important point is missed, muddled, or \
+         stated wrongly\n\
+         MISSED — misses the point, or its core claim is wrong\n\
+         Do NOT award GOT to a prediction that asserts something the key points \
+         CONTRADICT — a confident error is PARTIAL at best (MISSED if the core \
+         claim is wrong).\n\
+         Example: `PARTIAL — right that it reschedules, but you missed the \
+         max-stage clamp.`",
+        checkpoint.prompt
+    )
+}
+
+/// Parses a `VERDICT — feedback` grading reply into a [`Delta`] and the feedback
+/// text. Defaults to [`Delta::Missed`] if the verdict is unrecognized.
+fn parse_grade(raw: &str) -> (Delta, String) {
+    let line = raw.trim().lines().next().unwrap_or("").trim();
+    let upper = line.to_ascii_uppercase();
+    let delta = if upper.starts_with("GOT") {
+        Delta::Got
+    } else if upper.starts_with("PARTIAL") {
+        Delta::Partial
+    } else {
+        Delta::Missed
+    };
+    let feedback = line
+        .split_once(['—', '-'])
+        .map(|(_, f)| f.trim().to_string())
+        .filter(|f| !f.is_empty())
+        .unwrap_or_else(|| line.to_string());
+    (delta, feedback)
+}
+
 /// The phase of a [`Walk`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Phase {
@@ -1003,6 +1070,17 @@ mod tests {
     }
 
     // ── build (`flash trace --build`) ────────────────────────────────────────
+
+    #[test]
+    fn parse_grade_reads_verdict_and_feedback() {
+        let (d, f) = parse_grade("PARTIAL — right that it reschedules, but missed the clamp.");
+        assert_eq!(Delta::Partial, d);
+        assert_eq!("right that it reschedules, but missed the clamp.", f);
+        assert_eq!(Delta::Got, parse_grade("GOT — spot on").0);
+        assert_eq!(Delta::Missed, parse_grade("MISSED - wrong direction").0);
+        // An unrecognized verdict defaults to Missed; the line becomes feedback.
+        assert_eq!(Delta::Missed, parse_grade("hmm not sure").0);
+    }
 
     #[test]
     fn build_prompt_carries_goal_source_format_and_rules() {

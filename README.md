@@ -686,10 +686,12 @@ by hop:
 2. **Reveal** — flash prints the real excerpt from the source, then the
    checkpoint's key points and note.
 3. **Gap** — you judge yourself **Got it / Partial / Missed**. Grading is
-   self-judged and offline (no model call); a Partial or Missed is a **weak
-   edge** that resets so it resurfaces sooner, while a nailed hop advances and
-   fades. Each checkpoint is an ordinary card under the hood, so this scheduling
-   is the normal per-card SRS.
+   self-judged and offline (no model call) by default; pass **`--grade`** to have
+   Claude judge your typed prediction against the key points and return the
+   verdict plus a line of feedback (a model call per hop). Either way, a Partial
+   or Missed is a **weak edge** that resets so it resurfaces sooner, while a
+   nailed hop advances and fades. Each checkpoint is an ordinary card under the
+   hood, so this scheduling is the normal per-card SRS.
 4. **Compress** — after the last hop you restate the whole path in two
    sentences: if you can re-derive it, you understood it.
 

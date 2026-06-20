@@ -578,7 +578,8 @@ but a chat ≠ the tool). So validate the mechanic cheaply before heavy plumbing
    folder (a `flash.toml` + a stub deck/trace per item wired by `% requires:`);
    **`--walk`** builds and walks the explore walk over the source's shape.
    **Done.**
-5. **`--grade`** (live delta), **web surface**, richer `flash.toml [trace]` config.
+5. **`--grade`** (live Claude grading of each prediction) — **done**; next: a
+   **web surface** for the walk, and richer `flash.toml [trace]` config.
 
 ## Open / deferred decisions
 

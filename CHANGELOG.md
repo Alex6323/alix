@@ -27,7 +27,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   shown with the key points, you self-judge the **gap** (Got / Partial / Missed
   — a weak edge resets so it resurfaces sooner, via the normal per-checkpoint
   SRS), and after the last hop you **compress** the whole path into two
-  sentences. Self-judged and offline (no model call). `flash trace <deck> --map`
+  sentences. Self-judged and offline (no model call) by default; **`flash trace
+  --grade`** instead has Claude judge each typed prediction against the key points
+  and return the verdict + one line of feedback (a model call per hop). `flash
+  trace <deck> --map`
   prints the path without quizzing; the generic AI exam refuses a trace (its
   verification is the walk itself). See `examples/keypress-to-grade.txt`.
   **`flash trace --build <deck>`** discovers the path for you: declare just the

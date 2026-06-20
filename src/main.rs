@@ -226,6 +226,11 @@ struct TraceArgs {
     #[arg(long, conflicts_with_all = ["map", "build"])]
     suggest: bool,
 
+    /// Have Claude grade each prediction against the checkpoint's key points
+    /// (live grading) instead of self-grading. Costs a model call per hop.
+    #[arg(long)]
+    grade: bool,
+
     /// Scheduler used to schedule the checkpoints. Overrides the deck's
     /// `% scheduler:` directive; defaults to leitner.
     #[arg(short, long, value_enum)]
@@ -1582,15 +1587,23 @@ fn trace_cmd(args: TraceArgs) -> Result<()> {
         .or(deck.settings.scheduler)
         .unwrap_or_default();
     let mut store = open_store(args.store.clone())?;
-    run_walk(trace, scheduler, &mut store)
+    let config = Config::load(args.config.as_deref())?;
+    let grade = args.grade.then_some(&config);
+    run_walk(trace, scheduler, &mut store, grade)
 }
 
 /// Runs a trace walk in the terminal — predict → reveal → grade each checkpoint,
 /// then compress — scheduling each checkpoint in `store`. Shared by `flash trace`
 /// and `flash explore --walk`.
-fn run_walk(trace: Trace, scheduler: SchedulerKind, store: &mut Store) -> Result<()> {
+fn run_walk(
+    trace: Trace,
+    scheduler: SchedulerKind,
+    store: &mut Store,
+    grade: Option<&Config>,
+) -> Result<()> {
     let mut walk = Walk::new(trace, scheduler);
     let total = walk.total();
+    let mut last_prediction = String::new();
     println!("{BOLD}Trace{RESET}  {}", walk.trace().description);
     if let Some(src) = &walk.trace().source {
         println!("{DIM}source: {src}  ·  {total} checkpoints{RESET}");
@@ -1613,7 +1626,10 @@ fn run_walk(trace: Trace, scheduler: SchedulerKind, store: &mut Store) -> Result
                 print_givens(&checkpoint.givens);
                 match read_line(&format!("{DIM}predict >{RESET} "))? {
                     None => break 'walk, // EOF (Ctrl-D)
-                    Some(text) => walk.predict(text),
+                    Some(text) => {
+                        last_prediction = text.clone();
+                        walk.predict(text);
+                    }
                 }
             }
             Phase::Reveal => {
@@ -1635,7 +1651,29 @@ fn run_walk(trace: Trace, scheduler: SchedulerKind, store: &mut Store) -> Result
                 if let Some(note) = &checkpoint.note {
                     println!("{DIM}  ! {note}{RESET}");
                 }
-                match read_delta()? {
+                // `--grade`: Claude judges the prediction; otherwise self-grade.
+                let delta = match grade {
+                    Some(config) => {
+                        eprint!("{DIM}  grading…{RESET}");
+                        match flash::trace::grade_prediction(
+                            &checkpoint,
+                            &last_prediction,
+                            &config.trace,
+                            &config.ask,
+                        ) {
+                            Ok((delta, feedback)) => {
+                                println!("\r{BOLD}  {}{RESET} — {feedback}", delta.label());
+                                Some(delta)
+                            }
+                            Err(e) => {
+                                println!("\r{DIM}  (grading failed: {e} — grade it yourself){RESET}");
+                                read_delta()?
+                            }
+                        }
+                    }
+                    None => read_delta()?,
+                };
+                match delta {
                     Some(delta) => walk.grade(store, delta, now_ms()),
                     None => break 'walk, // quit
                 }
@@ -1834,7 +1872,7 @@ fn explore_walk(args: &ExploreArgs, config: &Config, source: &str, goal: &str) -
     let trace = Trace::from_deck(&deck)?;
     let scheduler = deck.settings.scheduler.unwrap_or_default();
     let mut store = open_store(None)?;
-    run_walk(trace, scheduler, &mut store)
+    run_walk(trace, scheduler, &mut store, None)
 }
 
 /// `flash workspace <dir>`: open a workspace into its member picker. Pick a fact
@@ -1874,7 +1912,7 @@ fn workspace_cmd(args: WorkspaceArgs) -> Result<()> {
                 let trace = Trace::from_deck(&deck)?;
                 let scheduler = deck.settings.scheduler.unwrap_or_default();
                 let mut store = open_store(args.store.clone())?;
-                run_walk(trace, scheduler, &mut store)?;
+                run_walk(trace, scheduler, &mut store, None)?;
                 continue;
             }
         }
