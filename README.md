@@ -30,6 +30,7 @@ flash trace mytrace.txt          # walk a predict-and-verify path through a % so
 flash trace --build mytrace.txt  # let Claude discover the path (writes checkpoints back)
 flash trace --suggest .          # recon a source for candidate traces worth authoring
 flash explore .                  # an ordered learning plan (decks + traces) toward a goal
+flash explore --walk .           # walk an explore tour of the source's shape
 flash deps mydeck.txt            # edit a deck's prerequisites (checkbox picker)
 flash stats mydeck.txt           # progress overview
 flash list mydeck.txt            # every card with stage and due time
@@ -721,6 +722,14 @@ deck for each trace (run `flash trace --build` on it) and a `% title:` fact deck
 for each deck (author it or `flash generate`) — wired together with `% requires:`
 so they unlock in dependency order, with each `% source:` pointing back at the
 real source. (Refuses a non-empty folder unless `--force`.)
+
+**Explore walk.** Before you even know what to trace, `flash explore --walk
+<source>` builds a short **tour of the source's shape** and walks it like a trace:
+you predict what kind of program it is (from the manifest), its domain nouns (from
+the module list), how it's driven (the entry point), its spine (the central file),
+and finally the first paths worth tracing — each hop revealing the real lines.
+It's written to a file (`-o`, default `explore.txt`), so `flash trace explore.txt`
+re-walks it.
 
 ## Configuration
 

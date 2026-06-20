@@ -213,7 +213,7 @@ pub fn build(deck: &Deck, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<Stri
 /// Recon a source and return a ranked menu of candidate traces to author — each
 /// a path description, a one-line spine sketch, and a suggested `% source:`
 /// scope. Unlike [`build`], it discovers nothing in depth and writes nothing: it
-/// orients over the scope once (the same read-only tools and cwd) and proposes
+/// surveys the scope once (the same read-only tools and cwd) and proposes
 /// *what* is worth tracing, leaving the expensive path discovery to a later
 /// `--build` of whichever the learner picks. `source` is a scope directly (a
 /// repo `.`, a directory, a file, or a URL), not a deck.
@@ -395,7 +395,7 @@ fn build_prompt(description: &str, source: &str, url: bool, cfg: &TraceConfig) -
     p
 }
 
-/// Builds the recon prompt for `--suggest`: orient over the scope and propose a
+/// Builds the recon prompt for `--suggest`: survey the scope and propose a
 /// ranked menu of candidate traces (path + spine sketch + scope) WITHOUT tracing
 /// any of them in depth. The cheap counterpart to [`build_prompt`] (see
 /// `docs/traces.md`, "Suggesting traces").
@@ -404,7 +404,7 @@ fn suggest_prompt(source: &str, url: bool, cfg: &TraceConfig) -> String {
         format!("Read the source page at {source} with the WebFetch tool (fetch it once).")
     } else {
         "Your working directory is the source root. Explore it with the Read, Glob \
-         and Grep tools — orient the way you would cold: the manifest (what kind of \
+         and Grep tools — read it the way you would cold: the manifest (what kind of \
          thing + its stack), then the module names (the domain nouns), then the \
          entry point, then the main path. You can read any file under the source; \
          you have no write or shell access."
@@ -420,7 +420,7 @@ fn suggest_prompt(source: &str, url: bool, cfg: &TraceConfig) -> String {
         "You are doing RECON on a source so a learner can decide WHAT to understand \
          in it. Do NOT trace any path in depth and do NOT write checkpoints — that \
          is a separate, expensive step the learner runs later on whichever \
-         suggestion they pick. Your one job is to ORIENT over the scope in a single \
+         suggestion they pick. Your one job is to SURVEY the scope in a single \
          pass and propose a ranked MENU of the most central traces to START from — \
          the entry points into understanding the source. This is deliberately the \
          STARTING set (the central paths), NOT an exhaustive set that fully covers \
@@ -454,7 +454,7 @@ fn suggest_prompt(source: &str, url: bool, cfg: &TraceConfig) -> String {
          utilities silently; only call out real subsystems a learner might expect to \
          see.\n\n\
          FORMAT — output ONLY the menu, no preamble, no code fences. Start with two \
-         orienting lines, then the numbered candidates:\n\n\
+         heading lines, then the numbered candidates:\n\n\
          Source  <one line: what this source is>\n\
          Spine   <the single most central path, as arrow-joined nouns>\n\n\
          1. <the path-question, e.g. how a keypress becomes a saved grade>\n   \
@@ -485,7 +485,7 @@ fn suggest_prompt(source: &str, url: bool, cfg: &TraceConfig) -> String {
 /// commentary, or a stray header before the first `#` card front, and trailing
 /// blank/fence lines. Unlike a full deck, a built trace's output is only the
 /// cards, so everything before the first column-0 `#` is dropped.
-fn clean_to_cards(raw: &str) -> String {
+pub(crate) fn clean_to_cards(raw: &str) -> String {
     let lines: Vec<&str> = raw.lines().collect();
     let Some(start) = lines.iter().position(|l| l.starts_with('#')) else {
         return raw.trim().to_string();

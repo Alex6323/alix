@@ -1,7 +1,7 @@
-//! `flash explore` — the orient tier (first slice).
+//! `flash explore` — goal-driven exploration of a source (first slice).
 //!
 //! Where [`crate::trace::suggest`] is the flat recon menu of candidate *traces*,
-//! `explore` is goal-driven orientation: given a source and a learning **goal**,
+//! `explore` is goal-driven exploration: given a source and a learning **goal**,
 //! it manufactures the ordered set of **means** — fact *decks* and *traces* —
 //! that, worked through, would reach the goal. The means are chosen by the shape
 //! of the knowledge (edges → traces, nodes → decks), sized to the goal by
@@ -21,7 +21,7 @@ use crate::{
     ask,
     config::{AskConfig, TraceConfig},
     deck::is_url,
-    trace::{build_run_config, resolve_source},
+    trace::{build_run_config, clean_to_cards, resolve_source},
 };
 
 /// Explore a source toward `goal` and return an ordered learning plan — the
@@ -52,16 +52,16 @@ pub fn explore(
     Ok(plan)
 }
 
-/// Builds the orientation prompt: explore the source and emit an ordered,
+/// Builds the exploration prompt: explore the source and emit an ordered,
 /// prerequisite-sorted plan of means (decks + traces) sized to the goal by
 /// saturation. The counterpart to [`crate::trace::suggest`]'s recon prompt, one
-/// tier up (see `docs/traces.md`, "Goals and orientation").
+/// tier up (see `docs/traces.md`, "Goals and exploration").
 fn explore_prompt(source: &str, goal: &str, url: bool, cfg: &TraceConfig) -> String {
     let explore = if url {
         format!("Read the source page at {source} with the WebFetch tool (fetch it once).")
     } else {
         "Your working directory is the source root. Explore it with the Read, Glob \
-         and Grep tools — orient the way you would cold: the manifest (what kind of \
+         and Grep tools — read it the way you would cold: the manifest (what kind of \
          thing + its stack), then the module names (the domain nouns), then the \
          entry point, then the main path. You can read any file under the source; \
          you have no write or shell access."
@@ -74,8 +74,8 @@ fn explore_prompt(source: &str, goal: &str, url: bool, cfg: &TraceConfig) -> Str
          for a tightly-scoped item"
     };
     let mut p = format!(
-        "You are ORIENTING a learner whose GOAL is:\n\n    {goal}\n\nover this \
-         source. Produce the ordered SET OF MEANS — fact decks and traces — that, \
+        "You are EXPLORING a source for a learner whose GOAL is:\n\n    {goal}\n\n\
+         Produce the ordered SET OF MEANS — fact decks and traces — that, \
          worked through in order, would achieve that goal. Do NOT build any deck or \
          trace in depth (no cards, no checkpoints) — that is a separate step the \
          learner runs later on each item. Output a PLAN: an ordered list of \
@@ -104,7 +104,7 @@ fn explore_prompt(source: &str, goal: &str, url: bool, cfg: &TraceConfig) -> Str
          must be a valid TOPOLOGICAL order: every item's requirements appear above \
          it.\n\n\
          FORMAT — output ONLY the plan, no preamble, no code fences. Start with \
-         three orienting lines, then the numbered items:\n\n\
+         three heading lines, then the numbered items:\n\n\
          Goal    {goal}\n\
          Source  <one line: what this source is>\n\
          Spine   <the single most central path, arrow-joined nouns>\n\n\
@@ -118,6 +118,94 @@ fn explore_prompt(source: &str, goal: &str, url: bool, cfg: &TraceConfig) -> Str
          line; do not resolve line numbers or write cards/checkpoints — later steps \
          do that. Use as many items as the goal needs (stop at saturation), ordered \
          by prerequisite."
+    );
+    if let Some(extra) = cfg
+        .extra
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        p.push_str("\n\nAdditional instructions:\n");
+        p.push_str(extra);
+    }
+    p
+}
+
+/// Generate the explore walk: a short predict-verify trace over a source's
+/// SHAPE — what it is → its parts → its entry → its spine → what to trace first —
+/// each hop citing real structural evidence. Returns the checkpoint cards
+/// (header-less); the caller wraps them in a `% trace:`/`% source:` deck. Reuses
+/// the same read-only exploration as [`explore`].
+pub fn walk(
+    source: &str,
+    goal: &str,
+    cfg: &TraceConfig,
+    ask_cfg: &AskConfig,
+) -> Result<String> {
+    let url = is_url(source);
+    let cwd = if url {
+        None
+    } else {
+        let (base_dir, _) = resolve_source(None, Some(source));
+        Some(base_dir)
+    };
+    let prompt = walk_prompt(source, goal, url, cfg);
+    let run_cfg = build_run_config(cfg, ask_cfg, cwd, url);
+    let raw = ask::run(&run_cfg, &prompt, &[])?;
+    let cards = clean_to_cards(&raw);
+    if cards.trim().is_empty() {
+        bail!("the explore walk produced no checkpoints");
+    }
+    Ok(cards)
+}
+
+/// Builds the explore-walk prompt: produce trace checkpoints about the
+/// source's *shape* (manifest → nouns → entry → spine → what to trace), each
+/// citing real structural evidence, in the standard trace checkpoint format.
+fn walk_prompt(source: &str, goal: &str, url: bool, cfg: &TraceConfig) -> String {
+    let explore = if url {
+        format!("Read the source page at {source} with the WebFetch tool (fetch it once).")
+    } else {
+        "Your working directory is the source root. Explore it with the Read, Glob \
+         and Grep tools — read the manifest, the module/file names, the entry point, \
+         and the most central file. You have no write or shell access."
+            .to_string()
+    };
+    let locator = if url {
+        "a short quoted span from the page — the exact words the answer rests on"
+    } else {
+        "ONE contiguous range, `file:start-end`, relative to the source root (e.g. \
+         `Cargo.toml:8-20` or `src/lib.rs:12-33`) — never comma-separated"
+    };
+    let mut p = format!(
+        "You are building an EXPLORE walk: a short predict-and-verify trace that \
+         teaches a newcomer the SHAPE of a source by making them PREDICT its \
+         structure before each reveal. The learner's aim:\n\n    {goal}\n\n{explore}\n\n\
+         Walk it the way you read a codebase cold, one hop per step:\n\
+         1. from the manifest / dependencies — what KIND of thing is this?\n\
+         2. from the module / file names — what are its core DOMAIN NOUNS (the model)?\n\
+         3. from the entry point — how is it DRIVEN (its commands / surfaces)?\n\
+         4. from the most central file — what is the SPINE (the main path data takes)?\n\
+         5. (last) given that shape, what are the first PATHS worth tracing next? — \
+         name 2-4 concrete candidate traces (the menu).\n\n\
+         Each hop must CITE REAL STRUCTURAL EVIDENCE as its `% at:` locator — the \
+         actual lines the answer rests on (the manifest's dependency list, the \
+         module-declaration lines, the entry enum, the central function's signature). \
+         The reveal is the real text; the source is the oracle, never invented. Every \
+         hop has a locator.\n\n\
+         FORMAT — output ONLY the checkpoint cards: no header, no `% trace:`/`% source:`, \
+         no preamble, no code fences. Each checkpoint (key-point and directive lines \
+         are indented with a TAB):\n\n    \
+         # <the shape question, asked plainly>\n\t<a key point a correct answer \
+         hits>\n\t<another key point>\n\t% at: <locator>\n\t! <one connecting \
+         insight>\n\n\
+         where `% at:` is {locator}.\n\n\
+         RULES: each question reasons FORWARD from the previous reveal (hop 1 has no \
+         prior); carry the STATE, never \"checkpoint N\"; ask plainly — do NOT prefix \
+         with \"Predict\"; keep the answer out of the question; every key point must be \
+         GROUNDED in the cited lines; the LAST hop lands on the candidate traces (the \
+         menu of what to trace first). Keep each question one or two sentences and each \
+         key point one line. Use 4-6 checkpoints."
     );
     if let Some(extra) = cfg
         .extra
@@ -362,6 +450,20 @@ mod tests {
         let p = explore_prompt("https://x", "understand the page", true, &TraceConfig::default());
         assert!(p.contains("WebFetch"));
         assert!(!p.contains("Glob")); // no local file tools for a URL source
+    }
+
+    #[test]
+    fn walk_prompt_predicts_shape_with_evidence() {
+        let p = walk_prompt(".", "understand the repo", false, &TraceConfig::default());
+        assert!(p.contains("EXPLORE walk")); // a predict-verify walk, not a plan dump
+        assert!(p.contains("PREDICT its")); // the learner predicts the shape
+        assert!(p.contains("DOMAIN NOUNS")); // nouns hop
+        assert!(p.contains("SPINE")); // spine hop
+        assert!(p.contains("CITE REAL STRUCTURAL EVIDENCE")); // grounded reveals
+        assert!(p.contains("candidate traces")); // last hop lands on the menu
+        assert!(p.contains("% at:")); // standard trace locator format
+        assert!(p.contains("Read, Glob")); // read-only local exploration
+        assert!(!p.contains("WebFetch"));
     }
 
     const SAMPLE_PLAN: &str = "\

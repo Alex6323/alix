@@ -33,8 +33,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   prints a ranked menu of candidate traces to author — a path-question, a spine
   sketch, and a suggested scope each, no checkpoints — closing the "what's worth
   tracing?" gap before `--build`.
-- **`flash explore <source>` (experimental, the orient tier)** — goal-driven
-  orientation: prints an ordered **learning plan** toward a `--goal` (default
+- **`flash explore <source>` (experimental)** — goal-driven exploration:
+  prints an ordered **learning plan** toward a `--goal` (default
   "understand the whole source"), the fact **decks** and **traces** worth
   authoring. Each item is tagged `[trace]`/`[deck]` (chosen by shape — edges
   become traces, node-shaped fact tables become decks), carries its `% requires:`
@@ -45,7 +45,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   **workspace** folder — a `flash.toml` (the goal) plus a stub deck/trace file per
   item, `% requires:`-wired in dependency order with absolute `% source:` paths,
   ready to `flash trace --build` / author (refuses a non-empty dir unless
-  `--force`).
+  `--force`). **`--walk`** instead builds an **explore walk** — a predict-verify
+  trace over the source's *shape* (what it is → its domain nouns → entry point →
+  spine → the first paths worth tracing), each hop revealing real structural
+  evidence (the manifest, the module list, the entry enum). It's written to a file
+  (`-o`, default `explore.txt`) and walked immediately, reusing the `flash trace`
+  walk; re-walk later with `flash trace <file>`.
 - **Workspaces** — a folder of decks reviewed together with shared directives.
   Membership is folder-implicit (any folder of `*.txt` decks, one level deep); an
   optional `flash.toml` manifest (a scoped `config.toml`) sets a `title` and a

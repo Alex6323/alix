@@ -107,6 +107,16 @@ struct ExploreArgs {
     #[arg(long, requires = "into")]
     force: bool,
 
+    /// Build an explore walk instead of a plan: a predict-verify trace over the
+    /// source's shape (what it is → its parts → entry → spine → what to trace),
+    /// written to a file and walked right away.
+    #[arg(long, conflicts_with = "into")]
+    walk: bool,
+
+    /// With --walk, the file to write the explore walk to (default explore.txt).
+    #[arg(short, long, requires = "walk")]
+    output: Option<PathBuf>,
+
     /// Path of the config file (default: platform config dir).
     #[arg(long)]
     config: Option<PathBuf>,
@@ -1536,8 +1546,14 @@ fn trace_cmd(args: TraceArgs) -> Result<()> {
         .or(deck.settings.scheduler)
         .unwrap_or_default();
     let mut store = open_store(args.store.clone())?;
-    let mut walk = Walk::new(trace, scheduler);
+    run_walk(trace, scheduler, &mut store)
+}
 
+/// Runs a trace walk in the terminal — predict → reveal → grade each checkpoint,
+/// then compress — scheduling each checkpoint in `store`. Shared by `flash trace`
+/// and `flash explore --walk`.
+fn run_walk(trace: Trace, scheduler: SchedulerKind, store: &mut Store) -> Result<()> {
+    let mut walk = Walk::new(trace, scheduler);
     let total = walk.total();
     println!("{BOLD}Trace{RESET}  {}", walk.trace().description);
     if let Some(src) = &walk.trace().source {
@@ -1584,7 +1600,7 @@ fn trace_cmd(args: TraceArgs) -> Result<()> {
                     println!("{DIM}  ! {note}{RESET}");
                 }
                 match read_delta()? {
-                    Some(delta) => walk.grade(&mut store, delta, now_ms()),
+                    Some(delta) => walk.grade(store, delta, now_ms()),
                     None => break 'walk, // quit
                 }
             }
@@ -1667,9 +1683,9 @@ fn trace_suggest(args: &TraceArgs) -> Result<()> {
     Ok(())
 }
 
-/// `flash explore`: orient over a source and print an ordered learning plan
-/// toward a goal — the decks and traces worth authoring, dependency-ordered.
-/// Read-only exploration; writes nothing (the first slice of the orient tier).
+/// `flash explore`: explore a source and print an ordered learning plan toward a
+/// goal — the decks and traces worth authoring, dependency-ordered. Read-only
+/// exploration; writes nothing (the first slice of `flash explore`).
 fn explore_cmd(args: ExploreArgs) -> Result<()> {
     let config = Config::load(args.config.as_deref())?;
     let source = args.source.to_string_lossy();
@@ -1677,6 +1693,12 @@ fn explore_cmd(args: ExploreArgs) -> Result<()> {
         .goal
         .as_deref()
         .unwrap_or("understand the whole source");
+
+    // `--walk`: build an explore walk over the source's shape and walk it.
+    if args.walk {
+        return explore_walk(&args, &config, &source, goal);
+    }
+
     eprintln!(
         "Exploring {source} for a learning plan toward \"{goal}\" (one pass — this \
          can take a minute)…"
@@ -1705,6 +1727,47 @@ fn explore_cmd(args: ExploreArgs) -> Result<()> {
         );
     }
     Ok(())
+}
+
+/// `flash explore --walk`: build an explore walk over a source's shape and walk
+/// it immediately. Writes the trace to a file (default `explore.txt`) with an
+/// absolute `% source:` so it re-walks from anywhere, then runs the shared walk.
+fn explore_walk(args: &ExploreArgs, config: &Config, source: &str, goal: &str) -> Result<()> {
+    if !std::io::stdin().is_terminal() {
+        bail!("`flash explore --walk` needs a terminal to walk");
+    }
+    eprintln!(
+        "Exploring {source} to build an explore walk (one pass — this can take a \
+         minute)…"
+    );
+    let checkpoints = flash::explore::walk(source, goal, &config.trace, &config.ask)?;
+
+    // Wrap the checkpoints in a trace deck with an absolute `% source:` root so
+    // the saved walk reads the right files from anywhere.
+    let root = std::fs::canonicalize(&args.source).unwrap_or_else(|_| args.source.clone());
+    let name = root.file_name().and_then(|n| n.to_str()).unwrap_or(source);
+    let deck_text = format!(
+        "% trace: exploring {name} — what it is, its parts, and its spine\n\
+         % source: {}\n\n{checkpoints}\n",
+        root.display()
+    );
+    let out = args
+        .output
+        .clone()
+        .unwrap_or_else(|| PathBuf::from("explore.txt"));
+    std::fs::write(&out, &deck_text).with_context(|| format!("cannot write {}", out.display()))?;
+    println!(
+        "{DIM}Wrote the explore walk to {} — re-walk it any time with \
+         `flash trace {}`.{RESET}\n",
+        out.display(),
+        out.display()
+    );
+
+    let deck = Deck::load(&out)?;
+    let trace = Trace::from_deck(&deck)?;
+    let scheduler = deck.settings.scheduler.unwrap_or_default();
+    let mut store = open_store(None)?;
+    run_walk(trace, scheduler, &mut store)
 }
 
 /// Prints a trace's path (prompts, key points, locators) without quizzing.
