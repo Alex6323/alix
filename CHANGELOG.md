@@ -29,7 +29,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   SRS), and after the last hop you **compress** the whole path into two
   sentences. Self-judged and offline (no model call) by default; **`flash trace
   --grade`** instead has Claude judge each typed prediction against the key points
-  and return the verdict + one line of feedback (a model call per hop). **`flash
+  and return the verdict + one line of feedback (a model call per hop, run at the
+  lightweight `[ask]` tier — not the heavy build defaults below). **`flash
   trace <deck> --serve`** walks it in the **web frontend** (the same
   frontend-agnostic `Walk` state machine the terminal uses): a left **path rail**
   whose nodes color in by Got / Partial / Missed, each checkpoint's source shown

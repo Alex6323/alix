@@ -31,9 +31,7 @@ use crate::{
     ask::{self, CliSession, Exchange, Reply},
     card::Card,
     choice,
-    config::{
-        AskConfig, Bindings, BrowseBindings, ExamConfig, Key, KeyPattern, Strictness, TraceConfig,
-    },
+    config::{AskConfig, Bindings, BrowseBindings, ExamConfig, Key, KeyPattern, Strictness},
     deck::{self, Deck, DeckState},
     exam, picker,
     recent::RecentDecks,
@@ -974,9 +972,9 @@ pub fn run_review(
 struct Walking {
     walk: Walk,
     scheduler: SchedulerKind,
-    /// `Some` in `--grade` mode: the trace + ask config a background grade
-    /// uses.
-    grade: Option<(TraceConfig, AskConfig)>,
+    /// `Some` in `--grade` mode: the `[ask]` config a background grade uses
+    /// (grading runs at the tutor tier, not trace's heavy build defaults).
+    grade: Option<AskConfig>,
     /// A background Claude grade in flight for the current reveal.
     pending: Option<Receiver<Result<(Delta, String), String>>>,
     /// The resolved Claude grade for the current reveal (verdict + feedback).
@@ -986,7 +984,7 @@ struct Walking {
 }
 
 impl Walking {
-    fn new(walk: Walk, scheduler: SchedulerKind, grade: Option<(TraceConfig, AskConfig)>) -> Self {
+    fn new(walk: Walk, scheduler: SchedulerKind, grade: Option<AskConfig>) -> Self {
         Walking {
             walk,
             scheduler,
@@ -1001,7 +999,7 @@ impl Walking {
     /// `--grade` mode. Clears any prior grade state for the fresh reveal.
     fn start_grade(&mut self) {
         self.clear_grade();
-        let Some((cfg, ask_cfg)) = self.grade.as_ref() else {
+        let Some(ask_cfg) = self.grade.as_ref() else {
             return;
         };
         let Some(checkpoint) = self.walk.checkpoint() else {
@@ -1012,7 +1010,7 @@ impl Walking {
             .prediction(self.walk.current_index())
             .unwrap_or("")
             .to_string();
-        let rx = trace::spawn_grade(checkpoint.clone(), prediction, cfg.clone(), ask_cfg.clone());
+        let rx = trace::spawn_grade(checkpoint.clone(), prediction, ask_cfg.clone());
         self.pending = Some(rx);
     }
 
@@ -1249,7 +1247,7 @@ pub fn run_walk(
     mut store: Store,
     addr: SocketAddr,
     scheduler: SchedulerKind,
-    grade: Option<(TraceConfig, AskConfig)>,
+    grade: Option<AskConfig>,
 ) -> Result<()> {
     let mut walking = Walking::new(walk, scheduler, grade);
     let server = Server::http(addr).map_err(|e| anyhow!("cannot start server on {addr}: {e}"))?;
@@ -2085,8 +2083,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let trace = walk_deck(dir.path());
         let walk = Walk::new(trace, SchedulerKind::Leitner);
-        let cfg = (TraceConfig::default(), AskConfig::default());
-        let mut w = Walking::new(walk, SchedulerKind::Leitner, Some(cfg));
+        let mut w = Walking::new(walk, SchedulerKind::Leitner, Some(AskConfig::default()));
 
         w.walk.predict("g".to_string());
         // Simulate the background grade resolving (no real CLI call in the test).

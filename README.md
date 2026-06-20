@@ -681,8 +681,10 @@ the model is weak (you still get parseable checkpoints, just a loose chain you
 then drill), the `[trace]` config section defaults it to a strong model
 (`model = "opus"`) and high reasoning effort (`effort = "high"`) — slower than
 the other AI features, but it runs once and is amortized over many reviews.
-Override `model`, `effort` (`low`–`max`) and `timeout_secs` there; `--suggest`
-and `--grade` share the same `[trace]` settings.
+Override `model`, `effort` (`low`–`max`) and `timeout_secs` there. `--suggest`
+shares these `[trace]` settings (it's also one-shot recon), but **`--grade` does
+not**: judging a prediction is a light, interactive, per-hop call, so it runs at
+the tutor tier — the `[ask]` model, effort and timeout — instead.
 
 **Don't know what to trace?** `flash trace --suggest <source>` does a single
 read-only recon pass over a source (a repo `.`, a directory, a file, or a URL)

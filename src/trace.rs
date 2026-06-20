@@ -509,21 +509,18 @@ pub(crate) fn clean_to_cards(raw: &str) -> String {
 /// Grades a learner's prediction at a checkpoint with Claude (`flash trace
 /// --grade`): compares it to the checkpoint's key points and returns the
 /// [`Delta`] plus one line of feedback. Pure reasoning over the supplied text —
-/// no tools. Reuses the ask runner with trace's model/timeout.
+/// no tools. Unlike the one-shot `--build`/`--suggest`, this is a light,
+/// interactive, per-hop judgment, so it runs at the tutor tier — the `[ask]`
+/// model, effort and timeout — not trace's heavy opus + high-effort defaults.
 pub fn grade_prediction(
     checkpoint: &Checkpoint,
     prediction: &str,
-    cfg: &TraceConfig,
     ask_cfg: &AskConfig,
 ) -> Result<(Delta, String)> {
     let run_cfg = AskConfig {
-        command: ask_cfg.command.clone(),
-        permission_mode: ask_cfg.permission_mode.clone(),
         allowed_tools: Vec::new(), // grading needs no tools, just the text
-        model: cfg.model.clone().or_else(|| ask_cfg.model.clone()),
-        effort: cfg.effort.clone().or_else(|| ask_cfg.effort.clone()),
-        timeout_secs: cfg.timeout_secs,
         cwd: None,
+        ..ask_cfg.clone()
     };
     let raw = ask::run(&run_cfg, &grade_prompt(checkpoint, prediction), &[])?;
     Ok(parse_grade(&raw))
@@ -536,13 +533,12 @@ pub fn grade_prediction(
 pub fn spawn_grade(
     checkpoint: Checkpoint,
     prediction: String,
-    cfg: TraceConfig,
     ask_cfg: AskConfig,
 ) -> Receiver<Result<(Delta, String), String>> {
     let (tx, rx) = channel();
     std::thread::spawn(move || {
-        let reply = grade_prediction(&checkpoint, &prediction, &cfg, &ask_cfg)
-            .map_err(|e| format!("{e:#}"));
+        let reply =
+            grade_prediction(&checkpoint, &prediction, &ask_cfg).map_err(|e| format!("{e:#}"));
         let _ = tx.send(reply);
     });
     rx

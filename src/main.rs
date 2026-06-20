@@ -1613,9 +1613,7 @@ fn trace_serve(
 ) -> Result<()> {
     let addr = serve_addr(args.serve.port, args.serve.lan, config);
     announce(addr, args.serve.lan, "a trace walk");
-    let grade = args
-        .grade
-        .then(|| (config.trace.clone(), config.ask.clone()));
+    let grade = args.grade.then(|| config.ask.clone());
     let walk = Walk::new(trace, scheduler);
     serve::run_walk(walk, store, addr, scheduler, grade)
 }
@@ -1686,7 +1684,6 @@ fn run_walk(
                         match flash::trace::grade_prediction(
                             &checkpoint,
                             &last_prediction,
-                            &config.trace,
                             &config.ask,
                         ) {
                             Ok((delta, feedback)) => {
