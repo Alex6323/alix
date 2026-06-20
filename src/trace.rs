@@ -333,7 +333,17 @@ fn build_prompt(description: &str, source: &str, url: bool, cfg: &TraceConfig) -
          6. Dives must return: if a hop calls into another function/file, the next \
          hop may dive in, but then return to the caller before going past the call — \
          bridge the return with state, reusing the call-site line so the seam shows.\n\
-         7. The last hop reaches the outcome the path was tracing toward.\n\n\
+         7. Each hop must TEACH — answer with the mechanism, not a deferral. The key \
+         points must say what ACTUALLY happens, never restate the question or hand off \
+         to a callee: \"it calls build_queue to produce the queue\" does NOT answer \
+         \"how is the order decided?\" — it just says another function decides. When \
+         the real work is inside a function the span merely CALLS, that callee is the \
+         hop: dive into it and ask the question THERE; do not frame the call-site's \
+         question as if it does the work. A thin delegating layer is folded into an \
+         honest handoff (\"the constructor hands queue-building to build_queue\") or \
+         skipped. There must be a real gap between a sensible guess and the reveal; if \
+         the answer is obvious or circular, cut or re-aim the hop.\n\
+         8. The last hop reaches the outcome the path was tracing toward.\n\n\
          Keep each question one or two sentences and each key point one line. Use as \
          many checkpoints as the path needs (typically 4-8); never pad."
     );
@@ -889,6 +899,7 @@ mod tests {
         assert!(p.contains("Carry the STATE"));
         assert!(p.contains("Do NOT prefix fronts with \"Predict\""));
         assert!(p.contains("Dives must return"));
+        assert!(p.contains("must TEACH")); // no vacuous delegation answers
         assert!(!p.contains("WebFetch")); // a local source needs no web tool
     }
 

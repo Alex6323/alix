@@ -204,7 +204,12 @@ each generated trace is a chain *by construction*, not by luck:
    toward; the compression step then retraces the whole path. If the last
    checkpoint doesn't reach that outcome, the path stopped short.
 
-Three self-checks for the builder to run before emitting the deck. **Order:** read
+Four self-checks for the builder to run before emitting the deck. **Substance:**
+each hop's answer must be the actual *mechanism*, not a deferral — if the key
+points amount to "it calls X to do it" (e.g. "calls `build_queue` to produce the
+queue" for "how is the order decided?"), the real hop is X: dive in and ask the
+question there. A circular or obvious answer has no prediction gap, so it teaches
+nothing — cut or re-aim it. **Order:** read
 the checkpoints top to bottom using **only each prompt + the prior reveal**; if a
 hop needs information no earlier hop (or its own excerpt) established, it's out of
 order or off the path. **Atomicity:** read each checkpoint **in isolation, as if
