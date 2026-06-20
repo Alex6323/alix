@@ -6,7 +6,7 @@
 # toolchain — `+nightly` is handled by rustup before cargo sees it — which is
 # why these live in a Makefile rather than .cargo/config.toml.)
 
-.PHONY: build test lint fmt fmt-check check run install clean
+.PHONY: build test lint fmt fmt-check check run serve install clean
 
 # Compile the workspace.
 build:
@@ -35,6 +35,12 @@ check: lint test
 # Run the binary, e.g. `make run ARGS="exam mydeck.txt"`.
 run:
 	cargo run -- $(ARGS)
+
+# Run the web frontend. With no ARGS, opens the in-browser deck picker;
+# pass a session via ARGS, e.g. `make serve ARGS="review mydeck.txt --port 8080"`.
+# `--serve` trails ARGS because it's a review/browse flag, not a global one.
+serve:
+	cargo run -- $(ARGS) --serve
 
 # Install `flash` from this checkout.
 install:
