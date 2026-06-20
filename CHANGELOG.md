@@ -7,6 +7,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **`flash deck <source>`** (renamed from `flash generate`; `gen`/`generate`
+  remain aliases) — generates a fact deck with Claude from a **web page URL or a
+  local file/directory path**, mirroring `flash trace`. A URL is fetched with
+  WebFetch and the deck starts with a `% link:`; a local source is explored
+  read-only with `Read`/`Glob`/`Grep` at its root and the deck starts with a
+  `% source:` (so `flash exam` can grade against it). This gives a fact-deck stub
+  from `flash explore --into` a manual fill path (point `flash deck` at its
+  `% source:`).
 - **Traces (`flash trace`, experimental)** — a guided predict-and-verify walk
   along a *path* through a `% source:`, drilling the connections between facts
   (the edges) rather than isolated facts. A trace deck declares a `% trace:`

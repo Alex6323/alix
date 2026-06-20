@@ -7,11 +7,15 @@
 //! validates and writes it. Claude is never given a write or shell tool, so
 //! the safe `dontAsk` + WebFetch/WebSearch permission story is unchanged.
 
+use std::path::PathBuf;
+
 use anyhow::{Result, bail};
 
 use crate::{
     ask,
     config::{AskConfig, GenerateConfig},
+    deck::is_url,
+    trace::resolve_source,
 };
 
 /// The built-in instruction prompt. `{url}` and `{max_cards}` are substituted.
@@ -80,6 +84,61 @@ duplicates.
 Output ONLY the final, deduplicated deck text — no markdown code fences, no \
 preamble, no closing remarks.";
 
+/// The instruction prompt for a **local source** (a file or directory).
+/// `{source}` and `{max_cards}` are substituted. Mirrors [`DEFAULT_PROMPT`] but
+/// explores the source with read-only file tools and ties the deck to it with a
+/// `% source:` line (so `flash exam` can grade against it).
+const DEFAULT_SOURCE_PROMPT: &str = "\
+You are an expert at creating spaced-repetition flashcards. Explore the source at \
+{source} — your working directory is its root; use the Read, Glob and Grep tools \
+(read-only, no write or shell access) — and turn its key facts into a flashcard \
+deck.
+
+OUTPUT FORMAT — a plain-text deck, one card after another:
+- A card starts with `# ` at column 0, followed by the question/front on the \
+same line.
+- The lines BELOW it, indented (a tab or spaces), are the answer/back. EVERY \
+card MUST have at least one indented answer line — never write a front with no \
+answer. Keep answers short — one fact or a few words; several lines are allowed.
+- An indented `! ` line adds a note shown AFTER answering. Add a note to most \
+cards: a brief elaboration, a concrete example, a mnemonic, or why it matters \
+— one or two short lines, never just restating the answer.
+- A fill-in-the-blank (cloze) card starts with `#?` instead of `#`. The `#?` \
+line is a short instruction; the INDENTED answer line(s) below it hold the \
+full sentence, with each hidden span wrapped in {{double curly braces}} — the \
+blanks live in the answer line, NEVER on the `#?` line. Use `#?` only when there \
+is a natural word to blank out.
+- `% ` lines are comments, ignored by the trainer. To begin an answer line with \
+a literal #, %, or !, escape it with a backslash: \\#.
+
+Begin the file with exactly these two comment lines:
+  % Generated from {source}
+  % source: {source}
+The `% source:` line ties the deck to its source, so `flash exam` can later grade \
+your understanding against it.
+
+PEDAGOGY — produce a balanced deck of AT MOST {max_cards} cards spread across \
+four layers of understanding:
+  1. Facts & terminology — definitions and key terms. Prefer cloze (#?) here.
+  2. Concepts & mechanisms — \"why\" and \"how\" questions (plain cards).
+  3. Application — \"given X, what happens / what would you do?\" (plain cards).
+  4. Connections — how the pieces relate, contrast, or build on each other.
+
+CARD QUALITY:
+- One idea per card (minimum-information principle); split compound facts.
+- NO TWO CARDS MAY TEST THE SAME FACT — vary what each card asks rather than \
+rephrasing the same question.
+- Ground every card in what the source actually shows; do not invent details \
+it doesn't contain. Fronts must be answerable from memory; avoid yes/no questions.
+- Give most cards a `! ` note that adds something beyond the answer.
+- Order cards from foundational to advanced.
+
+REVISE before finishing: re-read the whole draft and merge or delete any cards \
+that overlap or test the same idea, so every remaining card is distinct.
+
+Output ONLY the final, deduplicated deck text — no markdown code fences, no \
+preamble, no closing remarks.";
+
 /// The second-pass review prompt; the draft deck is appended to it.
 const REVIEW_PROMPT: &str = "\
 You are reviewing a spaced-repetition flashcard deck for quality, then \
@@ -101,11 +160,20 @@ The deck to review:
 
 ";
 
-/// Generates a deck from `url` and returns the cleaned deck text (not yet
-/// validated or written). Blocks until the CLI replies or times out.
-pub fn generate_deck(url: &str, cfg: &GenerateConfig, ask_cfg: &AskConfig) -> Result<String> {
-    let prompt = build_prompt(url, cfg);
-    let raw = ask::run(&run_config(cfg, ask_cfg), &prompt, &[])?;
+/// Generates a deck from `source` (a web page URL **or** a local file/directory
+/// path) and returns the cleaned deck text (not yet validated or written). A URL
+/// is fetched with WebFetch; a local source is explored read-only at its root.
+/// Blocks until the CLI replies or times out.
+pub fn generate_deck(source: &str, cfg: &GenerateConfig, ask_cfg: &AskConfig) -> Result<String> {
+    let url = is_url(source);
+    let cwd = if url {
+        None
+    } else {
+        let (base_dir, _) = resolve_source(None, Some(source));
+        Some(base_dir)
+    };
+    let prompt = build_prompt(source, url, cfg);
+    let raw = ask::run(&run_config(cfg, ask_cfg, url, cwd), &prompt, &[])?;
     let deck = clean_output(&raw);
     if deck.trim().is_empty() {
         bail!("the model returned no deck content");
@@ -118,7 +186,8 @@ pub fn generate_deck(url: &str, cfg: &GenerateConfig, ask_cfg: &AskConfig) -> Re
 /// the whole deck with fresh eyes.
 pub fn review_deck(deck: &str, cfg: &GenerateConfig, ask_cfg: &AskConfig) -> Result<String> {
     let prompt = build_review_prompt(deck);
-    let raw = ask::run(&run_config(cfg, ask_cfg), &prompt, &[])?;
+    // The reviewer only rewrites the supplied text; no source access needed.
+    let raw = ask::run(&run_config(cfg, ask_cfg, true, None), &prompt, &[])?;
     let reviewed = clean_output(&raw);
     if reviewed.trim().is_empty() {
         bail!("the review pass returned no deck content");
@@ -126,16 +195,28 @@ pub fn review_deck(deck: &str, cfg: &GenerateConfig, ask_cfg: &AskConfig) -> Res
     Ok(reviewed)
 }
 
-/// The CLI runner config for generation: the ask command/permission/tools with
-/// generation's own model and (longer) timeout.
-fn run_config(cfg: &GenerateConfig, ask_cfg: &AskConfig) -> AskConfig {
+/// The CLI runner config for generation: the ask command/permission with
+/// generation's own model and (longer) timeout. A web page keeps the ask
+/// allowlist (WebFetch); a local source gets read-only `Read`/`Glob`/`Grep` at
+/// its root (`cwd`).
+fn run_config(
+    cfg: &GenerateConfig,
+    ask_cfg: &AskConfig,
+    url: bool,
+    cwd: Option<PathBuf>,
+) -> AskConfig {
+    let allowed_tools = if url {
+        ask_cfg.allowed_tools.clone()
+    } else {
+        vec!["Read".to_string(), "Glob".to_string(), "Grep".to_string()]
+    };
     AskConfig {
         command: ask_cfg.command.clone(),
         permission_mode: ask_cfg.permission_mode.clone(),
-        allowed_tools: ask_cfg.allowed_tools.clone(),
+        allowed_tools,
         model: cfg.model.clone().or_else(|| ask_cfg.model.clone()),
         timeout_secs: cfg.timeout_secs,
-        cwd: None,
+        cwd,
     }
 }
 
@@ -144,11 +225,19 @@ fn build_review_prompt(deck: &str) -> String {
     format!("{REVIEW_PROMPT}{deck}")
 }
 
-/// Fills the prompt template and appends any extra guidance.
-fn build_prompt(url: &str, cfg: &GenerateConfig) -> String {
-    let template = cfg.prompt.as_deref().unwrap_or(DEFAULT_PROMPT);
+/// Fills the prompt template and appends any extra guidance. Picks the web-page
+/// template for a URL and the local-source template otherwise; a configured
+/// `prompt` override wins for either (`{url}`/`{source}` both resolve to the
+/// source).
+fn build_prompt(source: &str, url: bool, cfg: &GenerateConfig) -> String {
+    let template = cfg.prompt.as_deref().unwrap_or(if url {
+        DEFAULT_PROMPT
+    } else {
+        DEFAULT_SOURCE_PROMPT
+    });
     let mut prompt = template
-        .replace("{url}", url)
+        .replace("{url}", source)
+        .replace("{source}", source)
         .replace("{max_cards}", &cfg.max_cards.to_string());
     if let Some(extra) = cfg
         .extra
@@ -210,8 +299,34 @@ pub fn slug_from_url(url: &str) -> String {
         None => host,
     };
 
-    // Slugify: lower-case alphanumerics, runs of anything else become a single
-    // dash inserted only before the next kept character (so no edge dashes).
+    slugify(base)
+}
+
+/// The default deck file stem for a source: from the URL for a web page, from
+/// the path for a local file/directory.
+pub fn deck_name(source: &str) -> String {
+    if is_url(source) {
+        slug_from_url(source)
+    } else {
+        slug_from_path(source)
+    }
+}
+
+/// Derives a deck file stem from a local source path: the file stem (or, for a
+/// directory, its name), slugified; falls back to `"deck"`.
+pub fn slug_from_path(source: &str) -> String {
+    let p = std::path::Path::new(source);
+    let base = p
+        .file_stem()
+        .or_else(|| p.file_name())
+        .and_then(|s| s.to_str())
+        .unwrap_or("deck");
+    slugify(base)
+}
+
+/// Slugify: lower-case alphanumerics; runs of anything else become a single dash
+/// inserted only before the next kept character (so no edge dashes). Empty → `"deck"`.
+fn slugify(base: &str) -> String {
     let mut slug = String::new();
     let mut pending_dash = false;
     for c in base.chars() {
@@ -245,7 +360,7 @@ mod tests {
 
     #[test]
     fn prompt_substitutes_url_and_card_count() {
-        let p = build_prompt("https://example.org/page", &cfg(12));
+        let p = build_prompt("https://example.org/page", true, &cfg(12));
         assert!(p.contains("https://example.org/page"));
         assert!(p.contains("AT MOST 12 cards"));
         assert!(p.contains("% link: https://example.org/page"));
@@ -281,7 +396,7 @@ mod tests {
     fn extra_guidance_is_appended() {
         let mut g = cfg(10);
         g.extra = Some("Focus on the public API.".to_string());
-        let p = build_prompt("u", &g);
+        let p = build_prompt("u", true, &g);
         assert!(p.contains("Additional instructions:"));
         assert!(p.contains("Focus on the public API."));
     }
@@ -290,8 +405,25 @@ mod tests {
     fn full_prompt_override_replaces_template() {
         let mut g = cfg(5);
         g.prompt = Some("Make {max_cards} cards from {url}.".to_string());
-        let p = build_prompt("U", &g);
+        let p = build_prompt("U", true, &g);
         assert_eq!("Make 5 cards from U.", p);
+    }
+
+    #[test]
+    fn source_prompt_explores_locally_and_ties_to_source() {
+        let p = build_prompt("src/scheduler.rs", false, &cfg(8));
+        assert!(p.contains("src/scheduler.rs"));
+        assert!(p.contains("Read, Glob and Grep")); // read-only file tools
+        assert!(p.contains("% source: src/scheduler.rs")); // ties to source for exam
+        assert!(p.contains("AT MOST 8 cards"));
+        assert!(!p.contains("WebFetch")); // a local source, not a web page
+        assert!(!p.contains("{source}"));
+    }
+
+    #[test]
+    fn slug_from_paths() {
+        assert_eq!("scheduler", slug_from_path("src/scheduler.rs"));
+        assert_eq!("my-crate", slug_from_path("/home/me/My_Crate"));
     }
 
     #[test]

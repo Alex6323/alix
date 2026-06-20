@@ -24,7 +24,7 @@ flash --mode line mydeck.txt     # reveal the answer one line at a time (lyrics)
 flash --scheduler sm2 mydeck.txt # SM-2 intervals instead of Leitner
 flash --cram mydeck.txt          # ignore cooldowns, review everything
 flash browse mydeck.txt          # read through cards, no grading or scheduling
-flash generate <url>             # build a deck from a web page (via Claude)
+flash deck <url-or-path>         # generate a fact deck from a web page or a file/dir
 flash exam mydeck.txt            # AI exam against the deck's % source: (gates unlocks)
 flash trace mytrace.txt          # walk a predict-and-verify path through a % source:
 flash trace --build mytrace.txt  # let Claude discover the path (writes checkpoints back)
@@ -483,27 +483,31 @@ card's progress is untouched). Requires the `claude` CLI to be installed
 and logged in; the command, a `--model` override and the timeout are
 configurable in the `[ask]` section of the config file.
 
-## Generate a deck from a web page
+## Generate a fact deck — `flash deck`
 
-`flash generate <url>` turns a page (a Rust book chapter, a Wikipedia article,
-API docs) into a deck using the Claude CLI:
+`flash deck <source>` turns a **source** into a deck of fact cards using the
+Claude CLI. The source is a web page URL *or* a local file/directory path (the
+deck-side mirror of `flash trace`):
 
 ```sh
-flash generate https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html
-flash generate <url> -o ownership      # choose the file name
-flash generate <url> --cards 15        # cap the number of cards
-flash generate <url> --review          # add a 2nd pass to remove redundant cards
-flash generate <url> --print           # print to stdout instead of writing
+flash deck https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html
+flash deck src/scheduler.rs            # a local file (or a directory)
+flash deck <source> -o ownership       # choose the file name
+flash deck <source> --cards 15         # cap the number of cards
+flash deck <source> --review           # add a 2nd pass to remove redundant cards
+flash deck <source> --print            # print to stdout instead of writing
 ```
 
-Claude reads the page with the **WebFetch** tool (already on the ask
-allowlist) and emits the deck as plain text; flash then validates it
-(`parse_str`) and writes `~/decks/<slug>.txt`. Claude is never given a write
-or shell tool — it only returns text — so the safe `dontAsk` +
-WebFetch/WebSearch permission model is unchanged. The generated cards are
-spread across four layers of understanding (facts → concepts → application →
-connections), use cloze (`#?`) cards for terminology, and start with a
-`% link:` line back to the source so you can use the *ask* feature on them.
+For a **web page**, Claude reads it with the **WebFetch** tool and the deck
+starts with a `% link:` line back to it (so you can use the *ask* feature on the
+cards). For a **local source**, Claude explores it read-only with
+`Read`/`Glob`/`Grep` at the source root and the deck starts with a `% source:`
+line (so `flash exam` can later grade your understanding against it). Either way
+Claude only returns text — never a write or shell tool — and flash validates it
+(`parse_str`) and writes `~/decks/<slug>.txt`. The cards are spread across four
+layers of understanding (facts → concepts → application → connections) and use
+cloze (`#?`) cards for terminology. (`flash generate`/`flash gen` still work as
+aliases.)
 
 The prompt tells Claude to draft, then re-read the whole set and merge or drop
 cards that test the same fact, so the deck doesn't repeat itself. For a
@@ -717,7 +721,7 @@ config's knobs or a store's on-disk format, becomes a fact deck) — carries its
 and a `% source:` scope. The `--goal` scopes coverage: a broad goal covers every
 subsystem, a narrow one collapses to just its slice (and traces it in more
 detail). By default it's **read-only** — it prints the plan and you author the
-items yourself (`flash trace --build` a trace, write or `flash generate` a deck).
+items yourself (`flash trace --build` a trace, `flash deck` a fact deck).
 
 With **`--into <dir>`** it materializes the plan into a ready-made **workspace**:
 
@@ -727,7 +731,7 @@ flash explore . --goal "how review scheduling works" --into ~/decks/scheduling/
 
 That writes a `flash.toml` (the goal) and one stub file per item — a `% trace:`
 deck for each trace (run `flash trace --build` on it) and a `% title:` fact deck
-for each deck (author it or `flash generate`) — wired together with `% requires:`
+for each deck (author it or `flash deck`) — wired together with `% requires:`
 so they unlock in dependency order, with each `% source:` pointing back at the
 real source. (Refuses a non-empty folder unless `--force`.)
 

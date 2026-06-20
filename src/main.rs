@@ -59,9 +59,10 @@ enum Command {
     },
     /// Read through decks card by card without grading (no progress is saved).
     Browse(BrowseArgs),
-    /// Generate a deck from a web page using the Claude CLI.
-    #[command(visible_alias = "gen")]
-    Generate(GenerateArgs),
+    /// Generate a fact deck with Claude from a source — a web page URL or a
+    /// local file/directory path. (The deck-side mirror of `flash trace`.)
+    #[command(visible_aliases = ["gen", "generate"])]
+    Deck(GenerateArgs),
     /// Sit the AI exam for a deck: open questions from its `% source:`, graded
     /// by Claude. Passing marks the deck mastered and unlocks its dependents.
     Exam(ExamArgs),
@@ -147,8 +148,9 @@ struct ExploreArgs {
 
 #[derive(Args)]
 struct GenerateArgs {
-    /// URL of the page to turn into a deck.
-    url: String,
+    /// The source to turn into a fact deck: a web page URL, or a local file or
+    /// directory path.
+    source: String,
 
     /// Output deck name (default: a slug derived from the URL). Written into
     /// the decks directory; a `.txt` extension is added if missing.
@@ -368,7 +370,7 @@ fn main() -> Result<()> {
         Some(Command::Reset(args)) => reset(args),
         Some(Command::Check { decks }) => check(decks),
         Some(Command::Browse(args)) => browse(args),
-        Some(Command::Generate(args)) => generate_cmd(args),
+        Some(Command::Deck(args)) => deck_cmd(args),
         Some(Command::Exam(args)) => exam_cmd(args),
         Some(Command::Trace(args)) => trace_cmd(args),
         Some(Command::Explore(args)) => explore_cmd(args),
@@ -1403,18 +1405,26 @@ fn browse_serve(args: BrowseArgs) -> Result<()> {
     )
 }
 
-fn generate_cmd(args: GenerateArgs) -> Result<()> {
+fn deck_cmd(args: GenerateArgs) -> Result<()> {
     let config = Config::load(args.config.as_deref())?;
     let mut gen_cfg = config.generate.clone();
     if let Some(cards) = args.cards {
         gen_cfg.max_cards = cards;
     }
 
-    eprintln!(
-        "Generating a deck from {} (this can take a minute)…",
-        args.url
-    );
-    let mut text = generate::generate_deck(&args.url, &gen_cfg, &config.ask)?;
+    // For a local source, use an absolute path so the deck's `% source:` line
+    // resolves later (it's written into the decks dir, not next to the source);
+    // a URL stays as-is.
+    let source = if std::path::Path::new(&args.source).exists() {
+        std::fs::canonicalize(&args.source)
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|_| args.source.clone())
+    } else {
+        args.source.clone()
+    };
+
+    eprintln!("Generating a deck from {source} (this can take a minute)…");
+    let mut text = generate::generate_deck(&source, &gen_cfg, &config.ask)?;
 
     if args.review || gen_cfg.review {
         eprintln!("Reviewing the deck to remove redundant cards…");
@@ -1427,7 +1437,7 @@ fn generate_cmd(args: GenerateArgs) -> Result<()> {
     // hand rather than losing the whole generation.
     let name = match &args.output {
         Some(name) => name.clone(),
-        None => generate::slug_from_url(&args.url),
+        None => generate::deck_name(&source),
     };
     let name = if name.ends_with(".txt") {
         name
