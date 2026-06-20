@@ -210,6 +210,31 @@ pub fn build(deck: &Deck, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<Stri
     Ok(cards)
 }
 
+/// Recon a source and return a ranked menu of candidate traces to author — each
+/// a path description, a one-line spine sketch, and a suggested `% source:`
+/// scope. Unlike [`build`], it discovers nothing in depth and writes nothing: it
+/// orients over the scope once (the same read-only tools and cwd) and proposes
+/// *what* is worth tracing, leaving the expensive path discovery to a later
+/// `--build` of whichever the learner picks. `source` is a scope directly (a
+/// repo `.`, a directory, a file, or a URL), not a deck.
+pub fn suggest(source: &str, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<String> {
+    let url = is_url(source);
+    let cwd = if url {
+        None
+    } else {
+        let (base_dir, _) = resolve_source(None, Some(source));
+        Some(base_dir)
+    };
+    let prompt = suggest_prompt(source, url, cfg);
+    let run_cfg = build_run_config(cfg, ask_cfg, cwd, url);
+    let raw = ask::run(&run_cfg, &prompt, &[])?;
+    let menu = raw.trim().to_string();
+    if menu.is_empty() {
+        bail!("the recon produced no suggestions");
+    }
+    Ok(menu)
+}
+
 /// The CLI runner config for a build: the ask command/permission with trace's
 /// own model and (longer) timeout, **read-only** exploration tools, and the
 /// source root as the working directory.
@@ -357,6 +382,92 @@ fn build_prompt(description: &str, source: &str, url: bool, cfg: &TraceConfig) -
          8. The last hop reaches the outcome the path was tracing toward.\n\n\
          Keep each question one or two sentences and each key point one line. Use as \
          many checkpoints as the path needs (typically 4-8); never pad."
+    );
+    if let Some(extra) = cfg
+        .extra
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        p.push_str("\n\nAdditional instructions:\n");
+        p.push_str(extra);
+    }
+    p
+}
+
+/// Builds the recon prompt for `--suggest`: orient over the scope and propose a
+/// ranked menu of candidate traces (path + spine sketch + scope) WITHOUT tracing
+/// any of them in depth. The cheap counterpart to [`build_prompt`] (see
+/// `docs/traces.md`, "Suggesting traces").
+fn suggest_prompt(source: &str, url: bool, cfg: &TraceConfig) -> String {
+    let explore = if url {
+        format!("Read the source page at {source} with the WebFetch tool (fetch it once).")
+    } else {
+        "Your working directory is the source root. Explore it with the Read, Glob \
+         and Grep tools — orient the way you would cold: the manifest (what kind of \
+         thing + its stack), then the module names (the domain nouns), then the \
+         entry point, then the main path. You can read any file under the source; \
+         you have no write or shell access."
+            .to_string()
+    };
+    let scope = if url {
+        "the same URL"
+    } else {
+        "the whole source `.`, or a NARROWER scope (a subdirectory or single file) \
+         when a tight path lives in one place"
+    };
+    let mut p = format!(
+        "You are doing RECON on a source so a learner can decide WHAT to understand \
+         in it. Do NOT trace any path in depth and do NOT write checkpoints — that \
+         is a separate, expensive step the learner runs later on whichever \
+         suggestion they pick. Your one job is to ORIENT over the scope in a single \
+         pass and propose a ranked MENU of the most central traces to START from — \
+         the entry points into understanding the source. This is deliberately the \
+         STARTING set (the central paths), NOT an exhaustive set that fully covers \
+         the source.\n\n\
+         Source (the scope): {source}\n{explore}\n\n\
+         A *trace* is a path-QUESTION — \"how X becomes Y\" — a real SEQUENCE from a \
+         trigger to an outcome (a data flow, a control flow, or a derivation), the \
+         kind of thread a learner predicts step by step. It is NOT a topic, a \
+         feature list, or a \"goal\" (a bigger, long-term aim that lives at the \
+         workspace level, like \"understand this crate\"); each suggestion must \
+         name a concrete path with two ends.\n\n\
+         COVERAGE, NOT A COUNT — this decides HOW MANY. Do not aim for a number. \
+         First identify the major subsystems of the source (its modules, domains, \
+         top-level parts). Then emit ONE candidate per major subsystem — its single \
+         most load-bearing path — plus the central spine that threads them \
+         together. STOP when every major subsystem is covered once: the list is \
+         exactly as long as that takes (a source with twelve subsystems yields \
+         about twelve; one with four yields about four). Do NOT pad to look \
+         thorough, and do NOT drop a real subsystem to look concise. EXCLUDE the \
+         local, leaf paths INSIDE a subsystem — those are deeper dives for a later \
+         step, not starting points. Each candidate must be sized to be ONE trace — \
+         a single spine, not \"understand this whole module\"; if a path is large, \
+         narrow its scope rather than widening the question. RANK by centrality: \
+         the spine first, then each subsystem's main path.\n\n\
+         EDGES vs NODES — a trace drills *edges* (a path predicted hop by hop); some \
+         subsystems are mostly *nodes*: a table of facts with no path to predict (a \
+         config's knobs, a store's on-disk format). Do NOT force those into traces — \
+         that manufactures a fake path; they are better learned as plain fact decks. \
+         But make the skip VISIBLE: after the candidates, list the node-shaped \
+         subsystems you deliberately left out, one line each with why. Skip trivial \
+         utilities silently; only call out real subsystems a learner might expect to \
+         see.\n\n\
+         FORMAT — output ONLY the menu, no preamble, no code fences. Start with two \
+         orienting lines, then the numbered candidates:\n\n\
+         Source  <one line: what this source is>\n\
+         Spine   <the single most central path, as arrow-joined nouns>\n\n\
+         1. <the path-question, e.g. how a keypress becomes a saved grade>\n   \
+         spine: <3–6 rough hop labels joined by arrows — NOT cited checkpoints>\n   \
+         % source: <{scope}>\n\
+         2. …\n\n\
+         Skipped (node-shaped — fact-deck material, not traces):\n  \
+         - <subsystem> — <why it's facts, not a path>\n  \
+         - …\n\n\
+         The `spine:` is a rough sketch (hop labels only) so the learner can judge \
+         the trace at a glance and predict it; do not resolve line numbers, cite \
+         excerpts, or write key points — that is what `--build` does next. Keep \
+         each path-question one line."
     );
     if let Some(extra) = cfg
         .extra
@@ -915,6 +1026,34 @@ mod tests {
         assert!(p.contains("EVERY instance travels")); // side-branches aren't spine hops
         assert!(p.contains("self-documenting")); // gloss only non-derivable givens
         assert!(!p.contains("WebFetch")); // a local source needs no web tool
+    }
+
+    #[test]
+    fn suggest_prompt_recons_for_a_menu_without_tracing() {
+        let p = suggest_prompt(".", false, &TraceConfig::default());
+        assert!(p.contains("RECON")); // recon, not a full trace
+        assert!(p.contains("Do NOT trace any path in depth")); // no deep tracing
+        assert!(p.contains("ranked MENU")); // a menu of candidates
+        assert!(p.contains("path-QUESTION")); // each suggestion is a path, not a topic
+        assert!(p.contains("COVERAGE, NOT A COUNT")); // count is emergent, not capped
+        assert!(p.contains("per major subsystem")); // stop rule: cover each subsystem once
+        assert!(p.contains("EDGES vs NODES")); // trace edges, deck nodes
+        assert!(p.contains("Skipped (node-shaped")); // name the fact-shaped skips
+        assert!(!p.contains("5–8")); // the old arbitrary cap is gone
+        assert!(p.contains("by centrality")); // ranked spine-first
+        assert!(p.contains("spine:")); // sketch labels, ...
+        assert!(p.contains("NOT cited checkpoints")); // ... not full checkpoints
+        assert!(p.contains("a \"goal\"")); // distinguish a trace from a future goal/curriculum
+        assert!(p.contains("Read, Glob")); // same read-only exploration
+        assert!(!p.contains("WebFetch")); // local source needs no web tool
+        assert!(!p.contains("% at:")); // recon never emits locators
+    }
+
+    #[test]
+    fn suggest_prompt_url_uses_webfetch() {
+        let p = suggest_prompt("https://x", true, &TraceConfig::default());
+        assert!(p.contains("WebFetch"));
+        assert!(!p.contains("Glob")); // no local file tools for a URL source
     }
 
     #[test]

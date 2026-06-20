@@ -29,6 +29,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   checkpoints back into the deck. The build prompt encodes the chain rules from
   `docs/traces.md`, so generated traces are paths, not quizzes. Configurable via
   a new `[trace]` section (model, timeout, extra guidance).
+  **`flash trace --suggest <source>`** recons a source (read-only, one pass) and
+  prints a ranked menu of candidate traces to author — a path-question, a spine
+  sketch, and a suggested scope each, no checkpoints — closing the "what's worth
+  tracing?" gap before `--build`.
 - **Workspaces** — a folder of decks reviewed together with shared directives.
   Membership is folder-implicit (any folder of `*.txt` decks, one level deep); an
   optional `flash.toml` manifest (a scoped `config.toml`) sets a `title` and a

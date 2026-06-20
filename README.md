@@ -28,6 +28,7 @@ flash generate <url>             # build a deck from a web page (via Claude)
 flash exam mydeck.txt            # AI exam against the deck's % source: (gates unlocks)
 flash trace mytrace.txt          # walk a predict-and-verify path through a % source:
 flash trace --build mytrace.txt  # let Claude discover the path (writes checkpoints back)
+flash trace --suggest .          # recon a source for candidate traces worth authoring
 flash deps mydeck.txt            # edit a deck's prerequisites (checkbox picker)
 flash stats mydeck.txt           # progress overview
 flash list mydeck.txt            # every card with stage and due time
@@ -640,6 +641,20 @@ locators) back into the deck file. The result is cached and version-controlled
 there, so review it — especially the locators — and edit freely; re-run
 `--build` to regenerate. The build prompt encodes the chain rules below, so a
 generated trace comes out a path, not a quiz.
+
+**Don't know what to trace?** `flash trace --suggest <source>` does a single
+read-only recon pass over a source (a repo `.`, a directory, a file, or a URL)
+and prints a **ranked menu of candidate traces** — each a path-question, a
+one-line spine sketch, and a suggested `% source:` scope. The list is sized by
+**coverage** — the central spine plus one main path per major subsystem — so it's
+as long as the source needs, not a fixed number, and it's the central *starting
+points*, not an exhaustive curriculum. It also names the *node-shaped* subsystems
+it skips (a config table, a store's on-disk format) as **fact-deck material**
+rather than forcing them into a fake path — facts are a deck's job, edges are a
+trace's. It writes nothing: pick one, paste its
+header into a new deck, and `--build` it. Knowing *what* is worth
+tracing — and how deep — is itself the hard part (it needs you to already
+understand the source), so this hands that judgment to Claude.
 
 **Write it as a chain, not a quiz.** A trace's whole value is that it's a *path*:
 each checkpoint should pick up where the last *reveal* left off (note how hop 2

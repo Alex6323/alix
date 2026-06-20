@@ -141,7 +141,9 @@ struct ExamArgs {
 
 #[derive(Args)]
 struct TraceArgs {
-    /// The trace deck to walk (must declare a `% trace:`).
+    /// The trace deck to walk (must declare a `% trace:`). With `--suggest`,
+    /// this positional is instead a *source* to recon (a repo `.`, a directory,
+    /// a file, or a URL) — not a deck.
     deck: PathBuf,
 
     /// Print the path — each checkpoint's prompt, key points and locator —
@@ -154,6 +156,12 @@ struct TraceArgs {
     /// exploration; overwrites a previous build.
     #[arg(long, conflicts_with = "map")]
     build: bool,
+
+    /// Recon a SOURCE (the positional, here a repo/dir/file/URL — not a deck)
+    /// and print a ranked menu of candidate traces to author. Read-only; writes
+    /// nothing. Paste a suggestion into a new deck, then `--build` it.
+    #[arg(long, conflicts_with_all = ["map", "build"])]
+    suggest: bool,
 
     /// Scheduler used to schedule the checkpoints. Overrides the deck's
     /// `% scheduler:` directive; defaults to leitner.
@@ -1470,6 +1478,12 @@ const DIM: &str = "\x1b[2m";
 const RESET: &str = "\x1b[0m";
 
 fn trace_cmd(args: TraceArgs) -> Result<()> {
+    // `--suggest`: the positional is a SOURCE, not a deck — recon it and print a
+    // menu of candidate traces. Runs before any deck load.
+    if args.suggest {
+        return trace_suggest(&args);
+    }
+
     let deck = Deck::load(&args.deck)?;
 
     // `--build`: discover the path with Claude and write it back (no walk; a
@@ -1600,6 +1614,26 @@ fn trace_build(args: &TraceArgs, deck: Deck) -> Result<()> {
     println!(
         "Wrote {n} checkpoints to {path}. Review them and their `% at:` locators, \
          then walk it:  flash trace {path}"
+    );
+    Ok(())
+}
+
+/// `--suggest`: recon a source (a repo, directory, file, or URL — the
+/// positional, NOT a deck) and print a ranked menu of candidate traces to
+/// author. Read-only exploration; writes nothing. The cheap precursor to
+/// `--build` — pick a suggestion, paste it into a new deck, then build that.
+fn trace_suggest(args: &TraceArgs) -> Result<()> {
+    let config = Config::load(args.config.as_deref())?;
+    let source = args.deck.to_string_lossy();
+    eprintln!(
+        "Reconning {source} for traces worth tracing (one exploration pass — this \
+         can take a minute)…"
+    );
+    let menu = flash::trace::suggest(&source, &config.trace, &config.ask)?;
+    println!("{menu}");
+    println!(
+        "\n{DIM}Paste a suggestion into a new deck (its `% trace:` + `% source:`), \
+         then:  flash trace --build <deck>{RESET}"
     );
     Ok(())
 }

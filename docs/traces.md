@@ -58,22 +58,128 @@ A trace is a **single path** you walk hop by hop. At each checkpoint:
 Three properties do the work: it's a **path not a set**; **predict-before-reveal**;
 and **the ground truth is checkable** (it's *in* the source).
 
-## Two tiers: orient → goals → trace
+## Goals and orientation
 
-You often don't even know the goal. The first goal is always **orient**, and
-orientation is the cheap step that *manufactures* the goals — it bottoms out the
-regress because orienting needs no prior understanding (just skim structure).
+A **goal** is the long-term aim you hold — "understand this crate", "learn music
+theory". It is bigger than any single path, so it is **not** a trace: it lives
+one layer up, at the **workspace**. A workspace is the unit that *aims at a
+goal*, and its fact **decks** and **trace** decks are the *means* to it. Reserve
+the word "goal" for this layer — a single trace ("how X becomes Y") is a
+path-question, not a goal, even though to an LLM each is just a task.
 
-How I orient cold: manifest first (what kind of thing + its tech), then module
-names (the nouns / domain model), then the entry point, then README (treated as
-*intent*, a claim to verify, not truth). With no task, the default goal is "find
-the **spine**" (central noun + main path).
+You often don't yet know which traces (and decks) serve the goal. That is what
+**orientation** is for: the cheap recon step that, given the goal and its source,
+*manufactures the means* — it proposes the traces worth doing, and it needs no
+prior understanding (just skim structure). [`flash trace --suggest`](#suggesting-traces--flash-trace---suggest-source-recon-lite)
+(below) is the first, flat slice of this; the full orient tier turns that menu
+into a `% requires:`-ordered set living in the workspace.
 
-**Decided model:** orientation is itself the **top-level "orient me" trace** —
-you predict the shape at each hop ("given these deps, what kind of app is this?"),
-and its **compression output is the map + a menu of deeper trace-goals**. So it's
+**Traces or decks — chosen by the shape of the knowledge.** The means orientation
+manufactures are *both* fact decks and traces, and which fits a subsystem is
+decided by what it holds: **edge-shaped** parts (a path you predict hop by hop —
+the review loop, queue-building, the scheduler) become **traces**; **node-shaped**
+parts (a table of facts with no path — config knobs, a store's on-disk format)
+become **fact decks**. Forcing a node-shaped subsystem into a trace just
+manufactures a fake path (the set-pretending-to-be-a-path failure). So `--suggest`
+covers only the trace-shaped subsystems and *names* the node-shaped ones it skips
+as fact-deck material; orient proper proposes the decks for those — the goal stays
+fully covered, by the right means each time.
+
+How orientation reads a source cold: manifest first (what kind of thing + its
+tech), then module names (the nouns / domain model), then the entry point, then
+README (treated as *intent*, a claim to verify, not truth). With no specific aim,
+the default is "find the **spine**" (central noun + main path).
+
+**Decided model:** orientation is itself a **top-level "orient me" trace** — you
+predict the shape at each hop ("given these deps, what kind of app is this?"), and
+its **compression output is the map + a menu of candidate traces**. So it's
 traces all the way down, and you *learn* the orientation too. Escape hatch:
-**`flash trace <source> --map`** skips the quiz and just prints the map + goals.
+**`flash trace <source> --map`** skips the quiz and just prints the map + the
+candidate traces.
+
+## Suggesting traces — `flash trace --suggest <source>` (recon, lite)
+
+The hard part of a trace isn't building the path — `--build` does that — it's
+knowing *which* paths through a cold source are worth tracing, and **at what
+depth**. That judgment needs you to already understand the source: you can only
+size a hop if you know the path. So the person who can author a good `% trace:`
+is the one who least needs it. `--suggest` breaks that bootstrap by outsourcing
+the judgment to the model: a **cheap reconnaissance pass** over a `% source:`
+that proposes a ranked **menu of candidate traces**. It does *not* build
+checkpoints. (A *trace* is a path-question — "how X becomes Y". It is **not** a
+*goal*, the higher-level statement of intent — "I want to learn music theory" —
+that a future curriculum feature will turn into a *set* of traces; keep the two
+distinct.)
+
+It is the de-risked precursor to the [orient tier](#goals-and-orientation):
+same job (manufacture traces from a cold source), but a flat menu — no quiz, no
+hierarchy, no `% requires:` ordering. If the suggestions come back as real,
+well-scoped spines, that validates the depth-judgment bet *before* the full
+orient→goals→trace machinery is built — and the recon prompt it proves out is the
+one orient will reuse.
+
+**Cost vs. depth is the whole point.** Recon must not `--build` every candidate
+(that's N expensive builds). It does **one** exploration pass — the same
+read-only `Read`/`Glob`/`Grep` (`WebFetch` for a URL), cwd = source root — and
+orients the way you would cold (manifest → module nouns → entry point → spine),
+then emits, per candidate: a `% trace:` path description, a **one-line spine
+sketch** (3–6 rough hop labels, *not* cited checkpoints), and a suggested
+`% source:` scope (narrowed when a tight path lives in one file). The sketch is
+cheap but rich enough to choose by; you spend a full build only on the one you
+pick.
+
+**How many it lists is decided by coverage, not a cap.** It names the central
+spine plus *one main path per major subsystem*, and stops when every subsystem is
+covered once — so the length tracks the source (a repo with a dozen subsystems
+yields about a dozen suggestions; a small one, a few), never a fixed number. It
+won't pad to look thorough or drop a real subsystem to stay concise. The local,
+leaf paths *inside* a subsystem are deliberately left out — those are the deeper
+dives the [orient tier](#goals-and-orientation) sequences. It also **names the
+node-shaped subsystems it skips** — the ones that are a table of facts (config, a
+store's format) rather than a path — as fact-deck material, so the deferral is a
+visible decision, not a silent omission ([trace-vs-deck by shape](#goals-and-orientation)).
+So `--suggest` is the
+honest **starting set** — the central entry points into understanding the source,
+ranked spine-first — *not* the exhaustive set that fully covers it. (That
+complete, goal-sized set is orient's job, whose stopping rule is deeper:
+saturation — keep going until a new trace would teach no new mechanism.)
+
+```
+Source  .  (rust repo · ~40 files)
+Spine   Session → build_queue → scheduler
+
+Suggested traces — predict the spine, then `--build` the one you pick:
+
+  1. how a line of deck text becomes a card waiting in the review queue
+     spine:  load → parse_str → Card::plain → direction-expand → build_queue
+     % source: .
+  2. how pressing Good becomes a saved grade
+     spine:  keypress → Session::grade → scheduler.advance → store.save
+     % source: .
+  3. how card.id() stays stable so progress survives edits
+     spine:  id() hash inputs → store key → build_queue lookup
+     % source: src/card.rs
+
+Paste a block into a new deck, then `flash trace --build <deck>`.
+```
+
+`--suggest` is **side-effect-free**: read-only exploration that prints the menu
+to stdout and writes nothing. You read it, paste a header into a new
+`<topic>.txt`, and `--build` it. Scaffolding those stub decks for you, a faster
+recon model, and the full orient hierarchy are all **deferred** — this slice
+exists only to test whether the model's selection-and-depth judgment is
+trustworthy.
+
+Plumbing reuses Build wholesale: `trace::suggest(source, cfg, ask_cfg)` mirrors
+`trace::build` but takes a **source** (not a deck), runs a `suggest_prompt`
+through the same read-only `build_run_config`, and returns the menu text;
+`--suggest` (conflicts with `--build`/`--map`) reinterprets the positional as the
+source and needs no store or scheduler. Validate it like `build_prompt`: a unit
+test pins the recon framing (orient-don't-trace, N candidates, spine-sketch not
+checkpoints, rank by centrality, narrow scope, menu-only output), then dogfood
+`flash trace --suggest .` on this repo and check the top suggestion is a real,
+well-scoped spine that roughly matches the traces we already trust
+(`examples/keypress-to-grade.txt`, the scratch deck-text→queue path).
 
 ## Authoring (what you write) — minimal
 
@@ -214,7 +320,7 @@ each generated trace is a chain *by construction*, not by luck:
    notation, a contract clause on its defined terms (a Definitions section *is*
    this gloss), a paper's result on its method — name those givens the same way.
    The model selects the path and the locator; the source is the oracle.
-8. **The last hop lands the goal.** The final reveal is the **payoff that
+8. **The last hop lands the outcome.** The final reveal is the **payoff that
    completes the `% trace:`** — it reaches the outcome the path was tracing
    toward; the compression step then retraces the whole path. If the last
    checkpoint doesn't reach that outcome, the path stopped short.
@@ -377,9 +483,13 @@ but a chat ≠ the tool). So validate the mechanic cheaply before heavy plumbing
 2. **Build (path discovery)** from a scope; cached trace artifact. Its prompt
    must encode the [generation-prompt spec](#generation-prompt-spec--a-chain-not-a-set)
    (chain-not-a-set) so generated traces are paths by construction.
-3. **Orient tier** (`orient` as the top trace + `--map`), producing the workspace
+3. **Suggest (recon menu):** [`flash trace --suggest <source>`](#suggesting-traces--flash-trace---suggest-source-recon-lite)
+   — one read-only pass proposes a ranked menu of candidate traces (path + spine
+   sketch + scope), no checkpoints. The cheap precursor that closes the authoring
+   bootstrap and de-risks the orient tier by proving the recon prompt it reuses.
+4. **Orient tier** (`orient` as the top trace + `--map`), producing the workspace
    map + `% requires:`-ordered child traces.
-4. **`--grade`** (live delta), **web surface**, richer `flash.toml [trace]` config.
+5. **`--grade`** (live delta), **web surface**, richer `flash.toml [trace]` config.
 
 ## Open / deferred decisions
 
