@@ -723,6 +723,13 @@ for each deck (author it or `flash generate`) — wired together with `% require
 so they unlock in dependency order, with each `% source:` pointing back at the
 real source. (Refuses a non-empty folder unless `--force`.)
 
+Add **`--build`** to go all the way: `flash explore … --into <dir> --build`
+explores the source **once** and then reuses that same session to fill every
+item — predict-verify checkpoints for the traces and fact cards for the decks —
+so the workspace comes out review-ready in one command. Writing the whole set
+from one understanding keeps the items coherent (each builds on its prerequisites
+instead of repeating them), and it fills fact decks too.
+
 **Explore walk.** Before you even know what to trace, `flash explore --walk
 <source>` builds a short **tour of the source's shape** and walks it like a trace:
 you predict what kind of program it is (from the manifest), its domain nouns (from

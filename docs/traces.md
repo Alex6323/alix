@@ -221,8 +221,25 @@ the member file names), with each `% source:` rewritten absolute against the
 source root. So the plan becomes a real, buildable workspace: `flash trace
 --build` each trace, author or `flash generate` each deck, and the `% requires:`
 edges gate them in dependency order. (Refuses a non-empty target unless
-`--force`.) The walkable *explore* trace (predict the system's shape) and
-`--grade` come after.
+`--force`.)
+
+**`--into --build` fills the stubs in the same session.** By default `--into`
+writes empty stubs; with `--build`, `flash explore` **explores the source once,
+then resumes that same CLI session** (`ask::CliSession`: `--session-id` then
+`--resume`) to write the full content of every item — predict-verify checkpoints
+for each trace, fact cards for each deck — and `materialize` writes that content
+in place of the stub comment. Two model calls total (explore + fill) instead of
+re-exploring per item, and because the whole set is written from one
+understanding the items stay **coherent** (each aware of its prerequisites, no
+overlap, consistent terms). It also fills *fact decks* — content `flash generate`
+can't yet produce from a code scope — for free. The fill is one-shot (all items
+in one response); an item the response omits simply stays a stub, so it degrades
+gracefully (a very large plan may want chunking later). Dogfooded: a 7-item
+scheduling workspace came out 7/7 filled, every deck and trace valid
+(`flash check` + `flash trace --map`).
+
+The walkable *explore* trace (predict the system's shape) and `--grade` come
+after.
 
 Plumbing mirrors `--suggest`: `explore::explore(source, goal, cfg, ask_cfg)` runs
 an `explore_prompt` through the same read-only `build_run_config` (reusing the

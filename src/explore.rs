@@ -219,6 +219,123 @@ fn walk_prompt(source: &str, goal: &str, url: bool, cfg: &TraceConfig) -> String
     p
 }
 
+/// Explore a source once (one CLI session), then RESUME that session to fill
+/// every plan item with real content using the understanding just built —
+/// checkpoints for each `[trace]`, fact cards for each `[deck]`. Returns the plan
+/// and a map from item number to its filled body. Exploring once (not per item)
+/// keeps the items coherent (each aware of the others) and amortizes the read.
+pub fn explore_and_fill(
+    source: &str,
+    goal: &str,
+    cfg: &TraceConfig,
+    ask_cfg: &AskConfig,
+) -> Result<(String, HashMap<usize, String>)> {
+    let url = is_url(source);
+    let cwd = if url {
+        None
+    } else {
+        let (base_dir, _) = resolve_source(None, Some(source));
+        Some(base_dir)
+    };
+    let run_cfg = build_run_config(cfg, ask_cfg, cwd, url);
+    let mut session = ask::CliSession::new();
+
+    // 1. Explore — establishes the session and its understanding of the source.
+    let plan = ask::run(&run_cfg, &explore_prompt(source, goal, url, cfg), &session.args())?
+        .trim()
+        .to_string();
+    session.started = true;
+    if plan.is_empty() {
+        bail!("the exploration produced no plan");
+    }
+    let items = parse_plan(&plan);
+    if items.is_empty() {
+        bail!("the plan has no items to fill");
+    }
+
+    // 2. Resume — fill every item from what the session already learned.
+    let filled = ask::run(&run_cfg, &fill_prompt(&items), &session.args())?;
+    Ok((plan, parse_filled(&filled)))
+}
+
+/// Builds the fill prompt for the RESUMED explore session: write the full content
+/// for every plan item, keyed by `=== item N ===` delimiters, reusing the
+/// understanding from the exploration just done.
+fn fill_prompt(items: &[Item]) -> String {
+    let mut list = String::new();
+    for item in items {
+        let kind = match item.kind {
+            Kind::Trace => "trace",
+            Kind::Deck => "deck",
+        };
+        list.push_str(&format!("{}. [{}] {}\n", item.num, kind, item.title));
+    }
+    format!(
+        "You just explored this source and produced the plan below. Now WRITE THE \
+         FULL CONTENT for EVERY item, reusing what you already learned — only read \
+         more if you must verify a line number. Because you are writing the whole \
+         set at once, make it COHERENT: an item must NOT re-teach what an earlier \
+         item (its prerequisite) covers — build on it, keep terminology consistent, \
+         and don't overlap.\n\n\
+         For each item, emit a delimiter line exactly `=== item <N> ===` (its plan \
+         number) followed by its content:\n\
+         - a [trace] → the predict-verify CHECKPOINT cards: each is a `# ` question \
+         at column 0, then TAB-indented key points, a `% at: file:start-end` locator \
+         citing the REAL lines, and an optional `! ` note. Each hop opens on the \
+         previous reveal, predicts forward, and its key points are grounded in the \
+         cited lines.\n\
+         - a [deck] → FACT cards: each is a `# ` front at column 0, then TAB-indented \
+         back line(s). One fact per card, concise and recall-oriented.\n\n\
+         Do NOT repeat any header directive (`% trace:`, `% title:`, `% source:`, \
+         `% requires:`) — those are already written; output only the `# ` cards. \
+         Output ONLY the delimited item bodies: no preamble, no code fences, nothing \
+         between the last card of one item and the next `=== item ===` line.\n\n\
+         The plan:\n{list}"
+    )
+}
+
+/// Splits the fill response into per-item bodies on `=== item N ===` delimiters.
+/// Lenient: text before the first delimiter is dropped; an item with no body is
+/// omitted (so it stays a stub).
+pub(crate) fn parse_filled(raw: &str) -> HashMap<usize, String> {
+    let mut out: HashMap<usize, String> = HashMap::new();
+    let mut current: Option<usize> = None;
+    let mut buf = String::new();
+    for line in raw.lines() {
+        if let Some(num) = parse_item_delimiter(line) {
+            if let Some(n) = current.take() {
+                let body = buf.trim();
+                if !body.is_empty() {
+                    out.insert(n, body.to_string());
+                }
+            }
+            buf.clear();
+            current = Some(num);
+        } else if current.is_some() {
+            buf.push_str(line);
+            buf.push('\n');
+        }
+    }
+    if let Some(n) = current {
+        let body = buf.trim();
+        if !body.is_empty() {
+            out.insert(n, body.to_string());
+        }
+    }
+    out
+}
+
+/// Matches a `=== item N ===` delimiter line, returning N.
+fn parse_item_delimiter(line: &str) -> Option<usize> {
+    line.trim()
+        .strip_prefix("=== item")?
+        .trim()
+        .strip_suffix("===")?
+        .trim()
+        .parse()
+        .ok()
+}
+
 /// One item of an exploration plan: a fact deck or a trace to author.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Item {
@@ -241,6 +358,8 @@ pub struct Materialized {
     pub dir: PathBuf,
     pub traces: usize,
     pub decks: usize,
+    /// How many items were written with real content (vs. left as stubs).
+    pub filled: usize,
 }
 
 /// Parses the printed plan back into items (lenient — unrecognized lines, the
@@ -299,6 +418,7 @@ pub fn materialize(
     goal: &str,
     source: &str,
     force: bool,
+    filled: Option<&HashMap<usize, String>>,
 ) -> Result<Materialized> {
     let items = parse_plan(plan);
     if items.is_empty() {
@@ -334,6 +454,7 @@ pub fn materialize(
 
     let mut traces = 0;
     let mut decks = 0;
+    let mut filled_count = 0;
     for (item, name) in items.iter().zip(&names) {
         let mut body = String::new();
         match item.kind {
@@ -353,14 +474,27 @@ pub fn materialize(
             }
         }
         body.push('\n');
-        body.push_str(match item.kind {
-            Kind::Trace => {
-                "% Stub from `flash explore`. Discover the path:  flash trace --build <this file>\n"
+        match filled
+            .and_then(|f| f.get(&item.num))
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+        {
+            // `--build` filled this item with real checkpoints / cards.
+            Some(content) => {
+                filled_count += 1;
+                body.push_str(content);
+                body.push('\n');
             }
-            Kind::Deck => {
-                "% Stub from `flash explore`. Author cards here, or `flash generate` from the source.\n"
-            }
-        });
+            // A stub: header only, to be filled later.
+            None => body.push_str(match item.kind {
+                Kind::Trace => {
+                    "% Stub from `flash explore`. Discover the path:  flash trace --build <this file>\n"
+                }
+                Kind::Deck => {
+                    "% Stub from `flash explore`. Author cards here, or `flash generate` from the source.\n"
+                }
+            }),
+        }
         fs::write(dir.join(name), body)?;
     }
 
@@ -368,6 +502,7 @@ pub fn materialize(
         dir: dir.to_path_buf(),
         traces,
         decks,
+        filled: filled_count,
     })
 }
 
@@ -502,9 +637,10 @@ Spine   a -> b
         let dir = std::env::temp_dir().join(format!("flash-explore-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
 
-        let report = materialize(SAMPLE_PLAN, &dir, "understand the repo", ".", false).unwrap();
+        let report = materialize(SAMPLE_PLAN, &dir, "understand the repo", ".", false, None).unwrap();
         assert_eq!(2, report.traces);
         assert_eq!(1, report.decks);
+        assert_eq!(0, report.filled); // no fill map → all stubs
 
         let manifest = fs::read_to_string(dir.join("flash.toml")).unwrap();
         assert!(manifest.contains("goal = \"understand the repo\""));
@@ -531,8 +667,55 @@ Spine   a -> b
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("keep.txt"), "existing").unwrap();
 
-        assert!(materialize(SAMPLE_PLAN, &dir, "g", ".", false).is_err());
-        assert!(materialize(SAMPLE_PLAN, &dir, "g", ".", true).is_ok()); // --force writes anyway
+        assert!(materialize(SAMPLE_PLAN, &dir, "g", ".", false, None).is_err());
+        assert!(materialize(SAMPLE_PLAN, &dir, "g", ".", true, None).is_ok()); // --force writes anyway
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn parse_filled_splits_on_item_delimiters() {
+        let raw = "\
+preamble ignored
+=== item 1 ===
+# front a
+\tback a
+=== item 2 ===
+# question
+\tkey point
+\t% at: src/x.rs:1-3
+=== item 3 ===
+";
+        let filled = parse_filled(raw);
+        assert_eq!(2, filled.len()); // item 3 has no body → omitted
+        assert!(filled[&1].contains("# front a"));
+        assert!(filled[&2].contains("% at: src/x.rs:1-3"));
+        assert!(!filled.contains_key(&3));
+    }
+
+    #[test]
+    fn materialize_writes_filled_content_when_given() {
+        let dir = std::env::temp_dir().join(format!("flash-explore-fill-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let mut filled = HashMap::new();
+        filled.insert(
+            2usize,
+            "# how does text become Cards?\n\tparse_str runs a state machine\n\t% at: src/parser.rs:1-9"
+                .to_string(),
+        );
+
+        let report = materialize(SAMPLE_PLAN, &dir, "g", ".", false, Some(&filled)).unwrap();
+        assert_eq!(1, report.filled); // only item 2 was filled
+
+        // item 2 (a trace) keeps its header AND carries the filled checkpoint
+        let trace = fs::read_to_string(dir.join("02-how-text-becomes-cards.txt")).unwrap();
+        assert!(trace.contains("% trace: How text becomes Cards"));
+        assert!(trace.contains("# how does text become Cards?"));
+        assert!(trace.contains("% at: src/parser.rs:1-9"));
+        // item 1 had no fill → still a stub
+        let deck =
+            fs::read_to_string(dir.join("01-the-deck-format-markers-and-directives.txt")).unwrap();
+        assert!(deck.contains("% Stub from `flash explore`"));
 
         let _ = fs::remove_dir_all(&dir);
     }

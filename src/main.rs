@@ -107,6 +107,12 @@ struct ExploreArgs {
     #[arg(long, requires = "into")]
     force: bool,
 
+    /// With --into, fill every stub in one explore session — checkpoints for
+    /// traces, cards for fact decks — instead of leaving them empty. One coherent
+    /// pass (the items know about each other); more model work.
+    #[arg(long, requires = "into", conflicts_with = "walk")]
+    build: bool,
+
     /// Build an explore walk instead of a plan: a predict-verify trace over the
     /// source's shape (what it is → its parts → entry → spine → what to trace),
     /// written to a file and walked right away.
@@ -1699,6 +1705,37 @@ fn explore_cmd(args: ExploreArgs) -> Result<()> {
         return explore_walk(&args, &config, &source, goal);
     }
 
+    // `--into --build`: explore once, then fill every stub in the same session.
+    if args.build {
+        let dir = args.into.as_deref().expect("clap: --build requires --into");
+        eprintln!(
+            "Exploring {source} and filling the workspace toward \"{goal}\" (explore \
+             + fill in one session — this can take a few minutes)…"
+        );
+        let (plan, filled) =
+            flash::explore::explore_and_fill(&source, goal, &config.trace, &config.ask)?;
+        println!("{plan}");
+        let report =
+            flash::explore::materialize(&plan, dir, goal, &source, args.force, Some(&filled))?;
+        let total = report.traces + report.decks;
+        let stubs = total - report.filled;
+        println!(
+            "\n{BOLD}Built {total} files{RESET} in {} — {} filled, {stubs} stub(s) \
+             ({} traces, {} decks).",
+            report.dir.display(),
+            report.filled,
+            report.traces,
+            report.decks,
+        );
+        println!(
+            "{DIM}Walk a trace:  flash trace {}/<file>   ·   review the set:  \
+             flash review {}{RESET}",
+            report.dir.display(),
+            report.dir.display(),
+        );
+        return Ok(());
+    }
+
     eprintln!(
         "Exploring {source} for a learning plan toward \"{goal}\" (one pass — this \
          can take a minute)…"
@@ -1706,7 +1743,7 @@ fn explore_cmd(args: ExploreArgs) -> Result<()> {
     let plan = flash::explore::explore(&source, goal, &config.trace, &config.ask)?;
     println!("{plan}");
     if let Some(dir) = &args.into {
-        let report = flash::explore::materialize(&plan, dir, goal, &source, args.force)?;
+        let report = flash::explore::materialize(&plan, dir, goal, &source, args.force, None)?;
         let total = report.traces + report.decks;
         println!(
             "\n{BOLD}Wrote {total} files{RESET} to {} — {} traces, {} decks, + flash.toml.",

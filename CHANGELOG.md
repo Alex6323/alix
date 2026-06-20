@@ -45,7 +45,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   **workspace** folder — a `flash.toml` (the goal) plus a stub deck/trace file per
   item, `% requires:`-wired in dependency order with absolute `% source:` paths,
   ready to `flash trace --build` / author (refuses a non-empty dir unless
-  `--force`). **`--walk`** instead builds an **explore walk** — a predict-verify
+  `--force`). Add **`--build`** to fill them: `flash explore … --into <dir>
+  --build` explores the source **once**, then resumes that same CLI session to
+  write the full content of every item — predict-verify checkpoints for traces,
+  fact cards for decks — so the workspace is review-ready in one command, with the
+  items coherent (written from one understanding) and fact decks filled too.
+  **`--walk`** instead builds an **explore walk** — a predict-verify
   trace over the source's *shape* (what it is → its domain nouns → entry point →
   spine → the first paths worth tracing), each hop revealing real structural
   evidence (the manifest, the module list, the entry enum). It's written to a file
