@@ -61,8 +61,7 @@ enum Command {
     Browse(BrowseArgs),
     /// Generate a fact deck with Claude from a source — a web page URL or a
     /// local file/directory path. (The deck-side mirror of `flash trace`.)
-    #[command(visible_aliases = ["gen", "generate"])]
-    Deck(GenerateArgs),
+    Deck(GenerateDeckArgs),
     /// Sit the AI exam for a deck: open questions from its `% source:`, graded
     /// by Claude. Passing marks the deck mastered and unlocks its dependents.
     Exam(ExamArgs),
@@ -147,7 +146,7 @@ struct ExploreArgs {
 }
 
 #[derive(Args)]
-struct GenerateArgs {
+struct GenerateDeckArgs {
     /// The source to turn into a fact deck: a web page URL, or a local file or
     /// directory path.
     source: String,
@@ -1414,7 +1413,7 @@ fn browse_serve(args: BrowseArgs) -> Result<()> {
     )
 }
 
-fn deck_cmd(args: GenerateArgs) -> Result<()> {
+fn deck_cmd(args: GenerateDeckArgs) -> Result<()> {
     let config = Config::load(args.config.as_deref())?;
     let mut gen_cfg = config.generate.clone();
     if let Some(cards) = args.cards {

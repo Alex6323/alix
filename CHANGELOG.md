@@ -7,8 +7,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- **`flash deck <source>`** (renamed from `flash generate`; `gen`/`generate`
-  remain aliases) — generates a fact deck with Claude from a **web page URL or a
+- **`flash deck <source>`** (renamed from `flash generate`, which no longer
+  exists as an alias) — generates a fact deck with Claude from a **web page URL or a
   local file/directory path**, mirroring `flash trace`. A URL is fetched with
   WebFetch and the deck starts with a `% link:`; a local source is explored
   read-only with `Read`/`Glob`/`Grep` at its root and the deck starts with a

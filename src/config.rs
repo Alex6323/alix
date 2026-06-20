@@ -216,10 +216,9 @@ impl Default for AskConfig {
     }
 }
 
-/// Settings for AI deck generation (`flash generate`, the `[generate]`
-/// section).
+/// Settings for AI deck generation (`flash deck`, the `[generate]` section).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct GenerateConfig {
+pub struct GenerateDeckConfig {
     /// Model passed as `--model`; `None` falls back to the `[ask]` model, then
     /// the CLI's own default.
     pub model: Option<String>,
@@ -239,7 +238,7 @@ pub struct GenerateConfig {
     pub review: bool,
 }
 
-impl Default for GenerateConfig {
+impl Default for GenerateDeckConfig {
     fn default() -> Self {
         Self {
             model: None,
@@ -359,7 +358,7 @@ pub struct Config {
     pub browse: BrowseBindings,
     pub ask: AskConfig,
     /// AI deck generation settings.
-    pub generate: GenerateConfig,
+    pub generate: GenerateDeckConfig,
     /// AI exam settings.
     pub exam: ExamConfig,
     /// Trace building settings.
@@ -529,7 +528,7 @@ impl Config {
             ask.allowed_tools = tools;
         }
 
-        let mut generate = GenerateConfig::default();
+        let mut generate = GenerateDeckConfig::default();
         if let Some(model) = raw.generate.model.filter(|m| !m.trim().is_empty()) {
             generate.model = Some(model);
         }

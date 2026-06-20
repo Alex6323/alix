@@ -506,8 +506,7 @@ line (so `flash exam` can later grade your understanding against it). Either way
 Claude only returns text — never a write or shell tool — and flash validates it
 (`parse_str`) and writes `~/decks/<slug>.txt`. The cards are spread across four
 layers of understanding (facts → concepts → application → connections) and use
-cloze (`#?`) cards for terminology. (`flash generate`/`flash gen` still work as
-aliases.)
+cloze (`#?`) cards for terminology.
 
 The prompt tells Claude to draft, then re-read the whole set and merge or drop
 cards that test the same fact, so the deck doesn't repeat itself. For a

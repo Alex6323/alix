@@ -13,7 +13,7 @@ use anyhow::{Result, bail};
 
 use crate::{
     ask,
-    config::{AskConfig, GenerateConfig},
+    config::{AskConfig, GenerateDeckConfig},
     deck::is_url,
     trace::resolve_source,
 };
@@ -164,7 +164,7 @@ The deck to review:
 /// path) and returns the cleaned deck text (not yet validated or written). A URL
 /// is fetched with WebFetch; a local source is explored read-only at its root.
 /// Blocks until the CLI replies or times out.
-pub fn generate_deck(source: &str, cfg: &GenerateConfig, ask_cfg: &AskConfig) -> Result<String> {
+pub fn generate_deck(source: &str, cfg: &GenerateDeckConfig, ask_cfg: &AskConfig) -> Result<String> {
     let url = is_url(source);
     let cwd = if url {
         None
@@ -184,7 +184,7 @@ pub fn generate_deck(source: &str, cfg: &GenerateConfig, ask_cfg: &AskConfig) ->
 /// Runs a separate review pass over a draft `deck` and returns the cleaned,
 /// improved deck. A fresh CLI call (no shared session) so the reviewer reads
 /// the whole deck with fresh eyes.
-pub fn review_deck(deck: &str, cfg: &GenerateConfig, ask_cfg: &AskConfig) -> Result<String> {
+pub fn review_deck(deck: &str, cfg: &GenerateDeckConfig, ask_cfg: &AskConfig) -> Result<String> {
     let prompt = build_review_prompt(deck);
     // The reviewer only rewrites the supplied text; no source access needed.
     let raw = ask::run(&run_config(cfg, ask_cfg, true, None), &prompt, &[])?;
@@ -200,7 +200,7 @@ pub fn review_deck(deck: &str, cfg: &GenerateConfig, ask_cfg: &AskConfig) -> Res
 /// allowlist (WebFetch); a local source gets read-only `Read`/`Glob`/`Grep` at
 /// its root (`cwd`).
 fn run_config(
-    cfg: &GenerateConfig,
+    cfg: &GenerateDeckConfig,
     ask_cfg: &AskConfig,
     url: bool,
     cwd: Option<PathBuf>,
@@ -229,7 +229,7 @@ fn build_review_prompt(deck: &str) -> String {
 /// template for a URL and the local-source template otherwise; a configured
 /// `prompt` override wins for either (`{url}`/`{source}` both resolve to the
 /// source).
-fn build_prompt(source: &str, url: bool, cfg: &GenerateConfig) -> String {
+fn build_prompt(source: &str, url: bool, cfg: &GenerateDeckConfig) -> String {
     let template = cfg.prompt.as_deref().unwrap_or(if url {
         DEFAULT_PROMPT
     } else {
@@ -351,10 +351,10 @@ fn slugify(base: &str) -> String {
 mod tests {
     use super::*;
 
-    fn cfg(max_cards: usize) -> GenerateConfig {
-        GenerateConfig {
+    fn cfg(max_cards: usize) -> GenerateDeckConfig {
+        GenerateDeckConfig {
             max_cards,
-            ..GenerateConfig::default()
+            ..GenerateDeckConfig::default()
         }
     }
 
