@@ -104,6 +104,9 @@ struct PartialCard {
     /// Per-card `% at:` trace locator (a source position), raw value as
     /// written.
     at: Option<String>,
+    /// Per-card `% given:` lines (repeatable): a trace checkpoint's named
+    /// "givens", in order.
+    givens: Vec<String>,
 }
 
 impl PartialCard {
@@ -135,6 +138,7 @@ impl PartialCard {
             card.image_back = self.image_back.map(PathBuf::from);
             card.frontend = self.frontend;
             card.at = self.at;
+            card.givens = self.givens;
             cards.push(card);
         }
         Ok(())
@@ -287,6 +291,7 @@ pub fn parse_str(subject: &str, text: &str) -> Result<Vec<Card>, ParseError> {
                     image_back: None,
                     frontend: None,
                     at: None,
+                    givens: Vec::new(),
                 });
                 state = State::Front;
             }
@@ -337,6 +342,7 @@ pub fn parse_str(subject: &str, text: &str) -> Result<Vec<Card>, ParseError> {
                         "img" => partial.image = Some(value),
                         "img-back" => partial.image_back = Some(value),
                         "at" => partial.at = Some(value),
+                        "given" => partial.givens.push(value),
                         "frontend" => {
                             if let Ok(f) = Frontend::from_str(&value, true) {
                                 partial.frontend = Some(f);
@@ -587,6 +593,24 @@ mod tests {
         // A card without one stays None.
         let bare = parse_str("s", "# q\n\ta\n").unwrap();
         assert_eq!(None, bare[0].at);
+    }
+
+    #[test]
+    fn per_card_given_lines_are_collected_in_order() {
+        let text = "# q\n\
+                    % given: state — the parser position\n\
+                    % given: partial — the card being assembled\n\
+                    \tkey point\n";
+        let cards = parse_str("s", text).unwrap();
+        assert_eq!(
+            vec![
+                "state — the parser position".to_string(),
+                "partial — the card being assembled".to_string(),
+            ],
+            cards[0].givens
+        );
+        // A card without any `% given:` has an empty list.
+        assert!(parse_str("s", "# q\n\ta\n").unwrap()[0].givens.is_empty());
     }
 
     #[test]

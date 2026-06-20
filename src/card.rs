@@ -83,6 +83,12 @@ pub struct Card {
     /// Read live when walking a trace; see [`crate::trace`]. Not part of the
     /// identity hash — it points at the source, it is not card content.
     pub at: Option<String>,
+    /// Trace-checkpoint "givens" (`% given:` lines, repeatable): the off-screen
+    /// symbols the question/excerpt leans on, each as `name — meaning`. Shown
+    /// as a list under the question when walking (scaffolding so the
+    /// excerpt can stay tight; see [`crate::trace`]). Not part of the
+    /// identity hash.
+    pub givens: Vec<String>,
 }
 
 impl Card {
@@ -109,6 +115,7 @@ impl Card {
             frontend: None,
             max_stage: None,
             at: None,
+            givens: Vec::new(),
         }
     }
 
@@ -244,6 +251,7 @@ mod tests {
         a.frontend = Some(Frontend::Web);
         a.max_stage = Some(2);
         a.at = Some("card.rs:1-9".to_string());
+        a.givens = vec!["state — the parser position".to_string()];
         assert_eq!(a.id(), b.id());
     }
 

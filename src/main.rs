@@ -1515,6 +1515,7 @@ fn trace_cmd(args: TraceArgs) -> Result<()> {
                     .expect("predict has a checkpoint");
                 println!("\n{BOLD}── Checkpoint {}/{} ──{RESET}", i + 1, total);
                 println!("{}", checkpoint.prompt);
+                print_givens(&checkpoint.givens);
                 match read_line(&format!("{DIM}predict >{RESET} "))? {
                     None => break 'walk, // EOF (Ctrl-D)
                     Some(text) => walk.predict(text),
@@ -1611,6 +1612,9 @@ fn print_trace_map(trace: &Trace) -> Result<()> {
     }
     for (i, checkpoint) in trace.checkpoints.iter().enumerate() {
         println!("\n{BOLD}{}.{RESET} {}", i + 1, checkpoint.prompt);
+        for given in &checkpoint.givens {
+            println!("   {DIM}given · {given}{RESET}");
+        }
         for point in &checkpoint.points {
             println!("   • {point}");
         }
@@ -1624,17 +1628,23 @@ fn print_trace_map(trace: &Trace) -> Result<()> {
     Ok(())
 }
 
-/// Renders an excerpt with a line-number gutter, marking gaps between
-/// non-contiguous ranges.
+/// Prints a checkpoint's `% given:` list under the question, before predicting
+/// — the off-screen symbols the excerpt leans on, so it can stay tight.
+fn print_givens(givens: &[String]) {
+    if givens.is_empty() {
+        return;
+    }
+    println!("{DIM}given{RESET}");
+    for given in givens {
+        println!("  {DIM}· {given}{RESET}");
+    }
+}
+
+/// Renders an excerpt (one contiguous span) with a line-number gutter.
 fn print_excerpt(excerpt: &flash::trace::Excerpt) {
     println!("{DIM}  {}{RESET}", excerpt.path.display());
-    let mut prev: Option<usize> = None;
     for (no, text) in &excerpt.lines {
-        if prev.is_some_and(|p| *no > p + 1) {
-            println!("       {DIM}⋮{RESET}");
-        }
         println!("  {DIM}{no:>5}{RESET}  {text}");
-        prev = Some(*no);
     }
     if excerpt.truncated {
         println!("       {DIM}… (truncated){RESET}");

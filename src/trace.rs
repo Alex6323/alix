@@ -86,6 +86,9 @@ pub struct Checkpoint {
     pub prompt: String,
     /// The key points the revealed truth makes — the card's back lines.
     pub points: Vec<String>,
+    /// Named "givens" (`% given:` lines): off-screen symbols the question leans
+    /// on, shown as a list under the prompt before predicting.
+    pub givens: Vec<String>,
     /// The connective insight shown after the reveal (the card note).
     pub note: Option<String>,
     /// The `% at:` locator into the source, if the checkpoint declares one.
@@ -130,6 +133,7 @@ impl Trace {
             .map(|c| Checkpoint {
                 prompt: c.front.clone(),
                 points: c.back.clone(),
+                givens: c.givens.clone(),
                 note: c.note.clone(),
                 locator: c.at.clone(),
                 card_id: c.id(),
@@ -244,8 +248,9 @@ fn build_prompt(description: &str, source: &str, url: bool, cfg: &TraceConfig) -
     let locator = if url {
         "a short quoted span from the page — the exact sentence(s) the key points rest on"
     } else {
-        "`file:lines` relative to the source root (e.g. `src/serve.rs:682-689`, or \
-         `12,40-44` for several ranges)"
+        "ONE contiguous range, `file:start-end` (or `file:N` for a single line) \
+         relative to the source root, e.g. `src/serve.rs:682-689` — NEVER \
+         comma-separated ranges"
     };
     let mut p = format!(
         "You are tracing ONE path through a source so a learner can UNDERSTAND it by \
@@ -257,14 +262,59 @@ fn build_prompt(description: &str, source: &str, url: bool, cfg: &TraceConfig) -
          per hop.\n\n\
          FORMAT — output ONLY the checkpoint cards: no header, no `% trace:` or \
          `% source:` line, no preamble, no code fences. Each checkpoint is:\n\n    \
-         # <the question for this hop, asked plainly>\n    \t<a key point a correct \
-         answer hits>\n    \t<another key point>\n    \t% at: <locator>\n    \t! <one \
-         connecting insight, shown after the reveal>\n\n\
-         The `# ` front (column 0) is the QUESTION. The indented lines under it are \
-         the key points the revealed source makes (the rubric). `% at:` is the \
+         # <the question for this hop, asked plainly>\n    \t% given: <name> — <what \
+         it is>\n    \t<a key point a correct answer hits>\n    \t<another key \
+         point>\n    \t% at: <locator>\n    \t! <one connecting insight, shown after \
+         the reveal>\n\n\
+         The `# ` front (column 0) is the QUESTION. The `% given:` lines (repeatable, \
+         optional) name off-screen symbols the question leans on — flash lists them \
+         under the question before the learner predicts. The indented lines under it \
+         are the key points the revealed source makes (the rubric). `% at:` is the \
          locator: {locator} — it must point at the REAL lines/passage the key points \
          paraphrase, because flash reads them live at review time as the ground \
          truth. Cite accurately. The indented `! ` line is an optional note.\n\n\
+         SCOPE EACH HOP TO A SELF-CONTAINED UNIT, AND GLOSS WHAT YOU DON'T SHOW. The \
+         reader sees ONLY the lines you cite, so an excerpt must read on its own. \
+         Prefer hops that are a whole SMALL function/method — its inputs are its \
+         parameters, so nothing dangles. Do NOT dissect one big function into several \
+         checkpoints: a big function on the path is ONE black-box hop — cite its \
+         signature plus the load-bearing line(s) and describe what it does in the key \
+         points; if its internals are themselves worth understanding, that is a \
+         SEPARATE trace, not more hops here.\n\
+         The `% at:` is ONE CONTIGUOUS RANGE. NEVER stitch several ranges together \
+         (no commas): collapsing the gaps makes lines from different branches/places \
+         look adjacent, which misleads. If a hop cannot be shown in one contiguous \
+         span, it spans more than one region — that is the signal it is too big: \
+         split it, or black-box the function. \n\
+         GLOSS — completely and correctly. A `% given:` names a free variable: a \
+         symbol the cited span USES but does NOT BIND within those lines — typically \
+         a function PARAMETER (declared in the signature, above the body you cite) or \
+         a value from an enclosing/earlier scope. Apply a mechanical test to each \
+         symbol: if its binding (a `let`, an assignment, a `for x in`, the parameter \
+         itself) is INSIDE the cited lines, it is NOT a given — the reader sees it, \
+         do not gloss it; if the span uses it but its binding is OUTSIDE, it IS a \
+         given. (E.g. for a function body excerpt, the parameters are givens; a \
+         `let x = …` on a cited line is not.) Name each given with a `% given:` line, \
+         one per symbol, `name — what it is` (e.g. `% given: defaults — the workspace \
+         directive defaults, a parameter`). Check BOTH directions: every \
+         used-but-unbound symbol gets a `% given:`, and never gloss one the span \
+         binds itself. The list MUST be COMPLETE — a reader follows the span using \
+         ONLY the cited lines plus the givens. flash shows them under the question, \
+         so NEVER cram them into the question text. The gloss names the inputs \
+         (scaffolding); the cited lines stay the ground truth for the predicted thing \
+         — never move the hop's answer into the gloss. More than ~3 givens means the \
+         hop is cut too fine: re-scope it.\n\
+         KEY POINTS MUST BE GROUNDED in the cited lines. Every key point has to be \
+         evident from the excerpt (or a given) — describe ONLY what those lines show, \
+         never the rest of the function or file. If a key point asserts behavior that \
+         is not in the cited lines (another branch, a later call, the return path), it \
+         does not belong to this hop: cite the lines that show it, or drop it and let \
+         another hop cover it. A whole-function \"what does it do?\" question whose \
+         honest answer needs code you did NOT cite is mis-scoped — either BLACK-BOX it \
+         (key points stay at the contract the signature/return actually shows) or \
+         SPLIT it into hops that each cite their own region. Before emitting a \
+         checkpoint, re-read its key points against ONLY its excerpt + givens and \
+         delete any claim you cannot point to.\n\n\
          THE RULES THAT MAKE IT A PATH, NOT A QUIZ — follow every one:\n\
          1. One path, not a set. Each hop is a step along one chain. If two \
          checkpoints could be reordered without breaking, they are a set — re-trace \
@@ -473,9 +523,8 @@ pub struct Summary {
 pub struct Excerpt {
     /// The file it was read from.
     pub path: PathBuf,
-    /// The selected lines as `(1-based line number, content)`, in order. A jump
-    /// of more than one between consecutive entries marks a gap (non-contiguous
-    /// ranges), which a frontend can render with an elision marker.
+    /// The selected lines as `(1-based line number, content)`, contiguous and
+    /// in order — a locator is a single span, so an excerpt never has gaps.
     pub lines: Vec<(usize, String)>,
     /// Whether the selection was cut to [`MAX_EXCERPT_LINES`].
     pub truncated: bool,
@@ -507,10 +556,12 @@ fn resolve_source(deck_dir: Option<&Path>, source: Option<&str>) -> (PathBuf, Op
     }
 }
 
-/// Splits a locator into its optional `file:` part and optional line selection.
+/// Splits a locator into its optional `file:` part and optional line range.
 /// `card.rs:1-9` → (`card.rs`, `1-9`); `1-9` → (none, `1-9`); `card.rs` →
-/// (`card.rs`, none, the whole file). The split is on the last colon whose
-/// suffix is a valid line selection, so paths with colons stay intact.
+/// (`card.rs`, none, the whole file). A locator is a single span — `N` or
+/// `N-M`, never comma-separated — so a stitched, misleading excerpt is
+/// impossible. The split is on the last colon whose suffix is a valid range, so
+/// paths with colons stay intact.
 fn parse_locator(locator: &str) -> (Option<String>, Option<String>) {
     let locator = locator.trim();
     if let Some((file, spec)) = locator.rsplit_once(':')
@@ -524,18 +575,13 @@ fn parse_locator(locator: &str) -> (Option<String>, Option<String>) {
     (Some(locator.to_string()), None)
 }
 
-/// Whether `s` is a line selection: comma-separated `N` or `N-M` items, all
-/// digits, at least one item.
+/// Whether `s` is a single line range: `N` or `N-M`, all digits.
 fn is_line_spec(s: &str) -> bool {
     let s = s.trim();
-    !s.is_empty()
-        && s.split(',').all(|item| {
-            let item = item.trim();
-            match item.split_once('-') {
-                Some((a, b)) => is_number(a) && is_number(b),
-                None => is_number(item),
-            }
-        })
+    match s.split_once('-') {
+        Some((a, b)) => is_number(a) && is_number(b),
+        None => is_number(s),
+    }
 }
 
 fn is_number(s: &str) -> bool {
@@ -543,63 +589,43 @@ fn is_number(s: &str) -> bool {
     !s.is_empty() && s.chars().all(|c| c.is_ascii_digit())
 }
 
-/// Parses a validated line selection into inclusive ranges.
-fn parse_line_spec(spec: &str) -> Vec<(usize, usize)> {
-    spec.split(',')
-        .filter_map(|item| {
-            let item = item.trim();
-            match item.split_once('-') {
-                Some((a, b)) => Some((a.trim().parse().ok()?, b.trim().parse().ok()?)),
-                None => {
-                    let n = item.parse().ok()?;
-                    Some((n, n))
-                }
-            }
-        })
-        .map(|(a, b): (usize, usize)| if a <= b { (a, b) } else { (b, a) })
-        .collect()
+/// Parses a validated single range into inclusive `(start, end)` (a lone `N` is
+/// `(N, N)`; a reversed range is normalized).
+fn parse_line_range(spec: &str) -> (usize, usize) {
+    let parse = |s: &str| s.trim().parse::<usize>().unwrap_or(1);
+    let (a, b) = match spec.trim().split_once('-') {
+        Some((a, b)) => (parse(a), parse(b)),
+        None => {
+            let n = parse(spec);
+            (n, n)
+        }
+    };
+    if a <= b { (a, b) } else { (b, a) }
 }
 
-/// Reads the selected lines from `path` (the whole file, capped, when `spec` is
-/// `None`), returning them with their 1-based line numbers.
+/// Reads one contiguous span from `path` (the whole file, capped, when `spec`
+/// is `None`), returning the lines with their 1-based numbers.
 fn read_excerpt(path: &Path, spec: Option<&str>) -> Result<Excerpt> {
     let text = std::fs::read_to_string(path)
         .map_err(|e| anyhow!("cannot read the source `{}`: {e}", path.display()))?;
     let file_lines: Vec<&str> = text.lines().collect();
 
+    // The span to take, clamped to the file so a stale line number never panics.
+    let (start, end) = match spec {
+        None => (1, file_lines.len()),
+        Some(spec) => parse_line_range(spec),
+    };
+    let start = start.max(1);
+    let end = end.min(file_lines.len());
+
     let mut selected: Vec<(usize, String)> = Vec::new();
     let mut truncated = false;
-    let push = |no: usize, line: &str, selected: &mut Vec<(usize, String)>| -> bool {
+    for no in start..=end {
         if selected.len() >= MAX_EXCERPT_LINES {
-            return false;
+            truncated = true;
+            break;
         }
-        selected.push((no, line.to_string()));
-        true
-    };
-
-    match spec {
-        None => {
-            for (i, line) in file_lines.iter().enumerate() {
-                if !push(i + 1, line, &mut selected) {
-                    truncated = true;
-                    break;
-                }
-            }
-        }
-        Some(spec) => {
-            'outer: for (start, end) in parse_line_spec(spec) {
-                // Clamp to the file; a stale line number can never panic.
-                let start = start.max(1);
-                let end = end.min(file_lines.len());
-                for no in start..=end {
-                    let line = file_lines[no - 1];
-                    if !push(no, line, &mut selected) {
-                        truncated = true;
-                        break 'outer;
-                    }
-                }
-            }
-        }
+        selected.push((no, file_lines[no - 1].to_string()));
     }
 
     if selected.is_empty() {
@@ -648,9 +674,14 @@ mod tests {
         assert_eq!(
             (
                 Some("src/serve.rs".to_string()),
-                Some("544,980-985".to_string())
+                Some("682-689".to_string())
             ),
-            parse_locator("src/serve.rs:544,980-985")
+            parse_locator("src/serve.rs:682-689")
+        );
+        // A comma is not a valid range, so `file:N,M` is treated as a bare file.
+        assert_eq!(
+            (Some("src/serve.rs:544,980".to_string()), None),
+            parse_locator("src/serve.rs:544,980")
         );
         // Line-only and bare-file forms.
         assert_eq!(
@@ -664,25 +695,30 @@ mod tests {
     }
 
     #[test]
-    fn parse_line_spec_handles_ranges_singles_and_reversed() {
-        assert_eq!(vec![(1, 9)], parse_line_spec("1-9"));
-        assert_eq!(vec![(5, 5)], parse_line_spec("5"));
-        assert_eq!(vec![(3, 3), (10, 12)], parse_line_spec("3,10-12"));
+    fn parse_line_range_handles_single_range_and_reversed() {
+        assert_eq!((1, 9), parse_line_range("1-9"));
+        assert_eq!((5, 5), parse_line_range("5"));
         // A reversed range is normalized.
-        assert_eq!(vec![(8, 12)], parse_line_spec("12-8"));
+        assert_eq!((8, 12), parse_line_range("12-8"));
     }
 
     #[test]
-    fn read_excerpt_selects_ranges_with_line_numbers() {
+    fn read_excerpt_selects_a_contiguous_span_with_line_numbers() {
         let dir = tempfile::tempdir().unwrap();
         let path = write(dir.path(), "f.txt", "a\nb\nc\nd\ne\n");
-        let ex = read_excerpt(&path, Some("2-3")).unwrap();
-        assert_eq!(vec![(2, "b".to_string()), (3, "c".to_string())], ex.lines);
+        let ex = read_excerpt(&path, Some("2-4")).unwrap();
+        assert_eq!(
+            vec![
+                (2, "b".to_string()),
+                (3, "c".to_string()),
+                (4, "d".to_string())
+            ],
+            ex.lines
+        );
         assert!(!ex.truncated);
-        // Non-contiguous selection keeps each line's real number (the gap is
-        // visible as the jump 1 -> 4).
-        let ex = read_excerpt(&path, Some("1,4")).unwrap();
-        assert_eq!(vec![(1, "a".to_string()), (4, "d".to_string())], ex.lines);
+        // A single line.
+        let ex = read_excerpt(&path, Some("1")).unwrap();
+        assert_eq!(vec![(1, "a".to_string())], ex.lines);
     }
 
     #[test]
@@ -714,6 +750,7 @@ mod tests {
             "% trace: how it works\n\
              % source: source.txt\n\
              # Predict the first hop\n\
+             \t% given: line — the current input line\n\
              \tit reads the first line\n\
              \t% at: 1\n\
              \t! the entry point\n\
@@ -732,6 +769,11 @@ mod tests {
         assert_eq!("how it works", trace.description);
         assert_eq!(2, trace.checkpoints.len());
         assert_eq!("Predict the first hop", trace.checkpoints[0].prompt);
+        assert_eq!(
+            vec!["line — the current input line".to_string()],
+            trace.checkpoints[0].givens
+        );
+        assert!(trace.checkpoints[1].givens.is_empty());
         assert_eq!(Some("1".to_string()), trace.checkpoints[0].locator);
         assert_eq!(
             Some("the entry point".to_string()),
@@ -833,9 +875,16 @@ mod tests {
         assert!(p.contains("how X becomes Y"));
         assert!(p.contains("Source (the scope): ."));
         assert!(p.contains("Read, Glob")); // local exploration tools
-        assert!(p.contains("file:lines")); // local locator form
+        assert!(p.contains("file:start-end")); // single-range local locator form
+        assert!(p.contains("ONE CONTIGUOUS RANGE")); // no stitched multi-range excerpts
         assert!(p.contains("# <the question")); // the checkpoint format
         assert!(p.contains("% at:"));
+        assert!(p.contains("black-box hop")); // big function = one black-box hop
+        assert!(p.contains("free variable")); // gloss free variables as givens
+        assert!(p.contains("% given:")); // givens emitted as a directive, not crammed
+        assert!(p.contains("MUST be COMPLETE")); // every off-screen symbol glossed
+        assert!(p.contains("does NOT BIND")); // a given is used-but-not-bound (free)
+        assert!(p.contains("KEY POINTS MUST BE GROUNDED")); // no claims beyond the excerpt
         assert!(p.contains("One path, not a set"));
         assert!(p.contains("Carry the STATE"));
         assert!(p.contains("Do NOT prefix fronts with \"Predict\""));

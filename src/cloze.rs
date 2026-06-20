@@ -190,6 +190,7 @@ pub fn expand(
             frontend: None,
             max_stage: None,
             at: None,
+            givens: Vec::new(),
         });
     }
 

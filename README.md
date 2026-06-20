@@ -101,6 +101,7 @@ card's front. Follow a link for the full explanation.
 | `% source:` | deck | [Exam ground truth](#the-ai-exam-flash-exam) — a URL or file (repeatable). For a [trace](#traces-flash-trace), the source the path runs through. Also a tutor reference. |
 | `% trace:` | deck | What a [trace](#traces-flash-trace) walks — a path description ("how X becomes Y"); its presence makes the deck a trace. |
 | `% at:` | card | A [trace checkpoint's](#traces-flash-trace) locator into the `% source:` (`file:lines`, or just `lines` for a single-file source). |
+| `% given:` | card | A [trace checkpoint's](#traces-flash-trace) "given" (repeatable) — an off-screen symbol the question leans on, as `name — meaning`; shown as a list under the question. |
 | `% title:` | deck | [Display name](#workspaces) shown instead of the file name (a workspace sets `title` in its `flash.toml`). |
 
 **`% link:` vs `% source:`** — both point at the material a deck is about, but
@@ -620,11 +621,15 @@ open *predict* prompt, the key points a good prediction should hit — plus a
 	! State lives server-side; the page only ever names the grade.
 ```
 
-The locator is `file:lines` (e.g. `src/serve.rs:682-689`, or `54-57,160` for
-several ranges), or — when `% source:` is a single file — just the line numbers.
-The lines are **read live from the source** each time you walk, so the excerpt is
+The locator is a single contiguous range `file:start-end` (e.g.
+`src/serve.rs:682-689`), or — when `% source:` is a single file — just the line
+numbers; it is never comma-separated (a stitched excerpt makes disjoint code look
+adjacent). The lines are **read live from the source** each time you walk, so the excerpt is
 always current and the deck stays small; the source is the oracle, not an
-invented answer.
+invented answer. When a tight excerpt uses a symbol defined off-screen, name it
+with a `% given:` line (`% given: state — the parser's position so far`,
+repeatable) — these show as a list under the question, so the excerpt stays
+focused without orphaning the names it leans on.
 
 **Building it with Claude.** Instead of hand-writing the checkpoints, declare
 just the `% trace:` and `% source:`, then run `flash trace --build <deck>`:

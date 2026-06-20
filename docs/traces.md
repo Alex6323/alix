@@ -160,22 +160,61 @@ each generated trace is a chain *by construction*, not by luck:
    rule 3, not with "the call from checkpoint 2". A clean shape is symmetric:
    *caller calls X → dive into X → return to caller → caller calls Y → dive into
    Y …*.
-7. **The reveal is the real source.** Ground truth is a **live excerpt** via
-   `% at:`, never invented. The key points must paraphrase *exactly those lines*,
-   and the prompt must be answerable *from* them — the model selects the path and
-   the locator; the source is the oracle.
+7. **The reveal is the real source, and each hop is a self-contained unit.**
+   Ground truth is a **live excerpt** via `% at:`, never invented; the key points
+   paraphrase *exactly those lines* and the question is answerable *from* them.
+   The reader sees **only** the cited lines, so an excerpt must read on its own —
+   which is really a **granularity** rule, not a citation trick:
+   - **Prefer hops that are a whole small function/method.** Its inputs are its
+     parameters, so nothing dangles. Don't dissect one big function into several
+     checkpoints — that's what produces excerpts whose variables (`state`,
+     `first`, …) were bound off-screen, and no amount of extra line-ranges fixes
+     it (you patch two and two more dangle).
+   - **A big function on the path is one black-box hop:** cite its signature plus
+     the load-bearing line(s) and describe what it does in the key points; if its
+     internals deserve understanding, they become a **separate (nested) trace**,
+     not more hops here.
+   - **One `% at:` is one contiguous range** (`file:start-end`), never
+     comma-separated. Stitching disjoint ranges collapses the gaps so lines from
+     different branches look adjacent — misleading. If a hop won't fit in one
+     contiguous span, it spans more than one region: that's the granularity smell
+     telling you to split it or black-box the function.
+   - **Gloss what you don't show — completely and correctly.** A `% given:` is a
+     *free variable*: a symbol the span **uses but does not bind** in the cited
+     lines — typically a function **parameter** (declared in the signature, above
+     the body you cite) or a value from an enclosing scope. The test is
+     mechanical: if the symbol's binding (a `let`, an assignment, the parameter
+     itself) is *inside* the cited lines, it is **not** a given — the reader sees
+     it; if it's bound *outside*, it **is** one. (So `defaults`, a parameter used
+     in a body excerpt, is a given; a `let settings = …` on a cited line is not —
+     don't confuse the two.) Name each with a **`% given:` line** (`% given:
+     defaults — the workspace directive defaults`, repeatable), shown under the
+     question; never cram it into the question or leave it dangling. The list must
+     be **complete** *and* correct: every used-but-unbound symbol, and nothing the
+     span binds itself. The gloss names the *inputs* (scaffolding); the cited lines
+     stay the oracle for the *predicted* claim. More than ~2–3 givens means the hop
+     is cut too fine: re-scope it.
+
+   None of this is code-specific: a proof step leans on earlier lemmas and
+   notation, a contract clause on its defined terms (a Definitions section *is*
+   this gloss), a paper's result on its method — name those givens the same way.
+   The model selects the path and the locator; the source is the oracle.
 8. **The last hop lands the goal.** The final reveal is the **payoff that
    completes the `% trace:`** — it reaches the outcome the path was tracing
    toward; the compression step then retraces the whole path. If the last
    checkpoint doesn't reach that outcome, the path stopped short.
 
-Two self-checks for the builder to run before emitting the deck. **Order:** read
+Three self-checks for the builder to run before emitting the deck. **Order:** read
 the checkpoints top to bottom using **only each prompt + the prior reveal**; if a
 hop needs information no earlier hop (or its own excerpt) established, it's out of
 order or off the path. **Atomicity:** read each checkpoint **in isolation, as if
 it were the only card you saw today**; its prompt must still make sense (state
 carried as fact, no "checkpoint N" / "the last two hops" references) — because in
-review it often *will* surface alone.
+review it often *will* surface alone. **Grounding:** check each key point against
+**only its excerpt + givens**; if it asserts behavior not in the cited lines
+(another branch, a later call, the return path), the hop is mis-scoped — black-box
+it (key points stay at the signature/return contract) or split it so each hop
+cites the region its key points describe.
 
 ## The trace deck format — it's a normal deck
 
@@ -191,7 +230,7 @@ pointer to the real source. The only new directive is `% at:`.
 	The keydown handler calls grade("good")
 	It POSTs to /api/grade
 	The body carries only { grade } — not which card
-	% at: assets/serve/review.html:980,314
+	% at: assets/serve/review.html:978-983
 	! The page is a thin view; it never tracks card identity.
 
 # The body has no card id. How does the server know which card?
@@ -204,6 +243,7 @@ pointer to the real source. The only new directive is `% at:`.
 | Part | Role in the walk |
 |---|---|
 | `#` front | the **predict** prompt — you type a guess before anything reveals |
+| `% given: name — meaning` | a **given** (repeatable) — an off-screen symbol the question leans on; shown as a list under the prompt *before* predicting, so the excerpt can stay tight |
 | indented lines | the **key points** a good prediction should hit (the rubric) — shown on reveal; what self-grade / `--grade` checks against |
 | `% at: <locator>` | the **reveal** — flash reads those lines from the real file and shows them. Ground truth is the source, not the model |
 | `! note` | the connective **insight**, shown after the reveal |
@@ -214,11 +254,15 @@ cards. Each checkpoint gets the normal card identity (hash of its key-point
 lines), so **SRS attaches per checkpoint for free**.
 
 ### `% at:` locator
-Generalize beyond code: a **quoted span** is the universal, verifiable form ("the
-passage that says X") — works for code snippets, paper sentences, doc sections;
-robust to reformatting. `file:lines` / `page` are optional precision. **Read live
-from the source** at session time (always current, keeps the deck small), with
-the source as the oracle.
+A locator points at **one contiguous span** — `file:start-end` (or `file:N`),
+or just the line numbers when `% source:` is a single file. It is deliberately
+**not** comma-separated: stitching disjoint ranges collapses the gaps and makes
+lines from different places look adjacent, which misleads — if a hop won't fit in
+one span, it spans more than one region and should be split (see rule 7). For a
+prose source, a **quoted span** is the universal, verifiable form ("the passage
+that says X") — robust to reformatting; `page` numbers are optional precision.
+The span is **read live from the source** at session time (always current, keeps
+the deck small), with the source as the oracle.
 
 ## Grading — self-graded by default, `--grade` opt-in
 
