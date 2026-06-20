@@ -1533,9 +1533,10 @@ fn trace_cmd(args: TraceArgs) -> Result<()> {
             }
             Phase::Compress => {
                 println!("\n{BOLD}── Compress ──{RESET}");
+                println!("{BOLD}goal{RESET}  {}", walk.trace().goal);
                 println!(
-                    "Restate the whole path in two sentences — if you can re-derive \
-                     it, you understood it."
+                    "Answer it in two sentences that retrace the whole path — if you \
+                     can re-derive it, you understood it."
                 );
                 match read_line(&format!("{DIM}compress >{RESET} "))? {
                     None => break 'walk,
