@@ -10,6 +10,27 @@ actually grasped the material and gates your progress on passing it — so you'r
 not just memorizing, you're being checked. Decks stay simple plain-text files
 you own, reviewable in a ratatui terminal UI or a local web app.
 
+## Requirements
+
+The flashcard **core** — review, scheduling, every answer mode, browse, the TUI
+and the web frontend — runs standalone, with no external services or accounts.
+
+The **AI features** shell out to the [Claude Code](https://www.anthropic.com/claude-code)
+CLI, so they need it **installed and logged in** (which in turn needs a Claude
+subscription or API access). Install the CLI and run `claude` once to
+authenticate. The features that require it:
+
+- `flash deck` — generate a fact deck from a URL or a local file/directory;
+- `flash exam` — the AI exam;
+- `flash trace --build` / `--suggest` / `--grade` — discover, suggest, and grade
+  traces;
+- `flash explore` — goal-driven learning plans;
+- ask-Claude (`?`) — the in-session tutor, in both the TUI and the web frontend.
+
+flash invokes the CLI headless (`claude -p`) under a locked-down permission
+model (see [Ask Claude](#ask-claude-about-a-card)); the command, model and
+timeouts are configurable per feature in the [config file](#configuration).
+
 ## Usage
 
 The binary is called `flash`:
