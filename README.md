@@ -98,7 +98,7 @@ card's front. Follow a link for the full explanation.
 | `% requires:` | deck | [Prerequisite deck](#deck-dependencies) that gates unlocks (repeatable). |
 | `% link:` | deck | [ask-Claude reference](#ask-claude-about-a-card) URL — **tutor only** (repeatable). |
 | `% source:` | deck | [Exam ground truth](#the-ai-exam-flash-exam) — a URL or file (repeatable). For a [trace](#traces-flash-trace), the source the path runs through. Also a tutor reference. |
-| `% goal:` | deck | The question a [trace](#traces-flash-trace) answers — its presence makes the deck a trace. |
+| `% trace:` | deck | What a [trace](#traces-flash-trace) walks — a path description ("how X becomes Y"); its presence makes the deck a trace. |
 | `% at:` | card | A [trace checkpoint's](#traces-flash-trace) locator into the `% source:` (`file:lines`, or just `lines` for a single-file source). |
 | `% title:` | deck | [Display name](#workspaces) shown instead of the file name (a workspace sets `title` in its `flash.toml`). |
 
@@ -598,22 +598,22 @@ source and making you **predict each hop before it's revealed**. Where the
 trace verifies that you can follow one chain of reasoning — and the gap between
 your prediction and the truth is where the understanding forms.
 
-A trace is just a deck with a `% goal:` (which marks it a trace) and a
-`% source:` (the path's origin), then a sequence of **checkpoint** cards. Each
-checkpoint is an `explain`-style card — an open *predict* prompt, the key points
-a good prediction should hit — plus a `% at:` locator pointing at the real lines
-in the source:
+A trace is just a deck with a `% trace:` (a path description — what it walks,
+which also marks it a trace) and a `% source:` (the path's origin), then a
+sequence of **checkpoint** cards. Each checkpoint is an `explain`-style card — an
+open *predict* prompt, the key points a good prediction should hit — plus a
+`% at:` locator pointing at the real lines in the source:
 
 ```
-% goal: How does pressing the Good key in the browser become a saved grade?
+% trace: how pressing the Good key in the browser becomes a saved grade
 % source: ..
 
-# You press Good. Predict what the page sends the server — and what it does not.
+# You press Good. What does the page send the server — and what does it not?
 	grade(g) POSTs to /api/grade with a body of just { grade: g } — no card id.
 	% at: assets/serve/review.html:338-341
 	! The page is a thin view; it doesn't even track card identity.
 
-# So the request has no card id. Predict how the server knows which card you graded.
+# So the request has no card id. How does the server know which card you graded?
 	The handler grabs the live, server-side review session and grades on it.
 	% at: src/serve.rs:682-689
 	! State lives server-side; the page only ever names the grade.
@@ -628,8 +628,8 @@ invented answer.
 **Write it as a chain, not a quiz.** A trace's whole value is that it's a *path*:
 each checkpoint should pick up where the last *reveal* left off (note how hop 2
 above opens with hop 1's conclusion, "the request has no card id"), so you're
-following one thread — a data flow, a control flow, a derivation — to the goal.
-If the checkpoints are independent facts that all hang off one thing, you've
+following one thread — a data flow, a control flow, a derivation — to the
+outcome. If the checkpoints are independent facts that all hang off one thing, you've
 written a *set*, which is what cards and the exam already do; reach for a subject
 that has a real sequence.
 

@@ -192,15 +192,15 @@ pub fn parse_title(text: &str) -> Option<String> {
     })
 }
 
-/// The trace's goal (`% goal: <question>`), if the deck declares one. A
-/// `% goal:` marks the deck as a **trace** — a guided predict-and-verify walk
-/// (see [`crate::trace`]) rather than a plain card deck. The first such line
-/// wins. Invisible to the card parser, so it never affects card hashes.
-pub fn parse_goal(text: &str) -> Option<String> {
+/// What a trace walks (`% trace: <path description>`), if the deck declares it.
+/// A `% trace:` marks the deck as a **trace** — a guided predict-and-verify
+/// walk (see [`crate::trace`]) rather than a plain card deck. The first such
+/// line wins. Invisible to the card parser, so it never affects card hashes.
+pub fn parse_trace(text: &str) -> Option<String> {
     text.lines().find_map(|raw| {
         let rest = raw.trim().strip_prefix(MARKUP_COMMENT)?;
-        let goal = rest.trim().strip_prefix("goal:")?.trim();
-        (!goal.is_empty()).then(|| goal.to_string())
+        let desc = rest.trim().strip_prefix("trace:")?.trim();
+        (!desc.is_empty()).then(|| desc.to_string())
     })
 }
 
@@ -590,13 +590,13 @@ mod tests {
     }
 
     #[test]
-    fn goal_marks_a_trace_and_keeps_the_question() {
+    fn trace_marks_a_deck_and_keeps_the_path() {
         assert_eq!(
-            Some("How does a keypress become a saved grade?".to_string()),
-            parse_goal("% goal: How does a keypress become a saved grade?\n# f\n\tb\n")
+            Some("how a keypress becomes a saved grade".to_string()),
+            parse_trace("% trace: how a keypress becomes a saved grade\n# f\n\tb\n")
         );
-        assert_eq!(None, parse_goal("# f\n\tb\n"));
-        assert_eq!(None, parse_goal("% goal:\n# f\n\tb\n")); // empty
+        assert_eq!(None, parse_trace("# f\n\tb\n"));
+        assert_eq!(None, parse_trace("% trace:\n# f\n\tb\n")); // empty
     }
 
     #[test]

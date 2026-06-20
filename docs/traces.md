@@ -77,12 +77,14 @@ traces all the way down, and you *learn* the orientation too. Escape hatch:
 
 ## Authoring (what you write) — minimal
 
-You declare only what you actually know: the **goal** and the **scope**. You do
-**not** pre-specify the checkpoint count or which files the path crosses — those
-are *outputs* of the build (you can't know them before tracing).
+You declare only what you actually know: the **goal** — written as a `% trace:`
+line, a path description, *what* you want to understand — and the **scope**
+(`% source:`). You do **not** pre-specify the checkpoint count or which files the
+path crosses — those are *outputs* of the build (you can't know them before
+tracing).
 
 ```
-% goal: How does pressing the Good key become a saved grade?
+% trace: how pressing the Good key becomes a saved grade
 % source: .
 ```
 
@@ -108,14 +110,14 @@ each generated trace is a chain *by construction*, not by luck:
 
 1. **One path, not a set.** Trace a real **sequence** — a data flow, a control
    flow, a causal chain, or a derivation — that runs from a *trigger* to the
-   *outcome named in the `% goal:`*. If the candidate checkpoints are independent
+   *outcome named in the `% trace:`*. If the candidate checkpoints are independent
    facts hanging off one node (a hub with facets), that is a card deck, not a
    trace: pick a different spine, or refuse and say so. The litmus test: if you
    can **reorder two checkpoints** without anything breaking, it's a set.
 2. **Every prompt opens on the previous reveal.** Checkpoint *N+1*'s prompt must
-   restate the **conclusion just revealed at *N***, then ask the next prediction
-   (e.g. "the request carries no card id — predict how the server knows which
-   card…"). If a prompt is answerable without having seen the prior reveal, the
+   restate the **conclusion just revealed at *N***, then ask the next question
+   (e.g. "the request carries no card id — how does the server know which
+   card?"). If a prompt is answerable without having seen the prior reveal, the
    link is broken — rewrite it so the prior reveal is its premise.
 3. **Carry the state, not the bookkeeping.** When a prompt restates what came
    before, phrase it as **standalone fact about the system** — "the grade has been
@@ -127,10 +129,16 @@ each generated trace is a chain *by construction*, not by luck:
    itself. The opening should read like a **status line of where the system is
    now**, not a recap of the lesson. That is what keeps a checkpoint *atomic yet
    connected*: connected through accumulated state, not through position.
-4. **Prompts predict forward; they don't quiz.** Each front asks the learner to
-   *predict what happens next* ("predict what X sends / does / returns"),
-   answerable by reasoning forward from the prior reveal — never by outside
-   recall of a fact.
+4. **Ask forward — and just ask.** The front poses a question answered by
+   reasoning *forward* from the prior reveal ("how does the server know which
+   card?"), not one answered by outside recall of a fact. Phrase it as a **plain
+   question**; don't prefix fronts with "Predict what…" — predicting is the whole
+   mechanic and the UI already prompts for it, so the word is noise. A
+   forward-looking question is already a prediction. The nudge to *commit a guess
+   even when unsure* ("a hunch beats 'I don't know'") is a constant, so it lives
+   **once** in the walk's framing and the `predict >` prompt — not repeated into
+   every front (same reason as rule 3: constants belong in the frame, not the
+   content).
 5. **Don't lead the witness — keep the answer out of the prompt.** The setup
    states the established state (rule 3) and poses the prediction, but must not
    *contain* that prediction's answer, or a tell that hands it over. Beware
@@ -156,10 +164,10 @@ each generated trace is a chain *by construction*, not by luck:
    `% at:`, never invented. The key points must paraphrase *exactly those lines*,
    and the prompt must be answerable *from* them — the model selects the path and
    the locator; the source is the oracle.
-8. **The last hop lands the goal.** The final reveal is the **payoff that answers
-   `% goal:`**; the compression step then retraces the whole path *as that
-   answer*. If the last checkpoint doesn't close the question the goal opened, the
-   path stopped short.
+8. **The last hop lands the goal.** The final reveal is the **payoff that
+   completes the `% trace:`** — it reaches the outcome the path was tracing
+   toward; the compression step then retraces the whole path. If the last
+   checkpoint doesn't reach that outcome, the path stopped short.
 
 Two self-checks for the builder to run before emitting the deck. **Order:** read
 the checkpoints top to bottom using **only each prompt + the prior reveal**; if a
@@ -176,10 +184,10 @@ cards** (open prompt + key points), one per checkpoint, plus a per-card `% at:`
 pointer to the real source. The only new directive is `% at:`.
 
 ```
-% goal: How does pressing the Good key become a saved grade?
+% trace: how pressing the Good key becomes a saved grade
 % source: .
 
-# You press Good. Predict: what fires, and what does it send where?
+# You press Good. What fires, and what does it send where?
 	The keydown handler calls grade("good")
 	It POSTs to /api/grade
 	The body carries only { grade } — not which card
@@ -243,7 +251,7 @@ verification, and they never cross.**
 
 So generic `flash exam` **refuses** on a trace; a trace's `% source:` is read as
 *locator base*, not exam corpus. **Decided:** the kind is **derived, not declared**
-— `% goal:` is the trace marker and takes precedence over `% source:` (no new
+— `% trace:` is the trace marker and takes precedence over `% source:` (no new
 `% kind:` directive; consistent with L43's `% link:` = "not exam ground truth").
 Kinds today: card vs trace; "source/exam" is a *modifier* on a card deck, not a
 third kind. (Promote to an explicit `% kind:` only if the kind count grows, e.g.
@@ -253,7 +261,7 @@ mixed in one file.
 
 ## Files & organization
 
-**One file per trace** (forced cleanly by the format: `% goal:`/`% source:` are
+**One file per trace** (forced cleanly by the format: `% trace:`/`% source:` are
 header-level, one set per file — so you can't put two traces in one file anyway).
 Traces live **inside a workspace** (already built; `flash.toml` manifest). The
 orient-trace's output (map + child goals) is the workspace's index. `% requires:`

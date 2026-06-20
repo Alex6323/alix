@@ -1,6 +1,6 @@
 //! Traces — guided predict-and-verify walks along a path through a source.
 //!
-//! A trace deck (`% goal:` + a sequence of checkpoint cards, each with an
+//! A trace deck (`% trace:` + a sequence of checkpoint cards, each with an
 //! `% at:` locator into a `% source:`) is walked hop by hop: at each checkpoint
 //! you commit a **prediction**, then the real **excerpt** from the source is
 //! revealed alongside the key points a good prediction should hit, and you
@@ -92,12 +92,13 @@ pub struct Checkpoint {
     pub card_id: u64,
 }
 
-/// A trace built from a deck: the goal, the ordered checkpoints, and where
+/// A trace built from a deck: what it walks, the ordered checkpoints, and where
 /// their locators resolve.
 #[derive(Clone, Debug)]
 pub struct Trace {
-    /// The question the trace answers (`% goal:`).
-    pub goal: String,
+    /// What the trace walks (`% trace:`) — a path description ("how X becomes
+    /// Y").
+    pub description: String,
     /// The path origin (`% source:`), shown to the learner. `None` if the deck
     /// declares none (locators then need an explicit `file:` part and a base).
     pub source: Option<String>,
@@ -112,12 +113,12 @@ pub struct Trace {
 
 impl Trace {
     /// Builds a trace from a loaded deck. Errors if the deck is not a trace (no
-    /// `% goal:`) or has no checkpoints.
+    /// `% trace:`) or has no checkpoints.
     pub fn from_deck(deck: &Deck) -> Result<Trace> {
-        let goal = deck
-            .goal
+        let description = deck
+            .trace
             .clone()
-            .ok_or_else(|| anyhow!("{} is not a trace: it declares no `% goal:`", deck.subject))?;
+            .ok_or_else(|| anyhow!("{} is not a trace: it declares no `% trace:`", deck.subject))?;
         if deck.cards.is_empty() {
             bail!("the trace `{}` has no checkpoints", deck.subject);
         }
@@ -135,7 +136,7 @@ impl Trace {
         let source = deck.sources.first().cloned();
         let (base_dir, source_file) = resolve_source(deck.path.parent(), source.as_deref());
         Ok(Trace {
-            goal,
+            description,
             source,
             checkpoints,
             base_dir,
@@ -557,7 +558,7 @@ mod tests {
         let path = write(
             dir,
             "t.txt",
-            "% goal: How does it work?\n\
+            "% trace: how it works\n\
              % source: source.txt\n\
              # Predict the first hop\n\
              \tit reads the first line\n\
@@ -575,7 +576,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let deck = trace_deck(dir.path());
         let trace = Trace::from_deck(&deck).unwrap();
-        assert_eq!("How does it work?", trace.goal);
+        assert_eq!("how it works", trace.description);
         assert_eq!(2, trace.checkpoints.len());
         assert_eq!("Predict the first hop", trace.checkpoints[0].prompt);
         assert_eq!(Some("1".to_string()), trace.checkpoints[0].locator);
@@ -584,7 +585,7 @@ mod tests {
             trace.checkpoints[0].note
         );
 
-        // A plain deck (no `% goal:`) is not a trace.
+        // A plain deck (no `% trace:`) is not a trace.
         let plain = write(dir.path(), "p.txt", "# q\n\ta\n");
         let err = Trace::from_deck(&Deck::load(&plain).unwrap()).unwrap_err();
         assert!(format!("{err:#}").contains("not a trace"));
@@ -612,7 +613,7 @@ mod tests {
         let path = write(
             dir.path(),
             "t.txt",
-            "% goal: g\n% source: .\n# q\n\ta\n\t% at: 1\n",
+            "% trace: g\n% source: .\n# q\n\ta\n\t% at: 1\n",
         );
         let trace = Trace::from_deck(&Deck::load(&path).unwrap()).unwrap();
         let err = trace.excerpt(&trace.checkpoints[0]).unwrap_err();

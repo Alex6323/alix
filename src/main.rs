@@ -141,7 +141,7 @@ struct ExamArgs {
 
 #[derive(Args)]
 struct TraceArgs {
-    /// The trace deck to walk (must declare a `% goal:`).
+    /// The trace deck to walk (must declare a `% trace:`).
     deck: PathBuf,
 
     /// Print the path — each checkpoint's prompt, key points and locator —
@@ -1416,7 +1416,7 @@ fn exam_cmd(args: ExamArgs) -> Result<()> {
     // locator base, not an exam corpus). Point the user at `flash trace`.
     if deck.is_trace() {
         bail!(
-            "{} is a trace (it declares a `% goal:`) — walk it with `flash trace`, \
+            "{} is a trace (it declares a `% trace:`) — walk it with `flash trace`, \
              not the AI exam",
             deck.subject
         );
@@ -1483,13 +1483,13 @@ fn trace_cmd(args: TraceArgs) -> Result<()> {
     let mut walk = Walk::new(trace, scheduler);
 
     let total = walk.total();
-    println!("{BOLD}Trace{RESET}  {}", walk.trace().goal);
+    println!("{BOLD}Trace{RESET}  {}", walk.trace().description);
     if let Some(src) = &walk.trace().source {
         println!("{DIM}source: {src}  ·  {total} checkpoints{RESET}");
     }
     println!(
-        "{DIM}At each hop, predict before you reveal. Be honest about the gap — \
-         it's where the learning is.{RESET}"
+        "{DIM}At each hop, put down a guess before you reveal — even a hunch beats \
+         \"I don't know\". The gap between your guess and the truth is the learning.{RESET}"
     );
 
     'walk: loop {
@@ -1533,10 +1533,10 @@ fn trace_cmd(args: TraceArgs) -> Result<()> {
             }
             Phase::Compress => {
                 println!("\n{BOLD}── Compress ──{RESET}");
-                println!("{BOLD}goal{RESET}  {}", walk.trace().goal);
+                println!("{BOLD}tracing{RESET}  {}", walk.trace().description);
                 println!(
-                    "Answer it in two sentences that retrace the whole path — if you \
-                     can re-derive it, you understood it."
+                    "Retrace it in two sentences — if you can re-derive the whole \
+                     path, you understood it."
                 );
                 match read_line(&format!("{DIM}compress >{RESET} "))? {
                     None => break 'walk,
@@ -1554,7 +1554,7 @@ fn trace_cmd(args: TraceArgs) -> Result<()> {
 
 /// Prints a trace's path (prompts, key points, locators) without quizzing.
 fn print_trace_map(trace: &Trace) -> Result<()> {
-    println!("{BOLD}Trace{RESET}  {}", trace.goal);
+    println!("{BOLD}Trace{RESET}  {}", trace.description);
     if let Some(src) = &trace.source {
         println!("{DIM}source: {src}{RESET}");
     }

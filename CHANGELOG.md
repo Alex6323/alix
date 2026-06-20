@@ -9,8 +9,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 - **Traces (`flash trace`, experimental)** — a guided predict-and-verify walk
   along a *path* through a `% source:`, drilling the connections between facts
-  (the edges) rather than isolated facts. A trace deck declares a `% goal:`
-  (which marks it a trace) and a sequence of `explain`-style checkpoint cards,
+  (the edges) rather than isolated facts. A trace deck declares a `% trace:`
+  (a path description that marks it a trace) and a sequence of `explain`-style checkpoint cards,
   each with a `% at:` locator (`file:lines`, or just `lines` for a single-file
   source) into the real source. Walking it goes hop by hop: you **predict**
   before anything reveals, the real excerpt is **read live** from the source and

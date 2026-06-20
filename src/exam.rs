@@ -834,7 +834,7 @@ mod tests {
             sources: srcs.iter().map(|s| s.to_string()).collect(),
             settings: Default::default(),
             title: None,
-            goal: None,
+            trace: None,
         }
     }
 
@@ -1140,7 +1140,7 @@ mod tests {
             sources: vec!["notes.md".to_string()],
             settings: Default::default(),
             title: None,
-            goal: None,
+            trace: None,
         };
         let section = source_section(&deck.sources, deck.path.parent()).unwrap();
         assert!(section.contains("the ground truth text"));
