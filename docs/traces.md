@@ -113,7 +113,15 @@ each generated trace is a chain *by construction*, not by luck:
    *outcome named in the `% trace:`*. If the candidate checkpoints are independent
    facts hanging off one node (a hub with facets), that is a card deck, not a
    trace: pick a different spine, or refuse and say so. The litmus test: if you
-   can **reorder two checkpoints** without anything breaking, it's a set.
+   can **reorder two checkpoints** without anything breaking, it's a set. And stay
+   on the **spine** — the path *every* instance travels. A step that fires only for
+   some inputs (a conditional branch, an optional transform like direction
+   `both`/`reverse` that a plain forward card skips) is a **side-branch**, not a
+   spine hop: trace what all instances do, and if a branch is worth understanding
+   make it a **separate (nested) trace** rather than a detour most instances never
+   take. (Dogfooding the deck-text→queue trace surfaced this: the
+   direction-expansion hop is a no-op for the common forward card, so it read as a
+   slight side-quest off the single-card thread.)
 2. **Every prompt opens on the previous reveal.** Checkpoint *N+1*'s prompt must
    restate the **conclusion just revealed at *N***, then ask the next question
    (e.g. "the request carries no card id — how does the server know which
@@ -189,11 +197,18 @@ each generated trace is a chain *by construction*, not by luck:
      in a body excerpt, is a given; a `let settings = …` on a cited line is not —
      don't confuse the two.) Name each with a **`% given:` line** (`% given:
      defaults — the workspace directive defaults`, repeatable), shown under the
-     question; never cram it into the question or leave it dangling. The list must
-     be **complete** *and* correct: every used-but-unbound symbol, and nothing the
-     span binds itself. The gloss names the *inputs* (scaffolding); the cited lines
-     stay the oracle for the *predicted* claim. More than ~2–3 givens means the hop
-     is cut too fine: re-scope it.
+     question; never cram it into the question or leave it dangling. But **gloss
+     only what the reader can't *derive***: a given earns its place when the
+     symbol's meaning or origin is genuinely off-screen and not self-evident. A
+     self-documenting field or parameter whose name already says what it is
+     (`self.subject` on a `Card`) needs none — glossing the obvious just enumerates
+     the answer's ingredients and shrinks the predict gap to nothing (dogfooding
+     caught a hash hop whose three givens *were* the three hash inputs, so the
+     prediction was forced). The list must be **complete** in the honesty sense —
+     no *unexplained* dangling symbol — *and* correct: nothing the span binds
+     itself. The gloss names the *inputs* (scaffolding); the cited lines stay the
+     oracle for the *predicted* claim. More than ~2–3 givens means the hop is cut
+     too fine: re-scope it.
 
    None of this is code-specific: a proof step leans on earlier lemmas and
    notation, a contract clause on its defined terms (a Definitions section *is*

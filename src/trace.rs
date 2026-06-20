@@ -297,9 +297,15 @@ fn build_prompt(description: &str, source: &str, url: bool, cfg: &TraceConfig) -
          `let x = …` on a cited line is not.) Name each given with a `% given:` line, \
          one per symbol, `name — what it is` (e.g. `% given: defaults — the workspace \
          directive defaults, a parameter`). Check BOTH directions: every \
-         used-but-unbound symbol gets a `% given:`, and never gloss one the span \
-         binds itself. The list MUST be COMPLETE — a reader follows the span using \
-         ONLY the cited lines plus the givens. flash shows them under the question, \
+         used-but-unbound symbol is a CANDIDATE given, and never gloss one the span \
+         binds itself. But gloss only what the reader can't DERIVE: a given earns \
+         its place when the symbol's meaning or origin is genuinely off-screen and \
+         not self-evident. A self-documenting field or parameter whose name already \
+         says what it is (`self.subject` on a `Card`) needs none — glossing the \
+         obvious just enumerates the answer's ingredients and shrinks the predict \
+         gap to nothing. The list MUST be COMPLETE in the honesty sense — no \
+         UNEXPLAINED dangling symbol — but that means what the span can't be read \
+         without, not glossing every name. flash shows them under the question, \
          so NEVER cram them into the question text. The gloss names the inputs \
          (scaffolding); the cited lines stay the ground truth for the predicted thing \
          — never move the hop's answer into the gloss. More than ~3 givens means the \
@@ -316,9 +322,14 @@ fn build_prompt(description: &str, source: &str, url: bool, cfg: &TraceConfig) -
          checkpoint, re-read its key points against ONLY its excerpt + givens and \
          delete any claim you cannot point to.\n\n\
          THE RULES THAT MAKE IT A PATH, NOT A QUIZ — follow every one:\n\
-         1. One path, not a set. Each hop is a step along one chain. If two \
-         checkpoints could be reordered without breaking, they are a set — re-trace \
-         the spine.\n\
+         1. One path, not a set — and stay on the SPINE. Each hop is a step along \
+         one chain; if two checkpoints could be reordered without breaking, they \
+         are a set — re-trace the spine. Trace the path EVERY instance travels: a \
+         step that fires only for some inputs (a conditional branch, an optional \
+         transform like direction `both`/`reverse` that a plain forward card skips) \
+         is a side-branch, not a spine hop. Keep the main path on what all \
+         instances do; a branch worth understanding becomes a SEPARATE (nested) \
+         trace, not a detour most instances never take.\n\
          2. Every question opens on the previous reveal: state the conclusion the \
          prior hop established, then ask the next step. (Hop 1 has no prior.)\n\
          3. Carry the STATE, not the bookkeeping: restate what is now true about the \
@@ -900,6 +911,9 @@ mod tests {
         assert!(p.contains("Do NOT prefix fronts with \"Predict\""));
         assert!(p.contains("Dives must return"));
         assert!(p.contains("must TEACH")); // no vacuous delegation answers
+        assert!(p.contains("stay on the SPINE")); // trace the common path, nest branches
+        assert!(p.contains("EVERY instance travels")); // side-branches aren't spine hops
+        assert!(p.contains("self-documenting")); // gloss only non-derivable givens
         assert!(!p.contains("WebFetch")); // a local source needs no web tool
     }
 
