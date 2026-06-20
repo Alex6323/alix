@@ -605,24 +605,36 @@ a good prediction should hit — plus a `% at:` locator pointing at the real lin
 in the source:
 
 ```
-% goal: How does a flashcard keep your progress when you reword its question?
-% source: ../src/card.rs
+% goal: How does pressing the Good key in the browser become a saved grade?
+% source: ..
 
-# You fix a typo in a card's question. Predict what its identity depends on.
-	id() hashes the subject and the back (answer) lines.
-	The front and note are left out, so rewording the front keeps the same id.
-	% at: 152-156
-	! Identity is the card's content, not how you happen to ask it.
+# You press Good. Predict what the page sends the server — and what it does not.
+	grade(g) POSTs to /api/grade with a body of just { grade: g } — no card id.
+	% at: assets/serve/review.html:338-341
+	! The page is a thin view; it doesn't even track card identity.
+
+# So the request has no card id. Predict how the server knows which card you graded.
+	The handler grabs the live, server-side review session and grades on it.
+	% at: src/serve.rs:682-689
+	! State lives server-side; the page only ever names the grade.
 ```
 
-The locator is `file:lines` (e.g. `src/card.rs:152-156`), or — when `% source:`
-is a single file — just the line numbers (`152-156`, `158-159`, `54-57,160` for
-several ranges). The lines are **read live from the source** each time you walk,
-so the excerpt is always current and the deck stays small; the source is the
-oracle, not an invented answer.
+The locator is `file:lines` (e.g. `src/serve.rs:682-689`, or `54-57,160` for
+several ranges), or — when `% source:` is a single file — just the line numbers.
+The lines are **read live from the source** each time you walk, so the excerpt is
+always current and the deck stays small; the source is the oracle, not an
+invented answer.
 
-**Walking it** (`flash trace card-identity.txt`, needs a terminal) goes hop by
-hop:
+**Write it as a chain, not a quiz.** A trace's whole value is that it's a *path*:
+each checkpoint should pick up where the last *reveal* left off (note how hop 2
+above opens with hop 1's conclusion, "the request has no card id"), so you're
+following one thread — a data flow, a control flow, a derivation — to the goal.
+If the checkpoints are independent facts that all hang off one thing, you've
+written a *set*, which is what cards and the exam already do; reach for a subject
+that has a real sequence.
+
+**Walking it** (`flash trace keypress-to-grade.txt`, needs a terminal) goes hop
+by hop:
 
 1. **Predict** — you type a guess before anything reveals (committing is the
    point).
@@ -643,8 +655,8 @@ verification *is* its predict-verify walk plus the compression, correctly scoped
 to the path.
 
 A trace deck degrades gracefully — even without `flash trace` it is a valid deck
-of `explain` cards. See `examples/card-identity.txt` for a complete trace over
-this repo's own source.
+of `explain` cards. See `examples/keypress-to-grade.txt` for a complete trace
+over this repo's own source.
 
 ## Configuration
 

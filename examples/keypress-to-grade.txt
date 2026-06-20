@@ -1,0 +1,41 @@
+% A trace: a guided predict-and-verify walk through real source.
+% Walk it with:  flash trace examples/keypress-to-grade.txt
+%
+% Each hop picks up where the last reveal left off — you're following one
+% path (keypress -> request -> session -> scheduler -> disk), not a quiz.
+% goal: How does pressing the Good key in the browser become a durable saved grade?
+% source: ..
+
+# You press the Good key in the browser. Predict what the page sends to the server — and, just as telling, what it does *not* send.
+	grade(g) POSTs to /api/grade with a JSON body of just { grade: g }.
+	The request says how you graded — never which card.
+	% at: assets/serve/review.html:338-341
+	! The page is a thin view; it doesn't even track card identity.
+
+# So the request carries only the grade — no card id. Predict how the server then knows *which* card you just graded.
+	The handler grabs `reviewing` — the live, server-side review session.
+	It calls .grade on that session; the current card is server state.
+	So the server, not the page, is the source of truth for "which card".
+	% at: src/serve.rs:682-689
+	! State lives server-side; the page only ever names the grade.
+
+# The server hands the grade to its session's grade(). Predict how it picks *the* card and turns one keypress into a scheduling change.
+	It pops the front of the queue — that card is the one on screen.
+	It looks up (or creates) that card's stored state by its id() hash.
+	Then it delegates the real change to the scheduler's apply.
+	% at: src/session.rs:213-219
+	! "Which card" = the queue front; its identity is the id() hash.
+
+# The session calls scheduler.apply with your grade. Predict how a Good actually moves the card — and how a wrong answer would differ.
+	Good is a Pass: it bumps the card up one Leitner stage (capped).
+	A Fail drops it back to stage 1; Easy jumps two.
+	The review is recorded with its timestamp either way.
+	% at: src/scheduler.rs:92-100
+	! The new stage sets the cooldown before the card is due again.
+
+# That stage change so far lives only in memory. Predict what makes it survive — when, and how, the grade actually reaches disk.
+	Right after grading, the /api/grade handler calls store.save().
+	save() serializes the store, writes a temp file, then renames it.
+	The rename is atomic, so a crash mid-write can't corrupt your progress.
+	% at: src/store.rs:205-212
+	! Nothing is durable until that rename; that's the real "saved" moment.

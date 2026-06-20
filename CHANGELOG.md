@@ -19,7 +19,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   SRS), and after the last hop you **compress** the whole path into two
   sentences. Self-judged and offline (no model call). `flash trace <deck> --map`
   prints the path without quizzing; the generic AI exam refuses a trace (its
-  verification is the walk itself). See `examples/card-identity.txt`.
+  verification is the walk itself). See `examples/keypress-to-grade.txt`.
 - **Workspaces** — a folder of decks reviewed together with shared directives.
   Membership is folder-implicit (any folder of `*.txt` decks, one level deep); an
   optional `flash.toml` manifest (a scoped `config.toml`) sets a `title` and a
