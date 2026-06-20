@@ -707,9 +707,20 @@ config's knobs or a store's on-disk format, becomes a fact deck) — carries its
 `% requires:` prerequisites (the list is dependency-ordered, foundations first),
 and a `% source:` scope. The `--goal` scopes coverage: a broad goal covers every
 subsystem, a narrow one collapses to just its slice (and traces it in more
-detail). It's **read-only and writes nothing** — pick items and author them
-(`flash trace --build` a trace, write or `flash generate` a deck). Scaffolding the
-plan into a ready-made workspace folder is planned.
+detail). By default it's **read-only** — it prints the plan and you author the
+items yourself (`flash trace --build` a trace, write or `flash generate` a deck).
+
+With **`--into <dir>`** it materializes the plan into a ready-made **workspace**:
+
+```
+flash explore . --goal "how review scheduling works" --into ~/decks/scheduling/
+```
+
+That writes a `flash.toml` (the goal) and one stub file per item — a `% trace:`
+deck for each trace (run `flash trace --build` on it) and a `% title:` fact deck
+for each deck (author it or `flash generate`) — wired together with `% requires:`
+so they unlock in dependency order, with each `% source:` pointing back at the
+real source. (Refuses a non-empty folder unless `--force`.)
 
 ## Configuration
 

@@ -98,6 +98,15 @@ struct ExploreArgs {
     #[arg(long)]
     goal: Option<String>,
 
+    /// Scaffold the plan into a workspace folder at this path: a flash.toml plus
+    /// a stub deck/trace file per item, wired by `% requires:`. Writes files.
+    #[arg(long)]
+    into: Option<PathBuf>,
+
+    /// With --into, write into the directory even if it already contains files.
+    #[arg(long, requires = "into")]
+    force: bool,
+
     /// Path of the config file (default: platform config dir).
     #[arg(long)]
     config: Option<PathBuf>,
@@ -1674,10 +1683,27 @@ fn explore_cmd(args: ExploreArgs) -> Result<()> {
     );
     let plan = flash::explore::explore(&source, goal, &config.trace, &config.ask)?;
     println!("{plan}");
-    println!(
-        "\n{DIM}Each item is a deck or trace to author next — `flash trace --build` \
-         a trace, write a deck by hand or with `flash generate`.{RESET}"
-    );
+    if let Some(dir) = &args.into {
+        let report = flash::explore::materialize(&plan, dir, goal, &source, args.force)?;
+        let total = report.traces + report.decks;
+        println!(
+            "\n{BOLD}Wrote {total} files{RESET} to {} — {} traces, {} decks, + flash.toml.",
+            report.dir.display(),
+            report.traces,
+            report.decks,
+        );
+        println!(
+            "{DIM}Build a trace:  flash trace --build {}/<file>   ·   review the set:  \
+             flash review {}{RESET}",
+            report.dir.display(),
+            report.dir.display(),
+        );
+    } else {
+        println!(
+            "\n{DIM}Each item is a deck or trace to author next — `flash trace --build` \
+             a trace, write a deck by hand or with `flash generate`.{RESET}"
+        );
+    }
     Ok(())
 }
 

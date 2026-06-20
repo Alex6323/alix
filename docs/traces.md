@@ -207,21 +207,31 @@ The output is a plan: a `Goal`/`Source`/`Spine` header, then numbered items each
 tagged `[trace]` or `[deck]`, with a title (a path-question for a trace, a fact
 topic for a deck), its `requires:`, and a `% source:` scope.
 
-**This first slice prints the plan and writes nothing** — like `--suggest`, it is
-reviewable before anything hits disk. **Materializing** it — scaffolding a
-workspace folder with a `flash.toml` (the goal + shared directives) and a stub
-deck/trace file per item wired by `% requires:` — is the next slice (a `--into
-<dir>` / `--write`). The walkable *orient-me* trace (predict the system's shape)
-and `--grade` come after.
+By default it **prints the plan and writes nothing** — like `--suggest`,
+reviewable before anything hits disk. With **`--into <dir>`** it also
+**materializes** the plan into a workspace folder: a `flash.toml` (the goal + an
+empty `[defaults]`) and one stub file per item — a `% trace:` deck for a trace
+(its `% trace:` description doubles as the deck's display name, so it needs no
+`% title:`), a `% title:` fact deck for a deck — wired by `% requires:` (item
+numbers mapped to
+the member file names), with each `% source:` rewritten absolute against the
+source root. So the plan becomes a real, buildable workspace: `flash trace
+--build` each trace, author or `flash generate` each deck, and the `% requires:`
+edges gate them in dependency order. (Refuses a non-empty target unless
+`--force`.) The walkable *orient-me* trace (predict the system's shape) and
+`--grade` come after.
 
 Plumbing mirrors `--suggest`: `explore::explore(source, goal, cfg, ask_cfg)` runs
 an `explore_prompt` through the same read-only `build_run_config` (reusing the
 `[trace]` model/timeout for now) and returns the plan text; a top-level `flash
-explore <source>` command prints it and writes nothing. The prompt encodes the
-four axes above; a unit test pins them (goal echoed, two kinds of means by shape,
-saturation, `requires:`/topological order, plan-not-built). Dogfooded on this repo
-with both a whole-repo goal (≈19 items across every subsystem) and a narrow one
-(≈8, scheduling only), each a valid topological order.
+explore <source>` command prints it, and `--into` hands the plan to
+`explore::materialize` (which `parse_plan`s it back into items, then scaffolds the
+folder). The prompt encodes the four axes above; unit tests pin them (goal echoed,
+two kinds of means by shape, saturation, `requires:`/topological order,
+plan-not-built) and cover the round-trip (`parse_plan` + `materialize` emit wired
+stubs and refuse a non-empty dir). Dogfooded on this repo with a whole-repo goal
+(≈19 items across every subsystem) and a narrow one (≈8, scheduling only, →7 wired
+stub files), each a valid topological order.
 
 ## Authoring (what you write) — minimal
 
@@ -531,8 +541,9 @@ but a chat ≠ the tool). So validate the mechanic cheaply before heavy plumbing
    bootstrap and de-risks the orient tier by proving the recon prompt it reuses.
 4. **Orient tier — [`flash explore <source>`](#exploring-a-source--flash-explore-source-the-orient-tier)**:
    goal-driven, prints a `% requires:`-ordered plan of *means* (traces **and**
-   decks, chosen by shape). **Done (first slice, print-only);** materializing it
-   into a workspace folder is the next step.
+   decks, chosen by shape), and with **`--into <dir>`** materializes it into a
+   workspace folder (a `flash.toml` + a stub deck/trace per item wired by
+   `% requires:`). **Done.** Next: the walkable *orient-me* trace, `--grade`.
 5. **`--grade`** (live delta), **web surface**, richer `flash.toml [trace]` config.
 
 ## Open / deferred decisions

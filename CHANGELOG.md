@@ -40,9 +40,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   become traces, node-shaped fact tables become decks), carries its `% requires:`
   prerequisites (the list is a valid topological order, foundations first), and a
   `% source:` scope. The goal scopes coverage — a broad goal spans every
-  subsystem, a narrow one collapses to its slice (and traces it deeper). Read-only,
-  writes nothing (a first slice; materializing the plan into a workspace is
-  planned).
+  subsystem, a narrow one collapses to its slice (and traces it deeper). By
+  default read-only (prints the plan); **`--into <dir>`** materializes it into a
+  **workspace** folder — a `flash.toml` (the goal) plus a stub deck/trace file per
+  item, `% requires:`-wired in dependency order with absolute `% source:` paths,
+  ready to `flash trace --build` / author (refuses a non-empty dir unless
+  `--force`).
 - **Workspaces** — a folder of decks reviewed together with shared directives.
   Membership is folder-implicit (any folder of `*.txt` decks, one level deep); an
   optional `flash.toml` manifest (a scoped `config.toml`) sets a `title` and a

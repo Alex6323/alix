@@ -246,15 +246,19 @@ impl Deck {
         self.trace.is_some()
     }
 
-    /// The deck's display name: its `% title:` if set, else the file name with
-    /// the `.txt` extension stripped.
+    /// The deck's display name: its `% title:` if set, else — for a trace deck —
+    /// its `% trace:` path description (a trace's natural name), else the file
+    /// name with the `.txt` extension stripped.
     pub fn display_name(&self) -> String {
-        self.title.clone().unwrap_or_else(|| {
-            self.subject
-                .strip_suffix(".txt")
-                .unwrap_or(&self.subject)
-                .to_string()
-        })
+        self.title
+            .clone()
+            .or_else(|| self.trace.clone())
+            .unwrap_or_else(|| {
+                self.subject
+                    .strip_suffix(".txt")
+                    .unwrap_or(&self.subject)
+                    .to_string()
+            })
     }
 
     /// The deck's completion state, derived from its cards' stages (see
@@ -1299,6 +1303,13 @@ mod tests {
 
         std::fs::write(&path, "% title: English Sayings\n# a\n\tb\n").unwrap();
         assert_eq!("English Sayings", Deck::load(&path).unwrap().display_name());
+
+        // A trace deck with no `% title:` shows its `% trace:` description.
+        std::fs::write(&path, "% trace: how a keypress becomes a grade\n# a\n\tb\n").unwrap();
+        assert_eq!(
+            "how a keypress becomes a grade",
+            Deck::load(&path).unwrap().display_name()
+        );
     }
 
     #[test]
