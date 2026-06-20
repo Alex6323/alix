@@ -149,6 +149,12 @@ struct TraceArgs {
     #[arg(long)]
     map: bool,
 
+    /// Build the trace: explore the `% source:` with Claude to discover the
+    /// path, and write the checkpoints back into the deck file. Read-only
+    /// exploration; overwrites a previous build.
+    #[arg(long, conflicts_with = "map")]
+    build: bool,
+
     /// Scheduler used to schedule the checkpoints. Overrides the deck's
     /// `% scheduler:` directive; defaults to leitner.
     #[arg(short, long, value_enum)]
@@ -1465,6 +1471,13 @@ const RESET: &str = "\x1b[0m";
 
 fn trace_cmd(args: TraceArgs) -> Result<()> {
     let deck = Deck::load(&args.deck)?;
+
+    // `--build`: discover the path with Claude and write it back (no walk; a
+    // fresh trace deck has no checkpoints yet, so this runs before from_deck).
+    if args.build {
+        return trace_build(&args, deck);
+    }
+
     let trace = Trace::from_deck(&deck)?;
 
     // `--map`: just print the path, no quiz, no terminal needed.
@@ -1549,6 +1562,44 @@ fn trace_cmd(args: TraceArgs) -> Result<()> {
 
     store.save().context("cannot save progress")?;
     print_trace_summary(&walk);
+    Ok(())
+}
+
+/// Discovers the path with Claude (`flash trace --build`) and writes the
+/// checkpoints back into the deck file, keeping its `% trace:`/`% source:`
+/// header.
+fn trace_build(args: &TraceArgs, deck: Deck) -> Result<()> {
+    if !deck.is_trace() {
+        bail!(
+            "{} declares no `% trace:` — add the path you want to understand \
+             (e.g. `% trace: how X becomes Y`), then build it",
+            deck.subject
+        );
+    }
+    if deck.sources.is_empty() {
+        bail!(
+            "{} declares no `% source:` — add the scope to trace (a repo `.`, a \
+             directory, a file, or a URL)",
+            deck.subject
+        );
+    }
+    let config = Config::load(args.config.as_deref())?;
+    let source = deck.sources.first().map(String::as_str).unwrap_or_default();
+    eprintln!(
+        "Tracing a path through {source} (exploring the source — this can take a \
+         few minutes)…"
+    );
+    let cards = flash::trace::build(&deck, &config.trace, &config.ask)?;
+    flash::deck::set_trace_checkpoints(&args.deck, &cards)?;
+
+    let n = parser::parse_str(&deck.subject, &cards)
+        .map(|c| c.len())
+        .unwrap_or(0);
+    let path = args.deck.display();
+    println!(
+        "Wrote {n} checkpoints to {path}. Review them and their `% at:` locators, \
+         then walk it:  flash trace {path}"
+    );
     Ok(())
 }
 

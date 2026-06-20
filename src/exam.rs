@@ -547,6 +547,7 @@ fn run_config(cfg: &ExamConfig, ask_cfg: &AskConfig) -> AskConfig {
         allowed_tools: ask_cfg.allowed_tools.clone(),
         model: cfg.model.clone().or_else(|| ask_cfg.model.clone()),
         timeout_secs: cfg.timeout_secs,
+        cwd: None,
     }
 }
 

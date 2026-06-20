@@ -488,6 +488,50 @@ pub fn append_cards(path: &Path, cards: &str) -> Result<(), DeckError> {
     Ok(())
 }
 
+/// Replaces a trace deck's checkpoint cards with `cards`, keeping the header —
+/// every line before the first card front (the `% trace:`, `% source:` and any
+/// comment lines). Used by `flash trace --build` to write the discovered path
+/// back into the deck (overwriting a previous build), via an atomic temp-file
+/// rename. A deck with no card front yet is all header, so the cards are simply
+/// appended after it.
+pub fn set_trace_checkpoints(path: &Path, cards: &str) -> Result<(), DeckError> {
+    let io_err = |source| DeckError::Io {
+        path: path.to_path_buf(),
+        source,
+    };
+    let existing = std::fs::read_to_string(path).map_err(io_err)?;
+    let new_text = replace_after_header(&existing, cards);
+
+    let tmp = path.with_extension("txt.tmp");
+    std::fs::write(&tmp, new_text).map_err(io_err)?;
+    std::fs::rename(&tmp, path).map_err(io_err)?;
+    Ok(())
+}
+
+/// Returns the header of `text` (every line up to the first column-0 `#` card
+/// front, trailing blanks trimmed) followed by `cards`, separated by a blank
+/// line. The header keeps the `% trace:`/`% source:`/comment lines a build must
+/// not lose.
+fn replace_after_header(text: &str, cards: &str) -> String {
+    let cards = cards.trim_end();
+    let header = text
+        .lines()
+        .take_while(|l| !l.starts_with('#'))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let header = header.trim_end();
+    let mut out = String::new();
+    if !header.is_empty() {
+        out.push_str(header);
+        if !cards.is_empty() {
+            out.push_str("\n\n");
+        }
+    }
+    out.push_str(cards);
+    out.push('\n');
+    out
+}
+
 /// Rewrites a deck file's `% requires:` lines to exactly `deps` (deck names),
 /// grouped at the top of the file; any existing `% requires:` lines are
 /// removed first. Written atomically (temp + rename). Card identities are
@@ -765,6 +809,39 @@ mod tests {
         // The original card's identity survives; the new card is added.
         let cards = crate::parser::parse_str("d.txt", &text).unwrap();
         assert_eq!(2, cards.len());
+    }
+
+    #[test]
+    fn set_trace_checkpoints_replaces_cards_keeping_header() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_deck(
+            dir.path(),
+            "t.txt",
+            "% trace: how it works\n% source: .\n\n# old question\n\told point\n\t% at: 1\n",
+        );
+        set_trace_checkpoints(
+            &path,
+            "# new q1\n\tp1\n\t% at: 2\n# new q2\n\tp2\n\t% at: 3\n",
+        )
+        .unwrap();
+
+        let text = std::fs::read_to_string(&path).unwrap();
+        // The `% trace:`/`% source:` header is kept; the old checkpoint is gone.
+        assert!(text.starts_with("% trace: how it works\n% source: .\n"));
+        assert!(!text.contains("old question"));
+        assert!(text.contains("# new q1"));
+        // The header survives a reload; the new checkpoints parse.
+        let deck = Deck::load(&path).unwrap();
+        assert_eq!(Some("how it works".to_string()), deck.trace);
+        assert_eq!(2, deck.cards.len());
+    }
+
+    #[test]
+    fn replace_after_header_appends_when_no_cards_yet() {
+        // A fresh trace (header only) gets the cards appended below the header.
+        let text = "% trace: how it works\n% source: .\n";
+        let out = replace_after_header(text, "# q\n\tp\n");
+        assert_eq!("% trace: how it works\n% source: .\n\n# q\n\tp\n", out);
     }
 
     #[test]

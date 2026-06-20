@@ -27,6 +27,7 @@ flash browse mydeck.txt          # read through cards, no grading or scheduling
 flash generate <url>             # build a deck from a web page (via Claude)
 flash exam mydeck.txt            # AI exam against the deck's % source: (gates unlocks)
 flash trace mytrace.txt          # walk a predict-and-verify path through a % source:
+flash trace --build mytrace.txt  # let Claude discover the path (writes checkpoints back)
 flash deps mydeck.txt            # edit a deck's prerequisites (checkbox picker)
 flash stats mydeck.txt           # progress overview
 flash list mydeck.txt            # every card with stage and due time
@@ -624,6 +625,16 @@ several ranges), or — when `% source:` is a single file — just the line numb
 The lines are **read live from the source** each time you walk, so the excerpt is
 always current and the deck stays small; the source is the oracle, not an
 invented answer.
+
+**Building it with Claude.** Instead of hand-writing the checkpoints, declare
+just the `% trace:` and `% source:`, then run `flash trace --build <deck>`:
+Claude explores the source — with **read-only** `Read`/`Glob`/`Grep` and the
+source root as its working directory (no write or shell access) — traces the
+single load-bearing path, and writes the checkpoints (with their `% at:`
+locators) back into the deck file. The result is cached and version-controlled
+there, so review it — especially the locators — and edit freely; re-run
+`--build` to regenerate. The build prompt encodes the chain rules below, so a
+generated trace comes out a path, not a quiz.
 
 **Write it as a chain, not a quiz.** A trace's whole value is that it's a *path*:
 each checkpoint should pick up where the last *reveal* left off (note how hop 2

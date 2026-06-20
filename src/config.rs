@@ -197,6 +197,10 @@ pub struct AskConfig {
     /// `dontAsk`, this is an exclusive allowlist: everything else is denied,
     /// so a malicious deck-link page cannot make the tutor run commands.
     pub allowed_tools: Vec<String>,
+    /// Working directory for the CLI process (`current_dir`). `None` inherits
+    /// the caller's. Not a user setting: trace building sets it to the
+    /// `% source:` root so Claude explores the source with relative paths.
+    pub cwd: Option<PathBuf>,
 }
 
 impl Default for AskConfig {
@@ -207,6 +211,7 @@ impl Default for AskConfig {
             timeout_secs: 120,
             permission_mode: "dontAsk".to_string(),
             allowed_tools: vec!["WebFetch".to_string(), "WebSearch".to_string()],
+            cwd: None,
         }
     }
 }
@@ -304,6 +309,34 @@ impl Default for ExamConfig {
     }
 }
 
+/// Settings for trace building (`flash trace --build`, the `[trace]` section).
+/// Building explores the deck's `% source:` to discover the path, so — unlike
+/// the other AI calls — it runs the CLI with **read-only** file tools (`Read`,
+/// `Glob`, `Grep`, plus `WebFetch` for a URL source) and the source root as the
+/// working directory. No write or shell tool is ever granted.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TraceConfig {
+    /// Model passed as `--model`; `None` falls back to the `[ask]` model, then
+    /// the CLI's own default.
+    pub model: Option<String>,
+    /// How long to wait for the build before giving up. Exploring a source and
+    /// tracing a path is the biggest call, so this is larger than the others.
+    pub timeout_secs: u64,
+    /// Extra guidance appended to the build prompt (e.g. "trace the read path,
+    /// not the write path").
+    pub extra: Option<String>,
+}
+
+impl Default for TraceConfig {
+    fn default() -> Self {
+        Self {
+            model: None,
+            timeout_secs: 600,
+            extra: None,
+        }
+    }
+}
+
 /// Settings for the local web frontend (`flash serve`, the `[serve]` section).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ServeConfig {
@@ -329,6 +362,8 @@ pub struct Config {
     pub generate: GenerateConfig,
     /// AI exam settings.
     pub exam: ExamConfig,
+    /// Trace building settings.
+    pub trace: TraceConfig,
     /// Local web frontend settings.
     pub serve: ServeConfig,
     /// Directory the startup picker lists decks from, and resolves bare deck
@@ -356,6 +391,8 @@ struct RawConfig {
     generate: RawGenerate,
     #[serde(default)]
     exam: RawExam,
+    #[serde(default)]
+    trace: RawTrace,
     #[serde(default)]
     serve: RawServe,
     decks_dir: Option<String>,
@@ -386,6 +423,14 @@ struct RawExam {
     num_questions: Option<usize>,
     pass_threshold: Option<f64>,
     strictness: Option<String>,
+    extra: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct RawTrace {
+    model: Option<String>,
+    timeout_secs: Option<u64>,
     extra: Option<String>,
 }
 
@@ -523,6 +568,15 @@ impl Config {
         }
         exam.extra = raw.exam.extra.filter(|s| !s.trim().is_empty());
 
+        let mut trace = TraceConfig::default();
+        if let Some(model) = raw.trace.model.filter(|m| !m.trim().is_empty()) {
+            trace.model = Some(model);
+        }
+        if let Some(secs) = raw.trace.timeout_secs {
+            trace.timeout_secs = secs;
+        }
+        trace.extra = raw.trace.extra.filter(|s| !s.trim().is_empty());
+
         let mut serve = ServeConfig::default();
         if let Some(port) = raw.serve.port {
             serve.port = port;
@@ -536,6 +590,7 @@ impl Config {
             ask,
             generate,
             exam,
+            trace,
             serve,
             decks_dir,
         })
@@ -594,8 +649,8 @@ pub fn default_config_toml() -> &'static str {
 # reference. Uncomment a line and edit it to override that default; lines you
 # leave commented keep the built-in default, so improvements to the defaults
 # in newer versions still reach you. Keep the section headers ([keys],
-# [browse], [ask], [generate], [exam], [serve]) so an uncommented line lands
-# in the right section.
+# [browse], [ask], [generate], [exam], [trace], [serve]) so an uncommented line
+# lands in the right section.
 #
 # Keys are written as a single character ("j"), a special key name
 # ("space", "enter", "tab", "esc", "backspace"), or either with a "ctrl-"
@@ -670,6 +725,15 @@ pub fn default_config_toml() -> &'static str {
 # pass_threshold = 1.0          # fraction of questions that must fully pass (1.0 = all)
 # strictness = "balanced"       # answer grading: strict | balanced | lenient
 # extra = ""                    # extra guidance appended to question generation
+
+# Trace building (`flash trace --build <deck>`). Explores the deck's `% source:`
+# to discover the path and writes the checkpoints back. Reuses the [ask] command,
+# but runs with read-only file tools (Read/Glob/Grep, + WebFetch for a URL
+# source) and the source root as the working directory — never a write/shell tool.
+[trace]
+# model = ""                    # --model override; empty = use [ask] / CLI default
+# timeout_secs = 600            # exploring a source is the slowest call
+# extra = ""                    # extra guidance appended to the build prompt
 
 # Local web frontend (`flash serve`). Binds to localhost by default; `--lan`
 # exposes it to the network and `--port` overrides the port set here.

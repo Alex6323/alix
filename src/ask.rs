@@ -228,6 +228,11 @@ pub(crate) fn run(config: &AskConfig, prompt: &str, extra_args: &[String]) -> Re
     if let Some(model) = &config.model {
         cmd.args(["--model", model]);
     }
+    // Trace building runs in the `% source:` root so Claude explores it with
+    // relative paths; other callers inherit this process's directory.
+    if let Some(dir) = &config.cwd {
+        cmd.current_dir(dir);
+    }
     cmd.args(extra_args);
     let mut child = cmd
         .stdin(Stdio::piped())

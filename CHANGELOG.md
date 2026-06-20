@@ -20,6 +20,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   sentences. Self-judged and offline (no model call). `flash trace <deck> --map`
   prints the path without quizzing; the generic AI exam refuses a trace (its
   verification is the walk itself). See `examples/keypress-to-grade.txt`.
+  **`flash trace --build <deck>`** discovers the path for you: declare just the
+  `% trace:` and `% source:`, and Claude explores the source (read-only
+  `Read`/`Glob`/`Grep`, with the source root as its working directory — no write
+  or shell access), traces the single load-bearing path, and writes the
+  checkpoints back into the deck. The build prompt encodes the chain rules from
+  `docs/traces.md`, so generated traces are paths, not quizzes. Configurable via
+  a new `[trace]` section (model, timeout, extra guidance).
 - **Workspaces** — a folder of decks reviewed together with shared directives.
   Membership is folder-implicit (any folder of `*.txt` decks, one level deep); an
   optional `flash.toml` manifest (a scoped `config.toml`) sets a `title` and a

@@ -21,6 +21,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Result, anyhow, bail};
 
 use crate::{
+    ask,
+    config::{AskConfig, TraceConfig},
     deck::{Deck, is_url},
     scheduler::{Grade, SchedulerKind},
     store::Store,
@@ -165,6 +167,157 @@ impl Trace {
         };
         read_excerpt(&path, spec.as_deref())
     }
+}
+
+// ── Building (`flash trace --build`) ─────────────────────────────────────────
+//
+// Discovering the path is a separate, heavier step from walking it: Claude
+// explores the `% source:` (read-only file tools, cwd at the source root) and
+// emits the checkpoint cards, which the CLI writes back into the deck. Mirrors
+// `crate::generate`: build a prompt, run the CLI, clean the output.
+
+/// Explores the deck's `% source:` and returns the discovered checkpoint cards
+/// as deck-format text (ready to write back with
+/// [`crate::deck::set_trace_checkpoints`]). Blocks until the CLI replies or
+/// times out. Errors if the deck declares no `% trace:` or `% source:`.
+pub fn build(deck: &Deck, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<String> {
+    let description = deck
+        .trace
+        .as_deref()
+        .ok_or_else(|| anyhow!("{} declares no `% trace:` to build", deck.subject))?;
+    let source = deck
+        .sources
+        .first()
+        .ok_or_else(|| anyhow!("{} declares no `% source:` scope to trace", deck.subject))?;
+    let url = is_url(source);
+    let cwd = if url {
+        None
+    } else {
+        let (base_dir, _) = resolve_source(deck.path.parent(), Some(source));
+        Some(base_dir)
+    };
+    let prompt = build_prompt(description, source, url, cfg);
+    let run_cfg = build_run_config(cfg, ask_cfg, cwd, url);
+    let raw = ask::run(&run_cfg, &prompt, &[])?;
+    let cards = clean_to_cards(&raw);
+    if cards.trim().is_empty() {
+        bail!("the build produced no checkpoints");
+    }
+    Ok(cards)
+}
+
+/// The CLI runner config for a build: the ask command/permission with trace's
+/// own model and (longer) timeout, **read-only** exploration tools, and the
+/// source root as the working directory.
+fn build_run_config(
+    cfg: &TraceConfig,
+    ask_cfg: &AskConfig,
+    cwd: Option<PathBuf>,
+    url: bool,
+) -> AskConfig {
+    let mut allowed_tools = vec!["Read".to_string(), "Glob".to_string(), "Grep".to_string()];
+    if url {
+        allowed_tools.push("WebFetch".to_string());
+    }
+    AskConfig {
+        command: ask_cfg.command.clone(),
+        permission_mode: ask_cfg.permission_mode.clone(),
+        allowed_tools,
+        model: cfg.model.clone().or_else(|| ask_cfg.model.clone()),
+        timeout_secs: cfg.timeout_secs,
+        cwd,
+    }
+}
+
+/// Builds the path-discovery prompt: the goal, the scope, how to explore it,
+/// the checkpoint format, and the chain-not-a-set rules (see `docs/traces.md`).
+fn build_prompt(description: &str, source: &str, url: bool, cfg: &TraceConfig) -> String {
+    let explore = if url {
+        format!("Read the source page at {source} with the WebFetch tool (fetch it once).")
+    } else {
+        "Your working directory is the source root. Explore it with the Read, Glob \
+         and Grep tools — start at the entry point or the most load-bearing file and \
+         follow the references. You can read any file under the source; you have no \
+         write or shell access."
+            .to_string()
+    };
+    let locator = if url {
+        "a short quoted span from the page — the exact sentence(s) the key points rest on"
+    } else {
+        "`file:lines` relative to the source root (e.g. `src/serve.rs:682-689`, or \
+         `12,40-44` for several ranges)"
+    };
+    let mut p = format!(
+        "You are tracing ONE path through a source so a learner can UNDERSTAND it by \
+         predicting each step before it is revealed. The path must answer:\n\n    \
+         {description}\n\nSource (the scope): {source}\n{explore}\n\nFind the single \
+         load-bearing path from the trigger to the outcome named above — a real \
+         SEQUENCE (a data flow, a control flow, or a derivation), not a grab-bag of \
+         facts about the topic. Then write it as a series of CHECKPOINT cards, one \
+         per hop.\n\n\
+         FORMAT — output ONLY the checkpoint cards: no header, no `% trace:` or \
+         `% source:` line, no preamble, no code fences. Each checkpoint is:\n\n    \
+         # <the question for this hop, asked plainly>\n    \t<a key point a correct \
+         answer hits>\n    \t<another key point>\n    \t% at: <locator>\n    \t! <one \
+         connecting insight, shown after the reveal>\n\n\
+         The `# ` front (column 0) is the QUESTION. The indented lines under it are \
+         the key points the revealed source makes (the rubric). `% at:` is the \
+         locator: {locator} — it must point at the REAL lines/passage the key points \
+         paraphrase, because flash reads them live at review time as the ground \
+         truth. Cite accurately. The indented `! ` line is an optional note.\n\n\
+         THE RULES THAT MAKE IT A PATH, NOT A QUIZ — follow every one:\n\
+         1. One path, not a set. Each hop is a step along one chain. If two \
+         checkpoints could be reordered without breaking, they are a set — re-trace \
+         the spine.\n\
+         2. Every question opens on the previous reveal: state the conclusion the \
+         prior hop established, then ask the next step. (Hop 1 has no prior.)\n\
+         3. Carry the STATE, not the bookkeeping: restate what is now true about the \
+         system (\"the request carries only the grade, no card id\"), NEVER \"as \
+         checkpoint 2 showed\" or \"the last hop\" — each checkpoint is reviewed \
+         alone, so an index reference is meaningless.\n\
+         4. Ask forward, and just ask: a plain question answerable by reasoning \
+         forward from the prior reveal. Do NOT prefix fronts with \"Predict\".\n\
+         5. Don't give the answer away: keep a hop's answer out of its own question. \
+         Avoid loaded tells (\"it lives ONLY in memory\" hands over \"so save it\"); \
+         state the setup neutrally and let the learner reason.\n\
+         6. Dives must return: if a hop calls into another function/file, the next \
+         hop may dive in, but then return to the caller before going past the call — \
+         bridge the return with state, reusing the call-site line so the seam shows.\n\
+         7. The last hop reaches the outcome the path was tracing toward.\n\n\
+         Keep each question one or two sentences and each key point one line. Use as \
+         many checkpoints as the path needs (typically 4-8); never pad."
+    );
+    if let Some(extra) = cfg
+        .extra
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        p.push_str("\n\nAdditional instructions:\n");
+        p.push_str(extra);
+    }
+    p
+}
+
+/// Strips anything around the generated checkpoint cards: a leading code fence,
+/// commentary, or a stray header before the first `#` card front, and trailing
+/// blank/fence lines. Unlike a full deck, a built trace's output is only the
+/// cards, so everything before the first column-0 `#` is dropped.
+fn clean_to_cards(raw: &str) -> String {
+    let lines: Vec<&str> = raw.lines().collect();
+    let Some(start) = lines.iter().position(|l| l.starts_with('#')) else {
+        return raw.trim().to_string();
+    };
+    let mut end = lines.len();
+    while end > start + 1 {
+        let t = lines[end - 1].trim();
+        if t.is_empty() || t.starts_with("```") {
+            end -= 1;
+        } else {
+            break;
+        }
+    }
+    lines[start..end].join("\n")
 }
 
 /// The phase of a [`Walk`].
@@ -670,5 +823,99 @@ mod tests {
         assert_eq!(Phase::Predict, walk.phase());
         assert_eq!(0, walk.current_index());
         assert!(store.is_empty());
+    }
+
+    // ── build (`flash trace --build`) ────────────────────────────────────────
+
+    #[test]
+    fn build_prompt_carries_goal_source_format_and_rules() {
+        let p = build_prompt("how X becomes Y", ".", false, &TraceConfig::default());
+        assert!(p.contains("how X becomes Y"));
+        assert!(p.contains("Source (the scope): ."));
+        assert!(p.contains("Read, Glob")); // local exploration tools
+        assert!(p.contains("file:lines")); // local locator form
+        assert!(p.contains("# <the question")); // the checkpoint format
+        assert!(p.contains("% at:"));
+        assert!(p.contains("One path, not a set"));
+        assert!(p.contains("Carry the STATE"));
+        assert!(p.contains("Do NOT prefix fronts with \"Predict\""));
+        assert!(p.contains("Dives must return"));
+        assert!(!p.contains("WebFetch")); // a local source needs no web tool
+    }
+
+    #[test]
+    fn build_prompt_url_uses_webfetch_and_quoted_span() {
+        let p = build_prompt("how X", "https://x", true, &TraceConfig::default());
+        assert!(p.contains("WebFetch"));
+        assert!(p.contains("quoted span"));
+        assert!(!p.contains("Glob")); // no local file tools for a URL source
+    }
+
+    #[test]
+    fn build_prompt_appends_extra() {
+        let cfg = TraceConfig {
+            extra: Some("trace the read path".to_string()),
+            ..TraceConfig::default()
+        };
+        let p = build_prompt("g", ".", false, &cfg);
+        assert!(p.contains("Additional instructions:"));
+        assert!(p.contains("trace the read path"));
+    }
+
+    #[test]
+    fn build_run_config_uses_readonly_tools_and_cwd() {
+        let cwd = PathBuf::from("/some/src");
+        let cfg = build_run_config(
+            &TraceConfig::default(),
+            &AskConfig::default(),
+            Some(cwd.clone()),
+            false,
+        );
+        assert_eq!(vec!["Read", "Glob", "Grep"], cfg.allowed_tools);
+        assert_eq!(Some(cwd), cfg.cwd);
+        assert_eq!(600, cfg.timeout_secs); // the trace timeout, not ask's 120
+    }
+
+    #[test]
+    fn clean_to_cards_strips_fence_and_preamble() {
+        let raw = "Here is the trace:\n```text\n# Q1\n\tp\n\t% at: 1\n```";
+        assert_eq!("# Q1\n\tp\n\t% at: 1", clean_to_cards(raw));
+    }
+
+    /// Serializes the tests that write + exec a fake CLI (a concurrent fork
+    /// would inherit the write-open fd and fail exec with ETXTBSY).
+    static EXEC_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn fake_cli(dir: &Path, body: &str) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let path = dir.join("fake-claude");
+        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        path
+    }
+
+    fn ask_config(command: &Path) -> AskConfig {
+        AskConfig {
+            command: command.to_str().unwrap().to_string(),
+            timeout_secs: 10,
+            ..AskConfig::default()
+        }
+    }
+
+    #[test]
+    fn build_end_to_end_returns_cleaned_cards() {
+        let _lock = EXEC_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = fake_cli(
+            dir.path(),
+            "printf '# Q1\\n\\tp1\\n\\t%% at: 1\\n# Q2\\n\\tp2\\n\\t%% at: 2\\n'",
+        );
+        // A trace deck with `% source: .` (cwd resolves to the temp dir).
+        let path = write(dir.path(), "t.txt", "% trace: how it works\n% source: .\n");
+        let deck = Deck::load(&path).unwrap();
+        let cards = build(&deck, &TraceConfig::default(), &ask_config(&cli)).unwrap();
+        assert!(cards.starts_with("# Q1"));
+        assert!(cards.contains("# Q2"));
+        assert!(cards.contains("% at: 2"));
     }
 }
