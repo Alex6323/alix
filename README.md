@@ -380,8 +380,8 @@ covered them — for cards aimed at *understanding* rather than recall. Set it w
 `% mode: explain` (per card or deck-wide). The typing is optional and never
 checked: a self-graded mode can't verify your answer, so it doesn't pretend to
 (in the web frontend your typed answer is shown next to the points for honest
-comparison). It pairs with the ask-Claude helper, and is the day-to-day tier of
-the planned AI exam.
+comparison). It pairs with the ask-Claude helper, and is the day-to-day,
+self-graded tier below the [AI exam](#the-ai-exam-flash-exam).
 
 To throw a card away, press the **remove** key (`Ctrl-X` by default) on it
 instead of grading — it is dropped from the session without being asked again
@@ -583,9 +583,10 @@ in the terminal and the browser:
 flash asks Claude to read the source (URLs via the **WebFetch** tool; local
 files are embedded) and write fresh **open understanding** questions —
 application and connections, not the card facts — each with the key points a
-correct answer must contain. You type a prose answer per question, and a strict
+correct answer must contain. You type a prose answer per question, and an
 examiner grades them Pass / Partial / Fail **against the source's rubric, never
-against your cards** (grading the cards would be circular). The Claude calls run
+against your cards** (grading the cards would be circular), at the deck's
+configured strictness (below). The Claude calls run
 on a background thread so the UI stays responsive while it thinks.
 
 - **Pass** (every question by default; tune with `pass_threshold`) marks the
@@ -597,8 +598,9 @@ on a background thread so the UI stays responsive while it thinks.
   a missed fact, a `% mode: explain` card for a missed concept), with overlapping
   gaps merged into one card. Re-drill those and re-sit.
 
-Resetting a deck's progress (`flash reset <deck>`) also clears its mastered
-state, so a re-drilled deck must pass the exam again.
+Resetting a whole deck's progress (`flash reset <deck>`) also clears its mastered
+state, so a re-drilled deck must pass the exam again (resetting only individual
+cards with `--card`/`--cards` leaves the mastered state intact).
 
 **Grading strictness** is a property of the *material*, so it's per deck. A
 checklist-style topic (a procedure, exact syntax, a security drill) should fail
