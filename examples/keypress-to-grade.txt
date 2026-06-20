@@ -33,12 +33,12 @@
 	% at: src/scheduler.rs:92-100
 	! The new stage sets the cooldown before the card is due again.
 
-# Those last two hops dove inside that session.grade(...) call. Back in the /api/grade handler it has now returned, leaving the new stage only in memory. Predict the handler's very next move.
-	The grade call from checkpoint 2 has returned; the store is updated in RAM.
-	The line right after it is store.save() — persisting the change.
-	A save error is only logged, not fatal: the grading already happened.
+# session.grade() has returned, and the new stage is now recorded in the store. Back in the /api/grade handler, predict its very next line.
+	The new stage so far exists only in the in-memory store — not yet on disk.
+	So the handler's very next line is store.save(), which persists it.
+	A save error is only logged, not fatal — the grading itself already happened.
 	% at: src/serve.rs:689-692
-	! Line 689 is the same r.session.grade(...) from checkpoint 2 — now you see what follows it.
+	! grade() changes memory; persisting is the handler's job, on the very next line.
 
 # store.save() is called — but the store is one JSON file. Predict how it writes the update without risking a half-written file if the process dies mid-save.
 	It serializes the whole store, then writes it to a temp file (.json.tmp).

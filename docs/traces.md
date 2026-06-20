@@ -117,31 +117,57 @@ each generated trace is a chain *by construction*, not by luck:
    (e.g. "the request carries no card id — predict how the server knows which
    card…"). If a prompt is answerable without having seen the prior reveal, the
    link is broken — rewrite it so the prior reveal is its premise.
-3. **Prompts predict forward; they don't quiz.** Each front asks the learner to
+3. **Carry the state, not the bookkeeping.** When a prompt restates what came
+   before, phrase it as **standalone fact about the system** — "the grade has been
+   applied and the new stage is now recorded in the store" — *never* as a reference
+   to the trace's own structure ("as hops 2–3 showed", "the call from checkpoint 2",
+   "those last two hops"). Each checkpoint is an **individual SRS card that can
+   resurface alone, out of order, weeks later**, so an index reference is a
+   dangling pointer — "checkpoint 2" means nothing when this card comes up by
+   itself. The opening should read like a **status line of where the system is
+   now**, not a recap of the lesson. That is what keeps a checkpoint *atomic yet
+   connected*: connected through accumulated state, not through position.
+4. **Prompts predict forward; they don't quiz.** Each front asks the learner to
    *predict what happens next* ("predict what X sends / does / returns"),
    answerable by reasoning forward from the prior reveal — never by outside
    recall of a fact.
-4. **Dives must return.** When a hop calls into another function or file, the
+5. **Don't lead the witness — keep the answer out of the prompt.** The setup
+   states the established state (rule 3) and poses the prediction, but must not
+   *contain* that prediction's answer, or a tell that hands it over. Beware
+   evaluative/loaded framing — "the stage lives **only** in memory", "it isn't
+   saved **yet**", "the id is **still** unknown" — which names the very gap the
+   next hop fills; that gap is exactly what the learner should predict. State the
+   carried-forward fact *neutrally* ("the new stage is now recorded in the store")
+   and let the learner draw the consequence themselves; the insight belongs in the
+   reveal and key points, **never the front**. Litmus: if the learner could
+   produce the prediction just by paraphrasing the prompt, the answer leaked —
+   strip the tell.
+6. **Dives must return.** When a hop calls into another function or file, the
    next hop may **dive into** the callee — but you must then **climb back to the
    call site** before continuing past it, or the chain snaps (a reveal deep in a
    callee followed by a hop about the caller's *next* line, with nothing
    bridging the return). Reuse the call-site line in **both** the caller hop and
-   the return hop (overlapping `% at:` ranges) to stitch the seam. A clean shape
-   is symmetric: *caller calls X → dive into X → return to caller → caller calls
-   Y → dive into Y …*.
-5. **The reveal is the real source.** Ground truth is a **live excerpt** via
+   the return hop (overlapping `% at:` ranges) to stitch the seam — but bridge it
+   with *state* ("the call has returned; the store now holds the new stage"), per
+   rule 3, not with "the call from checkpoint 2". A clean shape is symmetric:
+   *caller calls X → dive into X → return to caller → caller calls Y → dive into
+   Y …*.
+7. **The reveal is the real source.** Ground truth is a **live excerpt** via
    `% at:`, never invented. The key points must paraphrase *exactly those lines*,
    and the prompt must be answerable *from* them — the model selects the path and
    the locator; the source is the oracle.
-6. **The last hop lands the goal.** The final reveal is the **payoff that answers
+8. **The last hop lands the goal.** The final reveal is the **payoff that answers
    `% goal:`**; the compression step then retraces the whole path *as that
    answer*. If the last checkpoint doesn't close the question the goal opened, the
    path stopped short.
 
-A useful self-check for the builder to run before emitting the deck: read the
-checkpoints in order using **only each prompt + the prior reveal**; if any hop
-needs information that wasn't established by an earlier hop (or by the excerpt it
-points at), that hop is either out of order or off the path.
+Two self-checks for the builder to run before emitting the deck. **Order:** read
+the checkpoints top to bottom using **only each prompt + the prior reveal**; if a
+hop needs information no earlier hop (or its own excerpt) established, it's out of
+order or off the path. **Atomicity:** read each checkpoint **in isolation, as if
+it were the only card you saw today**; its prompt must still make sense (state
+carried as fact, no "checkpoint N" / "the last two hops" references) — because in
+review it often *will* surface alone.
 
 ## The trace deck format — it's a normal deck
 
