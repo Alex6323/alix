@@ -3,20 +3,19 @@
 //! The format, line by line (each line is trimmed first, empty lines are
 //! skipped):
 //!
-//! - `# <text>`  at column 0 starts a new card; the text is the front side. An
-//!   *indented* `#` is answer content (code comments, Rust attributes, markdown
-//!   headers), not a card front.
-//! - `#? <text>` at column 0 starts a cloze card; `{{...}}` in its answer lines
-//!   are holes (see the [`cloze`](crate::cloze) module).
+//! - `# <text>`  at column 0 starts a new card; the text is the front side. An *indented* `#` is
+//!   answer content (code comments, Rust attributes, markdown headers), not a card front.
+//! - `#? <text>` at column 0 starts a cloze card; `{{...}}` in its answer lines are holes (see the
+//!   [`cloze`](crate::cloze) module).
 //! - `% <text>`  is a comment and ignored (any indentation).
-//! - `% link: <url>` is still a comment to the card parser, but the URL is
-//!   collected as a deck-level reference link (see [`parse_links`]); the
-//!   ask-Claude view offers these to Claude as background material.
-//! - `! <text>`  is a note attached to the current card (any indentation, after
-//!   its back). Several consecutive `!` lines form one multi-line note.
+//! - `% link: <url>` is still a comment to the card parser, but the URL is collected as a
+//!   deck-level reference link (see [`parse_links`]); the ask-Claude view offers these to Claude as
+//!   background material.
+//! - `! <text>`  is a note attached to the current card (any indentation, after its back). Several
+//!   consecutive `!` lines form one multi-line note.
 //! - any other line is a back line of the current card.
-//! - a leading `\` escapes a markup character (`#`, `%`, `!`) so a back line
-//!   can start with one; the backslash is stripped.
+//! - a leading `\` escapes a markup character (`#`, `%`, `!`) so a back line can start with one;
+//!   the backslash is stripped.
 //!
 //! A card consists of one front line, one or more back lines, and an
 //! optional note after the back lines. Malformed files yield errors with

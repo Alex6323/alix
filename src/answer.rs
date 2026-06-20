@@ -1,13 +1,12 @@
 //! Answer checking for the answer modes.
 //!
-//! - **Typing**: the answer must be typed character by character with live
-//!   feedback ([`TypingValidator`]). Revealing hints marks the card failed.
-//! - **Fuzzy**: a whole line is typed and submitted, then compared with a typo
-//!   tolerance ([`grade_fuzzy`]).
-//! - **Flip**: the user reveals the answer and grades themselves; no checking
-//!   happens here.
-//! - **Choice**: the user picks the answer out of four options (see the
-//!   [`choice`](crate::choice) module).
+//! - **Typing**: the answer must be typed character by character with live feedback
+//!   ([`TypingValidator`]). Revealing hints marks the card failed.
+//! - **Fuzzy**: a whole line is typed and submitted, then compared with a typo tolerance
+//!   ([`grade_fuzzy`]).
+//! - **Flip**: the user reveals the answer and grades themselves; no checking happens here.
+//! - **Choice**: the user picks the answer out of four options (see the [`choice`](crate::choice)
+//!   module).
 
 /// Which answer mode a review session uses.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]

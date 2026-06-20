@@ -1695,7 +1695,9 @@ fn run_walk(
                                 Some(delta)
                             }
                             Err(e) => {
-                                println!("\r{DIM}  (grading failed: {e} — grade it yourself){RESET}");
+                                println!(
+                                    "\r{DIM}  (grading failed: {e} — grade it yourself){RESET}"
+                                );
                                 read_delta()?
                             }
                         }
@@ -1922,7 +1924,10 @@ fn workspace_cmd(args: WorkspaceArgs) -> Result<()> {
                 args.dir.display(),
             );
         }
-        bail!("{} is not a workspace (no `flash.toml`)", args.dir.display());
+        bail!(
+            "{} is not a workspace (no `flash.toml`)",
+            args.dir.display()
+        );
     }
     loop {
         let store = open_store(args.store.clone())?;

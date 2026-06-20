@@ -2,11 +2,9 @@
 //!
 //! Two schedulers are available:
 //!
-//! - [`Leitner`]: a 6-stage box system. Stage cooldowns are 0 / 1h / 6h / 24h /
-//!   1w. Passing moves a card up one stage (it stays in stage 5 once there),
-//!   failing sends it back to stage 1.
-//! - [`Sm2`]: a SuperMemo-2 style scheduler with per-card ease factors and
-//!   growing intervals.
+//! - [`Leitner`]: a 6-stage box system. Stage cooldowns are 0 / 1h / 6h / 24h / 1w. Passing moves a
+//!   card up one stage (it stays in stage 5 once there), failing sends it back to stage 1.
+//! - [`Sm2`]: a SuperMemo-2 style scheduler with per-card ease factors and growing intervals.
 //!
 //! Both schedulers keep the card's Leitner `stage` field up to date, so it is
 //! safe to switch between them at any time.

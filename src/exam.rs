@@ -6,13 +6,12 @@
 //! the prompt) — never the cards, which avoids circularity. Three Claude calls,
 //! each through the same CLI runner [`crate::ask::run`] that `generate` uses:
 //!
-//! 1. [`generate_questions`] — fresh open understanding questions from the
-//!    source, each with the key points a correct answer must contain.
-//! 2. [`grade_answers`] — a strict examiner grades the typed answers against
-//!    those points and returns an overall pass/fail by threshold.
-//! 3. [`remediation_cards`] — on a fail, turns the missed concepts into cards
-//!    (cloze/plain for facts, `% mode: explain` for concepts), as deck-format
-//!    text ready to append.
+//! 1. [`generate_questions`] — fresh open understanding questions from the source, each with the
+//!    key points a correct answer must contain.
+//! 2. [`grade_answers`] — a strict examiner grades the typed answers against those points and
+//!    returns an overall pass/fail by threshold.
+//! 3. [`remediation_cards`] — on a fail, turns the missed concepts into cards (cloze/plain for
+//!    facts, `% mode: explain` for concepts), as deck-format text ready to append.
 //!
 //! The engine is pure: it builds prompts, calls the CLI and parses JSON. A CLI
 //! consumer (`flash exam`) drives the terminal Q&A; a web exam surface can
