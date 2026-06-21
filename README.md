@@ -57,7 +57,7 @@ coherent pass — freezing the cited source into the workspace so its line
 locators never drift. Inside the workspace a **facts deck reviews** and a
 **trace walks** (predict → reveal → judge the gap), unlocking in dependency
 order, with progress kept in the workspace's own store. See
-[Exploring a source](#exploring-a-source--flash-explore-experimental) and
+[Exploring a source](#exploring-a-source--flash-explore) and
 [Workspaces](#workspaces) for the full details. (The AI steps need the Claude
 CLI — see [Requirements](#requirements).)
 
@@ -773,7 +773,7 @@ generated trace comes out a path, not a quiz.
 
 **Snapshotting the source.** Because `% at: file:lines` reads the **live** source,
 editing a traced file shifts every excerpt to the wrong lines. So when you create
-a workspace by exploring a source ([`flash explore --into --build`](#exploring-a-source--flash-explore-experimental)),
+a workspace by exploring a source ([`flash explore --into --build`](#exploring-a-source--flash-explore)),
 its final step **freezes the cited excerpts** into the workspace's `assets/`
 folder — one tiny snippet per checkpoint — and repoints each `% at:` (and the
 trace's `% source:`) at them. The excerpts never drift and the workspace is
@@ -849,7 +849,7 @@ A trace deck degrades gracefully — even without `flash trace` it is a valid de
 of `explain` cards. See `examples/keypress-to-grade.txt` for a complete trace
 over this repo's own source.
 
-### Exploring a source — `flash explore` (experimental)
+## Exploring a source — `flash explore`
 
 `--suggest` lists central *traces*; **`flash explore <source>`** goes one layer
 up and prints an ordered **learning plan** toward a goal — the facts decks **and**
