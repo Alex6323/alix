@@ -31,6 +31,36 @@ flash invokes the CLI headless (`claude -p`) under a locked-down permission
 model (see [Ask Claude](#ask-claude-about-a-card)); the command, model and
 timeouts are configurable per feature in the [config file](#configuration).
 
+## Learn a codebase (the main workflow)
+
+flash's flagship use: point it at a repo (or any source) and it builds a
+self-contained **learning workspace** — facts decks and predict-and-verify
+[traces](#traces-flash-trace), dependency-ordered — that you then study with
+spaced repetition, the AI tutor, and the [exam](#the-ai-exam-flash-exam). Three
+steps:
+
+```sh
+# 1. Preview the plan (read-only): the decks and traces worth authoring.
+flash explore ./my-crate --goal "how the request pipeline works"
+
+# 2. Build the workspace in one pass: stubs filled, sources frozen into assets/.
+flash explore ./my-crate --goal "how the request pipeline works" \
+  --into ~/decks/request-pipeline --title "Request pipeline" --build
+
+# 3. Study it — in the terminal, or the browser with --serve.
+flash workspace ~/decks/request-pipeline    # or: flash --serve, then open it
+```
+
+`--goal` scopes what gets authored (and becomes the workspace's description),
+`--title` names it, and `--build` fills every facts deck and trace in one
+coherent pass — freezing the cited source into the workspace so its line
+locators never drift. Inside the workspace a **facts deck reviews** and a
+**trace walks** (predict → reveal → judge the gap), unlocking in dependency
+order, with progress kept in the workspace's own store. See
+[Exploring a source](#exploring-a-source--flash-explore-experimental) and
+[Workspaces](#workspaces) for the full details. (The AI steps need the Claude
+CLI — see [Requirements](#requirements).)
+
 ## Usage
 
 The binary is called `flash`:
