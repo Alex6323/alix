@@ -6,7 +6,7 @@
 # toolchain — `+nightly` is handled by rustup before cargo sees it — which is
 # why these live in a Makefile rather than .cargo/config.toml.)
 
-.PHONY: build test lint fmt fmt-check check run serve install clean
+.PHONY: build test lint fmt fmt-check check run serve book install clean
 
 # Compile the workspace.
 build:
@@ -41,6 +41,11 @@ run:
 # `--serve` trails ARGS because it's a review/browse flag, not a global one.
 serve:
 	cargo run -- $(ARGS) --serve
+
+# Serve the user manual (docs/book) with live reload and open it in the browser.
+# Requires mdBook: `cargo install mdbook`.
+book:
+	mdbook serve docs/book --open
 
 # Install `flash` from this checkout.
 install:
