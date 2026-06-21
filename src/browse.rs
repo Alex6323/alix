@@ -130,8 +130,14 @@ fn event_loop(
         current = current.min(last);
         terminal.draw(|frame| draw(frame, cards, label, current, keys))?;
         // Blocking read is fine: nothing happens without a keypress.
-        let Event::Key(key) = event::read()? else {
-            continue;
+        let key = match event::read()? {
+            // Resize with the event's dimensions so the redraw reflows at once.
+            Event::Resize(w, h) => {
+                terminal.resize(ratatui::layout::Rect::new(0, 0, w, h))?;
+                continue;
+            }
+            Event::Key(key) => key,
+            _ => continue,
         };
         if key.kind != KeyEventKind::Press {
             continue;

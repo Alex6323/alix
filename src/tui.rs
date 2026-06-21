@@ -261,11 +261,14 @@ impl App {
             terminal.draw(|frame| self.draw(frame))?;
             // Poll instead of blocking so pending CLI replies (and the
             // spinner) are picked up while no key is pressed.
-            if event::poll(Duration::from_millis(100))?
-                && let Event::Key(key) = event::read()?
-                && key.kind == KeyEventKind::Press
-            {
-                self.handle_key(key)?;
+            if event::poll(Duration::from_millis(100))? {
+                match event::read()? {
+                    // Resize with the event's dimensions so the redraw reflows
+                    // immediately instead of waiting for the next keypress.
+                    Event::Resize(w, h) => terminal.resize(Rect::new(0, 0, w, h))?,
+                    Event::Key(key) if key.kind == KeyEventKind::Press => self.handle_key(key)?,
+                    _ => {}
+                }
             }
             self.poll_ask();
         }
@@ -1648,11 +1651,12 @@ impl ExamApp {
             terminal.draw(|frame| self.draw(frame))?;
             // Poll so the spinner animates and background calls land while no
             // key is pressed.
-            if event::poll(Duration::from_millis(100))?
-                && let Event::Key(key) = event::read()?
-                && key.kind == KeyEventKind::Press
-            {
-                self.handle_key(key);
+            if event::poll(Duration::from_millis(100))? {
+                match event::read()? {
+                    Event::Resize(w, h) => terminal.resize(Rect::new(0, 0, w, h))?,
+                    Event::Key(key) if key.kind == KeyEventKind::Press => self.handle_key(key),
+                    _ => {}
+                }
             }
             self.sitting.poll(&mut self.store, time::now_ms());
         }

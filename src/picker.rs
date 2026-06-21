@@ -1121,92 +1121,100 @@ impl<K: Clone + Eq + Hash> Picker<K> {
     fn run(&mut self, terminal: &mut ratatui::DefaultTerminal) -> Result<Option<Vec<K>>> {
         while !self.done {
             terminal.draw(|frame| self.draw(frame))?;
-            if let Event::Key(key) = event::read()?
-                && key.kind == KeyEventKind::Press
-            {
-                let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
-                // In the launcher, keys navigate by default; `/` or `Ctrl-F`
-                // starts filter mode, where letters narrow the list instead. The
-                // classic reset / deps / card pickers always filter on a keypress.
-                let nav = self.launcher && !self.filtering;
-                let take_text = self.filtering || !self.launcher;
-                // In nav mode, letters are commands, matched against the
-                // (configurable) navigation keys.
-                let pattern = key_pattern(key.code, ctrl);
-                let hit = |list: &[KeyPattern]| pattern.is_some_and(|p| list.contains(&p));
-                match key.code {
-                    KeyCode::Char('c') if ctrl => self.cancel(),
-                    KeyCode::Esc if self.confirming => {
-                        self.confirming = false;
-                        self.refilter();
-                    }
-                    // Esc in the filter box keeps the filter and drops back to the
-                    // list, focused on the first match.
-                    KeyCode::Esc if self.filtering => {
-                        self.filtering = false;
-                        self.cursor = 0;
-                    }
-                    // Esc in nav with a filter applied clears it; otherwise cancel.
-                    KeyCode::Esc if self.launcher && !self.filter.is_empty() => {
-                        self.stop_filtering()
-                    }
-                    KeyCode::Esc => self.cancel(),
-                    // Launcher: Enter opens the focused row; otherwise (reset / deps
-                    // pickers) Enter accepts the selection.
-                    KeyCode::Enter if self.launcher && !self.confirming => self.launch_focused(),
-                    KeyCode::Enter => self.done = true,
-                    KeyCode::Tab if self.launcher && self.multi_select && !self.confirming => {
-                        if !self.selected.is_empty() {
-                            self.enter_confirm();
+            match event::read()? {
+                // Resize with the event's own dimensions, not a (possibly stale)
+                // ioctl query, so the next draw reflows immediately.
+                Event::Resize(w, h) => terminal.resize(Rect::new(0, 0, w, h))?,
+                Event::Key(key) if key.kind == KeyEventKind::Press => {
+                    let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+                    // In the launcher, keys navigate by default; `/` or `Ctrl-F`
+                    // starts filter mode, where letters narrow the list instead. The
+                    // classic reset / deps / card pickers always filter on a keypress.
+                    let nav = self.launcher && !self.filtering;
+                    let take_text = self.filtering || !self.launcher;
+                    // In nav mode, letters are commands, matched against the
+                    // (configurable) navigation keys.
+                    let pattern = key_pattern(key.code, ctrl);
+                    let hit = |list: &[KeyPattern]| pattern.is_some_and(|p| list.contains(&p));
+                    match key.code {
+                        KeyCode::Char('c') if ctrl => self.cancel(),
+                        KeyCode::Esc if self.confirming => {
+                            self.confirming = false;
+                            self.refilter();
                         }
-                    }
-                    // Arrows + Ctrl-n/p always move; the rest of nav is the
-                    // configurable key set (Vim-style by default).
-                    KeyCode::Up => self.move_cursor(-1),
-                    KeyCode::Down => self.move_cursor(1),
-                    KeyCode::Char('p') if ctrl => self.move_cursor(-1),
-                    KeyCode::Char('n') if ctrl => self.move_cursor(1),
-                    _ if nav && hit(&self.keys.down) => self.move_cursor(1),
-                    _ if nav && hit(&self.keys.up) => self.move_cursor(-1),
-                    _ if nav && hit(&self.keys.open) => self.launch_focused(),
-                    _ if nav && hit(&self.keys.back) => self.cancel(),
-                    _ if nav && hit(&self.keys.top) => self.cursor = 0,
-                    _ if nav && hit(&self.keys.bottom) => {
-                        self.cursor = self.filtered.len().saturating_sub(1);
-                    }
-                    _ if nav && hit(&self.keys.filter) => self.filtering = true,
-                    // `m` opens the Mastered window (handled by the caller).
-                    _ if nav && hit(&self.keys.mastered) => {
-                        self.request_mastered = true;
-                        self.done = true;
-                    }
-                    // Space ticks in the multi-select pickers; elsewhere it's just
-                    // a filter character (handled below) or ignored in nav mode.
-                    KeyCode::Char(' ') if self.multi_select && !self.confirming => self.toggle(),
-                    // Backspace: edit the filter, or step back when there's nothing
-                    // to delete (leave filter mode, return from a drill-in, cancel).
-                    KeyCode::Backspace if self.confirming => {
-                        self.confirming = false;
-                        self.refilter();
-                    }
-                    KeyCode::Backspace if nav => self.cancel(),
-                    KeyCode::Backspace if self.filter.is_empty() => {
-                        if self.filtering {
-                            self.stop_filtering();
-                        } else {
-                            self.cancel();
+                        // Esc in the filter box keeps the filter and drops back to the
+                        // list, focused on the first match.
+                        KeyCode::Esc if self.filtering => {
+                            self.filtering = false;
+                            self.cursor = 0;
                         }
+                        // Esc in nav with a filter applied clears it; otherwise cancel.
+                        KeyCode::Esc if self.launcher && !self.filter.is_empty() => {
+                            self.stop_filtering()
+                        }
+                        KeyCode::Esc => self.cancel(),
+                        // Launcher: Enter opens the focused row; otherwise (reset / deps
+                        // pickers) Enter accepts the selection.
+                        KeyCode::Enter if self.launcher && !self.confirming => {
+                            self.launch_focused()
+                        }
+                        KeyCode::Enter => self.done = true,
+                        KeyCode::Tab if self.launcher && self.multi_select && !self.confirming => {
+                            if !self.selected.is_empty() {
+                                self.enter_confirm();
+                            }
+                        }
+                        // Arrows + Ctrl-n/p always move; the rest of nav is the
+                        // configurable key set (Vim-style by default).
+                        KeyCode::Up => self.move_cursor(-1),
+                        KeyCode::Down => self.move_cursor(1),
+                        KeyCode::Char('p') if ctrl => self.move_cursor(-1),
+                        KeyCode::Char('n') if ctrl => self.move_cursor(1),
+                        _ if nav && hit(&self.keys.down) => self.move_cursor(1),
+                        _ if nav && hit(&self.keys.up) => self.move_cursor(-1),
+                        _ if nav && hit(&self.keys.open) => self.launch_focused(),
+                        _ if nav && hit(&self.keys.back) => self.cancel(),
+                        _ if nav && hit(&self.keys.top) => self.cursor = 0,
+                        _ if nav && hit(&self.keys.bottom) => {
+                            self.cursor = self.filtered.len().saturating_sub(1);
+                        }
+                        _ if nav && hit(&self.keys.filter) => self.filtering = true,
+                        // `m` opens the Mastered window (handled by the caller).
+                        _ if nav && hit(&self.keys.mastered) => {
+                            self.request_mastered = true;
+                            self.done = true;
+                        }
+                        // Space ticks in the multi-select pickers; elsewhere it's just
+                        // a filter character (handled below) or ignored in nav mode.
+                        KeyCode::Char(' ') if self.multi_select && !self.confirming => {
+                            self.toggle()
+                        }
+                        // Backspace: edit the filter, or step back when there's nothing
+                        // to delete (leave filter mode, return from a drill-in, cancel).
+                        KeyCode::Backspace if self.confirming => {
+                            self.confirming = false;
+                            self.refilter();
+                        }
+                        KeyCode::Backspace if nav => self.cancel(),
+                        KeyCode::Backspace if self.filter.is_empty() => {
+                            if self.filtering {
+                                self.stop_filtering();
+                            } else {
+                                self.cancel();
+                            }
+                        }
+                        KeyCode::Backspace => {
+                            self.filter.pop();
+                            self.refilter();
+                        }
+                        KeyCode::Char(c) if !ctrl && !self.confirming && take_text => {
+                            self.filter.push(c);
+                            self.refilter();
+                        }
+                        _ => {}
                     }
-                    KeyCode::Backspace => {
-                        self.filter.pop();
-                        self.refilter();
-                    }
-                    KeyCode::Char(c) if !ctrl && !self.confirming && take_text => {
-                        self.filter.push(c);
-                        self.refilter();
-                    }
-                    _ => {}
                 }
+                _ => {}
             }
         }
 
