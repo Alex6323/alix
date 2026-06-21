@@ -22,8 +22,8 @@
 
 # Part IV — The AI layer
 
-- [Ask-Claude — the tutor]()
-- [Generating decks]()
+- [Ask-Claude — the tutor](10-ask-claude.md)
+- [Generating decks](11-generating-decks.md)
 - [The AI exam]()
 - [Trace decks]()
 - [Explore — goals & curricula]()
