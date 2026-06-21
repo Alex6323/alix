@@ -33,3 +33,7 @@
 - [The web app]()
 - [Configuration]()
 - [Command reference]()
+
+---
+
+[How flash was made](how-flash-was-made.md)
