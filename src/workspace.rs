@@ -44,6 +44,10 @@ struct Manifest {
     /// Where this workspace keeps its progress (relative to the workspace, or
     /// absolute). `None` → `<workspace>/progress.json`.
     store: Option<String>,
+    /// Per-workspace override of the global `[ask] source_access`: when set, it
+    /// decides whether the grounded ask-tutor may read this workspace's decks'
+    /// source. `None` → inherit the global config.
+    source_access: Option<bool>,
     #[serde(default)]
     defaults: BTreeMap<String, toml::Value>,
 }
@@ -171,6 +175,14 @@ fn manifest_store(dir: &Path) -> Option<String> {
     toml::from_str::<Manifest>(&text).ok()?.store
 }
 
+/// The workspace manifest's `source_access` override, if it sets one — a
+/// per-workspace `Some(true)`/`Some(false)` that beats the global `[ask]
+/// source_access`. `None` (no manifest, malformed, or unset) → inherit global.
+pub fn manifest_source_access(dir: &Path) -> Option<bool> {
+    let text = std::fs::read_to_string(dir.join(MANIFEST)).ok()?;
+    toml::from_str::<Manifest>(&text).ok()?.source_access
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -276,5 +288,19 @@ mod tests {
         };
         write(&dir.path().join(MANIFEST), &format!("store = \"{abs}\"\n"));
         assert_eq!(PathBuf::from(abs), store_path(dir.path()));
+    }
+
+    #[test]
+    fn manifest_source_access_override() {
+        let dir = tempfile::tempdir().unwrap();
+        // Unset (or no manifest) → None, i.e. inherit the global `[ask]` setting.
+        assert_eq!(None, manifest_source_access(dir.path()));
+        write(&dir.path().join(MANIFEST), "title = \"W\"\n");
+        assert_eq!(None, manifest_source_access(dir.path()));
+        // Explicit overrides win.
+        write(&dir.path().join(MANIFEST), "source_access = true\n");
+        assert_eq!(Some(true), manifest_source_access(dir.path()));
+        write(&dir.path().join(MANIFEST), "source_access = false\n");
+        assert_eq!(Some(false), manifest_source_access(dir.path()));
     }
 }

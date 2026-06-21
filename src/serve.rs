@@ -572,12 +572,10 @@ impl Reviewing {
         let (prompt, purpose, run_cfg) = match question {
             Some(q) => {
                 let links = self.links.get(&*card.subject).cloned().unwrap_or_default();
-                // Ground the tutor in the card's source when the user opted in
-                // (`[ask] source_access`) and the deck has a local source root.
-                let root = cfg
-                    .source_access
-                    .then(|| self.source_roots.get(&*card.subject))
-                    .flatten();
+                // `source_roots` holds only decks whose effective source access
+                // (workspace override, else global) is on — so its presence means
+                // "ground this card's tutor in its source".
+                let root = self.source_roots.get(&*card.subject);
                 let prompt = ask::question_prompt(
                     &card,
                     &links,

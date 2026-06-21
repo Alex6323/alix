@@ -129,6 +129,10 @@ pub struct DeckInfo {
     /// The deck's `% source:` project root, for the grounded ask-tutor
     /// (`[ask] source_access`); `None` when there's no local source.
     pub source_root: Option<PathBuf>,
+    /// Whether the grounded tutor may read this deck's source — the *effective*
+    /// value (the deck's workspace `source_access` override, else the global
+    /// `[ask] source_access`).
+    pub source_access: bool,
 }
 
 /// Static settings of a review run.
@@ -827,13 +831,12 @@ impl App {
                 *cursor = 0;
                 let info = self.options.decks.get(&*card.subject);
                 let links = info.map(|i| i.links.as_slice()).unwrap_or(&[]);
-                // Ground the tutor in the card's source when the user opted in
-                // (`[ask] source_access`) and the deck has a local source root.
-                let root = if self.options.ask.source_access {
-                    info.and_then(|i| i.source_root.as_deref())
-                } else {
-                    None
-                };
+                // Ground the tutor in the card's source when source access is on
+                // for this deck (its workspace override, else global) and it has
+                // a local source root.
+                let root = info
+                    .filter(|i| i.source_access)
+                    .and_then(|i| i.source_root.as_deref());
                 let prompt =
                     ask::question_prompt(card, links, &question, !self.ask_session.started, root);
                 let ask_cfg = match root {

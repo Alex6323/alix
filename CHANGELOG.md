@@ -14,9 +14,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   …), and instructs it to check the real files before answering instead of
   relying on memory — so a question about a generated deck is grounded in the
   same source the deck was built from. Off by default because it grants the
-  (possibly LAN-served) tutor file-read access. The web ask panel also now shows
-  **which model and effort** are answering (`model: … · effort: …`) — a reminder
-  that the tutor uses the CLI default unless `[ask]` pins a stronger one.
+  (possibly LAN-served) tutor file-read access. A **workspace can override it**
+  per-folder with `source_access` in its `flash.toml` (so you can enable it for
+  one trusted crate without turning it on globally). The web ask panel also now
+  shows **which model and effort** are answering (`model: … · effort: …`) — a
+  reminder that the tutor uses the CLI default unless `[ask]` pins a stronger one.
 - **`flash explore --title` / `--max-stage` shape the scaffolded workspace; the
   goal becomes its description.** `flash explore --into <dir>` now takes an
   optional `--title` for the workspace's `flash.toml` `title` (omitted, the

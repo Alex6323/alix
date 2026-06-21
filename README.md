@@ -286,12 +286,16 @@ A **workspace** is a folder of decks reviewed together with shared directives �
 ideal for a cluster like all your vocabulary decks. A folder becomes a workspace
 when you drop a **`flash.toml`** in it — a scoped version of the
 [config file](#configuration) — setting a `title`, an optional one-line
-`description`, and a `[defaults]` table of directives shared by every deck:
+`description`, an optional `source_access` override (whether the
+[grounded ask-tutor](#ask-claude-about-a-card) may read this workspace's source,
+beating the global `[ask] source_access`), and a `[defaults]` table of directives
+shared by every deck:
 
 ```toml
 # ~/decks/english/flash.toml
 title = "English"
 description = "everyday conversational vocabulary"
+# source_access = true   # let the ask-tutor read this workspace's % source:
 
 [defaults]
 direction = "both"
@@ -547,8 +551,10 @@ answer: it runs `Read`/`Glob`/`Grep` with its working directory at the deck's
 `% source:` project root (the nearest `Cargo.toml`/`.git`/… above the cited
 files) and is told to check the real files before answering. It's off by default
 because it grants the tutor file-read access — only enable it on a machine and
-network you trust (especially with `--serve --lan`). While Claude thinks, the
-session stays responsive; Esc returns exactly where you were.
+network you trust (especially with `--serve --lan`). A [workspace](#workspaces)
+can override it per-folder: put `source_access = true` (or `false`) in its
+`flash.toml` to decide for that crate alone, beating the global default. While
+Claude thinks, the session stays responsive; Esc returns exactly where you were.
 
 This works in the **web frontend** too (`--serve`): an "Ask" button (and the
 `?` key) on an answered card opens a chat panel — type a question, **Send**,

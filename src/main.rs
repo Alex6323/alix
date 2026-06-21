@@ -500,6 +500,8 @@ fn load_decks(paths: &[PathBuf], defaults: &HashMap<String, DeckSettings>) -> Re
                 links: deck.reference_links(),
                 // Where the grounded tutor reads this deck's source (opt-in).
                 source_root: deck.source_root(),
+                // Resolved against the global config in `build_review`.
+                source_access: false,
             },
         );
         settings.push(deck.settings);
@@ -754,7 +756,18 @@ fn build_review(
     let decks_dir = config.decks_dir();
     let (resolved, deps_used) = resolve_deck_order(&expanded.decks, decks_dir.as_deref())?;
 
-    let (cards, deck_label, decks, settings) = load_decks(&resolved, &expanded.defaults)?;
+    let (cards, deck_label, mut decks, settings) = load_decks(&resolved, &expanded.defaults)?;
+    // Resolve each deck's effective ask-tutor source access: a deck in a
+    // workspace takes that workspace's `source_access` override if it sets one,
+    // else the global `[ask] source_access`.
+    for info in decks.values_mut() {
+        let workspace_override = info
+            .path
+            .parent()
+            .filter(|p| workspace::is_workspace(p))
+            .and_then(workspace::manifest_source_access);
+        info.source_access = workspace_override.unwrap_or(config.ask.source_access);
+    }
     // A single workspace shows its own title as the session label.
     let label = expanded.label.unwrap_or(deck_label);
 
@@ -1242,10 +1255,12 @@ fn review_serve(args: ReviewArgs) -> Result<()> {
             .iter()
             .map(|(subject, info)| (subject.clone(), info.links.clone()))
             .collect();
-        // Subject → `% source:` project root, for the grounded ask-tutor.
+        // Subject → `% source:` project root, but only for decks whose effective
+        // source access is on — so the web tutor grounds exactly those.
         let source_roots = b
             .decks
             .iter()
+            .filter(|(_, info)| info.source_access)
             .filter_map(|(subject, info)| {
                 info.source_root.clone().map(|root| (subject.clone(), root))
             })
