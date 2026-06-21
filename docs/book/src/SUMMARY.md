@@ -12,7 +12,7 @@
 
 # Part II — Richer cards
 
-- [Cloze, dual-direction & image cards]()
+- [Cloze, dual-direction & image cards](06-cloze-direction-images.md)
 - [Directives reference]()
 
 # Part III — Structure
