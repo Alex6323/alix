@@ -1021,10 +1021,16 @@ pub fn run_review(
                     deck: String,
                 }
                 let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
-                let known: HashMap<String, PathBuf> = picker::catalog(&decks_dir, &recent)
-                    .into_iter()
-                    .map(|e| (e.name, e.path))
-                    .collect();
+                // Include workspace members (by their qualified `<ws>/<file>`
+                // name) so an exam can be started on a deck inside a workspace,
+                // not just a top-level deck — mirroring `/api/select`.
+                let mut known: HashMap<String, PathBuf> = HashMap::new();
+                for e in picker::catalog(&decks_dir, &recent) {
+                    for m in &e.members {
+                        known.insert(m.name.clone(), m.path.clone());
+                    }
+                    known.insert(e.name, e.path);
+                }
                 let Some(path) = body.and_then(|b| known.get(&b.deck).cloned()) else {
                     respond_status(request, 400);
                     continue;

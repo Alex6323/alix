@@ -360,6 +360,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reinforced.
 
 ### Fixed
+- **You can start the AI exam on a deck inside a workspace from the browser.**
+  `POST /api/exam/start` only resolved top-level deck names, so the "Take exam"
+  action silently failed (a 400) for a workspace **member**; it now resolves
+  members by their qualified `<workspace>/<file>` name too, like `/api/select`.
 - **The web ask-Claude panel now shows only the current card's exchanges.** It
   was rendering the whole session's conversation, so every former card's Q&A
   piled up on screen. The display is now scoped to the card you're on (and so is
