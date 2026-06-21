@@ -1056,10 +1056,10 @@ fn review_loop(terminal: &mut DefaultTerminal, args: &ReviewArgs) -> Result<()> 
             return Ok(()); // picker cancelled / nothing selected
         };
         run_started_on(terminal, started, args)?;
-        match workspace {
-            Some(ws) => start_in = Some(ws), // back to the workspace for the next
-            None => return Ok(()),           // a loose deck: done after the activity
-        }
+        // Always return to the picker after an activity — a workspace member
+        // reopens its workspace, a loose deck the top list. Only an `Esc` at the
+        // picker itself (above) quits.
+        start_in = workspace;
     }
 }
 
@@ -1694,10 +1694,8 @@ fn browse_loop(
             paths,
             deck_store,
         )?;
-        match workspace {
-            Some(ws) => start_in = Some(ws),
-            None => return Ok(()),
-        }
+        // Always return to the picker; only an `Esc` at the picker quits.
+        start_in = workspace;
     }
 }
 
