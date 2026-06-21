@@ -20,6 +20,7 @@ pub mod deck;
 pub mod exam;
 pub mod explore;
 pub mod generate;
+pub mod import;
 pub mod parser;
 pub mod picker;
 pub mod recent;

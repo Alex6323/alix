@@ -46,6 +46,7 @@ flash --scheduler sm2 mydeck.txt # SM-2 intervals instead of Leitner
 flash --cram mydeck.txt          # ignore cooldowns, review everything
 flash browse mydeck.txt          # read through cards, no grading or scheduling
 flash deck <url-or-path>         # generate a fact deck from a web page or a file/dir
+flash import cards.tsv            # import an Anki TSV (front<TAB>back) into a deck
 flash exam mydeck.txt            # AI exam against the deck's % source: (gates unlocks)
 flash trace mytrace.txt          # walk a predict-and-verify path through a % source:
 flash trace --build mytrace.txt  # let Claude discover the path (writes checkpoints back)
@@ -543,6 +544,28 @@ command and permission settings. Review the result before relying on it — it i
 point, not a final deck. Generation needs the `claude` CLI installed and
 logged in, and works best on a single page or chapter (a whole book overruns
 the context budget).
+
+## Import an Anki deck (`flash import`)
+
+`flash import <file.tsv>` turns an Anki export into a flash deck — no Claude
+needed. Export your notes from Anki as **Notes in Plain Text** (`.txt`/`.tsv`)
+with fields separated by a tab; the first field becomes the front, the second
+the back, and any further fields are ignored:
+
+```sh
+flash import french.tsv                 # writes ~/decks/french.txt
+flash import french.tsv -o vocab        # choose the deck name
+flash import french.tsv --print         # print to stdout instead of writing
+flash import french.tsv --force          # overwrite an existing deck
+```
+
+It skips Anki's `#`-prefixed header lines (`#separator:tab`, `#html:true`, …),
+turns `<br>` tags into separate answer lines, decodes the common HTML entities
+(`&amp;`, `&lt;`, `&nbsp;`, …), and backslash-escapes a back line that would
+otherwise read as a flash comment or note. Rows missing a side are dropped. The
+result is validated (`parse_str`) and written to `~/decks/<name>.txt`; review it
+and clean up any leftover HTML by hand. It works best on a plain two-field
+export — rich notetypes, media, and tags don't carry over.
 
 ## The AI exam (`flash exam`)
 

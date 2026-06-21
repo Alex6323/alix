@@ -13,7 +13,7 @@ use flash::{
     card::{Card, Frontend},
     config::{self, Config, Strictness},
     deck::{Deck, DeckSettings, DeckState},
-    generate, parser, picker,
+    generate, import, parser, picker,
     recent::{self, RecentDecks},
     scheduler::SchedulerKind,
     serve,
@@ -62,6 +62,9 @@ enum Command {
     /// Generate a fact deck with Claude from a source — a web page URL or a
     /// local file/directory path. (The deck-side mirror of `flash trace`.)
     Deck(GenerateDeckArgs),
+    /// Import an Anki TSV export (tab-separated `front<TAB>back` lines) into a
+    /// flash deck.
+    Import(ImportArgs),
     /// Sit the AI exam for a deck: open questions from its `% source:`, graded
     /// by Claude. Passing marks the deck mastered and unlocks its dependents.
     Exam(ExamArgs),
@@ -166,6 +169,29 @@ struct GenerateDeckArgs {
     review: bool,
 
     /// Print the generated deck to stdout instead of writing a file.
+    #[arg(long)]
+    print: bool,
+
+    /// Overwrite the output file if it already exists.
+    #[arg(long)]
+    force: bool,
+
+    /// Path of the config file (default: platform config dir).
+    #[arg(long)]
+    config: Option<PathBuf>,
+}
+
+#[derive(Args)]
+struct ImportArgs {
+    /// The Anki TSV file to import (tab-separated `front<TAB>back` lines).
+    file: PathBuf,
+
+    /// Output deck name (default: a slug from the file name). Written into the
+    /// decks directory; a `.txt` extension is added if missing.
+    #[arg(short, long)]
+    output: Option<String>,
+
+    /// Print the deck to stdout instead of writing a file.
     #[arg(long)]
     print: bool,
 
@@ -379,6 +405,7 @@ fn main() -> Result<()> {
         Some(Command::Check { decks }) => check(decks),
         Some(Command::Browse(args)) => browse(args),
         Some(Command::Deck(args)) => deck_cmd(args),
+        Some(Command::Import(args)) => import_cmd(args),
         Some(Command::Exam(args)) => exam_cmd(args),
         Some(Command::Trace(args)) => trace_cmd(args),
         Some(Command::Explore(args)) => explore_cmd(args),
@@ -1492,6 +1519,70 @@ fn deck_cmd(args: GenerateDeckArgs) -> Result<()> {
         // Saved, but not yet valid: tell the user exactly what to fix.
         Err(e) => bail!(
             "Saved the generated deck to {}, but it does not parse yet:\n  {e}\n\
+             Fix that line and run `flash check {}`.",
+            path.display(),
+            path.display()
+        ),
+    }
+}
+
+fn import_cmd(args: ImportArgs) -> Result<()> {
+    let config = Config::load(args.config.as_deref())?;
+    let tsv = std::fs::read_to_string(&args.file)
+        .with_context(|| format!("cannot read {}", args.file.display()))?;
+    let text = import::tsv_to_deck(&tsv)?;
+
+    // The file name is part of every card's identity hash, so parse against the
+    // final name.
+    let name = match &args.output {
+        Some(name) => name.clone(),
+        None => generate::deck_name(&args.file.to_string_lossy()),
+    };
+    let name = if name.ends_with(".txt") {
+        name
+    } else {
+        format!("{name}.txt")
+    };
+    let parsed = parser::parse_str(&name, &text);
+
+    if args.print {
+        print!("{text}");
+        if !text.ends_with('\n') {
+            println!();
+        }
+        match &parsed {
+            Ok(cards) => eprintln!("({} cards — not written; --print)", cards.len()),
+            Err(e) => eprintln!("(warning: does not parse yet — {e})"),
+        }
+        return Ok(());
+    }
+
+    let dir = config
+        .decks_dir()
+        .context("cannot determine the decks directory")?;
+    let path = dir.join(&name);
+    if path.exists() && !args.force {
+        bail!(
+            "{} already exists; pass --force to overwrite",
+            path.display()
+        );
+    }
+    std::fs::create_dir_all(&dir).with_context(|| format!("cannot create {}", dir.display()))?;
+    let body = if text.ends_with('\n') {
+        text
+    } else {
+        format!("{text}\n")
+    };
+    std::fs::write(&path, body).with_context(|| format!("cannot write {}", path.display()))?;
+
+    match parsed {
+        Ok(cards) => {
+            println!("Imported {} cards into {}", cards.len(), path.display());
+            Ok(())
+        }
+        // Saved, but not yet valid: tell the user exactly what to fix.
+        Err(e) => bail!(
+            "Saved the deck to {}, but it does not parse yet:\n  {e}\n\
              Fix that line and run `flash check {}`.",
             path.display(),
             path.display()

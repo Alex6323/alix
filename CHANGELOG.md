@@ -22,6 +22,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   version-control assumption). It's automatic for explored workspaces, not a
   command; a loose trace over a live `% source:` is left as-is. Rationale in
   `docs/traces.md`.
+- **`flash import <file.tsv>`** — import an Anki "Notes in Plain Text" export
+  (tab-separated `front<TAB>back`) into a flash deck, no Claude needed. It skips
+  Anki's `#`-prefixed header lines, turns `<br>` tags into separate answer
+  lines, decodes the common HTML entities, and backslash-escapes a back line
+  that would otherwise read as a `%` comment or `!` note; rows missing a side
+  are dropped. The result is validated and written to `~/decks/` (`-o`/`--print`/
+  `--force`, like `flash deck`). Conversion lives in the lib
+  (`import::tsv_to_deck`).
 - **`flash deck <source>`** (renamed from `flash generate`, which no longer
   exists as an alias) — generates a fact deck with Claude from a **web page URL or a
   local file/directory path**, mirroring `flash trace`. A URL is fetched with
