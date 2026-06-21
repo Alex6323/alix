@@ -31,13 +31,16 @@ pub const MANIFEST: &str = "flash.toml";
 /// with the workspace.
 pub const STORE_FILE: &str = "progress.json";
 
-/// The `flash.toml` manifest: a display `title`, an optional `store` path (where
+/// The `flash.toml` manifest: a display `title`, a one-line `description` (e.g.
+/// the learning goal `flash explore` was given), an optional `store` path (where
 /// this workspace's progress lives), and a `[defaults]` table of shared
 /// directives (keyed by directive name). Unknown keys/sections are ignored, so
 /// the format stays forgiving and forward-compatible.
 #[derive(Deserialize, Default)]
 struct Manifest {
     title: Option<String>,
+    /// A short description of what the workspace is for (its learning goal).
+    description: Option<String>,
     /// Where this workspace keeps its progress (relative to the workspace, or
     /// absolute). `None` → `<workspace>/progress.json`.
     store: Option<String>,
@@ -52,6 +55,9 @@ pub struct Workspace {
     pub path: PathBuf,
     /// Display title (manifest `title`), or `None` to use the folder name.
     pub title: Option<String>,
+    /// A one-line description of the workspace (manifest `description`), or
+    /// `None`. `flash explore` writes the learning goal here.
+    pub description: Option<String>,
     /// Shared directive defaults from the manifest, folded below each member
     /// deck's own directives.
     pub settings: DeckSettings,
@@ -68,10 +74,11 @@ impl Workspace {
     pub fn load(dir: impl AsRef<Path>) -> io::Result<Workspace> {
         let path = dir.as_ref().to_path_buf();
         let members = members(&path)?;
-        let (title, settings) = read_manifest(&path.join(MANIFEST));
+        let (title, description, settings) = read_manifest(&path.join(MANIFEST));
         Ok(Workspace {
             path,
             title,
+            description,
             settings,
             members,
         })
@@ -89,23 +96,28 @@ impl Workspace {
     }
 }
 
-/// Reads the manifest's title and shared directive defaults. A missing or
-/// malformed file yields no title and default settings. The `[defaults]` table
-/// is interpreted by [`DeckSettings::from_directives`], so its keys mean
-/// exactly what the matching `% key: value` deck directives mean.
-fn read_manifest(path: &Path) -> (Option<String>, DeckSettings) {
+/// Reads the manifest's title, description, and shared directive defaults. A
+/// missing or malformed file yields no title/description and default settings.
+/// The `[defaults]` table is interpreted by [`DeckSettings::from_directives`],
+/// so its keys mean exactly what the matching `% key: value` deck directives
+/// mean.
+fn read_manifest(path: &Path) -> (Option<String>, Option<String>, DeckSettings) {
     let Ok(text) = std::fs::read_to_string(path) else {
-        return (None, DeckSettings::default());
+        return (None, None, DeckSettings::default());
     };
     let Ok(manifest) = toml::from_str::<Manifest>(&text) else {
-        return (None, DeckSettings::default());
+        return (None, None, DeckSettings::default());
     };
     let directives: Vec<(String, String)> = manifest
         .defaults
         .iter()
         .map(|(key, value)| (key.clone(), value_to_string(value)))
         .collect();
-    (manifest.title, DeckSettings::from_directives(&directives))
+    (
+        manifest.title,
+        manifest.description,
+        DeckSettings::from_directives(&directives),
+    )
 }
 
 /// A TOML value as the plain string the directive interpreter expects
@@ -175,11 +187,12 @@ mod tests {
         write(&dir.path().join("b.txt"), "# b\n\t2\n");
         write(
             &dir.path().join(MANIFEST),
-            "title = \"English\"\n\n[defaults]\nmode = \"typing\"\ndirection = \"both\"\nmax-stage = 3\n",
+            "title = \"English\"\ndescription = \"everyday vocab\"\n\n[defaults]\nmode = \"typing\"\ndirection = \"both\"\nmax-stage = 3\n",
         );
 
         let ws = Workspace::load(dir.path()).unwrap();
         assert_eq!(Some("English".to_string()), ws.title);
+        assert_eq!(Some("everyday vocab".to_string()), ws.description);
         assert_eq!("English", ws.display_name());
         assert_eq!(Some(Mode::Typing), ws.settings.mode);
         assert_eq!(Some(3), ws.settings.max_stage); // an int value parses too

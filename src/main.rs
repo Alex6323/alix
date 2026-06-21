@@ -124,6 +124,11 @@ struct ExploreArgs {
     #[arg(long)]
     into: Option<PathBuf>,
 
+    /// With --into, the workspace's display title (its `flash.toml` `title`).
+    /// Omitted, the folder name is used; `--goal` becomes the description.
+    #[arg(long, requires = "into")]
+    title: Option<String>,
+
     /// With --into, write into the directory even if it already contains files.
     #[arg(long, requires = "into")]
     force: bool,
@@ -2248,8 +2253,15 @@ fn explore_cmd(args: ExploreArgs) -> Result<()> {
         let (plan, filled) =
             flash::explore::explore_and_fill(&source, goal, &config.trace, &config.ask)?;
         println!("{plan}");
-        let report =
-            flash::explore::materialize(&plan, dir, goal, &source, args.force, Some(&filled))?;
+        let report = flash::explore::materialize(
+            &plan,
+            dir,
+            goal,
+            args.title.as_deref(),
+            &source,
+            args.force,
+            Some(&filled),
+        )?;
         let total = report.traces + report.decks;
         let stubs = total - report.filled;
         println!(
@@ -2287,7 +2299,15 @@ fn explore_cmd(args: ExploreArgs) -> Result<()> {
     let plan = flash::explore::explore(&source, goal, &config.trace, &config.ask)?;
     println!("{plan}");
     if let Some(dir) = &args.into {
-        let report = flash::explore::materialize(&plan, dir, goal, &source, args.force, None)?;
+        let report = flash::explore::materialize(
+            &plan,
+            dir,
+            goal,
+            args.title.as_deref(),
+            &source,
+            args.force,
+            None,
+        )?;
         let total = report.traces + report.decks;
         println!(
             "\n{BOLD}Wrote {total} files{RESET} to {} — {} traces, {} decks, + flash.toml.",

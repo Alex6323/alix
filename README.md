@@ -254,12 +254,13 @@ finished deck later lapses below the top stage, its dependents lock again.
 A **workspace** is a folder of decks reviewed together with shared directives —
 ideal for a cluster like all your vocabulary decks. A folder becomes a workspace
 when you drop a **`flash.toml`** in it — a scoped version of the
-[config file](#configuration) — setting a title and a `[defaults]` table of
-directives shared by every deck:
+[config file](#configuration) — setting a `title`, an optional one-line
+`description`, and a `[defaults]` table of directives shared by every deck:
 
 ```toml
 # ~/decks/english/flash.toml
 title = "English"
+description = "everyday conversational vocabulary"
 
 [defaults]
 direction = "both"
@@ -841,14 +842,17 @@ items yourself (`flash trace --build` a trace, `flash deck` a facts deck).
 With **`--into <dir>`** it materializes the plan into a ready-made **workspace**:
 
 ```
-flash explore . --goal "how review scheduling works" --into ~/decks/scheduling/
+flash explore . --goal "how review scheduling works" \
+  --into ~/decks/scheduling/ --title "Scheduling internals"
 ```
 
-That writes a `flash.toml` (the goal) and one stub file per item — a `% trace:`
-deck for each trace (run `flash trace --build` on it) and a `% title:` facts deck
-for each deck (author it or `flash deck`) — wired together with `% requires:`
-so they unlock in dependency order, with each `% source:` pointing back at the
-real source. (Refuses a non-empty folder unless `--force`.)
+That writes a `flash.toml` and one stub file per item — a `% trace:` deck for
+each trace (run `flash trace --build` on it) and a `% title:` facts deck for each
+deck (author it or `flash deck`) — wired together with `% requires:` so they
+unlock in dependency order, with each `% source:` pointing back at the real
+source. The `--goal` becomes the workspace's `description`; **`--title`** names
+it (omitted, the folder name is used). (Refuses a non-empty folder unless
+`--force`.)
 
 Add **`--build`** to go all the way: `flash explore … --into <dir> --build`
 explores the source **once** and then reuses that same session to fill every
