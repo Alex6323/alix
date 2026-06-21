@@ -138,6 +138,17 @@ card's note: `! from scheduler.rs:90-98`.) It's automatic for explored workspace
 a loose trace over a live source is left as-is. The rationale is in
 [`docs/traces.md`](../traces.md).
 
+## Checking the locators
+
+For a trace that *isn't* frozen — a loose `.txt` over a live `% source:` —
+[`flash check`](17-command-reference.md) validates that every `% at:` still
+resolves into its source: it warns about a locator that names a missing file,
+runs past the end of the file, or (for a single-file source) gives bare line
+numbers it can't place. It's a quick structural check — *does this excerpt still
+exist?* — so a moved or trimmed source is caught before you walk into it, not
+mid-hop. (Frozen snapshots don't move, but their snippets are validated the same
+way.)
+
 A trace deck degrades gracefully — even without `flash trace` it's a valid deck of
 `explain` cards. See `examples/keypress-to-grade.txt` for a complete trace over
 this repo's own source.

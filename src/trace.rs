@@ -174,6 +174,91 @@ impl Trace {
         };
         read_excerpt(&path, spec.as_deref())
     }
+
+    /// Validates every checkpoint's `% at:` locator against the live source, for
+    /// `flash check`. Returns one [`LocatorIssue`] per problem (empty = all
+    /// resolve): a checkpoint with no locator, a `file:` that doesn't exist, a
+    /// line range past the end of the file (the drift symptom — the source
+    /// shrank or moved), or a line-only locator without a single-file source. A
+    /// URL `% source:` has no local line ranges, so its locators are skipped.
+    pub fn lint_locators(&self) -> Vec<LocatorIssue> {
+        let mut issues = Vec::new();
+        let url_source = self.source.as_deref().is_some_and(is_url);
+        for (i, cp) in self.checkpoints.iter().enumerate() {
+            let Some(locator) = cp.locator.as_deref() else {
+                issues.push(LocatorIssue {
+                    checkpoint: i,
+                    message: "no `% at:` locator — a walk can't reveal its source".to_string(),
+                });
+                continue;
+            };
+            if url_source {
+                continue; // a remote source has no local line ranges to check
+            }
+            let (file, spec) = parse_locator(locator);
+            let path = match file {
+                Some(f) => self.base_dir.join(f),
+                None => match &self.source_file {
+                    Some(p) => p.clone(),
+                    None => {
+                        issues.push(LocatorIssue {
+                            checkpoint: i,
+                            message: format!(
+                                "locator `{locator}` gives only line numbers, but `% source:` \
+                                 is not a single file — write it as `file:lines`"
+                            ),
+                        });
+                        continue;
+                    }
+                },
+            };
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                issues.push(LocatorIssue {
+                    checkpoint: i,
+                    message: format!(
+                        "locator `{locator}` → `{}`: file not found or unreadable",
+                        path.display()
+                    ),
+                });
+                continue;
+            };
+            let Some(spec) = spec else { continue }; // whole-file locator: always valid
+            let (start, end) = parse_line_range(&spec);
+            let n = text.lines().count();
+            if start > n {
+                issues.push(LocatorIssue {
+                    checkpoint: i,
+                    message: format!(
+                        "locator `{locator}` starts at line {start}, but `{}` has only {n} \
+                         lines — the source changed; re-point it",
+                        path.display()
+                    ),
+                });
+            } else if end > n {
+                issues.push(LocatorIssue {
+                    checkpoint: i,
+                    message: format!(
+                        "locator `{locator}` ends at line {end}, but `{}` has only {n} lines \
+                         — the excerpt is clamped short; re-point it",
+                        path.display()
+                    ),
+                });
+            }
+        }
+        issues
+    }
+}
+
+/// A problem `flash check` found with a checkpoint's `% at:` locator (see
+/// [`Trace::lint_locators`]). `checkpoint` is the 0-based index into the path —
+/// and into the deck's cards, which a trace's checkpoints mirror 1:1 — so the
+/// caller can map it back to a deck line.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LocatorIssue {
+    /// Which checkpoint (0-based) the issue is on.
+    pub checkpoint: usize,
+    /// The problem, ready to print.
+    pub message: String,
 }
 
 // ── Building (`flash trace --build`) ─────────────────────────────────────────
@@ -1280,6 +1365,101 @@ mod tests {
         let trace = Trace::from_deck(&Deck::load(&path).unwrap()).unwrap();
         let err = trace.excerpt(&trace.checkpoints[0]).unwrap_err();
         assert!(format!("{err:#}").contains("not a single file"));
+    }
+
+    /// A trace whose `% at:` locators all resolve in range lints clean.
+    #[test]
+    fn lint_locators_passes_a_valid_trace() {
+        let dir = tempfile::tempdir().unwrap();
+        write(dir.path(), "src.txt", "one\ntwo\nthree\nfour\nfive\n");
+        let path = write(
+            dir.path(),
+            "t.txt",
+            "% trace: g\n% source: src.txt\n# q\n\ta\n\t% at: 2-3\n",
+        );
+        let trace = Trace::from_deck(&Deck::load(&path).unwrap()).unwrap();
+        assert!(trace.lint_locators().is_empty());
+    }
+
+    /// A range starting past EOF — the source shrank — is flagged.
+    #[test]
+    fn lint_locators_flags_a_start_past_eof() {
+        let dir = tempfile::tempdir().unwrap();
+        write(dir.path(), "src.txt", "one\ntwo\nthree\n");
+        let path = write(
+            dir.path(),
+            "t.txt",
+            "% trace: g\n% source: src.txt\n# q\n\ta\n\t% at: 5-6\n",
+        );
+        let trace = Trace::from_deck(&Deck::load(&path).unwrap()).unwrap();
+        let issues = trace.lint_locators();
+        assert_eq!(1, issues.len());
+        assert_eq!(0, issues[0].checkpoint);
+        assert!(issues[0].message.contains("only 3"));
+    }
+
+    /// A range whose end runs past EOF is silently clamped at walk time, so
+    /// `check` flags it too.
+    #[test]
+    fn lint_locators_flags_a_clamped_end() {
+        let dir = tempfile::tempdir().unwrap();
+        write(dir.path(), "src.txt", "one\ntwo\nthree\n");
+        let path = write(
+            dir.path(),
+            "t.txt",
+            "% trace: g\n% source: src.txt\n# q\n\ta\n\t% at: 2-9\n",
+        );
+        let trace = Trace::from_deck(&Deck::load(&path).unwrap()).unwrap();
+        let issues = trace.lint_locators();
+        assert_eq!(1, issues.len());
+        assert!(issues[0].message.contains("clamped"));
+    }
+
+    /// A `file:` part that names a missing file is flagged.
+    #[test]
+    fn lint_locators_flags_a_missing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write(
+            dir.path(),
+            "t.txt",
+            "% trace: g\n% source: .\n# q\n\ta\n\t% at: nope.rs:1-2\n",
+        );
+        let trace = Trace::from_deck(&Deck::load(&path).unwrap()).unwrap();
+        let issues = trace.lint_locators();
+        assert_eq!(1, issues.len());
+        assert!(issues[0].message.contains("not found"));
+    }
+
+    /// A checkpoint with no `% at:` line at all is flagged (a walk can't reveal
+    /// its source).
+    #[test]
+    fn lint_locators_flags_a_missing_locator() {
+        let dir = tempfile::tempdir().unwrap();
+        write(dir.path(), "src.txt", "one\ntwo\n");
+        let path = write(
+            dir.path(),
+            "t.txt",
+            "% trace: g\n% source: src.txt\n# q\n\ta\n",
+        );
+        let trace = Trace::from_deck(&Deck::load(&path).unwrap()).unwrap();
+        let issues = trace.lint_locators();
+        assert_eq!(1, issues.len());
+        assert!(issues[0].message.contains("no `% at:`"));
+    }
+
+    /// A bare line-only locator with a directory source can't resolve — flagged.
+    #[test]
+    fn lint_locators_flags_line_only_without_a_single_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write(
+            dir.path(),
+            "t.txt",
+            "% trace: g\n% source: .\n# q\n\ta\n\t% at: 1\n",
+        );
+        let trace = Trace::from_deck(&Deck::load(&path).unwrap()).unwrap();
+        let issues = trace.lint_locators();
+        assert_eq!(1, issues.len());
+        assert!(issues[0].message.contains("not a single file"));
     }
 
     #[test]

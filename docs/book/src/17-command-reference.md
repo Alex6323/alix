@@ -23,7 +23,7 @@ and `--serve` / `--port` / `--lan` ([the web app](15-the-web-app.md)).
 - `flash list <deck>...` — every card with its stage and due time.
 - `flash reset <deck>...` — clear progress (`--card`, `--cards`, `--all`; `-y` to
   skip the prompt).
-- `flash check <deck>...` — lint a deck (syntax, duplicate cards).
+- `flash check <deck>...` — lint a deck (syntax, duplicate cards, trace `% at:` locators).
 - `flash deps <deck>` (alias `require`) — edit `% requires:` with a checkbox picker
   ([dependencies](09-dependencies.md)).
 

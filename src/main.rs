@@ -2643,6 +2643,9 @@ fn check(decks: Vec<PathBuf>) -> Result<()> {
                 if !deck.sources.is_empty() {
                     println!("  sources:  {}", deck.sources.join(", "));
                 }
+                if let Some(desc) = &deck.trace {
+                    println!("  trace:    {desc}");
+                }
                 for (a, b) in deck.duplicates() {
                     warnings += 1;
                     eprintln!(
@@ -2664,6 +2667,28 @@ fn check(decks: Vec<PathBuf>) -> Result<()> {
                                 card.line,
                                 image.display()
                             );
+                        }
+                    }
+                }
+
+                // Trace decks: validate each `% at:` locator resolves into the
+                // live `% source:` — catches drift (a file that shrank or was
+                // renamed) before a walk hits it, like the duplicate/image checks.
+                if deck.is_trace() && !deck.cards.is_empty() {
+                    match Trace::from_deck(&deck) {
+                        Ok(trace) => {
+                            for issue in trace.lint_locators() {
+                                warnings += 1;
+                                let line = deck.cards.get(issue.checkpoint).map_or(0, |c| c.line);
+                                eprintln!(
+                                    "warning: {}: checkpoint at line {}: {}",
+                                    deck.subject, line, issue.message
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            warnings += 1;
+                            eprintln!("warning: {}: {e:#}", deck.subject);
                         }
                     }
                 }

@@ -118,6 +118,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   are dropped. The result is validated and written to `~/decks/` (`-o`/`--print`/
   `--force`, like `flash deck`). Conversion lives in the lib
   (`import::tsv_to_deck`).
+- **`flash check` now validates trace `% at:` locators.** A trace deck is linted
+  like any other: `check` resolves each checkpoint's locator against its
+  `% source:` and warns (advisory, non-fatal) about any that name a missing file,
+  run past the end of the file, give bare line numbers without a single-file
+  source, or are absent — a quick "does this excerpt still exist?" structural
+  check that catches a moved or trimmed source before a walk hits it. (Frozen
+  snapshots are validated the same way.) It also prints the deck's `% trace:`
+  description. Logic in the lib (`trace::Trace::lint_locators`).
 - **`flash deck <source>`** (renamed from `flash generate`, which no longer
   exists as an alias) — generates a facts deck with Claude from a **web page URL or a
   local file/directory path**, mirroring `flash trace`. A URL is fetched with

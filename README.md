@@ -87,7 +87,7 @@ flash explore --walk .           # walk an explore tour of the source's shape
 flash deps mydeck.txt            # edit a deck's prerequisites (checkbox picker)
 flash stats mydeck.txt           # progress overview
 flash list mydeck.txt            # every card with stage and due time
-flash check mydeck.txt           # lint a deck (syntax, duplicates)
+flash check mydeck.txt           # lint a deck (syntax, duplicates, trace locators)
 flash reset mydeck.txt           # clear stored progress (also --card / --all)
 ```
 
@@ -799,6 +799,15 @@ its original line numbers, so when those matter the original `file:lines` is kep
 in the card's note (`! from scheduler.rs:90-98`). It's automatic for explored
 workspaces, not a command; a loose trace over a live `% source:` is left as-is.
 See [docs/traces.md](docs/traces.md) for the rationale.
+
+**Checking the locators.** For a trace that *isn't* frozen — a loose `.txt` over
+a live `% source:` — **`flash check`** validates that every `% at:` still
+resolves into its source: it warns about a locator that names a missing file,
+runs past the end of the file, or (for a single-file source) gives bare line
+numbers it can't place. It's a quick structural check — *does this excerpt still
+exist?* — so a moved or trimmed source is caught before you walk into it, not
+mid-hop. (Frozen snapshots don't move, but their snippets are validated the same
+way.)
 
 Because building is one-shot, correctness-critical, and **fails silently** when
 the model is weak (you still get parseable checkpoints, just a loose chain you
