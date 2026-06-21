@@ -17,8 +17,8 @@
 
 # Part III — Structure
 
-- [Workspaces]()
-- [Dependencies & unlocks]()
+- [Workspaces](08-workspaces.md)
+- [Dependencies & unlocks](09-dependencies.md)
 
 # Part IV — The AI layer
 
