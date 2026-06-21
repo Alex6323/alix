@@ -1259,6 +1259,7 @@ fn review_serve(args: ReviewArgs) -> Result<()> {
     let opts = serve::ReviewOptions {
         mode_override: args.mode,
         keys: config.keys.clone(),
+        picker: config.picker.clone(),
         max_typos: args.max_typos,
         ask: config.ask.clone(),
         exam: config.exam.clone(),
@@ -1743,6 +1744,7 @@ fn browse_serve(args: BrowseArgs) -> Result<()> {
         decks_dir,
         addr,
         config.browse,
+        config.picker,
         build,
     )
 }

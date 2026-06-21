@@ -189,6 +189,73 @@ fn build_candidates(decks_dir: &Path, recent: &RecentDecks) -> Vec<Candidate> {
     out
 }
 
+/// The store-derived status of a deck, shared by the TUI picker and the web
+/// deck-selection screen so both surfaces show the same badge, lock, and gating.
+pub struct DeckStatus {
+    /// Completion state — drives the meta tint (finished → green, exam due →
+    /// yellow) and the frontend's machine-readable state string.
+    pub state: DeckState,
+    /// The badge after the label: `new` · `m/total` · `done ✓` · `mastered 🎉`
+    /// · `exam due`.
+    pub badge: String,
+    /// A `% requires:` prerequisite isn't finished (only when `enforce_locks`).
+    /// Shown dimmed with a 🔒; still advisory (review gating, not browse).
+    pub locked: bool,
+    /// Launching right now would have something to do — a card due/new, a trace
+    /// checkpoint, or a due exam. `false` for a fully-drilled / all-on-cooldown
+    /// deck, which the review launcher won't start (shown with a 🕒).
+    pub reviewable: bool,
+    /// Finished *and* exam-passed — reads `mastered 🎉` rather than `done ✓`, and
+    /// belongs in the Mastered window rather than Recent.
+    pub mastered: bool,
+    /// A trace deck (`% trace:`): launched as a predict-verify walk, never a
+    /// card review.
+    pub is_trace: bool,
+}
+
+/// Computes a deck's [`DeckStatus`] from the progress `store`, mirroring what a
+/// review session would see. `decks_dir` roots `% requires:` resolution for the
+/// lock check; `enforce_locks` is false for browse (any deck is browsable).
+pub fn deck_status(
+    deck: &Deck,
+    store: &Store,
+    decks_dir: Option<&Path>,
+    enforce_locks: bool,
+) -> DeckStatus {
+    let state = deck.state(store);
+    let total = deck.cards.len();
+    let retired = deck
+        .cards
+        .iter()
+        .filter(|card| session::is_retired(card, store))
+        .count();
+    // "mastered" is reserved for passing the exam; a source-less deck that's
+    // merely fully drilled stays "done".
+    let mastered = matches!(state, DeckState::Finished) && store.deck_mastered(&deck.subject);
+    let badge = match state {
+        DeckState::Finished if mastered => "mastered 🎉".to_string(),
+        DeckState::Finished => "done ✓".to_string(),
+        DeckState::ExamDue => "exam due".to_string(),
+        DeckState::NotStarted => "new".to_string(),
+        DeckState::Started => format!("{retired}/{total}"),
+    };
+    let locked = enforce_locks && deck::is_locked(deck, decks_dir, store);
+    // Is there anything to launch right now? A trace always walks; an exam-due
+    // deck launches its exam; otherwise there must be a card due or new.
+    let scheduler = deck.settings.scheduler.unwrap_or_default().scheduler();
+    let reviewable = deck.is_trace()
+        || matches!(state, DeckState::ExamDue)
+        || session::has_reviewable(&deck.cards, store, scheduler.as_ref(), session::now_ms());
+    DeckStatus {
+        state,
+        badge,
+        locked,
+        reviewable,
+        mastered,
+        is_trace: deck.is_trace(),
+    }
+}
+
 /// Turns a deck candidate into a picker item, deriving its completion-state
 /// meta (`new` / `m/total` at the top stage / `done ✓`) and lock status (a
 /// `% requires:` prerequisite not yet finished) from the progress store. A deck
@@ -237,46 +304,16 @@ fn deck_item(
     }
     let (label, meta, locked, state, is_trace, reviewable) = match Deck::load(&c.path) {
         Ok(deck) => {
-            let st = deck.state(store);
-            let total = deck.cards.len();
-            let retired = deck
-                .cards
-                .iter()
-                .filter(|card| session::is_retired(card, store))
-                .count();
-            let badge = match st {
-                // "mastered" is reserved for passing the exam; a source-less
-                // deck that's merely fully drilled stays "done".
-                DeckState::Finished if store.deck_mastered(&deck.subject) => {
-                    "mastered 🎉".to_string()
-                }
-                DeckState::Finished => "done ✓".to_string(),
-                DeckState::ExamDue => "exam due".to_string(),
-                DeckState::NotStarted => "new".to_string(),
-                DeckState::Started => format!("{retired}/{total}"),
-            };
-            let locked = enforce_locks && deck::is_locked(&deck, Some(decks_dir), store);
+            let status = deck_status(&deck, store, Some(decks_dir), enforce_locks);
             // In a workspace drill-in, badge whether a member is a trace (walked)
             // or a facts deck (reviewed). In Recent, every row is a loose file, so
             // the kind is just noise — drop it.
             let meta = if show_kind {
-                let kind = if deck.is_trace() { "trace" } else { "deck" };
-                format!("· {kind} · {badge}")
+                let kind = if status.is_trace { "trace" } else { "deck" };
+                format!("· {kind} · {}", status.badge)
             } else {
-                format!("· {badge}")
+                format!("· {}", status.badge)
             };
-            // Is there anything to launch right now? A trace always walks; an
-            // exam-due deck launches its exam; otherwise there must be a card due
-            // or new. A deck with nothing due won't start (Enter is a no-op).
-            let scheduler = deck.settings.scheduler.unwrap_or_default().scheduler();
-            let reviewable = deck.is_trace()
-                || matches!(st, DeckState::ExamDue)
-                || session::has_reviewable(
-                    &deck.cards,
-                    store,
-                    scheduler.as_ref(),
-                    session::now_ms(),
-                );
             // Use the explicit `% title:`, else the file name (without `.txt`) —
             // never a trace's long `% trace:` sentence, which is a paragraph, not
             // a list label.
@@ -284,10 +321,10 @@ fn deck_item(
             (
                 label,
                 Some(meta),
-                locked,
-                Some(st),
-                deck.is_trace(),
-                reviewable,
+                status.locked,
+                Some(status.state),
+                status.is_trace,
+                status.reviewable,
             )
         }
         // A deck that fails to load stays launchable so the load error surfaces.
@@ -317,8 +354,9 @@ fn file_name(path: &Path) -> String {
 
 /// A "2h ago"-style label for the last time progress was made in `folder`'s own
 /// workspace store (an actual review, not merely opening it), or `None` if it has
-/// none yet.
-fn workspace_last_progress(folder: &Path) -> Option<String> {
+/// none yet. Shared with the web picker, which shows the same time on workspace
+/// rows.
+pub fn workspace_last_progress(folder: &Path) -> Option<String> {
     let ts = Store::open(workspace::store_path(folder))
         .ok()?
         .last_review_ms()?;
@@ -705,8 +743,9 @@ pub fn pick_workspace(folder: &Path, enforce_locks: bool) -> Result<Option<Vec<P
 /// The index of the first prerequisite (`% requires:`) each member declares that
 /// is *also a member* of this set — the edge that gates it in the dependency
 /// tree. `None` means a root: no prerequisite, or one outside the set. Resolves
-/// names with [`deck::resolve_dep`]; an unreadable deck is a root.
-fn member_parents(members: &[PathBuf], decks_dir: &Path) -> Vec<Option<usize>> {
+/// names with [`deck::resolve_dep`]; an unreadable deck is a root. Shared with
+/// the web picker, which lays members out as the same unlock tree.
+pub fn member_parents(members: &[PathBuf], decks_dir: &Path) -> Vec<Option<usize>> {
     let canon = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
     let canonical: Vec<PathBuf> = members.iter().map(|m| canon(m)).collect();
     members
@@ -727,8 +766,10 @@ fn member_parents(members: &[PathBuf], decks_dir: &Path) -> Vec<Option<usize>> {
 /// `key` (e.g. startable-first, then name). `parent[i]` is the gating member's
 /// index, or `None` for a root. Returns `(index, prefix)` in pre-order, the
 /// prefix drawing the `├─`/`└─`/`│` branch lines. A dependency cycle can't strand
-/// a node — any left unvisited is appended as its own root.
-fn dependency_forest<K: Ord>(parent: &[Option<usize>], key: &[K]) -> Vec<(usize, String)> {
+/// a node — any left unvisited is appended as its own root. Shared with the web
+/// picker: each branch segment is exactly three chars wide, so a row's nesting
+/// depth is `prefix.chars().count() / 3`.
+pub fn dependency_forest<K: Ord>(parent: &[Option<usize>], key: &[K]) -> Vec<(usize, String)> {
     let n = parent.len();
     let mut children = vec![Vec::new(); n];
     let mut roots = Vec::new();

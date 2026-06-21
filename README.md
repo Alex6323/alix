@@ -459,15 +459,21 @@ flash --serve                              # no decks -> pick them in the browse
 ```
 
 Run `--serve` **without** naming any decks and the browser opens a
-deck-selection screen — the same list as the terminal picker (recent decks
-first) — so you never have to drop back to the terminal to choose. **Tap a deck
-to start it** (in review, a locked deck won't start — but `browse` ignores
-locking, so any deck opens there); or tick one or more checkboxes and the Start
-button becomes **Confirm**, which shows just the ticked decks and starts them as
-a merged session. When you finish a session, "Choose other decks" (on the
-summary, or in the ⋮ menu) returns to that screen, so you can study a different
-deck without restarting. Naming decks on the command line skips the screen and
-goes straight to review/browse.
+deck-selection screen that mirrors the terminal [picker](#getting-started): the
+same three sections — **Workspaces** (each with its last-progress time) ·
+**Recent** loose decks · **Folders** — and the same **single-launch**, so you
+**click a deck to start it** (an exam-due deck sits its exam). Open a
+**Workspace** or **Folder** to drill into its **unlock dependency tree**, where
+each deck nests under the prerequisite that gates it. A deck you can't start is
+dimmed: 🔒 locked (an unfinished `% requires:`), 🕒 nothing due; a `mastered 🎉`
+deck is tucked into the **Mastered window** (press `m`), and mastered/done/locked
+decks stay out of Recent (a quick launchpad) but are reachable by filtering — the
+filter searches *every* loose deck. `browse` ignores locking, so any deck opens
+there. Keyboard nav follows your `[picker]` config (`j`/`k` or arrows move, `/`
+or `Ctrl-F` filter, `m` the Mastered window). When you finish a session, "Choose
+other decks" (on the summary, or in the ⋮ menu) returns here — and a session
+launched inside a workspace returns **into that workspace**. Naming decks on the
+command line skips the screen and goes straight to review/browse.
 
 Every answer mode works in the browser: **flip** (reveal, then self-grade
 Again / Good / Easy), **line** (reveal a verse one line at a time — it

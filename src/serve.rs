@@ -31,13 +31,15 @@ use crate::{
     ask::{self, CliSession, Exchange, Reply},
     card::Card,
     choice,
-    config::{AskConfig, Bindings, BrowseBindings, ExamConfig, Key, KeyPattern, Strictness},
+    config::{
+        AskConfig, Bindings, BrowseBindings, ExamConfig, Key, KeyPattern, PickerKeys, Strictness,
+    },
     deck::{self, Deck, DeckState},
     exam, picker,
     recent::RecentDecks,
     render::{self, NoteUnit},
     scheduler::{Grade, SchedulerKind},
-    session::{Session, is_retired, now_ms},
+    session::{Session, now_ms},
     store::Store,
     trace::{self, Delta, Excerpt, Phase, Walk},
 };
@@ -184,19 +186,24 @@ struct BrowseDto {
     cards: Vec<CardDto>,
 }
 
-/// The deck-selection catalog sent to the browser picker. Decks and
-/// workspaces/folders are kept in separate lists: decks are multi-selectable
-/// (tick to merge), workspaces/folders open one at a time.
+/// The deck-selection catalog sent to the browser picker, in the same three
+/// sections as the TUI: `workspaces` (each with its last-progress time),
+/// `recent` loose decks (recent-first), and plain `folders`. A deck inside a
+/// workspace stays out of `recent` — you reach it by opening the workspace. The
+/// filter searches every loose deck.
 #[derive(Debug, Serialize)]
 struct DeckListDto {
-    decks: Vec<DeckItemDto>,
     workspaces: Vec<DeckItemDto>,
+    recent: Vec<DeckItemDto>,
+    folders: Vec<DeckItemDto>,
 }
 
-/// One deck offered in the selection screen: its file name, a completion-state
-/// label (`new` / `m/total` / `done ✓`), a machine-readable `state`
-/// (`new`/`started`/`finished`) for styling, and whether it is locked by an
-/// unfinished `% requires:` prerequisite. Mirrors the TUI picker rows.
+/// One row in the selection screen: its selection `name`, a display `label`, a
+/// completion-state badge (`new` / `m/total` / `done ✓` / `mastered 🎉`), a
+/// machine-readable `state` for styling, and the flags the picker dims/glyphs a
+/// row with — `locked` (🔒, a `% requires:` prerequisite), `reviewable` (false →
+/// 🕒, nothing due), `mastered` (🎉, tucked into the Mastered window). Mirrors
+/// the TUI picker rows.
 #[derive(Debug, Serialize)]
 struct DeckItemDto {
     /// Stable selection key (file/folder name) sent back on select.
@@ -204,26 +211,44 @@ struct DeckItemDto {
     /// Display title (`% title:`, else the name without `.txt`, else folder).
     label: String,
     meta: Option<String>,
+    /// `new`/`started`/`finished`/`examdue` for a deck; `workspace`/`folder` for
+    /// a drillable row.
     state: &'static str,
     locked: bool,
-    /// `true` when this entry has recent-use history (shown in the "Recent"
-    /// section by default; the rest are reachable through the filter).
+    /// Launching now would have something to do; `false` → nothing due (🕒).
+    reviewable: bool,
+    /// Finished *and* exam-passed — lives in the Mastered window, not Recent.
+    mastered: bool,
+    /// A trace deck (`% trace:`): walked, not card-reviewed.
+    is_trace: bool,
+    /// `true` when this entry has recent-use history (shown in Recent by
+    /// default; the rest are reachable through the filter).
     recent: bool,
-    /// `true` for a workspace folder row.
+    /// `true` for a workspace/folder row (opens into its members on click).
     is_workspace: bool,
-    /// For a workspace row: its member decks, shown when you open it.
+    /// For a workspace/folder row: its member decks as an unlock dependency
+    /// tree, shown when you open it.
     members: Vec<MemberDto>,
     /// Dim location hint (parent dir) for entries outside the decks dir; `null`
     /// keeps the row clean. Disambiguates same-named decks/workspaces.
     path: Option<String>,
 }
 
-/// A workspace member deck in the selection list: a qualified selection `name`
-/// (`<workspace>/<file>`) and a display `label`.
+/// A workspace member deck in the drill-in list: a qualified selection `name`
+/// (`<workspace>/<file>`), its display `label` and status (badge/state/locked/
+/// reviewable/mastered/trace, from the workspace's own store), and its `depth`
+/// in the unlock dependency tree (0 = a foundation root).
 #[derive(Debug, Serialize)]
 struct MemberDto {
     name: String,
     label: String,
+    meta: Option<String>,
+    state: &'static str,
+    locked: bool,
+    reviewable: bool,
+    mastered: bool,
+    is_trace: bool,
+    depth: usize,
 }
 
 /// The result of answering a choice card: which option was picked, which is
@@ -323,6 +348,36 @@ impl ReviewKeys {
     }
 }
 
+/// The deck-picker navigation keys the selection screen binds, mirroring the
+/// configured `[picker]` section (Vim defaults): move, open/back, jump to
+/// top/bottom, focus the filter, and open the Mastered window.
+#[derive(Debug, Serialize)]
+struct PickerKeysDto {
+    up: Vec<KeyDto>,
+    down: Vec<KeyDto>,
+    open: Vec<KeyDto>,
+    back: Vec<KeyDto>,
+    top: Vec<KeyDto>,
+    bottom: Vec<KeyDto>,
+    filter: Vec<KeyDto>,
+    mastered: Vec<KeyDto>,
+}
+
+impl PickerKeysDto {
+    fn from(k: &PickerKeys) -> Self {
+        Self {
+            up: key_list(&k.up),
+            down: key_list(&k.down),
+            open: key_list(&k.open),
+            back: key_list(&k.back),
+            top: key_list(&k.top),
+            bottom: key_list(&k.bottom),
+            filter: key_list(&k.filter),
+            mastered: key_list(&k.mastered),
+        }
+    }
+}
+
 /// The browse actions the web page binds, mirroring the configured `[browse]`.
 #[derive(Debug, Serialize)]
 struct BrowseKeys {
@@ -347,6 +402,9 @@ pub struct ReviewOptions {
     /// CLI `--mode` override; `None` lets each card use its own mode.
     pub mode_override: Option<Mode>,
     pub keys: Bindings,
+    /// Deck-picker navigation keys (the `[picker]` section), bound on the
+    /// selection screen.
+    pub picker: PickerKeys,
     /// Fuzzy-mode typo tolerance per line.
     pub max_typos: usize,
     /// Ask-Claude settings (command, allowlist, timeout, …).
@@ -636,11 +694,13 @@ pub fn run_review(
     let ReviewOptions {
         mode_override,
         keys: bindings,
+        picker: picker_keys,
         max_typos,
         ask: ask_cfg,
         exam: exam_cfg,
     } = opts;
     let keys = ReviewKeys::from(&bindings);
+    let picker_keys = PickerKeysDto::from(&picker_keys);
     let mut reviewing = initial.map(Reviewing::new);
     let mut examining: Option<Examining> = None;
     let server = Server::http(addr).map_err(|e| anyhow!("cannot start server on {addr}: {e}"))?;
@@ -650,6 +710,7 @@ pub fn run_review(
         match (&method, path.as_str()) {
             (Method::Get, "/") => respond_html(request, REVIEW_HTML),
             (Method::Get, "/api/keys") => respond_json(request, &keys),
+            (Method::Get, "/api/picker-keys") => respond_json(request, &picker_keys),
             (Method::Get, "/api/decks") => {
                 // Review enforces locking; the picker won't start a locked deck.
                 respond_json(request, &deck_catalog(&decks_dir, &recent, &store, true))
@@ -1377,6 +1438,7 @@ impl Browsing {
 /// `initial` `None` it opens at the deck-selection screen; `POST /api/select`
 /// builds the card list via `build`. The only thing it writes is card removal
 /// (deletes the card from its deck file and prunes its progress in `store`).
+#[allow(clippy::too_many_arguments)] // each is a distinct, named server input
 pub fn run_browse(
     initial: Option<CardsBuild>,
     mut store: Store,
@@ -1384,9 +1446,11 @@ pub fn run_browse(
     decks_dir: PathBuf,
     addr: SocketAddr,
     bindings: BrowseBindings,
+    picker: PickerKeys,
     mut build: impl FnMut(Vec<PathBuf>, &mut RecentDecks) -> Result<CardsBuild>,
 ) -> Result<()> {
     let keys = BrowseKeys::from(&bindings);
+    let picker_keys = PickerKeysDto::from(&picker);
     let mut browsing = initial.map(Browsing::new);
     let server = Server::http(addr).map_err(|e| anyhow!("cannot start server on {addr}: {e}"))?;
     for mut request in server.incoming_requests() {
@@ -1395,6 +1459,7 @@ pub fn run_browse(
         match (&method, path.as_str()) {
             (Method::Get, "/") => respond_html(request, BROWSE_HTML),
             (Method::Get, "/api/keys") => respond_json(request, &keys),
+            (Method::Get, "/api/picker-keys") => respond_json(request, &picker_keys),
             (Method::Get, "/api/decks") => {
                 // Browse is read-only — any deck is browsable, so no lock gating.
                 respond_json(request, &deck_catalog(&decks_dir, &recent, &store, false))
@@ -1556,83 +1621,191 @@ fn review_state(
     }
 }
 
-/// Builds the deck-selection catalog (recent decks first, then `decks_dir`),
-/// with each deck's completion state and lock status derived from `store` —
-/// mirroring the TUI picker rows. `with_lock` is false for the browse screen:
-/// locking gates *review* only, so any deck is browsable.
+/// A `DeckState` as the machine-readable string the page styles rows by.
+fn state_name(s: DeckState) -> &'static str {
+    match s {
+        DeckState::NotStarted => "new",
+        DeckState::Started => "started",
+        DeckState::Finished => "finished",
+        DeckState::ExamDue => "examdue",
+    }
+}
+
+/// A single loose deck as a selection row, its badge/lock/gating from the shared
+/// [`picker::deck_status`] so it reads exactly like the TUI picker.
+fn deck_item_dto(
+    e: &picker::DeckEntry,
+    store: &Store,
+    decks_dir: &Path,
+    with_lock: bool,
+) -> DeckItemDto {
+    let recent = e.last_used_ms.is_some();
+    match Deck::load(&e.path) {
+        Ok(deck) => {
+            let s = picker::deck_status(&deck, store, Some(decks_dir), with_lock);
+            DeckItemDto {
+                name: e.name.clone(),
+                label: e.label.clone(),
+                meta: Some(s.badge),
+                state: state_name(s.state),
+                locked: s.locked,
+                reviewable: s.reviewable,
+                mastered: s.mastered,
+                is_trace: s.is_trace,
+                recent,
+                is_workspace: false,
+                members: Vec::new(),
+                path: e.path_hint.clone(),
+            }
+        }
+        // A deck that fails to load stays launchable so the error surfaces.
+        Err(_) => DeckItemDto {
+            name: e.name.clone(),
+            label: e.label.clone(),
+            meta: None,
+            state: "new",
+            locked: false,
+            reviewable: true,
+            mastered: false,
+            is_trace: false,
+            recent,
+            is_workspace: false,
+            members: Vec::new(),
+            path: e.path_hint.clone(),
+        },
+    }
+}
+
+/// A workspace/folder's members as an unlock dependency tree (the drill-in
+/// list): each member nests under the `% requires:` that gates it, siblings
+/// startable-first, carrying a `depth` for indentation. Badges/locks come from
+/// the workspace's own store (a real workspace) or the global store (a plain
+/// folder), matching what a session will write.
+fn workspace_members(e: &picker::DeckEntry, decks_dir: &Path, with_lock: bool) -> Vec<MemberDto> {
+    let store = if crate::workspace::is_workspace(&e.path) {
+        Store::open(crate::workspace::store_path(&e.path)).ok()
+    } else {
+        crate::store::default_store_path().and_then(|p| Store::open(p).ok())
+    };
+    let paths: Vec<PathBuf> = e.members.iter().map(|m| m.path.clone()).collect();
+    let statuses: Vec<Option<picker::DeckStatus>> = paths
+        .iter()
+        .map(|p| {
+            let st = store.as_ref()?;
+            Deck::load(p)
+                .ok()
+                .map(|d| picker::deck_status(&d, st, Some(decks_dir), with_lock))
+        })
+        .collect();
+    // Order siblings startable-first (blocked = locked, or — when gating —
+    // nothing to review), then by label, like the TUI drill-in.
+    let parent = picker::member_parents(&paths, decks_dir);
+    let key: Vec<(bool, String)> = e
+        .members
+        .iter()
+        .enumerate()
+        .map(|(i, m)| {
+            let blocked = statuses[i]
+                .as_ref()
+                .is_some_and(|s| s.locked || (with_lock && !s.reviewable));
+            (blocked, m.label.clone())
+        })
+        .collect();
+    picker::dependency_forest(&parent, &key)
+        .into_iter()
+        .map(|(i, prefix)| {
+            let m = &e.members[i];
+            // Each tree branch segment is three columns wide (see picker).
+            let depth = prefix.chars().count() / 3;
+            match &statuses[i] {
+                Some(s) => MemberDto {
+                    name: m.name.clone(),
+                    label: m.label.clone(),
+                    meta: Some(s.badge.clone()),
+                    state: state_name(s.state),
+                    locked: s.locked,
+                    reviewable: s.reviewable,
+                    mastered: s.mastered,
+                    is_trace: s.is_trace,
+                    depth,
+                },
+                None => MemberDto {
+                    name: m.name.clone(),
+                    label: m.label.clone(),
+                    meta: None,
+                    state: "new",
+                    locked: false,
+                    reviewable: true,
+                    mastered: false,
+                    is_trace: false,
+                    depth,
+                },
+            }
+        })
+        .collect()
+}
+
+/// Builds the deck-selection catalog in the TUI's three sections — workspaces
+/// (each with its last-progress time), recent loose decks, and plain folders —
+/// each deck's badge/lock from `store`. `with_lock` is false for the browse
+/// screen: locking gates *review* only, so any deck is browsable.
 fn deck_catalog(
     decks_dir: &Path,
     recent: &RecentDecks,
     store: &Store,
     with_lock: bool,
 ) -> DeckListDto {
-    let mut decks = Vec::new();
     let mut workspaces = Vec::new();
+    let mut recent_decks = Vec::new();
+    let mut folders = Vec::new();
     for e in picker::catalog(decks_dir, recent) {
-        let recent = e.last_used_ms.is_some();
-        // A workspace/folder row: its member decks (shown on open), always
-        // selectable, no lock/state of its own.
+        // A workspace/folder row: its members open on click; it has no state of
+        // its own. A folder with a `flash.toml` is a workspace (shown with its
+        // last-progress time); without one it's a plain folder.
         if e.is_workspace {
-            let members: Vec<MemberDto> = e
-                .members
-                .iter()
-                .map(|m| MemberDto {
-                    name: m.name.clone(),
-                    label: m.label.clone(),
-                })
-                .collect();
-            // A folder with a `flash.toml` is a workspace; without one it's a
-            // plain folder. Both open into their members.
-            let kind = if crate::workspace::is_workspace(&e.path) {
-                "workspace"
+            let is_ws = crate::workspace::is_workspace(&e.path);
+            let members = workspace_members(&e, decks_dir, with_lock);
+            let meta = if is_ws {
+                match picker::workspace_last_progress(&e.path) {
+                    Some(when) => format!("{} decks · {when}", members.len()),
+                    None => format!("{} decks", members.len()),
+                }
             } else {
-                "folder"
+                format!("{} decks", members.len())
             };
-            workspaces.push(DeckItemDto {
-                meta: Some(format!("{kind} · {} decks", members.len())),
-                name: e.name,
-                label: e.label,
-                state: kind,
+            let dto = DeckItemDto {
+                meta: Some(meta),
+                state: if is_ws { "workspace" } else { "folder" },
                 locked: false,
-                recent,
+                reviewable: true,
+                mastered: false,
+                is_trace: false,
+                recent: e.last_used_ms.is_some(),
                 is_workspace: true,
                 members,
                 path: e.path_hint,
-            });
+                name: e.name,
+                label: e.label,
+            };
+            if is_ws {
+                workspaces.push(dto);
+            } else {
+                folders.push(dto);
+            }
             continue;
         }
-        let (state, meta, locked) = match Deck::load(&e.path) {
-            Ok(deck) => {
-                let total = deck.cards.len();
-                let retired = deck.cards.iter().filter(|c| is_retired(c, store)).count();
-                let (state, badge) = match deck.state(store) {
-                    // Exam-passed decks read "mastered"; plain drilled ones "done".
-                    DeckState::Finished if store.deck_mastered(&deck.subject) => {
-                        ("finished", "mastered ✓".to_string())
-                    }
-                    DeckState::Finished => ("finished", "done ✓".to_string()),
-                    DeckState::ExamDue => ("examdue", "exam due".to_string()),
-                    DeckState::NotStarted => ("new", "new".to_string()),
-                    DeckState::Started => ("started", format!("{retired}/{total}")),
-                };
-                let locked = with_lock && deck::is_locked(&deck, Some(decks_dir), store);
-                (state, Some(badge), locked)
-            }
-            Err(_) => ("new", None, false),
-        };
-        decks.push(DeckItemDto {
-            name: e.name,
-            label: e.label,
-            meta,
-            state,
-            locked,
-            recent,
-            is_workspace: false,
-            members: Vec::new(),
-            path: e.path_hint,
-        });
+        // A loose deck inside a workspace belongs to it — reached by opening the
+        // workspace, so it isn't listed loose in Recent.
+        if e.path.parent().is_some_and(crate::workspace::is_workspace) {
+            continue;
+        }
+        recent_decks.push(deck_item_dto(&e, store, decks_dir, with_lock));
     }
-    DeckListDto { decks, workspaces }
+    DeckListDto {
+        workspaces,
+        recent: recent_decks,
+        folders,
+    }
 }
 
 /// Parses a `{"decks":[name,…]}` selection and resolves each name to its deck

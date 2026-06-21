@@ -293,14 +293,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   silently.
 
 ### Changed
-- The startup deck picker (terminal and web) is now two-phase: `Enter` (or
-  tapping a deck name in the browser) starts the **focused** deck immediately; to
-  study several at once you tick decks (`Space` / checkbox) and **Confirm**
-  (`Tab` in the TUI), which reviews the chosen decks and starts them as a merged
-  session. A **locked** deck can no longer be *started* for review (was
-  advisory) — but it stays fully browsable (`flash browse` ignores locking) and
-  resettable. The `flash reset` / `flash deps` pickers keep their plain
-  multi-select.
+- **The web deck-selection screen now mirrors the terminal picker.** It is
+  **single-launch** (no checkboxes): click a deck to start it, or open a
+  **Workspace** / **Folder** to drill into its **unlock dependency tree** (each
+  deck nested under the prerequisite that gates it). Rows are grouped into
+  **Workspaces** (each with its last-progress time) · **Recent** loose decks ·
+  **Folders**, and the filter searches *every* loose deck. A deck you can't start
+  is dimmed — 🔒 locked (`% requires:`), 🕒 nothing due — and mastered/done/locked
+  decks are kept out of Recent, with a `mastered 🎉` deck tucked into a **Mastered
+  window** (`m`); navigation honors the `[picker]` config keys (served to the page
+  at `/api/picker-keys`). A **locked** deck can no longer be *started* for review
+  (was advisory), but stays fully browsable (`flash browse` ignores locking) and
+  resettable; the `flash reset` / `flash deps` pickers keep their plain
+  multi-select. The shared badge / lock / dependency-tree logic now lives in the
+  library (`picker::deck_status` and the exposed dependency-forest helpers),
+  consumed by both frontends. (In-browser trace **walking** is a follow-up — a
+  trace opened from the web picker still reviews its cards for now.)
 - **A card that reaches the top Leitner stage now retires** (rests, no longer
   scheduled until `flash reset`) instead of recurring at the stage-5 weekly
   cooldown. This is the default even without `% max-stage:`, and makes a
