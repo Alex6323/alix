@@ -3,3 +3,6 @@ ROADMAP.md
 SCRATCH.md
 current.png
 
+# mdBook build output (`make book` / `mdbook build`)
+/docs/book/book/
+
