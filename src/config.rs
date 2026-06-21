@@ -151,6 +151,43 @@ impl Bindings {
     }
 }
 
+/// Rebindable navigation keys for the deck picker, configured in the `[picker]`
+/// section. Vim-style by default. The arrow keys, `Enter` (open) and `Esc`
+/// (back) always work regardless of these.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PickerKeys {
+    /// Move up / down the list.
+    pub up: Vec<KeyPattern>,
+    pub down: Vec<KeyPattern>,
+    /// Open the focused row (a deck reviews, a workspace drills in).
+    pub open: Vec<KeyPattern>,
+    /// Step back / cancel.
+    pub back: Vec<KeyPattern>,
+    /// Jump to the first / last row.
+    pub top: Vec<KeyPattern>,
+    pub bottom: Vec<KeyPattern>,
+    /// Enter filter mode.
+    pub filter: Vec<KeyPattern>,
+    /// Open the Mastered window.
+    pub mastered: Vec<KeyPattern>,
+}
+
+impl Default for PickerKeys {
+    fn default() -> Self {
+        let keys = |list: &[&str]| list.iter().map(|s| parse_key(s).unwrap()).collect();
+        Self {
+            up: keys(&["k"]),
+            down: keys(&["j"]),
+            open: keys(&["l"]),
+            back: keys(&["h"]),
+            top: keys(&["g"]),
+            bottom: keys(&["G"]),
+            filter: keys(&["/", "ctrl-f"]),
+            mastered: keys(&["m"]),
+        }
+    }
+}
+
 /// Key bindings for the read-only browser (`flash browse`), configured in the
 /// `[browse]` section. Jumping to the first/last card stays fixed at
 /// `g`/`G`/Home/End — letter bindings are case-insensitive, so `g` and `G`
@@ -367,6 +404,8 @@ impl Default for ServeConfig {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Config {
     pub keys: Bindings,
+    /// Navigation keys for the deck picker.
+    pub picker: PickerKeys,
     /// Key bindings for `flash browse`.
     pub browse: BrowseBindings,
     pub ask: AskConfig,
@@ -395,6 +434,8 @@ impl Config {
 struct RawConfig {
     #[serde(default)]
     keys: RawKeys,
+    #[serde(default)]
+    picker: RawPicker,
     #[serde(default)]
     browse: RawBrowse,
     #[serde(default)]
@@ -445,6 +486,19 @@ struct RawTrace {
     effort: Option<String>,
     timeout_secs: Option<u64>,
     extra: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct RawPicker {
+    up: Option<Vec<String>>,
+    down: Option<Vec<String>>,
+    open: Option<Vec<String>>,
+    back: Option<Vec<String>>,
+    top: Option<Vec<String>>,
+    bottom: Option<Vec<String>>,
+    filter: Option<Vec<String>>,
+    mastered: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Default)]
@@ -518,6 +572,16 @@ impl Config {
         assign(&mut keys.ask, raw.keys.ask, "ask")?;
         assign(&mut keys.save_note, raw.keys.save_note, "save_note")?;
         assign(&mut keys.quit, raw.keys.quit, "quit")?;
+
+        let mut picker = PickerKeys::default();
+        assign(&mut picker.up, raw.picker.up, "picker.up")?;
+        assign(&mut picker.down, raw.picker.down, "picker.down")?;
+        assign(&mut picker.open, raw.picker.open, "picker.open")?;
+        assign(&mut picker.back, raw.picker.back, "picker.back")?;
+        assign(&mut picker.top, raw.picker.top, "picker.top")?;
+        assign(&mut picker.bottom, raw.picker.bottom, "picker.bottom")?;
+        assign(&mut picker.filter, raw.picker.filter, "picker.filter")?;
+        assign(&mut picker.mastered, raw.picker.mastered, "picker.mastered")?;
 
         let mut browse = BrowseBindings::default();
         assign(&mut browse.next, raw.browse.next, "browse.next")?;
@@ -606,6 +670,7 @@ impl Config {
 
         Ok(Self {
             keys,
+            picker,
             browse,
             ask,
             generate,
@@ -668,7 +733,7 @@ pub fn default_config_toml() -> &'static str {
 # Every option below is shown commented out at its default value, as a
 # reference. Uncomment a line and edit it to override that default; lines you
 # leave commented keep the built-in default, so improvements to the defaults
-# in newer versions still reach you. Keep the section headers ([keys],
+# in newer versions still reach you. Keep the section headers ([keys], [picker],
 # [browse], [ask], [generate], [exam], [trace], [serve]) so an uncommented line
 # lands in the right section.
 #
@@ -699,6 +764,18 @@ pub fn default_config_toml() -> &'static str {
 # ask = ["?"]                   # ask Claude about an answered card
 # save_note = ["ctrl-n"]        # ask view: save a condensed note to the deck
 # quit = ["esc", "ctrl-c"]      # quit the session
+
+# Navigation keys for the deck picker (Vim-style by default). The arrow keys,
+# Enter (open) and Esc (back) always work regardless of these.
+[picker]
+# up = ["k"]                    # move up
+# down = ["j"]                  # move down
+# open = ["l"]                  # open the focused row
+# back = ["h"]                  # step back / cancel
+# top = ["g"]                   # jump to the first row
+# bottom = ["G"]                # jump to the last row
+# filter = ["/", "ctrl-f"]      # start filtering
+# mastered = ["m"]              # open the Mastered window
 
 # Key bindings for `flash browse` (the read-only reader). Jumping to the first
 # and last card is fixed to g / G / Home / End, and the arrow keys always
@@ -853,6 +930,16 @@ mod tests {
     fn continue_is_a_valid_table_key() {
         let config = Config::from_toml("[keys]\ncontinue = [\"ctrl-n\"]\n").unwrap();
         assert_eq!(vec![parse_key("ctrl-n").unwrap()], config.keys.cont);
+    }
+
+    #[test]
+    fn picker_keys_override_and_default() {
+        let config = Config::from_toml("[picker]\ndown = [\"n\"]\nopen = [\"o\"]\n").unwrap();
+        assert_eq!(vec![parse_key("n").unwrap()], config.picker.down);
+        assert_eq!(vec![parse_key("o").unwrap()], config.picker.open);
+        // Unmentioned picker keys keep their Vim defaults.
+        assert_eq!(PickerKeys::default().up, config.picker.up);
+        assert_eq!(PickerKeys::default().mastered, config.picker.mastered);
     }
 
     #[test]

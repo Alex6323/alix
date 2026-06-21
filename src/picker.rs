@@ -23,6 +23,7 @@ use ratatui::{
 };
 
 use crate::{
+    config::{self, KeyPattern, PickerKeys},
     deck::{self, Deck, DeckState},
     parser,
     recent::RecentDecks,
@@ -30,6 +31,20 @@ use crate::{
     store::{Store, default_store_path},
     workspace,
 };
+
+/// Turns a key event into a [`KeyPattern`] for matching against [`PickerKeys`].
+/// Keys without a `config::Key` equivalent (arrows, etc.) yield `None`.
+fn key_pattern(code: KeyCode, ctrl: bool) -> Option<KeyPattern> {
+    let key = match code {
+        KeyCode::Char(c) => config::Key::Char(c),
+        KeyCode::Enter => config::Key::Enter,
+        KeyCode::Tab => config::Key::Tab,
+        KeyCode::Esc => config::Key::Esc,
+        KeyCode::Backspace => config::Key::Backspace,
+        _ => return None,
+    };
+    Some(KeyPattern { key, ctrl })
+}
 
 const HEADER_STYLE: Style = Style::new().fg(Color::Black).bg(Color::Cyan);
 
@@ -66,6 +81,7 @@ enum DisplayRow {
 
 /// One selectable row: identified by `key`, matched/displayed by `label`, with
 /// an optional dim `meta` suffix (a deck's last-used age, a card's stage/id).
+#[derive(Clone)]
 struct Item<K> {
     key: K,
     label: String,
@@ -466,6 +482,7 @@ pub struct Picked {
 /// with nothing to review right now (true for `review`, off for `browse` and
 /// under `--cram`). `start_in` opens straight into a workspace's drill-in
 /// (returning there after an activity); `Esc` from it falls back to the top list.
+#[allow(clippy::too_many_arguments)] // each is a distinct, named picker setting
 pub fn pick(
     terminal: &mut ratatui::DefaultTerminal,
     decks_dir: &Path,
@@ -474,11 +491,19 @@ pub fn pick(
     enforce_locks: bool,
     gate_reviewable: bool,
     start_in: Option<&Path>,
+    keys: &PickerKeys,
 ) -> Result<Picked> {
     // Runs on the caller's terminal: opening a project, stepping back, *and*
     // returning from a launched review all stay on one live screen — the TUI is
     // never torn down and reopened between them.
-    let mut top = top_picker(decks_dir, recent, store, enforce_locks, gate_reviewable);
+    let mut top = top_picker(
+        decks_dir,
+        recent,
+        store,
+        enforce_locks,
+        gate_reviewable,
+        keys,
+    );
     navigate(
         terminal,
         &mut top,
@@ -498,6 +523,7 @@ fn top_picker(
     store: &Store,
     enforce_locks: bool,
     gate_reviewable: bool,
+    keys: &PickerKeys,
 ) -> Picker<PathBuf> {
     let (mut workspaces, mut loose, mut folders) = (Vec::new(), Vec::new(), Vec::new());
     for c in build_candidates(decks_dir, recent) {
@@ -554,6 +580,7 @@ fn top_picker(
     // may bring a deliberate multi-deck flow back later.
     picker.multi_select = false;
     picker.gate_reviewable = gate_reviewable;
+    picker.keys = keys.clone();
     picker
 }
 
@@ -572,7 +599,7 @@ fn navigate(
 ) -> Result<Picked> {
     // Resuming straight into a workspace (returning after an activity).
     if let Some(ws) = start_in {
-        let mut sub = workspace_picker(ws, decks_dir, enforce_locks, gate_reviewable)?;
+        let mut sub = workspace_picker(ws, decks_dir, enforce_locks, gate_reviewable, &top.keys)?;
         if let Some(decks) = sub.run(terminal)? {
             return Ok(Picked {
                 decks,
@@ -583,7 +610,20 @@ fn navigate(
     }
     loop {
         top.rearm(); // re-runnable, keeping its cursor / filter / selection
-        let Some(chosen) = top.run(terminal)? else {
+        let chosen = top.run(terminal)?;
+        // `m` opens the Mastered window — the completed decks tucked out of Recent.
+        if std::mem::take(&mut top.request_mastered) {
+            if let Some(decks) = run_mastered_window(terminal, top)?
+                && !decks.is_empty()
+            {
+                return Ok(Picked {
+                    decks,
+                    workspace: None,
+                });
+            }
+            continue; // closed the window → back to the top list
+        }
+        let Some(chosen) = chosen else {
             return Ok(Picked {
                 decks: Vec::new(),
                 workspace: None,
@@ -593,7 +633,8 @@ fn navigate(
         if let [path] = chosen.as_slice()
             && workspace::has_decks(path)
         {
-            let mut sub = workspace_picker(path, decks_dir, enforce_locks, gate_reviewable)?;
+            let mut sub =
+                workspace_picker(path, decks_dir, enforce_locks, gate_reviewable, &top.keys)?;
             match sub.run(terminal)? {
                 Some(decks) => {
                     return Ok(Picked {
@@ -611,6 +652,41 @@ fn navigate(
     }
 }
 
+/// Opens the **Mastered** window: the completed (exam-passed) decks tucked out of
+/// Recent, gathered from the top picker's own rows. Returns the chosen deck (to
+/// reopen it), or `None` on `Esc`/`h`.
+fn run_mastered_window(
+    terminal: &mut ratatui::DefaultTerminal,
+    top: &Picker<PathBuf>,
+) -> Result<Option<Vec<PathBuf>>> {
+    let items: Vec<Item<PathBuf>> = top
+        .all
+        .iter()
+        .filter(|item| item.meta.as_deref().is_some_and(|m| m.contains("mastered")))
+        .cloned()
+        .map(|mut item| {
+            item.default_shown = true; // every mastered deck shows in this view
+            item.section = Section::None;
+            item
+        })
+        .collect();
+    let mut picker = Picker::new(
+        items,
+        HashSet::new(),
+        "mastered 🎉".to_string(),
+        String::new(),
+        false,
+        vec![Line::from(
+            "  No mastered decks yet — pass an exam to earn one. 🎉",
+        )],
+    );
+    picker.launcher = true;
+    picker.multi_select = false;
+    picker.keys = top.keys.clone();
+    // Not gated: you can reopen a mastered deck (e.g. to cram or re-examine it).
+    picker.run(terminal)
+}
+
 /// Opens a workspace directly into its member sub-picker (for `flash workspace
 /// <dir>`): the same drill-in list, with the folder itself as the lookup root so
 /// sibling `% requires:` and locks resolve within it. `None` if cancelled.
@@ -622,6 +698,7 @@ pub fn pick_workspace(folder: &Path, enforce_locks: bool) -> Result<Option<Vec<P
         folder,
         enforce_locks,
         enforce_locks,
+        &PickerKeys::default(),
     )?)
 }
 
@@ -749,6 +826,7 @@ fn workspace_picker(
     decks_dir: &Path,
     enforce_locks: bool,
     gate_reviewable: bool,
+    keys: &PickerKeys,
 ) -> Result<Picker<PathBuf>> {
     let ws = workspace::Workspace::load(folder)?;
     let store_path = if workspace::is_workspace(folder) {
@@ -807,6 +885,7 @@ fn workspace_picker(
     picker.launcher = true;
     picker.multi_select = false; // single-launch: pick one deck/trace, no checkboxes
     picker.gate_reviewable = gate_reviewable;
+    picker.keys = keys.clone();
     Ok(picker)
 }
 
@@ -953,6 +1032,8 @@ fn launch<K: Clone + Eq + Hash>(mut picker: Picker<K>) -> Result<Option<Vec<K>>>
 
 struct Picker<K> {
     all: Vec<Item<K>>,
+    /// Configurable navigation keys (launcher only); defaults are Vim-style.
+    keys: PickerKeys,
     filter: String,
     /// Indices into `all` matching the filter.
     filtered: Vec<usize>,
@@ -981,9 +1062,9 @@ struct Picker<K> {
     /// `/` or `Ctrl-F` starts filtering, `Esc` leaves it. The classic pickers
     /// (reset / deps / cards) ignore this and filter on every keystroke.
     filtering: bool,
-    /// Launcher only: reveal the rows normally hidden from Recent (mastered /
-    /// done / locked), toggled with `m`.
-    show_hidden: bool,
+    /// Launcher only: set when the user pressed `m` to open the Mastered window;
+    /// the caller picks this up after `run` returns and opens that view.
+    request_mastered: bool,
     /// Whether rows can be ticked into a multi-selection: shows the `[ ]`/`[x]`
     /// column and enables `Space`/`Tab`. Off for the workspace drill-in, which is
     /// a single-launch list (Enter a deck to review, a trace to walk) — no
@@ -1015,6 +1096,7 @@ impl<K: Clone + Eq + Hash> Picker<K> {
         let filtered = (0..all.len()).filter(|&i| all[i].default_shown).collect();
         Self {
             all,
+            keys: PickerKeys::default(),
             filter: String::new(),
             filtered,
             cursor: 0,
@@ -1026,7 +1108,7 @@ impl<K: Clone + Eq + Hash> Picker<K> {
             empty,
             launcher: false,
             filtering: false,
-            show_hidden: false,
+            request_mastered: false,
             multi_select: true,
             gate_reviewable: false,
             confirming: false,
@@ -1048,6 +1130,10 @@ impl<K: Clone + Eq + Hash> Picker<K> {
                 // classic reset / deps / card pickers always filter on a keypress.
                 let nav = self.launcher && !self.filtering;
                 let take_text = self.filtering || !self.launcher;
+                // In nav mode, letters are commands, matched against the
+                // (configurable) navigation keys.
+                let pattern = key_pattern(key.code, ctrl);
+                let hit = |list: &[KeyPattern]| pattern.is_some_and(|p| list.contains(&p));
                 match key.code {
                     KeyCode::Char('c') if ctrl => self.cancel(),
                     // Esc: leave the confirm view, leave filter mode (clearing it),
@@ -1058,39 +1144,34 @@ impl<K: Clone + Eq + Hash> Picker<K> {
                     }
                     KeyCode::Esc if self.filtering => self.stop_filtering(),
                     KeyCode::Esc => self.cancel(),
-                    // Start filter mode (launcher only).
-                    KeyCode::Char('/') if nav && !self.confirming => self.filtering = true,
-                    KeyCode::Char('f') if ctrl && self.launcher && !self.confirming => {
-                        self.filtering = true;
-                    }
-                    // Launcher: Enter / `l` open the focused row; otherwise (reset
-                    // / deps pickers) Enter accepts the selection.
+                    // Launcher: Enter opens the focused row; otherwise (reset / deps
+                    // pickers) Enter accepts the selection.
                     KeyCode::Enter if self.launcher && !self.confirming => self.launch_focused(),
                     KeyCode::Enter => self.done = true,
-                    KeyCode::Char('l') if nav => self.launch_focused(),
                     KeyCode::Tab if self.launcher && self.multi_select && !self.confirming => {
                         if !self.selected.is_empty() {
                             self.enter_confirm();
                         }
                     }
-                    // Movement: arrows + Ctrl-n/p always; Vim keys only in launcher
-                    // nav mode (where letters aren't filter input). `h` steps back.
+                    // Arrows + Ctrl-n/p always move; the rest of nav is the
+                    // configurable key set (Vim-style by default).
                     KeyCode::Up => self.move_cursor(-1),
                     KeyCode::Down => self.move_cursor(1),
                     KeyCode::Char('p') if ctrl => self.move_cursor(-1),
                     KeyCode::Char('n') if ctrl => self.move_cursor(1),
-                    KeyCode::Char('j') if nav => self.move_cursor(1),
-                    KeyCode::Char('k') if nav => self.move_cursor(-1),
-                    KeyCode::Char('h') if nav => self.cancel(),
-                    KeyCode::Char('g') if nav => self.cursor = 0,
-                    KeyCode::Char('G') if nav => {
+                    _ if nav && hit(&self.keys.down) => self.move_cursor(1),
+                    _ if nav && hit(&self.keys.up) => self.move_cursor(-1),
+                    _ if nav && hit(&self.keys.open) => self.launch_focused(),
+                    _ if nav && hit(&self.keys.back) => self.cancel(),
+                    _ if nav && hit(&self.keys.top) => self.cursor = 0,
+                    _ if nav && hit(&self.keys.bottom) => {
                         self.cursor = self.filtered.len().saturating_sub(1);
                     }
-                    // `m` reveals the rows hidden from Recent (mastered / done /
-                    // locked); press again to tuck them back.
-                    KeyCode::Char('m') if nav => {
-                        self.show_hidden = !self.show_hidden;
-                        self.refilter();
+                    _ if nav && hit(&self.keys.filter) => self.filtering = true,
+                    // `m` opens the Mastered window (handled by the caller).
+                    _ if nav && hit(&self.keys.mastered) => {
+                        self.request_mastered = true;
+                        self.done = true;
                     }
                     // Space ticks in the multi-select pickers; elsewhere it's just
                     // a filter character (handled below) or ignored in nav mode.
@@ -1249,15 +1330,14 @@ impl<K: Clone + Eq + Hash> Picker<K> {
         let needle = self.filter.to_lowercase();
         let filtering = !needle.is_empty();
         // Recent-default rule: with no filter, hide non-default rows (non-recent
-        // loose decks, and mastered/done/locked ones) — unless `m` revealed them
-        // or a filter is active, so the filter can still reach every row.
-        let show_all = filtering || self.show_hidden;
+        // loose decks, and mastered/done/locked ones); once filtering, search
+        // every row so the filter can still reach them.
         self.filtered = self
             .all
             .iter()
             .enumerate()
             .filter(|(_, item)| {
-                (show_all || item.default_shown) && item.label.to_lowercase().contains(&needle)
+                (filtering || item.default_shown) && item.label.to_lowercase().contains(&needle)
             })
             .map(|(i, _)| i)
             .collect();
@@ -1332,8 +1412,7 @@ impl<K: Clone + Eq + Hash> Picker<K> {
         }
         // Single-launch nav (the default): Vim-style movement, `/` to filter.
         if !self.multi_select {
-            let more = if self.show_hidden { "m less" } else { "m more" };
-            return format!(" ENTER/l open │ j/k move │ / filter │ {more} │ h/ESC back");
+            return " ENTER/l open │ j/k move │ / filter │ m mastered │ h/ESC back".to_string();
         }
         if self.confirming {
             " ENTER start merged │ ↑↓ move │ ESC back".to_string()

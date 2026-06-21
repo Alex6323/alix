@@ -26,12 +26,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   apart; over-long rows (a trace's `% trace:` sentence) are truncated with `…`.
   Rows you can't start now are dimmed and `Enter` is a no-op: 🔒 locked
   (`% requires:` unfinished), 🕒 nothing due (on cooldown); a mastered deck reads
-  `mastered 🎉`. The focus is on the **list** by default with Vim-style keys
-  (`j`/`k`/`g`/`G` or arrows move, `l`/`Enter` open, `h`/`Esc` back, `m` reveals
-  hidden rows); `/` or `Ctrl-F` starts filtering, `Esc` leaves it. Mastered/done
-  and locked decks are kept out of Recent (a quick launchpad) — `m` shows them, or
-  the filter reaches them. Long `% title:` / `% trace:` labels are capped so rows
-  stay short. The picker and the review/walk/exam it launches now share **one
+  `mastered 🎉`. The focus is on the **list** by default with Vim-style keys, all
+  rebindable in a new `[picker]` config section (`j`/`k`/`g`/`G` or arrows move,
+  `l`/`Enter` open, `h`/`Esc` back, `m` opens the Mastered window, `/` or `Ctrl-F`
+  filters). Mastered/done and locked decks are kept out of Recent (a quick
+  launchpad); **`m` opens a dedicated Mastered window** of the exam-passed decks,
+  or the filter reaches them. Long `% title:` / `% trace:` labels are capped so
+  rows stay short. The picker and the review/walk/exam it launches now share **one
   terminal**: opening a deck and returning to the workspace no longer tears the
   TUI down and reopens it.
   Opening a **workspace** or **folder** drills into its members drawn as an

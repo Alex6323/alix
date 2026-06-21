@@ -610,6 +610,7 @@ fn pick_decks_if_empty(
         enforce_locks,
         gate_reviewable,
         start_in,
+        &config.picker,
     )?;
     Ok((!picked.decks.is_empty()).then_some(picked))
 }
