@@ -221,6 +221,9 @@ struct DeckItemDto {
     mastered: bool,
     /// A trace deck (`% trace:`): walked, not card-reviewed.
     is_trace: bool,
+    /// The AI exam can be sat now (has a `% source:`, not locked) — drilled or
+    /// not, so the picker can offer "Take exam" to test out early.
+    examable: bool,
     /// `true` when this entry has recent-use history (shown in Recent by
     /// default; the rest are reachable through the filter).
     recent: bool,
@@ -251,6 +254,7 @@ struct MemberDto {
     reviewable: bool,
     mastered: bool,
     is_trace: bool,
+    examable: bool,
     depth: usize,
 }
 
@@ -1041,12 +1045,11 @@ pub fn run_review(
                     store = s;
                 }
                 match Deck::load(&path) {
+                    // Examable when it has a `% source:` and its `% requires:`
+                    // are satisfied — drilled or not (you may test out early).
                     Ok(deck)
                         if !deck.sources.is_empty()
-                            && matches!(
-                                deck.state(&store),
-                                DeckState::ExamDue | DeckState::Finished
-                            ) =>
+                            && !deck::is_locked(&deck, Some(decks_dir.as_path()), &store) =>
                     {
                         let strictness =
                             deck.settings.exam_strictness.unwrap_or(exam_cfg.strictness);
@@ -1846,6 +1849,7 @@ fn deck_item_dto(
                 reviewable: s.reviewable,
                 mastered: s.mastered,
                 is_trace: s.is_trace,
+                examable: s.examable,
                 recent,
                 is_workspace: false,
                 description: None,
@@ -1863,6 +1867,7 @@ fn deck_item_dto(
             reviewable: true,
             mastered: false,
             is_trace: false,
+            examable: false,
             recent,
             is_workspace: false,
             description: None,
@@ -1923,6 +1928,7 @@ fn workspace_members(e: &picker::DeckEntry, decks_dir: &Path, with_lock: bool) -
                     reviewable: s.reviewable,
                     mastered: s.mastered,
                     is_trace: s.is_trace,
+                    examable: s.examable,
                     depth,
                 },
                 None => MemberDto {
@@ -1934,6 +1940,7 @@ fn workspace_members(e: &picker::DeckEntry, decks_dir: &Path, with_lock: bool) -
                     reviewable: true,
                     mastered: false,
                     is_trace: false,
+                    examable: false,
                     depth,
                 },
             }
@@ -1976,6 +1983,7 @@ fn deck_catalog(
                 reviewable: true,
                 mastered: false,
                 is_trace: false,
+                examable: false,
                 recent: e.last_used_ms.is_some(),
                 is_workspace: true,
                 description: e.description,

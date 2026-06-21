@@ -302,6 +302,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   silently.
 
 ### Changed
+- **You can sit the AI exam early to test out of the drilling.** The exam no
+  longer requires every card drilled to the top stage first — it's available as
+  soon as a deck has a `% source:` and its `% requires:` are satisfied (drilled
+  or not). Passing it **masters** the deck regardless of card progress, which
+  **unlocks its dependents** — so a learner who already knows a topic isn't
+  forced to grind its cards. Exams still flow in dependency order: a **locked**
+  deck stays un-examable until its prerequisites are mastered (pass *their* exams
+  first). In the browser picker, a focused examable deck gets a **"Take exam"**
+  button (and the `x` key); `flash exam <deck>` does the same from the terminal.
 - **The web deck-selection screen now mirrors the terminal picker.** It is
   **single-launch** (no checkboxes): click a deck to start it, or open a
   **Workspace** / **Folder** to drill into its **unlock dependency tree** (each

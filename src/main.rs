@@ -1972,19 +1972,13 @@ fn exam_cmd(args: ExamArgs) -> Result<()> {
             deck.subject
         );
     }
-    // The exam verifies a deck you have already drilled; until every card is
-    // retired there is nothing to examine. A mastered deck may be re-sat.
-    if matches!(
-        deck.state(&store),
-        DeckState::NotStarted | DeckState::Started
-    ) {
-        let to_go = deck
-            .cards
-            .iter()
-            .filter(|c| !flash::session::is_retired(c, &store))
-            .count();
+    // Exams run in dependency order: a deck with unfinished `% requires:` waits
+    // until its prerequisites are mastered (pass their exams first). It need NOT
+    // be drilled, though — you may test out by sitting the exam early; passing
+    // masters it and unlocks its dependents.
+    if flash::deck::is_locked(&deck, config.decks_dir().as_deref(), &store) {
         bail!(
-            "drill {}'s cards to the top stage first ({to_go} to go), then sit the exam",
+            "{}'s prerequisites aren't finished yet — pass their exams first, then sit this one",
             deck.subject
         );
     }

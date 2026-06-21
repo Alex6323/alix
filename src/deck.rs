@@ -273,15 +273,21 @@ impl Deck {
         if total == 0 {
             return DeckState::NotStarted;
         }
+        // A passed AI exam masters the deck outright — you can test out of the
+        // drilling — so it counts as `Finished` (and unlocks its dependents)
+        // however many cards are still un-retired.
+        if store.deck_mastered(&self.subject) {
+            return DeckState::Finished;
+        }
         let retired = self
             .cards
             .iter()
             .filter(|c| session::is_retired(c, store))
             .count();
         if retired == total {
-            // Drilled. A sourced deck is only `Finished` (and thus unlocks
-            // dependents) once its exam is passed; otherwise it's `ExamDue`.
-            if self.sources.is_empty() || store.deck_mastered(&self.subject) {
+            // Drilled but not yet mastered: a sourced deck is `ExamDue`, a
+            // source-less one (no exam) is `Finished`.
+            if self.sources.is_empty() {
                 DeckState::Finished
             } else {
                 DeckState::ExamDue
@@ -829,6 +835,25 @@ mod tests {
         assert_eq!(DeckState::ExamDue, deck.state(&store));
 
         // Passing the exam (mastered) flips it to Finished.
+        store.set_deck_mastered(&deck.subject, 1);
+        assert_eq!(DeckState::Finished, deck.state(&store));
+    }
+
+    #[test]
+    fn passing_the_exam_masters_an_undrilled_deck() {
+        // Test out: a sourced deck whose cards aren't drilled is `Started`, but
+        // passing its exam masters it outright → `Finished` (so it unlocks
+        // dependents without first drilling every card).
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_deck(
+            dir.path(),
+            "d.txt",
+            "% source: https://x\n# a\n\t1\n# b\n\t2\n",
+        );
+        let deck = Deck::load(&path).unwrap();
+        let (mut store, _s) = empty_store();
+        assert_eq!(DeckState::NotStarted, deck.state(&store));
+
         store.set_deck_mastered(&deck.subject, 1);
         assert_eq!(DeckState::Finished, deck.state(&store));
     }

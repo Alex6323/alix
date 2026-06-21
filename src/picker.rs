@@ -217,6 +217,10 @@ pub struct DeckStatus {
     /// A trace deck (`% trace:`): launched as a predict-verify walk, never a
     /// card review.
     pub is_trace: bool,
+    /// The AI exam can be sat now: the deck has a `% source:` and its
+    /// `% requires:` are met (not locked) — drilled or not, so you can test out
+    /// early. (A trace has no exam, so this is `false` for one.)
+    pub examable: bool,
 }
 
 /// Computes a deck's [`DeckStatus`] from the progress `store`, mirroring what a
@@ -245,7 +249,11 @@ pub fn deck_status(
         DeckState::NotStarted => "new".to_string(),
         DeckState::Started => format!("{retired}/{total}"),
     };
-    let locked = enforce_locks && deck::is_locked(deck, decks_dir, store);
+    let actually_locked = deck::is_locked(deck, decks_dir, store);
+    let locked = enforce_locks && actually_locked;
+    // The exam can be sat when the deck has a source and isn't locked — drilled
+    // or not (test out early). A trace has no AI exam.
+    let examable = !deck.is_trace() && !deck.sources.is_empty() && !actually_locked;
     // Is there anything to launch right now? A trace always walks; an exam-due
     // deck launches its exam; otherwise there must be a card due or new.
     let scheduler = deck.settings.scheduler.unwrap_or_default().scheduler();
@@ -259,6 +267,7 @@ pub fn deck_status(
         reviewable,
         mastered,
         is_trace: deck.is_trace(),
+        examable,
     }
 }
 
