@@ -137,6 +137,10 @@
   .deckrow .open { flex: none; width: 14px; text-align: center; color: var(--dim); font-size: 1.1rem; line-height: 1; }
   .deckrow:hover .open { color: var(--bolt); }
   .deckrow .name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* a workspace row stacks its title over a dim description line */
+  .deckrow .rowtext { flex: 0 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .deckrow .rowtext .name { flex: none; }
+  .deckrow .desc { font-size: 0.74rem; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .deckrow .kind { flex: none; font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--bolt); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; }
   .deckrow .loc { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 0.72rem; color: var(--dim); }
   .deckrow .meta { margin-left: auto; padding-left: 10px; font-family: var(--mono); font-size: 0.74rem; color: var(--dim); white-space: nowrap; }
@@ -292,7 +296,11 @@ async function renderSelect() {
     const row = el("div", "deckrow");
     row.tabIndex = 0;
     row.appendChild(el("span", "open", "›"));
-    row.appendChild(el("span", "name", grp.label || grp.name));
+    // A workspace's description (its goal) sits dim under the title.
+    const text = el("div", "rowtext");
+    text.appendChild(el("span", "name", grp.label || grp.name));
+    if (grp.description) text.appendChild(el("span", "desc", grp.description));
+    row.appendChild(text);
     if (grp.path) row.appendChild(el("span", "loc", grp.path));
     if (grp.meta) row.appendChild(el("span", "meta", grp.meta));
     row.addEventListener("click", () => renderDrill(grp));

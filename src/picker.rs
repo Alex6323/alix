@@ -71,12 +71,15 @@ impl Section {
     }
 }
 
-/// A row in the rendered list: a blank spacer, a section header, or an item at a
-/// given position within `Picker::filtered`.
+/// A row in the rendered list: a blank spacer, a section header, an item at a
+/// given position within `Picker::filtered`, or a dim subtitle line below an
+/// item (carrying that item's index into `Picker::all`). A subtitle isn't
+/// selectable — the cursor skips over it.
 enum DisplayRow {
     Blank,
     Header(&'static str),
     Item(usize),
+    Subtitle(usize),
 }
 
 /// One selectable row: identified by `key`, matched/displayed by `label`, with
@@ -86,6 +89,9 @@ struct Item<K> {
     key: K,
     label: String,
     meta: Option<String>,
+    /// A dim one-line subtitle drawn below the row — a workspace's `description`.
+    /// `None` keeps the row a single line.
+    subtitle: Option<String>,
     /// Deck rows: locked because a `% requires:` prerequisite isn't finished.
     /// Shown dimmed with a lock glyph, but still selectable (advisory).
     locked: bool,
@@ -275,7 +281,7 @@ fn deck_item(
     // whether it's a workspace or a plain folder, so the row doesn't repeat it;
     // a real workspace instead shows when it last made progress.
     if c.is_workspace {
-        let (label, meta) = match workspace::Workspace::load(&c.path) {
+        let (label, meta, subtitle) = match workspace::Workspace::load(&c.path) {
             Ok(ws) => {
                 let mut parts = format!("· {} decks", ws.members.len());
                 if workspace::is_workspace(&c.path)
@@ -283,14 +289,15 @@ fn deck_item(
                 {
                     parts.push_str(&format!(" · {when}"));
                 }
-                (ws.display_name(), Some(parts))
+                (ws.display_name(), Some(parts), ws.description)
             }
-            Err(_) => (c.name, None),
+            Err(_) => (c.name, None, None),
         };
         return Item {
             key: c.path,
             label,
             meta,
+            subtitle,
             locked: false,
             state: None,
             is_workspace: true,
@@ -334,6 +341,7 @@ fn deck_item(
         key: c.path,
         label,
         meta,
+        subtitle: None,
         locked,
         state,
         is_workspace: false,
@@ -436,6 +444,9 @@ pub struct DeckEntry {
     pub path: PathBuf,
     pub last_used_ms: Option<u64>,
     pub is_workspace: bool,
+    /// A workspace's one-line `description` (its learning goal), shown dim under
+    /// the row. `None` for decks and folders.
+    pub description: Option<String>,
     pub members: Vec<DeckEntry>,
     /// Dim location hint (parent dir, `~`-abbreviated) when not in the decks
     /// dir.
@@ -451,7 +462,7 @@ pub fn catalog(decks_dir: &Path, recent: &RecentDecks) -> Vec<DeckEntry> {
         .into_iter()
         .map(|c| {
             if c.is_workspace {
-                let (label, members) = match workspace::Workspace::load(&c.path) {
+                let (label, description, members) = match workspace::Workspace::load(&c.path) {
                     Ok(ws) => {
                         let members = ws
                             .members
@@ -466,14 +477,15 @@ pub fn catalog(decks_dir: &Path, recent: &RecentDecks) -> Vec<DeckEntry> {
                                     path: m.clone(),
                                     last_used_ms: None,
                                     is_workspace: false,
+                                    description: None,
                                     members: Vec::new(),
                                     path_hint: None, // shown only in the drill-in
                                 }
                             })
                             .collect();
-                        (ws.display_name(), members)
+                        (ws.display_name(), ws.description, members)
                     }
-                    Err(_) => (c.name.clone(), Vec::new()),
+                    Err(_) => (c.name.clone(), None, Vec::new()),
                 };
                 DeckEntry {
                     path_hint: location_hint(&c.path, decks_dir),
@@ -482,6 +494,7 @@ pub fn catalog(decks_dir: &Path, recent: &RecentDecks) -> Vec<DeckEntry> {
                     path: c.path,
                     last_used_ms: c.last_used_ms,
                     is_workspace: true,
+                    description,
                     members,
                 }
             } else {
@@ -492,6 +505,7 @@ pub fn catalog(decks_dir: &Path, recent: &RecentDecks) -> Vec<DeckEntry> {
                     path: c.path,
                     last_used_ms: c.last_used_ms,
                     is_workspace: false,
+                    description: None,
                     members: Vec::new(),
                 }
             }
@@ -962,6 +976,7 @@ pub fn pick_cards(items: Vec<(u64, String, Option<String>)>, title: &str) -> Res
             key,
             label,
             meta,
+            subtitle: None,
             locked: false,
             state: None,
             is_workspace: false,
@@ -1026,6 +1041,7 @@ pub fn edit_dependencies(
             key: c.path,
             label: c.name,
             meta: None,
+            subtitle: None,
             locked: false,
             state: None,
             is_workspace: false,
@@ -1511,6 +1527,10 @@ impl<K: Clone + Eq + Hash> Picker<K> {
                 prev = Some(section);
             }
             rows.push(DisplayRow::Item(pos));
+            // A workspace's description trails it as a dim, non-selectable line.
+            if !self.confirming && self.all[i].subtitle.is_some() {
+                rows.push(DisplayRow::Subtitle(i));
+            }
         }
         rows
     }
@@ -1549,6 +1569,15 @@ impl<K: Clone + Eq + Hash> Picker<K> {
                 )),
                 DisplayRow::Item(pos) => {
                     self.item_line(self.filtered[*pos], *pos == self.cursor, width)
+                }
+                // The workspace description: dim, indented under its row, capped.
+                DisplayRow::Subtitle(i) => {
+                    let text = self.all[*i].subtitle.as_deref().unwrap_or_default();
+                    let cap = width.saturating_sub(6).clamp(12, 72);
+                    Line::from(Span::styled(
+                        format!("   {}", truncate(text, cap)),
+                        Style::new().fg(Color::DarkGray),
+                    ))
                 }
             })
             .collect();
@@ -1686,6 +1715,7 @@ mod tests {
             key: PathBuf::from(key),
             label: label.to_string(),
             meta: None,
+            subtitle: None,
             locked: false,
             state: None,
             is_workspace: false,
@@ -1720,6 +1750,7 @@ mod tests {
                 key: PathBuf::from(n),
                 label: n.to_string(),
                 meta: None,
+                subtitle: None,
                 locked: false,
                 state: None,
                 is_workspace: false,
@@ -1748,6 +1779,7 @@ mod tests {
                 key: PathBuf::from(n),
                 label: n.to_string(),
                 meta: None,
+                subtitle: None,
                 locked: *locked,
                 state: None,
                 is_workspace: false,
@@ -1779,6 +1811,7 @@ mod tests {
                 key: PathBuf::from(n),
                 label: n.to_string(),
                 meta: None,
+                subtitle: None,
                 locked: false,
                 state: None,
                 is_workspace: false,
@@ -1806,7 +1839,7 @@ mod tests {
             .into_iter()
             .filter_map(|row| match row {
                 DisplayRow::Header(h) => Some(h),
-                DisplayRow::Blank | DisplayRow::Item(_) => None,
+                DisplayRow::Blank | DisplayRow::Item(_) | DisplayRow::Subtitle(_) => None,
             })
             .collect()
     }

@@ -226,6 +226,9 @@ struct DeckItemDto {
     recent: bool,
     /// `true` for a workspace/folder row (opens into its members on click).
     is_workspace: bool,
+    /// A workspace's one-line description (its learning goal), shown dim under
+    /// the row; `null` for decks and folders.
+    description: Option<String>,
     /// For a workspace/folder row: its member decks as an unlock dependency
     /// tree, shown when you open it.
     members: Vec<MemberDto>,
@@ -1796,6 +1799,7 @@ fn deck_item_dto(
                 is_trace: s.is_trace,
                 recent,
                 is_workspace: false,
+                description: None,
                 members: Vec::new(),
                 path: e.path_hint.clone(),
             }
@@ -1812,6 +1816,7 @@ fn deck_item_dto(
             is_trace: false,
             recent,
             is_workspace: false,
+            description: None,
             members: Vec::new(),
             path: e.path_hint.clone(),
         },
@@ -1924,6 +1929,7 @@ fn deck_catalog(
                 is_trace: false,
                 recent: e.last_used_ms.is_some(),
                 is_workspace: true,
+                description: e.description,
                 members,
                 path: e.path_hint,
                 name: e.name,
