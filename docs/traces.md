@@ -590,11 +590,45 @@ but a chat ≠ the tool). So validate the mechanic cheaply before heavy plumbing
    richer `flash.toml [trace]` config, and surfacing trace decks in the web
    workspace picker.
 
+## Snapshotting the source (frozen `assets/`)
+
+`% at: file:lines` reads the **live** source at walk time, so editing a traced
+file silently shifts every excerpt to the wrong lines (we hit this:
+`examples/keypress-to-grade.txt` drifted after unrelated edits to review.html and
+serve.rs). **Quoted-span anchors** (address by text, grep live) were considered
+and rejected as the fix — they hit ambiguity (e.g. three `fn apply` in
+scheduler.rs), heavy escaping over quote-laden lines, and fuzzy span boundaries.
+
+The fix **flips the oracle from live → a frozen copy.** When you create a
+workspace by exploring a source — `flash explore --into <dir> --build` — its last
+step **freezes the cited excerpts** into the workspace's `assets/` folder: for
+each checkpoint it writes a small snippet file (`assets/01.rs`, `02.rs`, …) holding
+just the lines that checkpoint reveals, repoints that `% at:` at the snippet, and
+sets the trace's `% source:` to `assets/`. The excerpts then **never drift** — the
+snippets are frozen and committed with the workspace. Crucially it copies **only
+the excerpts, not whole (possibly huge) source files** — `assets/` stays tiny. The
+source is just text — any file, any topic — so a snippet is a plain copy (no
+version-control assumption). Bonus: the workspace is **self-contained/portable**
+(no upstream checkout needed) and it reuses the `assets/` folder image cards
+already need.
+
+A frozen snippet is re-based to line 1, so the original line numbers would be
+lost; when they're non-trivial (the excerpt didn't start at line 1) the original
+`file:lines` is preserved in the card's **note** (`! from scheduler.rs:90-98`), so
+you can still find the passage in the real source.
+
+It's the **default for explored workspaces**, not a command you run: a workspace
+created through exploration is self-contained from birth. A loose `.txt` trace
+over a live `% source:` is left untouched (the deliberately-live case), and fact
+decks keep their `% source:` (no line locators, so nothing drifts). The freeze is
+one-way — there's no refresh or un-snapshot. That's by design: a snapshot is
+either long-lived material that won't change, or a throwaway workspace (you'd just
+re-explore). We don't track staleness until there's a real need.
+
 ## Open / deferred decisions
 
-- Exact `% at:` syntax (quoted span vs symbol-anchor vs `file:lines`) — lean
-  quoted span primary, line refs as precision.
 - Whether the explore walk also emits a standalone map artifact vs only the
   in-trace compression output (lean: emit the map as the compression result).
 - How `--build` bounds path length / picks the spine on large repos.
-- Inline-cached excerpt vs live-read (lean: live-read; source is the oracle).
+- Whether a hand-authored (non-explored) trace ever needs an explicit freeze
+  step — deferred until the need shows up.

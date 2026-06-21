@@ -536,6 +536,80 @@ fn replace_after_header(text: &str, cards: &str) -> String {
     out
 }
 
+/// A snapshot's rewrite for one `% at:` line: its new value (the frozen excerpt
+/// snippet) and an optional provenance `note` (the original `file:lines`) to add
+/// as a `!` line, so the original line numbers aren't lost when the excerpt is
+/// re-based to line 1.
+pub struct AtRewrite {
+    pub at: String,
+    pub note: Option<String>,
+}
+
+/// Repoints a snapshotted trace in place (atomic temp + rename): replaces the
+/// first `% source:` value with `source`, and each `% at:` line (in file order)
+/// with the matching entry of `ats` — its new value plus, if any, a `! from …`
+/// provenance line. The `% trace:`, key points, existing notes, and everything
+/// else are preserved verbatim, so card identities are unaffected (`% at:` and
+/// notes are not hashed). Used when snapshotting a trace's excerpts into
+/// `assets/`.
+pub fn set_trace_snapshot(path: &Path, source: &str, ats: &[AtRewrite]) -> Result<(), DeckError> {
+    let io_err = |source| DeckError::Io {
+        path: path.to_path_buf(),
+        source,
+    };
+    let existing = std::fs::read_to_string(path).map_err(io_err)?;
+    let new_text = rewrite_trace_snapshot(&existing, source, ats);
+
+    let tmp = path.with_extension("txt.tmp");
+    std::fs::write(&tmp, new_text).map_err(io_err)?;
+    std::fs::rename(&tmp, path).map_err(io_err)?;
+    Ok(())
+}
+
+/// Pure transform for [`set_trace_snapshot`]: replace the first header
+/// `% source:` value with `source`, and each `% at:` value (in order) with
+/// `ats[i].at`, inserting a `! from …` line after it when `ats[i].note` is set.
+/// Indentation is preserved; everything else is untouched.
+fn rewrite_trace_snapshot(text: &str, source: &str, ats: &[AtRewrite]) -> String {
+    let directive = |line: &str, key: &str| {
+        line.trim()
+            .strip_prefix('%')
+            .map(str::trim)
+            .is_some_and(|rest| rest.strip_prefix(key).is_some())
+    };
+    fn indent_of(line: &str) -> &str {
+        &line[..line.len() - line.trim_start().len()]
+    }
+
+    let mut source_replaced = false;
+    let mut at_i = 0;
+    let mut in_header = true;
+    let mut out: Vec<String> = Vec::new();
+    for line in text.lines() {
+        if in_header && line.starts_with('#') {
+            in_header = false;
+        }
+        if in_header && !source_replaced && directive(line, "source:") {
+            out.push(format!("% source: {source}"));
+            source_replaced = true;
+        } else if directive(line, "at:") && at_i < ats.len() {
+            let indent = indent_of(line);
+            out.push(format!("{indent}% at: {}", ats[at_i].at));
+            if let Some(note) = &ats[at_i].note {
+                out.push(format!("{indent}! from {note}"));
+            }
+            at_i += 1;
+        } else {
+            out.push(line.to_string());
+        }
+    }
+    let mut joined = out.join("\n");
+    if text.ends_with('\n') && !joined.ends_with('\n') {
+        joined.push('\n');
+    }
+    joined
+}
+
 /// Rewrites a deck file's `% requires:` lines to exactly `deps` (deck names),
 /// grouped at the top of the file; any existing `% requires:` lines are
 /// removed first. Written atomically (temp + rename). Card identities are
@@ -1335,5 +1409,29 @@ mod tests {
         assert_eq!(1, dups.len());
         assert_eq!("one", dups[0].0.front);
         assert_eq!("two", dups[0].1.front);
+    }
+
+    #[test]
+    fn rewrite_trace_snapshot_repoints_source_each_at_and_adds_provenance() {
+        let text = "% trace: how X\n% source: ..\n\n# q1\n\tp\n\t% at: a.rs:90-98\n# q2\n\tp\n\t% at: b.rs:1\n";
+        let ats = [
+            AtRewrite {
+                at: "01.rs".into(),
+                note: Some("a.rs:90-98".into()),
+            },
+            AtRewrite {
+                at: "02.rs".into(),
+                note: None,
+            },
+        ];
+        let out = rewrite_trace_snapshot(text, "assets", &ats);
+        assert!(out.contains("% source: assets\n"), "{out}");
+        assert_eq!(1, out.matches("% source:").count()); // replaced, not added
+        assert!(out.contains("\t% at: 01.rs\n"), "{out}"); // first at → snippet, indent kept
+        assert!(out.contains("\t! from a.rs:90-98\n"), "{out}"); // original lines kept in a note
+        assert!(out.contains("\t% at: 02.rs\n"), "{out}"); // second at → snippet, no note
+        assert!(!out.contains("a.rs:90-98\n\t%")); // original locator gone from `% at:`
+        assert!(out.contains("% trace: how X\n")); // the trace marker is kept
+        assert!(out.ends_with('\n'));
     }
 }

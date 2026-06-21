@@ -122,7 +122,7 @@ card's front. Follow a link for the full explanation.
 | `% strictness:` | deck | [Exam grading rigor](#the-ai-exam-flash-exam): `strict`, `balanced`, or `lenient`. |
 | `% requires:` | deck | [Prerequisite deck](#deck-dependencies) that gates unlocks (repeatable). |
 | `% link:` | deck | [ask-Claude reference](#ask-claude-about-a-card) URL — **tutor only** (repeatable). |
-| `% source:` | deck | [Exam ground truth](#the-ai-exam-flash-exam) — a URL or file (repeatable). For a [trace](#traces-flash-trace), the source the path runs through. Also a tutor reference. |
+| `% source:` | deck | [Exam ground truth](#the-ai-exam-flash-exam) — a URL or file (repeatable). For a [trace](#traces-flash-trace), the source the path runs through (the frozen `assets/` copy in an explored workspace). Also a tutor reference. |
 | `% trace:` | deck | What a [trace](#traces-flash-trace) walks — a path description ("how X becomes Y"); its presence makes the deck a trace. |
 | `% at:` | card | A [trace checkpoint's](#traces-flash-trace) locator into the `% source:` (`file:lines`, or just `lines` for a single-file source). |
 | `% given:` | card | A [trace checkpoint's](#traces-flash-trace) "given" (repeatable) — an off-screen symbol the question leans on, as `name — meaning`; shown as a list under the question. |
@@ -676,6 +676,18 @@ there, so review it — especially the locators — and edit freely; re-run
 `--build` to regenerate. The build prompt encodes the chain rules below, so a
 generated trace comes out a path, not a quiz.
 
+**Snapshotting the source.** Because `% at: file:lines` reads the **live** source,
+editing a traced file shifts every excerpt to the wrong lines. So when you create
+a workspace by exploring a source ([`flash explore --into --build`](#exploring-a-source--flash-explore-experimental)),
+its final step **freezes the cited excerpts** into the workspace's `assets/`
+folder — one tiny snippet per checkpoint — and repoints each `% at:` (and the
+trace's `% source:`) at them. The excerpts never drift and the workspace is
+self-contained, **without copying whole source files**. A re-based snippet loses
+its original line numbers, so when those matter the original `file:lines` is kept
+in the card's note (`! from scheduler.rs:90-98`). It's automatic for explored
+workspaces, not a command; a loose trace over a live `% source:` is left as-is.
+See [docs/traces.md](docs/traces.md) for the rationale.
+
 Because building is one-shot, correctness-critical, and **fails silently** when
 the model is weak (you still get parseable checkpoints, just a loose chain you
 then drill), the `[trace]` config section defaults it to a strong model
@@ -779,7 +791,10 @@ explores the source **once** and then reuses that same session to fill every
 item — predict-verify checkpoints for the traces and fact cards for the decks —
 so the workspace comes out review-ready in one command. Writing the whole set
 from one understanding keeps the items coherent (each builds on its prerequisites
-instead of repeating them), and it fills fact decks too.
+instead of repeating them), and it fills fact decks too. As a final step it
+**freezes the source** into the workspace's `assets/` (see
+[Snapshotting the source](#traces-flash-trace)), so the workspace is
+self-contained and the trace locators never drift.
 
 **Explore walk.** Before you even know what to trace, `flash explore --walk
 <source>` builds a short **tour of the source's shape** and walks it like a trace:

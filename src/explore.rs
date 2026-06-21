@@ -20,8 +20,9 @@ use anyhow::{Result, bail};
 use crate::{
     ask,
     config::{AskConfig, TraceConfig},
-    deck::is_url,
-    trace::{build_run_config, clean_to_cards, resolve_source},
+    deck::{Deck, is_url},
+    trace::{self, build_run_config, clean_to_cards, resolve_source},
+    workspace,
 };
 
 /// Explore a source toward `goal` and return an ordered learning plan — the
@@ -508,6 +509,36 @@ pub fn materialize(
     })
 }
 
+/// Freezes each built trace's cited source into the workspace's `assets/` — the
+/// default final step of `flash explore --into --build`, so the workspace is
+/// self-contained and its line-number locators never drift. Traces that can't be
+/// frozen (a URL source, or no `% at:` files yet) are skipped. Returns
+/// `(traces frozen, files copied)`.
+pub fn snapshot_traces(dir: &Path) -> Result<(usize, usize)> {
+    let mut traces = 0;
+    let mut files = 0;
+    for member in workspace::Workspace::load(dir)?.members {
+        match Deck::load(&member) {
+            Ok(deck) if deck.is_trace() => match trace::snapshot(&deck) {
+                Ok(report) => {
+                    traces += 1;
+                    files += report.copied.len();
+                    for missing in &report.missing {
+                        eprintln!(
+                            "warning: {}: cited file not found, not frozen: {missing}",
+                            member.display()
+                        );
+                    }
+                }
+                // A trace with a URL source or no file locators can't be frozen.
+                Err(_) => continue,
+            },
+            _ => continue,
+        }
+    }
+    Ok((traces, files))
+}
+
 /// The member file name for an item: `NN-<slug>.txt`, the zero-padded number
 /// (preserving plan order) plus a slug of the title.
 fn file_name(item: &Item) -> String {
@@ -729,6 +760,37 @@ preamble ignored
         let deck =
             fs::read_to_string(dir.join("01-the-deck-format-markers-and-directives.txt")).unwrap();
         assert!(deck.contains("% Stub from `flash explore`"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn snapshot_traces_freezes_built_traces_skips_decks() {
+        let dir = std::env::temp_dir().join(format!("flash-snap-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("src")).unwrap();
+        fs::write(dir.join("src/a.rs"), "x\ny\nz\n").unwrap();
+        fs::write(dir.join("flash.toml"), "[defaults]\n").unwrap();
+        // a built trace citing src/a.rs (source = the dir)
+        let src = dir.join("src");
+        fs::write(
+            dir.join("01-t.txt"),
+            format!(
+                "% trace: t\n% source: {}\n# h\n\tp\n\t% at: a.rs:1-2\n",
+                src.display()
+            ),
+        )
+        .unwrap();
+        // a fact deck (not a trace) — skipped
+        fs::write(dir.join("02-d.txt"), "% title: d\n# q\n\ta\n").unwrap();
+
+        let (traces, files) = snapshot_traces(&dir).unwrap();
+        assert_eq!((1, 1), (traces, files)); // 1 trace, 1 excerpt snippet
+        assert!(dir.join("assets/01.rs").is_file());
+        assert!(!dir.join("assets/a.rs").exists()); // the excerpt, not the whole file
+        let text = fs::read_to_string(dir.join("01-t.txt")).unwrap();
+        assert!(text.contains("% source: assets\n"), "{text}");
+        assert!(text.contains("% at: 01.rs\n"), "{text}");
 
         let _ = fs::remove_dir_all(&dir);
     }

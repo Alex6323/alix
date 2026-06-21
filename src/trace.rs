@@ -21,7 +21,7 @@ use std::{
     sync::mpsc::{Receiver, channel},
 };
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail};
 
 use crate::{
     ask,
@@ -211,6 +211,159 @@ pub fn build(deck: &Deck, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<Stri
         bail!("the build produced no checkpoints");
     }
     Ok(cards)
+}
+
+// ── Snapshotting the source ──────────────────────────────────────────────────
+//
+// Line-number locators read the live source, so editing a traced file silently
+// shifts every excerpt. Snapshotting freezes just the cited excerpts into the
+// workspace's `assets/` (one small file per checkpoint) and repoints `% source:`
+// + each `% at:` at them: the excerpts then never drift, and the workspace is
+// self-contained — without copying whole (possibly huge) source files. The
+// re-based excerpt loses its original line numbers, which don't matter once the
+// span is frozen. It's the default last step of `flash explore --into --build`;
+// a loose trace over a live path is left untouched. The source is any text file.
+
+/// The directory under a workspace where a snapshotted trace's excerpts are
+/// frozen.
+pub(crate) const SNAPSHOT_DIR: &str = "assets";
+
+/// What [`snapshot`] froze.
+#[derive(Debug)]
+pub(crate) struct SnapshotReport {
+    /// The excerpt snippet files written into `assets/`.
+    pub copied: Vec<String>,
+    /// Locators whose excerpt couldn't be read and were left as-is.
+    pub missing: Vec<String>,
+}
+
+/// Freezes a built trace's cited **excerpts** into `<workspace>/assets/` — one
+/// small snippet file per checkpoint, holding just the lines that checkpoint
+/// reveals — and repoints `% source:` + every `% at:` at them. The locators then
+/// never drift when the upstream source is edited, and nothing huge is copied.
+/// The frozen excerpt is re-based to line 1 (the original line numbers are lost,
+/// which is fine for a frozen span).
+///
+/// Requires a trace whose `% source:` is local (not a URL) and whose folder is a
+/// workspace. The freeze is one-way — there is no "un-snapshot"; the workspace is
+/// either long-lived stable material or a throwaway.
+pub(crate) fn snapshot(deck: &Deck) -> Result<SnapshotReport> {
+    if deck.trace.is_none() {
+        bail!("{} is not a trace (no `% trace:`)", deck.subject);
+    }
+    let deck_dir = deck.path.parent().unwrap_or_else(|| Path::new("."));
+    if !crate::workspace::is_workspace(deck_dir) {
+        bail!(
+            "a trace snapshots into its workspace's `assets/`, but {} is not in a \
+             workspace (no `flash.toml`).",
+            deck.path.display()
+        );
+    }
+    let source = deck
+        .sources
+        .first()
+        .ok_or_else(|| anyhow!("{} declares no `% source:` to snapshot", deck.subject))?;
+    if is_url(source) {
+        bail!("`{source}` is a URL — there are no local excerpts to snapshot");
+    }
+
+    let trace = Trace::from_deck(deck)?;
+    let assets_dir = deck_dir.join(SNAPSHOT_DIR);
+    let mut copied = Vec::new();
+    let mut missing = Vec::new();
+    // The rewrite for each `% at:` line, in file order.
+    let mut ats: Vec<crate::deck::AtRewrite> = Vec::new();
+
+    for checkpoint in &trace.checkpoints {
+        let Some(locator) = &checkpoint.locator else {
+            continue;
+        };
+        match trace.excerpt(checkpoint) {
+            Ok(excerpt) => {
+                // `NN.<ext>` — the cited file's extension keeps the snippet
+                // readable; the number keeps it unique and ordered.
+                let n = copied.len() + 1;
+                let ext = excerpt_ext(&excerpt);
+                let name = format!("{n:02}.{ext}");
+                write_snippet(&assets_dir.join(&name), &excerpt)?;
+                copied.push(name.clone());
+                ats.push(crate::deck::AtRewrite {
+                    at: name,
+                    // Keep the original `file:lines` in a note when re-basing to
+                    // line 1 actually loses the numbers (the excerpt didn't start
+                    // at line 1).
+                    note: excerpt_provenance(&excerpt),
+                });
+            }
+            // Keep the original locator if the excerpt can't be read; warn later.
+            Err(_) => {
+                missing.push(locator.clone());
+                ats.push(crate::deck::AtRewrite {
+                    at: locator.clone(),
+                    note: None,
+                });
+            }
+        }
+    }
+    if copied.is_empty() {
+        bail!(
+            "{} has no readable `% at:` excerpts to snapshot",
+            deck.subject
+        );
+    }
+
+    crate::deck::set_trace_snapshot(&deck.path, SNAPSHOT_DIR, &ats)?;
+
+    Ok(SnapshotReport { copied, missing })
+}
+
+/// The extension to give a snippet — the cited file's (so `01.rs` stays
+/// recognizable), or `txt` when it has none.
+fn excerpt_ext(excerpt: &Excerpt) -> String {
+    excerpt
+        .path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("txt")
+        .to_string()
+}
+
+/// The original `file:lines` of an excerpt, for the provenance note — but only
+/// when re-basing to line 1 loses information (the excerpt starts past line 1).
+fn excerpt_provenance(excerpt: &Excerpt) -> Option<String> {
+    let first = excerpt.lines.first()?.0;
+    let last = excerpt.lines.last()?.0;
+    if first <= 1 {
+        return None; // the re-based numbers match the originals — nothing lost
+    }
+    let file = excerpt
+        .path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("source");
+    Some(if first == last {
+        format!("{file}:{first}")
+    } else {
+        format!("{file}:{first}-{last}")
+    })
+}
+
+/// Writes an excerpt's lines (content only, re-based to line 1) to a snippet
+/// file, creating `assets/` if needed.
+fn write_snippet(dest: &Path, excerpt: &Excerpt) -> Result<()> {
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("cannot create {}", parent.display()))?;
+    }
+    let mut body: String = excerpt
+        .lines
+        .iter()
+        .map(|(_, line)| line.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    body.push('\n');
+    std::fs::write(dest, body).with_context(|| format!("cannot write {}", dest.display()))?;
+    Ok(())
 }
 
 /// Recon a source and return a ranked menu of candidate traces to author — each
@@ -1235,5 +1388,134 @@ mod tests {
         assert!(cards.starts_with("# Q1"));
         assert!(cards.contains("# Q2"));
         assert!(cards.contains("% at: 2"));
+    }
+
+    // ── snapshotting ────────────────────────────────────────────────────
+
+    /// A workspace (`flash.toml` + deck) at `root/ws` whose trace cites files in
+    /// a sibling source tree at `root/src`.
+    fn snapshot_workspace(root: &Path) -> PathBuf {
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        write(&root.join("src"), "a.rs", "alpha\nbeta\ngamma\n");
+        write(&root.join("src"), "b.rs", "one\ntwo\n");
+        std::fs::create_dir_all(root.join("ws")).unwrap();
+        write(
+            &root.join("ws"),
+            "flash.toml",
+            "title = \"W\"\n\n[defaults]\n",
+        );
+        write(
+            &root.join("ws"),
+            "t.txt",
+            "% trace: how it works\n\
+             % source: ../src\n\
+             # hop 1\n\tit reads a\n\t% at: a.rs:2-3\n\
+             # hop 2\n\tit reads b\n\t% at: b.rs:1\n",
+        )
+    }
+
+    #[test]
+    fn snapshot_freezes_excerpts_with_provenance() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let deck_path = snapshot_workspace(root);
+        let deck = Deck::load(&deck_path).unwrap();
+
+        let report = snapshot(&deck).unwrap();
+        assert_eq!(2, report.copied.len());
+        assert!(report.missing.is_empty());
+        // one small snippet per checkpoint — NOT the whole files
+        assert!(root.join("ws/assets/01.rs").is_file());
+        assert!(root.join("ws/assets/02.rs").is_file());
+        assert!(!root.join("ws/assets/a.rs").exists());
+        // the snippet holds only the cited span (a.rs:2-3 → beta, gamma)
+        assert_eq!(
+            "beta\ngamma\n",
+            std::fs::read_to_string(root.join("ws/assets/01.rs")).unwrap()
+        );
+
+        let text = std::fs::read_to_string(&deck_path).unwrap();
+        assert!(text.contains("% source: assets\n"), "{text}");
+        assert!(text.contains("% at: 01.rs\n"), "{text}"); // locator → snippet
+        assert!(text.contains("! from a.rs:2-3\n"), "{text}"); // original lines kept in a note
+        assert!(!text.contains("a.rs:2-3\n\t%")); // the `% at:` no longer holds the file range
+        // hop 2 (b.rs:1) starts at line 1, so no provenance note
+        assert!(!text.contains("! from b.rs"));
+
+        // the reloaded trace reads the re-based excerpt from the snippet
+        let frozen = Deck::load(&deck_path).unwrap();
+        let trace = Trace::from_deck(&frozen).unwrap();
+        let ex = trace.excerpt(&trace.checkpoints[0]).unwrap();
+        assert_eq!(
+            vec![(1, "beta".to_string()), (2, "gamma".to_string())],
+            ex.lines
+        );
+    }
+
+    #[test]
+    fn snapshot_drift_is_gone_after_editing_upstream() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let deck_path = snapshot_workspace(root);
+        snapshot(&Deck::load(&deck_path).unwrap()).unwrap();
+        // Edit the upstream source — even delete it: the frozen snippet is intact.
+        std::fs::write(root.join("src/a.rs"), "TOTALLY\nDIFFERENT\n").unwrap();
+        let trace = Trace::from_deck(&Deck::load(&deck_path).unwrap()).unwrap();
+        let ex = trace.excerpt(&trace.checkpoints[0]).unwrap();
+        assert_eq!(
+            vec![(1, "beta".to_string()), (2, "gamma".to_string())],
+            ex.lines
+        );
+    }
+
+    #[test]
+    fn snapshot_freezes_single_file_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(root, "notes.md", "L1\nL2\nL3\n");
+        std::fs::create_dir_all(root.join("ws")).unwrap();
+        write(&root.join("ws"), "flash.toml", "[defaults]\n");
+        let deck_path = write(
+            &root.join("ws"),
+            "t.txt",
+            "% trace: t\n% source: ../notes.md\n# hop\n\tp\n\t% at: 2\n",
+        );
+        let report = snapshot(&Deck::load(&deck_path).unwrap()).unwrap();
+        assert_eq!(1, report.copied.len());
+        assert!(root.join("ws/assets/01.md").is_file());
+        let text = std::fs::read_to_string(&deck_path).unwrap();
+        assert!(text.contains("% source: assets\n"), "{text}");
+        assert!(text.contains("% at: 01.md\n"), "{text}");
+        assert!(text.contains("! from notes.md:2\n"), "{text}");
+
+        let frozen = Deck::load(&deck_path).unwrap();
+        let trace = Trace::from_deck(&frozen).unwrap();
+        let ex = trace.excerpt(&trace.checkpoints[0]).unwrap();
+        assert_eq!(vec![(1, "L2".to_string())], ex.lines);
+    }
+
+    #[test]
+    fn snapshot_refuses_non_workspace_and_url() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        // not in a workspace (no flash.toml)
+        let loose = write(
+            root,
+            "t.txt",
+            "% trace: t\n% source: .\n# h\n\tp\n\t% at: x.rs:1\n",
+        );
+        let err = snapshot(&Deck::load(&loose).unwrap()).unwrap_err();
+        assert!(format!("{err:#}").contains("not in a workspace"), "{err:#}");
+
+        // URL source, in a workspace
+        std::fs::create_dir_all(root.join("ws")).unwrap();
+        write(&root.join("ws"), "flash.toml", "[defaults]\n");
+        let url = write(
+            &root.join("ws"),
+            "u.txt",
+            "% trace: t\n% source: https://example.com/p\n# h\n\tp\n\t% at: 1\n",
+        );
+        let err = snapshot(&Deck::load(&url).unwrap()).unwrap_err();
+        assert!(format!("{err:#}").contains("URL"), "{err:#}");
     }
 }

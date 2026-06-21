@@ -7,6 +7,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Trace source snapshots** — creating a workspace by exploring a source
+  (`flash explore --into <dir> --build`) now **freezes the cited excerpts** into
+  the workspace as its final step: for each checkpoint it writes a small snippet
+  file into the workspace's `assets/` folder (`assets/01.rs`, `02.rs`, …) holding
+  just the lines that checkpoint reveals, and repoints the `% at:` (and the
+  trace's `% source:`) at it. This stops the line-number locators from drifting
+  when the upstream source is later edited (the walk reads the source live, so a
+  moved line silently shows the wrong excerpt), and makes the workspace
+  self-contained — **without copying whole (possibly huge) source files**. A
+  re-based snippet loses its original line numbers, so when those matter the
+  original `file:lines` is preserved in the card's note (`! from
+  scheduler.rs:90-98`). The source is plain text (any file, any topic — no
+  version-control assumption). It's automatic for explored workspaces, not a
+  command; a loose trace over a live `% source:` is left as-is. Rationale in
+  `docs/traces.md`.
 - **`flash deck <source>`** (renamed from `flash generate`, which no longer
   exists as an alias) — generates a fact deck with Claude from a **web page URL or a
   local file/directory path**, mirroring `flash trace`. A URL is fetched with

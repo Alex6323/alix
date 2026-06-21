@@ -1572,7 +1572,7 @@ fn trace_cmd(args: TraceArgs) -> Result<()> {
     // `--build`: discover the path with Claude and write it back (no walk; a
     // fresh trace deck has no checkpoints yet, so this runs before from_deck).
     if args.build {
-        return trace_build(&args, deck);
+        return trace_build(&args, &deck);
     }
 
     let trace = Trace::from_deck(&deck)?;
@@ -1729,7 +1729,7 @@ fn run_walk(
 /// Discovers the path with Claude (`flash trace --build`) and writes the
 /// checkpoints back into the deck file, keeping its `% trace:`/`% source:`
 /// header.
-fn trace_build(args: &TraceArgs, deck: Deck) -> Result<()> {
+fn trace_build(args: &TraceArgs, deck: &Deck) -> Result<()> {
     if !deck.is_trace() {
         bail!(
             "{} declares no `% trace:` — add the path you want to understand \
@@ -1750,7 +1750,7 @@ fn trace_build(args: &TraceArgs, deck: Deck) -> Result<()> {
         "Tracing a path through {source} (exploring the source — this can take a \
          few minutes)…"
     );
-    let cards = flash::trace::build(&deck, &config.trace, &config.ask)?;
+    let cards = flash::trace::build(deck, &config.trace, &config.ask)?;
     flash::deck::set_trace_checkpoints(&args.deck, &cards)?;
 
     let n = parser::parse_str(&deck.subject, &cards)
@@ -1822,6 +1822,17 @@ fn explore_cmd(args: ExploreArgs) -> Result<()> {
             report.traces,
             report.decks,
         );
+        // Freeze each trace's source into the workspace's `assets/` so its
+        // locators never drift and the workspace is self-contained.
+        match flash::explore::snapshot_traces(&report.dir) {
+            Ok((traces, files)) if traces > 0 => println!(
+                "{DIM}Froze {files} excerpt(s) from {traces} trace(s) into \
+                 {}/assets — the locators won't drift.{RESET}",
+                report.dir.display(),
+            ),
+            Ok(_) => {}
+            Err(e) => eprintln!("warning: could not snapshot the source: {e:#}"),
+        }
         println!(
             "{DIM}Walk a trace:  flash trace {}/<file>   ·   review the set:  \
              flash review {}{RESET}",
