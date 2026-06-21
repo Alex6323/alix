@@ -338,7 +338,7 @@ async function renderSelect() {
     const wrap = el("div", "select");
     wrap.appendChild(el("div", "lede", opts.lede));
     const filter = el("input", "deck-filter");
-    filter.type = "text"; filter.placeholder = "filter decks…"; filter.autocomplete = "off";
+    filter.type = "text"; filter.placeholder = opts.filterPlaceholder || "filter decks…"; filter.autocomplete = "off";
     wrap.appendChild(filter);
 
     const lists = el("div", "lists");
@@ -455,6 +455,7 @@ async function renderSelect() {
     if (folders.length) sections.push({ title: "Folders", rows: folders.map(openRow) });
     renderList({
       lede: "pick a deck to browse — open a workspace to drill in",
+      filterPlaceholder: "filter decks & workspaces…",
       sections, back: null, allowMastered: true,
     });
   }
