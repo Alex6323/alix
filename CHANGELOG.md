@@ -7,6 +7,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **The ask-Claude tutor can read the card's source to verify its answer
+  (opt-in).** A new `[ask] source_access` flag (off by default) lets the tutor
+  run with `Read`/`Glob`/`Grep` and its working directory at the deck's
+  `% source:` **project root** (resolved up to the nearest `Cargo.toml`/`.git`/
+  …), and instructs it to check the real files before answering instead of
+  relying on memory — so a question about a generated deck is grounded in the
+  same source the deck was built from. Off by default because it grants the
+  (possibly LAN-served) tutor file-read access. The web ask panel also now shows
+  **which model and effort** are answering (`model: … · effort: …`) — a reminder
+  that the tutor uses the CLI default unless `[ask]` pins a stronger one.
 - **`flash explore --title` / `--max-stage` shape the scaffolded workspace; the
   goal becomes its description.** `flash explore --into <dir>` now takes an
   optional `--title` for the workspace's `flash.toml` `title` (omitted, the

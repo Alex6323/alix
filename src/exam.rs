@@ -548,6 +548,7 @@ fn run_config(cfg: &ExamConfig, ask_cfg: &AskConfig) -> AskConfig {
         effort: ask_cfg.effort.clone(),
         timeout_secs: cfg.timeout_secs,
         cwd: None,
+        source_access: false,
     }
 }
 

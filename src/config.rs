@@ -239,6 +239,12 @@ pub struct AskConfig {
     /// the caller's. Not a user setting: trace building sets it to the
     /// `% source:` root so Claude explores the source with relative paths.
     pub cwd: Option<PathBuf>,
+    /// Opt-in: let the ask-Claude tutor **read the card's source** to verify its
+    /// answer (Read/Glob/Grep, working directory at the deck's `% source:`
+    /// project root) instead of answering from memory. Off by default because it
+    /// grants the served tutor file-read access — only enable it on a machine and
+    /// network you trust (especially with `flash serve --lan`).
+    pub source_access: bool,
 }
 
 impl Default for AskConfig {
@@ -251,6 +257,7 @@ impl Default for AskConfig {
             permission_mode: "dontAsk".to_string(),
             allowed_tools: vec!["WebFetch".to_string(), "WebSearch".to_string()],
             cwd: None,
+            source_access: false,
         }
     }
 }
@@ -514,6 +521,7 @@ struct RawAsk {
     timeout_secs: Option<u64>,
     permission_mode: Option<String>,
     allowed_tools: Option<Vec<String>>,
+    source_access: Option<bool>,
 }
 
 #[derive(Deserialize, Default)]
@@ -601,6 +609,9 @@ impl Config {
         }
         if let Some(tools) = raw.ask.allowed_tools {
             ask.allowed_tools = tools;
+        }
+        if let Some(source_access) = raw.ask.source_access {
+            ask.source_access = source_access;
         }
 
         let mut generate = GenerateDeckConfig::default();
@@ -793,6 +804,11 @@ pub fn default_config_toml() -> &'static str {
 # Tools the assistant may use. With "dontAsk" this is an exclusive
 # allowlist; the defaults let it consult deck links but nothing else.
 # allowed_tools = ["WebFetch", "WebSearch"]
+# Let the tutor READ the card's source (Read/Glob/Grep at the deck's % source:
+# project root) to verify its answer instead of relying on memory. Off by
+# default: it grants the (possibly LAN-served) tutor file-read access — only
+# enable on a machine and network you trust.
+# source_access = false
 
 # AI deck generation (`flash deck <source>`). Reuses the [ask] command,
 # permission mode and tool allowlist (WebFetch reads the page).

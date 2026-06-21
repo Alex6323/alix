@@ -412,6 +412,7 @@ pub(crate) fn build_run_config(
         effort: cfg.effort.clone().or_else(|| ask_cfg.effort.clone()),
         timeout_secs: cfg.timeout_secs,
         cwd,
+        source_access: false,
     }
 }
 
@@ -935,6 +936,71 @@ pub(crate) fn resolve_source(
     }
 }
 
+/// The project root the grounded ask-tutor reads: the nearest directory above a
+/// deck's `% source:` files that looks like a project (holds a `Cargo.toml`,
+/// `.git`, `package.json`, `go.mod`, or `pyproject.toml`), so the tutor can read
+/// the **whole** crate, not just the cited files. Falls back to the sources'
+/// common-ancestor directory, and to `None` when the deck has no local source
+/// (a URL source, or nothing on disk). `deck_dir` resolves relative sources.
+pub(crate) fn project_root(sources: &[String], deck_dir: &Path) -> Option<PathBuf> {
+    let mut dirs: Vec<PathBuf> = sources
+        .iter()
+        .filter(|s| !is_url(s))
+        .map(|s| {
+            let p = Path::new(s);
+            if p.is_absolute() {
+                p.to_path_buf()
+            } else {
+                deck_dir.join(p)
+            }
+        })
+        .filter(|p| p.exists())
+        // A cited file contributes its containing directory.
+        .map(|p| {
+            if p.is_file() {
+                p.parent().map(Path::to_path_buf).unwrap_or(p)
+            } else {
+                p
+            }
+        })
+        .collect();
+    dirs.sort();
+    dirs.dedup();
+    let base = common_ancestor(&dirs)?;
+    Some(find_project_root(&base).unwrap_or(base))
+}
+
+/// The deepest directory that is an ancestor of every path in `dirs`.
+fn common_ancestor(dirs: &[PathBuf]) -> Option<PathBuf> {
+    let mut common = dirs.first()?.clone();
+    for d in &dirs[1..] {
+        while !d.starts_with(&common) {
+            common = common.parent()?.to_path_buf();
+        }
+    }
+    Some(common)
+}
+
+/// Walks up from `dir` (inclusive) to the first ancestor holding a project
+/// marker, or `None` if none is found before the filesystem root.
+fn find_project_root(dir: &Path) -> Option<PathBuf> {
+    const MARKERS: [&str; 5] = [
+        "Cargo.toml",
+        ".git",
+        "package.json",
+        "go.mod",
+        "pyproject.toml",
+    ];
+    let mut cur = Some(dir);
+    while let Some(d) = cur {
+        if MARKERS.iter().any(|m| d.join(m).exists()) {
+            return Some(d.to_path_buf());
+        }
+        cur = d.parent();
+    }
+    None
+}
+
 /// Splits a locator into its optional `file:` part and optional line range.
 /// `card.rs:1-9` → (`card.rs`, `1-9`); `1-9` → (none, `1-9`); `card.rs` →
 /// (`card.rs`, none, the whole file). A locator is a single span — `N` or
@@ -1345,6 +1411,32 @@ mod tests {
         assert_eq!(vec!["Read", "Glob", "Grep"], cfg.allowed_tools);
         assert_eq!(Some(cwd), cfg.cwd);
         assert_eq!(600, cfg.timeout_secs); // the trace timeout, not ask's 120
+    }
+
+    #[test]
+    fn project_root_walks_up_to_the_crate_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let krate = dir.path().join("mycrate");
+        std::fs::create_dir_all(krate.join("src")).unwrap();
+        std::fs::write(krate.join("Cargo.toml"), "[package]\nname=\"x\"\n").unwrap();
+        std::fs::write(krate.join("README.md"), "# x\n").unwrap();
+        std::fs::write(krate.join("src/lib.rs"), "// lib\n").unwrap();
+        let s = |p: PathBuf| p.to_string_lossy().into_owned();
+
+        // README.md (root) + src/lib.rs → common ancestor is the crate root,
+        // which holds Cargo.toml.
+        let both = vec![s(krate.join("README.md")), s(krate.join("src/lib.rs"))];
+        assert_eq!(Some(krate.clone()), project_root(&both, dir.path()));
+
+        // A single nested file still walks up to the Cargo.toml root.
+        let only = vec![s(krate.join("src/lib.rs"))];
+        assert_eq!(Some(krate.clone()), project_root(&only, dir.path()));
+
+        // A URL source has no local root.
+        assert_eq!(
+            None,
+            project_root(&["https://example.com".to_string()], dir.path())
+        );
     }
 
     #[test]

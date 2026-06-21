@@ -538,8 +538,17 @@ CLI (`claude -p`), so you can ask "why is that the answer?" and follow up.
 One CLI conversation spans the whole review run (`--session-id` on the
 first question, `--resume` afterwards), so Claude remembers earlier cards
 and questions — but the panel shows only the **current card's** exchanges, not
-the whole history. While Claude thinks, the session stays responsive; Esc
-returns exactly where you were.
+the whole history. By default the tutor answers from the card text plus its own
+knowledge (tools: `WebFetch`/`WebSearch`), and it uses the **CLI's default
+model** — set `[ask] model`/`effort` to pin a stronger one (the web panel shows
+which model is answering). For a deck built from source, set **`[ask]
+source_access = true`** to let the tutor **read the card's source** to verify its
+answer: it runs `Read`/`Glob`/`Grep` with its working directory at the deck's
+`% source:` project root (the nearest `Cargo.toml`/`.git`/… above the cited
+files) and is told to check the real files before answering. It's off by default
+because it grants the tutor file-read access — only enable it on a machine and
+network you trust (especially with `--serve --lan`). While Claude thinks, the
+session stays responsive; Esc returns exactly where you were.
 
 This works in the **web frontend** too (`--serve`): an "Ask" button (and the
 `?` key) on an answered card opens a chat panel — type a question, **Send**,

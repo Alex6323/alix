@@ -445,6 +445,9 @@ pub struct SessionBuild {
     pub label: String,
     pub decks: HashMap<String, PathBuf>,
     pub links: HashMap<String, Vec<String>>,
+    /// Subject → its deck's `% source:` project root, for the grounded ask-tutor
+    /// (`[ask] source_access`). Only decks with a local source appear.
+    pub source_roots: HashMap<String, PathBuf>,
 }
 
 /// A trace walk ready to serve, built when a single trace deck is picked from the
@@ -485,6 +488,8 @@ struct Reviewing {
     /// session) so the ask view only shows *this* card's exchanges.
     transcript_card: Option<u64>,
     links: HashMap<String, Vec<String>>,
+    /// Subject → `% source:` project root, for the grounded tutor (opt-in).
+    source_roots: HashMap<String, PathBuf>,
     pending: Option<Pending>,
 }
 
@@ -517,6 +522,7 @@ impl Reviewing {
             transcript: Vec::new(),
             transcript_card: None,
             links: build.links,
+            source_roots: build.source_roots,
             pending: None,
         }
     }
@@ -563,11 +569,27 @@ impl Reviewing {
         let Some(card) = self.session.current().cloned() else {
             return false;
         };
-        let (prompt, purpose) = match question {
+        let (prompt, purpose, run_cfg) = match question {
             Some(q) => {
                 let links = self.links.get(&*card.subject).cloned().unwrap_or_default();
-                let prompt = ask::question_prompt(&card, &links, &q, !self.cli.started);
-                (prompt, Purpose::Question(q))
+                // Ground the tutor in the card's source when the user opted in
+                // (`[ask] source_access`) and the deck has a local source root.
+                let root = cfg
+                    .source_access
+                    .then(|| self.source_roots.get(&*card.subject))
+                    .flatten();
+                let prompt = ask::question_prompt(
+                    &card,
+                    &links,
+                    &q,
+                    !self.cli.started,
+                    root.map(PathBuf::as_path),
+                );
+                let run_cfg = match root {
+                    Some(r) => ask::with_source_root(cfg, r),
+                    None => cfg.clone(),
+                };
+                (prompt, Purpose::Question(q), run_cfg)
             }
             None => {
                 if self.transcript.is_empty() {
@@ -576,10 +598,11 @@ impl Reviewing {
                 (
                     ask::condense_prompt(&card, &self.transcript),
                     Purpose::Condense,
+                    cfg.clone(),
                 )
             }
         };
-        let rx = ask::spawn(cfg.clone(), prompt, self.cli.args());
+        let rx = ask::spawn(run_cfg, prompt, self.cli.args());
         self.pending = Some(Pending { rx, purpose, card });
         true
     }
@@ -2345,6 +2368,7 @@ mod tests {
             label: "d.txt".to_string(),
             decks,
             links: HashMap::new(),
+            source_roots: HashMap::new(),
         });
         (reviewing, card, deck)
     }

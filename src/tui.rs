@@ -126,6 +126,9 @@ pub struct DeckInfo {
     pub path: PathBuf,
     /// Reference links (`% link:` lines) offered to Claude as background.
     pub links: Vec<String>,
+    /// The deck's `% source:` project root, for the grounded ask-tutor
+    /// (`[ask] source_access`); `None` when there's no local source.
+    pub source_root: Option<PathBuf>,
 }
 
 /// Static settings of a review run.
@@ -822,17 +825,24 @@ impl App {
             KeyCode::Enter if waiting.is_none() && !input.trim().is_empty() => {
                 let question = std::mem::take(input);
                 *cursor = 0;
-                let links = self
-                    .options
-                    .decks
-                    .get(&*card.subject)
-                    .map(|info| info.links.as_slice())
-                    .unwrap_or(&[]);
+                let info = self.options.decks.get(&*card.subject);
+                let links = info.map(|i| i.links.as_slice()).unwrap_or(&[]);
+                // Ground the tutor in the card's source when the user opted in
+                // (`[ask] source_access`) and the deck has a local source root.
+                let root = if self.options.ask.source_access {
+                    info.and_then(|i| i.source_root.as_deref())
+                } else {
+                    None
+                };
                 let prompt =
-                    ask::question_prompt(card, links, &question, !self.ask_session.started);
+                    ask::question_prompt(card, links, &question, !self.ask_session.started, root);
+                let ask_cfg = match root {
+                    Some(r) => ask::with_source_root(&self.options.ask, r),
+                    None => self.options.ask.clone(),
+                };
                 *status = None;
                 *waiting = Some(Waiting {
-                    rx: ask::spawn(self.options.ask.clone(), prompt, self.ask_session.args()),
+                    rx: ask::spawn(ask_cfg, prompt, self.ask_session.args()),
                     purpose: Purpose::Question(question),
                 });
             }

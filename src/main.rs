@@ -498,6 +498,8 @@ fn load_decks(paths: &[PathBuf], defaults: &HashMap<String, DeckSettings>) -> Re
                 // Ask-Claude references include the deck's `% link:`s and any
                 // URL `% source:` (a source doubles as a reference).
                 links: deck.reference_links(),
+                // Where the grounded tutor reads this deck's source (opt-in).
+                source_root: deck.source_root(),
             },
         );
         settings.push(deck.settings);
@@ -1240,11 +1242,20 @@ fn review_serve(args: ReviewArgs) -> Result<()> {
             .iter()
             .map(|(subject, info)| (subject.clone(), info.links.clone()))
             .collect();
+        // Subject → `% source:` project root, for the grounded ask-tutor.
+        let source_roots = b
+            .decks
+            .iter()
+            .filter_map(|(subject, info)| {
+                info.source_root.clone().map(|root| (subject.clone(), root))
+            })
+            .collect();
         serve::SessionBuild {
             session: b.session,
             label: b.label,
             decks: subject_paths(b.decks),
             links,
+            source_roots,
         }
     };
 

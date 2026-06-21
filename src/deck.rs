@@ -315,6 +315,15 @@ impl Deck {
         out
     }
 
+    /// The project root behind this deck's local `% source:` — the crate/project
+    /// directory the grounded ask-tutor reads (see [`crate::trace::project_root`])
+    /// — or `None` for a URL-only / source-less deck. The deck's own folder roots
+    /// any relative source paths.
+    pub fn source_root(&self) -> Option<PathBuf> {
+        let deck_dir = self.path.parent().unwrap_or_else(|| Path::new("."));
+        crate::trace::project_root(&self.sources, deck_dir)
+    }
+
     /// Returns pairs of cards within this deck that share the same identity
     /// hash (i.e. same back lines). Such cards are indistinguishable to the
     /// progress store, so the `check` command warns about them.

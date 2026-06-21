@@ -10,6 +10,7 @@
 
 use std::{
     io::{Read, Write},
+    path::Path,
     process::{Command, Stdio},
     sync::mpsc::{Receiver, channel},
     time::{Duration, Instant},
@@ -110,8 +111,17 @@ fn random_uuid() -> String {
 ///
 /// The first message of a session carries the tutoring instructions and the
 /// deck's reference links; follow-ups only need the (possibly new) card and
-/// the question, because the CLI session remembers the rest.
-pub fn question_prompt(card: &Card, links: &[String], question: &str, first: bool) -> String {
+/// the question, because the CLI session remembers the rest. When `source_root`
+/// is `Some` (the `[ask] source_access` opt-in), every message reminds Claude it
+/// can read the card's source there and must verify against it — the current
+/// card's root, so it stays right even as the conversation moves between decks.
+pub fn question_prompt(
+    card: &Card,
+    links: &[String],
+    question: &str,
+    first: bool,
+    source_root: Option<&Path>,
+) -> String {
     let mut p = String::new();
     if first {
         p.push_str(
@@ -136,9 +146,33 @@ pub fn question_prompt(card: &Card, links: &[String], question: &str, first: boo
     }
     p.push_str("The card being reviewed:\n\n");
     push_card(&mut p, card);
+    if let Some(root) = source_root {
+        p.push_str(&format!(
+            "\nThis card was generated from the source code at {} — your working \
+             directory. Before stating anything specific about the code, READ the \
+             actual files there (Read, Glob, Grep) and verify against them; do not \
+             answer from memory. If the source contradicts the card, say so.\n",
+            root.display()
+        ));
+    }
     p.push_str("\nThe user's question: ");
     p.push_str(question);
     p
+}
+
+/// A copy of `cfg` that lets the tutor read the source at `root`: the working
+/// directory points there, and the read-only `Read`/`Glob`/`Grep` tools are
+/// added to the allowlist. Used when `[ask] source_access` is on, so the tutor
+/// can verify against the real source. Shared by the TUI and the web tutor.
+pub fn with_source_root(cfg: &AskConfig, root: &Path) -> AskConfig {
+    let mut grounded = cfg.clone();
+    grounded.cwd = Some(root.to_path_buf());
+    for tool in ["Read", "Glob", "Grep"] {
+        if !grounded.allowed_tools.iter().any(|t| t == tool) {
+            grounded.allowed_tools.push(tool.to_string());
+        }
+    }
+    grounded
 }
 
 /// Builds the prompt that condenses a conversation into note lines for the
@@ -328,8 +362,9 @@ mod tests {
     #[test]
     fn first_question_prompt_has_instructions_and_links() {
         let links = vec!["https://docs.rs/tokio".to_string()];
-        let p = question_prompt(&card(), &links, "and why that?", true);
+        let p = question_prompt(&card(), &links, "and why that?", true, None);
         assert!(p.contains("concise tutor"));
+        assert!(!p.contains("working directory")); // no source access by default
         assert!(p.contains("https://docs.rs/tokio"));
         assert!(p.contains("Deck: deck.txt"));
         assert!(p.contains("Front: Why?"));
@@ -341,7 +376,7 @@ mod tests {
     #[test]
     fn followup_prompt_is_short_but_carries_the_card() {
         let links = vec!["https://docs.rs/tokio".to_string()];
-        let p = question_prompt(&card(), &links, "next q", false);
+        let p = question_prompt(&card(), &links, "next q", false, None);
         // The session already knows the instructions and the links.
         assert!(!p.contains("concise tutor"));
         assert!(!p.contains("docs.rs"));
@@ -351,8 +386,23 @@ mod tests {
     }
 
     #[test]
+    fn source_access_grounds_every_prompt_in_the_crate_root() {
+        // Even a follow-up reminds Claude it can read the source and must verify.
+        let p = question_prompt(
+            &card(),
+            &[],
+            "is that right?",
+            false,
+            Some(Path::new("/repo/x")),
+        );
+        assert!(p.contains("/repo/x"));
+        assert!(p.contains("READ the actual files"));
+        assert!(p.ends_with("The user's question: is that right?"));
+    }
+
+    #[test]
     fn first_prompt_without_links_offers_none() {
-        let p = question_prompt(&card(), &[], "q", true);
+        let p = question_prompt(&card(), &[], "q", true, None);
         assert!(!p.contains("Reference links"));
     }
 

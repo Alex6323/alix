@@ -222,6 +222,7 @@ fn run_config(
         effort: ask_cfg.effort.clone(),
         timeout_secs: cfg.timeout_secs,
         cwd,
+        source_access: false,
     }
 }
 
