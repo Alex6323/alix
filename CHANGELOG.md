@@ -7,6 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Confirm before abandoning a review; commit the picker filter with Esc**
+  (terminal) — quitting a review **mid-session** now asks to confirm (`Enter`
+  leaves, any other key stays), so a stray `Esc` no longer drops a queued session;
+  a finished session or a hard `Ctrl-C` still leaves at once (matching the web
+  frontend). In the picker, `Esc` in the filter box now **keeps the filter** and
+  drops to the list focused on the first match (a second `Esc` clears it), instead
+  of discarding what you typed.
 - **Picker disables decks with nothing to review** (terminal) — a deck with no
   card due right now (fully drilled, or all on cooldown) is dimmed and badged
   with a 🕒 clock, mirroring how a 🔒 locked (`% requires:`) deck looks, and
@@ -40,8 +47,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   that gates it, foundations at the roots, siblings startable-first, each badged
   `· trace ·` / `· deck ·`. Opening a workspace, stepping back (`Esc`/`Backspace`),
   and **returning after a review/walk/exam** all happen within **one live screen**
-  — no TUI teardown/reopen — so you can study a deck, land back in the workspace,
-  and pick the next. The big gap it closes: a **trace** opened from the picker now
+  — no TUI teardown/reopen — so you can study a deck and **land back in the
+  picker** (the workspace you came from, or the top list) to pick the next; only
+  an `Esc` at the picker itself quits. The big gap it closes: a **trace** opened from the picker now
   **walks** (predict → reveal) instead of being flattened into a card review —
   both in the top-level drill-in and `flash workspace <dir>`. An explicit
   `flash review <trace.txt>` still flattens it (honoring the literal command). The
@@ -332,6 +340,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Web review now shows the expected answer whenever a typed line differed —
   including a fuzzy pass within tolerance — matching the TUI, so typos aren't
   reinforced.
+
+### Fixed
+- **The TUI reflows immediately on a terminal resize.** The event loops redrew
+  from a size query that could be momentarily stale right after a resize, so the
+  screen sometimes stayed unchanged until the next keypress refreshed it. They now
+  resize with the dimensions the resize event itself carries — picker, review,
+  exam, and browse.
 
 ## [0.1.0] - 2026-06-16
 
