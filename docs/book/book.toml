@@ -1,0 +1,8 @@
+[book]
+title = "The flash book"
+authors = ["alex6323"]
+language = "en"
+src = "src"
+
+[output.html]
+default-theme = "rust"
