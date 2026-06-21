@@ -1136,13 +1136,20 @@ impl<K: Clone + Eq + Hash> Picker<K> {
                 let hit = |list: &[KeyPattern]| pattern.is_some_and(|p| list.contains(&p));
                 match key.code {
                     KeyCode::Char('c') if ctrl => self.cancel(),
-                    // Esc: leave the confirm view, leave filter mode (clearing it),
-                    // else cancel / step back.
                     KeyCode::Esc if self.confirming => {
                         self.confirming = false;
                         self.refilter();
                     }
-                    KeyCode::Esc if self.filtering => self.stop_filtering(),
+                    // Esc in the filter box keeps the filter and drops back to the
+                    // list, focused on the first match.
+                    KeyCode::Esc if self.filtering => {
+                        self.filtering = false;
+                        self.cursor = 0;
+                    }
+                    // Esc in nav with a filter applied clears it; otherwise cancel.
+                    KeyCode::Esc if self.launcher && !self.filter.is_empty() => {
+                        self.stop_filtering()
+                    }
                     KeyCode::Esc => self.cancel(),
                     // Launcher: Enter opens the focused row; otherwise (reset / deps
                     // pickers) Enter accepts the selection.
@@ -1376,15 +1383,18 @@ impl<K: Clone + Eq + Hash> Picker<K> {
         frame.render_widget(bar(&left, &right, header.width), header);
 
         // Filter line — hidden in the confirm view. Shown as an input (with a
-        // cursor) while filtering or in the classic pickers; in the launcher's
-        // default nav mode it's just a dim hint, since the focus is on the list.
+        // cursor) while editing, or as the still-applied filter once you leave the
+        // box; with nothing to show it's a dim hint (focus is on the list).
         if !self.confirming {
-            if self.filtering || !self.launcher {
+            let editing = self.filtering || !self.launcher;
+            if editing || !self.filter.is_empty() {
                 frame.render_widget(Paragraph::new(format!(" filter: {}", self.filter)), filter);
-                frame.set_cursor_position(Position::new(
-                    filter.x + 9 + self.filter.chars().count() as u16,
-                    filter.y,
-                ));
+                if editing {
+                    frame.set_cursor_position(Position::new(
+                        filter.x + 9 + self.filter.chars().count() as u16,
+                        filter.y,
+                    ));
+                }
             } else {
                 frame.render_widget(
                     Paragraph::new(" / or Ctrl-F to filter")

@@ -170,6 +170,9 @@ pub struct App {
     /// exam after the review app exits.
     exam_request: Option<PathBuf>,
     quit: bool,
+    /// Set when the user asked to quit mid-session: a confirmation prompt is
+    /// shown, and the quit only goes through once they confirm it.
+    confirming_quit: bool,
 }
 
 impl App {
@@ -188,6 +191,7 @@ impl App {
             removed_ids: HashSet::new(),
             exam_request: None,
             quit: false,
+            confirming_quit: false,
         };
         app.start_card();
         app
@@ -479,6 +483,17 @@ impl App {
         }
 
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+
+        // A pending quit confirmation captures the next key: Enter / `y` leaves,
+        // anything else stays in the session.
+        if self.confirming_quit {
+            self.confirming_quit = false;
+            if matches!(key.code, KeyCode::Enter | KeyCode::Char('y')) {
+                self.quit = true;
+            }
+            return Ok(());
+        }
+
         let pattern = key_pattern(&key);
 
         // While typing an answer, plain character bindings must not shadow
@@ -515,7 +530,13 @@ impl App {
         let cont_hit = hit(&self.options.keys.cont);
 
         if quit_hit {
-            self.quit = true;
+            // Quitting mid-session abandons the queued cards, so confirm first.
+            // A finished session (summary) or a hard Ctrl-C leaves immediately.
+            if ctrl || self.session.is_finished() {
+                self.quit = true;
+            } else {
+                self.confirming_quit = true;
+            }
             return Ok(());
         }
         // Skipping only makes sense while a card is still unanswered.
@@ -883,6 +904,16 @@ impl App {
     }
 
     fn draw_footer(&self, frame: &mut Frame, area: Rect) {
+        // A pending quit confirmation replaces the footer with the prompt.
+        if self.confirming_quit {
+            let n = self.session.remaining();
+            let left = format!(
+                " Quit? {n} card{} still queued — ENTER leave · any other key stays",
+                if n == 1 { "" } else { "s" }
+            );
+            frame.render_widget(bar(&left, "", area.width), area);
+            return;
+        }
         let k = &self.options.keys;
         let l = Bindings::label;
         let keys = match &self.phase {
