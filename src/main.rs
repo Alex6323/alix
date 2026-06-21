@@ -24,6 +24,7 @@ use flash::{
     tui::{self, App},
     workspace,
 };
+use ratatui::DefaultTerminal;
 
 /// An AI-augmented spaced-repetition learning tool for the terminal and the
 /// web.
@@ -579,7 +580,9 @@ fn resolve<T: Copy + PartialEq>(
 /// the interactive picker (recent decks + the decks directory). Returns
 /// `Ok(None)` if the picker was cancelled or nothing was selected. The picker
 /// needs a terminal.
+#[allow(clippy::too_many_arguments)] // a thin picker shim; grouping would obscure
 fn pick_decks_if_empty(
+    terminal: Option<&mut DefaultTerminal>,
     decks: Vec<PathBuf>,
     config: &Config,
     recent: &RecentDecks,
@@ -597,8 +600,10 @@ fn pick_decks_if_empty(
     if !std::io::stdout().is_terminal() {
         bail!("no deck files given; try `flash <deck.txt>...` or `flash --help`");
     }
+    let terminal = terminal.expect("the interactive picker needs a terminal");
     let decks_dir = config.decks_dir().context("cannot determine ~/decks")?;
     let picked = picker::pick(
+        terminal,
         &decks_dir,
         recent,
         store,
@@ -840,6 +845,7 @@ fn single_trace_to_walk(from_picker: bool, deck_paths: &[PathBuf]) -> Option<Dec
 /// — unless a single chosen deck is `exam due`, in which case it resolves to
 /// that deck's exam instead of a (cardless) review.
 fn load_review_session(
+    terminal: Option<&mut DefaultTerminal>,
     args: &ReviewArgs,
     target: Frontend,
     start_in: Option<&Path>,
@@ -860,6 +866,7 @@ fn load_review_session(
     // Gate unreviewable decks in the picker — but not under `--cram`, which
     // ignores cooldowns, so everything seen is fair game.
     let Some(picked) = pick_decks_if_empty(
+        terminal,
         args.decks.clone(),
         &config,
         &recent,
@@ -930,6 +937,22 @@ fn load_review_session(
 /// Launches the interactive exam TUI for `deck`, resolving strictness from the
 /// deck's `% strictness:` or the `[exam]` default.
 fn run_exam_app(deck: Deck, config: &Config, store: Store) -> Result<()> {
+    exam_app(deck, config, store).run()
+}
+
+/// Runs the exam TUI on the picker's live `terminal` (no teardown).
+fn run_exam_app_on(
+    terminal: &mut DefaultTerminal,
+    deck: Deck,
+    config: &Config,
+    store: Store,
+) -> Result<()> {
+    exam_app(deck, config, store).run_on(terminal)
+}
+
+/// Builds the exam TUI, resolving strictness from the deck's `% strictness:` or
+/// the `[exam]` default.
+fn exam_app(deck: Deck, config: &Config, store: Store) -> tui::ExamApp {
     let strictness = deck
         .settings
         .exam_strictness
@@ -943,7 +966,6 @@ fn run_exam_app(deck: Deck, config: &Config, store: Store) -> Result<()> {
         store,
         decks_dir,
     )
-    .run()
 }
 
 /// Builds the browse card list from explicit `deck_paths` (no picker). Mirrors
@@ -1000,29 +1022,49 @@ fn review(args: ReviewArgs) -> Result<()> {
     if args.serve.serve {
         return review_serve(args);
     }
+    // Explicit decks: build and run once, standalone — the activity owns its
+    // terminal and prints a summary, as before. No picker, no return-loop.
+    if !args.decks.is_empty() {
+        return match load_review_session(None, &args, Frontend::Tui, None)? {
+            Some((started, _)) => run_started(started, &args),
+            None => Ok(()),
+        };
+    }
+    // Picker flow: one terminal shared by the picker and every activity it
+    // launches, so opening a deck and returning to its workspace never tear the
+    // TUI down and back up.
+    let mut terminal = ratatui::init();
+    let result = review_loop(&mut terminal, &args);
+    ratatui::restore();
+    result
+}
 
-    // When a deck/trace/exam is launched from a workspace, returning from it
-    // drops back into that workspace's picker — review one, come back, pick
-    // another. `start_in` carries the workspace to reopen on the next pass.
+/// The picker review loop: pick (or reopen a workspace), run the activity on the
+/// shared `terminal`, and — when it came from a workspace — return there for the
+/// next. Stays on one live screen the whole time.
+fn review_loop(terminal: &mut DefaultTerminal, args: &ReviewArgs) -> Result<()> {
     let mut start_in: Option<PathBuf> = None;
     loop {
-        let Some((started, workspace)) =
-            load_review_session(&args, Frontend::Tui, start_in.as_deref())?
+        let Some((started, workspace)) = load_review_session(
+            Some(&mut *terminal),
+            args,
+            Frontend::Tui,
+            start_in.as_deref(),
+        )?
         else {
             return Ok(()); // picker cancelled / nothing selected
         };
-        run_started(started, &args)?;
+        run_started_on(terminal, started, args)?;
         match workspace {
-            // Came from a workspace: reopen it and keep going.
-            Some(ws) => start_in = Some(ws),
-            // A loose deck (or an explicit `flash <deck>`): done after the activity.
-            None => return Ok(()),
+            Some(ws) => start_in = Some(ws), // back to the workspace for the next
+            None => return Ok(()),           // a loose deck: done after the activity
         }
     }
 }
 
 /// Runs one resolved activity — a card review, a trace walk, or an exam — to
-/// completion. Shared by the `review` loop so each can return to its workspace.
+/// completion, each managing its own terminal and printing a summary. Used for
+/// explicit `flash <deck>` (no picker).
 fn run_started(started: Started, args: &ReviewArgs) -> Result<()> {
     match started {
         Started::Exam {
@@ -1037,6 +1079,72 @@ fn run_started(started: Started, args: &ReviewArgs) -> Result<()> {
         } => run_walk(*trace, scheduler, &mut store, None),
         Started::Review(rs) => run_review_tui(*rs, args),
     }
+}
+
+/// Like [`run_started`] but on the picker's live `terminal`, so the activity and
+/// the picker share one screen. A trace walk is line-based, so it drops out of
+/// the alt screen and re-enters it for the picker.
+fn run_started_on(
+    terminal: &mut DefaultTerminal,
+    started: Started,
+    args: &ReviewArgs,
+) -> Result<()> {
+    match started {
+        Started::Exam {
+            deck,
+            store,
+            config,
+        } => run_exam_app_on(terminal, *deck, &config, store),
+        Started::Walk {
+            trace,
+            scheduler,
+            mut store,
+        } => {
+            ratatui::restore();
+            let result = run_walk(*trace, scheduler, &mut store, None);
+            *terminal = ratatui::init();
+            result
+        }
+        Started::Review(rs) => run_review_on(terminal, *rs, args),
+    }
+}
+
+/// The shared-terminal review: like [`run_review_tui`] but on the picker's
+/// terminal and without the post-run summary print (the App shows its own, and a
+/// print would corrupt the alt screen). The picker gates out empty sessions, so
+/// this just bails quietly if one slips through.
+fn run_review_on(
+    terminal: &mut DefaultTerminal,
+    rs: ReviewSession,
+    args: &ReviewArgs,
+) -> Result<()> {
+    let ReviewSession {
+        session,
+        store,
+        mode_override,
+        label,
+        decks,
+        config,
+        hidden,
+    } = rs;
+    if session.is_finished() || (hidden > 0 && session.cards().is_empty()) {
+        return Ok(());
+    }
+    let ui_options = flash::tui::Options {
+        mode_override,
+        max_typos: args.max_typos,
+        deck_label: label,
+        keys: config.keys.clone(),
+        ask: config.ask.clone(),
+        decks,
+    };
+    let (_stats, exam_request) = App::new(session, store, ui_options).run_on(terminal)?;
+    if let Some(path) = exam_request {
+        let store = store_for(std::slice::from_ref(&path), args.store.clone())?;
+        let deck = Deck::load(&path)?;
+        return run_exam_app_on(terminal, deck, &config, store);
+    }
+    Ok(())
 }
 
 /// Runs the review TUI for a built session: reports cards that need the browser,
@@ -1529,20 +1637,42 @@ fn browse(args: BrowseArgs) -> Result<()> {
         recent::default_recent_path().context("cannot determine the data directory")?,
     );
     let store = open_store(None)?;
-    // Like `review`, browsing from a workspace returns there afterwards.
+    // Explicit decks: browse once, standalone (own terminal).
+    if !args.decks.is_empty() {
+        let deck_store = store_for(&args.decks, None)?;
+        let build = build_browse(args.decks.clone(), &mut recent, Frontend::Tui)?;
+        let paths = subject_paths(build.decks);
+        return browse::run(build.cards, build.label, config.browse, paths, deck_store);
+    }
+    // Picker flow: one shared terminal, returning to the workspace afterwards.
+    let mut terminal = ratatui::init();
+    let result = browse_loop(&mut terminal, &args, &config, &mut recent, &store);
+    ratatui::restore();
+    result
+}
+
+/// The picker browse loop: pick (or reopen a workspace), browse on the shared
+/// `terminal`, and return to the workspace for the next.
+fn browse_loop(
+    terminal: &mut DefaultTerminal,
+    args: &BrowseArgs,
+    config: &Config,
+    recent: &mut RecentDecks,
+    store: &Store,
+) -> Result<()> {
     let mut start_in: Option<PathBuf> = None;
     loop {
-        // Browse is read-only traversal — locking gates review only, so any deck
-        // is browsable (enforce_locks = false), and nothing is gated as
-        // unreviewable.
+        // Browse is read-only traversal — locking gates review only (any deck is
+        // browsable), and nothing is gated as unreviewable.
         let Some(picker::Picked {
             decks: deck_paths,
             workspace,
         }) = pick_decks_if_empty(
+            Some(&mut *terminal),
             args.decks.clone(),
-            &config,
-            &recent,
-            &store,
+            config,
+            recent,
+            store,
             false,
             false,
             start_in.as_deref(),
@@ -1553,12 +1683,10 @@ fn browse(args: BrowseArgs) -> Result<()> {
         // Removing a card prunes its progress — from the decks' own store (a
         // workspace's when they all live in one).
         let deck_store = store_for(&deck_paths, None)?;
-        let build = build_browse(deck_paths, &mut recent, Frontend::Tui)?;
-
-        // Browse only writes if the user removes a card: it then deletes it from
-        // the deck file and prunes its progress. Provide the subject paths/store.
+        let build = build_browse(deck_paths, recent, Frontend::Tui)?;
         let paths = subject_paths(build.decks);
-        browse::run(
+        browse::run_on(
+            terminal,
             build.cards,
             build.label,
             config.browse.clone(),

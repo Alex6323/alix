@@ -38,6 +38,22 @@ pub fn run(
     label: String,
     keys: BrowseBindings,
     decks: HashMap<String, PathBuf>,
+    store: Store,
+) -> Result<()> {
+    let mut terminal = ratatui::init();
+    let result = run_on(&mut terminal, cards, label, keys, decks, store);
+    ratatui::restore();
+    result
+}
+
+/// Like [`run`] but on a caller-owned `terminal` (no init/restore), so the picker
+/// can browse a deck and resume afterwards without a TUI teardown.
+pub fn run_on(
+    terminal: &mut ratatui::DefaultTerminal,
+    cards: Vec<Card>,
+    label: String,
+    keys: BrowseBindings,
+    decks: HashMap<String, PathBuf>,
     mut store: Store,
 ) -> Result<()> {
     if cards.is_empty() {
@@ -48,16 +64,14 @@ pub fn run(
     let mut removed_lines: HashMap<String, BTreeSet<usize>> = HashMap::new();
     let mut removed_ids: HashSet<u64> = HashSet::new();
 
-    let mut terminal = ratatui::init();
     let result = event_loop(
-        &mut terminal,
+        terminal,
         &mut cards,
         &label,
         &keys,
         &mut removed_lines,
         &mut removed_ids,
     );
-    ratatui::restore();
 
     flush_removals(&removed_lines, &removed_ids, &decks, &mut store);
     result

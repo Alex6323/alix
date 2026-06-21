@@ -72,10 +72,12 @@ lately) · **Folders** (plain decks folders). A deck that lives inside a workspa
 stays out of Recent — you reach it by opening its workspace. Mastered/done and
 locked decks are also kept out of Recent (it's a quick launchpad) but stay
 reachable by filtering. Decks live in the decks directory (`~/decks` by default,
-set `decks_dir` in the config). The focus is on the **list** by default — move
-with `j`/`k` or `↑`/`↓` (`g`/`G` jump to ends), `Enter` starts the **focused**
-row. Press `/` or `Ctrl-F` to **filter** by name (searching *every* loose deck,
-not just the recent ones); `Esc` leaves the filter. A deck you can't start right
+set `decks_dir` in the config). The focus is on the **list** by default, with
+Vim-style keys: `j`/`k` (or `↑`/`↓`) move, `g`/`G` jump to ends, `l` (or `Enter`)
+opens the focused row, `h` (or `Esc`) steps back, and `m` reveals the hidden
+(mastered/done/locked) rows — press it again to tuck them away. Press `/` or
+`Ctrl-F` to **filter** by name (searching *every* loose deck, not just the recent
+ones); `Esc` leaves the filter. A deck you can't start right
 now is dimmed and `Enter` on it does nothing: 🔒 a
 [locked](#completion-states--unlocks) deck (an unfinished `% requires:`), 🕒 a deck
 with nothing due (all on cooldown — `--cram` reviews it anyway); a mastered deck

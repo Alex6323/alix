@@ -467,6 +467,7 @@ pub struct Picked {
 /// under `--cram`). `start_in` opens straight into a workspace's drill-in
 /// (returning there after an activity); `Esc` from it falls back to the top list.
 pub fn pick(
+    terminal: &mut ratatui::DefaultTerminal,
     decks_dir: &Path,
     recent: &RecentDecks,
     store: &Store,
@@ -474,20 +475,18 @@ pub fn pick(
     gate_reviewable: bool,
     start_in: Option<&Path>,
 ) -> Result<Picked> {
+    // Runs on the caller's terminal: opening a project, stepping back, *and*
+    // returning from a launched review all stay on one live screen — the TUI is
+    // never torn down and reopened between them.
     let mut top = top_picker(decks_dir, recent, store, enforce_locks, gate_reviewable);
-    // One terminal for the whole session: opening a project and stepping back are
-    // state changes within it, never a teardown/reopen of the TUI.
-    let mut terminal = ratatui::init();
-    let result = navigate(
-        &mut terminal,
+    navigate(
+        terminal,
         &mut top,
         decks_dir,
         enforce_locks,
         gate_reviewable,
         start_in,
-    );
-    ratatui::restore();
-    result
+    )
 }
 
 /// Builds the top-level picker — Workspaces · Recent (loose decks, recent-first;
@@ -982,6 +981,9 @@ struct Picker<K> {
     /// `/` or `Ctrl-F` starts filtering, `Esc` leaves it. The classic pickers
     /// (reset / deps / cards) ignore this and filter on every keystroke.
     filtering: bool,
+    /// Launcher only: reveal the rows normally hidden from Recent (mastered /
+    /// done / locked), toggled with `m`.
+    show_hidden: bool,
     /// Whether rows can be ticked into a multi-selection: shows the `[ ]`/`[x]`
     /// column and enables `Space`/`Tab`. Off for the workspace drill-in, which is
     /// a single-launch list (Enter a deck to review, a trace to walk) — no
@@ -1024,6 +1026,7 @@ impl<K: Clone + Eq + Hash> Picker<K> {
             empty,
             launcher: false,
             filtering: false,
+            show_hidden: false,
             multi_select: true,
             gate_reviewable: false,
             confirming: false,
@@ -1060,38 +1063,34 @@ impl<K: Clone + Eq + Hash> Picker<K> {
                     KeyCode::Char('f') if ctrl && self.launcher && !self.confirming => {
                         self.filtering = true;
                     }
-                    KeyCode::Enter => {
-                        // Launcher: Enter launches the focused deck, but never a
-                        // locked one — nor, when gating, one with nothing to review
-                        // (a no-op). Otherwise (reset / deps pickers) it accepts.
-                        if self.launcher && !self.confirming {
-                            let gate = self.gate_reviewable;
-                            if self
-                                .focused()
-                                .is_some_and(|item| !item.locked && (item.reviewable || !gate))
-                            {
-                                self.done = true;
-                            }
-                        } else {
-                            self.done = true;
-                        }
-                    }
+                    // Launcher: Enter / `l` open the focused row; otherwise (reset
+                    // / deps pickers) Enter accepts the selection.
+                    KeyCode::Enter if self.launcher && !self.confirming => self.launch_focused(),
+                    KeyCode::Enter => self.done = true,
+                    KeyCode::Char('l') if nav => self.launch_focused(),
                     KeyCode::Tab if self.launcher && self.multi_select && !self.confirming => {
                         if !self.selected.is_empty() {
                             self.enter_confirm();
                         }
                     }
-                    // Movement: arrows + Ctrl-n/p always; Vim h-less keys only in
-                    // launcher nav mode (where letters aren't filter input).
+                    // Movement: arrows + Ctrl-n/p always; Vim keys only in launcher
+                    // nav mode (where letters aren't filter input). `h` steps back.
                     KeyCode::Up => self.move_cursor(-1),
                     KeyCode::Down => self.move_cursor(1),
                     KeyCode::Char('p') if ctrl => self.move_cursor(-1),
                     KeyCode::Char('n') if ctrl => self.move_cursor(1),
                     KeyCode::Char('j') if nav => self.move_cursor(1),
                     KeyCode::Char('k') if nav => self.move_cursor(-1),
+                    KeyCode::Char('h') if nav => self.cancel(),
                     KeyCode::Char('g') if nav => self.cursor = 0,
                     KeyCode::Char('G') if nav => {
                         self.cursor = self.filtered.len().saturating_sub(1);
+                    }
+                    // `m` reveals the rows hidden from Recent (mastered / done /
+                    // locked); press again to tuck them back.
+                    KeyCode::Char('m') if nav => {
+                        self.show_hidden = !self.show_hidden;
+                        self.refilter();
                     }
                     // Space ticks in the multi-select pickers; elsewhere it's just
                     // a filter character (handled below) or ignored in nav mode.
@@ -1198,6 +1197,19 @@ impl<K: Clone + Eq + Hash> Picker<K> {
         self.refilter();
     }
 
+    /// Launcher: open the focused row (Enter / `l`), unless it's locked or — when
+    /// gating — has nothing to review (then it's a no-op, and a workspace/folder
+    /// drills in via the caller).
+    fn launch_focused(&mut self) {
+        let gate = self.gate_reviewable;
+        if self
+            .focused()
+            .is_some_and(|item| !item.locked && (item.reviewable || !gate))
+        {
+            self.done = true;
+        }
+    }
+
     fn move_cursor(&mut self, delta: isize) {
         if self.filtered.is_empty() {
             return;
@@ -1236,15 +1248,16 @@ impl<K: Clone + Eq + Hash> Picker<K> {
     fn refilter(&mut self) {
         let needle = self.filter.to_lowercase();
         let filtering = !needle.is_empty();
+        // Recent-default rule: with no filter, hide non-default rows (non-recent
+        // loose decks, and mastered/done/locked ones) — unless `m` revealed them
+        // or a filter is active, so the filter can still reach every row.
+        let show_all = filtering || self.show_hidden;
         self.filtered = self
             .all
             .iter()
             .enumerate()
-            // Recent-default rule: with no filter, hide non-default rows
-            // (non-recent loose decks); once filtering, search every row so the
-            // filter can reach them.
             .filter(|(_, item)| {
-                (filtering || item.default_shown) && item.label.to_lowercase().contains(&needle)
+                (show_all || item.default_shown) && item.label.to_lowercase().contains(&needle)
             })
             .map(|(i, _)| i)
             .collect();
@@ -1319,7 +1332,8 @@ impl<K: Clone + Eq + Hash> Picker<K> {
         }
         // Single-launch nav (the default): Vim-style movement, `/` to filter.
         if !self.multi_select {
-            return " ENTER open │ j/k move │ / filter │ ⌫/ESC back".to_string();
+            let more = if self.show_hidden { "m less" } else { "m more" };
+            return format!(" ENTER/l open │ j/k move │ / filter │ {more} │ h/ESC back");
         }
         if self.confirming {
             " ENTER start merged │ ↑↓ move │ ESC back".to_string()

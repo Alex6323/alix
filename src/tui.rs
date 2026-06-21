@@ -210,6 +210,20 @@ impl App {
         Ok((self.totals, self.exam_request.take()))
     }
 
+    /// Like [`run`](Self::run) but on a `terminal` the caller already set up (and
+    /// will restore), so the picker can launch a review and resume afterwards
+    /// without tearing the TUI down and back up.
+    pub fn run_on(
+        mut self,
+        terminal: &mut ratatui::DefaultTerminal,
+    ) -> Result<(SessionStats, Option<PathBuf>)> {
+        let result = self.event_loop(terminal);
+        self.flush_removals();
+        self.store.save()?;
+        result?;
+        Ok((self.totals, self.exam_request.take()))
+    }
+
     /// Starts a new session over the same decks, or flags that nothing is
     /// due yet so the summary can say so.
     fn try_restart(&mut self) {
@@ -1586,6 +1600,14 @@ impl ExamApp {
         let mut terminal = ratatui::init();
         let result = self.event_loop(&mut terminal);
         ratatui::restore();
+        let _ = self.store.save();
+        result
+    }
+
+    /// Like [`run`](Self::run) but on a caller-owned `terminal` (no init/restore),
+    /// so an exam launched from the picker resumes it afterwards seamlessly.
+    pub fn run_on(mut self, terminal: &mut ratatui::DefaultTerminal) -> Result<()> {
+        let result = self.event_loop(terminal);
         let _ = self.store.save();
         result
     }
