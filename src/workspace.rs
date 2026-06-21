@@ -26,12 +26,21 @@ use crate::deck::DeckSettings;
 /// keeps it out of the `*.txt` member scan automatically.
 pub const MANIFEST: &str = "flash.toml";
 
-/// The `flash.toml` manifest: a display `title` and a `[defaults]` table of
-/// shared directives (keyed by directive name). Unknown keys/sections are
-/// ignored, so the format stays forgiving and forward-compatible.
+/// The progress store a workspace uses when its manifest declares no `store`
+/// override: `progress.json` inside the workspace folder, so progress travels
+/// with the workspace.
+pub const STORE_FILE: &str = "progress.json";
+
+/// The `flash.toml` manifest: a display `title`, an optional `store` path (where
+/// this workspace's progress lives), and a `[defaults]` table of shared
+/// directives (keyed by directive name). Unknown keys/sections are ignored, so
+/// the format stays forgiving and forward-compatible.
 #[derive(Deserialize, Default)]
 struct Manifest {
     title: Option<String>,
+    /// Where this workspace keeps its progress (relative to the workspace, or
+    /// absolute). `None` → `<workspace>/progress.json`.
+    store: Option<String>,
     #[serde(default)]
     defaults: BTreeMap<String, toml::Value>,
 }
@@ -131,6 +140,25 @@ pub fn has_decks(path: &Path) -> bool {
     path.is_dir() && members(path).map(|m| !m.is_empty()).unwrap_or(false)
 }
 
+/// Where the workspace at `dir` keeps its progress: the manifest's `store` path
+/// (relative to `dir`, or absolute), else `<dir>/progress.json`. So an
+/// encapsulated workspace's progress travels with the folder, and a deck inside
+/// it is tracked separately from the global store. (Callers use this only for
+/// directories that are workspaces.)
+pub fn store_path(dir: &Path) -> PathBuf {
+    match manifest_store(dir) {
+        Some(store) if Path::new(&store).is_absolute() => PathBuf::from(store),
+        Some(store) => dir.join(store),
+        None => dir.join(STORE_FILE),
+    }
+}
+
+/// The raw `store = "..."` value from the workspace's manifest, if any.
+fn manifest_store(dir: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(dir.join(MANIFEST)).ok()?;
+    toml::from_str::<Manifest>(&text).ok()?.store
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -209,5 +237,31 @@ mod tests {
         write(&file, "# a\n\t1\n");
         assert!(!is_workspace(&file));
         assert!(!has_decks(&file));
+    }
+
+    #[test]
+    fn store_path_defaults_to_progress_json_in_the_workspace() {
+        let dir = tempfile::tempdir().unwrap();
+        write(&dir.path().join(MANIFEST), "title = \"W\"\n");
+        assert_eq!(dir.path().join("progress.json"), store_path(dir.path()));
+        // No manifest at all → still the in-folder default.
+        let bare = dir.path().join("bare");
+        std::fs::create_dir(&bare).unwrap();
+        assert_eq!(bare.join("progress.json"), store_path(&bare));
+    }
+
+    #[test]
+    fn store_path_honors_a_relative_or_absolute_override() {
+        let dir = tempfile::tempdir().unwrap();
+        write(&dir.path().join(MANIFEST), "store = \"sub/p.json\"\n");
+        assert_eq!(dir.path().join("sub/p.json"), store_path(dir.path()));
+
+        let abs = if cfg!(windows) {
+            "C:/p.json"
+        } else {
+            "/tmp/p.json"
+        };
+        write(&dir.path().join(MANIFEST), &format!("store = \"{abs}\"\n"));
+        assert_eq!(PathBuf::from(abs), store_path(dir.path()));
     }
 }

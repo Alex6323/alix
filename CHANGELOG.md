@@ -7,6 +7,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Per-workspace progress store** — a deck inside a workspace (a folder with a
+  `flash.toml`) now tracks its progress in a **`progress.json` inside that
+  workspace**, not the one global `~/.local/share/flash/progress.json`. So a
+  workspace is a self-contained, portable unit (decks + `assets/` snapshots +
+  progress in one folder), its history is isolated, and same-named decks in
+  different workspaces no longer collide in one store. Loose decks (and plain
+  folders without a manifest) keep the global store; `--store <path>` overrides
+  either; a workspace can redirect its store with a `store = "..."` line in the
+  `flash.toml`. Resolution: `--store` > the single workspace all the session's
+  decks share > global. Applies across the CLI/TUI (`review`, `trace`, `exam`,
+  `browse`, `stats`/`list`, `reset`, `flash workspace`); the web frontend follows
+  with the picker revamp. (No migration — workspace decks start fresh in the
+  workspace store; existing global progress for them is left in place.)
 - **Trace source snapshots** — creating a workspace by exploring a source
   (`flash explore --into <dir> --build`) now **freezes the cited excerpts** into
   the workspace as its final step: for each checkpoint it writes a small snippet

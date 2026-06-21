@@ -12,7 +12,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use ratatui::{
     Frame,
     crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
@@ -27,7 +27,7 @@ use crate::{
     parser,
     recent::RecentDecks,
     session,
-    store::Store,
+    store::{Store, default_store_path},
     workspace,
 };
 
@@ -357,7 +357,7 @@ pub fn pick(
         if let [path] = chosen.as_slice()
             && workspace::has_decks(path)
         {
-            match pick_in_workspace(path, store, decks_dir, enforce_locks)? {
+            match pick_in_workspace(path, decks_dir, enforce_locks)? {
                 Some(decks) => return Ok(decks),
                 None => continue, // Esc inside a workspace returns to the top list
             }
@@ -369,24 +369,28 @@ pub fn pick(
 /// Opens a workspace directly into its member sub-picker (for `flash workspace
 /// <dir>`): the same drill-in list, with the folder itself as the lookup root so
 /// sibling `% requires:` and locks resolve within it. `None` if cancelled.
-pub fn pick_workspace(
-    folder: &Path,
-    store: &Store,
-    enforce_locks: bool,
-) -> Result<Option<Vec<PathBuf>>> {
-    pick_in_workspace(folder, store, folder, enforce_locks)
+pub fn pick_workspace(folder: &Path, enforce_locks: bool) -> Result<Option<Vec<PathBuf>>> {
+    pick_in_workspace(folder, folder, enforce_locks)
 }
 
-/// The drill-in sub-picker for a workspace: its member decks, all pre-ticked so
-/// Enter reviews the whole cluster by default; untick to narrow. `Esc` returns
-/// `None` to step back to the top list.
+/// The drill-in sub-picker for a folder/workspace: its member decks, all
+/// pre-ticked so Enter reviews the whole cluster by default; untick to narrow.
+/// `Esc` returns `None` to step back to the top list. Member badges/locks are
+/// drawn from the **right** store — a workspace's own (`workspace::store_path`)
+/// or the global store for a plain folder — so they match what the session will
+/// write.
 fn pick_in_workspace(
     folder: &Path,
-    store: &Store,
     decks_dir: &Path,
     enforce_locks: bool,
 ) -> Result<Option<Vec<PathBuf>>> {
     let ws = workspace::Workspace::load(folder)?;
+    let store_path = if workspace::is_workspace(folder) {
+        workspace::store_path(folder)
+    } else {
+        default_store_path().context("cannot determine the data directory")?
+    };
+    let store = Store::open(&store_path)?;
     let items: Vec<Item<PathBuf>> = ws
         .members
         .iter()
@@ -397,7 +401,7 @@ fn pick_in_workspace(
                 last_used_ms: None,
                 is_workspace: false,
             };
-            let mut item = deck_item(c, store, decks_dir, enforce_locks);
+            let mut item = deck_item(c, &store, decks_dir, enforce_locks);
             item.hint = None; // inside the workspace, the folder path is redundant
             item
         })

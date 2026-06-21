@@ -259,6 +259,15 @@ deck *doesn't* set itself, so precedence runs **CLI flag > card > deck >
 workspace > default** — set `direction = "both"` once for the whole cluster, and
 an individual deck can still override it with its own `% direction:`.
 
+**A workspace keeps its own progress.** Its decks track their stages in a
+`progress.json` *inside the workspace folder* (override the path with a
+`store = "..."` line in the `flash.toml`), separate from the global store every
+loose deck shares. So a workspace is a **self-contained, portable unit** — its
+decks, its `assets/` (frozen trace excerpts), and its progress all live in one
+folder you can move or share, and its history stays isolated from everything
+else. Decks *outside* a workspace keep using the global store; `--store <path>`
+overrides either.
+
 Workspaces — and plain folders — appear as their own rows in the picker (terminal
 and web): a folder *with* a `flash.toml` shows as a **workspace**, one *without*
 as a plain **folder**. Both open (drill in) to their decks, where you review all

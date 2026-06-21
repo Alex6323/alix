@@ -424,6 +424,33 @@ fn open_store(path: Option<PathBuf>) -> Result<Store> {
     Store::open(&path).context("cannot open the progress store")
 }
 
+/// Which progress store a set of decks should use: the `--store` override, else
+/// the single workspace they all share (a deck is "in" a workspace when its
+/// parent folder has a `flash.toml`), else the global default (`None`). Loose
+/// decks, a plain folder, or decks spanning different workspaces all fall back
+/// to the global store — so a workspace's progress lives with the workspace,
+/// while everything else shares the one global store.
+fn store_path_for(decks: &[PathBuf], cli_override: Option<&Path>) -> Option<PathBuf> {
+    if let Some(path) = cli_override {
+        return Some(path.to_path_buf());
+    }
+    let mut stores = decks.iter().map(|deck| {
+        deck.parent()
+            .filter(|p| workspace::is_workspace(p))
+            .map(workspace::store_path)
+    });
+    match stores.next() {
+        Some(Some(first)) if stores.all(|s| s.as_ref() == Some(&first)) => Some(first),
+        _ => None,
+    }
+}
+
+/// Opens the progress store for `decks`, honoring `--store`. See
+/// [`store_path_for`].
+fn store_for(decks: &[PathBuf], cli_override: Option<PathBuf>) -> Result<Store> {
+    open_store(store_path_for(decks, cli_override.as_deref()))
+}
+
 /// The cards of all loaded decks, a header label, the per-subject deck info
 /// for the TUI, and the per-deck `% key: value` settings.
 type LoadedDecks = (
@@ -784,6 +811,8 @@ fn load_review_session(args: &ReviewArgs, target: Frontend) -> Result<Option<Sta
     let mut recent = RecentDecks::load(
         recent::default_recent_path().context("cannot determine the data directory")?,
     );
+    // The picker's badges/locks for the top-level list read the global store
+    // (its rows are loose decks); a drilled-into workspace shows its own store.
     let store = open_store(args.store.clone())?;
     // Review enforces locking — a deck whose prerequisites aren't finished
     // can't be started from the picker.
@@ -791,6 +820,9 @@ fn load_review_session(args: &ReviewArgs, target: Frontend) -> Result<Option<Sta
     else {
         return Ok(None); // picker cancelled or nothing selected
     };
+    // The session tracks progress in the decks' store — a workspace's own store
+    // when they all live in one, else the global store.
+    let store = store_for(&deck_paths, args.store.clone())?;
     // A single exam-due deck launches its exam rather than an empty review.
     if let [path] = deck_paths.as_slice()
         && let Ok(deck) = Deck::load(path)
@@ -946,7 +978,7 @@ fn review(args: ReviewArgs) -> Result<()> {
     // If a deck became exam-due this session and the user chose to sit it, the
     // review app saved the store on exit; reopen it for the exam.
     if let Some(path) = exam_request {
-        let store = open_store(args.store.clone())?;
+        let store = store_for(std::slice::from_ref(&path), args.store.clone())?;
         let deck = Deck::load(&path)?;
         return run_exam_app(deck, &config, store);
     }
@@ -1035,11 +1067,13 @@ fn announce(addr: SocketAddr, lan: bool, label: &str) {
 }
 
 fn stats(args: DeckArgs) -> Result<()> {
-    let store = open_store(args.store)?;
     let scheduler = args.scheduler.scheduler();
     let now = now_ms();
 
     for path in &args.decks {
+        // Each deck reads its own store — a workspace deck's progress lives in the
+        // workspace, not the global store.
+        let store = store_for(std::slice::from_ref(path), args.store.clone())?;
         let deck = Deck::load(path)?;
         let h = histogram(&deck.cards, &store);
 
@@ -1103,11 +1137,12 @@ fn stats(args: DeckArgs) -> Result<()> {
 }
 
 fn list(args: DeckArgs) -> Result<()> {
-    let store = open_store(args.store)?;
     let scheduler = args.scheduler.scheduler();
     let now = now_ms();
 
     for path in &args.decks {
+        // Each deck reads its own store (workspace store for a workspace deck).
+        let store = store_for(std::slice::from_ref(path), args.store.clone())?;
         let deck = Deck::load(path)?;
         println!("{}", deck.display_name());
         for card in &deck.cards {
@@ -1174,7 +1209,9 @@ fn confirm(prompt: &str, yes: bool) -> Result<bool> {
 }
 
 fn reset(args: ResetArgs) -> Result<()> {
-    let mut store = open_store(args.store)?;
+    // `--all` / a numeric `--card` operate on the global store (or `--store`);
+    // a deck-scoped reset re-resolves to the deck's workspace store below.
+    let mut store = open_store(args.store.clone())?;
 
     // `--all`: wipe everything; no decks needed, count up front for the prompt.
     if args.all {
@@ -1226,6 +1263,10 @@ fn reset(args: ResetArgs) -> Result<()> {
     } else {
         (args.decks.clone(), false)
     };
+
+    // Now that the decks are known, reset against their store (the workspace's
+    // own, if they all live in one).
+    let mut store = store_for(&deck_paths, args.store.clone())?;
 
     let (cards, label, decks, _) = load_decks(&deck_paths, &HashMap::new())?;
 
@@ -1384,6 +1425,9 @@ fn browse(args: BrowseArgs) -> Result<()> {
     else {
         return Ok(()); // picker cancelled or nothing selected
     };
+    // Removing a card prunes its progress — from the decks' own store (a
+    // workspace's when they all live in one).
+    let store = store_for(&deck_paths, None)?;
     let build = build_browse(deck_paths, &mut recent, Frontend::Tui)?;
 
     // Browse only writes if the user removes a card: it then deletes it from the
@@ -1596,7 +1640,8 @@ fn exam_cmd(args: ExamArgs) -> Result<()> {
     if let Some(n) = args.questions {
         exam_cfg.num_questions = n;
     }
-    let store = open_store(args.store.clone())?;
+    // A deck in a workspace is examined against that workspace's own store.
+    let store = store_for(std::slice::from_ref(&args.deck), args.store.clone())?;
     let deck = Deck::load(&args.deck)?;
 
     // A trace's verification is its own predict-verify walk + compression, not
@@ -1677,7 +1722,8 @@ fn trace_cmd(args: TraceArgs) -> Result<()> {
         .scheduler
         .or(deck.settings.scheduler)
         .unwrap_or_default();
-    let store = open_store(args.store.clone())?;
+    // A trace in a workspace tracks its progress in that workspace's own store.
+    let store = store_for(std::slice::from_ref(&args.deck), args.store.clone())?;
     let config = Config::load(args.config.as_deref())?;
 
     // `--serve`: walk it in the browser; otherwise in the terminal.
@@ -2000,7 +2046,7 @@ fn explore_walk(args: &ExploreArgs, config: &Config, source: &str, goal: &str) -
     let deck = Deck::load(&out)?;
     let trace = Trace::from_deck(&deck)?;
     let scheduler = deck.settings.scheduler.unwrap_or_default();
-    let mut store = open_store(None)?;
+    let mut store = store_for(std::slice::from_ref(&out), None)?;
     run_walk(trace, scheduler, &mut store, None)
 }
 
@@ -2028,14 +2074,14 @@ fn workspace_cmd(args: WorkspaceArgs) -> Result<()> {
         );
     }
     loop {
-        let store = open_store(args.store.clone())?;
-        let Some(picked) = picker::pick_workspace(&args.dir, &store, true)? else {
+        // The picker reads the workspace's own store; review / walk re-resolve it
+        // from the picked decks (`store_for`).
+        let Some(picked) = picker::pick_workspace(&args.dir, true)? else {
             return Ok(()); // quit the workspace
         };
         if picked.is_empty() {
             return Ok(());
         }
-        drop(store); // review / walk reopen the store themselves
 
         // A single trace deck is walked; anything else is a fact-deck review.
         if let [only] = picked.as_slice() {
@@ -2043,7 +2089,7 @@ fn workspace_cmd(args: WorkspaceArgs) -> Result<()> {
             if deck.is_trace() {
                 let trace = Trace::from_deck(&deck)?;
                 let scheduler = deck.settings.scheduler.unwrap_or_default();
-                let mut store = open_store(args.store.clone())?;
+                let mut store = store_for(std::slice::from_ref(only), args.store.clone())?;
                 run_walk(trace, scheduler, &mut store, None)?;
                 continue;
             }
@@ -2371,6 +2417,51 @@ mod tests {
 
     fn card(front: &str, back: &str) -> Card {
         Card::plain(Arc::from("d.txt"), front.into(), vec![back.into()], None, 1)
+    }
+
+    #[test]
+    fn store_path_for_picks_workspace_else_global_else_override() {
+        let dir = tempfile::tempdir().unwrap();
+        let mk_ws = |name: &str| {
+            let ws = dir.path().join(name);
+            std::fs::create_dir(&ws).unwrap();
+            std::fs::write(ws.join("flash.toml"), "title = \"W\"\n").unwrap();
+            std::fs::write(ws.join("a.txt"), "# a\n\t1\n").unwrap();
+            std::fs::write(ws.join("b.txt"), "# b\n\t1\n").unwrap();
+            ws
+        };
+        let ws = mk_ws("ws");
+        let ws2 = mk_ws("ws2");
+        let ws_store = ws.join("progress.json");
+        let loose = dir.path().join("loose.txt");
+        std::fs::write(&loose, "# c\n\t1\n").unwrap();
+
+        // a deck (or several) in one workspace → that workspace's store
+        assert_eq!(
+            Some(ws_store.clone()),
+            store_path_for(&[ws.join("a.txt")], None)
+        );
+        assert_eq!(
+            Some(ws_store.clone()),
+            store_path_for(&[ws.join("a.txt"), ws.join("b.txt")], None)
+        );
+        // loose, mixed loose+workspace, and cross-workspace all → global (None)
+        assert_eq!(None, store_path_for(std::slice::from_ref(&loose), None));
+        assert_eq!(
+            None,
+            store_path_for(&[ws.join("a.txt"), loose.clone()], None)
+        );
+        assert_eq!(
+            None,
+            store_path_for(&[ws.join("a.txt"), ws2.join("a.txt")], None)
+        );
+        assert_eq!(None, store_path_for(&[], None));
+        // --store wins over everything
+        let over = dir.path().join("x.json");
+        assert_eq!(
+            Some(over.clone()),
+            store_path_for(&[ws.join("a.txt")], Some(&over))
+        );
     }
 
     #[test]
