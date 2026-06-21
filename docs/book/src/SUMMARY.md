@@ -24,9 +24,9 @@
 
 - [Ask-Claude — the tutor](10-ask-claude.md)
 - [Generating decks](11-generating-decks.md)
-- [The AI exam]()
-- [Trace decks]()
-- [Explore — goals & curricula]()
+- [The AI exam](12-the-ai-exam.md)
+- [Trace decks](13-trace-decks.md)
+- [Explore — goals & curricula](14-explore.md)
 
 # Part V — Surfaces & reference
 
