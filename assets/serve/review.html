@@ -195,8 +195,16 @@
   .deck-filter { width: 100%; box-sizing: border-box; margin-bottom: 12px; padding: 11px 14px; background: rgba(0,0,0,0.25); border: 1px solid var(--line); border-radius: 11px; color: var(--ink); font: inherit; font-size: 0.95rem; }
   .deck-filter::placeholder { color: var(--dim); }
   .deck-filter:focus { outline: none; border-color: var(--bolt); }
-  .decklist { display: flex; flex-direction: column; gap: 8px; max-height: 62vh; overflow-y: auto; scrollbar-width: none; }
-  .decklist::-webkit-scrollbar { width: 0; }
+  .decklist { display: flex; flex-direction: column; gap: 8px; }
+  /* a single scroll container holds both the deck and workspace sections */
+  .lists { display: flex; flex-direction: column; max-height: 62vh; overflow-y: auto; scrollbar-width: none; }
+  .lists::-webkit-scrollbar { width: 0; }
+  .select .section { font-family: var(--mono); font-size: 0.64rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim); margin: 18px 2px 9px; }
+  .lists > .section:first-child { margin-top: 2px; }
+  .select .empty-hint { color: var(--dim); font-size: 0.85rem; padding: 4px 2px 0; }
+  /* workspace/folder rows open (no tick box) — a leading chevron signals it */
+  .deckrow .open { flex: none; width: 18px; text-align: center; color: var(--dim); font-size: 1.1rem; line-height: 1; }
+  .deckrow:hover .open { color: var(--bolt); }
   .deckrow { display: flex; align-items: center; gap: 12px; padding: 12px 14px; min-height: 48px; border: 1px solid var(--line); border-radius: 11px; cursor: pointer; transition: border-color 0.12s, background 0.12s; }
   .deckrow:hover { border-color: var(--bolt); }
   .deckrow:focus { outline: none; border-color: var(--bolt); box-shadow: 0 0 0 2px rgba(125,249,232,0.35); }
@@ -624,9 +632,10 @@ function renderExam() {
   }
 }
 
-// The deck-selection screen. Two phases: Browse (tap a deck name to launch it,
-// or tick checkboxes to pick several) and Confirm (review the ticked decks, then
-// Start the merged session).
+// The deck-selection screen. Decks and workspaces/folders live in separate
+// sections: decks tick to merge (or tap to launch), workspaces/folders open one
+// at a time. By default the deck section shows your recent decks; the filter
+// searches across every deck and workspace.
 async function renderSelect() {
   deckEl.textContent = "select decks";
   histEl.textContent = "";
@@ -634,7 +643,9 @@ async function renderSelect() {
   menuWrap.style.display = "none";
 
   const data = await api("/api/decks");
-  if (!data.decks.length) {
+  const allDecks = data.decks || [];
+  const allWs = data.workspaces || [];
+  if (!allDecks.length && !allWs.length) {
     const wrap = el("div", "select");
     wrap.appendChild(el("div", "lede", "choose decks to study"));
     wrap.appendChild(el("div", "msg", "No decks found. Add .txt decks to your decks folder."));
@@ -642,17 +653,17 @@ async function renderSelect() {
     return;
   }
 
-  const chosen = new Set(); // ticked deck names, shared across the two phases
+  const chosen = new Set();              // ticked deck names (decks only)
+  const anyRecent = allDecks.some(d => d.recent);
 
   function renderBrowse() {
     selectEsc = null;
     stage.innerHTML = ""; legend.innerHTML = "";
-    let focused = null; // the focused, startable (unlocked) deck name
+    let focused = null; // { name, kind: "deck" | "ws" } of the focused row
 
-    // Launch a single deck: an exam-due deck starts its exam, anything else a
-    // review session.
+    // Launch a single deck: an exam-due deck starts its exam, else a review.
     const launch = (name) => {
-      const deck = data.decks.find(x => x.name === name);
+      const deck = allDecks.find(x => x.name === name);
       if (deck && deck.state === "examdue") startExam(name);
       else select([name]);
     };
@@ -661,11 +672,11 @@ async function renderSelect() {
     wrap.appendChild(el("div", "lede", "tap a deck to start — or tick several to merge"));
 
     const filter = el("input", "deck-filter");
-    filter.type = "text"; filter.placeholder = "filter decks…"; filter.autocomplete = "off";
+    filter.type = "text"; filter.placeholder = "filter decks & workspaces…"; filter.autocomplete = "off";
     wrap.appendChild(filter);
 
-    // The primary button is Start (launch the focused deck) until decks are
-    // ticked, then Confirm (review the multi-deck selection).
+    // The primary button: Confirm once decks are ticked; else Open (a focused
+    // workspace) or Start/Take exam (a focused deck).
     function syncPrimary() {
       legend.innerHTML = "";
       if (chosen.size) {
@@ -675,20 +686,19 @@ async function renderSelect() {
         legend.appendChild(b);
         return;
       }
-      const fd = focused && data.decks.find(x => x.name === focused);
-      if (fd && fd.is_workspace) {
-        // A focused workspace opens (Enter), it doesn't start.
+      if (focused && focused.kind === "ws") {
+        const ws = allWs.find(x => x.name === focused.name);
         const b = el("button", "chip primary", "Open");
         b.appendChild(el("span", "k", "enter"));
-        b.addEventListener("click", () => renderWorkspace(fd));
+        b.addEventListener("click", () => ws && renderWorkspace(ws));
         legend.appendChild(b);
         return;
       }
-      // An exam-due deck launches its exam, not a review, so label it so.
+      const fd = focused && allDecks.find(x => x.name === focused.name);
       const b = el("button", "chip primary", fd && fd.state === "examdue" ? "Take exam" : "Start");
       b.appendChild(el("span", "k", "enter"));
-      b.disabled = !focused; // only when an unlocked deck row is focused
-      b.addEventListener("click", () => { if (focused) launch(focused); });
+      b.disabled = !(fd && !fd.locked);
+      b.addEventListener("click", () => { if (fd && !fd.locked) launch(fd.name); });
       legend.appendChild(b);
     }
 
@@ -698,63 +708,107 @@ async function renderSelect() {
       syncPrimary();
     };
 
-    const list = el("div", "decklist");
-    const rows = [];
-    for (const d of data.decks) {
-      // Exam-due decks have no reviewable cards, so they can't join a merged
-      // review — only launch their own exam. Workspaces aren't tickable either;
-      // they open. Both have a disabled tick box.
-      const examdue = d.state === "examdue";
-      const isWs = d.is_workspace;
-      const row = el("div", "deckrow" + (d.locked ? " locked" : "") + (examdue || isWs ? " examdue" : "") + (chosen.has(d.name) ? " on" : ""));
-      row.tabIndex = 0;
-      row.dataset.deck = d.name;
-      if (d.locked) row.dataset.locked = "1";
-      if (examdue || isWs) row.dataset.examdue = "1";
-      const box = el("span", "box");
-      box.addEventListener("click", (e) => { e.stopPropagation(); if (!d.locked && !examdue && !isWs) toggleTick(d.name, row); });
-      row.appendChild(box);
-      const name = el("span", "name", d.label || d.name);
-      if (d.locked) name.appendChild(el("span", "lock", " \u{1F512}"));
-      row.appendChild(name);
-      if (d.path) row.appendChild(el("span", "loc", d.path)); // dim location hint
-      if (d.meta) row.appendChild(el("span", "meta state-" + d.state, d.meta));
-      // Tapping a workspace opens it; tapping a deck launches it (not if locked).
-      row.addEventListener("click", () => { if (isWs) renderWorkspace(d); else if (!d.locked) launch(d.name); });
-      rows.push({ row, name: (d.label || d.name).toLowerCase() });
-      list.appendChild(row);
+    const lists = el("div", "lists");
+
+    // ── decks section (recent by default; the filter searches all) ──
+    const deckHeader = el("div", "section", anyRecent ? "Recent" : "Decks");
+    const deckList = el("div", "decklist");
+    const deckEmpty = el("div", "empty-hint", "No decks match.");
+    const deckRows = [];
+    if (allDecks.length) {
+      lists.appendChild(deckHeader);
+      for (const d of allDecks) {
+        // Exam-due decks have no reviewable cards — they can only launch their
+        // own exam, never join a merged review, so their tick box is disabled.
+        const examdue = d.state === "examdue";
+        const row = el("div", "deckrow" + (d.locked ? " locked" : "") + (examdue ? " examdue" : "") + (chosen.has(d.name) ? " on" : ""));
+        row.tabIndex = 0;
+        row.dataset.deck = d.name;
+        if (d.locked) row.dataset.locked = "1";
+        if (examdue) row.dataset.examdue = "1";
+        const box = el("span", "box");
+        box.addEventListener("click", (e) => { e.stopPropagation(); if (!d.locked && !examdue) toggleTick(d.name, row); });
+        row.appendChild(box);
+        const name = el("span", "name", d.label || d.name);
+        if (d.locked) name.appendChild(el("span", "lock", " \u{1F512}"));
+        row.appendChild(name);
+        if (d.path) row.appendChild(el("span", "loc", d.path));
+        if (d.meta) row.appendChild(el("span", "meta state-" + d.state, d.meta));
+        row.addEventListener("click", () => { if (!d.locked) launch(d.name); });
+        deckRows.push({ row, name: (d.label || d.name).toLowerCase(), recent: !!d.recent });
+        deckList.appendChild(row);
+      }
+      lists.appendChild(deckList);
+      lists.appendChild(deckEmpty);
     }
-    wrap.appendChild(list);
+
+    // ── workspaces & folders section (single-select; tap to open) ──
+    const wsRows = [];
+    let wsHeader = null;
+    if (allWs.length) {
+      wsHeader = el("div", "section", "Workspaces & folders");
+      lists.appendChild(wsHeader);
+      const wsList = el("div", "decklist");
+      for (const w of allWs) {
+        const row = el("div", "deckrow");
+        row.tabIndex = 0;
+        row.dataset.ws = w.name;
+        row.appendChild(el("span", "open", "›")); // ‹›-style open chevron
+        row.appendChild(el("span", "name", w.label || w.name));
+        if (w.path) row.appendChild(el("span", "loc", w.path));
+        if (w.meta) row.appendChild(el("span", "meta state-" + w.state, w.meta));
+        row.addEventListener("click", () => renderWorkspace(w));
+        wsRows.push({ row, name: (w.label || w.name).toLowerCase() });
+        wsList.appendChild(row);
+      }
+      lists.appendChild(wsList);
+    }
+
+    wrap.appendChild(lists);
     stage.appendChild(wrap);
 
-    // Focus drives the Start button: a focused unlocked deck enables it; the
-    // search box (or a locked deck) disables it. Tracked via focusin so clicking
-    // the button itself doesn't clear the remembered focus.
+    // Focus drives the primary button. Tracked via focusin so clicking the
+    // button itself doesn't clear the remembered focus.
     wrap.addEventListener("focusin", (e) => {
       const t = e.target;
-      if (t.dataset && t.dataset.deck !== undefined) focused = t.dataset.locked ? null : t.dataset.deck;
+      if (t.dataset && t.dataset.deck !== undefined) focused = t.dataset.locked ? null : { name: t.dataset.deck, kind: "deck" };
+      else if (t.dataset && t.dataset.ws !== undefined) focused = { name: t.dataset.ws, kind: "ws" };
       else if (t === filter) focused = null;
       if (!chosen.size) syncPrimary();
     });
 
-    const visible = () => rows.filter(r => r.row.style.display !== "none");
-    filter.addEventListener("input", () => {
+    // Decks show recent-only until you type; the filter searches every deck and
+    // every workspace. Empty sections (and their headers) hide themselves.
+    function applyFilter() {
       const q = filter.value.trim().toLowerCase();
-      for (const { row, name } of rows) row.style.display = !q || name.includes(q) ? "" : "none";
-    });
+      let deckShown = 0;
+      for (const r of deckRows) {
+        const show = q ? r.name.includes(q) : (anyRecent ? r.recent : true);
+        r.row.style.display = show ? "" : "none";
+        if (show) deckShown++;
+      }
+      deckHeader.textContent = q ? "Decks" : (anyRecent ? "Recent" : "Decks");
+      deckEmpty.style.display = (q && !deckShown) ? "" : "none";
+      for (const r of wsRows) r.row.style.display = !q || r.name.includes(q) ? "" : "none";
+      if (wsHeader) wsHeader.style.display = wsRows.some(r => r.row.style.display !== "none") ? "" : "none";
+    }
+
+    const visible = () => [...deckRows, ...wsRows].filter(r => r.row.style.display !== "none");
+    filter.addEventListener("input", applyFilter);
     filter.addEventListener("keydown", (e) => {
       if (e.key === "ArrowDown") { e.preventDefault(); const v = visible(); if (v.length) v[0].row.focus(); }
     });
-    list.addEventListener("keydown", (e) => {
+    lists.addEventListener("keydown", (e) => {
       const row = e.target.closest(".deckrow");
       if (!row) return;
       const v = visible();
       const idx = v.findIndex(r => r.row === row);
       if (e.key === "ArrowDown") { e.preventDefault(); if (idx < v.length - 1) v[idx + 1].row.focus(); }
       else if (e.key === "ArrowUp") { e.preventDefault(); if (idx > 0) v[idx - 1].row.focus(); else filter.focus(); }
-      else if (e.key === " ") { e.preventDefault(); if (!row.dataset.locked && !row.dataset.examdue) toggleTick(row.dataset.deck, row); }
+      else if (e.key === " " && row.dataset.deck !== undefined) { e.preventDefault(); if (!row.dataset.locked && !row.dataset.examdue) toggleTick(row.dataset.deck, row); }
     });
 
+    applyFilter();
     syncPrimary();
     filter.focus(); // ready to type-to-filter immediately
   }
@@ -764,14 +818,16 @@ async function renderSelect() {
     stage.innerHTML = ""; legend.innerHTML = "";
     const wrap = el("div", "select");
     wrap.appendChild(el("div", "lede", "start these decks together?"));
+    const lists = el("div", "lists");
     const list = el("div", "decklist");
     for (const name of chosen) {
       const row = el("div", "deckrow");
-      const d = data.decks.find(x => x.name === name);
+      const d = allDecks.find(x => x.name === name);
       row.appendChild(el("span", "name", (d && d.label) || name));
       list.appendChild(row);
     }
-    wrap.appendChild(list);
+    lists.appendChild(list);
+    wrap.appendChild(lists);
     stage.appendChild(wrap);
 
     const start = el("button", "chip primary", "Start");
@@ -818,6 +874,7 @@ async function renderSelect() {
       syncWs();
     };
 
+    const lists = el("div", "lists");
     const list = el("div", "decklist");
     const rows = [];
     for (const m of ws.members) {
@@ -832,7 +889,8 @@ async function renderSelect() {
       rows.push({ row, name: (m.label || m.name).toLowerCase() });
       list.appendChild(row);
     }
-    wrap.appendChild(list);
+    lists.appendChild(list);
+    wrap.appendChild(lists);
     stage.appendChild(wrap);
 
     const visible = () => rows.filter(r => r.row.style.display !== "none");
@@ -858,7 +916,7 @@ async function renderSelect() {
   }
 
   // Returning from a session launched inside a workspace re-opens that workspace.
-  const reopen = lastWorkspace && data.decks.find(x => x.is_workspace && x.name === lastWorkspace);
+  const reopen = lastWorkspace && allWs.find(x => x.name === lastWorkspace);
   if (reopen) renderWorkspace(reopen); else renderBrowse();
 }
 

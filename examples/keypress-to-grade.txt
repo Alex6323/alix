@@ -9,14 +9,14 @@
 # You press the Good key in the browser. What does the page send to the server — and, just as telling, what does it *not* send?
 	grade(g) POSTs to /api/grade with a JSON body of just { grade: g }.
 	The request says how you graded — never which card.
-	% at: assets/serve/review.html:338-341
+	% at: assets/serve/review.html:349
 	! The page is a thin view; it doesn't even track card identity.
 
 # So the request carries only the grade — no card id. How does the server then know *which* card you just graded?
 	The handler grabs `reviewing` — the live, server-side review session.
 	It calls .grade on that session; the current card is server state.
 	So the server, not the page, is the source of truth for "which card".
-	% at: src/serve.rs:682-689
+	% at: src/serve.rs:690-697
 	! State lives server-side; the page only ever names the grade.
 
 # The server hands the grade to its session's grade(). How does it pick *the* card and turn one keypress into a scheduling change?
@@ -30,14 +30,14 @@
 	Good is a Pass: it bumps the card up one Leitner stage (capped).
 	A Fail drops it back to stage 1; Easy jumps two.
 	The review is recorded with its timestamp either way.
-	% at: src/scheduler.rs:92-100
+	% at: src/scheduler.rs:90-98
 	! The new stage sets the cooldown before the card is due again.
 
 # session.grade() has returned, and the new stage is now recorded in the store. Back in the /api/grade handler, what's its very next line?
 	The new stage so far exists only in the in-memory store — not yet on disk.
 	So the handler's very next line is store.save(), which persists it.
 	A save error is only logged, not fatal — the grading itself already happened.
-	% at: src/serve.rs:689-692
+	% at: src/serve.rs:697-700
 	! grade() changes memory; persisting is the handler's job, on the very next line.
 
 # store.save() is called — but the store is one JSON file. How does it write the update without risking a half-written file if the process dies mid-save?

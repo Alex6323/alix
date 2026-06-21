@@ -1615,7 +1615,7 @@ fn trace_serve(
     announce(addr, args.serve.lan, "a trace walk");
     let grade = args.grade.then(|| config.ask.clone());
     let walk = Walk::new(trace, scheduler);
-    serve::run_walk(walk, store, addr, scheduler, grade)
+    serve::run_walk(walk, store, addr, scheduler, grade, config.keys.clone())
 }
 
 /// Runs a trace walk in the terminal — predict → reveal → grade each checkpoint,

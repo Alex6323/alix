@@ -184,10 +184,13 @@ struct BrowseDto {
     cards: Vec<CardDto>,
 }
 
-/// The deck-selection catalog sent to the browser picker.
+/// The deck-selection catalog sent to the browser picker. Decks and
+/// workspaces/folders are kept in separate lists: decks are multi-selectable
+/// (tick to merge), workspaces/folders open one at a time.
 #[derive(Debug, Serialize)]
 struct DeckListDto {
     decks: Vec<DeckItemDto>,
+    workspaces: Vec<DeckItemDto>,
 }
 
 /// One deck offered in the selection screen: its file name, a completion-state
@@ -203,6 +206,9 @@ struct DeckItemDto {
     meta: Option<String>,
     state: &'static str,
     locked: bool,
+    /// `true` when this entry has recent-use history (shown in the "Recent"
+    /// section by default; the rest are reachable through the filter).
+    recent: bool,
     /// `true` for a workspace folder row.
     is_workspace: bool,
     /// For a workspace row: its member decks, shown when you open it.
@@ -1238,6 +1244,28 @@ fn read_delta(request: &mut Request) -> Option<Delta> {
     Delta::from_key(body.delta.chars().next()?)
 }
 
+/// The walk actions the web page binds, reusing the configured review `[keys]`:
+/// the three grades map onto again/good/easy (Missed→again, Partial→good,
+/// Got it→easy) so the walk feels like review, and `reveal` advances.
+#[derive(Debug, Serialize)]
+struct WalkKeys {
+    reveal: Vec<KeyDto>,
+    again: Vec<KeyDto>,
+    good: Vec<KeyDto>,
+    easy: Vec<KeyDto>,
+}
+
+impl WalkKeys {
+    fn from(b: &Bindings) -> Self {
+        Self {
+            reveal: key_list(&b.reveal),
+            again: key_list(&b.again),
+            good: key_list(&b.good),
+            easy: key_list(&b.easy),
+        }
+    }
+}
+
 /// Serves a single trace walk at `addr` until the process is stopped. Mirrors
 /// the terminal walk: predict → reveal a live excerpt → grade (self-judged, or
 /// by Claude when `grade` is `Some`) → compress, scheduling each checkpoint in
@@ -1248,14 +1276,17 @@ pub fn run_walk(
     addr: SocketAddr,
     scheduler: SchedulerKind,
     grade: Option<AskConfig>,
+    bindings: Bindings,
 ) -> Result<()> {
     let mut walking = Walking::new(walk, scheduler, grade);
+    let keys = WalkKeys::from(&bindings);
     let server = Server::http(addr).map_err(|e| anyhow!("cannot start server on {addr}: {e}"))?;
     for mut request in server.incoming_requests() {
         let method = request.method().clone();
         let path = request_path(&request);
         match (&method, path.as_str()) {
             (Method::Get, "/") => respond_html(request, WALK_HTML),
+            (Method::Get, "/api/keys") => respond_json(request, &keys),
             // Poll: drain any finished background grade, return state.
             (Method::Get, "/api/walk") => {
                 walking.poll();
@@ -1535,70 +1566,73 @@ fn deck_catalog(
     store: &Store,
     with_lock: bool,
 ) -> DeckListDto {
-    let decks = picker::catalog(decks_dir, recent)
-        .into_iter()
-        .map(|e| {
-            // A workspace row: its member decks (shown on open), always
-            // selectable, no lock/state of its own.
-            if e.is_workspace {
-                let members: Vec<MemberDto> = e
-                    .members
-                    .iter()
-                    .map(|m| MemberDto {
-                        name: m.name.clone(),
-                        label: m.label.clone(),
-                    })
-                    .collect();
-                // A folder with a `flash.toml` is a workspace; without one it's a
-                // plain folder. Both open into their members.
-                let kind = if crate::workspace::is_workspace(&e.path) {
-                    "workspace"
-                } else {
-                    "folder"
-                };
-                return DeckItemDto {
-                    meta: Some(format!("{kind} · {} decks", members.len())),
-                    name: e.name,
-                    label: e.label,
-                    state: kind,
-                    locked: false,
-                    is_workspace: true,
-                    members,
-                    path: e.path_hint,
-                };
-            }
-            let (state, meta, locked) = match Deck::load(&e.path) {
-                Ok(deck) => {
-                    let total = deck.cards.len();
-                    let retired = deck.cards.iter().filter(|c| is_retired(c, store)).count();
-                    let (state, badge) = match deck.state(store) {
-                        // Exam-passed decks read "mastered"; plain drilled ones "done".
-                        DeckState::Finished if store.deck_mastered(&deck.subject) => {
-                            ("finished", "mastered ✓".to_string())
-                        }
-                        DeckState::Finished => ("finished", "done ✓".to_string()),
-                        DeckState::ExamDue => ("examdue", "exam due".to_string()),
-                        DeckState::NotStarted => ("new", "new".to_string()),
-                        DeckState::Started => ("started", format!("{retired}/{total}")),
-                    };
-                    let locked = with_lock && deck::is_locked(&deck, Some(decks_dir), store);
-                    (state, Some(badge), locked)
-                }
-                Err(_) => ("new", None, false),
+    let mut decks = Vec::new();
+    let mut workspaces = Vec::new();
+    for e in picker::catalog(decks_dir, recent) {
+        let recent = e.last_used_ms.is_some();
+        // A workspace/folder row: its member decks (shown on open), always
+        // selectable, no lock/state of its own.
+        if e.is_workspace {
+            let members: Vec<MemberDto> = e
+                .members
+                .iter()
+                .map(|m| MemberDto {
+                    name: m.name.clone(),
+                    label: m.label.clone(),
+                })
+                .collect();
+            // A folder with a `flash.toml` is a workspace; without one it's a
+            // plain folder. Both open into their members.
+            let kind = if crate::workspace::is_workspace(&e.path) {
+                "workspace"
+            } else {
+                "folder"
             };
-            DeckItemDto {
+            workspaces.push(DeckItemDto {
+                meta: Some(format!("{kind} · {} decks", members.len())),
                 name: e.name,
                 label: e.label,
-                meta,
-                state,
-                locked,
-                is_workspace: false,
-                members: Vec::new(),
+                state: kind,
+                locked: false,
+                recent,
+                is_workspace: true,
+                members,
                 path: e.path_hint,
+            });
+            continue;
+        }
+        let (state, meta, locked) = match Deck::load(&e.path) {
+            Ok(deck) => {
+                let total = deck.cards.len();
+                let retired = deck.cards.iter().filter(|c| is_retired(c, store)).count();
+                let (state, badge) = match deck.state(store) {
+                    // Exam-passed decks read "mastered"; plain drilled ones "done".
+                    DeckState::Finished if store.deck_mastered(&deck.subject) => {
+                        ("finished", "mastered ✓".to_string())
+                    }
+                    DeckState::Finished => ("finished", "done ✓".to_string()),
+                    DeckState::ExamDue => ("examdue", "exam due".to_string()),
+                    DeckState::NotStarted => ("new", "new".to_string()),
+                    DeckState::Started => ("started", format!("{retired}/{total}")),
+                };
+                let locked = with_lock && deck::is_locked(&deck, Some(decks_dir), store);
+                (state, Some(badge), locked)
             }
-        })
-        .collect();
-    DeckListDto { decks }
+            Err(_) => ("new", None, false),
+        };
+        decks.push(DeckItemDto {
+            name: e.name,
+            label: e.label,
+            meta,
+            state,
+            locked,
+            recent,
+            is_workspace: false,
+            members: Vec::new(),
+            path: e.path_hint,
+        });
+    }
+    DeckListDto { decks, workspaces }
 }
 
 /// Parses a `{"decks":[name,…]}` selection and resolves each name to its deck
