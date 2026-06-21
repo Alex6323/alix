@@ -1,7 +1,10 @@
 # 3 · The deck format
 
 A deck is a plain-text file, and the format is deliberately small — you can write
-one in any editor with no tooling, and read it back at a glance.
+one in any editor with no tooling, and read it back at a glance. It's loosely
+modeled on Markdown: a `#` heads each card the way it heads a Markdown section,
+and a note can hold a fenced code block — so the syntax is already familiar and
+most editors highlight it sensibly.
 
 ## Cards
 

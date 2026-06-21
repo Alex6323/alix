@@ -7,8 +7,8 @@
 - [Why flash exists](01-why-flash.md)
 - [Getting started](02-getting-started.md)
 - [The deck format](03-the-deck-format.md)
-- [Review modes]()
-- [Scheduling, stages & completion]()
+- [Review modes](04-review-modes.md)
+- [Scheduling, stages & completion](05-scheduling.md)
 
 # Part II — Richer cards
 
