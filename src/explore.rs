@@ -407,11 +407,13 @@ fn parse_item_header(t: &str) -> Option<(usize, Kind, String)> {
 /// trace, a `% title:` facts deck for a deck — wired by `% requires:` (item
 /// numbers mapped to the member file names), with each `% source:` rewritten
 /// absolute against the source root. Refuses a non-empty `dir` unless `force`.
+#[allow(clippy::too_many_arguments)] // a manifest + a plan + per-call knobs
 pub fn materialize(
     plan: &str,
     dir: &Path,
     goal: &str,
     title: Option<&str>,
+    max_stage: Option<u8>,
     source: &str,
     force: bool,
     filled: Option<&HashMap<usize, String>>,
@@ -456,6 +458,10 @@ pub fn materialize(
         "description = \"{}\"\n\n[defaults]\n",
         toml_escape(goal)
     ));
+    // A workspace-wide max-stage cap, shared by every member deck.
+    if let Some(max_stage) = max_stage {
+        manifest.push_str(&format!("max-stage = {max_stage}\n"));
+    }
     fs::write(dir.join(crate::workspace::MANIFEST), manifest)?;
 
     let mut traces = 0;
@@ -682,6 +688,7 @@ Spine   a -> b
             &dir,
             "understand the repo",
             None,
+            None,
             ".",
             false,
             None,
@@ -717,14 +724,14 @@ Spine   a -> b
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("keep.txt"), "existing").unwrap();
 
-        assert!(materialize(SAMPLE_PLAN, &dir, "g", None, ".", false, None).is_err());
-        assert!(materialize(SAMPLE_PLAN, &dir, "g", None, ".", true, None).is_ok()); // --force writes anyway
+        assert!(materialize(SAMPLE_PLAN, &dir, "g", None, None, ".", false, None).is_err());
+        assert!(materialize(SAMPLE_PLAN, &dir, "g", None, None, ".", true, None).is_ok()); // --force writes anyway
 
         let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn materialize_title_overrides_the_workspace_name() {
+    fn materialize_writes_title_and_max_stage() {
         let dir = std::env::temp_dir().join(format!("flash-explore-title-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
 
@@ -733,6 +740,7 @@ Spine   a -> b
             &dir,
             "the goal",
             Some("Repo Internals"),
+            Some(3),
             ".",
             false,
             None,
@@ -741,6 +749,8 @@ Spine   a -> b
         let manifest = fs::read_to_string(dir.join("flash.toml")).unwrap();
         assert!(manifest.contains("title = \"Repo Internals\""));
         assert!(manifest.contains("description = \"the goal\""));
+        // The cap lands in [defaults], shared by every member deck.
+        assert!(manifest.contains("[defaults]\nmax-stage = 3"));
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -776,7 +786,17 @@ preamble ignored
                 .to_string(),
         );
 
-        let report = materialize(SAMPLE_PLAN, &dir, "g", None, ".", false, Some(&filled)).unwrap();
+        let report = materialize(
+            SAMPLE_PLAN,
+            &dir,
+            "g",
+            None,
+            None,
+            ".",
+            false,
+            Some(&filled),
+        )
+        .unwrap();
         assert_eq!(1, report.filled); // only item 2 was filled
 
         // item 2 (a trace) keeps its header AND carries the filled checkpoint

@@ -52,9 +52,10 @@ flash workspace ~/decks/request-pipeline    # or: flash --serve, then open it
 ```
 
 `--goal` scopes what gets authored (and becomes the workspace's description),
-`--title` names it, and `--build` fills every facts deck and trace in one
-coherent pass — freezing the cited source into the workspace so its line
-locators never drift. Inside the workspace a **facts deck reviews** and a
+`--title` names it, `--max-stage <1–5>` caps how long cards keep resurfacing
+(a shared `[defaults]` for the whole workspace), and `--build` fills every facts
+deck and trace in one coherent pass — freezing the cited source into the
+workspace so its line locators never drift. Inside the workspace a **facts deck reviews** and a
 **trace walks** (predict → reveal → judge the gap), unlocking in dependency
 order, with progress kept in the workspace's own store. See
 [Exploring a source](#exploring-a-source--flash-explore) and
@@ -881,8 +882,9 @@ each trace (run `flash trace --build` on it) and a `% title:` facts deck for eac
 deck (author it or `flash deck`) — wired together with `% requires:` so they
 unlock in dependency order, with each `% source:` pointing back at the real
 source. The `--goal` becomes the workspace's `description`; **`--title`** names
-it (omitted, the folder name is used). (Refuses a non-empty folder unless
-`--force`.)
+it (omitted, the folder name is used); **`--max-stage <1–5>`** writes a shared
+`[defaults]` `max-stage` so every member deck caps at that Leitner stage.
+(Refuses a non-empty folder unless `--force`.)
 
 Add **`--build`** to go all the way: `flash explore … --into <dir> --build`
 explores the source **once** and then reuses that same session to fill every

@@ -129,6 +129,11 @@ struct ExploreArgs {
     #[arg(long, requires = "into")]
     title: Option<String>,
 
+    /// With --into, cap every member at this Leitner stage (the workspace's
+    /// `[defaults]` `max-stage`, 1–5): a card retires once it reaches it.
+    #[arg(long, requires = "into", value_parser = clap::value_parser!(u8).range(1..=5))]
+    max_stage: Option<u8>,
+
     /// With --into, write into the directory even if it already contains files.
     #[arg(long, requires = "into")]
     force: bool,
@@ -2258,6 +2263,7 @@ fn explore_cmd(args: ExploreArgs) -> Result<()> {
             dir,
             goal,
             args.title.as_deref(),
+            args.max_stage,
             &source,
             args.force,
             Some(&filled),
@@ -2304,6 +2310,7 @@ fn explore_cmd(args: ExploreArgs) -> Result<()> {
             dir,
             goal,
             args.title.as_deref(),
+            args.max_stage,
             &source,
             args.force,
             None,

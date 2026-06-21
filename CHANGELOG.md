@@ -7,12 +7,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- **`flash explore --title` names the scaffolded workspace; the goal becomes its
-  description.** `flash explore --into <dir>` now takes an optional `--title` for
-  the workspace's `flash.toml` `title` (omitted, the folder name is used), and
-  writes the `--goal` as a new `flash.toml` **`description`** field instead of an
-  ignored `goal` key. A workspace's `description` shows **dim under its row** in
-  both pickers (terminal and web).
+- **`flash explore --title` / `--max-stage` shape the scaffolded workspace; the
+  goal becomes its description.** `flash explore --into <dir>` now takes an
+  optional `--title` for the workspace's `flash.toml` `title` (omitted, the
+  folder name is used) and `--max-stage <1–5>` to set a shared `[defaults]`
+  `max-stage` cap for every member deck. It also writes the `--goal` as a new
+  `flash.toml` **`description`** field instead of an ignored `goal` key; a
+  workspace's `description` shows **dim under its row** in both pickers (terminal
+  and web).
 - **Confirm before abandoning a review; commit the picker filter with Esc**
   (terminal) — quitting a review **mid-session** now asks to confirm (`Enter`
   leaves, any other key stays), so a stray `Esc` no longer drops a queued session;
