@@ -1215,8 +1215,15 @@ impl<K: Clone + Eq + Hash> Picker<K> {
                         _ if nav && hit(&self.keys.up) => self.move_cursor(-1),
                         _ if nav && hit(&self.keys.open) => self.launch_focused(),
                         _ if nav && hit(&self.keys.back) => self.cancel(),
-                        _ if nav && hit(&self.keys.top) => self.cursor = 0,
-                        _ if nav && hit(&self.keys.bottom) => {
+                        // Jump to first/last is fixed at g/G/Home/End, matched
+                        // case-sensitively here: the config key layer lowercases
+                        // letters, so `g` and `G` can't be told apart there (the same
+                        // reason the browse pager hardcodes them). Letters act only in
+                        // nav mode — while filtering they're text.
+                        KeyCode::Home => self.cursor = 0,
+                        KeyCode::End => self.cursor = self.filtered.len().saturating_sub(1),
+                        KeyCode::Char('g') if nav => self.cursor = 0,
+                        KeyCode::Char('G') if nav => {
                             self.cursor = self.filtered.len().saturating_sub(1);
                         }
                         _ if nav && hit(&self.keys.filter) => self.filtering = true,

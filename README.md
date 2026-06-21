@@ -73,11 +73,13 @@ stays out of Recent — you reach it by opening its workspace. Mastered/done and
 locked decks are also kept out of Recent (it's a quick launchpad) but stay
 reachable by filtering. Decks live in the decks directory (`~/decks` by default,
 set `decks_dir` in the config). The focus is on the **list** by default, with
-Vim-style keys (all rebindable in the config's `[picker]` section): `j`/`k` (or
-`↑`/`↓`) move, `g`/`G` jump to ends, `l` (or `Enter`) opens the focused row, `h`
-(or `Esc`) steps back, `m` opens the **Mastered** window (your completed decks,
-kept out of Recent), and `/` (or `Ctrl-F`) starts **filtering** by name (searching
-*every* loose deck, not just the recent ones); `Esc` leaves the filter. A deck you
+Vim-style keys (rebindable in the config's `[picker]` section): `j`/`k` (or
+`↑`/`↓`) move, `l` (or `Enter`) opens the focused row, `h` (or `Esc`/`Backspace`)
+steps back, `m` opens the **Mastered** window (your completed decks, kept out of
+Recent), and `/` (or `Ctrl-F`) starts **filtering** by name (searching *every*
+loose deck, not just the recent ones); `Esc` leaves the filter. Jumping to the
+first/last row stays fixed at `g`/`G` (or Home/End), like the `[browse]` pager.
+A deck you
 can't start right
 now is dimmed and `Enter` on it does nothing: 🔒 a
 [locked](#completion-states--unlocks) deck (an unfinished `% requires:`), 🕒 a deck

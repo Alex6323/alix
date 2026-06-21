@@ -153,7 +153,9 @@ impl Bindings {
 
 /// Rebindable navigation keys for the deck picker, configured in the `[picker]`
 /// section. Vim-style by default. The arrow keys, `Enter` (open) and `Esc`
-/// (back) always work regardless of these.
+/// (back) always work regardless of these; jumping to the first/last row stays
+/// fixed at `g`/`G`/Home/End (letter bindings are case-insensitive, so `g` and
+/// `G` can't be told apart — same as the `[browse]` pager).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PickerKeys {
     /// Move up / down the list.
@@ -163,9 +165,6 @@ pub struct PickerKeys {
     pub open: Vec<KeyPattern>,
     /// Step back / cancel.
     pub back: Vec<KeyPattern>,
-    /// Jump to the first / last row.
-    pub top: Vec<KeyPattern>,
-    pub bottom: Vec<KeyPattern>,
     /// Enter filter mode.
     pub filter: Vec<KeyPattern>,
     /// Open the Mastered window.
@@ -180,8 +179,6 @@ impl Default for PickerKeys {
             down: keys(&["j"]),
             open: keys(&["l"]),
             back: keys(&["h"]),
-            top: keys(&["g"]),
-            bottom: keys(&["G"]),
             filter: keys(&["/", "ctrl-f"]),
             mastered: keys(&["m"]),
         }
@@ -495,8 +492,6 @@ struct RawPicker {
     down: Option<Vec<String>>,
     open: Option<Vec<String>>,
     back: Option<Vec<String>>,
-    top: Option<Vec<String>>,
-    bottom: Option<Vec<String>>,
     filter: Option<Vec<String>>,
     mastered: Option<Vec<String>>,
 }
@@ -578,8 +573,6 @@ impl Config {
         assign(&mut picker.down, raw.picker.down, "picker.down")?;
         assign(&mut picker.open, raw.picker.open, "picker.open")?;
         assign(&mut picker.back, raw.picker.back, "picker.back")?;
-        assign(&mut picker.top, raw.picker.top, "picker.top")?;
-        assign(&mut picker.bottom, raw.picker.bottom, "picker.bottom")?;
         assign(&mut picker.filter, raw.picker.filter, "picker.filter")?;
         assign(&mut picker.mastered, raw.picker.mastered, "picker.mastered")?;
 
@@ -766,14 +759,13 @@ pub fn default_config_toml() -> &'static str {
 # quit = ["esc", "ctrl-c"]      # quit the session
 
 # Navigation keys for the deck picker (Vim-style by default). The arrow keys,
-# Enter (open) and Esc (back) always work regardless of these.
+# Enter (open) and Esc (back) always work regardless of these; jumping to the
+# first/last row is fixed at g / G / Home / End (like [browse]).
 [picker]
 # up = ["k"]                    # move up
 # down = ["j"]                  # move down
 # open = ["l"]                  # open the focused row
 # back = ["h"]                  # step back / cancel
-# top = ["g"]                   # jump to the first row
-# bottom = ["G"]                # jump to the last row
 # filter = ["/", "ctrl-f"]      # start filtering
 # mastered = ["m"]              # open the Mastered window
 

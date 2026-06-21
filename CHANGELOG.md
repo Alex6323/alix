@@ -33,10 +33,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   apart; over-long rows (a trace's `% trace:` sentence) are truncated with `…`.
   Rows you can't start now are dimmed and `Enter` is a no-op: 🔒 locked
   (`% requires:` unfinished), 🕒 nothing due (on cooldown); a mastered deck reads
-  `mastered 🎉`. The focus is on the **list** by default with Vim-style keys, all
-  rebindable in a new `[picker]` config section (`j`/`k`/`g`/`G` or arrows move,
-  `l`/`Enter` open, `h`/`Esc` back, `m` opens the Mastered window, `/` or `Ctrl-F`
-  filters). Mastered/done and locked decks are kept out of Recent (a quick
+  `mastered 🎉`. The focus is on the **list** by default with Vim-style keys,
+  rebindable in a new `[picker]` config section (`j`/`k` or arrows move, `l`/`Enter`
+  open, `h`/`Esc`/`Backspace` back, `m` opens the Mastered window, `/` or `Ctrl-F`
+  filters); jumping to the first/last row is fixed at `g`/`G` (or Home/End), like
+  the `[browse]` pager. Mastered/done and locked decks are kept out of Recent (a quick
   launchpad); **`m` opens a dedicated Mastered window** of the exam-passed decks,
   or the filter reaches them. Long `% title:` / `% trace:` labels are capped so
   rows stay short. The picker and the review/walk/exam it launches now share **one
