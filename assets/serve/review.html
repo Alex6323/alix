@@ -262,6 +262,11 @@
   .ask-status { align-self: flex-start; color: var(--good); font-size: 0.85rem; }
   .ask-error { align-self: flex-start; color: var(--again); font-size: 0.85rem; }
   .ask-hint { color: var(--dim); }
+  /* the card under discussion, pinned above the input for reference */
+  .ask-card { border: 1px solid var(--line); border-radius: 12px; padding: 9px 13px; background: rgba(0,0,0,0.18); max-height: 22vh; overflow-y: auto; }
+  .ask-card-q { color: var(--dim); margin-bottom: 5px; }
+  .ask-card-ctx { color: var(--dim); font-family: var(--mono); font-size: 0.85em; margin-bottom: 4px; }
+  .ask-card-a { color: var(--ink); line-height: 1.45; white-space: pre-wrap; }
   .ask-input { width: 100%; box-sizing: border-box; resize: vertical; min-height: 52px; padding: 11px 13px; border-radius: 12px; border: 1px solid var(--line); background: rgba(0,0,0,0.25); color: var(--ink); font: inherit; }
   .ask-input:focus { outline: none; border-color: var(--bolt); }
   .ask-input:disabled { opacity: 0.6; }
@@ -500,6 +505,17 @@ function renderAsk() {
   const log = el("div", "ask-log");
   fillAskLog(log);
   wrap.appendChild(log);
+
+  // The card's front + answer, pinned just above the input so it's easy to
+  // reference while writing a question.
+  const c = state.card;
+  if (c) {
+    const ref = el("div", "ask-card");
+    ref.appendChild(el("div", "ask-card-q", c.front));
+    for (const ctx of c.context || []) ref.appendChild(el("div", "ask-card-ctx", ctx));
+    for (const b of c.back) ref.appendChild(el("div", "ask-card-a", b));
+    wrap.appendChild(ref);
+  }
 
   const input = el("textarea", "ask-input");
   input.placeholder = "Ask about this card…";

@@ -537,7 +537,8 @@ card (front, answer, note, deck name) is sent as context to the Claude Code
 CLI (`claude -p`), so you can ask "why is that the answer?" and follow up.
 One CLI conversation spans the whole review run (`--session-id` on the
 first question, `--resume` afterwards), so Claude remembers earlier cards
-and questions. While Claude thinks, the session stays responsive; Esc
+and questions — but the panel shows only the **current card's** exchanges, not
+the whole history. While Claude thinks, the session stays responsive; Esc
 returns exactly where you were.
 
 This works in the **web frontend** too (`--serve`): an "Ask" button (and the

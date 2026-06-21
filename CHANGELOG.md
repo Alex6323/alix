@@ -360,6 +360,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reinforced.
 
 ### Fixed
+- **The web ask-Claude panel now shows only the current card's exchanges.** It
+  was rendering the whole session's conversation, so every former card's Q&A
+  piled up on screen. The display is now scoped to the card you're on (and so is
+  the "save note" condense), while the CLI conversation still spans the session —
+  Claude keeps the full context. The card's front + answer are pinned just above
+  the input, for easy reference while you type a question. (The terminal ask view
+  already scoped per card.)
 - **The TUI reflows immediately on a terminal resize.** The event loops redrew
   from a size query that could be momentarily stale right after a resize, so the
   screen sometimes stayed unchanged until the next keypress refreshed it. They now

@@ -457,6 +457,10 @@ struct Reviewing {
     /// transcript, the per-subject `% link:` links, and an in-flight CLI call.
     cli: CliSession,
     transcript: Vec<Exchange>,
+    /// The card the displayed `transcript` is for. When the current card moves
+    /// on, the transcript is cleared (the CLI conversation still spans the whole
+    /// session) so the ask view only shows *this* card's exchanges.
+    transcript_card: Option<u64>,
     links: HashMap<String, Vec<String>>,
     pending: Option<Pending>,
 }
@@ -488,8 +492,20 @@ impl Reviewing {
             images,
             cli: CliSession::new(),
             transcript: Vec::new(),
+            transcript_card: None,
             links: build.links,
             pending: None,
+        }
+    }
+
+    /// Drops the displayed transcript when the current card changed, so the ask
+    /// view shows only this card's exchanges. The CLI session (`cli`) is
+    /// untouched, so Claude still has the whole conversation as context.
+    fn align_transcript(&mut self) {
+        let cur = self.session.current().map(|c| c.id());
+        if self.transcript_card != cur {
+            self.transcript.clear();
+            self.transcript_card = cur;
         }
     }
 
@@ -518,6 +534,9 @@ impl Reviewing {
         if self.pending.is_some() {
             return false;
         }
+        // A new card starts a fresh visible transcript (and a card-scoped
+        // condense), even though the CLI conversation continues.
+        self.align_transcript();
         let Some(card) = self.session.current().cloned() else {
             return false;
         };
@@ -545,6 +564,9 @@ impl Reviewing {
     /// Drains a finished CLI reply into the transcript (a question) or the deck
     /// file (a condense). Returns a transient `(status, error)` to show once.
     fn poll_ask(&mut self) -> (Option<String>, Option<String>) {
+        // Opening the ask view on a new card (the page polls `/api/ask`) drops
+        // the previous card's exchanges from the display.
+        self.align_transcript();
         let reply = match &self.pending {
             None => return (None, None),
             Some(p) => match p.rx.try_recv() {
@@ -2314,6 +2336,26 @@ mod tests {
         assert_eq!("why is s1 invalid?", r.transcript[0].0);
         assert_eq!("because ownership moved", r.transcript[0].1);
         assert!(r.cli.started); // later questions --resume
+    }
+
+    #[test]
+    fn ask_transcript_resets_when_the_card_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut r, card, _deck) = one_card_reviewing(dir.path());
+        // A previous card's discussion is on display, and the conversation has
+        // begun (the CLI session is live).
+        r.transcript
+            .push(("old q".to_string(), "old a".to_string()));
+        r.transcript_card = Some(card.id().wrapping_add(1)); // a different card
+        r.cli.started = true;
+
+        r.align_transcript();
+
+        // The current card differs from the transcript's card, so the display is
+        // cleared and re-tagged — but Claude's conversation context survives.
+        assert!(r.transcript.is_empty());
+        assert_eq!(Some(card.id()), r.transcript_card);
+        assert!(r.cli.started);
     }
 
     #[test]
