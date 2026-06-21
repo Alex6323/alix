@@ -1214,7 +1214,11 @@ fn review_serve(args: ReviewArgs) -> Result<()> {
     let mut recent = RecentDecks::load(
         recent::default_recent_path().context("cannot determine the data directory")?,
     );
-    let store = open_store(args.store.clone())?;
+    // The session writes to the decks' own store — a workspace's `progress.json`
+    // when they share one, else the global store — exactly like the TUI. The
+    // server starts on the store for any CLI-named decks (else the global one)
+    // and switches per selection from the in-browser picker.
+    let store = store_for(&args.decks, args.store.clone())?;
     let decks_dir = config.decks_dir().context("cannot determine ~/decks")?;
     let addr = serve_addr(args.serve.port, args.serve.lan, &config);
 
@@ -1286,8 +1290,19 @@ fn review_serve(args: ReviewArgs) -> Result<()> {
             None => Ok(None),
         }
     };
+    // Picks the right store for whatever decks a selection resolves to (`&[]` →
+    // the global store), so the server can switch per session like the TUI.
+    let store_for_sel = |paths: &[PathBuf]| store_for(paths, args.store.clone());
     serve::run_review(
-        initial, store, recent, decks_dir, addr, opts, build, build_walk,
+        initial,
+        store,
+        recent,
+        decks_dir,
+        addr,
+        opts,
+        build,
+        build_walk,
+        store_for_sel,
     )
 }
 

@@ -706,6 +706,11 @@ pub fn run_review(
     // Builds a walk when the picked decks are a single trace (else `None`, so the
     // caller flattens to a review); mirrors the terminal picker's trace → walk.
     mut build_walk: impl FnMut(&[PathBuf]) -> Result<Option<WalkBuild>>,
+    // The progress store the given decks write to — a workspace's own
+    // `progress.json` when they share one, else the global store (`&[]` → global),
+    // mirroring the terminal `store_for`. The active store is swapped to this when
+    // a session launches and reset to the global one back at the picker.
+    mut store_for: impl FnMut(&[PathBuf]) -> Result<Store>,
 ) -> Result<()> {
     let ReviewOptions {
         mode_override,
@@ -745,40 +750,54 @@ pub fn run_review(
             ),
             (Method::Post, "/api/select") => {
                 match select_decks(&mut request, &decks_dir, &recent) {
-                    // A single trace deck walks (the page navigates to `/walk`)
-                    // rather than flattening into a card review.
-                    Some(paths) => match build_walk(&paths) {
-                        Ok(Some(wb)) => {
-                            walking = Some(Walking::new(wb.walk, wb.scheduler, None));
-                            reviewing = None;
-                            examining = None;
-                            respond_json(request, &WalkRedirect { redirect: "/walk" });
+                    Some(paths) => {
+                        // Write to the decks' own store — a workspace's `progress.json`
+                        // when they share one, else the global store — so the browser
+                        // records progress where the TUI would and where the picker's
+                        // badges are read from.
+                        if let Err(e) = store_for(&paths).map(|s| store = s) {
+                            eprintln!("warning: could not open the progress store: {e}");
+                            respond_status(request, 400);
+                            continue;
                         }
-                        Ok(None) => match build(paths, &store, &mut recent) {
-                            Ok(b) => {
-                                reviewing = Some(Reviewing::new(b));
-                                walking = None;
-                                respond_json(
-                                    request,
-                                    &review_state(reviewing.as_ref(), &store, mode_override),
-                                );
+                        match build_walk(&paths) {
+                            Ok(Some(wb)) => {
+                                walking = Some(Walking::new(wb.walk, wb.scheduler, None));
+                                reviewing = None;
+                                examining = None;
+                                respond_json(request, &WalkRedirect { redirect: "/walk" });
                             }
+                            Ok(None) => match build(paths, &store, &mut recent) {
+                                Ok(b) => {
+                                    reviewing = Some(Reviewing::new(b));
+                                    walking = None;
+                                    respond_json(
+                                        request,
+                                        &review_state(reviewing.as_ref(), &store, mode_override),
+                                    );
+                                }
+                                Err(e) => {
+                                    eprintln!("warning: could not load the selected decks: {e}");
+                                    respond_status(request, 400);
+                                }
+                            },
                             Err(e) => {
-                                eprintln!("warning: could not load the selected decks: {e}");
+                                eprintln!("warning: could not load the selected trace: {e}");
                                 respond_status(request, 400);
                             }
-                        },
-                        Err(e) => {
-                            eprintln!("warning: could not load the selected trace: {e}");
-                            respond_status(request, 400);
                         }
-                    },
+                    }
                     None => respond_status(request, 400),
                 }
             }
             (Method::Post, "/api/deselect") => {
                 reviewing = None;
                 walking = None;
+                // Back at the picker: read the global store again (loose-deck
+                // badges live there, not in any workspace's store).
+                if let Ok(s) = store_for(&[]) {
+                    store = s;
+                }
                 respond_json(
                     request,
                     &review_state(reviewing.as_ref(), &store, mode_override),
@@ -964,6 +983,11 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
+                // The exam reads drill state and writes mastery/unlocks to the
+                // deck's own store (a workspace's, or the global one).
+                if let Ok(s) = store_for(std::slice::from_ref(&path)) {
+                    store = s;
+                }
                 match Deck::load(&path) {
                     Ok(deck)
                         if !deck.sources.is_empty()
@@ -1049,6 +1073,9 @@ pub fn run_review(
             // Leave the exam, back to the deck list / summary.
             (Method::Post, "/api/exam/close") => {
                 examining = None;
+                if let Ok(s) = store_for(&[]) {
+                    store = s;
+                }
                 respond_json(
                     request,
                     &review_state(reviewing.as_ref(), &store, mode_override),
@@ -1125,9 +1152,12 @@ pub fn run_review(
                 *w = Walking::new(fresh, scheduler, grade);
                 respond_json(request, &walk_dto(w));
             }
-            // Back to decks: abandon the walk and return to the picker.
+            // Back to decks: abandon the walk and return to the picker (global store).
             (Method::Post, "/api/walk/leave") => {
                 walking = None;
+                if let Ok(s) = store_for(&[]) {
+                    store = s;
+                }
                 respond_status(request, 204);
             }
             _ => respond_status(request, 404),
