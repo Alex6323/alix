@@ -297,6 +297,25 @@ struct AskDto {
     error: Option<String>,
 }
 
+/// The ask-tutor's model and effort, shown in the panel so it's clear which
+/// model is answering — and that it's the CLI default (`"default"`) unless the
+/// `[ask]` config pins one, not the stronger model that built the deck.
+#[derive(Debug, Serialize)]
+struct AskInfoDto {
+    model: String,
+    effort: String,
+}
+
+impl AskInfoDto {
+    fn from(cfg: &AskConfig) -> Self {
+        let or_default = |s: &Option<String>| s.clone().unwrap_or_else(|| "default".to_string());
+        Self {
+            model: or_default(&cfg.model),
+            effort: or_default(&cfg.effort),
+        }
+    }
+}
+
 /// One configured key, as the browser sees it: `k` is the `KeyboardEvent.key`
 /// value (`" "`, `"Enter"`, `"j"`, …) and `ctrl` whether Ctrl must be held.
 #[derive(Debug, Serialize)]
@@ -747,6 +766,7 @@ pub fn run_review(
     } = opts;
     let keys = ReviewKeys::from(&bindings);
     let picker_keys = PickerKeysDto::from(&picker_keys);
+    let ask_info = AskInfoDto::from(&ask_cfg);
     let mut reviewing = initial.map(Reviewing::new);
     let mut examining: Option<Examining> = None;
     // A trace picked from the selection screen walks here (the page navigates to
@@ -761,6 +781,7 @@ pub fn run_review(
             (Method::Get, "/walk") => respond_html(request, WALK_HTML),
             (Method::Get, "/api/keys") => respond_json(request, &keys),
             (Method::Get, "/api/picker-keys") => respond_json(request, &picker_keys),
+            (Method::Get, "/api/ask-info") => respond_json(request, &ask_info),
             (Method::Get, "/api/decks") => {
                 // Review enforces locking; the picker won't start a locked deck.
                 respond_json(request, &deck_catalog(&decks_dir, &recent, &store, true))

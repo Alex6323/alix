@@ -255,6 +255,7 @@
 
   /* ── ask Claude ── */
   .ask { width: var(--card-w); max-width: 92vw; display: flex; flex-direction: column; gap: 12px; animation: deal 0.3s both; }
+  .ask-model { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.06em; color: var(--dim); }
   .ask-log { display: flex; flex-direction: column; gap: 10px; max-height: 58vh; overflow-y: auto; padding-right: 4px; }
   .ask-q { align-self: flex-end; max-width: 85%; background: rgba(125,249,232,0.10); border: 1px solid var(--line); border-radius: 12px 12px 4px 12px; padding: 9px 13px; }
   .ask-a { align-self: flex-start; max-width: 92%; white-space: pre-wrap; line-height: 1.5; border-left: 3px solid var(--bolt); padding: 4px 0 4px 12px; }
@@ -339,6 +340,7 @@ let lastWorkspace = null; // name of the workspace you launched from, to return 
 let explainInput = ""; // the typed reconstruction on an explain card (client-side)
 let asking = false;   // the ask-Claude overlay is open
 let askData = { transcript: [], thinking: false, status: null, error: null };
+let askInfo = { model: "default", effort: "default" }; // the tutor's model + effort, from /api/ask-info
 let askPoll = null;   // setInterval handle while a reply is pending
 let examData = null;  // the ExamDto while an exam is active (null otherwise)
 let examPoll = null;  // setInterval handle while an exam call is in flight
@@ -502,6 +504,9 @@ function syncAsk() {
 
 function renderAsk() {
   const wrap = el("div", "ask");
+  // Which model is answering (and its effort). The tutor uses the CLI default
+  // unless `[ask]` pins one — not the stronger model that built the deck.
+  wrap.appendChild(el("div", "ask-model", `claude · model: ${askInfo.model} · effort: ${askInfo.effort}`));
   const log = el("div", "ask-log");
   fillAskLog(log);
   wrap.appendChild(log);
@@ -1304,8 +1309,13 @@ document.addEventListener("click", () => menu.classList.remove("open"));
 
 // Load the configured key bindings first, then the session. The picker-keys
 // endpoint falls back to the Vim defaults if an older server lacks it.
-Promise.all([api("/api/keys"), api("/api/picker-keys").catch(() => ({}))]).then(([k, pk]) => {
+Promise.all([
+  api("/api/keys"),
+  api("/api/picker-keys").catch(() => ({})),
+  api("/api/ask-info").catch(() => null),
+]).then(([k, pk, ai]) => {
   KEYS = k;
+  if (ai) askInfo = ai;
   PK = Object.assign({
     up: [{ k: "k", ctrl: false }], down: [{ k: "j", ctrl: false }],
     open: [{ k: "l", ctrl: false }], back: [{ k: "h", ctrl: false }],
