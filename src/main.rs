@@ -59,7 +59,7 @@ enum Command {
     },
     /// Read through decks card by card without grading (no progress is saved).
     Browse(BrowseArgs),
-    /// Generate a fact deck with Claude from a source — a web page URL or a
+    /// Generate a facts deck with Claude from a source — a web page URL or a
     /// local file/directory path. (The deck-side mirror of `flash trace`.)
     Deck(GenerateDeckArgs),
     /// Import an Anki TSV export (tab-separated `front<TAB>back` lines) into a
@@ -74,10 +74,10 @@ enum Command {
     /// compression.
     Trace(TraceArgs),
     /// Explore a source (a repo, directory, file, or URL) and print an ordered
-    /// learning plan toward a goal: the fact decks and traces worth authoring,
+    /// learning plan toward a goal: the facts decks and traces worth authoring,
     /// each tagged and dependency-ordered. Read-only; writes nothing.
     Explore(ExploreArgs),
-    /// Open a workspace folder: pick a fact deck (→ review) or a trace deck
+    /// Open a workspace folder: pick a facts deck (→ review) or a trace deck
     /// (→ walk) from its members; you return to the picker when done.
     Workspace(WorkspaceArgs),
     /// Edit a deck's prerequisite decks (`% requires:`) with a checkbox picker.
@@ -128,7 +128,7 @@ struct ExploreArgs {
     force: bool,
 
     /// With --into, fill every stub in one explore session — checkpoints for
-    /// traces, cards for fact decks — instead of leaving them empty. One coherent
+    /// traces, cards for facts decks — instead of leaving them empty. One coherent
     /// pass (the items know about each other); more model work.
     #[arg(long, requires = "into", conflicts_with = "walk")]
     build: bool,
@@ -150,7 +150,7 @@ struct ExploreArgs {
 
 #[derive(Args)]
 struct GenerateDeckArgs {
-    /// The source to turn into a fact deck: a web page URL, or a local file or
+    /// The source to turn into a facts deck: a web page URL, or a local file or
     /// directory path.
     source: String,
 
@@ -585,16 +585,28 @@ fn pick_decks_if_empty(
     recent: &RecentDecks,
     store: &Store,
     enforce_locks: bool,
-) -> Result<Option<Vec<PathBuf>>> {
+    gate_reviewable: bool,
+    start_in: Option<&Path>,
+) -> Result<Option<picker::Picked>> {
     if !decks.is_empty() {
-        return Ok(Some(decks));
+        return Ok(Some(picker::Picked {
+            decks,
+            workspace: None, // decks named explicitly: no workspace to return to
+        }));
     }
     if !std::io::stdout().is_terminal() {
         bail!("no deck files given; try `flash <deck.txt>...` or `flash --help`");
     }
     let decks_dir = config.decks_dir().context("cannot determine ~/decks")?;
-    let picked = picker::pick(&decks_dir, recent, store, enforce_locks)?;
-    Ok((!picked.is_empty()).then_some(picked))
+    let picked = picker::pick(
+        &decks_dir,
+        recent,
+        store,
+        enforce_locks,
+        gate_reviewable,
+        start_in,
+    )?;
+    Ok((!picked.decks.is_empty()).then_some(picked))
 }
 
 /// Expands `initial` decks with their `% requires:` prerequisites, returning
@@ -679,6 +691,13 @@ enum Started {
         deck: Box<Deck>,
         store: Store,
         config: Box<Config>,
+    },
+    /// A single trace deck picked interactively: walk it (predict → reveal)
+    /// rather than flatten it into a card review.
+    Walk {
+        trace: Box<Trace>,
+        scheduler: SchedulerKind,
+        store: Store,
     },
 }
 
@@ -803,48 +822,109 @@ fn build_review(
     })
 }
 
+/// If a single trace deck was **picked** interactively, returns its loaded deck
+/// — the signal to walk it rather than flatten it into a card review.
+/// `from_picker` gates this: an explicit `flash review <trace>` (decks named on
+/// the command line) keeps reviewing, honoring the literal command.
+fn single_trace_to_walk(from_picker: bool, deck_paths: &[PathBuf]) -> Option<Deck> {
+    if !from_picker {
+        return None;
+    }
+    match deck_paths {
+        [path] => Deck::load(path).ok().filter(|deck| deck.is_trace()),
+        _ => None,
+    }
+}
+
 /// The TUI review path: pick decks if none were given, then build the session
 /// — unless a single chosen deck is `exam due`, in which case it resolves to
 /// that deck's exam instead of a (cardless) review.
-fn load_review_session(args: &ReviewArgs, target: Frontend) -> Result<Option<Started>> {
+fn load_review_session(
+    args: &ReviewArgs,
+    target: Frontend,
+    start_in: Option<&Path>,
+) -> Result<Option<(Started, Option<PathBuf>)>> {
     let config = Config::load(args.config.as_deref())?;
     let mut recent = RecentDecks::load(
         recent::default_recent_path().context("cannot determine the data directory")?,
     );
+    // Whether the deck list came from the picker (no decks named on the command
+    // line): only then does a single trace route to a walk — an explicit
+    // `flash review <trace>` still flattens it to a card review.
+    let from_picker = args.decks.is_empty();
     // The picker's badges/locks for the top-level list read the global store
     // (its rows are loose decks); a drilled-into workspace shows its own store.
     let store = open_store(args.store.clone())?;
     // Review enforces locking — a deck whose prerequisites aren't finished
     // can't be started from the picker.
-    let Some(deck_paths) = pick_decks_if_empty(args.decks.clone(), &config, &recent, &store, true)?
+    // Gate unreviewable decks in the picker — but not under `--cram`, which
+    // ignores cooldowns, so everything seen is fair game.
+    let Some(picked) = pick_decks_if_empty(
+        args.decks.clone(),
+        &config,
+        &recent,
+        &store,
+        true,
+        !args.cram,
+        start_in,
+    )?
     else {
         return Ok(None); // picker cancelled or nothing selected
     };
+    // `workspace` is the folder the decks were drilled into, if any — the caller
+    // returns there after the activity ends.
+    let picker::Picked {
+        decks: deck_paths,
+        workspace,
+    } = picked;
     // The session tracks progress in the decks' store — a workspace's own store
     // when they all live in one, else the global store.
     let store = store_for(&deck_paths, args.store.clone())?;
+    // A single trace deck picked interactively launches its walk, not a
+    // flattened card review.
+    if let Some(deck) = single_trace_to_walk(from_picker, &deck_paths) {
+        let scheduler = args
+            .scheduler
+            .or(deck.settings.scheduler)
+            .unwrap_or_default();
+        let trace = Trace::from_deck(&deck)?;
+        return Ok(Some((
+            Started::Walk {
+                trace: Box::new(trace),
+                scheduler,
+                store,
+            },
+            workspace,
+        )));
+    }
     // A single exam-due deck launches its exam rather than an empty review.
     if let [path] = deck_paths.as_slice()
         && let Ok(deck) = Deck::load(path)
         && !deck.sources.is_empty()
         && deck.state(&store) == DeckState::ExamDue
     {
-        return Ok(Some(Started::Exam {
-            deck: Box::new(deck),
-            store,
-            config: Box::new(config),
-        }));
+        return Ok(Some((
+            Started::Exam {
+                deck: Box::new(deck),
+                store,
+                config: Box::new(config),
+            },
+            workspace,
+        )));
     }
     let build = build_review(deck_paths, args, &config, &store, &mut recent, target)?;
-    Ok(Some(Started::Review(Box::new(ReviewSession {
-        session: build.session,
-        store,
-        mode_override: args.mode,
-        label: build.label,
-        decks: build.decks,
-        config,
-        hidden: build.hidden,
-    }))))
+    Ok(Some((
+        Started::Review(Box::new(ReviewSession {
+            session: build.session,
+            store,
+            mode_override: args.mode,
+            label: build.label,
+            decks: build.decks,
+            config,
+            hidden: build.hidden,
+        })),
+        workspace,
+    )))
 }
 
 /// Launches the interactive exam TUI for `deck`, resolving strictness from the
@@ -921,16 +1001,47 @@ fn review(args: ReviewArgs) -> Result<()> {
         return review_serve(args);
     }
 
-    let started = match load_review_session(&args, Frontend::Tui)? {
-        None => return Ok(()),
-        // A single exam-due deck was chosen: run its exam, not a review.
-        Some(Started::Exam {
+    // When a deck/trace/exam is launched from a workspace, returning from it
+    // drops back into that workspace's picker — review one, come back, pick
+    // another. `start_in` carries the workspace to reopen on the next pass.
+    let mut start_in: Option<PathBuf> = None;
+    loop {
+        let Some((started, workspace)) =
+            load_review_session(&args, Frontend::Tui, start_in.as_deref())?
+        else {
+            return Ok(()); // picker cancelled / nothing selected
+        };
+        run_started(started, &args)?;
+        match workspace {
+            // Came from a workspace: reopen it and keep going.
+            Some(ws) => start_in = Some(ws),
+            // A loose deck (or an explicit `flash <deck>`): done after the activity.
+            None => return Ok(()),
+        }
+    }
+}
+
+/// Runs one resolved activity — a card review, a trace walk, or an exam — to
+/// completion. Shared by the `review` loop so each can return to its workspace.
+fn run_started(started: Started, args: &ReviewArgs) -> Result<()> {
+    match started {
+        Started::Exam {
             deck,
             store,
             config,
-        }) => return run_exam_app(*deck, &config, store),
-        Some(Started::Review(rs)) => rs,
-    };
+        } => run_exam_app(*deck, &config, store),
+        Started::Walk {
+            trace,
+            scheduler,
+            mut store,
+        } => run_walk(*trace, scheduler, &mut store, None),
+        Started::Review(rs) => run_review_tui(*rs, args),
+    }
+}
+
+/// Runs the review TUI for a built session: reports cards that need the browser,
+/// the nothing-due case, then the App, its summary, and any follow-on exam.
+fn run_review_tui(rs: ReviewSession, args: &ReviewArgs) -> Result<()> {
     let ReviewSession {
         session,
         store,
@@ -939,7 +1050,7 @@ fn review(args: ReviewArgs) -> Result<()> {
         decks,
         config,
         hidden,
-    } = *started;
+    } = rs;
 
     // Some cards can't be shown in the terminal (images need the browser).
     if hidden > 0 {
@@ -1418,22 +1529,47 @@ fn browse(args: BrowseArgs) -> Result<()> {
         recent::default_recent_path().context("cannot determine the data directory")?,
     );
     let store = open_store(None)?;
-    // Browse is read-only traversal — locking gates review only, so any deck is
-    // browsable (enforce_locks = false).
-    let Some(deck_paths) =
-        pick_decks_if_empty(args.decks.clone(), &config, &recent, &store, false)?
-    else {
-        return Ok(()); // picker cancelled or nothing selected
-    };
-    // Removing a card prunes its progress — from the decks' own store (a
-    // workspace's when they all live in one).
-    let store = store_for(&deck_paths, None)?;
-    let build = build_browse(deck_paths, &mut recent, Frontend::Tui)?;
+    // Like `review`, browsing from a workspace returns there afterwards.
+    let mut start_in: Option<PathBuf> = None;
+    loop {
+        // Browse is read-only traversal — locking gates review only, so any deck
+        // is browsable (enforce_locks = false), and nothing is gated as
+        // unreviewable.
+        let Some(picker::Picked {
+            decks: deck_paths,
+            workspace,
+        }) = pick_decks_if_empty(
+            args.decks.clone(),
+            &config,
+            &recent,
+            &store,
+            false,
+            false,
+            start_in.as_deref(),
+        )?
+        else {
+            return Ok(()); // picker cancelled or nothing selected
+        };
+        // Removing a card prunes its progress — from the decks' own store (a
+        // workspace's when they all live in one).
+        let deck_store = store_for(&deck_paths, None)?;
+        let build = build_browse(deck_paths, &mut recent, Frontend::Tui)?;
 
-    // Browse only writes if the user removes a card: it then deletes it from the
-    // deck file and prunes its progress. Provide the per-subject paths and store.
-    let paths = subject_paths(build.decks);
-    browse::run(build.cards, build.label, config.browse, paths, store)
+        // Browse only writes if the user removes a card: it then deletes it from
+        // the deck file and prunes its progress. Provide the subject paths/store.
+        let paths = subject_paths(build.decks);
+        browse::run(
+            build.cards,
+            build.label,
+            config.browse.clone(),
+            paths,
+            deck_store,
+        )?;
+        match workspace {
+            Some(ws) => start_in = Some(ws),
+            None => return Ok(()),
+        }
+    }
 }
 
 /// The web browse path: opens at the in-browser deck-selection screen when no
@@ -2083,7 +2219,7 @@ fn workspace_cmd(args: WorkspaceArgs) -> Result<()> {
             return Ok(());
         }
 
-        // A single trace deck is walked; anything else is a fact-deck review.
+        // A single trace deck is walked; anything else is a facts-deck review.
         if let [only] = picked.as_slice() {
             let deck = Deck::load(only)?;
             if deck.is_trace() {
@@ -2462,6 +2598,28 @@ mod tests {
             Some(over.clone()),
             store_path_for(&[ws.join("a.txt")], Some(&over))
         );
+    }
+
+    #[test]
+    fn single_trace_to_walk_only_for_a_picked_lone_trace() {
+        let dir = tempfile::tempdir().unwrap();
+        let trace = dir.path().join("t.txt");
+        std::fs::write(
+            &trace,
+            "% trace: how it works\n% source: .\n\n# q\n\tpoint\n\t% at: 1\n",
+        )
+        .unwrap();
+        let fact = dir.path().join("f.txt");
+        std::fs::write(&fact, "# q\n\ta\n").unwrap();
+
+        // A lone trace picked interactively → walk it.
+        assert!(single_trace_to_walk(true, std::slice::from_ref(&trace)).is_some());
+        // The same trace named explicitly (not from the picker) → still review.
+        assert!(single_trace_to_walk(false, std::slice::from_ref(&trace)).is_none());
+        // A lone facts deck → review, not walk.
+        assert!(single_trace_to_walk(true, std::slice::from_ref(&fact)).is_none());
+        // A trace alongside other decks isn't a lone trace → review/merge.
+        assert!(single_trace_to_walk(true, &[trace, fact]).is_none());
     }
 
     #[test]

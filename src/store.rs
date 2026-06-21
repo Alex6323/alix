@@ -218,6 +218,16 @@ impl Store {
         self.cards.get(&card_id)
     }
 
+    /// The most recent review timestamp across all cards (Unix ms), if any —
+    /// when progress was last made in this store. Reflects actual reviews, not
+    /// merely opening a deck.
+    pub fn last_review_ms(&self) -> Option<u64> {
+        self.cards
+            .values()
+            .filter_map(|state| state.history.last().map(|review| review.ts_ms))
+            .max()
+    }
+
     /// Returns a mutable reference to the state of a card, inserting a fresh
     /// stage-1 state if the card is new.
     pub fn get_or_insert(&mut self, card_id: u64, now_ms: u64) -> &mut CardState {

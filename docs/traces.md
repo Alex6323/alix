@@ -75,14 +75,14 @@ prior understanding (just skim structure). [`flash trace --suggest`](#suggesting
 into a `% requires:`-ordered set living in the workspace.
 
 **Traces or decks — chosen by the shape of the knowledge.** The means exploration
-manufactures are *both* fact decks and traces, and which fits a subsystem is
+manufactures are *both* facts decks and traces, and which fits a subsystem is
 decided by what it holds: **edge-shaped** parts (a path you predict hop by hop —
 the review loop, queue-building, the scheduler) become **traces**; **node-shaped**
 parts (a table of facts with no path — config knobs, a store's on-disk format)
-become **fact decks**. Forcing a node-shaped subsystem into a trace just
+become **facts decks**. Forcing a node-shaped subsystem into a trace just
 manufactures a fake path (the set-pretending-to-be-a-path failure). So `--suggest`
 covers only the trace-shaped subsystems and *names* the node-shaped ones it skips
-as fact-deck material; explore proper proposes the decks for those — the goal stays
+as facts-deck material; explore proper proposes the decks for those — the goal stays
 fully covered, by the right means each time.
 
 How exploration reads a source cold: manifest first (what kind of thing + its
@@ -139,7 +139,7 @@ won't pad to look thorough or drop a real subsystem to stay concise. The local,
 leaf paths *inside* a subsystem are deliberately left out — those are the deeper
 dives the [explore tier](#goals-and-exploration) sequences. It also **names the
 node-shaped subsystems it skips** — the ones that are a table of facts (config, a
-store's format) rather than a path — as fact-deck material, so the deferral is a
+store's format) rather than a path — as facts-deck material, so the deferral is a
 visible decision, not a silent omission ([trace-vs-deck by shape](#goals-and-exploration)).
 So `--suggest` is the
 honest **starting set** — the central entry points into understanding the source,
@@ -197,7 +197,7 @@ goal. It is `--suggest` grown up along the four axes from
    goes *deeper* there (e.g. it splits Leitner and SM-2 into separate traces
    rather than one scheduler deck). Saturation is **goal-relative**.
 2. **Means = traces ∪ decks** — it proposes *both*, choosing per part by shape
-   (edges → traces, nodes → fact decks), so the node-shaped subsystems `--suggest`
+   (edges → traces, nodes → facts decks), so the node-shaped subsystems `--suggest`
    only names-and-skips (the store schema, config knobs) become decks here. Full
    coverage, the right means each.
 3. **`% requires:` ordering** — every item carries the earlier items it builds on,
@@ -215,7 +215,7 @@ reviewable before anything hits disk. With **`--into <dir>`** it also
 **materializes** the plan into a workspace folder: a `flash.toml` (the goal + an
 empty `[defaults]`) and one stub file per item — a `% trace:` deck for a trace
 (its `% trace:` description doubles as the deck's display name, so it needs no
-`% title:`), a `% title:` fact deck for a deck — wired by `% requires:` (item
+`% title:`), a `% title:` facts deck for a deck — wired by `% requires:` (item
 numbers mapped to
 the member file names), with each `% source:` rewritten absolute against the
 source root. So the plan becomes a real, buildable workspace: `flash trace
@@ -231,7 +231,7 @@ for each trace, fact cards for each deck — and `materialize` writes that conte
 in place of the stub comment. Two model calls total (explore + fill) instead of
 re-exploring per item, and because the whole set is written from one
 understanding the items stay **coherent** (each aware of its prerequisites, no
-overlap, consistent terms). It also fills *fact decks* — content `flash generate`
+overlap, consistent terms). It also fills *facts decks* — content `flash generate`
 can't yet produce from a code scope — for free. The fill is one-shot (all items
 in one response); an item the response omits simply stays a stub, so it degrades
 gracefully (a very large plan may want chunking later). Dogfooded: a 7-item

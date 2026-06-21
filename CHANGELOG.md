@@ -7,6 +7,42 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Picker disables decks with nothing to review** (terminal) — a deck with no
+  card due right now (fully drilled, or all on cooldown) is dimmed and badged
+  with a 🕒 clock, mirroring how a 🔒 locked (`% requires:`) deck looks, and
+  `Enter` on it is a **no-op** — no more starting an empty session that bounces
+  you out to a "Nothing to review right now" message. Such decks also can't be
+  ticked into a merged review, and (in a workspace drill-in) sink below the
+  startable ones. `--cram`, which ignores cooldowns, turns the gating off; browse
+  never gates (any deck is browsable). New lib helper `session::has_reviewable`.
+- **Reworked deck picker + trace walking from the picker** (terminal) — the
+  no-argument picker is a clean, **single-launch** list (no checkboxes): `Enter`
+  opens the focused row. Its header is just `flash`; rows are grouped into
+  **Workspaces** (each showing when it last made progress, from its own store) ·
+  **Recent** (loose decks you reviewed lately) · **Folders**, a blank line between
+  sections, with the filter searching *every* loose deck. A deck that lives inside
+  a workspace is kept out of Recent — you reach it by opening its workspace. Rows
+  that share a title (two workspaces named the same) get a path hint to tell them
+  apart; over-long rows (a trace's `% trace:` sentence) are truncated with `…`.
+  Rows you can't start now are dimmed and `Enter` is a no-op: 🔒 locked
+  (`% requires:` unfinished), 🕒 nothing due (on cooldown); a mastered deck reads
+  `mastered 🎉`. The focus is on the **list** by default (`j`/`k`/`g`/`G` or
+  arrows navigate, Vim-style); `/` or `Ctrl-F` starts filtering, `Esc` leaves it.
+  Mastered/done and locked decks are kept out of Recent (a quick launchpad) but
+  stay reachable by filtering. Long `% title:` / `% trace:` labels are capped so
+  rows stay short.
+  Opening a **workspace** or **folder** drills into its members drawn as an
+  **unlock dependency tree** — a deck nests under the `% requires:` prerequisite
+  that gates it, foundations at the roots, siblings startable-first, each badged
+  `· trace ·` / `· deck ·`. Opening a workspace, stepping back (`Esc`/`Backspace`),
+  and **returning after a review/walk/exam** all happen within **one live screen**
+  — no TUI teardown/reopen — so you can study a deck, land back in the workspace,
+  and pick the next. The big gap it closes: a **trace** opened from the picker now
+  **walks** (predict → reveal) instead of being flattened into a card review —
+  both in the top-level drill-in and `flash workspace <dir>`. An explicit
+  `flash review <trace.txt>` still flattens it (honoring the literal command). The
+  multi-select machinery is retained in the code but unused for now. The web picker
+  follows in a later phase.
 - **Per-workspace progress store** — a deck inside a workspace (a folder with a
   `flash.toml`) now tracks its progress in a **`progress.json` inside that
   workspace**, not the one global `~/.local/share/flash/progress.json`. So a
@@ -44,11 +80,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `--force`, like `flash deck`). Conversion lives in the lib
   (`import::tsv_to_deck`).
 - **`flash deck <source>`** (renamed from `flash generate`, which no longer
-  exists as an alias) — generates a fact deck with Claude from a **web page URL or a
+  exists as an alias) — generates a facts deck with Claude from a **web page URL or a
   local file/directory path**, mirroring `flash trace`. A URL is fetched with
   WebFetch and the deck starts with a `% link:`; a local source is explored
   read-only with `Read`/`Glob`/`Grep` at its root and the deck starts with a
-  `% source:` (so `flash exam` can grade against it). This gives a fact-deck stub
+  `% source:` (so `flash exam` can grade against it). This gives a facts-deck stub
   from `flash explore --into` a manual fill path (point `flash deck` at its
   `% source:`).
 - **Traces (`flash trace`, experimental)** — a guided predict-and-verify walk
@@ -106,7 +142,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   --build` explores the source **once**, then resumes that same CLI session to
   write the full content of every item — predict-verify checkpoints for traces,
   fact cards for decks — so the workspace is review-ready in one command, with the
-  items coherent (written from one understanding) and fact decks filled too.
+  items coherent (written from one understanding) and facts decks filled too.
   **`--walk`** instead builds an **explore walk** — a predict-verify
   trace over the source's *shape* (what it is → its domain nouns → entry point →
   spine → the first paths worth tracing), each hop revealing real structural
@@ -122,7 +158,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (terminal and web, labeled "workspace" vs "folder") and drill into their decks
   (review all, or tick a subset); `flash review`/`browse <folder>` reviews the
   whole cluster. **`flash workspace <dir>`** opens a workspace into its own picker
-  and routes each member to the right thing — a **fact deck** → review, a **trace
+  and routes each member to the right thing — a **facts deck** → review, a **trace
   deck** → predict-verify walk — returning to the picker when done. Great for
   clusters like a vocabulary set that should all be `direction = "both"` without
   repeating it per file.

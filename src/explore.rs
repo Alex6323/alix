@@ -71,7 +71,7 @@ fn explore_prompt(source: &str, goal: &str, url: bool, cfg: &TraceConfig) -> Str
     };
     let mut p = format!(
         "You are EXPLORING a source for a learner whose GOAL is:\n\n    {goal}\n\n\
-         Produce the ordered SET OF MEANS — fact decks and traces — that, \
+         Produce the ordered SET OF MEANS — facts decks and traces — that, \
          worked through in order, would achieve that goal. Do NOT build any deck or \
          trace in depth (no cards, no checkpoints) — that is a separate step the \
          learner runs later on each item. Output a PLAN: an ordered list of \
@@ -331,7 +331,7 @@ fn parse_item_delimiter(line: &str) -> Option<usize> {
         .ok()
 }
 
-/// One item of an exploration plan: a fact deck or a trace to author.
+/// One item of an exploration plan: a facts deck or a trace to author.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Item {
     pub num: usize,
@@ -341,7 +341,7 @@ pub(crate) struct Item {
     pub source: String,
 }
 
-/// Whether a plan item is a trace (an edge) or a fact deck (nodes).
+/// Whether a plan item is a trace (an edge) or a facts deck (nodes).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Kind {
     Trace,
@@ -404,7 +404,7 @@ fn parse_item_header(t: &str) -> Option<(usize, Kind, String)> {
 
 /// Scaffolds the plan into a workspace folder `dir`: a `flash.toml` (the goal +
 /// an empty `[defaults]`) and one stub file per item — a `% trace:` deck for a
-/// trace, a `% title:` fact deck for a deck — wired by `% requires:` (item
+/// trace, a `% title:` facts deck for a deck — wired by `% requires:` (item
 /// numbers mapped to the member file names), with each `% source:` rewritten
 /// absolute against the source root. Refuses a non-empty `dir` unless `force`.
 pub fn materialize(
@@ -781,7 +781,7 @@ preamble ignored
             ),
         )
         .unwrap();
-        // a fact deck (not a trace) — skipped
+        // a facts deck (not a trace) — skipped
         fs::write(dir.join("02-d.txt"), "% title: d\n# q\n\ta\n").unwrap();
 
         let (traces, files) = snapshot_traces(&dir).unwrap();

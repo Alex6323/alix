@@ -605,7 +605,7 @@ fn suggest_prompt(source: &str, url: bool, cfg: &TraceConfig) -> String {
          EDGES vs NODES — a trace drills *edges* (a path predicted hop by hop); some \
          subsystems are mostly *nodes*: a table of facts with no path to predict (a \
          config's knobs, a store's on-disk format). Do NOT force those into traces — \
-         that manufactures a fake path; they are better learned as plain fact decks. \
+         that manufactures a fake path; they are better learned as plain facts decks. \
          But make the skip VISIBLE: after the candidates, list the node-shaped \
          subsystems you deliberately left out, one line each with why. Skip trivial \
          utilities silently; only call out real subsystems a learner might expect to \
@@ -618,7 +618,7 @@ fn suggest_prompt(source: &str, url: bool, cfg: &TraceConfig) -> String {
          spine: <3–6 rough hop labels joined by arrows — NOT cited checkpoints>\n   \
          % source: <{scope}>\n\
          2. …\n\n\
-         Skipped (node-shaped — fact-deck material, not traces):\n  \
+         Skipped (node-shaped — facts-deck material, not traces):\n  \
          - <subsystem> — <why it's facts, not a path>\n  \
          - …\n\n\
          The `spine:` is a rough sketch (hop labels only) so the learner can judge \

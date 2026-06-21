@@ -20,7 +20,7 @@ CLI, so they need it **installed and logged in** (which in turn needs a Claude
 subscription or API access). Install the CLI and run `claude` once to
 authenticate. The features that require it:
 
-- `flash deck` — generate a fact deck from a URL or a local file/directory;
+- `flash deck` — generate a facts deck from a URL or a local file/directory;
 - `flash exam` — the AI exam;
 - `flash trace --build` / `--suggest` / `--grade` — discover, suggest, and grade
   traces;
@@ -45,7 +45,7 @@ flash --mode line mydeck.txt     # reveal the answer one line at a time (lyrics)
 flash --scheduler sm2 mydeck.txt # SM-2 intervals instead of Leitner
 flash --cram mydeck.txt          # ignore cooldowns, review everything
 flash browse mydeck.txt          # read through cards, no grading or scheduling
-flash deck <url-or-path>         # generate a fact deck from a web page or a file/dir
+flash deck <url-or-path>         # generate a facts deck from a web page or a file/dir
 flash import cards.tsv            # import an Anki TSV (front<TAB>back) into a deck
 flash exam mydeck.txt            # AI exam against the deck's % source: (gates unlocks)
 flash trace mytrace.txt          # walk a predict-and-verify path through a % source:
@@ -66,13 +66,24 @@ default 10), `--limit N` (cap session size), `--max-typos N` (fuzzy tolerance
 per line, default 2).
 
 Run `flash` with no deck arguments (as the desktop launcher does) to open the
-**deck picker**: it lists recently reviewed decks first, then every `*.txt`
-in the decks directory (`~/decks` by default, set `decks_dir` in the
-config). Type to filter by name, `↑`/`↓` to move, and `Enter` to start the
-**focused** deck — `Esc` cancels. A locked deck (see Completion states) can't be
-started. To study several decks at once, `Space` ticks decks; once one is ticked
-the footer offers `Tab` to **confirm**, which shows just the ticked decks and
-starts them as a merged session on `Enter` (`Esc` goes back).
+**deck picker**, grouped into three sections: **[Workspaces](#workspaces)**
+(each showing when it last made progress) · **Recent** (loose decks you reviewed
+lately) · **Folders** (plain decks folders). A deck that lives inside a workspace
+stays out of Recent — you reach it by opening its workspace. Mastered/done and
+locked decks are also kept out of Recent (it's a quick launchpad) but stay
+reachable by filtering. Decks live in the decks directory (`~/decks` by default,
+set `decks_dir` in the config). The focus is on the **list** by default — move
+with `j`/`k` or `↑`/`↓` (`g`/`G` jump to ends), `Enter` starts the **focused**
+row. Press `/` or `Ctrl-F` to **filter** by name (searching *every* loose deck,
+not just the recent ones); `Esc` leaves the filter. A deck you can't start right
+now is dimmed and `Enter` on it does nothing: 🔒 a
+[locked](#completion-states--unlocks) deck (an unfinished `% requires:`), 🕒 a deck
+with nothing due (all on cooldown — `--cram` reviews it anyway); a mastered deck
+reads `mastered 🎉`. `Enter` on a **Workspace** or **Folder** opens it (drills in) — `Esc`
+or `Backspace` steps back out to the list, all within one screen; a
+[trace](#traces-flash-trace) opened from the picker **walks** instead of being
+reviewed as cards. When you finish a deck/walk/exam launched from a workspace, you
+land **back in that workspace** to pick the next one.
 
 ## Deck format
 
@@ -268,17 +279,23 @@ folder you can move or share, and its history stays isolated from everything
 else. Decks *outside* a workspace keep using the global store; `--store <path>`
 overrides either.
 
-Workspaces — and plain folders — appear as their own rows in the picker (terminal
-and web): a folder *with* a `flash.toml` shows as a **workspace**, one *without*
-as a plain **folder**. Both open (drill in) to their decks, where you review all
-or tick a subset; a manifest-less folder is still reviewable
-(`flash review <folder>`), it just applies no shared directives.
+**Workspaces** and plain **Folders** appear in their own picker sections
+(terminal and web): a folder *with* a `flash.toml` shows under **Workspaces**, one
+*without* as a plain **Folder**. Both open (drill in) to their
+members drawn as an **unlock dependency tree**: a deck nests under the
+`% requires:` prerequisite that gates it, foundations at the roots, and siblings
+ordered startable-first. Each row is badged `· trace ·` or `· deck ·`. The drill-in
+is a **single-launch list** (no checkboxes): `Enter` on a facts deck reviews it,
+`Enter` on a trace **walks** it. (Typing a filter flattens the tree to a plain
+search; `flash review <folder>` reviews the whole cluster merged.) A manifest-less
+folder is still reviewable (`flash review <folder>`), it just applies no shared
+directives.
 
-**`flash workspace <dir>`** opens a workspace into its own picker and routes each
-member to the right experience — a **fact deck** starts a review, a **trace
-deck** starts a [predict-verify walk](#traces-flash-trace) — returning you to the
-picker when done. (`flash review <dir>` instead flattens the whole folder into one
-review, so trace decks get quizzed as flat cards.)
+**`flash workspace <dir>`** opens a workspace straight into that same drill-in
+picker, routing each member to the right experience — a **facts deck** to a
+review, a **trace deck** to a [predict-verify walk](#traces-flash-trace) —
+returning you to the picker when done. (`flash review <dir>` instead flattens the
+whole folder into one review, so trace decks get quizzed as flat cards.)
 
 **`% title:`** (on a deck) or **`title`** (in a workspace's `flash.toml`) gives a
 display name, shown in the picker, the session header, `flash list` and `flash
@@ -514,7 +531,7 @@ card's progress is untouched). Requires the `claude` CLI to be installed
 and logged in; the command, a `--model` override and the timeout are
 configurable in the `[ask]` section of the config file.
 
-## Generate a fact deck — `flash deck`
+## Generate a facts deck — `flash deck`
 
 `flash deck <source>` turns a **source** into a deck of fact cards using the
 Claude CLI. The source is a web page URL *or* a local file/directory path (the
@@ -739,7 +756,7 @@ one-line spine sketch, and a suggested `% source:` scope. The list is sized by
 **coverage** — the central spine plus one main path per major subsystem — so it's
 as long as the source needs, not a fixed number, and it's the central *starting
 points*, not an exhaustive curriculum. It also names the *node-shaped* subsystems
-it skips (a config table, a store's on-disk format) as **fact-deck material**
+it skips (a config table, a store's on-disk format) as **facts-deck material**
 rather than forcing them into a fake path — facts are a deck's job, edges are a
 trace's. It writes nothing: pick one, paste its
 header into a new deck, and `--build` it. Knowing *what* is worth
@@ -791,7 +808,7 @@ over this repo's own source.
 ### Exploring a source — `flash explore` (experimental)
 
 `--suggest` lists central *traces*; **`flash explore <source>`** goes one layer
-up and prints an ordered **learning plan** toward a goal — the fact decks **and**
+up and prints an ordered **learning plan** toward a goal — the facts decks **and**
 traces worth authoring, dependency-ordered:
 
 ```
@@ -801,12 +818,12 @@ flash explore . --goal "how review scheduling works" # a narrow goal → a focus
 
 Each item is tagged `[trace]` or `[deck]` — chosen by the shape of the knowledge
 (a *path* you predict hop by hop becomes a trace; a *table of facts*, like a
-config's knobs or a store's on-disk format, becomes a fact deck) — carries its
+config's knobs or a store's on-disk format, becomes a facts deck) — carries its
 `% requires:` prerequisites (the list is dependency-ordered, foundations first),
 and a `% source:` scope. The `--goal` scopes coverage: a broad goal covers every
 subsystem, a narrow one collapses to just its slice (and traces it in more
 detail). By default it's **read-only** — it prints the plan and you author the
-items yourself (`flash trace --build` a trace, `flash deck` a fact deck).
+items yourself (`flash trace --build` a trace, `flash deck` a facts deck).
 
 With **`--into <dir>`** it materializes the plan into a ready-made **workspace**:
 
@@ -815,7 +832,7 @@ flash explore . --goal "how review scheduling works" --into ~/decks/scheduling/
 ```
 
 That writes a `flash.toml` (the goal) and one stub file per item — a `% trace:`
-deck for each trace (run `flash trace --build` on it) and a `% title:` fact deck
+deck for each trace (run `flash trace --build` on it) and a `% title:` facts deck
 for each deck (author it or `flash deck`) — wired together with `% requires:`
 so they unlock in dependency order, with each `% source:` pointing back at the
 real source. (Refuses a non-empty folder unless `--force`.)
@@ -825,7 +842,7 @@ explores the source **once** and then reuses that same session to fill every
 item — predict-verify checkpoints for the traces and fact cards for the decks —
 so the workspace comes out review-ready in one command. Writing the whole set
 from one understanding keeps the items coherent (each builds on its prerequisites
-instead of repeating them), and it fills fact decks too. As a final step it
+instead of repeating them), and it fills facts decks too. As a final step it
 **freezes the source** into the workspace's `assets/` (see
 [Snapshotting the source](#traces-flash-trace)), so the workspace is
 self-contained and the trace locators never drift.

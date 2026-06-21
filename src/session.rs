@@ -389,6 +389,24 @@ pub fn is_retired(card: &Card, store: &Store) -> bool {
         .is_some_and(|s| s.stage >= effective_max(card) && s.streak >= 1)
 }
 
+/// Whether these cards would yield anything to review at `now_ms` under
+/// `scheduler`: a never-seen (fresh) card, or a seen card that is due. Retired
+/// cards never count. Mirrors [`build_queue`]'s per-card decision (minus cram and
+/// the new-card cap), so a caller — e.g. the picker — can tell, *before* building
+/// a session, whether a deck has anything to do right now.
+pub fn has_reviewable(
+    cards: &[Card],
+    store: &Store,
+    scheduler: &dyn Scheduler,
+    now_ms: u64,
+) -> bool {
+    cards.iter().any(|card| match store.get(card.id()) {
+        Some(_) if is_retired(card, store) => false,
+        Some(state) => scheduler.is_due(state, now_ms),
+        None => true,
+    })
+}
+
 /// The highest Leitner stage any of these cards can reach: the largest
 /// `% max-stage:` cap among them (the global [`MAX_STAGE`] when none cap it, or
 /// for an empty set). Stages above this are unreachable, so a stage histogram
@@ -880,6 +898,36 @@ mod tests {
         let s = store.get_or_insert(c.id(), 0);
         s.stage = 1;
         assert!(!is_retired(&c, &store)); // below the cap
+    }
+
+    #[test]
+    fn has_reviewable_counts_new_and_due_not_cooldown_or_retired() {
+        let (mut store, _dir) = empty_store();
+        let sched = SchedulerKind::Leitner.scheduler();
+        let now = 10_000_000;
+
+        // A brand-new (unseen) card is reviewable.
+        assert!(has_reviewable(&cards(1), &store, sched.as_ref(), now));
+
+        // A card just passed to stage 2 at `now` is on cooldown (due in 1h):
+        // not reviewable now, reviewable once its due time arrives.
+        let mut c = card("deck.txt", 0);
+        let s = store.get_or_insert(c.id(), now);
+        s.stage = 2;
+        s.streak = 1;
+        s.stage_entered_ms = now;
+        let one = std::slice::from_ref(&c);
+        assert!(!has_reviewable(one, &store, sched.as_ref(), now));
+        assert!(has_reviewable(one, &store, sched.as_ref(), now + 3_600_000));
+
+        // A retired card (at its cap, passed) never counts, even past its due.
+        c.max_stage = Some(2);
+        assert!(!has_reviewable(
+            std::slice::from_ref(&c),
+            &store,
+            sched.as_ref(),
+            now + 3_600_000
+        ));
     }
 
     #[test]
