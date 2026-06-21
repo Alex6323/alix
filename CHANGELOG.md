@@ -379,6 +379,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reinforced.
 
 ### Fixed
+- **A `% source:` that names several files no longer breaks the exam.** The deck
+  generator sometimes writes a multi-file source as `<root>/README.md + src/lib.rs`
+  (first a full path, the rest relative to it). The exam read the whole string as
+  one path and failed with "cannot read source file …"; sources are now split on
+  ` + `, each part resolved (relative parts anchored to the first file's
+  directory) and read, with unreadable parts skipped rather than aborting the
+  exam. The grounded tutor's project-root resolution handles the same format.
 - **You can start the AI exam on a deck inside a workspace from the browser.**
   `POST /api/exam/start` only resolved top-level deck names, so the "Take exam"
   action silently failed (a 400) for a workspace **member**; it now resolves

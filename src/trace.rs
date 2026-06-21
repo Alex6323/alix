@@ -946,14 +946,7 @@ pub(crate) fn project_root(sources: &[String], deck_dir: &Path) -> Option<PathBu
     let mut dirs: Vec<PathBuf> = sources
         .iter()
         .filter(|s| !is_url(s))
-        .map(|s| {
-            let p = Path::new(s);
-            if p.is_absolute() {
-                p.to_path_buf()
-            } else {
-                deck_dir.join(p)
-            }
-        })
+        .flat_map(|s| source_paths(s, Some(deck_dir)))
         .filter(|p| p.exists())
         // A cited file contributes its containing directory.
         .map(|p| {
@@ -968,6 +961,35 @@ pub(crate) fn project_root(sources: &[String], deck_dir: &Path) -> Option<PathBu
     dirs.dedup();
     let base = common_ancestor(&dirs)?;
     Some(find_project_root(&base).unwrap_or(base))
+}
+
+/// Splits a `% source:` value into the file/dir paths it names. Most values are a
+/// single path, but the deck generator sometimes joins several with " + " where
+/// the first is a full path and the rest are relative to its directory (e.g.
+/// `<crate>/README.md + src/lib.rs` → both files under `<crate>`). A relative
+/// part resolves against the first part's directory when that exists, else
+/// against `base` (the deck's folder).
+pub(crate) fn source_paths(value: &str, base: Option<&Path>) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut anchor: Option<PathBuf> = None;
+    for part in value.split(" + ").map(str::trim).filter(|p| !p.is_empty()) {
+        let p = Path::new(part);
+        let resolved = if p.is_absolute() {
+            p.to_path_buf()
+        } else {
+            anchor
+                .as_ref()
+                .map(|a| a.join(p))
+                .filter(|candidate| candidate.exists())
+                .or_else(|| base.map(|d| d.join(p)))
+                .unwrap_or_else(|| p.to_path_buf())
+        };
+        if anchor.is_none() {
+            anchor = resolved.parent().map(Path::to_path_buf);
+        }
+        out.push(resolved);
+    }
+    out
 }
 
 /// The deepest directory that is an ancestor of every path in `dirs`.
@@ -1416,26 +1438,53 @@ mod tests {
     #[test]
     fn project_root_walks_up_to_the_crate_root() {
         let dir = tempfile::tempdir().unwrap();
-        let krate = dir.path().join("mycrate");
-        std::fs::create_dir_all(krate.join("src")).unwrap();
-        std::fs::write(krate.join("Cargo.toml"), "[package]\nname=\"x\"\n").unwrap();
-        std::fs::write(krate.join("README.md"), "# x\n").unwrap();
-        std::fs::write(krate.join("src/lib.rs"), "// lib\n").unwrap();
+        let crate_dir = dir.path().join("mycrate");
+        std::fs::create_dir_all(crate_dir.join("src")).unwrap();
+        std::fs::write(crate_dir.join("Cargo.toml"), "[package]\nname=\"x\"\n").unwrap();
+        std::fs::write(crate_dir.join("README.md"), "# x\n").unwrap();
+        std::fs::write(crate_dir.join("src/lib.rs"), "// lib\n").unwrap();
         let s = |p: PathBuf| p.to_string_lossy().into_owned();
 
         // README.md (root) + src/lib.rs → common ancestor is the crate root,
         // which holds Cargo.toml.
-        let both = vec![s(krate.join("README.md")), s(krate.join("src/lib.rs"))];
-        assert_eq!(Some(krate.clone()), project_root(&both, dir.path()));
+        let both = vec![
+            s(crate_dir.join("README.md")),
+            s(crate_dir.join("src/lib.rs")),
+        ];
+        assert_eq!(Some(crate_dir.clone()), project_root(&both, dir.path()));
 
         // A single nested file still walks up to the Cargo.toml root.
-        let only = vec![s(krate.join("src/lib.rs"))];
-        assert_eq!(Some(krate.clone()), project_root(&only, dir.path()));
+        let only = vec![s(crate_dir.join("src/lib.rs"))];
+        assert_eq!(Some(crate_dir.clone()), project_root(&only, dir.path()));
 
         // A URL source has no local root.
         assert_eq!(
             None,
             project_root(&["https://example.com".to_string()], dir.path())
+        );
+    }
+
+    #[test]
+    fn source_paths_splits_plus_and_anchors_relative_parts() {
+        let dir = tempfile::tempdir().unwrap();
+        let crate_dir = dir.path().join("crate");
+        std::fs::create_dir_all(crate_dir.join("src")).unwrap();
+        std::fs::write(crate_dir.join("README.md"), "r").unwrap();
+        std::fs::write(crate_dir.join("src/lib.rs"), "l").unwrap();
+
+        // `<crate>/README.md + src/lib.rs`: the relative part anchors to the
+        // first file's directory (the crate), not the deck folder.
+        let value = format!("{}/README.md + src/lib.rs", crate_dir.display());
+        assert_eq!(
+            vec![crate_dir.join("README.md"), crate_dir.join("src/lib.rs")],
+            source_paths(&value, Some(dir.path()))
+        );
+
+        // A single path is returned unchanged.
+        let one = crate_dir.join("src/lib.rs");
+        assert_eq!(
+            vec![one.clone()],
+            source_paths(&one.to_string_lossy(), None)
         );
     }
 

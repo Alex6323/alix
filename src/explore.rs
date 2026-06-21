@@ -113,7 +113,12 @@ fn explore_prompt(source: &str, goal: &str, url: bool, cfg: &TraceConfig) -> Str
          two ends; a [deck] title names a coherent set of facts. Keep each title one \
          line; do not resolve line numbers or write cards/checkpoints — later steps \
          do that. Use as many items as the goal needs (stop at saturation), ordered \
-         by prerequisite."
+         by prerequisite.\n\n\
+         `% source:` FORMAT: a [deck]'s source must be actual FILE path(s) (the \
+         exam reads them) — never a bare directory. For several files, join them \
+         with ` + `, writing the FIRST as a full path and the rest RELATIVE to its \
+         directory, e.g. `% source: <root>/README.md + src/lib.rs`. A [trace] may \
+         use a single directory or file as its locator base."
     );
     if let Some(extra) = cfg
         .extra

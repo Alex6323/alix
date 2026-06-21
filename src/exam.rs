@@ -561,15 +561,29 @@ fn source_section(sources: &[String], base: Option<&Path>) -> Result<String> {
     for src in sources {
         if deck::is_url(src) {
             urls.push(src.clone());
-        } else {
-            let path = match base {
-                Some(dir) => dir.join(src),
-                None => std::path::PathBuf::from(src),
-            };
-            let text = std::fs::read_to_string(&path)
-                .with_context(|| format!("cannot read source file {}", path.display()))?;
-            files.push((src.clone(), truncate(&text)));
+            continue;
         }
+        // A value may name several files joined with " + " (a shorthand the
+        // generator sometimes emits, e.g. `README.md + src/lib.rs`); read each
+        // resolved path, skipping any that don't exist rather than failing.
+        for path in crate::trace::source_paths(src, base) {
+            match std::fs::read_to_string(&path) {
+                Ok(text) => {
+                    let label = path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| path.display().to_string());
+                    files.push((label, truncate(&text)));
+                }
+                Err(e) => eprintln!(
+                    "warning: skipping unreadable `% source:` {}: {e}",
+                    path.display()
+                ),
+            }
+        }
+    }
+    if urls.is_empty() && files.is_empty() {
+        bail!("none of the deck's `% source:` paths could be read to examine against");
     }
 
     let mut out = String::new();
