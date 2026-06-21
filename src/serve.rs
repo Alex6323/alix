@@ -421,6 +421,21 @@ pub struct SessionBuild {
     pub links: HashMap<String, Vec<String>>,
 }
 
+/// A trace walk ready to serve, built when a single trace deck is picked from the
+/// review server's deck-selection screen. The walk is self-graded (no live
+/// `--grade`), matching the terminal picker's trace → walk.
+pub struct WalkBuild {
+    pub walk: Walk,
+    pub scheduler: SchedulerKind,
+}
+
+/// The `/api/select` reply when a trace was picked: tells the page to navigate to
+/// the walk view (the review server hosts `walk.html` at `/walk`).
+#[derive(Debug, Serialize)]
+struct WalkRedirect {
+    redirect: &'static str,
+}
+
 /// A browse card list ready to serve, with its label and deck paths.
 pub struct CardsBuild {
     pub cards: Vec<Card>,
@@ -679,6 +694,7 @@ fn exam_dto(ex: &Examining, decks_dir: &Path) -> ExamDto {
 /// decks (`POST /api/select`) calls `build` to construct a session in place.
 /// `build` borrows the shared `store` and `recent`, so all sessions write one
 /// history and update the recent-decks list, exactly like the CLI.
+#[allow(clippy::too_many_arguments)] // each is a distinct, named server input
 pub fn run_review(
     initial: Option<SessionBuild>,
     mut store: Store,
@@ -687,6 +703,9 @@ pub fn run_review(
     addr: SocketAddr,
     opts: ReviewOptions,
     mut build: impl FnMut(Vec<PathBuf>, &Store, &mut RecentDecks) -> Result<SessionBuild>,
+    // Builds a walk when the picked decks are a single trace (else `None`, so the
+    // caller flattens to a review); mirrors the terminal picker's trace → walk.
+    mut build_walk: impl FnMut(&[PathBuf]) -> Result<Option<WalkBuild>>,
 ) -> Result<()> {
     let ReviewOptions {
         mode_override,
@@ -700,12 +719,16 @@ pub fn run_review(
     let picker_keys = PickerKeysDto::from(&picker_keys);
     let mut reviewing = initial.map(Reviewing::new);
     let mut examining: Option<Examining> = None;
+    // A trace picked from the selection screen walks here (the page navigates to
+    // `/walk`, which this server hosts alongside review).
+    let mut walking: Option<Walking> = None;
     let server = Server::http(addr).map_err(|e| anyhow!("cannot start server on {addr}: {e}"))?;
     for mut request in server.incoming_requests() {
         let method = request.method().clone();
         let path = request_path(&request);
         match (&method, path.as_str()) {
             (Method::Get, "/") => respond_html(request, REVIEW_HTML),
+            (Method::Get, "/walk") => respond_html(request, WALK_HTML),
             (Method::Get, "/api/keys") => respond_json(request, &keys),
             (Method::Get, "/api/picker-keys") => respond_json(request, &picker_keys),
             (Method::Get, "/api/decks") => {
@@ -722,16 +745,31 @@ pub fn run_review(
             ),
             (Method::Post, "/api/select") => {
                 match select_decks(&mut request, &decks_dir, &recent) {
-                    Some(paths) => match build(paths, &store, &mut recent) {
-                        Ok(b) => {
-                            reviewing = Some(Reviewing::new(b));
-                            respond_json(
-                                request,
-                                &review_state(reviewing.as_ref(), &store, mode_override),
-                            );
+                    // A single trace deck walks (the page navigates to `/walk`)
+                    // rather than flattening into a card review.
+                    Some(paths) => match build_walk(&paths) {
+                        Ok(Some(wb)) => {
+                            walking = Some(Walking::new(wb.walk, wb.scheduler, None));
+                            reviewing = None;
+                            examining = None;
+                            respond_json(request, &WalkRedirect { redirect: "/walk" });
                         }
+                        Ok(None) => match build(paths, &store, &mut recent) {
+                            Ok(b) => {
+                                reviewing = Some(Reviewing::new(b));
+                                walking = None;
+                                respond_json(
+                                    request,
+                                    &review_state(reviewing.as_ref(), &store, mode_override),
+                                );
+                            }
+                            Err(e) => {
+                                eprintln!("warning: could not load the selected decks: {e}");
+                                respond_status(request, 400);
+                            }
+                        },
                         Err(e) => {
-                            eprintln!("warning: could not load the selected decks: {e}");
+                            eprintln!("warning: could not load the selected trace: {e}");
                             respond_status(request, 400);
                         }
                     },
@@ -740,6 +778,7 @@ pub fn run_review(
             }
             (Method::Post, "/api/deselect") => {
                 reviewing = None;
+                walking = None;
                 respond_json(
                     request,
                     &review_state(reviewing.as_ref(), &store, mode_override),
@@ -1014,6 +1053,82 @@ pub fn run_review(
                     request,
                     &review_state(reviewing.as_ref(), &store, mode_override),
                 );
+            }
+            // ── Trace walk (a single trace picked from the selection screen) ──
+            // The same flow as the standalone `run_walk`, guarded on `walking`.
+            (Method::Get, "/api/walk") => {
+                let Some(w) = walking.as_mut() else {
+                    respond_status(request, 409);
+                    continue;
+                };
+                w.poll();
+                respond_json(request, &walk_dto(w));
+            }
+            (Method::Post, "/api/walk/predict") => {
+                let Some(w) = walking.as_mut() else {
+                    respond_status(request, 409);
+                    continue;
+                };
+                #[derive(Deserialize)]
+                struct Body {
+                    text: String,
+                }
+                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
+                if let Some(b) = body {
+                    w.walk.predict(b.text);
+                    w.start_grade();
+                }
+                respond_json(request, &walk_dto(w));
+            }
+            (Method::Post, "/api/walk/grade") => {
+                let self_delta = read_delta(&mut request);
+                let Some(w) = walking.as_mut() else {
+                    respond_status(request, 409);
+                    continue;
+                };
+                let delta = w.grade_result.as_ref().map(|(d, _)| *d).or(self_delta);
+                match delta {
+                    Some(delta) => {
+                        w.walk.grade(&mut store, delta, now_ms());
+                        if let Err(e) = store.save() {
+                            eprintln!("warning: could not save progress: {e}");
+                        }
+                        w.clear_grade();
+                        respond_json(request, &walk_dto(w));
+                    }
+                    None => respond_status(request, 400),
+                }
+            }
+            (Method::Post, "/api/walk/compress") => {
+                let Some(w) = walking.as_mut() else {
+                    respond_status(request, 409);
+                    continue;
+                };
+                #[derive(Deserialize)]
+                struct Body {
+                    text: String,
+                }
+                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
+                if let Some(b) = body {
+                    w.walk.compress(b.text);
+                }
+                respond_json(request, &walk_dto(w));
+            }
+            (Method::Post, "/api/walk/restart") => {
+                let Some(w) = walking.as_mut() else {
+                    respond_status(request, 409);
+                    continue;
+                };
+                let fresh = Walk::new(w.walk.trace().clone(), w.scheduler);
+                let scheduler = w.scheduler;
+                let grade = w.grade.take();
+                *w = Walking::new(fresh, scheduler, grade);
+                respond_json(request, &walk_dto(w));
+            }
+            // Back to decks: abandon the walk and return to the picker.
+            (Method::Post, "/api/walk/leave") => {
+                walking = None;
+                respond_status(request, 204);
             }
             _ => respond_status(request, 404),
         }

@@ -351,7 +351,9 @@ function grade(g)  { if (g === "easy") zap(); api("/api/grade", post({ grade: g 
 function skip()    { api("/api/skip", post({})).then(apply); }
 function remove()  { api("/api/remove", post({})).then(apply); }
 function restart() { api("/api/restart", post({})).then(apply); }
-function select(names) { api("/api/select", post({ decks: names })).then(apply); }
+// A trace picked from the picker walks: the server replies with a redirect to
+// the walk page (hosted at /walk) instead of a review session.
+function select(names) { api("/api/select", post({ decks: names })).then(s => { if (s && s.redirect) { location.href = s.redirect; return; } apply(s); }); }
 function deselect() { confirmingLeave = false; menu.classList.remove("open"); api("/api/deselect", post({})).then(apply); }
 
 // Returning to the picker mid-session abandons the cards still queued, so warn

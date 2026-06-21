@@ -464,9 +464,11 @@ Run `--serve` **without** naming any decks and the browser opens a
 deck-selection screen that mirrors the terminal [picker](#getting-started): the
 same three sections — **Workspaces** (each with its last-progress time) ·
 **Recent** loose decks · **Folders** — and the same **single-launch**, so you
-**click a deck to start it** (an exam-due deck sits its exam). Open a
-**Workspace** or **Folder** to drill into its **unlock dependency tree**, where
-each deck nests under the prerequisite that gates it. A deck you can't start is
+**click a deck to start it** (an exam-due deck sits its exam, and a
+[trace](#traces-flash-trace) **walks** — predict → verify — at `/walk`, with a
+**Back to decks** to return to the picker). Open a **Workspace** or **Folder** to
+drill into its **unlock dependency tree**, where each deck nests under the
+prerequisite that gates it. A deck you can't start is
 dimmed: 🔒 locked (an unfinished `% requires:`), 🕒 nothing due; a `mastered 🎉`
 deck is tucked into the **Mastered window** (press `m`), and mastered/done/locked
 decks stay out of Recent (a quick launchpad) but are reachable by filtering — the

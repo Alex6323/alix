@@ -1267,7 +1267,28 @@ fn review_serve(args: ReviewArgs) -> Result<()> {
     let build = |paths: Vec<PathBuf>, store: &Store, recent: &mut RecentDecks| {
         build_review(paths, &args, &config, store, recent, Frontend::Web).map(to_build)
     };
-    serve::run_review(initial, store, recent, decks_dir, addr, opts, build)
+    // A single trace picked from the in-browser picker walks (predict → verify),
+    // mirroring the terminal picker; a trace named on the CLI took the `initial`
+    // path above and still flattens to a card review.
+    let build_walk = |paths: &[PathBuf]| -> Result<Option<serve::WalkBuild>> {
+        match single_trace_to_walk(true, paths) {
+            Some(deck) => {
+                let scheduler = args
+                    .scheduler
+                    .or(deck.settings.scheduler)
+                    .unwrap_or_default();
+                let trace = Trace::from_deck(&deck)?;
+                Ok(Some(serve::WalkBuild {
+                    walk: Walk::new(trace, scheduler),
+                    scheduler,
+                }))
+            }
+            None => Ok(None),
+        }
+    };
+    serve::run_review(
+        initial, store, recent, decks_dir, addr, opts, build, build_walk,
+    )
 }
 
 /// Prints where the web frontend is reachable, and a warning when it is

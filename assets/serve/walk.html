@@ -197,6 +197,9 @@
 let state = null;     // the latest WalkDto
 let poll = null;      // setInterval handle while a live grade is in flight
 let KEYS = {};        // configured key bindings, from /api/keys
+// Hosted by the review server (picked from its deck list) rather than standalone
+// `flash trace --serve` — so we offer a "Back to decks" return to the picker.
+const HOSTED = location.pathname === "/walk";
 
 const api  = (path, opts) => fetch(path, opts).then(r => r.json());
 const post = body => ({ method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
@@ -220,6 +223,8 @@ function predict(text) { api("/api/walk/predict", post({ text })).then(apply); }
 function grade(delta)  { api("/api/walk/grade", post({ delta })).then(apply); }
 function compress(text){ api("/api/walk/compress", post({ text })).then(apply); }
 function restart()     { api("/api/walk/restart", post({})).then(apply); }
+// Abandon the walk and return to the deck picker (hosted mode only).
+function backToDecks() { fetch("/api/walk/leave", post({})).catch(() => {}).finally(() => { location.href = "/"; }); }
 
 function startPoll() {
   if (poll) return;
@@ -252,6 +257,8 @@ function render() {
   else if (state.phase === "reveal")   renderReveal();
   else if (state.phase === "compress") renderCompress();
   else if (state.phase === "done")     renderDone();
+  // A return-to-picker escape hatch when the review server hosts this walk.
+  if (HOSTED) chip("Decks", "", backToDecks, "esc");
 }
 
 // the card shell with a question region; returns {card, q, a}
@@ -442,6 +449,8 @@ function chip(text, cls, onClick, key) {
 // primary action. Typing in a textarea is left alone.
 document.addEventListener("keydown", e => {
   if (!state || e.altKey || e.metaKey) return;
+  // Esc returns to the deck picker (hosted mode), even from a textarea.
+  if (HOSTED && e.key === "Escape") { e.preventDefault(); backToDecks(); return; }
   if (e.target && /^(TEXTAREA|INPUT)$/.test(e.target.tagName)) return;
   if (state.phase === "reveal" && !state.thinking && !state.verdict) {
     for (const d of DELTAS) if (hit(e, d.keys())) { e.preventDefault(); grade(d.delta); return; }

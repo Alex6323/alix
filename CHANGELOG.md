@@ -308,8 +308,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   resettable; the `flash reset` / `flash deps` pickers keep their plain
   multi-select. The shared badge / lock / dependency-tree logic now lives in the
   library (`picker::deck_status` and the exposed dependency-forest helpers),
-  consumed by both frontends. (In-browser trace **walking** is a follow-up — a
-  trace opened from the web picker still reviews its cards for now.)
+  consumed by both frontends. A **trace** picked from the in-browser picker now
+  **walks** (predict → verify, just like the terminal), hosted by the review
+  server at `/walk`; a **Back to decks** (or `Esc`) returns to the picker.
 - **A card that reaches the top Leitner stage now retires** (rests, no longer
   scheduled until `flash reset`) instead of recurring at the stage-5 weekly
   cooldown. This is the default even without `% max-stage:`, and makes a
