@@ -54,13 +54,16 @@ to this codebase. When in doubt, mirror the surrounding code.
   summary; public items get a `///` sentence or two on *intent* (the why), not a
   restatement of the type. Keep field docs to a line.
 
-- **Tests live inline.** Put them in `#[cfg(test)] mod tests` at the bottom of the
-  module they cover — `tests/` is reserved for the `#[ignore]`d real-Claude eval
-  harness. Name them as full snake_case sentences stating condition + expectation
-  (`passing_the_exam_masters_an_undrilled_deck`). Anything that shells out to
-  Claude uses the shared harness in `src/testutil.rs`: `fake_reply` (drains stdin
-  then emits a canned reply — use it for fixed outputs to avoid the EPIPE race),
-  `fake_cli`, `ask_config`, and wrap the call in `exec_lock()` (serializes
+- **Tests live inline; integration tests in `tests/`.** Unit tests go in a
+  `#[cfg(test)] mod tests` at the bottom of the module they cover. `tests/` holds
+  the end-to-end suites: `tests/cli.rs` drives the built binary as a subprocess
+  (deterministic — temp decks + `--store`, no real Claude — so it runs in CI),
+  and `tests/eval.rs` is the `#[ignore]`d real-Claude grader-calibration harness
+  (`make eval`). Name tests as full snake_case sentences stating condition +
+  expectation (`passing_the_exam_masters_an_undrilled_deck`). Anything that shells
+  out to Claude uses the shared harness in `src/testutil.rs`: `fake_reply` (drains
+  stdin then emits a canned reply — use it for fixed outputs to avoid the EPIPE
+  race), `fake_cli`, `ask_config`, and wrap the call in `exec_lock()` (serializes
   fork/exec; poison-tolerant).
 
 - **Keep threading in the lib.** Background work follows the `ask::spawn` shape: a
