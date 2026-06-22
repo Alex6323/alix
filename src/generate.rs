@@ -285,7 +285,26 @@ fn clean_output(raw: &str) -> String {
             break;
         }
     }
-    lines[start..end].join("\n")
+    space_cards(&lines[start..end])
+}
+
+/// Inserts a blank line before each card front (a `#` at column 0) *after the
+/// first*, so a generated deck's cards are visually separated. The first card
+/// stays attached to any `%` header above it, and a card already preceded by a
+/// blank line is left untouched (no double blanks).
+fn space_cards(lines: &[&str]) -> String {
+    let mut out: Vec<&str> = Vec::with_capacity(lines.len());
+    let mut seen_card = false;
+    for &line in lines {
+        if line.starts_with('#') {
+            if seen_card && out.last().is_some_and(|prev| !prev.trim().is_empty()) {
+                out.push("");
+            }
+            seen_card = true;
+        }
+        out.push(line);
+    }
+    out.join("\n")
 }
 
 /// Derives a deck file stem from a URL: the last meaningful path segment
@@ -472,6 +491,25 @@ mod tests {
     fn clean_keeps_a_clean_deck_unchanged() {
         let raw = "# Q\n\tA";
         assert_eq!("# Q\n\tA", clean_output(raw));
+    }
+
+    #[test]
+    fn clean_puts_a_blank_line_between_cards() {
+        let raw = "# Q1\n\tA1\n# Q2\n\tA2";
+        assert_eq!("# Q1\n\tA1\n\n# Q2\n\tA2", clean_output(raw));
+    }
+
+    #[test]
+    fn clean_does_not_double_the_blank_between_cards() {
+        let raw = "# Q1\n\tA1\n\n# Q2\n\tA2";
+        assert_eq!("# Q1\n\tA1\n\n# Q2\n\tA2", clean_output(raw));
+    }
+
+    #[test]
+    fn clean_keeps_the_header_attached_to_the_first_card() {
+        // The header stays with card 1; only the *second* card gets a blank.
+        let raw = "% link: u\n# Q1\n\tA1\n# Q2\n\tA2";
+        assert_eq!("% link: u\n# Q1\n\tA1\n\n# Q2\n\tA2", clean_output(raw));
     }
 
     #[test]

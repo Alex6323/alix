@@ -415,6 +415,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reinforced.
 
 ### Fixed
+- **Generated decks now put a blank line between cards.** `flash deck`'s output
+  cleaner (`generate::clean_output`) inserts a blank line before each card front
+  (`#`) after the first, so a generated/`--review`ed deck is readable instead of
+  cards running together. The first card stays attached to its `%` header, and an
+  already-separated deck is left untouched.
 - **A note saved from the ask tutor shows on the card right away.** Saving a
   note appended it to the deck file but left the in-memory card unchanged, so the
   new note only appeared after the deck was re-read (a later session). The just-
