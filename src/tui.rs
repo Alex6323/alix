@@ -175,10 +175,10 @@ pub struct App {
     removed_lines: HashMap<String, BTreeSet<usize>>,
     /// Identity hashes of removed cards, pruned from the store at the end.
     removed_ids: HashSet<u64>,
-    /// Set at the summary when the user chooses to sit the exam of a deck that
-    /// became `exam due` this session; `run` returns it so `main` launches the
-    /// exam after the review app exits.
-    exam_request: Option<PathBuf>,
+    /// Set at the summary when the user picks a follow-up for a deck that became
+    /// `exam due` this session — sit its exam, or browse it; `run` returns it so
+    /// `main` launches that after the review app exits.
+    next_action: Option<AfterReview>,
     quit: bool,
     /// Set when the user asked to quit mid-session: a confirmation prompt is
     /// shown, and the quit only goes through once they confirm it.
@@ -186,6 +186,15 @@ pub struct App {
     /// Showing a cited card's source excerpt in place of its answer (`% at:`),
     /// toggled with `s`; reset for each new card.
     citation_view: bool,
+}
+
+/// What the user chose at the session-end summary, for `main` to act on after
+/// the review app exits.
+pub enum AfterReview {
+    /// Sit the deck's AI exam.
+    Exam(PathBuf),
+    /// Browse the deck — a read-only walk through its cards.
+    Browse(PathBuf),
 }
 
 impl App {
@@ -202,7 +211,7 @@ impl App {
             ask_session: ask::CliSession::new(),
             removed_lines: HashMap::new(),
             removed_ids: HashSet::new(),
-            exam_request: None,
+            next_action: None,
             quit: false,
             confirming_quit: false,
             citation_view: false,
@@ -214,7 +223,7 @@ impl App {
     /// Runs the TUI until the user quits. Returns the counters accumulated over
     /// all sessions of this run, plus the deck whose exam the user asked to sit
     /// at the summary (if any).
-    pub fn run(mut self) -> Result<(SessionStats, Option<PathBuf>)> {
+    pub fn run(mut self) -> Result<(SessionStats, Option<AfterReview>)> {
         let mut terminal = ratatui::init();
         let result = self.event_loop(&mut terminal);
         ratatui::restore();
@@ -225,7 +234,7 @@ impl App {
         // the loop exited between grades (and to persist the prunes above).
         self.store.save()?;
         result?;
-        Ok((self.totals, self.exam_request.take()))
+        Ok((self.totals, self.next_action.take()))
     }
 
     /// Like [`run`](Self::run) but on a `terminal` the caller already set up (and
@@ -234,12 +243,12 @@ impl App {
     pub fn run_on(
         mut self,
         terminal: &mut ratatui::DefaultTerminal,
-    ) -> Result<(SessionStats, Option<PathBuf>)> {
+    ) -> Result<(SessionStats, Option<AfterReview>)> {
         let result = self.event_loop(terminal);
         self.flush_removals();
         self.store.save()?;
         result?;
-        Ok((self.totals, self.exam_request.take()))
+        Ok((self.totals, self.next_action.take()))
     }
 
     /// Starts a new session over the same decks, or flags that nothing is
@@ -834,7 +843,10 @@ impl App {
                 // it); any other key exits.
                 let exam_due = self.exam_due_decks();
                 if key.code == KeyCode::Char('x') && !exam_due.is_empty() {
-                    self.exam_request = Some(exam_due[0].1.clone());
+                    self.next_action = Some(AfterReview::Exam(exam_due[0].1.clone()));
+                    self.quit = true;
+                } else if key.code == KeyCode::Char('b') && !exam_due.is_empty() {
+                    self.next_action = Some(AfterReview::Browse(exam_due[0].1.clone()));
                     self.quit = true;
                 } else if restart_hit && !self.nothing_due {
                     self.try_restart();
@@ -1158,7 +1170,7 @@ impl App {
                 let exam = if self.exam_due_decks().is_empty() {
                     ""
                 } else {
-                    "x take exam │ "
+                    "x take exam │ b browse │ "
                 };
                 format!(
                     "{exam}{} new session │ any other key to exit",
@@ -1583,8 +1595,10 @@ impl App {
         for (subject, _) in self.exam_due_decks() {
             lines.push(Line::default());
             lines.push(Line::from(
-                format!("  ✦ {subject} is ready for its exam — press x to take it.")
-                    .fg(Color::Yellow),
+                format!(
+                    "  ✦ {subject} is ready for its exam — press x to take it, or b to browse."
+                )
+                .fg(Color::Yellow),
             ));
         }
         frame.render_widget(Paragraph::new(lines), area);

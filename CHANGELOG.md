@@ -27,6 +27,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   fact deck's `% source:` then points at the excerpts, so its exam grades against
   them. (Snippet names are workspace-unique now, so multiple frozen decks no
   longer collide in `assets/`.)
+- **Browse a deck from the session-end summary** (terminal). When a deck turns
+  *exam due* at the end of a review, the summary now offers `b` to **browse** it
+  (a read-only walk through its cards) right next to `x` to sit the exam — useful
+  for a last skim before the exam. Both the offer line and the footer show the
+  keys. (`App` returns an `AfterReview::{Exam,Browse}` for `main` to launch.)
 - **The progress store is now version-checked.** A `progress.json` written by a
   newer flash is refused on open with a clear "upgrade flash" message instead of
   being silently rewritten at the old version (which could drop data the newer

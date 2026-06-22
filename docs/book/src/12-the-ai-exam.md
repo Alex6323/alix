@@ -39,8 +39,8 @@ three ways:
 - **From the picker:** choosing an `exam due` deck starts the exam instead of an
   empty review.
 - **From the summary:** when you drill a deck's last cards and it turns exam due,
-  the session-end summary offers it — press `x` in the terminal, a button in the
-  browser.
+  the session-end summary offers it — press `x` in the terminal (or `b` to browse
+  the deck instead), a button in the browser.
 
 flash asks Claude to read the source (URLs via `WebFetch`, local files embedded)
 and write **fresh understanding questions** — application and connections, *not*

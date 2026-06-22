@@ -21,7 +21,7 @@ use flash::{
     store::{Store, default_store_path},
     time::{humanize_ms, now_ms},
     trace::{Phase, SourceBase, Trace, Walk},
-    tui::{self, App},
+    tui::{self, AfterReview, App},
     workspace,
 };
 use ratatui::DefaultTerminal;
@@ -978,6 +978,40 @@ fn run_exam_app_on(
     exam_app(deck, config, store).run_on(terminal)
 }
 
+/// Browses a single deck from the session-end summary — on the caller's live
+/// `terminal` (the picker flow) when given, else standalone.
+fn browse_one(
+    path: &std::path::Path,
+    store_override: Option<PathBuf>,
+    config: &Config,
+    terminal: Option<&mut DefaultTerminal>,
+) -> Result<()> {
+    let mut recent = RecentDecks::load(
+        recent::default_recent_path().context("cannot determine the data directory")?,
+    );
+    let decks = vec![path.to_path_buf()];
+    let deck_store = store_for(&decks, store_override)?;
+    let build = build_browse(decks, &mut recent, Frontend::Tui)?;
+    let paths = subject_paths(build.decks);
+    match terminal {
+        Some(t) => browse::run_on(
+            t,
+            build.cards,
+            build.label,
+            config.browse.clone(),
+            paths,
+            deck_store,
+        ),
+        None => browse::run(
+            build.cards,
+            build.label,
+            config.browse.clone(),
+            paths,
+            deck_store,
+        ),
+    }
+}
+
 /// Builds the exam TUI, resolving strictness from the deck's `% strictness:` or
 /// the `[exam]` default.
 fn exam_app(deck: Deck, config: &Config, store: Store) -> tui::ExamApp {
@@ -1166,13 +1200,18 @@ fn run_review_on(
         ask: config.ask.clone(),
         decks,
     };
-    let (_stats, exam_request) = App::new(session, store, ui_options).run_on(terminal)?;
-    if let Some(path) = exam_request {
-        let store = store_for(std::slice::from_ref(&path), args.store.clone())?;
-        let deck = Deck::load(&path)?;
-        return run_exam_app_on(terminal, deck, &config, store);
+    let (_stats, next_action) = App::new(session, store, ui_options).run_on(terminal)?;
+    match next_action {
+        Some(AfterReview::Exam(path)) => {
+            let store = store_for(std::slice::from_ref(&path), args.store.clone())?;
+            let deck = Deck::load(&path)?;
+            run_exam_app_on(terminal, deck, &config, store)
+        }
+        Some(AfterReview::Browse(path)) => {
+            browse_one(&path, args.store.clone(), &config, Some(terminal))
+        }
+        None => Ok(()),
     }
-    Ok(())
 }
 
 /// Runs the review TUI for a built session: reports cards that need the browser,
@@ -1217,19 +1256,22 @@ fn run_review_tui(rs: ReviewSession, args: &ReviewArgs) -> Result<()> {
         ask: config.ask.clone(),
         decks,
     };
-    let (stats, exam_request) = App::new(session, store, ui_options).run()?;
+    let (stats, next_action) = App::new(session, store, ui_options).run()?;
     println!(
         "Reviewed {} cards: {} passed, {} failed.",
         stats.reviews, stats.passed, stats.failed
     );
-    // If a deck became exam-due this session and the user chose to sit it, the
-    // review app saved the store on exit; reopen it for the exam.
-    if let Some(path) = exam_request {
-        let store = store_for(std::slice::from_ref(&path), args.store.clone())?;
-        let deck = Deck::load(&path)?;
-        return run_exam_app(deck, &config, store);
+    // If a deck became exam-due this session, the user can sit its exam or browse
+    // it from the summary; the review app saved the store on exit.
+    match next_action {
+        Some(AfterReview::Exam(path)) => {
+            let store = store_for(std::slice::from_ref(&path), args.store.clone())?;
+            let deck = Deck::load(&path)?;
+            run_exam_app(deck, &config, store)
+        }
+        Some(AfterReview::Browse(path)) => browse_one(&path, args.store.clone(), &config, None),
+        None => Ok(()),
     }
-    Ok(())
 }
 
 /// The web review path. With no decks given it opens at the in-browser

@@ -720,7 +720,7 @@ in the terminal and the browser:
   opens the exam in the TUI. You also reach it by **picking an `exam due` deck**
   in the launcher (it starts the exam instead of an empty review), or from the
   **session-end summary** — when you drill a deck's last cards and it turns exam
-  due, the summary offers "press `x` to take it".
+  due, the summary offers "press `x` to take it" (or `b` to browse the deck).
 - **Web** (`flash serve`): picking an `exam due` deck in the deck list launches
   the exam in the page; a finished session likewise offers it at the summary.
 
