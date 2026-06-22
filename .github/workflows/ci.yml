@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# One run per branch/PR: cancel superseded runs, but never on main.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+env:
+  # Warnings are errors in CI — this is the "clippy must be green" gate.
+  # Local `make check` stays lenient; CI runs the same command, strictly.
+  RUSTFLAGS: -Dwarnings
+
+jobs:
+  # Formatting uses the NIGHTLY toolchain on purpose: rustfmt.toml has
+  # nightly-only options (see the Makefile). No compile, so it's its own fast job.
+  fmt:
+    name: rustfmt (nightly)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
+      - run: make fmt-check
+
+  # clippy + tests on stable — the exact `make check` you run locally.
+  check:
+    name: clippy + tests (stable)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: make check
