@@ -6,7 +6,7 @@
 # toolchain — `+nightly` is handled by rustup before cargo sees it — which is
 # why these live in a Makefile rather than .cargo/config.toml.)
 
-.PHONY: build test lint fmt fmt-check check coverage run serve book install clean
+.PHONY: build test lint fmt fmt-check check coverage eval run serve book install clean
 
 # Compile the workspace.
 build:
@@ -39,6 +39,13 @@ check: lint test
 coverage:
 	cargo llvm-cov --html
 	@echo "HTML report -> target/llvm-cov/html/index.html"
+
+# Grader-calibration evals (tests/eval.rs): the REAL grade prompt vs labeled
+# adversarial answers, to catch a lenient grader. Needs the claude CLI logged in;
+# makes real, costed calls. Off the normal gate — run before shipping a change
+# to grade_prompt.
+eval:
+	cargo test --test eval -- --ignored --nocapture --test-threads=1
 
 # Run the binary, e.g. `make run ARGS="exam mydeck.txt"`.
 run:
