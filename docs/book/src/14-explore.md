@@ -41,8 +41,10 @@ session to fill every item — predict-verify checkpoints for the traces, fact c
 for the decks — so the workspace comes out review-ready in one command. Writing the
 whole set from one understanding keeps the items **coherent** (each builds on its
 prerequisites instead of repeating them). As a final step it
-[freezes the source](13-trace-decks.md) into the workspace's `assets/`, so it's
-self-contained and the trace locators never drift.
+[freezes the cited excerpts](13-trace-decks.md) of every cited deck — traces and
+fact decks with [`% at:` citations](06-cloze-direction-images.md#source-citations)
+alike — into the workspace's `assets/`, so it's self-contained and its locators
+never drift.
 
 This is the tool's high-water mark: name what you want to understand, and flash
 assembles a dependency-ordered curriculum of facts and traces — gated by

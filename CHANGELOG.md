@@ -20,7 +20,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   The deck **generator writes these citations for you** — `flash deck` on a local
   source and `flash explore --build` add a `% at:` to each fact that maps to
   specific lines — and **`flash check` validates** a fact deck's citations,
-  warning about one that no longer resolves (a moved or shrunk file).
+  warning about one that no longer resolves (a moved or shrunk file). A workspace
+  built with **`flash explore --into --build` freezes** every cited deck's
+  excerpts into its `assets/` (fact decks now, not just traces), so the citations
+  don't drift and the workspace travels without the upstream source; a frozen
+  fact deck's `% source:` then points at the excerpts, so its exam grades against
+  them. (Snippet names are workspace-unique now, so multiple frozen decks no
+  longer collide in `assets/`.)
 - **The progress store is now version-checked.** A `progress.json` written by a
   newer flash is refused on open with a clear "upgrade flash" message instead of
   being silently rewritten at the old version (which could drop data the newer

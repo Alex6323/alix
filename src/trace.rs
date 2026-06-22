@@ -312,24 +312,23 @@ pub(crate) struct SnapshotReport {
     pub missing: Vec<String>,
 }
 
-/// Freezes a built trace's cited **excerpts** into `<workspace>/assets/` — one
-/// small snippet file per checkpoint, holding just the lines that checkpoint
-/// reveals — and repoints `% source:` + every `% at:` at them. The locators then
-/// never drift when the upstream source is edited, and nothing huge is copied.
-/// The frozen excerpt is re-based to line 1 (the original line numbers are lost,
-/// which is fine for a frozen span).
+/// Freezes a deck's cited **excerpts** into `<workspace>/assets/` — one small
+/// snippet file per `% at:` citation, holding just the lines it reveals — and
+/// repoints `% source:` + every `% at:` at them. The locators then never drift
+/// when the upstream source is edited, and nothing huge is copied. The frozen
+/// excerpt is re-based to line 1 (the original line numbers are lost, which is
+/// fine for a frozen span). Works for a trace (its checkpoints) or a fact deck
+/// (its cited cards); `start` is how many snippets earlier decks in the same
+/// workspace already wrote, so names stay unique in the shared `assets/`.
 ///
-/// Requires a trace whose `% source:` is local (not a URL) and whose folder is a
+/// Requires a deck whose `% source:` is local (not a URL) and whose folder is a
 /// workspace. The freeze is one-way — there is no "un-snapshot"; the workspace is
 /// either long-lived stable material or a throwaway.
-pub(crate) fn snapshot(deck: &Deck) -> Result<SnapshotReport> {
-    if deck.trace.is_none() {
-        bail!("{} is not a trace (no `% trace:`)", deck.subject);
-    }
+pub(crate) fn snapshot(deck: &Deck, start: usize) -> Result<SnapshotReport> {
     let deck_dir = deck.path.parent().unwrap_or_else(|| Path::new("."));
     if !crate::workspace::is_workspace(deck_dir) {
         bail!(
-            "a trace snapshots into its workspace's `assets/`, but {} is not in a \
+            "a deck snapshots into its workspace's `assets/`, but {} is not in a \
              workspace (no `flash.toml`).",
             deck.path.display()
         );
@@ -342,22 +341,25 @@ pub(crate) fn snapshot(deck: &Deck) -> Result<SnapshotReport> {
         bail!("`{source}` is a URL — there are no local excerpts to snapshot");
     }
 
-    let trace = Trace::from_deck(deck)?;
+    let (base_dir, source_file) = resolve_source(Some(deck_dir), Some(source));
     let assets_dir = deck_dir.join(SNAPSHOT_DIR);
     let mut copied = Vec::new();
     let mut missing = Vec::new();
-    // The rewrite for each `% at:` line, in file order.
+    // The rewrite for each `% at:` line, in file order. Both a trace's
+    // checkpoints and a fact deck's cards cite via `% at:`, so iterating the
+    // deck's cards freezes either.
     let mut ats: Vec<crate::deck::AtRewrite> = Vec::new();
 
-    for checkpoint in &trace.checkpoints {
-        let Some(locator) = &checkpoint.locator else {
+    for card in &deck.cards {
+        let Some(locator) = card.at.as_deref() else {
             continue;
         };
-        match trace.excerpt(checkpoint) {
+        match excerpt_at(&base_dir, source_file.as_deref(), locator) {
             Ok(excerpt) => {
                 // `NN.<ext>` — the cited file's extension keeps the snippet
-                // readable; the number keeps it unique and ordered.
-                let n = copied.len() + 1;
+                // readable; `start` keeps the number unique across the shared
+                // workspace `assets/` when several decks snapshot into it.
+                let n = start + copied.len() + 1;
                 let ext = excerpt_ext(&excerpt);
                 let name = format!("{n:02}.{ext}");
                 write_snippet(&assets_dir.join(&name), &excerpt)?;
@@ -372,9 +374,9 @@ pub(crate) fn snapshot(deck: &Deck) -> Result<SnapshotReport> {
             }
             // Keep the original locator if the excerpt can't be read; warn later.
             Err(_) => {
-                missing.push(locator.clone());
+                missing.push(locator.to_string());
                 ats.push(crate::deck::AtRewrite {
-                    at: locator.clone(),
+                    at: locator.to_string(),
                     note: None,
                 });
             }
@@ -1810,7 +1812,7 @@ mod tests {
         let deck_path = snapshot_workspace(root);
         let deck = Deck::load(&deck_path).unwrap();
 
-        let report = snapshot(&deck).unwrap();
+        let report = snapshot(&deck, 0).unwrap();
         assert_eq!(2, report.copied.len());
         assert!(report.missing.is_empty());
         // one small snippet per checkpoint — NOT the whole files
@@ -1846,7 +1848,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let deck_path = snapshot_workspace(root);
-        snapshot(&Deck::load(&deck_path).unwrap()).unwrap();
+        snapshot(&Deck::load(&deck_path).unwrap(), 0).unwrap();
         // Edit the upstream source — even delete it: the frozen snippet is intact.
         std::fs::write(root.join("src/a.rs"), "TOTALLY\nDIFFERENT\n").unwrap();
         let trace = Trace::from_deck(&Deck::load(&deck_path).unwrap()).unwrap();
@@ -1869,7 +1871,7 @@ mod tests {
             "t.txt",
             "% trace: t\n% source: ../notes.md\n# hop\n\tp\n\t% at: 2\n",
         );
-        let report = snapshot(&Deck::load(&deck_path).unwrap()).unwrap();
+        let report = snapshot(&Deck::load(&deck_path).unwrap(), 0).unwrap();
         assert_eq!(1, report.copied.len());
         assert!(root.join("ws/assets/01.md").is_file());
         let text = std::fs::read_to_string(&deck_path).unwrap();
@@ -1893,7 +1895,7 @@ mod tests {
             "t.txt",
             "% trace: t\n% source: .\n# h\n\tp\n\t% at: x.rs:1\n",
         );
-        let err = snapshot(&Deck::load(&loose).unwrap()).unwrap_err();
+        let err = snapshot(&Deck::load(&loose).unwrap(), 0).unwrap_err();
         assert!(format!("{err:#}").contains("not in a workspace"), "{err:#}");
 
         // URL source, in a workspace
@@ -1904,7 +1906,7 @@ mod tests {
             "u.txt",
             "% trace: t\n% source: https://example.com/p\n# h\n\tp\n\t% at: 1\n",
         );
-        let err = snapshot(&Deck::load(&url).unwrap()).unwrap_err();
+        let err = snapshot(&Deck::load(&url).unwrap(), 0).unwrap_err();
         assert!(format!("{err:#}").contains("URL"), "{err:#}");
     }
 }

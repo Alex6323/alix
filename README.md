@@ -440,7 +440,10 @@ You can write `% at:` by hand, but the deck generator adds them for you:
 [`flash deck <local source>`](#generate-a-facts-deck--flash-deck) and
 [`flash explore --build`](#exploring-a-source--flash-explore) cite the lines each
 fact came from, and `flash check` warns about a citation that no longer resolves
-(a moved or shrunk file).
+(a moved or shrunk file). In a workspace built with `flash explore --into
+--build`, the cited excerpts are also **frozen** into `assets/` (like trace
+excerpts), so they never drift and the workspace travels without the upstream
+source.
 
 ## Review
 
@@ -948,9 +951,12 @@ item — predict-verify checkpoints for the traces and fact cards for the decks 
 so the workspace comes out review-ready in one command. Writing the whole set
 from one understanding keeps the items coherent (each builds on its prerequisites
 instead of repeating them), and it fills facts decks too. As a final step it
-**freezes the source** into the workspace's `assets/` (see
-[Snapshotting the source](#traces-flash-trace)), so the workspace is
-self-contained and the trace locators never drift.
+**freezes the cited excerpts** of every cited deck — traces *and* fact decks with
+[`% at:` citations](#source-citations--at-on-a-fact-card) — into the workspace's
+`assets/` (see [Snapshotting the source](#traces-flash-trace)), so the workspace
+is self-contained and its locators never drift. (A snapshotted fact deck's
+`% source:` then points at `assets/`, so its exam grades against the frozen
+excerpts.)
 
 **Explore walk.** Before you even know what to trace, `flash explore --walk
 <source>` builds a short **tour of the source's shape** and walks it like a trace:

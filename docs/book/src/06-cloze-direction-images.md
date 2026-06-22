@@ -111,4 +111,6 @@ You rarely have to write these by hand. Generating a deck from a local source â€
 [`flash explore --build`](14-explore.md) â€” cites the lines each fact came from,
 and [`flash check`](17-command-reference.md) warns about a citation that no
 longer resolves, so a moved or shrunk file is caught before you next review the
-card.
+card. A workspace built with `flash explore --into --build` goes one further and
+**freezes** the cited excerpts into its `assets/` (just like trace excerpts), so
+the citations never drift and the workspace travels without the original source.

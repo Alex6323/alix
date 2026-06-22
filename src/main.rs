@@ -2307,12 +2307,12 @@ fn explore_cmd(args: ExploreArgs) -> Result<()> {
             report.traces,
             report.decks,
         );
-        // Freeze each trace's source into the workspace's `assets/` so its
+        // Freeze each cited deck's source into the workspace's `assets/` so its
         // locators never drift and the workspace is self-contained.
-        match flash::explore::snapshot_traces(&report.dir) {
-            Ok((traces, files)) if traces > 0 => println!(
-                "{DIM}Froze {files} excerpt(s) from {traces} trace(s) into \
-                 {}/assets — the locators won't drift.{RESET}",
+        match flash::explore::snapshot_workspace(&report.dir) {
+            Ok((decks, files)) if decks > 0 => println!(
+                "{DIM}Froze {files} excerpt(s) from {decks} deck(s) into \
+                 {}/assets — the citations won't drift.{RESET}",
                 report.dir.display(),
             ),
             Ok(_) => {}

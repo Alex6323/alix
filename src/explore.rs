@@ -529,34 +529,40 @@ pub fn materialize(
     })
 }
 
-/// Freezes each built trace's cited source into the workspace's `assets/` — the
+/// Freezes each cited deck's source excerpts into the workspace's `assets/` — the
 /// default final step of `flash explore --into --build`, so the workspace is
-/// self-contained and its line-number locators never drift. Traces that can't be
-/// frozen (a URL source, or no `% at:` files yet) are skipped. Returns
-/// `(traces frozen, files copied)`.
-pub fn snapshot_traces(dir: &Path) -> Result<(usize, usize)> {
-    let mut traces = 0;
+/// self-contained and its line-number locators never drift. A cited deck is a
+/// trace (its checkpoints) or a fact deck whose cards carry `% at:`. Decks that
+/// can't be frozen (a URL source, or no readable `% at:` excerpts) are skipped.
+/// Returns `(decks frozen, files copied)`.
+pub fn snapshot_workspace(dir: &Path) -> Result<(usize, usize)> {
+    let mut decks = 0;
     let mut files = 0;
     for member in workspace::Workspace::load(dir)?.members {
-        match Deck::load(&member) {
-            Ok(deck) if deck.is_trace() => match trace::snapshot(&deck) {
-                Ok(report) => {
-                    traces += 1;
-                    files += report.copied.len();
-                    for missing in &report.missing {
-                        eprintln!(
-                            "warning: {}: cited file not found, not frozen: {missing}",
-                            member.display()
-                        );
-                    }
+        let Ok(deck) = Deck::load(&member) else {
+            continue;
+        };
+        if !(deck.is_trace() || deck.cards.iter().any(|c| c.at.is_some())) {
+            continue;
+        }
+        // `files` is the running snippet count, passed as the start so each deck's
+        // snippets get unique names in the shared `assets/`.
+        match trace::snapshot(&deck, files) {
+            Ok(report) => {
+                decks += 1;
+                files += report.copied.len();
+                for missing in &report.missing {
+                    eprintln!(
+                        "warning: {}: cited file not found, not frozen: {missing}",
+                        member.display()
+                    );
                 }
-                // A trace with a URL source or no file locators can't be frozen.
-                Err(_) => continue,
-            },
-            _ => continue,
+            }
+            // A URL source, or no readable `% at:` excerpts: can't be frozen.
+            Err(_) => continue,
         }
     }
-    Ok((traces, files))
+    Ok((decks, files))
 }
 
 /// The member file name for an item: `NN-<slug>.txt`, the zero-padded number
@@ -846,14 +852,14 @@ preamble ignored
     }
 
     #[test]
-    fn snapshot_traces_freezes_built_traces_skips_decks() {
+    fn snapshot_workspace_freezes_traces_and_cited_facts() {
         let dir = std::env::temp_dir().join(format!("flash-snap-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(dir.join("src")).unwrap();
         fs::write(dir.join("src/a.rs"), "x\ny\nz\n").unwrap();
         fs::write(dir.join("flash.toml"), "[defaults]\n").unwrap();
-        // a built trace citing src/a.rs (source = the dir)
         let src = dir.join("src");
+        // a built trace citing src/a.rs (source = the dir)
         fs::write(
             dir.join("01-t.txt"),
             format!(
@@ -862,16 +868,27 @@ preamble ignored
             ),
         )
         .unwrap();
-        // a facts deck (not a trace) — skipped
-        fs::write(dir.join("02-d.txt"), "% title: d\n# q\n\ta\n").unwrap();
+        // a fact deck citing the same source with `% at:` — also frozen
+        fs::write(
+            dir.join("02-d.txt"),
+            format!("% source: {}\n# q\n\ta\n\t% at: a.rs:3\n", src.display()),
+        )
+        .unwrap();
+        // a fact deck with no citations — skipped
+        fs::write(dir.join("03-plain.txt"), "% title: d\n# q\n\ta\n").unwrap();
 
-        let (traces, files) = snapshot_traces(&dir).unwrap();
-        assert_eq!((1, 1), (traces, files)); // 1 trace, 1 excerpt snippet
+        let (decks, files) = snapshot_workspace(&dir).unwrap();
+        assert_eq!((2, 2), (decks, files)); // trace + cited fact, one snippet each
+        // Two unique snippet names in the shared assets/ (the offset prevents a
+        // collision), and the whole file is never copied.
         assert!(dir.join("assets/01.rs").is_file());
-        assert!(!dir.join("assets/a.rs").exists()); // the excerpt, not the whole file
-        let text = fs::read_to_string(dir.join("01-t.txt")).unwrap();
-        assert!(text.contains("% source: assets\n"), "{text}");
-        assert!(text.contains("% at: 01.rs\n"), "{text}");
+        assert!(dir.join("assets/02.rs").is_file());
+        assert!(!dir.join("assets/a.rs").exists());
+        // the fact deck was repointed off its live locator onto a frozen snippet
+        let fact = fs::read_to_string(dir.join("02-d.txt")).unwrap();
+        assert!(fact.contains("% source: assets\n"), "{fact}");
+        assert!(!fact.contains("% at: a.rs:3"), "{fact}");
+        assert!(fact.contains("% at: 0"), "{fact}");
 
         let _ = fs::remove_dir_all(&dir);
     }
