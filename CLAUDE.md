@@ -30,12 +30,81 @@ producing a large bogus diff. The tree also has some pre-existing rustfmt drift,
 so don't reformat unrelated files as part of a change — keep your diff to what
 you touched.
 
+## Code style (Rust)
+
+These are flash's house idioms — the things clippy and rustfmt *don't* catch and
+that a change should match. The global rules (simple, readable, small focused
+functions, meaningful names) still apply on top; this section is what's specific
+to this codebase. When in doubt, mirror the surrounding code.
+
+- **Errors come in two layers.** Domain modules (`deck`, `store`, `parser`)
+  expose a `thiserror` enum for typed failures; workflow code (`exam`, `ask`,
+  `generate`) returns `anyhow::Result` and uses `bail!` + `.context(...)` at call
+  boundaries. Message style is **lowercase, no trailing period**, e.g.
+  ``bail!("the deck declares no `% source:` to examine against")``. Add
+  `.context(...)` where it helps the user locate the failure, not at every `?`.
+
+- **No `unwrap` / `expect` / `panic!` in library paths.** Reach for `?`, `.or(…)`,
+  `unwrap_or_default()`, or `unwrap_or_else(…)` instead. `.expect("…")` is allowed
+  only when the line directly above guarantees the invariant (e.g.
+  `child.stdin.take().expect("stdin was piped")`). In `#[cfg(test)]` code,
+  `.unwrap()` on tempfiles and fixtures is fine.
+
+- **Doc comments are prose, not signatures.** Every module opens with a `//!`
+  summary; public items get a `///` sentence or two on *intent* (the why), not a
+  restatement of the type. Keep field docs to a line.
+
+- **Tests live inline.** Put them in `#[cfg(test)] mod tests` at the bottom of the
+  module they cover — `tests/` is reserved for the `#[ignore]`d real-Claude eval
+  harness. Name them as full snake_case sentences stating condition + expectation
+  (`passing_the_exam_masters_an_undrilled_deck`). Anything that shells out to
+  Claude uses the shared harness in `src/testutil.rs`: `fake_reply` (drains stdin
+  then emits a canned reply — use it for fixed outputs to avoid the EPIPE race),
+  `fake_cli`, `ask_config`, and wrap the call in `exec_lock()` (serializes
+  fork/exec; poison-tolerant).
+
+- **Keep threading in the lib.** Background work follows the `ask::spawn` shape: a
+  function that spawns a thread and returns a `Receiver`; frontends only
+  `try_recv`/poll. Don't spawn threads from the TUI or the web server.
+
+- **Small idioms.** Chain `Option` precedence with `.or(…)`
+  (`card.mode.or(deck.mode)`), not `match`. Write deck/store files atomically
+  (write a `.tmp`, then `rename`). For repeated I/O errors, define a local
+  `io_err` closure and `.map_err(io_err)`. Construct structs with
+  `Struct { field, ..Default::default() }` rather than adding a builder — at
+  these struct sizes the update syntax already covers "set some, default the
+  rest" (a builder only earns its boilerplate with many optional fields plus
+  validation).
+
+- **CI denies warnings** (`RUSTFLAGS: -Dwarnings`); keep the build clean rather
+  than papering a lint over with `#[allow(…)]`.
+
 ## Conventions
 
+- **Test-first for library logic.** Write the test before (or alongside) new
+  `src/` behavior — above all the AI plumbing's error paths, where bugs hide and
+  local runs can mask races (the `testutil` fake-CLI tests exist because one such
+  race slipped through). Thin frontend glue (TUI / `serve` wiring) is the
+  exception — a follow-up or manual check is enough there. This is the
+  deterministic half of the QUALITY plan; the grader-calibration evals
+  (`make eval`) are the AI half, run deliberately before touching `grade_*`.
 - **Tests and clippy must be green** before a change is done (`make check`).
   Formatting is run deliberately with `make fmt`, not enforced as a gate.
 - Don't commit unless asked; never push without permission.
-- The deck format, every `%`/card directive, and all features are documented in
-  `README.md` (start with the "Directives at a glance" table). Keep it in sync
-  when you add a directive or feature.
+- **Two docs, two jobs — keep both in sync, judge which.** `README.md` is the
+  **reference**: the deck format, every `%`/card directive, and all features
+  (start with the "Directives at a glance" table) — update it whenever you add or
+  change a directive or feature. `docs/book/` is the **narrative user manual**
+  (mdBook; `make book`) — when a change affects how a feature is explained or
+  used, update the relevant chapter too. Use judgment: significant user-facing
+  changes warrant a book edit, internal refactors don't.
+- **User-facing changes get a `CHANGELOG.md` entry** under `## [Unreleased]`
+  (Keep a Changelog format: Added / Changed / Fixed). Internal refactors and
+  test-only changes don't.
+- **Don't break card identity.** A card's id is
+  `XxHash64(deck file name + its answer/back lines)` — see `Card::id`
+  (`src/card.rs`). It deliberately ignores the front, notes, and comments, so
+  editing those preserves a card's review history while changing a back line
+  resets it. Preserve this whenever you touch the parser, `hash_lines`, or deck
+  rewriting — a careless change silently wipes users' progress.
 - Roadmap and design rationale live in `ROADMAP.md` (gitignored, local).
