@@ -1086,6 +1086,112 @@ mod tests {
     use crate::testutil::{ask_config, exec_lock, fake_cli, fake_reply};
 
     #[test]
+    fn verdict_labels() {
+        assert_eq!("PASS", Verdict::Pass.label());
+        assert_eq!("PARTIAL", Verdict::Partial.label());
+        assert_eq!("FAIL", Verdict::Fail.label());
+    }
+
+    #[test]
+    fn generate_questions_rejects_a_deck_without_a_source() {
+        let deck = deck_with_sources(&[]);
+        let err = generate_questions(
+            &deck,
+            &ExamConfig::default(),
+            &ask_config(std::path::Path::new("unused")),
+        )
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("no `% source:`"));
+    }
+
+    #[test]
+    fn generate_questions_rejects_an_empty_reply() {
+        let _lock = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = fake_reply(dir.path(), "{\"questions\":[]}");
+        let deck = deck_with_sources(&["https://x"]);
+        let err = generate_questions(&deck, &ExamConfig::default(), &ask_config(&cli)).unwrap_err();
+        assert!(format!("{err:#}").contains("no questions"));
+    }
+
+    #[test]
+    fn generate_questions_rejects_a_malformed_question() {
+        let _lock = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = fake_reply(
+            dir.path(),
+            "{\"questions\":[{\"prompt\":\"\",\"points\":[]}]}",
+        );
+        let deck = deck_with_sources(&["https://x"]);
+        let err = generate_questions(&deck, &ExamConfig::default(), &ask_config(&cli)).unwrap_err();
+        assert!(format!("{err:#}").contains("malformed"));
+    }
+
+    #[test]
+    fn grade_answers_rejects_a_count_mismatch() {
+        let qs = vec![
+            ExamQuestion {
+                prompt: "Q1".to_string(),
+                points: vec!["p".to_string()],
+            },
+            ExamQuestion {
+                prompt: "Q2".to_string(),
+                points: vec!["p".to_string()],
+            },
+        ];
+        let err = grade_answers(
+            &qs,
+            &["only one".to_string()],
+            Strictness::Balanced,
+            &ExamConfig::default(),
+            &ask_config(std::path::Path::new("unused")),
+        )
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("expected 2 answers, got 1"));
+    }
+
+    #[test]
+    fn grade_answers_rejects_a_wrong_grade_count() {
+        let _lock = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        // One grade for two questions.
+        let cli = fake_reply(
+            dir.path(),
+            "{\"grades\":[{\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]}]}",
+        );
+        let qs = vec![
+            ExamQuestion {
+                prompt: "Q1".to_string(),
+                points: vec!["p".to_string()],
+            },
+            ExamQuestion {
+                prompt: "Q2".to_string(),
+                points: vec!["p".to_string()],
+            },
+        ];
+        let err = grade_answers(
+            &qs,
+            &["a".to_string(), "b".to_string()],
+            Strictness::Balanced,
+            &ExamConfig::default(),
+            &ask_config(&cli),
+        )
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("graded 1 of 2"));
+    }
+
+    #[test]
+    fn remediation_cards_rejects_no_gaps() {
+        let err = remediation_cards(
+            &[],
+            &ExamConfig::default(),
+            &ask_config(std::path::Path::new("unused")),
+        )
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("no gaps"));
+    }
+
+    #[test]
     fn generate_questions_end_to_end() {
         let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();

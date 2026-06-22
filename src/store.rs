@@ -309,6 +309,47 @@ mod tests {
     }
 
     #[test]
+    fn open_rejects_malformed_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("progress.json");
+        std::fs::write(&path, "this is not json").unwrap();
+        assert!(Store::open(&path).is_err());
+    }
+
+    #[test]
+    fn open_rejects_a_non_numeric_card_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("progress.json");
+        // A valid StoreFile shape, but a card key that isn't a u64 hash.
+        std::fs::write(
+            &path,
+            r#"{"version":1,"cards":{"not-a-number":{"stage":1,"stage_entered_ms":0}}}"#,
+        )
+        .unwrap();
+        let err = Store::open(&path).err().unwrap();
+        assert!(format!("{err}").contains("bad card key"));
+    }
+
+    #[test]
+    fn last_review_ms_is_the_latest_across_cards() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("progress.json");
+        let mut store = Store::open(&path).unwrap();
+        assert_eq!(None, store.last_review_ms());
+        store.get_or_insert(1, 0).record_review(100, true);
+        store.get_or_insert(2, 0).record_review(300, true);
+        assert_eq!(Some(300), store.last_review_ms());
+    }
+
+    #[test]
+    fn path_returns_the_store_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("progress.json");
+        let store = Store::open(&path).unwrap();
+        assert_eq!(path.as_path(), store.path());
+    }
+
+    #[test]
     fn save_and_reload_roundtrip() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("progress.json");
