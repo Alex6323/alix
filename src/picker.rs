@@ -543,7 +543,7 @@ pub struct Picked {
 /// with nothing to review right now (true for `review`, off for `browse` and
 /// under `--cram`). `start_in` opens straight into a workspace's drill-in
 /// (returning there after an activity); `Esc` from it falls back to the top list.
-#[allow(clippy::too_many_arguments)] // each is a distinct, named picker setting
+#[expect(clippy::too_many_arguments)] // each is a distinct, named picker setting
 pub fn pick(
     terminal: &mut ratatui::DefaultTerminal,
     decks_dir: &Path,

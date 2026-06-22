@@ -594,7 +594,7 @@ fn resolve<T: Copy + PartialEq>(
 /// the interactive picker (recent decks + the decks directory). Returns
 /// `Ok(None)` if the picker was cancelled or nothing was selected. The picker
 /// needs a terminal.
-#[allow(clippy::too_many_arguments)] // a thin picker shim; grouping would obscure
+#[expect(clippy::too_many_arguments)] // a thin picker shim; grouping would obscure
 fn pick_decks_if_empty(
     terminal: Option<&mut DefaultTerminal>,
     decks: Vec<PathBuf>,

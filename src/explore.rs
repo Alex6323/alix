@@ -412,7 +412,7 @@ fn parse_item_header(t: &str) -> Option<(usize, Kind, String)> {
 /// trace, a `% title:` facts deck for a deck — wired by `% requires:` (item
 /// numbers mapped to the member file names), with each `% source:` rewritten
 /// absolute against the source root. Refuses a non-empty `dir` unless `force`.
-#[allow(clippy::too_many_arguments)] // a manifest + a plan + per-call knobs
+#[expect(clippy::too_many_arguments)] // a manifest + a plan + per-call knobs
 pub fn materialize(
     plan: &str,
     dir: &Path,

@@ -51,9 +51,11 @@ pub struct Card {
     /// The 1-based line number of the front side in the deck file.
     pub line: usize,
     /// Lines hashed for the card's identity instead of `back`. `None` for
-    /// plain cards (which hash their back lines). Cloze sub-cards hash the raw
-    /// marked-up lines plus a hole index so their identity survives rewording
-    /// the front and stays unique even when two holes contain the same text.
+    /// plain cards (which hash their back lines). Cloze sub-cards hash each
+    /// line's text with the cloze delimiters stripped (so restyling the markup
+    /// never reshuffles ids), plus a per-hole index — keeping their identity
+    /// stable across rewording the front and unique even when two holes hold the
+    /// same text.
     pub hash_lines: Option<Vec<String>>,
     /// Per-card answer-mode override (`% mode:` on the card, else the deck's
     /// `% mode:`). `None` falls back to the CLI flag / built-in default. Not
@@ -158,9 +160,12 @@ impl Card {
     ///
     /// Plain cards hash the subject bytes followed by the bytes of each
     /// (trimmed) back line with an unseeded `XxHash64`, ignoring front and
-    /// note, so progress survives rewording the front and adding notes. This
-    /// value keys the progress store and must stay stable across versions, or
-    /// existing progress would be orphaned.
+    /// note, so progress survives rewording the front and adding notes. Cloze
+    /// cards hash `hash_lines` instead of the back — the delimiter-free line
+    /// structure plus a per-hole index (see that field's doc) — so restyling the
+    /// `{{ }}` markup never reshuffles ids. This value keys the progress store
+    /// and must stay stable across versions, or existing progress would be
+    /// orphaned.
     pub fn id(&self) -> u64 {
         let mut hasher = XxHash64::default();
         hasher.write(self.subject.as_bytes());

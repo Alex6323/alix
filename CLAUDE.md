@@ -79,8 +79,17 @@ to this codebase. When in doubt, mirror the surrounding code.
   rest" (a builder only earns its boilerplate with many optional fields plus
   validation).
 
-- **CI denies warnings** (`RUSTFLAGS: -Dwarnings`); keep the build clean rather
-  than papering a lint over with `#[allow(…)]`.
+- **CI denies warnings** (`RUSTFLAGS: -Dwarnings`), so the build must stay clean.
+  Fix the cause rather than silence it — never suppress a real `dead_code` /
+  `unused` / correctness lint just to get past CI. When a lint is a genuine false
+  positive or the refactor it would force is worse than the lint (e.g.
+  `clippy::too_many_arguments` on a server/picker entry point), suppress it
+  **item-scoped with a one-line reason**, and prefer **`#[expect(…)]` over
+  `#[allow(…)]`**: an `#[expect]` is self-cleaning — once the lint stops firing,
+  the compiler flags it (`unfulfilled_lint_expectations`, an error under
+  `-Dwarnings`), so a stale suppression can't linger. Keep `#[allow]` only for
+  broad module-/crate-level or conditionally-firing cases, where an expectation
+  would be spuriously unfulfilled.
 
 ## Conventions
 
@@ -105,8 +114,11 @@ to this codebase. When in doubt, mirror the surrounding code.
   (Keep a Changelog format: Added / Changed / Fixed). Internal refactors and
   test-only changes don't.
 - **Don't break card identity.** A card's id is
-  `XxHash64(deck file name + its answer/back lines)` — see `Card::id`
-  (`src/card.rs`). It deliberately ignores the front, notes, and comments, so
+  `XxHash64(deck file name + its back lines)` — or, for **cloze** cards, its
+  `hash_lines`: each line's text with the `{{ }}` delimiters stripped (so
+  restyling the markup doesn't reshuffle ids), plus a per-hole index — see
+  `Card::id` (`src/card.rs`). It deliberately ignores the front, notes, and
+  comments, so
   editing those preserves a card's review history while changing a back line
   resets it. Preserve this whenever you touch the parser, `hash_lines`, or deck
   rewriting — a careless change silently wipes users' progress.

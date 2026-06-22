@@ -775,7 +775,7 @@ fn exam_dto(ex: &Examining, decks_dir: &Path) -> ExamDto {
 /// decks (`POST /api/select`) calls `build` to construct a session in place.
 /// `build` borrows the shared `store` and `recent`, so all sessions write one
 /// history and update the recent-decks list, exactly like the CLI.
-#[allow(clippy::too_many_arguments)] // each is a distinct, named server input
+#[expect(clippy::too_many_arguments)] // each is a distinct, named server input
 pub fn run_review(
     initial: Option<SessionBuild>,
     mut store: Store,
@@ -1668,7 +1668,7 @@ impl Browsing {
 /// `initial` `None` it opens at the deck-selection screen; `POST /api/select`
 /// builds the card list via `build`. The only thing it writes is card removal
 /// (deletes the card from its deck file and prunes its progress in `store`).
-#[allow(clippy::too_many_arguments)] // each is a distinct, named server input
+#[expect(clippy::too_many_arguments)] // each is a distinct, named server input
 pub fn run_browse(
     initial: Option<CardsBuild>,
     mut store: Store,
