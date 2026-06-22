@@ -1092,7 +1092,9 @@ mod tests {
     /// mutex and cascade into spurious `PoisonError`s in every other test that
     /// shares it — turning one real failure into several misleading ones.
     fn exec_lock() -> std::sync::MutexGuard<'static, ()> {
-        EXEC_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+        EXEC_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     /// Writes a fake `claude` CLI that emits `body` and returns its path.
