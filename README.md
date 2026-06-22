@@ -436,6 +436,12 @@ from the source, so a moved or missing file shows *"source unavailable"* rather
 than a stale quote. `% at:` is a comment to the scheduler, so adding it never
 changes a card's identity or resets its progress.
 
+You can write `% at:` by hand, but the deck generator adds them for you:
+[`flash deck <local source>`](#generate-a-facts-deck--flash-deck) and
+[`flash explore --build`](#exploring-a-source--flash-explore) cite the lines each
+fact came from, and `flash check` warns about a citation that no longer resolves
+(a moved or shrunk file).
+
 ## Review
 
 The default **flip** mode is Anki-style: you reveal the answer and grade
@@ -634,7 +640,9 @@ For a **web page**, Claude reads it with the **WebFetch** tool and the deck
 starts with a `% link:` line back to it (so you can use the *ask* feature on the
 cards). For a **local source**, Claude explores it read-only with
 `Read`/`Glob`/`Grep` at the source root and the deck starts with a `% source:`
-line (so `flash exam` can later grade your understanding against it). Either way
+line (so `flash exam` can later grade your understanding against it); it also
+adds a [`% at:` citation](#source-citations--at-on-a-fact-card) to each fact that
+maps to specific lines, so the card can show its source on reveal. Either way
 Claude only returns text — never a write or shell tool — and flash validates it
 (`parse_str`) and writes `~/decks/<slug>.txt`. The cards are spread across four
 layers of understanding (facts → concepts → application → connections) and use

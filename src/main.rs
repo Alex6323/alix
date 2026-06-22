@@ -2701,6 +2701,24 @@ fn check(decks: Vec<PathBuf>) -> Result<()> {
                         }
                     }
                 }
+
+                // Fact decks: a card may also cite its source with `% at:`; warn
+                // when a citation doesn't resolve (a moved/shrunk file), so a
+                // hand-written or generated citation is caught before review.
+                if !deck.is_trace() {
+                    let base = SourceBase::for_deck(&deck);
+                    for card in &deck.cards {
+                        if let Some(at) = card.at.as_deref()
+                            && let Err(e) = base.excerpt(at)
+                        {
+                            warnings += 1;
+                            eprintln!(
+                                "warning: {}: card at line {}: `% at: {at}` — {e:#}",
+                                deck.subject, card.line
+                            );
+                        }
+                    }
+                }
             }
         }
     }

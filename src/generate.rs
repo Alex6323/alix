@@ -108,6 +108,12 @@ line is a short instruction; the INDENTED answer line(s) below it hold the \
 full sentence, with each hidden span wrapped in {{double curly braces}} — the \
 blanks live in the answer line, NEVER on the `#?` line. Use `#?` only when there \
 is a natural word to blank out.
+- A `% at: file:start-end` line indented under a card cites where its answer \
+lives in the source (e.g. `% at: src/string.rs:120-128`; the path is relative to \
+the source root — your working directory). Add one to every card whose answer \
+maps to a specific, contiguous range of lines — read the real lines, never guess \
+the numbers — so the learner can flip the card to its source on reveal. Omit it \
+for a card that synthesizes across several places.
 - `% ` lines are comments, ignored by the trainer. To begin an answer line with \
 a literal #, %, or !, escape it with a backslash: \\#.
 
@@ -424,6 +430,16 @@ mod tests {
         assert!(p.contains("AT MOST 8 cards"));
         assert!(!p.contains("WebFetch")); // a local source, not a web page
         assert!(!p.contains("{source}"));
+        // It asks for per-card `% at:` source citations (read the real lines).
+        assert!(p.contains("% at: file:start-end"));
+        assert!(p.contains("never guess"));
+    }
+
+    #[test]
+    fn url_prompt_does_not_ask_for_line_citations() {
+        // A web page has no line numbers, so the URL prompt must not request `% at:`.
+        let p = build_prompt("https://example.org/page", true, &cfg(8));
+        assert!(!p.contains("% at:"));
     }
 
     #[test]

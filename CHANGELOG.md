@@ -17,6 +17,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   source shows "source unavailable" rather than a stale quote, and `% at:` is not
   part of the card's identity hash (adding it never resets progress). Reuses the
   trace walk's excerpt machinery via a shared `trace::SourceBase`/`excerpt_at`.
+  The deck **generator writes these citations for you** — `flash deck` on a local
+  source and `flash explore --build` add a `% at:` to each fact that maps to
+  specific lines — and **`flash check` validates** a fact deck's citations,
+  warning about one that no longer resolves (a moved or shrunk file).
 - **The progress store is now version-checked.** A `progress.json` written by a
   newer flash is refused on open with a clear "upgrade flash" message instead of
   being silently rewritten at the old version (which could drop data the newer

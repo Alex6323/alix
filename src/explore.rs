@@ -285,7 +285,10 @@ fn fill_prompt(items: &[Item]) -> String {
          previous reveal, predicts forward, and its key points are grounded in the \
          cited lines.\n\
          - a [deck] → FACT cards: each is a `# ` front at column 0, then TAB-indented \
-         back line(s). One fact per card, concise and recall-oriented.\n\n\
+         back line(s), plus a `% at: file:start-end` locator citing the REAL lines \
+         whenever the fact maps to a specific range (so the card can show its source \
+         on reveal; omit it when the fact synthesizes across several places). One \
+         fact per card, concise and recall-oriented.\n\n\
          Do NOT repeat any header directive (`% trace:`, `% title:`, `% source:`, \
          `% requires:`) — those are already written; output only the `# ` cards. \
          Output ONLY the delimited item bodies: no preamble, no code fences, nothing \
@@ -636,6 +639,31 @@ mod tests {
         );
         assert!(p.contains("WebFetch"));
         assert!(!p.contains("Glob")); // no local file tools for a URL source
+    }
+
+    #[test]
+    fn fill_prompt_asks_fact_cards_to_cite_their_source() {
+        let items = vec![
+            Item {
+                num: 1,
+                kind: Kind::Deck,
+                title: "Basics".to_string(),
+                requires: Vec::new(),
+                source: ".".to_string(),
+            },
+            Item {
+                num: 2,
+                kind: Kind::Trace,
+                title: "The path".to_string(),
+                requires: vec![1],
+                source: ".".to_string(),
+            },
+        ];
+        let p = fill_prompt(&items);
+        assert!(p.contains("FACT cards"));
+        // Fact cards get a `% at:` citation so the card can show its source.
+        assert!(p.contains("% at: file:start-end"));
+        assert!(p.contains("show its source on reveal"));
     }
 
     #[test]

@@ -105,3 +105,10 @@ This is the same machinery trace walks use to reveal source, brought to ordinary
 fact cards — so a card that asks *what* a thing is can also show you *where* it
 lives. Like all `%` directives, `% at:` is invisible to the identity hash: adding
 a citation to an existing card never resets its progress.
+
+You rarely have to write these by hand. Generating a deck from a local source —
+[`flash deck <path>`](11-generating-decks.md) or
+[`flash explore --build`](14-explore.md) — cites the lines each fact came from,
+and [`flash check`](17-command-reference.md) warns about a citation that no
+longer resolves, so a moved or shrunk file is caught before you next review the
+card.
