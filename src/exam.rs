@@ -1167,10 +1167,14 @@ mod tests {
         let _lock = EXEC_LOCK.lock().unwrap();
         let dir = tempfile::tempdir().unwrap();
         // The model answered in prose (no `#` card front) instead of emitting
-        // cards: a failure, not a silently-appended bogus "card".
+        // cards: a failure, not a silently-appended bogus "card". The script
+        // drains stdin first (`cat`) — like the real CLI and the other fakes —
+        // so `ask::run`'s prompt write can't race the child into a broken pipe
+        // (which would surface as "cannot write the prompt", not the error under
+        // test; it flaked only under CI load).
         let cli = fake_cli(
             dir.path(),
-            "printf '%s' 'Sure, here is some advice on those concepts.'",
+            "cat >/dev/null; printf '%s' 'Sure, here is some advice on those concepts.'",
         );
         let err = remediation_cards(
             &["the gap".to_string()],
