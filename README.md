@@ -172,7 +172,7 @@ card's front. Follow a link for the full explanation.
 | `% link:` | deck | [ask-Claude reference](#ask-claude-about-a-card) URL — **tutor only** (repeatable). |
 | `% source:` | deck | [Exam ground truth](#the-ai-exam-flash-exam) — a URL or file (repeatable). For a [trace](#traces-flash-trace), the source the path runs through (the frozen `assets/` copy in an explored workspace). Also a tutor reference. |
 | `% trace:` | deck | What a [trace](#traces-flash-trace) walks — a path description ("how X becomes Y"); its presence makes the deck a trace. |
-| `% at:` | card | A [trace checkpoint's](#traces-flash-trace) locator into the `% source:` (`file:lines`, or just `lines` for a single-file source). |
+| `% at:` | card | A locator into the `% source:` (`file:lines`, or just `lines` for a single-file source): a [trace checkpoint's](#traces-flash-trace) reveal target, or a [fact card's source citation](#source-citations--at-on-a-fact-card) shown on reveal. |
 | `% given:` | card | A [trace checkpoint's](#traces-flash-trace) "given" (repeatable) — an off-screen symbol the question leans on, as `name — meaning`; shown as a list under the question. |
 | `% title:` | deck | [Display name](#workspaces) shown instead of the file name (a workspace sets `title` in its `flash.toml`). |
 
@@ -412,6 +412,29 @@ In the terminal, `flash review` skips such cards with a note, and if a whole
 deck is web-only it points you at `--serve`. Use `% frontend:` to force a card
 or deck to a frontend explicitly. `flash check` warns about a referenced image
 file that doesn't exist (it doesn't fail the check).
+
+### Source citations (`% at:` on a fact card)
+
+A plain fact card can cite where its answer comes from. Add a `% at:` locator
+pointing into the deck's `% source:`, and on reveal the card offers to swap its
+worded answer for the exact source lines:
+
+```
+% source: src/string.rs
+
+# What does the `String` struct hold?
+    A `Vec<u8>` (its bytes).
+    % at: src/string.rs:1-3
+```
+
+The locator takes the same form a [trace checkpoint](#traces-flash-trace) uses —
+`file:lines` (e.g. `src/string.rs:1-3`), or just `lines` when the `% source:` is
+a single file. On reveal a `</>` marker appears on the answer: in the web,
+**click the answer** (or press `s`) to swap it for the line-numbered excerpt, and
+again to swap back; in the terminal, press **`s`**. The excerpt is read **live**
+from the source, so a moved or missing file shows *"source unavailable"* rather
+than a stale quote. `% at:` is a comment to the scheduler, so adding it never
+changes a card's identity or resets its progress.
 
 ## Review
 

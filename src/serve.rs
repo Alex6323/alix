@@ -41,7 +41,7 @@ use crate::{
     scheduler::{Grade, SchedulerKind},
     session::{Session, now_ms},
     store::Store,
-    trace::{self, Delta, Excerpt, Phase, Walk},
+    trace::{self, Delta, Excerpt, Phase, SourceBase, Walk},
 };
 
 /// Per-deck data the server needs to apply a removal: the file path, plus the
@@ -138,6 +138,15 @@ struct CardDto {
     img: Option<String>,
     /// `/img/<key>` URL for the answer-side image, shown on reveal, or `null`.
     img_back: Option<String>,
+    /// The card's `% at:` source citation locator (e.g. `string.rs:120-128`),
+    /// shown compact on reveal and expandable to `citation`. `null` if absent.
+    at: Option<String>,
+    /// The resolved excerpt for `at`, expanded in the browser on demand. `null`
+    /// when the card has no `% at:` or it couldn't be resolved.
+    citation: Option<ExcerptDto>,
+    /// Why `at` couldn't be resolved (missing file, drifted line range), if it
+    /// failed — shown dim in place of the excerpt.
+    citation_error: Option<String>,
 }
 
 /// The current review state sent to the browser after every action.
@@ -448,6 +457,9 @@ pub struct SessionBuild {
     /// Subject → its deck's `% source:` project root, for the grounded ask-tutor
     /// (`[ask] source_access`). Only decks with a local source appear.
     pub source_roots: HashMap<String, PathBuf>,
+    /// Subject → its deck's source base, for resolving a card's `% at:` citation
+    /// excerpt on reveal.
+    pub source_bases: HashMap<String, SourceBase>,
 }
 
 /// A trace walk ready to serve, built when a single trace deck is picked from the
@@ -490,6 +502,8 @@ struct Reviewing {
     links: HashMap<String, Vec<String>>,
     /// Subject → `% source:` project root, for the grounded tutor (opt-in).
     source_roots: HashMap<String, PathBuf>,
+    /// Subject → source base, for resolving a card's `% at:` citation excerpt.
+    source_bases: HashMap<String, SourceBase>,
     pending: Option<Pending>,
 }
 
@@ -523,6 +537,7 @@ impl Reviewing {
             transcript_card: None,
             links: build.links,
             source_roots: build.source_roots,
+            source_bases: build.source_bases,
             pending: None,
         }
     }
@@ -1350,14 +1365,14 @@ struct HopDto {
 }
 
 /// A revealed source excerpt for the browser — line-numbered, contiguous.
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 struct ExcerptDto {
     path: String,
     lines: Vec<LineDto>,
     truncated: bool,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 struct LineDto {
     n: usize,
     text: String,
@@ -1832,9 +1847,24 @@ fn review_state(
     } else {
         Vec::new()
     };
+    // Resolve a fact card's `% at:` citation against its deck's source base, so
+    // the browser can show it on reveal (the same live read a trace walk does).
+    let card_with_citation = card.map(|c| {
+        let mut dto = card_dto(c);
+        if let Some(locator) = c.at.as_deref() {
+            dto.at = Some(locator.to_string());
+            if let Some(base) = r.source_bases.get(&*c.subject) {
+                match base.excerpt(locator) {
+                    Ok(ex) => dto.citation = Some(excerpt_dto(&ex)),
+                    Err(e) => dto.citation_error = Some(format!("{e:#}")),
+                }
+            }
+        }
+        dto
+    });
     StateDto {
         phase: "review",
-        card: card.map(card_dto),
+        card: card_with_citation,
         choices,
         mode: mode_name(mode),
         remaining: session.remaining(),
@@ -2097,6 +2127,11 @@ fn card_dto(card: &Card) -> CardDto {
             .collect(),
         img: card.image.as_ref().map(img_url),
         img_back: card.image_back.as_ref().map(img_url),
+        // The citation is resolved by `review_state`, which has the source base;
+        // browse (no base) leaves these empty.
+        at: None,
+        citation: None,
+        citation_error: None,
     }
 }
 
@@ -2379,6 +2414,7 @@ mod tests {
             decks,
             links: HashMap::new(),
             source_roots: HashMap::new(),
+            source_bases: HashMap::new(),
         });
         (reviewing, card, deck)
     }

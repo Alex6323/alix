@@ -79,3 +79,29 @@ can't draw them. So an image card is automatically *web-only* (as if it declared
 `% frontend: web`): `flash review` in the terminal skips it with a note, and if a
 whole deck is images it points you at `--serve` to open it in the browser. `flash
 check` warns about an image file it can't find, but doesn't fail on it.
+
+## Source citations
+
+A plain fact card can show *where its answer comes from*. Give the card a `% at:`
+locator into the deck's `% source:`, and on reveal it offers to swap the worded
+answer for the exact source lines:
+
+```text
+% source: src/string.rs
+
+# What does the `String` struct hold?
+    A `Vec<u8>` (its bytes).
+    % at: src/string.rs:1-3
+```
+
+The locator is the same shape a [trace checkpoint](13-trace-decks.md) uses:
+`file:lines` (e.g. `src/string.rs:1-3`), or just `lines` when the `% source:` is
+a single file. On reveal a `</>` marker appears on the answer — in the web,
+**click the answer** (or press `s`) to flip it to the line-numbered excerpt and
+back; in the terminal, press **`s`**. The lines are read *live* from the source,
+so a moved or deleted file shows "source unavailable" rather than a stale quote.
+
+This is the same machinery trace walks use to reveal source, brought to ordinary
+fact cards — so a card that asks *what* a thing is can also show you *where* it
+lives. Like all `%` directives, `% at:` is invisible to the identity hash: adding
+a citation to an existing card never resets its progress.

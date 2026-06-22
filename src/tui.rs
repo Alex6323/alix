@@ -133,6 +133,9 @@ pub struct DeckInfo {
     /// value (the deck's workspace `source_access` override, else the global
     /// `[ask] source_access`).
     pub source_access: bool,
+    /// The deck's source base, for resolving a card's `% at:` citation excerpt
+    /// on reveal (fact-card citations).
+    pub source_base: crate::trace::SourceBase,
 }
 
 /// Static settings of a review run.
@@ -180,6 +183,9 @@ pub struct App {
     /// Set when the user asked to quit mid-session: a confirmation prompt is
     /// shown, and the quit only goes through once they confirm it.
     confirming_quit: bool,
+    /// Showing a cited card's source excerpt in place of its answer (`% at:`),
+    /// toggled with `s`; reset for each new card.
+    citation_view: bool,
 }
 
 impl App {
@@ -199,6 +205,7 @@ impl App {
             exam_request: None,
             quit: false,
             confirming_quit: false,
+            citation_view: false,
         };
         app.start_card();
         app
@@ -349,6 +356,7 @@ impl App {
 
     /// Sets up the phase for the next card, or the summary if none is left.
     fn start_card(&mut self) {
+        self.citation_view = false; // a new card starts on its answer, not its source
         let Some(card) = self.session.current() else {
             // Reaching the summary: flag up front whether a new session could
             // start, so the screen can say "nothing due" without the user
@@ -421,6 +429,86 @@ impl App {
             results,
         };
         Ok(())
+    }
+
+    /// The card currently on screen: the snapshot held by the phase after
+    /// grading (Feedback / an answered Choice), else the session's current card.
+    fn current_card(&self) -> Option<&Card> {
+        match &self.phase {
+            Phase::Feedback { card, .. } | Phase::Choice { card, .. } => Some(card),
+            _ => self.session.current(),
+        }
+    }
+
+    /// Whether the on-screen `card` is answered/revealed — the states in which
+    /// its `% at:` source citation can be shown (and `s` toggles to it).
+    fn answered(&self, card: &Card) -> bool {
+        match &self.phase {
+            Phase::Flip { revealed } | Phase::Explain { revealed, .. } => *revealed,
+            Phase::LineByLine { revealed } => *revealed >= card.back.len(),
+            Phase::Feedback { .. } => true,
+            Phase::Choice { selected, .. } => selected.is_some(),
+            _ => false,
+        }
+    }
+
+    /// Renders `card`'s cited source excerpt (line-numbered), resolved live
+    /// against its deck's source base — or a dim reason it can't be read.
+    fn push_source(&self, lines: &mut Vec<Line>, card: &Card) {
+        let resolved = self
+            .options
+            .decks
+            .get(&*card.subject)
+            .zip(card.at.as_deref())
+            .map(|(info, at)| info.source_base.excerpt(at));
+        match resolved {
+            Some(Ok(ex)) => {
+                for (n, text) in &ex.lines {
+                    lines.push(Line::from(vec![
+                        Span::styled(format!("{n:>4} "), Style::new().fg(Color::DarkGray)),
+                        Span::raw(text.clone()),
+                    ]));
+                }
+                if ex.truncated {
+                    lines.push(Line::from("    … (truncated)".dim()));
+                }
+            }
+            Some(Err(e)) => lines.push(Line::from(format!("source unavailable: {e:#}").dim())),
+            None => lines.push(Line::from("source unavailable".dim())),
+        }
+    }
+
+    /// The shared tail under an answered card: its note, then the grade prompt
+    /// (Flip/Explain/LineByLine) or the PASSED/FAILED badge (Feedback/Choice).
+    fn push_answer_tail(&self, lines: &mut Vec<Line>, card: &Card, width: u16) {
+        push_note(lines, card, width);
+        lines.push(Line::default());
+        match &self.phase {
+            Phase::Flip { .. } | Phase::LineByLine { .. } => {
+                lines.push(Line::from("How well did you know it?".italic()));
+            }
+            Phase::Explain { .. } => {
+                lines.push(Line::from("How well did you cover them?".italic()));
+            }
+            Phase::Feedback { grade, .. } => lines.push(passed_failed_badge(grade.passed())),
+            Phase::Choice {
+                question,
+                selected: Some(s),
+                ..
+            } => lines.push(passed_failed_badge(*s == question.correct)),
+            _ => {}
+        }
+    }
+
+    /// The dim affordance line telling the user `s` swaps answer ⟷ source.
+    fn push_citation_hint(&self, lines: &mut Vec<Line>) {
+        lines.push(Line::default());
+        let hint = if self.citation_view {
+            "¶  s  show the answer"
+        } else {
+            "</>  s  view the source"
+        };
+        lines.push(Line::from(hint.dim()));
     }
 
     /// Grades the current card and goes straight to the next one (flip mode:
@@ -566,6 +654,18 @@ impl App {
         if remove_hit && answerable {
             self.remove_card();
             return Ok(());
+        }
+        // `s` swaps a cited card between its answer and its source excerpt, once
+        // answered (so it never shadows plain-`s` while typing an answer).
+        if !ctrl && matches!(key.code, KeyCode::Char('s') | KeyCode::Char('S')) {
+            let cited = match self.current_card() {
+                Some(c) => c.at.is_some() && self.answered(c),
+                None => false,
+            };
+            if cited {
+                self.citation_view = !self.citation_view;
+                return Ok(());
+            }
         }
 
         match &mut self.phase {
@@ -951,7 +1051,7 @@ impl App {
         let keys = match &self.phase {
             Phase::Typing { .. } => {
                 format!(
-                    "{} hint │ {} skip │ {} remove │ {} quit",
+                    "{} hint │ {} skip │ {} remove │ {} leave",
                     l(&k.hint),
                     l(&k.skip),
                     l(&k.remove),
@@ -959,7 +1059,7 @@ impl App {
                 )
             }
             Phase::Fuzzy { .. } => format!(
-                "{} submit line │ {} skip │ {} remove │ {} quit",
+                "{} submit line │ {} skip │ {} remove │ {} leave",
                 l(&k.submit),
                 l(&k.skip),
                 l(&k.remove),
@@ -967,7 +1067,7 @@ impl App {
             ),
             Phase::Flip { revealed: false } => {
                 format!(
-                    "{} reveal │ {} skip │ {} remove │ {} quit",
+                    "{} reveal │ {} skip │ {} remove │ {} leave",
                     l(&k.reveal),
                     l(&k.skip),
                     l(&k.remove),
@@ -975,7 +1075,7 @@ impl App {
                 )
             }
             Phase::Flip { revealed: true } => format!(
-                "{} again │ {} good │ {} easy │ {} remove │ {} ask │ {} quit",
+                "{} again │ {} good │ {} easy │ {} remove │ {} ask │ {} leave",
                 l(&k.again),
                 l(&k.good),
                 l(&k.easy),
@@ -986,13 +1086,13 @@ impl App {
             Phase::Explain {
                 revealed: false, ..
             } => format!(
-                "ENTER reveal │ {} skip │ {} remove │ {} quit",
+                "ENTER reveal │ {} skip │ {} remove │ {} leave",
                 l(&k.skip),
                 l(&k.remove),
                 l(&k.quit)
             ),
             Phase::Explain { revealed: true, .. } => format!(
-                "{} again │ {} good │ {} easy │ {} remove │ {} ask │ {} quit",
+                "{} again │ {} good │ {} easy │ {} remove │ {} ask │ {} leave",
                 l(&k.again),
                 l(&k.good),
                 l(&k.easy),
@@ -1004,7 +1104,7 @@ impl App {
                 let total = self.session.current().map_or(0, |c| c.back.len());
                 if *revealed < total {
                     format!(
-                        "{} reveal next │ {} skip │ {} remove │ {} quit",
+                        "{} reveal next │ {} skip │ {} remove │ {} leave",
                         l(&k.reveal),
                         l(&k.skip),
                         l(&k.remove),
@@ -1012,7 +1112,7 @@ impl App {
                     )
                 } else {
                     format!(
-                        "{} again │ {} good │ {} easy │ {} remove │ {} ask │ {} quit",
+                        "{} again │ {} good │ {} easy │ {} remove │ {} ask │ {} leave",
                         l(&k.again),
                         l(&k.good),
                         l(&k.easy),
@@ -1028,7 +1128,7 @@ impl App {
                 ..
             } => {
                 format!(
-                    "1-{} select │ {} skip │ {} remove │ {} quit",
+                    "1-{} select │ {} skip │ {} remove │ {} leave",
                     question.options.len(),
                     l(&k.skip),
                     l(&k.remove),
@@ -1040,7 +1140,7 @@ impl App {
             }
             | Phase::Feedback { .. } => {
                 format!(
-                    "{} continue │ {} ask │ {} quit",
+                    "{} continue │ {} ask │ {} leave",
                     l(&k.cont),
                     l(&k.ask),
                     l(&k.quit)
@@ -1117,6 +1217,19 @@ impl App {
         if !mode_tag.is_empty() {
             lines.push(Line::from(mode_tag.dim()));
             lines.push(Line::default());
+        }
+
+        // A cited card with its source toggled on: the excerpt takes the answer's
+        // place (swap, not stack), keeping the note + grade prompt below it. Done
+        // as an early return so the normal per-mode render stays untouched.
+        let answered = self.answered(card);
+        let cited = card.at.is_some();
+        if self.citation_view && answered && cited {
+            self.push_source(&mut lines, card);
+            self.push_answer_tail(&mut lines, card, area.width);
+            self.push_citation_hint(&mut lines);
+            frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), area);
+            return;
         }
 
         match &self.phase {
@@ -1313,6 +1426,11 @@ impl App {
             Phase::Ask { .. } | Phase::Summary => unreachable!(),
         }
 
+        // The answer-side affordance ( </> s view source ) under a cited card.
+        if answered && cited {
+            self.push_citation_hint(&mut lines);
+        }
+
         let mut paragraph = Paragraph::new(lines);
         if cursor.is_none() {
             // Wrap long lines (notes, options) — but never while an input
@@ -1502,6 +1620,16 @@ pub(crate) fn bar(left: &str, right: &str, width: u16) -> Paragraph<'static> {
         .saturating_sub(right.chars().count());
     let text = format!("{left}{}{right}", " ".repeat(pad));
     Paragraph::new(text).style(HEADER_STYLE)
+}
+
+/// The PASSED / FAILED badge shown after a graded card (typing/fuzzy feedback,
+/// an answered choice), shared by the normal and source-view renders.
+fn passed_failed_badge(passed: bool) -> Line<'static> {
+    if passed {
+        Line::from(" PASSED ".bold().fg(Color::Black).bg(Color::Green))
+    } else {
+        Line::from(" FAILED ".bold().fg(Color::Black).bg(Color::Red))
+    }
 }
 
 /// Appends the card's note, if any, as a yellow quoted block with a left bar.

@@ -7,6 +7,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Fact cards can cite their source (`% at:`), shown on reveal.** A plain fact
+  card may now carry a `% at: file:lines` locator into its deck's `% source:`
+  (the same form a trace checkpoint uses — `file:lines`, or just `lines` for a
+  single-file source). On reveal a `</>` marker appears on the answer; in the
+  web you **click the answer** (or press `s`) to swap it for the line-numbered
+  source excerpt and back, and in the terminal you press **`s`** — one view at a
+  time, so the card stays compact. The excerpt is read live, so a moved/missing
+  source shows "source unavailable" rather than a stale quote, and `% at:` is not
+  part of the card's identity hash (adding it never resets progress). Reuses the
+  trace walk's excerpt machinery via a shared `trace::SourceBase`/`excerpt_at`.
 - **The progress store is now version-checked.** A `progress.json` written by a
   newer flash is refused on open with a clear "upgrade flash" message instead of
   being silently rewritten at the old version (which could drop data the newer

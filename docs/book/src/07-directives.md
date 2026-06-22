@@ -25,7 +25,7 @@ full.
 | `% source:` | deck | [Exam ground truth](12-the-ai-exam.md) (URL/file, repeatable); also a [trace](13-trace-decks.md)'s path origin, and a tutor reference. |
 | `% strictness:` | deck | [Exam grading rigor](12-the-ai-exam.md): strict, balanced, lenient. |
 | `% trace:` | deck | What a [trace](13-trace-decks.md) walks; its presence makes the deck a trace. |
-| `% at:` | card | A [trace checkpoint's](13-trace-decks.md) locator into the source (`file:lines`). |
+| `% at:` | card | A locator into the `% source:` (`file:lines`): a [trace checkpoint's](13-trace-decks.md) reveal target, or a [fact card's source citation](06-cloze-direction-images.md#source-citations) shown on reveal. |
 | `% given:` | card | A [trace checkpoint's](13-trace-decks.md) off-screen symbol, as `name — meaning` (repeatable). |
 
 ## `% link:` vs `% source:`

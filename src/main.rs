@@ -20,7 +20,7 @@ use flash::{
     session::{Order, Session, SessionOptions, histogram},
     store::{Store, default_store_path},
     time::{humanize_ms, now_ms},
-    trace::{Phase, Trace, Walk},
+    trace::{Phase, SourceBase, Trace, Walk},
     tui::{self, App},
     workspace,
 };
@@ -502,6 +502,8 @@ fn load_decks(paths: &[PathBuf], defaults: &HashMap<String, DeckSettings>) -> Re
                 source_root: deck.source_root(),
                 // Resolved against the global config in `build_review`.
                 source_access: false,
+                // For resolving a card's `% at:` citation excerpt on reveal.
+                source_base: SourceBase::for_deck(&deck),
             },
         );
         settings.push(deck.settings);
@@ -1265,12 +1267,19 @@ fn review_serve(args: ReviewArgs) -> Result<()> {
                 info.source_root.clone().map(|root| (subject.clone(), root))
             })
             .collect();
+        // Subject → source base, so the web can resolve a card's `% at:` citation.
+        let source_bases = b
+            .decks
+            .iter()
+            .map(|(subject, info)| (subject.clone(), info.source_base.clone()))
+            .collect();
         serve::SessionBuild {
             session: b.session,
             label: b.label,
             decks: subject_paths(b.decks),
             links,
             source_roots,
+            source_bases,
         }
     };
 

@@ -110,6 +110,23 @@
   .region.n { flex: 0 0 auto; max-height: 30%; }   /* note */
   /* keep the note (and its divider) pinned to the bottom of the card */
   #noteDivider { margin-top: auto; }
+  /* a cited card's answer region is tappable to swap answer <-> source; a corner
+     icon marks it ( </> = view the source, ¶ = back to the answer ) */
+  .region.a.citable { position: relative; cursor: pointer; }
+  .cite-toggle { position: absolute; top: 6px; right: 10px; display: inline-flex; align-items: center; gap: 6px;
+                 color: var(--dim); user-select: none; transition: color 0.12s; }
+  .cite-toggle .ci { font-family: var(--mono); font-size: 0.9rem; line-height: 1; }
+  .cite-toggle .k { font-family: var(--mono); font-size: 0.66rem; border: 1px solid var(--line);
+                    border-radius: 5px; padding: 1px 5px; }
+  .region.a.citable:hover .cite-toggle { color: var(--bolt); }
+  .region.a.citable:hover .cite-toggle .k { border-color: var(--bolt); }
+  .cite-err { color: var(--dim); font-style: italic; font-size: 0.8rem; padding-left: 6px; }
+  .excerpt { padding: 6px 8px; background: rgba(0,0,0,0.25); border-radius: 8px; overflow-x: auto;
+             font-family: var(--mono); font-size: 0.78rem; line-height: 1.45; }
+  .exline { display: flex; gap: 12px; white-space: pre; }
+  .exline .lno { color: var(--dim); text-align: right; min-width: 3ch; user-select: none; }
+  .exline .ltx { color: var(--ink); }
+  .excerpt-more { color: var(--dim); font-size: 0.72rem; padding-left: 6px; margin-top: 4px; }
   .front-text { font-size: clamp(1.4rem, 4.4vw, 2.05rem); font-weight: 600; line-height: 1.28; letter-spacing: -0.01em; }
   .context { color: var(--bolt); font-family: var(--mono); font-size: 0.95rem; white-space: pre-wrap; }
   .context .hole { color: var(--bolt-hi); font-weight: 700; }      /* the active cloze blank */
@@ -340,6 +357,7 @@
 "use strict";
 let state = null;     // last StateDto
 let revealed = 0;     // back lines shown for the current card
+let citationView = false; // showing the source excerpt in place of the answer
 let feedback = null;  // choice result being shown ({chosen, correct, passed})
 let confirmingLeave = false; // showing the "session not finished" leave prompt
 let selectEsc = null; // in the deck-select confirm view, Esc returns to browse
@@ -389,7 +407,7 @@ function renderLeaveConfirm() {
   chip("Stay", "primary", cancelLeave, "esc");
 }
 
-function apply(s) { state = s; revealed = 0; feedback = null; explainInput = ""; render(); }
+function apply(s) { state = s; revealed = 0; citationView = false; feedback = null; explainInput = ""; render(); }
 function isChoice() { return state.mode === "choice" && state.choices; }
 function isInput() { return state.mode === "typing" || state.mode === "fuzzy"; }
 function isExplain() { return state.mode === "explain"; }
@@ -1006,14 +1024,44 @@ function fillBottom() {
   if (!a) return;
   a.innerHTML = "";
   a.appendChild(el("span", "mode-tag", modeLabel())); // badge heads the answer section
-  if (feedback) { (isChoice() ? renderChoiceFeedback : renderCheckFeedback)(a); setNote(true); }
+  const citable = state.card.at && isAnswered();
+  if (citable && citationView) {
+    // Source view: the cited excerpt takes the answer's place (swap, not stack).
+    if (state.card.citation) renderExcerpt(a, state.card.citation);
+    else a.appendChild(el("div", "cite-err", state.card.citation_error || "source unavailable"));
+    setNote(true);
+  } else if (feedback) { (isChoice() ? renderChoiceFeedback : renderCheckFeedback)(a); setNote(true); }
   else if (isChoice()) { renderChoices(a); setNote(false); }
   else if (isInput()) { renderInput(a); setNote(false); }
   else if (isExplain()) { renderExplain(a); setNote(fullyRevealed()); }
   else { fillAnswer(a); setNote(fullyRevealed()); }
+  // A cited card: the whole region toggles answer ⟷ source (click it, or `s`).
+  // The pill both marks the card as having a source and labels where it is.
+  a.classList.toggle("citable", citable);
+  a.onclick = citable ? onCiteClick : null;
+  if (citable) {
+    const grp = el("span", "cite-toggle");
+    grp.title = citationView ? "show answer" : "show source " + state.card.at;
+    grp.appendChild(el("span", "ci", citationView ? "¶" : "</>"));
+    grp.appendChild(el("span", "k", "s"));
+    a.appendChild(grp);
+  }
   // keep the newest line in view as a verse is revealed line by line
   if (state.mode === "line" && revealed > 0) a.scrollTop = a.scrollHeight;
   updateFade(a);
+}
+
+// Swap the answer region between the worded answer and the cited source excerpt.
+function toggleCitation() {
+  if (!state || !state.card || !state.card.at || !isAnswered()) return;
+  citationView = !citationView;
+  fillBottom();
+}
+// Click anywhere in the answer/excerpt swaps it — but don't hijack a drag that's
+// selecting text (e.g. copying a line of the excerpt).
+function onCiteClick() {
+  if (window.getSelection && String(window.getSelection())) return;
+  toggleCitation();
 }
 
 // Show a soft fade on whichever edge of the answer region hides content,
@@ -1042,6 +1090,20 @@ function setNote(show) {
     if (divider) divider.remove();
     if (n) n.remove();
   }
+}
+
+// A line-numbered source excerpt (the cited source), like the trace walk. The
+// `↳ file:lines` pill already names the file, so no path header is needed.
+function renderExcerpt(parent, ex) {
+  const pre = el("div", "excerpt");
+  for (const ln of ex.lines) {
+    const row = el("div", "exline");
+    row.appendChild(el("span", "lno", String(ln.n)));
+    row.appendChild(el("span", "ltx", ln.text));
+    pre.appendChild(row);
+  }
+  parent.appendChild(pre);
+  if (ex.truncated) parent.appendChild(el("div", "excerpt-more", "… (truncated)"));
 }
 
 // Tappable multiple-choice options.
@@ -1211,7 +1273,7 @@ function renderLegend() {
     chip("Easy", "easy", () => grade("easy"), label(KEYS.easy));
     chip("Ask", "", openAsk, label(KEYS.ask));
   }
-  chip("Decks", "", leaveSession, "esc"); // return to the deck picker
+  chip("Leave", "", leaveSession, "esc"); // return to the deck picker
 }
 
 function renderSummary() {
@@ -1250,7 +1312,7 @@ function renderSummary() {
   });
   const newSession = chip("New session", examDue.length ? "" : "primary", restart, label(KEYS.restart));
   newSession.disabled = !state.can_restart;
-  chip("Back to Decks", "", deselect, "esc");
+  chip("Leave", "", deselect, "esc");
 }
 
 function reveal() {
@@ -1313,6 +1375,10 @@ document.addEventListener("keydown", (e) => {
     }
     if (state.can_restart && hit(e, KEYS.restart)) { e.preventDefault(); restart(); }
     return;
+  }
+  // `s` swaps a cited card between its answer and its source, once answered.
+  if (state.card.at && isAnswered() && !e.ctrlKey && e.key.toLowerCase() === "s") {
+    e.preventDefault(); toggleCitation(); return;
   }
   if (feedback) {
     if (hit(e, KEYS.ask)) { e.preventDefault(); openAsk(); return; }

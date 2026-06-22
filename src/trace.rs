@@ -162,17 +162,7 @@ impl Trace {
             .locator
             .as_deref()
             .ok_or_else(|| anyhow!("this checkpoint has no `% at:` locator to reveal"))?;
-        let (file, spec) = parse_locator(locator);
-        let path = match file {
-            Some(f) => self.base_dir.join(f),
-            None => self.source_file.clone().ok_or_else(|| {
-                anyhow!(
-                    "locator `{locator}` gives only line numbers, but `% source:` \
-                     is not a single file — write it as `file:lines`"
-                )
-            })?,
-        };
-        read_excerpt(&path, spec.as_deref())
+        excerpt_at(&self.base_dir, self.source_file.as_deref(), locator)
     }
 
     /// Validates every checkpoint's `% at:` locator against the live source, for
@@ -1021,6 +1011,36 @@ pub(crate) fn resolve_source(
     }
 }
 
+/// The source base a fact deck's per-card `% at:` citations resolve against,
+/// computed once from the deck's `% source:` so a frontend can read a card's
+/// cited excerpt on reveal without re-loading the deck. Mirrors how a [`Trace`]
+/// resolves its checkpoint locators — the same machinery, for plain fact cards.
+#[derive(Clone, Debug)]
+pub struct SourceBase {
+    base_dir: PathBuf,
+    source_file: Option<PathBuf>,
+}
+
+impl SourceBase {
+    /// Resolves the base from a deck's directory and its first `% source:`.
+    pub fn for_deck(deck: &Deck) -> Self {
+        let (base_dir, source_file) =
+            resolve_source(deck.path.parent(), deck.sources.first().map(String::as_str));
+        Self {
+            base_dir,
+            source_file,
+        }
+    }
+
+    /// Reads the live excerpt a card's `% at:` `locator` points at. Errors the
+    /// same way a trace does — an unreadable/missing file, a line range past the
+    /// file's end (the drift symptom), or a line-only locator with no single
+    /// `% source:` file.
+    pub fn excerpt(&self, locator: &str) -> Result<Excerpt> {
+        excerpt_at(&self.base_dir, self.source_file.as_deref(), locator)
+    }
+}
+
 /// The project root the grounded ask-tutor reads: the nearest directory above a
 /// deck's `% source:` files that looks like a project (holds a `Cargo.toml`,
 /// `.git`, `package.json`, `go.mod`, or `pyproject.toml`), so the tutor can read
@@ -1157,6 +1177,24 @@ fn parse_line_range(spec: &str) -> (usize, usize) {
 
 /// Reads one contiguous span from `path` (the whole file, capped, when `spec`
 /// is `None`), returning the lines with their 1-based numbers.
+/// Resolves a `% at:` `locator` to a live [`Excerpt`] against a source base:
+/// `base_dir` is the directory a `file:` part joins onto, and `source_file` is
+/// the single `% source:` file a line-only locator refers to. Shared by trace
+/// checkpoints ([`Trace::excerpt`]) and fact-card citations ([`SourceBase`]).
+fn excerpt_at(base_dir: &Path, source_file: Option<&Path>, locator: &str) -> Result<Excerpt> {
+    let (file, spec) = parse_locator(locator);
+    let path = match file {
+        Some(f) => base_dir.join(f),
+        None => source_file.map(Path::to_path_buf).ok_or_else(|| {
+            anyhow!(
+                "locator `{locator}` gives only line numbers, but `% source:` \
+                 is not a single file — write it as `file:lines`"
+            )
+        })?,
+    };
+    read_excerpt(&path, spec.as_deref())
+}
+
 fn read_excerpt(path: &Path, spec: Option<&str>) -> Result<Excerpt> {
     let text = std::fs::read_to_string(path)
         .map_err(|e| anyhow!("cannot read the source `{}`: {e}", path.display()))?;
@@ -1202,6 +1240,57 @@ mod tests {
         let path = dir.join(name);
         std::fs::write(&path, body).unwrap();
         path
+    }
+
+    #[test]
+    fn excerpt_at_resolves_a_file_and_line_locator() {
+        let dir = tempfile::tempdir().unwrap();
+        write(dir.path(), "notes.md", "alpha\nbeta\ngamma\ndelta\n");
+        let ex = excerpt_at(dir.path(), None, "notes.md:2-3").unwrap();
+        assert_eq!(
+            vec![(2, "beta".to_string()), (3, "gamma".to_string())],
+            ex.lines
+        );
+    }
+
+    #[test]
+    fn excerpt_at_resolves_a_line_only_locator_against_the_single_source_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = write(dir.path(), "notes.md", "alpha\nbeta\ngamma\n");
+        let ex = excerpt_at(dir.path(), Some(&file), "2").unwrap();
+        assert_eq!(vec![(2, "beta".to_string())], ex.lines);
+    }
+
+    #[test]
+    fn excerpt_at_rejects_a_line_only_locator_without_a_single_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let err = excerpt_at(dir.path(), None, "2-3").unwrap_err();
+        assert!(format!("{err:#}").contains("only line numbers"));
+    }
+
+    #[test]
+    fn source_base_reads_a_fact_cards_citation() {
+        let dir = tempfile::tempdir().unwrap();
+        write(dir.path(), "notes.md", "one\ntwo\nthree\nfour\n");
+        let deck_path = dir.path().join("facts.txt");
+        // A plain fact deck (no `% trace:`) whose card carries a `% at:`.
+        std::fs::write(
+            &deck_path,
+            "% source: notes.md\n# q\n\ta\n\t% at: notes.md:2-3\n",
+        )
+        .unwrap();
+        let deck = crate::deck::Deck::load(&deck_path).unwrap();
+        let base = SourceBase::for_deck(&deck);
+        let locator = deck.cards[0].at.as_deref().expect("card carries % at:");
+        assert_eq!(
+            vec![(2, "two".to_string()), (3, "three".to_string())],
+            base.excerpt(locator).unwrap().lines
+        );
+        // A single-file `% source:` also lets a line-only locator resolve.
+        assert_eq!(
+            vec![(3, "three".to_string())],
+            base.excerpt("3").unwrap().lines
+        );
     }
 
     #[test]
