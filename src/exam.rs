@@ -1087,6 +1087,14 @@ mod tests {
     /// would make exec fail with ETXTBSY), like the ask tests.
     static EXEC_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+    /// Acquires [`EXEC_LOCK`], tolerating poison. A test that panics (e.g. an
+    /// assertion failure) while holding the guard would otherwise poison the
+    /// mutex and cascade into spurious `PoisonError`s in every other test that
+    /// shares it — turning one real failure into several misleading ones.
+    fn exec_lock() -> std::sync::MutexGuard<'static, ()> {
+        EXEC_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     /// Writes a fake `claude` CLI that emits `body` and returns its path.
     fn fake_cli(dir: &std::path::Path, body: &str) -> std::path::PathBuf {
         use std::os::unix::fs::PermissionsExt;
@@ -1106,7 +1114,7 @@ mod tests {
 
     #[test]
     fn generate_questions_end_to_end() {
-        let _lock = EXEC_LOCK.lock().unwrap();
+        let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
         let json = "{\"questions\":[{\"prompt\":\"Why move?\",\
                     \"points\":[\"avoids double free\"]}]}";
@@ -1124,7 +1132,7 @@ mod tests {
 
     #[test]
     fn grade_answers_end_to_end_pass() {
-        let _lock = EXEC_LOCK.lock().unwrap();
+        let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
         let json = "{\"grades\":[{\"verdict\":\"pass\",\"feedback\":\"good\",\"missed\":[]}]}";
         let cli = fake_cli(dir.path(), &format!("printf '%s' '{json}'"));
@@ -1146,7 +1154,7 @@ mod tests {
 
     #[test]
     fn remediation_cards_end_to_end() {
-        let _lock = EXEC_LOCK.lock().unwrap();
+        let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
         // A fenced deck; clean_deck_output must strip the fences.
         let cli = fake_cli(
@@ -1164,7 +1172,7 @@ mod tests {
 
     #[test]
     fn remediation_cards_rejects_a_reply_without_cards() {
-        let _lock = EXEC_LOCK.lock().unwrap();
+        let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
         // The model answered in prose (no `#` card front) instead of emitting
         // cards: a failure, not a silently-appended bogus "card". The script
@@ -1243,7 +1251,7 @@ mod tests {
 
     #[test]
     fn sitting_drives_generate_answer_grade_remediate_on_fail() {
-        let _lock = EXEC_LOCK.lock().unwrap();
+        let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
         // One fail, one pass -> overall fail (default threshold = all pass).
         let cli = branching_cli(
@@ -1295,7 +1303,7 @@ mod tests {
 
     #[test]
     fn sitting_pass_marks_mastered() {
-        let _lock = EXEC_LOCK.lock().unwrap();
+        let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
         let cli = branching_cli(
             dir.path(),
