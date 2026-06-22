@@ -1494,34 +1494,13 @@ mod tests {
         assert_eq!("# Q1\n\tp\n\t% at: 1", clean_to_cards(raw));
     }
 
-    /// Serializes the tests that write + exec a fake CLI (a concurrent fork
-    /// would inherit the write-open fd and fail exec with ETXTBSY).
-    static EXEC_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    fn fake_cli(dir: &Path, body: &str) -> PathBuf {
-        use std::os::unix::fs::PermissionsExt;
-        let path = dir.join("fake-claude");
-        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-        path
-    }
-
-    fn ask_config(command: &Path) -> AskConfig {
-        AskConfig {
-            command: command.to_str().unwrap().to_string(),
-            timeout_secs: 10,
-            ..AskConfig::default()
-        }
-    }
+    use crate::testutil::{ask_config, exec_lock, fake_reply};
 
     #[test]
     fn build_end_to_end_returns_cleaned_cards() {
-        let _lock = EXEC_LOCK.lock().unwrap();
+        let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
-        let cli = fake_cli(
-            dir.path(),
-            "printf '# Q1\\n\\tp1\\n\\t%% at: 1\\n# Q2\\n\\tp2\\n\\t%% at: 2\\n'",
-        );
+        let cli = fake_reply(dir.path(), "# Q1\n\tp1\n\t% at: 1\n# Q2\n\tp2\n\t% at: 2\n");
         // A trace deck with `% source: .` (cwd resolves to the temp dir).
         let path = write(dir.path(), "t.txt", "% trace: how it works\n% source: .\n");
         let deck = Deck::load(&path).unwrap();

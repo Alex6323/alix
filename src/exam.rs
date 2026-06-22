@@ -1083,36 +1083,7 @@ mod tests {
         assert_eq!("# Q\n% mode: explain\n\tA", clean_deck_output(raw));
     }
 
-    /// Serializes tests that write + exec scripts (a concurrent writer's fd
-    /// would make exec fail with ETXTBSY), like the ask tests.
-    static EXEC_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    /// Acquires [`EXEC_LOCK`], tolerating poison. A test that panics (e.g. an
-    /// assertion failure) while holding the guard would otherwise poison the
-    /// mutex and cascade into spurious `PoisonError`s in every other test that
-    /// shares it — turning one real failure into several misleading ones.
-    fn exec_lock() -> std::sync::MutexGuard<'static, ()> {
-        EXEC_LOCK
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
-
-    /// Writes a fake `claude` CLI that emits `body` and returns its path.
-    fn fake_cli(dir: &std::path::Path, body: &str) -> std::path::PathBuf {
-        use std::os::unix::fs::PermissionsExt;
-        let path = dir.join("fake-claude");
-        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-        path
-    }
-
-    fn ask_config(command: &std::path::Path) -> AskConfig {
-        AskConfig {
-            command: command.to_str().unwrap().to_string(),
-            timeout_secs: 10,
-            ..AskConfig::default()
-        }
-    }
+    use crate::testutil::{ask_config, exec_lock, fake_cli, fake_reply};
 
     #[test]
     fn generate_questions_end_to_end() {
@@ -1120,7 +1091,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let json = "{\"questions\":[{\"prompt\":\"Why move?\",\
                     \"points\":[\"avoids double free\"]}]}";
-        let cli = fake_cli(dir.path(), &format!("printf '%s' '{json}'"));
+        let cli = fake_reply(dir.path(), json);
         let deck = deck_with_sources(&["https://x"]);
         let cfg = ExamConfig {
             num_questions: 1,
@@ -1137,7 +1108,7 @@ mod tests {
         let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
         let json = "{\"grades\":[{\"verdict\":\"pass\",\"feedback\":\"good\",\"missed\":[]}]}";
-        let cli = fake_cli(dir.path(), &format!("printf '%s' '{json}'"));
+        let cli = fake_reply(dir.path(), json);
         let qs = vec![ExamQuestion {
             prompt: "Q".to_string(),
             points: vec!["p".to_string()],
@@ -1159,9 +1130,9 @@ mod tests {
         let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
         // A fenced deck; clean_deck_output must strip the fences.
-        let cli = fake_cli(
+        let cli = fake_reply(
             dir.path(),
-            "printf '%s\\n' '```text' '# Why?' '% mode: explain' '  point' '```'",
+            "```text\n# Why?\n% mode: explain\n  point\n```\n",
         );
         let cards = remediation_cards(
             &["the gap".to_string()],
@@ -1177,15 +1148,8 @@ mod tests {
         let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
         // The model answered in prose (no `#` card front) instead of emitting
-        // cards: a failure, not a silently-appended bogus "card". The script
-        // drains stdin first (`cat`) — like the real CLI and the other fakes —
-        // so `ask::run`'s prompt write can't race the child into a broken pipe
-        // (which would surface as "cannot write the prompt", not the error under
-        // test; it flaked only under CI load).
-        let cli = fake_cli(
-            dir.path(),
-            "cat >/dev/null; printf '%s' 'Sure, here is some advice on those concepts.'",
-        );
+        // cards: a failure, not a silently-appended bogus "card".
+        let cli = fake_reply(dir.path(), "Sure, here is some advice on those concepts.");
         let err = remediation_cards(
             &["the gap".to_string()],
             &ExamConfig::default(),

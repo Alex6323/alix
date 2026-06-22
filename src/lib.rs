@@ -33,3 +33,6 @@ pub mod time;
 pub mod trace;
 pub mod tui;
 pub mod workspace;
+
+#[cfg(test)]
+mod testutil;

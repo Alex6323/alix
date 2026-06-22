@@ -367,7 +367,7 @@ fn truncate(s: &str, max: usize) -> &str {
 
 #[cfg(test)]
 mod tests {
-    use std::{os::unix::fs::PermissionsExt, sync::Arc};
+    use std::sync::Arc;
 
     use super::*;
 
@@ -501,18 +501,7 @@ mod tests {
         assert!(extract_note_lines("  \n\n").is_empty());
     }
 
-    /// Serializes the tests that write + execute scripts: a concurrent fork
-    /// in another test inherits the briefly write-open script fd, and the
-    /// exec then fails with ETXTBSY.
-    static EXEC_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    /// Writes a small fake CLI script and returns its path.
-    fn fake_cli(dir: &std::path::Path, body: &str) -> std::path::PathBuf {
-        let path = dir.join("fake-claude");
-        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-        path
-    }
+    use crate::testutil::{exec_lock, fake_cli};
 
     fn config(command: &std::path::Path, timeout_secs: u64) -> AskConfig {
         AskConfig {
@@ -525,7 +514,7 @@ mod tests {
 
     #[test]
     fn run_returns_stdout_of_the_cli() {
-        let _lock = EXEC_LOCK.lock().unwrap();
+        let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
         // Echo the prompt back (reads stdin like the real CLI).
         let cli = fake_cli(dir.path(), "cat");
@@ -535,7 +524,7 @@ mod tests {
 
     #[test]
     fn run_passes_session_args_to_the_cli() {
-        let _lock = EXEC_LOCK.lock().unwrap();
+        let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
         // Echo the received arguments instead of the prompt.
         let cli = fake_cli(dir.path(), "echo \"$@\"; cat > /dev/null");
@@ -553,7 +542,7 @@ mod tests {
 
     #[test]
     fn run_passes_effort_when_set() {
-        let _lock = EXEC_LOCK.lock().unwrap();
+        let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
         let cli = fake_cli(dir.path(), "echo \"$@\"; cat > /dev/null");
         let config = AskConfig {
@@ -568,7 +557,7 @@ mod tests {
 
     #[test]
     fn run_omits_effort_when_unset() {
-        let _lock = EXEC_LOCK.lock().unwrap();
+        let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
         let cli = fake_cli(dir.path(), "echo \"$@\"; cat > /dev/null");
         let answer = run(&config(&cli, 10), "x", &[]).unwrap();
@@ -577,7 +566,7 @@ mod tests {
 
     #[test]
     fn run_reports_failures_with_stderr() {
-        let _lock = EXEC_LOCK.lock().unwrap();
+        let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
         let cli = fake_cli(dir.path(), "echo 'not logged in' >&2; exit 1");
         let err = run(&config(&cli, 10), "x", &[]).unwrap_err();
@@ -586,7 +575,7 @@ mod tests {
 
     #[test]
     fn run_times_out() {
-        let _lock = EXEC_LOCK.lock().unwrap();
+        let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
         let cli = fake_cli(dir.path(), "sleep 30");
         let err = run(&config(&cli, 1), "x", &[]).unwrap_err();
@@ -606,7 +595,7 @@ mod tests {
 
     #[test]
     fn spawn_delivers_on_the_channel() {
-        let _lock = EXEC_LOCK.lock().unwrap();
+        let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
         let cli = fake_cli(dir.path(), "cat");
         let rx = spawn(config(&cli, 10), "ping".to_string(), Vec::new());
