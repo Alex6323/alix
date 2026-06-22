@@ -16,6 +16,7 @@ full.
 | `% scheduler:` | deck | [Scheduler](05-scheduling.md): `leitner` (default) or `sm2`. |
 | `% direction:` | deck · card | [Review direction](06-cloze-direction-images.md): forward, reverse, both. |
 | `% max-stage:` | deck | [Top Leitner stage](05-scheduling.md) 1–5; reaching it retires the card. |
+| `% unlock-stage:` | deck | [Stage that opens the gate](12-the-ai-exam.md) 1–5: the exam/unlock fires once every card reaches it (cards keep drilling). |
 | `% frontend:` | deck · card | Restrict to `any`, `tui`, or `web`. [→ ch 6](06-cloze-direction-images.md) |
 | `% img:` / `% img-back:` | card | [Image](06-cloze-direction-images.md) on the front / back (web only). |
 | `% img-dir:` | deck | Base directory image filenames resolve against. [→ ch 6](06-cloze-direction-images.md) |

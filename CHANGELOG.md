@@ -27,6 +27,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   fact deck's `% source:` then points at the excerpts, so its exam grades against
   them. (Snippet names are workspace-unique now, so multiple frozen decks no
   longer collide in `assets/`.)
+- **`% unlock-stage: N` — unlock a deck before its cards retire.** A `% source:`
+  deck becomes *exam due* (its exam opens), and a source-less deck *finished*
+  (its dependents unlock), once **every card reaches Leitner stage N** — without
+  retiring them, so they keep drilling to the top. (Contrast `% max-stage:`,
+  which gets there by *retiring* cards, stopping their review.) Default (unset)
+  keeps the old gate: every card retired at the top stage; a retired card always
+  counts as gate-ready. Settable per deck, in a workspace `flash.toml`
+  `[defaults]`, or via `flash explore --into --unlock-stage <1–5>`. Generalizes
+  the completion gate (`Deck::state`).
 - **Browse a deck from the session-end summary** (terminal). When a deck turns
   *exam due* at the end of a review, the summary now offers `b` to **browse** it
   (a read-only walk through its cards) right next to `x` to sit the exam — useful

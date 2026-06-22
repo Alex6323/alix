@@ -26,7 +26,10 @@ blog post, an SO answer) as `% link:` so the exam ignores it.
 
 Once every card in a sourced deck reaches the top stage, the deck is **exam due**
 rather than finished — drilled, but not yet counted, so it doesn't unlock its
-dependents yet.
+dependents yet. To open the exam earlier, while the cards keep drilling, set
+`% unlock-stage: N`: the deck turns exam due once every card reaches stage `N`
+(a source-less deck becomes *finished* at that stage instead, unlocking its
+dependents directly).
 
 ## Sitting the exam
 

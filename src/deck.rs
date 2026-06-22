@@ -43,6 +43,12 @@ pub struct DeckSettings {
     /// How strictly this deck's AI exam grades answers (`% strictness: ...`).
     /// `None` uses the `[exam]` config default.
     pub exam_strictness: Option<Strictness>,
+    /// The Leitner stage every card must reach to unlock the deck
+    /// (`% unlock-stage: 1..=5`): its exam becomes available (a sourced deck) or
+    /// its dependents unlock (a source-less one). `None` keeps the default gate —
+    /// all cards retired at the top stage. Unlike `% max-stage:`, cards keep
+    /// drilling past it.
+    pub unlock_stage: Option<u8>,
 }
 
 impl DeckSettings {
@@ -65,6 +71,13 @@ impl DeckSettings {
                         .map(|n| n.clamp(1, MAX_STAGE))
                 }
                 "strictness" => settings.exam_strictness = Strictness::from_str(value, true).ok(),
+                "unlock-stage" => {
+                    settings.unlock_stage = value
+                        .trim()
+                        .parse::<u8>()
+                        .ok()
+                        .map(|n| n.clamp(1, MAX_STAGE))
+                }
                 _ => {}
             }
         }
@@ -83,6 +96,7 @@ impl DeckSettings {
         self.img_dir = self.img_dir.clone().or_else(|| defaults.img_dir.clone());
         self.max_stage = self.max_stage.or(defaults.max_stage);
         self.exam_strictness = self.exam_strictness.or(defaults.exam_strictness);
+        self.unlock_stage = self.unlock_stage.or(defaults.unlock_stage);
     }
 }
 
@@ -264,10 +278,11 @@ impl Deck {
     /// The deck's completion state, derived from its cards' stages (see
     /// [`session::is_retired`]) and, for `% source:` decks, its exam result:
     /// `NotStarted` while no card has been reviewed, `Started` in between, and
-    /// once every card is retired either `ExamDue` (a sourced deck whose exam
+    /// once the unlock gate is met either `ExamDue` (a sourced deck whose exam
     /// hasn't been passed) or `Finished`. A source-less deck has no exam, so it
-    /// is `Finished` as soon as it is fully drilled. An empty deck is
-    /// `NotStarted`.
+    /// is `Finished` as soon as the gate is met. The gate is "every card retired"
+    /// by default, or "every card at stage ≥ N" with `% unlock-stage: N`. An
+    /// empty deck is `NotStarted`.
     pub fn state(&self, store: &Store) -> DeckState {
         let total = self.cards.len();
         if total == 0 {
@@ -279,13 +294,19 @@ impl Deck {
         if store.deck_mastered(&self.subject) {
             return DeckState::Finished;
         }
-        let retired = self
-            .cards
-            .iter()
-            .filter(|c| session::is_retired(c, store))
-            .count();
-        if retired == total {
-            // Drilled but not yet mastered: a sourced deck is `ExamDue`, a
+        // The unlock gate: every card retired (the default), or — with
+        // `% unlock-stage: N` set — every card at stage ≥ N, so a deck can unlock
+        // before its cards retire while they keep drilling to the top. A retired
+        // card always counts (it can climb no higher).
+        let gated = self.cards.iter().all(|c| {
+            session::is_retired(c, store)
+                || self
+                    .settings
+                    .unlock_stage
+                    .is_some_and(|n| store.get(c.id()).is_some_and(|s| s.stage >= n))
+        });
+        if gated {
+            // Drilled enough but not yet mastered: a sourced deck is `ExamDue`, a
             // source-less one (no exam) is `Finished`.
             if self.sources.is_empty() {
                 DeckState::Finished
@@ -845,6 +866,67 @@ mod tests {
 
         // Passing the exam (mastered) flips it to Finished.
         store.set_deck_mastered(&deck.subject, 1);
+        assert_eq!(DeckState::Finished, deck.state(&store));
+    }
+
+    #[test]
+    fn unlock_stage_makes_a_sourced_deck_examdue_before_retirement() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_deck(
+            dir.path(),
+            "d.txt",
+            "% source: https://x\n% unlock-stage: 2\n# a\n\t1\n# b\n\t2\n",
+        );
+        let deck = Deck::load(&path).unwrap();
+        assert_eq!(Some(2), deck.settings.unlock_stage);
+        let (mut store, _s) = empty_store();
+
+        // Both cards at stage 2 — still drilling, NOT retired — opens the gate.
+        for card in &deck.cards {
+            store.get_or_insert(card.id(), 0).stage = 2;
+        }
+        assert_eq!(DeckState::ExamDue, deck.state(&store));
+    }
+
+    #[test]
+    fn unlock_stage_finishes_a_sourceless_deck_before_retirement() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_deck(dir.path(), "d.txt", "% unlock-stage: 2\n# a\n\t1\n");
+        let deck = Deck::load(&path).unwrap();
+        let (mut store, _s) = empty_store();
+
+        // No `% source:`, so reaching the unlock stage finishes it (unlocks deps).
+        store.get_or_insert(deck.cards[0].id(), 0).stage = 2;
+        assert_eq!(DeckState::Finished, deck.state(&store));
+    }
+
+    #[test]
+    fn without_unlock_stage_a_mid_stage_deck_is_still_started() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_deck(dir.path(), "d.txt", "# a\n\t1\n");
+        let deck = Deck::load(&path).unwrap();
+        let (mut store, _s) = empty_store();
+        // Stage 4, below MAX_STAGE and not retired: the default gate needs
+        // retirement, so the deck is still only `Started`.
+        store.get_or_insert(deck.cards[0].id(), 0).stage = 4;
+        assert_eq!(DeckState::Started, deck.state(&store));
+    }
+
+    #[test]
+    fn a_retired_card_counts_even_when_unlock_stage_is_higher() {
+        let dir = tempfile::tempdir().unwrap();
+        // `% max-stage: 3` retires at stage 3; `% unlock-stage: 5` is unreachable
+        // by stage, but a retired card still counts as gate-ready.
+        let path = write_deck(
+            dir.path(),
+            "d.txt",
+            "% max-stage: 3\n% unlock-stage: 5\n# a\n\t1\n",
+        );
+        let deck = Deck::load(&path).unwrap();
+        let (mut store, _s) = empty_store();
+        let s = store.get_or_insert(deck.cards[0].id(), 0);
+        s.stage = 3;
+        s.streak = 1; // retired at the deck's own max-stage
         assert_eq!(DeckState::Finished, deck.state(&store));
     }
 

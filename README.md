@@ -164,6 +164,7 @@ card's front. Follow a link for the full explanation.
 | `% scheduler:` | deck | [Scheduler](#deck-directives): `leitner` (default) or `sm2`. |
 | `% direction:` | deck · card | [Review direction](#dual-direction-cards--direction): `forward`, `reverse`, or `both`. |
 | `% max-stage:` | deck | [Top Leitner stage](#deck-directives) `1`–`5`; reaching it retires the card. |
+| `% unlock-stage:` | deck | [Stage that opens the gate](#deck-directives) `1`–`5`: the exam/unlock fires once every card reaches it (cards keep drilling, no early retirement). |
 | `% frontend:` | deck · card | [Restrict](#deck-directives) a card/deck to `any`, `tui`, or `web`. |
 | `% img:` / `% img-back:` | card | [Image](#images--img--img-back) on the front / back (web frontend). |
 | `% img-dir:` | deck | [Base directory](#images--img--img-back) that image filenames resolve against. |
@@ -215,6 +216,12 @@ command line:
   times — `% max-stage: 1` means "get it right once and it's done." With the
   default `5`, a card still retires once it climbs to stage 5. A deck counts as
   *finished* (see Completion states) once all its cards have retired.
+- `unlock-stage` — the Leitner stage (`1`–`5`) every card must reach for the deck
+  to **unlock**: a `% source:` deck becomes *exam due* (its exam opens), a
+  source-less one becomes *finished* (its dependents unlock). Unlike `max-stage`,
+  the cards are **not** retired — they keep drilling to the top. Default: the deck
+  unlocks only when every card retires at the top stage. (A card that has already
+  retired counts as gate-ready even below the unlock stage.)
 - `strictness` — how strictly the AI exam grades answers (`strict`, `balanced`,
   `lenient`); only affects `flash exam` (see [the AI exam](#the-ai-exam-flash-exam)).
 
@@ -710,7 +717,10 @@ so you don't need to repeat it as a `% link:`. The reverse isn't true: a
 supplementary links (a blog, an SO answer) as `% link:` so the exam ignores them.
 
 Once every card in a `% source:` deck reaches the top stage, the deck is **exam
-due** rather than finished (so it does not yet unlock its dependents).
+due** rather than finished (so it does not yet unlock its dependents). To open
+the exam earlier — while the cards keep drilling — set `% unlock-stage: N`: the
+deck turns exam due once every card reaches stage `N` (see
+[deck directives](#deck-directives)).
 
 **Sitting the exam — interactive, in either frontend.** The exam is a guided,
 one-question-at-a-time flow (Back/Next, then a per-question breakdown), the same
@@ -942,8 +952,10 @@ deck (author it or `flash deck`) — wired together with `% requires:` so they
 unlock in dependency order, with each `% source:` pointing back at the real
 source. The `--goal` becomes the workspace's `description`; **`--title`** names
 it (omitted, the folder name is used); **`--max-stage <1–5>`** writes a shared
-`[defaults]` `max-stage` so every member deck caps at that Leitner stage.
-(Refuses a non-empty folder unless `--force`.)
+`[defaults]` `max-stage` so every member deck caps at that Leitner stage, and
+**`--unlock-stage <1–5>`** writes a shared `unlock-stage` so a member unlocks once
+its cards reach that stage (without retiring early). (Refuses a non-empty folder
+unless `--force`.)
 
 Add **`--build`** to go all the way: `flash explore … --into <dir> --build`
 explores the source **once** and then reuses that same session to fill every
