@@ -17,6 +17,11 @@ const HISTORY_CAP: usize = 50;
 /// The highest Leitner stage. Cards that keep passing stay here.
 pub const MAX_STAGE: u8 = 5;
 
+/// The current on-disk store-format version. Bump it when the persisted shape
+/// changes in a way an older binary couldn't safely read, and add the matching
+/// step in [`migrate`].
+const CURRENT_VERSION: u32 = 1;
+
 /// One recorded review of a card.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Review {
@@ -107,6 +112,9 @@ pub struct DeckProgress {
 /// On-disk representation of the store.
 #[derive(Serialize, Deserialize)]
 struct StoreFile {
+    /// Format version. Defaults to 1 for a file written before the field was
+    /// required, so a legacy store still loads. [`migrate`] checks it.
+    #[serde(default = "default_version")]
     version: u32,
     /// Card states keyed by the decimal string of the card's identity hash
     /// (JSON object keys must be strings).
@@ -140,6 +148,15 @@ pub enum StoreError {
         #[source]
         source: serde_json::Error,
     },
+    #[error(
+        "{path}: progress file is version {found}, but this build of flash \
+         understands only up to {supported} — upgrade flash to open it"
+    )]
+    TooNew {
+        path: PathBuf,
+        found: u32,
+        supported: u32,
+    },
 }
 
 impl Store {
@@ -164,6 +181,7 @@ impl Store {
             path: path.clone(),
             source,
         })?;
+        let file = migrate(file, &path)?;
         let mut cards = HashMap::with_capacity(file.cards.len());
         for (key, state) in file.cards {
             let hash = key.parse::<u64>().map_err(|e| StoreError::Format {
@@ -194,7 +212,7 @@ impl Store {
         }
 
         let file = StoreFile {
-            version: 1,
+            version: CURRENT_VERSION,
             cards: self
                 .cards
                 .iter()
@@ -287,6 +305,28 @@ impl Store {
     pub fn path(&self) -> &Path {
         &self.path
     }
+}
+
+/// Serde default for a legacy store with no `version` field: the oldest format.
+fn default_version() -> u32 {
+    1
+}
+
+/// Brings a just-loaded [`StoreFile`] up to [`CURRENT_VERSION`], or fails loudly
+/// if it was written by a newer flash than this one. Refusing is the safety net:
+/// silently saving a newer store back at the current version would drop whatever
+/// fields the newer format added — i.e. quietly wipe progress. Future migrations
+/// step the version up one at a time here, oldest first.
+fn migrate(file: StoreFile, path: &Path) -> Result<StoreFile, StoreError> {
+    if file.version > CURRENT_VERSION {
+        return Err(StoreError::TooNew {
+            path: path.to_path_buf(),
+            found: file.version,
+            supported: CURRENT_VERSION,
+        });
+    }
+    // e.g. `if file.version < 2 { file = v1_to_v2(file); }`
+    Ok(file)
 }
 
 /// The default location of the store file
@@ -412,6 +452,42 @@ mod tests {
         let store = Store::open(&path).unwrap();
         assert!(store.is_empty());
         assert!(!store.deck_mastered("anything.txt"));
+    }
+
+    #[test]
+    fn loads_a_store_file_without_a_version_field() {
+        // A file predating the `version` field defaults to v1 and still loads.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("progress.json");
+        std::fs::write(&path, "{\"cards\":{}}").unwrap();
+        let store = Store::open(&path).unwrap();
+        assert!(store.is_empty());
+    }
+
+    #[test]
+    fn rejects_a_store_from_a_newer_flash_without_touching_it() {
+        // A store written by a future flash (higher version) must NOT be
+        // silently downgraded and re-saved — that would drop fields the newer
+        // format added. Open must fail and leave the file exactly as it was.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("progress.json");
+        let newer = "{\"version\":999,\"cards\":{}}";
+        std::fs::write(&path, newer).unwrap();
+
+        let err = Store::open(&path).err().unwrap();
+        assert!(format!("{err}").contains("version 999"));
+        assert_eq!(newer, std::fs::read_to_string(&path).unwrap());
+    }
+
+    #[test]
+    fn save_writes_the_current_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("progress.json");
+        let mut store = Store::open(&path).unwrap();
+        store.get_or_insert(1, 0);
+        store.save().unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains(&format!("\"version\": {CURRENT_VERSION}")));
     }
 
     #[test]

@@ -7,6 +7,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **The progress store is now version-checked.** A `progress.json` written by a
+  newer flash is refused on open with a clear "upgrade flash" message instead of
+  being silently rewritten at the old version (which could drop data the newer
+  format added); the file on disk is left untouched. A store with no `version`
+  field still loads as the original format. This lays the groundwork for safe
+  schema migrations.
 - **The ask-Claude tutor can read the card's source to verify its answer
   (opt-in).** A new `[ask] source_access` flag (off by default) lets the tutor
   run with `Read`/`Glob`/`Grep` and its working directory at the deck's
