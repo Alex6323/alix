@@ -30,10 +30,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`% unlock-stage: N` — unlock a deck before its cards retire.** A `% source:`
   deck becomes *exam due* (its exam opens), and a source-less deck *finished*
   (its dependents unlock), once **every card reaches Leitner stage N** — without
-  retiring them, so they keep drilling to the top. (Contrast `% max-stage:`,
-  which gets there by *retiring* cards, stopping their review.) Default (unset)
-  keeps the old gate: every card retired at the top stage; a retired card always
-  counts as gate-ready. Settable per deck, in a workspace `flash.toml`
+  retiring them, so they keep drilling to the top stage; the directive only lowers
+  the unlock bar. Default (unset) keeps the old gate: every card retired at the top
+  stage. Settable per deck, in a workspace `flash.toml`
   `[defaults]`, or via `flash explore --into --unlock-stage <1–5>`. Generalizes
   the completion gate (`Deck::state`).
 - **Browse a deck from the session-end summary** (terminal). When a deck turns
@@ -59,12 +58,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   one trusted crate without turning it on globally). The web ask panel also now
   shows **which model and effort** are answering (`model: … · effort: …`) — a
   reminder that the tutor uses the CLI default unless `[ask]` pins a stronger one.
-- **`flash explore --title` / `--max-stage` shape the scaffolded workspace; the
-  goal becomes its description.** `flash explore --into <dir>` now takes an
-  optional `--title` for the workspace's `flash.toml` `title` (omitted, the
-  folder name is used) and `--max-stage <1–5>` to set a shared `[defaults]`
-  `max-stage` cap for every member deck. It also writes the `--goal` as a new
-  `flash.toml` **`description`** field instead of an ignored `goal` key; a
+- **`flash explore --title` shapes the scaffolded workspace; the goal becomes its
+  description.** `flash explore --into <dir>` now takes an optional `--title` for
+  the workspace's `flash.toml` `title` (omitted, the folder name is used). It also
+  writes the `--goal` as a new `flash.toml` **`description`** field instead of an
+  ignored `goal` key; a
   workspace's `description` shows **dim under its row** in both pickers (terminal
   and web).
 - **Confirm before abandoning a review; commit the picker filter with Esc**
@@ -292,14 +290,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   conversation spans the session (`--session-id`/`--resume`), and Save note
   appends a condensed note to the deck file. Reachable wherever you serve,
   including `--lan`.
-- `% max-stage: N` deck directive (1–5, default 5): the deck's top Leitner
-  stage. A card that reaches it **retires** — it rests and is no longer
-  scheduled (not even under `--cram`) until `flash reset` — so material you only
-  need a couple of times (e.g. code review) drops out instead of recurring
-  forever. `% max-stage: 1` = "get it right once and it's done." A deck is
-  *finished* once all its cards retire. `flash list` shows retired cards as
-  `resting`, and stage histograms (picker, summary, `flash stats`) render
-  unreachable stages above the cap as a dim `–` instead of `0`.
 - Deck completion states and unlocks. Each deck has a state derived from its
   cards' stages — not started / started / finished (all cards at the top stage)
   — shown in the deck picker (terminal and web) and `flash stats`. A deck is
@@ -390,8 +380,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   server at `/walk`; a **Back to decks** (or `Esc`) returns to the picker.
 - **A card that reaches the top Leitner stage now retires** (rests, no longer
   scheduled until `flash reset`) instead of recurring at the stage-5 weekly
-  cooldown. This is the default even without `% max-stage:`, and makes a
-  *finished* deck stay finished.
+  cooldown, so a *finished* deck stays finished.
 - The TUI's remaining-card count moved from the header to the bottom-right of
   the footer, shown as `N↓` after the pass/fail tally — matching the web
   frontend's score line (the header now carries only the stage histogram).

@@ -795,7 +795,7 @@ fn grade_prompt(checkpoint: &Checkpoint, prediction: &str) -> String {
          CONTRADICT — a confident error is PARTIAL at best (MISSED if the core \
          claim is wrong).\n\
          Example: `PARTIAL — right that it reschedules, but you missed the \
-         max-stage clamp.`",
+         streak reset.`",
         checkpoint.prompt
     )
 }

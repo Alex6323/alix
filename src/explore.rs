@@ -421,7 +421,6 @@ pub fn materialize(
     dir: &Path,
     goal: &str,
     title: Option<&str>,
-    max_stage: Option<u8>,
     unlock_stage: Option<u8>,
     source: &str,
     force: bool,
@@ -467,10 +466,6 @@ pub fn materialize(
         "description = \"{}\"\n\n[defaults]\n",
         toml_escape(goal)
     ));
-    // A workspace-wide max-stage cap, shared by every member deck.
-    if let Some(max_stage) = max_stage {
-        manifest.push_str(&format!("max-stage = {max_stage}\n"));
-    }
     // A workspace-wide unlock stage: members gate (exam / unlock dependents) once
     // every card reaches it, without retiring early.
     if let Some(unlock_stage) = unlock_stage {
@@ -734,7 +729,6 @@ Spine   a -> b
             "understand the repo",
             None,
             None,
-            None,
             ".",
             false,
             None,
@@ -770,14 +764,14 @@ Spine   a -> b
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("keep.txt"), "existing").unwrap();
 
-        assert!(materialize(SAMPLE_PLAN, &dir, "g", None, None, None, ".", false, None).is_err());
-        assert!(materialize(SAMPLE_PLAN, &dir, "g", None, None, None, ".", true, None).is_ok()); // --force writes anyway
+        assert!(materialize(SAMPLE_PLAN, &dir, "g", None, None, ".", false, None).is_err());
+        assert!(materialize(SAMPLE_PLAN, &dir, "g", None, None, ".", true, None).is_ok()); // --force writes anyway
 
         let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn materialize_writes_title_and_stage_defaults() {
+    fn materialize_writes_title_and_unlock_stage() {
         let dir = std::env::temp_dir().join(format!("flash-explore-title-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
 
@@ -786,7 +780,6 @@ Spine   a -> b
             &dir,
             "the goal",
             Some("Repo Internals"),
-            Some(3),
             Some(2),
             ".",
             false,
@@ -796,9 +789,8 @@ Spine   a -> b
         let manifest = fs::read_to_string(dir.join("flash.toml")).unwrap();
         assert!(manifest.contains("title = \"Repo Internals\""));
         assert!(manifest.contains("description = \"the goal\""));
-        // Both caps land in [defaults], shared by every member deck.
-        assert!(manifest.contains("[defaults]\nmax-stage = 3"));
-        assert!(manifest.contains("unlock-stage = 2"));
+        // The unlock-stage lands in [defaults], shared by every member deck.
+        assert!(manifest.contains("[defaults]\nunlock-stage = 2"));
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -838,7 +830,6 @@ preamble ignored
             SAMPLE_PLAN,
             &dir,
             "g",
-            None,
             None,
             None,
             ".",

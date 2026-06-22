@@ -52,9 +52,8 @@ flash workspace ~/decks/request-pipeline    # or: flash --serve, then open it
 ```
 
 `--goal` scopes what gets authored (and becomes the workspace's description),
-`--title` names it, `--max-stage <1–5>` caps how long cards keep resurfacing
-(a shared `[defaults]` for the whole workspace), and `--build` fills every facts
-deck and trace in one coherent pass — freezing the cited source into the
+`--title` names it, and `--build` fills every facts deck and trace in one
+coherent pass — freezing the cited source into the
 workspace so its line locators never drift. Inside the workspace a **facts deck reviews** and a
 **trace walks** (predict → reveal → judge the gap), unlocking in dependency
 order, with progress kept in the workspace's own store. See
@@ -163,7 +162,6 @@ card's front. Follow a link for the full explanation.
 | `% order:` | deck | [Card order](#deck-directives): `scheduled` (default) or `sequential`. |
 | `% scheduler:` | deck | [Scheduler](#deck-directives): `leitner` (default) or `sm2`. |
 | `% direction:` | deck · card | [Review direction](#dual-direction-cards--direction): `forward`, `reverse`, or `both`. |
-| `% max-stage:` | deck | [Top Leitner stage](#deck-directives) `1`–`5`; reaching it retires the card. |
 | `% unlock-stage:` | deck | [Stage that opens the gate](#deck-directives) `1`–`5`: the exam/unlock fires once every card reaches it (cards keep drilling, no early retirement). |
 | `% frontend:` | deck · card | [Restrict](#deck-directives) a card/deck to `any`, `tui`, or `web`. |
 | `% img:` / `% img-back:` | card | [Image](#images--img--img-back) on the front / back (web frontend). |
@@ -210,18 +208,12 @@ command line:
   frontend. Image cards are `web` automatically (see Images below).
 - `img-dir` — directory that card `% img:` / `% img-back:` filenames resolve
   against (deck header only; see Images below).
-- `max-stage` — the deck's top Leitner stage, `1`–`5` (default `5`). A card that
-  reaches it **retires**: it rests and is no longer scheduled (not even under
-  `--cram`) until `flash reset`. Use it for material you only need a couple of
-  times — `% max-stage: 1` means "get it right once and it's done." With the
-  default `5`, a card still retires once it climbs to stage 5. A deck counts as
-  *finished* (see Completion states) once all its cards have retired.
 - `unlock-stage` — the Leitner stage (`1`–`5`) every card must reach for the deck
   to **unlock**: a `% source:` deck becomes *exam due* (its exam opens), a
-  source-less one becomes *finished* (its dependents unlock). Unlike `max-stage`,
-  the cards are **not** retired — they keep drilling to the top. Default: the deck
-  unlocks only when every card retires at the top stage. (A card that has already
-  retired counts as gate-ready even below the unlock stage.)
+  source-less one becomes *finished* (its dependents unlock). The cards are
+  **not** retired — they keep drilling to the top stage; the directive only lowers
+  the unlock bar. Default: the deck unlocks only when every card retires at the
+  top stage.
 - `strictness` — how strictly the AI exam grades answers (`strict`, `balanced`,
   `lenient`); only affects `flash exam` (see [the AI exam](#the-ai-exam-flash-exam)).
 
@@ -951,11 +943,9 @@ each trace (run `flash trace --build` on it) and a `% title:` facts deck for eac
 deck (author it or `flash deck`) — wired together with `% requires:` so they
 unlock in dependency order, with each `% source:` pointing back at the real
 source. The `--goal` becomes the workspace's `description`; **`--title`** names
-it (omitted, the folder name is used); **`--max-stage <1–5>`** writes a shared
-`[defaults]` `max-stage` so every member deck caps at that Leitner stage, and
-**`--unlock-stage <1–5>`** writes a shared `unlock-stage` so a member unlocks once
-its cards reach that stage (without retiring early). (Refuses a non-empty folder
-unless `--force`.)
+it (omitted, the folder name is used); **`--unlock-stage <1–5>`** writes a shared
+`[defaults]` `unlock-stage` so a member unlocks once its cards reach that stage
+(without retiring early). (Refuses a non-empty folder unless `--force`.)
 
 Add **`--build`** to go all the way: `flash explore … --into <dir> --build`
 explores the source **once** and then reuses that same session to fill every

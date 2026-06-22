@@ -188,7 +188,6 @@ pub fn expand(
             image: None,
             image_back: None,
             frontend: None,
-            max_stage: None,
             at: None,
             givens: Vec::new(),
         });

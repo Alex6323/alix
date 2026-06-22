@@ -36,21 +36,11 @@ using fixed steps. Switching schedulers is safe: SM-2 seeds itself from your
 existing Leitner progress and keeps the Leitner stage in sync, so you can move
 between the two without losing your place.
 
-## Retiring cards: `% max-stage`
+## Retiring cards
 
-A card doesn't climb forever. Once it reaches the **top stage** — 5 by default —
-it **retires**: it rests and is no longer scheduled, *not even under `--cram`*,
-until you `flash reset`.
-
-`% max-stage: N` (1–5, in the deck header) lowers that ceiling for material you
-only need to load briefly:
-
-```
-% max-stage: 1
-```
-
-means "get it right once and it's done" — handy for a code-review checklist, or a
-fact you only need this week.
+A card doesn't climb forever. Once it reaches the **top stage** (5) by passing, it
+**retires**: it rests and is no longer scheduled, *not even under `--cram`*, until
+you `flash reset`. A deck is *finished* once all its cards have retired.
 
 ## Completion states
 

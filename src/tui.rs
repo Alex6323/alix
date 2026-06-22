@@ -1040,8 +1040,8 @@ impl App {
         let h = self.session.stage_histogram(&self.store);
         // The remaining-card count lives in the footer now (bottom-right),
         // mirroring the web frontend; the header keeps just the stage histogram.
-        // Stages above the session's top stage are unreachable (every card caps
-        // below them via `% max-stage:`), shown as `–` instead of a `0`.
+        // The stage bar. `hist_cells` dims stages above the top stage, but every
+        // deck now reaches the top stage, so all five always show.
         let c = hist_cells(&h, self.session.top_stage());
         let right = format!("{}|{}|{}|{}|{}|{} ", c[0], c[1], c[2], c[3], c[4], c[5]);
         frame.render_widget(bar(&left, &right, area.width), area);
@@ -1548,8 +1548,8 @@ impl App {
         };
         let h = self.session.stage_histogram(&self.store);
 
-        // Stages above the session's top stage are unreachable (capped by
-        // `% max-stage:`), shown dim as `–`.
+        // The stage bar (stages above the top would dim, but every deck now
+        // reaches the top stage).
         let top = self.session.top_stage();
         let mut stage_spans = vec![Span::raw(format!("  stages:   new {} │", h[0]))];
         for s in 1..=5u8 {
@@ -1709,9 +1709,9 @@ pub(crate) fn context_line(ctx: &str) -> Line<'static> {
     Line::from(spans)
 }
 
-/// The six stage-histogram cells (new, s1..s5) as strings, with stages above
-/// `top_stage` shown as `–` — they are unreachable because every card caps
-/// below them via `% max-stage:`.
+/// The six stage-histogram cells (new, s1..s5) as strings, dimming stages above
+/// `top_stage` to `–`. Every deck now reaches the top stage, so in practice all
+/// five render.
 fn hist_cells(h: &[usize; 6], top_stage: u8) -> [String; 6] {
     std::array::from_fn(|i| {
         if i >= 1 && i as u8 > top_stage {

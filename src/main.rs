@@ -129,14 +129,9 @@ struct ExploreArgs {
     #[arg(long, requires = "into")]
     title: Option<String>,
 
-    /// With --into, cap every member at this Leitner stage (the workspace's
-    /// `[defaults]` `max-stage`, 1–5): a card retires once it reaches it.
-    #[arg(long, requires = "into", value_parser = clap::value_parser!(u8).range(1..=5))]
-    max_stage: Option<u8>,
-
     /// With --into, the workspace's `[defaults]` `unlock-stage` (1–5): a member
     /// deck's exam/unlock opens once every card reaches this stage, without
-    /// retiring early (unlike --max-stage).
+    /// retiring the cards early.
     #[arg(long, requires = "into", value_parser = clap::value_parser!(u8).range(1..=5))]
     unlock_stage: Option<u8>,
 
@@ -1455,8 +1450,7 @@ fn stats(args: DeckArgs) -> Result<()> {
             DeckState::Finished if store.deck_mastered(&deck.subject) => "mastered ✓",
             DeckState::Finished => "finished ✓",
         };
-        // Stages above the deck's `% max-stage:` are unreachable, shown as `–`.
-        let top = flash::session::max_reachable_stage(&deck.cards);
+        let top = flash::store::MAX_STAGE;
         let cell = |s: usize| {
             if s as u8 > top {
                 "–".to_string()
@@ -2340,7 +2334,6 @@ fn explore_cmd(args: ExploreArgs) -> Result<()> {
             dir,
             goal,
             args.title.as_deref(),
-            args.max_stage,
             args.unlock_stage,
             &source,
             args.force,
@@ -2388,7 +2381,6 @@ fn explore_cmd(args: ExploreArgs) -> Result<()> {
             dir,
             goal,
             args.title.as_deref(),
-            args.max_stage,
             args.unlock_stage,
             &source,
             args.force,

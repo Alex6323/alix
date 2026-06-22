@@ -179,8 +179,8 @@ struct StateDto {
     /// disables "New session" and shows a "nothing due" note when this is
     /// false.
     can_restart: bool,
-    /// The highest reachable stage (1–5); the page renders stages above it as a
-    /// muted `–` since every card caps below them via `% max-stage:`.
+    /// The highest reachable stage (always 5 now); the page would dim stages
+    /// above it to `–`, but every deck reaches the top stage.
     top_stage: u8,
     label: String,
 }

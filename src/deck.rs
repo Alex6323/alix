@@ -37,17 +37,14 @@ pub struct DeckSettings {
     /// Directory that card `% img:` / `% img-back:` filenames resolve against
     /// (`% img-dir: ...`). Absolute, or relative to the deck file's folder.
     pub img_dir: Option<PathBuf>,
-    /// Top Leitner stage for this deck (`% max-stage: 1..=5`). `None` uses the
-    /// global [`MAX_STAGE`]. Reaching it retires the card.
-    pub max_stage: Option<u8>,
     /// How strictly this deck's AI exam grades answers (`% strictness: ...`).
     /// `None` uses the `[exam]` config default.
     pub exam_strictness: Option<Strictness>,
     /// The Leitner stage every card must reach to unlock the deck
     /// (`% unlock-stage: 1..=5`): its exam becomes available (a sourced deck) or
     /// its dependents unlock (a source-less one). `None` keeps the default gate —
-    /// all cards retired at the top stage. Unlike `% max-stage:`, cards keep
-    /// drilling past it.
+    /// all cards retired at the top stage. The cards keep drilling to the top —
+    /// the directive only lowers the unlock bar.
     pub unlock_stage: Option<u8>,
 }
 
@@ -63,13 +60,6 @@ impl DeckSettings {
                 "direction" => settings.direction = Direction::from_str(value, true).ok(),
                 "frontend" => settings.frontend = Frontend::from_str(value, true).ok(),
                 "img-dir" => settings.img_dir = Some(PathBuf::from(value)),
-                "max-stage" => {
-                    settings.max_stage = value
-                        .trim()
-                        .parse::<u8>()
-                        .ok()
-                        .map(|n| n.clamp(1, MAX_STAGE))
-                }
                 "strictness" => settings.exam_strictness = Strictness::from_str(value, true).ok(),
                 "unlock-stage" => {
                     settings.unlock_stage = value
@@ -94,7 +84,6 @@ impl DeckSettings {
         self.direction = self.direction.or(defaults.direction);
         self.frontend = self.frontend.or(defaults.frontend);
         self.img_dir = self.img_dir.clone().or_else(|| defaults.img_dir.clone());
-        self.max_stage = self.max_stage.or(defaults.max_stage);
         self.exam_strictness = self.exam_strictness.or(defaults.exam_strictness);
         self.unlock_stage = self.unlock_stage.or(defaults.unlock_stage);
     }
@@ -215,8 +204,6 @@ impl Deck {
             card.frontend = card.frontend.or(settings.frontend);
             card.image = card.image.take().map(|p| resolve_image(&base_dir, p));
             card.image_back = card.image_back.take().map(|p| resolve_image(&base_dir, p));
-            // Deck-wide top stage (`% max-stage:`); reaching it retires the card.
-            card.max_stage = settings.max_stage;
         }
         // Expand the declared direction (card override, else deck) into cards.
         // `reverse` swaps the card, `both` adds the swapped one alongside; the
@@ -295,16 +282,15 @@ impl Deck {
             return DeckState::Finished;
         }
         // The unlock gate: every card retired (the default), or — with
-        // `% unlock-stage: N` set — every card at stage ≥ N, so a deck can unlock
-        // before its cards retire while they keep drilling to the top. A retired
-        // card always counts (it can climb no higher).
-        let gated = self.cards.iter().all(|c| {
-            session::is_retired(c, store)
-                || self
-                    .settings
-                    .unlock_stage
-                    .is_some_and(|n| store.get(c.id()).is_some_and(|s| s.stage >= n))
-        });
+        // `% unlock-stage: N` — every card at stage ≥ N, so a deck unlocks before
+        // its cards retire while they keep drilling to the top.
+        let gated = match self.settings.unlock_stage {
+            Some(n) => self
+                .cards
+                .iter()
+                .all(|c| store.get(c.id()).is_some_and(|s| s.stage >= n)),
+            None => self.cards.iter().all(|c| session::is_retired(c, store)),
+        };
         if gated {
             // Drilled enough but not yet mastered: a sourced deck is `ExamDue`, a
             // source-less one (no exam) is `Finished`.
@@ -913,24 +899,6 @@ mod tests {
     }
 
     #[test]
-    fn a_retired_card_counts_even_when_unlock_stage_is_higher() {
-        let dir = tempfile::tempdir().unwrap();
-        // `% max-stage: 3` retires at stage 3; `% unlock-stage: 5` is unreachable
-        // by stage, but a retired card still counts as gate-ready.
-        let path = write_deck(
-            dir.path(),
-            "d.txt",
-            "% max-stage: 3\n% unlock-stage: 5\n# a\n\t1\n",
-        );
-        let deck = Deck::load(&path).unwrap();
-        let (mut store, _s) = empty_store();
-        let s = store.get_or_insert(deck.cards[0].id(), 0);
-        s.stage = 3;
-        s.streak = 1; // retired at the deck's own max-stage
-        assert_eq!(DeckState::Finished, deck.state(&store));
-    }
-
-    #[test]
     fn passing_the_exam_masters_an_undrilled_deck() {
         // Test out: a sourced deck whose cards aren't drilled is `Started`, but
         // passing its exam masters it outright → `Finished` (so it unlocks
@@ -1046,22 +1014,6 @@ mod tests {
         let (store, _s) = empty_store();
         assert!(deck.cards.is_empty());
         assert_eq!(DeckState::NotStarted, deck.state(&store));
-    }
-
-    #[test]
-    fn max_stage_directive_finishes_deck_at_lower_stage() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = write_deck(dir.path(), "d.txt", "% max-stage: 2\n# a\n\t1\n");
-        let deck = Deck::load(&path).unwrap();
-        assert_eq!(Some(2), deck.settings.max_stage);
-        assert_eq!(Some(2), deck.cards[0].max_stage); // stamped onto the card
-        let (mut store, _s) = empty_store();
-
-        // Stage 2 reached by passing -> retired -> finished, below MAX_STAGE.
-        let s = store.get_or_insert(deck.cards[0].id(), 0);
-        s.stage = 2;
-        s.streak = 1;
-        assert_eq!(DeckState::Finished, deck.state(&store));
     }
 
     #[test]

@@ -199,7 +199,7 @@ mod tests {
         write(&dir.path().join("b.txt"), "# b\n\t2\n");
         write(
             &dir.path().join(MANIFEST),
-            "title = \"English\"\ndescription = \"everyday vocab\"\n\n[defaults]\nmode = \"typing\"\ndirection = \"both\"\nmax-stage = 3\n",
+            "title = \"English\"\ndescription = \"everyday vocab\"\n\n[defaults]\nmode = \"typing\"\ndirection = \"both\"\nunlock-stage = 3\n",
         );
 
         let ws = Workspace::load(dir.path()).unwrap();
@@ -207,7 +207,7 @@ mod tests {
         assert_eq!(Some("everyday vocab".to_string()), ws.description);
         assert_eq!("English", ws.display_name());
         assert_eq!(Some(Mode::Typing), ws.settings.mode);
-        assert_eq!(Some(3), ws.settings.max_stage); // an int value parses too
+        assert_eq!(Some(3), ws.settings.unlock_stage); // an int value parses too
         // The manifest is not a `.txt`, so it is never a member.
         let names: Vec<_> = ws
             .members
