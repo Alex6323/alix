@@ -1,6 +1,7 @@
 /target
 ROADMAP.md
 SCRATCH.md
+QUALITY.md
 current.png
 
 # mdBook build output (`make book` / `mdbook build`)
