@@ -6,7 +6,7 @@
 # toolchain — `+nightly` is handled by rustup before cargo sees it — which is
 # why these live in a Makefile rather than .cargo/config.toml.)
 
-.PHONY: build test lint fmt fmt-check check run serve book install clean
+.PHONY: build test lint fmt fmt-check check coverage run serve book install clean
 
 # Compile the workspace.
 build:
@@ -31,6 +31,14 @@ fmt-check:
 # The gates that must stay green before work is done. (fmt is intentionally
 # separate — formatting uses nightly and is run deliberately, not as a gate.)
 check: lint test
+
+# Test coverage (needs cargo-llvm-cov: `cargo install cargo-llvm-cov`). Prints a
+# per-file summary and writes a browsable report to target/llvm-cov/html/. A
+# flashlight for untested branches — especially the AI plumbing's error paths —
+# not a gate to chase a number.
+coverage:
+	cargo llvm-cov --html
+	@echo "HTML report -> target/llvm-cov/html/index.html"
 
 # Run the binary, e.g. `make run ARGS="exam mydeck.txt"`.
 run:
