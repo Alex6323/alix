@@ -10,7 +10,7 @@
 
 use std::{
     io::{Read, Write},
-    path::Path,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::mpsc::{Receiver, channel},
     time::{Duration, Instant},
@@ -35,6 +35,10 @@ pub struct CliSession {
     /// Whether the session has been created on the CLI side (a first call
     /// succeeded).
     pub started: bool,
+    /// The working directory the conversation was created in. Claude scopes
+    /// conversation history per directory, so `--resume` only finds it when run
+    /// in the same `cwd` as the `--session-id` that created it.
+    cwd: Option<PathBuf>,
 }
 
 impl CliSession {
@@ -43,6 +47,7 @@ impl CliSession {
         Self {
             id: random_uuid(),
             started: false,
+            cwd: None,
         }
     }
 
@@ -53,6 +58,23 @@ impl CliSession {
         } else {
             vec!["--session-id".to_string(), self.id.clone()]
         }
+    }
+
+    /// Like [`args`](Self::args), but for a call that will run in `cwd`. Because
+    /// Claude stores conversation history per working directory, a `--resume`
+    /// only finds the conversation when run in the directory that created it. If
+    /// `cwd` differs from where this session started — e.g. moving to a card
+    /// grounded in a different `% source:` root, or from a grounded question to
+    /// an ungrounded one — the old conversation is unreachable, so start a fresh
+    /// session in the new directory instead of emitting a doomed `--resume`.
+    /// Callers read [`started`](Self::started) *after* this to decide whether the
+    /// prompt is a first message (it is, once a cwd change resets the session).
+    pub fn args_in(&mut self, cwd: Option<&Path>) -> Vec<String> {
+        if self.started && self.cwd.as_deref() != cwd {
+            *self = Self::new();
+        }
+        self.cwd = cwd.map(Path::to_path_buf);
+        self.args()
     }
 }
 
@@ -416,6 +438,29 @@ mod tests {
         assert_eq!("--resume", resume[0]);
         // Same conversation in both calls.
         assert_eq!(create[1], resume[1]);
+    }
+
+    #[test]
+    fn args_in_resumes_in_the_same_cwd_but_resets_on_a_change() {
+        let a = Path::new("/crate/a");
+        let b = Path::new("/crate/b");
+        let mut session = CliSession::new();
+        // First call in cwd a: creates the session there.
+        let create = session.args_in(Some(a));
+        assert_eq!("--session-id", create[0]);
+        let id = create[1].clone();
+        session.started = true; // a successful reply marks it started
+
+        // Same cwd: resumes the same conversation.
+        let resume = session.args_in(Some(a));
+        assert_eq!(["--resume", &id], resume.as_slice());
+
+        // A different cwd can't resume that conversation -> fresh session, and
+        // `started` is cleared so the next prompt is a first message.
+        let switched = session.args_in(Some(b));
+        assert_eq!("--session-id", switched[0]);
+        assert_ne!(id, switched[1]);
+        assert!(!session.started);
     }
 
     #[test]

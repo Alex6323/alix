@@ -256,15 +256,18 @@
   /* ── ask Claude ── */
   .ask { width: var(--card-w); max-width: 92vw; display: flex; flex-direction: column; gap: 12px; animation: deal 0.3s both; }
   .ask-model { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.06em; color: var(--dim); }
-  .ask-log { display: flex; flex-direction: column; gap: 10px; max-height: 58vh; overflow-y: auto; padding-right: 4px; }
+  /* card + conversation share one scroll region so the card can stick to its top */
+  .ask-scroll { display: flex; flex-direction: column; gap: 12px; max-height: 64vh; overflow-y: auto; padding-right: 4px; }
+  .ask-log { display: flex; flex-direction: column; gap: 10px; }
   .ask-q { align-self: flex-end; max-width: 85%; background: rgba(125,249,232,0.10); border: 1px solid var(--line); border-radius: 12px 12px 4px 12px; padding: 9px 13px; }
   .ask-a { align-self: flex-start; max-width: 92%; white-space: pre-wrap; line-height: 1.5; border-left: 3px solid var(--bolt); padding: 4px 0 4px 12px; }
   .ask-thinking { align-self: flex-start; color: var(--dim); font-style: italic; }
   .ask-status { align-self: flex-start; color: var(--good); font-size: 0.85rem; }
   .ask-error { align-self: flex-start; color: var(--again); font-size: 0.85rem; }
   .ask-hint { color: var(--dim); }
-  /* the card under discussion, pinned above the input for reference */
-  .ask-card { border: 1px solid var(--line); border-radius: 12px; padding: 9px 13px; background: rgba(0,0,0,0.18); max-height: 22vh; overflow-y: auto; }
+  /* the card under discussion, stuck to the top of the scroll region so it stays
+     in view as the conversation scrolls under it (needs a solid bg to occlude) */
+  .ask-card { position: sticky; top: 0; z-index: 2; border: 1px solid var(--line); border-radius: 12px; padding: 9px 13px; background: var(--panel-bot); max-height: 30vh; overflow-y: auto; box-shadow: 0 10px 18px -14px var(--void); }
   .ask-card-q { color: var(--dim); margin-bottom: 5px; }
   .ask-card-ctx { color: var(--dim); font-family: var(--mono); font-size: 0.85em; margin-bottom: 4px; }
   .ask-card-a { color: var(--ink); line-height: 1.45; white-space: pre-wrap; }
@@ -281,6 +284,10 @@
   /* ── AI exam ── */
   .exam { width: var(--card-w); max-width: 92vw; display: flex; flex-direction: column; gap: 12px; animation: deal 0.3s both; max-height: 78vh; overflow-y: auto; padding-right: 4px; }
   .exam-wait { color: var(--dim); font-style: italic; }
+  .exam-elapsed { color: var(--dim); font-size: 0.8rem; }
+  .exam-elapsed .dot { display: inline-block; width: 7px; height: 7px; margin-right: 7px; border-radius: 50%; background: var(--bolt); animation: pulse 1.1s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 0.3; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1.1); } }
+  .exam-error { border: 1px solid var(--again); border-left-width: 3px; border-radius: 10px; padding: 9px 12px; color: var(--again); font-size: 0.88rem; background: rgba(220,80,80,0.06); }
   .exam-progress { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); }
   .exam-q { font-size: clamp(1.1rem, 3.4vw, 1.4rem); line-height: 1.4; color: var(--ink); }
   .exam-input { width: 100%; box-sizing: border-box; resize: vertical; min-height: 120px; padding: 11px 13px; border-radius: 12px; border: 1px solid var(--line); background: rgba(0,0,0,0.25); color: var(--ink); font: inherit; }
@@ -301,7 +308,7 @@
   .exam-ready { color: var(--warn); margin-top: 8px; }
 
   @media (prefers-reduced-motion: reduce) {
-    .stack, .summary, .reveal, .card.zap { animation: none; }
+    .stack, .summary, .reveal, .card.zap, .exam-elapsed .dot { animation: none; }
   }
 </style>
 </head>
@@ -455,7 +462,15 @@ function openAsk() {
   render(); // builds the panel once (entrance animation runs once)
   api("/api/ask").then(d => { askData = d; if (asking) syncAsk(); }); // pick up any prior transcript
 }
-function closeAsk() { asking = false; stopAskPoll(); render(); }
+function closeAsk() {
+  asking = false;
+  stopAskPoll();
+  // A note saved during the chat now lives on the server's card; re-pull the
+  // state so it shows on return without a manual reload. Keep the reveal
+  // position (`revealed`/`feedback` are client-side and the card can't change
+  // while the modal ask panel is open), so we don't reset the card to its front.
+  api("/api/state").then(s => { state = s; render(); }).catch(render);
+}
 function sendAsk(text) {
   const q = (text || "").trim();
   if (!q || askData.thinking) return;
@@ -487,7 +502,10 @@ function fillAskLog(log) {
   if (askData.error) log.appendChild(el("div", "ask-error", askData.error));
   if (!askData.transcript.length && !askData.thinking && !askData.status && !askData.error)
     log.appendChild(el("div", "ask-hint", "Ask Claude about this card."));
-  log.scrollTop = log.scrollHeight;
+  // Keep the newest exchange in view; the card + conversation scroll together
+  // now (the card sticks), so scroll their shared container, not just the log.
+  const sc = log.closest(".ask-scroll") || log;
+  sc.scrollTop = sc.scrollHeight;
 }
 
 // Update the open panel in place — no rebuild, so the entrance animation
@@ -507,20 +525,23 @@ function renderAsk() {
   // Which model is answering (and its effort). The tutor uses the CLI default
   // unless `[ask]` pins one — not the stronger model that built the deck.
   wrap.appendChild(el("div", "ask-model", `claude · model: ${askInfo.model} · effort: ${askInfo.effort}`));
-  const log = el("div", "ask-log");
-  fillAskLog(log);
-  wrap.appendChild(log);
 
-  // The card's front + answer, pinned just above the input so it's easy to
-  // reference while writing a question.
+  // The card and the conversation share one scroll region: the card under
+  // discussion (its front + answer) sticks to the top as a reference while
+  // Claude's conversation about it scrolls under it, answer below question.
+  const scroll = el("div", "ask-scroll");
   const c = state.card;
   if (c) {
     const ref = el("div", "ask-card");
     ref.appendChild(el("div", "ask-card-q", c.front));
     for (const ctx of c.context || []) ref.appendChild(el("div", "ask-card-ctx", ctx));
     for (const b of c.back) ref.appendChild(el("div", "ask-card-a", b));
-    wrap.appendChild(ref);
+    scroll.appendChild(ref);
   }
+  const log = el("div", "ask-log");
+  fillAskLog(log);
+  scroll.appendChild(log);
+  wrap.appendChild(scroll);
 
   const input = el("textarea", "ask-input");
   input.placeholder = "Ask about this card…";
@@ -563,10 +584,25 @@ function startExamPoll() {
       examData = d;
       if (!d.thinking) stopExamPoll();
       if (!prev || prev.phase !== d.phase || prev.error !== d.error) render();
+      else if (d.thinking) {
+        // Tick the elapsed counter in place — a full re-render would restart the
+        // entrance animation (flicker).
+        const e = document.querySelector(".exam-elapsed");
+        if (e) { e.innerHTML = ""; e.appendChild(el("span", "dot"));
+                 e.appendChild(document.createTextNode(examElapsedText(d))); }
+      }
     });
   }, 600);
 }
 function stopExamPoll() { if (examPoll) { clearInterval(examPoll); examPoll = null; } }
+// Progress line under the spinner: a live "Claude is working" counter — the only
+// honest signal we get from a `claude -p` call that streams no token-level state.
+function examElapsedText(d) {
+  const s = d.elapsed || 0;
+  if (s < 2) return "Claude is working…";
+  if (s < 90) return `Claude is working… ${s}s`;
+  return `Claude is working… ${Math.floor(s / 60)}m ${s % 60}s — this can take a couple of minutes`;
+}
 // Save the current answer, then move to question `goto`.
 function examNav(goto) {
   const ta = document.querySelector(".exam-input");
@@ -590,12 +626,18 @@ function renderExam() {
   scoreEl.innerHTML = "";
   menuWrap.style.display = "none";
   const wrap = el("div", "exam");
+  // A failed Claude call surfaces a prominent banner up top, so it's never
+  // mistaken for "nothing happened" (the result/grades may scroll below it).
+  if (d.error) wrap.appendChild(el("div", "exam-error", "⚠ " + d.error));
 
   if (d.phase === "generating" || d.phase === "grading" || d.phase === "remediating") {
     const msg = { generating: "Preparing your exam…", grading: "Grading your answers…",
                   remediating: "Writing remediation cards…" }[d.phase];
     wrap.appendChild(el("div", "exam-wait", msg));
-    if (d.error) wrap.appendChild(el("div", "ask-error", d.error));
+    const prog = el("div", "exam-elapsed");
+    prog.appendChild(el("span", "dot"));
+    prog.appendChild(document.createTextNode(examElapsedText(d)));
+    wrap.appendChild(prog);
     stage.appendChild(wrap);
     if (d.error || d.phase === "generating") chip("Close", "", closeExam, "esc");
     return;
@@ -609,7 +651,6 @@ function renderExam() {
     ta.value = d.answer || "";
     ta.rows = 6;
     wrap.appendChild(ta);
-    if (d.error) wrap.appendChild(el("div", "ask-error", d.error));
     stage.appendChild(wrap);
     ta.focus();
     if (d.current > 0) chip("Back", "", () => examNav(d.current - 1));
@@ -644,9 +685,9 @@ function renderExam() {
       }
       wrap.appendChild(q);
     });
-    if (d.error) wrap.appendChild(el("div", "ask-error", d.error));
     stage.appendChild(wrap);
-    if (!d.passed && d.gaps.length) chip("Add remediation cards", "primary", examRemediate);
+    if (!d.passed && d.gaps.length)
+      chip(d.error ? "Try remediation again" : "Add remediation cards", "primary", examRemediate);
     chip("Close", "", closeExam, "esc");
     return;
   }

@@ -381,6 +381,49 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reinforced.
 
 ### Fixed
+- **A note saved from the ask tutor shows on the card right away.** Saving a
+  note appended it to the deck file but left the in-memory card unchanged, so the
+  new note only appeared after the deck was re-read (a later session). The just-
+  saved lines are now mirrored onto the in-memory card (`Card::append_note`) — no
+  deck re-read — so returning to the card shows the note immediately, on both the
+  web and the terminal (the web previously never reflected it; the terminal only
+  updated the ask view's recap, not the card on return). On the web, closing the
+  ask panel now re-pulls the card state (keeping the reveal position) so the
+  saved note appears on return instead of only after a manual page reload.
+- **The web ask panel shows the card above the conversation, matching the
+  terminal.** The card under discussion (its front + answer) now sits at the top
+  as the reference, with Claude's conversation flowing below it (answer under
+  question), instead of the card being tucked beneath the conversation — so the
+  question you're studying reads above the answer, the same order the TUI already
+  used. The card and conversation now share one scroll region and the card
+  **sticks to the top**, staying in view as a long conversation scrolls under it.
+- **The grounded tutor no longer breaks the conversation with "No conversation
+  found with session ID".** Claude scopes its conversation history by working
+  directory, but the grounded tutor (`[ask] source_access`) runs each card's
+  questions with the working directory set to that card's `% source:` root. A
+  follow-up `--resume` that ran in a *different* directory than the
+  `--session-id` that created the session — moving between cards grounded in
+  different roots, switching a grounded and an ungrounded deck, or the
+  "save note" condense (which ran ungrounded) after a grounded question — landed
+  in the wrong project and failed. The CLI session is now **cwd-aware**
+  (`CliSession::args_in`): a working-directory change starts a fresh
+  conversation there (a clean first prompt) instead of a doomed resume, and a
+  card's condense uses the **same grounding** as its questions so the directory
+  stays stable. Same-directory follow-ups still resume as before.
+- **Exam remediation is faster, can't fail silently, and shows progress.** Three
+  problems when "Add remediation cards" was slow or produced nothing: (1) the
+  remediation call inherited the tutor's `WebFetch`/`WebSearch` tools and could
+  wander off researching the gaps — it now runs tool-free (it only needs the gap
+  list), so it's a quick, deterministic text-generation call; (2) if the model
+  replied in prose instead of cards, the prose was appended to the deck as a
+  bogus "card" (so "no new cards" appeared on re-drill) — the reply must now
+  contain at least one `#` card front or remediation fails with a clear message
+  instead; (3) a failed call (timeout, empty/unparseable reply, write error) was
+  easy to miss — both the web and terminal exam views now show a **prominent
+  error banner at the top** (web offers "Try remediation again"; the terminal
+  scrolls it back into view), and every in-flight Claude call (generating,
+  grading, remediating) shows a **live "Claude is working… Ns" counter** so a
+  long call no longer looks frozen.
 - **A `% source:` that names several files no longer breaks the exam.** The deck
   generator sometimes writes a multi-file source as `<root>/README.md + src/lib.rs`
   (first a full path, the rest relative to it). The exam read the whole string as

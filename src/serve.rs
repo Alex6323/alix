@@ -569,38 +569,38 @@ impl Reviewing {
         let Some(card) = self.session.current().cloned() else {
             return false;
         };
-        let (prompt, purpose, run_cfg) = match question {
+        // A condense needs a transcript to summarize; bail before touching the
+        // session so a no-op can't reset the conversation.
+        if question.is_none() && self.transcript.is_empty() {
+            return false;
+        }
+        // `source_roots` holds only decks whose effective source access
+        // (workspace override, else global) is on — its presence means "ground
+        // this card's tutor (and its condense) in its source". Both a question
+        // and its condense use the same grounding, so the CLI's working
+        // directory stays stable and the conversation remains resumable.
+        let root = self.source_roots.get(&*card.subject).cloned();
+        let run_cfg = match &root {
+            Some(r) => ask::with_source_root(cfg, r),
+            None => cfg.clone(),
+        };
+        // Reconcile the session with this call's cwd *before* building the
+        // prompt: a cwd change starts a fresh conversation, so `started` then
+        // reports this as a first message (full card context).
+        let args = self.cli.args_in(run_cfg.cwd.as_deref());
+        let (prompt, purpose) = match question {
             Some(q) => {
                 let links = self.links.get(&*card.subject).cloned().unwrap_or_default();
-                // `source_roots` holds only decks whose effective source access
-                // (workspace override, else global) is on — so its presence means
-                // "ground this card's tutor in its source".
-                let root = self.source_roots.get(&*card.subject);
-                let prompt = ask::question_prompt(
-                    &card,
-                    &links,
-                    &q,
-                    !self.cli.started,
-                    root.map(PathBuf::as_path),
-                );
-                let run_cfg = match root {
-                    Some(r) => ask::with_source_root(cfg, r),
-                    None => cfg.clone(),
-                };
-                (prompt, Purpose::Question(q), run_cfg)
+                let prompt =
+                    ask::question_prompt(&card, &links, &q, !self.cli.started, root.as_deref());
+                (prompt, Purpose::Question(q))
             }
-            None => {
-                if self.transcript.is_empty() {
-                    return false;
-                }
-                (
-                    ask::condense_prompt(&card, &self.transcript),
-                    Purpose::Condense,
-                    cfg.clone(),
-                )
-            }
+            None => (
+                ask::condense_prompt(&card, &self.transcript),
+                Purpose::Condense,
+            ),
         };
-        let rx = ask::spawn(run_cfg, prompt, self.cli.args());
+        let rx = ask::spawn(run_cfg, prompt, args);
         self.pending = Some(Pending { rx, purpose, card });
         true
     }
@@ -638,7 +638,16 @@ impl Reviewing {
                     .files
                     .append_note(&pending.card.subject, pending.card.line, &notes)
                 {
-                    Ok(()) => (Some("note saved".to_string()), None),
+                    Ok(()) => {
+                        // Mirror the note onto the in-memory card so returning to
+                        // it shows the note at once, without re-reading the deck.
+                        if let Some(card) = self.session.current_mut()
+                            && card.id() == pending.card.id()
+                        {
+                            card.append_note(&notes);
+                        }
+                        (Some("note saved".to_string()), None)
+                    }
                     Err(e) => (None, Some(e)),
                 }
             }
@@ -681,6 +690,8 @@ struct ExamDto {
     unlocks: Vec<String>,
     thinking: bool,
     error: Option<String>,
+    /// Seconds the in-flight Claude call has been running (progress feedback).
+    elapsed: Option<u64>,
 }
 
 #[derive(Serialize)]
@@ -755,6 +766,7 @@ fn exam_dto(ex: &Examining, decks_dir: &Path) -> ExamDto {
         unlocks,
         thinking: s.thinking(),
         error: s.error().map(str::to_string),
+        elapsed: s.elapsed_secs(),
     }
 }
 

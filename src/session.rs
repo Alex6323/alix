@@ -191,6 +191,13 @@ impl Session {
         self.queue.front().map(|&i| &self.cards[i])
     }
 
+    /// The current card, mutable — e.g. to attach a note just saved from the ask
+    /// tutor so the card shows it without re-reading the deck file.
+    pub fn current_mut(&mut self) -> Option<&mut Card> {
+        let i = *self.queue.front()?;
+        Some(&mut self.cards[i])
+    }
+
     /// All cards of this session's decks (e.g. as the distractor pool for
     /// multiple-choice questions).
     pub fn cards(&self) -> &[Card] {

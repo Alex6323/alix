@@ -319,24 +319,22 @@ impl App {
                 let notes = ask::extract_note_lines(&text);
                 *status = Some(match self.options.decks.get(&*card.subject) {
                     None => format!("no deck file known for {}", card.subject),
-                    Some(info) => {
-                        match deck::append_note(&info.path, card.line, &notes) {
-                            Ok(()) if notes.is_empty() => "nothing to save".to_string(),
-                            Ok(()) => {
-                                // Show the note on this card immediately, too.
-                                let addition = notes.join("\n");
-                                match &mut card.note {
-                                    Some(note) => {
-                                        note.push('\n');
-                                        note.push_str(&addition);
-                                    }
-                                    note @ None => *note = Some(addition),
-                                }
-                                format!("note saved to {}", info.path.display())
+                    Some(info) => match deck::append_note(&info.path, card.line, &notes) {
+                        Ok(()) if notes.is_empty() => "nothing to save".to_string(),
+                        Ok(()) => {
+                            // Show the note immediately, without re-reading the
+                            // deck: on the ask view's card recap (this clone) and
+                            // on the session card the review redraws on return.
+                            card.append_note(&notes);
+                            if let Some(sc) = self.session.current_mut()
+                                && sc.id() == card.id()
+                            {
+                                sc.append_note(&notes);
                             }
-                            Err(e) => format!("cannot save note: {e}"),
+                            format!("note saved to {}", info.path.display())
                         }
-                    }
+                        Err(e) => format!("cannot save note: {e}"),
+                    },
                 });
             }
             (ask::Reply::Error(e), _) => {
@@ -815,10 +813,24 @@ impl App {
 
         if save_hit {
             if !transcript.is_empty() && waiting.is_none() {
+                // Ground the condense in the same source root as this card's
+                // questions, so the CLI's working directory stays stable and the
+                // conversation remains resumable.
+                let root = self
+                    .options
+                    .decks
+                    .get(&*card.subject)
+                    .filter(|i| i.source_access)
+                    .and_then(|i| i.source_root.as_deref());
+                let ask_cfg = match root {
+                    Some(r) => ask::with_source_root(&self.options.ask, r),
+                    None => self.options.ask.clone(),
+                };
                 let prompt = ask::condense_prompt(card, transcript);
+                let args = self.ask_session.args_in(ask_cfg.cwd.as_deref());
                 *status = None;
                 *waiting = Some(Waiting {
-                    rx: ask::spawn(self.options.ask.clone(), prompt, self.ask_session.args()),
+                    rx: ask::spawn(ask_cfg, prompt, args),
                     purpose: Purpose::Condense,
                 });
             }
@@ -837,15 +849,19 @@ impl App {
                 let root = info
                     .filter(|i| i.source_access)
                     .and_then(|i| i.source_root.as_deref());
-                let prompt =
-                    ask::question_prompt(card, links, &question, !self.ask_session.started, root);
                 let ask_cfg = match root {
                     Some(r) => ask::with_source_root(&self.options.ask, r),
                     None => self.options.ask.clone(),
                 };
+                // Reconcile the session with this call's cwd *before* the prompt:
+                // a cwd change starts a fresh conversation, so `started` then
+                // reports this as a first message (full card context).
+                let args = self.ask_session.args_in(ask_cfg.cwd.as_deref());
+                let prompt =
+                    ask::question_prompt(card, links, &question, !self.ask_session.started, root);
                 *status = None;
                 *waiting = Some(Waiting {
-                    rx: ask::spawn(ask_cfg, prompt, self.ask_session.args()),
+                    rx: ask::spawn(ask_cfg, prompt, args),
                     purpose: Purpose::Question(question),
                 });
             }
@@ -1671,7 +1687,11 @@ impl ExamApp {
                     _ => {}
                 }
             }
-            self.sitting.poll(&mut self.store, time::now_ms());
+            // On a phase transition, reset the scroll so a fresh error banner
+            // (or a new result) starts in view rather than scrolled past.
+            if self.sitting.poll(&mut self.store, time::now_ms()) {
+                self.scroll = 0;
+            }
         }
         Ok(())
     }
@@ -1754,6 +1774,12 @@ impl ExamApp {
 
     fn draw_body(&self, frame: &mut Frame, area: Rect) {
         let mut lines: Vec<Line> = Vec::new();
+        // A failed background call surfaces a prominent banner at the top, so a
+        // long grade list below can't push it out of view.
+        if let Some(e) = self.sitting.error() {
+            lines.push(Line::from(format!("⚠ {e}").bold().fg(Color::Red)));
+            lines.push(Line::default());
+        }
         match self.sitting.phase() {
             exam::Phase::Generating | exam::Phase::Grading | exam::Phase::Remediating => {
                 let msg = match self.sitting.phase() {
@@ -1762,10 +1788,15 @@ impl ExamApp {
                     _ => "Preparing your exam…",
                 };
                 if self.sitting.thinking() {
-                    lines.push(Line::from(format!("{} {msg}", spinner())));
+                    let elapsed = self
+                        .sitting
+                        .elapsed_secs()
+                        .map(|s| format!("  ({s}s — Claude is working)"))
+                        .unwrap_or_default();
+                    lines.push(Line::from(format!("{} {msg}{elapsed}", spinner())));
                 } else {
                     // Not thinking in a spinner phase means the call failed; the
-                    // error is shown below.
+                    // error banner is shown above.
                     lines.push(Line::from("The exam helper could not complete.".dim()));
                 }
             }
@@ -1844,10 +1875,6 @@ impl ExamApp {
                 lines.push(Line::default());
                 lines.push(Line::from("Re-drill the deck, then re-sit the exam."));
             }
-        }
-        if let Some(e) = self.sitting.error() {
-            lines.push(Line::default());
-            lines.push(Line::from(format!("error: {e}").fg(Color::Red)));
         }
         let scroll = if matches!(self.sitting.phase(), exam::Phase::Results) {
             self.scroll

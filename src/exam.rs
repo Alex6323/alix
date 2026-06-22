@@ -186,10 +186,18 @@ pub fn remediation_cards(gaps: &[String], cfg: &ExamConfig, ask_cfg: &AskConfig)
         bail!("no gaps to remediate");
     }
     let prompt = remediation_prompt(gaps);
-    let raw = ask::run(&run_config(cfg, ask_cfg), &prompt, &[])?;
+    // Remediation turns the gap list into cards; it needs no web access. Drop the
+    // tutor's WebFetch/WebSearch tools so it's a plain text-generation call —
+    // faster, and it won't wander off researching the gaps.
+    let mut cfg_run = run_config(cfg, ask_cfg);
+    cfg_run.allowed_tools.clear();
+    let raw = ask::run(&cfg_run, &prompt, &[])?;
     let cards = clean_deck_output(&raw);
-    if cards.trim().is_empty() {
-        bail!("the model returned no remediation cards");
+    // Every card front starts with `#`; if the reply has none, the model
+    // answered in prose instead of emitting cards — treat it as a failure rather
+    // than appending the prose to the deck as a bogus "card".
+    if !cards.lines().any(|l| l.trim_start().starts_with('#')) {
+        bail!("the model replied without any cards — try remediating again");
     }
     Ok(cards)
 }
@@ -291,6 +299,9 @@ pub struct Sitting {
     result: Option<ExamResult>,
     pending: Option<Pending>,
     error: Option<String>,
+    /// When the in-flight background call started (ms), for an elapsed-time
+    /// progress indicator; `None` when idle.
+    pending_since: Option<u64>,
 }
 
 impl Sitting {
@@ -317,6 +328,7 @@ impl Sitting {
             result: None,
             pending: Some(pending),
             error: None,
+            pending_since: Some(crate::time::now_ms()),
         }
     }
 
@@ -336,6 +348,12 @@ impl Sitting {
     /// Whether a background call is in flight.
     pub fn thinking(&self) -> bool {
         self.pending.is_some()
+    }
+    /// Seconds the in-flight background call has been running, for a progress
+    /// indicator; `None` when idle.
+    pub fn elapsed_secs(&self) -> Option<u64> {
+        self.pending_since
+            .map(|since| crate::time::now_ms().saturating_sub(since) / 1000)
     }
     pub fn total(&self) -> usize {
         self.questions.len()
@@ -421,6 +439,7 @@ impl Sitting {
             self.cfg.clone(),
             self.ask_cfg.clone(),
         )));
+        self.pending_since = Some(crate::time::now_ms());
         self.phase = Phase::Grading;
     }
 
@@ -451,6 +470,7 @@ impl Sitting {
             self.cfg.clone(),
             self.ask_cfg.clone(),
         )));
+        self.pending_since = Some(crate::time::now_ms());
         self.phase = Phase::Remediating;
     }
 
@@ -478,6 +498,7 @@ impl Sitting {
             },
         };
         self.pending = None;
+        self.pending_since = None;
         match reply {
             Reply::Questions(Ok(qs)) => {
                 self.answers = vec![String::new(); qs.len()];
@@ -1139,6 +1160,25 @@ mod tests {
         )
         .unwrap();
         assert_eq!("# Why?\n% mode: explain\n  point", cards);
+    }
+
+    #[test]
+    fn remediation_cards_rejects_a_reply_without_cards() {
+        let _lock = EXEC_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        // The model answered in prose (no `#` card front) instead of emitting
+        // cards: a failure, not a silently-appended bogus "card".
+        let cli = fake_cli(
+            dir.path(),
+            "printf '%s' 'Sure, here is some advice on those concepts.'",
+        );
+        let err = remediation_cards(
+            &["the gap".to_string()],
+            &ExamConfig::default(),
+            &ask_config(&cli),
+        )
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("without any cards"));
     }
 
     #[test]

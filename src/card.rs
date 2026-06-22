@@ -169,6 +169,23 @@ impl Card {
         }
         hasher.finish()
     }
+
+    /// Appends freshly-saved note lines to this card's in-memory `note`, joined
+    /// the same way the parser joins a card's `! ` lines. Lets a note saved from
+    /// the ask tutor show on the card immediately, without re-reading the deck.
+    pub fn append_note(&mut self, notes: &[String]) {
+        if notes.is_empty() {
+            return;
+        }
+        let addition = notes.join("\n");
+        match &mut self.note {
+            Some(note) => {
+                note.push('\n');
+                note.push_str(&addition);
+            }
+            slot => *slot = Some(addition),
+        }
+    }
 }
 
 impl Eq for Card {}
@@ -197,6 +214,17 @@ mod tests {
         let a = card("subject1", "hello", &["world"], None);
         let b = card("subject1", "hi there", &["world"], Some("a note"));
         assert_eq!(a.id(), b.id());
+    }
+
+    #[test]
+    fn append_note_creates_then_joins_with_newlines() {
+        let mut c = card("d.txt", "front", &["back"], None);
+        c.append_note(&[]); // nothing to add
+        assert_eq!(None, c.note);
+        c.append_note(&["first".to_string()]);
+        assert_eq!(Some("first".to_string()), c.note);
+        c.append_note(&["second".to_string(), "third".to_string()]);
+        assert_eq!(Some("first\nsecond\nthird".to_string()), c.note);
     }
 
     #[test]
