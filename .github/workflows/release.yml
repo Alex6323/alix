@@ -1,8 +1,8 @@
 name: release
 
-# Cut a release: on a version tag (e.g. v0.1.0), cross-compile `alix` for each
-# target and upload the archives to the GitHub Release. The asset names match the
-# download buttons on alix.io AND site/install.sh:
+# Cut a release: on a version tag (e.g. v0.1.0), create the GitHub Release, then
+# cross-compile `alix` for each target and upload the archives to it. The asset
+# names match the download buttons on alix.io AND site/install.sh:
 #   alix-aarch64-apple-darwin.tar.gz   alix-x86_64-apple-darwin.tar.gz
 #   alix-x86_64-unknown-linux-gnu.tar.gz   alix-x86_64-pc-windows-msvc.zip
 on:
@@ -13,7 +13,18 @@ permissions:
   contents: write # create the Release and upload its assets
 
 jobs:
-  release:
+  # upload-rust-binary-action only uploads to an EXISTING release, so create the
+  # release first (one job), then fan out the per-target builds + uploads to it.
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/create-gh-release-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  upload-assets:
+    needs: create-release
     name: ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     strategy:
@@ -30,7 +41,7 @@ jobs:
         with:
           targets: ${{ matrix.target }}
       # Builds, archives (.tar.gz / .zip on Windows), and uploads to the release
-      # for the pushed tag — creating the release if it doesn't exist yet.
+      # that create-release made for the pushed tag.
       - uses: taiki-e/upload-rust-binary-action@v1
         with:
           bin: alix
