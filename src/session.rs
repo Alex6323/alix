@@ -301,7 +301,7 @@ fn build_queue(
 
     for (i, card) in cards.iter().enumerate() {
         match store.get(card.id()) {
-            // A retired card rests until `flash reset` — never scheduled, not
+            // A retired card rests until `alix reset` — never scheduled, not
             // even under cram.
             Some(_) if is_retired(card, store) => {}
             Some(state) => {
@@ -380,7 +380,7 @@ fn separate_siblings(order: Vec<usize>, cards: &[Card]) -> VecDeque<usize> {
 }
 
 /// Whether a card is *retired* (resting): it has reached the top Leitner stage
-/// ([`MAX_STAGE`]) by passing, so it is no longer scheduled until `flash reset`.
+/// ([`MAX_STAGE`]) by passing, so it is no longer scheduled until `alix reset`.
 /// The `streak >= 1` guard ignores a card sitting on the top stage without a
 /// passing streak. Unseen cards are never retired.
 pub fn is_retired(card: &Card, store: &Store) -> bool {

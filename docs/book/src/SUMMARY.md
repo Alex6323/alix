@@ -4,7 +4,7 @@
 
 # Part I — Foundations
 
-- [Why flash exists](01-why-flash.md)
+- [Why alix exists](01-why-alix.md)
 - [Getting started](02-getting-started.md)
 - [The deck format](03-the-deck-format.md)
 - [Review modes](04-review-modes.md)
@@ -36,4 +36,4 @@
 
 ---
 
-[How flash was made](how-flash-was-made.md)
+[How alix was made](how-alix-was-made.md)

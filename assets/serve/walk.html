@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>flash · trace</title>
+<title>alix · trace</title>
 <style>
   :root {
     --void: #06121a;
@@ -179,7 +179,7 @@
   <div class="bar">
     <span class="brand">
       <svg viewBox="0 0 512 512" aria-hidden="true"><path d="M 269 168 L 221 254 L 253 254 L 237 348 L 297 246 L 263 246 L 285 168 Z" fill="currentColor"/></svg>
-      flash
+      alix
     </span>
     <span class="sep">·</span>
     <span class="deck" id="deck">trace</span>
@@ -198,7 +198,7 @@ let state = null;     // the latest WalkDto
 let poll = null;      // setInterval handle while a live grade is in flight
 let KEYS = {};        // configured key bindings, from /api/keys
 // Hosted by the review server (picked from its deck list) rather than standalone
-// `flash trace --serve` — so we offer a "Back to decks" return to the picker.
+// `alix trace --serve` — so we offer a "Back to decks" return to the picker.
 const HOSTED = location.pathname === "/walk";
 
 const api  = (path, opts) => fetch(path, opts).then(r => r.json());

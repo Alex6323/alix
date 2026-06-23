@@ -1,7 +1,7 @@
 # 4 · Review modes
 
 A *mode* decides how a card is tested — from "reveal it and be honest with
-yourself" to "type it exactly." flash has six. Set one with `--mode` on the
+yourself" to "type it exactly." alix has six. Set one with `--mode` on the
 command line, or per deck or card with a `% mode:` directive; the effective mode
 resolves **`--mode` flag > card's `% mode:` > deck's `% mode:` > the default
 (`flip`)**. A small badge above the answer always shows which mode is in play.

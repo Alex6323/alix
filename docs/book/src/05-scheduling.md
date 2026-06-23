@@ -40,12 +40,12 @@ between the two without losing your place.
 
 A card doesn't climb forever. Once it reaches the **top stage** (5) by passing, it
 **retires**: it rests and is no longer scheduled, *not even under `--cram`*, until
-you `flash reset`. A deck is *finished* once all its cards have retired.
+you `alix reset`. A deck is *finished* once all its cards have retired.
 
 ## Completion states
 
 A deck's **state** is derived from its cards' stages, and shown in the picker and
-`flash stats`:
+`alix stats`:
 
 - **not started** — you haven't reviewed any card yet
 - **started** — somewhere in between
@@ -68,7 +68,7 @@ Need to review everything now, schedule be damned — the night before an exam?
 `--cram` ignores cooldowns and shows every card that isn't retired:
 
 ```sh
-flash --cram mydeck.txt
+alix --cram mydeck.txt
 ```
 
 Retired cards stay out (that's what retirement is for); everything else is fair

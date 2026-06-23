@@ -1,17 +1,17 @@
 # 15 · The web app — `--serve`
 
-Everything flash does in the terminal it can also do in a browser. Add `--serve`
-to `review` or `browse` (or run `flash --serve` with no decks) and it runs the same
+Everything alix does in the terminal it can also do in a browser. Add `--serve`
+to `review` or `browse` (or run `alix --serve` with no decks) and it runs the same
 session logic over a tiny local web server, writing to the **same progress store**
 — so a card you grade or remove in the browser shows up on the command line and
 vice versa. It's handy on a tablet or phone, where touch (and images) beat a TUI.
 
 ```sh
-flash review rust.txt --serve              # open http://127.0.0.1:7777
-flash review rust.txt --serve --port 8080
-flash review rust.txt --serve --lan        # reachable from other devices on your network
-flash browse rust.txt --serve
-flash --serve                              # no decks → pick them in the browser
+alix review rust.txt --serve              # open http://127.0.0.1:7777
+alix review rust.txt --serve --port 8080
+alix review rust.txt --serve --lan        # reachable from other devices on your network
+alix browse rust.txt --serve
+alix --serve                              # no decks → pick them in the browser
 ```
 
 ## Choosing decks in the browser

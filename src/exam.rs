@@ -14,7 +14,7 @@
 //!    facts, `% mode: explain` for concepts), as deck-format text ready to append.
 //!
 //! The engine is pure: it builds prompts, calls the CLI and parses JSON. A CLI
-//! consumer (`flash exam`) drives the terminal Q&A; a web exam surface can
+//! consumer (`alix exam`) drives the terminal Q&A; a web exam surface can
 //! reuse the same three functions.
 
 use std::{
@@ -1267,7 +1267,7 @@ mod tests {
 
     #[test]
     fn local_file_source_is_embedded() {
-        let dir = std::env::temp_dir().join(format!("flash-exam-src-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("alix-exam-src-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let src = dir.join("notes.md");
         std::fs::write(&src, "the ground truth text").unwrap();

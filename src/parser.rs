@@ -536,7 +536,7 @@ mod tests {
         let text = "% mode: line\n\
                     %  Scheduler:SM2 \n\
                     % link: https://example.org\n\
-                    % Then learn it with: flash\n\
+                    % Then learn it with: alix\n\
                     % a plain comment\n\
                     # front\n\tback\n";
         assert_eq!(

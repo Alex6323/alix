@@ -1,4 +1,4 @@
-# 12 · The AI exam — `flash exam`
+# 12 · The AI exam — `alix exam`
 
 This is the feature the whole tool is built around. Drilling cards *loads* a
 deck's material into memory; the **AI exam** checks that you actually *understood*
@@ -37,7 +37,7 @@ The exam is a guided, one-question-at-a-time flow — answer, move Back/Next, th
 per-question breakdown — identical in the terminal and the browser. You reach it
 three ways:
 
-- **Directly:** `flash exam ownership.txt` (with `--questions 8`, `--strictness …`
+- **Directly:** `alix exam ownership.txt` (with `--questions 8`, `--strictness …`
   if you like).
 - **From the picker:** choosing an `exam due` deck starts the exam instead of an
   empty review.
@@ -45,7 +45,7 @@ three ways:
   the session-end summary offers it — press `x` in the terminal (or `b` to browse
   the deck instead), a button in the browser.
 
-flash asks Claude to read the source (URLs via `WebFetch`, local files embedded)
+alix asks Claude to read the source (URLs via `WebFetch`, local files embedded)
 and write **fresh understanding questions** — application and connections, *not*
 the card facts — each with the key points a correct answer must hit. You type a
 prose answer per question, and an examiner grades each **Pass / Partial / Fail
@@ -62,7 +62,7 @@ responsive while it thinks.
   card for a missed concept, with overlapping gaps merged. Re-drill those and
   re-sit.
 
-Resetting a whole deck (`flash reset <deck>`) also clears its mastered state, so a
+Resetting a whole deck (`alix reset <deck>`) also clears its mastered state, so a
 re-drilled deck must pass again; resetting only individual cards (`--card` /
 `--cards`) leaves mastery intact.
 
@@ -71,7 +71,7 @@ re-drilled deck must pass again; resetting only individual cards (`--card` /
 How hard each answer is judged is a property of the *material*, so it's per deck. A
 checklist topic — a procedure, exact syntax, a security drill — should fail you for
 omitting a step; a conceptual topic shouldn't. Set it with a `% strictness:`
-header directive (or `flash exam --strictness …`, or the `[exam]` default):
+header directive (or `alix exam --strictness …`, or the `[exam]` default):
 
 - **strict** — completeness required: every rubric point must be present, so
   omitting one is a gap.

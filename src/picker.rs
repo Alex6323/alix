@@ -1,5 +1,5 @@
 //! A small checkbox TUI for picking one or more items: decks to review (the
-//! startup picker, used when `flash` is launched without deck arguments), a
+//! startup picker, used when `alix` is launched without deck arguments), a
 //! deck's prerequisites (the `deps` editor), or cards to reset.
 //!
 //! Type to filter, Space to (de)select, Enter to confirm, Esc to cancel. The
@@ -99,7 +99,7 @@ struct Item<K> {
     /// `None` for non-deck pickers (cards, dependency editor).
     state: Option<DeckState>,
     /// A folder/workspace row: it opens (drills in) on Enter rather than being
-    /// ticked. A folder with a `flash.toml` is a workspace; without one it's a
+    /// ticked. A folder with an `alix.toml` is a workspace; without one it's a
     /// plain folder — both drill in.
     is_workspace: bool,
     /// A trace deck (`% trace:`): launched as a predict-verify walk, never ticked
@@ -135,7 +135,7 @@ struct Candidate {
     name: String,
     /// When last reviewed, if it is a recent entry.
     last_used_ms: Option<u64>,
-    /// `true` for a drillable folder (a workspace if it has a `flash.toml`, else
+    /// `true` for a drillable folder (a workspace if it has an `alix.toml`, else
     /// a plain folder), `false` for a single deck file.
     is_workspace: bool,
 }
@@ -628,7 +628,7 @@ fn top_picker(
     let mut picker = Picker::new(
         items,
         HashSet::new(),
-        // No title — the top picker's header is just "flash".
+        // No title — the top picker's header is just "alix".
         String::new(),
         // Footer is computed per launcher state in `draw`.
         String::new(),
@@ -748,11 +748,11 @@ fn run_mastered_window(
     picker.run(terminal)
 }
 
-/// Opens a workspace directly into its member sub-picker (for `flash workspace
+/// Opens a workspace directly into its member sub-picker (for `alix workspace
 /// <dir>`): the same drill-in list, with the folder itself as the lookup root so
 /// sibling `% requires:` and locks resolve within it. `None` if cancelled.
 pub fn pick_workspace(folder: &Path, enforce_locks: bool) -> Result<Option<Vec<PathBuf>>> {
-    // `flash workspace` is a review context (no `--cram`), so gate unreviewable
+    // `alix workspace` is a review context (no `--cram`), so gate unreviewable
     // members just like the review launcher.
     launch(workspace_picker(
         folder,
@@ -1108,7 +1108,7 @@ struct Picker<K> {
     /// Scroll offset within `filtered`.
     offset: usize,
     selected: HashSet<K>,
-    /// Header label (after "flash — ").
+    /// Header label (after "alix — ").
     title: String,
     /// Footer key hints.
     footer: String,
@@ -1448,12 +1448,12 @@ impl<K: Clone + Eq + Hash> Picker<K> {
         } else {
             &self.title
         };
-        // Just "flash" when there's no title (the top picker); else "flash —
+        // Just "alix" when there's no title (the top picker); else "alix —
         // <title>" (a drilled-into workspace). No item count.
         let left = if title.is_empty() {
-            " flash".to_string()
+            " alix".to_string()
         } else {
-            format!(" flash — {title}")
+            format!(" alix — {title}")
         };
         // The selected-count only means something where rows can be ticked.
         let right = if self.multi_select {

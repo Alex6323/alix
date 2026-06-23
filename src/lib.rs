@@ -2,11 +2,11 @@
 //! web.
 //!
 //! Decks are plain-text files. On top of the flashcard basics it offers a
-//! ratatui TUI, an optional local web frontend (`flash serve`), Leitner and
+//! ratatui TUI, an optional local web frontend (`alix serve`), Leitner and
 //! SM-2 schedulers, several answer modes (flip, typing, fuzzy, multiple choice,
 //! line-by-line, explain), cloze and dual-direction cards, deck dependencies,
 //! and per-card review statistics. Claude is woven in: an ask-Claude tutor, AI
-//! deck generation, and an AI exam (`flash exam`) that gates progression on
+//! deck generation, and an AI exam (`alix exam`) that gates progression on
 //! verified understanding.
 
 pub mod answer;

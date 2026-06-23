@@ -1,4 +1,4 @@
-# Unified dev commands for flash. Run `make <target>`.
+# Unified dev commands for alix. Run `make <target>`.
 #
 # Formatting goes through the NIGHTLY toolchain on purpose: this repo's
 # rustfmt.toml uses nightly-only options, so plain `cargo fmt` (stable) can't
@@ -62,7 +62,7 @@ serve:
 book:
 	mdbook serve docs/book --open
 
-# Install `flash` from this checkout.
+# Install `alix` from this checkout.
 install:
 	cargo install --path .
 

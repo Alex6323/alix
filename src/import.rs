@@ -1,18 +1,18 @@
 //! Anki TSV import — turn a tab-separated `front<TAB>back` export into the
-//! flash plain-text deck format.
+//! alix plain-text deck format.
 //!
 //! Aimed at Anki's "Notes in Plain Text" export (fields separated by a tab):
 //! the first field is the front, the second is the back, further fields are
 //! ignored. Anki's `#`-prefixed header lines (`#separator:tab`, `#html:true`,
 //! …) are skipped, `<br>` tags become answer-line breaks, a few common HTML
-//! entities are decoded, and a back line that would otherwise read as a flash
+//! entities are decoded, and a back line that would otherwise read as an alix
 //! comment (`%`) or note (`!`) is backslash-escaped. The result is plain text
 //! the caller validates with [`crate::parser::parse_str`] and writes — no card
 //! identity or scheduling is involved.
 
 use anyhow::{Result, bail};
 
-/// Converts Anki-style TSV `text` into flash deck format. Errors only when no
+/// Converts Anki-style TSV `text` into alix deck format. Errors only when no
 /// usable `front<TAB>back` row is found, so the caller never writes an empty
 /// deck.
 pub fn tsv_to_deck(text: &str) -> Result<String> {
@@ -79,7 +79,7 @@ fn clean_field(field: &str) -> String {
     s
 }
 
-/// Backslash-escapes a back line that would otherwise be read as a flash comment
+/// Backslash-escapes a back line that would otherwise be read as an alix comment
 /// (`%`) or note (`!`). A leading `#` needs no escape: the line is indented, so
 /// it's answer content, not a card front (those only count at column 0).
 fn escape_leading_markup(line: &str) -> String {

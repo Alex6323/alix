@@ -1,7 +1,7 @@
 //! The progress store.
 //!
 //! Progress is kept in a single JSON file (by default
-//! `~/.local/share/flash/progress.json`), created on first save.
+//! `~/.local/share/alix/progress.json`), created on first save.
 
 use std::{
     collections::HashMap,
@@ -149,8 +149,8 @@ pub enum StoreError {
         source: serde_json::Error,
     },
     #[error(
-        "{path}: progress file is version {found}, but this build of flash \
-         understands only up to {supported} — upgrade flash to open it"
+        "{path}: progress file is version {found}, but this build of alix \
+         understands only up to {supported} — upgrade alix to open it"
     )]
     TooNew {
         path: PathBuf,
@@ -282,7 +282,7 @@ impl Store {
     }
 
     /// Clears all stored progress, returning how many cards were removed (e.g.
-    /// for `flash reset --all`). Also drops all deck-mastered state. Does not
+    /// for `alix reset --all`). Also drops all deck-mastered state. Does not
     /// save.
     pub fn clear(&mut self) -> usize {
         let n = self.cards.len();
@@ -313,7 +313,7 @@ fn default_version() -> u32 {
 }
 
 /// Brings a just-loaded [`StoreFile`] up to [`CURRENT_VERSION`], or fails loudly
-/// if it was written by a newer flash than this one. Refusing is the safety net:
+/// if it was written by a newer alix than this one. Refusing is the safety net:
 /// silently saving a newer store back at the current version would drop whatever
 /// fields the newer format added — i.e. quietly wipe progress. Future migrations
 /// step the version up one at a time here, oldest first.
@@ -330,10 +330,35 @@ fn migrate(file: StoreFile, path: &Path) -> Result<StoreFile, StoreError> {
 }
 
 /// The default location of the store file
-/// (`~/.local/share/flash/progress.json` on Linux).
+/// (`~/.local/share/alix/progress.json` on Linux).
 pub fn default_store_path() -> Option<PathBuf> {
-    directories::ProjectDirs::from("", "", "flash")
-        .map(|dirs| dirs.data_dir().join("progress.json"))
+    directories::ProjectDirs::from("", "", "alix").map(|dirs| dirs.data_dir().join("progress.json"))
+}
+
+/// One-time adoption of a pre-rename `flash` data directory. The tool used to
+/// store progress under `flash/`; if the new `alix/` data dir doesn't exist yet
+/// but the legacy `flash/` one does, move it across so existing progress
+/// survives the rename. Best-effort — any error is ignored (a failed move just
+/// means the user starts fresh, never a crash). Call once at startup.
+pub fn migrate_legacy_data_dir() {
+    let old = directories::ProjectDirs::from("", "", "flash").map(|d| d.data_dir().to_path_buf());
+    let new = directories::ProjectDirs::from("", "", "alix").map(|d| d.data_dir().to_path_buf());
+    if let (Some(old), Some(new)) = (old, new) {
+        adopt_legacy_dir(&old, &new);
+    }
+}
+
+/// Renames `old` to `new` when `new` is absent and `old` exists. Split out from
+/// [`migrate_legacy_data_dir`] so it can be tested without touching the real
+/// platform data directory.
+fn adopt_legacy_dir(old: &Path, new: &Path) {
+    if new.exists() || !old.exists() {
+        return;
+    }
+    if let Some(parent) = new.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::rename(old, new);
 }
 
 #[cfg(test)]
@@ -346,6 +371,41 @@ mod tests {
         let path = dir.path().join("progress.json");
         let store = Store::open(&path).unwrap();
         assert!(store.is_empty());
+    }
+
+    #[test]
+    fn adopt_legacy_dir_moves_when_new_is_absent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let old = tmp.path().join("flash");
+        let new = tmp.path().join("alix");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("progress.json"), "{}").unwrap();
+        adopt_legacy_dir(&old, &new);
+        assert!(
+            new.join("progress.json").exists(),
+            "progress should have moved"
+        );
+        assert!(
+            !old.exists(),
+            "the legacy dir should be gone after the move"
+        );
+    }
+
+    #[test]
+    fn adopt_legacy_dir_leaves_an_existing_new_dir_untouched() {
+        let tmp = tempfile::tempdir().unwrap();
+        let old = tmp.path().join("flash");
+        let new = tmp.path().join("alix");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("progress.json"), "OLD").unwrap();
+        std::fs::create_dir_all(&new).unwrap();
+        std::fs::write(new.join("progress.json"), "NEW").unwrap();
+        adopt_legacy_dir(&old, &new);
+        assert_eq!(
+            "NEW",
+            std::fs::read_to_string(new.join("progress.json")).unwrap()
+        );
+        assert!(old.exists(), "the legacy dir should be left in place");
     }
 
     #[test]
@@ -465,8 +525,8 @@ mod tests {
     }
 
     #[test]
-    fn rejects_a_store_from_a_newer_flash_without_touching_it() {
-        // A store written by a future flash (higher version) must NOT be
+    fn rejects_a_store_from_a_newer_alix_without_touching_it() {
+        // A store written by a future alix (higher version) must NOT be
         // silently downgraded and re-saved — that would drop fields the newer
         // format added. Open must fail and leave the file exactly as it was.
         let dir = tempfile::tempdir().unwrap();

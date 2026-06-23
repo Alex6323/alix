@@ -195,7 +195,7 @@ fn draw(frame: &mut Frame, cards: &[Card], label: &str, current: usize, keys: &B
 
     let card = &cards[current];
 
-    let left = format!(" flash {} │ {} (browse)", env!("CARGO_PKG_VERSION"), label);
+    let left = format!(" alix {} │ {} (browse)", env!("CARGO_PKG_VERSION"), label);
     let right = format!("card {} / {} ", current + 1, cards.len());
     frame.render_widget(bar(&left, &right, header.width), header);
 

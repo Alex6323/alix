@@ -87,7 +87,7 @@ preamble, no closing remarks.";
 /// The instruction prompt for a **local source** (a file or directory).
 /// `{source}` and `{max_cards}` are substituted. Mirrors [`DEFAULT_PROMPT`] but
 /// explores the source with read-only file tools and ties the deck to it with a
-/// `% source:` line (so `flash exam` can grade against it).
+/// `% source:` line (so `alix exam` can grade against it).
 const DEFAULT_SOURCE_PROMPT: &str = "\
 You are an expert at creating spaced-repetition flashcards. Explore the source at \
 {source} — your working directory is its root; use the Read, Glob and Grep tools \
@@ -120,7 +120,7 @@ a literal #, %, or !, escape it with a backslash: \\#.
 Begin the file with exactly these two comment lines:
   % Generated from {source}
   % source: {source}
-The `% source:` line ties the deck to its source, so `flash exam` can later grade \
+The `% source:` line ties the deck to its source, so `alix exam` can later grade \
 your understanding against it.
 
 PEDAGOGY — produce a balanced deck of AT MOST {max_cards} cards spread across \

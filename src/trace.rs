@@ -12,7 +12,7 @@
 //! This module is the frontend-agnostic engine: it builds the [`Trace`] from a
 //! [`Deck`], resolves each locator to a live [`Excerpt`] (read fresh from the
 //! source, the oracle), and drives the [`Walk`] state machine + per-checkpoint
-//! scheduling. The CLI (`flash trace`) is a thin reader over it. Grading is
+//! scheduling. The CLI (`alix trace`) is a thin reader over it. Grading is
 //! self-judged and offline — no model calls — so the mechanic can be validated
 //! cheaply; live Claude grading (`--grade`) is a later layer.
 
@@ -166,7 +166,7 @@ impl Trace {
     }
 
     /// Validates every checkpoint's `% at:` locator against the live source, for
-    /// `flash check`. Returns one [`LocatorIssue`] per problem (empty = all
+    /// `alix check`. Returns one [`LocatorIssue`] per problem (empty = all
     /// resolve): a checkpoint with no locator, a `file:` that doesn't exist, a
     /// line range past the end of the file (the drift symptom — the source
     /// shrank or moved), or a line-only locator without a single-file source. A
@@ -239,7 +239,7 @@ impl Trace {
     }
 }
 
-/// A problem `flash check` found with a checkpoint's `% at:` locator (see
+/// A problem `alix check` found with a checkpoint's `% at:` locator (see
 /// [`Trace::lint_locators`]). `checkpoint` is the 0-based index into the path —
 /// and into the deck's cards, which a trace's checkpoints mirror 1:1 — so the
 /// caller can map it back to a deck line.
@@ -251,7 +251,7 @@ pub struct LocatorIssue {
     pub message: String,
 }
 
-// ── Building (`flash trace --build`) ─────────────────────────────────────────
+// ── Building (`alix trace --build`) ─────────────────────────────────────────
 //
 // Discovering the path is a separate, heavier step from walking it: Claude
 // explores the `% source:` (read-only file tools, cwd at the source root) and
@@ -296,7 +296,7 @@ pub fn build(deck: &Deck, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<Stri
 // + each `% at:` at them: the excerpts then never drift, and the workspace is
 // self-contained — without copying whole (possibly huge) source files. The
 // re-based excerpt loses its original line numbers, which don't matter once the
-// span is frozen. It's the default last step of `flash explore --into --build`;
+// span is frozen. It's the default last step of `alix explore --into --build`;
 // a loose trace over a live path is left untouched. The source is any text file.
 
 /// The directory under a workspace where a snapshotted trace's excerpts are
@@ -329,7 +329,7 @@ pub(crate) fn snapshot(deck: &Deck, start: usize) -> Result<SnapshotReport> {
     if !crate::workspace::is_workspace(deck_dir) {
         bail!(
             "a deck snapshots into its workspace's `assets/`, but {} is not in a \
-             workspace (no `flash.toml`).",
+             workspace (no `alix.toml`).",
             deck.path.display()
         );
     }
@@ -527,11 +527,11 @@ fn build_prompt(description: &str, source: &str, url: bool, cfg: &TraceConfig) -
          point>\n    \t% at: <locator>\n    \t! <one connecting insight, shown after \
          the reveal>\n\n\
          The `# ` front (column 0) is the QUESTION. The `% given:` lines (repeatable, \
-         optional) name off-screen symbols the question leans on — flash lists them \
+         optional) name off-screen symbols the question leans on — alix lists them \
          under the question before the learner predicts. The indented lines under it \
          are the key points the revealed source makes (the rubric). `% at:` is the \
          locator: {locator} — it must point at the REAL lines/passage the key points \
-         paraphrase, because flash reads them live at review time as the ground \
+         paraphrase, because alix reads them live at review time as the ground \
          truth. Cite accurately. The indented `! ` line is an optional note.\n\n\
          SCOPE EACH HOP TO A SELF-CONTAINED UNIT, AND GLOSS WHAT YOU DON'T SHOW. The \
          reader sees ONLY the lines you cite, so an excerpt must read on its own. \
@@ -565,7 +565,7 @@ fn build_prompt(description: &str, source: &str, url: bool, cfg: &TraceConfig) -
          obvious just enumerates the answer's ingredients and shrinks the predict \
          gap to nothing. The list MUST be COMPLETE in the honesty sense — no \
          UNEXPLAINED dangling symbol — but that means what the span can't be read \
-         without, not glossing every name. flash shows them under the question, \
+         without, not glossing every name. alix shows them under the question, \
          so NEVER cram them into the question text. The gloss names the inputs \
          (scaffolding); the cited lines stay the ground truth for the predicted thing \
          — never move the hop's answer into the gloss. More than ~3 givens means the \
@@ -737,7 +737,7 @@ pub(crate) fn clean_to_cards(raw: &str) -> String {
     lines[start..end].join("\n")
 }
 
-/// Grades a learner's prediction at a checkpoint with Claude (`flash trace
+/// Grades a learner's prediction at a checkpoint with Claude (`alix trace
 /// --grade`): compares it to the checkpoint's key points and returns the
 /// [`Delta`] plus one line of feedback. Pure reasoning over the supplied text —
 /// no tools. Unlike the one-shot `--build`/`--suggest`, this is a light,
@@ -1605,7 +1605,7 @@ mod tests {
         assert!(store.is_empty());
     }
 
-    // ── build (`flash trace --build`) ────────────────────────────────────────
+    // ── build (`alix trace --build`) ────────────────────────────────────────
 
     #[test]
     fn parse_grade_reads_verdict_and_feedback() {
@@ -1783,7 +1783,7 @@ mod tests {
 
     // ── snapshotting ────────────────────────────────────────────────────
 
-    /// A workspace (`flash.toml` + deck) at `root/ws` whose trace cites files in
+    /// A workspace (`alix.toml` + deck) at `root/ws` whose trace cites files in
     /// a sibling source tree at `root/src`.
     fn snapshot_workspace(root: &Path) -> PathBuf {
         std::fs::create_dir_all(root.join("src")).unwrap();
@@ -1792,7 +1792,7 @@ mod tests {
         std::fs::create_dir_all(root.join("ws")).unwrap();
         write(
             &root.join("ws"),
-            "flash.toml",
+            "alix.toml",
             "title = \"W\"\n\n[defaults]\n",
         );
         write(
@@ -1865,7 +1865,7 @@ mod tests {
         let root = dir.path();
         write(root, "notes.md", "L1\nL2\nL3\n");
         std::fs::create_dir_all(root.join("ws")).unwrap();
-        write(&root.join("ws"), "flash.toml", "[defaults]\n");
+        write(&root.join("ws"), "alix.toml", "[defaults]\n");
         let deck_path = write(
             &root.join("ws"),
             "t.txt",
@@ -1889,7 +1889,7 @@ mod tests {
     fn snapshot_refuses_non_workspace_and_url() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        // not in a workspace (no flash.toml)
+        // not in a workspace (no alix.toml)
         let loose = write(
             root,
             "t.txt",
@@ -1900,7 +1900,7 @@ mod tests {
 
         // URL source, in a workspace
         std::fs::create_dir_all(root.join("ws")).unwrap();
-        write(&root.join("ws"), "flash.toml", "[defaults]\n");
+        write(&root.join("ws"), "alix.toml", "[defaults]\n");
         let url = write(
             &root.join("ws"),
             "u.txt",

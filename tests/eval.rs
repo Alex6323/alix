@@ -16,7 +16,7 @@
 //! leniency, an actual `Pass`, fails it. A failing eval is not a code bug: it
 //! means `grade_prompt` drifted lenient and should be tightened.
 
-use flash::{
+use alix::{
     config::{AskConfig, ExamConfig, Strictness},
     exam::{ExamQuestion, Verdict, grade_answers},
 };

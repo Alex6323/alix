@@ -45,4 +45,4 @@ Where a setting can come from several places, the more specific wins:
 > CLI flag > card `%` directive > deck `%` directive > workspace `[defaults]` > built-in default
 
 So `--mode` on the command line overrides a card's `% mode:`, which overrides the
-deck's, which overrides a workspace's `[defaults]`, which overrides flash's default.
+deck's, which overrides a workspace's `[defaults]`, which overrides alix's default.

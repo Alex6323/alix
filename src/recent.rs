@@ -73,9 +73,9 @@ impl RecentDecks {
 }
 
 /// The default location of the recent-decks file
-/// (`~/.local/share/flash/recent.json` on Linux).
+/// (`~/.local/share/alix/recent.json` on Linux).
 pub fn default_recent_path() -> Option<PathBuf> {
-    directories::ProjectDirs::from("", "", "flash").map(|dirs| dirs.data_dir().join("recent.json"))
+    directories::ProjectDirs::from("", "", "alix").map(|dirs| dirs.data_dir().join("recent.json"))
 }
 
 #[cfg(test)]

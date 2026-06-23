@@ -4,7 +4,7 @@
 //! folder, be reviewed together, and inherit a common set of directives without
 //! repeating them in every file. Membership is **folder-implicit**: a workspace
 //! is any folder containing `*.txt` decks. An optional [`MANIFEST`]
-//! (`flash.toml`) sets a `title` and a `[defaults]` table of shared directives,
+//! (`alix.toml`) sets a `title` and a `[defaults]` table of shared directives,
 //! mirroring the local [`Config`](crate::config::Config) (`config.toml`) but
 //! scoped to the folder. The `[defaults]` keys are the deck directive names,
 //! fed through the same interpreter ([`DeckSettings::from_directives`]), then
@@ -24,15 +24,15 @@ use crate::deck::DeckSettings;
 
 /// The reserved manifest file in a workspace folder. Its `.toml` extension
 /// keeps it out of the `*.txt` member scan automatically.
-pub const MANIFEST: &str = "flash.toml";
+pub const MANIFEST: &str = "alix.toml";
 
 /// The progress store a workspace uses when its manifest declares no `store`
 /// override: `progress.json` inside the workspace folder, so progress travels
 /// with the workspace.
 pub const STORE_FILE: &str = "progress.json";
 
-/// The `flash.toml` manifest: a display `title`, a one-line `description` (e.g.
-/// the learning goal `flash explore` was given), an optional `store` path (where
+/// The `alix.toml` manifest: a display `title`, a one-line `description` (e.g.
+/// the learning goal `alix explore` was given), an optional `store` path (where
 /// this workspace's progress lives), and a `[defaults]` table of shared
 /// directives (keyed by directive name). Unknown keys/sections are ignored, so
 /// the format stays forgiving and forward-compatible.
@@ -60,7 +60,7 @@ pub struct Workspace {
     /// Display title (manifest `title`), or `None` to use the folder name.
     pub title: Option<String>,
     /// A one-line description of the workspace (manifest `description`), or
-    /// `None`. `flash explore` writes the learning goal here.
+    /// `None`. `alix explore` writes the learning goal here.
     pub description: Option<String>,
     /// Shared directive defaults from the manifest, folded below each member
     /// deck's own directives.
@@ -71,7 +71,7 @@ pub struct Workspace {
 
 impl Workspace {
     /// Loads the workspace rooted at `dir`: its `*.txt` members and, if
-    /// present, the `flash.toml` manifest (title + shared directives). A
+    /// present, the `alix.toml` manifest (title + shared directives). A
     /// folder without a manifest — or with a malformed one — is still a
     /// workspace, with default settings, so a bad manifest never stops it
     /// from loading.
@@ -143,7 +143,7 @@ fn members(dir: &Path) -> io::Result<Vec<PathBuf>> {
     Ok(paths)
 }
 
-/// `true` if `path` is an **explicit workspace**: a directory with a `flash.toml`
+/// `true` if `path` is an **explicit workspace**: a directory with an `alix.toml`
 /// manifest *and* at least one `*.txt` deck. A folder of decks without a manifest
 /// is a plain "folder" (see [`has_decks`]) — reviewable, but not a workspace.
 pub fn is_workspace(path: &Path) -> bool {

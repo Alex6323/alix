@@ -1033,7 +1033,7 @@ impl App {
 
     fn draw_header(&self, frame: &mut Frame, area: Rect) {
         let left = format!(
-            " flash {} │ {}",
+            " alix {} │ {}",
             env!("CARGO_PKG_VERSION"),
             self.options.deck_label
         );
@@ -1888,7 +1888,7 @@ impl ExamApp {
         .areas(frame.area());
 
         let left = format!(
-            " flash {} │ exam · {}",
+            " alix {} │ exam · {}",
             env!("CARGO_PKG_VERSION"),
             self.sitting.subject()
         );

@@ -1,7 +1,7 @@
 # 9 · Dependencies & unlocks
 
 Real subjects have an order: you can't grasp borrowing before ownership, or a
-derived rule before its axioms. flash lets a deck declare what it builds on, and
+derived rule before its axioms. alix lets a deck declare what it builds on, and
 uses that both to sequence your study and to gate decks until you're ready.
 
 ## Declaring prerequisites — `% requires:`
@@ -37,13 +37,13 @@ requiring a `% mode: line` lyrics deck won't switch your session into line mode.
 (Dependencies apply to `review` only; `browse` and `stats` work on exactly the
 decks you name.)
 
-## Editing without typos — `flash deps`
+## Editing without typos — `alix deps`
 
-To change a deck's prerequisites without hand-editing, use `flash deps <deck>`
-(alias `flash require`):
+To change a deck's prerequisites without hand-editing, use `alix deps <deck>`
+(alias `alix require`):
 
 ```sh
-flash deps borrowing.txt
+alix deps borrowing.txt
 ```
 
 It opens the deck picker over your decks directory, pre-ticked to the current
@@ -66,6 +66,6 @@ top stage, its dependents lock again, nudging you to shore up the foundation
 before moving on.
 
 This is what turns a folder of decks into a **curriculum**: order the material by
-`% requires:`, and flash walks you through it foundations-first, gating each step
+`% requires:`, and alix walks you through it foundations-first, gating each step
 on the last. It's also the backbone of the AI exam's notion of *mastery* (a later
-chapter) and of how `flash explore` lays out a generated learning plan.
+chapter) and of how `alix explore` lays out a generated learning plan.

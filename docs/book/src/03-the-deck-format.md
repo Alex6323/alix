@@ -79,7 +79,7 @@ worth knowing:
   **reword a question** without losing any review history — none of those feed
   the identity.
 - Changing an **answer line** makes a new card with fresh progress. Two cards
-  with identical answers in the same deck collide; `flash check` warns about
+  with identical answers in the same deck collide; `alix check` warns about
   those.
 
 So a deck is safe to refactor: rephrase, annotate, reorder, add directives — your

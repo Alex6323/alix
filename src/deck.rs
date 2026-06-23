@@ -128,7 +128,7 @@ pub struct Deck {
     pub title: Option<String>,
     /// What this deck traces (`% trace:`) — a path description, if any. Its
     /// presence makes the deck a **trace** — a predict-and-verify walk (see
-    /// [`crate::trace`]) rather than a card deck — which is what `flash trace`
+    /// [`crate::trace`]) rather than a card deck — which is what `alix trace`
     /// walks and what makes the generic AI exam refuse it. `None` for an
     /// ordinary deck.
     pub trace: Option<String>,
@@ -516,7 +516,7 @@ pub fn append_cards(path: &Path, cards: &str) -> Result<(), DeckError> {
 
 /// Replaces a trace deck's checkpoint cards with `cards`, keeping the header —
 /// every line before the first card front (the `% trace:`, `% source:` and any
-/// comment lines). Used by `flash trace --build` to write the discovered path
+/// comment lines). Used by `alix trace --build` to write the discovered path
 /// back into the deck (overwriting a previous build), via an atomic temp-file
 /// rename. A deck with no card front yet is all header, so the cards are simply
 /// appended after it.

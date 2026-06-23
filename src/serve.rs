@@ -1,6 +1,6 @@
 //! A local web frontend.
 //!
-//! `flash serve` starts a small synchronous HTTP server (one request at a
+//! `alix serve` starts a small synchronous HTTP server (one request at a
 //! time — correct for a single user) that serves an embedded web page and a
 //! JSON API. It is a third consumer of the same logic the TUI and browser use:
 //! the [`Session`]/[`Store`] drive review, and cards are sent to the browser as
@@ -1269,7 +1269,7 @@ pub fn run_review(
     Ok(())
 }
 
-// ── Trace walks (`flash trace --serve`) ──────────────────────────────────────
+// ── Trace walks (`alix trace --serve`) ──────────────────────────────────────
 //
 // A single walk of one trace deck, mirroring the terminal `run_walk`: predict →
 // reveal a live excerpt → grade → compress. There is no deck-selection screen
@@ -2026,7 +2026,7 @@ fn deck_catalog(
     let mut folders = Vec::new();
     for e in picker::catalog(decks_dir, recent) {
         // A workspace/folder row: its members open on click; it has no state of
-        // its own. A folder with a `flash.toml` is a workspace (shown with its
+        // its own. A folder with an `alix.toml` is a workspace (shown with its
         // last-progress time); without one it's a plain folder.
         if e.is_workspace {
             let is_ws = crate::workspace::is_workspace(&e.path);

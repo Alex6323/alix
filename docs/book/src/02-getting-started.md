@@ -2,19 +2,19 @@
 
 ## Install
 
-flash is a single Rust binary, built from source — you need a Rust toolchain
+alix is a single Rust binary, built from source — you need a Rust toolchain
 (install [`rustup`](https://rustup.rs) if you don't have one):
 
 ```sh
-git clone <repo-url> flash
-cd flash
+git clone <repo-url> alix
+cd alix
 make install        # or: cargo install --path .
 ```
 
-That puts `flash` on your `PATH`. Check it:
+That puts `alix` on your `PATH`. Check it:
 
 ```sh
-flash --help
+alix --help
 ```
 
 The flashcard **core** — reviewing, scheduling, every answer mode, browse, the
@@ -35,7 +35,7 @@ answer on the indented lines beneath it:
     Spaced repetition system.
     ! It schedules each card just before you'd forget it.
 
-# Which scheduler does flash use by default?
+# Which scheduler does alix use by default?
     Leitner — a six-stage box with growing cooldowns.
 ```
 
@@ -45,22 +45,22 @@ readability. A line starting with `!` is a **note**, shown after you answer.
 ## Review it
 
 ```sh
-flash srs.txt
+alix srs.txt
 ```
 
-flash shows the question; you recall the answer, press a key to reveal it, then
+alix shows the question; you recall the answer, press a key to reveal it, then
 grade yourself — **again** (you missed it), **good**, or **easy**. Your grade
 moves the card along its schedule, so cards you know come back rarely and cards
 you miss come back soon. That self-graded reveal is **flip mode**, the default;
 later chapters cover the modes that make you *type* the answer, pick from
 choices, or reveal it line by line.
 
-When nothing is due, flash says so and exits — come back when cards mature, or
+When nothing is due, alix says so and exits — come back when cards mature, or
 pass `--cram` to review everything regardless of cooldowns.
 
 ## The deck picker
 
-Run `flash` with no arguments to open the **picker** over your decks directory
+Run `alix` with no arguments to open the **picker** over your decks directory
 (`~/decks` by default; change it with `decks_dir` in the config). It groups your
 decks into Workspaces, Recent, and Folders and is driven by Vim-style keys
 (`j`/`k` to move, `Enter` to open, `/` to filter by name). This is what the
@@ -69,11 +69,11 @@ desktop launcher opens.
 ## The everyday commands
 
 ```sh
-flash browse srs.txt    # read through the cards — no grading, no scheduling
-flash stats srs.txt     # a progress overview
-flash list srs.txt      # every card with its stage and due time
-flash check srs.txt     # lint the deck (syntax errors, duplicate cards)
-flash reset srs.txt     # clear stored progress (also --card / --all)
+alix browse srs.txt    # read through the cards — no grading, no scheduling
+alix stats srs.txt     # a progress overview
+alix list srs.txt      # every card with its stage and due time
+alix check srs.txt     # lint the deck (syntax errors, duplicate cards)
+alix reset srs.txt     # clear stored progress (also --card / --all)
 ```
 
 Give several decks at once and their due cards merge into one session. From here

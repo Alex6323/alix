@@ -12,6 +12,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "alix"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "directories",
+ "ratatui",
+ "serde",
+ "serde_json",
+ "strsim",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tiny_http",
+ "toml",
+ "twox-hash",
+]
+
+[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -507,24 +525,6 @@ name = "fixedbitset"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ce7134b9999ecaf8bcd65542e436736ef32ddca1b3e06094cb6ec5755203b80"
-
-[[package]]
-name = "flash"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "directories",
- "ratatui",
- "serde",
- "serde_json",
- "strsim",
- "tempfile",
- "thiserror 2.0.18",
- "tiny_http",
- "toml",
- "twox-hash",
-]
 
 [[package]]
 name = "fnv"

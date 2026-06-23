@@ -1,15 +1,15 @@
-# 11 · Generating decks — `flash deck`
+# 11 · Generating decks — `alix deck`
 
-Authoring cards by hand is the slow part of any flashcard habit. `flash deck`
+Authoring cards by hand is the slow part of any flashcard habit. `alix deck`
 removes it: point it at a source and Claude drafts a deck of fact cards for you.
 
 ```sh
-flash deck https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html
-flash deck src/scheduler.rs            # a local file (or a whole directory)
+alix deck https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html
+alix deck src/scheduler.rs            # a local file (or a whole directory)
 ```
 
 The source is a **web page URL** or a **local file/directory** — the deck-side
-mirror of `flash trace` (a later chapter), which builds *traces* from the same
+mirror of `alix trace` (a later chapter), which builds *traces* from the same
 kinds of source.
 
 ## What you get
@@ -18,7 +18,7 @@ Claude reads the source and returns a deck spread across **four layers of
 understanding** — facts → concepts → application → connections — using cloze
 (`#?`) cards for terminology. The prompt has it draft, then re-read the whole set
 and merge or drop cards that test the same fact, so the deck doesn't repeat
-itself. flash validates the text it gets back (it only ever accepts cards, never a
+itself. alix validates the text it gets back (it only ever accepts cards, never a
 write or shell command) and writes it to `~/decks/<slug>.txt`.
 
 How the source is recorded depends on its kind, and it matters later:
@@ -35,10 +35,10 @@ How the source is recorded depends on its kind, and it matters later:
 ## Useful flags
 
 ```sh
-flash deck <source> -o ownership    # choose the output file name
-flash deck <source> --cards 15      # cap the number of cards
-flash deck <source> --review        # a 2nd pass that dedups and tightens
-flash deck <source> --print         # print to stdout instead of writing a file
+alix deck <source> -o ownership    # choose the output file name
+alix deck <source> --cards 15      # cap the number of cards
+alix deck <source> --review        # a 2nd pass that dedups and tightens
+alix deck <source> --print         # print to stdout instead of writing a file
 ```
 
 `--review` runs a **second** Claude call that takes the draft and returns a
@@ -52,4 +52,4 @@ in the `[generate]` section of the config.
 A generated deck is just a plain-text deck like any other: read it, edit it, cut
 the weak cards, add your own. Treat the output as a strong first draft, not
 gospel — the point is to skip the blank page, not to outsource judgment. That's
-the same division the whole tool runs on (see [how flash was made](how-flash-was-made.md)).
+the same division the whole tool runs on (see [how alix was made](how-alix-was-made.md)).

@@ -1,4 +1,4 @@
-# 13 · Trace decks — `flash trace`
+# 13 · Trace decks — `alix trace`
 
 > **Experimental.** Traces are new and still evolving — the deck format and the
 > flow may still change.
@@ -10,7 +10,7 @@ source and making you **predict each hop before it's revealed**. Where the
 verifies you can follow one chain of reasoning, and the gap between your
 prediction and the truth is where the understanding forms.
 
-This is the most direct expression of the book's [opening bet](01-why-flash.md):
+This is the most direct expression of the book's [opening bet](01-why-alix.md):
 understanding is the chain of *because-this-therefore-that*, and a trace makes you
 build that chain yourself.
 
@@ -52,7 +52,7 @@ You don't have to hand-write checkpoints. Declare just the `% trace:` and
 `% source:`, then:
 
 ```sh
-flash trace --build mytrace.txt
+alix trace --build mytrace.txt
 ```
 
 Claude explores the source — **read-only** `Read`/`Glob`/`Grep`, source root as
@@ -71,7 +71,7 @@ settings; `--grade` does not (it's a light per-hop call at the tutor tier).
 ## Don't know what to trace? — `--suggest`
 
 ```sh
-flash trace --suggest .
+alix trace --suggest .
 ```
 
 does a single read-only recon pass over a source (a repo `.`, a directory, a file,
@@ -97,13 +97,13 @@ choose a subject with a real sequence instead.
 ## Walking it
 
 ```sh
-flash trace keypress-to-grade.txt
+alix trace keypress-to-grade.txt
 ```
 
 goes hop by hop:
 
 1. **Predict** — type a guess before anything reveals (committing is the point).
-2. **Reveal** — flash prints the real excerpt from the source, then the key points
+2. **Reveal** — alix prints the real excerpt from the source, then the key points
    and note.
 3. **Gap** — you judge yourself **Got it / Partial / Missed**. Self-judged and
    offline by default; pass **`--grade`** to have Claude judge your typed
@@ -114,14 +114,14 @@ goes hop by hop:
 4. **Compress** — after the last hop, restate the whole path in two sentences. If
    you can re-derive it, you understood it.
 
-**In the browser:** `flash trace <deck> --serve` walks it in the web frontend — a
+**In the browser:** `alix trace <deck> --serve` walks it in the web frontend — a
 **path rail** you descend (nodes coloring in by Got / Partial / Missed) with each
 checkpoint's source shown in a line-numbered excerpt; `--serve --grade` does the
 live grading. Progress saves to the same store, so a walk started in the terminal
 continues in the browser.
 
-`flash trace <deck> --map` prints the route — every prompt, key points, and
-locator — without quizzing. And the generic `flash exam` refuses a trace (it points
+`alix trace <deck> --map` prints the route — every prompt, key points, and
+locator — without quizzing. And the generic `alix exam` refuses a trace (it points
 you here): a trace's verification *is* its predict-verify walk plus the
 compression, scoped to the path.
 
@@ -129,7 +129,7 @@ compression, scoped to the path.
 
 Because `% at: file:lines` reads the **live** source, editing a traced file would
 shift every excerpt to the wrong lines. So when you create a workspace by exploring
-a source ([`flash explore --into --build`](14-explore.md)), its final step
+a source ([`alix explore --into --build`](14-explore.md)), its final step
 **freezes** the cited excerpts into the workspace's `assets/` folder — one tiny
 snippet per checkpoint — and repoints each `% at:` at them, so they never drift and
 the workspace is self-contained, without copying whole files. (A re-based snippet
@@ -141,7 +141,7 @@ a loose trace over a live source is left as-is. The rationale is in
 ## Checking the locators
 
 For a trace that *isn't* frozen — a loose `.txt` over a live `% source:` —
-[`flash check`](17-command-reference.md) validates that every `% at:` still
+[`alix check`](17-command-reference.md) validates that every `% at:` still
 resolves into its source: it warns about a locator that names a missing file,
 runs past the end of the file, or (for a single-file source) gives bare line
 numbers it can't place. It's a quick structural check — *does this excerpt still
@@ -149,6 +149,6 @@ exist?* — so a moved or trimmed source is caught before you walk into it, not
 mid-hop. (Frozen snapshots don't move, but their snippets are validated the same
 way.)
 
-A trace deck degrades gracefully — even without `flash trace` it's a valid deck of
+A trace deck degrades gracefully — even without `alix trace` it's a valid deck of
 `explain` cards. See `examples/keypress-to-grade.txt` for a complete trace over
 this repo's own source.

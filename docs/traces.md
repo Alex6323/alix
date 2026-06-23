@@ -2,7 +2,7 @@
 
 > Status: **design, not built.** This captures the full model worked out in
 > conversation so it survives across sessions. Workspaces (the foundation) and
-> the `flash.toml` manifest are already shipped on `main`. Traces are the next,
+> the `alix.toml` manifest are already shipped on `main`. Traces are the next,
 > separate experiment — intended to live on its own branch on top of workspaces.
 > This is the concrete realization of ROADMAP L8 ("understand and replicate how
 > AI/Claude learns — cards == filling the context in the brain").
@@ -12,7 +12,7 @@
 Flashcards (and Anki) are good at one thing: getting **atomic facts** retrievable
 to near-automaticity via SRS. That's necessary but it's a ceiling. Real
 understanding lives in the **connections between facts** — the *edges* of a
-knowledge graph, not the *nodes*. Anki and the existing `flash exam` both test a
+knowledge graph, not the *nodes*. Anki and the existing `alix exam` both test a
 **set** of independent items. Nothing makes you trace a **path** and predict each
 hop. That unoccupied territory is what traces target.
 
@@ -70,7 +70,7 @@ path-question, not a goal, even though to an LLM each is just a task.
 You often don't yet know which traces (and decks) serve the goal. That is what
 **exploration** is for: the cheap recon step that, given the goal and its source,
 *manufactures the means* — it proposes the traces worth doing, and it needs no
-prior understanding (just skim structure). [`flash trace --suggest`](#suggesting-traces--flash-trace---suggest-source-recon-lite)
+prior understanding (just skim structure). [`alix trace --suggest`](#suggesting-traces--alix-trace---suggest-source-recon-lite)
 (below) is the first, flat slice of this; the full explore tier turns that menu
 into a `% requires:`-ordered set living in the workspace.
 
@@ -90,7 +90,7 @@ tech), then module names (the nouns / domain model), then the entry point, then
 README (treated as *intent*, a claim to verify, not truth). With no specific aim,
 the default is "find the **spine**" (central noun + main path).
 
-**Decided model — built as [`flash explore --walk`](#exploring-a-source--flash-explore-source).**
+**Decided model — built as [`alix explore --walk`](#exploring-a-source--alix-explore-source).**
 Exploration is itself a **top-level "explore" trace** — you predict the *shape*
 at each hop ("from these deps, what kind of program is this?", "from the module
 list, what are the domain nouns?", "where's the entry point?", "what's the
@@ -98,9 +98,9 @@ spine?"), each revealing **real structural evidence** (the manifest, the
 module-declaration lines, the entry enum, the spine's central file), and the
 **last hop lands on the menu of candidate traces**. So it's traces all the way
 down, and you *learn* the exploration rather than just receive it. It is written
-to a file, so `flash trace <file> --map` reprints the map without walking.
+to a file, so `alix trace <file> --map` reprints the map without walking.
 
-## Suggesting traces — `flash trace --suggest <source>` (recon, lite)
+## Suggesting traces — `alix trace --suggest <source>` (recon, lite)
 
 The hard part of a trace isn't building the path — `--build` does that — it's
 knowing *which* paths through a cold source are worth tracing, and **at what
@@ -163,7 +163,7 @@ Suggested traces — predict the spine, then `--build` the one you pick:
      spine:  id() hash inputs → store key → build_queue lookup
      % source: src/card.rs
 
-Paste a block into a new deck, then `flash trace --build <deck>`.
+Paste a block into a new deck, then `alix trace --build <deck>`.
 ```
 
 `--suggest` is **side-effect-free**: read-only exploration that prints the menu
@@ -180,13 +180,13 @@ through the same read-only `build_run_config`, and returns the menu text;
 source and needs no store or scheduler. Validate it like `build_prompt`: a unit
 test pins the recon framing (survey-don't-trace, N candidates, spine-sketch not
 checkpoints, rank by centrality, narrow scope, menu-only output), then dogfood
-`flash trace --suggest .` on this repo and check the top suggestion is a real,
+`alix trace --suggest .` on this repo and check the top suggestion is a real,
 well-scoped spine that roughly matches the traces we already trust
 (`examples/keypress-to-grade.txt`, the scratch deck-text→queue path).
 
-## Exploring a source — `flash explore <source>`
+## Exploring a source — `alix explore <source>`
 
-Where `--suggest` is the flat trace menu, **`flash explore`** is the full step:
+Where `--suggest` is the flat trace menu, **`alix explore`** is the full step:
 goal-driven exploration that manufactures the *ordered set of means* toward a
 goal. It is `--suggest` grown up along the four axes from
 [Goals and exploration](#goals-and-exploration):
@@ -212,38 +212,38 @@ topic for a deck), its `requires:`, and a `% source:` scope.
 
 By default it **prints the plan and writes nothing** — like `--suggest`,
 reviewable before anything hits disk. With **`--into <dir>`** it also
-**materializes** the plan into a workspace folder: a `flash.toml` (the goal + an
+**materializes** the plan into a workspace folder: an `alix.toml` (the goal + an
 empty `[defaults]`) and one stub file per item — a `% trace:` deck for a trace
 (its `% trace:` description doubles as the deck's display name, so it needs no
 `% title:`), a `% title:` facts deck for a deck — wired by `% requires:` (item
 numbers mapped to
 the member file names), with each `% source:` rewritten absolute against the
-source root. So the plan becomes a real, buildable workspace: `flash trace
---build` each trace, author or `flash generate` each deck, and the `% requires:`
+source root. So the plan becomes a real, buildable workspace: `alix trace
+--build` each trace, author or `alix generate` each deck, and the `% requires:`
 edges gate them in dependency order. (Refuses a non-empty target unless
 `--force`.)
 
 **`--into --build` fills the stubs in the same session.** By default `--into`
-writes empty stubs; with `--build`, `flash explore` **explores the source once,
+writes empty stubs; with `--build`, `alix explore` **explores the source once,
 then resumes that same CLI session** (`ask::CliSession`: `--session-id` then
 `--resume`) to write the full content of every item — predict-verify checkpoints
 for each trace, fact cards for each deck — and `materialize` writes that content
 in place of the stub comment. Two model calls total (explore + fill) instead of
 re-exploring per item, and because the whole set is written from one
 understanding the items stay **coherent** (each aware of its prerequisites, no
-overlap, consistent terms). It also fills *facts decks* — content `flash generate`
+overlap, consistent terms). It also fills *facts decks* — content `alix generate`
 can't yet produce from a code scope — for free. The fill is one-shot (all items
 in one response); an item the response omits simply stays a stub, so it degrades
 gracefully (a very large plan may want chunking later). Dogfooded: a 7-item
 scheduling workspace came out 7/7 filled, every deck and trace valid
-(`flash check` + `flash trace --map`).
+(`alix check` + `alix trace --map`).
 
 The walkable *explore* trace (predict the system's shape) and `--grade` come
 after.
 
 Plumbing mirrors `--suggest`: `explore::explore(source, goal, cfg, ask_cfg)` runs
 an `explore_prompt` through the same read-only `build_run_config` (reusing the
-`[trace]` model/timeout for now) and returns the plan text; a top-level `flash
+`[trace]` model/timeout for now) and returns the plan text; a top-level `alix
 explore <source>` command prints it, and `--into` hands the plan to
 `explore::materialize` (which `parse_plan`s it back into items, then scaffolds the
 folder). The prompt encodes the four axes above; unit tests pin them (goal echoed,
@@ -253,17 +253,17 @@ stubs and refuse a non-empty dir). Dogfooded on this repo with a whole-repo goal
 (≈19 items across every subsystem) and a narrow one (≈8, scheduling only, →7 wired
 stub files), each a valid topological order.
 
-**`--walk` — the explore walk.** Instead of a plan, `flash explore --walk
+**`--walk` — the explore walk.** Instead of a plan, `alix explore --walk
 <source>` builds the *explore walk* (the [decided model](#goals-and-exploration)):
 a short predict-verify walk over the source's *shape* — what it is (the manifest)
 → its domain nouns (the module list) → how it's driven (the entry enum) → its
 spine (the central file) → the first paths worth tracing (the dispatch map). Each
 hop cites real structural evidence as its `% at:`, so it **reuses the whole
-`flash trace` walk**: `explore::walk` generates the checkpoints (a new
+`alix trace` walk**: `explore::walk` generates the checkpoints (a new
 `walk_prompt`), they're wrapped in a `% trace:`/`% source:` deck with an
-absolute root, and `run_walk` — factored out of `flash trace` and shared — walks
+absolute root, and `run_walk` — factored out of `alix trace` and shared — walks
 them. It writes the trace to a file (`-o`, default `explore.txt`) and walks it
-immediately; re-walk later with `flash trace <file>`. Each explore checkpoint is a
+immediately; re-walk later with `alix trace <file>`. Each explore checkpoint is a
 normal card, so the exploration itself enters the SRS.
 
 ## Authoring (what you write) — minimal
@@ -283,7 +283,7 @@ tracing).
 directory, a single entry file, or a URL/doc. Optional soft cap:
 `% checkpoints: ~8` (never required; defaults to "as many as the path needs").
 
-## Build (`flash trace --build <deck>`)
+## Build (`alix trace --build <deck>`)
 
 Claude **explores** the scope, traces the path, and writes the discovered
 checkpoints back into the deck file (cached, version-controlled, editable). The
@@ -456,11 +456,11 @@ pointer to the real source. The only new directive is `% at:`.
 | `#` front | the **predict** prompt — you type a guess before anything reveals |
 | `% given: name — meaning` | a **given** (repeatable) — an off-screen symbol the question leans on; shown as a list under the prompt *before* predicting, so the excerpt can stay tight |
 | indented lines | the **key points** a good prediction should hit (the rubric) — shown on reveal; what self-grade / `--grade` checks against |
-| `% at: <locator>` | the **reveal** — flash reads those lines from the real file and shows them. Ground truth is the source, not the model |
+| `% at: <locator>` | the **reveal** — alix reads those lines from the real file and shows them. Ground truth is the source, not the model |
 | `! note` | the connective **insight**, shown after the reveal |
 | file order | the **path** — checkpoints walked top to bottom |
 
-It degrades gracefully: even without `flash trace`, it's a valid deck of explain
+It degrades gracefully: even without `alix trace`, it's a valid deck of explain
 cards. Each checkpoint gets the normal card identity (hash of its key-point
 lines), so **SRS attaches per checkpoint for free**.
 
@@ -480,7 +480,7 @@ the deck small), with the source as the oracle.
 - **Default (self-graded, offline, free):** on reveal you see the real excerpt +
   the key points and rate yourself Got / Partial / Missed (like flip/explain
   today).
-- **`flash trace --grade` (or `[trace] grade = live`):** Claude judges your typed
+- **`alix trace --grade` (or `[trace] grade = live`):** Claude judges your typed
   prediction against the key points + excerpt and produces the specific delta
   (reuses the exam grading machinery). Costs a model call per hop.
 
@@ -504,7 +504,7 @@ verification, and they never cross.**
 - **trace deck → the predict-verify walk + the compression step, which is its
   exam, correctly scoped to the path.**
 
-So generic `flash exam` **refuses** on a trace; a trace's `% source:` is read as
+So generic `alix exam` **refuses** on a trace; a trace's `% source:` is read as
 *locator base*, not exam corpus. **Decided:** the kind is **derived, not declared**
 — `% trace:` is the trace marker and takes precedence over `% source:` (no new
 `% kind:` directive; consistent with L43's `% link:` = "not exam ground truth").
@@ -518,14 +518,14 @@ mixed in one file.
 
 **One file per trace** (forced cleanly by the format: `% trace:`/`% source:` are
 header-level, one set per file — so you can't put two traces in one file anyway).
-Traces live **inside a workspace** (already built; `flash.toml` manifest). The
+Traces live **inside a workspace** (already built; `alix.toml` manifest). The
 explore walk's output (map + child goals) is the workspace's index. `% requires:`
 between traces sequences *understanding* via the existing lock/unlock + mastery
 machinery — a repo becomes a dependency-ordered set of traces you climb.
 
 ```
 ~/decks/flashcard2/            (a workspace)
-  flash.toml                   (title + shared directives; later: trace corpus)
+  alix.toml                   (title + shared directives; later: trace corpus)
   explore.txt                   (the explore walk → map + menu of goals)
   card-identity.txt            (a trace)
   keypress-to-grade.txt        (a trace)
@@ -542,10 +542,10 @@ machinery — a repo becomes a dependency-ordered set of traces you climb.
 
 ## Frontends
 
-CLI first (mirrors how `flash exam` shipped), reusing: `% source:`, the
+CLI first (mirrors how `alix exam` shipped), reusing: `% source:`, the
 `claude -p` plumbing, exam's Pass/Partial/Fail + rubric grading, the store +
 scheduling, `% mode: explain` cards. The **web trace surface** then followed
-(`flash trace <deck> --serve`, the web is the primary surface per ROADMAP L4):
+(`alix trace <deck> --serve`, the web is the primary surface per ROADMAP L4):
 the same frontend-agnostic [`Walk`](../src/trace.rs) state machine drives both,
 so the browser is a thin reader over it exactly like the TUI. The walk page
 (`assets/serve/walk.html`) renders a left **path rail** (the spine you walk, its
@@ -559,7 +559,7 @@ page polls `GET /api/walk` while it's `thinking`, just like the exam.
 - `% mode: explain` cards (open prompt + key points + self-grade).
 - `exam::Sitting` + `spawn_*` runners + Pass/Partial/Fail rubric grading.
 - The store + per-card SRS identity + scheduling; deck states/unlocks (`% requires:`).
-- Workspaces + `flash.toml` (the home for a trace set; later a `[trace]` corpus).
+- Workspaces + `alix.toml` (the home for a trace set; later a `[trace]` corpus).
 - `directories`/`claude -p`/`config` plumbing.
 
 ## Suggested build order (phased, de-risked)
@@ -568,26 +568,26 @@ The riskiest unknown is **whether the predict-verify trace actually feels like
 understanding as a tool** (the conversation was a manual dry-run that felt right,
 but a chat ≠ the tool). So validate the mechanic cheaply before heavy plumbing:
 
-1. **Atom / single-source trace:** `flash trace` over one explicit `% source:`,
+1. **Atom / single-source trace:** `alix trace` over one explicit `% source:`,
    predict→reveal→delta→compress, self-graded, on a feature branch. Prove it's
    good.
 2. **Build (path discovery)** from a scope; cached trace artifact. Its prompt
    must encode the [generation-prompt spec](#generation-prompt-spec--a-chain-not-a-set)
    (chain-not-a-set) so generated traces are paths by construction.
-3. **Suggest (recon menu):** [`flash trace --suggest <source>`](#suggesting-traces--flash-trace---suggest-source-recon-lite)
+3. **Suggest (recon menu):** [`alix trace --suggest <source>`](#suggesting-traces--alix-trace---suggest-source-recon-lite)
    — one read-only pass proposes a ranked menu of candidate traces (path + spine
    sketch + scope), no checkpoints. The cheap precursor that closes the authoring
    bootstrap and de-risks the explore tier by proving the recon prompt it reuses.
-4. **Explore tier — [`flash explore <source>`](#exploring-a-source--flash-explore-source)**:
+4. **Explore tier — [`alix explore <source>`](#exploring-a-source--alix-explore-source)**:
    goal-driven, prints a `% requires:`-ordered plan of *means* (traces **and**
    decks, chosen by shape); **`--into <dir>`** materializes it into a workspace
-   folder (a `flash.toml` + a stub deck/trace per item wired by `% requires:`);
+   folder (an `alix.toml` + a stub deck/trace per item wired by `% requires:`);
    **`--walk`** builds and walks the explore walk over the source's shape.
    **Done.**
 5. **`--grade`** (live Claude grading of each prediction) — **done**.
-6. **Web walk surface** (`flash trace <deck> --serve`) — **done**; the browser
+6. **Web walk surface** (`alix trace <deck> --serve`) — **done**; the browser
    drives the same `Walk` state machine, with `--grade` as the live option. Next:
-   richer `flash.toml [trace]` config, and surfacing trace decks in the web
+   richer `alix.toml [trace]` config, and surfacing trace decks in the web
    workspace picker.
 
 ## Snapshotting the source (frozen `assets/`)
@@ -600,7 +600,7 @@ and rejected as the fix — they hit ambiguity (e.g. three `fn apply` in
 scheduler.rs), heavy escaping over quote-laden lines, and fuzzy span boundaries.
 
 The fix **flips the oracle from live → a frozen copy.** When you create a
-workspace by exploring a source — `flash explore --into <dir> --build` — its last
+workspace by exploring a source — `alix explore --into <dir> --build` — its last
 step **freezes the cited excerpts** into the workspace's `assets/` folder: for
 each checkpoint it writes a small snippet file (`assets/01.rs`, `02.rs`, …) holding
 just the lines that checkpoint reveals, repoints that `% at:` at the snippet, and

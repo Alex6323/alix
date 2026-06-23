@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- **Renamed the project `flash` → `alix`.** The binary, the crate, the workspace
+  manifest (`flash.toml` → `alix.toml`), and the data directory
+  (`~/.local/share/flash` → `~/.local/share/alix`) all move to the new name.
+  Existing progress is **auto-adopted on first run**: if the legacy `flash` data
+  dir exists and the new one doesn't, it's moved across, so your history carries
+  over untouched. (The cards are still "flashcards" — only the tool's name
+  changed.)
+
 ### Added
 - **Fact cards can cite their source (`% at:`), shown on reveal.** A plain fact
   card may now carry a `% at: file:lines` locator into its deck's `% source:`
@@ -17,11 +26,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   source shows "source unavailable" rather than a stale quote, and `% at:` is not
   part of the card's identity hash (adding it never resets progress). Reuses the
   trace walk's excerpt machinery via a shared `trace::SourceBase`/`excerpt_at`.
-  The deck **generator writes these citations for you** — `flash deck` on a local
-  source and `flash explore --build` add a `% at:` to each fact that maps to
-  specific lines — and **`flash check` validates** a fact deck's citations,
+  The deck **generator writes these citations for you** — `alix deck` on a local
+  source and `alix explore --build` add a `% at:` to each fact that maps to
+  specific lines — and **`alix check` validates** a fact deck's citations,
   warning about one that no longer resolves (a moved or shrunk file). A workspace
-  built with **`flash explore --into --build` freezes** every cited deck's
+  built with **`alix explore --into --build` freezes** every cited deck's
   excerpts into its `assets/` (fact decks now, not just traces), so the citations
   don't drift and the workspace travels without the upstream source; a frozen
   fact deck's `% source:` then points at the excerpts, so its exam grades against
@@ -32,8 +41,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (its dependents unlock), once **every card reaches Leitner stage N** — without
   retiring them, so they keep drilling to the top stage; the directive only lowers
   the unlock bar. Default (unset) keeps the old gate: every card retired at the top
-  stage. Settable per deck, in a workspace `flash.toml`
-  `[defaults]`, or via `flash explore --into --unlock-stage <1–5>`. Generalizes
+  stage. Settable per deck, in a workspace `alix.toml`
+  `[defaults]`, or via `alix explore --into --unlock-stage <1–5>`. Generalizes
   the completion gate (`Deck::state`).
 - **Browse a deck from the session-end summary** (terminal). When a deck turns
   *exam due* at the end of a review, the summary now offers `b` to **browse** it
@@ -41,7 +50,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   for a last skim before the exam. Both the offer line and the footer show the
   keys. (`App` returns an `AfterReview::{Exam,Browse}` for `main` to launch.)
 - **The progress store is now version-checked.** A `progress.json` written by a
-  newer flash is refused on open with a clear "upgrade flash" message instead of
+  newer alix is refused on open with a clear "upgrade alix" message instead of
   being silently rewritten at the old version (which could drop data the newer
   format added); the file on disk is left untouched. A store with no `version`
   field still loads as the original format. This lays the groundwork for safe
@@ -54,14 +63,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   relying on memory — so a question about a generated deck is grounded in the
   same source the deck was built from. Off by default because it grants the
   (possibly LAN-served) tutor file-read access. A **workspace can override it**
-  per-folder with `source_access` in its `flash.toml` (so you can enable it for
+  per-folder with `source_access` in its `alix.toml` (so you can enable it for
   one trusted crate without turning it on globally). The web ask panel also now
   shows **which model and effort** are answering (`model: … · effort: …`) — a
   reminder that the tutor uses the CLI default unless `[ask]` pins a stronger one.
-- **`flash explore --title` shapes the scaffolded workspace; the goal becomes its
-  description.** `flash explore --into <dir>` now takes an optional `--title` for
-  the workspace's `flash.toml` `title` (omitted, the folder name is used). It also
-  writes the `--goal` as a new `flash.toml` **`description`** field instead of an
+- **`alix explore --title` shapes the scaffolded workspace; the goal becomes its
+  description.** `alix explore --into <dir>` now takes an optional `--title` for
+  the workspace's `alix.toml` `title` (omitted, the folder name is used). It also
+  writes the `--goal` as a new `alix.toml` **`description`** field instead of an
   ignored `goal` key; a
   workspace's `description` shows **dim under its row** in both pickers (terminal
   and web).
@@ -82,7 +91,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   never gates (any deck is browsable). New lib helper `session::has_reviewable`.
 - **Reworked deck picker + trace walking from the picker** (terminal) — the
   no-argument picker is a clean, **single-launch** list (no checkboxes): `Enter`
-  opens the focused row. Its header is just `flash`; rows are grouped into
+  opens the focused row. Its header is just `alix`; rows are grouped into
   **Workspaces** (each showing when it last made progress, from its own store) ·
   **Recent** (loose decks you reviewed lately) · **Folders**, a blank line between
   sections, with the filter searching *every* loose deck. A deck that lives inside
@@ -110,25 +119,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   picker** (the workspace you came from, or the top list) to pick the next; only
   an `Esc` at the picker itself quits. The big gap it closes: a **trace** opened from the picker now
   **walks** (predict → reveal) instead of being flattened into a card review —
-  both in the top-level drill-in and `flash workspace <dir>`. An explicit
-  `flash review <trace.txt>` still flattens it (honoring the literal command). The
+  both in the top-level drill-in and `alix workspace <dir>`. An explicit
+  `alix review <trace.txt>` still flattens it (honoring the literal command). The
   multi-select machinery is retained in the code but unused for now. The web picker
   follows in a later phase.
 - **Per-workspace progress store** — a deck inside a workspace (a folder with a
-  `flash.toml`) now tracks its progress in a **`progress.json` inside that
-  workspace**, not the one global `~/.local/share/flash/progress.json`. So a
+  `alix.toml`) now tracks its progress in a **`progress.json` inside that
+  workspace**, not the one global `~/.local/share/alix/progress.json`. So a
   workspace is a self-contained, portable unit (decks + `assets/` snapshots +
   progress in one folder), its history is isolated, and same-named decks in
   different workspaces no longer collide in one store. Loose decks (and plain
   folders without a manifest) keep the global store; `--store <path>` overrides
   either; a workspace can redirect its store with a `store = "..."` line in the
-  `flash.toml`. Resolution: `--store` > the single workspace all the session's
+  `alix.toml`. Resolution: `--store` > the single workspace all the session's
   decks share > global. Applies across the CLI/TUI (`review`, `trace`, `exam`,
-  `browse`, `stats`/`list`, `reset`, `flash workspace`); the web frontend follows
+  `browse`, `stats`/`list`, `reset`, `alix workspace`); the web frontend follows
   with the picker revamp. (No migration — workspace decks start fresh in the
   workspace store; existing global progress for them is left in place.)
 - **Trace source snapshots** — creating a workspace by exploring a source
-  (`flash explore --into <dir> --build`) now **freezes the cited excerpts** into
+  (`alix explore --into <dir> --build`) now **freezes the cited excerpts** into
   the workspace as its final step: for each checkpoint it writes a small snippet
   file into the workspace's `assets/` folder (`assets/01.rs`, `02.rs`, …) holding
   just the lines that checkpoint reveals, and repoints the `% at:` (and the
@@ -142,15 +151,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   version-control assumption). It's automatic for explored workspaces, not a
   command; a loose trace over a live `% source:` is left as-is. Rationale in
   `docs/traces.md`.
-- **`flash import <file.tsv>`** — import an Anki "Notes in Plain Text" export
-  (tab-separated `front<TAB>back`) into a flash deck, no Claude needed. It skips
+- **`alix import <file.tsv>`** — import an Anki "Notes in Plain Text" export
+  (tab-separated `front<TAB>back`) into an alix deck, no Claude needed. It skips
   Anki's `#`-prefixed header lines, turns `<br>` tags into separate answer
   lines, decodes the common HTML entities, and backslash-escapes a back line
   that would otherwise read as a `%` comment or `!` note; rows missing a side
   are dropped. The result is validated and written to `~/decks/` (`-o`/`--print`/
-  `--force`, like `flash deck`). Conversion lives in the lib
+  `--force`, like `alix deck`). Conversion lives in the lib
   (`import::tsv_to_deck`).
-- **`flash check` now validates trace `% at:` locators.** A trace deck is linted
+- **`alix check` now validates trace `% at:` locators.** A trace deck is linted
   like any other: `check` resolves each checkpoint's locator against its
   `% source:` and warns (advisory, non-fatal) about any that name a missing file,
   run past the end of the file, give bare line numbers without a single-file
@@ -158,15 +167,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   check that catches a moved or trimmed source before a walk hits it. (Frozen
   snapshots are validated the same way.) It also prints the deck's `% trace:`
   description. Logic in the lib (`trace::Trace::lint_locators`).
-- **`flash deck <source>`** (renamed from `flash generate`, which no longer
+- **`alix deck <source>`** (renamed from `alix generate`, which no longer
   exists as an alias) — generates a facts deck with Claude from a **web page URL or a
-  local file/directory path**, mirroring `flash trace`. A URL is fetched with
+  local file/directory path**, mirroring `alix trace`. A URL is fetched with
   WebFetch and the deck starts with a `% link:`; a local source is explored
   read-only with `Read`/`Glob`/`Grep` at its root and the deck starts with a
-  `% source:` (so `flash exam` can grade against it). This gives a facts-deck stub
-  from `flash explore --into` a manual fill path (point `flash deck` at its
+  `% source:` (so `alix exam` can grade against it). This gives a facts-deck stub
+  from `alix explore --into` a manual fill path (point `alix deck` at its
   `% source:`).
-- **Traces (`flash trace`, experimental)** — a guided predict-and-verify walk
+- **Traces (`alix trace`, experimental)** — a guided predict-and-verify walk
   along a *path* through a `% source:`, drilling the connections between facts
   (the edges) rather than isolated facts. A trace deck declares a `% trace:`
   (a path description that marks it a trace) and a sequence of `explain`-style checkpoint cards,
@@ -178,19 +187,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   shown with the key points, you self-judge the **gap** (Got / Partial / Missed
   — a weak edge resets so it resurfaces sooner, via the normal per-checkpoint
   SRS), and after the last hop you **compress** the whole path into two
-  sentences. Self-judged and offline (no model call) by default; **`flash trace
+  sentences. Self-judged and offline (no model call) by default; **`alix trace
   --grade`** instead has Claude judge each typed prediction against the key points
   and return the verdict + one line of feedback (a model call per hop, run at the
-  lightweight `[ask]` tier — not the heavy build defaults below). **`flash
+  lightweight `[ask]` tier — not the heavy build defaults below). **`alix
   trace <deck> --serve`** walks it in the **web frontend** (the same
   frontend-agnostic `Walk` state machine the terminal uses): a left **path rail**
   whose nodes color in by Got / Partial / Missed, each checkpoint's source shown
   in a line-numbered excerpt, and `--serve --grade` running the live grade on a
   background thread while the page polls; `--port`/`--lan` work as in `review`.
-  `flash trace <deck> --map`
+  `alix trace <deck> --map`
   prints the path without quizzing; the generic AI exam refuses a trace (its
   verification is the walk itself). See `examples/keypress-to-grade.txt`.
-  **`flash trace --build <deck>`** discovers the path for you: declare just the
+  **`alix trace --build <deck>`** discovers the path for you: declare just the
   `% trace:` and `% source:`, and Claude explores the source (read-only
   `Read`/`Glob`/`Grep`, with the source root as its working directory — no write
   or shell access), traces the single load-bearing path, and writes the
@@ -201,11 +210,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   effort (`--effort high`)** because building is one-shot, correctness-critical
   and fails silently on a weak model. A new `effort` knob also exists on `[ask]`
   (off by default) and is plumbed through to the CLI's `--effort` flag.
-  **`flash trace --suggest <source>`** recons a source (read-only, one pass) and
+  **`alix trace --suggest <source>`** recons a source (read-only, one pass) and
   prints a ranked menu of candidate traces to author — a path-question, a spine
   sketch, and a suggested scope each, no checkpoints — closing the "what's worth
   tracing?" gap before `--build`.
-- **`flash explore <source>` (experimental)** — goal-driven exploration:
+- **`alix explore <source>` (experimental)** — goal-driven exploration:
   prints an ordered **learning plan** toward a `--goal` (default
   "understand the whole source"), the fact **decks** and **traces** worth
   authoring. Each item is tagged `[trace]`/`[deck]` (chosen by shape — edges
@@ -214,10 +223,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `% source:` scope. The goal scopes coverage — a broad goal spans every
   subsystem, a narrow one collapses to its slice (and traces it deeper). By
   default read-only (prints the plan); **`--into <dir>`** materializes it into a
-  **workspace** folder — a `flash.toml` (the goal) plus a stub deck/trace file per
+  **workspace** folder — an `alix.toml` (the goal) plus a stub deck/trace file per
   item, `% requires:`-wired in dependency order with absolute `% source:` paths,
-  ready to `flash trace --build` / author (refuses a non-empty dir unless
-  `--force`). Add **`--build`** to fill them: `flash explore … --into <dir>
+  ready to `alix trace --build` / author (refuses a non-empty dir unless
+  `--force`). Add **`--build`** to fill them: `alix explore … --into <dir>
   --build` explores the source **once**, then resumes that same CLI session to
   write the full content of every item — predict-verify checkpoints for traces,
   fact cards for decks — so the workspace is review-ready in one command, with the
@@ -226,25 +235,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   trace over the source's *shape* (what it is → its domain nouns → entry point →
   spine → the first paths worth tracing), each hop revealing real structural
   evidence (the manifest, the module list, the entry enum). It's written to a file
-  (`-o`, default `explore.txt`) and walked immediately, reusing the `flash trace`
-  walk; re-walk later with `flash trace <file>`.
+  (`-o`, default `explore.txt`) and walked immediately, reusing the `alix trace`
+  walk; re-walk later with `alix trace <file>`.
 - **Workspaces** — a folder of decks reviewed together with shared directives.
-  A folder is a **workspace** when it has a `flash.toml` manifest (a scoped
+  A folder is a **workspace** when it has an `alix.toml` manifest (a scoped
   `config.toml`) setting a `title` and a `[defaults]` table of directives that
   fill in what each deck leaves unset (precedence CLI > card > deck > workspace >
   default); a folder of decks *without* a manifest is a plain **folder** — still
   reviewable, but not a workspace. Both appear as their own rows in the picker
   (terminal and web, labeled "workspace" vs "folder") and drill into their decks
-  (review all, or tick a subset); `flash review`/`browse <folder>` reviews the
-  whole cluster. **`flash workspace <dir>`** opens a workspace into its own picker
+  (review all, or tick a subset); `alix review`/`browse <folder>` reviews the
+  whole cluster. **`alix workspace <dir>`** opens a workspace into its own picker
   and routes each member to the right thing — a **facts deck** → review, a **trace
   deck** → predict-verify walk — returning to the picker when done. Great for
   clusters like a vocabulary set that should all be `direction = "both"` without
   repeating it per file.
-- `% title:` deck directive (also usable in a `workspace.flash` manifest): a
-  display name shown in the picker, session header, `flash list` and `flash stats`
+- `% title:` deck directive (also usable in a `workspace.alix` manifest): a
+  display name shown in the picker, session header, `alix list` and `alix stats`
   instead of the file name. Display-only and never part of card identity.
-- **`flash exam <deck>`** — the AI exam, which *verifies understanding* and
+- **`alix exam <deck>`** — the AI exam, which *verifies understanding* and
   gates progression (rung 3 of the AI-exam direction). A deck declares its
   ground truth with `% source: <url-or-file>` (repeatable); the exam asks Claude
   for fresh open questions generated **from that source** (never from the cards,
@@ -252,13 +261,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Pass/Partial/Fail against per-question rubric points. Passing marks the deck
   **mastered**, which is what now unlocks dependent decks — drilling a `% source:`
   deck to the top stage leaves it *exam due* (a new deck state, shown in the
-  picker and `flash stats`) rather than finished; source-less decks keep the
+  picker and `alix stats`) rather than finished; source-less decks keep the
   mechanical "finished = drilled" unlock. On a fail, the missed concepts can be
   turned into remediation cards appended to the deck — the card type is chosen
   per gap (cloze/plain for a missed fact, `% mode: explain` for a missed
   concept), and overlapping gaps are consolidated into a single card — then
   re-drill, re-sit. **Grading strictness is per deck** —
-  `% strictness: strict | balanced | lenient` (or `flash exam --strictness`, or
+  `% strictness: strict | balanced | lenient` (or `alix exam --strictness`, or
   the `[exam]` default) — because some material needs every point recalled while
   other is about grasping the idea: `strict` treats an omitted rubric point as a
   gap, `balanced` (default) judges understanding and forgives terse phrasing,
@@ -266,12 +275,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   which sets how many answers must pass). New `[exam]` config section (`model`,
   `timeout_secs`, `num_questions`, `pass_threshold`, `strictness`, `extra`);
   reuses the `[ask]` command/permission/tools (WebFetch reads a source URL).
-  `flash reset` of a deck also clears its mastered state. A URL `% source:` also
+  `alix reset` of a deck also clears its mastered state. A URL `% source:` also
   doubles as an ask-Claude reference link (no duplicate `% link:` needed); a
   `% link:` never becomes an exam source.
   The exam is **fully interactive in both frontends** (rung 3b): answer one
-  question at a time (Back/Next), then see a per-question breakdown — `flash exam`
-  and `flash serve` share one engine (`exam::Sitting`) that runs Claude on a
+  question at a time (Back/Next), then see a per-question breakdown — `alix exam`
+  and `alix serve` share one engine (`exam::Sitting`) that runs Claude on a
   background thread and polls, so neither blocks. You reach it by **picking an
   `exam due` deck** (it launches the exam instead of an empty review) or from the
   **session-end summary** when a deck you were drilling just became exam-due.
@@ -292,7 +301,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   including `--lan`.
 - Deck completion states and unlocks. Each deck has a state derived from its
   cards' stages — not started / started / finished (all cards at the top stage)
-  — shown in the deck picker (terminal and web) and `flash stats`. A deck is
+  — shown in the deck picker (terminal and web) and `alix stats`. A deck is
   **locked** while any of its `% requires:` prerequisites isn't finished
   (finishing a foundation unlocks what builds on it); locked decks are dimmed
   with a 🔒 but stay selectable (advisory). Derived live from progress, with no
@@ -300,7 +309,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Repeated `TAB` in typing mode progressively reveals the answer: each press
   uncovers two more characters until the line is fully shown (still counts the
   card as failed); typing or deleting resets the reveal.
-- In-browser deck selection: `flash --serve` (and `flash browse --serve`) with no
+- In-browser deck selection: `alix --serve` (and `alix browse --serve`) with no
   deck files now opens a deck-selection screen in the browser instead of the
   terminal picker — a checklist of the same decks (recent first), with a Start
   button that builds the session in place. Passing decks on the CLI still skips
@@ -341,10 +350,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   paths are used as-is). Images render in the web frontend only, so an image card
   is automatically web-only — the TUI skips such cards (and refuses, pointing at
   `--serve`, if a whole deck is web-only). A general `% frontend: any|tui|web`
-  directive (per card or deck-wide) controls this explicitly; `flash check` warns
+  directive (per card or deck-wide) controls this explicitly; `alix check` warns
   about missing image files. `/img/<key>` URLs are opaque hashes of registered
   deck paths, so the server never joins request input to a filesystem path.
-- `flash reset` clears stored progress: for one or more decks, a single card
+- `alix reset` clears stored progress: for one or more decks, a single card
   (`--card <id-or-front-text>`), or everything (`--all`). With no decks it opens
   the same checkbox picker as `review`/`browse` to choose them; `--cards` opens
   a picker over a deck's cards (those with progress). Confirms first unless
@@ -360,7 +369,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   forced to grind its cards. Exams still flow in dependency order: a **locked**
   deck stays un-examable until its prerequisites are mastered (pass *their* exams
   first). In the browser picker, a focused examable deck gets a **"Take exam"**
-  button (and the `x` key); `flash exam <deck>` does the same from the terminal.
+  button (and the `x` key); `alix exam <deck>` does the same from the terminal.
 - **The web deck-selection screen now mirrors the terminal picker.** It is
   **single-launch** (no checkboxes): click a deck to start it, or open a
   **Workspace** / **Folder** to drill into its **unlock dependency tree** (each
@@ -371,15 +380,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   decks are kept out of Recent, with a `mastered 🎉` deck tucked into a **Mastered
   window** (`m`); navigation honors the `[picker]` config keys (served to the page
   at `/api/picker-keys`). A **locked** deck can no longer be *started* for review
-  (was advisory), but stays fully browsable (`flash browse` ignores locking) and
-  resettable; the `flash reset` / `flash deps` pickers keep their plain
+  (was advisory), but stays fully browsable (`alix browse` ignores locking) and
+  resettable; the `alix reset` / `alix deps` pickers keep their plain
   multi-select. The shared badge / lock / dependency-tree logic now lives in the
   library (`picker::deck_status` and the exposed dependency-forest helpers),
   consumed by both frontends. A **trace** picked from the in-browser picker now
   **walks** (predict → verify, just like the terminal), hosted by the review
   server at `/walk`; a **Back to decks** (or `Esc`) returns to the picker.
 - **A card that reaches the top Leitner stage now retires** (rests, no longer
-  scheduled until `flash reset`) instead of recurring at the stage-5 weekly
+  scheduled until `alix reset`) instead of recurring at the stage-5 weekly
   cooldown, so a *finished* deck stays finished.
 - The TUI's remaining-card count moved from the header to the bottom-right of
   the footer, shown as `N↓` after the pass/fail tally — matching the web
@@ -410,7 +419,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Deck-level directives (`% mode/order/scheduler`) must now sit in the deck
   header, before the first card; a `% key: value` after a card front is treated
   as a per-card override.
-- `flash check` no longer fails on warnings: duplicate-answer warnings are
+- `alix check` no longer fails on warnings: duplicate-answer warnings are
   advisory, so it exits non-zero only when a deck won't parse, and prints a
   `N error(s), M warning(s)` summary.
 - Web review now shows the expected answer whenever a typed line differed —
@@ -418,7 +427,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reinforced.
 
 ### Fixed
-- **Generated decks now put a blank line between cards.** `flash deck`'s output
+- **Generated decks now put a blank line between cards.** `alix deck`'s output
   cleaner (`generate::clean_output`) inserts a blank line before each card front
   (`#`) after the first, so a generated/`--review`ed deck is readable instead of
   cards running together. The first card stays attached to its `%` header, and an
@@ -492,7 +501,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.1.0] - 2026-06-16
 
-First release of `flash`: a terminal spaced-repetition flashcard trainer with
+First release of `alix`: a terminal spaced-repetition flashcard trainer with
 a ratatui TUI, plain-text decks, two schedulers, several answer modes, cloze
 cards, deck dependencies, an ask-Claude helper, and AI deck generation.
 
@@ -531,31 +540,31 @@ cards, deck dependencies, an ask-Claude helper, and AI deck generation.
   + an exclusive `WebFetch`/`WebSearch` allowlist).
 
 ### AI deck generation
-- `flash generate <url>` builds a deck from a web page via Claude (WebFetch),
+- `alix generate <url>` builds a deck from a web page via Claude (WebFetch),
   with a prompt that spreads cards across four layers of understanding, uses
   cloze and notes, and self-reviews for redundancy; `--review` adds a second
   refinement pass. Output is validated and saved (or `--print`ed); `--cards`
-  and `[generate]` config tune it. Claude only returns text — flash writes the
+  and `[generate]` config tune it. Claude only returns text — alix writes the
   file — so no extra tool permissions are needed.
 
 ### Other commands
-- `flash browse` — read-only walk through cards (no grading, no writes).
-- `flash deps` (alias `require`) — edit a deck's prerequisites with a checkbox
+- `alix browse` — read-only walk through cards (no grading, no writes).
+- `alix deps` (alias `require`) — edit a deck's prerequisites with a checkbox
   picker.
-- `flash stats`, `flash list`, `flash check`, `flash config`.
+- `alix stats`, `alix list`, `alix check`, `alix config`.
 - Startup **deck picker** (recent decks + the decks directory) when run with no
   arguments.
 
 ### Configuration
-- `~/.config/flash/config.toml` with `[keys]`, `[browse]`, `[ask]`,
-  `[generate]` sections and `decks_dir`. `flash config --init` writes a
+- `~/.config/alix/config.toml` with `[keys]`, `[browse]`, `[ask]`,
+  `[generate]` sections and `decks_dir`. `alix config --init` writes a
   self-documenting template (every option commented at its default);
-  `flash config` prints the active settings. Key bindings are rebindable.
+  `alix config` prints the active settings. Key bindings are rebindable.
 
 ### Storage
 - Card identity is a stable XxHash64 over the deck file name plus the back
   lines (a test pins the value so upgrades never orphan progress). Progress is
-  stored at `~/.local/share/flash/progress.json`, created on first use.
+  stored at `~/.local/share/alix/progress.json`, created on first use.
 
 ### Desktop
 - `assets/install-desktop.sh` installs an icon, launcher, and `.desktop` entry.

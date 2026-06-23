@@ -22,7 +22,7 @@ Only the doubled braces are special: a lone `{` or `}` is literal, so an answer
 like `let p = Foo {};` is fine inside a cloze (and if you ever need a literal
 `{{`, write `\{\{`).
 
-flash keeps a card's cloze siblings apart in the queue when other cards are
+alix keeps a card's cloze siblings apart in the queue when other cards are
 available, so you don't see `mut` right after `u64`. Cloze progress is forgiving:
 rewording the front — or even a later change to the blank markup — keeps your
 history, while editing the answer text or what's *inside* a blank resets the
@@ -76,8 +76,8 @@ as-is.
 
 One catch worth knowing: **images render in the web frontend only** — a terminal
 can't draw them. So an image card is automatically *web-only* (as if it declared
-`% frontend: web`): `flash review` in the terminal skips it with a note, and if a
-whole deck is images it points you at `--serve` to open it in the browser. `flash
+`% frontend: web`): `alix review` in the terminal skips it with a note, and if a
+whole deck is images it points you at `--serve` to open it in the browser. `alix
 check` warns about an image file it can't find, but doesn't fail on it.
 
 ## Source citations
@@ -107,10 +107,10 @@ lives. Like all `%` directives, `% at:` is invisible to the identity hash: addin
 a citation to an existing card never resets its progress.
 
 You rarely have to write these by hand. Generating a deck from a local source —
-[`flash deck <path>`](11-generating-decks.md) or
-[`flash explore --build`](14-explore.md) — cites the lines each fact came from,
-and [`flash check`](17-command-reference.md) warns about a citation that no
+[`alix deck <path>`](11-generating-decks.md) or
+[`alix explore --build`](14-explore.md) — cites the lines each fact came from,
+and [`alix check`](17-command-reference.md) warns about a citation that no
 longer resolves, so a moved or shrunk file is caught before you next review the
-card. A workspace built with `flash explore --into --build` goes one further and
+card. A workspace built with `alix explore --into --build` goes one further and
 **freezes** the cited excerpts into its `assets/` (just like trace excerpts), so
 the citations never drift and the workspace travels without the original source.

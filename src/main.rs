@@ -5,9 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{Context, Result, anyhow, bail};
-use clap::{Args, Parser, Subcommand};
-use flash::{
+use alix::{
     answer::Mode,
     browse,
     card::{Card, Frontend},
@@ -24,6 +22,8 @@ use flash::{
     tui::{self, AfterReview, App},
     workspace,
 };
+use anyhow::{Context, Result, anyhow, bail};
+use clap::{Args, Parser, Subcommand};
 use ratatui::DefaultTerminal;
 
 /// An AI-augmented spaced-repetition learning tool for the terminal and the
@@ -61,10 +61,10 @@ enum Command {
     /// Read through decks card by card without grading (no progress is saved).
     Browse(BrowseArgs),
     /// Generate a facts deck with Claude from a source — a web page URL or a
-    /// local file/directory path. (The deck-side mirror of `flash trace`.)
+    /// local file/directory path. (The deck-side mirror of `alix trace`.)
     Deck(GenerateDeckArgs),
     /// Import an Anki TSV export (tab-separated `front<TAB>back` lines) into a
-    /// flash deck.
+    /// alix deck.
     Import(ImportArgs),
     /// Sit the AI exam for a deck: open questions from its `% source:`, graded
     /// by Claude. Passing marks the deck mastered and unlocks its dependents.
@@ -119,12 +119,12 @@ struct ExploreArgs {
     #[arg(long)]
     goal: Option<String>,
 
-    /// Scaffold the plan into a workspace folder at this path: a flash.toml plus
+    /// Scaffold the plan into a workspace folder at this path: an alix.toml plus
     /// a stub deck/trace file per item, wired by `% requires:`. Writes files.
     #[arg(long)]
     into: Option<PathBuf>,
 
-    /// With --into, the workspace's display title (its `flash.toml` `title`).
+    /// With --into, the workspace's display title (its `alix.toml` `title`).
     /// Omitted, the folder name is used; `--goal` becomes the description.
     #[arg(long, requires = "into")]
     title: Option<String>,
@@ -407,6 +407,8 @@ struct ReviewArgs {
 }
 
 fn main() -> Result<()> {
+    // One-time: adopt a pre-rename `flash` data dir so existing progress survives.
+    alix::store::migrate_legacy_data_dir();
     let cli = Cli::parse();
     match cli.command {
         None => review(cli.review),
@@ -438,7 +440,7 @@ fn open_store(path: Option<PathBuf>) -> Result<Store> {
 
 /// Which progress store a set of decks should use: the `--store` override, else
 /// the single workspace they all share (a deck is "in" a workspace when its
-/// parent folder has a `flash.toml`), else the global default (`None`). Loose
+/// parent folder has an `alix.toml`), else the global default (`None`). Loose
 /// decks, a plain folder, or decks spanning different workspaces all fall back
 /// to the global store — so a workspace's progress lives with the workspace,
 /// while everything else shares the one global store.
@@ -531,7 +533,7 @@ fn expand_workspaces(deck_paths: &[PathBuf]) -> Result<Expanded> {
     let mut defaults: HashMap<String, DeckSettings> = HashMap::new();
     let mut label = None;
     for path in deck_paths {
-        // Any folder of decks expands (a workspace applies its `flash.toml`
+        // Any folder of decks expands (a workspace applies its `alix.toml`
         // defaults; a plain folder loads with defaults).
         if workspace::has_decks(path) {
             let ws = workspace::Workspace::load(path)?;
@@ -615,7 +617,7 @@ fn pick_decks_if_empty(
         }));
     }
     if !std::io::stdout().is_terminal() {
-        bail!("no deck files given; try `flash <deck.txt>...` or `flash --help`");
+        bail!("no deck files given; try `alix <deck.txt>...` or `alix --help`");
     }
     let terminal = terminal.expect("the interactive picker needs a terminal");
     let decks_dir = config.decks_dir().context("cannot determine ~/decks")?;
@@ -680,7 +682,7 @@ fn visit_dep(
     }
     let parent = path.parent();
     for req in &deck.requires {
-        let dep = flash::deck::resolve_dep(req, decks_dir, parent)
+        let dep = alix::deck::resolve_dep(req, decks_dir, parent)
             .ok_or_else(|| anyhow!("{} requires '{}', which was not found", deck.subject, req))?;
         visit_dep(&dep, decks_dir, ordered, done, on_stack, any_requires)?;
     }
@@ -726,7 +728,7 @@ enum Started {
 
 /// Loads the decks named (or picked) for a review, resolves prerequisites and
 /// the mode/scheduler/order settings, and builds the session and store. Shared
-/// by `flash review` (TUI) and `flash serve` (web). Returns `Ok(None)` when the
+/// by `alix review` (TUI) and `alix serve` (web). Returns `Ok(None)` when the
 /// picker was cancelled.
 /// A review session built from an explicit set of deck paths. Shared by the TUI
 /// path and the web frontend's `/api/select` (via a builder closure).
@@ -858,7 +860,7 @@ fn build_review(
 
 /// If a single trace deck was **picked** interactively, returns its loaded deck
 /// — the signal to walk it rather than flatten it into a card review.
-/// `from_picker` gates this: an explicit `flash review <trace>` (decks named on
+/// `from_picker` gates this: an explicit `alix review <trace>` (decks named on
 /// the command line) keeps reviewing, honoring the literal command.
 fn single_trace_to_walk(from_picker: bool, deck_paths: &[PathBuf]) -> Option<Deck> {
     if !from_picker {
@@ -885,7 +887,7 @@ fn load_review_session(
     );
     // Whether the deck list came from the picker (no decks named on the command
     // line): only then does a single trace route to a walk — an explicit
-    // `flash review <trace>` still flattens it to a card review.
+    // `alix review <trace>` still flattens it to a card review.
     let from_picker = args.decks.is_empty();
     // The picker's badges/locks for the top-level list read the global store
     // (its rows are loose decks); a drilled-into workspace shows its own store.
@@ -1127,7 +1129,7 @@ fn review_loop(terminal: &mut DefaultTerminal, args: &ReviewArgs) -> Result<()> 
 
 /// Runs one resolved activity — a card review, a trace walk, or an exam — to
 /// completion, each managing its own terminal and printing a summary. Used for
-/// explicit `flash <deck>` (no picker).
+/// explicit `alix <deck>` (no picker).
 fn run_started(started: Started, args: &ReviewArgs) -> Result<()> {
     match started {
         Started::Exam {
@@ -1193,7 +1195,7 @@ fn run_review_on(
     if session.is_finished() || (hidden > 0 && session.cards().is_empty()) {
         return Ok(());
     }
-    let ui_options = flash::tui::Options {
+    let ui_options = alix::tui::Options {
         mode_override,
         max_typos: args.max_typos,
         deck_label: label,
@@ -1249,7 +1251,7 @@ fn run_review_tui(rs: ReviewSession, args: &ReviewArgs) -> Result<()> {
         return Ok(());
     }
 
-    let ui_options = flash::tui::Options {
+    let ui_options = alix::tui::Options {
         mode_override,
         max_typos: args.max_typos,
         deck_label: label,
@@ -1430,7 +1432,7 @@ fn stats(args: DeckArgs) -> Result<()> {
             if let Some(state) = store.get(card.id()) {
                 // Retired cards are resting, so they don't count as due (they
                 // still count toward the review totals below).
-                if !flash::session::is_retired(card, &store) {
+                if !alix::session::is_retired(card, &store) {
                     let due = scheduler.due_at(state);
                     if due <= now {
                         due_now += 1;
@@ -1450,7 +1452,7 @@ fn stats(args: DeckArgs) -> Result<()> {
             DeckState::Finished if store.deck_mastered(&deck.subject) => "mastered ✓",
             DeckState::Finished => "finished ✓",
         };
-        let top = flash::store::MAX_STAGE;
+        let top = alix::store::MAX_STAGE;
         let cell = |s: usize| {
             if s as u8 > top {
                 "–".to_string()
@@ -1492,9 +1494,9 @@ fn list(args: DeckArgs) -> Result<()> {
         for card in &deck.cards {
             let (stage, due) = match store.get(card.id()) {
                 Some(state) => {
-                    // Retired cards rest until `flash reset`; their due time is
+                    // Retired cards rest until `alix reset`; their due time is
                     // moot, so say so instead of showing a misleading interval.
-                    let due = if flash::session::is_retired(card, &store) {
+                    let due = if alix::session::is_retired(card, &store) {
                         "resting".to_string()
                     } else {
                         let due = scheduler.due_at(state);
@@ -1590,9 +1592,7 @@ fn reset(args: ResetArgs) -> Result<()> {
     // Resolve decks: those named, or chosen from the picker when none are given.
     let (deck_paths, from_deck_picker) = if args.decks.is_empty() {
         if !std::io::stdout().is_terminal() {
-            bail!(
-                "no deck files given; try `flash reset <deck.txt>...`, `--card <id>`, or `--all`"
-            );
+            bail!("no deck files given; try `alix reset <deck.txt>...`, `--card <id>`, or `--all`");
         }
         let config = Config::load(None)?;
         let recent = RecentDecks::load(
@@ -1755,7 +1755,7 @@ fn browse(args: BrowseArgs) -> Result<()> {
         return browse_serve(args);
     }
     if !std::io::stdout().is_terminal() {
-        bail!("`flash browse` needs a terminal");
+        bail!("`alix browse` needs a terminal");
     }
     let config = Config::load(None)?;
     let mut recent = RecentDecks::load(
@@ -1951,7 +1951,7 @@ fn deck_cmd(args: GenerateDeckArgs) -> Result<()> {
         // Saved, but not yet valid: tell the user exactly what to fix.
         Err(e) => bail!(
             "Saved the generated deck to {}, but it does not parse yet:\n  {e}\n\
-             Fix that line and run `flash check {}`.",
+             Fix that line and run `alix check {}`.",
             path.display(),
             path.display()
         ),
@@ -2015,7 +2015,7 @@ fn import_cmd(args: ImportArgs) -> Result<()> {
         // Saved, but not yet valid: tell the user exactly what to fix.
         Err(e) => bail!(
             "Saved the deck to {}, but it does not parse yet:\n  {e}\n\
-             Fix that line and run `flash check {}`.",
+             Fix that line and run `alix check {}`.",
             path.display(),
             path.display()
         ),
@@ -2034,10 +2034,10 @@ fn exam_cmd(args: ExamArgs) -> Result<()> {
 
     // A trace's verification is its own predict-verify walk + compression, not
     // the source-wide AI exam; the generic exam refuses it (its `% source:` is a
-    // locator base, not an exam corpus). Point the user at `flash trace`.
+    // locator base, not an exam corpus). Point the user at `alix trace`.
     if deck.is_trace() {
         bail!(
-            "{} is a trace (it declares a `% trace:`) — walk it with `flash trace`, \
+            "{} is a trace (it declares a `% trace:`) — walk it with `alix trace`, \
              not the AI exam",
             deck.subject
         );
@@ -2053,14 +2053,14 @@ fn exam_cmd(args: ExamArgs) -> Result<()> {
     // until its prerequisites are mastered (pass their exams first). It need NOT
     // be drilled, though — you may test out by sitting the exam early; passing
     // masters it and unlocks its dependents.
-    if flash::deck::is_locked(&deck, config.decks_dir().as_deref(), &store) {
+    if alix::deck::is_locked(&deck, config.decks_dir().as_deref(), &store) {
         bail!(
             "{}'s prerequisites aren't finished yet — pass their exams first, then sit this one",
             deck.subject
         );
     }
     if !std::io::stdin().is_terminal() {
-        bail!("`flash exam` needs a terminal");
+        bail!("`alix exam` needs a terminal");
     }
 
     // Grading strictness: CLI flag > the deck's `% strictness:` > the `[exam]`
@@ -2073,7 +2073,7 @@ fn exam_cmd(args: ExamArgs) -> Result<()> {
     tui::ExamApp::new(deck, strictness, exam_cfg, config.ask, store, decks_dir).run()
 }
 
-// ANSI styling for the linear `flash trace` flow (it requires a terminal).
+// ANSI styling for the linear `alix trace` flow (it requires a terminal).
 const BOLD: &str = "\x1b[1m";
 const DIM: &str = "\x1b[2m";
 const RESET: &str = "\x1b[0m";
@@ -2113,14 +2113,14 @@ fn trace_cmd(args: TraceArgs) -> Result<()> {
         return trace_serve(trace, scheduler, store, &args, &config);
     }
     if !std::io::stdin().is_terminal() {
-        bail!("`flash trace` needs a terminal");
+        bail!("`alix trace` needs a terminal");
     }
     let mut store = store;
     let grade = args.grade.then_some(&config);
     run_walk(trace, scheduler, &mut store, grade)
 }
 
-/// `flash trace --serve`: walk a trace in the browser. Mirrors the terminal
+/// `alix trace --serve`: walk a trace in the browser. Mirrors the terminal
 /// walk (predict → reveal → grade → compress); `--grade` enables live Claude
 /// grading. One deck, one walk — no deck-selection screen.
 fn trace_serve(
@@ -2138,8 +2138,8 @@ fn trace_serve(
 }
 
 /// Runs a trace walk in the terminal — predict → reveal → grade each checkpoint,
-/// then compress — scheduling each checkpoint in `store`. Shared by `flash trace`
-/// and `flash explore --walk`.
+/// then compress — scheduling each checkpoint in `store`. Shared by `alix trace`
+/// and `alix explore --walk`.
 fn run_walk(
     trace: Trace,
     scheduler: SchedulerKind,
@@ -2200,7 +2200,7 @@ fn run_walk(
                 let delta = match grade {
                     Some(config) => {
                         eprint!("{DIM}  grading…{RESET}");
-                        match flash::trace::grade_prediction(
+                        match alix::trace::grade_prediction(
                             &checkpoint,
                             &last_prediction,
                             &config.ask,
@@ -2245,7 +2245,7 @@ fn run_walk(
     Ok(())
 }
 
-/// Discovers the path with Claude (`flash trace --build`) and writes the
+/// Discovers the path with Claude (`alix trace --build`) and writes the
 /// checkpoints back into the deck file, keeping its `% trace:`/`% source:`
 /// header.
 fn trace_build(args: &TraceArgs, deck: &Deck) -> Result<()> {
@@ -2269,8 +2269,8 @@ fn trace_build(args: &TraceArgs, deck: &Deck) -> Result<()> {
         "Tracing a path through {source} (exploring the source — this can take a \
          few minutes)…"
     );
-    let cards = flash::trace::build(deck, &config.trace, &config.ask)?;
-    flash::deck::set_trace_checkpoints(&args.deck, &cards)?;
+    let cards = alix::trace::build(deck, &config.trace, &config.ask)?;
+    alix::deck::set_trace_checkpoints(&args.deck, &cards)?;
 
     let n = parser::parse_str(&deck.subject, &cards)
         .map(|c| c.len())
@@ -2278,7 +2278,7 @@ fn trace_build(args: &TraceArgs, deck: &Deck) -> Result<()> {
     let path = args.deck.display();
     println!(
         "Wrote {n} checkpoints to {path}. Review them and their `% at:` locators, \
-         then walk it:  flash trace {path}"
+         then walk it:  alix trace {path}"
     );
     Ok(())
 }
@@ -2294,18 +2294,18 @@ fn trace_suggest(args: &TraceArgs) -> Result<()> {
         "Reconning {source} for traces worth tracing (one exploration pass — this \
          can take a minute)…"
     );
-    let menu = flash::trace::suggest(&source, &config.trace, &config.ask)?;
+    let menu = alix::trace::suggest(&source, &config.trace, &config.ask)?;
     println!("{menu}");
     println!(
         "\n{DIM}Paste a suggestion into a new deck (its `% trace:` + `% source:`), \
-         then:  flash trace --build <deck>{RESET}"
+         then:  alix trace --build <deck>{RESET}"
     );
     Ok(())
 }
 
-/// `flash explore`: explore a source and print an ordered learning plan toward a
+/// `alix explore`: explore a source and print an ordered learning plan toward a
 /// goal — the decks and traces worth authoring, dependency-ordered. Read-only
-/// exploration; writes nothing (the first slice of `flash explore`).
+/// exploration; writes nothing (the first slice of `alix explore`).
 fn explore_cmd(args: ExploreArgs) -> Result<()> {
     let config = Config::load(args.config.as_deref())?;
     let source = args.source.to_string_lossy();
@@ -2327,9 +2327,9 @@ fn explore_cmd(args: ExploreArgs) -> Result<()> {
              + fill in one session — this can take a few minutes)…"
         );
         let (plan, filled) =
-            flash::explore::explore_and_fill(&source, goal, &config.trace, &config.ask)?;
+            alix::explore::explore_and_fill(&source, goal, &config.trace, &config.ask)?;
         println!("{plan}");
-        let report = flash::explore::materialize(
+        let report = alix::explore::materialize(
             &plan,
             dir,
             goal,
@@ -2351,7 +2351,7 @@ fn explore_cmd(args: ExploreArgs) -> Result<()> {
         );
         // Freeze each cited deck's source into the workspace's `assets/` so its
         // locators never drift and the workspace is self-contained.
-        match flash::explore::snapshot_workspace(&report.dir) {
+        match alix::explore::snapshot_workspace(&report.dir) {
             Ok((decks, files)) if decks > 0 => println!(
                 "{DIM}Froze {files} excerpt(s) from {decks} deck(s) into \
                  {}/assets — the citations won't drift.{RESET}",
@@ -2361,8 +2361,8 @@ fn explore_cmd(args: ExploreArgs) -> Result<()> {
             Err(e) => eprintln!("warning: could not snapshot the source: {e:#}"),
         }
         println!(
-            "{DIM}Walk a trace:  flash trace {}/<file>   ·   review the set:  \
-             flash review {}{RESET}",
+            "{DIM}Walk a trace:  alix trace {}/<file>   ·   review the set:  \
+             alix review {}{RESET}",
             report.dir.display(),
             report.dir.display(),
         );
@@ -2373,10 +2373,10 @@ fn explore_cmd(args: ExploreArgs) -> Result<()> {
         "Exploring {source} for a learning plan toward \"{goal}\" (one pass — this \
          can take a minute)…"
     );
-    let plan = flash::explore::explore(&source, goal, &config.trace, &config.ask)?;
+    let plan = alix::explore::explore(&source, goal, &config.trace, &config.ask)?;
     println!("{plan}");
     if let Some(dir) = &args.into {
-        let report = flash::explore::materialize(
+        let report = alix::explore::materialize(
             &plan,
             dir,
             goal,
@@ -2388,38 +2388,38 @@ fn explore_cmd(args: ExploreArgs) -> Result<()> {
         )?;
         let total = report.traces + report.decks;
         println!(
-            "\n{BOLD}Wrote {total} files{RESET} to {} — {} traces, {} decks, + flash.toml.",
+            "\n{BOLD}Wrote {total} files{RESET} to {} — {} traces, {} decks, + alix.toml.",
             report.dir.display(),
             report.traces,
             report.decks,
         );
         println!(
-            "{DIM}Build a trace:  flash trace --build {}/<file>   ·   review the set:  \
-             flash review {}{RESET}",
+            "{DIM}Build a trace:  alix trace --build {}/<file>   ·   review the set:  \
+             alix review {}{RESET}",
             report.dir.display(),
             report.dir.display(),
         );
     } else {
         println!(
-            "\n{DIM}Each item is a deck or trace to author next — `flash trace --build` \
-             a trace, write a deck by hand or with `flash generate`.{RESET}"
+            "\n{DIM}Each item is a deck or trace to author next — `alix trace --build` \
+             a trace, write a deck by hand or with `alix generate`.{RESET}"
         );
     }
     Ok(())
 }
 
-/// `flash explore --walk`: build an explore walk over a source's shape and walk
+/// `alix explore --walk`: build an explore walk over a source's shape and walk
 /// it immediately. Writes the trace to a file (default `explore.txt`) with an
 /// absolute `% source:` so it re-walks from anywhere, then runs the shared walk.
 fn explore_walk(args: &ExploreArgs, config: &Config, source: &str, goal: &str) -> Result<()> {
     if !std::io::stdin().is_terminal() {
-        bail!("`flash explore --walk` needs a terminal to walk");
+        bail!("`alix explore --walk` needs a terminal to walk");
     }
     eprintln!(
         "Exploring {source} to build an explore walk (one pass — this can take a \
          minute)…"
     );
-    let checkpoints = flash::explore::walk(source, goal, &config.trace, &config.ask)?;
+    let checkpoints = alix::explore::walk(source, goal, &config.trace, &config.ask)?;
 
     // Wrap the checkpoints in a trace deck with an absolute `% source:` root so
     // the saved walk reads the right files from anywhere.
@@ -2437,7 +2437,7 @@ fn explore_walk(args: &ExploreArgs, config: &Config, source: &str, goal: &str) -
     std::fs::write(&out, &deck_text).with_context(|| format!("cannot write {}", out.display()))?;
     println!(
         "{DIM}Wrote the explore walk to {} — re-walk it any time with \
-         `flash trace {}`.{RESET}\n",
+         `alix trace {}`.{RESET}\n",
         out.display(),
         out.display()
     );
@@ -2449,28 +2449,25 @@ fn explore_walk(args: &ExploreArgs, config: &Config, source: &str, goal: &str) -
     run_walk(trace, scheduler, &mut store, None)
 }
 
-/// `flash workspace <dir>`: open a workspace into its member picker. Pick a fact
+/// `alix workspace <dir>`: open a workspace into its member picker. Pick a fact
 /// deck → review it; pick a trace deck → walk it; back to the picker when done,
-/// until you quit. Unlike `flash review <dir>`, which flattens the whole
+/// until you quit. Unlike `alix review <dir>`, which flattens the whole
 /// workspace into one review (trace decks degrade to flat cards), this routes
 /// each member to the right experience.
 fn workspace_cmd(args: WorkspaceArgs) -> Result<()> {
     if !std::io::stdin().is_terminal() {
-        bail!("`flash workspace` needs a terminal");
+        bail!("`alix workspace` needs a terminal");
     }
     if !workspace::is_workspace(&args.dir) {
         if workspace::has_decks(&args.dir) {
             bail!(
-                "{} is a folder of decks, not a workspace — add a `flash.toml` to \
-                 make it one, or `flash review {}` to review its decks.",
+                "{} is a folder of decks, not a workspace — add an `alix.toml` to \
+                 make it one, or `alix review {}` to review its decks.",
                 args.dir.display(),
                 args.dir.display(),
             );
         }
-        bail!(
-            "{} is not a workspace (no `flash.toml`)",
-            args.dir.display()
-        );
+        bail!("{} is not a workspace (no `alix.toml`)", args.dir.display());
     }
     loop {
         // The picker reads the workspace's own store; review / walk re-resolve it
@@ -2550,7 +2547,7 @@ fn print_givens(givens: &[String]) {
 }
 
 /// Renders an excerpt (one contiguous span) with a line-number gutter.
-fn print_excerpt(excerpt: &flash::trace::Excerpt) {
+fn print_excerpt(excerpt: &alix::trace::Excerpt) {
     println!("{DIM}  {}{RESET}", excerpt.path.display());
     for (no, text) in &excerpt.lines {
         println!("  {DIM}{no:>5}{RESET}  {text}");
@@ -2598,7 +2595,7 @@ fn read_line(prompt: &str) -> Result<Option<String>> {
 
 /// Prompts for the self-judged delta, re-asking until it gets `g`/`p`/`m`.
 /// Returns `None` to quit (a leading `q`, or EOF).
-fn read_delta() -> Result<Option<flash::trace::Delta>> {
+fn read_delta() -> Result<Option<alix::trace::Delta>> {
     loop {
         let prompt = format!("{DIM}  gap?  [g]ot · [p]artial · [m]issed  (q to quit) >{RESET} ");
         let Some(answer) = read_line(&prompt)? else {
@@ -2607,7 +2604,7 @@ fn read_delta() -> Result<Option<flash::trace::Delta>> {
         match answer.trim().chars().next() {
             Some('q') | Some('Q') => return Ok(None),
             Some(c) => {
-                if let Some(delta) = flash::trace::Delta::from_key(c) {
+                if let Some(delta) = alix::trace::Delta::from_key(c) {
                     return Ok(Some(delta));
                 }
             }
@@ -2619,7 +2616,7 @@ fn read_delta() -> Result<Option<flash::trace::Delta>> {
 
 fn deps_cmd(deck_path: PathBuf) -> Result<()> {
     if !std::io::stdout().is_terminal() {
-        bail!("`flash deps` needs a terminal");
+        bail!("`alix deps` needs a terminal");
     }
     let config = Config::load(None)?;
     let decks_dir = config
@@ -2641,7 +2638,7 @@ fn deps_cmd(deck_path: PathBuf) -> Result<()> {
             }
         }
     }
-    flash::deck::set_requires(&deck_path, &names)?;
+    alix::deck::set_requires(&deck_path, &names)?;
     if names.is_empty() {
         println!("Cleared all prerequisites of {}.", deck.subject);
     } else {
@@ -2797,7 +2794,7 @@ fn config_cmd(init: bool) -> Result<()> {
     } else {
         println!(
             "no config file at {} — using defaults; create one with \
-             `flash config --init`",
+             `alix config --init`",
             path.display()
         );
     }
@@ -2867,7 +2864,7 @@ mod tests {
         let mk_ws = |name: &str| {
             let ws = dir.path().join(name);
             std::fs::create_dir(&ws).unwrap();
-            std::fs::write(ws.join("flash.toml"), "title = \"W\"\n").unwrap();
+            std::fs::write(ws.join("alix.toml"), "title = \"W\"\n").unwrap();
             std::fs::write(ws.join("a.txt"), "# a\n\t1\n").unwrap();
             std::fs::write(ws.join("b.txt"), "# b\n\t1\n").unwrap();
             ws
@@ -2961,14 +2958,14 @@ mod tests {
         let ws = dir.path().join("eng");
         std::fs::create_dir(&ws).unwrap();
         std::fs::write(ws.join("a.txt"), "# a\n\tb\n").unwrap();
-        std::fs::write(ws.join("flash.toml"), "[defaults]\ndirection = \"both\"\n").unwrap();
+        std::fs::write(ws.join("alix.toml"), "[defaults]\ndirection = \"both\"\n").unwrap();
 
         // A member picked as a bare file (a subset selection) still inherits the
         // workspace's directives.
         let exp = expand_workspaces(&[ws.join("a.txt")]).unwrap();
         assert_eq!(1, exp.decks.len());
         assert_eq!(
-            Some(flash::card::Direction::Both),
+            Some(alix::card::Direction::Both),
             exp.defaults.get("a.txt").unwrap().direction
         );
         assert!(exp.label.is_none()); // not a single-workspace request

@@ -1,5 +1,5 @@
 //! User configuration, loaded from a TOML file
-//! (`~/.config/flash/config.toml` on Linux).
+//! (`~/.config/alix/config.toml` on Linux).
 //!
 //! Currently this configures key bindings. Every action takes a list of
 //! keys; the first one is shown in the footer of the TUI. A key is written
@@ -185,7 +185,7 @@ impl Default for PickerKeys {
     }
 }
 
-/// Key bindings for the read-only browser (`flash browse`), configured in the
+/// Key bindings for the read-only browser (`alix browse`), configured in the
 /// `[browse]` section. Jumping to the first/last card stays fixed at
 /// `g`/`G`/Home/End — letter bindings are case-insensitive, so `g` and `G`
 /// cannot be told apart — and the arrow keys always work for next/previous.
@@ -243,7 +243,7 @@ pub struct AskConfig {
     /// answer (Read/Glob/Grep, working directory at the deck's `% source:`
     /// project root) instead of answering from memory. Off by default because it
     /// grants the served tutor file-read access — only enable it on a machine and
-    /// network you trust (especially with `flash serve --lan`).
+    /// network you trust (especially with `alix serve --lan`).
     pub source_access: bool,
 }
 
@@ -262,7 +262,7 @@ impl Default for AskConfig {
     }
 }
 
-/// Settings for AI deck generation (`flash deck`, the `[generate]` section).
+/// Settings for AI deck generation (`alix deck`, the `[generate]` section).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GenerateDeckConfig {
     /// Model passed as `--model`; `None` falls back to the `[ask]` model, then
@@ -299,7 +299,7 @@ impl Default for GenerateDeckConfig {
 
 /// How strictly the AI exam grades a typed answer against a question's rubric
 /// points. This is a per-deck choice (set with `% strictness:`, the `[exam]`
-/// default, or `flash exam --strictness`) because some material demands
+/// default, or `alix exam --strictness`) because some material demands
 /// recalling everything while other material is about grasping the idea.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, ValueEnum)]
 pub enum Strictness {
@@ -317,7 +317,7 @@ pub enum Strictness {
     Lenient,
 }
 
-/// Settings for the AI exam (`flash exam`, the `[exam]` section). Like
+/// Settings for the AI exam (`alix exam`, the `[exam]` section). Like
 /// generate, it reuses the `[ask]` command, permission mode and tool allowlist
 /// (WebFetch reads a `% source:` URL). The exam grades open understanding
 /// questions generated from the deck's `% source:`, never the cards.
@@ -354,7 +354,7 @@ impl Default for ExamConfig {
     }
 }
 
-/// Settings for trace building (`flash trace --build`, the `[trace]` section).
+/// Settings for trace building (`alix trace --build`, the `[trace]` section).
 /// Building explores the deck's `% source:` to discover the path, so — unlike
 /// the other AI calls — it runs the CLI with **read-only** file tools (`Read`,
 /// `Glob`, `Grep`, plus `WebFetch` for a URL source) and the source root as the
@@ -390,7 +390,7 @@ impl Default for TraceConfig {
     }
 }
 
-/// Settings for the local web frontend (`flash serve`, the `[serve]` section).
+/// Settings for the local web frontend (`alix serve`, the `[serve]` section).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ServeConfig {
     /// Default port to listen on (overridden by `--port`).
@@ -410,7 +410,7 @@ pub struct Config {
     pub keys: Bindings,
     /// Navigation keys for the deck picker.
     pub picker: PickerKeys,
-    /// Key bindings for `flash browse`.
+    /// Key bindings for `alix browse`.
     pub browse: BrowseBindings,
     pub ask: AskConfig,
     /// AI deck generation settings.
@@ -705,10 +705,9 @@ impl Config {
 }
 
 /// The default location of the config file
-/// (`~/.config/flash/config.toml` on Linux).
+/// (`~/.config/alix/config.toml` on Linux).
 pub fn default_config_path() -> Option<PathBuf> {
-    directories::ProjectDirs::from("", "", "flash")
-        .map(|dirs| dirs.config_dir().join("config.toml"))
+    directories::ProjectDirs::from("", "", "alix").map(|dirs| dirs.config_dir().join("config.toml"))
 }
 
 /// The default decks directory (`~/decks`).
@@ -732,7 +731,7 @@ fn expand_tilde(path: &str) -> PathBuf {
 /// future versions). Section headers stay active so a single line can be
 /// uncommented beneath one.
 pub fn default_config_toml() -> &'static str {
-    r#"# flash configuration.
+    r#"# alix configuration.
 #
 # Every option below is shown commented out at its default value, as a
 # reference. Uncomment a line and edit it to override that default; lines you
@@ -749,7 +748,7 @@ pub fn default_config_toml() -> &'static str {
 # character bindings are ignored so they cannot shadow text input; use
 # ctrl-/special keys for hint, skip and quit.
 
-# Directory the startup picker lists decks from (when `flash` is launched
+# Directory the startup picker lists decks from (when `alix` is launched
 # without deck arguments). A leading ~ is expanded. Defaults to ~/decks.
 # decks_dir = "~/decks"
 
@@ -780,7 +779,7 @@ pub fn default_config_toml() -> &'static str {
 # filter = ["/", "ctrl-f"]      # start filtering
 # mastered = ["m"]              # open the Mastered window
 
-# Key bindings for `flash browse` (the read-only reader). Jumping to the first
+# Key bindings for `alix browse` (the read-only reader). Jumping to the first
 # and last card is fixed to g / G / Home / End, and the arrow keys always
 # move next/previous; these three are configurable:
 [browse]
@@ -810,7 +809,7 @@ pub fn default_config_toml() -> &'static str {
 # enable on a machine and network you trust.
 # source_access = false
 
-# AI deck generation (`flash deck <source>`). Reuses the [ask] command,
+# AI deck generation (`alix deck <source>`). Reuses the [ask] command,
 # permission mode and tool allowlist (WebFetch reads the page).
 [generate]
 # model = ""                    # --model override; empty = use [ask] / CLI default
@@ -820,7 +819,7 @@ pub fn default_config_toml() -> &'static str {
 # prompt = ""                   # full prompt override; may use {url} and {max_cards}
 # review = false                # run a second pass to drop redundant cards (--review)
 
-# AI exam (`flash exam <deck>`). Generates open understanding questions from
+# AI exam (`alix exam <deck>`). Generates open understanding questions from
 # the deck's `% source:` and grades typed answers; passing marks the deck
 # "mastered" and unlocks its dependents. Reuses the [ask] command, permission
 # mode and tool allowlist (WebFetch reads a source URL).
@@ -832,7 +831,7 @@ pub fn default_config_toml() -> &'static str {
 # strictness = "balanced"       # answer grading: strict | balanced | lenient
 # extra = ""                    # extra guidance appended to question generation
 
-# Trace building (`flash trace --build <deck>`). Explores the deck's `% source:`
+# Trace building (`alix trace --build <deck>`). Explores the deck's `% source:`
 # to discover the path and writes the checkpoints back. Reuses the [ask] command,
 # but runs with read-only file tools (Read/Glob/Grep, + WebFetch for a URL
 # source) and the source root as the working directory — never a write/shell tool.
@@ -842,10 +841,10 @@ pub fn default_config_toml() -> &'static str {
 # timeout_secs = 600            # exploring a source is the slowest call
 # extra = ""                    # extra guidance appended to the build prompt
 
-# Local web frontend (`flash serve`). Binds to localhost by default; `--lan`
+# Local web frontend (`alix serve`). Binds to localhost by default; `--lan`
 # exposes it to the network and `--port` overrides the port set here.
 [serve]
-# port = 7777                   # default port for `flash serve`
+# port = 7777                   # default port for `alix serve`
 "#
 }
 

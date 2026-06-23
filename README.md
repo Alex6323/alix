@@ -1,11 +1,11 @@
-# flash
+# alix
 
 An **AI-augmented spaced-repetition learning tool** for the terminal and the
 web. At its core it's a fast, plain-text flashcard trainer — Leitner and SM-2
 scheduling, several answer modes, cloze and dual-direction cards, images, and
 deck dependencies. What sets it apart is the **Claude integration**: an
 *ask-Claude tutor* on any card, *AI deck generation* from a web page,
-*understanding cards*, and an **AI exam** (`flash exam`) that verifies you
+*understanding cards*, and an **AI exam** (`alix exam`) that verifies you
 actually grasped the material and gates your progress on passing it — so you're
 not just memorizing, you're being checked. Decks stay simple plain-text files
 you own, reviewable in a ratatui terminal UI or a local web app.
@@ -20,35 +20,35 @@ CLI, so they need it **installed and logged in** (which in turn needs a Claude
 subscription or API access). Install the CLI and run `claude` once to
 authenticate. The features that require it:
 
-- `flash deck` — generate a facts deck from a URL or a local file/directory;
-- `flash exam` — the AI exam;
-- `flash trace --build` / `--suggest` / `--grade` — discover, suggest, and grade
+- `alix deck` — generate a facts deck from a URL or a local file/directory;
+- `alix exam` — the AI exam;
+- `alix trace --build` / `--suggest` / `--grade` — discover, suggest, and grade
   traces;
-- `flash explore` — goal-driven learning plans;
+- `alix explore` — goal-driven learning plans;
 - ask-Claude (`?`) — the in-session tutor, in both the TUI and the web frontend.
 
-flash invokes the CLI headless (`claude -p`) under a locked-down permission
+alix invokes the CLI headless (`claude -p`) under a locked-down permission
 model (see [Ask Claude](#ask-claude-about-a-card)); the command, model and
 timeouts are configurable per feature in the [config file](#configuration).
 
 ## Learn a codebase (the main workflow)
 
-flash's flagship use: point it at a repo (or any source) and it builds a
+alix's flagship use: point it at a repo (or any source) and it builds a
 self-contained **learning workspace** — facts decks and predict-and-verify
-[traces](#traces-flash-trace), dependency-ordered — that you then study with
-spaced repetition, the AI tutor, and the [exam](#the-ai-exam-flash-exam). Three
+[traces](#traces-alix-trace), dependency-ordered — that you then study with
+spaced repetition, the AI tutor, and the [exam](#the-ai-exam-alix-exam). Three
 steps:
 
 ```sh
 # 1. Preview the plan (read-only): the decks and traces worth authoring.
-flash explore ./my-crate --goal "how the request pipeline works"
+alix explore ./my-crate --goal "how the request pipeline works"
 
 # 2. Build the workspace in one pass: stubs filled, sources frozen into assets/.
-flash explore ./my-crate --goal "how the request pipeline works" \
+alix explore ./my-crate --goal "how the request pipeline works" \
   --into ~/decks/request-pipeline --title "Request pipeline" --build
 
 # 3. Study it — in the terminal, or the browser with --serve.
-flash workspace ~/decks/request-pipeline    # or: flash --serve, then open it
+alix workspace ~/decks/request-pipeline    # or: alix --serve, then open it
 ```
 
 `--goal` scopes what gets authored (and becomes the workspace's description),
@@ -57,37 +57,37 @@ coherent pass — freezing the cited source into the
 workspace so its line locators never drift. Inside the workspace a **facts deck reviews** and a
 **trace walks** (predict → reveal → judge the gap), unlocking in dependency
 order, with progress kept in the workspace's own store. See
-[Exploring a source](#exploring-a-source--flash-explore) and
+[Exploring a source](#exploring-a-source--alix-explore) and
 [Workspaces](#workspaces) for the full details. (The AI steps need the Claude
 CLI — see [Requirements](#requirements).)
 
 ## Usage
 
-The binary is called `flash`:
+The binary is called `alix`:
 
 ```sh
-flash                            # pick decks interactively (recent + ~/decks)
-flash mydeck.txt                 # review due cards (flip mode, Leitner)
-flash --mode typing mydeck.txt   # type the answer character by character
-flash --mode fuzzy mydeck.txt    # whole-line input, small typos tolerated
-flash --mode choice mydeck.txt   # multiple choice (distractors from the deck)
-flash --mode line mydeck.txt     # reveal the answer one line at a time (lyrics)
-flash --scheduler sm2 mydeck.txt # SM-2 intervals instead of Leitner
-flash --cram mydeck.txt          # ignore cooldowns, review everything
-flash browse mydeck.txt          # read through cards, no grading or scheduling
-flash deck <url-or-path>         # generate a facts deck from a web page or a file/dir
-flash import cards.tsv            # import an Anki TSV (front<TAB>back) into a deck
-flash exam mydeck.txt            # AI exam against the deck's % source: (gates unlocks)
-flash trace mytrace.txt          # walk a predict-and-verify path through a % source:
-flash trace --build mytrace.txt  # let Claude discover the path (writes checkpoints back)
-flash trace --suggest .          # recon a source for candidate traces worth authoring
-flash explore .                  # an ordered learning plan (decks + traces) toward a goal
-flash explore --walk .           # walk an explore tour of the source's shape
-flash deps mydeck.txt            # edit a deck's prerequisites (checkbox picker)
-flash stats mydeck.txt           # progress overview
-flash list mydeck.txt            # every card with stage and due time
-flash check mydeck.txt           # lint a deck (syntax, duplicates, trace locators)
-flash reset mydeck.txt           # clear stored progress (also --card / --all)
+alix                            # pick decks interactively (recent + ~/decks)
+alix mydeck.txt                 # review due cards (flip mode, Leitner)
+alix --mode typing mydeck.txt   # type the answer character by character
+alix --mode fuzzy mydeck.txt    # whole-line input, small typos tolerated
+alix --mode choice mydeck.txt   # multiple choice (distractors from the deck)
+alix --mode line mydeck.txt     # reveal the answer one line at a time (lyrics)
+alix --scheduler sm2 mydeck.txt # SM-2 intervals instead of Leitner
+alix --cram mydeck.txt          # ignore cooldowns, review everything
+alix browse mydeck.txt          # read through cards, no grading or scheduling
+alix deck <url-or-path>         # generate a facts deck from a web page or a file/dir
+alix import cards.tsv            # import an Anki TSV (front<TAB>back) into a deck
+alix exam mydeck.txt            # AI exam against the deck's % source: (gates unlocks)
+alix trace mytrace.txt          # walk a predict-and-verify path through a % source:
+alix trace --build mytrace.txt  # let Claude discover the path (writes checkpoints back)
+alix trace --suggest .          # recon a source for candidate traces worth authoring
+alix explore .                  # an ordered learning plan (decks + traces) toward a goal
+alix explore --walk .           # walk an explore tour of the source's shape
+alix deps mydeck.txt            # edit a deck's prerequisites (checkbox picker)
+alix stats mydeck.txt           # progress overview
+alix list mydeck.txt            # every card with stage and due time
+alix check mydeck.txt           # lint a deck (syntax, duplicates, trace locators)
+alix reset mydeck.txt           # clear stored progress (also --card / --all)
 ```
 
 Several decks can be given at once; their due cards are merged into one
@@ -95,7 +95,7 @@ session. Useful flags for `review`: `--new N` (max unseen cards to introduce,
 default 10), `--limit N` (cap session size), `--max-typos N` (fuzzy tolerance
 per line, default 2).
 
-Run `flash` with no deck arguments (as the desktop launcher does) to open the
+Run `alix` with no deck arguments (as the desktop launcher does) to open the
 **deck picker**, grouped into three sections: **[Workspaces](#workspaces)**
 (each showing when it last made progress) · **Recent** (loose decks you reviewed
 lately) · **Folders** (plain decks folders). A deck that lives inside a workspace
@@ -116,7 +116,7 @@ now is dimmed and `Enter` on it does nothing: 🔒 a
 with nothing due (all on cooldown — `--cram` reviews it anyway); a mastered deck
 reads `mastered 🎉`. `Enter` on a **Workspace** or **Folder** opens it (drills in) — `Esc`
 or `Backspace` steps back out to the list, all within one screen; a
-[trace](#traces-flash-trace) opened from the picker **walks** instead of being
+[trace](#traces-alix-trace) opened from the picker **walks** instead of being
 reviewed as cards. When you finish a deck/walk/exam launched from a workspace, you
 land **back in that workspace** to pick the next one.
 
@@ -166,14 +166,14 @@ card's front. Follow a link for the full explanation.
 | `% frontend:` | deck · card | [Restrict](#deck-directives) a card/deck to `any`, `tui`, or `web`. |
 | `% img:` / `% img-back:` | card | [Image](#images--img--img-back) on the front / back (web frontend). |
 | `% img-dir:` | deck | [Base directory](#images--img--img-back) that image filenames resolve against. |
-| `% strictness:` | deck | [Exam grading rigor](#the-ai-exam-flash-exam): `strict`, `balanced`, or `lenient`. |
+| `% strictness:` | deck | [Exam grading rigor](#the-ai-exam-alix-exam): `strict`, `balanced`, or `lenient`. |
 | `% requires:` | deck | [Prerequisite deck](#deck-dependencies) that gates unlocks (repeatable). |
 | `% link:` | deck | [ask-Claude reference](#ask-claude-about-a-card) URL — **tutor only** (repeatable). |
-| `% source:` | deck | [Exam ground truth](#the-ai-exam-flash-exam) — a URL or file (repeatable). For a [trace](#traces-flash-trace), the source the path runs through (the frozen `assets/` copy in an explored workspace). Also a tutor reference. |
-| `% trace:` | deck | What a [trace](#traces-flash-trace) walks — a path description ("how X becomes Y"); its presence makes the deck a trace. |
-| `% at:` | card | A locator into the `% source:` (`file:lines`, or just `lines` for a single-file source): a [trace checkpoint's](#traces-flash-trace) reveal target, or a [fact card's source citation](#source-citations--at-on-a-fact-card) shown on reveal. |
-| `% given:` | card | A [trace checkpoint's](#traces-flash-trace) "given" (repeatable) — an off-screen symbol the question leans on, as `name — meaning`; shown as a list under the question. |
-| `% title:` | deck | [Display name](#workspaces) shown instead of the file name (a workspace sets `title` in its `flash.toml`). |
+| `% source:` | deck | [Exam ground truth](#the-ai-exam-alix-exam) — a URL or file (repeatable). For a [trace](#traces-alix-trace), the source the path runs through (the frozen `assets/` copy in an explored workspace). Also a tutor reference. |
+| `% trace:` | deck | What a [trace](#traces-alix-trace) walks — a path description ("how X becomes Y"); its presence makes the deck a trace. |
+| `% at:` | card | A locator into the `% source:` (`file:lines`, or just `lines` for a single-file source): a [trace checkpoint's](#traces-alix-trace) reveal target, or a [fact card's source citation](#source-citations--at-on-a-fact-card) shown on reveal. |
+| `% given:` | card | A [trace checkpoint's](#traces-alix-trace) "given" (repeatable) — an off-screen symbol the question leans on, as `name — meaning`; shown as a list under the question. |
+| `% title:` | deck | [Display name](#workspaces) shown instead of the file name (a workspace sets `title` in its `alix.toml`). |
 
 **`% link:` vs `% source:`** — both point at the material a deck is about, but
 they are not interchangeable. `% source:` is the **exam's ground truth**:
@@ -215,13 +215,13 @@ command line:
   the unlock bar. Default: the deck unlocks only when every card retires at the
   top stage.
 - `strictness` — how strictly the AI exam grades answers (`strict`, `balanced`,
-  `lenient`); only affects `flash exam` (see [the AI exam](#the-ai-exam-flash-exam)).
+  `lenient`); only affects `alix exam` (see [the AI exam](#the-ai-exam-alix-exam)).
 
 These are ordinary `%` comments, so they don't affect parsing and card hashes
 are unaffected. An explicit CLI flag always wins over a directive, which wins over
 the built-in default. Directives are read only from the deck(s) you ask to
 review — never from prerequisites pulled in via `% requires:` (see below). When
-several requested decks disagree on a setting, the default is used. `flash check
+several requested decks disagree on a setting, the default is used. `alix check
 <deck>` prints a deck's directives.
 
 **Per-card mode.** A `% mode:` directive placed *after* a card's front (and
@@ -256,7 +256,7 @@ your session into line mode. Dependencies apply to `review` only — `browse` an
 `stats` operate on exactly the decks you name.
 
 You can edit a deck's prerequisites without hand-typing (and without typos)
-with `flash deps <deck>` (alias `flash require`): it opens the deck picker over your
+with `alix deps <deck>` (alias `alix require`): it opens the deck picker over your
 decks directory, pre-ticked to the current prerequisites. `Space` toggles,
 `Enter` saves (rewriting the `% requires:` lines), `Esc` cancels; unticking
 everything clears them. Since the lines are comments, editing dependencies
@@ -267,10 +267,10 @@ never affects card progress.
 Every deck has a **completion state**, derived from its cards' stages:
 *not started* (no card reviewed), *finished* (every card at the top stage), or
 *started* (in between). The deck picker (terminal and web) shows it on each row
-— `new`, `m/total` (cards at the top stage), or `done ✓` — and `flash stats`
+— `new`, `m/total` (cards at the top stage), or `done ✓` — and `alix stats`
 prints it too. A deck that declares a `% source:` adds one more state between
 drilled and finished — *exam due* (`exam due`, tinted) — because drilling alone
-no longer finishes it; see [the AI exam](#the-ai-exam-flash-exam).
+no longer finishes it; see [the AI exam](#the-ai-exam-alix-exam).
 
 Completion drives **unlocks**, with no extra syntax: a deck is **locked** while
 any of its `% requires:` prerequisites isn't finished, so finishing a foundation
@@ -283,7 +283,7 @@ finished deck later lapses below the top stage, its dependents lock again.
 
 A **workspace** is a folder of decks reviewed together with shared directives —
 ideal for a cluster like all your vocabulary decks. A folder becomes a workspace
-when you drop a **`flash.toml`** in it — a scoped version of the
+when you drop a **`alix.toml`** in it — a scoped version of the
 [config file](#configuration) — setting a `title`, an optional one-line
 `description`, an optional `source_access` override (whether the
 [grounded ask-tutor](#ask-claude-about-a-card) may read this workspace's source,
@@ -291,7 +291,7 @@ beating the global `[ask] source_access`), and a `[defaults]` table of directive
 shared by every deck:
 
 ```toml
-# ~/decks/english/flash.toml
+# ~/decks/english/alix.toml
 title = "English"
 description = "everyday conversational vocabulary"
 # source_access = true   # let the ask-tutor read this workspace's % source:
@@ -302,7 +302,7 @@ mode = "typing"
 ```
 
 ```
-flash review ~/decks/english/        # review every deck in the folder, together
+alix review ~/decks/english/        # review every deck in the folder, together
 ```
 
 The `[defaults]` keys are the deck directive names, and they fill in only what a
@@ -312,7 +312,7 @@ an individual deck can still override it with its own `% direction:`.
 
 **A workspace keeps its own progress.** Its decks track their stages in a
 `progress.json` *inside the workspace folder* (override the path with a
-`store = "..."` line in the `flash.toml`), separate from the global store every
+`store = "..."` line in the `alix.toml`), separate from the global store every
 loose deck shares. So a workspace is a **self-contained, portable unit** — its
 decks, its `assets/` (frozen trace excerpts), and its progress all live in one
 folder you can move or share, and its history stays isolated from everything
@@ -320,25 +320,25 @@ else. Decks *outside* a workspace keep using the global store; `--store <path>`
 overrides either.
 
 **Workspaces** and plain **Folders** appear in their own picker sections
-(terminal and web): a folder *with* a `flash.toml` shows under **Workspaces**, one
+(terminal and web): a folder *with* an `alix.toml` shows under **Workspaces**, one
 *without* as a plain **Folder**. Both open (drill in) to their
 members drawn as an **unlock dependency tree**: a deck nests under the
 `% requires:` prerequisite that gates it, foundations at the roots, and siblings
 ordered startable-first. Each row is badged `· trace ·` or `· deck ·`. The drill-in
 is a **single-launch list** (no checkboxes): `Enter` on a facts deck reviews it,
 `Enter` on a trace **walks** it. (Typing a filter flattens the tree to a plain
-search; `flash review <folder>` reviews the whole cluster merged.) A manifest-less
-folder is still reviewable (`flash review <folder>`), it just applies no shared
+search; `alix review <folder>` reviews the whole cluster merged.) A manifest-less
+folder is still reviewable (`alix review <folder>`), it just applies no shared
 directives.
 
-**`flash workspace <dir>`** opens a workspace straight into that same drill-in
+**`alix workspace <dir>`** opens a workspace straight into that same drill-in
 picker, routing each member to the right experience — a **facts deck** to a
-review, a **trace deck** to a [predict-verify walk](#traces-flash-trace) —
-returning you to the picker when done. (`flash review <dir>` instead flattens the
+review, a **trace deck** to a [predict-verify walk](#traces-alix-trace) —
+returning you to the picker when done. (`alix review <dir>` instead flattens the
 whole folder into one review, so trace decks get quizzed as flat cards.)
 
-**`% title:`** (on a deck) or **`title`** (in a workspace's `flash.toml`) gives a
-display name, shown in the picker, the session header, `flash list` and `flash
+**`% title:`** (on a deck) or **`title`** (in a workspace's `alix.toml`) gives a
+display name, shown in the picker, the session header, `alix list` and `alix
 stats` instead of the file name. It's display-only — you still refer to decks by
 file path on the command line — and never affects a card's identity.
 
@@ -407,9 +407,9 @@ absolute path is used as-is. One image per side.
 
 Images render in the **web frontend only** — the terminal can't draw them — so
 an image card is automatically *web-only* (as if it declared `% frontend: web`).
-In the terminal, `flash review` skips such cards with a note, and if a whole
+In the terminal, `alix review` skips such cards with a note, and if a whole
 deck is web-only it points you at `--serve`. Use `% frontend:` to force a card
-or deck to a frontend explicitly. `flash check` warns about a referenced image
+or deck to a frontend explicitly. `alix check` warns about a referenced image
 file that doesn't exist (it doesn't fail the check).
 
 ### Source citations (`% at:` on a fact card)
@@ -426,7 +426,7 @@ worded answer for the exact source lines:
     % at: src/string.rs:1-3
 ```
 
-The locator takes the same form a [trace checkpoint](#traces-flash-trace) uses —
+The locator takes the same form a [trace checkpoint](#traces-alix-trace) uses —
 `file:lines` (e.g. `src/string.rs:1-3`), or just `lines` when the `% source:` is
 a single file. On reveal a `</>` marker appears on the answer: in the web,
 **click the answer** (or press `s`) to swap it for the line-numbered excerpt, and
@@ -436,10 +436,10 @@ than a stale quote. `% at:` is a comment to the scheduler, so adding it never
 changes a card's identity or resets its progress.
 
 You can write `% at:` by hand, but the deck generator adds them for you:
-[`flash deck <local source>`](#generate-a-facts-deck--flash-deck) and
-[`flash explore --build`](#exploring-a-source--flash-explore) cite the lines each
-fact came from, and `flash check` warns about a citation that no longer resolves
-(a moved or shrunk file). In a workspace built with `flash explore --into
+[`alix deck <local source>`](#generate-a-facts-deck--alix-deck) and
+[`alix explore --build`](#exploring-a-source--alix-explore) cite the lines each
+fact came from, and `alix check` warns about a citation that no longer resolves
+(a moved or shrunk file). In a workspace built with `alix explore --into
 --build`, the cited excerpts are also **frozen** into `assets/` (like trace
 excerpts), so they never drift and the workspace travels without the upstream
 source.
@@ -480,13 +480,13 @@ covered them — for cards aimed at *understanding* rather than recall. Set it w
 checked: a self-graded mode can't verify your answer, so it doesn't pretend to
 (in the web frontend your typed answer is shown next to the points for honest
 comparison). It pairs with the ask-Claude helper, and is the day-to-day,
-self-graded tier below the [AI exam](#the-ai-exam-flash-exam).
+self-graded tier below the [AI exam](#the-ai-exam-alix-exam).
 
 To throw a card away, press the **remove** key (`Ctrl-X` by default) on it
 instead of grading — it is dropped from the session without being asked again
 (cloze siblings go too). The marked cards are deleted from their deck files,
 and their progress is pruned, when the session ends. The same key works in
-`flash browse`.
+`alix browse`.
 
 Schedulers:
 
@@ -499,7 +499,7 @@ Schedulers:
 
 ## Browse
 
-`flash browse <deck>...` is a walk through every card — front and back shown
+`alix browse <deck>...` is a walk through every card — front and back shown
 together, in file order — without grading or scheduling. It is for a first
 read-through of a new deck or just checking its contents, without affecting
 your schedule. Navigate with `l`/`h` (next/previous, vim-style — `n`/`p`, the
@@ -508,8 +508,8 @@ arrow keys, and `Space` also work), `g`/`G` (first/last, also Home/End), and
 on quit the marked cards are deleted from their deck files and their progress
 is pruned — the only thing browsing ever writes. The next/previous/remove/quit
 keys are configurable in the `[browse]` section of the config file (see below);
-first/last stay `g`/`G`. Run `flash browse` with no deck argument to choose
-decks from the same picker `flash` uses.
+first/last stay `g`/`G`. Run `alix browse` with no deck argument to choose
+decks from the same picker `alix` uses.
 
 ## Web frontend
 
@@ -520,11 +520,11 @@ a card you grade or remove in the browser shows up on the command line and vice
 versa.
 
 ```
-flash review rust.txt --serve              # open http://127.0.0.1:7777
-flash review rust.txt --serve --port 8080
-flash review rust.txt --serve --lan        # reachable from other devices on your network
-flash browse rust.txt --serve              # the browse view in the browser
-flash --serve                              # no decks -> pick them in the browser
+alix review rust.txt --serve              # open http://127.0.0.1:7777
+alix review rust.txt --serve --port 8080
+alix review rust.txt --serve --lan        # reachable from other devices on your network
+alix browse rust.txt --serve              # the browse view in the browser
+alix --serve                              # no decks -> pick them in the browser
 ```
 
 Run `--serve` **without** naming any decks and the browser opens a
@@ -532,7 +532,7 @@ deck-selection screen that mirrors the terminal [picker](#getting-started): the
 same three sections — **Workspaces** (each with its last-progress time) ·
 **Recent** loose decks · **Folders** — and the same **single-launch**, so you
 **click a deck to start it** (an exam-due deck sits its exam, and a
-[trace](#traces-flash-trace) **walks** — predict → verify — at `/walk`, with a
+[trace](#traces-alix-trace) **walks** — predict → verify — at `/walk`, with a
 **Back to decks** to return to the picker). Open a **Workspace** or **Folder** to
 drill into its **unlock dependency tree**, where each deck nests under the
 prerequisite that gates it. A deck you can't start is
@@ -584,7 +584,7 @@ files) and is told to check the real files before answering. It's off by default
 because it grants the tutor file-read access — only enable it on a machine and
 network you trust (especially with `--serve --lan`). A [workspace](#workspaces)
 can override it per-folder: put `source_access = true` (or `false`) in its
-`flash.toml` to decide for that crate alone, beating the global default. While
+`alix.toml` to decide for that crate alone, beating the global default. While
 Claude thinks, the session stays responsive; Esc returns exactly where you were.
 
 This works in the **web frontend** too (`--serve`): an "Ask" button (and the
@@ -610,7 +610,7 @@ consult when useful — fetched once, remembered for the rest of the run. These
 lines do not affect card hashes.
 
 Because the CLI runs headless (`-p`), it cannot show interactive permission
-prompts — an unanswerable prompt would hang the call. flash therefore
+prompts — an unanswerable prompt would hang the call. alix therefore
 runs it with `--permission-mode dontAsk` and an exclusive tool allowlist
 (`WebFetch`, `WebSearch` by default): the listed tools work without
 prompting, and every other tool is silently denied, so a malicious page
@@ -623,29 +623,29 @@ card's progress is untouched). Requires the `claude` CLI to be installed
 and logged in; the command, a `--model` override and the timeout are
 configurable in the `[ask]` section of the config file.
 
-## Generate a facts deck — `flash deck`
+## Generate a facts deck — `alix deck`
 
-`flash deck <source>` turns a **source** into a deck of fact cards using the
+`alix deck <source>` turns a **source** into a deck of fact cards using the
 Claude CLI. The source is a web page URL *or* a local file/directory path (the
-deck-side mirror of `flash trace`):
+deck-side mirror of `alix trace`):
 
 ```sh
-flash deck https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html
-flash deck src/scheduler.rs            # a local file (or a directory)
-flash deck <source> -o ownership       # choose the file name
-flash deck <source> --cards 15         # cap the number of cards
-flash deck <source> --review           # add a 2nd pass to remove redundant cards
-flash deck <source> --print            # print to stdout instead of writing
+alix deck https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html
+alix deck src/scheduler.rs            # a local file (or a directory)
+alix deck <source> -o ownership       # choose the file name
+alix deck <source> --cards 15         # cap the number of cards
+alix deck <source> --review           # add a 2nd pass to remove redundant cards
+alix deck <source> --print            # print to stdout instead of writing
 ```
 
 For a **web page**, Claude reads it with the **WebFetch** tool and the deck
 starts with a `% link:` line back to it (so you can use the *ask* feature on the
 cards). For a **local source**, Claude explores it read-only with
 `Read`/`Glob`/`Grep` at the source root and the deck starts with a `% source:`
-line (so `flash exam` can later grade your understanding against it); it also
+line (so `alix exam` can later grade your understanding against it); it also
 adds a [`% at:` citation](#source-citations--at-on-a-fact-card) to each fact that
 maps to specific lines, so the card can show its source on reveal. Either way
-Claude only returns text — never a write or shell tool — and flash validates it
+Claude only returns text — never a write or shell tool — and alix validates it
 (`parse_str`) and writes `~/decks/<slug>.txt`. The cards are spread across four
 layers of understanding (facts → concepts → application → connections) and use
 cloze (`#?`) cards for terminology.
@@ -665,29 +665,29 @@ point, not a final deck. Generation needs the `claude` CLI installed and
 logged in, and works best on a single page or chapter (a whole book overruns
 the context budget).
 
-## Import an Anki deck (`flash import`)
+## Import an Anki deck (`alix import`)
 
-`flash import <file.tsv>` turns an Anki export into a flash deck — no Claude
+`alix import <file.tsv>` turns an Anki export into an alix deck — no Claude
 needed. Export your notes from Anki as **Notes in Plain Text** (`.txt`/`.tsv`)
 with fields separated by a tab; the first field becomes the front, the second
 the back, and any further fields are ignored:
 
 ```sh
-flash import french.tsv                 # writes ~/decks/french.txt
-flash import french.tsv -o vocab        # choose the deck name
-flash import french.tsv --print         # print to stdout instead of writing
-flash import french.tsv --force          # overwrite an existing deck
+alix import french.tsv                 # writes ~/decks/french.txt
+alix import french.tsv -o vocab        # choose the deck name
+alix import french.tsv --print         # print to stdout instead of writing
+alix import french.tsv --force          # overwrite an existing deck
 ```
 
 It skips Anki's `#`-prefixed header lines (`#separator:tab`, `#html:true`, …),
 turns `<br>` tags into separate answer lines, decodes the common HTML entities
 (`&amp;`, `&lt;`, `&nbsp;`, …), and backslash-escapes a back line that would
-otherwise read as a flash comment or note. Rows missing a side are dropped. The
+otherwise read as an alix comment or note. Rows missing a side are dropped. The
 result is validated (`parse_str`) and written to `~/decks/<name>.txt`; review it
 and clean up any leftover HTML by hand. It works best on a plain two-field
 export — rich notetypes, media, and tags don't carry over.
 
-## The AI exam (`flash exam`)
+## The AI exam (`alix exam`)
 
 Mechanical review *loads* a deck's material into memory; the **AI exam**
 *verifies you understood it* and is what gates progression. The idea: drilling
@@ -718,15 +718,15 @@ deck turns exam due once every card reaches stage `N` (see
 one-question-at-a-time flow (Back/Next, then a per-question breakdown), the same
 in the terminal and the browser:
 
-- **Terminal**: `flash exam ownership.txt` (or `--questions 8`, `--strictness …`)
+- **Terminal**: `alix exam ownership.txt` (or `--questions 8`, `--strictness …`)
   opens the exam in the TUI. You also reach it by **picking an `exam due` deck**
   in the launcher (it starts the exam instead of an empty review), or from the
   **session-end summary** — when you drill a deck's last cards and it turns exam
   due, the summary offers "press `x` to take it" (or `b` to browse the deck).
-- **Web** (`flash serve`): picking an `exam due` deck in the deck list launches
+- **Web** (`alix serve`): picking an `exam due` deck in the deck list launches
   the exam in the page; a finished session likewise offers it at the summary.
 
-flash asks Claude to read the source (URLs via the **WebFetch** tool; local
+alix asks Claude to read the source (URLs via the **WebFetch** tool; local
 files are embedded) and write fresh **open understanding** questions —
 application and connections, not the card facts — each with the key points a
 correct answer must contain. You type a prose answer per question, and an
@@ -744,14 +744,14 @@ on a background thread so the UI stays responsive while it thinks.
   a missed fact, a `% mode: explain` card for a missed concept), with overlapping
   gaps merged into one card. Re-drill those and re-sit.
 
-Resetting a whole deck's progress (`flash reset <deck>`) also clears its mastered
+Resetting a whole deck's progress (`alix reset <deck>`) also clears its mastered
 state, so a re-drilled deck must pass the exam again (resetting only individual
 cards with `--card`/`--cards` leaves the mastered state intact).
 
 **Grading strictness** is a property of the *material*, so it's per deck. A
 checklist-style topic (a procedure, exact syntax, a security drill) should fail
 you for omitting a step; a conceptual topic shouldn't. Set it with a
-`% strictness:` header directive (or `flash exam --strictness …`, or the
+`% strictness:` header directive (or `alix exam --strictness …`, or the
 `[exam]` default):
 
 - `strict` — completeness required: every rubric point must be present, so
@@ -771,7 +771,7 @@ Settings live in the `[exam]` section: `model`, `timeout_secs` (default 300),
 generation). It reuses the `[ask]` command, permission mode and tool allowlist,
 and needs the `claude` CLI installed and logged in.
 
-## Traces (`flash trace`)
+## Traces (`alix trace`)
 
 > **Experimental.** Traces are a new, evolving feature — the deck format and the
 > flow may still change.
@@ -779,7 +779,7 @@ and needs the `claude` CLI installed and logged in.
 Cards drill *facts* (the nodes of what you know); a **trace** drills the
 *connections between them* (the edges) by walking a **path** through a real
 source and making you **predict each hop before it's revealed**. Where the
-[AI exam](#the-ai-exam-flash-exam) verifies a *set* of independent answers, a
+[AI exam](#the-ai-exam-alix-exam) verifies a *set* of independent answers, a
 trace verifies that you can follow one chain of reasoning — and the gap between
 your prediction and the truth is where the understanding forms.
 
@@ -815,7 +815,7 @@ repeatable) — these show as a list under the question, so the excerpt stays
 focused without orphaning the names it leans on.
 
 **Building it with Claude.** Instead of hand-writing the checkpoints, declare
-just the `% trace:` and `% source:`, then run `flash trace --build <deck>`:
+just the `% trace:` and `% source:`, then run `alix trace --build <deck>`:
 Claude explores the source — with **read-only** `Read`/`Glob`/`Grep` and the
 source root as its working directory (no write or shell access) — traces the
 single load-bearing path, and writes the checkpoints (with their `% at:`
@@ -826,7 +826,7 @@ generated trace comes out a path, not a quiz.
 
 **Snapshotting the source.** Because `% at: file:lines` reads the **live** source,
 editing a traced file shifts every excerpt to the wrong lines. So when you create
-a workspace by exploring a source ([`flash explore --into --build`](#exploring-a-source--flash-explore)),
+a workspace by exploring a source ([`alix explore --into --build`](#exploring-a-source--alix-explore)),
 its final step **freezes the cited excerpts** into the workspace's `assets/`
 folder — one tiny snippet per checkpoint — and repoints each `% at:` (and the
 trace's `% source:`) at them. The excerpts never drift and the workspace is
@@ -837,7 +837,7 @@ workspaces, not a command; a loose trace over a live `% source:` is left as-is.
 See [docs/traces.md](docs/traces.md) for the rationale.
 
 **Checking the locators.** For a trace that *isn't* frozen — a loose `.txt` over
-a live `% source:` — **`flash check`** validates that every `% at:` still
+a live `% source:` — **`alix check`** validates that every `% at:` still
 resolves into its source: it warns about a locator that names a missing file,
 runs past the end of the file, or (for a single-file source) gives bare line
 numbers it can't place. It's a quick structural check — *does this excerpt still
@@ -855,7 +855,7 @@ shares these `[trace]` settings (it's also one-shot recon), but **`--grade` does
 not**: judging a prediction is a light, interactive, per-hop call, so it runs at
 the tutor tier — the `[ask]` model, effort and timeout — instead.
 
-**Don't know what to trace?** `flash trace --suggest <source>` does a single
+**Don't know what to trace?** `alix trace --suggest <source>` does a single
 read-only recon pass over a source (a repo `.`, a directory, a file, or a URL)
 and prints a **ranked menu of candidate traces** — each a path-question, a
 one-line spine sketch, and a suggested `% source:` scope. The list is sized by
@@ -877,11 +877,11 @@ outcome. If the checkpoints are independent facts that all hang off one thing, y
 written a *set*, which is what cards and the exam already do; reach for a subject
 that has a real sequence.
 
-**Walking it** (`flash trace keypress-to-grade.txt`) goes hop by hop:
+**Walking it** (`alix trace keypress-to-grade.txt`) goes hop by hop:
 
 1. **Predict** — you type a guess before anything reveals (committing is the
    point).
-2. **Reveal** — flash prints the real excerpt from the source, then the
+2. **Reveal** — alix prints the real excerpt from the source, then the
    checkpoint's key points and note.
 3. **Gap** — you judge yourself **Got it / Partial / Missed**. Grading is
    self-judged and offline (no model call) by default; pass **`--grade`** to have
@@ -893,7 +893,7 @@ that has a real sequence.
 4. **Compress** — after the last hop you restate the whole path in two
    sentences: if you can re-derive it, you understood it.
 
-**In the browser** — add **`--serve`** (`flash trace <deck> --serve`) to walk it
+**In the browser** — add **`--serve`** (`alix trace <deck> --serve`) to walk it
 in the web frontend instead of the terminal, the same way `review`/`browse`
 serve. The walk page shows the **path** as a rail you descend (its nodes color in
 by Got / Partial / Missed) and reveals each checkpoint's real source in a
@@ -901,25 +901,25 @@ line-numbered excerpt; `--serve --grade` runs the live grading and the page wait
 on Claude per hop. `--port`/`--lan` work as elsewhere. Progress saves to the same
 store, so a walk started in the terminal continues in the browser.
 
-`flash trace <deck> --map` prints the path (every prompt, its key points and
+`alix trace <deck> --map` prints the path (every prompt, its key points and
 locator) without quizzing — a quick "just show me the route". The generic AI
-exam refuses a trace (`flash exam <trace>` points you here): a trace's
+exam refuses a trace (`alix exam <trace>` points you here): a trace's
 verification *is* its predict-verify walk plus the compression, correctly scoped
 to the path.
 
-A trace deck degrades gracefully — even without `flash trace` it is a valid deck
+A trace deck degrades gracefully — even without `alix trace` it is a valid deck
 of `explain` cards. See `examples/keypress-to-grade.txt` for a complete trace
 over this repo's own source.
 
-## Exploring a source — `flash explore`
+## Exploring a source — `alix explore`
 
-`--suggest` lists central *traces*; **`flash explore <source>`** goes one layer
+`--suggest` lists central *traces*; **`alix explore <source>`** goes one layer
 up and prints an ordered **learning plan** toward a goal — the facts decks **and**
 traces worth authoring, dependency-ordered:
 
 ```
-flash explore .                                      # plan to understand the whole source
-flash explore . --goal "how review scheduling works" # a narrow goal → a focused subset
+alix explore .                                      # plan to understand the whole source
+alix explore . --goal "how review scheduling works" # a narrow goal → a focused subset
 ```
 
 Each item is tagged `[trace]` or `[deck]` — chosen by the shape of the knowledge
@@ -929,25 +929,25 @@ config's knobs or a store's on-disk format, becomes a facts deck) — carries it
 and a `% source:` scope. The `--goal` scopes coverage: a broad goal covers every
 subsystem, a narrow one collapses to just its slice (and traces it in more
 detail). By default it's **read-only** — it prints the plan and you author the
-items yourself (`flash trace --build` a trace, `flash deck` a facts deck).
+items yourself (`alix trace --build` a trace, `alix deck` a facts deck).
 
 With **`--into <dir>`** it materializes the plan into a ready-made **workspace**:
 
 ```
-flash explore . --goal "how review scheduling works" \
+alix explore . --goal "how review scheduling works" \
   --into ~/decks/scheduling/ --title "Scheduling internals"
 ```
 
-That writes a `flash.toml` and one stub file per item — a `% trace:` deck for
-each trace (run `flash trace --build` on it) and a `% title:` facts deck for each
-deck (author it or `flash deck`) — wired together with `% requires:` so they
+That writes an `alix.toml` and one stub file per item — a `% trace:` deck for
+each trace (run `alix trace --build` on it) and a `% title:` facts deck for each
+deck (author it or `alix deck`) — wired together with `% requires:` so they
 unlock in dependency order, with each `% source:` pointing back at the real
 source. The `--goal` becomes the workspace's `description`; **`--title`** names
 it (omitted, the folder name is used); **`--unlock-stage <1–5>`** writes a shared
 `[defaults]` `unlock-stage` so a member unlocks once its cards reach that stage
 (without retiring early). (Refuses a non-empty folder unless `--force`.)
 
-Add **`--build`** to go all the way: `flash explore … --into <dir> --build`
+Add **`--build`** to go all the way: `alix explore … --into <dir> --build`
 explores the source **once** and then reuses that same session to fill every
 item — predict-verify checkpoints for the traces and fact cards for the decks —
 so the workspace comes out review-ready in one command. Writing the whole set
@@ -955,24 +955,24 @@ from one understanding keeps the items coherent (each builds on its prerequisite
 instead of repeating them), and it fills facts decks too. As a final step it
 **freezes the cited excerpts** of every cited deck — traces *and* fact decks with
 [`% at:` citations](#source-citations--at-on-a-fact-card) — into the workspace's
-`assets/` (see [Snapshotting the source](#traces-flash-trace)), so the workspace
+`assets/` (see [Snapshotting the source](#traces-alix-trace)), so the workspace
 is self-contained and its locators never drift. (A snapshotted fact deck's
 `% source:` then points at `assets/`, so its exam grades against the frozen
 excerpts.)
 
-**Explore walk.** Before you even know what to trace, `flash explore --walk
+**Explore walk.** Before you even know what to trace, `alix explore --walk
 <source>` builds a short **tour of the source's shape** and walks it like a trace:
 you predict what kind of program it is (from the manifest), its domain nouns (from
 the module list), how it's driven (the entry point), its spine (the central file),
 and finally the first paths worth tracing — each hop revealing the real lines.
-It's written to a file (`-o`, default `explore.txt`), so `flash trace explore.txt`
+It's written to a file (`-o`, default `explore.txt`), so `alix trace explore.txt`
 re-walks it.
 
 ## Configuration
 
-Key bindings can be changed in `~/.config/flash/config.toml`. Create the
-file with `flash config --init`, inspect the active bindings with
-`flash config`. Every action takes a list of keys; the first one is
+Key bindings can be changed in `~/.config/alix/config.toml`. Create the
+file with `alix config --init`, inspect the active bindings with
+`alix config`. Every action takes a list of keys; the first one is
 shown in the footer. For example, to grade flip-mode cards with j/k/l:
 
 ```toml
@@ -992,7 +992,7 @@ an answer (typing and fuzzy mode), plain character bindings are ignored so
 they cannot shadow text input — use `ctrl-`/special keys for `hint`, `skip`
 and `quit`. A different config file can be passed with `--config <path>`.
 
-The browser (`flash browse`) has its own bindings in a `[browse]` section:
+The browser (`alix browse`) has its own bindings in a `[browse]` section:
 
 ```toml
 [browse]
@@ -1019,9 +1019,9 @@ port = 7777
   back lines. Your progress survives editing a card's front and adding notes,
   but renaming a deck file or editing its back lines resets the affected
   cards.
-- Progress is stored at `~/.local/share/flash/progress.json` and config at
-  `~/.config/flash/config.toml` (created on first use).
-- `flash reset <deck>...` clears stored progress so cards become "new" again —
+- Progress is stored at `~/.local/share/alix/progress.json` and config at
+  `~/.config/alix/config.toml` (created on first use).
+- `alix reset <deck>...` clears stored progress so cards become "new" again —
   for whole decks, a single card (`--card <id-or-front-text>`), or the entire
   store (`--all`). Run it with no decks to pick from the deck list, or add
   `--cards` to pick individual cards from a checkbox list. It confirms first
@@ -1029,16 +1029,16 @@ port = 7777
 
 ## Desktop integration
 
-To launch flash from the desktop menu (Cinnamon, GNOME, KDE, ...), run:
+To launch alix from the desktop menu (Cinnamon, GNOME, KDE, ...), run:
 
 ```sh
 assets/install-desktop.sh
 ```
 
-It installs the icon (`assets/flash.svg`, rendered to the standard
+It installs the icon (`assets/alix.svg`, rendered to the standard
 PNG sizes), a launcher that reviews everything due in `~/decks` in a
 terminal, and a `.desktop` entry under `~/.local/share`. Re-run it after
-editing the SVG. The launcher prefers an installed `flash` (`cargo install
+editing the SVG. The launcher prefers an installed `alix` (`cargo install
 --path .`) and falls back to the project build.
 
 ## Development
