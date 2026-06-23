@@ -1,5 +1,9 @@
 # `alix`
 
+[![crates.io](https://img.shields.io/crates/v/alix)](https://crates.io/crates/alix)
+[![docs.rs](https://img.shields.io/docsrs/alix)](https://docs.rs/alix)
+[![License: MIT OR Apache-2.0](https://img.shields.io/crates/l/alix)](https://crates.io/crates/alix)
+
 Your **personal AI tutor**, built for understanding — not just remembering.
 Under the hood it's a fast, plain-text spaced-repetition trainer — Leitner and
 SM-2 scheduling, several answer modes, cloze and dual-direction cards, images,
