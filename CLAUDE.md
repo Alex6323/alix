@@ -1,4 +1,4 @@
-# alix — project guide
+# `alix` — project guide
 
 `alix` is an **AI-augmented** spaced-repetition learning tool in Rust, with a
 terminal (TUI) and a web frontend (`alix serve`). On top of a plain-text
@@ -32,7 +32,7 @@ you touched.
 
 ## Code style (Rust)
 
-These are alix's house idioms — the things clippy and rustfmt *don't* catch and
+These are `alix`'s house idioms — the things clippy and rustfmt *don't* catch and
 that a change should match. The global rules (simple, readable, small focused
 functions, meaningful names) still apply on top; this section is what's specific
 to this codebase. When in doubt, mirror the surrounding code.

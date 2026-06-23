@@ -1,4 +1,4 @@
-# alix
+# `alix`
 
 An **AI-augmented spaced-repetition learning tool** for the terminal and the
 web. At its core it's a fast, plain-text flashcard trainer — Leitner and SM-2
@@ -27,13 +27,13 @@ authenticate. The features that require it:
 - `alix explore` — goal-driven learning plans;
 - ask-Claude (`?`) — the in-session tutor, in both the TUI and the web frontend.
 
-alix invokes the CLI headless (`claude -p`) under a locked-down permission
+`alix` invokes the CLI headless (`claude -p`) under a locked-down permission
 model (see [Ask Claude](#ask-claude-about-a-card)); the command, model and
 timeouts are configurable per feature in the [config file](#configuration).
 
 ## Learn a codebase (the main workflow)
 
-alix's flagship use: point it at a repo (or any source) and it builds a
+`alix`'s flagship use: point it at a repo (or any source) and it builds a
 self-contained **learning workspace** — facts decks and predict-and-verify
 [traces](#traces-alix-trace), dependency-ordered — that you then study with
 spaced repetition, the AI tutor, and the [exam](#the-ai-exam-alix-exam). Three
@@ -610,7 +610,7 @@ consult when useful — fetched once, remembered for the rest of the run. These
 lines do not affect card hashes.
 
 Because the CLI runs headless (`-p`), it cannot show interactive permission
-prompts — an unanswerable prompt would hang the call. alix therefore
+prompts — an unanswerable prompt would hang the call. `alix` therefore
 runs it with `--permission-mode dontAsk` and an exclusive tool allowlist
 (`WebFetch`, `WebSearch` by default): the listed tools work without
 prompting, and every other tool is silently denied, so a malicious page
@@ -645,7 +645,7 @@ cards). For a **local source**, Claude explores it read-only with
 line (so `alix exam` can later grade your understanding against it); it also
 adds a [`% at:` citation](#source-citations--at-on-a-fact-card) to each fact that
 maps to specific lines, so the card can show its source on reveal. Either way
-Claude only returns text — never a write or shell tool — and alix validates it
+Claude only returns text — never a write or shell tool — and `alix` validates it
 (`parse_str`) and writes `~/decks/<slug>.txt`. The cards are spread across four
 layers of understanding (facts → concepts → application → connections) and use
 cloze (`#?`) cards for terminology.
@@ -667,7 +667,7 @@ the context budget).
 
 ## Import an Anki deck (`alix import`)
 
-`alix import <file.tsv>` turns an Anki export into an alix deck — no Claude
+`alix import <file.tsv>` turns an Anki export into an `alix` deck — no Claude
 needed. Export your notes from Anki as **Notes in Plain Text** (`.txt`/`.tsv`)
 with fields separated by a tab; the first field becomes the front, the second
 the back, and any further fields are ignored:
@@ -682,7 +682,7 @@ alix import french.tsv --force          # overwrite an existing deck
 It skips Anki's `#`-prefixed header lines (`#separator:tab`, `#html:true`, …),
 turns `<br>` tags into separate answer lines, decodes the common HTML entities
 (`&amp;`, `&lt;`, `&nbsp;`, …), and backslash-escapes a back line that would
-otherwise read as an alix comment or note. Rows missing a side are dropped. The
+otherwise read as an `alix` comment or note. Rows missing a side are dropped. The
 result is validated (`parse_str`) and written to `~/decks/<name>.txt`; review it
 and clean up any leftover HTML by hand. It works best on a plain two-field
 export — rich notetypes, media, and tags don't carry over.
@@ -726,7 +726,7 @@ in the terminal and the browser:
 - **Web** (`alix serve`): picking an `exam due` deck in the deck list launches
   the exam in the page; a finished session likewise offers it at the summary.
 
-alix asks Claude to read the source (URLs via the **WebFetch** tool; local
+`alix` asks Claude to read the source (URLs via the **WebFetch** tool; local
 files are embedded) and write fresh **open understanding** questions —
 application and connections, not the card facts — each with the key points a
 correct answer must contain. You type a prose answer per question, and an
@@ -881,7 +881,7 @@ that has a real sequence.
 
 1. **Predict** — you type a guess before anything reveals (committing is the
    point).
-2. **Reveal** — alix prints the real excerpt from the source, then the
+2. **Reveal** — `alix` prints the real excerpt from the source, then the
    checkpoint's key points and note.
 3. **Gap** — you judge yourself **Got it / Partial / Missed**. Grading is
    self-judged and offline (no model call) by default; pass **`--grade`** to have
@@ -1029,7 +1029,7 @@ port = 7777
 
 ## Desktop integration
 
-To launch alix from the desktop menu (Cinnamon, GNOME, KDE, ...), run:
+To launch `alix` from the desktop menu (Cinnamon, GNOME, KDE, ...), run:
 
 ```sh
 assets/install-desktop.sh
