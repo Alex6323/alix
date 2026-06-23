@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-06-23
+
 ### Changed
 - **Renamed the project `flash` → `alix`.** The binary, the crate, the workspace
   manifest (`flash.toml` → `alix.toml`), and the data directory
