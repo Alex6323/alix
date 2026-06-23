@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>alix — your personal AI tutor</title>
+<meta name="description" content="Your personal AI tutor — built for understanding, not just remembering. Spaced repetition with an AI exam that gates progress on verified understanding.">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<meta property="og:title" content="alix — your personal AI tutor">
+<meta property="og:description" content="Built for understanding, not just remembering.">
+<meta property="og:type" content="website">
+<style>
+  :root{
+    --bg:#0d1117; --surface:#161b22; --line:#283039;
+    --text:#e6edf3; --muted:#9aa4b2; --accent:#ffb454; --accent-ink:#1a1206;
+    --radius:14px; --maxw:980px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--accent); text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:var(--maxw); margin:0 auto; padding:0 24px}
+  code,kbd,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+
+  header{border-bottom:1px solid var(--line)}
+  .nav{display:flex; align-items:center; justify-content:space-between; height:64px}
+  .brand{font-weight:800; font-size:21px; letter-spacing:.5px}
+  .brand b{color:var(--accent); font-weight:800}
+  .nav nav a{color:var(--muted); margin-left:22px; font-size:15px}
+  .nav nav a:hover{color:var(--text); text-decoration:none}
+
+  .hero{text-align:center; padding:88px 0 52px}
+  .hero h1{font-size:clamp(38px,6.5vw,62px); line-height:1.06; margin:0 0 20px; font-weight:800; letter-spacing:-1px}
+  .hero .tag{font-size:clamp(18px,2.6vw,23px); max-width:660px; margin:0 auto 12px}
+  .hero .sub{color:var(--muted); max-width:620px; margin:0 auto 32px}
+  .cmd{display:inline-flex; align-items:center; gap:14px; background:var(--surface);
+    border:1px solid var(--line); border-radius:10px; padding:11px 16px; margin-bottom:26px}
+  .cmd code{font-size:15px}
+  .cmd .d{color:var(--accent)}
+  .copy{background:transparent;border:1px solid var(--line);color:var(--muted);border-radius:7px;padding:4px 11px;font-size:13px;cursor:pointer}
+  .copy:hover{color:var(--text);border-color:var(--muted)}
+  .btns{display:flex; gap:14px; justify-content:center; flex-wrap:wrap}
+  .btn{padding:11px 22px; border-radius:10px; font-weight:600; font-size:15px}
+  .btn.primary{background:var(--accent); color:var(--accent-ink)}
+  .btn.primary:hover{filter:brightness(1.07); text-decoration:none}
+  .btn.ghost{border:1px solid var(--line); color:var(--text)}
+  .btn.ghost:hover{border-color:var(--muted); text-decoration:none}
+
+  .shot{margin:6px auto 0; max-width:920px}
+  .shot img{width:100%; height:auto; display:block; border:1px solid var(--line);
+    border-radius:var(--radius); box-shadow:0 24px 60px rgba(0,0,0,.45)}
+  .shot .cap{text-align:center; color:var(--muted); font-size:13px; margin-top:11px}
+
+  .features{padding:84px 0 30px}
+  .grid{display:grid; grid-template-columns:repeat(2,1fr); gap:18px}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:24px}
+  .card h3{margin:0 0 8px; font-size:18px}
+  .card p{margin:0; color:var(--muted)}
+  .card .k{color:var(--accent)}
+
+  footer{border-top:1px solid var(--line); margin-top:64px; padding:34px 0; color:var(--muted); font-size:14px}
+  .foot{display:flex; justify-content:space-between; flex-wrap:wrap; gap:14px}
+  .foot a{color:var(--muted)}
+  .foot a:hover{color:var(--text)}
+
+  @media(max-width:680px){ .grid{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<header><div class="wrap nav">
+  <div class="brand">al<b>i</b>x</div>
+  <nav>
+    <a href="/book/">Book</a>
+    <a href="https://github.com/Alex6323/alix">GitHub</a>
+    <a href="https://crates.io/crates/alix">crates.io</a>
+  </nav>
+</div></header>
+
+<main class="wrap">
+  <section class="hero">
+    <h1>Learn it. Then prove you<br>actually understand it.</h1>
+    <p class="tag">Your personal AI tutor — built for understanding, not just remembering.</p>
+    <p class="sub">Plain-text flashcards with spaced repetition at the core, and an AI layer woven through: a tutor on any card, generated decks, and an exam that gates your progress on real understanding.</p>
+    <div class="cmd">
+      <code><span class="d">$</span> cargo install alix</code>
+      <button class="copy" onclick="navigator.clipboard.writeText('cargo install alix');this.textContent='copied'">copy</button>
+    </div>
+    <div class="btns">
+      <a class="btn primary" href="/book/">Read the book</a>
+      <a class="btn ghost" href="https://github.com/Alex6323/alix">View on GitHub</a>
+    </div>
+  </section>
+
+  <section class="shot">
+    <img src="img/screenshot.svg" alt="alix web review UI (placeholder)">
+    <p class="cap">The alix web app — placeholder; real screenshots coming.</p>
+  </section>
+
+  <section class="features">
+    <div class="grid">
+      <div class="card"><h3><span class="k">Understand</span>, don't just remember</h3>
+        <p>Most tools optimize recall of isolated facts. alix's AI exam grades you against the source and unlocks what's next only once you can actually explain it.</p></div>
+      <div class="card"><h3>A tutor on every card</h3>
+        <p>Stuck or curious? Ask, and the AI explains in context — grounded in your deck's own source. (Claude today; OpenAI, DeepSeek, Mistral and more on the way.)</p></div>
+      <div class="card"><h3>Proven spaced repetition</h3>
+        <p>Leitner and SM-2 scheduling over plain-text decks you own — cloze, dual-direction, images, and dependencies between topics.</p></div>
+      <div class="card"><h3>Traces: follow the thread</h3>
+        <p>Predict-and-verify walks through real source code or papers — drilling the <i>edges</i> between facts, not just the facts.</p></div>
+    </div>
+  </section>
+</main>
+
+<footer><div class="wrap foot">
+  <div>MIT OR Apache-2.0 &middot; built by Alex with Claude</div>
+  <div>
+    <a href="/book/">Book</a> &middot;
+    <a href="https://github.com/Alex6323/alix">GitHub</a> &middot;
+    <a href="https://crates.io/crates/alix">crates.io</a>
+  </div>
+</div></footer>
+</body>
+</html>

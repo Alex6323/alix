@@ -7,3 +7,4 @@ src = "src"
 
 [output.html]
 default-theme = "rust"
+site-url = "/book/"

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 740" role="img" aria-label="alix web UI placeholder">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#161b22"/>
+      <stop offset="1" stop-color="#0f141b"/>
+    </linearGradient>
+  </defs>
+  <rect x="1" y="1" width="1198" height="738" rx="14" fill="url(#g)" stroke="#283039"/>
+  <path d="M1 15 a14 14 0 0 1 14 -14 h1170 a14 14 0 0 1 14 14 v39 h-1198 z" fill="#0f141b"/>
+  <line x1="1" y1="54" x2="1199" y2="54" stroke="#283039"/>
+  <circle cx="34" cy="28" r="7" fill="#ff5f56"/>
+  <circle cx="60" cy="28" r="7" fill="#ffbd2e"/>
+  <circle cx="86" cy="28" r="7" fill="#27c93f"/>
+  <rect x="360" y="17" width="480" height="23" rx="11" fill="#0d1117" stroke="#283039"/>
+  <text x="600" y="33" text-anchor="middle" fill="#6b7480" font-family="monospace" font-size="13">alix.io</text>
+  <text x="600" y="368" text-anchor="middle" fill="#e6edf3" font-family="sans-serif" font-size="42" font-weight="700">alix web UI</text>
+  <text x="600" y="412" text-anchor="middle" fill="#9aa4b2" font-family="sans-serif" font-size="18">your screenshot goes here</text>
+  <text x="600" y="604" text-anchor="middle" fill="#ffb454" font-family="sans-serif" font-size="14" opacity="0.85" letter-spacing="2">PLACEHOLDER</text>
+</svg>
