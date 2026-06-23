@@ -22,7 +22,7 @@ Only the doubled braces are special: a lone `{` or `}` is literal, so an answer
 like `let p = Foo {};` is fine inside a cloze (and if you ever need a literal
 `{{`, write `\{\{`).
 
-alix keeps a card's cloze siblings apart in the queue when other cards are
+`alix` keeps a card's cloze siblings apart in the queue when other cards are
 available, so you don't see `mut` right after `u64`. Cloze progress is forgiving:
 rewording the front — or even a later change to the blank markup — keeps your
 history, while editing the answer text or what's *inside* a blank resets the

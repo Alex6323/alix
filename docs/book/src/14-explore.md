@@ -36,7 +36,7 @@ folder unless `--force`.) You then fill the stubs at your own pace.
 alix explore . --goal "…" --into ~/decks/scheduling/ --build
 ```
 
-goes all the way: alix explores the source **once**, then reuses that single
+goes all the way: `alix` explores the source **once**, then reuses that single
 session to fill every item — predict-verify checkpoints for the traces, fact cards
 for the decks — so the workspace comes out review-ready in one command. Writing the
 whole set from one understanding keeps the items **coherent** (each builds on its
@@ -46,7 +46,7 @@ fact decks with [`% at:` citations](06-cloze-direction-images.md#source-citation
 alike — into the workspace's `assets/`, so it's self-contained and its locators
 never drift.
 
-This is the tool's high-water mark: name what you want to understand, and alix
+This is the tool's high-water mark: name what you want to understand, and `alix`
 assembles a dependency-ordered curriculum of facts and traces — gated by
 [mastery](12-the-ai-exam.md) — that you climb.
 

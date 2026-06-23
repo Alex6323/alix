@@ -1,6 +1,6 @@
 # 15 · The web app — `--serve`
 
-Everything alix does in the terminal it can also do in a browser. Add `--serve`
+Everything `alix` does in the terminal it can also do in a browser. Add `--serve`
 to `review` or `browse` (or run `alix --serve` with no decks) and it runs the same
 session logic over a tiny local web server, writing to the **same progress store**
 — so a card you grade or remove in the browser shows up on the command line and

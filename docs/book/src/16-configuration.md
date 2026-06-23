@@ -1,6 +1,6 @@
 # 16 · Configuration
 
-alix works out of the box; the config file is for when you want to change key
+`alix` works out of the box; the config file is for when you want to change key
 bindings, point at a different decks directory, or tune the AI features. It lives
 at `~/.config/alix/config.toml` — create it with `alix config --init`, and
 inspect the active key bindings with `alix config`.
@@ -58,7 +58,7 @@ settings:
 
 ## Decks directory and storage
 
-By default alix looks for decks in `~/decks`; set `decks_dir` to change it.
+By default `alix` looks for decks in `~/decks`; set `decks_dir` to change it.
 Progress is stored at `~/.local/share/alix/progress.json` (a workspace keeps its
 own inside its folder; `--store <path>` overrides).
 

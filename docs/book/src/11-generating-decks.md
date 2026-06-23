@@ -18,7 +18,7 @@ Claude reads the source and returns a deck spread across **four layers of
 understanding** — facts → concepts → application → connections — using cloze
 (`#?`) cards for terminology. The prompt has it draft, then re-read the whole set
 and merge or drop cards that test the same fact, so the deck doesn't repeat
-itself. alix validates the text it gets back (it only ever accepts cards, never a
+itself. `alix` validates the text it gets back (it only ever accepts cards, never a
 write or shell command) and writes it to `~/decks/<slug>.txt`.
 
 How the source is recorded depends on its kind, and it matters later:
@@ -52,4 +52,4 @@ in the `[generate]` section of the config.
 A generated deck is just a plain-text deck like any other: read it, edit it, cut
 the weak cards, add your own. Treat the output as a strong first draft, not
 gospel — the point is to skip the blank page, not to outsource judgment. That's
-the same division the whole tool runs on (see [how alix was made](how-alix-was-made.md)).
+the same division the whole tool runs on (see [how `alix` was made](how-alix-was-made.md)).

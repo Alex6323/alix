@@ -1,7 +1,7 @@
 # 9 · Dependencies & unlocks
 
 Real subjects have an order: you can't grasp borrowing before ownership, or a
-derived rule before its axioms. alix lets a deck declare what it builds on, and
+derived rule before its axioms. `alix` lets a deck declare what it builds on, and
 uses that both to sequence your study and to gate decks until you're ready.
 
 ## Declaring prerequisites — `% requires:`
@@ -66,6 +66,6 @@ top stage, its dependents lock again, nudging you to shore up the foundation
 before moving on.
 
 This is what turns a folder of decks into a **curriculum**: order the material by
-`% requires:`, and alix walks you through it foundations-first, gating each step
+`% requires:`, and `alix` walks you through it foundations-first, gating each step
 on the last. It's also the backbone of the AI exam's notion of *mastery* (a later
 chapter) and of how `alix explore` lays out a generated learning plan.

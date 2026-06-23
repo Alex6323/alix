@@ -1,7 +1,7 @@
 # 10 · Ask-Claude — the tutor
 
 This is where the AI layer begins. Everything so far — drilling, scheduling,
-workspaces — runs entirely offline. From here on alix can call Claude, and the
+workspaces — runs entirely offline. From here on `alix` can call Claude, and the
 first place it does is the most useful: a tutor on any card.
 
 (One reminder: every AI feature shells out to the Claude Code CLI, so it needs the
@@ -11,13 +11,13 @@ flashcard core never calls it.)
 ## Asking about a card
 
 On any post-answer screen — a revealed flip card, the feedback after a typed
-answer, an answered choice — press `?`. alix hands Claude the card (its front,
+answer, an answered choice — press `?`. `alix` hands Claude the card (its front,
 answer, note, and deck name) as context, and you can ask "why is that the
 answer?", "what's a simpler way to see this?", or anything else, and follow up.
 While Claude thinks the session stays responsive; `Esc` drops you back exactly
 where you were.
 
-One conversation spans the **whole review run** (alix uses `--session-id` for the
+One conversation spans the **whole review run** (`alix` uses `--session-id` for the
 first question and `--resume` after), so Claude remembers the earlier cards and
 questions — you can ask how the current card relates to one from ten minutes ago,
 and it knows.
@@ -56,7 +56,7 @@ hashes.
 ## How it's sandboxed
 
 Because the CLI runs headless (`claude -p`), it can't show interactive permission
-prompts — an unanswerable prompt would just hang the call. So alix runs it locked
+prompts — an unanswerable prompt would just hang the call. So `alix` runs it locked
 down: `--permission-mode dontAsk` plus an **exclusive tool allowlist** (`WebFetch`,
 `WebSearch` by default). The listed tools work without prompting; every other tool
 is silently denied. That means a malicious page behind a deck link can't make the

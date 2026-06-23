@@ -45,7 +45,7 @@ three ways:
   the session-end summary offers it — press `x` in the terminal (or `b` to browse
   the deck instead), a button in the browser.
 
-alix asks Claude to read the source (URLs via `WebFetch`, local files embedded)
+`alix` asks Claude to read the source (URLs via `WebFetch`, local files embedded)
 and write **fresh understanding questions** — application and connections, *not*
 the card facts — each with the key points a correct answer must hit. You type a
 prose answer per question, and an examiner grades each **Pass / Partial / Fail

@@ -2,7 +2,7 @@
 
 ## Install
 
-alix is a single Rust binary, built from source — you need a Rust toolchain
+`alix` is a single Rust binary, built from source — you need a Rust toolchain
 (install [`rustup`](https://rustup.rs) if you don't have one):
 
 ```sh
@@ -48,14 +48,14 @@ readability. A line starting with `!` is a **note**, shown after you answer.
 alix srs.txt
 ```
 
-alix shows the question; you recall the answer, press a key to reveal it, then
+`alix` shows the question; you recall the answer, press a key to reveal it, then
 grade yourself — **again** (you missed it), **good**, or **easy**. Your grade
 moves the card along its schedule, so cards you know come back rarely and cards
 you miss come back soon. That self-graded reveal is **flip mode**, the default;
 later chapters cover the modes that make you *type* the answer, pick from
 choices, or reveal it line by line.
 
-When nothing is due, alix says so and exits — come back when cards mature, or
+When nothing is due, `alix` says so and exits — come back when cards mature, or
 pass `--cram` to review everything regardless of cooldowns.
 
 ## The deck picker

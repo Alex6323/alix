@@ -103,7 +103,7 @@ alix trace keypress-to-grade.txt
 goes hop by hop:
 
 1. **Predict** — type a guess before anything reveals (committing is the point).
-2. **Reveal** — alix prints the real excerpt from the source, then the key points
+2. **Reveal** — `alix` prints the real excerpt from the source, then the key points
    and note.
 3. **Gap** — you judge yourself **Got it / Partial / Missed**. Self-judged and
    offline by default; pass **`--grade`** to have Claude judge your typed
