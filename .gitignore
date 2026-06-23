@@ -2,7 +2,8 @@
 ROADMAP.md
 SCRATCH.md
 QUALITY.md
-current.png
+# transient screenshots dropped at the repo root (current.png, crates-io.png, …)
+/*.png
 
 # mdBook build output (`make book` / `mdbook build`)
 /docs/book/book/

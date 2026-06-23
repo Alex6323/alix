@@ -10,6 +10,7 @@ repository = "https://github.com/Alex6323/alix"
 homepage = "https://alix.io"
 readme = "README.md"
 categories = ["command-line-utilities"]
+exclude = ["docs/", "site/", ".github/", "examples/"]
 
 [dependencies]
 anyhow = "1"
