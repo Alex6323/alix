@@ -2,7 +2,7 @@ name: release
 
 # Cut a release: on a version tag (e.g. v0.1.0), create the GitHub Release, then
 # cross-compile `alix` for each target and upload the archives to it. The asset
-# names match the download buttons on alix.io AND site/install.sh:
+# names match the download buttons on alix.study AND site/install.sh:
 #   alix-aarch64-apple-darwin.tar.gz   alix-x86_64-apple-darwin.tar.gz
 #   alix-x86_64-unknown-linux-gnu.tar.gz   alix-x86_64-pc-windows-msvc.zip
 on:

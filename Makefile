@@ -62,7 +62,7 @@ serve:
 book:
 	mdbook serve docs/book --open
 
-# Serve the alix.io landing page locally for a quick preview (static files from
+# Serve the alix.study landing page locally for a quick preview (static files from
 # site/). Needs python3. The /book/ link only resolves on the deployed Pages
 # site — use `make book` to preview the manual itself.
 site:

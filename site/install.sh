@@ -1,7 +1,7 @@
 #!/bin/sh
 # alix installer — downloads a pre-compiled binary from GitHub Releases.
 #
-#   curl -sSf https://alix.io/install.sh | sh
+#   curl -sSf https://alix.study/install.sh | sh
 #
 # No Rust toolchain required. macOS and Linux (x86-64) are covered here; on
 # Windows, grab the .zip from the releases page, or use `cargo install alix`.
