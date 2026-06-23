@@ -1,9 +1,9 @@
 # The `alix` book
 
-`alix` is an **AI-augmented spaced-repetition tool** for understanding things, not
-just memorizing them. It has two faces: a fast, plain-text flashcard core, and an
-AI layer woven through it — a tutor on any card, AI-generated decks and curricula,
-and an exam that gates your progress on verified understanding.
+`alix` is your **personal AI tutor** — built for understanding, not just
+memorizing. It has two faces: a fast, plain-text flashcard core, and an AI layer
+woven through it — a tutor on any card, AI-generated decks and curricula, and an
+exam that gates your progress on verified understanding.
 
 This book is the manual. The project README's *Directives at a glance* table is
 the quick index; here each feature is expanded with worked examples and the

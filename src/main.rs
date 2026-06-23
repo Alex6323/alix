@@ -26,8 +26,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use clap::{Args, Parser, Subcommand};
 use ratatui::DefaultTerminal;
 
-/// An AI-augmented spaced-repetition learning tool for the terminal and the
-/// web.
+/// Your personal AI tutor — built for understanding, not just remembering.
 ///
 /// Decks are plain text files: `# question` starts a card, the indented
 /// lines below it are the answer, `! text` adds a note, `% text` is a

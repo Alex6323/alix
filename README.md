@@ -1,9 +1,9 @@
 # `alix`
 
-An **AI-augmented spaced-repetition learning tool** for the terminal and the
-web. At its core it's a fast, plain-text flashcard trainer — Leitner and SM-2
-scheduling, several answer modes, cloze and dual-direction cards, images, and
-deck dependencies. What sets it apart is the **Claude integration**: an
+Your **personal AI tutor**, built for understanding — not just remembering.
+Under the hood it's a fast, plain-text spaced-repetition trainer — Leitner and
+SM-2 scheduling, several answer modes, cloze and dual-direction cards, images,
+and deck dependencies — and what sets it apart is the **Claude integration**: an
 *ask-Claude tutor* on any card, *AI deck generation* from a web page,
 *understanding cards*, and an **AI exam** (`alix exam`) that verifies you
 actually grasped the material and gates your progress on passing it — so you're

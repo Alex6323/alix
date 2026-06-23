@@ -3,7 +3,7 @@ name = "alix"
 version = "0.1.0"
 authors = ["Alex6323 <Al3k5@protonmail.com>"]
 edition = "2024"
-description = "An AI-augmented spaced-repetition learning tool for the terminal and the web."
+description = "Your personal AI tutor — built for understanding, not just remembering."
 keywords = ["learning", "flashcards", "spaced-repetition", "tui"]
 license = "MIT OR Apache-2.0"
 
