@@ -6,7 +6,7 @@
 # toolchain — `+nightly` is handled by rustup before cargo sees it — which is
 # why these live in a Makefile rather than .cargo/config.toml.)
 
-.PHONY: build test lint fmt fmt-check check coverage eval run serve book install clean
+.PHONY: build test lint fmt fmt-check check coverage eval run serve book site install clean
 
 # Compile the workspace.
 build:
@@ -61,6 +61,13 @@ serve:
 # Requires mdBook: `cargo install mdbook`.
 book:
 	mdbook serve docs/book --open
+
+# Serve the alix.io landing page locally for a quick preview (static files from
+# site/). Needs python3. The /book/ link only resolves on the deployed Pages
+# site — use `make book` to preview the manual itself.
+site:
+	@echo "Landing page -> http://localhost:8000  (Ctrl-C to stop)"
+	python3 -m http.server -d site 8000
 
 # Install `alix` from this checkout.
 install:
