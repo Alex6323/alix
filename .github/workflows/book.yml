@@ -1,0 +1,49 @@
+name: book
+
+# Build the mdBook manual (docs/book) and publish it to GitHub Pages.
+# One-time setup: repo Settings → Pages → Source = "GitHub Actions".
+# Builds only when the book (or this workflow) changes.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/book/**"
+      - ".github/workflows/book.yml"
+  workflow_dispatch:
+
+# The deploy job needs to publish to Pages; everything else is read-only.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One Pages deployment at a time — and never cancel a deploy mid-flight.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: build (mdbook)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: mdbook
+      - run: mdbook build docs/book # outputs to docs/book/book
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/book/book
+
+  deploy:
+    name: deploy (pages)
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
