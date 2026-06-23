@@ -44,6 +44,12 @@ them probably shouldn't be built:
   retain. If you can't name one, it's out. Expansion that deepens the one job
   still counts (sharper exam grading deepens *verify*); breadth that sits beside
   the loop doesn't (a calendar, a habit tracker).
+- **Reach counts too, but reach is not scope.** Work that widens access to the
+  same one job — install and onboarding, the web and TUI surfaces, backends,
+  performance, reliability — is admissible even though it deepens no step of
+  the loop; it lets more people reach the one job. The guard: widen reach
+  *without* adding scope the NOT-list rules out, and never let "it'll bring
+  users" substitute for clearing this gate — almost anything can claim that.
 - **Conceptual surface area is the real cost, not lines of code.** Prefer
   extending an existing concept (a `%` directive, a mode) over adding a
   subsystem the user must learn. A new concept must beat *merging into* or
