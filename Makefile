@@ -67,7 +67,7 @@ book:
 # site — use `make book` to preview the manual itself.
 site:
 	@echo "Landing page -> http://localhost:8000  (Ctrl-C to stop)"
-	python3 -m http.server -d site 8000
+	python3 -m http.server -b 127.0.0.1 -d site 8000
 
 # Install `alix` from this checkout.
 install:
