@@ -911,9 +911,13 @@ fn build_review(
     };
     let session = Session::new_with_deps(cards, store, scheduler, options, dep_ranks, now_ms());
 
-    // Remember these decks for next time's picker.
-    recent.record(&deck_paths, now_ms());
-    let _ = recent.save();
+    // Remember these decks for next time's picker — but only when there is
+    // actually something to review, so merely opening a deck with nothing due
+    // doesn't bump it to the top of the recent list.
+    if !session.is_finished() {
+        recent.record(&deck_paths, now_ms());
+        let _ = recent.save();
+    }
 
     Ok(ReviewBuild {
         session,

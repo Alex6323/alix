@@ -457,6 +457,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reinforced.
 
 ### Fixed
+- **Opening a deck with nothing due no longer bumps it to the top of the recent
+  list.** A review now records the deck as "recent" only when the session
+  actually has cards to review (`!session.is_finished()`), so merely entering a
+  fully-drilled / all-on-cooldown deck leaves the recent order untouched.
 - **Generated decks now put a blank line between cards.** `alix deck`'s output
   cleaner (`generate::clean_output`) inserts a blank line before each card front
   (`#`) after the first, so a generated/`--review`ed deck is readable instead of
