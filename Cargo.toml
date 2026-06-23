@@ -5,6 +5,7 @@ authors = ["Alex6323 <Al3k5@protonmail.com>"]
 edition = "2024"
 description = "An AI-augmented spaced-repetition learning tool for the terminal and the web."
 keywords = ["learning", "flashcards", "spaced-repetition", "tui"]
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 anyhow = "1"
