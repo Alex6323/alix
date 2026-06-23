@@ -30,6 +30,11 @@ nothing counts until it's checked. Designs were argued rather than accepted, the
 test suite and the lints are the floor, and the author uses `alix` to learn real
 material, which is what exposes whatever only *looked* finished.
 
+Even the name is a small instance of the same thing. `alix` is the author's
+own — *Alex*, with the `x` he wanted — and sitting inside it, in order, are the
+letters `a` and `i`: a quiet nod to how it was built and what it runs on. Nobody
+has to catch it; it's just there for whoever looks.
+
 None of this is hidden, because hiding it would contradict the point. The
 codebase is small and plain on purpose — if you want to know how something
 really works, the honest answer is always: read it.
