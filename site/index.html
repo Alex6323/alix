@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>alix — your personal AI tutor</title>
-<meta name="description" content="Your personal AI tutor — built for understanding, not just remembering. Spaced repetition with an AI exam that gates progress on verified understanding.">
+<title>alix — your personal tutor</title>
+<meta name="description" content="Your personal tutor — built for understanding, not just remembering. Spaced repetition with an AI exam that gates progress on verified understanding.">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
-<meta property="og:title" content="alix — your personal AI tutor">
+<meta property="og:title" content="alix — your personal tutor">
 <meta property="og:description" content="Built for understanding, not just remembering.">
 <meta property="og:type" content="website">
 <style>
@@ -27,6 +27,10 @@
   .wrap{max-width:var(--maxw); margin:0 auto; padding:0 24px}
   code,kbd,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 
+  .prerelease{background:rgba(255,180,84,.10); border-bottom:1px solid var(--line);
+    color:var(--muted); font-size:13.5px; text-align:center; padding:10px 24px}
+  .prerelease strong{color:var(--accent); font-weight:700}
+
   header{border-bottom:1px solid var(--line)}
   .nav{display:flex; align-items:center; justify-content:space-between; height:64px}
   .brand{font-weight:800; font-size:21px; letter-spacing:.5px}
@@ -38,6 +42,8 @@
   .hero h1{font-size:clamp(38px,6.5vw,62px); line-height:1.06; margin:0 0 20px; font-weight:800; letter-spacing:-1px}
   .hero .tag{font-size:clamp(18px,2.6vw,23px); max-width:660px; margin:0 auto 12px}
   .hero .sub{color:var(--muted); max-width:620px; margin:0 auto 32px}
+  .hero .needs{color:var(--muted); font-size:13.5px; max-width:600px; margin:20px auto 0}
+  .hero .needs b{color:var(--text); font-weight:600}
   .cmd{display:inline-flex; align-items:center; gap:14px; background:var(--surface);
     border:1px solid var(--line); border-radius:10px; padding:11px 16px; margin-bottom:26px}
   .cmd code{font-size:15px}
@@ -52,9 +58,18 @@
   .btn.ghost:hover{border-color:var(--muted); text-decoration:none}
 
   .shot{margin:6px auto 0; max-width:920px}
-  .shot img{width:100%; height:auto; display:block; border:1px solid var(--line);
-    border-radius:var(--radius); box-shadow:0 24px 60px rgba(0,0,0,.45)}
-  .shot .cap{text-align:center; color:var(--muted); font-size:13px; margin-top:11px}
+  .carousel{position:relative; cursor:default; user-select:none}
+  .viewport{overflow:hidden; aspect-ratio:1.3; border:1px solid var(--line); border-radius:var(--radius);
+    box-shadow:0 24px 60px rgba(0,0,0,.45)}
+  .track{display:flex; height:100%; transition:transform .5s ease}
+  .slide{min-width:100%; height:100%}
+  .slide img{width:100%; height:100%; object-fit:cover; display:block}
+  .shot .cap{text-align:center; color:var(--muted); font-size:13px; margin-top:14px; min-height:1.2em}
+  .dots{display:flex; gap:9px; justify-content:center; margin-top:12px}
+  .dot{width:9px; height:9px; padding:0; border-radius:50%; border:none;
+    background:var(--line); cursor:pointer; transition:background .2s}
+  .dot:hover{background:var(--muted)}
+  .dot.is-active{background:var(--accent)}
 
   .features{padding:84px 0 30px}
   .grid{display:grid; grid-template-columns:repeat(2,1fr); gap:18px}
@@ -87,6 +102,9 @@
 </style>
 </head>
 <body>
+<div class="prerelease">
+  <strong>Pre-release</strong> · alix is early software (v0.1.0) — expect rough edges and breaking changes before 1.0.
+</div>
 <header><div class="wrap nav">
   <div class="brand"><b>a</b>l<b>i</b>x</div>
   <nav>
@@ -99,7 +117,7 @@
 <main class="wrap">
   <section class="hero">
     <h1>Learn it. Then prove you<br>actually understand it.</h1>
-    <p class="tag">Your personal AI tutor — built for understanding, not just remembering.</p>
+    <p class="tag">Your personal tutor — built for understanding, not just remembering.</p>
     <p class="sub">Plain-text flashcards with spaced repetition at the core, and an AI layer woven through: a tutor on any card, generated decks, and an exam that gates your progress on real understanding.</p>
     <div class="cmd">
       <code><span class="d">$</span> curl -sSf https://alix.study/install.sh | sh</code>
@@ -109,11 +127,29 @@
       <a class="btn primary" href="#download">Download</a>
       <a class="btn ghost" href="/book/">Read the book</a>
     </div>
+    <p class="needs">The flashcard core runs on its own. The <b>AI features</b> — the tutor, deck generation, and the exam — currently need the <a href="https://www.anthropic.com/claude-code">Claude&nbsp;Code</a> CLI installed and signed in (a Claude subscription or API access).</p>
   </section>
 
   <section class="shot">
-    <img src="img/screenshot.svg" alt="alix web review UI (placeholder)">
-    <p class="cap">The alix web app — placeholder; real screenshots coming.</p>
+    <div class="carousel">
+      <div class="viewport">
+        <div class="track" id="track">
+          <div class="slide"><img src="img/shot-1-picker.png" alt="alix deck picker — workspaces, folders, and what's due" loading="lazy"></div>
+          <div class="slide"><img src="img/shot-2-unlocks.png" alt="A workspace whose topics unlock as prerequisites are mastered" loading="lazy"></div>
+          <div class="slide"><img src="img/shot-3-review.png" alt="Reviewing a card, revealed, with a saved note" loading="lazy"></div>
+          <div class="slide"><img src="img/shot-4-ask.png" alt="Asking the built-in AI tutor about a card" loading="lazy"></div>
+          <div class="slide"><img src="img/shot-5-note.png" alt="The tutor's explanation saved back onto the card" loading="lazy"></div>
+        </div>
+      </div>
+      <p class="cap" id="shotcap">Your decks, workspaces, and what's due — at a glance.</p>
+      <div class="dots" id="dots">
+        <button class="dot is-active" type="button" aria-label="Screenshot 1"></button>
+        <button class="dot" type="button" aria-label="Screenshot 2"></button>
+        <button class="dot" type="button" aria-label="Screenshot 3"></button>
+        <button class="dot" type="button" aria-label="Screenshot 4"></button>
+        <button class="dot" type="button" aria-label="Screenshot 5"></button>
+      </div>
+    </div>
   </section>
 
   <section class="download" id="download">
@@ -161,5 +197,36 @@
     <a href="https://crates.io/crates/alix">crates.io</a>
   </div>
 </div></footer>
+
+<script>
+(function () {
+  var caps = [
+    "Your decks, workspaces, and what's due — at a glance.",
+    "Topics unlock as you master their prerequisites.",
+    "Spaced-repetition review, with notes that stick.",
+    "A built-in tutor on every card.",
+    "Save the tutor's explanation straight back onto the card."
+  ];
+  var track = document.getElementById('track');
+  var cap = document.getElementById('shotcap');
+  var dots = Array.prototype.slice.call(document.querySelectorAll('#dots .dot'));
+  if (!track || !dots.length) return;
+  var i = 0, timer = null;
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduce) track.style.transition = 'none'; // honor reduced-motion: still rotate, but swap instantly (no slide)
+  function go(n) {
+    i = (n + caps.length) % caps.length;
+    track.style.transform = 'translateX(' + (-i * 100) + '%)';
+    if (cap) cap.textContent = caps[i];
+    dots.forEach(function (d, j) { d.classList.toggle('is-active', j === i); });
+  }
+  function start() { if (!timer) timer = setInterval(function () { go(i + 1); }, 7000); }
+  function stop() { if (timer) { clearInterval(timer); timer = null; } }
+  dots.forEach(function (d, j) { d.addEventListener('click', function () { go(j); stop(); start(); }); });
+  var car = document.querySelector('.carousel');
+  if (car) { car.addEventListener('mouseenter', stop); car.addEventListener('mouseleave', start); }
+  go(0); start();
+})();
+</script>
 </body>
 </html>
