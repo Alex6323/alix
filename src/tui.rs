@@ -20,6 +20,7 @@ use ratatui::{
 use crate::{
     answer::{FuzzyResult, Mode, TypingValidator, best_prefix_match, grade_fuzzy},
     ask,
+    augment::{self, AugmentCache},
     card::Card,
     choice::{self, ChoiceQuestion},
     config::{AskConfig, Bindings, ExamConfig, Key, KeyPattern, Strictness},
@@ -186,6 +187,9 @@ pub struct App {
     /// Showing a cited card's source excerpt in place of its answer (`% at:`),
     /// toggled with `s`; reset for each new card.
     citation_view: bool,
+    /// AI distractors for choice cards, read when building a choice question
+    /// (populated ahead of time by `alix deck augment`; empty → offline sampling).
+    augment: AugmentCache,
 }
 
 /// What the user chose at the session-end summary, for `main` to act on after
@@ -197,9 +201,17 @@ pub enum AfterReview {
     Browse(PathBuf),
 }
 
+/// The mode a card will be reviewed in: the CLI `--mode` override, else the
+/// card's own `% mode:` (card > deck), else the built-in default.
+fn effective_mode(card: &Card, mode_override: Option<Mode>) -> Mode {
+    mode_override.or(card.mode).unwrap_or_default()
+}
+
 impl App {
-    /// Creates the app and primes the first card.
+    /// Creates the app and primes the first card. Loads any AI distractors a
+    /// prior `alix deck augment` generated for these cards.
     pub fn new(session: Session, store: Store, options: Options) -> Self {
+        let augment = AugmentCache::open(augment::augment_path_for(store.path()));
         let mut app = Self {
             session,
             store,
@@ -215,6 +227,7 @@ impl App {
             quit: false,
             confirming_quit: false,
             citation_view: false,
+            augment,
         };
         app.start_card();
         app
@@ -374,9 +387,7 @@ impl App {
             self.phase = Phase::Summary;
             return;
         };
-        // CLI override wins; otherwise the card's own mode (card > deck), else
-        // the built-in default.
-        let mode = self.options.mode_override.or(card.mode).unwrap_or_default();
+        let mode = effective_mode(card, self.options.mode_override);
         self.phase = match mode {
             Mode::Typing => {
                 let expected = card.back.clone();
@@ -400,7 +411,8 @@ impl App {
             },
             Mode::LineByLine => Phase::LineByLine { revealed: 0 },
             Mode::Choice => {
-                match choice::build(card, self.session.cards(), time::now_ms()) {
+                let ai = self.augment.distractors(card.id());
+                match choice::build(card, self.session.cards(), time::now_ms(), ai) {
                     Some(question) => Phase::Choice {
                         card: card.clone(),
                         question,

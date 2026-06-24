@@ -54,6 +54,22 @@ Recognition is easier than recall, so a correct pick grades **good** (never easy
 and a wrong pick fails. If a session has fewer than four distinct answers, the
 card falls back to flip.
 
+**AI distractors.** For wrong options written by Claude instead — plausible,
+tempting answers the kind a half-learned mind would fall for — augment the deck
+ahead of time:
+
+```sh
+alix deck augment mydeck.txt --target choices --with "use common misconceptions"
+```
+
+This is a deliberate, one-off command: it generates the distractors once and
+caches them by card id (in `augment.json` beside your progress). Review reads the
+cache automatically, so study stays instant and fully offline — Claude is never
+called while you study. A card without cached distractors falls back to the
+sampled ones above, so it never loses its options; and because the AI brings its
+own wrong answers, choice mode works even on a deck too small to sample from. See
+the augmentation chapter for `--target notes` and the rest.
+
 ## line — one line at a time
 
 The back is revealed one line at a time: press the reveal key (`Space`), recalling

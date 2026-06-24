@@ -10,6 +10,7 @@
 
 pub mod answer;
 pub mod ask;
+pub mod augment;
 pub mod browse;
 pub mod card;
 pub mod choice;

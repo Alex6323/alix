@@ -23,6 +23,12 @@
     --card-h: min(82vh, 680px);
   }
   * { box-sizing: border-box; }
+  /* A blinking caret should only ever appear inside a real text input — never on
+     a focused button, a chosen option, or page text (e.g. with the browser's
+     caret-browsing on). caret-color is inherited, so transparent here hides it
+     everywhere; the editable elements opt back in. */
+  html { caret-color: transparent; }
+  input, textarea, [contenteditable] { caret-color: auto; }
   html, body { margin: 0; height: 100%; }
   body {
     background: radial-gradient(120% 80% at 50% -10%, #0c2734 0%, var(--void) 60%) fixed;

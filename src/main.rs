@@ -7,6 +7,7 @@ use std::{
 
 use alix::{
     answer::Mode,
+    augment::{self, AugmentCache},
     browse,
     card::{Card, Frontend},
     config::{self, Config, Strictness},
@@ -59,9 +60,9 @@ enum Command {
     },
     /// Read through decks card by card without grading (no progress is saved).
     Browse(BrowseArgs),
-    /// Generate a facts deck with Claude from a source — a web page URL or a
-    /// local file/directory path. (The deck-side mirror of `alix trace`.)
-    Deck(GenerateDeckArgs),
+    /// Create or augment decks with Claude.
+    #[command(subcommand)]
+    Deck(DeckAction),
     /// Import an Anki TSV export (tab-separated `front<TAB>back` lines) into a
     /// alix deck.
     Import(ImportArgs),
@@ -190,6 +191,53 @@ struct GenerateDeckArgs {
     /// Path of the config file (default: platform config dir).
     #[arg(long)]
     config: Option<PathBuf>,
+}
+
+/// The `alix deck` subcommands: create a deck, or augment an existing one.
+#[derive(Subcommand)]
+enum DeckAction {
+    /// Generate a facts deck with Claude from a source — a web page URL or a
+    /// local file/directory path. (The deck-side mirror of `alix trace`.)
+    Generate(GenerateDeckArgs),
+    /// Augment an existing deck with Claude — multiple-choice distractors, or
+    /// trivia notes. Augmentations are deliberate and persisted, so review stays
+    /// instant and fully offline.
+    Augment(AugmentArgs),
+}
+
+#[derive(Args)]
+struct AugmentArgs {
+    /// The deck file to augment.
+    deck: PathBuf,
+
+    /// What to augment — mirrors the review concepts: `choices` (multiple-choice
+    /// distractors) or `notes` (trivia / mnemonics). Both are cached beside your
+    /// progress, never written into the deck; review reads them.
+    #[arg(long, value_enum)]
+    target: AugmentTarget,
+
+    /// Free-text guidance for *how* to augment, woven into the prompt (e.g.
+    /// "use common misconceptions", "add a surprising historical fact").
+    #[arg(long)]
+    with: Option<String>,
+
+    /// Path of the progress store the augmentation cache sits beside (default:
+    /// platform data dir).
+    #[arg(long)]
+    store: Option<PathBuf>,
+
+    /// Path of the config file (default: platform config dir).
+    #[arg(long)]
+    config: Option<PathBuf>,
+}
+
+/// What `alix deck augment` generates, named after the review concept it feeds.
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+enum AugmentTarget {
+    /// Multiple-choice distractors.
+    Choices,
+    /// Trivia / mnemonic notes, shown with the card's deck note on reveal.
+    Notes,
 }
 
 #[derive(Args)]
@@ -417,7 +465,10 @@ fn main() -> Result<()> {
         Some(Command::Reset(args)) => reset(args),
         Some(Command::Check { decks }) => check(decks),
         Some(Command::Browse(args)) => browse(args),
-        Some(Command::Deck(args)) => deck_cmd(args),
+        Some(Command::Deck(action)) => match action {
+            DeckAction::Generate(args) => deck_cmd(args),
+            DeckAction::Augment(args) => augment_cmd(args),
+        },
         Some(Command::Import(args)) => import_cmd(args),
         Some(Command::Exam(args)) => exam_cmd(args),
         Some(Command::Trace(args)) => trace_cmd(args),
@@ -779,11 +830,21 @@ fn build_review(
     // `Any` (default), or its specific frontend. Image cards are web-only, so
     // they drop out of the TUI here (and the caller reports the count).
     let total = cards.len();
-    let cards: Vec<_> = cards
+    let mut cards: Vec<_> = cards
         .into_iter()
         .filter(|c| matches!(c.frontend(), Frontend::Any) || c.frontend() == target)
         .collect();
     let hidden = total - cards.len();
+
+    // Merge in any AI-generated notes (`alix deck augment --target notes`), which
+    // live in the sidecar cache beside the store — shown with the card's own deck
+    // note on reveal. (Distractors are read separately, when a choice is built.)
+    let augment = AugmentCache::open(augment::augment_path_for(store.path()));
+    for card in &mut cards {
+        if let Some(note) = augment.note(card.id()) {
+            card.append_note(&[note.to_string()]);
+        }
+    }
 
     // Directives (mode/scheduler/order) come from the requested deck(s) only,
     // not the pulled-in prerequisites — a prerequisite must not override the
@@ -1869,6 +1930,67 @@ fn browse_serve(args: BrowseArgs) -> Result<()> {
         config.picker,
         build,
     )
+}
+
+/// `alix deck augment`: deliberately generate AI augmentations for a deck into
+/// the sidecar cache (`augment.json`), which review then reads. Foreground, so
+/// any Claude error surfaces here rather than mid-review.
+fn augment_cmd(args: AugmentArgs) -> Result<()> {
+    let config = Config::load(args.config.as_deref())?;
+    let deck = Deck::load(&args.deck)?;
+    let items: Vec<augment::WarmItem> = deck
+        .cards
+        .iter()
+        .map(|c| augment::WarmItem {
+            id: c.id(),
+            question: c.front.clone(),
+            answer: c.back.join("\n"),
+        })
+        .collect();
+    if items.is_empty() {
+        bail!("the deck has no cards to augment");
+    }
+    let ask_cfg = augment::run_config(&config.ai, &config.ask);
+
+    // The cache sits beside whatever store the deck reviews against, so a
+    // workspace deck's augmentations live with the workspace.
+    let store = store_for(std::slice::from_ref(&args.deck), args.store.clone())?;
+    let cache_path = augment::augment_path_for(store.path());
+    let mut cache = AugmentCache::open(&cache_path);
+
+    let total = items.len();
+    let made = match args.target {
+        AugmentTarget::Choices => {
+            let map = augment::generate(
+                &items,
+                config.ai.distractor_count,
+                args.with.as_deref(),
+                &ask_cfg,
+            )?;
+            for (id, distractors) in &map {
+                cache.set_distractors(*id, distractors.clone());
+            }
+            map.len()
+        }
+        AugmentTarget::Notes => {
+            let map = augment::generate_notes(&items, args.with.as_deref(), &ask_cfg)?;
+            for (id, note) in &map {
+                cache.set_note(*id, note.clone());
+            }
+            map.len()
+        }
+    };
+    cache.save()?;
+
+    let kind = match args.target {
+        AugmentTarget::Choices => "distractors",
+        AugmentTarget::Notes => "notes",
+    };
+    println!(
+        "augmented {made} of {total} cards with {kind} → {}",
+        cache_path.display()
+    );
+    Ok(())
 }
 
 fn deck_cmd(args: GenerateDeckArgs) -> Result<()> {

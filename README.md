@@ -24,7 +24,8 @@ CLI, so they need it **installed and logged in** (which in turn needs a Claude
 subscription or API access). Install the CLI and run `claude` once to
 authenticate. The features that require it:
 
-- `alix deck` — generate a facts deck from a URL or a local file/directory;
+- `alix deck generate` — generate a facts deck from a URL or a local
+  file/directory; `alix deck augment` — add AI distractors or notes to one;
 - `alix exam` — the AI exam;
 - `alix trace --build` / `--suggest` / `--grade` — discover, suggest, and grade
   traces;
@@ -74,12 +75,14 @@ alix                            # pick decks interactively (recent + ~/decks)
 alix mydeck.txt                 # review due cards (flip mode, Leitner)
 alix --mode typing mydeck.txt   # type the answer character by character
 alix --mode fuzzy mydeck.txt    # whole-line input, small typos tolerated
-alix --mode choice mydeck.txt   # multiple choice (distractors from the deck)
+alix --mode choice mydeck.txt   # multiple choice (distractors sampled from the deck)
 alix --mode line mydeck.txt     # reveal the answer one line at a time (lyrics)
 alix --scheduler sm2 mydeck.txt # SM-2 intervals instead of Leitner
 alix --cram mydeck.txt          # ignore cooldowns, review everything
 alix browse mydeck.txt          # read through cards, no grading or scheduling
-alix deck <url-or-path>         # generate a facts deck from a web page or a file/dir
+alix deck generate <url-or-path>   # generate a facts deck from a web page or a file/dir
+alix deck augment mydeck.txt --target choices   # AI distractors (cached; review reads them)
+alix deck augment mydeck.txt --target notes --with "add trivia"   # AI notes
 alix import cards.tsv            # import an Anki TSV (front<TAB>back) into a deck
 alix exam mydeck.txt            # AI exam against the deck's % source: (gates unlocks)
 alix trace mytrace.txt          # walk a predict-and-verify path through a % source:
@@ -440,7 +443,7 @@ than a stale quote. `% at:` is a comment to the scheduler, so adding it never
 changes a card's identity or resets its progress.
 
 You can write `% at:` by hand, but the deck generator adds them for you:
-[`alix deck <local source>`](#generate-a-facts-deck--alix-deck) and
+[`alix deck generate <local source>`](#generate-a-facts-deck--alix-deck-generate) and
 [`alix explore --build`](#exploring-a-source--alix-explore) cite the lines each
 fact came from, and `alix check` warns about a citation that no longer resolves
 (a moved or shrunk file). In a workspace built with `alix explore --into
@@ -468,6 +471,22 @@ no distractors ever have to be written. Recognition is easier than recall: a
 correct pick grades as *good* (never *easy*), a wrong pick fails the card.
 Cloze siblings are never used as distractors, and if a session has fewer
 than four distinct answers the card falls back to flip mode.
+
+For **AI-written** distractors instead — plausible, tempting wrong answers
+tailored to each card — augment the deck ahead of time:
+
+```sh
+alix deck augment mydeck.txt --target choices --with "use common misconceptions"
+```
+
+This generates them once with Claude and caches them by card id (in
+`augment.json` beside your progress), so review stays instant and fully offline —
+no waiting, no live calls during study. Review reads the cache automatically: a
+card with cached distractors uses them, anything else falls back to the offline
+sampler above (so a card never loses its options), and because the AI brings its
+own wrong answers, choice mode works even on a deck too thin to sample from.
+Editing a card's answer regenerates its distractors next time you augment. See
+[Augment a deck](#augment-a-deck--alix-deck-augment).
 
 In **line** mode the back is revealed one line at a time: press the reveal
 key (`Space`) to uncover the next line, recalling it first. It is meant for
@@ -627,19 +646,19 @@ card's progress is untouched). Requires the `claude` CLI to be installed
 and logged in; the command, a `--model` override and the timeout are
 configurable in the `[ask]` section of the config file.
 
-## Generate a facts deck — `alix deck`
+## Generate a facts deck — `alix deck generate`
 
-`alix deck <source>` turns a **source** into a deck of fact cards using the
-Claude CLI. The source is a web page URL *or* a local file/directory path (the
-deck-side mirror of `alix trace`):
+`alix deck generate <source>` turns a **source** into a deck of fact cards using
+the Claude CLI. The source is a web page URL *or* a local file/directory path
+(the deck-side mirror of `alix trace`):
 
 ```sh
-alix deck https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html
-alix deck src/scheduler.rs            # a local file (or a directory)
-alix deck <source> -o ownership       # choose the file name
-alix deck <source> --cards 15         # cap the number of cards
-alix deck <source> --review           # add a 2nd pass to remove redundant cards
-alix deck <source> --print            # print to stdout instead of writing
+alix deck generate https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html
+alix deck generate src/scheduler.rs        # a local file (or a directory)
+alix deck generate <source> -o ownership   # choose the file name
+alix deck generate <source> --cards 15     # cap the number of cards
+alix deck generate <source> --review       # 2nd pass to remove redundant cards
+alix deck generate <source> --print        # print to stdout instead of writing
 ```
 
 For a **web page**, Claude reads it with the **WebFetch** tool and the deck
@@ -668,6 +687,34 @@ command and permission settings. Review the result before relying on it — it i
 point, not a final deck. Generation needs the `claude` CLI installed and
 logged in, and works best on a single page or chapter (a whole book overruns
 the context budget).
+
+## Augment a deck — `alix deck augment`
+
+`alix deck augment <deck> --target <kind>` enriches an *existing* deck with
+Claude. It's a **deliberate, one-off command** — generation happens here, in the
+foreground (so any error surfaces immediately), and the result is cached beside
+your progress (`augment.json`, keyed by card id). Review then reads the cache, so
+study stays instant and fully offline — Claude is never called mid-session.
+
+```sh
+alix deck augment mydeck.txt --target choices    # multiple-choice distractors
+alix deck augment mydeck.txt --target notes      # a trivia / mnemonic note per card
+alix deck augment mydeck.txt --target choices --with "use common misconceptions"
+```
+
+- **`--target choices`** writes plausible wrong answers for [choice
+  mode](#review). Review uses them automatically; cards without them fall back to
+  the offline sampler.
+- **`--target notes`** writes one short note (trivia, context, a mnemonic) per
+  card, shown *alongside* the card's own `! ` deck note on reveal. Your deck file
+  is never modified — AI notes live only in the cache.
+- **`--with "<guidance>"`** steers *how* (e.g. "use common misconceptions",
+  "add a surprising historical fact").
+
+Nothing here touches a card's identity, so augmenting never resets progress;
+editing a card's answer changes its id, so it simply regenerates next time you
+augment. Tuned under `[ai]` (`model`, `distractor_count`, `timeout_secs`).
+Augmentation needs the `claude` CLI installed and logged in.
 
 ## Import an Anki deck (`alix import`)
 

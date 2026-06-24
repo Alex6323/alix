@@ -6,6 +6,31 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **`alix deck augment` — deliberate AI deck augmentation.** A new command that
+  enriches an existing deck with Claude and **caches the result** beside your
+  progress (`augment.json`, keyed by card id); review reads the cache, so study
+  stays instant and fully offline (Claude is never called mid-session). Two
+  targets: `--target choices` writes plausible multiple-choice distractors (used
+  automatically in choice mode, with the offline sampler as fallback — so choice
+  now works even on a deck too thin to sample from), and `--target notes` writes
+  a short trivia/mnemonic note per card, shown *alongside* the card's own deck
+  note on reveal (the deck file is never modified). `--with "<guidance>"` steers
+  how. Tuned under `[ai]` (`model`, `distractor_count`, `timeout_secs`).
+
+### Changed
+- **`alix deck` is now a command group: `alix deck generate` + `alix deck
+  augment`.** **Breaking:** `alix deck <source>` is now `alix deck generate
+  <source>`.
+- **Choice-mode offline distractors are shape-aware.** Number-like answers now
+  only compete with the same shape (a 4-digit year vs other years, not a `1,5`
+  ratio or a 2-digit count), so an obviously-wrong option no longer slips in.
+
+### Fixed
+- The web review UI no longer shows a stray blinking caret (e.g. with the
+  browser's caret-browsing on); a caret now appears only inside a real text
+  input.
+
 ## [0.1.0] - 2026-06-23
 
 ### Changed

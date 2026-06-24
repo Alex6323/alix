@@ -390,6 +390,33 @@ impl Default for TraceConfig {
     }
 }
 
+/// Settings for `alix deck augment` (the `[ai]` section). Augmentation is a
+/// deliberate command — it generates distractors (and, later, notes) into the
+/// sidecar cache — so there is no on/off switch; these just tune the calls.
+/// Generation reuses the `[ask]` command but runs tool-free, so no allowlist
+/// applies.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AiConfig {
+    /// Model passed as `--model`; `None` falls back to the `[ask]` model, then
+    /// the CLI's own default.
+    pub model: Option<String>,
+    /// How many distractors to request per choice card.
+    pub distractor_count: usize,
+    /// How long to wait for a generation call before giving up. A whole-deck
+    /// batch is a big call (like `[generate]`/`[exam]`), so this is generous.
+    pub timeout_secs: u64,
+}
+
+impl Default for AiConfig {
+    fn default() -> Self {
+        Self {
+            model: None,
+            distractor_count: 3,
+            timeout_secs: 300,
+        }
+    }
+}
+
 /// Settings for the local web frontend (`alix serve`, the `[serve]` section).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ServeConfig {
@@ -419,6 +446,8 @@ pub struct Config {
     pub exam: ExamConfig,
     /// Trace building settings.
     pub trace: TraceConfig,
+    /// Opt-in AI question-augmentation settings (choice-mode distractors).
+    pub ai: AiConfig,
     /// Local web frontend settings.
     pub serve: ServeConfig,
     /// Directory the startup picker lists decks from, and resolves bare deck
@@ -451,8 +480,18 @@ struct RawConfig {
     #[serde(default)]
     trace: RawTrace,
     #[serde(default)]
+    ai: RawAi,
+    #[serde(default)]
     serve: RawServe,
     decks_dir: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct RawAi {
+    model: Option<String>,
+    distractor_count: Option<usize>,
+    timeout_secs: Option<u64>,
 }
 
 #[derive(Deserialize, Default)]
@@ -665,6 +704,17 @@ impl Config {
         }
         trace.extra = raw.trace.extra.filter(|s| !s.trim().is_empty());
 
+        let mut ai = AiConfig::default();
+        if let Some(model) = raw.ai.model.filter(|m| !m.trim().is_empty()) {
+            ai.model = Some(model);
+        }
+        if let Some(count) = raw.ai.distractor_count {
+            ai.distractor_count = count;
+        }
+        if let Some(secs) = raw.ai.timeout_secs {
+            ai.timeout_secs = secs;
+        }
+
         let mut serve = ServeConfig::default();
         if let Some(port) = raw.serve.port {
             serve.port = port;
@@ -680,6 +730,7 @@ impl Config {
             generate,
             exam,
             trace,
+            ai,
             serve,
             decks_dir,
         })
@@ -737,8 +788,8 @@ pub fn default_config_toml() -> &'static str {
 # reference. Uncomment a line and edit it to override that default; lines you
 # leave commented keep the built-in default, so improvements to the defaults
 # in newer versions still reach you. Keep the section headers ([keys], [picker],
-# [browse], [ask], [generate], [exam], [trace], [serve]) so an uncommented line
-# lands in the right section.
+# [browse], [ask], [generate], [exam], [trace], [ai], [serve]) so an uncommented
+# line lands in the right section.
 #
 # Keys are written as a single character ("j"), a special key name
 # ("space", "enter", "tab", "esc", "backspace"), or either with a "ctrl-"
@@ -840,6 +891,14 @@ pub fn default_config_toml() -> &'static str {
 # effort = "high"               # default; --effort: low|medium|high|xhigh|max
 # timeout_secs = 600            # exploring a source is the slowest call
 # extra = ""                    # extra guidance appended to the build prompt
+
+# AI deck augmentation (`alix deck augment <deck>`). Generates choice-mode
+# distractors (and notes) into a sidecar cache beside your progress; review
+# reads them. Reuses the [ask] command; generation is a tool-free text call.
+[ai]
+# model = ""                    # --model override; empty = use [ask] / CLI default
+# distractor_count = 3          # wrong options generated per choice card
+# timeout_secs = 300            # a whole-deck batch is a big call; wait this long
 
 # Local web frontend (`alix serve`). Binds to localhost by default; `--lan`
 # exposes it to the network and `--port` overrides the port set here.
@@ -1039,6 +1098,31 @@ mod tests {
         assert_eq!(None, Config::default().ask.effort);
         let config = Config::from_toml("[ask]\neffort = \"medium\"\n").unwrap();
         assert_eq!(Some("medium".to_string()), config.ask.effort);
+    }
+
+    #[test]
+    fn ai_defaults_to_three_distractors_and_cli_model() {
+        let ai = Config::default().ai;
+        assert_eq!(3, ai.distractor_count);
+        assert_eq!(None, ai.model);
+    }
+
+    #[test]
+    fn ai_section_overrides_defaults() {
+        let config = Config::from_toml("[ai]\ndistractor_count = 5\nmodel = \"haiku\"\n").unwrap();
+        assert_eq!(5, config.ai.distractor_count);
+        assert_eq!(Some("haiku".to_string()), config.ai.model);
+    }
+
+    #[test]
+    fn ai_empty_model_means_cli_default() {
+        let config = Config::from_toml("[ai]\nmodel = \"\"\n").unwrap();
+        assert_eq!(None, config.ai.model);
+    }
+
+    #[test]
+    fn unknown_ai_setting_is_rejected() {
+        assert!(Config::from_toml("[ai]\nbogus = 1\n").is_err());
     }
 
     #[test]

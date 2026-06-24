@@ -29,6 +29,7 @@ use twox_hash::XxHash64;
 use crate::{
     answer::{Mode, grade_lines_unordered},
     ask::{self, CliSession, Exchange, Reply},
+    augment::{self, AugmentCache},
     card::Card,
     choice,
     config::{
@@ -504,6 +505,9 @@ struct Reviewing {
     source_roots: HashMap<String, PathBuf>,
     /// Subject → source base, for resolving a card's `% at:` citation excerpt.
     source_bases: HashMap<String, SourceBase>,
+    /// AI distractors for choice cards, read when building a choice question
+    /// (generated ahead of time by `alix deck augment`; empty → offline).
+    augment: AugmentCache,
     pending: Option<Pending>,
 }
 
@@ -538,8 +542,18 @@ impl Reviewing {
             links: build.links,
             source_roots: build.source_roots,
             source_bases: build.source_bases,
+            // The real cache is opened by `open_augment` once the active store
+            // path is known; until then an empty cache (offline only).
+            augment: AugmentCache::open(Path::new("")),
             pending: None,
         }
+    }
+
+    /// Opens the distractor cache co-located with the active `store_path` (the
+    /// active store changes per selection). Distractors are generated ahead of
+    /// time by `alix deck augment`; review only reads them.
+    fn open_augment(&mut self, store_path: &Path) {
+        self.augment = AugmentCache::open(augment::augment_path_for(store_path));
     }
 
     /// Drops the displayed transcript when the current card changed, so the ask
@@ -820,6 +834,9 @@ pub fn run_review(
     let picker_keys = PickerKeysDto::from(&picker_keys);
     let ask_info = AskInfoDto::from(&ask_cfg);
     let mut reviewing = initial.map(Reviewing::new);
+    if let Some(r) = reviewing.as_mut() {
+        r.open_augment(store.path());
+    }
     let mut examining: Option<Examining> = None;
     // A trace picked from the selection screen walks here (the page navigates to
     // `/walk`, which this server hosts alongside review).
@@ -867,7 +884,9 @@ pub fn run_review(
                             }
                             Ok(None) => match build(paths, &store, &mut recent) {
                                 Ok(b) => {
-                                    reviewing = Some(Reviewing::new(b));
+                                    let mut r = Reviewing::new(b);
+                                    r.open_augment(store.path());
+                                    reviewing = Some(r);
                                     walking = None;
                                     respond_json(
                                         request,
@@ -979,7 +998,8 @@ pub fn run_review(
                 // on this card during the result — Remove still works on it.
                 let picked = read_index(&mut request).and_then(|chosen| {
                     let card = r.session.current()?.clone();
-                    let correct = choice::build(&card, r.session.cards(), card.id())?.correct;
+                    let ai = r.augment.distractors(card.id());
+                    let correct = choice::build(&card, r.session.cards(), card.id(), ai)?.correct;
                     Some((chosen, correct))
                 });
                 match picked {
@@ -1823,7 +1843,10 @@ fn review_state(
         .or(card.and_then(|c| c.mode))
         .unwrap_or_default();
     let choices = if mode == Mode::Choice {
-        card.and_then(|c| choice::build(c, session.cards(), c.id()).map(|q| q.options))
+        card.and_then(|c| {
+            choice::build(c, session.cards(), c.id(), r.augment.distractors(c.id()))
+                .map(|q| q.options)
+        })
     } else {
         None
     };
