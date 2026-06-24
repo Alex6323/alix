@@ -55,6 +55,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   answers compose freely, and the Next/Submit button now shows the binding.
 
 ### Fixed
+- **Web picker: ↑ on the first row no longer jumps into the filter box.** The
+  filter is reachable only by `/` or `Ctrl-F` (matching the TUI); arrow keys stay
+  within the deck list.
 - The web review UI no longer shows a stray blinking caret (e.g. with the
   browser's caret-browsing on); a caret now appears only inside a real text
   input.

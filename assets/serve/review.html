@@ -951,7 +951,7 @@ async function renderSelect() {
       // Vim/arrow nav; g/G/Home/End jump to ends; / or Ctrl-F focus the filter;
       // l/Enter open the focused row; m opens Mastered; h backs out.
       if (e.key === "ArrowDown" || hit(e, PK.down)) { e.preventDefault(); if (idx < v.length - 1) v[idx + 1].focus(); }
-      else if (e.key === "ArrowUp" || hit(e, PK.up)) { e.preventDefault(); if (idx > 0) v[idx - 1].focus(); else filter.focus(); }
+      else if (e.key === "ArrowUp" || hit(e, PK.up)) { e.preventDefault(); if (idx > 0) v[idx - 1].focus(); } // stays on the first row; the filter is only reachable via / or Ctrl-F
       else if (e.key === "g" || e.key === "Home") { e.preventDefault(); if (v.length) v[0].focus(); }
       else if (e.key === "G" || e.key === "End") { e.preventDefault(); if (v.length) v[v.length - 1].focus(); }
       else if (hit(e, PK.filter)) { e.preventDefault(); filter.focus(); }
