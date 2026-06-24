@@ -937,7 +937,7 @@ async function renderSelect() {
     filter.addEventListener("keydown", (e) => {
       const v = visibleRows();
       if (e.key === "ArrowDown") { e.preventDefault(); if (v.length) v[0].focus(); }
-      else if (e.key === "Enter") { e.stopPropagation(); e.preventDefault(); if (v.length) v[0].click(); }
+      else if (e.key === "Enter") { e.stopPropagation(); e.preventDefault(); if (v.length) v[0].focus(); } // focus the first match, don't launch it
       else if (e.key === "Escape") { e.stopPropagation(); e.preventDefault(); if (v.length) v[0].focus(); else filter.blur(); }
       else if (e.key === "Backspace") { e.stopPropagation(); } // edit the filter, don't go back
     });

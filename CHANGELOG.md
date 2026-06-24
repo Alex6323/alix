@@ -66,6 +66,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Web picker: ↑ on the first row no longer jumps into the filter box.** The
   filter is reachable only by `/` or `Ctrl-F` (matching the TUI); arrow keys stay
   within the deck list.
+- **Web picker: Enter in the filter box focuses the first match** instead of
+  immediately launching it, so you can filter then navigate before committing.
 - The web review UI no longer shows a stray blinking caret (e.g. with the
   browser's caret-browsing on); a caret now appears only inside a real text
   input.
