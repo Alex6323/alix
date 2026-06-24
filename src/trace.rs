@@ -186,21 +186,17 @@ impl Trace {
                 continue; // a remote source has no local line ranges to check
             }
             let (file, spec) = parse_locator(locator);
-            let path = match file {
-                Some(f) => self.base_dir.join(f),
-                None => match &self.source_file {
-                    Some(p) => p.clone(),
-                    None => {
-                        issues.push(LocatorIssue {
-                            checkpoint: i,
-                            message: format!(
-                                "locator `{locator}` gives only line numbers, but `% source:` \
-                                 is not a single file — write it as `file:lines`"
-                            ),
-                        });
-                        continue;
-                    }
-                },
+            let Some(path) =
+                locator_path(&self.base_dir, self.source_file.as_deref(), file.as_deref())
+            else {
+                issues.push(LocatorIssue {
+                    checkpoint: i,
+                    message: format!(
+                        "locator `{locator}` gives only line numbers, but `% source:` \
+                         is not a single file — write it as `file:lines`"
+                    ),
+                });
+                continue;
             };
             let Ok(text) = std::fs::read_to_string(&path) else {
                 issues.push(LocatorIssue {
@@ -1198,17 +1194,33 @@ fn parse_line_range(spec: &str) -> (usize, usize) {
 /// `base_dir` is the directory a `file:` part joins onto, and `source_file` is
 /// the single `% source:` file a line-only locator refers to. Shared by trace
 /// checkpoints ([`Trace::excerpt`]) and fact-card citations ([`SourceBase`]).
+/// Resolves a parsed locator's `file:` part to the file it reads. A single-file
+/// `% source:` (`source_file`) IS that one file, so every locator reads it and
+/// any `file:` part is redundant — and may be written relative to a different
+/// root (e.g. the crate root) than `base_dir`, which would join on into a wrong,
+/// duplicated path (`…/src/executor/src/executor/…`). Otherwise the `file:` part
+/// joins onto `base_dir`. `None` = a line-only locator with no single-file
+/// source (the caller reports it). Shared by [`excerpt_at`] and
+/// [`Trace::lint_locators`] so the two never disagree.
+fn locator_path(
+    base_dir: &Path,
+    source_file: Option<&Path>,
+    file: Option<&str>,
+) -> Option<PathBuf> {
+    match source_file {
+        Some(sf) => Some(sf.to_path_buf()),
+        None => file.map(|f| base_dir.join(f)),
+    }
+}
+
 fn excerpt_at(base_dir: &Path, source_file: Option<&Path>, locator: &str) -> Result<Excerpt> {
     let (file, spec) = parse_locator(locator);
-    let path = match file {
-        Some(f) => base_dir.join(f),
-        None => source_file.map(Path::to_path_buf).ok_or_else(|| {
-            anyhow!(
-                "locator `{locator}` gives only line numbers, but `% source:` \
-                 is not a single file — write it as `file:lines`"
-            )
-        })?,
-    };
+    let path = locator_path(base_dir, source_file, file.as_deref()).ok_or_else(|| {
+        anyhow!(
+            "locator `{locator}` gives only line numbers, but `% source:` \
+             is not a single file — write it as `file:lines`"
+        )
+    })?;
     read_excerpt(&path, spec.as_deref())
 }
 
@@ -1283,6 +1295,20 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let err = excerpt_at(dir.path(), None, "2-3").unwrap_err();
         assert!(format!("{err:#}").contains("only line numbers"));
+    }
+
+    #[test]
+    fn excerpt_at_single_file_source_ignores_a_redundant_file_path() {
+        // A single-file `% source:` whose checkpoint repeats the path relative to
+        // the crate root must still read the source file — not join the path onto
+        // the file's own directory and duplicate it
+        // (`…/src/executor/src/executor/env.rs`).
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src/executor")).unwrap();
+        let file = write(dir.path(), "src/executor/env.rs", "a\nb\nc\nd\n");
+        let base_dir = file.parent().unwrap();
+        let ex = excerpt_at(base_dir, Some(&file), "src/executor/env.rs:2-3").unwrap();
+        assert_eq!(vec![(2, "b".to_string()), (3, "c".to_string())], ex.lines);
     }
 
     #[test]

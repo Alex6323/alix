@@ -56,6 +56,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   answers compose freely, and the Next/Submit button now shows the binding.
 
 ### Fixed
+- **A trace/fact citation against a single-file `% source:` no longer doubles the
+  path.** When `% source:` is one file, every `% at:` reads *that* file; a locator
+  that repeats the path relative to a different root (e.g. the crate root,
+  `% at: src/executor/env.rs:44-64` against `% source: …/src/executor/env.rs`)
+  was joined onto the file's own directory, yielding
+  `…/src/executor/src/executor/env.rs` ("no such file"). Both the walk reveal and
+  `alix check` now share one `locator_path` resolver, so they can't disagree.
 - **Web picker: ↑ on the first row no longer jumps into the filter box.** The
   filter is reachable only by `/` or `Ctrl-F` (matching the TUI); arrow keys stay
   within the deck list.
