@@ -177,6 +177,11 @@ to this codebase. When in doubt, mirror the surrounding code.
 - **User-facing changes get a `CHANGELOG.md` entry** under `## [Unreleased]`
   (Keep a Changelog format: Added / Changed / Fixed). Internal refactors and
   test-only changes don't.
+- **Break freely while pre-1.0.** While the version is `0.x.y`, don't add
+  back-compat shims or aliases for renamed or removed commands, flags, config
+  keys, or directives — change them outright and record it as a **Breaking** note
+  under `## [Unreleased]` → Changed. Compatibility machinery only earns its keep
+  after 1.0; before then it's just surface to carry.
 - **No new dependency without a one-line reason.** Each crate added is permanent
   maintenance and supply-chain surface — reach for std or an existing dep first,
   and when a new one genuinely earns its place, say why in the commit.
