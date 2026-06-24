@@ -190,6 +190,13 @@ pub struct App {
     /// AI distractors for choice cards, read when building a choice question
     /// (populated ahead of time by `alix deck augment`; empty → offline sampling).
     augment: AugmentCache,
+    /// A per-presentation counter (seeded from the clock) that rotates a reworded
+    /// question variant in each time a card is shown (`alix deck augment
+    /// --target questions`).
+    present_seq: u64,
+    /// The authored front of each card we've rotated a variant into, so the
+    /// original phrasing stays in the rotation (generated variants drop it).
+    original_fronts: HashMap<u64, String>,
 }
 
 /// What the user chose at the session-end summary, for `main` to act on after
@@ -228,6 +235,8 @@ impl App {
             confirming_quit: false,
             citation_view: false,
             augment,
+            present_seq: time::now_ms(),
+            original_fronts: HashMap::new(),
         };
         app.start_card();
         app
@@ -376,9 +385,38 @@ impl App {
         *waiting = None;
     }
 
+    /// Rotates the current card's question through the pool of its authored front
+    /// plus any cached variants (`alix deck augment --target questions`), picking
+    /// a fresh phrasing each presentation so the same card asks differently. The
+    /// answer is unchanged, so identity (which ignores the front) is untouched.
+    fn rotate_variant(&mut self) {
+        let Some(id) = self.session.current().map(|c| c.id()) else {
+            return;
+        };
+        if self.augment.variants(id).is_none() {
+            return;
+        }
+        // Capture the authored front the first time, before we overwrite it, so
+        // it stays in the rotation alongside the generated variants.
+        if !self.original_fronts.contains_key(&id)
+            && let Some(card) = self.session.current()
+        {
+            self.original_fronts.insert(id, card.front.clone());
+        }
+        let original = self.original_fronts.get(&id).cloned().unwrap_or_default();
+        let seed = self.present_seq;
+        self.present_seq = self.present_seq.wrapping_add(1);
+        if let Some(chosen) = self.augment.pick_front(id, &original, seed)
+            && let Some(card) = self.session.current_mut()
+        {
+            card.front = chosen;
+        }
+    }
+
     /// Sets up the phase for the next card, or the summary if none is left.
     fn start_card(&mut self) {
         self.citation_view = false; // a new card starts on its answer, not its source
+        self.rotate_variant(); // a different reworded question each time it comes up
         let Some(card) = self.session.current() else {
             // Reaching the summary: flag up front whether a new session could
             // start, so the screen can say "nothing due" without the user

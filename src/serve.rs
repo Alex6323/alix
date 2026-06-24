@@ -508,6 +508,12 @@ struct Reviewing {
     /// AI distractors for choice cards, read when building a choice question
     /// (generated ahead of time by `alix deck augment`; empty → offline).
     augment: AugmentCache,
+    /// A per-presentation counter (seeded from the clock) that rotates a reworded
+    /// question variant in each time a card is shown (`--target questions`).
+    present_seq: u64,
+    /// The authored front of each card we've rotated a variant into, so the
+    /// original phrasing stays in the rotation (generated variants drop it).
+    original_fronts: HashMap<u64, String>,
     pending: Option<Pending>,
 }
 
@@ -545,6 +551,8 @@ impl Reviewing {
             // The real cache is opened by `open_augment` once the active store
             // path is known; until then an empty cache (offline only).
             augment: AugmentCache::open(Path::new("")),
+            present_seq: now_ms(),
+            original_fronts: HashMap::new(),
             pending: None,
         }
     }
@@ -554,6 +562,34 @@ impl Reviewing {
     /// time by `alix deck augment`; review only reads them.
     fn open_augment(&mut self, store_path: &Path) {
         self.augment = AugmentCache::open(augment::augment_path_for(store_path));
+    }
+
+    /// Rotates the current card's question through the pool of its authored front
+    /// plus any cached variants (`alix deck augment --target questions`), a fresh
+    /// phrasing each time a card is presented. The answer is unchanged, so
+    /// identity (which ignores the front) is untouched. Called on card advance.
+    fn rotate_variant(&mut self) {
+        let Some(id) = self.session.current().map(|c| c.id()) else {
+            return;
+        };
+        if self.augment.variants(id).is_none() {
+            return;
+        }
+        // Capture the authored front the first time, before we overwrite it, so
+        // it stays in the rotation alongside the generated variants.
+        if !self.original_fronts.contains_key(&id)
+            && let Some(card) = self.session.current()
+        {
+            self.original_fronts.insert(id, card.front.clone());
+        }
+        let original = self.original_fronts.get(&id).cloned().unwrap_or_default();
+        let seed = self.present_seq;
+        self.present_seq = self.present_seq.wrapping_add(1);
+        if let Some(chosen) = self.augment.pick_front(id, &original, seed)
+            && let Some(card) = self.session.current_mut()
+        {
+            card.front = chosen;
+        }
     }
 
     /// Drops the displayed transcript when the current card changed, so the ask
@@ -836,6 +872,7 @@ pub fn run_review(
     let mut reviewing = initial.map(Reviewing::new);
     if let Some(r) = reviewing.as_mut() {
         r.open_augment(store.path());
+        r.rotate_variant();
     }
     let mut examining: Option<Examining> = None;
     // A trace picked from the selection screen walks here (the page navigates to
@@ -886,6 +923,7 @@ pub fn run_review(
                                 Ok(b) => {
                                     let mut r = Reviewing::new(b);
                                     r.open_augment(store.path());
+                                    r.rotate_variant();
                                     reviewing = Some(r);
                                     walking = None;
                                     respond_json(
@@ -931,6 +969,7 @@ pub fn run_review(
                         if let Err(e) = store.save() {
                             eprintln!("warning: could not save progress: {e}");
                         }
+                        r.rotate_variant(); // a fresh phrasing for the next card
                         respond_json(
                             request,
                             &review_state(reviewing.as_ref(), &store, mode_override),
@@ -945,6 +984,7 @@ pub fn run_review(
                     continue;
                 };
                 r.session.skip();
+                r.rotate_variant(); // a fresh phrasing for the next card
                 respond_json(
                     request,
                     &review_state(reviewing.as_ref(), &store, mode_override),
@@ -1040,6 +1080,7 @@ pub fn run_review(
                     continue;
                 };
                 r.session.restart(&store, now_ms());
+                r.rotate_variant(); // a fresh phrasing for the new session's first card
                 respond_json(
                     request,
                     &review_state(reviewing.as_ref(), &store, mode_override),

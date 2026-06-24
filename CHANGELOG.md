@@ -10,13 +10,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`alix deck augment` — deliberate AI deck augmentation.** A new command that
   enriches an existing deck with Claude and **caches the result** beside your
   progress (`augment.json`, keyed by card id); review reads the cache, so study
-  stays instant and fully offline (Claude is never called mid-session). Two
+  stays instant and fully offline (Claude is never called mid-session). Three
   targets: `--target choices` writes plausible multiple-choice distractors (used
   automatically in choice mode, with the offline sampler as fallback — so choice
-  now works even on a deck too thin to sample from), and `--target notes` writes
-  a short trivia/mnemonic note per card, shown *alongside* the card's own deck
-  note on reveal (the deck file is never modified). `--with "<guidance>"` steers
-  how. Tuned under `[ai]` (`model`, `distractor_count`, `timeout_secs`).
+  now works even on a deck too thin to sample from); `--target notes` writes a
+  short trivia/mnemonic note per card, shown *alongside* the card's own deck note
+  on reveal (the deck file is never modified); and `--target questions` writes a
+  pool of reworded phrasings of each question (same answer), a fresh one of which
+  review rotates in each time a card comes up so it can't be passed by
+  recognizing one fixed wording (plain, non-cloze cards). `--with "<guidance>"` steers how. Tuned under
+  `[ai]` (`model`, `distractor_count`, `variant_count`, `timeout_secs`).
 
 ### Changed
 - **`alix deck` is now a command group: `alix deck generate` + `alix deck

@@ -210,9 +210,10 @@ struct AugmentArgs {
     /// The deck file to augment.
     deck: PathBuf,
 
-    /// What to augment — mirrors the review concepts: `choices` (multiple-choice
-    /// distractors) or `notes` (trivia / mnemonics). Both are cached beside your
-    /// progress, never written into the deck; review reads them.
+    /// What to augment — mirrors the review concepts: `choices` (distractors),
+    /// `notes` (trivia / mnemonics), or `questions` (reworded phrasings rotated
+    /// at review). All are cached beside your progress, never written into the
+    /// deck; review reads them.
     #[arg(long, value_enum)]
     target: AugmentTarget,
 
@@ -238,6 +239,9 @@ enum AugmentTarget {
     Choices,
     /// Trivia / mnemonic notes, shown with the card's deck note on reveal.
     Notes,
+    /// Reworded question variants, rotated at review time so the card can't be
+    /// answered by recognizing one fixed wording. Plain (non-cloze) cards only.
+    Questions,
 }
 
 #[derive(Args)]
@@ -836,9 +840,10 @@ fn build_review(
         .collect();
     let hidden = total - cards.len();
 
-    // Merge in any AI-generated notes (`alix deck augment --target notes`), which
-    // live in the sidecar cache beside the store — shown with the card's own deck
-    // note on reveal. (Distractors are read separately, when a choice is built.)
+    // Merge in any AI-generated notes from the sidecar cache (`alix deck augment
+    // --target notes`) — shown with the card's own deck note on reveal. (Question
+    // variants are rotated in per-presentation by the frontends, and distractors
+    // are read when a choice question is built.)
     let augment = AugmentCache::open(augment::augment_path_for(store.path()));
     for card in &mut cards {
         if let Some(note) = augment.note(card.id()) {
@@ -1938,19 +1943,8 @@ fn browse_serve(args: BrowseArgs) -> Result<()> {
 fn augment_cmd(args: AugmentArgs) -> Result<()> {
     let config = Config::load(args.config.as_deref())?;
     let deck = Deck::load(&args.deck)?;
-    let items: Vec<augment::WarmItem> = deck
-        .cards
-        .iter()
-        .map(|c| augment::WarmItem {
-            id: c.id(),
-            question: c.front.clone(),
-            answer: c.back.join("\n"),
-        })
-        .collect();
-    if items.is_empty() {
-        bail!("the deck has no cards to augment");
-    }
     let ask_cfg = augment::run_config(&config.ai, &config.ask);
+    let guidance = args.with.as_deref();
 
     // The cache sits beside whatever store the deck reviews against, so a
     // workspace deck's augmentations live with the workspace.
@@ -1958,39 +1952,72 @@ fn augment_cmd(args: AugmentArgs) -> Result<()> {
     let cache_path = augment::augment_path_for(store.path());
     let mut cache = AugmentCache::open(&cache_path);
 
-    let total = items.len();
-    let made = match args.target {
+    let (made, total, kind) = match args.target {
         AugmentTarget::Choices => {
-            let map = augment::generate(
-                &items,
-                config.ai.distractor_count,
-                args.with.as_deref(),
-                &ask_cfg,
-            )?;
+            let items = warm_items(&deck.cards);
+            if items.is_empty() {
+                bail!("the deck has no cards to augment");
+            }
+            let total = items.len();
+            let map = augment::generate(&items, config.ai.distractor_count, guidance, &ask_cfg)?;
             for (id, distractors) in &map {
                 cache.set_distractors(*id, distractors.clone());
             }
-            map.len()
+            (map.len(), total, "distractors")
         }
         AugmentTarget::Notes => {
-            let map = augment::generate_notes(&items, args.with.as_deref(), &ask_cfg)?;
+            let items = warm_items(&deck.cards);
+            if items.is_empty() {
+                bail!("the deck has no cards to augment");
+            }
+            let total = items.len();
+            let map = augment::generate_notes(&items, guidance, &ask_cfg)?;
             for (id, note) in &map {
                 cache.set_note(*id, note.clone());
             }
-            map.len()
+            (map.len(), total, "notes")
+        }
+        AugmentTarget::Questions => {
+            // Morphing the front only makes sense for plain cards — a cloze
+            // card's front is its title, with the fill-in-the-blank in the body.
+            let plain: Vec<Card> = deck
+                .cards
+                .iter()
+                .filter(|c| c.hash_lines.is_none())
+                .cloned()
+                .collect();
+            let items = warm_items(&plain);
+            if items.is_empty() {
+                bail!("the deck has no plain (non-cloze) cards to add question variants to");
+            }
+            let total = items.len();
+            let map =
+                augment::generate_variants(&items, config.ai.variant_count, guidance, &ask_cfg)?;
+            for (id, variants) in &map {
+                cache.set_variants(*id, variants.clone());
+            }
+            (map.len(), total, "question variants")
         }
     };
     cache.save()?;
 
-    let kind = match args.target {
-        AugmentTarget::Choices => "distractors",
-        AugmentTarget::Notes => "notes",
-    };
     println!(
         "augmented {made} of {total} cards with {kind} → {}",
         cache_path.display()
     );
     Ok(())
+}
+
+/// Builds the per-card generation input from `cards`.
+fn warm_items(cards: &[Card]) -> Vec<augment::WarmItem> {
+    cards
+        .iter()
+        .map(|c| augment::WarmItem {
+            id: c.id(),
+            question: c.front.clone(),
+            answer: c.back.join("\n"),
+        })
+        .collect()
 }
 
 fn deck_cmd(args: GenerateDeckArgs) -> Result<()> {

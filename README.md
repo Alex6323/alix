@@ -699,6 +699,7 @@ study stays instant and fully offline — Claude is never called mid-session.
 ```sh
 alix deck augment mydeck.txt --target choices    # multiple-choice distractors
 alix deck augment mydeck.txt --target notes      # a trivia / mnemonic note per card
+alix deck augment mydeck.txt --target questions  # reworded phrasings of each question
 alix deck augment mydeck.txt --target choices --with "use common misconceptions"
 ```
 
@@ -708,13 +709,41 @@ alix deck augment mydeck.txt --target choices --with "use common misconceptions"
 - **`--target notes`** writes one short note (trivia, context, a mnemonic) per
   card, shown *alongside* the card's own `! ` deck note on reveal. Your deck file
   is never modified — AI notes live only in the cache.
-- **`--with "<guidance>"`** steers *how* (e.g. "use common misconceptions",
-  "add a surprising historical fact").
+- **`--target questions`** writes a small pool of **reworded phrasings** of each
+  question (the same answer still applies). Review rotates a fresh one in each
+  time the card comes up, so you can't pass it by recognizing one fixed wording —
+  you have to actually read and understand it. Plain (non-cloze) cards only, since a
+  cloze card's "front" is its title.
 
-Nothing here touches a card's identity, so augmenting never resets progress;
-editing a card's answer changes its id, so it simply regenerates next time you
-augment. Tuned under `[ai]` (`model`, `distractor_count`, `timeout_secs`).
-Augmentation needs the `claude` CLI installed and logged in.
+  It only helps when the question carries *content* to reword. A substantive
+  front morphs well:
+
+  ```text
+  What does the CAP theorem state?
+    → What claim does the CAP theorem make?
+    → According to the CAP theorem, what is asserted?
+    → What is the central assertion of the CAP theorem?
+  ```
+
+  A content-free front can only become other content-free fronts — morphing adds
+  nothing:
+
+  ```text
+  What is it?
+    → What is this?   What's it called?   Can you name it?   Which one is this?
+  ```
+
+  So write **self-contained questions** and morphing earns its keep; vague fronts
+  like "What is it?" are a smell either way.
+- **`--with "<guidance>"`** steers *how* (e.g. "use common misconceptions",
+  "add a surprising historical fact", "phrase questions as real-world scenarios").
+
+Nothing here touches a card's identity, so augmenting never resets progress
+(distractors, notes, and variants all key off the answer, which the id hashes —
+not the front); editing a card's answer changes its id, so it simply regenerates
+next time you augment. Tuned under `[ai]` (`model`, `distractor_count`,
+`variant_count`, `timeout_secs`). Augmentation needs the `claude` CLI installed
+and logged in.
 
 ## Import an Anki deck (`alix import`)
 
