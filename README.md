@@ -106,9 +106,10 @@ Run `alix` with no deck arguments (as the desktop launcher does) to open the
 **deck picker**, grouped into three sections: **[Workspaces](#workspaces)**
 (each showing when it last made progress) · **Recent** (loose decks you reviewed
 lately) · **Folders** (plain decks folders). A deck that lives inside a workspace
-stays out of Recent — you reach it by opening its workspace. Mastered/done and
-locked decks are also kept out of Recent (it's a quick launchpad) but stay
-reachable by filtering. Decks live in the decks directory (`~/decks` by default,
+stays out of Recent — you reach it by opening its workspace. Mastered/done decks
+are kept out of Recent (it's a quick launchpad) but stay reachable by filtering;
+an exam-locked deck that's still drillable stays in Recent. Decks live in the
+decks directory (`~/decks` by default,
 set `decks_dir` in the config). The focus is on the **list** by default, with
 Vim-style keys (rebindable in the config's `[picker]` section): `j`/`k` (or
 `↑`/`↓`) move, `l` (or `Enter`) opens the focused row, `h` (or `Esc`/`Backspace`)
@@ -116,12 +117,12 @@ steps back, `m` opens the **Mastered** window (your completed decks, kept out of
 Recent), and `/` (or `Ctrl-F`) starts **filtering** by name (searching *every*
 loose deck, not just the recent ones); `Esc` leaves the filter. Jumping to the
 first/last row stays fixed at `g`/`G` (or Home/End), like the `[browse]` pager.
-A deck you
-can't start right
-now is dimmed and `Enter` on it does nothing: 🔒 a
-[locked](#completion-states--unlocks) deck (an unfinished `% requires:`), 🕒 a deck
-with nothing due (all on cooldown — `--cram` reviews it anyway); a mastered deck
-reads `mastered 🎉`. `Enter` on a **Workspace** or **Folder** opens it (drills in) — `Esc`
+A deck with nothing to launch right now is dimmed and `Enter` on it does nothing:
+🕒 nothing due (all on cooldown — `--cram` reviews it anyway), or a fully-drilled
+deck whose exam is locked. A 🔒 marks a deck whose
+[exam is locked](#completion-states--unlocks) (a sourced `% requires:` isn't
+passed yet) — but it stays **drillable**, so `Enter` still reviews it if cards are
+due. A mastered deck reads `mastered 🎉`. `Enter` on a **Workspace** or **Folder** opens it (drills in) — `Esc`
 or `Backspace` steps back out to the list, all within one screen; a
 [trace](#traces-alix-trace) opened from the picker **walks** instead of being
 reviewed as cards. When you finish a deck/walk/exam launched from a workspace, you
@@ -279,12 +280,17 @@ prints it too. A deck that declares a `% source:` adds one more state between
 drilled and finished — *exam due* (`exam due`, tinted) — because drilling alone
 no longer finishes it; see [the AI exam](#the-ai-exam-alix-exam).
 
-Completion drives **unlocks**, with no extra syntax: a deck is **locked** while
-any of its `% requires:` prerequisites isn't finished, so finishing a foundation
-unlocks the decks that build on it. Locked decks are shown dimmed with a 🔒, but
-the lock is **advisory** — you can still pick one (its prerequisite cards are
-pulled in foundations-first anyway). State and locks are recomputed live, so if a
-finished deck later lapses below the top stage, its dependents lock again.
+Completion drives **unlocks**, with no extra syntax — but the gate is the
+**exam**, not drilling. A sourced deck's **exam is locked** while any of its
+*sourced* `% requires:` prerequisites hasn't passed *its* exam; passing a
+foundation's exam unlocks the exams that build on it. A **source-less**
+prerequisite has no exam to pass, so it never gates — its `% requires:` edge is
+purely informational (a suggested order in the dependency tree). Crucially, the
+lock never blocks **drilling**: you can review any deck at any time, in any order
+— you drill only to prepare for an exam. A deck whose exam is locked shows a 🔒
+but stays drillable; the 🔒 just means "its exam isn't available yet." State and
+locks are recomputed live, so if a foundation later lapses, its dependents' exams
+lock again.
 
 ### Workspaces
 
@@ -565,11 +571,11 @@ same three sections — **Workspaces** (each with its last-progress time) ·
 [trace](#traces-alix-trace) **walks** — predict → verify — at `/walk`, with a
 **Back to decks** to return to the picker). Open a **Workspace** or **Folder** to
 drill into its **unlock dependency tree**, where each deck nests under the
-prerequisite that gates it. A deck you can't start is
-dimmed: 🔒 locked (an unfinished `% requires:`), 🕒 nothing due; a `mastered 🎉`
-deck is tucked into the **Mastered window** (press `m`), and mastered/done/locked
-decks stay out of Recent (a quick launchpad) but are reachable by filtering — the
-filter searches *every* loose deck. `browse` ignores locking, so any deck opens
+prerequisite that gates it. A 🔒 marks a deck whose **exam** is locked (a sourced
+`% requires:` isn't passed) — still drillable; a deck dimmed with 🕒 has nothing
+due. A `mastered 🎉` deck is tucked into the **Mastered window** (press `m`), and
+mastered/done decks stay out of Recent (a quick launchpad) but are reachable by
+filtering — the filter searches *every* loose deck. `browse` ignores locking, so any deck opens
 there. Keyboard nav follows your `[picker]` config (`j`/`k` or arrows move, `/`
 or `Ctrl-F` filter, `m` the Mastered window). When you finish a session, "Choose
 other decks" (on the summary, or in the ⋮ menu) returns here — and a session

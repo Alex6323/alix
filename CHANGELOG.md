@@ -30,6 +30,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   as `[…]`), are unaffected.
 
 ### Changed
+- **`% requires:` now gates the exam, not drilling.** You can review/drill any
+  deck at any time, in any order — a prerequisite-locked deck is no longer
+  blocked in the picker (it stays bright and startable, with 🔒 meaning only "its
+  exam is locked"). The dependency order applies to **exams**: to sit a sourced
+  deck's exam you must have passed each *sourced* prerequisite's exam. A
+  **source-less** prerequisite has no exam, so it never gates — its edge is
+  informational in the dependency tree, seen *through* to the nearest sourced
+  ancestor. (`is_locked` counts only sourced prereqs; both pickers and the
+  exam-due review shortcut respect the new gate.)
 - **`alix deck` is now a command group: `alix deck generate` + `alix deck
   augment`.** **Breaking:** `alix deck <source>` is now `alix deck generate
   <source>`.

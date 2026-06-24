@@ -370,11 +370,15 @@ pub fn resolve_dep(
     candidates.into_iter().find(|p| p.is_file())
 }
 
-/// Whether `deck` is "locked": any of its transitive `% requires:`
-/// prerequisites is not yet [`Finished`](DeckState::Finished). `decks_dir`
-/// resolves prerequisite names. A missing prerequisite, an unreadable file, or
-/// a dependency cycle is treated as non-blocking (a broken graph never hides a
-/// deck — those problems surface when you actually review it).
+/// Whether `deck`'s **exam** is locked: any of its transitive **sourced**
+/// `% requires:` prerequisites has not yet passed its exam (is not
+/// [`Finished`](DeckState::Finished)). A source-less prerequisite has no exam to
+/// pass, so it never gates — it is seen *through* to any sourced ancestor behind
+/// it (its `% requires:` edge is purely informational). This gates only sitting
+/// the exam, never drilling: a deck may be reviewed at any time regardless of
+/// its prerequisites. `decks_dir` resolves prerequisite names. A missing
+/// prerequisite, an unreadable file, or a dependency cycle is treated as
+/// non-blocking (a broken graph never hides a deck).
 pub fn is_locked(deck: &Deck, decks_dir: Option<&Path>, store: &Store) -> bool {
     fn prereqs_finished(
         deck: &Deck,
@@ -393,9 +397,14 @@ pub fn is_locked(deck: &Deck, decks_dir: Option<&Path>, store: &Store) -> bool {
             let Ok(prereq) = Deck::load(&path) else {
                 continue; // unreadable prerequisite: don't lock on it
             };
-            if prereq.state(store) != DeckState::Finished
-                || !prereqs_finished(&prereq, decks_dir, store, visited)
-            {
+            // A sourced prerequisite gates: its exam must be passed (mastered ⇒
+            // `Finished`). A source-less one has no exam, so it never gates — but
+            // a sourced ancestor behind it still does, so recurse through it
+            // either way.
+            if !prereq.sources.is_empty() && prereq.state(store) != DeckState::Finished {
+                return false;
+            }
+            if !prereqs_finished(&prereq, decks_dir, store, visited) {
                 return false;
             }
         }
@@ -1017,46 +1026,45 @@ mod tests {
     }
 
     #[test]
-    fn locked_until_prerequisite_finished() {
+    fn source_less_prerequisite_never_locks() {
         let dir = tempfile::tempdir().unwrap();
+        // basics has no `% source:`, so no exam — it can never gate.
         write_deck(dir.path(), "basics.txt", "# a\n\t1\n");
         let adv = write_deck(dir.path(), "advanced.txt", "% requires: basics\n# x\n\ty\n");
         let advanced = Deck::load(&adv).unwrap();
-        let basics = Deck::load(dir.path().join("basics.txt")).unwrap();
-        let (mut store, _s) = empty_store();
+        let (store, _s) = empty_store();
         let dd = Some(dir.path());
 
-        // basics not started -> advanced locked.
-        assert!(is_locked(&advanced, dd, &store));
-        // basics started but not finished -> still locked.
-        store.get_or_insert(basics.cards[0].id(), 0).stage = 2;
-        assert!(is_locked(&advanced, dd, &store));
-        // basics finished -> advanced unlocked.
-        retire(&mut store, basics.cards[0].id());
+        // Undrilled, drilled, whatever — a source-less prerequisite is purely
+        // informational, so the dependent's exam is never locked by it.
         assert!(!is_locked(&advanced, dd, &store));
-        // A deck without prerequisites is never locked.
-        assert!(!is_locked(&basics, dd, &store));
     }
 
     #[test]
-    fn locking_is_transitive() {
+    fn lock_sees_through_a_source_less_prereq_to_a_sourced_ancestor() {
         let dir = tempfile::tempdir().unwrap();
-        write_deck(dir.path(), "a.txt", "# a\n\t1\n");
+        // a (sourced) <- b (source-less) <- c (sourced): the gate is a's exam,
+        // seen through b which never gates on its own.
+        write_deck(dir.path(), "a.txt", "% source: https://x\n# a\n\t1\n");
         write_deck(dir.path(), "b.txt", "% requires: a\n# b\n\t2\n");
-        let cpath = write_deck(dir.path(), "c.txt", "% requires: b\n# c\n\t3\n");
+        let cpath = write_deck(
+            dir.path(),
+            "c.txt",
+            "% source: https://y\n% requires: b\n# c\n\t3\n",
+        );
         let c = Deck::load(&cpath).unwrap();
         let a = Deck::load(dir.path().join("a.txt")).unwrap();
         let b = Deck::load(dir.path().join("b.txt")).unwrap();
         let (mut store, _s) = empty_store();
         let dd = Some(dir.path());
 
+        // a's exam not passed -> c locked (through the transparent b).
         assert!(is_locked(&c, dd, &store));
-        // Finishing only the direct prerequisite is not enough — its own
-        // prerequisite is still unfinished.
+        // Drilling/finishing the source-less b changes nothing.
         retire(&mut store, b.cards[0].id());
         assert!(is_locked(&c, dd, &store));
-        // Finish the foundation too -> unlocked.
-        retire(&mut store, a.cards[0].id());
+        // Mastering a (its exam passed) unlocks c.
+        store.set_deck_mastered(&a.subject, 1);
         assert!(!is_locked(&c, dd, &store));
     }
 

@@ -255,10 +255,12 @@ pub fn deck_status(
     // or not (test out early). A trace has no AI exam.
     let examable = !deck.is_trace() && !deck.sources.is_empty() && !actually_locked;
     // Is there anything to launch right now? A trace always walks; an exam-due
-    // deck launches its exam; otherwise there must be a card due or new.
+    // deck launches its exam (only when its exam isn't locked); otherwise there
+    // must be a card due or new. Drilling is never gated by the lock — a
+    // prerequisite-locked deck with due cards is still reviewable.
     let scheduler = deck.settings.scheduler.unwrap_or_default().scheduler();
     let reviewable = deck.is_trace()
-        || matches!(state, DeckState::ExamDue)
+        || (matches!(state, DeckState::ExamDue) && examable)
         || session::has_reviewable(&deck.cards, store, scheduler.as_ref(), session::now_ms());
     DeckStatus {
         state,
@@ -607,10 +609,11 @@ fn top_picker(
         let mut item = deck_item(c, store, decks_dir, enforce_locks, false);
         item.section = section;
         // Recent shows recent loose decks you can actually start now — finished
-        // (mastered / done) and locked ones are hidden by default so the list
-        // stays a quick launchpad; they're still reachable by filtering.
+        // (mastered / done) ones are hidden by default so the list stays a quick
+        // launchpad; they're still reachable by filtering. A prerequisite-locked
+        // deck is still drillable, so it stays in Recent.
         item.default_shown = section != Section::Recent
-            || (is_recent && !matches!(item.state, Some(DeckState::Finished)) && !item.locked);
+            || (is_recent && !matches!(item.state, Some(DeckState::Finished)));
         match section {
             Section::Workspaces => workspaces.push(item),
             Section::Folders => folders.push(item),
@@ -923,7 +926,10 @@ fn workspace_picker(
     let key: Vec<(bool, String)> = items
         .iter()
         .map(|item| {
-            let blocked = item.locked || (gate_reviewable && !item.reviewable);
+            // Startable-first: a deck is "blocked" only when there's nothing to
+            // launch (nothing due / exam-locked-and-drilled). A prereq-locked
+            // deck with due cards is still drillable, so it isn't blocked.
+            let blocked = gate_reviewable && !item.reviewable;
             (blocked, item.label.clone())
         })
         .collect();
@@ -1371,10 +1377,10 @@ impl<K: Clone + Eq + Hash> Picker<K> {
     /// drills in via the caller).
     fn launch_focused(&mut self) {
         let gate = self.gate_reviewable;
-        if self
-            .focused()
-            .is_some_and(|item| !item.locked && (item.reviewable || !gate))
-        {
+        // Drilling is never gated by the prerequisite lock — only the exam is
+        // (and an exam-locked deck isn't `reviewable`), so launch on `reviewable`
+        // alone.
+        if self.focused().is_some_and(|item| item.reviewable || !gate) {
             self.done = true;
         }
     }
@@ -1392,15 +1398,14 @@ impl<K: Clone + Eq + Hash> Picker<K> {
             return; // single-launch lists have nothing to tick
         }
         if let Some(&i) = self.filtered.get(self.cursor) {
-            // A locked deck can't be ticked (it isn't startable). An exam-due
-            // deck has no reviewable cards — it only launches its own exam, so
-            // it can't join a merged review either. A workspace opens (Enter)
+            // An exam-due deck has no reviewable cards — it only launches its own
+            // exam, so it can't join a merged review. A workspace opens (Enter)
             // rather than being ticked. A trace is walked, not card-reviewed, so
             // it can't join a merged review. A deck with nothing due can't either
-            // (when the review launcher is gating). Non-deck pickers set none of
+            // (when the review launcher is gating). A prerequisite-locked deck is
+            // still drillable, so it CAN be ticked. Non-deck pickers set none of
             // these.
-            if self.all[i].locked
-                || self.all[i].state == Some(DeckState::ExamDue)
+            if self.all[i].state == Some(DeckState::ExamDue)
                 || self.all[i].is_workspace
                 || self.all[i].is_trace
                 || (self.gate_reviewable && !self.all[i].reviewable)
@@ -1601,13 +1606,13 @@ impl<K: Clone + Eq + Hash> Picker<K> {
         let checked = self.selected.contains(&item.key);
 
         // A deck the review launcher won't start right now: nothing is due (or
-        // it's fully drilled). Shown like a locked row — dimmed and disabled —
-        // but with a clock instead of a lock. Only when gating (review, not
-        // browse / cram).
+        // it's fully drilled, exam-locked). Dimmed and disabled, with a 🕒 clock.
+        // Only when gating (review, not browse / cram).
         let unreviewable = self.gate_reviewable && !item.reviewable;
         let marker = if on_cursor { "›" } else { " " };
-        // 🔒 a `% requires:` prerequisite isn't finished · 🕒 nothing due right now
-        // (on cooldown). A finished deck shows its 🎉 in the badge, not here.
+        // 🔒 the exam is locked (a sourced prerequisite's exam isn't passed) — the
+        // deck is still drillable · 🕒 nothing due right now (on cooldown). A
+        // finished deck shows its 🎉 in the badge, not here.
         let glyph = if item.locked {
             "🔒 "
         } else if unreviewable && !matches!(item.state, Some(DeckState::Finished)) {
@@ -1658,8 +1663,10 @@ impl<K: Clone + Eq + Hash> Picker<K> {
             style = style.fg(Color::Black).bg(Color::Cyan);
         } else if checked {
             style = style.fg(Color::Cyan);
-        } else if item.locked || unreviewable {
-            // Advisory: locked / nothing-due decks are dimmed and not startable.
+        } else if unreviewable {
+            // Advisory: a deck with nothing to launch right now (nothing due, or
+            // fully drilled with its exam locked) is dimmed. A drillable locked
+            // deck stays bright — it's startable.
             style = style.fg(Color::DarkGray);
         }
 
@@ -1678,9 +1685,9 @@ impl<K: Clone + Eq + Hash> Picker<K> {
         }
         if let Some(meta) = &item.meta {
             // Tint the state suffix (finished → green, exam due → yellow),
-            // but keep the cursor and dimmed (locked / nothing-due) styling
-            // dominant where they apply.
-            let meta_style = if on_cursor || item.locked || unreviewable {
+            // but keep the cursor and dimmed (nothing-due) styling dominant
+            // where they apply.
+            let meta_style = if on_cursor || unreviewable {
                 style
             } else {
                 match item.state {
@@ -1950,11 +1957,17 @@ mod tests {
     }
 
     #[test]
-    fn launcher_does_not_tick_locked_decks() {
+    fn launcher_ticks_and_launches_a_drillable_locked_deck() {
+        // A prerequisite-locked deck is still drillable (only its exam is gated),
+        // so it both launches on Enter and joins a merged review when ticked.
         let mut p = launcher_with(&[("locked.txt", true)]);
         p.cursor = 0;
+        p.launch_focused();
+        assert!(p.done);
+
+        p.done = false;
         p.toggle();
-        assert!(p.selected.is_empty());
+        assert!(p.selected.contains(&PathBuf::from("locked.txt")));
     }
 
     #[test]

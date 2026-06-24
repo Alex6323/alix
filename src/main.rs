@@ -1004,11 +1004,15 @@ fn load_review_session(
             workspace,
         )));
     }
-    // A single exam-due deck launches its exam rather than an empty review.
+    // A single exam-due deck launches its exam rather than an empty review —
+    // unless its exam is locked (a sourced prerequisite isn't passed), in which
+    // case it falls through to a (possibly empty) review instead of opening an
+    // exam the deck isn't allowed to sit yet.
     if let [path] = deck_paths.as_slice()
         && let Ok(deck) = Deck::load(path)
         && !deck.sources.is_empty()
         && deck.state(&store) == DeckState::ExamDue
+        && !alix::deck::is_locked(&deck, config.decks_dir().as_deref(), &store)
     {
         return Ok(Some((
             Started::Exam {
