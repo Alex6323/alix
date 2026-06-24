@@ -1026,11 +1026,20 @@ pub struct SourceBase {
 impl SourceBase {
     /// Resolves the base from a deck's directory and its first `% source:`.
     pub fn for_deck(deck: &Deck) -> Self {
+        // A `% source:` may name several files joined by ` + ` (the first a full
+        // path, the rest relative to its directory). A per-card `% at: file:lines`
+        // locator resolves against the first file's directory, so base the
+        // resolution on that first part — not the whole joined string, which is
+        // not itself a path.
+        let first = deck.sources.first();
+        let multi = first.is_some_and(|s| s.contains(" + "));
         let (base_dir, source_file) =
-            resolve_source(deck.path.parent(), deck.sources.first().map(String::as_str));
+            resolve_source(deck.path.parent(), first.map(|s| first_source(s)));
         Self {
             base_dir,
-            source_file,
+            // With several source files a bare-line locator is ambiguous, so drop
+            // the single-file shortcut and require `file:lines`.
+            source_file: if multi { None } else { source_file },
         }
     }
 
@@ -1097,6 +1106,12 @@ pub(crate) fn source_paths(value: &str, base: Option<&Path>) -> Vec<PathBuf> {
         out.push(resolved);
     }
     out
+}
+
+/// The first file/dir a (possibly ` + `-joined) `% source:` value names, trimmed
+/// — the path a deck's `% at:` citations resolve their base against.
+fn first_source(value: &str) -> &str {
+    value.split(" + ").next().unwrap_or(value).trim()
 }
 
 /// The deepest directory that is an ancestor of every path in `dirs`.
@@ -1293,6 +1308,45 @@ mod tests {
             vec![(3, "three".to_string())],
             base.excerpt("3").unwrap().lines
         );
+    }
+
+    #[test]
+    fn source_base_reads_a_multi_file_citation() {
+        // A `% source:` that joins several files with ` + ` (the first a full
+        // path, the rest relative to its dir). Each card's `% at: file:lines`
+        // must resolve to the right file, not be appended to the joined string.
+        let dir = tempfile::tempdir().unwrap();
+        write(dir.path(), "README.md", "r1\nr2\nr3\n");
+        std::fs::create_dir(dir.path().join("src")).unwrap();
+        write(dir.path(), "src/lib.rs", "l1\nl2\nl3\nl4\n");
+        let readme = dir.path().join("README.md");
+        let deck_path = dir.path().join("facts.txt");
+        std::fs::write(
+            &deck_path,
+            format!(
+                "% source: {} + src/lib.rs\n\
+                 # q1\n\ta1\n\t% at: README.md:1-2\n\
+                 # q2\n\ta2\n\t% at: src/lib.rs:3-4\n",
+                readme.display()
+            ),
+        )
+        .unwrap();
+        let deck = crate::deck::Deck::load(&deck_path).unwrap();
+        let base = SourceBase::for_deck(&deck);
+
+        let readme_at = deck.cards[0].at.as_deref().unwrap();
+        assert_eq!(
+            vec![(1, "r1".to_string()), (2, "r2".to_string())],
+            base.excerpt(readme_at).unwrap().lines
+        );
+        let lib_at = deck.cards[1].at.as_deref().unwrap();
+        assert_eq!(
+            vec![(3, "l3".to_string()), (4, "l4".to_string())],
+            base.excerpt(lib_at).unwrap().lines
+        );
+        // A bare-line locator is ambiguous with several files — it must error
+        // rather than silently read the first one.
+        assert!(base.excerpt("2").is_err());
     }
 
     #[test]

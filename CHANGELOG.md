@@ -49,6 +49,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   list.** A review now records the deck as "recent" only when the session
   actually has cards to review (`!session.is_finished()`), so merely entering a
   fully-drilled / all-on-cooldown deck leaves the recent order untouched.
+- **A fact card's `% at:` citation resolves against a multi-file `% source:`.** A
+  deck whose `% source:` joins several files with ` + ` (the generator's format,
+  e.g. `<crate>/README.md + src/lib.rs`) now reads each card's cited excerpt from
+  the right file. Previously the whole joined string was treated as one directory
+  and the `% at:` file appended to it, so the reveal showed `cannot read the
+  source …/README.md + src/lib.rs/README.md`. `SourceBase::for_deck` now bases on
+  the first source file (matching `source_paths`); with several files a bare-line
+  locator is rejected (ambiguous) rather than silently reading the first.
 
 ## [0.1.0] - 2026-06-23
 
