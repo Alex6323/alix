@@ -234,6 +234,9 @@ struct DeckItemDto {
     /// The AI exam can be sat now (has a `% source:`, not locked) — drilled or
     /// not, so the picker can offer "Take exam" to test out early.
     examable: bool,
+    /// The deck *has* an exam at all (sourced, non-trace) even if it's locked —
+    /// lets the footer always show a "Take exam" control, disabled when locked.
+    has_exam: bool,
     /// `true` when this entry has recent-use history (shown in Recent by
     /// default; the rest are reachable through the filter).
     recent: bool,
@@ -265,6 +268,7 @@ struct MemberDto {
     mastered: bool,
     is_trace: bool,
     examable: bool,
+    has_exam: bool,
     depth: usize,
 }
 
@@ -1977,6 +1981,7 @@ fn deck_item_dto(
                 mastered: s.mastered,
                 is_trace: s.is_trace,
                 examable: s.examable,
+                has_exam: s.has_exam,
                 recent,
                 is_workspace: false,
                 description: None,
@@ -1995,6 +2000,7 @@ fn deck_item_dto(
             mastered: false,
             is_trace: false,
             examable: false,
+            has_exam: false,
             recent,
             is_workspace: false,
             description: None,
@@ -2056,6 +2062,7 @@ fn workspace_members(e: &picker::DeckEntry, decks_dir: &Path, with_lock: bool) -
                     mastered: s.mastered,
                     is_trace: s.is_trace,
                     examable: s.examable,
+                    has_exam: s.has_exam,
                     depth,
                 },
                 None => MemberDto {
@@ -2068,6 +2075,7 @@ fn workspace_members(e: &picker::DeckEntry, decks_dir: &Path, with_lock: bool) -
                     mastered: false,
                     is_trace: false,
                     examable: false,
+                    has_exam: false,
                     depth,
                 },
             }
@@ -2111,6 +2119,7 @@ fn deck_catalog(
                 mastered: false,
                 is_trace: false,
                 examable: false,
+                has_exam: false,
                 recent: e.last_used_ms.is_some(),
                 is_workspace: true,
                 description: e.description,

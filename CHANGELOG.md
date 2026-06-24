@@ -32,9 +32,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 - **`% requires:` now gates the exam, not drilling.** You can review/drill any
   deck at any time, in any order — a prerequisite-locked deck is no longer
-  blocked in the picker (it stays bright and startable; when it's focused the
-  footer says "🔒 Exam locked", rather than a per-row lock glyph that read as
-  "the deck is locked"). The dependency order applies to **exams**: to sit a sourced
+  blocked in the picker (it stays bright and startable; the lock is named
+  explicitly when it's focused — the TUI footer says "🔒 Exam locked", the web
+  shows its "Take exam" button disabled with a 🔒 — rather than a per-row lock
+  glyph that read as "the deck is locked"). The dependency order applies to **exams**: to sit a sourced
   deck's exam you must have passed each *sourced* prerequisite's exam. A
   **source-less** prerequisite has no exam, so it never gates — its edge is
   informational in the dependency tree, seen *through* to the nearest sourced

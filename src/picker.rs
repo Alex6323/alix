@@ -221,6 +221,10 @@ pub struct DeckStatus {
     /// `% requires:` are met (not locked) — drilled or not, so you can test out
     /// early. (A trace has no exam, so this is `false` for one.)
     pub examable: bool,
+    /// The deck *has* an AI exam at all — a `% source:`, non-trace — whether or
+    /// not it can be sat right now. (`examable` is this AND not locked.) Lets a
+    /// frontend always show a "Take exam" control, disabled when locked.
+    pub has_exam: bool,
 }
 
 /// Computes a deck's [`DeckStatus`] from the progress `store`, mirroring what a
@@ -251,9 +255,10 @@ pub fn deck_status(
     };
     let actually_locked = deck::is_locked(deck, decks_dir, store);
     let locked = enforce_locks && actually_locked;
-    // The exam can be sat when the deck has a source and isn't locked — drilled
-    // or not (test out early). A trace has no AI exam.
-    let examable = !deck.is_trace() && !deck.sources.is_empty() && !actually_locked;
+    // A deck has an exam when it has a source and isn't a trace; it can be SAT
+    // when, additionally, it isn't locked — drilled or not (test out early).
+    let has_exam = !deck.is_trace() && !deck.sources.is_empty();
+    let examable = has_exam && !actually_locked;
     // Is there anything to launch right now? A trace always walks; an exam-due
     // deck launches its exam (only when its exam isn't locked); otherwise there
     // must be a card due or new. Drilling is never gated by the lock — a
@@ -270,6 +275,7 @@ pub fn deck_status(
         mastered,
         is_trace: deck.is_trace(),
         examable,
+        has_exam,
     }
 }
 

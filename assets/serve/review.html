@@ -260,9 +260,6 @@
   .legend .score b { color: var(--good); font-weight: 600; }
   .legend .score s { color: var(--again); text-decoration: none; font-weight: 600; }
   .legend .score .left { color: var(--ink); margin-left: 8px; }
-  /* "🔒 Exam locked" note for a focused exam-locked deck — its own full-width
-     row under the chips, so it never disturbs their layout. */
-  .legend .locknote { grid-column: 1 / -1; justify-self: center; font-family: var(--mono); font-size: 0.8rem; color: var(--dim); padding-top: 6px; }
   .chip {
     display: inline-flex; align-items: center; gap: 8px;
     background: none; color: var(--ink); border: 1px solid var(--line);
@@ -880,8 +877,10 @@ async function renderSelect() {
         primary.addEventListener("click", () => renderDrill(f._open));
       } else if (f && f._item) {
         const it = f._item;
-        primary = el("button", "chip primary", it.state === "examdue" ? "Take exam" : "Start");
-        primary.appendChild(el("span", "k", "enter"));
+        const examPrimary = it.state === "examdue"; // a drilled deck's main action is its exam
+        primary = el("button", "chip primary", examPrimary ? "Take exam" : "Start");
+        // A locked exam shows the lock as its key hint instead of enter.
+        primary.appendChild(el("span", "k", (examPrimary && !it.examable) ? "\u{1F512}" : "enter"));
         primary.disabled = !canStart(it, f._gated);
         primary.addEventListener("click", () => launch(it, f._wsName, f._gated));
       } else {
@@ -890,17 +889,16 @@ async function renderSelect() {
         primary.disabled = true;
       }
       legend.appendChild(primary);
-      // The lock is about the exam, not the deck — name it for the focused row
-      // instead of a (confusing) lock glyph on the row itself.
-      if (f && f._item && f._item.locked) {
-        legend.appendChild(el("span", "locknote", "\u{1F512} Exam locked"));
-      }
-      // Test out: sit the AI exam even before drilling (an examable deck that
-      // isn't already exam-due, whose primary is "Take exam" anyway).
-      if (f && f._item && f._item.examable && f._item.state !== "examdue") {
+      // A consistent "Take exam" button next to Back for any deck that HAS an
+      // exam but isn't already exam-due (where the primary is the exam): enabled
+      // to test out early, or disabled with a 🔒 key hint when its exam is
+      // locked. Calmer than showing/hiding it plus a separate lock note.
+      if (f && f._item && f._item.has_exam && f._item.state !== "examdue") {
+        const it = f._item;
         const ex = el("button", "chip", "Take exam");
-        ex.appendChild(el("span", "k", "x"));
-        ex.addEventListener("click", () => { lastWorkspace = f._wsName || null; startExam(f._item.name); });
+        ex.appendChild(el("span", "k", it.examable ? "x" : "\u{1F512}"));
+        ex.disabled = !it.examable;
+        if (it.examable) ex.addEventListener("click", () => { lastWorkspace = f._wsName || null; startExam(it.name); });
         legend.appendChild(ex);
       }
       if (opts.back) {
