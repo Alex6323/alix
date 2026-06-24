@@ -133,6 +133,21 @@ pub fn expand(
         return Err(ParseError::ClozeWithoutHoles(line));
     }
 
+    // A single hole spanning the whole answer (no literal text around it) is
+    // just a plain front→back card wearing cloze markup: blanking the only hole
+    // leaves no surrounding words to recall it from. Multi-hole answers still
+    // give each blank its siblings (shown as `[…]`) for context, so only the
+    // lone-hole case is rejected.
+    if total == 1 {
+        let has_context = lines.iter().flatten().any(|seg| match seg {
+            Segment::Text(t) => t.chars().any(char::is_alphanumeric),
+            Segment::Hole(_) => false,
+        });
+        if !has_context {
+            return Err(ParseError::ClozeWithoutContext(line));
+        }
+    }
+
     // Identity hashes the parsed structure of each line (text + hole contents,
     // delimiters removed), so changing the hole markup never reshuffles ids.
     let structure: Vec<String> = lines.iter().map(|segments| hash_repr(segments)).collect();
@@ -378,5 +393,31 @@ mod tests {
             Err(ParseError::ClozeWithoutHoles(1)),
             expand(&subject(), "f", &back, None, 1)
         );
+    }
+
+    /// A lone hole that is the entire answer (only formatting around it) is a
+    /// plain card in disguise — there is nothing to recall it from.
+    #[test]
+    fn expand_whole_answer_hole_is_an_error() {
+        let back = vec![(2, "`{{IdentStr}}`".to_string())];
+        assert_eq!(
+            Err(ParseError::ClozeWithoutContext(1)),
+            expand(&subject(), "f", &back, None, 1)
+        );
+    }
+
+    /// A single hole embedded in literal text is a real cloze.
+    #[test]
+    fn expand_single_hole_with_context_is_ok() {
+        let back = vec![(2, "the borrowed form is {{IdentStr}}".to_string())];
+        assert!(expand(&subject(), "f", &back, None, 1).is_ok());
+    }
+
+    /// Two holes with no literal text still contextualize each other (the other
+    /// hole shows as `[…]`), so the lone-hole rule must not reject them.
+    #[test]
+    fn expand_multi_hole_without_literal_text_is_ok() {
+        let back = vec![(2, "{{red}} {{green}}".to_string())];
+        assert!(expand(&subject(), "f", &back, None, 1).is_ok());
     }
 }

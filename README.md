@@ -371,6 +371,13 @@ a literal `{{` as `\{\{` if you ever need one). Progress of a cloze card
 survives rewording its front and even a future change to the hole markup, but
 editing its answer text or hole contents resets the affected holes.
 
+A cloze needs surrounding text to recall *from*: if the whole answer is a
+single hole with nothing around it (e.g. `` `{{IdentStr}}` ``), `alix check`
+rejects it — that is a plain `#` card in disguise, so write it as one. A lone
+hole is fine the moment the answer has other words around it, and answers with
+two or more holes are always allowed (each hole's siblings, shown as `[…]`,
+give it context).
+
 ### Dual-direction cards (`% direction:`)
 
 A `% direction:` directive reviews a card both ways — useful for vocabulary and

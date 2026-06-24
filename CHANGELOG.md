@@ -20,6 +20,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   review rotates in each time a card comes up so it can't be passed by
   recognizing one fixed wording (plain, non-cloze cards). `--with "<guidance>"` steers how. Tuned under
   `[ai]` (`model`, `distractor_count`, `variant_count`, `timeout_secs`).
+- **`alix check` rejects a cloze whose entire answer is one hole.** A `#?` card
+  whose only hole spans the whole answer (e.g. `` `{{IdentStr}}` ``, with nothing
+  but formatting around it) is a plain front→back card in disguise — blanking the
+  lone hole leaves no surrounding text to recall it from. `check` now flags it
+  (`cloze answer is one hole with no surrounding text … use a plain '#' card`),
+  the sibling of the existing "cloze with no holes" error. Answers with literal
+  context around the hole, or with two or more holes (each hole's siblings show
+  as `[…]`), are unaffected.
 
 ### Changed
 - **`alix deck` is now a command group: `alix deck generate` + `alix deck
@@ -28,11 +36,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Choice-mode offline distractors are shape-aware.** Number-like answers now
   only compete with the same shape (a 4-digit year vs other years, not a `1,5`
   ratio or a 2-digit count), so an obviously-wrong option no longer slips in.
+- **Ask-Claude (web): Enter now inserts a newline and Shift+Enter sends.** The
+  ask box is a multi-line textarea, so plain Enter composes freely and a
+  deliberate Shift+Enter submits the question (the Send chip and placeholder
+  show the hint). Previously Enter sent and Shift+Enter made the newline.
 
 ### Fixed
 - The web review UI no longer shows a stray blinking caret (e.g. with the
   browser's caret-browsing on); a caret now appears only inside a real text
   input.
+- **Opening a deck with nothing due no longer bumps it to the top of the recent
+  list.** A review now records the deck as "recent" only when the session
+  actually has cards to review (`!session.is_finished()`), so merely entering a
+  fully-drilled / all-on-cooldown deck leaves the recent order untouched.
 
 ## [0.1.0] - 2026-06-23
 
@@ -455,16 +471,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Web review now shows the expected answer whenever a typed line differed —
   including a fuzzy pass within tolerance — matching the TUI, so typos aren't
   reinforced.
-- **Ask-Claude (web): Enter now inserts a newline and Shift+Enter sends.** The
-  ask box is a multi-line textarea, so plain Enter composes freely and a
-  deliberate Shift+Enter submits the question (the Send chip and placeholder
-  show the hint). Previously Enter sent and Shift+Enter made the newline.
 
 ### Fixed
-- **Opening a deck with nothing due no longer bumps it to the top of the recent
-  list.** A review now records the deck as "recent" only when the session
-  actually has cards to review (`!session.is_finished()`), so merely entering a
-  fully-drilled / all-on-cooldown deck leaves the recent order untouched.
 - **Generated decks now put a blank line between cards.** `alix deck`'s output
   cleaner (`generate::clean_output`) inserts a blank line before each card front
   (`#`) after the first, so a generated/`--review`ed deck is readable instead of

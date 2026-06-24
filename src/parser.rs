@@ -62,6 +62,10 @@ pub enum ParseError {
     EmptyFront(usize),
     #[error("line {0}: cloze card ('#?') has no {{{{...}}}} holes in its answer")]
     ClozeWithoutHoles(usize),
+    #[error(
+        "line {0}: cloze answer is one hole with no surrounding text — there's nothing to recall it from; use a plain '#' card"
+    )]
+    ClozeWithoutContext(usize),
     #[error("line {0}: empty cloze hole '{{{{}}}}'")]
     EmptyClozeHole(usize),
     #[error("line {0}: unclosed cloze hole (missing the closing '}}}}')")]
