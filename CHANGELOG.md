@@ -40,6 +40,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ask box is a multi-line textarea, so plain Enter composes freely and a
   deliberate Shift+Enter submits the question (the Send chip and placeholder
   show the hint). Previously Enter sent and Shift+Enter made the newline.
+- **Web exam: Shift+Enter advances** to the next question (or submits, on the
+  last), matching the ask box — Enter still inserts a newline so multi-line
+  answers compose freely, and the Next/Submit button now shows the binding.
 
 ### Fixed
 - The web review UI no longer shows a stray blinking caret (e.g. with the

@@ -672,15 +672,23 @@ function renderExam() {
     wrap.appendChild(el("div", "exam-progress", `Question ${d.current + 1} / ${d.total}`));
     wrap.appendChild(el("div", "exam-q", d.question || ""));
     const ta = el("textarea", "exam-input");
-    ta.placeholder = "Type your answer…";
+    ta.placeholder = "Type your answer… (Shift+Enter to continue)";
     ta.value = d.answer || "";
     ta.rows = 6;
+    // Enter inserts a newline; Shift+Enter takes the primary action — advance,
+    // or submit on the last question — matching the ask box.
+    ta.addEventListener("keydown", e => {
+      if (e.key === "Enter" && e.shiftKey) {
+        e.preventDefault();
+        if (examData.on_last) examSubmit(); else examNav(examData.current + 1);
+      }
+    });
     wrap.appendChild(ta);
     stage.appendChild(wrap);
     ta.focus();
     if (d.current > 0) chip("Back", "", () => examNav(d.current - 1));
-    if (d.on_last) chip("Submit for grading", "primary", examSubmit);
-    else chip("Next", "primary", () => examNav(d.current + 1));
+    if (d.on_last) chip("Submit for grading", "primary", examSubmit, "shift+enter");
+    else chip("Next", "primary", () => examNav(d.current + 1), "shift+enter");
     chip("Quit", "", closeExam, "esc");
     return;
   }
