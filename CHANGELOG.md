@@ -455,6 +455,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Web review now shows the expected answer whenever a typed line differed —
   including a fuzzy pass within tolerance — matching the TUI, so typos aren't
   reinforced.
+- **Ask-Claude (web): Enter now inserts a newline and Shift+Enter sends.** The
+  ask box is a multi-line textarea, so plain Enter composes freely and a
+  deliberate Shift+Enter submits the question (the Send chip and placeholder
+  show the hint). Previously Enter sent and Shift+Enter made the newline.
 
 ### Fixed
 - **Opening a deck with nothing due no longer bumps it to the top of the recent

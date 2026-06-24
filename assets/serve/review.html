@@ -568,17 +568,18 @@ function renderAsk() {
   wrap.appendChild(scroll);
 
   const input = el("textarea", "ask-input");
-  input.placeholder = "Ask about this card…";
+  input.placeholder = "Ask about this card… (Shift+Enter to send)";
   input.rows = 2;
   input.disabled = askData.thinking;
   input.addEventListener("keydown", e => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendAsk(input.value); }
+    // Enter inserts a newline (compose freely); Shift+Enter sends.
+    if (e.key === "Enter" && e.shiftKey) { e.preventDefault(); sendAsk(input.value); }
   });
   wrap.appendChild(input);
   stage.appendChild(wrap);
 
   legend.innerHTML = "";
-  const send = chip("Send", "primary", () => sendAsk(input.value), "enter");
+  const send = chip("Send", "primary", () => sendAsk(input.value), "shift+enter");
   send.disabled = askData.thinking;
   chip("Save note", "", saveAskNote, label(KEYS.save_note));
   chip("Close", "", closeAsk, "esc");
@@ -1357,7 +1358,7 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   // The ask overlay: Esc closes, the save-note key saves; the textarea handles
-  // typing and Enter-to-send.
+  // typing, Enter for a newline, and Shift+Enter to send.
   if (asking) {
     if (e.key === "Escape") { e.preventDefault(); closeAsk(); return; }
     if (hit(e, KEYS.save_note)) { e.preventDefault(); saveAskNote(); return; }
