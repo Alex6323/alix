@@ -1493,7 +1493,14 @@ impl<K: Clone + Eq + Hash> Picker<K> {
         self.draw_list(frame, list);
 
         let footer_text = self.footer_text();
-        frame.render_widget(bar(&footer_text, "", footer.width), footer);
+        // When the focused deck's exam is locked, spell it out on the right — the
+        // row no longer carries a (confusing) lock glyph.
+        let footer_right = if self.focused().is_some_and(|it| it.locked) {
+            "🔒 Exam locked "
+        } else {
+            ""
+        };
+        frame.render_widget(bar(&footer_text, footer_right, footer.width), footer);
     }
 
     /// The footer hints for the current state. The launcher computes them per
@@ -1610,12 +1617,11 @@ impl<K: Clone + Eq + Hash> Picker<K> {
         // Only when gating (review, not browse / cram).
         let unreviewable = self.gate_reviewable && !item.reviewable;
         let marker = if on_cursor { "›" } else { " " };
-        // 🔒 the exam is locked (a sourced prerequisite's exam isn't passed) — the
-        // deck is still drillable · 🕒 nothing due right now (on cooldown). A
-        // finished deck shows its 🎉 in the badge, not here.
-        let glyph = if item.locked {
-            "🔒 "
-        } else if unreviewable && !matches!(item.state, Some(DeckState::Finished)) {
+        // 🕒 nothing due right now (on cooldown). A finished deck shows its 🎉 in
+        // the badge, not here. An exam-locked deck carries no row glyph — the
+        // footer spells out "🔒 Exam locked" when it's focused, which is clearer
+        // than a bare lock on the row (that read as "the deck is locked").
+        let glyph = if unreviewable && !matches!(item.state, Some(DeckState::Finished)) {
             "🕒 "
         } else {
             ""

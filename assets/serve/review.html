@@ -260,6 +260,9 @@
   .legend .score b { color: var(--good); font-weight: 600; }
   .legend .score s { color: var(--again); text-decoration: none; font-weight: 600; }
   .legend .score .left { color: var(--ink); margin-left: 8px; }
+  /* "🔒 Exam locked" note for a focused exam-locked deck — its own full-width
+     row under the chips, so it never disturbs their layout. */
+  .legend .locknote { grid-column: 1 / -1; justify-self: center; font-family: var(--mono); font-size: 0.8rem; color: var(--dim); padding-top: 6px; }
   .chip {
     display: inline-flex; align-items: center; gap: 8px;
     background: none; color: var(--ink); border: 1px solid var(--line);
@@ -812,10 +815,10 @@ async function renderSelect() {
     const row = el("div", "deckrow" + (dimmed ? " dim" : ""));
     row.tabIndex = 0;
     if (it.depth) row.style.setProperty("--depth", it.depth);
-    // 🔒 exam locked (a sourced prerequisite's exam isn't passed) — still
-    // drillable · 🕒 nothing due (a finished deck shows its 🎉 in the badge).
-    const glyph = it.locked ? "\u{1F512}"
-      : (gated && !it.reviewable && it.state !== "finished") ? "\u{1F552}" : "";
+    // 🕒 nothing due (a finished deck shows its 🎉 in the badge). An exam-locked
+    // deck has no row glyph — the footer says "🔒 Exam locked" for the focused
+    // row (clearer than a bare lock, which read as "the deck is locked").
+    const glyph = (gated && !it.reviewable && it.state !== "finished") ? "\u{1F552}" : "";
     if (glyph) row.appendChild(el("span", "glyph", glyph));
     row.appendChild(el("span", "name", it.label || it.name));
     if (showKind && it.is_trace) row.appendChild(el("span", "kind", "trace"));
@@ -887,6 +890,11 @@ async function renderSelect() {
         primary.disabled = true;
       }
       legend.appendChild(primary);
+      // The lock is about the exam, not the deck — name it for the focused row
+      // instead of a (confusing) lock glyph on the row itself.
+      if (f && f._item && f._item.locked) {
+        legend.appendChild(el("span", "locknote", "\u{1F512} Exam locked"));
+      }
       // Test out: sit the AI exam even before drilling (an examable deck that
       // isn't already exam-due, whose primary is "Take exam" anyway).
       if (f && f._item && f._item.examable && f._item.state !== "examdue") {
