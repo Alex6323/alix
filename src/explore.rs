@@ -429,9 +429,14 @@ pub fn materialize(
     force: bool,
     filled: Option<&HashMap<usize, String>>,
 ) -> Result<Materialized> {
-    let items = parse_plan(plan);
+    let mut items = parse_plan(plan);
     if items.is_empty() {
         bail!("the plan has no items to materialize");
+    }
+    // The model ignores the prompt's "keep titles short" guidance, so enforce it
+    // here: condense each title before it becomes the header AND the file name.
+    for item in &mut items {
+        item.title = condense_title(&item.title);
     }
     if dir.exists() {
         let non_empty = fs::read_dir(dir)
@@ -586,6 +591,91 @@ pub fn snapshot_workspace(dir: &Path) -> Result<SnapshotSummary> {
 /// (preserving plan order) plus a slug of the title.
 fn file_name(item: &Item) -> String {
     format!("{:02}-{}.txt", item.num, slug(&item.title))
+}
+
+/// The minor words a title keeps lowercase (unless first or last) — articles and
+/// short coordinating conjunctions / prepositions. Forms of "to be" and pronouns
+/// are intentionally absent, so `Is`/`Its` stay capitalized.
+const MINOR_WORDS: &[&str] = &[
+    "a", "an", "the", "and", "but", "or", "nor", "for", "of", "to", "in", "on", "at", "by", "as",
+    "per", "via", "with", "from", "into", "onto", "vs",
+];
+
+/// The hard ceiling on a condensed title's word count — the backstop that bounds
+/// a long title the model wrote with no separator to cut at.
+const MAX_TITLE_WORDS: usize = 12;
+
+/// Condenses a model-written plan title into a short, capitalized one —
+/// deterministically, because the plan prompt asks for brevity but the model
+/// ignores it (it appends the deck's contents after a colon). So this enforces
+/// it rather than trusting the instruction: cut the enumeration (everything from
+/// the first `:`/`;`/dash, plus a trailing parenthetical), hard-cap the word
+/// count as a backstop when no such separator exists, then apply title case that
+/// leaves code spans (backticked, `snake_case`, `CamelCase`, `ACRONYM`) intact.
+fn condense_title(raw: &str) -> String {
+    let mut s = raw.trim();
+    // Cut at the first enumeration separator if there is one — but never depend
+    // on one: the word cap below bounds a title that has none.
+    if let Some(i) = s.find([':', ';', '—', '–']) {
+        s = s[..i].trim_end();
+    }
+    // Drop a trailing parenthetical aside ("… (foo, bar)").
+    if let Some(i) = s.find(" (") {
+        s = s[..i].trim_end();
+    }
+    let words: Vec<&str> = s.split_whitespace().collect();
+    let truncated = words.len() > MAX_TITLE_WORDS;
+    let kept = if truncated {
+        &words[..MAX_TITLE_WORDS]
+    } else {
+        &words[..]
+    };
+    let last = kept.len().saturating_sub(1);
+    let mut out = kept
+        .iter()
+        .enumerate()
+        .map(|(i, w)| title_word(w, i == 0 || i == last))
+        .collect::<Vec<_>>()
+        .join(" ");
+    if truncated {
+        out.push('…');
+    }
+    out
+}
+
+/// Title-cases one word: code tokens pass through verbatim, minor words stay
+/// lowercase unless they're forced (first/last word), everything else is
+/// capitalized per hyphen/slash segment.
+fn title_word(w: &str, force_cap: bool) -> String {
+    if is_code_token(w) {
+        return w.to_string();
+    }
+    let lower = w.to_lowercase();
+    if !force_cap && MINOR_WORDS.contains(&lower.as_str()) {
+        return lower;
+    }
+    w.split_inclusive(['-', '/'])
+        .map(capitalize_first)
+        .collect()
+}
+
+/// Whether a word is a code identifier to leave exactly as written: a backticked
+/// span, `snake_case`, a call (`foo()`), or any token with an internal capital
+/// (`CamelCase`, `VM`, `gRPC`).
+fn is_code_token(w: &str) -> bool {
+    w.contains('`')
+        || w.contains('_')
+        || w.contains('(')
+        || w.chars().skip(1).any(|c| c.is_ascii_uppercase())
+}
+
+/// Uppercases the first character of a segment, leaving the rest untouched.
+fn capitalize_first(seg: &str) -> String {
+    let mut chars = seg.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => String::new(),
+    }
 }
 
 /// A short kebab slug from a title: up to the first six alphanumeric words.
@@ -777,15 +867,14 @@ Spine   a -> b
         assert!(!manifest.contains("title ="));
         assert!(manifest.contains("[defaults]"));
 
-        let deck =
-            fs::read_to_string(dir.join("01-the-deck-format-markers-and-directives.txt")).unwrap();
-        assert!(deck.contains("% title: The deck format: markers and directives"));
+        let deck = fs::read_to_string(dir.join("01-the-deck-format.txt")).unwrap();
+        assert!(deck.contains("% title: The Deck Format")); // condensed + title-cased
         assert!(deck.contains("% source: ")); // rewritten absolute
 
         let trace = fs::read_to_string(dir.join("02-how-text-becomes-cards.txt")).unwrap();
-        assert!(trace.contains("% trace: How text becomes Cards"));
+        assert!(trace.contains("% trace: How Text Becomes Cards"));
         // requires 1 → the first item's file name
-        assert!(trace.contains("% requires: 01-the-deck-format-markers-and-directives.txt"));
+        assert!(trace.contains("% requires: 01-the-deck-format.txt"));
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -874,12 +963,11 @@ preamble ignored
 
         // item 2 (a trace) keeps its header AND carries the filled checkpoint
         let trace = fs::read_to_string(dir.join("02-how-text-becomes-cards.txt")).unwrap();
-        assert!(trace.contains("% trace: How text becomes Cards"));
+        assert!(trace.contains("% trace: How Text Becomes Cards"));
         assert!(trace.contains("# how does text become Cards?"));
         assert!(trace.contains("% at: src/parser.rs:1-9"));
         // item 1 had no fill → still a stub
-        let deck =
-            fs::read_to_string(dir.join("01-the-deck-format-markers-and-directives.txt")).unwrap();
+        let deck = fs::read_to_string(dir.join("01-the-deck-format.txt")).unwrap();
         assert!(deck.contains("% Stub from `alix explore`"));
 
         let _ = fs::remove_dir_all(&dir);
@@ -957,6 +1045,59 @@ preamble ignored
         assert!(!dir.join("assets").exists()); // no empty assets dir left behind
 
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn condense_title_cuts_the_enumeration_and_title_cases() {
+        // The model's signature shape: a good short head, a colon, then the
+        // enumeration the prompt forbids. Cut at the colon, title-case the head.
+        assert_eq!(
+            "What the Crate Is and Its Public Surface",
+            condense_title(
+                "what the crate is and its public surface: library role, the \
+                 three-part Store/Execute/Inspect model, the features"
+            )
+        );
+        assert_eq!(
+            "The Object-Store Data Model",
+            condense_title("the object-store data model: the four-method `Store` trait")
+        );
+    }
+
+    #[test]
+    fn condense_title_leaves_code_spans_untouched() {
+        // Backticked / snake_case / CamelCase / acronym tokens must survive title
+        // casing verbatim — never `Grpc`, `Execute_signed`, `Vm`.
+        assert_eq!(
+            "How a `TransactionData` Becomes an `ExecutionResult`",
+            condense_title("how a `TransactionData` becomes an `ExecutionResult`: the spine")
+        );
+        assert_eq!(
+            "The `grpc`/`graphql`/`tracing` Features",
+            condense_title("the `grpc`/`graphql`/`tracing` features")
+        );
+        assert_eq!(
+            "How the VM Reads execute_signed",
+            condense_title("how the VM reads execute_signed")
+        );
+    }
+
+    #[test]
+    fn condense_title_word_caps_when_there_is_no_separator() {
+        // No colon to cut at: the word cap is the guarantee, so brevity holds.
+        let raw = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi";
+        let out = condense_title(raw);
+        assert!(out.ends_with('…'), "{out}");
+        assert_eq!(12, out.trim_end_matches('…').split_whitespace().count());
+        assert!(out.starts_with("Alpha Beta Gamma"), "{out}");
+    }
+
+    #[test]
+    fn condense_title_drops_a_trailing_parenthetical() {
+        assert_eq!(
+            "The Typed Error Surface",
+            condense_title("the typed error surface (validation, store, execution)")
+        );
     }
 
     #[test]

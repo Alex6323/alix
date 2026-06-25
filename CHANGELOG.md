@@ -111,11 +111,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the 🕒 "nothing due" glyph moved from the start of the row to the end (with the
   status), so the left gutter is just tree + title. (The server already computed
   the prefix for `depth`; it's now sent to the browser.)
-- **`alix explore` now generates short deck/trace titles.** The plan prompt asks
-  for a terse noun phrase (a [deck]) or path-question (a [trace]) instead of a
-  one-line sentence enumerating the contents, so workspace decks read as `the
-  crate surface` rather than `the crate surface: three-part Store/Execute/Inspect
-  model, the three feature flags …` and stop truncating in the picker.
+- **`alix explore` generates short, title-cased deck/trace titles.** The plan
+  prompt asks for a terse title, but the model ignored it and appended the deck's
+  contents after a colon — so the title is now **condensed deterministically in
+  code** rather than left to the prompt: the enumeration is cut (at the first
+  `:`/`;`/dash, or by a word cap when there's no separator), and the result is
+  title-cased with code spans (`` `grpc` ``, `snake_case`, `CamelCase`,
+  `ACRONYM`s) left intact. Workspace decks read as `The Crate Surface`, not `the
+  crate surface: three-part Store/Execute/Inspect model, the three feature flags
+  …`, and stop truncating in the picker. The condensed title also drives the file
+  name, so slugs no longer trail a stray word from the cut enumeration.
 - **Web trace walk: the leave button reads "Leave" and confirms an unfinished
   walk.** The hosted walk's return chip was "Decks"; it's now "Leave" (matching a
   fact-deck session), and leaving before the last checkpoint shows a "Leave the
