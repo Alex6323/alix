@@ -362,7 +362,10 @@ pub(crate) fn snapshot(deck: &Deck, start: usize) -> Result<SnapshotReport> {
         bail!("`{source}` is a URL — there are no local excerpts to snapshot");
     }
 
-    let (base_dir, source_file) = resolve_source(Some(deck_dir), Some(source));
+    // Resolve `% at:` locators exactly as the review path does — including a
+    // ` + `-joined multi-file `% source:`, which must be split, not treated as one
+    // literal path. Sharing `SourceBase` keeps freeze and review in lock-step.
+    let source_base = SourceBase::for_deck(deck);
     let assets_dir = deck_dir.join(SNAPSHOT_DIR);
     let mut copied = Vec::new();
     let mut missing = Vec::new();
@@ -375,7 +378,7 @@ pub(crate) fn snapshot(deck: &Deck, start: usize) -> Result<SnapshotReport> {
         let Some(locator) = card.at.as_deref() else {
             continue;
         };
-        match excerpt_at(&base_dir, source_file.as_deref(), locator) {
+        match source_base.excerpt(locator) {
             Ok(excerpt) => {
                 // `NN.<ext>` — the cited file's extension keeps the snippet
                 // readable; `start` keeps the number unique across the shared
@@ -1236,7 +1239,7 @@ fn locator_path(
 /// the direct join when it exists, else the first ancestor of `base_dir` at which
 /// `file` resolves, else fall back to the direct join (so a genuine miss still
 /// names the expected path in the error).
-fn resolve_under_base(base_dir: &Path, file: &str) -> PathBuf {
+pub(crate) fn resolve_under_base(base_dir: &Path, file: &str) -> PathBuf {
     let direct = base_dir.join(file);
     if direct.exists() {
         return direct;
@@ -1310,6 +1313,18 @@ pub fn note_without_provenance(note: Option<&str>) -> Option<String> {
 
 fn excerpt_at(base_dir: &Path, source_file: Option<&Path>, locator: &str) -> Result<Excerpt> {
     let (file, spec) = parse_locator(locator);
+    // A relative `file:` part is joined onto `base_dir`; if that base no longer
+    // exists, the join fabricates a misleading `…/missing-base/file` path. Fail on
+    // the real cause — the `% source:` base is gone — rather than the phantom path.
+    let joins_onto_base =
+        source_file.is_none() && file.as_deref().is_some_and(|f| !Path::new(f).is_absolute());
+    if joins_onto_base && !base_dir.is_dir() {
+        bail!(
+            "the `% source:` base `{}` does not exist — the deck's source path is \
+             likely stale or wrong",
+            base_dir.display()
+        );
+    }
     let path = locator_path(base_dir, source_file, file.as_deref()).ok_or_else(|| {
         anyhow!(
             "locator `{locator}` gives only line numbers, but `% source:` \
@@ -1404,6 +1419,25 @@ mod tests {
         let base_dir = file.parent().unwrap();
         let ex = excerpt_at(base_dir, Some(&file), "src/executor/env.rs:2-3").unwrap();
         assert_eq!(vec![(2, "b".to_string()), (3, "c".to_string())], ex.lines);
+    }
+
+    #[test]
+    fn excerpt_at_reports_a_missing_source_base_clearly() {
+        // A directory `% source:` whose base no longer exists (a moved/stale path)
+        // must error on the SOURCE itself, not fabricate a `…/missing-base/file`
+        // path by joining the locator onto it.
+        let base = std::env::temp_dir().join(format!("alix-nobase-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let err = format!(
+            "{:#}",
+            excerpt_at(&base, None, "src/lib.rs:1-3").unwrap_err()
+        );
+        assert!(err.contains(&base.display().to_string()), "{err}");
+        assert!(err.contains("does not exist"), "{err}");
+        assert!(
+            !err.contains("src/lib.rs"),
+            "must not name a locator joined onto the missing base: {err}"
+        );
     }
 
     #[test]
@@ -2169,6 +2203,32 @@ mod tests {
         let trace = Trace::from_deck(&frozen).unwrap();
         let ex = trace.excerpt(&trace.checkpoints[0]).unwrap();
         assert_eq!(vec![(1, "L2".to_string())], ex.lines);
+    }
+
+    #[test]
+    fn snapshot_freezes_a_multi_file_plus_joined_source() {
+        // A `% source:` joining several files with ` + ` (the generator's format)
+        // must freeze every cited file — snapshot has to split it the same way the
+        // review path does, not treat the whole line as one literal path.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        write(&root.join("src"), "a.rs", "alpha\nbeta\ngamma\n");
+        write(&root.join("src"), "b.rs", "one\ntwo\n");
+        std::fs::create_dir_all(root.join("ws")).unwrap();
+        write(&root.join("ws"), "alix.toml", "[defaults]\n");
+        let deck_path = write(
+            &root.join("ws"),
+            "d.txt",
+            "% source: ../src/a.rs + b.rs\n\
+             # q1\n\tp\n\t% at: a.rs:2-3\n\
+             # q2\n\tp\n\t% at: b.rs:1\n",
+        );
+        let report = snapshot(&Deck::load(&deck_path).unwrap(), 0).unwrap();
+        assert_eq!(2, report.copied.len(), "both ` + ` files freeze");
+        assert!(report.missing.is_empty(), "{:?}", report.missing);
+        assert!(root.join("ws/assets/01.rs").is_file());
+        assert!(root.join("ws/assets/02.rs").is_file());
     }
 
     #[test]

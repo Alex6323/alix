@@ -167,6 +167,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   answers compose freely, and the Next/Submit button now shows the binding.
 
 ### Fixed
+- **`alix explore --into --build` now actually freezes its `assets/`.** The
+  generated `% source:` paths were silently doubled: when `--source` is a
+  subdirectory (a crate) but the plan writes a scope relative to the project root
+  above it (`crates/x/src/lib.rs`), the write-time join produced
+  `…/crates/x/crates/x/src/lib.rs` — a path that doesn't exist. Every citation
+  read failed, so the freeze step copied nothing and the workspace was left with
+  no `assets/` **and no warning**. Generation now anchors the scope overlap-aware
+  (the write-time twin of the `% at:` read fix), so the citations resolve and the
+  excerpts freeze.
+- **A multi-file `% source:` (`a.rs + b.rs`) now freezes every cited file.**
+  Snapshotting treated the whole ` + `-joined line as one literal path, so a
+  multi-file source froze nothing; it now splits the source exactly as the review
+  path does (shared `SourceBase`), so freeze and review can't disagree.
+- **A missing or stale `% source:` base fails with a clear message.** A directory
+  `% source:` that no longer exists used to have the locator joined onto it,
+  yielding a baffling `…/README.md/src/lib.rs` "no such file"; it now reports the
+  real cause — the source base doesn't exist (the path is likely stale or wrong).
+- **A cited deck that can't be frozen is reported, not swallowed.**
+  `alix explore --build` now warns which deck's source couldn't be read instead
+  of silently leaving an empty `assets/`.
 - **A `% at:` locator written relative to a project root above `% source:` now
   resolves.** When a deck scopes `% source:` to a subdirectory or file (e.g.
   `…/crate/src/executor`) but writes its `% at:` paths from the crate root

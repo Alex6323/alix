@@ -2684,12 +2684,22 @@ fn explore_cmd(args: ExploreArgs) -> Result<()> {
         // Freeze each cited deck's source into the workspace's `assets/` so its
         // locators never drift and the workspace is self-contained.
         match alix::explore::snapshot_workspace(&report.dir) {
-            Ok((decks, files)) if decks > 0 => println!(
-                "{DIM}Froze {files} excerpt(s) from {decks} deck(s) into \
-                 {}/assets — the citations won't drift.{RESET}",
-                report.dir.display(),
-            ),
-            Ok(_) => {}
+            Ok(summary) => {
+                if summary.decks > 0 {
+                    println!(
+                        "{DIM}Froze {} excerpt(s) from {} deck(s) into {}/assets — \
+                         the citations won't drift.{RESET}",
+                        summary.files,
+                        summary.decks,
+                        report.dir.display(),
+                    );
+                }
+                // A cited deck that froze nothing is a broken/stale `% source:` —
+                // surface it so the empty `assets/` isn't a silent mystery.
+                for failed in &summary.failed {
+                    eprintln!("warning: could not freeze {failed}");
+                }
+            }
             Err(e) => eprintln!("warning: could not snapshot the source: {e:#}"),
         }
         println!(

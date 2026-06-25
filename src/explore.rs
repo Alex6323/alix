@@ -533,15 +533,27 @@ pub fn materialize(
     })
 }
 
+/// Outcome of freezing a workspace: how many decks and files were frozen, plus
+/// any *cited* decks that froze nothing. A cited deck that can't be frozen is
+/// almost always a broken or stale `% source:` — surfaced here so the caller can
+/// warn instead of leaving the user with a silently empty `assets/`.
+#[derive(Debug, Default)]
+pub struct SnapshotSummary {
+    pub decks: usize,
+    pub files: usize,
+    /// `"<member>: <reason>"` for each cited deck whose excerpts couldn't be read.
+    pub failed: Vec<String>,
+}
+
 /// Freezes each cited deck's source excerpts into the workspace's `assets/` — the
 /// default final step of `alix explore --into --build`, so the workspace is
 /// self-contained and its line-number locators never drift. A cited deck is a
-/// trace (its checkpoints) or a fact deck whose cards carry `% at:`. Decks that
-/// can't be frozen (a URL source, or no readable `% at:` excerpts) are skipped.
-/// Returns `(decks frozen, files copied)`.
-pub fn snapshot_workspace(dir: &Path) -> Result<(usize, usize)> {
-    let mut decks = 0;
-    let mut files = 0;
+/// trace (its checkpoints) or a fact deck whose cards carry `% at:`. A deck with
+/// no citations (a plain fact deck, a URL source) is skipped; a deck that DOES
+/// cite local excerpts but whose source can't be read is recorded in
+/// [`SnapshotSummary::failed`], never silently dropped.
+pub fn snapshot_workspace(dir: &Path) -> Result<SnapshotSummary> {
+    let mut summary = SnapshotSummary::default();
     for member in workspace::Workspace::load(dir)?.members {
         let Ok(deck) = Deck::load(&member) else {
             continue;
@@ -549,12 +561,12 @@ pub fn snapshot_workspace(dir: &Path) -> Result<(usize, usize)> {
         if !(deck.is_trace() || deck.cards.iter().any(|c| c.at.is_some())) {
             continue;
         }
-        // `files` is the running snippet count, passed as the start so each deck's
-        // snippets get unique names in the shared `assets/`.
-        match trace::snapshot(&deck, files) {
+        // `summary.files` is the running snippet count, passed as the start so each
+        // deck's snippets get unique names in the shared `assets/`.
+        match trace::snapshot(&deck, summary.files) {
             Ok(report) => {
-                decks += 1;
-                files += report.copied.len();
+                summary.decks += 1;
+                summary.files += report.copied.len();
                 for missing in &report.missing {
                     eprintln!(
                         "warning: {}: cited file not found, not frozen: {missing}",
@@ -562,11 +574,12 @@ pub fn snapshot_workspace(dir: &Path) -> Result<(usize, usize)> {
                     );
                 }
             }
-            // A URL source, or no readable `% at:` excerpts: can't be frozen.
-            Err(_) => continue,
+            // The deck cites local excerpts but none could be frozen — almost
+            // always a broken/stale `% source:`. Record it; don't swallow it.
+            Err(e) => summary.failed.push(format!("{}: {e:#}", member.display())),
         }
     }
-    Ok((decks, files))
+    Ok(summary)
 }
 
 /// The member file name for an item: `NN-<slug>.txt`, the zero-padded number
@@ -593,19 +606,36 @@ fn slug(title: &str) -> String {
 /// Rewrites a plan `% source:` scope to point at the real source: absolute under
 /// the source root for a local path (`.` → the root itself), left as-is for a
 /// URL or when there is no local root.
+///
+/// The model sometimes writes the scope relative to the PROJECT ROOT *above* the
+/// `--source` (e.g. `crates/x/src/lib.rs` while `root` already IS `…/crates/x`).
+/// A plain `root.join(scope)` would double the overlap into a path that doesn't
+/// exist (`…/crates/x/crates/x/src/lib.rs`) — which silently broke both freezing
+/// and citation reads. So the first ` + ` part is anchored overlap-aware via
+/// [`trace::resolve_under_base`] (the write-time twin of how `% at:` locators
+/// resolve on read), and any further ` + ` parts stay relative to it.
 fn rewrite_scope(scope: &str, root: Option<&Path>) -> String {
     let scope = scope.trim();
-    match root {
-        Some(root) if !is_url(scope) => {
-            if scope == "." {
-                root.display().to_string()
-            } else if Path::new(scope).is_absolute() {
-                scope.to_string()
-            } else {
-                root.join(scope).display().to_string()
-            }
-        }
-        _ => scope.to_string(),
+    let Some(root) = root else {
+        return scope.to_string();
+    };
+    if is_url(scope) {
+        return scope.to_string();
+    }
+    let (first, rest) = match scope.split_once(" + ") {
+        Some((a, b)) => (a.trim(), Some(b.trim())),
+        None => (scope, None),
+    };
+    let anchored = if first == "." {
+        root.to_path_buf()
+    } else if Path::new(first).is_absolute() {
+        PathBuf::from(first)
+    } else {
+        trace::resolve_under_base(root, first)
+    };
+    match rest {
+        Some(rest) => format!("{} + {}", anchored.display(), rest),
+        None => anchored.display().to_string(),
     }
 }
 
@@ -881,8 +911,9 @@ preamble ignored
         // a fact deck with no citations — skipped
         fs::write(dir.join("03-plain.txt"), "% title: d\n# q\n\ta\n").unwrap();
 
-        let (decks, files) = snapshot_workspace(&dir).unwrap();
-        assert_eq!((2, 2), (decks, files)); // trace + cited fact, one snippet each
+        let summary = snapshot_workspace(&dir).unwrap();
+        assert_eq!((2, 2), (summary.decks, summary.files)); // trace + cited fact, one snippet each
+        assert!(summary.failed.is_empty(), "{:?}", summary.failed);
         // Two unique snippet names in the shared assets/ (the offset prevents a
         // collision), and the whole file is never copied.
         assert!(dir.join("assets/01.rs").is_file());
@@ -895,5 +926,72 @@ preamble ignored
         assert!(fact.contains("% at: 0"), "{fact}");
 
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn snapshot_workspace_surfaces_a_deck_whose_source_cannot_be_frozen() {
+        // A cited deck whose `% source:` points nowhere must be REPORTED, not
+        // silently swallowed (the bug that left a freshly built workspace with no
+        // `assets/` and no warning).
+        let dir = std::env::temp_dir().join(format!("alix-snap-fail-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("alix.toml"), "[defaults]\n").unwrap();
+        fs::write(
+            dir.join("01-broken.txt"),
+            format!(
+                "% source: {}/does-not-exist\n# q\n\ta\n\t% at: src/x.rs:1\n",
+                dir.display()
+            ),
+        )
+        .unwrap();
+
+        let summary = snapshot_workspace(&dir).unwrap();
+        assert_eq!(0, summary.decks); // nothing frozen
+        assert_eq!(1, summary.failed.len(), "{:?}", summary.failed);
+        assert!(
+            summary.failed[0].contains("01-broken.txt"),
+            "{:?}",
+            summary.failed
+        );
+        assert!(!dir.join("assets").exists()); // no empty assets dir left behind
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn rewrite_scope_anchors_a_repo_relative_scope_without_doubling() {
+        // The `--source` is a subdir (a crate), but the model writes its source
+        // scope relative to the project root *above* it. The written `% source:`
+        // must be the real file, never `…/mycrate/crates/mycrate/…` (the doubling
+        // that silently broke freezing and citation reads).
+        let root = std::env::temp_dir().join(format!("alix-scope-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let crate_src = root.join("crates/mycrate/src");
+        fs::create_dir_all(&crate_src).unwrap();
+        fs::write(crate_src.join("lib.rs"), "fn main() {}\n").unwrap();
+        let lib = crate_src.join("lib.rs").display().to_string();
+        let source = root.join("crates/mycrate"); // the `--source`
+
+        // repo-root-relative scope → resolved overlap-aware to the real file
+        assert_eq!(
+            lib,
+            rewrite_scope("crates/mycrate/src/lib.rs", Some(&source))
+        );
+        // a clean crate-relative scope still resolves directly
+        assert_eq!(lib, rewrite_scope("src/lib.rs", Some(&source)));
+        // `.` → the source root itself; an absolute path is left untouched
+        assert_eq!(
+            source.display().to_string(),
+            rewrite_scope(".", Some(&source))
+        );
+        assert_eq!(lib, rewrite_scope(&lib, Some(&source)));
+        // multi-source: only the first ` + ` part is re-anchored, the rest stays
+        assert_eq!(
+            format!("{lib} + other.rs"),
+            rewrite_scope("crates/mycrate/src/lib.rs + other.rs", Some(&source))
+        );
+
+        let _ = fs::remove_dir_all(&root);
     }
 }
