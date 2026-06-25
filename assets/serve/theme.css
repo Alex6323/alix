@@ -29,6 +29,9 @@
   --note-border: #e7c66b;
   --note-ink: #ecdca6;
   --note-code: #cfe0e3;
+  /* note wash + border — derived from --note-border so every theme adapts */
+  --note-bg: color-mix(in srgb, var(--note-border) 12%, transparent);
+  --note-line: color-mix(in srgb, var(--note-border) 24%, transparent);
   --excerpt-bg: #071a23;
   --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -57,23 +60,23 @@
 
 /* ── Kid — warm, rounded, candy accents (the bold one) ──────────────── */
 :root[data-theme="kid"] {
-  --void: #fff6ec;
+  --void: #fff2db;
   --panel-top: #ffffff;
-  --panel-bot: #fff0f6;
-  --ink: #3b2a4f;
-  --dim: #9b82a8;
-  --line: #ffded0;
-  --bolt: #7b4dff;
-  --bolt-hi: #a886ff;
-  --good: #00bd86;
-  --warn: #ffb020;
-  --again: #ff5d8f;
-  --halo: #ffe7d4;
+  --panel-bot: #fff6ea;
+  --ink: #2a1840;
+  --dim: #6e4d8a;
+  --line: #ffd49e;
+  --bolt: #7a2ff5;
+  --bolt-hi: #9c5cff;
+  --good: #00b86b;
+  --warn: #ff9500;
+  --again: #ff3d85;
+  --halo: #ffe1b8;
   --menu-bg: #ffffff;
-  --note-border: #ffb020;
-  --note-ink: #8a5600;
-  --note-code: #4a3a5a;
-  --excerpt-bg: #fff0f6;
+  --note-border: #ff9500;
+  --note-ink: #7a3c00;
+  --note-code: #34204e;
+  --excerpt-bg: #fff6ea;
   --sans: ui-rounded, "SF Pro Rounded", "Nunito", "Quicksand", system-ui, sans-serif;
 }
 

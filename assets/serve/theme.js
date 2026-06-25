@@ -18,7 +18,7 @@
   var THEMES = [
     { id: "dark",             name: "alix",             mode: "dark",  c: ["#06121a", "#22d3ee", "#3ee0a0"] },
     { id: "light",            name: "alix Light",       mode: "light", c: ["#f5f7f6", "#0c8b97", "#138a5b"] },
-    { id: "kid",              name: "Fun",              mode: "light", c: ["#fff6ec", "#7b4dff", "#00bd86"] },
+    { id: "kid",              name: "Fun",              mode: "kids",  c: ["#fff2db", "#7a2ff5", "#00b86b"] },
     { id: "github-dark",      name: "GitHub",           mode: "dark",  c: ["#0d1117", "#2f81f7", "#3fb950"] },
     { id: "github-light",     name: "GitHub Light",     mode: "light", c: ["#ffffff", "#0969da", "#1a7f37"] },
     { id: "one-dark",         name: "One Dark",         mode: "dark",  c: ["#282c34", "#61afef", "#98c379"] },
@@ -62,12 +62,12 @@
     head.appendChild(x);
     panel.appendChild(head);
 
-    ["light", "dark"].forEach(function (mode) {
+    ["light", "dark", "kids"].forEach(function (mode) {
       var group = THEMES.filter(function (t) { return t.mode === mode; });
       if (!group.length) return;
       var label = document.createElement("div");
       label.className = "theme-group-label";
-      label.textContent = mode === "light" ? "Light" : "Dark";
+      label.textContent = mode === "light" ? "Light" : mode === "dark" ? "Dark" : "Kids";
       panel.appendChild(label);
       var grid = document.createElement("div");
       grid.className = "theme-grid";
