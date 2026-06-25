@@ -292,9 +292,11 @@ impl Deck {
             None => self.cards.iter().all(|c| session::is_retired(c, store)),
         };
         if gated {
-            // Drilled enough but not yet mastered: a sourced deck is `ExamDue`, a
-            // source-less one (no exam) is `Finished`.
-            if self.sources.is_empty() {
+            // Drilled enough but not yet mastered: a sourced deck is `ExamDue`.
+            // A source-less deck has no exam, and a trace's exam IS the walk
+            // (which masters it on completion — see `Walk::grade`), so both are
+            // `Finished` here rather than waiting at an exam they'll never sit.
+            if self.sources.is_empty() || self.is_trace() {
                 DeckState::Finished
             } else {
                 DeckState::ExamDue

@@ -30,6 +30,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   as `[…]`), are unaffected.
 
 ### Changed
+- **A trace masters when you finish walking it.** A trace has no separate exam —
+  the predict-and-verify walk *is* its exam — so once every checkpoint is retired
+  the trace is marked **mastered** (the same flag a passed exam sets): it reads
+  "mastered 🎉", lands in the Mastered window, and **unlocks its dependents**.
+  Previously a fully-walked trace was stuck at "exam due" (an exam it could never
+  sit), so nothing that `% requires:` it ever unlocked.
 - **`% requires:` now gates the exam, not drilling.** You can review/drill any
   deck at any time, in any order — a prerequisite-locked deck is no longer
   blocked in the picker (it stays bright and startable; the lock is named

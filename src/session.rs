@@ -384,8 +384,15 @@ fn separate_siblings(order: Vec<usize>, cards: &[Card]) -> VecDeque<usize> {
 /// The `streak >= 1` guard ignores a card sitting on the top stage without a
 /// passing streak. Unseen cards are never retired.
 pub fn is_retired(card: &Card, store: &Store) -> bool {
+    is_retired_id(card.id(), store)
+}
+
+/// Whether the card with `card_id` is retired — at the top stage with a streak.
+/// Lets callers that hold an id but not the [`Card`] (e.g. a trace checkpoint)
+/// share the one retirement rule.
+pub fn is_retired_id(card_id: u64, store: &Store) -> bool {
     store
-        .get(card.id())
+        .get(card_id)
         .is_some_and(|s| s.stage >= MAX_STAGE && s.streak >= 1)
 }
 

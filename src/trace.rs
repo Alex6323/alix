@@ -107,6 +107,9 @@ pub struct Trace {
     /// What the trace walks (`% trace:`) — a path description ("how X becomes
     /// Y").
     pub description: String,
+    /// The deck's subject (its file name) — keys the trace's mastery in the
+    /// store, just like a fact deck's exam mastery.
+    pub subject: String,
     /// The path origin (`% source:`), shown to the learner. `None` if the deck
     /// declares none (locators then need an explicit `file:` part and a base).
     pub source: Option<String>,
@@ -146,6 +149,7 @@ impl Trace {
         let (base_dir, source_file) = resolve_source(deck.path.parent(), source.as_deref());
         Ok(Trace {
             description,
+            subject: deck.subject.clone(),
             source,
             checkpoints,
             base_dir,
@@ -905,12 +909,28 @@ impl Walk {
                 .apply(state, delta.grade(), now_ms);
         }
         self.deltas[self.current] = Some(delta);
+        // A trace's walk IS its exam: once every checkpoint is retired (the path
+        // is reliably predicted), the trace is mastered — set the same flag a
+        // passed exam sets, so it reads "mastered 🎉" and unlocks its dependents.
+        // Sticky and set once (the timestamp marks when mastery was reached).
+        if !store.deck_mastered(&self.trace.subject) && self.all_checkpoints_retired(store) {
+            store.set_deck_mastered(&self.trace.subject, now_ms);
+        }
         if self.current + 1 < self.trace.checkpoints.len() {
             self.current += 1;
             self.phase = Phase::Predict;
         } else {
             self.phase = Phase::Compress;
         }
+    }
+
+    /// Whether every checkpoint's card is retired — the trace has been walked
+    /// reliably enough to count as mastered.
+    fn all_checkpoints_retired(&self, store: &Store) -> bool {
+        self.trace
+            .checkpoints
+            .iter()
+            .all(|cp| crate::session::is_retired_id(cp.card_id, store))
     }
 
     /// Records the final compression of the path and finishes the walk. No-op
@@ -1385,6 +1405,42 @@ mod tests {
         assert_eq!(Grade::Pass, Delta::Got.grade());
         assert_eq!(Grade::Fail, Delta::Partial.grade());
         assert_eq!(Grade::Fail, Delta::Missed.grade());
+    }
+
+    #[test]
+    fn walking_a_trace_to_completion_masters_and_finishes_it() {
+        use crate::store::{MAX_STAGE, Store};
+        let dir = tempfile::tempdir().unwrap();
+        write(dir.path(), "src.rs", "a\nb\nc\n");
+        let deck_path = dir.path().join("t.txt");
+        std::fs::write(
+            &deck_path,
+            format!(
+                "% trace: how a moves\n% source: {}\n# what happens?\n\tit advances\n\t% at: 1-2\n",
+                dir.path().join("src.rs").display()
+            ),
+        )
+        .unwrap();
+        let deck = crate::deck::Deck::load(&deck_path).unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+
+        // Before any walk: not mastered, and not Finished (so it would lock a
+        // dependent — and must NOT be stuck at the exam it can't sit).
+        assert!(!store.deck_mastered(&deck.subject));
+        assert_ne!(crate::deck::DeckState::Finished, deck.state(&store));
+
+        // Walk it correctly enough times to retire the single checkpoint.
+        for round in 0..MAX_STAGE + 1 {
+            let mut walk = Walk::new(Trace::from_deck(&deck).unwrap(), SchedulerKind::Leitner);
+            walk.predict("p".to_string());
+            walk.grade(&mut store, Delta::Got, u64::from(round) + 1);
+            walk.compress("c".to_string());
+        }
+
+        // The walk IS the trace's exam: completing it masters the trace, which is
+        // then Finished and unlocks its dependents.
+        assert!(store.deck_mastered(&deck.subject));
+        assert_eq!(crate::deck::DeckState::Finished, deck.state(&store));
     }
 
     #[test]
