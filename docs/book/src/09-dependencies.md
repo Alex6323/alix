@@ -20,22 +20,16 @@ A deck names its prerequisites with `% requires:` lines in the header
 A name resolves next to the requiring deck or in your decks directory, with or
 without the `.txt`. Like all directives these are plain comments, so adding or
 changing them never touches card progress. A missing prerequisite or a dependency
-cycle is reported as an error.
+cycle is treated as non-blocking — a broken edge never hides a deck.
 
-## Foundations first
+## Dependencies don't change what you review
 
-When you review a deck, its prerequisites are pulled into the session
-**automatically** — transitively and de-duplicated — and ordered **foundations
-first**: a prerequisite's cards (both due reviews and freshly introduced ones)
-come before the cards of the deck that depends on it, while each deck keeps its
-normal scheduler order internally. So reviewing `borrowing` quietly refreshes
-`ownership` first.
-
-A prerequisite contributes only its **cards**, not its settings — the `mode`,
-`order`, and `scheduler` come from the deck you actually asked to review, so
-requiring a `% mode: line` lyrics deck won't switch your session into line mode.
-(Dependencies apply to `review` only; `browse` and `stats` work on exactly the
-decks you name.)
+`% requires:` is about *order and gating*, not session contents. When you review
+(or browse) a deck, the session holds exactly that deck's cards — prerequisites
+are never pulled in, so the `mode`/`order`/`scheduler` you study under is always
+the deck's own. What dependencies shape is the picker's **dependency tree**
+(foundations shown first) and, for a deck with a `% source:`, the **exam gate**
+below.
 
 ## Editing without typos — `alix deps`
 
@@ -53,19 +47,19 @@ comments, editing dependencies never disturbs card progress.
 
 ## Unlocks
 
-The same `% requires:` graph drives **unlocks**, with no extra syntax. A deck is
-**locked** while any of its prerequisites isn't *finished* — every card retired,
-the completion state from [chapter 5](05-scheduling.md). Finish a foundation and
-the decks that build on it open up; locked decks show dimmed with a 🔒 in the
-picker.
+The same `% requires:` graph drives **unlocks**, with no extra syntax — and the
+gate is the **exam**, not drilling. You can review any deck at any time, in any
+order; what `% requires:` controls is **exam order**: a deck with a `% source:`
+can't sit its exam until each of its *sourced* prerequisites has passed its own
+exam, and passing a foundation's exam unlocks the exams that build on it. A
+**source-less** prerequisite has no exam to pass, so it never gates — its edge is
+just a suggested order in the tree. (A **trace** masters by finishing its walk —
+the walk is its exam — so it gates and unlocks like any sourced deck.)
 
-The lock is **advisory**, not a wall: you can still pick a locked deck, and its
-prerequisite cards are pulled in foundations-first anyway, so you're never truly
-stuck. And it's recomputed **live** — if a finished deck later lapses below the
-top stage, its dependents lock again, nudging you to shore up the foundation
-before moving on.
+In the picker a deck whose exam is locked shows a 🔒, but it stays **drillable** —
+only the exam waits on the prerequisites.
 
 This is what turns a folder of decks into a **curriculum**: order the material by
-`% requires:`, and `alix` walks you through it foundations-first, gating each step
-on the last. It's also the backbone of the AI exam's notion of *mastery* (a later
-chapter) and of how `alix explore` lays out a generated learning plan.
+`% requires:`, and `alix` gates each step's exam on passing the last. It's the
+backbone of the AI exam's notion of *mastery* (a later chapter) and of how `alix
+explore` lays out a generated learning plan.

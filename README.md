@@ -228,9 +228,8 @@ command line:
 These are ordinary `%` comments, so they don't affect parsing and card hashes
 are unaffected. An explicit CLI flag always wins over a directive, which wins over
 the built-in default. Directives are read only from the deck(s) you ask to
-review — never from prerequisites pulled in via `% requires:` (see below). When
-several requested decks disagree on a setting, the default is used. `alix check
-<deck>` prints a deck's directives.
+review. When several requested decks disagree on a setting, the default is used.
+`alix check <deck>` prints a deck's directives.
 
 **Per-card mode.** A `% mode:` directive placed *after* a card's front (and
 before the next one) overrides the deck's mode for that card only, so one deck
@@ -248,20 +247,18 @@ A deck can declare prerequisite decks with `% requires:` lines (repeatable):
 % requires: rust-ownership
 ```
 
-When you review a deck, its prerequisites are pulled in automatically —
-transitively, de-duplicated — and the session is ordered **foundations
-first**: a prerequisite deck's cards (both due reviews and newly introduced
-ones) come before the cards of the deck that depends on it, while normal
-scheduler order is kept within each deck. A prerequisite name resolves next to
-the requiring deck or in the decks directory, with or without `.txt`. Missing
-prerequisites and dependency cycles are reported as errors. They are ordinary
-`%` comments, so hashes are unaffected.
+`% requires:` declares *order and gating*, not session contents: reviewing or
+browsing a deck uses exactly that deck's cards — prerequisites are never pulled
+in. A prerequisite name resolves next to the requiring deck or in the decks
+directory, with or without `.txt`; a missing prerequisite or a dependency cycle
+is non-blocking (it never hides a deck). They are ordinary `%` comments, so
+hashes are unaffected.
 
-A prerequisite contributes only its **cards** to the session, not its
-directives: the `mode`, `order` and `scheduler` come from the deck you asked to
-review, so requiring a `% mode: line` lyrics deck as a prerequisite won't switch
-your session into line mode. Dependencies apply to `review` only — `browse` and
-`stats` operate on exactly the decks you name.
+What dependencies *do* drive is the picker's **dependency tree** (foundations
+shown first) and the **exam gate**: a deck with a `% source:` can't sit its exam
+until its sourced prerequisites have passed theirs — see
+[Completion states & unlocks](#completion-states--unlocks). Drilling is never
+gated, so you can review any deck at any time.
 
 You can edit a deck's prerequisites without hand-typing (and without typos)
 with `alix deps <deck>` (alias `alix require`): it opens the deck picker over your

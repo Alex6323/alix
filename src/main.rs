@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     io::{IsTerminal, Write},
     net::{Ipv4Addr, SocketAddr},
     path::{Path, PathBuf},
@@ -23,7 +23,7 @@ use alix::{
     tui::{self, AfterReview, App},
     workspace,
 };
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand};
 use ratatui::DefaultTerminal;
 
@@ -688,64 +688,6 @@ fn pick_decks_if_empty(
     Ok((!picked.decks.is_empty()).then_some(picked))
 }
 
-/// Expands `initial` decks with their `% requires:` prerequisites, returning
-/// the decks in dependency order (every prerequisite before the deck that
-/// needs it), de-duplicated, plus whether any prerequisites were declared.
-fn resolve_deck_order(
-    initial: &[PathBuf],
-    decks_dir: Option<&Path>,
-) -> Result<(Vec<PathBuf>, bool)> {
-    let mut ordered = Vec::new();
-    let mut done = HashSet::new();
-    let mut on_stack = HashSet::new();
-    let mut any_requires = false;
-    for path in initial {
-        visit_dep(
-            path,
-            decks_dir,
-            &mut ordered,
-            &mut done,
-            &mut on_stack,
-            &mut any_requires,
-        )?;
-    }
-    Ok((ordered, any_requires))
-}
-
-/// Post-order DFS: a deck is appended to `ordered` only after its
-/// prerequisites, so the result lists foundations first. `on_stack` catches
-/// dependency cycles; `done` de-duplicates shared prerequisites.
-fn visit_dep(
-    path: &Path,
-    decks_dir: Option<&Path>,
-    ordered: &mut Vec<PathBuf>,
-    done: &mut HashSet<PathBuf>,
-    on_stack: &mut HashSet<PathBuf>,
-    any_requires: &mut bool,
-) -> Result<()> {
-    let key = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    if done.contains(&key) {
-        return Ok(());
-    }
-    if !on_stack.insert(key.clone()) {
-        bail!("dependency cycle detected at {}", path.display());
-    }
-    let deck = Deck::load(path)?;
-    if !deck.requires.is_empty() {
-        *any_requires = true;
-    }
-    let parent = path.parent();
-    for req in &deck.requires {
-        let dep = alix::deck::resolve_dep(req, decks_dir, parent)
-            .ok_or_else(|| anyhow!("{} requires '{}', which was not found", deck.subject, req))?;
-        visit_dep(&dep, decks_dir, ordered, done, on_stack, any_requires)?;
-    }
-    on_stack.remove(&key);
-    done.insert(key.clone());
-    ordered.push(key);
-    Ok(())
-}
-
 /// A review session built from the deck selection and settings, ready to be
 /// driven by either the TUI or the web frontend. `decks` and `config` are only
 /// needed by the TUI (key bindings, ask-Claude, reference links).
@@ -809,13 +751,11 @@ fn build_review(
     target: Frontend,
 ) -> Result<ReviewBuild> {
     // Expand any workspace folder into its member decks (tagged with the
-    // workspace's shared directives), then pull in prerequisites, foundations
-    // first.
+    // workspace's shared directives). A deck's `% requires:` prerequisites are
+    // NOT pulled into the session — you review only the deck(s) you picked
+    // (the dependency graph gates exams, not what a review session contains).
     let expanded = expand_workspaces(&deck_paths)?;
-    let decks_dir = config.decks_dir();
-    let (resolved, deps_used) = resolve_deck_order(&expanded.decks, decks_dir.as_deref())?;
-
-    let (cards, deck_label, mut decks, settings) = load_decks(&resolved, &expanded.defaults)?;
+    let (cards, deck_label, mut decks, settings) = load_decks(&expanded.decks, &expanded.defaults)?;
     // Resolve each deck's effective ask-tutor source access: a deck in a
     // workspace takes that workspace's `source_access` override if it sets one,
     // else the global `[ask] source_access`.
@@ -851,24 +791,8 @@ fn build_review(
         }
     }
 
-    // Directives (mode/scheduler/order) come from the requested deck(s) only,
-    // not the pulled-in prerequisites — a prerequisite must not override the
-    // mode you chose for the deck you actually want to study.
-    let target_subjects: HashSet<&str> = expanded
-        .decks
-        .iter()
-        .filter_map(|p| p.file_name().and_then(|n| n.to_str()))
-        .collect();
-    let target_settings: Vec<&DeckSettings> = resolved
-        .iter()
-        .zip(&settings)
-        .filter(|(path, _)| {
-            path.file_name()
-                .and_then(|n| n.to_str())
-                .is_some_and(|n| target_subjects.contains(n))
-        })
-        .map(|(_, s)| s)
-        .collect();
+    // Directives (scheduler/order) come from the session's decks.
+    let target_settings: Vec<&DeckSettings> = settings.iter().collect();
 
     // scheduler/order are deck/session-level: CLI flag > deck directive >
     // default. `mode` is now per-card (resolved at review time from the card's
@@ -886,30 +810,13 @@ fn build_review(
         Order::default(),
     );
 
-    // When prerequisites were pulled in, rank each card by its deck's position
-    // in the dependency order so the session presents foundations first.
-    let dep_ranks: Vec<usize> = if deps_used {
-        let mut rank_of: HashMap<String, usize> = HashMap::new();
-        for (rank, path) in resolved.iter().enumerate() {
-            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                rank_of.entry(name.to_string()).or_insert(rank);
-            }
-        }
-        cards
-            .iter()
-            .map(|c| *rank_of.get(&*c.subject).unwrap_or(&0))
-            .collect()
-    } else {
-        Vec::new()
-    };
-
     let options = SessionOptions {
         max_new: args.new,
         limit: args.limit,
         cram: args.cram,
         order,
     };
-    let session = Session::new_with_deps(cards, store, scheduler, options, dep_ranks, now_ms());
+    let session = Session::new(cards, store, scheduler, options, now_ms());
 
     // Remember these decks for next time's picker — but only when there is
     // actually something to review, so merely opening a deck with nothing due

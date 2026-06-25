@@ -73,10 +73,6 @@ pub struct Session {
     scheduler: Box<dyn Scheduler>,
     kind: SchedulerKind,
     options: SessionOptions,
-    /// Per-card dependency rank (lower = more foundational), parallel to
-    /// `cards`. Empty when no deck dependencies are in play. The queue is
-    /// stably ordered by it, so prerequisite decks' cards come first.
-    dep_ranks: Vec<usize>,
     /// Total distinct cards that entered the queue initially.
     pub initial_size: usize,
     /// Session counters.
@@ -97,31 +93,8 @@ impl Session {
         options: SessionOptions,
         now_ms: u64,
     ) -> Self {
-        Self::new_with_deps(cards, store, kind, options, Vec::new(), now_ms)
-    }
-
-    /// Like [`new`](Self::new) but with per-card dependency ranks: the queue is
-    /// additionally ordered so cards of lower-ranked (prerequisite) decks come
-    /// before higher-ranked ones, keeping scheduler order within each rank.
-    /// `dep_ranks` is parallel to `cards`; an empty slice means no ordering.
-    pub fn new_with_deps(
-        cards: Vec<Card>,
-        store: &Store,
-        kind: SchedulerKind,
-        options: SessionOptions,
-        dep_ranks: Vec<usize>,
-        now_ms: u64,
-    ) -> Self {
         let scheduler = kind.scheduler();
-        let queue = build_queue(
-            &cards,
-            store,
-            &*scheduler,
-            kind,
-            options,
-            &dep_ranks,
-            now_ms,
-        );
+        let queue = build_queue(&cards, store, &*scheduler, kind, options, now_ms);
         let initial_size = queue.len();
 
         Self {
@@ -130,7 +103,6 @@ impl Session {
             scheduler,
             kind,
             options,
-            dep_ranks,
             initial_size,
             stats: SessionStats::default(),
         }
@@ -148,7 +120,6 @@ impl Session {
             &*self.scheduler,
             self.kind,
             self.options,
-            &self.dep_ranks,
             now_ms,
         );
         if queue.is_empty() {
@@ -170,7 +141,6 @@ impl Session {
             &*self.scheduler,
             self.kind,
             self.options,
-            &self.dep_ranks,
             now_ms,
         )
         .is_empty()
@@ -293,7 +263,6 @@ fn build_queue(
     scheduler: &dyn Scheduler,
     kind: SchedulerKind,
     options: SessionOptions,
-    dep_ranks: &[usize],
     now_ms: u64,
 ) -> VecDeque<usize> {
     let mut due: Vec<usize> = Vec::new();
@@ -336,11 +305,6 @@ fn build_queue(
         // Card indices follow deck/file order, so sorting restores it while
         // keeping the due/new selection above.
         order.sort_unstable();
-    }
-    // Order-first by dependency rank: a stable sort keeps the scheduler order
-    // within each deck while moving prerequisite decks ahead of dependents.
-    if !dep_ranks.is_empty() {
-        order.sort_by_key(|&i| dep_ranks[i]);
     }
     if let Some(limit) = options.limit {
         order.truncate(limit);
@@ -549,37 +513,6 @@ mod tests {
         assert_eq!("front 1", session.current().unwrap().front);
         session.grade(&mut store, Grade::Pass, now);
         assert_eq!("front 2", session.current().unwrap().front);
-    }
-
-    #[test]
-    fn dependency_rank_orders_prerequisites_first() {
-        let (mut store, _dir) = empty_store();
-        // First two cards belong to the dependent deck (rank 1), last two to
-        // the prerequisite deck (rank 0). All are new.
-        let all = vec![
-            card("adv.txt", 0),
-            card("adv.txt", 1),
-            card("basics.txt", 2),
-            card("basics.txt", 3),
-        ];
-        let ranks = vec![1, 1, 0, 0];
-        let mut session = Session::new_with_deps(
-            all,
-            &store,
-            SchedulerKind::Leitner,
-            SessionOptions {
-                max_new: 10,
-                ..Default::default()
-            },
-            ranks,
-            1000,
-        );
-        // The prerequisite deck's cards come first despite appearing later.
-        assert_eq!("basics.txt", &*session.current().unwrap().subject);
-        session.grade(&mut store, Grade::Pass, 1000);
-        assert_eq!("basics.txt", &*session.current().unwrap().subject);
-        session.grade(&mut store, Grade::Pass, 1000);
-        assert_eq!("adv.txt", &*session.current().unwrap().subject);
     }
 
     #[test]

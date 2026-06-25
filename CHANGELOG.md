@@ -30,6 +30,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   as `[…]`), are unaffected.
 
 ### Changed
+- **Reviewing a deck no longer pulls in its prerequisites' cards.** A review (in
+  the TUI/CLI) now holds exactly the deck(s) you picked — `% requires:` decks are
+  not auto-added "foundations-first" — matching what the web already did.
+  Dependencies are about *order and gating* (the picker tree + the exam gate),
+  not what a session contains. (Removed the `resolve_deck_order`/`dep_ranks`
+  machinery; book + README updated.)
 - **A trace masters when you finish walking it.** A trace has no separate exam —
   the predict-and-verify walk *is* its exam — so once every checkpoint is retired
   the trace is marked **mastered** (the same flag a passed exam sets): it reads
