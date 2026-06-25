@@ -30,6 +30,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   as `[…]`), are unaffected.
 
 ### Changed
+- **`alix explore` now generates short deck/trace titles.** The plan prompt asks
+  for a terse noun phrase (a [deck]) or path-question (a [trace]) instead of a
+  one-line sentence enumerating the contents, so workspace decks read as `the
+  crate surface` rather than `the crate surface: three-part Store/Execute/Inspect
+  model, the three feature flags …` and stop truncating in the picker.
 - **Web trace walk: the leave button reads "Leave" and confirms an unfinished
   walk.** The hosted walk's return chip was "Decks"; it's now "Leave" (matching a
   fact-deck session), and leaving before the last checkpoint shows a "Leave the

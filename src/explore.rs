@@ -104,16 +104,19 @@ fn explore_prompt(source: &str, goal: &str, url: bool, cfg: &TraceConfig) -> Str
          Goal    {goal}\n\
          Source  <one line: what this source is>\n\
          Spine   <the single most central path, arrow-joined nouns>\n\n\
-         1. [deck]  <the fact topic, e.g. the deck format: directives and markers>\n   \
+         1. [deck]  <a short topic noun phrase, e.g. the deck format>\n   \
          requires: none\n   % source: <{scope}>\n\
          2. [trace] <the path-question, e.g. how deck text becomes a list of Cards>\n   \
          requires: 1\n   % source: <{scope}>\n\
          3. …\n\n\
-         Tag EVERY item [trace] or [deck]. A [trace] title is a path-question with \
-         two ends; a [deck] title names a coherent set of facts. Keep each title one \
-         line; do not resolve line numbers or write cards/checkpoints — later steps \
-         do that. Use as many items as the goal needs (stop at saturation), ordered \
-         by prerequisite.\n\n\
+         Tag EVERY item [trace] or [deck]. Keep each title SHORT — one line, a \
+         handful of words: a [deck] is a noun phrase naming the topic (`the crate \
+         surface`, `error taxonomy`), a [trace] is a terse path-question (`how a \
+         request becomes a profile`). Do NOT pack the contents into the title — no \
+         `X: a, b, and c` enumerations, no parenthetical lists; the cards hold the \
+         detail. Do not resolve line numbers or write cards/checkpoints — later \
+         steps do that. Use as many items as the goal needs (stop at saturation), \
+         ordered by prerequisite.\n\n\
          `% source:` FORMAT: a [deck]'s source must be actual FILE path(s) (the \
          exam reads them) — never a bare directory. For several files, join them \
          with ` + `, writing the FIRST as a full path and the rest RELATIVE to its \
