@@ -77,16 +77,239 @@
   --sans: ui-rounded, "SF Pro Rounded", "Nunito", "Quicksand", system-ui, sans-serif;
 }
 
-/* ── theme picker swatches (lives in the status bar, built by theme.js) ─ */
-#theme-picker { display: inline-flex; align-items: center; gap: 6px; flex: none; }
-.theme-swatch {
-  width: 15px; height: 15px; padding: 0; border-radius: 50%;
-  border: 1px solid var(--line); cursor: pointer;
-  transition: transform 0.12s ease;
+/* ─────────────────────────────────────────────────────────────────────
+ * Library: beloved editor/terminal palettes, replicated by name (MIT-
+ * equivalent, credited). Each maps its background / surface / foreground /
+ * muted / border / accent / green / yellow / red to our vars.
+ * ───────────────────────────────────────────────────────────────────── */
+
+/* ── GitHub Dark ── */
+:root[data-theme="github-dark"] {
+  --void: #0d1117; --panel-top: #161b22; --panel-bot: #161b22;
+  --ink: #e6edf3; --dim: #7d8590; --line: #30363d;
+  --bolt: #2f81f7; --bolt-hi: #2f81f7;
+  --good: #3fb950; --warn: #d29922; --again: #f85149;
+  --halo: #161b22; --menu-bg: #161b22;
+  --note-border: #d29922; --note-ink: #e6edf3; --note-code: #e6edf3;
+  --excerpt-bg: #161b22;
 }
-/* Each swatch previews its own theme (bg + accent), regardless of the live one. */
-.theme-swatch[data-theme="dark"]  { background: linear-gradient(135deg, #0a212b 0 50%, #22d3ee 50% 100%); }
-.theme-swatch[data-theme="light"] { background: linear-gradient(135deg, #ffffff 0 50%, #0c8b97 50% 100%); }
-.theme-swatch[data-theme="kid"]   { background: linear-gradient(135deg, #fff0f6 0 50%, #7b4dff 50% 100%); }
-.theme-swatch:hover { transform: scale(1.15); }
-.theme-swatch.on { box-shadow: 0 0 0 2px var(--void), 0 0 0 4px var(--bolt); }
+
+/* ── GitHub Light ── */
+:root[data-theme="github-light"] {
+  --void: #ffffff; --panel-top: #f6f8fa; --panel-bot: #f6f8fa;
+  --ink: #1f2328; --dim: #656d76; --line: #d0d7de;
+  --bolt: #0969da; --bolt-hi: #0969da;
+  --good: #1a7f37; --warn: #9a6700; --again: #d1242f;
+  --halo: #f6f8fa; --menu-bg: #f6f8fa;
+  --note-border: #9a6700; --note-ink: #1f2328; --note-code: #1f2328;
+  --excerpt-bg: #f6f8fa;
+}
+
+/* ── One Dark ── */
+:root[data-theme="one-dark"] {
+  --void: #282c34; --panel-top: #3e4451; --panel-bot: #3e4451;
+  --ink: #abb2bf; --dim: #5c6370; --line: #181a1f;
+  --bolt: #61afef; --bolt-hi: #61afef;
+  --good: #98c379; --warn: #e5c07b; --again: #e06c75;
+  --halo: #3e4451; --menu-bg: #3e4451;
+  --note-border: #e5c07b; --note-ink: #abb2bf; --note-code: #abb2bf;
+  --excerpt-bg: #3e4451;
+}
+
+/* ── Dracula ── */
+:root[data-theme="dracula"] {
+  --void: #282a36; --panel-top: #44475a; --panel-bot: #44475a;
+  --ink: #f8f8f2; --dim: #6272a4; --line: #6272a4;
+  --bolt: #bd93f9; --bolt-hi: #bd93f9;
+  --good: #50fa7b; --warn: #f1fa8c; --again: #ff5555;
+  --halo: #44475a; --menu-bg: #44475a;
+  --note-border: #f1fa8c; --note-ink: #f8f8f2; --note-code: #f8f8f2;
+  --excerpt-bg: #44475a;
+}
+
+/* ── Monokai ── */
+:root[data-theme="monokai"] {
+  --void: #272822; --panel-top: #1e1f1c; --panel-bot: #1e1f1c;
+  --ink: #f8f8f2; --dim: #88846f; --line: #1e1f1c;
+  --bolt: #f92672; --bolt-hi: #f92672;
+  --good: #a6e22e; --warn: #e6db74; --again: #f92672;
+  --halo: #1e1f1c; --menu-bg: #1e1f1c;
+  --note-border: #e6db74; --note-ink: #f8f8f2; --note-code: #f8f8f2;
+  --excerpt-bg: #1e1f1c;
+}
+
+/* ── Catppuccin Mocha ── */
+:root[data-theme="catppuccin-mocha"] {
+  --void: #1e1e2e; --panel-top: #181825; --panel-bot: #181825;
+  --ink: #cdd6f4; --dim: #a6adc8; --line: #45475a;
+  --bolt: #cba6f7; --bolt-hi: #cba6f7;
+  --good: #a6e3a1; --warn: #f9e2af; --again: #f38ba8;
+  --halo: #181825; --menu-bg: #181825;
+  --note-border: #f9e2af; --note-ink: #cdd6f4; --note-code: #cdd6f4;
+  --excerpt-bg: #181825;
+}
+
+/* ── Catppuccin Latte ── */
+:root[data-theme="catppuccin-latte"] {
+  --void: #eff1f5; --panel-top: #e6e9ef; --panel-bot: #e6e9ef;
+  --ink: #4c4f69; --dim: #6c6f85; --line: #bcc0cc;
+  --bolt: #8839ef; --bolt-hi: #8839ef;
+  --good: #40a02b; --warn: #df8e1d; --again: #d20f39;
+  --halo: #e6e9ef; --menu-bg: #e6e9ef;
+  --note-border: #df8e1d; --note-ink: #4c4f69; --note-code: #4c4f69;
+  --excerpt-bg: #e6e9ef;
+}
+
+/* ── Tokyo Night ── */
+:root[data-theme="tokyo-night"] {
+  --void: #1a1b26; --panel-top: #16161e; --panel-bot: #16161e;
+  --ink: #c0caf5; --dim: #565f89; --line: #15161e;
+  --bolt: #7aa2f7; --bolt-hi: #7aa2f7;
+  --good: #9ece6a; --warn: #e0af68; --again: #f7768e;
+  --halo: #16161e; --menu-bg: #16161e;
+  --note-border: #e0af68; --note-ink: #c0caf5; --note-code: #c0caf5;
+  --excerpt-bg: #16161e;
+}
+
+/* ── Solarized Dark ── */
+:root[data-theme="solarized-dark"] {
+  --void: #002b36; --panel-top: #073642; --panel-bot: #073642;
+  --ink: #839496; --dim: #586e75; --line: #073642;
+  --bolt: #268bd2; --bolt-hi: #268bd2;
+  --good: #859900; --warn: #b58900; --again: #dc322f;
+  --halo: #073642; --menu-bg: #073642;
+  --note-border: #b58900; --note-ink: #839496; --note-code: #839496;
+  --excerpt-bg: #073642;
+}
+
+/* ── Solarized Light ── */
+:root[data-theme="solarized-light"] {
+  --void: #fdf6e3; --panel-top: #eee8d5; --panel-bot: #eee8d5;
+  --ink: #657b83; --dim: #93a1a1; --line: #eee8d5;
+  --bolt: #268bd2; --bolt-hi: #268bd2;
+  --good: #859900; --warn: #b58900; --again: #dc322f;
+  --halo: #eee8d5; --menu-bg: #eee8d5;
+  --note-border: #b58900; --note-ink: #657b83; --note-code: #657b83;
+  --excerpt-bg: #eee8d5;
+}
+
+/* ── Gruvbox Dark ── */
+:root[data-theme="gruvbox-dark"] {
+  --void: #282828; --panel-top: #3c3836; --panel-bot: #3c3836;
+  --ink: #ebdbb2; --dim: #a89984; --line: #504945;
+  --bolt: #83a598; --bolt-hi: #83a598;
+  --good: #b8bb26; --warn: #fabd2f; --again: #fb4934;
+  --halo: #3c3836; --menu-bg: #3c3836;
+  --note-border: #fabd2f; --note-ink: #ebdbb2; --note-code: #ebdbb2;
+  --excerpt-bg: #3c3836;
+}
+
+/* ── Gruvbox Light ── */
+:root[data-theme="gruvbox-light"] {
+  --void: #fbf1c7; --panel-top: #ebdbb2; --panel-bot: #ebdbb2;
+  --ink: #3c3836; --dim: #7c6f64; --line: #d5c4a1;
+  --bolt: #458588; --bolt-hi: #458588;
+  --good: #98971a; --warn: #d79921; --again: #cc241d;
+  --halo: #ebdbb2; --menu-bg: #ebdbb2;
+  --note-border: #d79921; --note-ink: #3c3836; --note-code: #3c3836;
+  --excerpt-bg: #ebdbb2;
+}
+
+/* ── Nord ── */
+:root[data-theme="nord"] {
+  --void: #2e3440; --panel-top: #3b4252; --panel-bot: #3b4252;
+  --ink: #d8dee9; --dim: #4c566a; --line: #4c566a;
+  --bolt: #88c0d0; --bolt-hi: #88c0d0;
+  --good: #a3be8c; --warn: #ebcb8b; --again: #bf616a;
+  --halo: #3b4252; --menu-bg: #3b4252;
+  --note-border: #ebcb8b; --note-ink: #d8dee9; --note-code: #d8dee9;
+  --excerpt-bg: #3b4252;
+}
+
+/* ── Ayu Dark ── */
+:root[data-theme="ayu-dark"] {
+  --void: #0d1017; --panel-top: #10141c; --panel-bot: #10141c;
+  --ink: #bfbdb6; --dim: #5c6773; --line: #1b1f29;
+  --bolt: #e6b450; --bolt-hi: #e6b450;
+  --good: #aad94c; --warn: #ffb454; --again: #f07178;
+  --halo: #10141c; --menu-bg: #10141c;
+  --note-border: #ffb454; --note-ink: #bfbdb6; --note-code: #bfbdb6;
+  --excerpt-bg: #10141c;
+}
+
+/* ── Rosé Pine ── */
+:root[data-theme="rose-pine"] {
+  --void: #191724; --panel-top: #1f1d2e; --panel-bot: #1f1d2e;
+  --ink: #e0def4; --dim: #6e6a86; --line: #26233a;
+  --bolt: #c4a7e7; --bolt-hi: #c4a7e7;
+  --good: #31748f; --warn: #f6c177; --again: #eb6f92;
+  --halo: #1f1d2e; --menu-bg: #1f1d2e;
+  --note-border: #f6c177; --note-ink: #e0def4; --note-code: #e0def4;
+  --excerpt-bg: #1f1d2e;
+}
+
+/* ── Everforest Dark ── */
+:root[data-theme="everforest-dark"] {
+  --void: #2d353b; --panel-top: #343f44; --panel-bot: #343f44;
+  --ink: #d3c6aa; --dim: #859289; --line: #3d484d;
+  --bolt: #a7c080; --bolt-hi: #a7c080;
+  --good: #a7c080; --warn: #dbbc7f; --again: #e67e80;
+  --halo: #343f44; --menu-bg: #343f44;
+  --note-border: #dbbc7f; --note-ink: #d3c6aa; --note-code: #d3c6aa;
+  --excerpt-bg: #343f44;
+}
+
+/* ── theme picker (popover gallery, built by theme.js) ─────────────────
+   Opened from each page's `#theme-open` trigger. The panel uses the live theme
+   variables, so hovering a swatch previews the whole UI — panel included. */
+
+/* walk.html's standalone bar trigger (review/browse open it from the ⋮ menu) */
+.theme-trigger {
+  flex: none; background: none; border: 1px solid var(--line); color: var(--dim);
+  width: 26px; height: 22px; padding: 0; border-radius: 7px; cursor: pointer;
+  font-size: 0.9rem; line-height: 1;
+}
+.theme-trigger:hover { color: var(--ink); border-color: var(--dim); }
+
+.theme-backdrop {
+  position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,0.45);
+  opacity: 0; pointer-events: none; transition: opacity 0.15s;
+}
+.theme-backdrop.show { opacity: 1; pointer-events: auto; }
+
+.theme-panel {
+  position: fixed; z-index: 41; top: 50%; left: 50%;
+  transform: translate(-50%, -48%) scale(0.98);
+  width: min(92vw, 470px); max-height: 80vh; overflow-y: auto;
+  background: var(--menu-bg); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 16px;
+  box-shadow: 0 24px 60px -12px rgba(0,0,0,0.6); padding: 15px 18px 20px;
+  opacity: 0; pointer-events: none; transition: opacity 0.15s, transform 0.15s;
+}
+.theme-panel.show { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
+
+.theme-head { display: flex; align-items: center; justify-content: space-between; }
+.theme-head span { font-weight: 600; font-size: 1rem; }
+.theme-x { background: none; border: 0; color: var(--dim); font-size: 0.9rem; cursor: pointer; padding: 4px 7px; border-radius: 6px; }
+.theme-x:hover { color: var(--ink); background: rgba(127,127,127,0.14); }
+
+.theme-group-label {
+  font-size: 0.66rem; letter-spacing: 0.09em; text-transform: uppercase;
+  color: var(--dim); margin: 14px 0 8px;
+}
+.theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 8px; }
+
+.theme-cell {
+  display: flex; flex-direction: column; gap: 6px;
+  background: none; border: 1px solid transparent; border-radius: 11px;
+  padding: 6px; cursor: pointer; text-align: left;
+}
+.theme-cell:hover { border-color: var(--line); }
+.theme-cell.on { border-color: var(--bolt); }
+.theme-prev {
+  height: 40px; border-radius: 8px; border: 1px solid rgba(127,127,127,0.25);
+  display: flex; align-items: flex-end; gap: 5px; padding: 6px;
+}
+.theme-dot { width: 11px; height: 11px; border-radius: 50%; box-shadow: 0 0 0 1px rgba(0,0,0,0.18); }
+.theme-name { font-size: 0.8rem; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.theme-cell.on .theme-name { color: var(--bolt); }

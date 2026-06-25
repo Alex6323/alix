@@ -38,11 +38,14 @@ so the single-threaded server never blocks.
 
 ## Themes
 
-The web UI ships three colour themes — **Dark** (the default), **Light**, and a
-playful **Kid** theme. A row of swatches in the status bar switches between them
-instantly, and your choice is remembered in the browser (kept in `localStorage`,
-not the config file). The palette lives in a shared `theme.css` the server hosts,
-so all three screens — review, browse, and trace walks — change together.
+The web UI ships a **gallery** of colour themes — the alix **Dark**/**Light**
+originals and a playful **Kid** theme, plus crowd-favourite editor/slide palettes
+(GitHub, Dracula, Nord, Solarized, Gruvbox, Catppuccin, Tokyo Night, Monokai, One
+Dark, Ayu, Rosé Pine, Everforest). Open the **Theme…** popover from the ⋮ menu (a
+small bar button on the trace walk): a grid grouped Light / Dark that **previews
+the whole UI live as you hover**, and remembers your choice in the browser (kept
+in `localStorage`, not the config). The palette lives in a shared `theme.css` the
+server hosts, so every screen — review, browse, and trace walks — themes together.
 
 ## Local by design
 

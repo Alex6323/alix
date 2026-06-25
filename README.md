@@ -590,10 +590,12 @@ server, so the chips show your own keys. The overflow menu (⋮) holds **Remove*
 which deletes the current card from its deck file and prunes its progress, and
 **Choose decks**, which returns to the deck-selection screen.
 
-Three colour **themes** ship with the web UI — **Dark** (the default), **Light**,
-and a playful **Kid** theme. A small swatch control in the status bar switches
-between them live, and your choice is remembered in the browser; no configuration
-needed.
+A **gallery of themes** ships with the web UI — the alix **Dark**/**Light**
+originals and a playful **Kid** theme, plus crowd-favourite editor/slide palettes
+(GitHub, Dracula, Nord, Solarized, Gruvbox, Catppuccin, Tokyo Night, Monokai, One
+Dark, Ayu, Rosé Pine, Everforest). Open the **Theme…** popover from the ⋮ menu — a
+grid grouped Light / Dark that previews the whole UI live as you hover, and
+remembers your choice in the browser; no configuration needed.
 
 It is deliberately local-only — no accounts, no database. By default it binds
 to `127.0.0.1` (this machine only); `--lan` binds all interfaces so a device on
