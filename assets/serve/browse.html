@@ -4,27 +4,17 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>alix — browse</title>
+<link rel="stylesheet" href="/theme.css">
+<script>document.documentElement.dataset.theme=(function(){try{return localStorage.getItem("alix-theme")}catch(e){return null}})()||"dark";</script>
 <style>
   :root {
-    --void: #06121a;
-    --panel-top: #103241;
-    --panel-bot: #0a212b;
-    --ink: #e8f4f5;
-    --dim: #6f939d;
-    --line: #173640;
-    --bolt: #22d3ee;
-    --bolt-hi: #7df9e8;
-    --good: #3ee0a0;
-    --again: #ff6b6b;
-    --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
-    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     --card-w: min(94vw, 720px);
     --card-h: min(70vh, 600px);
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; }
   body {
-    background: radial-gradient(120% 80% at 50% -10%, #0c2734 0%, var(--void) 60%) fixed;
+    background: radial-gradient(120% 80% at 50% -10%, var(--halo) 0%, var(--void) 60%) fixed;
     color: var(--ink); font-family: var(--sans);
     display: flex; flex-direction: column; min-height: 100%; overflow: hidden;
   }
@@ -75,11 +65,11 @@
   .note {
     text-align: left; margin: 18px auto 0; max-width: 600px;
     background: rgba(245, 213, 122, 0.09); border: 1px solid rgba(245, 213, 122, 0.18);
-    border-left: 3px solid #e7c66b; border-radius: 10px;
-    padding: 12px 15px; color: #ecdca6; font-size: 0.93rem;
+    border-left: 3px solid var(--note-border); border-radius: 10px;
+    padding: 12px 15px; color: var(--note-ink); font-size: 0.93rem;
   }
   .note p { margin: 0 0 10px; } .note p:last-child { margin-bottom: 0; }
-  .note pre { margin: 8px 0; padding: 10px 12px; overflow-x: auto; background: rgba(0,0,0,0.32); border-radius: 8px; font: 0.82rem/1.45 var(--mono); color: #cfe0e3; }
+  .note pre { margin: 8px 0; padding: 10px 12px; overflow-x: auto; background: rgba(0,0,0,0.32); border-radius: 8px; font: 0.82rem/1.45 var(--mono); color: var(--note-code); }
 
   .legend { display: flex; gap: 8px; justify-content: center; align-items: center; flex-wrap: wrap; padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
   .chip {
@@ -105,7 +95,7 @@
   .menu {
     position: absolute; right: 0; top: calc(100% + 8px); z-index: 20;
     display: none; min-width: 168px; padding: 6px;
-    background: #0b2531; border: 1px solid var(--line); border-radius: 11px;
+    background: var(--menu-bg); border: 1px solid var(--line); border-radius: 11px;
     box-shadow: 0 14px 34px -12px rgba(0,0,0,0.8);
   }
   .menu.open { display: block; }
@@ -163,6 +153,7 @@
     <span class="spacer"></span>
     <span class="charge"><i id="charge"></i></span>
     <span class="pos" id="pos"></span>
+    <div id="theme-picker"></div>
     <span class="menu-wrap" id="menuWrap">
       <button class="kebab" id="kebab" aria-label="More actions" aria-haspopup="true">⋮</button>
       <div class="menu" id="menu" role="menu">
@@ -568,5 +559,6 @@ Promise.all([
   return fetch("/api/cards");
 }).then(r => r.json()).then(apply);
 </script>
+<script src="/theme.js"></script>
 </body>
 </html>

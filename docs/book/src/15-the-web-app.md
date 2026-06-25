@@ -36,6 +36,14 @@ The AI features come along too: the [ask-Claude tutor](10-ask-claude.md), the
 surface, each running its Claude call on a background thread while the page polls —
 so the single-threaded server never blocks.
 
+## Themes
+
+The web UI ships three colour themes — **Dark** (the default), **Light**, and a
+playful **Kid** theme. A row of swatches in the status bar switches between them
+instantly, and your choice is remembered in the browser (kept in `localStorage`,
+not the config file). The palette lives in a shared `theme.css` the server hosts,
+so all three screens — review, browse, and trace walks — change together.
+
 ## Local by design
 
 The server is deliberately local-only — no accounts, no database. By default it

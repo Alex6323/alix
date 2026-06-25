@@ -14,6 +14,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   server. A workspace/folder still opens (drills in) on `l`/→; leaving a browse
   returns to the picker (and re-opens the launching workspace). Browse-from-the-
   picker is view-only (card removal stays a feature of `alix browse --serve`).
+- **Web UI themes — Light, Dark, and a Kid theme, switchable in the browser.**
+  The web frontend (`--serve`) now ships three colour themes — the original
+  **Dark**, a new **Light**, and a playful **Kid** theme — picked from a swatch
+  control in the status bar and remembered per browser (no config needed). The
+  palette moved into a shared, server-served `theme.css` so all three screens
+  (review, browse, walk) theme together, applied via a `data-theme` on the page;
+  the default stays Dark, so nothing changes unless you pick another.
 - **`alix deck augment` — deliberate AI deck augmentation.** A new command that
   enriches an existing deck with Claude and **caches the result** beside your
   progress (`augment.json`, keyed by card id); review reads the cache, so study

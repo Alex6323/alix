@@ -108,6 +108,8 @@ impl DeckFiles {
 const REVIEW_HTML: &str = include_str!("../assets/serve/review.html");
 const BROWSE_HTML: &str = include_str!("../assets/serve/browse.html");
 const WALK_HTML: &str = include_str!("../assets/serve/walk.html");
+const THEME_CSS: &str = include_str!("../assets/serve/theme.css");
+const THEME_JS: &str = include_str!("../assets/serve/theme.js");
 
 /// One display unit of a card's note, ready for JSON. Mirrors
 /// [`render::NoteUnit`]; the web page renders `sentence` as a paragraph and
@@ -899,6 +901,10 @@ pub fn run_review(
             (Method::Get, "/") => respond_html(request, REVIEW_HTML),
             (Method::Get, "/walk") => respond_html(request, WALK_HTML),
             (Method::Get, "/browse") => respond_html(request, BROWSE_HTML),
+            (Method::Get, "/theme.css") => respond_asset(request, THEME_CSS, "text/css; charset=utf-8"),
+            (Method::Get, "/theme.js") => {
+                respond_asset(request, THEME_JS, "application/javascript; charset=utf-8")
+            }
             (Method::Get, "/api/keys") => respond_json(request, &keys),
             (Method::Get, "/api/picker-keys") => respond_json(request, &picker_keys),
             (Method::Get, "/api/ask-info") => respond_json(request, &ask_info),
@@ -1821,6 +1827,10 @@ pub fn run_browse(
         let path = request_path(&request);
         match (&method, path.as_str()) {
             (Method::Get, "/") => respond_html(request, BROWSE_HTML),
+            (Method::Get, "/theme.css") => respond_asset(request, THEME_CSS, "text/css; charset=utf-8"),
+            (Method::Get, "/theme.js") => {
+                respond_asset(request, THEME_JS, "application/javascript; charset=utf-8")
+            }
             (Method::Get, "/api/keys") => respond_json(request, &keys),
             (Method::Get, "/api/picker-keys") => respond_json(request, &picker_keys),
             (Method::Get, "/api/decks") => {
@@ -2354,6 +2364,13 @@ fn respond_html(request: Request, html: &str) {
     let header =
         Header::from_bytes(&b"Content-Type"[..], &b"text/html; charset=utf-8"[..]).unwrap();
     let _ = request.respond(Response::from_string(html.to_string()).with_header(header));
+}
+
+/// Serves a static text asset (the shared `theme.css` / `theme.js`) with the
+/// given content type.
+fn respond_asset(request: Request, body: &str, content_type: &str) {
+    let header = Header::from_bytes(&b"Content-Type"[..], content_type.as_bytes()).unwrap();
+    let _ = request.respond(Response::from_string(body.to_string()).with_header(header));
 }
 
 fn respond_status(request: Request, code: u16) {

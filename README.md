@@ -590,6 +590,11 @@ server, so the chips show your own keys. The overflow menu (⋮) holds **Remove*
 which deletes the current card from its deck file and prunes its progress, and
 **Choose decks**, which returns to the deck-selection screen.
 
+Three colour **themes** ship with the web UI — **Dark** (the default), **Light**,
+and a playful **Kid** theme. A small swatch control in the status bar switches
+between them live, and your choice is remembered in the browser; no configuration
+needed.
+
 It is deliberately local-only — no accounts, no database. By default it binds
 to `127.0.0.1` (this machine only); `--lan` binds all interfaces so a device on
 the same network can reach it at `http://<your-machine-ip>:<port>` (no

@@ -1,0 +1,92 @@
+/* alix web themes — the palette, as switchable CSS variables.
+ *
+ * Applied via a `data-theme` attribute on <html> (set by theme.js from
+ * localStorage). The default (no attribute, or `dark`) is the original
+ * "electric terminal" look, so existing users see no change. Each page keeps
+ * its own layout CSS and its per-screen `--card-w`/`--card-h`; only the colour
+ * palette + fonts live here, so all three screens theme together.
+ *
+ * Every themeable value is a variable. The five colours that used to be
+ * hardcoded in the pages — the body halo, the menu background, the note trio,
+ * and the trace excerpt background — are variables now too (--halo, --menu-bg,
+ * --note-*, --excerpt-bg). */
+
+/* ── Dark — the default ─────────────────────────────────────────────── */
+:root {
+  --void: #06121a;
+  --panel-top: #103241;
+  --panel-bot: #0a212b;
+  --ink: #e8f4f5;
+  --dim: #6f939d;
+  --line: #173640;
+  --bolt: #22d3ee;
+  --bolt-hi: #7df9e8;
+  --good: #3ee0a0;
+  --warn: #f5c451;
+  --again: #ff6b6b;
+  --halo: #0c2734;
+  --menu-bg: #0b2531;
+  --note-border: #e7c66b;
+  --note-ink: #ecdca6;
+  --note-code: #cfe0e3;
+  --excerpt-bg: #071a23;
+  --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+/* ── Light — paper & ink, the teal accent kept for identity ─────────── */
+:root[data-theme="light"] {
+  --void: #f5f7f6;
+  --panel-top: #ffffff;
+  --panel-bot: #eef2f2;
+  --ink: #16262c;
+  --dim: #5e7178;
+  --line: #d6dfe0;
+  --bolt: #0c8b97;
+  --bolt-hi: #0aa6b3;
+  --good: #138a5b;
+  --warn: #b9790c;
+  --again: #d23b34;
+  --halo: #e6eff0;
+  --menu-bg: #ffffff;
+  --note-border: #c98a12;
+  --note-ink: #6a5117;
+  --note-code: #2b3a40;
+  --excerpt-bg: #eef3f3;
+}
+
+/* ── Kid — warm, rounded, candy accents (the bold one) ──────────────── */
+:root[data-theme="kid"] {
+  --void: #fff6ec;
+  --panel-top: #ffffff;
+  --panel-bot: #fff0f6;
+  --ink: #3b2a4f;
+  --dim: #9b82a8;
+  --line: #ffded0;
+  --bolt: #7b4dff;
+  --bolt-hi: #a886ff;
+  --good: #00bd86;
+  --warn: #ffb020;
+  --again: #ff5d8f;
+  --halo: #ffe7d4;
+  --menu-bg: #ffffff;
+  --note-border: #ffb020;
+  --note-ink: #8a5600;
+  --note-code: #4a3a5a;
+  --excerpt-bg: #fff0f6;
+  --sans: ui-rounded, "SF Pro Rounded", "Nunito", "Quicksand", system-ui, sans-serif;
+}
+
+/* ── theme picker swatches (lives in the status bar, built by theme.js) ─ */
+#theme-picker { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.theme-swatch {
+  width: 15px; height: 15px; padding: 0; border-radius: 50%;
+  border: 1px solid var(--line); cursor: pointer;
+  transition: transform 0.12s ease;
+}
+/* Each swatch previews its own theme (bg + accent), regardless of the live one. */
+.theme-swatch[data-theme="dark"]  { background: linear-gradient(135deg, #0a212b 0 50%, #22d3ee 50% 100%); }
+.theme-swatch[data-theme="light"] { background: linear-gradient(135deg, #ffffff 0 50%, #0c8b97 50% 100%); }
+.theme-swatch[data-theme="kid"]   { background: linear-gradient(135deg, #fff0f6 0 50%, #7b4dff 50% 100%); }
+.theme-swatch:hover { transform: scale(1.15); }
+.theme-swatch.on { box-shadow: 0 0 0 2px var(--void), 0 0 0 4px var(--bolt); }
