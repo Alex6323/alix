@@ -78,6 +78,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   answers compose freely, and the Next/Submit button now shows the binding.
 
 ### Fixed
+- **Leaving a workspace trace walk returns you to that workspace, not the top
+  picker.** A walk runs on its own `/walk` page, so the launching workspace was
+  forgotten on return; it's now stashed (sessionStorage) and re-opened, matching
+  how a deck review or exam launched from a workspace lands you back in it.
 - **A trace/fact citation against a single-file `% source:` no longer doubles the
   path.** When `% source:` is one file, every `% at:` reads *that* file; a locator
   that repeats the path relative to a different root (e.g. the crate root,
