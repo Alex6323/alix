@@ -550,7 +550,12 @@ function syncAsk() {
   if (!wrap) { render(); return; }
   fillAskLog(wrap.querySelector(".ask-log"));
   const input = wrap.querySelector(".ask-input");
-  if (input) input.disabled = askData.thinking;
+  if (input) {
+    input.disabled = askData.thinking;
+    // Once Claude's reply lands, focus the box so a follow-up can be typed
+    // immediately (the poll stops here, so this fires once per answer).
+    if (!askData.thinking) input.focus();
+  }
   const send = legend.querySelector(".chip.primary");
   if (send) send.disabled = askData.thinking;
 }

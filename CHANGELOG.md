@@ -100,6 +100,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   answers compose freely, and the Next/Submit button now shows the binding.
 
 ### Fixed
+- **Ask-Claude (web): the input re-focuses when a reply lands**, so you can type
+  a follow-up immediately instead of clicking back into the box.
 - **Leaving a workspace trace walk returns you to that workspace, not the top
   picker.** A walk runs on its own `/walk` page, so the launching workspace was
   forgotten on return; it's now stashed (sessionStorage) and re-opened, matching
