@@ -12,12 +12,13 @@
     --card-h: min(82vh, 680px);
   }
   * { box-sizing: border-box; }
-  /* A blinking caret should only ever appear inside a real text input — never on
-     a focused button, a chosen option, or page text (e.g. with the browser's
+  /* A blinking caret should only ever appear inside a real text input or a
+     text-based source (a code excerpt you might read/select) — never on a focused
+     button, a chosen option, or page/card text (e.g. with the browser's
      caret-browsing on). caret-color is inherited, so transparent here hides it
-     everywhere; the editable elements opt back in. */
+     everywhere; the editable elements and source excerpts opt back in. */
   html { caret-color: transparent; }
-  input, textarea, [contenteditable] { caret-color: auto; }
+  input, textarea, [contenteditable], .excerpt, .code { caret-color: auto; }
   html, body { margin: 0; height: 100%; }
   body {
     background: radial-gradient(120% 80% at 50% -10%, var(--halo) 0%, var(--void) 60%) fixed;
@@ -33,7 +34,9 @@
   }
   .bar .brand { display: inline-flex; align-items: center; gap: 7px; color: var(--bolt); font-weight: 600; }
   .bar .brand svg { width: 13px; height: 16px; filter: drop-shadow(0 0 5px rgba(34,211,238,0.6)); }
-  .bar .deck { color: var(--ink); }
+  /* A long (hand-crafted) title must shorten with an ellipsis — never wrap to a
+     second line and grow the header's height. */
+  .bar .deck { color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
   .bar .sep { color: var(--line); }
   .bar .spacer { flex: 1; }
   /* stage histogram (new|s1|s2|s3|s4|s5) + cards left, like the TUI header */
@@ -97,6 +100,9 @@
     mask-image: linear-gradient(to bottom, transparent, #000 34px, #000 calc(100% - 34px), transparent);
     -webkit-mask-image: linear-gradient(to bottom, transparent, #000 34px, #000 calc(100% - 34px), transparent);
   }
+  /* a clear "there's more below" marker when the answer/excerpt overflows the card */
+  .more-hint { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); font-family: var(--mono); font-size: 0.64rem; letter-spacing: 0.05em; color: var(--bolt); background: var(--panel-bot, rgba(6,18,26,0.95)); border: 1px solid var(--line); border-radius: 999px; padding: 3px 11px; pointer-events: none; opacity: 0; transition: opacity 0.15s; box-shadow: 0 5px 16px -7px rgba(0,0,0,0.8); }
+  .more-hint.show { opacity: 0.94; }
   .region.q { flex: 0 0 auto; max-height: 38%; }   /* question */
   /* the answer can use almost the whole card; only when the card has a note do
      we cap it shorter, to leave room for the note below */
@@ -392,11 +398,15 @@ function restart() { api("/api/restart", post({})).then(apply); }
 // A trace picked from the picker walks: the server replies with a redirect to
 // the walk page (hosted at /walk) instead of a review session. The walk runs on
 // its own page, so stash the workspace we launched from to re-open it on return.
-function select(names) { api("/api/select", post({ decks: names })).then(s => { if (s && s.redirect) { if (lastWorkspace) sessionStorage.setItem("alix.returnWs", lastWorkspace); location.href = s.redirect; return; } apply(s); }); }
+function select(names) { rememberLaunch(names[0]); api("/api/select", post({ decks: names })).then(s => { if (s && s.redirect) { if (lastWorkspace) sessionStorage.setItem("alix.returnWs", lastWorkspace); sessionStorage.setItem("alix.walkName", names[0] || ""); location.href = s.redirect; return; } apply(s); }); }
+// Remember the deck just launched so the picker re-lands the cursor on it when it
+// re-opens (the selection shouldn't move while the user is away). Survives both an
+// in-page return (review/exam) and a page-reload return (walk/browse).
+function rememberLaunch(name) { if (name) sessionStorage.setItem("alix.lastDeck", name); }
 // Browse a deck read-only: the server builds the card list and replies with a
 // redirect to /browse (hosted here). Stash the launching workspace so leaving
 // the browse re-opens it, like a walk.
-function browseDeck(it, wsName) { if (wsName) sessionStorage.setItem("alix.returnWs", wsName); api("/api/browse", post({ decks: [it.name] })).then(s => { if (s && s.redirect) location.href = s.redirect; }); }
+function browseDeck(it, wsName) { rememberLaunch(it.name); if (wsName) sessionStorage.setItem("alix.returnWs", wsName); api("/api/browse", post({ decks: [it.name] })).then(s => { if (s && s.redirect) location.href = s.redirect; }); }
 function deselect() { confirmingLeave = false; menu.classList.remove("open"); api("/api/deselect", post({})).then(apply); }
 
 // Returning to the picker mid-session abandons the cards still queued, so warn
@@ -465,7 +475,8 @@ function render() {
   if (state.phase === "select") { renderSelect(); return; }
 
   deckEl.textContent = state.label;
-  histEl.innerHTML = histCells(state.histogram, state.top_stage).join("|");
+  histEl.textContent = ""; // no stage ladder in the header — it's noise (the
+                           // per-stage breakdown stays in the session summary)
   scoreEl.innerHTML = `<b>${state.passed}✓</b> <s>${state.failed}✗</s><span class="left">${state.remaining}↓</span>`;
   menuWrap.style.display = state.finished ? "none" : "";
 
@@ -597,7 +608,15 @@ function renderAsk() {
 // on a background thread and we poll /api/exam while `thinking`. Answers are
 // entered one question at a time; grading is a single batch call.
 function startExam(deck) {
+  rememberLaunch(deck);
   api("/api/exam/start", post({ deck })).then(d => {
+    // A trace exam cooling down after a recent fail replies with the remaining
+    // time instead of a sitting — re-walk and re-sit later.
+    if (d && d.cooldown_ms != null) {
+      const mins = Math.max(1, Math.round(d.cooldown_ms / 60000));
+      alert("This trace exam is cooling down after a recent fail.\nRe-walk it and try again in about " + mins + " min.");
+      return;
+    }
     if (d && d.phase) { examData = d; render(); if (d.thinking) startExamPoll(); }
   });
 }
@@ -744,8 +763,12 @@ function renderExam() {
       }
       wrap.appendChild(q);
     });
+    // A failed trace exam is re-walked (no card remediation — a trace is a path,
+    // not a card pile); a failed fact exam can turn its gaps into cards.
+    if (!d.passed && d.is_trace)
+      wrap.appendChild(el("div", "exam-wait", "Re-walk the trace to strengthen the weak hops, then re-sit."));
     stage.appendChild(wrap);
-    if (!d.passed && d.gaps.length)
+    if (!d.passed && d.can_remediate)
       chip(d.error ? "Try remediation again" : "Add remediation cards", "primary", examRemediate);
     chip("Close", "", closeExam, "esc");
     return;
@@ -802,9 +825,10 @@ async function renderSelect() {
   function launch(it, wsName, gated) {
     if (!canStart(it, gated)) return;
     lastWorkspace = wsName || null;
-    // An exam-due deck sits its exam only when the exam is actually available
-    // (sourced + prerequisites passed); a locked one falls back to a review.
-    if (it.state === "examdue" && it.examable) startExam(it.name);
+    // A trace's primary action is always the WALK (its exam is reached via the
+    // "Take exam" button, or the walk's capstone). An exam-due fact deck sits its
+    // exam when available (sourced + prerequisites passed); else it reviews.
+    if (!it.is_trace && it.state === "examdue" && it.examable) startExam(it.name);
     else select([it.name]);
   }
 
@@ -931,10 +955,10 @@ async function renderSelect() {
       }
       // "Take exam" sits to the RIGHT of Back for any deck that HAS an exam but
       // isn't already exam-due (where the primary is the exam): enabled to test
-      // out early, or disabled with a 🔒 key hint when its exam is locked. Keeping
-      // the variable button rightmost means a trace (which has none) never
-      // shuffles the stable Start/Back buttons as you move between rows.
-      if (f && f._item && f._item.has_exam && f._item.state !== "examdue") {
+      // out early, or disabled with a 🔒 key hint when its exam is locked. A trace
+      // always shows it — its primary is the Walk, so this is the only way to reach
+      // its compression exam (whatever its drill state).
+      if (f && f._item && f._item.has_exam && (f._item.is_trace || f._item.state !== "examdue")) {
         const it = f._item;
         const ex = el("button", "chip", "Take exam");
         ex.appendChild(el("span", "k", it.examable ? "x" : "\u{1F512}"));
@@ -999,8 +1023,15 @@ async function renderSelect() {
 
     applyFilter();
     syncPrimary();
-    const first = visibleRows()[0];
-    if (first) first.focus(); else filter.focus();
+    const rows = visibleRows();
+    // Re-land on the deck just launched (review/browse/exam/walk), so the cursor
+    // doesn't jump while the user was away; otherwise focus the first row. The
+    // marker is one-shot — cleared once consumed, so later re-renders (filtering)
+    // behave normally.
+    const want = sessionStorage.getItem("alix.lastDeck");
+    sessionStorage.removeItem("alix.lastDeck");
+    const target = want && rows.find(r => (r._item && r._item.name === want) || (r._open && r._open.name === want));
+    if (target) target.focus(); else if (rows[0]) rows[0].focus(); else filter.focus();
   }
 
   function renderTop() {
@@ -1072,6 +1103,7 @@ function renderCard() {
   a.id = "ansRegion";
   a.addEventListener("scroll", () => updateFade(a));
   card.appendChild(a);
+  card.appendChild(el("div", "more-hint")); // overflow marker (shown by updateFade)
 
   deck.appendChild(card);
   stage.appendChild(deck);
@@ -1129,10 +1161,31 @@ function onCiteClick() {
 
 // Show a soft fade on whichever edge of the answer region hides content,
 // instead of a scrollbar.
+// Count the source-excerpt lines (`.ln`) fully below the region's visible bottom,
+// so the marker can say how much more there is.
+function hiddenLineCount(a) {
+  const lns = a.querySelectorAll(".ln");
+  if (!lns.length) return 0;
+  const foldY = a.getBoundingClientRect().bottom;
+  let n = 0;
+  lns.forEach(ln => { if (ln.getBoundingClientRect().top >= foldY - 4) n++; });
+  return n;
+}
+
 function updateFade(a) {
   if (!a) return;
+  const atBottom = a.scrollTop + a.clientHeight >= a.scrollHeight - 2;
   a.classList.toggle("fade-top", a.scrollTop > 2);
-  a.classList.toggle("fade-bottom", a.scrollTop + a.clientHeight < a.scrollHeight - 2);
+  a.classList.toggle("fade-bottom", !atBottom);
+  const more = a.parentElement && a.parentElement.querySelector(".more-hint");
+  if (!more) return;
+  if (!atBottom && a.scrollHeight > a.clientHeight + 2) {
+    const n = hiddenLineCount(a);
+    more.textContent = n > 0 ? `⌵ ${n} more line${n === 1 ? "" : "s"}` : "⌵ more below";
+    more.classList.add("show");
+  } else {
+    more.classList.remove("show");
+  }
 }
 
 // Adds (or removes) the note region and a divider before it. Because content is
@@ -1516,7 +1569,15 @@ Promise.all([
   // (the JS `lastWorkspace` didn't survive the navigation to /walk and back).
   lastWorkspace = sessionStorage.getItem("alix.returnWs");
   sessionStorage.removeItem("alix.returnWs");
+  // Walk capstone: the walk's "Take the exam" flagged this on its way back here;
+  // open that trace's exam (the compression). `walkName` is the deck the picker
+  // launched the walk for.
+  const takeExam = sessionStorage.getItem("alix.takeExam");
+  const walkName = sessionStorage.getItem("alix.walkName");
+  sessionStorage.removeItem("alix.takeExam");
+  sessionStorage.removeItem("alix.walkName");
   load();
+  if (takeExam && walkName) startExam(walkName);
 });
 </script>
 <script src="/theme.js"></script>

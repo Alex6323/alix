@@ -16,6 +16,11 @@
   /* no scrollbars anywhere — overflow is signalled with edge fades, not bars */
   * { scrollbar-width: none; }
   *::-webkit-scrollbar { width: 0; height: 0; }
+  /* A blinking caret belongs only in a text input (the prediction box) or a
+     text-based source (the code excerpt) — never on the card's prose, even with
+     the browser's caret-browsing on. */
+  html { caret-color: transparent; }
+  input, textarea, [contenteditable], .code { caret-color: auto; }
   html, body { margin: 0; height: 100%; }
   body {
     background: radial-gradient(120% 80% at 50% -10%, var(--halo) 0%, var(--void) 60%) fixed;
@@ -31,7 +36,7 @@
   }
   .bar .brand { display: inline-flex; align-items: center; gap: 7px; color: var(--bolt); font-weight: 600; }
   .bar .brand svg { width: 14px; height: 16px; filter: drop-shadow(0 0 5px rgba(34,211,238,0.6)); }
-  .bar .deck { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar .deck { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 0 1 auto; }
   .bar .sep { color: var(--line); flex: none; }
   .bar .spacer { flex: 1; }
   .bar .mode { flex: none; letter-spacing: 0.1em; text-transform: uppercase; font-size: 0.6rem; border: 1px solid var(--line); border-radius: 999px; padding: 3px 9px; }
@@ -66,6 +71,9 @@
   .region.a.fade-top { mask-image: linear-gradient(to bottom, transparent, #000 30px); -webkit-mask-image: linear-gradient(to bottom, transparent, #000 30px); }
   .region.a.fade-bottom { mask-image: linear-gradient(to top, transparent, #000 30px); -webkit-mask-image: linear-gradient(to top, transparent, #000 30px); }
   .region.a.fade-top.fade-bottom { mask-image: linear-gradient(to bottom, transparent, #000 30px, #000 calc(100% - 30px), transparent); -webkit-mask-image: linear-gradient(to bottom, transparent, #000 30px, #000 calc(100% - 30px), transparent); }
+  /* a clear "there's more below" marker when the reveal region overflows the card */
+  .more-hint { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); font-family: var(--mono); font-size: 0.64rem; letter-spacing: 0.05em; color: var(--bolt); background: var(--panel-bot); border: 1px solid var(--line); border-radius: 999px; padding: 3px 11px; pointer-events: none; opacity: 0; transition: opacity 0.15s; box-shadow: 0 5px 16px -7px rgba(0,0,0,0.8); }
+  .more-hint.show { opacity: 0.94; }
   .region.q { flex: 0 0 auto; max-height: 46%; }
   .region.a { flex: 1 1 auto; }
   .region.n { flex: 0 0 auto; max-height: 30%; }
@@ -163,6 +171,24 @@
   .chip.got:hover { border-color: var(--bolt-hi); color: var(--bolt-hi); }
   .chip:disabled { opacity: 0.4; cursor: default; }
 
+  /* ask-Claude panel — the same optic as the review tutor, its subject the
+     current checkpoint (prompt + key points) instead of a card. */
+  .ask { display: flex; flex-direction: column; gap: 14px; width: var(--card-w); max-width: 100%; }
+  .ask-scroll { display: flex; flex-direction: column; gap: 12px; max-height: 64vh; overflow-y: auto; padding-right: 4px; }
+  .ask-log { display: flex; flex-direction: column; gap: 10px; }
+  .ask-q { align-self: flex-end; max-width: 85%; background: rgba(125,249,232,0.10); border: 1px solid var(--line); border-radius: 12px 12px 4px 12px; padding: 9px 13px; }
+  .ask-a { align-self: flex-start; max-width: 92%; white-space: pre-wrap; line-height: 1.5; border-left: 3px solid var(--bolt); padding: 4px 0 4px 12px; }
+  .ask-thinking { align-self: flex-start; color: var(--dim); font-style: italic; }
+  .ask-status { align-self: flex-start; color: var(--good); font-size: 0.85rem; }
+  .ask-error { align-self: flex-start; color: var(--again); font-size: 0.85rem; }
+  .ask-hint { color: var(--dim); }
+  .ask-card { position: sticky; top: 0; z-index: 2; border: 1px solid var(--line); border-radius: 12px; padding: 9px 13px; background: var(--panel-bot); max-height: 30vh; overflow-y: auto; box-shadow: 0 10px 18px -14px var(--void); }
+  .ask-card-q { color: var(--bolt); margin-bottom: 5px; }
+  .ask-card-a { color: var(--ink); line-height: 1.45; }
+  .ask-input { width: 100%; box-sizing: border-box; resize: vertical; min-height: 52px; padding: 11px 13px; border-radius: 12px; border: 1px solid var(--line); background: rgba(0,0,0,0.25); color: var(--ink); font: inherit; }
+  .ask-input:focus { outline: none; border-color: var(--bolt); }
+  .ask-input:disabled { opacity: 0.6; }
+
   @media (prefers-reduced-motion: reduce) { .stack, .summary { animation: none; } }
 </style>
 </head>
@@ -189,6 +215,9 @@
 let state = null;     // the latest WalkDto
 let poll = null;      // setInterval handle while a live grade is in flight
 let KEYS = {};        // configured key bindings, from /api/keys
+let asking = false;   // the ask-Claude panel is open
+let askData = { transcript: [], thinking: false, status: null, error: null };
+let askPoll = null;   // setInterval handle while an ask reply is pending
 // Hosted by the review server (picked from its deck list) rather than standalone
 // `alix trace --serve` — so we offer a "Back to decks" return to the picker.
 const HOSTED = location.pathname === "/walk";
@@ -213,8 +242,77 @@ function apply(d) { state = d; if (d.thinking) startPoll(); else stopPoll(); ren
 
 function predict(text) { api("/api/walk/predict", post({ text })).then(apply); }
 function grade(delta)  { api("/api/walk/grade", post({ delta })).then(apply); }
-function compress(text){ api("/api/walk/compress", post({ text })).then(apply); }
 function restart()     { api("/api/walk/restart", post({})).then(apply); }
+// Capstone (hosted mode): leave the walk and have the picker open this trace's
+// exam — the compression that verifies and masters it. The picker remembers
+// which trace it launched (sessionStorage), so we only flag the intent here.
+function takeExam()    { sessionStorage.setItem("alix.takeExam", "1"); leaveWalk(); }
+
+// ── ask-Claude about the current checkpoint (hosted mode) ──────────────────
+// The same tutor the review uses; the server scopes it to the current
+// checkpoint (prompt + key points + the live excerpt). One conversation spans
+// the walk; the panel polls /api/walk/ask while a reply is pending.
+function openAsk() { asking = true; render(); api("/api/walk/ask").then(d => { askData = d; if (asking) syncAsk(); }); }
+function closeAsk() { asking = false; stopAskPoll(); load(); } // re-pull the walk (a saved note may have landed)
+function sendAsk(text) {
+  const q = (text || "").trim();
+  if (!q || askData.thinking) return;
+  const ta = document.querySelector(".ask-input");
+  if (ta) ta.value = "";
+  api("/api/walk/ask", post({ question: q })).then(d => { askData = d; if (asking) syncAsk(); startAskPoll(); });
+}
+function saveAskNote() {
+  if (askData.thinking || !askData.transcript.length) return;
+  api("/api/walk/ask/note", post({})).then(d => { askData = d; if (asking) syncAsk(); startAskPoll(); });
+}
+function startAskPoll() { stopAskPoll(); askPoll = setInterval(() => { api("/api/walk/ask").then(d => { askData = d; if (!d.thinking) stopAskPoll(); if (asking) syncAsk(); }); }, 400); }
+function stopAskPoll() { if (askPoll) { clearInterval(askPoll); askPoll = null; } }
+function fillAskLog(log) {
+  log.innerHTML = "";
+  for (const ex of askData.transcript) { log.appendChild(el("div", "ask-q", ex.q)); log.appendChild(el("div", "ask-a", ex.a)); }
+  if (askData.thinking) log.appendChild(el("div", "ask-thinking", "Claude is thinking…"));
+  if (askData.status) log.appendChild(el("div", "ask-status", askData.status));
+  if (askData.error) log.appendChild(el("div", "ask-error", askData.error));
+  if (!askData.transcript.length && !askData.thinking && !askData.status && !askData.error) log.appendChild(el("div", "ask-hint", "Ask Claude about this step."));
+  const sc = log.closest(".ask-scroll") || log;
+  sc.scrollTop = sc.scrollHeight;
+}
+function syncAsk() {
+  const wrap = document.querySelector(".ask");
+  if (!wrap) { render(); return; }
+  fillAskLog(wrap.querySelector(".ask-log"));
+  const input = wrap.querySelector(".ask-input");
+  if (input) { input.disabled = askData.thinking; if (!askData.thinking) input.focus(); }
+  const send = legend.querySelector(".chip.primary");
+  if (send) send.disabled = askData.thinking;
+}
+function renderAsk() {
+  const wrap = el("div", "ask");
+  const scroll = el("div", "ask-scroll");
+  // The checkpoint under discussion sticks to the top as a reference: its
+  // question, then the key points the reveal makes.
+  const ref = el("div", "ask-card");
+  if (state.prompt) ref.appendChild(el("div", "ask-card-q", state.prompt));
+  for (const p of state.points || []) ref.appendChild(el("div", "ask-card-a", "▸ " + p));
+  scroll.appendChild(ref);
+  const log = el("div", "ask-log");
+  fillAskLog(log);
+  scroll.appendChild(log);
+  wrap.appendChild(scroll);
+  const input = el("textarea", "ask-input");
+  input.placeholder = "Ask about this step… (Shift+Enter to send)";
+  input.rows = 2;
+  input.disabled = askData.thinking;
+  input.addEventListener("keydown", e => { if (e.key === "Enter" && e.shiftKey) { e.preventDefault(); sendAsk(input.value); } });
+  wrap.appendChild(input);
+  stage.appendChild(wrap);
+  legend.replaceChildren();
+  const send = chip("Send", "primary", () => sendAsk(input.value), "⇧↵");
+  send.disabled = askData.thinking;
+  chip("Save note", "", saveAskNote, label(KEYS.save_note));
+  chip("Close", "", closeAsk, "esc");
+  if (!askData.thinking) setTimeout(() => input.focus(), 0);
+}
 // Abandon the walk and return to the deck picker (hosted mode only).
 let confirmingLeave = false; // showing the "leave the walk?" confirmation
 function leaveWalk() { fetch("/api/walk/leave", post({})).catch(() => {}).finally(() => { location.href = "/"; }); }
@@ -257,9 +355,9 @@ function render() {
   renderChrome();
   stage.replaceChildren();
   legend.replaceChildren();
+  if (asking) { renderAsk(); return; } // the ask panel takes over the stage
   if (state.phase === "predict")  renderPredict();
   else if (state.phase === "reveal")   renderReveal();
-  else if (state.phase === "compress") renderCompress();
   else if (state.phase === "done")     renderDone();
   // A return-to-picker escape hatch when the review server hosts this walk —
   // labelled like a fact deck's session ("Leave").
@@ -279,15 +377,40 @@ function buildCard() {
   const a = el("div", "region a");
   a.addEventListener("scroll", () => updateFade(a));
   card.appendChild(a);
+  card.appendChild(el("div", "more-hint")); // overflow marker (shown by updateFade)
   stack.appendChild(card);
   stage.appendChild(stack);
+  // Compute the fade + "more" marker once content is laid out, so an overflowing
+  // excerpt is flagged immediately — not only after the first scroll.
+  requestAnimationFrame(() => updateFade(a));
   return { card, q, a };
+}
+
+// Count the reveal lines (`.ln`) sitting fully below the region's visible bottom,
+// so the marker can say how much more there is.
+function hiddenLineCount(a) {
+  const lns = a.querySelectorAll(".ln");
+  if (!lns.length) return 0;
+  const foldY = a.getBoundingClientRect().bottom;
+  let n = 0;
+  lns.forEach(ln => { if (ln.getBoundingClientRect().top >= foldY - 4) n++; });
+  return n;
 }
 
 function updateFade(a) {
   if (!a) return;
+  const atBottom = a.scrollTop + a.clientHeight >= a.scrollHeight - 2;
   a.classList.toggle("fade-top", a.scrollTop > 2);
-  a.classList.toggle("fade-bottom", a.scrollTop + a.clientHeight < a.scrollHeight - 2);
+  a.classList.toggle("fade-bottom", !atBottom);
+  const more = a.parentElement && a.parentElement.querySelector(".more-hint");
+  if (!more) return;
+  if (!atBottom && a.scrollHeight > a.clientHeight + 2) {
+    const n = hiddenLineCount(a);
+    more.textContent = n > 0 ? `⌵ ${n} more line${n === 1 ? "" : "s"}` : "⌵ more below";
+    more.classList.add("show");
+  } else {
+    more.classList.remove("show");
+  }
 }
 
 // add the question prompt (with a long-question shrink) to a region
@@ -394,32 +517,19 @@ const DELTAS = [
 function renderRevealActions() {
   if (state.thinking) { chip("Grading…", "", () => {}).disabled = true; return; }
   if (state.verdict) {
-    chip(state.current < state.total ? "Next checkpoint" : "Compress", "primary", () => grade(verdictClass(state.verdict)[0]), label(KEYS.reveal) || "↵");
-    return;
+    chip(state.current < state.total ? "Next checkpoint" : "Finish", "primary", () => grade(verdictClass(state.verdict)[0]), label(KEYS.reveal) || "↵");
+  } else {
+    // self-grade (also the fallback after a live-grade error)
+    DELTAS.forEach(d => chip(d.label, d.cls, () => grade(d.delta), label(d.keys())));
   }
-  // self-grade (also the fallback after a live-grade error)
-  DELTAS.forEach(d => chip(d.label, d.cls, () => grade(d.delta), label(d.keys())));
-}
-
-function renderCompress() {
-  const { q, a } = buildCard();
-  q.appendChild(el("div", "eyebrow", "compress"));
-  q.appendChild(el("div", "front-text", "Retrace it in two sentences."));
-  q.appendChild(el("div", "lede", "If you can re-derive the whole path — " + (state.description || "") + " — you understood it. This compression is the trace’s own exam."));
-  const wrap = el("div", "compose");
-  const ta = el("textarea", "field");
-  ta.placeholder = "Retrace the path end to end…  ·  Shift+Enter to finish";
-  ta.addEventListener("keydown", e => { if (e.key === "Enter" && (e.shiftKey || e.metaKey || e.ctrlKey)) { e.preventDefault(); compress(ta.value.trim()); } });
-  wrap.appendChild(ta);
-  a.appendChild(wrap);
-  chip("Finish", "primary", () => compress(ta.value.trim()), "⇧↵");
-  setTimeout(() => ta.focus(), 0);
+  // Ask Claude about this step (hosted mode — the review server runs the tutor).
+  if (HOSTED) chip("Ask", "", openAsk, label(KEYS.ask) || "?");
 }
 
 function renderDone() {
   const s = state.summary || { got: 0, partial: 0, missed: 0, weak: [], total: 0 };
   const wrap = el("div", "summary");
-  wrap.appendChild(el("div", "lede", "walk complete"));
+  wrap.appendChild(el("div", "lede", "walk complete · the drill is done"));
   wrap.appendChild(el("h2", null, state.description || "Trace walked."));
   const row = (k, v, cls) => {
     const r = el("div", "row");
@@ -432,14 +542,13 @@ function renderDone() {
   row("missed", String(s.missed), "missed");
   if (s.weak && s.weak.length) row("weak (resurface sooner)", s.weak.map(h => "#" + h).join(" · "));
   else if (s.total) row("every checkpoint landed", "✓");
-  if (state.compression) {
-    const c = el("div", "compression");
-    c.appendChild(el("span", "lbl", "your compression"));
-    c.appendChild(el("p", null, state.compression));
-    wrap.appendChild(c);
-  }
+  // The exam (the compression) is what verifies and masters the trace.
+  wrap.appendChild(el("div", "lede", HOSTED
+    ? "Verify it: retrace the whole path in the exam to master this trace."
+    : "Verify it with `alix exam` — retrace the whole path to master this trace."));
   stage.appendChild(wrap);
-  chip("Walk again", "primary", restart, label(KEYS.reveal) || "↵");
+  if (HOSTED) chip("Take the exam", "primary", takeExam, "↵");
+  chip("Walk again", HOSTED ? "" : "primary", restart, HOSTED ? "" : (label(KEYS.reveal) || "↵"));
 }
 
 function chip(text, cls, onClick, key) {
@@ -454,6 +563,12 @@ function chip(text, cls, onClick, key) {
 // primary action. Typing in a textarea is left alone.
 document.addEventListener("keydown", e => {
   if (!state || e.altKey || e.metaKey) return;
+  // While the ask panel is open: Esc closes it; typing + Shift+Enter-to-send are
+  // handled inside the panel's own input.
+  if (asking) {
+    if (e.key === "Escape") { e.preventDefault(); closeAsk(); }
+    return;
+  }
   // While the leave confirmation is up: Enter leaves, Esc keeps going.
   if (HOSTED && confirmingLeave) {
     if (e.key === "Enter") { e.preventDefault(); leaveWalk(); }
@@ -464,6 +579,8 @@ document.addEventListener("keydown", e => {
   // unfinished walk asks to confirm first.
   if (HOSTED && e.key === "Escape") { e.preventDefault(); backToDecks(); return; }
   if (e.target && /^(TEXTAREA|INPUT)$/.test(e.target.tagName)) return;
+  // `?` (or the configured ask key) opens the tutor on the reveal.
+  if (HOSTED && state.phase === "reveal" && (e.key === "?" || hit(e, KEYS.ask))) { e.preventDefault(); openAsk(); return; }
   if (state.phase === "reveal" && !state.thinking && !state.verdict) {
     for (const d of DELTAS) if (hit(e, d.keys())) { e.preventDefault(); grade(d.delta); return; }
   }

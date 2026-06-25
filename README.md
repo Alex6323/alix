@@ -862,9 +862,11 @@ This dial (how hard each answer is judged) is independent of `pass_threshold`
 
 Settings live in the `[exam]` section: `model`, `timeout_secs` (default 300),
 `num_questions` (default 5), `pass_threshold` (default 1.0 = all must pass),
-`strictness` (default `balanced`), and `extra` (guidance appended to question
-generation). It reuses the `[ask]` command, permission mode and tool allowlist,
-and needs the `claude` CLI installed and logged in.
+`strictness` (default `balanced`), `retry_cooldown_secs` (default 3600 — how long
+a failed *trace* exam waits before a re-sit; `0` disables it), and `extra`
+(guidance appended to question generation). It reuses the `[ask]` command,
+permission mode and tool allowlist, and needs the `claude` CLI installed and
+logged in.
 
 ## Traces (`alix trace`)
 
@@ -997,10 +999,19 @@ on Claude per hop. `--port`/`--lan` work as elsewhere. Progress saves to the sam
 store, so a walk started in the terminal continues in the browser.
 
 `alix trace <deck> --map` prints the path (every prompt, its key points and
-locator) without quizzing — a quick "just show me the route". The generic AI
-exam refuses a trace (`alix exam <trace>` points you here): a trace's
-verification *is* its predict-verify walk plus the compression, correctly scoped
-to the path.
+locator) without quizzing — a quick "just show me the route".
+
+**A trace's exam is the compression.** Walking the checkpoints is the *drill*;
+the *verification* is `alix exam <trace>` — one fixed question, the `% trace:`,
+which you answer by retracing the whole path in a sentence or two. Claude grades
+that against the path's checkpoints (AI-graded, like a fact deck's exam), and
+**passing masters the trace** (unlocking its dependents). You reach it three
+ways: directly with `alix exam <trace>`, as the **capstone** offered at the end
+of a walk, or via the picker's **"Take exam"** — and, like a fact deck, you can
+sit it early to *test out* without walking. A failed trace exam is **re-walked**,
+not remediated into cards (a trace is a path, not a card pile); after a fail it
+**cools down** before you can re-sit (so the graded feedback can't just be pasted
+back — `[exam] retry_cooldown_secs`, default 1h).
 
 A trace deck degrades gracefully — even without `alix trace` it is a valid deck
 of `explain` cards. See `examples/keypress-to-grade.txt` for a complete trace

@@ -98,6 +98,9 @@ pub struct Checkpoint {
     pub locator: Option<String>,
     /// The card's identity hash — the key its per-checkpoint SRS hangs off.
     pub card_id: u64,
+    /// The 1-based line of the checkpoint's front in the deck file, so an
+    /// ask-Claude "save note" can append a `!` line to the right checkpoint.
+    pub line: usize,
 }
 
 /// A trace built from a deck: what it walks, the ordered checkpoints, and where
@@ -115,6 +118,9 @@ pub struct Trace {
     pub source: Option<String>,
     /// The checkpoints, in file order — the path, walked top to bottom.
     pub checkpoints: Vec<Checkpoint>,
+    /// The deck file this trace was loaded from — for appending an ask-Claude
+    /// "save note" to a checkpoint.
+    pub deck_path: PathBuf,
     /// Directory a locator's `file:` part resolves against.
     base_dir: PathBuf,
     /// The single source file, when `% source:` is one file — then a locator
@@ -143,6 +149,7 @@ impl Trace {
                 note: c.note.clone(),
                 locator: c.at.clone(),
                 card_id: c.id(),
+                line: c.line,
             })
             .collect();
         let source = deck.sources.first().cloned();
@@ -152,9 +159,23 @@ impl Trace {
             subject: deck.subject.clone(),
             source,
             checkpoints,
+            deck_path: deck.path.clone(),
             base_dir,
             source_file,
         })
+    }
+
+    /// The rubric the trace **exam** grades a learner's compression against —
+    /// every checkpoint's key points, in path order. The exam asks the learner
+    /// to retrace the whole path ([`description`](Trace::description)) in a
+    /// couple of sentences and judges whether that re-derives these points; it's
+    /// drawn from the checkpoints (which already paraphrase the real source), so
+    /// grading needs no source read.
+    pub fn compression_rubric(&self) -> Vec<String> {
+        self.checkpoints
+            .iter()
+            .flat_map(|cp| cp.points.iter().cloned())
+            .collect()
     }
 
     /// Reads the live excerpt for a checkpoint's locator from the source.
@@ -827,17 +848,21 @@ pub enum Phase {
     Predict,
     /// The excerpt + key points are shown; awaiting the self-judged delta.
     Reveal,
-    /// Every checkpoint walked; awaiting the final compression of the path.
-    Compress,
-    /// The walk is finished.
+    /// Every checkpoint walked — the drill is done. Verification (and mastery)
+    /// is the trace's **exam**: retracing the whole path in a couple of
+    /// sentences, AI-graded (`alix exam <trace>` / the picker's "Take exam" /
+    /// the walk's capstone). The walk itself no longer asks for an (ungraded)
+    /// compression.
     Done,
 }
 
 /// One in-progress walk of a trace — a small frontend-agnostic state machine.
-/// The CLI (and, later, a web surface) drive it: show the current checkpoint,
+/// The CLI and the web walk surface drive it: show the current checkpoint,
 /// take a [`predict`](Walk::predict), reveal the [`excerpt`](Trace::excerpt),
-/// take the self-judged [`grade`](Walk::grade) (which schedules the
-/// checkpoint), and finally [`compress`](Walk::compress) the path.
+/// and take the self-judged [`grade`](Walk::grade) (which schedules the
+/// checkpoint). After the last checkpoint the walk is [`Phase::Done`] — the
+/// drill is complete; mastery comes from the trace's separate AI-graded **exam**
+/// (the compression), not from the walk.
 pub struct Walk {
     trace: Trace,
     scheduler: SchedulerKind,
@@ -845,7 +870,6 @@ pub struct Walk {
     phase: Phase,
     predictions: Vec<String>,
     deltas: Vec<Option<Delta>>,
-    compression: Option<String>,
 }
 
 impl Walk {
@@ -859,7 +883,6 @@ impl Walk {
             phase: Phase::Predict,
             predictions: vec![String::new(); n],
             deltas: vec![None; n],
-            compression: None,
         }
     }
 
@@ -894,10 +917,13 @@ impl Walk {
     }
 
     /// Records the self-judged delta for the current checkpoint, schedules it
-    /// in `store`, and advances — to the next checkpoint's
-    /// [`Phase::Predict`], or to [`Phase::Compress`] after the last one.
-    /// No-op outside [`Phase::Reveal`]. The store is updated but not saved
-    /// (the caller saves).
+    /// in `store`, and advances — to the next checkpoint's [`Phase::Predict`],
+    /// or to [`Phase::Done`] after the last one. No-op outside [`Phase::Reveal`].
+    /// The store is updated but not saved (the caller saves).
+    ///
+    /// The walk is the **drill**; it no longer masters the trace. Mastery is the
+    /// trace's separate AI-graded **exam** (the compression) — passing it sets
+    /// `deck_mastered`, exactly like a fact deck.
     pub fn grade(&mut self, store: &mut Store, delta: Delta, now_ms: u64) {
         if self.phase != Phase::Reveal {
             return;
@@ -909,38 +935,12 @@ impl Walk {
                 .apply(state, delta.grade(), now_ms);
         }
         self.deltas[self.current] = Some(delta);
-        // A trace's walk IS its exam: once every checkpoint is retired (the path
-        // is reliably predicted), the trace is mastered — set the same flag a
-        // passed exam sets, so it reads "mastered 🎉" and unlocks its dependents.
-        // Sticky and set once (the timestamp marks when mastery was reached).
-        if !store.deck_mastered(&self.trace.subject) && self.all_checkpoints_retired(store) {
-            store.set_deck_mastered(&self.trace.subject, now_ms);
-        }
         if self.current + 1 < self.trace.checkpoints.len() {
             self.current += 1;
             self.phase = Phase::Predict;
         } else {
-            self.phase = Phase::Compress;
+            self.phase = Phase::Done;
         }
-    }
-
-    /// Whether every checkpoint's card is retired — the trace has been walked
-    /// reliably enough to count as mastered.
-    fn all_checkpoints_retired(&self, store: &Store) -> bool {
-        self.trace
-            .checkpoints
-            .iter()
-            .all(|cp| crate::session::is_retired_id(cp.card_id, store))
-    }
-
-    /// Records the final compression of the path and finishes the walk. No-op
-    /// outside [`Phase::Compress`].
-    pub fn compress(&mut self, text: String) {
-        if self.phase != Phase::Compress {
-            return;
-        }
-        self.compression = Some(text);
-        self.phase = Phase::Done;
     }
 
     /// The prediction typed at checkpoint `i`, if any.
@@ -950,10 +950,6 @@ impl Walk {
     /// The judged delta for checkpoint `i`, once it has been graded.
     pub fn delta(&self, i: usize) -> Option<Delta> {
         self.deltas.get(i).copied().flatten()
-    }
-    /// The compression text, once the walk is done.
-    pub fn compression(&self) -> Option<&str> {
-        self.compression.as_deref()
     }
 
     /// A tally of the deltas recorded so far.
@@ -1208,20 +1204,18 @@ fn parse_line_range(spec: &str) -> (usize, usize) {
     if a <= b { (a, b) } else { (b, a) }
 }
 
-/// Reads one contiguous span from `path` (the whole file, capped, when `spec`
-/// is `None`), returning the lines with their 1-based numbers.
-/// Resolves a `% at:` `locator` to a live [`Excerpt`] against a source base:
-/// `base_dir` is the directory a `file:` part joins onto, and `source_file` is
-/// the single `% source:` file a line-only locator refers to. Shared by trace
-/// checkpoints ([`Trace::excerpt`]) and fact-card citations ([`SourceBase`]).
-/// Resolves a parsed locator's `file:` part to the file it reads. A single-file
-/// `% source:` (`source_file`) IS that one file, so every locator reads it and
-/// any `file:` part is redundant — and may be written relative to a different
-/// root (e.g. the crate root) than `base_dir`, which would join on into a wrong,
-/// duplicated path (`…/src/executor/src/executor/…`). Otherwise the `file:` part
-/// joins onto `base_dir`. `None` = a line-only locator with no single-file
-/// source (the caller reports it). Shared by [`excerpt_at`] and
-/// [`Trace::lint_locators`] so the two never disagree.
+/// Resolves a parsed locator's `file:` part to the file it reads. `None` = a
+/// line-only locator with no single-file source (the caller reports it). Shared
+/// by [`excerpt_at`] and [`Trace::lint_locators`] so the two never disagree.
+///
+/// Two ways a `% at:` path can be written relative to a different root than the
+/// `% source:` scope, both handled here:
+/// - A **single-file** `% source:` (`source_file`) IS that one file, so the locator reads it
+///   directly and any `file:` part is redundant (it may repeat the path from the crate root, which
+///   would otherwise duplicate — `…/src/executor/src/executor/env.rs`).
+/// - A **directory** `% source:` whose locators are written relative to a project root *above* it
+///   (the generator does this — `% source: …/crate/src/executor` but `% at:
+///   src/executor/local_vm.rs`): see [`resolve_under_base`].
 fn locator_path(
     base_dir: &Path,
     source_file: Option<&Path>,
@@ -1229,8 +1223,89 @@ fn locator_path(
 ) -> Option<PathBuf> {
     match source_file {
         Some(sf) => Some(sf.to_path_buf()),
-        None => file.map(|f| base_dir.join(f)),
+        None => file.map(|f| resolve_under_base(base_dir, f)),
     }
+}
+
+/// Resolves a locator's `file:` part under a **directory** `% source:` `base_dir`.
+/// Normally `file` is relative to `base_dir`, but the deck generator sometimes
+/// writes it relative to a PROJECT ROOT *above* `% source:` — e.g. `% source:`
+/// scopes to `…/crate/src/executor` while the locator is the crate-root-relative
+/// `src/executor/local_vm.rs`. Joining that straight onto the deeper base doubles
+/// the overlap (`…/src/executor/src/executor/local_vm.rs`, "no such file"). So:
+/// the direct join when it exists, else the first ancestor of `base_dir` at which
+/// `file` resolves, else fall back to the direct join (so a genuine miss still
+/// names the expected path in the error).
+fn resolve_under_base(base_dir: &Path, file: &str) -> PathBuf {
+    let direct = base_dir.join(file);
+    if direct.exists() {
+        return direct;
+    }
+    let mut ancestor = base_dir.parent();
+    while let Some(dir) = ancestor {
+        let candidate = dir.join(file);
+        if candidate.exists() {
+            return candidate;
+        }
+        ancestor = dir.parent();
+    }
+    direct
+}
+
+/// Relabels a freshly-read `excerpt` to its ORIGINAL source for *display*, using
+/// the card's `note`. A frozen-snapshot asset (`assets/30.rs`) holds content
+/// re-based to line 1, and the real location lives in the card's
+/// `! from <file>:<start>` note (written by [`crate::deck::set_trace_snapshot`]).
+/// When that provenance is present, this repoints the excerpt's path at the real
+/// file and renumbers its lines from the original start, and returns the original
+/// `file:start-end` to show as the "at" label — so the learner sees real source
+/// and line numbers, not the opaque asset (`30.rs`, lines 1-N). With no
+/// provenance (a live trace) it returns the excerpt unchanged and `None`.
+pub fn relabel_for_display(mut excerpt: Excerpt, note: Option<&str>) -> (Excerpt, Option<String>) {
+    let Some((file, start)) = provenance_from_note(note) else {
+        return (excerpt, None);
+    };
+    excerpt.path = PathBuf::from(&file);
+    for (i, line) in excerpt.lines.iter_mut().enumerate() {
+        line.0 = start + i;
+    }
+    let label = match (excerpt.lines.first(), excerpt.lines.last()) {
+        (Some((a, _)), Some((b, _))) if a != b => format!("{file}:{a}-{b}"),
+        (Some((a, _)), _) => format!("{file}:{a}"),
+        _ => file,
+    };
+    (excerpt, Some(label))
+}
+
+/// Parses the original `from <file>:<start>[-end]` provenance a snapshot writes
+/// into a card's note, recovering the real source file and 1-based start line.
+/// Only a snapshot writes this exact shape, so it rarely fires for a hand-authored
+/// note that merely mentions a file.
+fn provenance_from_note(note: Option<&str>) -> Option<(String, usize)> {
+    for line in note?.lines() {
+        let Some(rest) = line.trim().strip_prefix("from ") else {
+            continue;
+        };
+        if let Some((file, spec)) = rest.rsplit_once(':')
+            && let Some(start) = spec.split('-').next().and_then(|n| n.trim().parse().ok())
+            && !file.trim().is_empty()
+        {
+            return Some((file.trim().to_string(), start));
+        }
+    }
+    None
+}
+
+/// Strips the snapshot provenance line (`from <file>:<lines>`) from a card's note
+/// for display, since [`relabel_for_display`] promotes it to the "at" label.
+/// Returns `None` if nothing meaningful remains.
+pub fn note_without_provenance(note: Option<&str>) -> Option<String> {
+    let kept: Vec<&str> = note?
+        .lines()
+        .filter(|l| provenance_from_note(Some(l)).is_none())
+        .collect();
+    let joined = kept.join("\n");
+    (!joined.trim().is_empty()).then_some(joined)
 }
 
 fn excerpt_at(base_dir: &Path, source_file: Option<&Path>, locator: &str) -> Result<Excerpt> {
@@ -1332,6 +1407,78 @@ mod tests {
     }
 
     #[test]
+    fn excerpt_at_resolves_a_crate_root_locator_against_a_subdir_source() {
+        // `% source:` scopes to a SUBDIR (`<root>/src/executor`), but the locator
+        // is written relative to the crate root (`src/executor/local_vm.rs`).
+        // Joining it onto the deeper base would double the overlap
+        // (`…/src/executor/src/executor/local_vm.rs`); resolution must instead walk
+        // up and find it at the crate root.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src/executor")).unwrap();
+        write(dir.path(), "src/executor/local_vm.rs", "a\nb\nc\nd\n");
+        let base_dir = dir.path().join("src/executor"); // the `% source:` dir
+        let ex = excerpt_at(&base_dir, None, "src/executor/local_vm.rs:2-3").unwrap();
+        assert_eq!(vec![(2, "b".to_string()), (3, "c".to_string())], ex.lines);
+    }
+
+    #[test]
+    fn relabel_for_display_uses_the_provenance_note() {
+        // A frozen asset's excerpt (path `30.rs`, re-based lines 1-3) is relabeled
+        // to the real source + line numbers from the `from <file>:<start>` note.
+        let ex = Excerpt {
+            path: PathBuf::from("/ws/assets/30.rs"),
+            lines: vec![
+                (1, "a".to_string()),
+                (2, "b".to_string()),
+                (3, "c".to_string()),
+            ],
+            truncated: false,
+        };
+        let (ex, label) = relabel_for_display(ex, Some("from caching.rs:106-120"));
+        assert_eq!("caching.rs", ex.path.to_str().unwrap());
+        assert_eq!(
+            vec![
+                (106, "a".to_string()),
+                (107, "b".to_string()),
+                (108, "c".to_string())
+            ],
+            ex.lines
+        );
+        // The label reflects the lines actually shown (here 3, not the full range).
+        assert_eq!(Some("caching.rs:106-108".to_string()), label);
+    }
+
+    #[test]
+    fn relabel_for_display_is_a_noop_without_provenance() {
+        let ex = Excerpt {
+            path: PathBuf::from("/src/foo.rs"),
+            lines: vec![(10, "x".to_string())],
+            truncated: false,
+        };
+        let (ex2, label) = relabel_for_display(ex.clone(), Some("just an insight"));
+        assert_eq!(ex.path, ex2.path);
+        assert_eq!(ex.lines, ex2.lines);
+        assert_eq!(None, label);
+        assert_eq!(None, relabel_for_display(ex, None).1); // no note: unchanged
+    }
+
+    #[test]
+    fn note_without_provenance_drops_only_the_from_line() {
+        assert_eq!(
+            None,
+            note_without_provenance(Some("from caching.rs:106-120"))
+        );
+        assert_eq!(
+            Some("a real insight".to_string()),
+            note_without_provenance(Some("a real insight\nfrom caching.rs:106-120"))
+        );
+        assert_eq!(
+            Some("plain note".to_string()),
+            note_without_provenance(Some("plain note"))
+        );
+    }
+
+    #[test]
     fn source_base_reads_a_fact_cards_citation() {
         let dir = tempfile::tempdir().unwrap();
         write(dir.path(), "notes.md", "one\ntwo\nthree\nfour\n");
@@ -1408,8 +1555,11 @@ mod tests {
     }
 
     #[test]
-    fn walking_a_trace_to_completion_masters_and_finishes_it() {
-        use crate::store::{MAX_STAGE, Store};
+    fn walking_a_trace_drills_but_does_not_master_it() {
+        use crate::{
+            deck::DeckState,
+            store::{MAX_STAGE, Store},
+        };
         let dir = tempfile::tempdir().unwrap();
         write(dir.path(), "src.rs", "a\nb\nc\n");
         let deck_path = dir.path().join("t.txt");
@@ -1424,23 +1574,26 @@ mod tests {
         let deck = crate::deck::Deck::load(&deck_path).unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
 
-        // Before any walk: not mastered, and not Finished (so it would lock a
-        // dependent — and must NOT be stuck at the exam it can't sit).
         assert!(!store.deck_mastered(&deck.subject));
-        assert_ne!(crate::deck::DeckState::Finished, deck.state(&store));
+        assert_eq!(DeckState::NotStarted, deck.state(&store));
 
         // Walk it correctly enough times to retire the single checkpoint.
         for round in 0..MAX_STAGE + 1 {
             let mut walk = Walk::new(Trace::from_deck(&deck).unwrap(), SchedulerKind::Leitner);
             walk.predict("p".to_string());
             walk.grade(&mut store, Delta::Got, u64::from(round) + 1);
-            walk.compress("c".to_string());
+            assert_eq!(Phase::Done, walk.phase()); // no compress step
         }
 
-        // The walk IS the trace's exam: completing it masters the trace, which is
-        // then Finished and unlocks its dependents.
-        assert!(store.deck_mastered(&deck.subject));
-        assert_eq!(crate::deck::DeckState::Finished, deck.state(&store));
+        // The walk is the DRILL, not the exam: drilling all checkpoints does NOT
+        // master the trace — it becomes `ExamDue` (its compression exam is next),
+        // so it stays locked for dependents until that exam is passed.
+        assert!(!store.deck_mastered(&deck.subject));
+        assert_eq!(DeckState::ExamDue, deck.state(&store));
+
+        // Passing the trace exam is what masters it (→ Finished, unlocks).
+        store.set_deck_mastered(&deck.subject, 99);
+        assert_eq!(DeckState::Finished, deck.state(&store));
     }
 
     #[test]
@@ -1690,7 +1843,7 @@ mod tests {
     }
 
     #[test]
-    fn walk_runs_predict_reveal_grade_then_compress() {
+    fn walk_runs_predict_reveal_grade_to_done() {
         let dir = tempfile::tempdir().unwrap();
         let deck = trace_deck(dir.path());
         let trace = Trace::from_deck(&deck).unwrap();
@@ -1710,16 +1863,13 @@ mod tests {
         assert_eq!(1, walk.current_index());
         assert_eq!(2, store.get(card0).unwrap().stage); // Got -> stage up
 
-        // Hop 2 (last): a Missed resets to stage 1 and moves to compression.
+        // Hop 2 (last): a Missed resets to stage 1 and finishes the walk (no
+        // compress step — verification is the separate trace exam).
         let card1 = walk.checkpoint().unwrap().card_id;
         walk.predict(String::new());
         walk.grade(&mut store, Delta::Missed, 1001);
-        assert_eq!(Phase::Compress, walk.phase());
-        assert_eq!(1, store.get(card1).unwrap().stage); // Missed -> reset
-
-        walk.compress("the whole path in two sentences".to_string());
         assert_eq!(Phase::Done, walk.phase());
-        assert_eq!(Some("the whole path in two sentences"), walk.compression());
+        assert_eq!(1, store.get(card1).unwrap().stage); // Missed -> reset
 
         let summary = walk.summary();
         assert_eq!(1, summary.got);

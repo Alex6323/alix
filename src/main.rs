@@ -663,6 +663,7 @@ fn pick_decks_if_empty(
     enforce_locks: bool,
     gate_reviewable: bool,
     start_in: Option<&Path>,
+    focus: Option<&Path>,
 ) -> Result<Option<picker::Picked>> {
     if !decks.is_empty() {
         return Ok(Some(picker::Picked {
@@ -683,6 +684,7 @@ fn pick_decks_if_empty(
         enforce_locks,
         gate_reviewable,
         start_in,
+        focus,
         &config.picker,
     )?;
     Ok((!picked.decks.is_empty()).then_some(picked))
@@ -720,6 +722,15 @@ enum Started {
         scheduler: SchedulerKind,
         store: Store,
     },
+}
+
+/// What [`load_review_session`] resolved: the activity to run, the `workspace` it
+/// was drilled into (to return there afterwards), and the `focus` deck to re-land
+/// the picker's cursor on so the selection doesn't jump while the user is away.
+struct LoadedSession {
+    started: Started,
+    workspace: Option<PathBuf>,
+    focus: Option<PathBuf>,
 }
 
 /// Loads the decks named (or picked) for a review, resolves prerequisites and
@@ -856,7 +867,8 @@ fn load_review_session(
     args: &ReviewArgs,
     target: Frontend,
     start_in: Option<&Path>,
-) -> Result<Option<(Started, Option<PathBuf>)>> {
+    focus: Option<&Path>,
+) -> Result<Option<LoadedSession>> {
     let config = Config::load(args.config.as_deref())?;
     let mut recent = RecentDecks::load(
         recent::default_recent_path().context("cannot determine the data directory")?,
@@ -881,6 +893,7 @@ fn load_review_session(
         true,
         !args.cram,
         start_in,
+        focus,
     )?
     else {
         return Ok(None); // picker cancelled or nothing selected
@@ -891,6 +904,9 @@ fn load_review_session(
         decks: deck_paths,
         workspace,
     } = picked;
+    // The deck the user launched — handed back so the caller can re-focus it when
+    // the picker re-opens (the selection shouldn't jump while they're away).
+    let focus_deck = deck_paths.first().cloned();
     // The session tracks progress in the decks' store — a workspace's own store
     // when they all live in one, else the global store.
     let store = store_for(&deck_paths, args.store.clone())?;
@@ -902,14 +918,15 @@ fn load_review_session(
             .or(deck.settings.scheduler)
             .unwrap_or_default();
         let trace = Trace::from_deck(&deck)?;
-        return Ok(Some((
-            Started::Walk {
+        return Ok(Some(LoadedSession {
+            started: Started::Walk {
                 trace: Box::new(trace),
                 scheduler,
                 store,
             },
             workspace,
-        )));
+            focus: focus_deck,
+        }));
     }
     // A single exam-due deck launches its exam rather than an empty review —
     // unless its exam is locked (a sourced prerequisite isn't passed), in which
@@ -921,18 +938,19 @@ fn load_review_session(
         && deck.state(&store) == DeckState::ExamDue
         && !alix::deck::is_locked(&deck, config.decks_dir().as_deref(), &store)
     {
-        return Ok(Some((
-            Started::Exam {
+        return Ok(Some(LoadedSession {
+            started: Started::Exam {
                 deck: Box::new(deck),
                 store,
                 config: Box::new(config),
             },
             workspace,
-        )));
+            focus: focus_deck,
+        }));
     }
     let build = build_review(deck_paths, args, &config, &store, &mut recent, target)?;
-    Ok(Some((
-        Started::Review(Box::new(ReviewSession {
+    Ok(Some(LoadedSession {
+        started: Started::Review(Box::new(ReviewSession {
             session: build.session,
             store,
             mode_override: args.mode,
@@ -942,7 +960,8 @@ fn load_review_session(
             hidden: build.hidden,
         })),
         workspace,
-    )))
+        focus: focus_deck,
+    }))
 }
 
 /// Launches the interactive exam TUI for `deck`, resolving strictness from the
@@ -1070,8 +1089,8 @@ fn review(args: ReviewArgs) -> Result<()> {
     // Explicit decks: build and run once, standalone — the activity owns its
     // terminal and prints a summary, as before. No picker, no return-loop.
     if !args.decks.is_empty() {
-        return match load_review_session(None, &args, Frontend::Tui, None)? {
-            Some((started, _)) => run_started(started, &args),
+        return match load_review_session(None, &args, Frontend::Tui, None, None)? {
+            Some(loaded) => run_started(loaded.started, &args),
             None => Ok(()),
         };
     }
@@ -1089,21 +1108,30 @@ fn review(args: ReviewArgs) -> Result<()> {
 /// next. Stays on one live screen the whole time.
 fn review_loop(terminal: &mut DefaultTerminal, args: &ReviewArgs) -> Result<()> {
     let mut start_in: Option<PathBuf> = None;
+    let mut focus: Option<PathBuf> = None;
     loop {
-        let Some((started, workspace)) = load_review_session(
+        let Some(loaded) = load_review_session(
             Some(&mut *terminal),
             args,
             Frontend::Tui,
             start_in.as_deref(),
+            focus.as_deref(),
         )?
         else {
             return Ok(()); // picker cancelled / nothing selected
         };
+        let LoadedSession {
+            started,
+            workspace,
+            focus: launched,
+        } = loaded;
         run_started_on(terminal, started, args)?;
         // Always return to the picker after an activity — a workspace member
         // reopens its workspace, a loose deck the top list. Only an `Esc` at the
-        // picker itself (above) quits.
+        // picker itself (above) quits. Re-focus the deck just launched so the
+        // selection stays put under the user.
         start_in = workspace;
+        focus = launched;
     }
 }
 
@@ -1121,7 +1149,7 @@ fn run_started(started: Started, args: &ReviewArgs) -> Result<()> {
             trace,
             scheduler,
             mut store,
-        } => run_walk(*trace, scheduler, &mut store, None),
+        } => run_walk(*trace, scheduler, &mut store, None).map(|_| ()),
         Started::Review(rs) => run_review_tui(*rs, args),
     }
 }
@@ -1146,7 +1174,7 @@ fn run_started_on(
             mut store,
         } => {
             ratatui::restore();
-            let result = run_walk(*trace, scheduler, &mut store, None);
+            let result = run_walk(*trace, scheduler, &mut store, None).map(|_| ());
             *terminal = ratatui::init();
             result
         }
@@ -1777,6 +1805,7 @@ fn browse_loop(
     store: &Store,
 ) -> Result<()> {
     let mut start_in: Option<PathBuf> = None;
+    let mut focus: Option<PathBuf> = None;
     loop {
         // Browse is read-only traversal — locking gates review only (any deck is
         // browsable), and nothing is gated as unreviewable.
@@ -1792,10 +1821,12 @@ fn browse_loop(
             false,
             false,
             start_in.as_deref(),
+            focus.as_deref(),
         )?
         else {
             return Ok(()); // picker cancelled or nothing selected
         };
+        let launched = deck_paths.first().cloned();
         // Removing a card prunes its progress — from the decks' own store (a
         // workspace's when they all live in one).
         let deck_store = store_for(&deck_paths, None)?;
@@ -1809,8 +1840,10 @@ fn browse_loop(
             paths,
             deck_store,
         )?;
-        // Always return to the picker; only an `Esc` at the picker quits.
+        // Always return to the picker (only an `Esc` at the picker quits),
+        // re-focused on the deck just browsed so the selection doesn't jump.
         start_in = workspace;
+        focus = launched;
     }
 }
 
@@ -2106,17 +2139,10 @@ fn exam_cmd(args: ExamArgs) -> Result<()> {
     let store = store_for(std::slice::from_ref(&args.deck), args.store.clone())?;
     let deck = Deck::load(&args.deck)?;
 
-    // A trace's verification is its own predict-verify walk + compression, not
-    // the source-wide AI exam; the generic exam refuses it (its `% source:` is a
-    // locator base, not an exam corpus). Point the user at `alix trace`.
-    if deck.is_trace() {
-        bail!(
-            "{} is a trace (it declares a `% trace:`) — walk it with `alix trace`, \
-             not the AI exam",
-            deck.subject
-        );
-    }
-    if deck.sources.is_empty() {
+    // Every exam needs something to verify against: a fact deck's `% source:`,
+    // or a trace (whose exam is its graded compression). A source-less fact deck
+    // has none.
+    if !deck.has_exam() {
         bail!(
             "{} declares no `% source:` — add one (a URL or a file path) to \
              examine this deck",
@@ -2143,8 +2169,88 @@ fn exam_cmd(args: ExamArgs) -> Result<()> {
         .strictness
         .or(deck.settings.exam_strictness)
         .unwrap_or(config.exam.strictness);
+
+    // A trace's exam is the compression (one fixed question = the `% trace:`),
+    // graded against the path; a fact deck's exam generates questions from its
+    // source.
+    if deck.is_trace() {
+        return run_trace_exam(&deck, &config, strictness, store);
+    }
     let decks_dir = config.decks_dir();
     tui::ExamApp::new(deck, strictness, exam_cfg, config.ask, store, decks_dir).run()
+}
+
+/// Sits a **trace's exam** — the compression. One fixed question (the
+/// `% trace:`), graded holistically against the path's checkpoints; a pass
+/// masters the trace (unlocking its dependents) just like a fact deck. Bails if
+/// the exam is cooling down after a recent fail. Shared by `alix exam <trace>`
+/// (test out) and the walk's capstone. The caller has checked the deck is a
+/// trace and isn't locked.
+fn run_trace_exam(
+    deck: &Deck,
+    config: &Config,
+    strictness: Strictness,
+    store: Store,
+) -> Result<()> {
+    let trace = Trace::from_deck(deck)?;
+    if let Some(remaining) = alix::exam::cooldown_remaining_ms(
+        &store,
+        &deck.subject,
+        config.exam.retry_cooldown_secs,
+        now_ms(),
+    ) {
+        bail!(
+            "this trace exam is cooling down after a failed attempt — re-walk it \
+             and try again in {}",
+            humanize_ms(remaining)
+        );
+    }
+    let sitting = alix::exam::Sitting::start_trace(
+        trace.description.clone(),
+        trace.compression_rubric(),
+        deck.subject.clone(),
+        deck.path.clone(),
+        strictness,
+        config.exam.clone(),
+        config.ask.clone(),
+    );
+    tui::ExamApp::from_sitting(sitting, store, deck.path.clone(), config.decks_dir()).run()
+}
+
+/// After a full walk, offers the trace's exam (the compression) as a capstone:
+/// prompts, and on a yes sits it. Skips when the exam is locked (`% requires:`
+/// unmet) or cooling down after a recent fail (it just says so).
+fn offer_trace_exam_capstone(deck: &Deck, config: &Config, store: Store) -> Result<()> {
+    if alix::deck::is_locked(deck, config.decks_dir().as_deref(), &store) {
+        return Ok(()); // its exam is gated on unfinished prerequisites
+    }
+    if alix::exam::cooldown_remaining_ms(
+        &store,
+        &deck.subject,
+        config.exam.retry_cooldown_secs,
+        now_ms(),
+    )
+    .is_some()
+    {
+        println!(
+            "{DIM}(the trace exam is cooling down after a recent fail — re-sit it later){RESET}"
+        );
+        return Ok(());
+    }
+    println!();
+    let prompt =
+        format!("{DIM}Take the exam to verify you can re-derive the path? [Y/n] >{RESET} ");
+    match read_line(&prompt)? {
+        Some(ans) if ans.trim().eq_ignore_ascii_case("n") => Ok(()),
+        None => Ok(()), // EOF (Ctrl-D): just leave
+        _ => {
+            let strictness = deck
+                .settings
+                .exam_strictness
+                .unwrap_or(config.exam.strictness);
+            run_trace_exam(deck, config, strictness, store)
+        }
+    }
 }
 
 // ANSI styling for the linear `alix trace` flow (it requires a terminal).
@@ -2191,12 +2297,20 @@ fn trace_cmd(args: TraceArgs) -> Result<()> {
     }
     let mut store = store;
     let grade = args.grade.then_some(&config);
-    run_walk(trace, scheduler, &mut store, grade)
+    let completed = run_walk(trace, scheduler, &mut store, grade)?;
+    // Capstone: a full walk earns the trace's exam — the compression that
+    // verifies (and masters) it. Offered here, also reachable any time with
+    // `alix exam <trace>`.
+    if completed {
+        return offer_trace_exam_capstone(&deck, &config, store);
+    }
+    Ok(())
 }
 
 /// `alix trace --serve`: walk a trace in the browser. Mirrors the terminal
-/// walk (predict → reveal → grade → compress); `--grade` enables live Claude
-/// grading. One deck, one walk — no deck-selection screen.
+/// walk (predict → reveal → grade each checkpoint); `--grade` enables live Claude
+/// grading. One deck, one walk — no deck-selection screen. Verification (the
+/// compression exam) is reached afterwards via the picker's "Take exam".
 fn trace_serve(
     trace: Trace,
     scheduler: SchedulerKind,
@@ -2211,15 +2325,18 @@ fn trace_serve(
     serve::run_walk(walk, store, addr, scheduler, grade, config.keys.clone())
 }
 
-/// Runs a trace walk in the terminal — predict → reveal → grade each checkpoint,
-/// then compress — scheduling each checkpoint in `store`. Shared by `alix trace`
-/// and `alix explore --walk`.
+/// Runs a trace walk in the terminal — predict → reveal → grade each checkpoint
+/// — scheduling each checkpoint in `store`. The walk is the **drill**; mastery
+/// is the trace's separate exam (the compression). Shared by `alix trace` and
+/// `alix explore --walk`. Returns whether every checkpoint was walked (the walk
+/// reached [`Phase::Done`] rather than being quit early), so the caller can offer
+/// the exam as a capstone.
 fn run_walk(
     trace: Trace,
     scheduler: SchedulerKind,
     store: &mut Store,
     grade: Option<&Config>,
-) -> Result<()> {
+) -> Result<bool> {
     let mut walk = Walk::new(trace, scheduler);
     let total = walk.total();
     let mut last_prediction = String::new();
@@ -2255,7 +2372,13 @@ fn run_walk(
                 let checkpoint = walk.checkpoint().cloned().expect("reveal has a checkpoint");
                 println!("\n{BOLD}Reveal{RESET}");
                 match walk.trace().excerpt(&checkpoint) {
-                    Ok(excerpt) => print_excerpt(&excerpt),
+                    Ok(excerpt) => {
+                        // A frozen-snapshot asset reads `30.rs`, lines 1-N; relabel
+                        // it back to the real `caching.rs:106-120` for display.
+                        let (excerpt, _) =
+                            alix::trace::relabel_for_display(excerpt, checkpoint.note.as_deref());
+                        print_excerpt(&excerpt);
+                    }
                     Err(e) => {
                         let loc = checkpoint.locator.as_deref().unwrap_or("(none)");
                         println!("{DIM}  (couldn't read the source — {e})  at: {loc}{RESET}");
@@ -2267,7 +2390,10 @@ fn run_walk(
                         println!("    • {point}");
                     }
                 }
-                if let Some(note) = &checkpoint.note {
+                // The provenance (`from <file>:<lines>`) is promoted into the
+                // excerpt label, so drop it from the note shown here.
+                if let Some(note) = alix::trace::note_without_provenance(checkpoint.note.as_deref())
+                {
                     println!("{DIM}  ! {note}{RESET}");
                 }
                 // `--grade`: Claude judges the prediction; otherwise self-grade.
@@ -2298,25 +2424,13 @@ fn run_walk(
                     None => break 'walk, // quit
                 }
             }
-            Phase::Compress => {
-                println!("\n{BOLD}── Compress ──{RESET}");
-                println!("{BOLD}tracing{RESET}  {}", walk.trace().description);
-                println!(
-                    "Retrace it in two sentences — if you can re-derive the whole \
-                     path, you understood it."
-                );
-                match read_line(&format!("{DIM}compress >{RESET} "))? {
-                    None => break 'walk,
-                    Some(text) => walk.compress(text),
-                }
-            }
             Phase::Done => break 'walk,
         }
     }
 
     store.save().context("cannot save progress")?;
     print_trace_summary(&walk);
-    Ok(())
+    Ok(walk.phase() == Phase::Done)
 }
 
 /// Discovers the path with Claude (`alix trace --build`) and writes the
@@ -2520,7 +2634,7 @@ fn explore_walk(args: &ExploreArgs, config: &Config, source: &str, goal: &str) -
     let trace = Trace::from_deck(&deck)?;
     let scheduler = deck.settings.scheduler.unwrap_or_default();
     let mut store = store_for(std::slice::from_ref(&out), None)?;
-    run_walk(trace, scheduler, &mut store, None)
+    run_walk(trace, scheduler, &mut store, None).map(|_| ())
 }
 
 /// `alix workspace <dir>`: open a workspace into its member picker. Pick a fact

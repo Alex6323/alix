@@ -66,6 +66,18 @@ lib/AI error paths, behavior in the lib, README + book + CHANGELOG synced, no ne
 dependency without a one-line reason). The fit gate decides *whether*; the craft
 gate decides *how*.
 
+**UI noise is a gate too — clean, no-distraction surfaces.** Both frontends (TUI
+and web) must stay calm: only what the user needs *right now*, nothing competing
+for attention. Every pixel/char earns its place — chrome that's always on but
+rarely useful (status ladders, persistent counters, decorative readouts) is
+noise, not information. When you add UI, the default is *less*: prefer one
+primary action, tuck secondary/rare controls behind a menu, and cut a readout
+before adding one. A long or hand-crafted label **truncates** (ellipsis) — it
+never wraps or reflows the layout; headers and bars hold a fixed size regardless
+of content. When in doubt, remove it; if it's genuinely useful but rare, hide it
+behind a `⋮`/`m`/`?`-style affordance rather than leaving it on screen. Treat a
+noisy diff the way you'd treat a failing test: not done yet.
+
 ## Dev commands — use the Makefile
 
 | Command | What it does |

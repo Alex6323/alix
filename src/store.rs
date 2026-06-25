@@ -20,7 +20,13 @@ pub const MAX_STAGE: u8 = 5;
 /// The current on-disk store-format version. Bump it when the persisted shape
 /// changes in a way an older binary couldn't safely read, and add the matching
 /// step in [`migrate`].
-const CURRENT_VERSION: u32 = 1;
+///
+/// v2 made [`DeckProgress::mastered_at_ms`] optional and added
+/// `exam_failed_at_ms` (the re-sit cooldown), so a deck can carry a *failed*
+/// exam with no mastery — an entry an older binary (which required
+/// `mastered_at_ms`) couldn't parse. Reading a v1 file is still fine (the new
+/// fields default), so the bump only fences off the *forward* direction.
+const CURRENT_VERSION: u32 = 2;
 
 /// One recorded review of a card.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -101,12 +107,19 @@ impl CardState {
     }
 }
 
-/// Deck-level progress, keyed by deck subject (= file name). Currently records
-/// that the deck's AI exam has been passed ("mastered").
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+/// Deck-level progress, keyed by deck subject (= file name): whether the deck's
+/// AI exam has been passed ("mastered"), and when it was last *failed* (for the
+/// re-sit cooldown). A deck appears here once either happens; an entry with
+/// neither set is meaningless and is never written.
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DeckProgress {
-    /// When the exam was last passed (Unix ms).
-    pub mastered_at_ms: u64,
+    /// When the exam was last passed (Unix ms); `None` until it is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mastered_at_ms: Option<u64>,
+    /// When the exam was last failed (Unix ms), gating an immediate re-sit;
+    /// `None` if it has never failed (or a later pass cleared it).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exam_failed_at_ms: Option<u64>,
 }
 
 /// On-disk representation of the store.
@@ -262,26 +275,41 @@ impl Store {
 
     /// Whether the given deck has passed its AI exam ("mastered").
     pub fn deck_mastered(&self, subject: &str) -> bool {
-        self.decks.contains_key(subject)
+        self.deck_mastered_at(subject).is_some()
     }
 
     /// When the deck was mastered (epoch ms), if it has been.
     pub fn deck_mastered_at(&self, subject: &str) -> Option<u64> {
-        self.decks.get(subject).map(|d| d.mastered_at_ms)
+        self.decks.get(subject).and_then(|d| d.mastered_at_ms)
     }
 
-    /// Records that the deck passed its exam at `now_ms`. Does not save.
+    /// Records that the deck passed its exam at `now_ms`, clearing any failed-exam
+    /// cooldown (a pass supersedes a prior fail). Does not save.
     pub fn set_deck_mastered(&mut self, subject: &str, now_ms: u64) {
-        self.decks.insert(
-            subject.to_string(),
-            DeckProgress {
-                mastered_at_ms: now_ms,
-            },
-        );
+        let entry = self.decks.entry(subject.to_string()).or_default();
+        entry.mastered_at_ms = Some(now_ms);
+        entry.exam_failed_at_ms = None;
     }
 
-    /// Drops a deck's mastered state (e.g. on per-deck reset). Returns whether
-    /// an entry was present. Does not save.
+    /// When the deck's exam was last failed (epoch ms), if recently — drives the
+    /// re-sit cooldown so a failed exam can't be immediately re-sat with the
+    /// graded feedback pasted back in.
+    pub fn exam_failed_at(&self, subject: &str) -> Option<u64> {
+        self.decks.get(subject).and_then(|d| d.exam_failed_at_ms)
+    }
+
+    /// Records that the deck's exam was failed at `now_ms` (for the re-sit
+    /// cooldown). Does not save.
+    pub fn set_exam_failed(&mut self, subject: &str, now_ms: u64) {
+        self.decks
+            .entry(subject.to_string())
+            .or_default()
+            .exam_failed_at_ms = Some(now_ms);
+    }
+
+    /// Drops a deck's exam progress — both mastery and the failed-exam cooldown
+    /// (e.g. on per-deck reset). Returns whether an entry was present. Does not
+    /// save.
     pub fn clear_deck_mastered(&mut self, subject: &str) -> bool {
         self.decks.remove(subject).is_some()
     }
@@ -500,6 +528,54 @@ mod tests {
         assert!(reloaded.clear_deck_mastered("rust.txt"));
         assert!(!reloaded.deck_mastered("rust.txt"));
         assert!(!reloaded.clear_deck_mastered("rust.txt")); // nothing left
+    }
+
+    #[test]
+    fn exam_failed_records_and_a_pass_clears_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("progress.json");
+
+        let mut store = Store::open(&path).unwrap();
+        assert_eq!(None, store.exam_failed_at("t.txt"));
+        // A failed exam stamps the cooldown without mastering the deck.
+        store.set_exam_failed("t.txt", 5000);
+        assert_eq!(Some(5000), store.exam_failed_at("t.txt"));
+        assert!(!store.deck_mastered("t.txt"));
+        store.save().unwrap();
+
+        // Survives a save/reload.
+        let mut reloaded = Store::open(&path).unwrap();
+        assert_eq!(Some(5000), reloaded.exam_failed_at("t.txt"));
+        // A later pass masters the deck and clears the cooldown.
+        reloaded.set_deck_mastered("t.txt", 9000);
+        assert!(reloaded.deck_mastered("t.txt"));
+        assert_eq!(None, reloaded.exam_failed_at("t.txt"));
+    }
+
+    #[test]
+    fn per_deck_clear_drops_the_cooldown_too() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        store.set_exam_failed("t.txt", 1);
+        assert!(store.clear_deck_mastered("t.txt"));
+        assert_eq!(None, store.exam_failed_at("t.txt"));
+    }
+
+    #[test]
+    fn loads_a_v1_deck_record_with_a_bare_mastered_timestamp() {
+        // Pre-v2 stores wrote `mastered_at_ms` as a bare number (not optional);
+        // it must still load as a mastered deck.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("progress.json");
+        std::fs::write(
+            &path,
+            "{\"version\":1,\"cards\":{},\"decks\":{\"rust.txt\":{\"mastered_at_ms\":1234}}}",
+        )
+        .unwrap();
+        let store = Store::open(&path).unwrap();
+        assert!(store.deck_mastered("rust.txt"));
+        assert_eq!(Some(1234), store.deck_mastered_at("rust.txt"));
+        assert_eq!(None, store.exam_failed_at("rust.txt"));
     }
 
     #[test]

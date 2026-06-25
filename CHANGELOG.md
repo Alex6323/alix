@@ -7,6 +7,35 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Ask Claude during a trace walk.** The web walk now has an **Ask** button on
+  each reveal (and the `?` key) — the same tutor a card review offers, scoped to
+  the current checkpoint (its question, key points and the live source excerpt).
+  Send questions, **Save note** to append a `!` line to that checkpoint, Esc to
+  close. The ask machinery is now a shared component used by both the review and
+  the walk, so one CLI conversation spans the session. Hosted walks only (the
+  picker → walk flow); the standalone `alix trace --serve` is unaffected.
+- **A "⌵ N more" marker when a source excerpt overflows the card.** A reveal
+  whose excerpt is taller than the card shows a small `⌵ N more lines` pill at the
+  cut edge (counting the hidden lines), in both the trace walk and a fact card's
+  `% at:` citation — and it appears immediately on an overflowing excerpt, not
+  only after the first scroll. The subtle edge-fade stays underneath it.
+- **A trace's exam is its compression — AI-graded.** A trace's `% trace:` is a
+  question ("how X becomes Y"); its **exam** is to answer it — retrace the whole
+  path in a sentence or two from memory — and Claude grades that *holistically*
+  against the path's checkpoints (no question generation, no source read: the
+  checkpoints already paraphrase the source). **Passing masters the trace**
+  (unlocking its dependents), exactly like a fact deck. Reached three ways:
+  `alix exam <trace>` (which no longer refuses a trace), the **capstone** offered
+  at the end of a walk (`Take the exam?`), or the picker's **"Take exam"** button
+  (terminal and web) — and, like a fact deck, you can sit it **early to test
+  out**, gated only by `% requires:`. A **failed** trace exam is **re-walked**
+  (not remediated into cards — a trace is a path, not a card pile; its weak
+  checkpoints already resurface through SRS), and after a fail it **cools down**
+  before a re-sit so the graded feedback can't be pasted straight back into the
+  one fixed question — `[exam] retry_cooldown_secs` (default 3600; `0` disables
+  it). Built on the existing exam engine (`Sitting::start_trace` +
+  `grade_compression`), so the TUI `ExamApp` and the web exam overlay drive it
+  unchanged.
 - **Browse a deck straight from the web picker.** A deck row's primary action is
   now **Review** (Enter), with a new **Browse** button (the go-right key, `l`/→)
   that opens a read-only walk through its cards — the review server hosts the
@@ -44,6 +73,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   as `[…]`), are unaffected.
 
 ### Changed
+- **The review header no longer shows the stage ladder.** The always-on
+  `new|s1|s2|…` stage histogram is gone from the review header (TUI and web) — it
+  was noise; the per-stage breakdown stays in the end-of-session summary.
+- **Returning to the picker keeps your place.** After a review/browse/walk/exam,
+  the deck picker re-lands the cursor on the deck you just launched (rather than
+  jumping to the top), so you can step straight to the next — often dependent —
+  deck. Both the terminal picker and the browser picker (the top list and a
+  workspace drill-in).
 - **The Mastered window shows when a deck was mastered and how much is left to
   drill.** A mastered deck's badge now reads e.g. `mastered 🎉 · 3w ago · 8 to
   drill` — the time since it passed (the `deck_mastered` timestamp was already
@@ -75,12 +112,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Dependencies are about *order and gating* (the picker tree + the exam gate),
   not what a session contains. (Removed the `resolve_deck_order`/`dep_ranks`
   machinery; book + README updated.)
-- **A trace masters when you finish walking it.** A trace has no separate exam —
-  the predict-and-verify walk *is* its exam — so once every checkpoint is retired
-  the trace is marked **mastered** (the same flag a passed exam sets): it reads
-  "mastered 🎉", lands in the Mastered window, and **unlocks its dependents**.
-  Previously a fully-walked trace was stuck at "exam due" (an exam it could never
-  sit), so nothing that `% requires:` it ever unlocked.
+- **Breaking — a trace masters by passing its exam, not by finishing the walk.**
+  Walking a trace is now the *drill*: completing the walk no longer masters it
+  (the earlier "mastered once every checkpoint retires" behavior is gone). A
+  fully-walked trace becomes **exam due**; passing the new trace exam — the
+  compression (see Added) — is what masters it and unlocks its dependents, just
+  like a fact deck. The ungraded walk-end "compress" step is removed (and its
+  `/api/walk/compress` endpoint), and the progress store bumps to **v2** (an
+  older alix now cleanly refuses a v2 store with an "upgrade alix" message rather
+  than mis-reading the new deck-progress shape).
 - **`% requires:` now gates the exam, not drilling.** You can review/drill any
   deck at any time, in any order — a prerequisite-locked deck is no longer
   blocked in the picker (it stays bright and startable; the lock is named
@@ -107,6 +147,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   answers compose freely, and the Next/Submit button now shows the binding.
 
 ### Fixed
+- **A `% at:` locator written relative to a project root above `% source:` now
+  resolves.** When a deck scopes `% source:` to a subdirectory or file (e.g.
+  `…/crate/src/executor`) but writes its `% at:` paths from the crate root
+  (`src/executor/local_vm.rs`), joining them doubled the overlap
+  (`…/src/executor/src/executor/local_vm.rs`, "no such file"). Resolution now
+  walks up the base directory's ancestors until the cited file is found.
+- **Frozen-snapshot excerpts show the original file and line numbers.** A walk or
+  fact card whose `% source:` is a frozen `assets/` snapshot showed the asset
+  (`30.rs`, lines 1-N) instead of the real source; the cited excerpt now relabels
+  to the original `caching.rs:106-120` (from the card's `! from …` provenance
+  note) — in the walk, the fact-card citation and the terminal walk.
+- **A long (hand-crafted) deck title no longer reflows the header.** The
+  review/browse/walk headers truncate an over-long title with an ellipsis instead
+  of wrapping to a second line and growing the header's height.
+- **No stray blinking caret on the walk and browse slides.** The caret is now
+  suppressed on card/slide prose across the walk and browse pages (review was
+  already fixed), appearing only inside a real text input or a source-code excerpt
+  (e.g. with the browser's caret-browsing on).
 - **Ask-Claude (web): the input re-focuses when a reply lands**, so you can type
   a follow-up immediately instead of clicking back into the box.
 - **Leaving a workspace trace walk returns you to that workspace, not the top

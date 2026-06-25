@@ -217,13 +217,17 @@ pub struct DeckStatus {
     /// A trace deck (`% trace:`): launched as a predict-verify walk, never a
     /// card review.
     pub is_trace: bool,
-    /// The AI exam can be sat now: the deck has a `% source:` and its
+    /// The AI exam can be sat now: the deck has an exam ([`has_exam`]) and its
     /// `% requires:` are met (not locked) — drilled or not, so you can test out
-    /// early. (A trace has no exam, so this is `false` for one.)
+    /// early. (A failed trace exam's re-sit cooldown is enforced separately at
+    /// the launch site, which has the config.)
+    ///
+    /// [`has_exam`]: DeckStatus::has_exam
     pub examable: bool,
-    /// The deck *has* an AI exam at all — a `% source:`, non-trace — whether or
-    /// not it can be sat right now. (`examable` is this AND not locked.) Lets a
-    /// frontend always show a "Take exam" control, disabled when locked.
+    /// The deck *has* an AI exam at all — a `% source:` fact deck, or a **trace**
+    /// (its exam is the graded compression) — whether or not it can be sat right
+    /// now. (`examable` is this AND not locked.) Lets a frontend always show a
+    /// "Take exam" control, disabled when locked.
     pub has_exam: bool,
 }
 
@@ -269,9 +273,11 @@ pub fn deck_status(
     };
     let actually_locked = deck::is_locked(deck, decks_dir, store);
     let locked = enforce_locks && actually_locked;
-    // A deck has an exam when it has a source and isn't a trace; it can be SAT
-    // when, additionally, it isn't locked — drilled or not (test out early).
-    let has_exam = !deck.is_trace() && !deck.sources.is_empty();
+    // A deck has an exam when it has a source (a fact deck) or is a trace (its
+    // exam is the graded compression); it can be SAT when, additionally, it isn't
+    // locked — drilled or not (test out early). The failed-exam re-sit cooldown
+    // (trace exams) is enforced at the launch sites, which have the config.
+    let has_exam = deck.has_exam();
     let examable = has_exam && !actually_locked;
     // Is there anything to launch right now? A trace always walks; an exam-due
     // deck launches its exam (only when its exam isn't locked); otherwise there
@@ -565,6 +571,8 @@ pub struct Picked {
 /// with nothing to review right now (true for `review`, off for `browse` and
 /// under `--cram`). `start_in` opens straight into a workspace's drill-in
 /// (returning there after an activity); `Esc` from it falls back to the top list.
+/// `focus` is the deck just launched — the picker re-opens with the cursor on it
+/// (so the selection doesn't jump while the user was away), if it's still shown.
 #[expect(clippy::too_many_arguments)] // each is a distinct, named picker setting
 pub fn pick(
     terminal: &mut ratatui::DefaultTerminal,
@@ -574,6 +582,7 @@ pub fn pick(
     enforce_locks: bool,
     gate_reviewable: bool,
     start_in: Option<&Path>,
+    focus: Option<&Path>,
     keys: &PickerKeys,
 ) -> Result<Picked> {
     // Runs on the caller's terminal: opening a project, stepping back, *and*
@@ -587,6 +596,13 @@ pub fn pick(
         gate_reviewable,
         keys,
     );
+    // Land on the just-launched loose deck (a workspace member is focused in its
+    // own drill-in, inside `navigate`).
+    if start_in.is_none()
+        && let Some(f) = focus
+    {
+        top.focus_key(f);
+    }
     navigate(
         terminal,
         &mut top,
@@ -594,6 +610,7 @@ pub fn pick(
         enforce_locks,
         gate_reviewable,
         start_in,
+        focus,
     )
 }
 
@@ -680,10 +697,16 @@ fn navigate(
     enforce_locks: bool,
     gate_reviewable: bool,
     start_in: Option<&Path>,
+    focus: Option<&Path>,
 ) -> Result<Picked> {
-    // Resuming straight into a workspace (returning after an activity).
+    // Resuming straight into a workspace (returning after an activity): land on the
+    // member just launched, so the selection doesn't jump (the user can then step
+    // down to its dependent).
     if let Some(ws) = start_in {
         let mut sub = workspace_picker(ws, decks_dir, enforce_locks, gate_reviewable, &top.keys)?;
+        if let Some(f) = focus {
+            sub.focus_key(f);
+        }
         if let Some(decks) = sub.run(terminal)? {
             return Ok(Picked {
                 decks,
@@ -1411,6 +1434,25 @@ impl<K: Clone + Eq + Hash> Picker<K> {
         }
         let last = self.filtered.len() - 1;
         self.cursor = (self.cursor as isize + delta).clamp(0, last as isize) as usize;
+    }
+
+    /// Moves the cursor onto the row whose key is `key`, if it's currently shown
+    /// (in `filtered`). Used to re-land on the just-launched deck when the picker
+    /// re-opens after a review/browse, so the selection doesn't jump under the
+    /// user; a no-op if the row is filtered/hidden (then the cursor stays put).
+    /// Generic over `Borrow` so a `&Path` matches a `PathBuf` key.
+    fn focus_key<Q>(&mut self, key: &Q)
+    where
+        K: std::borrow::Borrow<Q>,
+        Q: Eq + ?Sized,
+    {
+        if let Some(pos) = self
+            .filtered
+            .iter()
+            .position(|&i| self.all[i].key.borrow() == key)
+        {
+            self.cursor = pos;
+        }
     }
 
     fn toggle(&mut self) {

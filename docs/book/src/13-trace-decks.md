@@ -111,8 +111,8 @@ goes hop by hop:
    (a model call per hop). Either way, a Partial or Missed is a **weak edge** that
    resets and resurfaces sooner; a nailed hop advances and fades. Each checkpoint
    is an ordinary card underneath, so this is the normal per-card SRS.
-4. **Compress** — after the last hop, restate the whole path in two sentences. If
-   you can re-derive it, you understood it.
+4. **Done** — after the last hop the walk is complete. That's the *drill*; the
+   *verification* (what masters the trace) is its separate **exam**, below.
 
 **In the browser:** `alix trace <deck> --serve` walks it in the web frontend — a
 **path rail** you descend (nodes coloring in by Got / Partial / Missed) with each
@@ -121,9 +121,29 @@ live grading. Progress saves to the same store, so a walk started in the termina
 continues in the browser.
 
 `alix trace <deck> --map` prints the route — every prompt, key points, and
-locator — without quizzing. And the generic `alix exam` refuses a trace (it points
-you here): a trace's verification *is* its predict-verify walk plus the
-compression, scoped to the path.
+locator — without quizzing.
+
+## The exam — the compression
+
+A trace's `% trace:` is a *question* ("how X becomes Y"). The **exam** is to
+answer it: retrace the whole path in a sentence or two, from memory. Claude grades
+that compression against the path's checkpoints — AI-graded, exactly like a
+[fact deck's exam](12-the-ai-exam.md), at the deck's `% strictness:` — and
+**passing masters the trace**, which unlocks its dependents. So the symmetry is:
+
+- walking the checkpoints (predict → verify each edge) is the **drill**;
+- the compression is the **exam**.
+
+You reach it three ways: `alix exam <trace>`, the **capstone** offered at the end
+of a walk (`Take the exam?`), or the picker's **"Take exam"** button. Like a fact
+deck, you can sit it **early to test out** — gated only by `% requires:` (a
+trace's sourced prerequisites must be mastered first).
+
+A **failed** trace exam is **re-walked**, not turned into remediation cards (a
+trace is a path, not a card pile) — the weak checkpoints already resurface sooner
+through their own SRS. After a fail the exam **cools down** for a while before you
+can re-sit it, so the graded feedback can't simply be pasted back into the one
+fixed question (`[exam] retry_cooldown_secs`, default one hour; `0` disables it).
 
 ## Snapshotting
 

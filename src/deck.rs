@@ -241,10 +241,21 @@ impl Deck {
     }
 
     /// Whether this deck is a **trace** (it declares a `% trace:`): a guided
-    /// predict-and-verify walk rather than a card deck. The generic AI exam
-    /// refuses a trace — its verification is the walk + compression itself.
+    /// predict-and-verify walk rather than a card deck. A trace's exam is its
+    /// **compression** — retracing the path in a couple of sentences, graded
+    /// against the checkpoints — not the generic source-wide exam a fact deck
+    /// sits.
     pub fn is_trace(&self) -> bool {
         self.trace.is_some()
+    }
+
+    /// Whether the deck has an AI exam that gates mastery: a **trace** (its exam
+    /// is the graded compression) or any deck with a `% source:` (a fact deck's
+    /// exam, generated from the source). A source-less fact deck has none — it is
+    /// `Finished` the moment it is drilled. The single definition shared by
+    /// [`state`](Deck::state), [`is_locked`] and the picker.
+    pub fn has_exam(&self) -> bool {
+        self.is_trace() || !self.sources.is_empty()
     }
 
     /// The deck's display name: its `% title:` if set, else — for a trace deck —
@@ -292,14 +303,13 @@ impl Deck {
             None => self.cards.iter().all(|c| session::is_retired(c, store)),
         };
         if gated {
-            // Drilled enough but not yet mastered: a sourced deck is `ExamDue`.
-            // A source-less deck has no exam, and a trace's exam IS the walk
-            // (which masters it on completion — see `Walk::grade`), so both are
-            // `Finished` here rather than waiting at an exam they'll never sit.
-            if self.sources.is_empty() || self.is_trace() {
-                DeckState::Finished
-            } else {
+            // Drilled enough but not yet mastered: a deck with an exam (a sourced
+            // fact deck, or a trace — whose exam is its graded compression) is
+            // `ExamDue`; a source-less fact deck has no exam, so it's `Finished`.
+            if self.has_exam() {
                 DeckState::ExamDue
+            } else {
+                DeckState::Finished
             }
         } else if self.cards.iter().all(|c| store.get(c.id()).is_none()) {
             DeckState::NotStarted
@@ -399,11 +409,12 @@ pub fn is_locked(deck: &Deck, decks_dir: Option<&Path>, store: &Store) -> bool {
             let Ok(prereq) = Deck::load(&path) else {
                 continue; // unreadable prerequisite: don't lock on it
             };
-            // A sourced prerequisite gates: its exam must be passed (mastered ⇒
-            // `Finished`). A source-less one has no exam, so it never gates — but
-            // a sourced ancestor behind it still does, so recurse through it
+            // A prerequisite with an exam gates: it must be passed (mastered ⇒
+            // `Finished`) — a sourced fact deck or a trace (its exam is the graded
+            // compression). A source-less fact deck has no exam, so it never gates
+            // — but a sourced ancestor behind it still does, so recurse through it
             // either way.
-            if !prereq.sources.is_empty() && prereq.state(store) != DeckState::Finished {
+            if prereq.has_exam() && prereq.state(store) != DeckState::Finished {
                 return false;
             }
             if !prereqs_finished(&prereq, decks_dir, store, visited) {

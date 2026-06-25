@@ -18,7 +18,10 @@ use std::{
     hash::Hasher,
     net::SocketAddr,
     path::{Path, PathBuf},
-    sync::mpsc::{Receiver, TryRecvError},
+    sync::{
+        Arc,
+        mpsc::{Receiver, TryRecvError},
+    },
 };
 
 use anyhow::{Result, anyhow};
@@ -501,14 +504,10 @@ struct Reviewing {
     label: String,
     files: DeckFiles,
     images: HashMap<String, PathBuf>,
-    /// Ask-Claude: the CLI conversation spanning this selection, the running
-    /// transcript, the per-subject `% link:` links, and an in-flight CLI call.
-    cli: CliSession,
-    transcript: Vec<Exchange>,
-    /// The card the displayed `transcript` is for. When the current card moves
-    /// on, the transcript is cleared (the CLI conversation still spans the whole
-    /// session) so the ask view only shows *this* card's exchanges.
-    transcript_card: Option<u64>,
+    /// Ask-Claude tutor (the CLI conversation, transcript and in-flight call),
+    /// shared with the trace walk; the per-subject `% link:` links and source
+    /// roots that ground it stay here (they're keyed by deck subject).
+    ask: Ask,
     links: HashMap<String, Vec<String>>,
     /// Subject → `% source:` project root, for the grounded tutor (opt-in).
     source_roots: HashMap<String, PathBuf>,
@@ -523,7 +522,6 @@ struct Reviewing {
     /// The authored front of each card we've rotated a variant into, so the
     /// original phrasing stays in the rotation (generated variants drop it).
     original_fronts: HashMap<u64, String>,
-    pending: Option<Pending>,
 }
 
 /// An in-flight ask-Claude call: the channel the background thread answers on,
@@ -543,6 +541,151 @@ enum Purpose {
     Condense,
 }
 
+/// The ask-Claude tutor's state, shared by a review session and a trace walk: the
+/// CLI conversation spanning the session, the running transcript shown for the
+/// current subject (a review card or a walk checkpoint), and any in-flight call.
+/// It is agnostic to *what* is being studied — the consumer supplies the subject
+/// [`Card`], its `% link:` links and source root per call, and (on a "save note"
+/// condense) writes the resulting note where the subject lives.
+struct Ask {
+    cli: CliSession,
+    transcript: Vec<Exchange>,
+    /// The subject id the displayed transcript belongs to; cleared when the
+    /// subject changes (the CLI conversation itself still spans the whole
+    /// session, so Claude keeps the full context).
+    subject: Option<u64>,
+    pending: Option<Pending>,
+}
+
+impl Ask {
+    fn new() -> Self {
+        Self {
+            cli: CliSession::new(),
+            transcript: Vec::new(),
+            subject: None,
+            pending: None,
+        }
+    }
+
+    /// Drops the displayed transcript when the subject (card/checkpoint) changes,
+    /// so the ask view shows only the current subject's exchanges.
+    fn align(&mut self, subject: Option<u64>) {
+        if self.subject != subject {
+            self.transcript.clear();
+            self.subject = subject;
+        }
+    }
+
+    fn dto(&self, status: Option<String>, error: Option<String>) -> AskDto {
+        AskDto {
+            transcript: self
+                .transcript
+                .iter()
+                .map(|(q, a)| ExchangeDto {
+                    q: q.clone(),
+                    a: a.clone(),
+                })
+                .collect(),
+            thinking: self.pending.is_some(),
+            status,
+            error,
+        }
+    }
+
+    /// Starts a question about `card` (or, with `question: None`, condenses the
+    /// conversation into note lines). `links`/`root` ground the tutor exactly as a
+    /// review does. Returns `false` (no-op) if a call is already pending or a
+    /// condense has nothing to summarize.
+    fn start(
+        &mut self,
+        cfg: &AskConfig,
+        card: &Card,
+        links: &[String],
+        root: Option<&Path>,
+        question: Option<String>,
+    ) -> bool {
+        if self.pending.is_some() {
+            return false;
+        }
+        // A new subject starts a fresh visible transcript (and a subject-scoped
+        // condense), even though the CLI conversation continues.
+        self.align(Some(card.id()));
+        if question.is_none() && self.transcript.is_empty() {
+            return false;
+        }
+        let run_cfg = match root {
+            Some(r) => ask::with_source_root(cfg, r),
+            None => cfg.clone(),
+        };
+        // Reconcile the session with this call's cwd *before* building the prompt:
+        // a cwd change starts a fresh conversation, so `started` then reports this
+        // as a first message (full subject context).
+        let args = self.cli.args_in(run_cfg.cwd.as_deref());
+        let (prompt, purpose) = match question {
+            Some(q) => (
+                ask::question_prompt(card, links, &q, !self.cli.started, root),
+                Purpose::Question(q),
+            ),
+            None => (
+                ask::condense_prompt(card, &self.transcript),
+                Purpose::Condense,
+            ),
+        };
+        let rx = ask::spawn(run_cfg, prompt, args);
+        self.pending = Some(Pending {
+            rx,
+            purpose,
+            card: card.clone(),
+        });
+        true
+    }
+
+    /// Drains a finished reply: a question lands in the transcript; a condense's
+    /// note lines are handed to `save` (the consumer writes them where the subject
+    /// lives — a deck card, or a trace checkpoint). Returns a one-shot
+    /// `(status, error)` to show once.
+    fn poll(
+        &mut self,
+        save: impl FnOnce(&Card, &[String]) -> Result<(), String>,
+    ) -> (Option<String>, Option<String>) {
+        let reply = match &self.pending {
+            None => return (None, None),
+            Some(p) => match p.rx.try_recv() {
+                Ok(reply) => reply,
+                Err(TryRecvError::Empty) => return (None, None),
+                Err(TryRecvError::Disconnected) => {
+                    Reply::Error("the ask helper exited unexpectedly".to_string())
+                }
+            },
+        };
+        let pending = self.pending.take().expect("pending was present");
+        match (reply, pending.purpose) {
+            (Reply::Answer(answer), Purpose::Question(question)) => {
+                self.cli.started = true; // later calls --resume this conversation
+                self.transcript.push((question, answer));
+                (None, None)
+            }
+            (Reply::Answer(text), Purpose::Condense) => {
+                self.cli.started = true;
+                let notes = ask::extract_note_lines(&text);
+                if notes.is_empty() {
+                    return (Some("nothing to save".to_string()), None);
+                }
+                match save(&pending.card, &notes) {
+                    Ok(()) => (Some("note saved".to_string()), None),
+                    Err(e) => (None, Some(e)),
+                }
+            }
+            // Don't resume a session in an unknown state; the next question starts
+            // a fresh one.
+            (Reply::Error(e), _) => {
+                self.cli = CliSession::new();
+                (None, Some(e))
+            }
+        }
+    }
+}
+
 impl Reviewing {
     fn new(build: SessionBuild) -> Self {
         let images = collect_images(build.session.cards());
@@ -551,9 +694,7 @@ impl Reviewing {
             label: build.label,
             files: DeckFiles::new(build.decks),
             images,
-            cli: CliSession::new(),
-            transcript: Vec::new(),
-            transcript_card: None,
+            ask: Ask::new(),
             links: build.links,
             source_roots: build.source_roots,
             source_bases: build.source_bases,
@@ -562,7 +703,6 @@ impl Reviewing {
             augment: AugmentCache::open(Path::new("")),
             present_seq: now_ms(),
             original_fronts: HashMap::new(),
-            pending: None,
         }
     }
 
@@ -605,133 +745,54 @@ impl Reviewing {
     /// view shows only this card's exchanges. The CLI session (`cli`) is
     /// untouched, so Claude still has the whole conversation as context.
     fn align_transcript(&mut self) {
-        let cur = self.session.current().map(|c| c.id());
-        if self.transcript_card != cur {
-            self.transcript.clear();
-            self.transcript_card = cur;
-        }
+        self.ask.align(self.session.current().map(|c| c.id()));
     }
 
     /// The ask-view payload, with an optional one-shot status/error.
     fn ask_dto(&self, status: Option<String>, error: Option<String>) -> AskDto {
-        AskDto {
-            transcript: self
-                .transcript
-                .iter()
-                .map(|(q, a)| ExchangeDto {
-                    q: q.clone(),
-                    a: a.clone(),
-                })
-                .collect(),
-            thinking: self.pending.is_some(),
-            status,
-            error,
-        }
+        self.ask.dto(status, error)
     }
 
     /// Starts an ask-Claude call about the current card. `question` is the text
-    /// to ask; `None` condenses the conversation into deck notes instead.
-    /// Returns `false` (no-op) if a call is already pending, nothing is
-    /// reviewable, or there is nothing to condense.
+    /// to ask; `None` condenses the conversation into deck notes instead. Returns
+    /// `false` (no-op) if a call is already pending, nothing is reviewable, or
+    /// there is nothing to condense. Grounds the tutor in the card's deck source
+    /// when that deck opted into `[ask] source_access` (`source_roots`).
     fn start_ask(&mut self, cfg: &AskConfig, question: Option<String>) -> bool {
-        if self.pending.is_some() {
-            return false;
-        }
-        // A new card starts a fresh visible transcript (and a card-scoped
-        // condense), even though the CLI conversation continues.
-        self.align_transcript();
         let Some(card) = self.session.current().cloned() else {
             return false;
         };
-        // A condense needs a transcript to summarize; bail before touching the
-        // session so a no-op can't reset the conversation.
-        if question.is_none() && self.transcript.is_empty() {
-            return false;
-        }
-        // `source_roots` holds only decks whose effective source access
-        // (workspace override, else global) is on — its presence means "ground
-        // this card's tutor (and its condense) in its source". Both a question
-        // and its condense use the same grounding, so the CLI's working
-        // directory stays stable and the conversation remains resumable.
+        let links = self.links.get(&*card.subject).cloned().unwrap_or_default();
         let root = self.source_roots.get(&*card.subject).cloned();
-        let run_cfg = match &root {
-            Some(r) => ask::with_source_root(cfg, r),
-            None => cfg.clone(),
-        };
-        // Reconcile the session with this call's cwd *before* building the
-        // prompt: a cwd change starts a fresh conversation, so `started` then
-        // reports this as a first message (full card context).
-        let args = self.cli.args_in(run_cfg.cwd.as_deref());
-        let (prompt, purpose) = match question {
-            Some(q) => {
-                let links = self.links.get(&*card.subject).cloned().unwrap_or_default();
-                let prompt =
-                    ask::question_prompt(&card, &links, &q, !self.cli.started, root.as_deref());
-                (prompt, Purpose::Question(q))
-            }
-            None => (
-                ask::condense_prompt(&card, &self.transcript),
-                Purpose::Condense,
-            ),
-        };
-        let rx = ask::spawn(run_cfg, prompt, args);
-        self.pending = Some(Pending { rx, purpose, card });
-        true
+        self.ask
+            .start(cfg, &card, &links, root.as_deref(), question)
     }
 
     /// Drains a finished CLI reply into the transcript (a question) or the deck
-    /// file (a condense). Returns a transient `(status, error)` to show once.
+    /// file (a "save note" condense). Returns a transient `(status, error)`.
     fn poll_ask(&mut self) -> (Option<String>, Option<String>) {
         // Opening the ask view on a new card (the page polls `/api/ask`) drops
         // the previous card's exchanges from the display.
         self.align_transcript();
-        let reply = match &self.pending {
-            None => return (None, None),
-            Some(p) => match p.rx.try_recv() {
-                Ok(reply) => reply,
-                Err(TryRecvError::Empty) => return (None, None),
-                Err(TryRecvError::Disconnected) => {
-                    Reply::Error("the ask helper exited unexpectedly".to_string())
-                }
-            },
-        };
-        let pending = self.pending.take().expect("pending was present");
-        match (reply, pending.purpose) {
-            (Reply::Answer(answer), Purpose::Question(question)) => {
-                self.cli.started = true; // later calls --resume this conversation
-                self.transcript.push((question, answer));
-                (None, None)
+        // Field-split the borrow so the save closure can touch `files`/`session`
+        // while `ask` drives the poll.
+        let Self {
+            ask,
+            files,
+            session,
+            ..
+        } = self;
+        ask.poll(|card, notes| {
+            files.append_note(&card.subject, card.line, notes)?;
+            // Mirror the note onto the in-memory card so returning to it shows the
+            // note at once, without re-reading the deck.
+            if let Some(cur) = session.current_mut()
+                && cur.id() == card.id()
+            {
+                cur.append_note(notes);
             }
-            (Reply::Answer(text), Purpose::Condense) => {
-                self.cli.started = true;
-                let notes = ask::extract_note_lines(&text);
-                if notes.is_empty() {
-                    return (Some("nothing to save".to_string()), None);
-                }
-                match self
-                    .files
-                    .append_note(&pending.card.subject, pending.card.line, &notes)
-                {
-                    Ok(()) => {
-                        // Mirror the note onto the in-memory card so returning to
-                        // it shows the note at once, without re-reading the deck.
-                        if let Some(card) = self.session.current_mut()
-                            && card.id() == pending.card.id()
-                        {
-                            card.append_note(&notes);
-                        }
-                        (Some("note saved".to_string()), None)
-                    }
-                    Err(e) => (None, Some(e)),
-                }
-            }
-            // Don't resume a session in an unknown state; the next question
-            // starts a fresh one.
-            (Reply::Error(e), _) => {
-                self.cli = CliSession::new();
-                (None, Some(e))
-            }
-        }
+            Ok(())
+        })
     }
 }
 
@@ -760,6 +821,12 @@ struct ExamDto {
     grades: Vec<ExamGradeDto>,
     passed: Option<bool>,
     gaps: Vec<String>,
+    /// Whether a failed result can be remediated into cards (fact decks only — a
+    /// trace is re-walked, not remediated). Drives the remediation button.
+    can_remediate: bool,
+    /// A trace exam (the compression), so the page shows a "re-walk" hint on a
+    /// fail instead of remediation.
+    is_trace: bool,
     /// Decks a pass unlocks.
     unlocks: Vec<String>,
     thinking: bool,
@@ -837,6 +904,8 @@ fn exam_dto(ex: &Examining, decks_dir: &Path) -> ExamDto {
         grades,
         passed,
         gaps: s.gaps(),
+        can_remediate: s.can_remediate(),
+        is_trace: s.kind() == exam::SittingKind::Trace,
         unlocks,
         thinking: s.thinking(),
         error: s.error().map(str::to_string),
@@ -901,7 +970,9 @@ pub fn run_review(
             (Method::Get, "/") => respond_html(request, REVIEW_HTML),
             (Method::Get, "/walk") => respond_html(request, WALK_HTML),
             (Method::Get, "/browse") => respond_html(request, BROWSE_HTML),
-            (Method::Get, "/theme.css") => respond_asset(request, THEME_CSS, "text/css; charset=utf-8"),
+            (Method::Get, "/theme.css") => {
+                respond_asset(request, THEME_CSS, "text/css; charset=utf-8")
+            }
             (Method::Get, "/theme.js") => {
                 respond_asset(request, THEME_JS, "application/javascript; charset=utf-8")
             }
@@ -1217,20 +1288,57 @@ pub fn run_review(
                     store = s;
                 }
                 match Deck::load(&path) {
-                    // Examable when it has a `% source:` and its `% requires:`
-                    // are satisfied — drilled or not (you may test out early).
+                    // Examable when it has an exam (a `% source:` fact deck, or a
+                    // trace) and its `% requires:` are satisfied — drilled or not
+                    // (you may test out early).
                     Ok(deck)
-                        if !deck.sources.is_empty()
+                        if deck.has_exam()
                             && !deck::is_locked(&deck, Some(decks_dir.as_path()), &store) =>
                     {
                         let strictness =
                             deck.settings.exam_strictness.unwrap_or(exam_cfg.strictness);
-                        let sitting = exam::Sitting::start(
-                            &deck,
-                            strictness,
-                            exam_cfg.clone(),
-                            ask_cfg.clone(),
-                        );
+                        // A trace's exam is the graded compression (one fixed
+                        // question), gated by the re-sit cooldown after a fail; a
+                        // fact deck's exam generates questions from its source.
+                        let sitting = if deck.is_trace() {
+                            match trace::Trace::from_deck(&deck) {
+                                Ok(t) => {
+                                    if let Some(ms) = exam::cooldown_remaining_ms(
+                                        &store,
+                                        &deck.subject,
+                                        exam_cfg.retry_cooldown_secs,
+                                        now_ms(),
+                                    ) {
+                                        #[derive(Serialize)]
+                                        struct Cooldown {
+                                            cooldown_ms: u64,
+                                        }
+                                        respond_json(request, &Cooldown { cooldown_ms: ms });
+                                        continue;
+                                    }
+                                    exam::Sitting::start_trace(
+                                        t.description.clone(),
+                                        t.compression_rubric(),
+                                        deck.subject.clone(),
+                                        deck.path.clone(),
+                                        strictness,
+                                        exam_cfg.clone(),
+                                        ask_cfg.clone(),
+                                    )
+                                }
+                                Err(_) => {
+                                    respond_status(request, 409);
+                                    continue;
+                                }
+                            }
+                        } else {
+                            exam::Sitting::start(
+                                &deck,
+                                strictness,
+                                exam_cfg.clone(),
+                                ask_cfg.clone(),
+                            )
+                        };
                         let ex = Examining {
                             sitting,
                             deck_path: path,
@@ -1353,21 +1461,6 @@ pub fn run_review(
                     None => respond_status(request, 400),
                 }
             }
-            (Method::Post, "/api/walk/compress") => {
-                let Some(w) = walking.as_mut() else {
-                    respond_status(request, 409);
-                    continue;
-                };
-                #[derive(Deserialize)]
-                struct Body {
-                    text: String,
-                }
-                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
-                if let Some(b) = body {
-                    w.walk.compress(b.text);
-                }
-                respond_json(request, &walk_dto(w));
-            }
             (Method::Post, "/api/walk/restart") => {
                 let Some(w) = walking.as_mut() else {
                     respond_status(request, 409);
@@ -1378,6 +1471,42 @@ pub fn run_review(
                 let grade = w.grade.take();
                 *w = Walking::new(fresh, scheduler, grade);
                 respond_json(request, &walk_dto(w));
+            }
+            // Ask-Claude about the current checkpoint — the same tutor a review
+            // uses (its subject is the checkpoint). Runs on a background thread;
+            // the page polls `GET /api/walk/ask`.
+            (Method::Post, "/api/walk/ask") => {
+                #[derive(Deserialize)]
+                struct Body {
+                    question: String,
+                }
+                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
+                let question = body.map(|b| b.question).filter(|q| !q.trim().is_empty());
+                let Some(w) = walking.as_mut() else {
+                    respond_status(request, 409);
+                    continue;
+                };
+                if let Some(q) = question {
+                    w.start_ask(&ask_cfg, Some(q));
+                }
+                respond_json(request, &w.ask_dto(None, None));
+            }
+            // Condense the conversation into a `!` note on the checkpoint.
+            (Method::Post, "/api/walk/ask/note") => {
+                let Some(w) = walking.as_mut() else {
+                    respond_status(request, 409);
+                    continue;
+                };
+                w.start_ask(&ask_cfg, None);
+                respond_json(request, &w.ask_dto(None, None));
+            }
+            (Method::Get, "/api/walk/ask") => {
+                let Some(w) = walking.as_mut() else {
+                    respond_status(request, 409);
+                    continue;
+                };
+                let (status, error) = w.poll_ask();
+                respond_json(request, &w.ask_dto(status, error));
             }
             // Back to decks: abandon the walk and return to the picker (global store).
             (Method::Post, "/api/walk/leave") => {
@@ -1417,6 +1546,9 @@ struct Walking {
     grade_result: Option<(Delta, String)>,
     /// A failed Claude grade — the reveal falls back to self-grading.
     grade_error: Option<String>,
+    /// Ask-Claude tutor for the current checkpoint — the same machinery a review
+    /// uses, its subject the checkpoint instead of a card.
+    ask: Ask,
 }
 
 impl Walking {
@@ -1428,7 +1560,60 @@ impl Walking {
             pending: None,
             grade_result: None,
             grade_error: None,
+            ask: Ask::new(),
         }
+    }
+
+    /// The current checkpoint as a tutor [`Card`]: front = the predict prompt,
+    /// back = the key points, note = the live source excerpt + the connecting
+    /// insight. Its `id()` matches the checkpoint's `card_id` (both hash subject +
+    /// back), so the transcript aligns per checkpoint.
+    fn checkpoint_card(&self) -> Option<Card> {
+        let trace = self.walk.trace();
+        let cp = self.walk.checkpoint()?;
+        let mut note = String::new();
+        if let Ok(ex) = trace.excerpt(cp) {
+            note.push_str("Source excerpt:\n");
+            for (n, line) in &ex.lines {
+                note.push_str(&format!("{n}: {line}\n"));
+            }
+        }
+        if let Some(insight) = &cp.note {
+            if !note.is_empty() {
+                note.push('\n');
+            }
+            note.push_str(insight);
+        }
+        Some(Card::plain(
+            Arc::from(trace.subject.as_str()),
+            cp.prompt.clone(),
+            cp.points.clone(),
+            (!note.is_empty()).then_some(note),
+            cp.line,
+        ))
+    }
+
+    /// Starts an ask-Claude call about the current checkpoint (or condenses into a
+    /// note with `question: None`). No-op off a checkpoint (the done screen).
+    fn start_ask(&mut self, cfg: &AskConfig, question: Option<String>) -> bool {
+        let Some(card) = self.checkpoint_card() else {
+            return false;
+        };
+        self.ask.start(cfg, &card, &[], None, question)
+    }
+
+    /// Drains a finished ask reply; a "save note" condense appends a `!` line to
+    /// the current checkpoint in the trace deck file.
+    fn poll_ask(&mut self) -> (Option<String>, Option<String>) {
+        self.ask.align(self.walk.checkpoint().map(|c| c.card_id));
+        let deck_path = self.walk.trace().deck_path.clone();
+        self.ask.poll(|card, notes| {
+            crate::deck::append_note(&deck_path, card.line, notes).map_err(|e| e.to_string())
+        })
+    }
+
+    fn ask_dto(&self, status: Option<String>, error: Option<String>) -> AskDto {
+        self.ask.dto(status, error)
     }
 
     /// After a prediction, kick off a background Claude grade — a no-op outside
@@ -1546,14 +1731,12 @@ struct WalkDto {
     grade_error: Option<String>,
     // done
     summary: Option<SummaryDto>,
-    compression: Option<String>,
 }
 
 fn walk_phase_name(phase: Phase) -> &'static str {
     match phase {
         Phase::Predict => "predict",
         Phase::Reveal => "reveal",
-        Phase::Compress => "compress",
         Phase::Done => "done",
     }
 }
@@ -1620,7 +1803,6 @@ fn walk_dto(w: &Walking) -> WalkDto {
         feedback: w.grade_result.as_ref().map(|(_, f)| f.clone()),
         grade_error: w.grade_error.clone(),
         summary: None,
-        compression: None,
     };
 
     match phase {
@@ -1639,7 +1821,17 @@ fn walk_dto(w: &Walking) -> WalkDto {
                 dto.points = c.points.clone();
                 dto.note = c.note.clone();
                 match trace.excerpt(c) {
-                    Ok(ex) => dto.excerpt = Some(excerpt_dto(&ex)),
+                    Ok(ex) => {
+                        // For a frozen-snapshot asset, relabel the excerpt + the
+                        // "at" label to the ORIGINAL source (`caching.rs:106-120`),
+                        // so the gutter shows real line numbers, not the asset's.
+                        let (ex, label) = trace::relabel_for_display(ex, c.note.as_deref());
+                        if let Some(label) = label {
+                            dto.locator = Some(label);
+                            dto.note = trace::note_without_provenance(c.note.as_deref());
+                        }
+                        dto.excerpt = Some(excerpt_dto(&ex));
+                    }
                     Err(e) => dto.excerpt_error = Some(format!("{e:#}")),
                 }
             }
@@ -1648,7 +1840,6 @@ fn walk_dto(w: &Walking) -> WalkDto {
                 .map(str::to_string)
                 .filter(|p| !p.is_empty());
         }
-        Phase::Compress => {}
         Phase::Done => {
             let s = walk.summary();
             dto.summary = Some(SummaryDto {
@@ -1658,7 +1849,6 @@ fn walk_dto(w: &Walking) -> WalkDto {
                 weak: s.weak.iter().map(|i| i + 1).collect(),
                 total: walk.total(),
             });
-            dto.compression = walk.compression().map(str::to_string);
         }
     }
     dto
@@ -1757,18 +1947,6 @@ pub fn run_walk(
                     None => respond_status(request, 400),
                 }
             }
-            // Record the final compression and finish the walk.
-            (Method::Post, "/api/walk/compress") => {
-                #[derive(Deserialize)]
-                struct Body {
-                    text: String,
-                }
-                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
-                if let Some(b) = body {
-                    walking.walk.compress(b.text);
-                }
-                respond_json(request, &walk_dto(&walking));
-            }
             // Walk the same trace again from the top.
             (Method::Post, "/api/walk/restart") => {
                 let fresh = Walk::new(walking.walk.trace().clone(), walking.scheduler);
@@ -1827,7 +2005,9 @@ pub fn run_browse(
         let path = request_path(&request);
         match (&method, path.as_str()) {
             (Method::Get, "/") => respond_html(request, BROWSE_HTML),
-            (Method::Get, "/theme.css") => respond_asset(request, THEME_CSS, "text/css; charset=utf-8"),
+            (Method::Get, "/theme.css") => {
+                respond_asset(request, THEME_CSS, "text/css; charset=utf-8")
+            }
             (Method::Get, "/theme.js") => {
                 respond_asset(request, THEME_JS, "application/javascript; charset=utf-8")
             }
@@ -1986,7 +2166,16 @@ fn review_state(
             dto.at = Some(locator.to_string());
             if let Some(base) = r.source_bases.get(&*c.subject) {
                 match base.excerpt(locator) {
-                    Ok(ex) => dto.citation = Some(excerpt_dto(&ex)),
+                    Ok(ex) => {
+                        // Relabel a frozen-snapshot asset to its real source +
+                        // line numbers (the `! from <file>:<lines>` note), so the
+                        // citation reads `store.rs:36-66`, not `01.rs`, 1-N.
+                        let (ex, label) = trace::relabel_for_display(ex, c.note.as_deref());
+                        if let Some(label) = label {
+                            dto.at = Some(label);
+                        }
+                        dto.citation = Some(excerpt_dto(&ex));
+                    }
                     Err(e) => dto.citation_error = Some(format!("{e:#}")),
                 }
             }
@@ -2569,7 +2758,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (mut r, card, _deck) = one_card_reviewing(dir.path());
         let (tx, rx) = std::sync::mpsc::channel();
-        r.pending = Some(Pending {
+        r.ask.pending = Some(Pending {
             rx,
             purpose: Purpose::Question("why is s1 invalid?".to_string()),
             card,
@@ -2581,11 +2770,11 @@ mod tests {
         tx.send(Reply::Answer("because ownership moved".to_string()))
             .unwrap();
         assert_eq!((None, None), r.poll_ask());
-        assert!(r.pending.is_none());
-        assert_eq!(1, r.transcript.len());
-        assert_eq!("why is s1 invalid?", r.transcript[0].0);
-        assert_eq!("because ownership moved", r.transcript[0].1);
-        assert!(r.cli.started); // later questions --resume
+        assert!(r.ask.pending.is_none());
+        assert_eq!(1, r.ask.transcript.len());
+        assert_eq!("why is s1 invalid?", r.ask.transcript[0].0);
+        assert_eq!("because ownership moved", r.ask.transcript[0].1);
+        assert!(r.ask.cli.started); // later questions --resume
     }
 
     #[test]
@@ -2594,27 +2783,28 @@ mod tests {
         let (mut r, card, _deck) = one_card_reviewing(dir.path());
         // A previous card's discussion is on display, and the conversation has
         // begun (the CLI session is live).
-        r.transcript
+        r.ask
+            .transcript
             .push(("old q".to_string(), "old a".to_string()));
-        r.transcript_card = Some(card.id().wrapping_add(1)); // a different card
-        r.cli.started = true;
+        r.ask.subject = Some(card.id().wrapping_add(1)); // a different card
+        r.ask.cli.started = true;
 
         r.align_transcript();
 
         // The current card differs from the transcript's card, so the display is
         // cleared and re-tagged — but Claude's conversation context survives.
-        assert!(r.transcript.is_empty());
-        assert_eq!(Some(card.id()), r.transcript_card);
-        assert!(r.cli.started);
+        assert!(r.ask.transcript.is_empty());
+        assert_eq!(Some(card.id()), r.ask.subject);
+        assert!(r.ask.cli.started);
     }
 
     #[test]
     fn poll_ask_condense_appends_note_to_deck() {
         let dir = tempfile::tempdir().unwrap();
         let (mut r, card, deck) = one_card_reviewing(dir.path());
-        r.transcript.push(("q".to_string(), "a".to_string()));
+        r.ask.transcript.push(("q".to_string(), "a".to_string()));
         let (tx, rx) = std::sync::mpsc::channel();
-        r.pending = Some(Pending {
+        r.ask.pending = Some(Pending {
             rx,
             purpose: Purpose::Condense,
             card,
@@ -2632,9 +2822,9 @@ mod tests {
     fn poll_ask_error_resets_session() {
         let dir = tempfile::tempdir().unwrap();
         let (mut r, card, _deck) = one_card_reviewing(dir.path());
-        r.cli.started = true;
+        r.ask.cli.started = true;
         let (tx, rx) = std::sync::mpsc::channel();
-        r.pending = Some(Pending {
+        r.ask.pending = Some(Pending {
             rx,
             purpose: Purpose::Question("q".to_string()),
             card,
@@ -2643,9 +2833,9 @@ mod tests {
         let (status, error) = r.poll_ask();
         assert_eq!(Some("not logged in".to_string()), error);
         assert!(status.is_none());
-        assert!(r.pending.is_none());
-        assert!(!r.cli.started); // a fresh session next time
-        assert!(r.transcript.is_empty());
+        assert!(r.ask.pending.is_none());
+        assert!(!r.ask.cli.started); // a fresh session next time
+        assert!(r.ask.transcript.is_empty());
     }
 
     // ── trace walk ──────────────────────────────────────────────────────
@@ -2712,17 +2902,15 @@ mod tests {
         assert_eq!(Some("got"), d.path[0].delta);
         assert!(d.path[1].current);
 
-        // Walk the last hop, then compress → done with a summary.
+        // Walk the last hop → done with a summary (the drill; verification is the
+        // separate trace exam, not an in-walk compression).
         w.walk.predict(String::new());
         w.walk.grade(&mut store, Delta::Missed, 1001);
-        assert_eq!("compress", walk_dto(&w).phase);
-        w.walk.compress("retraced".to_string());
         let d = walk_dto(&w);
         assert_eq!("done", d.phase);
         let s = d.summary.expect("done has a summary");
         assert_eq!((1, 0, 1), (s.got, s.partial, s.missed));
         assert_eq!(vec![2], s.weak); // 1-based: the missed second hop
-        assert_eq!(Some("retraced".to_string()), d.compression);
     }
 
     #[test]
@@ -2743,5 +2931,38 @@ mod tests {
         w.clear_grade();
         let d = walk_dto(&w);
         assert!(d.verdict.is_none() && d.feedback.is_none() && !d.thinking);
+    }
+
+    #[test]
+    fn walk_ask_condense_appends_a_note_to_the_checkpoint() {
+        let dir = tempfile::tempdir().unwrap();
+        let trace = walk_deck(dir.path());
+        let deck_path = trace.deck_path.clone();
+        let walk = Walk::new(trace, SchedulerKind::Leitner);
+        let mut w = Walking::new(walk, SchedulerKind::Leitner, None);
+        w.walk.predict("guess".to_string()); // reveal hop 1 (a current checkpoint)
+
+        // A condense reply is in flight (no real CLI call), about the synthesized
+        // checkpoint card — its line points at the checkpoint in the deck file.
+        let card = w.checkpoint_card().expect("a checkpoint card");
+        let (tx, rx) = std::sync::mpsc::channel();
+        w.ask.pending = Some(Pending {
+            rx,
+            purpose: Purpose::Condense,
+            card,
+        });
+        tx.send(Reply::Answer(
+            "- the read lock is released first".to_string(),
+        ))
+        .unwrap();
+
+        let (status, error) = w.poll_ask();
+        assert_eq!(Some("note saved".to_string()), status);
+        assert!(error.is_none());
+        let text = std::fs::read_to_string(&deck_path).unwrap();
+        assert!(
+            text.contains("the read lock is released first"),
+            "deck:\n{text}"
+        );
     }
 }

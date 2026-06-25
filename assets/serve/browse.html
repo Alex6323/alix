@@ -12,6 +12,10 @@
     --card-h: min(70vh, 600px);
   }
   * { box-sizing: border-box; }
+  /* A blinking caret belongs only in a text input or a text-based source (a code
+     excerpt) — never on the card's prose (e.g. with caret-browsing on). */
+  html { caret-color: transparent; }
+  input, textarea, [contenteditable], .excerpt, .code { caret-color: auto; }
   html, body { margin: 0; height: 100%; }
   body {
     background: radial-gradient(120% 80% at 50% -10%, var(--halo) 0%, var(--void) 60%) fixed;
@@ -25,7 +29,9 @@
   }
   .bar .brand { display: inline-flex; align-items: center; gap: 7px; color: var(--bolt); font-weight: 600; }
   .bar .brand svg { width: 13px; height: 16px; filter: drop-shadow(0 0 5px rgba(34,211,238,0.6)); }
-  .bar .deck { color: var(--ink); }
+  /* A long (hand-crafted) title shortens with an ellipsis — never wraps and grows
+     the header's height. */
+  .bar .deck { color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
   .bar .tag { color: var(--dim); }
   .bar .sep { color: var(--line); }
   .bar .spacer { flex: 1; }

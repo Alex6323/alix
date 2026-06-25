@@ -500,12 +500,23 @@ A trace carries `% source:` (the path origin), which collides with the exam's
 verification, and they never cross.**
 
 - review deck → mechanical drill.
-- source deck → the AI exam (source-wide).
-- **trace deck → the predict-verify walk + the compression step, which is its
-  exam, correctly scoped to the path.**
+- source deck → the AI exam (source-wide, questions generated from the source).
+- **trace deck → the predict-verify walk is the *drill*; the **compression** is
+  the *exam*, scoped to the path.**
 
-So generic `alix exam` **refuses** on a trace; a trace's `% source:` is read as
-*locator base*, not exam corpus. **Decided:** the kind is **derived, not declared**
+**SHIPPED (2026-06-25):** the compression is now a real AI-graded exam, not an
+ungraded walk-end step. `alix exam <trace>` (and the picker's "Take exam", and the
+walk's capstone) asks one fixed question — the `% trace:` — and grades the
+learner's two-sentence retrace *holistically* against the checkpoints' key points
+(no question generation, no source read; the checkpoints already paraphrase the
+source). Passing sets `deck_mastered`, exactly like a fact deck — superseding the
+earlier "a trace masters when every checkpoint retires" rule. A fail is re-walked
+(no card remediation) and starts a re-sit cooldown (`[exam] retry_cooldown_secs`).
+The engine is `exam::Sitting::start_trace` + `exam::grade_compression`, reusing the
+whole `Sitting`/`ExamApp`/web-exam machinery with one fixed question. A trace's
+`% source:` stays the *locator base*, never an exam corpus.
+
+The original framing below stands: the kind is **derived, not declared**
 — `% trace:` is the trace marker and takes precedence over `% source:` (no new
 `% kind:` directive; consistent with L43's `% link:` = "not exam ground truth").
 Kinds today: card vs trace; "source/exam" is a *modifier* on a card deck, not a

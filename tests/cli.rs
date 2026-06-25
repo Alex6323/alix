@@ -131,3 +131,57 @@ fn a_corrupt_progress_file_fails_without_overwriting_it() {
     );
     assert_eq!(garbage, std::fs::read_to_string(&store).unwrap());
 }
+
+/// A small trace deck over `src` (a single source file in the same dir).
+fn trace_deck(dir: &Path) -> String {
+    write(dir, "src.rs", "let a = b;\nuse_it(a);\n");
+    write(
+        dir,
+        "t.txt",
+        "% trace: how a moves into use_it\n% source: src.rs\n\
+         # what happens to a?\n\tit is moved into use_it\n\t% at: 1-2\n",
+    )
+}
+
+#[test]
+fn exam_on_a_trace_no_longer_refuses_it() {
+    // A trace used to be refused by `alix exam` ("walk it with `alix trace`").
+    // Now its exam IS the compression, so the command enters the exam flow and
+    // (headless, with no TTY) stops only at the terminal requirement — never the
+    // old refusal.
+    let dir = TempDir::new().unwrap();
+    let deck = trace_deck(dir.path());
+    let store = dir.path().join("p.json");
+    let out = alix(&["exam", &deck, "--store", store.to_str().unwrap()]);
+    let err = stderr(&out);
+    assert!(!out.status.success(), "no TTY → it still can't run the UI");
+    assert!(err.contains("needs a terminal"), "stderr: {err}");
+    assert!(
+        !err.contains("walk it") && !err.contains("is a trace"),
+        "the trace is no longer refused: {err}"
+    );
+}
+
+#[test]
+fn exam_on_a_trace_is_gated_by_unfinished_prerequisites() {
+    // A trace's exam runs in dependency order like a fact deck's: a sourced
+    // prerequisite that hasn't been mastered locks it.
+    let dir = TempDir::new().unwrap();
+    write(dir.path(), "base-src.md", "the basics");
+    write(dir.path(), "base.txt", "% source: base-src.md\n# b?\n\tb\n");
+    write(dir.path(), "src.rs", "let a = b;\nuse_it(a);\n");
+    let deck = write(
+        dir.path(),
+        "t.txt",
+        "% trace: how a moves\n% source: src.rs\n% requires: base\n\
+         # what happens?\n\tit moves\n\t% at: 1-2\n",
+    );
+    let store = dir.path().join("p.json");
+    let out = alix(&["exam", &deck, "--store", store.to_str().unwrap()]);
+    let err = stderr(&out);
+    assert!(!out.status.success(), "a locked trace exam can't be sat");
+    assert!(
+        err.contains("prerequisites aren't finished"),
+        "stderr: {err}"
+    );
+}

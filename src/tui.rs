@@ -1082,19 +1082,15 @@ impl App {
     }
 
     fn draw_header(&self, frame: &mut Frame, area: Rect) {
+        // Just the tool + the deck — no stage ladder (it's noise; the per-stage
+        // breakdown stays in the session summary). The remaining-card count lives
+        // in the footer (bottom-right), mirroring the web frontend.
         let left = format!(
             " alix {} │ {}",
             env!("CARGO_PKG_VERSION"),
             self.options.deck_label
         );
-        let h = self.session.stage_histogram(&self.store);
-        // The remaining-card count lives in the footer now (bottom-right),
-        // mirroring the web frontend; the header keeps just the stage histogram.
-        // The stage bar. `hist_cells` dims stages above the top stage, but every
-        // deck now reaches the top stage, so all five always show.
-        let c = hist_cells(&h, self.session.top_stage());
-        let right = format!("{}|{}|{}|{}|{}|{} ", c[0], c[1], c[2], c[3], c[4], c[5]);
-        frame.render_widget(bar(&left, &right, area.width), area);
+        frame.render_widget(bar(&left, "", area.width), area);
     }
 
     fn draw_footer(&self, frame: &mut Frame, area: Rect) {
@@ -1759,19 +1755,6 @@ pub(crate) fn context_line(ctx: &str) -> Line<'static> {
     Line::from(spans)
 }
 
-/// The six stage-histogram cells (new, s1..s5) as strings, dimming stages above
-/// `top_stage` to `–`. Every deck now reaches the top stage, so in practice all
-/// five render.
-fn hist_cells(h: &[usize; 6], top_stage: u8) -> [String; 6] {
-    std::array::from_fn(|i| {
-        if i >= 1 && i as u8 > top_stage {
-            "–".to_string()
-        } else {
-            h[i].to_string()
-        }
-    })
-}
-
 /// Points the current typing row at whichever still-unclaimed expected line it
 /// best matches as a prefix, so its characters are colored against a concrete
 /// target. With a single answer line this always picks that line; with several
@@ -1839,6 +1822,18 @@ impl ExamApp {
     ) -> Self {
         let deck_path = deck.path.clone();
         let sitting = exam::Sitting::start(&deck, strictness, exam_cfg, ask_cfg);
+        Self::from_sitting(sitting, store, deck_path, decks_dir)
+    }
+
+    /// Wraps an already-built `sitting` — used for the **trace exam**, whose
+    /// single fixed question is constructed by
+    /// [`exam::Sitting::start_trace`]. `deck_path` resolves what a pass unlocks.
+    pub fn from_sitting(
+        sitting: exam::Sitting,
+        store: Store,
+        deck_path: PathBuf,
+        decks_dir: Option<PathBuf>,
+    ) -> Self {
         Self {
             sitting,
             store,
@@ -2059,6 +2054,14 @@ impl ExamApp {
                             }
                         }
                         lines.push(Line::default());
+                    }
+                    // A failed trace exam isn't remediated into cards (a trace is
+                    // a path, not a card pile) — re-walk it instead.
+                    if !r.passed && self.sitting.kind() == exam::SittingKind::Trace {
+                        lines.push(Line::from(
+                            "Re-walk the trace to strengthen the weak hops, then re-sit."
+                                .fg(Color::Yellow),
+                        ));
                     }
                 }
             }
