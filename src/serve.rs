@@ -859,6 +859,9 @@ pub fn run_review(
     // Builds a walk when the picked decks are a single trace (else `None`, so the
     // caller flattens to a review); mirrors the terminal picker's trace → walk.
     mut build_walk: impl FnMut(&[PathBuf]) -> Result<Option<WalkBuild>>,
+    // Builds a read-only browse card list from the picked decks (the picker's
+    // "Browse" action; the page navigates to `/browse`, which this server hosts).
+    mut build_browse: impl FnMut(Vec<PathBuf>, &mut RecentDecks) -> Result<CardsBuild>,
     // The progress store the given decks write to — a workspace's own
     // `progress.json` when they share one, else the global store (`&[]` → global),
     // mirroring the terminal `store_for`. The active store is swapped to this when
@@ -885,6 +888,9 @@ pub fn run_review(
     // A trace picked from the selection screen walks here (the page navigates to
     // `/walk`, which this server hosts alongside review).
     let mut walking: Option<Walking> = None;
+    // The picker's "Browse" action opens a read-only card list (the page
+    // navigates to `/browse`, hosted here too).
+    let mut browsing: Option<Browsing> = None;
     let server = Server::http(addr).map_err(|e| anyhow!("cannot start server on {addr}: {e}"))?;
     for mut request in server.incoming_requests() {
         let method = request.method().clone();
@@ -892,6 +898,7 @@ pub fn run_review(
         match (&method, path.as_str()) {
             (Method::Get, "/") => respond_html(request, REVIEW_HTML),
             (Method::Get, "/walk") => respond_html(request, WALK_HTML),
+            (Method::Get, "/browse") => respond_html(request, BROWSE_HTML),
             (Method::Get, "/api/keys") => respond_json(request, &keys),
             (Method::Get, "/api/picker-keys") => respond_json(request, &picker_keys),
             (Method::Get, "/api/ask-info") => respond_json(request, &ask_info),
@@ -899,10 +906,20 @@ pub fn run_review(
                 // Review enforces locking; the picker won't start a locked deck.
                 respond_json(request, &deck_catalog(&decks_dir, &recent, &store, true))
             }
-            (Method::Get, key) if key.starts_with("/img/") => match &reviewing {
-                Some(r) => serve_image(request, &r.images, &key["/img/".len()..]),
-                None => respond_status(request, 404),
-            },
+            (Method::Get, "/api/cards") => {
+                respond_json(request, &browse_payload(browsing.as_ref()))
+            }
+            // Image cards: served from whichever session is live (review or browse).
+            (Method::Get, key) if key.starts_with("/img/") => {
+                let name = &key["/img/".len()..];
+                if let Some(r) = &reviewing {
+                    serve_image(request, &r.images, name)
+                } else if let Some(b) = &browsing {
+                    serve_image(request, &b.images, name)
+                } else {
+                    respond_status(request, 404)
+                }
+            }
             (Method::Get, "/api/state") => respond_json(
                 request,
                 &review_state(reviewing.as_ref(), &store, mode_override),
@@ -952,9 +969,42 @@ pub fn run_review(
                     None => respond_status(request, 400),
                 }
             }
+            // The picker's "Browse" action: build a read-only card list and tell
+            // the page to navigate to `/browse` (hosted here, like `/walk`).
+            (Method::Post, "/api/browse") => {
+                match select_decks(&mut request, &decks_dir, &recent) {
+                    Some(paths) => {
+                        if let Err(e) = store_for(&paths).map(|s| store = s) {
+                            eprintln!("warning: could not open the progress store: {e}");
+                            respond_status(request, 400);
+                            continue;
+                        }
+                        match build_browse(paths, &mut recent) {
+                            Ok(b) => {
+                                browsing = Some(Browsing::new(b));
+                                reviewing = None;
+                                walking = None;
+                                examining = None;
+                                respond_json(
+                                    request,
+                                    &WalkRedirect {
+                                        redirect: "/browse",
+                                    },
+                                );
+                            }
+                            Err(e) => {
+                                eprintln!("warning: could not load the selected decks: {e}");
+                                respond_status(request, 400);
+                            }
+                        }
+                    }
+                    None => respond_status(request, 400),
+                }
+            }
             (Method::Post, "/api/deselect") => {
                 reviewing = None;
                 walking = None;
+                browsing = None;
                 // Back at the picker: read the global store again (loose-deck
                 // badges live there, not in any workspace's store).
                 if let Ok(s) = store_for(&[]) {

@@ -207,8 +207,17 @@ function apply(d) { phase = d.phase; label = d.label; cards = d.cards || []; i =
 function select(names) { fetch("/api/select", post({ decks: names })).then(r => r.json()).then(apply); }
 function deselect() { menu.classList.remove("open"); fetch("/api/deselect", post({})).then(r => r.json()).then(apply); }
 
+// When the review server hosts this browse (at /browse), "leave" returns to the
+// picker page (the launching workspace re-opens via review.html's sessionStorage),
+// instead of browse.html's own deck-selection screen.
+const HOSTED = location.pathname === "/browse";
+function leave() {
+  if (HOSTED) fetch("/api/deselect", post({})).catch(() => {}).finally(() => { location.href = "/"; });
+  else deselect();
+}
+
 function remove() {
-  if (cards.length === 0) return;
+  if (HOSTED || cards.length === 0) return; // read-only when hosted by the review server
   fetch("/api/remove", post({ index: i })).then(r => r.json()).then(d => {
     cards = d.cards;
     if (i >= cards.length) i = Math.max(0, cards.length - 1);
@@ -228,7 +237,7 @@ function render() {
     chargeEl.style.width = "0%";
     menuWrap.style.display = "none";
     stage.appendChild(el("div", "msg", "No cards."));
-    chip("Back to Decks", deselect, false, "esc");
+    chip(HOSTED ? "Leave" : "Back to Decks", leave, false, "esc");
     return;
   }
   menuWrap.style.display = "";
@@ -253,7 +262,7 @@ function render() {
 
   chip("Prev", () => go(i - 1), i === 0, keyLabel(KEYS.prev) || "←");
   chip("Next", () => go(i + 1), i === cards.length - 1, keyLabel(KEYS.next) || "→");
-  chip("Decks", deselect, false, "esc");
+  chip(HOSTED ? "Leave" : "Decks", leave, false, "esc");
 }
 
 // The deck-selection screen, mirroring the terminal picker (browse-flavored).
@@ -528,8 +537,8 @@ document.addEventListener("keydown", (e) => {
     }
     return;
   }
-  // Esc returns to the deck picker.
-  if (e.key === "Escape") { e.preventDefault(); deselect(); return; }
+  // Esc returns to the deck picker (the review picker when hosted).
+  if (e.key === "Escape") { e.preventDefault(); leave(); return; }
   // first/last stay fixed at g/G/Home/End, like the TUI; arrows always move
   if (hit(e, KEYS.remove)) { e.preventDefault(); remove(); }
   else if (hit(e, KEYS.next) || e.key === "ArrowRight" || e.key === "ArrowDown") { e.preventDefault(); go(i + 1); }

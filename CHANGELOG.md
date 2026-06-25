@@ -7,6 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Browse a deck straight from the web picker.** A deck row's primary action is
+  now **Review** (Enter), with a new **Browse** button (the go-right key, `l`/→)
+  that opens a read-only walk through its cards — the review server hosts the
+  browse page at `/browse`, so you no longer need a separate `alix browse`
+  server. A workspace/folder still opens (drills in) on `l`/→; leaving a browse
+  returns to the picker (and re-opens the launching workspace). Browse-from-the-
+  picker is view-only (card removal stays a feature of `alix browse --serve`).
 - **`alix deck augment` — deliberate AI deck augmentation.** A new command that
   enriches an existing deck with Claude and **caches the result** beside your
   progress (`augment.json`, keyed by card id); review reads the cache, so study

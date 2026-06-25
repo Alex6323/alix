@@ -403,6 +403,10 @@ function restart() { api("/api/restart", post({})).then(apply); }
 // the walk page (hosted at /walk) instead of a review session. The walk runs on
 // its own page, so stash the workspace we launched from to re-open it on return.
 function select(names) { api("/api/select", post({ decks: names })).then(s => { if (s && s.redirect) { if (lastWorkspace) sessionStorage.setItem("alix.returnWs", lastWorkspace); location.href = s.redirect; return; } apply(s); }); }
+// Browse a deck read-only: the server builds the card list and replies with a
+// redirect to /browse (hosted here). Stash the launching workspace so leaving
+// the browse re-opens it, like a walk.
+function browseDeck(it, wsName) { if (wsName) sessionStorage.setItem("alix.returnWs", wsName); api("/api/browse", post({ decks: [it.name] })).then(s => { if (s && s.redirect) location.href = s.redirect; }); }
 function deselect() { confirmingLeave = false; menu.classList.remove("open"); api("/api/deselect", post({})).then(apply); }
 
 // Returning to the picker mid-session abandons the cards still queued, so warn
@@ -906,17 +910,24 @@ async function renderSelect() {
       } else if (f && f._item) {
         const it = f._item;
         const examPrimary = it.state === "examdue"; // a drilled deck's main action is its exam
-        primary = el("button", "chip primary", examPrimary ? "Take exam" : "Start");
+        primary = el("button", "chip primary", it.is_trace ? "Walk" : (examPrimary ? "Take exam" : "Review"));
         // A locked exam shows the lock as its key hint instead of enter.
         primary.appendChild(el("span", "k", (examPrimary && !it.examable) ? "\u{1F512}" : "enter"));
         primary.disabled = !canStart(it, f._gated);
         primary.addEventListener("click", () => launch(it, f._wsName, f._gated));
       } else {
-        primary = el("button", "chip primary", "Start");
+        primary = el("button", "chip primary", "Review");
         primary.appendChild(el("span", "k", "enter"));
         primary.disabled = true;
       }
       legend.appendChild(primary);
+      // A read-only Browse of the focused deck, bound to the go-right key (l / →).
+      if (f && f._item) {
+        const br = el("button", "chip", "Browse");
+        br.appendChild(el("span", "k", label(PK.open) || "l"));
+        br.addEventListener("click", () => browseDeck(f._item, f._wsName));
+        legend.appendChild(br);
+      }
       if (opts.back) {
         const bb = el("button", "chip", "Back");
         bb.appendChild(el("span", "k", "esc"));
@@ -976,13 +987,14 @@ async function renderSelect() {
       const cur = e.target.closest(".deckrow");
       const idx = cur ? v.indexOf(cur) : -1;
       // Vim/arrow nav; g/G/Home/End jump to ends; / or Ctrl-F focus the filter;
-      // l/Enter open the focused row; m opens Mastered; h backs out.
+      // Enter reviews the focused deck; l/→ browses it (a workspace/folder opens);
+      // m opens Mastered; h backs out.
       if (e.key === "ArrowDown" || hit(e, PK.down)) { e.preventDefault(); if (idx < v.length - 1) v[idx + 1].focus(); }
       else if (e.key === "ArrowUp" || hit(e, PK.up)) { e.preventDefault(); if (idx > 0) v[idx - 1].focus(); } // stays on the first row; the filter is only reachable via / or Ctrl-F
       else if (e.key === "g" || e.key === "Home") { e.preventDefault(); if (v.length) v[0].focus(); }
       else if (e.key === "G" || e.key === "End") { e.preventDefault(); if (v.length) v[v.length - 1].focus(); }
       else if (hit(e, PK.filter)) { e.preventDefault(); filter.focus(); }
-      else if (hit(e, PK.open)) { e.preventDefault(); if (cur) cur.click(); }
+      else if (e.key === "ArrowRight" || hit(e, PK.open)) { e.preventDefault(); if (cur && cur._item) browseDeck(cur._item, cur._wsName); else if (cur) cur.click(); }
       else if (opts.allowMastered && hit(e, PK.mastered)) { e.preventDefault(); renderMastered(); }
       else if (e.key === "x" && cur && cur._item && cur._item.examable) {
         e.preventDefault(); lastWorkspace = cur._wsName || null; startExam(cur._item.name);

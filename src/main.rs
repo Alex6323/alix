@@ -1363,6 +1363,16 @@ fn review_serve(args: ReviewArgs) -> Result<()> {
     // Picks the right store for whatever decks a selection resolves to (`&[]` →
     // the global store), so the server can switch per session like the TUI.
     let store_for_sel = |paths: &[PathBuf]| store_for(paths, args.store.clone());
+    // The picker's "Browse" action builds a read-only card list — the same
+    // builder the standalone `alix browse` server uses.
+    let to_cards = |b: BrowseBuild| serve::CardsBuild {
+        cards: b.cards,
+        label: b.label,
+        decks: subject_paths(b.decks),
+    };
+    let build_browse_sel = |paths: Vec<PathBuf>, recent: &mut RecentDecks| {
+        build_browse(paths, recent, Frontend::Web).map(to_cards)
+    };
     serve::run_review(
         initial,
         store,
@@ -1372,6 +1382,7 @@ fn review_serve(args: ReviewArgs) -> Result<()> {
         opts,
         build,
         build_walk,
+        build_browse_sel,
         store_for_sel,
     )
 }
