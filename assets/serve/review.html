@@ -840,7 +840,7 @@ async function renderSelect() {
     const wrap = el("div", "select");
     wrap.appendChild(el("div", "lede", opts.lede));
     const filter = el("input", "deck-filter");
-    filter.type = "text"; filter.placeholder = opts.filterPlaceholder || "filter decks…"; filter.autocomplete = "off";
+    filter.type = "text"; filter.placeholder = opts.filterPlaceholder || "Search  ·  / or Ctrl-F"; filter.autocomplete = "off";
     wrap.appendChild(filter);
 
     const lists = el("div", "lists");
@@ -889,10 +889,17 @@ async function renderSelect() {
         primary.disabled = true;
       }
       legend.appendChild(primary);
-      // A consistent "Take exam" button next to Back for any deck that HAS an
-      // exam but isn't already exam-due (where the primary is the exam): enabled
-      // to test out early, or disabled with a 🔒 key hint when its exam is
-      // locked. Calmer than showing/hiding it plus a separate lock note.
+      if (opts.back) {
+        const bb = el("button", "chip", "Back");
+        bb.appendChild(el("span", "k", "esc"));
+        bb.addEventListener("click", opts.back);
+        legend.appendChild(bb);
+      }
+      // "Take exam" sits to the RIGHT of Back for any deck that HAS an exam but
+      // isn't already exam-due (where the primary is the exam): enabled to test
+      // out early, or disabled with a 🔒 key hint when its exam is locked. Keeping
+      // the variable button rightmost means a trace (which has none) never
+      // shuffles the stable Start/Back buttons as you move between rows.
       if (f && f._item && f._item.has_exam && f._item.state !== "examdue") {
         const it = f._item;
         const ex = el("button", "chip", "Take exam");
@@ -900,12 +907,6 @@ async function renderSelect() {
         ex.disabled = !it.examable;
         if (it.examable) ex.addEventListener("click", () => { lastWorkspace = f._wsName || null; startExam(it.name); });
         legend.appendChild(ex);
-      }
-      if (opts.back) {
-        const bb = el("button", "chip", "Back");
-        bb.appendChild(el("span", "k", "esc"));
-        bb.addEventListener("click", opts.back);
-        legend.appendChild(bb);
       }
     }
 
@@ -978,7 +979,7 @@ async function renderSelect() {
     if (folders.length) sections.push({ title: "Folders", rows: folders.map(openRow) });
     renderList({
       lede: "pick a deck to start — open a workspace to drill in",
-      filterPlaceholder: "filter decks & workspaces…",
+      filterPlaceholder: "Search decks & workspaces  ·  / or Ctrl-F",
       sections, back: null, allowMastered: true,
     });
   }
