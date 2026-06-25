@@ -247,7 +247,21 @@ pub fn deck_status(
     // merely fully drilled stays "done".
     let mastered = matches!(state, DeckState::Finished) && store.deck_mastered(&deck.subject);
     let badge = match state {
-        DeckState::Finished if mastered => "mastered 🎉".to_string(),
+        DeckState::Finished if mastered => {
+            // In the Mastered window: when it was mastered, and how many of its
+            // cards are still drillable (e.g. you tested out of the exam without
+            // drilling them all).
+            let mut s = "mastered 🎉".to_string();
+            if let Some(at) = store.deck_mastered_at(&deck.subject) {
+                let ago = crate::time::humanize_ms(session::now_ms().saturating_sub(at));
+                s.push_str(&format!(" · {ago} ago"));
+            }
+            let to_drill = total - retired;
+            if to_drill > 0 {
+                s.push_str(&format!(" · {to_drill} to drill"));
+            }
+            s
+        }
         DeckState::Finished => "done ✓".to_string(),
         DeckState::ExamDue => "exam due".to_string(),
         DeckState::NotStarted => "new".to_string(),

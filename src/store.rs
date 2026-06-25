@@ -265,6 +265,11 @@ impl Store {
         self.decks.contains_key(subject)
     }
 
+    /// When the deck was mastered (epoch ms), if it has been.
+    pub fn deck_mastered_at(&self, subject: &str) -> Option<u64> {
+        self.decks.get(subject).map(|d| d.mastered_at_ms)
+    }
+
     /// Records that the deck passed its exam at `now_ms`. Does not save.
     pub fn set_deck_mastered(&mut self, subject: &str, now_ms: u64) {
         self.decks.insert(
@@ -481,13 +486,16 @@ mod tests {
 
         let mut store = Store::open(&path).unwrap();
         assert!(!store.deck_mastered("rust.txt"));
+        assert_eq!(None, store.deck_mastered_at("rust.txt"));
         store.set_deck_mastered("rust.txt", 1234);
         assert!(store.deck_mastered("rust.txt"));
+        assert_eq!(Some(1234), store.deck_mastered_at("rust.txt"));
         store.save().unwrap();
 
         // Survives a save/reload.
         let mut reloaded = Store::open(&path).unwrap();
         assert!(reloaded.deck_mastered("rust.txt"));
+        assert_eq!(Some(1234), reloaded.deck_mastered_at("rust.txt"));
         // Per-deck clear drops just that deck.
         assert!(reloaded.clear_deck_mastered("rust.txt"));
         assert!(!reloaded.deck_mastered("rust.txt"));

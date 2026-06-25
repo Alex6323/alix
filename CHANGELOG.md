@@ -30,6 +30,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   as `[…]`), are unaffected.
 
 ### Changed
+- **The Mastered window shows when a deck was mastered and how much is left to
+  drill.** A mastered deck's badge now reads e.g. `mastered 🎉 · 3w ago · 8 to
+  drill` — the time since it passed (the `deck_mastered` timestamp was already
+  stored) and how many of its cards aren't yet retired (so a deck you *tested
+  out* of without drilling shows the work remaining). Both TUI and web.
 - **Web picker draws the dependency tree like the TUI.** A workspace's members
   now show `├─`/`└─`/`│` branch lines (muted) instead of plain indentation, and
   the 🕒 "nothing due" glyph moved from the start of the row to the end (with the
