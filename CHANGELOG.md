@@ -30,6 +30,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   as `[…]`), are unaffected.
 
 ### Changed
+- **Web exam: leaving mid-answer asks to confirm.** Pressing Esc (or Quit) while
+  answering now shows a "Quit the exam? Your answers won't be graded" prompt —
+  Enter abandons it, Esc keeps going — so a stray Esc no longer throws away an
+  in-progress exam, matching the review-session leave guard. (Other phases close
+  immediately; the typed answer is preserved if you keep going.)
 - **Reviewing a deck no longer pulls in its prerequisites' cards.** A review (in
   the TUI/CLI) now holds exactly the deck(s) you picked — `% requires:` decks are
   not auto-added "foundations-first" — matching what the web already did.

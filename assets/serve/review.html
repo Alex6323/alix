@@ -375,6 +375,7 @@ let askData = { transcript: [], thinking: false, status: null, error: null };
 let askInfo = { model: "default", effort: "default" }; // the tutor's model + effort, from /api/ask-info
 let askPoll = null;   // setInterval handle while a reply is pending
 let examData = null;  // the ExamDto while an exam is active (null otherwise)
+let examConfirmingQuit = false; // showing the "abandon the exam?" confirmation
 let examPoll = null;  // setInterval handle while an exam call is in flight
 let KEYS = {};        // configured review key bindings, from /api/keys
 let PK = {};          // configured deck-picker nav keys, from /api/picker-keys
@@ -597,9 +598,31 @@ function startExam(deck) {
   });
 }
 function closeExam() {
+  examConfirmingQuit = false;
   stopExamPoll();
   api("/api/exam/close", post({})).then(s => { examData = null; apply(s); });
 }
+
+// The answering-phase footer buttons — re-rendered on their own when the quit
+// confirmation is dismissed, so the textarea keeps the answer you typed.
+function examAnswerButtons(d) {
+  legend.innerHTML = "";
+  if (d.current > 0) chip("Back", "", () => examNav(d.current - 1));
+  if (d.on_last) chip("Submit for grading", "primary", examSubmit, "shift+enter");
+  else chip("Next", "primary", () => examNav(d.current + 1), "shift+enter");
+  chip("Quit", "", quitExam, "esc");
+}
+// Leaving mid-answer abandons the exam, so confirm first — exactly like leaving
+// a review session. Other phases (results/error/generating) just close.
+function quitExam() {
+  if (!examData || examData.phase !== "answering") { closeExam(); return; }
+  examConfirmingQuit = true;
+  legend.innerHTML = "";
+  legend.appendChild(el("span", "leave-msg", "Quit the exam? Your answers won't be graded."));
+  chip("Quit anyway", "again", closeExam, "enter");
+  chip("Keep going", "primary", cancelExamQuit, "esc");
+}
+function cancelExamQuit() { examConfirmingQuit = false; if (examData) examAnswerButtons(examData); }
 function startExamPoll() {
   stopExamPoll();
   examPoll = setInterval(() => {
@@ -679,7 +702,8 @@ function renderExam() {
     // Enter inserts a newline; Shift+Enter takes the primary action — advance,
     // or submit on the last question — matching the ask box.
     ta.addEventListener("keydown", e => {
-      if (e.key === "Enter" && e.shiftKey) {
+      // Inert while the quit confirmation is up (Enter/Esc answer that instead).
+      if (e.key === "Enter" && e.shiftKey && !examConfirmingQuit) {
         e.preventDefault();
         if (examData.on_last) examSubmit(); else examNav(examData.current + 1);
       }
@@ -687,10 +711,7 @@ function renderExam() {
     wrap.appendChild(ta);
     stage.appendChild(wrap);
     ta.focus();
-    if (d.current > 0) chip("Back", "", () => examNav(d.current - 1));
-    if (d.on_last) chip("Submit for grading", "primary", examSubmit, "shift+enter");
-    else chip("Next", "primary", () => examNav(d.current + 1), "shift+enter");
-    chip("Quit", "", closeExam, "esc");
+    examAnswerButtons(d);
     return;
   }
 
@@ -1364,9 +1385,16 @@ function chip(text, cls, onClick, key) {
 
 document.addEventListener("keydown", (e) => {
   if (!state || e.altKey || e.metaKey) return; // ctrl handled per-binding below
-  // The exam overlay takes priority; Esc leaves it, the textarea handles typing.
+  // The exam overlay takes priority. Esc asks to quit (it abandons the exam);
+  // while that confirmation is up, Enter quits and Esc keeps going. The textarea
+  // handles typing.
   if (examData) {
-    if (e.key === "Escape") { e.preventDefault(); closeExam(); }
+    if (examConfirmingQuit) {
+      if (e.key === "Enter") { e.preventDefault(); closeExam(); }
+      else if (e.key === "Escape") { e.preventDefault(); cancelExamQuit(); }
+      return;
+    }
+    if (e.key === "Escape") { e.preventDefault(); quitExam(); }
     return;
   }
   if (state.phase === "select") {
