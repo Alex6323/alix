@@ -167,6 +167,8 @@
   .chip.primary { background: var(--bolt); color: var(--void); border-color: var(--bolt); }
   .chip.primary .k { color: rgba(6,18,26,0.55); border-color: rgba(6,18,26,0.3); }
   .chip.primary:hover { filter: brightness(1.08); color: var(--void); }
+  .chip.again { color: var(--again); border-color: rgba(255,107,107,0.4); }
+  .leave-msg { color: var(--dim); font-size: 0.9rem; margin-right: auto; }
   .chip.missed:hover { border-color: var(--again); color: var(--again); }
   .chip.partial:hover { border-color: var(--good); color: var(--good); }
   .chip.got:hover { border-color: var(--bolt-hi); color: var(--bolt-hi); }
@@ -224,7 +226,19 @@ function grade(delta)  { api("/api/walk/grade", post({ delta })).then(apply); }
 function compress(text){ api("/api/walk/compress", post({ text })).then(apply); }
 function restart()     { api("/api/walk/restart", post({})).then(apply); }
 // Abandon the walk and return to the deck picker (hosted mode only).
-function backToDecks() { fetch("/api/walk/leave", post({})).catch(() => {}).finally(() => { location.href = "/"; }); }
+let confirmingLeave = false; // showing the "leave the walk?" confirmation
+function leaveWalk() { fetch("/api/walk/leave", post({})).catch(() => {}).finally(() => { location.href = "/"; }); }
+// A finished walk leaves straight away; an unfinished one warns first — like a
+// review session — since you'd abandon the remaining checkpoints.
+function backToDecks() {
+  if (!state || state.phase === "done") { leaveWalk(); return; }
+  confirmingLeave = true;
+  legend.replaceChildren();
+  legend.appendChild(el("span", "leave-msg", "Leave the walk before finishing the path?"));
+  chip("Leave anyway", "again", leaveWalk, "enter");
+  chip("Stay", "primary", cancelLeave, "esc");
+}
+function cancelLeave() { confirmingLeave = false; render(); }
 
 function startPoll() {
   if (poll) return;
@@ -257,8 +271,9 @@ function render() {
   else if (state.phase === "reveal")   renderReveal();
   else if (state.phase === "compress") renderCompress();
   else if (state.phase === "done")     renderDone();
-  // A return-to-picker escape hatch when the review server hosts this walk.
-  if (HOSTED) chip("Decks", "", backToDecks, "esc");
+  // A return-to-picker escape hatch when the review server hosts this walk —
+  // labelled like a fact deck's session ("Leave").
+  if (HOSTED) chip("Leave", "", backToDecks, "esc");
 }
 
 // the card shell with a question region; returns {card, q, a}
@@ -449,7 +464,14 @@ function chip(text, cls, onClick, key) {
 // primary action. Typing in a textarea is left alone.
 document.addEventListener("keydown", e => {
   if (!state || e.altKey || e.metaKey) return;
-  // Esc returns to the deck picker (hosted mode), even from a textarea.
+  // While the leave confirmation is up: Enter leaves, Esc keeps going.
+  if (HOSTED && confirmingLeave) {
+    if (e.key === "Enter") { e.preventDefault(); leaveWalk(); }
+    else if (e.key === "Escape") { e.preventDefault(); cancelLeave(); }
+    return;
+  }
+  // Esc returns to the deck picker (hosted mode), even from a textarea — but an
+  // unfinished walk asks to confirm first.
   if (HOSTED && e.key === "Escape") { e.preventDefault(); backToDecks(); return; }
   if (e.target && /^(TEXTAREA|INPUT)$/.test(e.target.tagName)) return;
   if (state.phase === "reveal" && !state.thinking && !state.verdict) {

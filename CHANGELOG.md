@@ -30,6 +30,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   as `[…]`), are unaffected.
 
 ### Changed
+- **Web trace walk: the leave button reads "Leave" and confirms an unfinished
+  walk.** The hosted walk's return chip was "Decks"; it's now "Leave" (matching a
+  fact-deck session), and leaving before the last checkpoint shows a "Leave the
+  walk before finishing the path?" prompt (Enter leaves, Esc stays) — the same
+  guard as review and exam. A finished walk still leaves immediately.
 - **Web exam: leaving mid-answer asks to confirm.** Pressing Esc (or Quit) while
   answering now shows a "Quit the exam? Your answers won't be graded" prompt —
   Enter abandons it, Esc keeps going — so a stray Esc no longer throws away an
