@@ -30,6 +30,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   as `[…]`), are unaffected.
 
 ### Changed
+- **Web picker draws the dependency tree like the TUI.** A workspace's members
+  now show `├─`/`└─`/`│` branch lines (muted) instead of plain indentation, and
+  the 🕒 "nothing due" glyph moved from the start of the row to the end (with the
+  status), so the left gutter is just tree + title. (The server already computed
+  the prefix for `depth`; it's now sent to the browser.)
 - **`alix explore` now generates short deck/trace titles.** The plan prompt asks
   for a terse noun phrase (a [deck]) or path-question (a [trace]) instead of a
   one-line sentence enumerating the contents, so workspace decks read as `the

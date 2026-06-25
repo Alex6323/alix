@@ -235,6 +235,10 @@
   .deckrow .open { flex: none; width: 14px; text-align: center; color: var(--dim); font-size: 1.1rem; line-height: 1; }
   .deckrow:hover .open { color: var(--bolt); }
   .deckrow .glyph { flex: none; line-height: 1; }
+  /* dependency-tree branch lines (├─ └─ │) — muted, monospace; the trailing
+     space separates them from the title, so cancel the row gap. */
+  .deckrow .tree { flex: none; font-family: var(--mono); font-size: 0.92rem; line-height: 1; color: var(--dim); white-space: pre; margin-right: -6px; }
+  .lists.filtering .deckrow .tree { display: none; }
   .deckrow .name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* a workspace row stacks its title over a dim description line */
   .deckrow .rowtext { flex: 0 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
@@ -833,16 +837,18 @@ async function renderSelect() {
     const dimmed = gated && !it.reviewable;
     const row = el("div", "deckrow" + (dimmed ? " dim" : ""));
     row.tabIndex = 0;
-    if (it.depth) row.style.setProperty("--depth", it.depth);
-    // 🕒 nothing due (a finished deck shows its 🎉 in the badge). An exam-locked
-    // deck has no row glyph — the footer says "🔒 Exam locked" for the focused
-    // row (clearer than a bare lock, which read as "the deck is locked").
-    const glyph = (gated && !it.reviewable && it.state !== "finished") ? "\u{1F552}" : "";
-    if (glyph) row.appendChild(el("span", "glyph", glyph));
+    // The dependency-tree branch prefix (├─/└─/│), drawn for workspace members
+    // like the TUI; it provides the indentation, and is hidden while filtering
+    // (a filtered subset is no longer a tree). An exam-locked deck has no row
+    // glyph — the footer names the lock for the focused row.
+    if (it.tree) row.appendChild(el("span", "tree", it.tree));
     row.appendChild(el("span", "name", it.label || it.name));
     if (showKind && it.is_trace) row.appendChild(el("span", "kind", "trace"));
     if (it.path) row.appendChild(el("span", "loc", it.path));
     if (it.meta) row.appendChild(el("span", "meta state-" + it.state, it.meta));
+    // 🕒 nothing due — at the line end with the status, so the left gutter stays
+    // tree + title. (A finished deck shows its 🎉 in the badge instead.)
+    if (gated && !it.reviewable && it.state !== "finished") row.appendChild(el("span", "glyph", "\u{1F552}"));
     row.addEventListener("click", () => launch(it, wsName, gated));
     row._item = it; row._gated = gated; row._wsName = wsName;
     row._search = (it.label || it.name).toLowerCase();

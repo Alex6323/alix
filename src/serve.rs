@@ -270,6 +270,9 @@ struct MemberDto {
     examable: bool,
     has_exam: bool,
     depth: usize,
+    /// The `├─`/`└─`/`│` tree-branch prefix drawn before the label, so the web
+    /// shows the dependency tree like the TUI (not just indentation).
+    tree: String,
 }
 
 /// The result of answering a choice card: which option was picked, which is
@@ -2064,6 +2067,7 @@ fn workspace_members(e: &picker::DeckEntry, decks_dir: &Path, with_lock: bool) -
                     examable: s.examable,
                     has_exam: s.has_exam,
                     depth,
+                    tree: prefix.clone(),
                 },
                 None => MemberDto {
                     name: m.name.clone(),
@@ -2077,6 +2081,7 @@ fn workspace_members(e: &picker::DeckEntry, decks_dir: &Path, with_lock: bool) -
                     examable: false,
                     has_exam: false,
                     depth,
+                    tree: prefix.clone(),
                 },
             }
         })
