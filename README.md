@@ -4,6 +4,11 @@
 [![docs.rs](https://img.shields.io/docsrs/alix)](https://docs.rs/alix)
 [![License: MIT OR Apache-2.0](https://img.shields.io/crates/l/alix)](https://crates.io/crates/alix)
 
+**DISCLAIMER**
+This is WIP - don't use it for serious learning just yet. There will be breaking
+changes to the deck format, to the progress store, and what not. Most likely you'll
+lose all your progress and I won't provide a migration path. You have been warned!
+
 Your **personal AI tutor**, built for understanding — not just remembering.
 Under the hood it's a fast, plain-text spaced-repetition trainer — Leitner and
 SM-2 scheduling, several answer modes, cloze and dual-direction cards, images,
