@@ -172,6 +172,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   answers compose freely, and the Next/Submit button now shows the binding.
 
 ### Fixed
+- **Browsing a deck launched from the web picker shows your configured keys.**
+  When the review server hosts the browse page (the picker → Browse flow), its
+  Prev/Next chips showed the literal `←`/`→` arrows instead of your `[browse]`
+  bindings (`h`/`l` by default): the server replied to the page's key request
+  with the review grade keys, which carry no next/prev. Browse now has its own
+  `/api/browse-keys` endpoint, served by both the standalone and the hosting
+  review server.
 - **`alix explore --into --build` now actually freezes its `assets/`.** The
   generated `% source:` paths were silently doubled: when `--source` is a
   subdirectory (a crate) but the plan writes a scope relative to the project root

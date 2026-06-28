@@ -467,6 +467,9 @@ pub struct ReviewOptions {
     /// Deck-picker navigation keys (the `[picker]` section), bound on the
     /// selection screen.
     pub picker: PickerKeys,
+    /// Browse-mode keys (the `[browse]` section), bound on the `/browse` page
+    /// this server also hosts.
+    pub browse: BrowseBindings,
     /// Fuzzy-mode typo tolerance per line.
     pub max_typos: usize,
     /// Ask-Claude settings (command, allowlist, timeout, …).
@@ -968,12 +971,16 @@ pub fn run_review(
         mode_override,
         keys: bindings,
         picker: picker_keys,
+        browse: browse_bindings,
         max_typos,
         ask: ask_cfg,
         exam: exam_cfg,
     } = opts;
     let keys = ReviewKeys::from(&bindings);
     let picker_keys = PickerKeysDto::from(&picker_keys);
+    // The `/browse` page this server also hosts needs its own next/prev/remove
+    // keys, distinct from the review grade keys served at `/api/keys`.
+    let browse_keys = BrowseKeys::from(&browse_bindings);
     let ask_info = AskInfoDto::from(&ask_cfg);
     let mut reviewing = initial.map(Reviewing::new);
     if let Some(r) = reviewing.as_mut() {
@@ -1002,6 +1009,7 @@ pub fn run_review(
                 respond_asset(request, THEME_JS, "application/javascript; charset=utf-8")
             }
             (Method::Get, "/api/keys") => respond_json(request, &keys),
+            (Method::Get, "/api/browse-keys") => respond_json(request, &browse_keys),
             (Method::Get, "/api/picker-keys") => respond_json(request, &picker_keys),
             (Method::Get, "/api/ask-info") => respond_json(request, &ask_info),
             (Method::Get, "/api/decks") => {
@@ -2036,7 +2044,7 @@ pub fn run_browse(
             (Method::Get, "/theme.js") => {
                 respond_asset(request, THEME_JS, "application/javascript; charset=utf-8")
             }
-            (Method::Get, "/api/keys") => respond_json(request, &keys),
+            (Method::Get, "/api/browse-keys") => respond_json(request, &keys),
             (Method::Get, "/api/picker-keys") => respond_json(request, &picker_keys),
             (Method::Get, "/api/decks") => {
                 // Browse is read-only — any deck is browsable, so no lock gating.

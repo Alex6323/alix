@@ -1438,6 +1438,7 @@ fn review_serve(args: ReviewArgs) -> Result<()> {
         mode_override: args.mode,
         keys: config.keys.clone(),
         picker: config.picker.clone(),
+        browse: config.browse.clone(),
         max_typos: args.max_typos,
         ask: config.ask.clone(),
         exam: config.exam.clone(),

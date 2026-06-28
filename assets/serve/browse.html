@@ -552,7 +552,7 @@ document.addEventListener("click", () => menu.classList.remove("open"));
 // Load the configured key bindings first, then the cards (or the picker). The
 // picker-keys endpoint falls back to the Vim defaults if an older server lacks it.
 Promise.all([
-  fetch("/api/keys").then(r => r.json()),
+  fetch("/api/browse-keys").then(r => r.json()),
   fetch("/api/picker-keys").then(r => r.json()).catch(() => ({})),
 ]).then(([k, pk]) => {
   KEYS = k;
