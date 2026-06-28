@@ -57,11 +57,6 @@ run:
 serve:
 	cargo run -- $(ARGS) --serve --port 7780
 
-# Run the TUI frontend. With no ARGS, opens the deck picker;
-# pass a session via ARGS, e.g. `make serve ARGS="review mydeck.txt"`.
-tui:
-	cargo run -- $(ARGS)
-
 # Serve the user manual (docs/book) with live reload and open it in the browser.
 # Requires mdBook: `cargo install mdbook`.
 book:
