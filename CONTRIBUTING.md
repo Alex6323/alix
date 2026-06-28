@@ -9,20 +9,21 @@ collaborator on this repo is instructed). The testing expectations are in the
 
 ## What `alix` is
 
-> **North star:** *alix turns the things you read into verified understanding —
-> spaced repetition for retention, AI that checks you actually understand, not
-> just remember.*
+It's an AI-augmented spaced-repetition tool: a flashcard core — plain-text deck
+files, with image cards too — plus Claude woven in (an ask-Claude tutor, AI deck
+generation, and an AI exam that tries to gate progress on understanding, not just
+recall). The **library crate (`src/`) is the single source of logic**; the TUI,
+the web server (`--serve`), and the CLI are thin consumers.
 
-It's an AI-augmented spaced-repetition tool: a plain-text flashcard core with
-Claude woven in (an ask-Claude tutor, AI deck generation, and an AI exam that
-gates progress on verified understanding). The **library crate (`src/`) is the
-single source of logic**; the TUI, the web server (`--serve`), and the CLI are
-thin consumers.
+It's early and changing fast — expect rough edges and breaking changes (the
+README says it outright: don't trust it with serious learning yet). What it's
+*aiming* at — the "north star" in [`CLAUDE.md`](CLAUDE.md) — is to turn the things
+you read into understanding you've actually verified, not just remembered.
 
-**Focus is a feature.** `alix` does a few things exceptionally well rather than
-many things adequately — and that only survives if the discipline is written
-down and applied *while building*. So contributions are very welcome, but they
-pass through a gate.
+The bet is to stay **narrow on purpose** — to do a few things well rather than
+many adequately. That only holds if the focus is written down and applied *while
+building*, which is what the gate below is for. Contributions are very welcome;
+the gate is about whether a change fits, not about you.
 
 ## Good first contributions
 
@@ -37,7 +38,7 @@ code — once something is built, sunk cost quietly biases everyone toward mergi
 it.
 
 - **Default is no — but I'll always tell you why.** A new feature has to earn
-  its place; keeping `alix` small is what keeps it good. That's not hostility,
+  its place; staying small and focused is the whole bet. That's not hostility,
   and it's rarely final — "no" usually means "not like this" or "not yet," not
   "never."
 - **For anything non-trivial, open a [feature proposal](../../issues/new/choose)
