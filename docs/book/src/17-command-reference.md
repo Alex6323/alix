@@ -6,12 +6,11 @@ depth, where there is one. Run any command with `--help` for its full flags.
 ## Reviewing
 
 - `alix` — open the deck [picker](02-getting-started.md) (recent + `~/decks`).
-- `alix <deck>...` — review due cards; several decks merge into one session.
-- `alix review <deck-or-folder>...` — the same, explicit, and how you review a
-  [workspace](08-workspaces.md) folder.
-- `alix browse <deck>...` — read through cards with no grading or scheduling.
-- `alix workspace <dir>` — open a workspace, routing each member to a review or a
-  walk.
+- `alix <deck>` / `alix review <deck>` — review one deck's due cards.
+- `alix browse <deck>` — read through one deck's cards, no grading or scheduling.
+- `alix workspace <dir>` — open a [workspace](08-workspaces.md), routing each
+  member you pick to a review or a walk (a workspace is reviewed member-by-member,
+  never merged).
 
 Common flags: `--mode <m>` ([modes](04-review-modes.md)), `--scheduler <s>` /
 `--topology <name>` ([scheduling](05-scheduling.md)), `--cram`, `--new N`,

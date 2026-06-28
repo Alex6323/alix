@@ -49,6 +49,60 @@ fn check_accepts_a_valid_deck() {
 }
 
 #[test]
+fn review_rejects_multiple_decks() {
+    // One deck per session — merging several loose decks was removed. The guard
+    // fires before any terminal is opened, so this is testable headless.
+    let dir = TempDir::new().unwrap();
+    let a = write(dir.path(), "a.txt", VALID_DECK);
+    let b = write(dir.path(), "b.txt", VALID_DECK);
+    let store = dir.path().join("p.json");
+    let cfg = write(dir.path(), "cfg.toml", ""); // isolate from any global config
+    let out = alix(&[
+        "review",
+        &a,
+        &b,
+        "--store",
+        store.to_str().unwrap(),
+        "--config",
+        &cfg,
+    ]);
+    assert!(!out.status.success(), "reviewing two decks should error");
+    assert!(
+        stderr(&out).contains("one deck"),
+        "stderr: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn review_rejects_a_workspace_directory() {
+    // A workspace is reviewed member-by-member, never as a merged set.
+    let dir = TempDir::new().unwrap();
+    let ws = dir.path().join("eng");
+    std::fs::create_dir(&ws).unwrap();
+    std::fs::write(ws.join("m.txt"), VALID_DECK).unwrap();
+    let store = dir.path().join("p.json");
+    let cfg = write(dir.path(), "cfg.toml", "");
+    let out = alix(&[
+        "review",
+        ws.to_str().unwrap(),
+        "--store",
+        store.to_str().unwrap(),
+        "--config",
+        &cfg,
+    ]);
+    assert!(
+        !out.status.success(),
+        "reviewing a workspace dir should error"
+    );
+    assert!(
+        stderr(&out).contains("workspace"),
+        "stderr: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
 fn check_rejects_a_malformed_deck() {
     let dir = TempDir::new().unwrap();
     // A card front with no answer line is a parse error.

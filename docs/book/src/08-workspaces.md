@@ -63,10 +63,9 @@ search.
 
 `alix workspace <dir>` jumps straight into that drill-in view, routing each
 member to the right experience — a facts deck to a review, a trace to a walk — and
-returning you to the picker when you finish one. (`alix review <dir>`, by
-contrast, flattens the whole folder into one merged review, so trace decks get
-quizzed as plain cards — usually not what you want for a workspace that holds
-traces.)
+returning you to the picker when you finish one. (`alix review <dir>` no longer
+works on a folder — a session is one deck file, so a whole workspace is never
+reviewed at once; open it and pick a member instead.)
 
 A folder without a manifest is still reviewable with `alix review <folder>`; it
 just applies no shared directives.

@@ -76,6 +76,6 @@ alix check srs.txt     # lint the deck (syntax errors, duplicate cards)
 alix reset srs.txt     # clear stored progress (also --card / --all)
 ```
 
-Give several decks at once and their due cards merge into one session. From here
-the book goes deep: the next chapter is the [deck format](03-the-deck-format.md)
-in full, then the answer modes and scheduling.
+A session is one deck — review them one at a time. From here the book goes deep:
+the next chapter is the [deck format](03-the-deck-format.md) in full, then the
+answer modes and scheduling.

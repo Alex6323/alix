@@ -410,7 +410,7 @@ function restart() { api("/api/restart", post({})).then(apply); }
 // A trace picked from the picker walks: the server replies with a redirect to
 // the walk page (hosted at /walk) instead of a review session. The walk runs on
 // its own page, so stash the workspace we launched from to re-open it on return.
-function select(names) { rememberLaunch(names[0]); api("/api/select", post({ decks: names })).then(s => { if (s && s.redirect) { if (lastWorkspace) sessionStorage.setItem("alix.returnWs", lastWorkspace); sessionStorage.setItem("alix.walkName", names[0] || ""); location.href = s.redirect; return; } apply(s); }); }
+function select(name) { rememberLaunch(name); api("/api/select", post({ deck: name })).then(s => { if (s && s.redirect) { if (lastWorkspace) sessionStorage.setItem("alix.returnWs", lastWorkspace); sessionStorage.setItem("alix.walkName", name || ""); location.href = s.redirect; return; } apply(s); }); }
 // Remember the deck just launched so the picker re-lands the cursor on it when it
 // re-opens (the selection shouldn't move while the user is away). Survives both an
 // in-page return (review/exam) and a page-reload return (walk/browse).
@@ -418,7 +418,7 @@ function rememberLaunch(name) { if (name) sessionStorage.setItem("alix.lastDeck"
 // Browse a deck read-only: the server builds the card list and replies with a
 // redirect to /browse (hosted here). Stash the launching workspace so leaving
 // the browse re-opens it, like a walk.
-function browseDeck(it, wsName) { rememberLaunch(it.name); if (wsName) sessionStorage.setItem("alix.returnWs", wsName); api("/api/browse", post({ decks: [it.name] })).then(s => { if (s && s.redirect) location.href = s.redirect; }); }
+function browseDeck(it, wsName) { rememberLaunch(it.name); if (wsName) sessionStorage.setItem("alix.returnWs", wsName); api("/api/browse", post({ deck: it.name })).then(s => { if (s && s.redirect) location.href = s.redirect; }); }
 function deselect() { confirmingLeave = false; menu.classList.remove("open"); api("/api/deselect", post({})).then(apply); }
 
 // Returning to the picker mid-session abandons the cards still queued, so warn
@@ -841,7 +841,7 @@ async function renderSelect() {
     // "Take exam" button, or the walk's capstone). An exam-due fact deck sits its
     // exam when available (sourced + prerequisites passed); else it reviews.
     if (!it.is_trace && it.state === "examdue" && it.examable) startExam(it.name);
-    else select([it.name]);
+    else select(it.name);
   }
 
   // A drillable workspace/folder row (chevron, opens its members).

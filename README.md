@@ -102,10 +102,9 @@ alix check mydeck.txt           # lint a deck (syntax, duplicates, trace locator
 alix reset mydeck.txt           # clear stored progress (also --card / --all)
 ```
 
-Several decks can be given at once; their due cards are merged into one
-session. Useful flags for `review`: `--new N` (max unseen cards to introduce,
-default 10), `--limit N` (cap session size), `--max-typos N` (fuzzy tolerance
-per line, default 2).
+A session is one deck file — review them one at a time. Useful flags for
+`review`: `--new N` (max unseen cards to introduce, default 10), `--limit N`
+(cap session size), `--max-typos N` (fuzzy tolerance per line, default 2).
 
 Run `alix` with no deck arguments (as the desktop launcher does) to open the
 **deck picker**, grouped into three sections: **[Workspaces](#workspaces)**
@@ -317,7 +316,7 @@ mode = "typing"
 ```
 
 ```
-alix review ~/decks/english/        # review every deck in the folder, together
+alix workspace ~/decks/english/     # open the workspace; pick a member to review
 ```
 
 The `[defaults]` keys are the deck directive names, and they fill in only what a
@@ -341,16 +340,16 @@ members drawn as an **unlock dependency tree**: a deck nests under the
 `% requires:` prerequisite that gates it, foundations at the roots, and siblings
 ordered startable-first. Each row is badged `· trace ·` or `· deck ·`. The drill-in
 is a **single-launch list** (no checkboxes): `Enter` on a facts deck reviews it,
-`Enter` on a trace **walks** it. (Typing a filter flattens the tree to a plain
-search; `alix review <folder>` reviews the whole cluster merged.) A manifest-less
-folder is still reviewable (`alix review <folder>`), it just applies no shared
-directives.
+`Enter` on a trace **walks** it — one deck per session, never the whole folder at
+once. (Typing a filter flattens the tree to a plain search.) A manifest-less
+folder works the same way — open it (`alix workspace <folder>`) and pick a
+member; it just applies no shared directives.
 
 **`alix workspace <dir>`** opens a workspace straight into that same drill-in
 picker, routing each member to the right experience — a **facts deck** to a
 review, a **trace deck** to a [predict-verify walk](#traces-alix-trace) —
-returning you to the picker when done. (`alix review <dir>` instead flattens the
-whole folder into one review, so trace decks get quizzed as flat cards.)
+returning you to the picker when done. (A session is one deck file, so a whole
+workspace is never reviewed at once — open it and pick a member.)
 
 **`% title:`** (on a deck) or **`title`** (in a workspace's `alix.toml`) gives a
 display name, shown in the picker, the session header, `alix list` and `alix
@@ -537,7 +536,7 @@ Schedulers:
 
 ## Browse
 
-`alix browse <deck>...` is a walk through every card — front and back shown
+`alix browse <deck>` is a walk through one deck's cards — front and back shown
 together, in file order — without grading or scheduling. It is for a first
 read-through of a new deck or just checking its contents, without affecting
 your schedule. Navigate with `l`/`h` (next/previous, vim-style — `n`/`p`, the

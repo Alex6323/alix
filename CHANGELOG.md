@@ -86,6 +86,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   as `[…]`), are unaffected.
 
 ### Changed
+- **Breaking — one deck per session.** `alix review` and `alix browse` now take
+  exactly one deck *file*: merging several loose decks into a combined session is
+  gone, and a whole workspace is no longer reviewed at once. Workspaces stay an
+  organizing layer — review their members one at a time (the picker drills in;
+  `alix workspace <dir>` opens that picker), and a member still inherits the
+  workspace's directives and store. `stats`/`list`/`reset` still take multiple
+  decks (they're per-deck operations, not a merged session).
 - **The review header no longer shows the stage ladder.** The always-on
   `new|s1|s2|…` stage histogram is gone from the review header (TUI and web) — it
   was noise; the per-stage breakdown stays in the end-of-session summary.

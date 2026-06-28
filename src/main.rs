@@ -586,55 +586,33 @@ fn load_decks(paths: &[PathBuf], defaults: &HashMap<String, DeckSettings>) -> Re
     Ok((cards, names.join(", "), decks, settings))
 }
 
-/// The result of [`expand_workspaces`]: the member deck files to load, the
-/// per-deck workspace directive defaults (keyed by file name), and the session
-/// label when a single workspace was requested.
+/// The result of [`expand_workspaces`]: the deck file(s) to load and the per-deck
+/// workspace directive defaults (keyed by file name).
 struct Expanded {
     decks: Vec<PathBuf>,
     defaults: HashMap<String, DeckSettings>,
-    label: Option<String>,
 }
 
-/// Expands any workspace folder in `deck_paths` into its member deck files,
-/// tagging each member (by file name) with the workspace's shared directive
-/// defaults. Plain file paths pass through untagged. When a single workspace
-/// was requested, its display name becomes the session label.
+/// Resolves each deck file's workspace context: a member file whose parent folder
+/// is a workspace inherits that workspace's shared directive defaults (keyed by
+/// file name); plain files pass through untagged. A review/browse target is a
+/// single deck *file* (whole-workspace review was removed), so this no longer
+/// expands a folder — it just tags the file with its workspace's directives.
 fn expand_workspaces(deck_paths: &[PathBuf]) -> Result<Expanded> {
     let mut decks = Vec::new();
     let mut defaults: HashMap<String, DeckSettings> = HashMap::new();
-    let mut label = None;
     for path in deck_paths {
-        // Any folder of decks expands (a workspace applies its `alix.toml`
-        // defaults; a plain folder loads with defaults).
-        if workspace::has_decks(path) {
-            let ws = workspace::Workspace::load(path)?;
-            if deck_paths.len() == 1 {
-                label = Some(ws.display_name());
-            }
-            for member in ws.members {
-                if let Some(name) = member.file_name().and_then(|n| n.to_str()) {
-                    defaults.insert(name.to_string(), ws.settings.clone());
-                }
-                decks.push(member);
-            }
-        } else {
-            // A deck file picked from inside a workspace folder (a subset
-            // selection) still inherits that workspace's shared directives.
-            if let Some(parent) = path.parent()
-                && parent.join(workspace::MANIFEST).is_file()
-                && let Ok(ws) = workspace::Workspace::load(parent)
-                && let Some(name) = path.file_name().and_then(|n| n.to_str())
-            {
-                defaults.insert(name.to_string(), ws.settings);
-            }
-            decks.push(path.clone());
+        // A deck file inside a workspace folder inherits its shared directives.
+        if let Some(parent) = path.parent()
+            && parent.join(workspace::MANIFEST).is_file()
+            && let Ok(ws) = workspace::Workspace::load(parent)
+            && let Some(name) = path.file_name().and_then(|n| n.to_str())
+        {
+            defaults.insert(name.to_string(), ws.settings);
         }
+        decks.push(path.clone());
     }
-    Ok(Expanded {
-        decks,
-        defaults,
-        label,
-    })
+    Ok(Expanded { decks, defaults })
 }
 
 /// Resolves a per-run setting from three sources, most specific first: an
@@ -783,10 +761,22 @@ fn build_review(
     recent: &mut RecentDecks,
     target: Frontend,
 ) -> Result<ReviewBuild> {
-    // Expand any workspace folder into its member decks (tagged with the
-    // workspace's shared directives). A deck's `% requires:` prerequisites are
-    // NOT pulled into the session — you review only the deck(s) you picked
-    // (the dependency graph gates exams, not what a review session contains).
+    // A session is exactly one deck file's cards — no merging of several loose
+    // decks, and no reviewing a whole workspace at once. Workspaces are an
+    // organizing layer: review their members one at a time (the picker drills in;
+    // `alix workspace <dir>` opens that picker).
+    let [deck] = deck_paths.as_slice() else {
+        bail!("review one deck at a time (merging decks was removed)");
+    };
+    if workspace::has_decks(deck) {
+        bail!(
+            "`{}` is a workspace — review a deck inside it, or open it with `alix workspace`",
+            deck.display()
+        );
+    }
+    // Resolve the deck's workspace context (a member file inherits its workspace's
+    // shared directives). `% requires:` prerequisites are NOT pulled in — the
+    // dependency graph gates exams, not what a review session contains.
     let expanded = expand_workspaces(&deck_paths)?;
     let (cards, deck_label, mut decks, settings) = load_decks(&expanded.decks, &expanded.defaults)?;
     // Resolve each deck's effective ask-tutor source access: a deck in a
@@ -800,8 +790,8 @@ fn build_review(
             .and_then(workspace::manifest_source_access);
         info.source_access = workspace_override.unwrap_or(config.ask.source_access);
     }
-    // A single workspace shows its own title as the session label.
-    let label = expanded.label.unwrap_or(deck_label);
+    // One deck per session, so the label is the deck's own subject.
+    let label = deck_label;
 
     // Keep only the cards reviewable in the target frontend; a card declares
     // `Any` (default), or its specific frontend. Image cards are web-only, so
@@ -1111,9 +1101,19 @@ fn build_browse(
     recent: &mut RecentDecks,
     target: Frontend,
 ) -> Result<BrowseBuild> {
+    // One deck file per browse — no merging loose decks or whole workspaces.
+    let [deck] = deck_paths.as_slice() else {
+        bail!("browse one deck at a time (merging decks was removed)");
+    };
+    if workspace::has_decks(deck) {
+        bail!(
+            "`{}` is a workspace — browse a deck inside it, or open it with `alix workspace`",
+            deck.display()
+        );
+    }
     let expanded = expand_workspaces(&deck_paths)?;
     let (cards, deck_label, decks, _) = load_decks(&expanded.decks, &expanded.defaults)?;
-    let label = expanded.label.unwrap_or(deck_label);
+    let label = deck_label;
     let cards: Vec<_> = cards
         .into_iter()
         .filter(|c| matches!(c.frontend(), Frontend::Any) || c.frontend() == target)
@@ -3281,6 +3281,33 @@ mod tests {
     }
 
     #[test]
+    fn build_browse_rejects_multiple_decks() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.txt");
+        let b = dir.path().join("b.txt");
+        std::fs::write(&a, "# q\n\ta\n").unwrap();
+        std::fs::write(&b, "# q\n\tb\n").unwrap();
+        let mut recent = RecentDecks::load(dir.path().join("recent.json"));
+        let err = build_browse(vec![a, b], &mut recent, Frontend::Tui)
+            .err()
+            .unwrap();
+        assert!(format!("{err}").contains("one deck"), "{err}");
+    }
+
+    #[test]
+    fn build_browse_rejects_a_workspace_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path().join("eng");
+        std::fs::create_dir(&ws).unwrap();
+        std::fs::write(ws.join("m.txt"), "# q\n\ta\n").unwrap();
+        let mut recent = RecentDecks::load(dir.path().join("recent.json"));
+        let err = build_browse(vec![ws], &mut recent, Frontend::Tui)
+            .err()
+            .unwrap();
+        assert!(format!("{err}").contains("workspace"), "{err}");
+    }
+
+    #[test]
     fn reset_selects_all_without_a_filter() {
         let cards = vec![card("A", "1"), card("B", "2")];
         assert_eq!(2, select_reset_ids(&cards, None).len());
@@ -3302,7 +3329,6 @@ mod tests {
             Some(alix::card::Direction::Both),
             exp.defaults.get("a.txt").unwrap().direction
         );
-        assert!(exp.label.is_none()); // not a single-workspace request
     }
 
     #[test]

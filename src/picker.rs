@@ -1190,9 +1190,6 @@ struct Picker<K> {
     /// out to a "nothing to review" message. Off for browse (any deck is
     /// browsable) and under `--cram` (cooldowns are ignored).
     gate_reviewable: bool,
-    /// Launcher review sub-state: the list shows only the ticked decks and
-    /// Enter starts the merged session.
-    confirming: bool,
     done: bool,
     cancelled: bool,
 }
@@ -1226,7 +1223,6 @@ impl<K: Clone + Eq + Hash> Picker<K> {
             request_mastered: false,
             multi_select: true,
             gate_reviewable: false,
-            confirming: false,
             done: false,
             cancelled: false,
         }
@@ -1253,10 +1249,6 @@ impl<K: Clone + Eq + Hash> Picker<K> {
                     let hit = |list: &[KeyPattern]| pattern.is_some_and(|p| list.contains(&p));
                     match key.code {
                         KeyCode::Char('c') if ctrl => self.cancel(),
-                        KeyCode::Esc if self.confirming => {
-                            self.confirming = false;
-                            self.refilter();
-                        }
                         // Esc in the filter box keeps the filter and drops back to the
                         // list, focused on the first match.
                         KeyCode::Esc if self.filtering => {
@@ -1270,15 +1262,8 @@ impl<K: Clone + Eq + Hash> Picker<K> {
                         KeyCode::Esc => self.cancel(),
                         // Launcher: Enter opens the focused row; otherwise (reset / deps
                         // pickers) Enter accepts the selection.
-                        KeyCode::Enter if self.launcher && !self.confirming => {
-                            self.launch_focused()
-                        }
+                        KeyCode::Enter if self.launcher => self.launch_focused(),
                         KeyCode::Enter => self.done = true,
-                        KeyCode::Tab if self.launcher && self.multi_select && !self.confirming => {
-                            if !self.selected.is_empty() {
-                                self.enter_confirm();
-                            }
-                        }
                         // Arrows + Ctrl-n/p always move; the rest of nav is the
                         // configurable key set (Vim-style by default).
                         KeyCode::Up => self.move_cursor(-1),
@@ -1308,15 +1293,9 @@ impl<K: Clone + Eq + Hash> Picker<K> {
                         }
                         // Space ticks in the multi-select pickers; elsewhere it's just
                         // a filter character (handled below) or ignored in nav mode.
-                        KeyCode::Char(' ') if self.multi_select && !self.confirming => {
-                            self.toggle()
-                        }
+                        KeyCode::Char(' ') if self.multi_select => self.toggle(),
                         // Backspace: edit the filter, or step back when there's nothing
                         // to delete (leave filter mode, return from a drill-in, cancel).
-                        KeyCode::Backspace if self.confirming => {
-                            self.confirming = false;
-                            self.refilter();
-                        }
                         KeyCode::Backspace if nav => self.cancel(),
                         KeyCode::Backspace if self.filter.is_empty() => {
                             if self.filtering {
@@ -1329,7 +1308,7 @@ impl<K: Clone + Eq + Hash> Picker<K> {
                             self.filter.pop();
                             self.refilter();
                         }
-                        KeyCode::Char(c) if !ctrl && !self.confirming && take_text => {
+                        KeyCode::Char(c) if !ctrl && take_text => {
                             self.filter.push(c);
                             self.refilter();
                         }
@@ -1363,15 +1342,11 @@ impl<K: Clone + Eq + Hash> Picker<K> {
     /// The chosen keys once the picker is done (not cancelled).
     fn result(&self) -> Vec<K> {
         if self.launcher {
-            // Confirm view -> the ticked set (merged session); browse -> the
-            // single focused deck that Enter launched.
-            return if self.confirming {
-                self.ticked()
-            } else {
-                self.focused()
-                    .map(|item| vec![item.key.clone()])
-                    .unwrap_or_default()
-            };
+            // The single focused deck that Enter launched (one deck per session).
+            return self
+                .focused()
+                .map(|item| vec![item.key.clone()])
+                .unwrap_or_default();
         }
         let chosen = self.ticked();
         if self.exact || !chosen.is_empty() {
@@ -1381,17 +1356,6 @@ impl<K: Clone + Eq + Hash> Picker<K> {
         self.focused()
             .map(|item| vec![item.key.clone()])
             .unwrap_or_default()
-    }
-
-    /// Enters the launcher's confirm view: the list shows only the ticked
-    /// decks.
-    fn enter_confirm(&mut self) {
-        self.confirming = true;
-        self.filtered = (0..self.all.len())
-            .filter(|&i| self.selected.contains(&self.all[i].key))
-            .collect();
-        self.cursor = 0;
-        self.offset = 0;
     }
 
     fn cancel(&mut self) {
@@ -1405,7 +1369,6 @@ impl<K: Clone + Eq + Hash> Picker<K> {
     fn rearm(&mut self) {
         self.done = false;
         self.cancelled = false;
-        self.confirming = false;
     }
 
     /// Leaves filter mode and clears the filter (back to the full list).
@@ -1510,11 +1473,7 @@ impl<K: Clone + Eq + Hash> Picker<K> {
         ])
         .areas(frame.area());
 
-        let title = if self.confirming {
-            "start these decks?"
-        } else {
-            &self.title
-        };
+        let title = self.title.as_str();
         // Just "alix" when there's no title (the top picker); else "alix —
         // <title>" (a drilled-into workspace). No item count.
         let left = if title.is_empty() {
@@ -1530,26 +1489,23 @@ impl<K: Clone + Eq + Hash> Picker<K> {
         };
         frame.render_widget(bar(&left, &right, header.width), header);
 
-        // Filter line — hidden in the confirm view. Shown as an input (with a
-        // cursor) while editing, or as the still-applied filter once you leave the
-        // box; with nothing to show it's a dim hint (focus is on the list).
-        if !self.confirming {
-            let editing = self.filtering || !self.launcher;
-            if editing || !self.filter.is_empty() {
-                frame.render_widget(Paragraph::new(format!(" filter: {}", self.filter)), filter);
-                if editing {
-                    frame.set_cursor_position(Position::new(
-                        filter.x + 9 + self.filter.chars().count() as u16,
-                        filter.y,
-                    ));
-                }
-            } else {
-                frame.render_widget(
-                    Paragraph::new(" / or Ctrl-F to filter")
-                        .style(Style::new().fg(Color::DarkGray)),
-                    filter,
-                );
+        // Filter line — shown as an input (with a cursor) while editing, or as the
+        // still-applied filter once you leave the box; with nothing to show it's a
+        // dim hint (focus is on the list).
+        let editing = self.filtering || !self.launcher;
+        if editing || !self.filter.is_empty() {
+            frame.render_widget(Paragraph::new(format!(" filter: {}", self.filter)), filter);
+            if editing {
+                frame.set_cursor_position(Position::new(
+                    filter.x + 9 + self.filter.chars().count() as u16,
+                    filter.y,
+                ));
             }
+        } else {
+            frame.render_widget(
+                Paragraph::new(" / or Ctrl-F to filter").style(Style::new().fg(Color::DarkGray)),
+                filter,
+            );
         }
 
         self.draw_list(frame, list);
@@ -1575,43 +1531,31 @@ impl<K: Clone + Eq + Hash> Picker<K> {
         if self.filtering {
             return " ENTER open │ ↑↓ move │ ESC clear filter".to_string();
         }
-        // Single-launch nav (the default): Vim-style movement, `/` to filter.
-        if !self.multi_select {
-            return " ENTER/l open │ j/k move │ / filter │ m mastered │ h/ESC back".to_string();
-        }
-        if self.confirming {
-            " ENTER start merged │ ↑↓ move │ ESC back".to_string()
-        } else if self.selected.is_empty() {
-            " ENTER start │ SPACE tick │ ↑↓ move │ / filter │ ESC cancel".to_string()
-        } else {
-            " ENTER start │ SPACE tick │ TAB confirm │ ↑↓ move │ ESC cancel".to_string()
-        }
+        // The launcher is single-launch — one deck per session.
+        " ENTER/l open │ j/k move │ / filter │ m mastered │ h/ESC back".to_string()
     }
 
     /// The display sequence: a section header above the first row of each
-    /// section, interleaved with the filtered item rows. Headers are skipped in
-    /// the confirm view (a flat list of ticked decks). A [`DisplayRow::Item`]
+    /// section, interleaved with the filtered item rows. A [`DisplayRow::Item`]
     /// carries a position into `self.filtered`.
     fn display_rows(&self) -> Vec<DisplayRow> {
         let mut rows = Vec::new();
         let mut prev: Option<Section> = None;
         for (pos, &i) in self.filtered.iter().enumerate() {
-            if !self.confirming {
-                let section = self.all[i].section;
-                if Some(section) != prev
-                    && let Some(header) = section.header()
-                {
-                    // A blank line above every header — including the first, to
-                    // set the sections off from the filter line — so they breathe
-                    // instead of running together.
-                    rows.push(DisplayRow::Blank);
-                    rows.push(DisplayRow::Header(header));
-                }
-                prev = Some(section);
+            let section = self.all[i].section;
+            if Some(section) != prev
+                && let Some(header) = section.header()
+            {
+                // A blank line above every header — including the first, to set
+                // the sections off from the filter line — so they breathe instead
+                // of running together.
+                rows.push(DisplayRow::Blank);
+                rows.push(DisplayRow::Header(header));
             }
+            prev = Some(section);
             rows.push(DisplayRow::Item(pos));
             // A workspace's description trails it as a dim, non-selectable line.
-            if !self.confirming && self.all[i].subtitle.is_some() {
+            if self.all[i].subtitle.is_some() {
                 rows.push(DisplayRow::Subtitle(i));
             }
         }
@@ -1695,7 +1639,7 @@ impl<K: Clone + Eq + Hash> Picker<K> {
         } else {
             ""
         };
-        let show_check = self.multi_select && !self.confirming;
+        let show_check = self.multi_select;
 
         // Truncate a long label (a trace's `% trace:` sentence can be a
         // paragraph) so the meta badge — `· trace · new` — stays on screen
@@ -1705,11 +1649,7 @@ impl<K: Clone + Eq + Hash> Picker<K> {
             + tree.chars().count()
             + glyph.chars().count()
             + item.meta.as_ref().map_or(0, |m| 2 + m.chars().count())
-            + if self.confirming {
-                0
-            } else {
-                item.hint.as_ref().map_or(0, |h| 2 + h.chars().count())
-            };
+            + item.hint.as_ref().map_or(0, |h| 2 + h.chars().count());
         // Fit the width (+2 margin for wide glyphs), but also hard-cap the label
         // so a long `% title:` / `% trace:` sentence stays a short list entry.
         const LABEL_CAP: usize = 48;
@@ -1741,9 +1681,7 @@ impl<K: Clone + Eq + Hash> Picker<K> {
         let mut spans = vec![Span::styled(main, style)];
         // A dim location hint for out-of-decks-dir entries (disambiguates
         // same-named decks/workspaces). Follows the row style on the cursor.
-        if let Some(hint) = &item.hint
-            && !self.confirming
-        {
+        if let Some(hint) = &item.hint {
             let hint_style = if on_cursor {
                 style
             } else {
@@ -1884,6 +1822,7 @@ mod tests {
             Vec::new(),
         );
         p.launcher = true;
+        p.multi_select = false; // the real launcher is single-launch (no ticking)
         p
     }
 
@@ -1958,15 +1897,6 @@ mod tests {
     }
 
     #[test]
-    fn confirm_view_drops_section_headers() {
-        let mut p = sectioned(&[("a", Section::Recent, true), ("b", Section::Recent, true)]);
-        p.launcher = true;
-        p.selected.insert(PathBuf::from("a"));
-        p.enter_confirm();
-        assert!(headers(&p).is_empty());
-    }
-
-    #[test]
     fn non_default_rows_appear_only_when_filtering() {
         let mut p = sectioned(&[
             ("recent-deck", Section::Recent, true),
@@ -2011,31 +1941,13 @@ mod tests {
     }
 
     #[test]
-    fn launcher_confirm_returns_ticked_set() {
-        let mut p = launcher_with(&[("a.txt", false), ("b.txt", false), ("c.txt", false)]);
-        p.selected.insert(PathBuf::from("a.txt"));
-        p.selected.insert(PathBuf::from("c.txt"));
-        p.enter_confirm();
-        assert!(p.confirming);
-        assert_eq!(2, p.filtered.len()); // confirm view shows only ticked decks
-        assert_eq!(
-            vec![PathBuf::from("a.txt"), PathBuf::from("c.txt")],
-            p.result()
-        );
-    }
-
-    #[test]
-    fn launcher_ticks_and_launches_a_drillable_locked_deck() {
+    fn launcher_launches_a_drillable_locked_deck() {
         // A prerequisite-locked deck is still drillable (only its exam is gated),
-        // so it both launches on Enter and joins a merged review when ticked.
+        // so it launches on Enter.
         let mut p = launcher_with(&[("locked.txt", true)]);
         p.cursor = 0;
         p.launch_focused();
         assert!(p.done);
-
-        p.done = false;
-        p.toggle();
-        assert!(p.selected.contains(&PathBuf::from("locked.txt")));
     }
 
     #[test]
@@ -2099,20 +2011,20 @@ mod tests {
     }
 
     #[test]
-    fn gating_disables_an_unreviewable_deck() {
-        // Nothing due + the review launcher is gating: the row can't be ticked
-        // (and Enter is a no-op), just like a locked deck.
+    fn gating_disables_launching_an_unreviewable_deck() {
+        // Nothing due + the review launcher is gating: Enter is a no-op, just like
+        // a locked deck — you can't start a deck with nothing to review.
         let mut p = launcher_with(&[("done.txt", false)]);
         p.all[0].reviewable = false;
         p.gate_reviewable = true;
         p.cursor = 0;
-        p.toggle();
-        assert!(p.selected.is_empty());
+        p.launch_focused();
+        assert!(!p.done);
 
-        // Without gating (browse, or `--cram`), the same row is selectable again.
+        // Without gating (browse, or `--cram`), the same deck launches.
         p.gate_reviewable = false;
-        p.toggle();
-        assert_eq!(1, p.selected.len());
+        p.launch_focused();
+        assert!(p.done);
     }
 
     #[test]

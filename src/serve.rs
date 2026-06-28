@@ -1027,9 +1027,10 @@ pub fn run_review(
                 &review_state(reviewing.as_ref(), &store, mode_override),
             ),
             (Method::Post, "/api/select") => {
-                match select_decks(&mut request, &decks_dir, &recent) {
-                    Some(paths) => {
-                        // Write to the decks' own store — a workspace's `progress.json`
+                match select_deck(&mut request, &decks_dir, &recent) {
+                    Some(deck) => {
+                        let paths = vec![deck];
+                        // Write to the deck's own store — a workspace's `progress.json`
                         // when they share one, else the global store — so the browser
                         // records progress where the TUI would and where the picker's
                         // badges are read from.
@@ -1073,36 +1074,35 @@ pub fn run_review(
             }
             // The picker's "Browse" action: build a read-only card list and tell
             // the page to navigate to `/browse` (hosted here, like `/walk`).
-            (Method::Post, "/api/browse") => {
-                match select_decks(&mut request, &decks_dir, &recent) {
-                    Some(paths) => {
-                        if let Err(e) = store_for(&paths).map(|s| store = s) {
-                            eprintln!("warning: could not open the progress store: {e}");
-                            respond_status(request, 400);
-                            continue;
+            (Method::Post, "/api/browse") => match select_deck(&mut request, &decks_dir, &recent) {
+                Some(deck) => {
+                    let paths = vec![deck];
+                    if let Err(e) = store_for(&paths).map(|s| store = s) {
+                        eprintln!("warning: could not open the progress store: {e}");
+                        respond_status(request, 400);
+                        continue;
+                    }
+                    match build_browse(paths, &mut recent) {
+                        Ok(b) => {
+                            browsing = Some(Browsing::new(b));
+                            reviewing = None;
+                            walking = None;
+                            examining = None;
+                            respond_json(
+                                request,
+                                &WalkRedirect {
+                                    redirect: "/browse",
+                                },
+                            );
                         }
-                        match build_browse(paths, &mut recent) {
-                            Ok(b) => {
-                                browsing = Some(Browsing::new(b));
-                                reviewing = None;
-                                walking = None;
-                                examining = None;
-                                respond_json(
-                                    request,
-                                    &WalkRedirect {
-                                        redirect: "/browse",
-                                    },
-                                );
-                            }
-                            Err(e) => {
-                                eprintln!("warning: could not load the selected decks: {e}");
-                                respond_status(request, 400);
-                            }
+                        Err(e) => {
+                            eprintln!("warning: could not load the selected decks: {e}");
+                            respond_status(request, 400);
                         }
                     }
-                    None => respond_status(request, 400),
                 }
-            }
+                None => respond_status(request, 400),
+            },
             (Method::Post, "/api/deselect") => {
                 reviewing = None;
                 walking = None;
@@ -2049,21 +2049,19 @@ pub fn run_browse(
             (Method::Get, "/api/cards") => {
                 respond_json(request, &browse_payload(browsing.as_ref()))
             }
-            (Method::Post, "/api/select") => {
-                match select_decks(&mut request, &decks_dir, &recent) {
-                    Some(paths) => match build(paths, &mut recent) {
-                        Ok(b) => {
-                            browsing = Some(Browsing::new(b));
-                            respond_json(request, &browse_payload(browsing.as_ref()));
-                        }
-                        Err(e) => {
-                            eprintln!("warning: could not load the selected decks: {e}");
-                            respond_status(request, 400);
-                        }
-                    },
-                    None => respond_status(request, 400),
-                }
-            }
+            (Method::Post, "/api/select") => match select_deck(&mut request, &decks_dir, &recent) {
+                Some(deck) => match build(vec![deck], &mut recent) {
+                    Ok(b) => {
+                        browsing = Some(Browsing::new(b));
+                        respond_json(request, &browse_payload(browsing.as_ref()));
+                    }
+                    Err(e) => {
+                        eprintln!("warning: could not load the selected decks: {e}");
+                        respond_status(request, 400);
+                    }
+                },
+                None => respond_status(request, 400),
+            },
             (Method::Post, "/api/deselect") => {
                 browsing = None;
                 respond_json(request, &browse_payload(browsing.as_ref()));
@@ -2447,22 +2445,19 @@ fn deck_catalog(
 /// path via the live catalog. Returns `None` (→ 400) for an empty or malformed
 /// body, or any name not in the catalog — so no filesystem path is ever built
 /// from request input, keeping selection safe under `--lan`.
-fn select_decks(
-    request: &mut Request,
-    decks_dir: &Path,
-    recent: &RecentDecks,
-) -> Option<Vec<PathBuf>> {
+fn select_deck(request: &mut Request, decks_dir: &Path, recent: &RecentDecks) -> Option<PathBuf> {
     #[derive(Deserialize)]
     struct Body {
-        decks: Vec<String>,
+        deck: String,
     }
     let body: Body = serde_json::from_reader(request.as_reader()).ok()?;
-    if body.decks.is_empty() {
+    if body.deck.is_empty() {
         return None;
     }
     // The resolution map includes top-level decks/workspaces and every
     // workspace's members (by their qualified `<workspace>/<file>` key), so a
-    // subset selection from inside a workspace resolves safely too.
+    // member selection from inside a workspace resolves safely too. An unknown or
+    // crafted name maps to nothing, so it's rejected rather than hitting the disk.
     let mut known: HashMap<String, PathBuf> = HashMap::new();
     for e in picker::catalog(decks_dir, recent) {
         for m in &e.members {
@@ -2470,14 +2465,14 @@ fn select_decks(
         }
         known.insert(e.name, e.path);
     }
-    resolve_names(body.decks, &known)
+    resolve_name(&body.deck, &known)
 }
 
-/// Maps each requested deck name to its catalog path. Returns `None` if any
-/// name is not in the catalog, so an unknown or crafted name is rejected
-/// wholesale rather than reaching the filesystem.
-fn resolve_names(names: Vec<String>, known: &HashMap<String, PathBuf>) -> Option<Vec<PathBuf>> {
-    names.into_iter().map(|n| known.get(&n).cloned()).collect()
+/// Maps a requested deck name to its catalog path, or `None` if it isn't known —
+/// so an unknown or crafted name (e.g. a traversal attempt) is rejected rather
+/// than reaching the filesystem.
+fn resolve_name(name: &str, known: &HashMap<String, PathBuf>) -> Option<PathBuf> {
+    known.get(name).cloned()
 }
 
 /// Serializes a card for the browser, structuring its note via the shared
@@ -2712,26 +2707,16 @@ mod tests {
     }
 
     #[test]
-    fn resolve_names_rejects_unknown_deck() {
+    fn resolve_name_rejects_unknown_deck() {
         let mut known = HashMap::new();
         known.insert("a.txt".to_string(), PathBuf::from("/decks/a.txt"));
-        known.insert("b.txt".to_string(), PathBuf::from("/decks/b.txt"));
-        // All known -> resolves to their catalog paths.
+        // A known name resolves to its catalog path.
         assert_eq!(
-            resolve_names(vec!["b.txt".to_string(), "a.txt".to_string()], &known),
-            Some(vec![
-                PathBuf::from("/decks/b.txt"),
-                PathBuf::from("/decks/a.txt")
-            ])
+            resolve_name("a.txt", &known),
+            Some(PathBuf::from("/decks/a.txt"))
         );
-        // One unknown name (e.g. a traversal attempt) rejects the whole request.
-        assert_eq!(
-            resolve_names(
-                vec!["a.txt".to_string(), "../etc/passwd".to_string()],
-                &known
-            ),
-            None
-        );
+        // An unknown name (e.g. a traversal attempt) resolves to nothing.
+        assert_eq!(resolve_name("../etc/passwd", &known), None);
     }
 
     #[test]
