@@ -2520,8 +2520,10 @@ fn run_walk(
                     Ok(excerpt) => {
                         // A frozen-snapshot asset reads `30.rs`, lines 1-N; relabel
                         // it back to the real `caching.rs:106-120` for display.
-                        let (excerpt, _) =
-                            alix::trace::relabel_for_display(excerpt, checkpoint.note.as_deref());
+                        let (excerpt, _) = alix::trace::relabel_for_display(
+                            excerpt,
+                            checkpoint.at_origin.as_deref(),
+                        );
                         print_excerpt(&excerpt);
                     }
                     Err(e) => {
@@ -2535,10 +2537,9 @@ fn run_walk(
                         println!("    • {point}");
                     }
                 }
-                // The provenance (`from <file>:<lines>`) is promoted into the
-                // excerpt label, so drop it from the note shown here.
-                if let Some(note) = alix::trace::note_without_provenance(checkpoint.note.as_deref())
-                {
+                // The note is the learner's own (provenance now rides the `% at:`
+                // line), so show it as-is.
+                if let Some(note) = &checkpoint.note {
                     println!("{DIM}  ! {note}{RESET}");
                 }
                 // `--grade`: Claude judges the prediction; otherwise self-grade.
@@ -3062,6 +3063,22 @@ fn check(decks: Vec<PathBuf>) -> Result<()> {
                             );
                         }
                     }
+                }
+
+                // Frozen decks: warn when a card's snapshot no longer matches the
+                // live source (the file changed or is gone), so the learner can
+                // update or drop that card.
+                for drift in alix::trace::drifted_cards(&deck) {
+                    warnings += 1;
+                    let what = if drift.gone {
+                        "source file is gone"
+                    } else {
+                        "no longer found in the source"
+                    };
+                    eprintln!(
+                        "warning: {}: card at line {} — frozen excerpt {} ({})",
+                        deck.subject, drift.line, what, drift.at
+                    );
                 }
 
                 // Trace decks: validate each `% at:` locator resolves into the

@@ -629,6 +629,7 @@ impl Ask {
         card: &Card,
         links: &[String],
         root: Option<&Path>,
+        frozen: Option<&str>,
         question: Option<String>,
     ) -> bool {
         if self.pending.is_some() {
@@ -650,7 +651,7 @@ impl Ask {
         let args = self.cli.args_in(run_cfg.cwd.as_deref());
         let (prompt, purpose) = match question {
             Some(q) => (
-                ask::question_prompt(card, links, &q, !self.cli.started, root),
+                ask::question_prompt(card, links, &q, !self.cli.started, root, frozen),
                 Purpose::Question(q),
             ),
             None => (
@@ -791,9 +792,25 @@ impl Reviewing {
             return false;
         };
         let links = self.links.get(&*card.subject).cloned().unwrap_or_default();
-        let root = self.source_roots.get(&*card.subject).cloned();
+        // The grounded source root (opt-in via `source_access`): a per-card
+        // `% origin:` override, else the deck/workspace root.
+        let root = self.source_roots.get(&*card.subject).map(|deck_root| {
+            card.origin
+                .as_deref()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| deck_root.clone())
+        });
+        // A frozen card inlines its snapshot excerpt as the anchor; the live
+        // source is read for context. A recorded-but-missing source → the canned
+        // "couldn't find" reply (no cwd handed to the subprocess).
+        let frozen = root.as_ref().and_then(|_| {
+            let at = card.at.as_deref()?;
+            let base = self.source_bases.get(&*card.subject)?;
+            trace::frozen_excerpt_block(at, card.at_origin.as_deref(), base)
+        });
+        let live_root = root.as_deref().filter(|r| r.exists());
         self.ask
-            .start(cfg, &card, &links, root.as_deref(), question)
+            .start(cfg, &card, &links, live_root, frozen.as_deref(), question)
     }
 
     /// Drains a finished CLI reply into the transcript (a question) or the deck
@@ -1632,7 +1649,19 @@ impl Walking {
         let Some(card) = self.checkpoint_card() else {
             return false;
         };
-        self.ask.start(cfg, &card, &[], None, question)
+        // Ground the walk tutor in the trace's live source (opt-in), with the
+        // current checkpoint's frozen excerpt as the anchor.
+        let root = cfg
+            .source_access
+            .then(|| self.walk.trace().origin.clone())
+            .flatten();
+        let frozen = root.as_ref().and_then(|_| {
+            let c = self.walk.checkpoint()?;
+            self.walk.trace().frozen_block(c)
+        });
+        let live_root = root.as_deref().filter(|r| r.exists());
+        self.ask
+            .start(cfg, &card, &[], live_root, frozen.as_deref(), question)
     }
 
     /// Drains a finished ask reply; a "save note" condense appends a `!` line to
@@ -1858,10 +1887,9 @@ fn walk_dto(w: &Walking) -> WalkDto {
                         // For a frozen-snapshot asset, relabel the excerpt + the
                         // "at" label to the ORIGINAL source (`caching.rs:106-120`),
                         // so the gutter shows real line numbers, not the asset's.
-                        let (ex, label) = trace::relabel_for_display(ex, c.note.as_deref());
+                        let (ex, label) = trace::relabel_for_display(ex, c.at_origin.as_deref());
                         if let Some(label) = label {
                             dto.locator = Some(label);
-                            dto.note = trace::note_without_provenance(c.note.as_deref());
                         }
                         dto.excerpt = Some(excerpt_dto(&ex));
                     }
@@ -2214,9 +2242,9 @@ fn review_state(
                 match base.excerpt(locator) {
                     Ok(ex) => {
                         // Relabel a frozen-snapshot asset to its real source +
-                        // line numbers (the `! from <file>:<lines>` note), so the
-                        // citation reads `store.rs:36-66`, not `01.rs`, 1-N.
-                        let (ex, label) = trace::relabel_for_display(ex, c.note.as_deref());
+                        // line numbers (the `% at:` ` from <file>:<lines>` origin),
+                        // so the citation reads `store.rs:36-66`, not `01.rs`, 1-N.
+                        let (ex, label) = trace::relabel_for_display(ex, c.at_origin.as_deref());
                         if let Some(label) = label {
                             dto.at = Some(label);
                         }

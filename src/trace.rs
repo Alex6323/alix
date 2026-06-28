@@ -96,6 +96,9 @@ pub struct Checkpoint {
     pub note: Option<String>,
     /// The `% at:` locator into the source, if the checkpoint declares one.
     pub locator: Option<String>,
+    /// The frozen `% at:`'s ` from <file>:<lines>` origin provenance, if any —
+    /// drives display relabeling and tutor grounding.
+    pub at_origin: Option<String>,
     /// The card's identity hash — the key its per-checkpoint SRS hangs off.
     pub card_id: u64,
     /// The 1-based line of the checkpoint's front in the deck file, so an
@@ -121,6 +124,10 @@ pub struct Trace {
     /// The deck file this trace was loaded from — for appending an ask-Claude
     /// "save note" to a checkpoint.
     pub deck_path: PathBuf,
+    /// The live source root the tutor grounds in (the deck's `% origin:` for a
+    /// frozen trace, else its `% source:` project root). `None` when there's no
+    /// local source.
+    pub origin: Option<PathBuf>,
     /// Directory a locator's `file:` part resolves against.
     base_dir: PathBuf,
     /// The single source file, when `% source:` is one file — then a locator
@@ -148,6 +155,7 @@ impl Trace {
                 givens: c.givens.clone(),
                 note: c.note.clone(),
                 locator: c.at.clone(),
+                at_origin: c.at_origin.clone(),
                 card_id: c.id(),
                 line: c.line,
             })
@@ -160,6 +168,7 @@ impl Trace {
             source,
             checkpoints,
             deck_path: deck.path.clone(),
+            origin: deck.source_root(),
             base_dir,
             source_file,
         })
@@ -188,6 +197,17 @@ impl Trace {
             .as_deref()
             .ok_or_else(|| anyhow!("this checkpoint has no `% at:` locator to reveal"))?;
         excerpt_at(&self.base_dir, self.source_file.as_deref(), locator)
+    }
+
+    /// The inline frozen-excerpt block for a checkpoint's tutor prompt, or `None`
+    /// for a live (non-frozen) checkpoint or an unreadable excerpt.
+    pub fn frozen_block(&self, checkpoint: &Checkpoint) -> Option<String> {
+        checkpoint.at_origin.as_deref()?;
+        let excerpt = self.excerpt(checkpoint).ok()?;
+        Some(render_frozen_block(
+            excerpt,
+            checkpoint.at_origin.as_deref(),
+        ))
     }
 
     /// Validates every checkpoint's `% at:` locator against the live source, for
@@ -345,7 +365,11 @@ pub(crate) struct SnapshotReport {
 /// Requires a deck whose `% source:` is local (not a URL) and whose folder is a
 /// workspace. The freeze is one-way — there is no "un-snapshot"; the workspace is
 /// either long-lived stable material or a throwaway.
-pub(crate) fn snapshot(deck: &Deck, start: usize) -> Result<SnapshotReport> {
+pub(crate) fn snapshot(
+    deck: &Deck,
+    start: usize,
+    workspace_origin: Option<&Path>,
+) -> Result<SnapshotReport> {
     let deck_dir = deck.path.parent().unwrap_or_else(|| Path::new("."));
     if !crate::workspace::is_workspace(deck_dir) {
         bail!(
@@ -361,6 +385,17 @@ pub(crate) fn snapshot(deck: &Deck, start: usize) -> Result<SnapshotReport> {
     if is_url(source) {
         bail!("`{source}` is a URL — there are no local excerpts to snapshot");
     }
+
+    // The live crate this deck froze from — its `% at:` provenance is recorded
+    // relative to it so the tutor + drift can find the files. The deck's own
+    // resolved source root is the authority; a deck-level `% origin:` is written
+    // only when it diverges from the workspace `[defaults] origin`.
+    let origin_root = deck.source_root();
+    let deck_origin = match (&origin_root, workspace_origin) {
+        (Some(o), Some(ws)) if same_path(o, ws) => None, // workspace default covers it
+        (Some(o), _) => Some(o.display().to_string()),
+        (None, _) => None,
+    };
 
     // Resolve `% at:` locators exactly as the review path does — including a
     // ` + `-joined multi-file `% source:`, which must be split, not treated as one
@@ -390,10 +425,9 @@ pub(crate) fn snapshot(deck: &Deck, start: usize) -> Result<SnapshotReport> {
                 copied.push(name.clone());
                 ats.push(crate::deck::AtRewrite {
                     at: name,
-                    // Keep the original `file:lines` in a note when re-basing to
-                    // line 1 actually loses the numbers (the excerpt didn't start
-                    // at line 1).
-                    note: excerpt_provenance(&excerpt),
+                    // The origin-relative `file:lines` rides the `% at:` line as
+                    // ` from …`, so the live source stays locatable.
+                    origin: excerpt_provenance(&excerpt, origin_root.as_deref()),
                 });
             }
             // Keep the original locator if the excerpt can't be read; warn later.
@@ -401,7 +435,7 @@ pub(crate) fn snapshot(deck: &Deck, start: usize) -> Result<SnapshotReport> {
                 missing.push(locator.to_string());
                 ats.push(crate::deck::AtRewrite {
                     at: locator.to_string(),
-                    note: None,
+                    origin: None,
                 });
             }
         }
@@ -413,7 +447,7 @@ pub(crate) fn snapshot(deck: &Deck, start: usize) -> Result<SnapshotReport> {
         );
     }
 
-    crate::deck::set_trace_snapshot(&deck.path, SNAPSHOT_DIR, &ats)?;
+    crate::deck::set_trace_snapshot(&deck.path, SNAPSHOT_DIR, deck_origin.as_deref(), &ats)?;
 
     Ok(SnapshotReport { copied, missing })
 }
@@ -429,24 +463,47 @@ fn excerpt_ext(excerpt: &Excerpt) -> String {
         .to_string()
 }
 
-/// The original `file:lines` of an excerpt, for the provenance note — but only
-/// when re-basing to line 1 loses information (the excerpt starts past line 1).
-fn excerpt_provenance(excerpt: &Excerpt) -> Option<String> {
+/// The original `file:lines` of an excerpt for the ` from …` provenance, as a
+/// path **relative to `origin_root`** (`src/caching.rs:46-66`) so the tutor and
+/// drift detection can locate the live file. Falls back to the basename when the
+/// excerpt isn't under the origin. Always emitted now (unlike the old basename
+/// note) — the origin path matters even when the line numbers didn't shift.
+fn excerpt_provenance(excerpt: &Excerpt, origin_root: Option<&Path>) -> Option<String> {
     let first = excerpt.lines.first()?.0;
     let last = excerpt.lines.last()?.0;
-    if first <= 1 {
-        return None; // the re-based numbers match the originals — nothing lost
-    }
-    let file = excerpt
-        .path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("source");
+    let rel = origin_root
+        .and_then(|root| path_relative_to(&excerpt.path, root))
+        .or_else(|| {
+            excerpt
+                .path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+        })
+        .unwrap_or_else(|| "source".to_string());
     Some(if first == last {
-        format!("{file}:{first}")
+        format!("{rel}:{first}")
     } else {
-        format!("{file}:{first}-{last}")
+        format!("{rel}:{first}-{last}")
     })
+}
+
+/// `path` expressed relative to `root`, canonicalizing both (the files exist at
+/// freeze time) so `./` segments and symlinks don't defeat the prefix match.
+fn path_relative_to(path: &Path, root: &Path) -> Option<String> {
+    let path = path.canonicalize().ok()?;
+    let root = root.canonicalize().ok()?;
+    path.strip_prefix(&root)
+        .ok()
+        .map(|p| p.to_string_lossy().into_owned())
+}
+
+/// Whether two paths point at the same location, canonicalizing when possible so
+/// `./` and symlink differences don't read as divergence.
+fn same_path(a: &Path, b: &Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
+    }
 }
 
 /// Writes an excerpt's lines (content only, re-based to line 1) to a snippet
@@ -1256,16 +1313,18 @@ pub(crate) fn resolve_under_base(base_dir: &Path, file: &str) -> PathBuf {
 }
 
 /// Relabels a freshly-read `excerpt` to its ORIGINAL source for *display*, using
-/// the card's `note`. A frozen-snapshot asset (`assets/30.rs`) holds content
-/// re-based to line 1, and the real location lives in the card's
-/// `! from <file>:<start>` note (written by [`crate::deck::set_trace_snapshot`]).
-/// When that provenance is present, this repoints the excerpt's path at the real
-/// file and renumbers its lines from the original start, and returns the original
-/// `file:start-end` to show as the "at" label — so the learner sees real source
-/// and line numbers, not the opaque asset (`30.rs`, lines 1-N). With no
-/// provenance (a live trace) it returns the excerpt unchanged and `None`.
-pub fn relabel_for_display(mut excerpt: Excerpt, note: Option<&str>) -> (Excerpt, Option<String>) {
-    let Some((file, start)) = provenance_from_note(note) else {
+/// the card's `at_origin` (the ` from <file>:<lines>` recorded on the `% at:`
+/// line when the excerpt was frozen). A frozen asset (`assets/30.rs`) holds
+/// content re-based to line 1; when `at_origin` is present this repoints the
+/// excerpt's path at the real file (`src/caching.rs`), renumbers its lines from
+/// the original start, and returns `file:start-end` to show as the "at" label —
+/// so the learner sees real source and line numbers, not the opaque asset. With
+/// no `at_origin` (a live trace) it returns the excerpt unchanged and `None`.
+pub fn relabel_for_display(
+    mut excerpt: Excerpt,
+    at_origin: Option<&str>,
+) -> (Excerpt, Option<String>) {
+    let Some((file, start)) = parse_at_origin(at_origin) else {
         return (excerpt, None);
     };
     excerpt.path = PathBuf::from(&file);
@@ -1280,35 +1339,115 @@ pub fn relabel_for_display(mut excerpt: Excerpt, note: Option<&str>) -> (Excerpt
     (excerpt, Some(label))
 }
 
-/// Parses the original `from <file>:<start>[-end]` provenance a snapshot writes
-/// into a card's note, recovering the real source file and 1-based start line.
-/// Only a snapshot writes this exact shape, so it rarely fires for a hand-authored
-/// note that merely mentions a file.
-fn provenance_from_note(note: Option<&str>) -> Option<(String, usize)> {
-    for line in note?.lines() {
-        let Some(rest) = line.trim().strip_prefix("from ") else {
-            continue;
-        };
-        if let Some((file, spec)) = rest.rsplit_once(':')
-            && let Some(start) = spec.split('-').next().and_then(|n| n.trim().parse().ok())
-            && !file.trim().is_empty()
-        {
-            return Some((file.trim().to_string(), start));
-        }
+/// Renders a frozen card's excerpt as the inline "exact code" block for the
+/// tutor: the relabeled origin label (`src/caching.rs:46-66`) and the snippet
+/// lines with their real line numbers. The asset is the anchor — what the learner
+/// sees — so the tutor reasons about this, using the live source only for context.
+fn render_frozen_block(excerpt: Excerpt, at_origin: Option<&str>) -> String {
+    let (excerpt, label) = relabel_for_display(excerpt, at_origin);
+    let mut s = String::new();
+    if let Some(label) = label {
+        s.push_str(&label);
+        s.push('\n');
     }
-    None
+    for (n, text) in &excerpt.lines {
+        s.push_str(&format!("{n}\t{text}\n"));
+    }
+    s
 }
 
-/// Strips the snapshot provenance line (`from <file>:<lines>`) from a card's note
-/// for display, since [`relabel_for_display`] promotes it to the "at" label.
-/// Returns `None` if nothing meaningful remains.
-pub fn note_without_provenance(note: Option<&str>) -> Option<String> {
-    let kept: Vec<&str> = note?
+/// A frozen card whose snapshot no longer matches the live source — so the
+/// learner can update or drop it. `at` labels the card (its origin location).
+#[derive(Debug)]
+pub struct Drift {
+    /// The card's front line in the deck file.
+    pub line: usize,
+    /// The original location label (`src/caching.rs:46-66`).
+    pub at: String,
+    /// Why it drifted: the source file is gone, or the snippet changed/moved out.
+    pub gone: bool,
+}
+
+/// Detects frozen cards whose frozen excerpt no longer exists in the live source
+/// (the file is gone, or its lines changed). A *moved* excerpt that's otherwise
+/// unchanged is NOT flagged — the block is searched across the whole file. Empty
+/// for a non-frozen deck or one with no readable origin.
+pub fn drifted_cards(deck: &Deck) -> Vec<Drift> {
+    let Some(origin_root) = deck.source_root() else {
+        return Vec::new();
+    };
+    let source_base = SourceBase::for_deck(deck);
+    let mut out = Vec::new();
+    for card in &deck.cards {
+        let (Some(at), Some(at_origin)) = (card.at.as_deref(), card.at_origin.as_deref()) else {
+            continue;
+        };
+        let Some((file, _)) = parse_at_origin(Some(at_origin)) else {
+            continue;
+        };
+        // The frozen snippet (the asset) vs the live file it came from.
+        let Ok(frozen) = source_base.excerpt(at) else {
+            continue;
+        };
+        match std::fs::read_to_string(origin_root.join(&file)) {
+            Err(_) => out.push(Drift {
+                line: card.line,
+                at: at_origin.to_string(),
+                gone: true,
+            }),
+            Ok(live) if !excerpt_occurs_in(&frozen, &live) => out.push(Drift {
+                line: card.line,
+                at: at_origin.to_string(),
+                gone: false,
+            }),
+            Ok(_) => {}
+        }
+    }
+    out
+}
+
+/// Whether the frozen excerpt's lines still appear as a contiguous block in
+/// `live` (trailing whitespace ignored, so reformatting the file's line endings
+/// doesn't read as drift). A moved-but-unchanged block still matches.
+fn excerpt_occurs_in(frozen: &Excerpt, live: &str) -> bool {
+    let block = frozen
+        .lines
+        .iter()
+        .map(|(_, t)| t.trim_end())
+        .collect::<Vec<_>>()
+        .join("\n");
+    if block.trim().is_empty() {
+        return true;
+    }
+    let live_norm = live
         .lines()
-        .filter(|l| provenance_from_note(Some(l)).is_none())
-        .collect();
-    let joined = kept.join("\n");
-    (!joined.trim().is_empty()).then_some(joined)
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n");
+    live_norm.contains(&block)
+}
+
+/// The inline frozen-excerpt block for a fact card's tutor prompt, read from the
+/// deck's snapshot asset. `None` for a live card (no `at_origin`) or an
+/// unreadable asset.
+pub fn frozen_excerpt_block(
+    at: &str,
+    at_origin: Option<&str>,
+    source_base: &SourceBase,
+) -> Option<String> {
+    at_origin?;
+    let excerpt = source_base.excerpt(at).ok()?;
+    Some(render_frozen_block(excerpt, at_origin))
+}
+
+/// Parses a frozen `% at:`'s `at_origin` provenance (`src/caching.rs:46-66`) into
+/// the real source file and its 1-based start line. The split is on the LAST
+/// colon, so a path with directories (`src/caching.rs`) stays intact.
+pub(crate) fn parse_at_origin(at_origin: Option<&str>) -> Option<(String, usize)> {
+    let spec = at_origin?.trim();
+    let (file, lines) = spec.rsplit_once(':')?;
+    let start = lines.split('-').next()?.trim().parse().ok()?;
+    (!file.trim().is_empty()).then(|| (file.trim().to_string(), start))
 }
 
 fn excerpt_at(base_dir: &Path, source_file: Option<&Path>, locator: &str) -> Result<Excerpt> {
@@ -1456,9 +1595,9 @@ mod tests {
     }
 
     #[test]
-    fn relabel_for_display_uses_the_provenance_note() {
+    fn relabel_for_display_uses_the_at_origin() {
         // A frozen asset's excerpt (path `30.rs`, re-based lines 1-3) is relabeled
-        // to the real source + line numbers from the `from <file>:<start>` note.
+        // to the real source + line numbers from the `% at:` ` from …` origin.
         let ex = Excerpt {
             path: PathBuf::from("/ws/assets/30.rs"),
             lines: vec![
@@ -1468,8 +1607,8 @@ mod tests {
             ],
             truncated: false,
         };
-        let (ex, label) = relabel_for_display(ex, Some("from caching.rs:106-120"));
-        assert_eq!("caching.rs", ex.path.to_str().unwrap());
+        let (ex, label) = relabel_for_display(ex, Some("src/caching.rs:106-120"));
+        assert_eq!("src/caching.rs", ex.path.to_str().unwrap());
         assert_eq!(
             vec![
                 (106, "a".to_string()),
@@ -1479,7 +1618,7 @@ mod tests {
             ex.lines
         );
         // The label reflects the lines actually shown (here 3, not the full range).
-        assert_eq!(Some("caching.rs:106-108".to_string()), label);
+        assert_eq!(Some("src/caching.rs:106-108".to_string()), label);
     }
 
     #[test]
@@ -1497,19 +1636,18 @@ mod tests {
     }
 
     #[test]
-    fn note_without_provenance_drops_only_the_from_line() {
+    fn parse_at_origin_splits_file_and_start_on_the_last_colon() {
         assert_eq!(
-            None,
-            note_without_provenance(Some("from caching.rs:106-120"))
+            Some(("src/caching.rs".to_string(), 46)),
+            parse_at_origin(Some("src/caching.rs:46-66"))
         );
         assert_eq!(
-            Some("a real insight".to_string()),
-            note_without_provenance(Some("a real insight\nfrom caching.rs:106-120"))
+            Some(("a.rs".to_string(), 1)),
+            parse_at_origin(Some("a.rs:1"))
         );
-        assert_eq!(
-            Some("plain note".to_string()),
-            note_without_provenance(Some("plain note"))
-        );
+        // No colon / no provenance → nothing to relabel.
+        assert_eq!(None, parse_at_origin(Some("just an insight")));
+        assert_eq!(None, parse_at_origin(None));
     }
 
     #[test]
@@ -2132,7 +2270,7 @@ mod tests {
         let deck_path = snapshot_workspace(root);
         let deck = Deck::load(&deck_path).unwrap();
 
-        let report = snapshot(&deck, 0).unwrap();
+        let report = snapshot(&deck, 0, None).unwrap();
         assert_eq!(2, report.copied.len());
         assert!(report.missing.is_empty());
         // one small snippet per checkpoint — NOT the whole files
@@ -2147,11 +2285,11 @@ mod tests {
 
         let text = std::fs::read_to_string(&deck_path).unwrap();
         assert!(text.contains("% source: assets\n"), "{text}");
-        assert!(text.contains("% at: 01.rs\n"), "{text}"); // locator → snippet
-        assert!(text.contains("! from a.rs:2-3\n"), "{text}"); // original lines kept in a note
-        assert!(!text.contains("a.rs:2-3\n\t%")); // the `% at:` no longer holds the file range
-        // hop 2 (b.rs:1) starts at line 1, so no provenance note
-        assert!(!text.contains("! from b.rs"));
+        assert!(text.contains("% origin: "), "{text}"); // the live source root is recorded
+        // The provenance rides the `% at:` line, never a `!` note.
+        assert!(text.contains("% at: 01.rs from a.rs:2-3\n"), "{text}");
+        assert!(text.contains("% at: 02.rs from b.rs:1\n"), "{text}");
+        assert!(!text.contains("! from"), "{text}");
 
         // the reloaded trace reads the re-based excerpt from the snippet
         let frozen = Deck::load(&deck_path).unwrap();
@@ -2164,11 +2302,34 @@ mod tests {
     }
 
     #[test]
+    fn drifted_cards_flags_a_changed_or_missing_excerpt() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let deck_path = snapshot_workspace(root);
+        snapshot(&Deck::load(&deck_path).unwrap(), 0, None).unwrap();
+
+        // Intact source → no drift.
+        assert!(drifted_cards(&Deck::load(&deck_path).unwrap()).is_empty());
+
+        // The cited excerpt's lines change → drift (file still there).
+        std::fs::write(root.join("src/a.rs"), "alpha\nCHANGED\nLINES\n").unwrap();
+        let d = drifted_cards(&Deck::load(&deck_path).unwrap());
+        assert_eq!(1, d.len(), "{d:?}");
+        assert!(!d[0].gone);
+        assert_eq!("a.rs:2-3", d[0].at);
+
+        // The whole file is gone → drift (gone).
+        std::fs::remove_file(root.join("src/a.rs")).unwrap();
+        let d = drifted_cards(&Deck::load(&deck_path).unwrap());
+        assert!(d.iter().any(|x| x.gone && x.at == "a.rs:2-3"), "{d:?}");
+    }
+
+    #[test]
     fn snapshot_drift_is_gone_after_editing_upstream() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let deck_path = snapshot_workspace(root);
-        snapshot(&Deck::load(&deck_path).unwrap(), 0).unwrap();
+        snapshot(&Deck::load(&deck_path).unwrap(), 0, None).unwrap();
         // Edit the upstream source — even delete it: the frozen snippet is intact.
         std::fs::write(root.join("src/a.rs"), "TOTALLY\nDIFFERENT\n").unwrap();
         let trace = Trace::from_deck(&Deck::load(&deck_path).unwrap()).unwrap();
@@ -2191,13 +2352,13 @@ mod tests {
             "t.txt",
             "% trace: t\n% source: ../notes.md\n# hop\n\tp\n\t% at: 2\n",
         );
-        let report = snapshot(&Deck::load(&deck_path).unwrap(), 0).unwrap();
+        let report = snapshot(&Deck::load(&deck_path).unwrap(), 0, None).unwrap();
         assert_eq!(1, report.copied.len());
         assert!(root.join("ws/assets/01.md").is_file());
         let text = std::fs::read_to_string(&deck_path).unwrap();
         assert!(text.contains("% source: assets\n"), "{text}");
-        assert!(text.contains("% at: 01.md\n"), "{text}");
-        assert!(text.contains("! from notes.md:2\n"), "{text}");
+        assert!(text.contains("% at: 01.md from notes.md:2\n"), "{text}");
+        assert!(!text.contains("! from"), "{text}");
 
         let frozen = Deck::load(&deck_path).unwrap();
         let trace = Trace::from_deck(&frozen).unwrap();
@@ -2224,7 +2385,7 @@ mod tests {
              # q1\n\tp\n\t% at: a.rs:2-3\n\
              # q2\n\tp\n\t% at: b.rs:1\n",
         );
-        let report = snapshot(&Deck::load(&deck_path).unwrap(), 0).unwrap();
+        let report = snapshot(&Deck::load(&deck_path).unwrap(), 0, None).unwrap();
         assert_eq!(2, report.copied.len(), "both ` + ` files freeze");
         assert!(report.missing.is_empty(), "{:?}", report.missing);
         assert!(root.join("ws/assets/01.rs").is_file());
@@ -2241,7 +2402,7 @@ mod tests {
             "t.txt",
             "% trace: t\n% source: .\n# h\n\tp\n\t% at: x.rs:1\n",
         );
-        let err = snapshot(&Deck::load(&loose).unwrap(), 0).unwrap_err();
+        let err = snapshot(&Deck::load(&loose).unwrap(), 0, None).unwrap_err();
         assert!(format!("{err:#}").contains("not in a workspace"), "{err:#}");
 
         // URL source, in a workspace
@@ -2252,7 +2413,7 @@ mod tests {
             "u.txt",
             "% trace: t\n% source: https://example.com/p\n# h\n\tp\n\t% at: 1\n",
         );
-        let err = snapshot(&Deck::load(&url).unwrap(), 0).unwrap_err();
+        let err = snapshot(&Deck::load(&url).unwrap(), 0, None).unwrap_err();
         assert!(format!("{err:#}").contains("URL"), "{err:#}");
     }
 }

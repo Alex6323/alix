@@ -479,6 +479,15 @@ pub fn materialize(
     if let Some(unlock_stage) = unlock_stage {
         manifest.push_str(&format!("unlock-stage = {unlock_stage}\n"));
     }
+    // The live source root the frozen `% at:` provenance resolves against — the
+    // tutor grounds here for context, and drift detection reads it. Cascades into
+    // every member deck (`% origin:`), overridable per deck/card.
+    if let Some(root) = &root {
+        manifest.push_str(&format!(
+            "origin = \"{}\"\n",
+            toml_escape(&root.display().to_string())
+        ));
+    }
     fs::write(dir.join(crate::workspace::MANIFEST), manifest)?;
 
     let mut traces = 0;
@@ -559,7 +568,11 @@ pub struct SnapshotSummary {
 /// [`SnapshotSummary::failed`], never silently dropped.
 pub fn snapshot_workspace(dir: &Path) -> Result<SnapshotSummary> {
     let mut summary = SnapshotSummary::default();
-    for member in workspace::Workspace::load(dir)?.members {
+    let ws = workspace::Workspace::load(dir)?;
+    // The workspace-wide origin (`alix.toml [defaults] origin`): a deck whose
+    // source root matches it inherits it; one that diverges writes its own.
+    let workspace_origin = ws.settings.origin.as_deref().map(PathBuf::from);
+    for member in ws.members {
         let Ok(deck) = Deck::load(&member) else {
             continue;
         };
@@ -568,7 +581,7 @@ pub fn snapshot_workspace(dir: &Path) -> Result<SnapshotSummary> {
         }
         // `summary.files` is the running snippet count, passed as the start so each
         // deck's snippets get unique names in the shared `assets/`.
-        match trace::snapshot(&deck, summary.files) {
+        match trace::snapshot(&deck, summary.files, workspace_origin.as_deref()) {
             Ok(report) => {
                 summary.decks += 1;
                 summary.files += report.copied.len();

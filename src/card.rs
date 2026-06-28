@@ -81,6 +81,15 @@ pub struct Card {
     /// Read live when walking a trace; see [`crate::trace`]. Not part of the
     /// identity hash — it points at the source, it is not card content.
     pub at: Option<String>,
+    /// Where a frozen `% at:` snapshot came from in the live source, relative to
+    /// the effective `% origin:` (`% at: 29.rs from src/caching.rs:46-66` →
+    /// `src/caching.rs:46-66`). Drives display relabeling, tutor grounding, and
+    /// drift detection. Not part of the identity hash.
+    pub at_origin: Option<String>,
+    /// Per-card `% origin:` override of the deck/workspace origin (the crate root
+    /// this card's frozen source lives in). Effective origin = card else deck else
+    /// workspace `[defaults]`. Not part of the identity hash.
+    pub origin: Option<String>,
     /// Trace-checkpoint "givens" (`% given:` lines, repeatable): the off-screen
     /// symbols the question/excerpt leans on, each as `name — meaning`. Shown
     /// as a list under the question when walking (scaffolding so the
@@ -112,6 +121,8 @@ impl Card {
             image_back: None,
             frontend: None,
             at: None,
+            at_origin: None,
+            origin: None,
             givens: Vec::new(),
         }
     }

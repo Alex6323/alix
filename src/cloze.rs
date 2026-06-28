@@ -204,6 +204,8 @@ pub fn expand(
             image_back: None,
             frontend: None,
             at: None,
+            at_origin: None,
+            origin: None,
             givens: Vec::new(),
         });
     }

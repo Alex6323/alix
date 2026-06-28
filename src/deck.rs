@@ -46,6 +46,11 @@ pub struct DeckSettings {
     /// all cards retired at the top stage. The cards keep drilling to the top —
     /// the directive only lowers the unlock bar.
     pub unlock_stage: Option<u8>,
+    /// The live source root a frozen deck's `% at:` snapshots came from
+    /// (`% origin: <crate>`). Cascades workspace `[defaults]` → deck → card; the
+    /// tutor grounds in it for context and drift detection reads it. `None` for a
+    /// non-frozen deck.
+    pub origin: Option<String>,
 }
 
 impl DeckSettings {
@@ -68,6 +73,12 @@ impl DeckSettings {
                         .ok()
                         .map(|n| n.clamp(1, MAX_STAGE))
                 }
+                "origin" => {
+                    let v = value.trim();
+                    if !v.is_empty() {
+                        settings.origin = Some(v.to_string());
+                    }
+                }
                 _ => {}
             }
         }
@@ -86,6 +97,7 @@ impl DeckSettings {
         self.img_dir = self.img_dir.clone().or_else(|| defaults.img_dir.clone());
         self.exam_strictness = self.exam_strictness.or(defaults.exam_strictness);
         self.unlock_stage = self.unlock_stage.or(defaults.unlock_stage);
+        self.origin = self.origin.clone().or_else(|| defaults.origin.clone());
     }
 }
 
@@ -334,13 +346,34 @@ impl Deck {
         out
     }
 
-    /// The project root behind this deck's local `% source:` — the crate/project
-    /// directory the grounded ask-tutor reads (see [`crate::trace::project_root`])
-    /// — or `None` for a URL-only / source-less deck. The deck's own folder roots
-    /// any relative source paths.
+    /// The live source root the grounded ask-tutor reads. For a **frozen** deck
+    /// this is its `% origin:` (the real crate the `% at:` snapshots came from —
+    /// `% source:` itself points at the opaque `assets/`); otherwise the project
+    /// root behind the deck's local `% source:` (see [`crate::trace::project_root`]).
+    /// `None` for a URL-only / source-less deck.
     pub fn source_root(&self) -> Option<PathBuf> {
+        if let Some(origin) = &self.settings.origin {
+            return Some(PathBuf::from(origin));
+        }
         let deck_dir = self.path.parent().unwrap_or_else(|| Path::new("."));
+        // A frozen deck loaded WITHOUT its workspace defaults folded (bare
+        // `Deck::load`) has no `settings.origin` yet — recover it straight from the
+        // workspace manifest, so grounding works regardless of the load path.
+        if self.is_frozen()
+            && let Ok(ws) = crate::workspace::Workspace::load(deck_dir)
+            && let Some(origin) = ws.settings.origin
+        {
+            return Some(PathBuf::from(origin));
+        }
         crate::trace::project_root(&self.sources, deck_dir)
+    }
+
+    /// Whether this deck reads from frozen `assets/` snapshots (`% source: assets`)
+    /// rather than a live source — i.e. it has been through `snapshot`.
+    pub fn is_frozen(&self) -> bool {
+        self.sources
+            .first()
+            .is_some_and(|s| s == crate::trace::SNAPSHOT_DIR)
     }
 
     /// Returns pairs of cards within this deck that share the same identity
@@ -580,29 +613,35 @@ fn replace_after_header(text: &str, cards: &str) -> String {
     out
 }
 
-/// A snapshot's rewrite for one `% at:` line: its new value (the frozen excerpt
-/// snippet) and an optional provenance `note` (the original `file:lines`) to add
-/// as a `!` line, so the original line numbers aren't lost when the excerpt is
-/// re-based to line 1.
+/// A snapshot's rewrite for one `% at:` line: the frozen asset locator and the
+/// origin-relative provenance (`src/caching.rs:46-66`) appended as ` from …` —
+/// so the original location survives on the locator line itself, not smuggled
+/// into a user `!` note.
 pub struct AtRewrite {
     pub at: String,
-    pub note: Option<String>,
+    pub origin: Option<String>,
 }
 
 /// Repoints a snapshotted trace in place (atomic temp + rename): replaces the
-/// first `% source:` value with `source`, and each `% at:` line (in file order)
-/// with the matching entry of `ats` — its new value plus, if any, a `! from …`
-/// provenance line. The `% trace:`, key points, existing notes, and everything
-/// else are preserved verbatim, so card identities are unaffected (`% at:` and
-/// notes are not hashed). Used when snapshotting a trace's excerpts into
+/// first `% source:` value with `source` (and adds a `% origin:` header when
+/// `origin` is set — the live crate root this deck froze from), and each `% at:`
+/// line (in file order) with the matching `ats` entry — its frozen asset plus a
+/// ` from <origin-relative>:<lines>` suffix. The `% trace:`, key points, notes,
+/// and everything else are preserved verbatim, so card identities are unaffected
+/// (`% at:`/`% origin:` and notes are not hashed). Used when snapshotting into
 /// `assets/`.
-pub fn set_trace_snapshot(path: &Path, source: &str, ats: &[AtRewrite]) -> Result<(), DeckError> {
+pub fn set_trace_snapshot(
+    path: &Path,
+    source: &str,
+    origin: Option<&str>,
+    ats: &[AtRewrite],
+) -> Result<(), DeckError> {
     let io_err = |source| DeckError::Io {
         path: path.to_path_buf(),
         source,
     };
     let existing = std::fs::read_to_string(path).map_err(io_err)?;
-    let new_text = rewrite_trace_snapshot(&existing, source, ats);
+    let new_text = rewrite_trace_snapshot(&existing, source, origin, ats);
 
     let tmp = path.with_extension("txt.tmp");
     std::fs::write(&tmp, new_text).map_err(io_err)?;
@@ -611,10 +650,16 @@ pub fn set_trace_snapshot(path: &Path, source: &str, ats: &[AtRewrite]) -> Resul
 }
 
 /// Pure transform for [`set_trace_snapshot`]: replace the first header
-/// `% source:` value with `source`, and each `% at:` value (in order) with
-/// `ats[i].at`, inserting a `! from …` line after it when `ats[i].note` is set.
-/// Indentation is preserved; everything else is untouched.
-fn rewrite_trace_snapshot(text: &str, source: &str, ats: &[AtRewrite]) -> String {
+/// `% source:` value with `source` (adding a `% origin:` line after it when set),
+/// and each `% at:` value (in order) with `ats[i].at`, appending
+/// ` from <ats[i].origin>` when present. Indentation is preserved; everything
+/// else is untouched.
+fn rewrite_trace_snapshot(
+    text: &str,
+    source: &str,
+    origin: Option<&str>,
+    ats: &[AtRewrite],
+) -> String {
     let directive = |line: &str, key: &str| {
         line.trim()
             .strip_prefix('%')
@@ -635,12 +680,15 @@ fn rewrite_trace_snapshot(text: &str, source: &str, ats: &[AtRewrite]) -> String
         }
         if in_header && !source_replaced && directive(line, "source:") {
             out.push(format!("% source: {source}"));
+            if let Some(origin) = origin {
+                out.push(format!("% origin: {origin}"));
+            }
             source_replaced = true;
         } else if directive(line, "at:") && at_i < ats.len() {
             let indent = indent_of(line);
-            out.push(format!("{indent}% at: {}", ats[at_i].at));
-            if let Some(note) = &ats[at_i].note {
-                out.push(format!("{indent}! from {note}"));
+            match &ats[at_i].origin {
+                Some(o) => out.push(format!("{indent}% at: {} from {o}", ats[at_i].at)),
+                None => out.push(format!("{indent}% at: {}", ats[at_i].at)),
             }
             at_i += 1;
         } else {
@@ -1220,6 +1268,25 @@ mod tests {
     }
 
     #[test]
+    fn origin_cascades_workspace_then_deck() {
+        // The deck's own `% origin:` wins over the workspace `[defaults]`.
+        let mut deck =
+            DeckSettings::from_directives(&[("origin".to_string(), "/deck".to_string())]);
+        deck.fill_from(&DeckSettings::from_directives(&[(
+            "origin".to_string(),
+            "/ws".to_string(),
+        )]));
+        assert_eq!(Some("/deck".to_string()), deck.origin);
+        // The workspace default fills in when the deck is silent.
+        let mut bare = DeckSettings::default();
+        bare.fill_from(&DeckSettings::from_directives(&[(
+            "origin".to_string(),
+            "/ws".to_string(),
+        )]));
+        assert_eq!(Some("/ws".to_string()), bare.origin);
+    }
+
+    #[test]
     fn reference_links_union_url_sources_excluding_files_and_dupes() {
         let dir = tempfile::tempdir().unwrap();
         let path = write_deck(
@@ -1501,25 +1568,26 @@ mod tests {
     }
 
     #[test]
-    fn rewrite_trace_snapshot_repoints_source_each_at_and_adds_provenance() {
+    fn rewrite_trace_snapshot_repoints_source_origin_and_each_at() {
         let text = "% trace: how X\n% source: ..\n\n# q1\n\tp\n\t% at: a.rs:90-98\n# q2\n\tp\n\t% at: b.rs:1\n";
         let ats = [
             AtRewrite {
                 at: "01.rs".into(),
-                note: Some("a.rs:90-98".into()),
+                origin: Some("src/a.rs:90-98".into()),
             },
             AtRewrite {
                 at: "02.rs".into(),
-                note: None,
+                origin: Some("src/b.rs:1".into()),
             },
         ];
-        let out = rewrite_trace_snapshot(text, "assets", &ats);
+        let out = rewrite_trace_snapshot(text, "assets", Some("/crate"), &ats);
         assert!(out.contains("% source: assets\n"), "{out}");
         assert_eq!(1, out.matches("% source:").count()); // replaced, not added
-        assert!(out.contains("\t% at: 01.rs\n"), "{out}"); // first at → snippet, indent kept
-        assert!(out.contains("\t! from a.rs:90-98\n"), "{out}"); // original lines kept in a note
-        assert!(out.contains("\t% at: 02.rs\n"), "{out}"); // second at → snippet, no note
-        assert!(!out.contains("a.rs:90-98\n\t%")); // original locator gone from `% at:`
+        assert!(out.contains("% origin: /crate\n"), "{out}"); // origin written after source
+        // The provenance rides the `% at:` line as ` from …`, not a `!` note.
+        assert!(out.contains("\t% at: 01.rs from src/a.rs:90-98\n"), "{out}");
+        assert!(out.contains("\t% at: 02.rs from src/b.rs:1\n"), "{out}");
+        assert!(!out.contains("! from"), "{out}"); // no note-abuse
         assert!(out.contains("% trace: how X\n")); // the trace marker is kept
         assert!(out.ends_with('\n'));
     }

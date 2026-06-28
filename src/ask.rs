@@ -137,12 +137,19 @@ fn random_uuid() -> String {
 /// is `Some` (the `[ask] source_access` opt-in), every message reminds Claude it
 /// can read the card's source there and must verify against it — the current
 /// card's root, so it stays right even as the conversation moves between decks.
+/// The reply a frozen card's tutor gives when its source can't be found — the
+/// learner can then remove or update the card. Kept verbatim so the frontends and
+/// tests agree on the exact wording.
+pub const SOURCE_NOT_FOUND: &str =
+    "I couldn't find the source material of this card to provide a grounded answer.";
+
 pub fn question_prompt(
     card: &Card,
     links: &[String],
     question: &str,
     first: bool,
     source_root: Option<&Path>,
+    frozen: Option<&str>,
 ) -> String {
     let mut p = String::new();
     if first {
@@ -168,14 +175,43 @@ pub fn question_prompt(
     }
     p.push_str("The card being reviewed:\n\n");
     push_card(&mut p, card);
-    if let Some(root) = source_root {
-        p.push_str(&format!(
-            "\nThis card was generated from the source code at {} — your working \
-             directory. Before stating anything specific about the code, READ the \
-             actual files there (Read, Glob, Grep) and verify against them; do not \
-             answer from memory. If the source contradicts the card, say so.\n",
-            root.display()
-        ));
+    match (frozen, source_root) {
+        // A frozen card: the snapshot excerpt is the ground truth (it's what the
+        // learner sees); the live crate is read only for surrounding context.
+        (Some(excerpt), root) => {
+            p.push_str(
+                "\nThe exact code this card is about, frozen when the card was made \
+                 — treat it as the GROUND TRUTH, since it's what the learner sees:\n\n",
+            );
+            p.push_str(excerpt);
+            if let Some(root) = root {
+                p.push_str(&format!(
+                    "\nYour working directory is the live source at {}. The snippet \
+                     above may have moved or changed since; READ the surrounding \
+                     source there (Read, Glob, Grep) to explain how this excerpt \
+                     fits the rest of the code — but ground your answer in the \
+                     snippet above, not a drifted copy. If you cannot find this code \
+                     anywhere in the source, reply exactly: \"{SOURCE_NOT_FOUND}\"\n",
+                    root.display()
+                ));
+            } else {
+                p.push_str(&format!(
+                    "\nThe live source this came from is unavailable, so reply \
+                     exactly: \"{SOURCE_NOT_FOUND}\"\n"
+                ));
+            }
+        }
+        // A live (non-frozen) source: read it directly and verify.
+        (None, Some(root)) => {
+            p.push_str(&format!(
+                "\nThis card was generated from the source code at {} — your working \
+                 directory. Before stating anything specific about the code, READ the \
+                 actual files there (Read, Glob, Grep) and verify against them; do not \
+                 answer from memory. If the source contradicts the card, say so.\n",
+                root.display()
+            ));
+        }
+        (None, None) => {}
     }
     p.push_str("\nThe user's question: ");
     p.push_str(question);
@@ -384,7 +420,7 @@ mod tests {
     #[test]
     fn first_question_prompt_has_instructions_and_links() {
         let links = vec!["https://docs.rs/tokio".to_string()];
-        let p = question_prompt(&card(), &links, "and why that?", true, None);
+        let p = question_prompt(&card(), &links, "and why that?", true, None, None);
         assert!(p.contains("concise tutor"));
         assert!(!p.contains("working directory")); // no source access by default
         assert!(p.contains("https://docs.rs/tokio"));
@@ -398,7 +434,7 @@ mod tests {
     #[test]
     fn followup_prompt_is_short_but_carries_the_card() {
         let links = vec!["https://docs.rs/tokio".to_string()];
-        let p = question_prompt(&card(), &links, "next q", false, None);
+        let p = question_prompt(&card(), &links, "next q", false, None, None);
         // The session already knows the instructions and the links.
         assert!(!p.contains("concise tutor"));
         assert!(!p.contains("docs.rs"));
@@ -416,6 +452,7 @@ mod tests {
             "is that right?",
             false,
             Some(Path::new("/repo/x")),
+            None,
         );
         assert!(p.contains("/repo/x"));
         assert!(p.contains("READ the actual files"));
@@ -423,8 +460,30 @@ mod tests {
     }
 
     #[test]
+    fn frozen_prompt_inlines_the_excerpt_and_grounds_for_context() {
+        // A frozen card: the snapshot excerpt is the anchor, the live crate is
+        // read only for context, and a missing source yields the canned reply.
+        let block = "src/caching.rs:46-66\n46\tfn get_object() {}\n";
+        let p = question_prompt(
+            &card(),
+            &[],
+            "explain",
+            true,
+            Some(Path::new("/crate")),
+            Some(block),
+        );
+        assert!(p.contains("GROUND TRUTH"), "{p}");
+        assert!(p.contains("src/caching.rs:46-66"), "{p}");
+        assert!(p.contains("/crate"), "{p}");
+        assert!(p.contains("surrounding source"), "{p}");
+        // No live source → the canned "couldn't find" instruction instead.
+        let gone = question_prompt(&card(), &[], "explain", true, None, Some(block));
+        assert!(gone.contains(SOURCE_NOT_FOUND), "{gone}");
+    }
+
+    #[test]
     fn first_prompt_without_links_offers_none() {
-        let p = question_prompt(&card(), &[], "q", true, None);
+        let p = question_prompt(&card(), &[], "q", true, None, None);
         assert!(!p.contains("Reference links"));
     }
 

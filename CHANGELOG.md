@@ -17,6 +17,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   I", current emphasized) so the sequence reads as a path, not a shuffle. A
   single cached topology is picked automatically. Terminal and web; the edge
   labels (which would reveal answers) stay under the hood.
+- **The ask-Claude tutor grounds a frozen card in its live source.** For a card
+  in a frozen workspace (`alix explore --into --build`), the tutor now reads the
+  **original crate** for context — explaining how the cited code fits the
+  surrounding source — with the **frozen snapshot excerpt as the anchor** (what
+  the learner sees stays the ground truth, so the tutor never reasons about a
+  drifted copy). It no longer cites opaque asset names (`01.rs`). The live source
+  is found via a new `% origin:` directive (below); if it's gone, the tutor
+  replies *"I couldn't find the source material of this card to provide a grounded
+  answer."* so you can update or drop the card. The **trace-walk tutor**, which
+  had no grounding at all, gets the same treatment. Gated by the existing
+  `[ask] source_access` opt-in.
+- **`% origin:` — the live source root a frozen deck's snapshots came from.**
+  Written into a workspace's `alix.toml [defaults]` at build time and cascading
+  **workspace → deck → card** like every other directive (a card may override it
+  for a cross-repo source), it lets the tutor and drift detection find the real
+  crate even though `% source:` points at the opaque `assets/`.
+- **`alix check` flags drifted frozen cards.** When a frozen card's snapshot no
+  longer appears in its live source — the lines changed, or the file is gone — it
+  warns (`card at line N — frozen excerpt no longer found in the source`), so you
+  can refresh or remove that card. A snippet that merely *moved* within the file
+  is not flagged.
 - **Ask Claude during a trace walk.** The web walk now has an **Ask** button on
   each reveal (and the `?` key) — the same tutor a card review offers, scoped to
   the current checkpoint (its question, key points and the live source excerpt).
@@ -93,6 +114,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `alix workspace <dir>` opens that picker), and a member still inherits the
   workspace's directives and store. `stats`/`list`/`reset` still take multiple
   decks (they're per-deck operations, not a merged session).
+- **Breaking — the freeze format records provenance on the `% at:` line, not a
+  note.** Freezing a workspace now writes `% origin:` (the live crate root) and
+  appends each card's original location to its locator
+  (`% at: 29.rs from src/caching.rs:46-66`), instead of smuggling it into a hidden
+  `! from …` note that the display then stripped back out. Notes are the
+  learner's again. **Existing frozen workspaces keep working for review and the
+  exam, but the tutor can't ground them until re-frozen** (re-run
+  `alix explore … --build`). Pre-1.0, so no compatibility shim. Card identities
+  are unaffected (`% at:`/`% origin:`/notes are not hashed).
 - **The review header no longer shows the stage ladder.** The always-on
   `new|s1|s2|…` stage histogram is gone from the review header (TUI and web) — it
   was noise; the per-stage breakdown stays in the end-of-session summary.

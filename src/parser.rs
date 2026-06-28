@@ -105,8 +105,13 @@ struct PartialCard {
     /// Per-card `% frontend:`, if the card declares one.
     frontend: Option<Frontend>,
     /// Per-card `% at:` trace locator (a source position), raw value as
-    /// written.
+    /// written — the asset locator, with any ` from <origin>` suffix split off.
     at: Option<String>,
+    /// The ` from <origin>` suffix of a frozen `% at:` (origin-relative
+    /// `src/caching.rs:46-66`), if present.
+    at_origin: Option<String>,
+    /// Per-card `% origin:` override (the crate root the frozen source lives in).
+    origin: Option<String>,
     /// Per-card `% given:` lines (repeatable): a trace checkpoint's named
     /// "givens", in order.
     givens: Vec<String>,
@@ -141,6 +146,8 @@ impl PartialCard {
             card.image_back = self.image_back.map(PathBuf::from);
             card.frontend = self.frontend;
             card.at = self.at;
+            card.at_origin = self.at_origin;
+            card.origin = self.origin;
             card.givens = self.givens;
             cards.push(card);
         }
@@ -215,6 +222,17 @@ pub fn parse_trace(text: &str) -> Option<String> {
 /// trimmed value. Returns `None` for non-directive `%` lines: prose comments
 /// (key contains whitespace, like `% Then learn with:`), empty key/value, and
 /// `link` (handled by [`parse_links`]).
+/// Splits a `% at:` value into its asset locator and the optional ` from
+/// <origin>` provenance a frozen snapshot appends (`29.rs from src/caching.rs:46-66`
+/// → `("29.rs", Some("src/caching.rs:46-66"))`). The separator is spaced, so a
+/// path like `from_x.rs` stays intact.
+fn split_at_origin(value: &str) -> (String, Option<String>) {
+    match value.split_once(" from ") {
+        Some((at, origin)) => (at.trim().to_string(), Some(origin.trim().to_string())),
+        None => (value.trim().to_string(), None),
+    }
+}
+
 fn directive(raw: &str) -> Option<(String, String)> {
     let rest = raw.trim().strip_prefix(MARKUP_COMMENT)?;
     let (key, value) = rest.split_once(':')?;
@@ -294,6 +312,8 @@ pub fn parse_str(subject: &str, text: &str) -> Result<Vec<Card>, ParseError> {
                     image_back: None,
                     frontend: None,
                     at: None,
+                    at_origin: None,
+                    origin: None,
                     givens: Vec::new(),
                 });
                 state = State::Front;
@@ -344,7 +364,14 @@ pub fn parse_str(subject: &str, text: &str) -> Result<Vec<Card>, ParseError> {
                         }
                         "img" => partial.image = Some(value),
                         "img-back" => partial.image_back = Some(value),
-                        "at" => partial.at = Some(value),
+                        "at" => {
+                            // A frozen `% at:` carries `<asset> from <origin>`; split
+                            // the origin provenance off the asset locator.
+                            let (at, origin) = split_at_origin(&value);
+                            partial.at = Some(at);
+                            partial.at_origin = origin;
+                        }
+                        "origin" => partial.origin = Some(value),
                         "given" => partial.givens.push(value),
                         "frontend" => {
                             if let Ok(f) = Frontend::from_str(&value, true) {
@@ -403,6 +430,30 @@ mod tests {
         assert_eq!(vec!["back"], cards[0].back);
         assert_eq!(None, cards[0].note);
         assert_eq!(1, cards[0].line);
+    }
+
+    #[test]
+    fn at_splits_off_the_from_origin_provenance() {
+        let cards = parse_str("s", "# q\n\tp\n\t% at: 29.rs from src/caching.rs:46-66\n").unwrap();
+        assert_eq!(Some("29.rs".to_string()), cards[0].at);
+        assert_eq!(Some("src/caching.rs:46-66".to_string()), cards[0].at_origin);
+    }
+
+    #[test]
+    fn at_without_from_keeps_the_whole_locator() {
+        let cards = parse_str("s", "# q\n\tp\n\t% at: src/from_x.rs:1-3\n").unwrap();
+        assert_eq!(Some("src/from_x.rs:1-3".to_string()), cards[0].at);
+        assert_eq!(None, cards[0].at_origin);
+    }
+
+    #[test]
+    fn per_card_origin_directive_is_parsed() {
+        let cards = parse_str(
+            "s",
+            "# q\n\tp\n\t% origin: /crate\n\t% at: 1.rs from a.rs:1\n",
+        )
+        .unwrap();
+        assert_eq!(Some("/crate".to_string()), cards[0].origin);
     }
 
     #[test]

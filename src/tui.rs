@@ -1018,12 +1018,27 @@ impl App {
                 let info = self.options.decks.get(&*card.subject);
                 let links = info.map(|i| i.links.as_slice()).unwrap_or(&[]);
                 // Ground the tutor in the card's source when source access is on
-                // for this deck (its workspace override, else global) and it has
-                // a local source root.
-                let root = info
-                    .filter(|i| i.source_access)
-                    .and_then(|i| i.source_root.as_deref());
-                let ask_cfg = match root {
+                // for this deck (its workspace override, else global): a per-card
+                // `% origin:` override, else the deck/workspace source root.
+                let root = info.filter(|i| i.source_access).and_then(|i| {
+                    card.origin
+                        .as_deref()
+                        .map(PathBuf::from)
+                        .or_else(|| i.source_root.clone())
+                });
+                // A frozen card inlines its snapshot excerpt as the anchor; the
+                // live source is read for context, and a missing source yields the
+                // canned "couldn't find" reply.
+                let frozen = root.as_ref().and_then(|_| {
+                    let at = card.at.as_deref()?;
+                    crate::trace::frozen_excerpt_block(
+                        at,
+                        card.at_origin.as_deref(),
+                        &info?.source_base,
+                    )
+                });
+                let live_root = root.as_deref().filter(|r| r.exists());
+                let ask_cfg = match live_root {
                     Some(r) => ask::with_source_root(&self.options.ask, r),
                     None => self.options.ask.clone(),
                 };
@@ -1031,8 +1046,14 @@ impl App {
                 // a cwd change starts a fresh conversation, so `started` then
                 // reports this as a first message (full card context).
                 let args = self.ask_session.args_in(ask_cfg.cwd.as_deref());
-                let prompt =
-                    ask::question_prompt(card, links, &question, !self.ask_session.started, root);
+                let prompt = ask::question_prompt(
+                    card,
+                    links,
+                    &question,
+                    !self.ask_session.started,
+                    live_root,
+                    frozen.as_deref(),
+                );
                 *status = None;
                 *waiting = Some(Waiting {
                     rx: ask::spawn(ask_cfg, prompt, args),

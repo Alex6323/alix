@@ -183,7 +183,8 @@ card's front. Follow a link for the full explanation.
 | `% link:` | deck | [ask-Claude reference](#ask-claude-about-a-card) URL — **tutor only** (repeatable). |
 | `% source:` | deck | [Exam ground truth](#the-ai-exam-alix-exam) — a URL or file (repeatable). For a [trace](#traces-alix-trace), the source the path runs through (the frozen `assets/` copy in an explored workspace). Also a tutor reference. |
 | `% trace:` | deck | What a [trace](#traces-alix-trace) walks — a path description ("how X becomes Y"); its presence makes the deck a trace. |
-| `% at:` | card | A locator into the `% source:` (`file:lines`, or just `lines` for a single-file source): a [trace checkpoint's](#traces-alix-trace) reveal target, or a [fact card's source citation](#source-citations--at-on-a-fact-card) shown on reveal. |
+| `% at:` | card | A locator into the `% source:` (`file:lines`, or just `lines` for a single-file source): a [trace checkpoint's](#traces-alix-trace) reveal target, or a [fact card's source citation](#source-citations--at-on-a-fact-card) shown on reveal. In a frozen workspace it points at the `assets/` snapshot and carries the original location after ` from ` (`29.rs from src/caching.rs:46-66`). |
+| `% origin:` | workspace · deck · card | The live source root a frozen deck's snapshots came from (set in a workspace's `alix.toml` at build time). The ask-tutor grounds in it for context and `alix check` reads it to flag drift; `% source:` itself points at the frozen `assets/`. |
 | `% given:` | card | A [trace checkpoint's](#traces-alix-trace) "given" (repeatable) — an off-screen symbol the question leans on, as `name — meaning`; shown as a list under the question. |
 | `% title:` | deck | [Display name](#workspaces) shown instead of the file name (a workspace sets `title` in its `alix.toml`). |
 
