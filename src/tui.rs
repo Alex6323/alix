@@ -218,6 +218,14 @@ fn effective_mode(card: &Card, mode_override: Option<Mode>) -> Mode {
     mode_override.or(card.mode).unwrap_or_default()
 }
 
+/// A red (weak) → green (strong) colour for a strength in `0.0..=1.0`, with a
+/// slight lift toward green as a colourblind cue. Mirrors the web heatmap bar.
+fn strength_color(s: f32) -> Color {
+    let s = s.clamp(0.0, 1.0);
+    let lerp = |a: f32, b: f32| (a + (b - a) * s) as u8;
+    Color::Rgb(lerp(200.0, 90.0), lerp(70.0, 195.0), lerp(70.0, 100.0))
+}
+
 impl App {
     /// Creates the app and primes the first card. Loads any AI distractors a
     /// prior `alix deck augment` generated for these cards.
@@ -1241,23 +1249,31 @@ impl App {
     }
 
     /// The region breadcrumb for `card`, when the session is topology-ordered:
-    /// region names in walk order with the current one emphasized, as one dim
-    /// line. `None` when there's no topology or the card isn't in a region.
+    /// region names in walk order (current bold, others dim), each followed by a
+    /// per-card heatmap of colored blocks — red (weak) → green (strong) by stage,
+    /// the terminal echo of the web bar. `None` when there's no topology or the
+    /// card isn't in a region.
     fn breadcrumb_line(&self, card: &Card) -> Option<Line<'static>> {
         let name = self.options.topology_name.as_deref()?;
         let topo = self.augment.topology(name)?;
-        let (regions, current) = topo.region_path(card.id())?;
-        let mut spans = Vec::new();
-        for (i, region) in regions.iter().copied().enumerate() {
+        let current = topo
+            .regions
+            .iter()
+            .position(|r| r.cards.contains(&card.id()))?;
+        let mut spans: Vec<Span> = Vec::new();
+        for (i, region) in topo.regions.iter().enumerate() {
             if i > 0 {
-                spans.push(" · ".dim());
+                spans.push("   ".into());
             }
-            let span = region.to_string();
             spans.push(if i == current {
-                span.bold()
+                region.name.clone().bold()
             } else {
-                span.dim()
+                region.name.clone().dim()
             });
+            spans.push(" ".into());
+            for s in crate::session::card_strengths(&region.cards, &self.store) {
+                spans.push(Span::styled("▆", Style::new().fg(strength_color(s))));
+            }
         }
         Some(Line::from(spans))
     }

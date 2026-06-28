@@ -441,6 +441,11 @@ struct ReviewArgs {
     #[arg(long)]
     topology: Option<String>,
 
+    /// Focus the session on one topology region (e.g. "persistence") — only that
+    /// region's cards are reviewed, to drill a weak area. Needs a topology.
+    #[arg(long)]
+    region: Option<String>,
+
     /// Maximum number of new (never-seen) cards to introduce.
     #[arg(short, long, default_value_t = 10)]
     new: usize,
@@ -826,6 +831,22 @@ fn build_review(
     let topology = resolve_topology(args.topology.as_deref(), &augment)?;
     let topology_name = topology.map(|t| t.name.clone());
     let topology_order = topology.map(|t| TopologyOrder::from_walk(&t.walk));
+
+    // `--region` focuses the session on one region of the topology — drill a
+    // weak area. SRS still picks what's due *within* that region.
+    if let Some(region_name) = args.region.as_deref() {
+        let Some(topology) = topology else {
+            bail!("--region needs a topology — pass --topology, or augment one for this deck");
+        };
+        let Some(region_ids) = topology.region_cards(region_name) else {
+            bail!(
+                "no region named `{region_name}` in topology `{}`",
+                topology.name
+            );
+        };
+        let ids: std::collections::HashSet<u64> = region_ids.iter().copied().collect();
+        cards.retain(|c| ids.contains(&c.id()));
+    }
 
     // Directives (scheduler/order) come from the session's decks.
     let target_settings: Vec<&DeckSettings> = settings.iter().collect();
@@ -2807,6 +2828,7 @@ fn workspace_cmd(args: WorkspaceArgs) -> Result<()> {
             scheduler: None,
             order: None,
             topology: None,
+            region: None,
             new: 10,
             limit: None,
             cram: false,

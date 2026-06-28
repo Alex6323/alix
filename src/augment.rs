@@ -127,6 +127,15 @@ impl Topology {
         let names = self.regions.iter().map(|r| r.name.as_str()).collect();
         Some((names, current))
     }
+
+    /// The card ids of the region named `name` (matched case-insensitively), for
+    /// focusing a session on one area. `None` when no region matches.
+    pub fn region_cards(&self, name: &str) -> Option<&[u64]> {
+        self.regions
+            .iter()
+            .find(|r| r.name.eq_ignore_ascii_case(name))
+            .map(|r| r.cards.as_slice())
+    }
 }
 
 /// A topology's walk projected to a session-ready lookup: each card id mapped to
@@ -1183,6 +1192,17 @@ mod tests {
         let (names, current) = t.region_path(3).unwrap();
         assert_eq!(vec!["Parsing", "Session", "Persistence"], names);
         assert_eq!(1, current); // card 3 lives in "Session"
+    }
+
+    #[test]
+    fn region_cards_finds_by_name_case_insensitively() {
+        let t = topo_regions(vec![
+            region("Persistence", vec![10, 20]),
+            region("Engine", vec![30]),
+        ]);
+        assert_eq!(Some([10, 20].as_slice()), t.region_cards("persistence"));
+        assert_eq!(Some([30].as_slice()), t.region_cards("Engine"));
+        assert_eq!(None, t.region_cards("nope"));
     }
 
     #[test]
