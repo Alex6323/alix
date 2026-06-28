@@ -129,14 +129,18 @@
   .exline .ltx { color: var(--ink); }
   .excerpt-more { color: var(--dim); font-size: 0.72rem; padding-left: 6px; margin-top: 4px; }
   .front-text { font-size: clamp(1.4rem, 4.4vw, 2.05rem); font-weight: 600; line-height: 1.28; letter-spacing: -0.01em; }
-  /* The topological orientation breadcrumb: one thin line of every region name,
-     current emphasized — the whole trail, not a peephole. Coarse names say
-     "where am I", never the answer; clips rather than wraps to stay a thin line. */
-  .crumb { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; overflow: hidden;
-           margin-bottom: 0.5rem; font-size: 0.74rem; letter-spacing: 0.02em; color: var(--dim); }
-  .crumb-item { white-space: nowrap; }
-  .crumb-item.cur { color: var(--ink); font-weight: 600; }
-  .crumb-sep { color: var(--line); flex: none; }
+  /* The topological orientation breadcrumb: each region is its name over a thin
+     per-card heatmap bar. Two channels, kept apart: name weight/opacity = where
+     you are; bar color (red→green) = how solid each card in the area is. Clips
+     rather than wraps to stay a thin strip. */
+  .crumb { display: flex; align-items: flex-start; gap: 14px; flex-wrap: nowrap;
+           overflow: hidden; margin-bottom: 0.55rem; }
+  .crumb-region { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .crumb-name { font-size: 0.74rem; letter-spacing: 0.02em; color: var(--ink);
+                white-space: nowrap; opacity: 0.5; }
+  .crumb-region.cur .crumb-name { opacity: 1; font-weight: 600; }
+  .crumb-bar { display: flex; gap: 1px; height: 3px; border-radius: 2px; overflow: hidden; }
+  .crumb-cell { flex: 1 1 0; min-width: 3px; }
   .context { color: var(--bolt); font-family: var(--mono); font-size: 0.95rem; white-space: pre-wrap; }
   .context .hole { color: var(--bolt-hi); font-weight: 700; }      /* the active cloze blank */
   .context .muted-hole { color: var(--dim); }                     /* sibling holes, hidden */
@@ -1096,14 +1100,24 @@ function renderCard() {
 
   // question region
   const q = el("div", "region q");
-  // Orientation breadcrumb: every region name on one thin line, current
-  // emphasized — the whole trail, so a region reads as a place in a structure.
+  // Orientation breadcrumb: each region is its name (bold = where you are) over a
+  // thin per-card heatmap bar — every card a cell, red (weak) → green (strong),
+  // so the line doubles as a progress map that greens up as a region is learned.
   if (c.crumb && c.crumb.regions.length) {
     const cr = c.crumb;
     const bc = el("div", "crumb");
     for (let i = 0; i < cr.regions.length; i++) {
-      if (i > 0) bc.appendChild(el("span", "crumb-sep", "·"));
-      bc.appendChild(el("span", "crumb-item" + (i === cr.current ? " cur" : ""), cr.regions[i]));
+      const reg = el("div", "crumb-region" + (i === cr.current ? " cur" : ""));
+      reg.appendChild(el("div", "crumb-name", cr.regions[i]));
+      const bar = el("div", "crumb-bar");
+      for (const s of (cr.cells && cr.cells[i]) || []) {
+        const cell = el("span", "crumb-cell");
+        const h = Math.round(120 * s);                       // 0 red → 120 green
+        cell.style.background = `hsl(${h}, 62%, ${40 + 12 * s}%)`;
+        bar.appendChild(cell);
+      }
+      reg.appendChild(bar);
+      bc.appendChild(reg);
     }
     q.appendChild(bc);
   }

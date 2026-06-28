@@ -166,6 +166,10 @@ struct CardDto {
 struct CrumbDto {
     regions: Vec<String>,
     current: usize,
+    /// Per-region, per-card strength (`0..=1`, outer index aligns with
+    /// `regions`) for the heatmap bar under each region — each card a cell,
+    /// red (weak) → green (strong).
+    cells: Vec<Vec<f32>>,
 }
 
 /// The current review state sent to the browser after every action.
@@ -2191,6 +2195,11 @@ fn review_state(
             dto.crumb = Some(CrumbDto {
                 regions: regions.into_iter().map(str::to_string).collect(),
                 current,
+                cells: topo
+                    .regions
+                    .iter()
+                    .map(|reg| crate::session::card_strengths(&reg.cards, store))
+                    .collect(),
             });
         }
         if let Some(locator) = c.at.as_deref() {

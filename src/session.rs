@@ -390,6 +390,17 @@ pub fn is_retired_id(card_id: u64, store: &Store) -> bool {
         .is_some_and(|s| s.stage >= MAX_STAGE && s.streak >= 1)
 }
 
+/// Each card's normalized Leitner stage (`0.0..=1.0`, unseen = 0, top-stage = 1)
+/// — the per-card "weak → strong" value for a region's heatmap bar. A region's
+/// bar reads all-red when new and all-green once its cards reach the top stage.
+/// Deliberately *not* called "mastery", which is the exam's term.
+pub fn card_strengths(card_ids: &[u64], store: &Store) -> Vec<f32> {
+    card_ids
+        .iter()
+        .map(|&id| f32::from(store.get(id).map_or(0, |s| s.stage)) / f32::from(MAX_STAGE))
+        .collect()
+}
+
 /// Whether these cards would yield anything to review at `now_ms` under
 /// `scheduler`: a never-seen (fresh) card, or a seen card that is due. Retired
 /// cards never count. Mirrors [`build_queue`]'s per-card decision (minus cram and
@@ -1093,5 +1104,21 @@ mod tests {
         );
         assert_eq!(2, session.initial_size);
         assert_eq!("front 1", session.current().unwrap().front);
+    }
+
+    #[test]
+    fn card_strengths_normalizes_each_stage() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(3);
+        store.get_or_insert(all[0].id(), 0).stage = MAX_STAGE; // top → 1.0
+        store.get_or_insert(all[1].id(), 0).stage = 1; // 1/5 → 0.2
+        // all[2] is unseen → 0.0
+        let ids: Vec<u64> = all.iter().map(Card::id).collect();
+        let s = card_strengths(&ids, &store);
+        assert_eq!(3, s.len());
+        assert!((s[0] - 1.0).abs() < 1e-6);
+        assert!((s[1] - 0.2).abs() < 1e-6);
+        assert_eq!(0.0, s[2]);
+        assert!(card_strengths(&[], &store).is_empty());
     }
 }
