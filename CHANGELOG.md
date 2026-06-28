@@ -7,6 +7,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Topology-ordered review (experimental).** `alix deck augment <deck> --target
+  topology` derives a graph of how a deck's cards relate — labeled edges, a
+  suggested walk, and coarse named **regions** — cached beside your progress (a
+  deck can hold several, one per `--with` principle, keyed by it). `alix review
+  <deck> --topology <name>` then serves the **due** cards in that walk's order
+  instead of at random — SRS still decides *which* cards are due, the topology
+  only reorders them — and review shows a thin **region breadcrumb** ("where am
+  I", current emphasized) so the sequence reads as a path, not a shuffle. A
+  single cached topology is picked automatically. Terminal and web; the edge
+  labels (which would reveal answers) stay under the hood.
 - **Ask Claude during a trace walk.** The web walk now has an **Ask** button on
   each reveal (and the `?` key) — the same tutor a card review offers, scoped to
   the current checkpoint (its question, key points and the live source excerpt).

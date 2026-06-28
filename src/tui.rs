@@ -154,6 +154,10 @@ pub struct Options {
     pub ask: AskConfig,
     /// Loaded decks by subject.
     pub decks: HashMap<String, DeckInfo>,
+    /// The resolved topology name when this session is topology-ordered, so the
+    /// card view can show the region breadcrumb from that topology; `None`
+    /// otherwise.
+    pub topology_name: Option<String>,
 }
 
 /// The review application.
@@ -1236,6 +1240,28 @@ impl App {
         frame.render_widget(bar(&left, &right, area.width), area);
     }
 
+    /// The region breadcrumb for `card`, when the session is topology-ordered:
+    /// region names in walk order with the current one emphasized, as one dim
+    /// line. `None` when there's no topology or the card isn't in a region.
+    fn breadcrumb_line(&self, card: &Card) -> Option<Line<'static>> {
+        let name = self.options.topology_name.as_deref()?;
+        let topo = self.augment.topology(name)?;
+        let (regions, current) = topo.region_path(card.id())?;
+        let mut spans = Vec::new();
+        for (i, region) in regions.iter().copied().enumerate() {
+            if i > 0 {
+                spans.push(" · ".dim());
+            }
+            let span = region.to_string();
+            spans.push(if i == current {
+                span.bold()
+            } else {
+                span.dim()
+            });
+        }
+        Some(Line::from(spans))
+    }
+
     fn draw_card(&self, frame: &mut Frame, area: Rect) {
         let mut lines: Vec<Line> = Vec::new();
         let mut cursor: Option<(u16, u16)> = None;
@@ -1250,6 +1276,11 @@ impl App {
             },
         };
 
+        // Orientation breadcrumb: one dim line of region names with the current
+        // one emphasized, when the session is topology-ordered.
+        if let Some(crumb) = self.breadcrumb_line(card) {
+            lines.push(crumb);
+        }
         lines.push(Line::from(card.front.clone().bold()));
         // Cloze cards show their masked answer text below the front.
         for ctx in &card.context {

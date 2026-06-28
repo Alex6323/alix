@@ -716,6 +716,8 @@ struct ReviewSession {
     /// How many cards were filtered out as not reviewable in the target
     /// frontend (e.g. image cards excluded from the TUI).
     hidden: usize,
+    /// The resolved topology name when topology-ordered, for the TUI breadcrumb.
+    topology_name: Option<String>,
 }
 
 /// What the TUI picker resolved to: a review session, or — when a single
@@ -1005,6 +1007,7 @@ fn load_review_session(
             decks: build.decks,
             config,
             hidden: build.hidden,
+            topology_name: build.topology_name,
         })),
         workspace,
         focus: focus_deck,
@@ -1246,6 +1249,7 @@ fn run_review_on(
         decks,
         config,
         hidden,
+        topology_name,
     } = rs;
     if session.is_finished() || (hidden > 0 && session.cards().is_empty()) {
         return Ok(());
@@ -1257,6 +1261,7 @@ fn run_review_on(
         keys: config.keys.clone(),
         ask: config.ask.clone(),
         decks,
+        topology_name,
     };
     let (_stats, next_action) = App::new(session, store, ui_options).run_on(terminal)?;
     match next_action {
@@ -1283,6 +1288,7 @@ fn run_review_tui(rs: ReviewSession, args: &ReviewArgs) -> Result<()> {
         decks,
         config,
         hidden,
+        topology_name,
     } = rs;
 
     // Some cards can't be shown in the terminal (images need the browser).
@@ -1313,6 +1319,7 @@ fn run_review_tui(rs: ReviewSession, args: &ReviewArgs) -> Result<()> {
         keys: config.keys.clone(),
         ask: config.ask.clone(),
         decks,
+        topology_name,
     };
     let (stats, next_action) = App::new(session, store, ui_options).run()?;
     println!(

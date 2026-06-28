@@ -73,3 +73,43 @@ alix --cram mydeck.txt
 
 Retired cards stay out (that's what retirement is for); everything else is fair
 game regardless of when it's next due.
+
+## Topological order *(experimental)*
+
+By default your due cards come up in scheduler order — for Leitner, the ones you
+know least first. That's right for *retention*, but it can feel random: a card
+about parsing, then one about persistence, with no thread between them.
+
+A **topology** gives the session a thread. `alix deck augment <deck> --target
+topology` asks Claude to read the deck and lay out a *graph* of how the cards
+relate — a suggested **walk** through them, plus a few coarse named **regions**
+(stages or themes). It's cached beside your progress like distractors and notes;
+a deck can hold several, one per `--with` principle:
+
+```sh
+alix deck augment internals.txt --target topology
+alix deck augment capitals.txt --target topology --with "north to south"
+alix deck augment capitals.txt --target topology --with "by continent"
+```
+
+Then review along it:
+
+```sh
+alix review internals.txt --topology auto    # or any cached principle's name
+```
+
+The key thing: this changes only the **order**, never the schedule. SRS still
+decides *which* cards are due and how they advance — the topology just serves
+that due set in walk order instead of shuffled, so each card is a natural
+follow-up to the last. Not-due cards are skipped, so the session stays as short
+as your due pile.
+
+As you go, a thin **region breadcrumb** sits above each card — e.g.
+`Ingestion · Review Engine · Persistence · Frontends`, the one you're in
+emphasized — so you see *where you are* in the material, not just what's in front
+of you. The names are deliberately coarse: they orient without giving away any
+card's answer.
+
+If a deck has exactly one cached topology, `--topology` with no name uses it.
+This is experimental — both the terminal and the web show the breadcrumb and the
+ordering; richer map views are still to come.

@@ -13,9 +13,10 @@ depth, where there is one. Run any command with `--help` for its full flags.
 - `alix workspace <dir>` — open a workspace, routing each member to a review or a
   walk.
 
-Common flags: `--mode <m>` ([modes](04-review-modes.md)), `--scheduler <s>`
-([scheduling](05-scheduling.md)), `--cram`, `--new N`, `--limit N`, `--max-typos N`,
-and `--serve` / `--port` / `--lan` ([the web app](15-the-web-app.md)).
+Common flags: `--mode <m>` ([modes](04-review-modes.md)), `--scheduler <s>` /
+`--topology <name>` ([scheduling](05-scheduling.md)), `--cram`, `--new N`,
+`--limit N`, `--max-typos N`, and `--serve` / `--port` / `--lan`
+([the web app](15-the-web-app.md)).
 
 ## Progress
 

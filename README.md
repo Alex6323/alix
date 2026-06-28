@@ -722,6 +722,7 @@ study stays instant and fully offline — Claude is never called mid-session.
 alix deck augment mydeck.txt --target choices    # multiple-choice distractors
 alix deck augment mydeck.txt --target notes      # a trivia / mnemonic note per card
 alix deck augment mydeck.txt --target questions  # reworded phrasings of each question
+alix deck augment mydeck.txt --target topology   # a graph + walk + regions (experimental)
 alix deck augment mydeck.txt --target choices --with "use common misconceptions"
 ```
 
@@ -757,8 +758,18 @@ alix deck augment mydeck.txt --target choices --with "use common misconceptions"
 
   So write **self-contained questions** and morphing earns its keep; vague fronts
   like "What is it?" are a smell either way.
+- **`--target topology`** *(experimental)* derives a **graph of how the deck's
+  cards relate** — labeled edges, a suggested **walk**, and a handful of coarse
+  named **regions** — cached like the rest. A deck can hold several topologies,
+  one per `--with` principle and keyed by it (`auto` when none). `alix review
+  <deck> --topology <name>` then serves the **due** cards in that walk's order
+  instead of at random — SRS still decides *which* cards are due, the topology
+  only reorders them — and review shows a thin **region breadcrumb** ("where am
+  I", current emphasized) so the sequence reads as a path, not a shuffle. With a
+  single cached topology, `--topology` (no name) picks it automatically.
 - **`--with "<guidance>"`** steers *how* (e.g. "use common misconceptions",
-  "add a surprising historical fact", "phrase questions as real-world scenarios").
+  "add a surprising historical fact", "phrase questions as real-world scenarios",
+  or a topology principle like "by type dependency" / "north to south").
 
 Nothing here touches a card's identity, so augmenting never resets progress
 (distractors, notes, and variants all key off the answer, which the id hashes —
