@@ -10,14 +10,14 @@ changes to the deck format, to the progress store, and what not. Most likely you
 lose all your progress and I won't provide a migration path. You have been warned!
 
 Your **personal AI tutor**, built for understanding — not just remembering.
-Under the hood it's a fast, plain-text spaced-repetition trainer — Leitner and
-SM-2 scheduling, several answer modes, cloze and dual-direction cards, images,
-and deck dependencies — and what sets it apart is the **Claude integration**: an
+Under the hood it's a plain-text spaced-repetition trainer — Leitner and SM-2
+scheduling, several answer modes, cloze and dual-direction cards, images, and
+deck dependencies — and the layer on top is the **Claude integration**: an
 *ask-Claude tutor* on any card, *AI deck generation* from a web page,
-*understanding cards*, and an **AI exam** (`alix exam`) that verifies you
-actually grasped the material and gates your progress on passing it — so you're
-not just memorizing, you're being checked. Decks stay simple plain-text files
-you own, reviewable in a ratatui terminal UI or a local web app.
+*understanding cards*, and an **AI exam** (`alix exam`) that checks whether you
+grasped the material — not just recalled it — and gates your progress on
+passing. Decks stay simple plain-text files you own, reviewable in a ratatui
+terminal UI or a local web app.
 
 ## Requirements
 
@@ -43,7 +43,7 @@ timeouts are configurable per feature in the [config file](#configuration).
 
 ## Learn a codebase (the main workflow)
 
-`alix`'s flagship use: point it at a repo (or any source) and it builds a
+`alix`'s main use: point it at a repo (or any source) and it builds a
 self-contained **learning workspace** — facts decks and predict-and-verify
 [traces](#traces-alix-trace), dependency-ordered — that you then study with
 spaced repetition, the AI tutor, and the [exam](#the-ai-exam-alix-exam). Three
@@ -803,7 +803,7 @@ export — rich notetypes, media, and tags don't carry over.
 ## The AI exam (`alix exam`)
 
 Mechanical review *loads* a deck's material into memory; the **AI exam**
-*verifies you understood it* and is what gates progression. The idea: drilling
+*checks whether you understood it* and is what gates progression. The idea: drilling
 cards proves recall, but not that the ideas connected — so a deck can declare a
 ground-truth **source** and require you to pass an exam against it before it
 counts as done.

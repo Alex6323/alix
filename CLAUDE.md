@@ -11,14 +11,14 @@ in the lib (`src/`), not in a frontend, so both surfaces share it.
 
 ## Scope & focus
 
-`alix` does a few things exceptionally well rather than many things adequately.
+`alix` aims to do a few things well rather than many adequately.
 Focus is a feature, and it survives only if the discipline is written down. New
 capability here originates mostly in conversation with Claude, so this is the
 gate that actually fires — apply it *while building* and push back on scope
 creep rather than quietly saying yes.
 
 **North star** (a fixed reference, not a destination — you don't "complete" it,
-it keeps you on heading): *alix turns the things you read into verified
+it keeps you on heading): *alix aims to turn the things you read into verified
 understanding — spaced repetition for retention, AI that checks you actually
 understand, not just remember.* Measure every feature call against this.
 
