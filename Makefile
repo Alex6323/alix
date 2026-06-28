@@ -6,7 +6,7 @@
 # toolchain — `+nightly` is handled by rustup before cargo sees it — which is
 # why these live in a Makefile rather than .cargo/config.toml.)
 
-.PHONY: build test lint fmt fmt-check check coverage eval run serve book site install clean
+.PHONY: build test lint lint-js fmt fmt-check check coverage eval run serve book site install clean
 
 # Compile the workspace.
 build:
@@ -19,6 +19,18 @@ test:
 # Lint, including tests and examples.
 lint:
 	cargo clippy --all-targets
+
+# Syntax-check the JS embedded in the served HTML assets (assets/serve/*.html).
+# That JS is shipped as static strings, so cargo never parses it — this catches a
+# syntax error the Rust gates can't see. Needs node; a no-op (not a failure) when
+# node isn't installed, so it never blocks a cargo-only contributor or CI. Not
+# wired into `check` for that reason — run it deliberately, like fmt.
+lint-js:
+	@if command -v node >/dev/null 2>&1; then \
+		node scripts/lint-js.js; \
+	else \
+		echo "lint-js: node not found — skipping JS asset check"; \
+	fi
 
 # Format with the nightly toolchain (NOT stable `cargo fmt`).
 fmt:
