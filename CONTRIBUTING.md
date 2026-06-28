@@ -4,8 +4,8 @@ Thanks for wanting to help. `alix` is small on purpose, so the most useful thing
 you can read before writing code is *what it's trying to be* — and what it's
 deliberately not. This page is the contributor-facing distillation of the house
 rules; [`CLAUDE.md`](CLAUDE.md) is the full version (it's also how the AI
-collaborator on this repo is instructed), and [`QUALITY.md`](QUALITY.md) is the
-testing contract.
+collaborator on this repo is instructed). The testing expectations are in the
+[house rules](#house-rules-the-craft-gate) below.
 
 ## What `alix` is
 
