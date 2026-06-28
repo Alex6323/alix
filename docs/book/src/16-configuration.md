@@ -14,12 +14,12 @@ self-graded cards with `j`/`k`/`l`:
 [keys]
 failed = ["j"]
 partly = ["k"]
-got = ["l"]
+nailed = ["l"]
 ```
 
 Keys are a single character (`"j"`), a special name (`"space"`, `"enter"`, `"tab"`,
 `"esc"`, `"backspace"`), or either with a `ctrl-` prefix (`"ctrl-s"`). The
-rebindable actions are `failed`, `partly`, `got`, `reveal`, `hint`, `submit`, `skip`,
+rebindable actions are `failed`, `partly`, `nailed`, `reveal`, `hint`, `submit`, `skip`,
 `remove` (default `ctrl-x`), `continue`, `restart` (default `r`), and `quit`. While
 you're typing an answer (typing/fuzzy mode), plain-character bindings are ignored so
 they can't shadow your input — use `ctrl-`/special keys for `hint`, `skip`, and

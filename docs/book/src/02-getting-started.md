@@ -50,7 +50,7 @@ alix srs.txt
 
 `alix` shows the question; you recall the answer, press a key to reveal it, then
 grade yourself — **failed** (you missed it), **partly** (got the gist but
-stumbled), or **got it**. Your grade moves the card along its schedule, so cards
+stumbled), or **nailed**. Your grade moves the card along its schedule, so cards
 you know come back rarely and cards you miss come back soon. That self-graded reveal is **flip mode**, the default;
 later chapters cover the modes that make you *type* the answer, pick from
 choices, or reveal it line by line.

@@ -280,7 +280,7 @@
   .chip.again:hover { border-color: var(--again); color: var(--again); }
   .chip.failed:hover { border-color: var(--again); color: var(--again); }
   .chip.partly:hover { border-color: var(--warn); color: var(--warn); }
-  .chip.got:hover { border-color: var(--good); color: var(--good); }
+  .chip.nailed:hover { border-color: var(--good); color: var(--good); }
 
   /* ── ask Claude ── */
   .ask { width: var(--card-w); max-width: 92vw; display: flex; flex-direction: column; gap: 12px; animation: deal 0.3s both; }
@@ -443,7 +443,7 @@ function submitCheck() {
   api("/api/check", post({ lines })).then(f => { feedback = f; render(); });
 }
 // Continue from a result (choice or typed) applies the grade and advances.
-function continueAfter() { grade(feedback.passed ? "got" : "failed"); }
+function continueAfter() { grade(feedback.passed ? "nailed" : "failed"); }
 
 function el(tag, cls, text) {
   const n = document.createElement(tag);
@@ -1415,7 +1415,7 @@ function renderLegend() {
   } else {
     chip("Failed", "failed", () => grade("failed"), label(KEYS.failed));
     chip("Partly", "partly", () => grade("partly"), label(KEYS.partly));
-    chip("Got it", "got", () => grade("got"), label(KEYS.got));
+    chip("Nailed", "nailed", () => grade("nailed"), label(KEYS.nailed));
     chip("Ask", "", openAsk, label(KEYS.ask));
   }
   chip("Leave", "", leaveSession, "esc"); // return to the deck picker
@@ -1564,7 +1564,7 @@ document.addEventListener("keydown", (e) => {
   if (hit(e, KEYS.ask)) { e.preventDefault(); openAsk(); return; }
   if (hit(e, KEYS.failed)) { e.preventDefault(); grade("failed"); }
   else if (hit(e, KEYS.partly)) { e.preventDefault(); grade("partly"); }
-  else if (hit(e, KEYS.got)) { e.preventDefault(); grade("got"); }
+  else if (hit(e, KEYS.nailed)) { e.preventDefault(); grade("nailed"); }
 });
 
 document.getElementById("kebab").addEventListener("click", (e) => { e.stopPropagation(); menu.classList.toggle("open"); });

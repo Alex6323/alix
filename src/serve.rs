@@ -389,7 +389,7 @@ struct ReviewKeys {
     reveal: Vec<KeyDto>,
     failed: Vec<KeyDto>,
     partly: Vec<KeyDto>,
-    got: Vec<KeyDto>,
+    nailed: Vec<KeyDto>,
     skip: Vec<KeyDto>,
     remove: Vec<KeyDto>,
     restart: Vec<KeyDto>,
@@ -403,7 +403,7 @@ impl ReviewKeys {
             reveal: key_list(&b.reveal),
             failed: key_list(&b.failed),
             partly: key_list(&b.partly),
-            got: key_list(&b.got),
+            nailed: key_list(&b.nailed),
             skip: key_list(&b.skip),
             remove: key_list(&b.remove),
             restart: key_list(&b.restart),
@@ -1729,7 +1729,7 @@ impl Walking {
 #[derive(Serialize)]
 struct HopDto {
     prompt: String,
-    /// `got` | `partly` | `failed` once judged; `null` while unwalked.
+    /// `nailed` | `partly` | `failed` once judged; `null` while unwalked.
     delta: Option<&'static str>,
     /// The hop currently being predicted or revealed.
     current: bool,
@@ -1752,7 +1752,7 @@ struct LineDto {
 /// The walk tally shown on the done screen.
 #[derive(Serialize)]
 struct SummaryDto {
-    got: usize,
+    nailed: usize,
     partly: usize,
     failed: usize,
     /// 1-based hop numbers judged partly or failed.
@@ -1805,7 +1805,7 @@ fn walk_phase_name(phase: Phase) -> &'static str {
 
 fn delta_name(delta: Delta) -> &'static str {
     match delta {
-        Delta::Got => "got",
+        Delta::Nailed => "nailed",
         Delta::Partial => "partly",
         Delta::Failed => "failed",
     }
@@ -1904,7 +1904,7 @@ fn walk_dto(w: &Walking) -> WalkDto {
         Phase::Done => {
             let s = walk.summary();
             dto.summary = Some(SummaryDto {
-                got: s.got,
+                nailed: s.nailed,
                 partly: s.partly,
                 failed: s.failed,
                 weak: s.weak.iter().map(|i| i + 1).collect(),
@@ -1925,15 +1925,15 @@ fn read_delta(request: &mut Request) -> Option<Delta> {
     Delta::from_key(body.delta.chars().next()?)
 }
 
-/// The walk actions the web page binds, reusing the configured review `[keys]`:
-/// the three deltas map onto failed/partly/got (Failed→failed, Partial→partly,
-/// Got it→got) so the walk grades exactly like review, and `reveal` advances.
+/// The walk's grade keys — the same `[keys]` review uses. A walk's three deltas
+/// *are* the review grades (failed / partly / nailed), so it binds the identical
+/// keys; `reveal` advances to the next checkpoint.
 #[derive(Debug, Serialize)]
 struct WalkKeys {
     reveal: Vec<KeyDto>,
     failed: Vec<KeyDto>,
     partly: Vec<KeyDto>,
-    got: Vec<KeyDto>,
+    nailed: Vec<KeyDto>,
 }
 
 impl WalkKeys {
@@ -1942,7 +1942,7 @@ impl WalkKeys {
             reveal: key_list(&b.reveal),
             failed: key_list(&b.failed),
             partly: key_list(&b.partly),
-            got: key_list(&b.got),
+            nailed: key_list(&b.nailed),
         }
     }
 }
@@ -2598,7 +2598,7 @@ fn read_grade(request: &mut Request) -> Option<Grade> {
     match body.grade.as_str() {
         "failed" => Some(Grade::Fail),
         "partly" => Some(Grade::Partial),
-        "got" => Some(Grade::Pass),
+        "nailed" => Some(Grade::Pass),
         _ => None,
     }
 }
@@ -2960,11 +2960,11 @@ mod tests {
         assert_eq!(vec!["it reads the first line".to_string()], d.points);
 
         // Grade Got: the rail colors the walked node and advances to hop 2.
-        w.walk.grade(&mut store, Delta::Got, 1000);
+        w.walk.grade(&mut store, Delta::Nailed, 1000);
         let d = walk_dto(&w);
         assert_eq!("predict", d.phase);
         assert_eq!(2, d.current);
-        assert_eq!(Some("got"), d.path[0].delta);
+        assert_eq!(Some("nailed"), d.path[0].delta);
         assert!(d.path[1].current);
 
         // Walk the last hop → done with a summary (the drill; verification is the
@@ -2974,7 +2974,7 @@ mod tests {
         let d = walk_dto(&w);
         assert_eq!("done", d.phase);
         let s = d.summary.expect("done has a summary");
-        assert_eq!((1, 0, 1), (s.got, s.partly, s.failed));
+        assert_eq!((1, 0, 1), (s.nailed, s.partly, s.failed));
         assert_eq!(vec![2], s.weak); // 1-based: the failed second hop
     }
 

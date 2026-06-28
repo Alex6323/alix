@@ -115,7 +115,7 @@
 
   /* the resolved live grade, shown in the answer region */
   .verdict .badge { display: inline-block; font-weight: 700; font-size: 0.8rem; letter-spacing: 0.05em; padding: 4px 12px; border-radius: 999px; margin-bottom: 8px; }
-  .badge.got { color: var(--good); background: rgba(62,224,160,0.13); border: 1px solid rgba(62,224,160,0.3); }
+  .badge.nailed { color: var(--good); background: rgba(62,224,160,0.13); border: 1px solid rgba(62,224,160,0.3); }
   .badge.partly { color: var(--warn); background: rgba(245,196,81,0.13); border: 1px solid rgba(245,196,81,0.3); }
   .badge.failed { color: var(--again); background: rgba(255,107,107,0.13); border: 1px solid rgba(255,107,107,0.3); }
   .verdict p { margin: 0; line-height: 1.45; opacity: 0.9; }
@@ -139,7 +139,7 @@
   .summary h2 { font-size: 1.4rem; margin: 0 0 18px; line-height: 1.3; }
   .summary .row { display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--line); color: var(--dim); }
   .summary .row b { color: var(--ink); font-family: var(--mono); font-weight: 600; }
-  .summary .row b.got { color: var(--good); } .summary .row b.partly { color: var(--warn); } .summary .row b.failed { color: var(--again); }
+  .summary .row b.nailed { color: var(--good); } .summary .row b.partly { color: var(--warn); } .summary .row b.failed { color: var(--again); }
   .summary .compression { margin-top: 18px; border-left: 3px solid var(--bolt); padding: 4px 0 4px 14px; }
   .summary .compression .lbl { display: block; color: var(--bolt); margin-bottom: 6px; }
   .summary .compression p { margin: 0; line-height: 1.55; white-space: pre-wrap; color: var(--ink); }
@@ -168,7 +168,7 @@
   .leave-msg { color: var(--dim); font-size: 0.9rem; margin-right: auto; }
   .chip.failed:hover { border-color: var(--again); color: var(--again); }
   .chip.partly:hover { border-color: var(--warn); color: var(--warn); }
-  .chip.got:hover { border-color: var(--good); color: var(--good); }
+  .chip.nailed:hover { border-color: var(--good); color: var(--good); }
   .chip:disabled { opacity: 0.4; cursor: default; }
 
   /* ask-Claude panel — the same optic as the review tutor, its subject the
@@ -345,7 +345,7 @@ function renderChrome() {
   const score = document.getElementById("score");
   score.replaceChildren();
   let g = 0, p = 0, m = 0;
-  (state.path || []).forEach(h => { if (h.delta === "got") g++; else if (h.delta === "partly") p++; else if (h.delta === "failed") m++; });
+  (state.path || []).forEach(h => { if (h.delta === "nailed") g++; else if (h.delta === "partly") p++; else if (h.delta === "failed") m++; });
   score.append(el("b", null, String(g)), " · ", el("i", null, String(p)), " · ", el("s", null, String(m)));
 }
 
@@ -504,14 +504,14 @@ function renderReveal() {
 
 function verdictClass(v) {
   v = (v || "").toLowerCase();
-  return v.startsWith("got") ? "got" : v.startsWith("part") ? "partly" : "failed";
+  return v.startsWith("nail") ? "nailed" : v.startsWith("part") ? "partly" : "failed";
 }
 
-// the three deltas map onto review's failed/partly/got keys
+// the three deltas map onto review's failed/partly/nailed keys
 const DELTAS = [
   { delta: "f", cls: "failed", label: "Failed", keys: () => KEYS.failed },
   { delta: "p", cls: "partly", label: "Partly", keys: () => KEYS.partly },
-  { delta: "g", cls: "got",    label: "Got it", keys: () => KEYS.got },
+  { delta: "n", cls: "nailed", label: "Nailed", keys: () => KEYS.nailed },
 ];
 
 function renderRevealActions() {
@@ -527,7 +527,7 @@ function renderRevealActions() {
 }
 
 function renderDone() {
-  const s = state.summary || { got: 0, partly: 0, failed: 0, weak: [], total: 0 };
+  const s = state.summary || { nailed: 0, partly: 0, failed: 0, weak: [], total: 0 };
   const wrap = el("div", "summary");
   wrap.appendChild(el("div", "lede", "walk complete · the drill is done"));
   wrap.appendChild(el("h2", null, state.description || "Trace walked."));
@@ -537,7 +537,7 @@ function renderDone() {
     r.appendChild(el("b", cls || null, v));
     wrap.appendChild(r);
   };
-  row("got", String(s.got), "got");
+  row("nailed", String(s.nailed), "nailed");
   row("partly", String(s.partly), "partly");
   row("failed", String(s.failed), "failed");
   if (s.weak && s.weak.length) row("weak (resurface sooner)", s.weak.map(h => "#" + h).join(" · "));

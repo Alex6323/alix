@@ -23,10 +23,10 @@ open *predict* prompt and the key points a good prediction should hit — plus a
 `% at:` locator pointing at the real lines in the source:
 
 ```
-% trace: how pressing the Got it key in the browser becomes a saved grade
+% trace: how pressing the Nailed key in the browser becomes a saved grade
 % source: ..
 
-# You press Got it. What does the page send the server — and what does it not?
+# You press Nailed. What does the page send the server — and what does it not?
     grade(g) POSTs to /api/grade with a body of just { grade: g } — no card id.
     % at: assets/serve/review.html:338-341
     ! The page is a thin view; it doesn't even track card identity.
@@ -105,17 +105,18 @@ goes hop by hop:
 1. **Predict** — type a guess before anything reveals (committing is the point).
 2. **Reveal** — `alix` prints the real excerpt from the source, then the key points
    and note.
-3. **Gap** — you judge yourself **Got it / Partial / Missed**. Self-judged and
-   offline by default; pass **`--grade`** to have Claude judge your typed
-   prediction against the key points and return a verdict plus a line of feedback
-   (a model call per hop). Either way, a Partial or Missed is a **weak edge** that
-   resets and resurfaces sooner; a nailed hop advances and fades. Each checkpoint
-   is an ordinary card underneath, so this is the normal per-card SRS.
+3. **Gap** — you judge yourself **Failed / Partly / Nailed** (the same three
+   grades review uses). Self-judged and offline by default; pass **`--grade`** to
+   have Claude judge your typed prediction against the key points and return a
+   verdict plus a line of feedback (a model call per hop). Either way, a failed or
+   partly hop is a **weak edge** that resurfaces sooner — a failed one resets, a
+   partly steps back one stage — while a nailed hop advances and fades. Each
+   checkpoint is an ordinary card underneath, so this is the normal per-card SRS.
 4. **Done** — after the last hop the walk is complete. That's the *drill*; the
    *verification* (what masters the trace) is its separate **exam**, below.
 
 **In the browser:** `alix trace <deck> --serve` walks it in the web frontend — a
-**path rail** you descend (nodes coloring in by Got / Partial / Missed) with each
+**path rail** you descend (nodes coloring in by Failed / Partly / Nailed) with each
 checkpoint's source shown in a line-numbered excerpt; `--serve --grade` does the
 live grading. Progress saves to the same store, so a walk started in the terminal
 continues in the browser.

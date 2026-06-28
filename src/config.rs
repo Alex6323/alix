@@ -96,8 +96,8 @@ pub struct Bindings {
     pub failed: Vec<KeyPattern>,
     /// Self-graded modes: grade as partly (demote one stage).
     pub partly: Vec<KeyPattern>,
-    /// Self-graded modes: grade as got it (advance one stage).
-    pub got: Vec<KeyPattern>,
+    /// Self-graded modes: grade as nailed (advance one stage).
+    pub nailed: Vec<KeyPattern>,
     /// Flip mode: reveal the answer.
     pub reveal: Vec<KeyPattern>,
     /// Typing mode: reveal a hint (fails the card).
@@ -127,7 +127,7 @@ impl Default for Bindings {
         Self {
             failed: keys(&["1", "f"]),
             partly: keys(&["2", "p"]),
-            got: keys(&["3", "g"]),
+            nailed: keys(&["3", "n"]),
             reveal: keys(&["space", "enter"]),
             hint: keys(&["tab", "ctrl-h", "ctrl-backspace"]),
             submit: keys(&["enter"]),
@@ -579,7 +579,7 @@ struct RawAsk {
 struct RawKeys {
     failed: Option<Vec<String>>,
     partly: Option<Vec<String>>,
-    got: Option<Vec<String>>,
+    nailed: Option<Vec<String>>,
     reveal: Option<Vec<String>>,
     hint: Option<Vec<String>>,
     submit: Option<Vec<String>>,
@@ -614,7 +614,7 @@ impl Config {
 
         assign(&mut keys.failed, raw.keys.failed, "failed")?;
         assign(&mut keys.partly, raw.keys.partly, "partly")?;
-        assign(&mut keys.got, raw.keys.got, "got")?;
+        assign(&mut keys.nailed, raw.keys.nailed, "nailed")?;
         assign(&mut keys.reveal, raw.keys.reveal, "reveal")?;
         assign(&mut keys.hint, raw.keys.hint, "hint")?;
         assign(&mut keys.submit, raw.keys.submit, "submit")?;
@@ -824,7 +824,7 @@ pub fn default_config_toml() -> &'static str {
 [keys]
 # failed = ["1", "f"]           # self-graded: grade as failed (reset)
 # partly = ["2", "p"]           # self-graded: grade as partly (demote one stage)
-# got = ["3", "g"]              # self-graded: grade as got it (advance)
+# nailed = ["3", "n"]           # self-graded: grade as nailed (advance)
 # reveal = ["space", "enter"]   # flip mode: show the answer
 # hint = ["tab", "ctrl-h", "ctrl-backspace"]  # typing mode (fails the card)
 # submit = ["enter"]            # fuzzy mode: submit the current line
@@ -1007,11 +1007,11 @@ mod tests {
     #[test]
     fn rebind_grades_to_jkl() {
         let config =
-            Config::from_toml("[keys]\nfailed = [\"j\"]\npartly = [\"k\"]\ngot = [\"l\"]\n")
+            Config::from_toml("[keys]\nfailed = [\"j\"]\npartly = [\"k\"]\nnailed = [\"l\"]\n")
                 .unwrap();
         assert_eq!(vec![parse_key("j").unwrap()], config.keys.failed);
         assert_eq!(vec![parse_key("k").unwrap()], config.keys.partly);
-        assert_eq!(vec![parse_key("l").unwrap()], config.keys.got);
+        assert_eq!(vec![parse_key("l").unwrap()], config.keys.nailed);
         // Unmentioned actions keep their defaults.
         assert_eq!(Bindings::default().quit, config.keys.quit);
     }
