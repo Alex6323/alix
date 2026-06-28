@@ -215,6 +215,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   answers compose freely, and the Next/Submit button now shows the binding.
 
 ### Fixed
+- **A trace `--grade` reply that isn't a real verdict now errors instead of being
+  scored as a miss.** The per-hop grader expects the model to answer
+  `NAILED`/`PARTLY`/`FAILED`; an unrecognized reply (a weaker model ignoring the
+  instruction) used to silently fall through to a failing grade — fabricating a
+  verdict the model never gave. It now surfaces an error and falls back to
+  self-grading, so a correct prediction is never quietly marked wrong.
 - **Browsing a deck launched from the web picker shows your configured keys.**
   When the review server hosts the browse page (the picker → Browse flow), its
   Prev/Next chips showed the literal `←`/`→` arrows instead of your `[browse]`

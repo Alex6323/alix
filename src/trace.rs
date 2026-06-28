@@ -837,7 +837,7 @@ pub fn grade_prediction(
         ..ask_cfg.clone()
     };
     let raw = ask::run(&run_cfg, &grade_prompt(checkpoint, prediction), &[])?;
-    Ok(parse_grade(&raw))
+    parse_grade(&raw)
 }
 
 /// Background variant of [`grade_prediction`]: runs the grade on a thread and
@@ -884,24 +884,29 @@ fn grade_prompt(checkpoint: &Checkpoint, prediction: &str) -> String {
 }
 
 /// Parses a `VERDICT — feedback` grading reply into a [`Delta`] and the feedback
-/// text. The verdict word is one of `NAILED` / `PARTLY` / `FAILED` (what the
-/// prompt asks for); anything else falls back to [`Delta::Failed`].
-fn parse_grade(raw: &str) -> (Delta, String) {
+/// text. The verdict must be one of `NAILED` / `PARTLY` / `FAILED` (what the
+/// prompt asks for); any other reply is an **error** — a grader that ignores the
+/// instruction (a weak local model, say) must not be papered over with a
+/// fabricated grade, so the caller aborts the AI grade rather than scoring a hop
+/// the model never actually judged.
+fn parse_grade(raw: &str) -> Result<(Delta, String)> {
     let line = raw.trim().lines().next().unwrap_or("").trim();
     let upper = line.to_ascii_uppercase();
     let delta = if upper.starts_with("NAILED") {
         Delta::Nailed
     } else if upper.starts_with("PARTLY") {
         Delta::Partial
-    } else {
+    } else if upper.starts_with("FAILED") {
         Delta::Failed
+    } else {
+        bail!("the grader did not return a NAILED, PARTLY, or FAILED verdict: {line:?}");
     };
     let feedback = line
         .split_once(['—', '-'])
         .map(|(_, f)| f.trim().to_string())
         .filter(|f| !f.is_empty())
         .unwrap_or_else(|| line.to_string());
-    (delta, feedback)
+    Ok((delta, feedback))
 }
 
 /// The phase of a [`Walk`].
@@ -2087,13 +2092,24 @@ mod tests {
 
     #[test]
     fn parse_grade_reads_verdict_and_feedback() {
-        let (d, f) = parse_grade("PARTLY — right that it reschedules, but missed the clamp.");
+        let (d, f) =
+            parse_grade("PARTLY — right that it reschedules, but missed the clamp.").unwrap();
         assert_eq!(Delta::Partial, d);
         assert_eq!("right that it reschedules, but missed the clamp.", f);
-        assert_eq!(Delta::Nailed, parse_grade("NAILED — spot on").0);
-        assert_eq!(Delta::Failed, parse_grade("FAILED - wrong direction").0);
-        // An unrecognized verdict defaults to Failed; the line becomes feedback.
-        assert_eq!(Delta::Failed, parse_grade("hmm not sure").0);
+        assert_eq!(Delta::Nailed, parse_grade("NAILED — spot on").unwrap().0);
+        assert_eq!(
+            Delta::Failed,
+            parse_grade("FAILED - wrong direction").unwrap().0
+        );
+    }
+
+    #[test]
+    fn parse_grade_errors_on_an_unrecognized_verdict() {
+        // A grader that ignores the NAILED/PARTLY/FAILED instruction (e.g. a weak
+        // local model) must surface an error — never a fabricated grade the model
+        // didn't give. The caller then aborts the AI grade (and self-grades).
+        assert!(parse_grade("hmm not sure").is_err());
+        assert!(parse_grade("").is_err());
     }
 
     #[test]
