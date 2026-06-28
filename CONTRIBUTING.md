@@ -146,6 +146,26 @@ surrounding code; when in doubt, mirror it. The essentials:
 - **Prompt changes** (anything touching `grade_*`) ship with a `make eval` run
   and the calibration delta noted — that's how "mastered" stays honest.
 
+## Testing — two layers
+
+`alix` is unusual: it's *built by* an LLM, and it *calls* one at runtime (Claude
+today). That splits testing into two jobs, and it helps to know which you're in:
+
+1. **Deterministic correctness** — does the code do the right thing given known
+   inputs? Ordinary QA: unit + integration tests, clippy, fmt. The AI code paths
+   are covered by a **fake model CLI** — a test helper that stands in for the real
+   LLM binary and emits canned output — so they run without ever calling a live
+   model. This is the **blocking gate** (`make check`, enforced by CI).
+2. **AI-behaviour quality** — do the *prompts* produce good output: fair grades,
+   coherent traces, a non-lenient exam? The fake CLI can't see this, so it needs
+   the **eval harness** (`make eval`), which runs the real prompts against a live
+   model and scores them. It's non-deterministic and costs money, so it lives
+   **outside** the blocking gate — run it before any change to a `grade_*` prompt,
+   and note the calibration delta.
+
+Rule of thumb: a code change must pass layer 1 (`make check`); a *prompt* change
+must also clear layer 2 (`make eval`).
+
 ## Commits & pull requests
 
 - **Don't break the build, and run `make check` before pushing.**
