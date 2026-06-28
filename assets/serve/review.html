@@ -1065,7 +1065,9 @@ async function renderSelect() {
   // Drilled into a workspace/folder: its members as an unlock dependency tree.
   // Esc/h returns to the top list (forgetting it, so a later session lands top).
   function renderDrill(grp) {
-    const back = () => { lastWorkspace = null; renderTop(); };
+    // Backing out re-lands the top list on the workspace/folder we came from,
+    // reusing the one-shot re-land marker that a launched deck sets.
+    const back = () => { lastWorkspace = null; sessionStorage.setItem("alix.lastDeck", grp.name); renderTop(); };
     renderList({
       lede: (grp.label || grp.name) + " — pick a deck to start",
       sections: [{ title: null, rows: grp.members.map(m => deckRow(m, true, grp.name, true, true)) }],

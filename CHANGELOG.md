@@ -179,6 +179,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with the review grade keys, which carry no next/prev. Browse now has its own
   `/api/browse-keys` endpoint, served by both the standalone and the hosting
   review server.
+- **Backing out of a workspace re-lands the cursor on it.** Leaving a workspace
+  or folder in the web picker (Esc/`h`) dropped focus back to the very first row;
+  it now returns the cursor to the workspace/folder you came from, reusing the
+  same re-land marker a launched deck already sets.
 - **`alix explore --into --build` now actually freezes its `assets/`.** The
   generated `% source:` paths were silently doubled: when `--source` is a
   subdirectory (a crate) but the plan writes a scope relative to the project root
