@@ -1168,9 +1168,13 @@ editing the SVG. The launcher prefers an installed `alix` (`cargo install
 ## Development
 
 ```sh
-cargo test       # unit tests
-cargo clippy     # lints
+make check       # clippy + tests — the gate before any change is done
+make fmt         # format (nightly rustfmt; not plain `cargo fmt`)
+make serve       # run the web frontend
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how contributions are gated — the
+focus (fit) gate, the house rules (craft gate), and the PR checklist.
 
 ## License
 
