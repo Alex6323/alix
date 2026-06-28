@@ -114,6 +114,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `alix workspace <dir>` opens that picker), and a member still inherits the
   workspace's directives and store. `stats`/`list`/`reset` still take multiple
   decks (they're per-deck operations, not a merged session).
+- **Breaking — review grades are now `failed` / `partly` / `got it`, replacing
+  `again` / `good` / `easy`.** Fact-deck review and the trace walk now share one
+  three-outcome grade: **failed** resets the card to stage 1, **partly** drops it
+  *one* stage (a soft miss — it returns sooner but you keep most of your
+  progress), and **got it** advances one stage. The old `easy` (+2 stage jump) is
+  gone, and `partly` is a genuinely new middle — previously the trace walk's
+  "partial" scheduled identically to a miss (full reset); now it is a distinct,
+  gentler outcome on both surfaces. A `partly` does not advance the streak (it
+  can't retire a card). **The `[keys]` config keys renamed** — `again`/`good`/
+  `easy` → `failed`/`partly`/`got` (defaults `1`/`f`, `2`/`p`, `3`/`g`); an
+  existing config with the old keys must be updated (`alix config --init` shows
+  the new template). Pre-1.0, no shim. Progress files are unaffected — grades were
+  never stored by name.
 - **Breaking — the freeze format records provenance on the `% at:` line, not a
   note.** Freezing a workspace now writes `% origin:` (the live crate root) and
   appends each card's original location to its locator

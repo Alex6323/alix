@@ -469,7 +469,10 @@ source.
 ## Review
 
 The default **flip** mode is Anki-style: you reveal the answer and grade
-yourself (again / good / easy — easy jumps two Leitner stages). The
+yourself **failed / partly / got it** — the same three grades the trace walk
+uses. *Failed* resets the card to stage 1, *partly* drops it one stage (a soft
+miss — it returns sooner but you keep most of your progress), and *got it*
+advances it one stage. The
 **typing** mode has you type the back of the card character by
 character with instant green/red feedback; `TAB` reveals the next two
 characters as a hint, and pressing it again uncovers two more each time until
@@ -483,7 +486,8 @@ In **choice** mode you pick the answer out of four options with `1`–`4`.
 The three wrong options are sampled from the answers of the other cards in
 the session, preferring similar-looking ones (years compete with years), so
 no distractors ever have to be written. Recognition is easier than recall: a
-correct pick grades as *good* (never *easy*), a wrong pick fails the card.
+correct pick grades as *got it*, a wrong pick *failed* (an auto-graded mode has
+no *partly*).
 Cloze siblings are never used as distractors, and if a session has fewer
 than four distinct answers the card falls back to flip mode.
 
@@ -506,7 +510,7 @@ Editing a card's answer regenerates its distractors next time you augment. See
 In **line** mode the back is revealed one line at a time: press the reveal
 key (`Space`) to uncover the next line, recalling it first. It is meant for
 lyrics, poems, or any ordered list. Once every line is shown you grade
-yourself again / good / easy, exactly like flip mode. Pair it with
+yourself failed / partly / got it, exactly like flip mode. Pair it with
 `--order sequential` (or `% order: sequential` in the deck) to walk the
 sections top to bottom — e.g. one card per verse/chorus of a song.
 
@@ -585,7 +589,7 @@ launched inside a workspace returns **into that workspace**. Naming decks on the
 command line skips the screen and goes straight to review/browse.
 
 Every answer mode works in the browser: **flip** (reveal, then self-grade
-Again / Good / Easy), **line** (reveal a verse one line at a time — it
+Failed / Partly / Got it), **line** (reveal a verse one line at a time — it
 auto-scrolls to follow the newest line), **typing** / **fuzzy** (type your
 answer and submit; checked exactly or with your configured typo tolerance, each
 line marked ✓/✗ with the correct answer shown), and **choice** (tap one of the
@@ -1097,18 +1101,18 @@ re-walks it.
 Key bindings can be changed in `~/.config/alix/config.toml`. Create the
 file with `alix config --init`, inspect the active bindings with
 `alix config`. Every action takes a list of keys; the first one is
-shown in the footer. For example, to grade flip-mode cards with j/k/l:
+shown in the footer. For example, to grade self-graded cards with j/k/l:
 
 ```toml
 [keys]
-again = ["j"]
-good = ["k"]
-easy = ["l"]
+failed = ["j"]
+partly = ["k"]
+got = ["l"]
 ```
 
 Keys are written as a single character (`"j"`), a special key name
 (`"space"`, `"enter"`, `"tab"`, `"esc"`, `"backspace"`), or either with a
-`ctrl-` prefix (`"ctrl-s"`). Rebindable actions: `again`, `good`, `easy`,
+`ctrl-` prefix (`"ctrl-s"`). Rebindable actions: `failed`, `partly`, `got`,
 `reveal`, `hint`, `submit`, `skip`, `remove` (mark the card for deletion from
 its deck file, default `ctrl-x`), `continue`, `restart` (start a new session
 from the summary screen, default `r`), `quit`. While you are typing

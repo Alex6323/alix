@@ -204,13 +204,6 @@
   .option.wrong .num { color: var(--again); }
   .option.dim { opacity: 0.45; }
 
-  .card.zap { animation: zap 0.5s ease-out; }
-  @keyframes zap {
-    0%   { box-shadow: 0 18px 50px -20px rgba(0,0,0,0.8), 0 0 0 0 rgba(125,249,232,0); }
-    35%  { box-shadow: 0 18px 50px -20px rgba(0,0,0,0.8), 0 0 26px 1px rgba(125,249,232,0.5); }
-    100% { box-shadow: 0 18px 50px -20px rgba(0,0,0,0.8), 0 0 0 0 rgba(125,249,232,0); }
-  }
-
   /* ── summary ──────────────────────────────────────────────────────── */
   .summary { width: var(--card-w); text-align: left; animation: deal 0.3s both; }
   .summary .lede { font-family: var(--mono); color: var(--bolt); font-size: 0.7rem; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 14px; }
@@ -285,8 +278,9 @@
   .chip.primary .k { color: rgba(6,18,26,0.55); border-color: rgba(6,18,26,0.3); }
   .chip.primary:hover { filter: brightness(1.08); color: var(--void); }
   .chip.again:hover { border-color: var(--again); color: var(--again); }
-  .chip.good:hover { border-color: var(--good); color: var(--good); }
-  .chip.easy:hover { border-color: var(--bolt-hi); color: var(--bolt-hi); }
+  .chip.failed:hover { border-color: var(--again); color: var(--again); }
+  .chip.partly:hover { border-color: var(--warn); color: var(--warn); }
+  .chip.got:hover { border-color: var(--good); color: var(--good); }
 
   /* ── ask Claude ── */
   .ask { width: var(--card-w); max-width: 92vw; display: flex; flex-direction: column; gap: 12px; animation: deal 0.3s both; }
@@ -343,7 +337,7 @@
   .exam-ready { color: var(--warn); margin-top: 8px; }
 
   @media (prefers-reduced-motion: reduce) {
-    .stack, .summary, .reveal, .card.zap, .exam-elapsed .dot { animation: none; }
+    .stack, .summary, .reveal, .exam-elapsed .dot { animation: none; }
   }
 </style>
 </head>
@@ -403,7 +397,7 @@ const menu = document.getElementById("menu");
 async function api(path, opts) { return (await fetch(path, opts)).json(); }
 function post(body) { return { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }; }
 function load()    { api("/api/state").then(apply); }
-function grade(g)  { if (g === "easy") zap(); api("/api/grade", post({ grade: g })).then(apply); }
+function grade(g)  { api("/api/grade", post({ grade: g })).then(apply); }
 function skip()    { api("/api/skip", post({})).then(apply); }
 function remove()  { api("/api/remove", post({})).then(apply); }
 function restart() { api("/api/restart", post({})).then(apply); }
@@ -449,7 +443,7 @@ function submitCheck() {
   api("/api/check", post({ lines })).then(f => { feedback = f; render(); });
 }
 // Continue from a result (choice or typed) applies the grade and advances.
-function continueAfter() { grade(feedback.passed ? "good" : "again"); }
+function continueAfter() { grade(feedback.passed ? "got" : "failed"); }
 
 function el(tag, cls, text) {
   const n = document.createElement(tag);
@@ -1419,9 +1413,9 @@ function renderLegend() {
     chip(state.mode === "line" && revealed > 0 ? "Reveal next" : "Reveal", "primary", reveal, label(KEYS.reveal));
     chip("Skip", "", skip, label(KEYS.skip));
   } else {
-    chip("Again", "again", () => grade("again"), label(KEYS.again));
-    chip("Good", "good", () => grade("good"), label(KEYS.good));
-    chip("Easy", "easy", () => grade("easy"), label(KEYS.easy));
+    chip("Failed", "failed", () => grade("failed"), label(KEYS.failed));
+    chip("Partly", "partly", () => grade("partly"), label(KEYS.partly));
+    chip("Got it", "got", () => grade("got"), label(KEYS.got));
     chip("Ask", "", openAsk, label(KEYS.ask));
   }
   chip("Leave", "", leaveSession, "esc"); // return to the deck picker
@@ -1470,11 +1464,6 @@ function reveal() {
   revealed = state.mode === "line" ? Math.min(revealed + 1, backCount()) : backCount();
   fillBottom();
   renderLegend();
-}
-
-function zap() {
-  const card = document.getElementById("card");
-  if (card) card.classList.add("zap");
 }
 
 function chip(text, cls, onClick, key) {
@@ -1573,9 +1562,9 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   if (hit(e, KEYS.ask)) { e.preventDefault(); openAsk(); return; }
-  if (hit(e, KEYS.again)) { e.preventDefault(); grade("again"); }
-  else if (hit(e, KEYS.good)) { e.preventDefault(); grade("good"); }
-  else if (hit(e, KEYS.easy)) { e.preventDefault(); grade("easy"); }
+  if (hit(e, KEYS.failed)) { e.preventDefault(); grade("failed"); }
+  else if (hit(e, KEYS.partly)) { e.preventDefault(); grade("partly"); }
+  else if (hit(e, KEYS.got)) { e.preventDefault(); grade("got"); }
 });
 
 document.getElementById("kebab").addEventListener("click", (e) => { e.stopPropagation(); menu.classList.toggle("open"); });

@@ -387,9 +387,9 @@ fn key_list(list: &[KeyPattern]) -> Vec<KeyDto> {
 #[derive(Debug, Serialize)]
 struct ReviewKeys {
     reveal: Vec<KeyDto>,
-    again: Vec<KeyDto>,
-    good: Vec<KeyDto>,
-    easy: Vec<KeyDto>,
+    failed: Vec<KeyDto>,
+    partly: Vec<KeyDto>,
+    got: Vec<KeyDto>,
     skip: Vec<KeyDto>,
     remove: Vec<KeyDto>,
     restart: Vec<KeyDto>,
@@ -401,9 +401,9 @@ impl ReviewKeys {
     fn from(b: &Bindings) -> Self {
         Self {
             reveal: key_list(&b.reveal),
-            again: key_list(&b.again),
-            good: key_list(&b.good),
-            easy: key_list(&b.easy),
+            failed: key_list(&b.failed),
+            partly: key_list(&b.partly),
+            got: key_list(&b.got),
             skip: key_list(&b.skip),
             remove: key_list(&b.remove),
             restart: key_list(&b.restart),
@@ -1729,7 +1729,7 @@ impl Walking {
 #[derive(Serialize)]
 struct HopDto {
     prompt: String,
-    /// `got` | `partial` | `missed` once judged; `null` while unwalked.
+    /// `got` | `partly` | `failed` once judged; `null` while unwalked.
     delta: Option<&'static str>,
     /// The hop currently being predicted or revealed.
     current: bool,
@@ -1753,9 +1753,9 @@ struct LineDto {
 #[derive(Serialize)]
 struct SummaryDto {
     got: usize,
-    partial: usize,
-    missed: usize,
-    /// 1-based hop numbers judged Partial or Missed.
+    partly: usize,
+    failed: usize,
+    /// 1-based hop numbers judged partly or failed.
     weak: Vec<usize>,
     total: usize,
 }
@@ -1806,8 +1806,8 @@ fn walk_phase_name(phase: Phase) -> &'static str {
 fn delta_name(delta: Delta) -> &'static str {
     match delta {
         Delta::Got => "got",
-        Delta::Partial => "partial",
-        Delta::Missed => "missed",
+        Delta::Partial => "partly",
+        Delta::Failed => "failed",
     }
 }
 
@@ -1905,8 +1905,8 @@ fn walk_dto(w: &Walking) -> WalkDto {
             let s = walk.summary();
             dto.summary = Some(SummaryDto {
                 got: s.got,
-                partial: s.partial,
-                missed: s.missed,
+                partly: s.partly,
+                failed: s.failed,
                 weak: s.weak.iter().map(|i| i + 1).collect(),
                 total: walk.total(),
             });
@@ -1926,23 +1926,23 @@ fn read_delta(request: &mut Request) -> Option<Delta> {
 }
 
 /// The walk actions the web page binds, reusing the configured review `[keys]`:
-/// the three grades map onto again/good/easy (Missed→again, Partial→good,
-/// Got it→easy) so the walk feels like review, and `reveal` advances.
+/// the three deltas map onto failed/partly/got (Failed→failed, Partial→partly,
+/// Got it→got) so the walk grades exactly like review, and `reveal` advances.
 #[derive(Debug, Serialize)]
 struct WalkKeys {
     reveal: Vec<KeyDto>,
-    again: Vec<KeyDto>,
-    good: Vec<KeyDto>,
-    easy: Vec<KeyDto>,
+    failed: Vec<KeyDto>,
+    partly: Vec<KeyDto>,
+    got: Vec<KeyDto>,
 }
 
 impl WalkKeys {
     fn from(b: &Bindings) -> Self {
         Self {
             reveal: key_list(&b.reveal),
-            again: key_list(&b.again),
-            good: key_list(&b.good),
-            easy: key_list(&b.easy),
+            failed: key_list(&b.failed),
+            partly: key_list(&b.partly),
+            got: key_list(&b.got),
         }
     }
 }
@@ -2588,7 +2588,7 @@ fn mode_name(mode: Mode) -> &'static str {
     }
 }
 
-/// Parses a `{"grade":"again|good|easy"}` POST body into a [`Grade`].
+/// Parses a `{"grade":"failed|partly|got"}` POST body into a [`Grade`].
 fn read_grade(request: &mut Request) -> Option<Grade> {
     #[derive(Deserialize)]
     struct Body {
@@ -2596,9 +2596,9 @@ fn read_grade(request: &mut Request) -> Option<Grade> {
     }
     let body: Body = serde_json::from_reader(request.as_reader()).ok()?;
     match body.grade.as_str() {
-        "again" => Some(Grade::Fail),
-        "good" => Some(Grade::Pass),
-        "easy" => Some(Grade::Easy),
+        "failed" => Some(Grade::Fail),
+        "partly" => Some(Grade::Partial),
+        "got" => Some(Grade::Pass),
         _ => None,
     }
 }
@@ -2970,12 +2970,12 @@ mod tests {
         // Walk the last hop → done with a summary (the drill; verification is the
         // separate trace exam, not an in-walk compression).
         w.walk.predict(String::new());
-        w.walk.grade(&mut store, Delta::Missed, 1001);
+        w.walk.grade(&mut store, Delta::Failed, 1001);
         let d = walk_dto(&w);
         assert_eq!("done", d.phase);
         let s = d.summary.expect("done has a summary");
-        assert_eq!((1, 0, 1), (s.got, s.partial, s.missed));
-        assert_eq!(vec![2], s.weak); // 1-based: the missed second hop
+        assert_eq!((1, 0, 1), (s.got, s.partly, s.failed));
+        assert_eq!(vec![2], s.weak); // 1-based: the failed second hop
     }
 
     #[test]
@@ -2990,7 +2990,7 @@ mod tests {
         w.grade_result = Some((Delta::Partial, "right idea, missed a detail".to_string()));
         let d = walk_dto(&w);
         assert!(d.auto_grade);
-        assert_eq!(Some("PARTIAL"), d.verdict);
+        assert_eq!(Some("PARTLY"), d.verdict);
         assert_eq!(Some("right idea, missed a detail".to_string()), d.feedback);
 
         w.clear_grade();

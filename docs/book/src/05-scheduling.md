@@ -18,20 +18,23 @@ the card comes due again:
 
 Grading moves the card between stages:
 
-- **again** (fail) → back to stage 1
-- **good** (pass) → up one stage
-- **easy** → up two stages
+- **failed** → back to stage 1
+- **partly** → down one stage (floored at 1)
+- **got it** → up one stage
 
-So a card you keep getting right climbs to longer and longer intervals, and a miss
-sends it back to the bottom of the ladder. It's predictable and needs no tuning —
-a good default.
+So a card you keep getting right climbs to longer and longer intervals, a miss
+sends it back to the bottom of the ladder, and a **partly** — you got the gist but
+stumbled — only steps it back one rung, so you keep most of your progress but see
+it sooner. It's predictable and needs no tuning — a good default.
 
 ## SM-2
 
 SuperMemo-2 spacing, with a per-card **ease factor**. Passing grows the interval
 (roughly 1 day, then 6 days, then `interval × ease`); the ease nudges up or down
-with each grade and never drops below 1.3; and a fail sends the card to a short
-10-minute relearn. It adapts the spacing to each card's difficulty instead of
+with each grade and never drops below 1.3; a **partly** keeps the card's
+repetition count but halves its next interval (the SM-2 twin of Leitner's
+one-stage demotion); and a **failed** sends the card to a short 10-minute relearn.
+It adapts the spacing to each card's difficulty instead of
 using fixed steps. Switching schedulers is safe: SM-2 seeds itself from your
 existing Leitner progress and keeps the Leitner stage in sync, so you can move
 between the two without losing your place.

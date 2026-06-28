@@ -92,12 +92,12 @@ pub fn parse_key(s: &str) -> Result<KeyPattern> {
 /// All rebindable actions.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Bindings {
-    /// Flip mode: grade as failed.
-    pub again: Vec<KeyPattern>,
-    /// Flip mode: grade as passed.
-    pub good: Vec<KeyPattern>,
-    /// Flip mode: grade as easy.
-    pub easy: Vec<KeyPattern>,
+    /// Self-graded modes: grade as failed (reset to stage 1).
+    pub failed: Vec<KeyPattern>,
+    /// Self-graded modes: grade as partly (demote one stage).
+    pub partly: Vec<KeyPattern>,
+    /// Self-graded modes: grade as got it (advance one stage).
+    pub got: Vec<KeyPattern>,
     /// Flip mode: reveal the answer.
     pub reveal: Vec<KeyPattern>,
     /// Typing mode: reveal a hint (fails the card).
@@ -125,9 +125,9 @@ impl Default for Bindings {
     fn default() -> Self {
         let keys = |list: &[&str]| list.iter().map(|s| parse_key(s).unwrap()).collect();
         Self {
-            again: keys(&["1", "a"]),
-            good: keys(&["2", "g"]),
-            easy: keys(&["3", "e"]),
+            failed: keys(&["1", "f"]),
+            partly: keys(&["2", "p"]),
+            got: keys(&["3", "g"]),
             reveal: keys(&["space", "enter"]),
             hint: keys(&["tab", "ctrl-h", "ctrl-backspace"]),
             submit: keys(&["enter"]),
@@ -577,9 +577,9 @@ struct RawAsk {
 #[derive(Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 struct RawKeys {
-    again: Option<Vec<String>>,
-    good: Option<Vec<String>>,
-    easy: Option<Vec<String>>,
+    failed: Option<Vec<String>>,
+    partly: Option<Vec<String>>,
+    got: Option<Vec<String>>,
     reveal: Option<Vec<String>>,
     hint: Option<Vec<String>>,
     submit: Option<Vec<String>>,
@@ -612,9 +612,9 @@ impl Config {
             Ok(())
         };
 
-        assign(&mut keys.again, raw.keys.again, "again")?;
-        assign(&mut keys.good, raw.keys.good, "good")?;
-        assign(&mut keys.easy, raw.keys.easy, "easy")?;
+        assign(&mut keys.failed, raw.keys.failed, "failed")?;
+        assign(&mut keys.partly, raw.keys.partly, "partly")?;
+        assign(&mut keys.got, raw.keys.got, "got")?;
         assign(&mut keys.reveal, raw.keys.reveal, "reveal")?;
         assign(&mut keys.hint, raw.keys.hint, "hint")?;
         assign(&mut keys.submit, raw.keys.submit, "submit")?;
@@ -822,9 +822,9 @@ pub fn default_config_toml() -> &'static str {
 
 # Review key bindings (flip / typing / fuzzy / choice modes).
 [keys]
-# again = ["1", "a"]            # flip mode: grade as failed
-# good = ["2", "g"]             # flip mode: grade as passed
-# easy = ["3", "e"]             # flip mode: grade as easy
+# failed = ["1", "f"]           # self-graded: grade as failed (reset)
+# partly = ["2", "p"]           # self-graded: grade as partly (demote one stage)
+# got = ["3", "g"]              # self-graded: grade as got it (advance)
 # reveal = ["space", "enter"]   # flip mode: show the answer
 # hint = ["tab", "ctrl-h", "ctrl-backspace"]  # typing mode (fails the card)
 # submit = ["enter"]            # fuzzy mode: submit the current line
@@ -1007,10 +1007,11 @@ mod tests {
     #[test]
     fn rebind_grades_to_jkl() {
         let config =
-            Config::from_toml("[keys]\nagain = [\"j\"]\ngood = [\"k\"]\neasy = [\"l\"]\n").unwrap();
-        assert_eq!(vec![parse_key("j").unwrap()], config.keys.again);
-        assert_eq!(vec![parse_key("k").unwrap()], config.keys.good);
-        assert_eq!(vec![parse_key("l").unwrap()], config.keys.easy);
+            Config::from_toml("[keys]\nfailed = [\"j\"]\npartly = [\"k\"]\ngot = [\"l\"]\n")
+                .unwrap();
+        assert_eq!(vec![parse_key("j").unwrap()], config.keys.failed);
+        assert_eq!(vec![parse_key("k").unwrap()], config.keys.partly);
+        assert_eq!(vec![parse_key("l").unwrap()], config.keys.got);
         // Unmentioned actions keep their defaults.
         assert_eq!(Bindings::default().quit, config.keys.quit);
     }
@@ -1043,8 +1044,8 @@ mod tests {
 
     #[test]
     fn bad_key_in_binding_is_rejected() {
-        let err = Config::from_toml("[keys]\nagain = [\"jj\"]\n").unwrap_err();
-        assert!(format!("{err:#}").contains("again"));
+        let err = Config::from_toml("[keys]\nfailed = [\"jj\"]\n").unwrap_err();
+        assert!(format!("{err:#}").contains("failed"));
     }
 
     #[test]

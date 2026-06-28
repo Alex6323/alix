@@ -11,9 +11,10 @@ recognition, exact recall, or understanding.
 
 ## flip — reveal and self-grade *(default)*
 
-You read the question, recall the answer, reveal it, and grade yourself: **again**
-(missed), **good**, or **easy** (easy jumps the card *two* Leitner stages instead
-of one). It's the Anki-style default, and the right choice whenever you can fairly
+You read the question, recall the answer, reveal it, and grade yourself: **failed**
+(missed — reset to stage 1), **partly** (got the gist but stumbled — down one
+stage), or **got it** (up one stage). The same three grades the trace walk uses.
+It's the Anki-style default, and the right choice whenever you can fairly
 judge your own answer — conceptual questions, explanations, anything open-ended.
 
 ```

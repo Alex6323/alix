@@ -11,21 +11,25 @@
 
 use crate::store::{CardState, MAX_STAGE, Sm2State};
 
-/// The outcome of reviewing a card.
+/// The outcome of reviewing a card. Three honest outcomes, shared by fact-deck
+/// review and the trace walk: **failed** / **partly** / **got it**.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Grade {
-    /// The answer was wrong (or the user asked for hints / graded "again").
+    /// Wrong (or the user asked for hints / graded "failed"). Resets to stage 1.
     Fail,
-    /// The answer was correct.
+    /// Only partly right — a soft miss that demotes the card *one* stage instead
+    /// of resetting it. Not a clean pass: it does not advance the streak.
+    Partial,
+    /// Fully correct ("got it"). Advances one stage.
     Pass,
-    /// The answer was correct and effortless (flip mode only).
-    Easy,
 }
 
 impl Grade {
-    /// Whether this grade counts as a pass.
+    /// Whether this grade counts as a clean pass (advances the streak). A
+    /// `Partial` is deliberately *not* a clean pass — it kept most of your
+    /// progress, but you didn't fully have it.
     pub fn passed(self) -> bool {
-        !matches!(self, Grade::Fail)
+        matches!(self, Grade::Pass)
     }
 }
 
@@ -90,8 +94,8 @@ impl Scheduler for Leitner {
     fn apply(&self, state: &mut CardState, grade: Grade, now_ms: u64) {
         state.stage = match grade {
             Grade::Fail => 1,
+            Grade::Partial => state.stage.saturating_sub(1).max(1),
             Grade::Pass => (state.stage + 1).min(MAX_STAGE),
-            Grade::Easy => (state.stage + 2).min(MAX_STAGE),
         };
         state.stage_entered_ms = now_ms;
         state.record_review(now_ms, grade.passed());
@@ -100,9 +104,10 @@ impl Scheduler for Leitner {
 
 /// A SuperMemo-2 style scheduler.
 ///
-/// Quality mapping: `Fail` = 2, `Pass` = 4, `Easy` = 5. A failed card resets
-/// its repetition count and becomes due in 10 minutes; passed cards follow
-/// the classic 1 day / 6 days / `interval * ease` progression.
+/// Quality mapping: `Fail` = 2, `Partial` = 3, `Pass` = 4. A failed card resets
+/// its repetition count and becomes due in 10 minutes; a passed card follows the
+/// classic 1 day / 6 days / `interval * ease` progression; a partial keeps its
+/// reps but halves the interval (the SM-2 twin of Leitner's one-stage demotion).
 pub struct Sm2;
 
 /// How soon a failed card comes back, in milliseconds (10 minutes).
@@ -139,27 +144,36 @@ impl Scheduler for Sm2 {
 
         let quality: f64 = match grade {
             Grade::Fail => 2.0,
+            Grade::Partial => 3.0,
             Grade::Pass => 4.0,
-            Grade::Easy => 5.0,
         };
 
         // Classic SM-2 ease update; applied for every review.
         sm2.ease += 0.1 - (5.0 - quality) * (0.08 + (5.0 - quality) * 0.02);
         sm2.ease = sm2.ease.max(MIN_EASE);
 
-        if grade == Grade::Fail {
-            sm2.reps = 0;
-            sm2.interval_ms = RELEARN_MS;
-        } else {
-            sm2.reps += 1;
-            sm2.interval_ms = match sm2.reps {
-                1 => DAY_MS,
-                2 => 6 * DAY_MS,
-                _ => {
-                    let grown = (sm2.interval_ms as f64 * sm2.ease) as u64;
-                    grown.max(DAY_MS)
-                }
-            };
+        match grade {
+            Grade::Fail => {
+                sm2.reps = 0;
+                sm2.interval_ms = RELEARN_MS;
+            }
+            // A partial keeps its reps but halves the interval (floored at the
+            // relearn gap) — it comes back sooner than a clean pass would allow,
+            // without the full relearn a fail triggers.
+            Grade::Partial => {
+                sm2.interval_ms = (sm2.interval_ms / 2).max(RELEARN_MS);
+            }
+            Grade::Pass => {
+                sm2.reps += 1;
+                sm2.interval_ms = match sm2.reps {
+                    1 => DAY_MS,
+                    2 => 6 * DAY_MS,
+                    _ => {
+                        let grown = (sm2.interval_ms as f64 * sm2.ease) as u64;
+                        grown.max(DAY_MS)
+                    }
+                };
+            }
         }
         sm2.due_ms = now_ms.saturating_add(sm2.interval_ms);
         state.sm2 = Some(sm2);
@@ -167,8 +181,8 @@ impl Scheduler for Sm2 {
         // Keep the Leitner stage in sync so switching schedulers stays sane.
         state.stage = match grade {
             Grade::Fail => 1,
+            Grade::Partial => state.stage.saturating_sub(1).max(1),
             Grade::Pass => (state.stage + 1).min(MAX_STAGE),
-            Grade::Easy => (state.stage + 2).min(MAX_STAGE),
         };
         state.stage_entered_ms = now_ms;
         state.record_review(now_ms, grade.passed());
@@ -224,14 +238,18 @@ mod tests {
     }
 
     #[test]
-    fn leitner_easy_moves_up_two_stages() {
-        let mut s = state_at_stage(2, 0);
-        Leitner.apply(&mut s, Grade::Easy, 5000);
-        assert_eq!(4, s.stage);
-
+    fn leitner_partly_drops_one_stage() {
         let mut s = state_at_stage(4, 0);
-        Leitner.apply(&mut s, Grade::Easy, 5000);
-        assert_eq!(5, s.stage);
+        Leitner.apply(&mut s, Grade::Partial, 5000);
+        assert_eq!(3, s.stage);
+        assert_eq!(5000, s.stage_entered_ms);
+    }
+
+    #[test]
+    fn leitner_partly_floors_at_stage_one() {
+        let mut s = state_at_stage(1, 0);
+        Leitner.apply(&mut s, Grade::Partial, 5000);
+        assert_eq!(1, s.stage);
     }
 
     #[test]
@@ -240,6 +258,18 @@ mod tests {
         Leitner.apply(&mut s, Grade::Fail, 5000);
         assert_eq!(1, s.stage);
         assert_eq!(0, s.streak);
+    }
+
+    #[test]
+    fn partly_is_not_a_clean_pass() {
+        let mut s = state_at_stage(3, 0);
+        Leitner.apply(&mut s, Grade::Pass, 0); // build a streak
+        assert_eq!(1, s.streak);
+        assert_eq!(1, s.total_passes);
+        Leitner.apply(&mut s, Grade::Partial, 1000);
+        assert_eq!(0, s.streak); // partly resets the streak
+        assert_eq!(1, s.total_passes); // ...and doesn't count as a pass
+        assert!(!s.history.last().unwrap().passed); // logged as not-passed
     }
 
     #[test]
@@ -295,9 +325,32 @@ mod tests {
     }
 
     #[test]
-    fn sm2_easy_raises_ease() {
+    fn sm2_partly_trims_interval_without_resetting_reps() {
         let mut s = state_at_stage(1, 0);
-        Sm2.apply(&mut s, Grade::Easy, 0);
-        assert!(s.sm2.unwrap().ease > DEFAULT_EASE);
+        Sm2.apply(&mut s, Grade::Pass, 0); // reps 1, interval 1 day
+        Sm2.apply(&mut s, Grade::Pass, DAY_MS); // reps 2, interval 6 days
+        assert_eq!(2, s.sm2.unwrap().reps);
+        assert_eq!(6 * DAY_MS, s.sm2.unwrap().interval_ms);
+
+        Sm2.apply(&mut s, Grade::Partial, 7 * DAY_MS);
+        let after = s.sm2.unwrap();
+        assert_eq!(2, after.reps); // reps preserved (not reset, not advanced)
+        assert_eq!(3 * DAY_MS, after.interval_ms); // halved
+        assert_eq!(2, s.stage); // stage mirror dropped one (3 -> 2)
+    }
+
+    #[test]
+    fn sm2_partly_nudges_ease_down() {
+        let mut s = state_at_stage(3, 0);
+        Sm2.apply(&mut s, Grade::Partial, 0);
+        assert!(s.sm2.unwrap().ease < DEFAULT_EASE);
+    }
+
+    #[test]
+    fn sm2_partly_interval_floors_at_relearn() {
+        let mut s = state_at_stage(1, 0);
+        // Fresh derive at stage 1 has a zero interval; a partial floors it.
+        Sm2.apply(&mut s, Grade::Partial, 0);
+        assert_eq!(RELEARN_MS, s.sm2.unwrap().interval_ms);
     }
 }

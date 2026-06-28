@@ -2906,14 +2906,14 @@ fn print_excerpt(excerpt: &alix::trace::Excerpt) {
 /// Prints the end-of-walk tally and which checkpoints came out weak.
 fn print_trace_summary(walk: &Walk) {
     let s = walk.summary();
-    let graded = s.got + s.partial + s.missed;
+    let graded = s.got + s.partly + s.failed;
     if graded == 0 {
         println!("\n{DIM}Left the trace early — no checkpoints recorded.{RESET}");
         return;
     }
     println!(
-        "\n{BOLD}Walk complete{RESET}  {} got · {} partial · {} missed",
-        s.got, s.partial, s.missed
+        "\n{BOLD}Walk complete{RESET}  {} got · {} partly · {} failed",
+        s.got, s.partly, s.failed
     );
     if s.weak.is_empty() {
         println!("{DIM}Every hop landed — the path will fade gently.{RESET}");
@@ -2939,11 +2939,11 @@ fn read_line(prompt: &str) -> Result<Option<String>> {
     Ok(Some(line.trim_end().to_string()))
 }
 
-/// Prompts for the self-judged delta, re-asking until it gets `g`/`p`/`m`.
+/// Prompts for the self-judged delta, re-asking until it gets `g`/`p`/`f`.
 /// Returns `None` to quit (a leading `q`, or EOF).
 fn read_delta() -> Result<Option<alix::trace::Delta>> {
     loop {
-        let prompt = format!("{DIM}  gap?  [g]ot · [p]artial · [m]issed  (q to quit) >{RESET} ");
+        let prompt = format!("{DIM}  gap?  [g]ot · [p]artly · [f]ailed  (q to quit) >{RESET} ");
         let Some(answer) = read_line(&prompt)? else {
             return Ok(None);
         };
@@ -2956,7 +2956,7 @@ fn read_delta() -> Result<Option<alix::trace::Delta>> {
             }
             None => {}
         }
-        println!("{DIM}  answer g, p, or m (or q to quit).{RESET}");
+        println!("{DIM}  answer g, p, or f (or q to quit).{RESET}");
     }
 }
 
@@ -3168,9 +3168,9 @@ fn config_cmd(init: bool) -> Result<()> {
         println!("  {action:<9} {}", keys.join(", "));
     };
     println!("key bindings:");
-    show("again", &keys.again);
-    show("good", &keys.good);
-    show("easy", &keys.easy);
+    show("failed", &keys.failed);
+    show("partly", &keys.partly);
+    show("got", &keys.got);
     show("reveal", &keys.reveal);
     show("hint", &keys.hint);
     show("submit", &keys.submit);

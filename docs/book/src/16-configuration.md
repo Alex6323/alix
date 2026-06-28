@@ -7,19 +7,19 @@ inspect the active key bindings with `alix config`.
 
 ## Key bindings
 
-Every action takes a list of keys (the first is shown in the footer). To grade flip
-cards with `j`/`k`/`l`:
+Every action takes a list of keys (the first is shown in the footer). To grade
+self-graded cards with `j`/`k`/`l`:
 
 ```toml
 [keys]
-again = ["j"]
-good = ["k"]
-easy = ["l"]
+failed = ["j"]
+partly = ["k"]
+got = ["l"]
 ```
 
 Keys are a single character (`"j"`), a special name (`"space"`, `"enter"`, `"tab"`,
 `"esc"`, `"backspace"`), or either with a `ctrl-` prefix (`"ctrl-s"`). The
-rebindable actions are `again`, `good`, `easy`, `reveal`, `hint`, `submit`, `skip`,
+rebindable actions are `failed`, `partly`, `got`, `reveal`, `hint`, `submit`, `skip`,
 `remove` (default `ctrl-x`), `continue`, `restart` (default `r`), and `quit`. While
 you're typing an answer (typing/fuzzy mode), plain-character bindings are ignored so
 they can't shadow your input — use `ctrl-`/special keys for `hint`, `skip`, and

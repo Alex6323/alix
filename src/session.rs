@@ -199,8 +199,8 @@ impl Session {
         let card = &self.cards[index];
         let state = store.get_or_insert(card.id(), now_ms);
         self.scheduler.apply(state, grade, now_ms);
-        // Cap the stage at the top, so Easy's +2 jump never overshoots
-        // `MAX_STAGE` (reaching it retires the card).
+        // Safety net: keep the stage within the top (reaching `MAX_STAGE`
+        // retires the card). The scheduler already caps a pass at `MAX_STAGE`.
         if state.stage > MAX_STAGE {
             state.stage = MAX_STAGE;
         }

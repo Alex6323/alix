@@ -4,7 +4,7 @@
 //! `% at:` locator into a `% source:`) is walked hop by hop: at each checkpoint
 //! you commit a **prediction**, then the real **excerpt** from the source is
 //! revealed alongside the key points a good prediction should hit, and you
-//! judge the **delta** (Got / Partial / Missed). The miss is recorded for SRS —
+//! judge the **delta** (got it / partly / failed). The miss is recorded for SRS —
 //! a weak edge resurfaces sooner — but never derails the chain; you advance
 //! from the revealed truth. After the last hop you **compress** the whole path
 //! into a couple of sentences, which is the trace's own exam.
@@ -40,12 +40,12 @@ const MAX_EXCERPT_LINES: usize = 60;
 /// truth at a checkpoint.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Delta {
-    /// The prediction covered the key points.
+    /// The prediction covered the key points ("got it").
     Got,
     /// Partly right — something important was missing or wrong.
     Partial,
-    /// The prediction missed the point.
-    Missed,
+    /// The prediction missed the point ("failed").
+    Failed,
 }
 
 impl Delta {
@@ -54,7 +54,7 @@ impl Delta {
         match c.to_ascii_lowercase() {
             'g' => Some(Delta::Got),
             'p' => Some(Delta::Partial),
-            'm' => Some(Delta::Missed),
+            'f' => Some(Delta::Failed),
             _ => None,
         }
     }
@@ -63,18 +63,20 @@ impl Delta {
     pub fn label(self) -> &'static str {
         match self {
             Delta::Got => "GOT IT",
-            Delta::Partial => "PARTIAL",
-            Delta::Missed => "MISSED",
+            Delta::Partial => "PARTLY",
+            Delta::Failed => "FAILED",
         }
     }
 
-    /// How this delta schedules the checkpoint. A nailed hop advances (and
-    /// fades); a partial or missed one is a **weak edge** that resets so it
-    /// resurfaces sooner — recorded, not punished (the walk still continues).
+    /// How this delta schedules the checkpoint, sharing the review grades. A
+    /// nailed hop advances (and fades); a **partly** one is a weak edge that
+    /// drops a stage so it resurfaces sooner; a **failed** one resets — recorded,
+    /// not punished (the walk still continues).
     pub fn grade(self) -> Grade {
         match self {
             Delta::Got => Grade::Pass,
-            Delta::Partial | Delta::Missed => Grade::Fail,
+            Delta::Partial => Grade::Partial,
+            Delta::Failed => Grade::Fail,
         }
     }
 }
@@ -869,29 +871,29 @@ fn grade_prompt(checkpoint: &Checkpoint, prediction: &str) -> String {
          a dash and ONE short sentence of feedback naming what was right or \
          missing. The verdict is one of:\n\
          GOT — covers the key points with nothing important wrong\n\
-         PARTIAL — some right, but an important point is missed, muddled, or \
+         PARTLY — some right, but an important point is missed, muddled, or \
          stated wrongly\n\
-         MISSED — misses the point, or its core claim is wrong\n\
+         FAILED — misses the point, or its core claim is wrong\n\
          Do NOT award GOT to a prediction that asserts something the key points \
-         CONTRADICT — a confident error is PARTIAL at best (MISSED if the core \
+         CONTRADICT — a confident error is PARTLY at best (FAILED if the core \
          claim is wrong).\n\
-         Example: `PARTIAL — right that it reschedules, but you missed the \
+         Example: `PARTLY — right that it reschedules, but you missed the \
          streak reset.`",
         checkpoint.prompt
     )
 }
 
 /// Parses a `VERDICT — feedback` grading reply into a [`Delta`] and the feedback
-/// text. Defaults to [`Delta::Missed`] if the verdict is unrecognized.
+/// text. Defaults to [`Delta::Failed`] if the verdict is unrecognized.
 fn parse_grade(raw: &str) -> (Delta, String) {
     let line = raw.trim().lines().next().unwrap_or("").trim();
     let upper = line.to_ascii_uppercase();
     let delta = if upper.starts_with("GOT") {
         Delta::Got
-    } else if upper.starts_with("PARTIAL") {
+    } else if upper.starts_with("PARTLY") || upper.starts_with("PARTIAL") {
         Delta::Partial
     } else {
-        Delta::Missed
+        Delta::Failed
     };
     let feedback = line
         .split_once(['—', '-'])
@@ -1019,11 +1021,11 @@ impl Walk {
             match delta {
                 Some(Delta::Got) => s.got += 1,
                 Some(Delta::Partial) => {
-                    s.partial += 1;
+                    s.partly += 1;
                     s.weak.push(i);
                 }
-                Some(Delta::Missed) => {
-                    s.missed += 1;
+                Some(Delta::Failed) => {
+                    s.failed += 1;
                     s.weak.push(i);
                 }
                 None => {}
@@ -1037,9 +1039,9 @@ impl Walk {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Summary {
     pub got: usize,
-    pub partial: usize,
-    pub missed: usize,
-    /// 0-based indices of the checkpoints judged Partial or Missed — the weak
+    pub partly: usize,
+    pub failed: usize,
+    /// 0-based indices of the checkpoints judged partly or failed — the weak
     /// edges that SRS will resurface sooner.
     pub weak: Vec<usize>,
 }
@@ -1718,12 +1720,13 @@ mod tests {
     fn delta_keys_and_grades() {
         assert_eq!(Some(Delta::Got), Delta::from_key('G'));
         assert_eq!(Some(Delta::Partial), Delta::from_key('p'));
-        assert_eq!(Some(Delta::Missed), Delta::from_key('m'));
+        assert_eq!(Some(Delta::Failed), Delta::from_key('f'));
         assert_eq!(None, Delta::from_key('x'));
-        // Got advances; partial/missed are weak edges that reset.
+        // Got advances; partly drops a stage; failed resets — each shares the
+        // review grade, so a partly is now a distinct, gentler outcome.
         assert_eq!(Grade::Pass, Delta::Got.grade());
-        assert_eq!(Grade::Fail, Delta::Partial.grade());
-        assert_eq!(Grade::Fail, Delta::Missed.grade());
+        assert_eq!(Grade::Partial, Delta::Partial.grade());
+        assert_eq!(Grade::Fail, Delta::Failed.grade());
     }
 
     #[test]
@@ -2035,18 +2038,34 @@ mod tests {
         assert_eq!(1, walk.current_index());
         assert_eq!(2, store.get(card0).unwrap().stage); // Got -> stage up
 
-        // Hop 2 (last): a Missed resets to stage 1 and finishes the walk (no
+        // Hop 2 (last): a Failed resets to stage 1 and finishes the walk (no
         // compress step — verification is the separate trace exam).
         let card1 = walk.checkpoint().unwrap().card_id;
         walk.predict(String::new());
-        walk.grade(&mut store, Delta::Missed, 1001);
+        walk.grade(&mut store, Delta::Failed, 1001);
         assert_eq!(Phase::Done, walk.phase());
-        assert_eq!(1, store.get(card1).unwrap().stage); // Missed -> reset
+        assert_eq!(1, store.get(card1).unwrap().stage); // Failed -> reset
 
         let summary = walk.summary();
         assert_eq!(1, summary.got);
-        assert_eq!(1, summary.missed);
-        assert_eq!(vec![1], summary.weak); // the missed hop is the weak edge
+        assert_eq!(1, summary.failed);
+        assert_eq!(vec![1], summary.weak); // the failed hop is the weak edge
+    }
+
+    #[test]
+    fn partly_demotes_a_checkpoint_one_stage_not_reset() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck = trace_deck(dir.path());
+        let trace = Trace::from_deck(&deck).unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let mut walk = Walk::new(trace, SchedulerKind::Leitner);
+        let card0 = walk.checkpoint().unwrap().card_id;
+        // Lift the first checkpoint to stage 3, then grade it Partial.
+        store.get_or_insert(card0, 0).stage = 3;
+        walk.predict("guess".to_string());
+        walk.grade(&mut store, Delta::Partial, 1000);
+        assert_eq!(2, store.get(card0).unwrap().stage); // partly: 3 -> 2, not reset
+        assert_eq!(1, walk.summary().partly);
     }
 
     #[test]
@@ -2067,13 +2086,15 @@ mod tests {
 
     #[test]
     fn parse_grade_reads_verdict_and_feedback() {
-        let (d, f) = parse_grade("PARTIAL — right that it reschedules, but missed the clamp.");
+        let (d, f) = parse_grade("PARTLY — right that it reschedules, but missed the clamp.");
         assert_eq!(Delta::Partial, d);
         assert_eq!("right that it reschedules, but missed the clamp.", f);
         assert_eq!(Delta::Got, parse_grade("GOT — spot on").0);
-        assert_eq!(Delta::Missed, parse_grade("MISSED - wrong direction").0);
-        // An unrecognized verdict defaults to Missed; the line becomes feedback.
-        assert_eq!(Delta::Missed, parse_grade("hmm not sure").0);
+        assert_eq!(Delta::Failed, parse_grade("FAILED - wrong direction").0);
+        // The old "PARTIAL" wording still parses, for resilience.
+        assert_eq!(Delta::Partial, parse_grade("PARTIAL - close").0);
+        // An unrecognized verdict defaults to Failed; the line becomes feedback.
+        assert_eq!(Delta::Failed, parse_grade("hmm not sure").0);
     }
 
     #[test]

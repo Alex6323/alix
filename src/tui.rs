@@ -691,9 +691,9 @@ impl App {
         let hint_hit = hit(&self.options.keys.hint);
         let submit_hit = hit(&self.options.keys.submit);
         let reveal_hit = hit(&self.options.keys.reveal);
-        let again_hit = hit(&self.options.keys.again);
-        let good_hit = hit(&self.options.keys.good);
-        let easy_hit = hit(&self.options.keys.easy);
+        let failed_hit = hit(&self.options.keys.failed);
+        let partly_hit = hit(&self.options.keys.partly);
+        let got_hit = hit(&self.options.keys.got);
         let cont_hit = hit(&self.options.keys.cont);
 
         if quit_hit {
@@ -820,12 +820,12 @@ impl App {
                     if reveal_hit {
                         *revealed = true;
                     }
-                } else if again_hit {
+                } else if failed_hit {
                     self.finish_card_and_advance(Grade::Fail)?;
-                } else if good_hit {
+                } else if partly_hit {
+                    self.finish_card_and_advance(Grade::Partial)?;
+                } else if got_hit {
                     self.finish_card_and_advance(Grade::Pass)?;
-                } else if easy_hit {
-                    self.finish_card_and_advance(Grade::Easy)?;
                 } else if ask_hit {
                     self.enter_ask();
                 }
@@ -842,12 +842,12 @@ impl App {
                         KeyCode::Char(c) if !ctrl => input.push(c),
                         _ => {}
                     }
-                } else if again_hit {
+                } else if failed_hit {
                     self.finish_card_and_advance(Grade::Fail)?;
-                } else if good_hit {
+                } else if partly_hit {
+                    self.finish_card_and_advance(Grade::Partial)?;
+                } else if got_hit {
                     self.finish_card_and_advance(Grade::Pass)?;
-                } else if easy_hit {
-                    self.finish_card_and_advance(Grade::Easy)?;
                 } else if ask_hit {
                     self.enter_ask();
                 }
@@ -858,12 +858,12 @@ impl App {
                     if reveal_hit {
                         *revealed += 1;
                     }
-                } else if again_hit {
+                } else if failed_hit {
                     self.finish_card_and_advance(Grade::Fail)?;
-                } else if good_hit {
+                } else if partly_hit {
+                    self.finish_card_and_advance(Grade::Partial)?;
+                } else if got_hit {
                     self.finish_card_and_advance(Grade::Pass)?;
-                } else if easy_hit {
-                    self.finish_card_and_advance(Grade::Easy)?;
                 } else if ask_hit {
                     self.enter_ask();
                 }
@@ -1166,10 +1166,10 @@ impl App {
                 )
             }
             Phase::Flip { revealed: true } => format!(
-                "{} again │ {} good │ {} easy │ {} remove │ {} ask │ {} leave",
-                l(&k.again),
-                l(&k.good),
-                l(&k.easy),
+                "{} failed │ {} partly │ {} got │ {} remove │ {} ask │ {} leave",
+                l(&k.failed),
+                l(&k.partly),
+                l(&k.got),
                 l(&k.remove),
                 l(&k.ask),
                 l(&k.quit)
@@ -1183,10 +1183,10 @@ impl App {
                 l(&k.quit)
             ),
             Phase::Explain { revealed: true, .. } => format!(
-                "{} again │ {} good │ {} easy │ {} remove │ {} ask │ {} leave",
-                l(&k.again),
-                l(&k.good),
-                l(&k.easy),
+                "{} failed │ {} partly │ {} got │ {} remove │ {} ask │ {} leave",
+                l(&k.failed),
+                l(&k.partly),
+                l(&k.got),
                 l(&k.remove),
                 l(&k.ask),
                 l(&k.quit)
@@ -1203,10 +1203,10 @@ impl App {
                     )
                 } else {
                     format!(
-                        "{} again │ {} good │ {} easy │ {} remove │ {} ask │ {} leave",
-                        l(&k.again),
-                        l(&k.good),
-                        l(&k.easy),
+                        "{} failed │ {} partly │ {} got │ {} remove │ {} ask │ {} leave",
+                        l(&k.failed),
+                        l(&k.partly),
+                        l(&k.got),
                         l(&k.remove),
                         l(&k.ask),
                         l(&k.quit)
