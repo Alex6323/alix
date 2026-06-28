@@ -8,6 +8,7 @@
 use std::collections::VecDeque;
 
 use crate::{
+    augment::TopologyOrder,
     card::Card,
     scheduler::{Grade, Scheduler, SchedulerKind},
     store::{MAX_STAGE, Store},
@@ -27,7 +28,7 @@ pub enum Order {
 }
 
 /// Options controlling which cards enter a session and in what order.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct SessionOptions {
     /// Maximum number of never-seen cards to introduce.
     pub max_new: usize,
@@ -38,6 +39,9 @@ pub struct SessionOptions {
     pub cram: bool,
     /// How the queued cards are ordered.
     pub order: Order,
+    /// Reorder the due/new set by this AI topology walk. `None` keeps the
+    /// scheduler's order — only the *sort* changes, never which cards are due.
+    pub topology: Option<TopologyOrder>,
 }
 
 impl Default for SessionOptions {
@@ -47,6 +51,7 @@ impl Default for SessionOptions {
             limit: None,
             cram: false,
             order: Order::Scheduled,
+            topology: None,
         }
     }
 }
@@ -94,7 +99,7 @@ impl Session {
         now_ms: u64,
     ) -> Self {
         let scheduler = kind.scheduler();
-        let queue = build_queue(&cards, store, &*scheduler, kind, options, now_ms);
+        let queue = build_queue(&cards, store, &*scheduler, kind, &options, now_ms);
         let initial_size = queue.len();
 
         Self {
@@ -119,7 +124,7 @@ impl Session {
             store,
             &*self.scheduler,
             self.kind,
-            self.options,
+            &self.options,
             now_ms,
         );
         if queue.is_empty() {
@@ -140,7 +145,7 @@ impl Session {
             store,
             &*self.scheduler,
             self.kind,
-            self.options,
+            &self.options,
             now_ms,
         )
         .is_empty()
@@ -262,7 +267,7 @@ fn build_queue(
     store: &Store,
     scheduler: &dyn Scheduler,
     kind: SchedulerKind,
-    options: SessionOptions,
+    options: &SessionOptions,
     now_ms: u64,
 ) -> VecDeque<usize> {
     let mut due: Vec<usize> = Vec::new();
@@ -299,17 +304,42 @@ fn build_queue(
         }
     }
 
+    let mut fresh: Vec<usize> = fresh.into_iter().take(options.max_new).collect();
+
+    // A topology reorders the already-selected cards by the AI walk; the
+    // scheduler still chose *which* cards are here. Sorting the due and new sets
+    // separately keeps due cards ahead of new ones, so a session `limit` still
+    // favors what's due. The stable sort leaves cards absent from the walk (rank
+    // `None` → `usize::MAX`) in their existing scheduler order within each group.
+    if let Some(topo) = &options.topology {
+        let rank = |&i: &usize| topo.rank_of(cards[i].id()).unwrap_or(usize::MAX);
+        due.sort_by_key(rank);
+        fresh.sort_by_key(rank);
+    }
+
     let mut order: Vec<usize> = due;
-    order.extend(fresh.into_iter().take(options.max_new));
+    order.extend(fresh);
+
     if options.order == Order::Sequential {
         // Card indices follow deck/file order, so sorting restores it while
-        // keeping the due/new selection above.
+        // keeping the due/new selection above. An explicit Sequential override
+        // runs last, so it wins over a topology if both are somehow set.
         order.sort_unstable();
     }
     if let Some(limit) = options.limit {
         order.truncate(limit);
     }
-    separate_siblings(order, cards)
+
+    // A topology is a deliberate ordering, so don't let sibling-separation
+    // reshuffle it: to break two adjacent cloze holes apart it would pull a card
+    // from another region between them, and that shows up as the orientation
+    // breadcrumb jumping out of a region and back. Cloze holes that land
+    // adjacent under a topology are the deferred cloze-as-one-node case.
+    if options.topology.is_some() {
+        order.into()
+    } else {
+        separate_siblings(order, cards)
+    }
 }
 
 /// The sibling group of a card. Sub-cards of one cloze card share their
@@ -455,6 +485,7 @@ mod tests {
                 limit: Some(3),
                 cram: false,
                 order: Order::Scheduled,
+                topology: None,
             },
             1000,
         );
@@ -545,6 +576,7 @@ mod tests {
                 limit: None,
                 cram: true,
                 order: Order::Scheduled,
+                topology: None,
             },
             now + 1,
         );
@@ -878,10 +910,188 @@ mod tests {
                 limit: None,
                 cram: true,
                 order: Order::Scheduled,
+                topology: None,
             },
             1000,
         );
         // Resting: not queued, even though cram ignores cooldowns.
         assert!(session.is_finished());
+    }
+
+    fn topology_order(walk: &[&Card]) -> TopologyOrder {
+        let ids: Vec<u64> = walk.iter().map(|c| c.id()).collect();
+        TopologyOrder::from_walk(&ids)
+    }
+
+    #[test]
+    fn topology_reorders_the_due_set() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(3);
+        // All three seen and due (stage 1, cooldown 0); scheduler order is 0,1,2.
+        for c in &all {
+            store.get_or_insert(c.id(), 0);
+        }
+        // A topology that reverses that order takes over.
+        let topo = topology_order(&[&all[2], &all[1], &all[0]]);
+        let mut session = Session::new(
+            all.clone(),
+            &store,
+            SchedulerKind::Leitner,
+            SessionOptions {
+                topology: Some(topo),
+                ..Default::default()
+            },
+            1000,
+        );
+        assert_eq!("front 2", session.current().unwrap().front);
+        session.grade(&mut store, Grade::Pass, 1000);
+        assert_eq!("front 1", session.current().unwrap().front);
+        session.grade(&mut store, Grade::Pass, 1000);
+        assert_eq!("front 0", session.current().unwrap().front);
+    }
+
+    #[test]
+    fn topology_only_reorders_does_not_readmit_a_card_that_is_not_due() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(2);
+        let now = 5_000_000;
+        // Card 0 is due; card 1 is on cooldown (stage 2 entered now, 1h cooldown).
+        store.get_or_insert(all[0].id(), 0);
+        store.get_or_insert(all[1].id(), now).stage = 2;
+        // A topology listing the not-due card first must NOT pull it in.
+        let topo = topology_order(&[&all[1], &all[0]]);
+        let session = Session::new(
+            all.clone(),
+            &store,
+            SchedulerKind::Leitner,
+            SessionOptions {
+                max_new: 0,
+                topology: Some(topo),
+                ..Default::default()
+            },
+            now + 1,
+        );
+        assert_eq!(1, session.initial_size);
+        assert_eq!("front 0", session.current().unwrap().front);
+    }
+
+    #[test]
+    fn cards_not_in_walk_append_in_scheduler_order() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(3);
+        for c in &all {
+            store.get_or_insert(c.id(), 0);
+        }
+        // The walk lists only the middle card; the other two keep scheduler order.
+        let topo = topology_order(&[&all[1]]);
+        let mut session = Session::new(
+            all.clone(),
+            &store,
+            SchedulerKind::Leitner,
+            SessionOptions {
+                topology: Some(topo),
+                ..Default::default()
+            },
+            1000,
+        );
+        assert_eq!("front 1", session.current().unwrap().front); // ranked first
+        session.grade(&mut store, Grade::Pass, 1000);
+        assert_eq!("front 0", session.current().unwrap().front); // then 0, 2 in order
+        session.grade(&mut store, Grade::Pass, 1000);
+        assert_eq!("front 2", session.current().unwrap().front);
+    }
+
+    #[test]
+    fn retired_card_excluded_even_with_a_topology() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(1);
+        let s = store.get_or_insert(all[0].id(), 0);
+        s.stage = MAX_STAGE;
+        s.streak = 1; // retired
+        // A topology listing the retired card cannot resurrect it — the filter
+        // runs before the topology sort.
+        let topo = topology_order(&[&all[0]]);
+        let session = Session::new(
+            all.clone(),
+            &store,
+            SchedulerKind::Leitner,
+            SessionOptions {
+                topology: Some(topo),
+                ..Default::default()
+            },
+            1000,
+        );
+        assert!(session.is_finished());
+    }
+
+    #[test]
+    fn topology_keeps_cloze_siblings_in_walk_order_skipping_separation() {
+        let (mut store, _dir) = empty_store();
+        // Two sub-cards of one cloze share (subject, line) → siblings; plus one
+        // other card. Without a topology, separate_siblings would slip `other`
+        // between the siblings; with a topology, the walk order is kept verbatim.
+        let sib_a = Card::plain(
+            Arc::from("d.txt"),
+            "front a".into(),
+            vec!["a".into()],
+            None,
+            7,
+        );
+        let sib_b = Card::plain(
+            Arc::from("d.txt"),
+            "front b".into(),
+            vec!["b".into()],
+            None,
+            7,
+        );
+        let other = card("d.txt", 3);
+        let all = vec![sib_a.clone(), sib_b.clone(), other.clone()];
+        for c in &all {
+            store.get_or_insert(c.id(), 0);
+        }
+        let topo = topology_order(&[&sib_a, &sib_b, &other]);
+        let mut session = Session::new(
+            all,
+            &store,
+            SchedulerKind::Leitner,
+            SessionOptions {
+                topology: Some(topo),
+                ..Default::default()
+            },
+            1000,
+        );
+        // Siblings stay adjacent (walk order), not split by `other`.
+        assert_eq!("front a", session.current().unwrap().front);
+        session.grade(&mut store, Grade::Pass, 1000);
+        assert_eq!("front b", session.current().unwrap().front);
+        session.grade(&mut store, Grade::Pass, 1000);
+        assert_eq!("front 3", session.current().unwrap().front);
+    }
+
+    #[test]
+    fn topology_keeps_due_ahead_of_new_under_a_limit() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(4);
+        // Cards 0,1 are due; 2,3 are new.
+        store.get_or_insert(all[0].id(), 0);
+        store.get_or_insert(all[1].id(), 0);
+        // A walk that ranks a NEW card (3) ahead of the due cards must not let it
+        // jump past them: due-priority holds, the topology only orders within a
+        // group, so the limit keeps the two due cards (ordered 1 before 0).
+        let topo = topology_order(&[&all[3], &all[1], &all[0], &all[2]]);
+        let session = Session::new(
+            all.clone(),
+            &store,
+            SchedulerKind::Leitner,
+            SessionOptions {
+                max_new: 10,
+                limit: Some(2),
+                topology: Some(topo),
+                ..Default::default()
+            },
+            1000,
+        );
+        assert_eq!(2, session.initial_size);
+        assert_eq!("front 1", session.current().unwrap().front);
     }
 }

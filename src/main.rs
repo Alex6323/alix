@@ -7,7 +7,7 @@ use std::{
 
 use alix::{
     answer::Mode,
-    augment::{self, AugmentCache},
+    augment::{self, AugmentCache, Topology, TopologyOrder},
     browse,
     card::{Card, Frontend},
     config::{self, Config, Strictness},
@@ -211,9 +211,10 @@ struct AugmentArgs {
     deck: PathBuf,
 
     /// What to augment — mirrors the review concepts: `choices` (distractors),
-    /// `notes` (trivia / mnemonics), or `questions` (reworded phrasings rotated
-    /// at review). All are cached beside your progress, never written into the
-    /// deck; review reads them.
+    /// `notes` (trivia / mnemonics), `questions` (reworded phrasings rotated at
+    /// review), or `topology` (a graph of how the cards relate + a suggested
+    /// walk; experimental). All are cached beside your progress, never written
+    /// into the deck; review reads them.
     #[arg(long, value_enum)]
     target: AugmentTarget,
 
@@ -242,6 +243,11 @@ enum AugmentTarget {
     /// Reworded question variants, rotated at review time so the card can't be
     /// answered by recognizing one fixed wording. Plain (non-cloze) cards only.
     Questions,
+    /// A deck-level topology: a graph of how the cards relate plus a suggested
+    /// walk, so review can present them in a connected order. Experimental —
+    /// prints the walk so you can judge whether it lands. `--with` steers the
+    /// organizing principle (e.g. "by module and type dependency").
+    Topology,
 }
 
 #[derive(Args)]
@@ -428,6 +434,12 @@ struct ReviewArgs {
     /// defaults to scheduled.
     #[arg(short, long, value_enum)]
     order: Option<Order>,
+
+    /// Reorder the due set by a stored AI topology of this name (see `alix deck
+    /// augment --target topology`). With no name, a deck's single cached topology
+    /// is used automatically.
+    #[arg(long)]
+    topology: Option<String>,
 
     /// Maximum number of new (never-seen) cards to introduce.
     #[arg(short, long, default_value_t = 10)]
@@ -746,6 +758,9 @@ struct ReviewBuild {
     /// Cards dropped because they are not reviewable in the target frontend
     /// (e.g. image cards excluded from the TUI).
     hidden: usize,
+    /// The resolved topology's name, if the session is topology-ordered, so a
+    /// frontend can fetch it from the augment cache to show the connective cue.
+    topology_name: Option<String>,
 }
 
 /// Builds a review session from explicit `deck_paths` (no interactive picker):
@@ -802,6 +817,14 @@ fn build_review(
         }
     }
 
+    // Resolve the topology that reorders this session (if any) and project it to
+    // a session-ready order. The resolved name travels on `ReviewBuild` so the
+    // web frontend can show the "why this card follows the last" cue from the
+    // same topology.
+    let topology = resolve_topology(args.topology.as_deref(), &augment)?;
+    let topology_name = topology.map(|t| t.name.clone());
+    let topology_order = topology.map(|t| TopologyOrder::from_walk(&t.walk));
+
     // Directives (scheduler/order) come from the session's decks.
     let target_settings: Vec<&DeckSettings> = settings.iter().collect();
 
@@ -826,6 +849,7 @@ fn build_review(
         limit: args.limit,
         cram: args.cram,
         order,
+        topology: topology_order,
     };
     let session = Session::new(cards, store, scheduler, options, now_ms());
 
@@ -842,7 +866,30 @@ fn build_review(
         label,
         decks,
         hidden,
+        topology_name,
     })
+}
+
+/// Resolves which stored topology, if any, reorders this session: an explicit
+/// `--topology <name>` must name a cached topology (else an error), no flag with
+/// exactly one cached topology auto-uses it, and zero-or-several without a name
+/// leaves ordering to the scheduler.
+fn resolve_topology<'a>(
+    name: Option<&str>,
+    augment: &'a AugmentCache,
+) -> Result<Option<&'a Topology>> {
+    match name {
+        Some(name) => match augment.topology(name) {
+            Some(topology) => Ok(Some(topology)),
+            None => bail!(
+                "no topology named `{name}` is cached for this deck — run `alix deck augment <deck> --target topology`"
+            ),
+        },
+        None => Ok(match augment.topologies() {
+            [single] => Some(single),
+            _ => None,
+        }),
+    }
 }
 
 /// If a single trace deck was **picked** interactively, returns its loaded deck
@@ -1333,6 +1380,7 @@ fn review_serve(args: ReviewArgs) -> Result<()> {
             links,
             source_roots,
             source_bases,
+            topology_name: b.topology_name,
         }
     };
 
@@ -1957,6 +2005,23 @@ fn augment_cmd(args: AugmentArgs) -> Result<()> {
             }
             (map.len(), total, "question variants")
         }
+        AugmentTarget::Topology => {
+            let items = warm_items(&deck.cards);
+            if items.is_empty() {
+                bail!("the deck has no cards to build a topology over");
+            }
+            let total = items.len();
+            let topo = augment::generate_topology(&items, guidance, &ask_cfg)?;
+            print_topology(&topo, &deck.cards);
+            let walked = topo.walk.len();
+            cache.add_topology(topo);
+            let n = cache.topologies().len();
+            println!(
+                "({n} topolog{} stored for this deck)",
+                if n == 1 { "y" } else { "ies" }
+            );
+            (walked, total, "a topology")
+        }
     };
     cache.save()?;
 
@@ -1977,6 +2042,57 @@ fn warm_items(cards: &[Card]) -> Vec<augment::WarmItem> {
             answer: c.back.join("\n"),
         })
         .collect()
+}
+
+/// Prints a generated topology as its suggested walk — each card with the reason
+/// it follows the previous one — so a person can judge whether the order reads as
+/// "good follow-up" rather than random. The eyeball test for the topology probe.
+fn print_topology(topo: &augment::Topology, cards: &[Card]) {
+    let fronts: std::collections::HashMap<u64, String> = cards
+        .iter()
+        .map(|c| (c.id(), truncate(&one_line(&c.front), 72)))
+        .collect();
+    let unknown = "<card not in deck>".to_string();
+
+    println!(
+        "\ntopology '{}': {}\n({} cards walked, {} edges)\n",
+        topo.name,
+        topo.principle,
+        topo.walk.len(),
+        topo.edges.len()
+    );
+    let mut prev: Option<u64> = None;
+    for (i, id) in topo.walk.iter().enumerate() {
+        let front = fronts.get(id).unwrap_or(&unknown);
+        match prev {
+            None => println!("{:>3}. {front}", i + 1),
+            Some(p) => {
+                let why = topo
+                    .edges
+                    .iter()
+                    .find(|e| e.from == p && e.to == *id)
+                    .map(|e| e.label.as_str())
+                    .unwrap_or("—");
+                println!("{:>3}. ↳ [{why}]  {front}", i + 1);
+            }
+        }
+        prev = Some(*id);
+    }
+    println!();
+}
+
+/// Collapses whitespace runs (incl. newlines) onto one line.
+fn one_line(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Truncates `s` to at most `max` chars, appending an ellipsis when it was cut.
+fn truncate(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    let kept: String = s.chars().take(max.saturating_sub(1)).collect();
+    format!("{kept}…")
 }
 
 fn deck_cmd(args: GenerateDeckArgs) -> Result<()> {
@@ -2683,6 +2799,7 @@ fn workspace_cmd(args: WorkspaceArgs) -> Result<()> {
             mode: None,
             scheduler: None,
             order: None,
+            topology: None,
             new: 10,
             limit: None,
             cram: false,

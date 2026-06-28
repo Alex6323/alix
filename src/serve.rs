@@ -153,6 +153,19 @@ struct CardDto {
     /// Why `at` couldn't be resolved (missing file, drifted line range), if it
     /// failed — shown dim in place of the excerpt.
     citation_error: Option<String>,
+    /// The topological orientation breadcrumb — coarse region names with the
+    /// current one marked — when the session is topology-ordered. `null`
+    /// otherwise. Resolved by `review_state`, which holds the topology.
+    crumb: Option<CrumbDto>,
+}
+
+/// The "where am I" region breadcrumb: the topology's region names in walk order
+/// and the index of the current card's region. The page windows this to its
+/// width (worst case: previous, current, next).
+#[derive(Debug, Serialize)]
+struct CrumbDto {
+    regions: Vec<String>,
+    current: usize,
 }
 
 /// The current review state sent to the browser after every action.
@@ -473,6 +486,9 @@ pub struct SessionBuild {
     /// Subject → its deck's source base, for resolving a card's `% at:` citation
     /// excerpt on reveal.
     pub source_bases: HashMap<String, SourceBase>,
+    /// The resolved topology name when this session is topology-ordered, so the
+    /// server can show the connective cue from that topology. `None` otherwise.
+    pub topology_name: Option<String>,
 }
 
 /// A trace walk ready to serve, built when a single trace deck is picked from the
@@ -522,6 +538,10 @@ struct Reviewing {
     /// The authored front of each card we've rotated a variant into, so the
     /// original phrasing stays in the rotation (generated variants drop it).
     original_fronts: HashMap<u64, String>,
+    /// The resolved topology name when this session is topology-ordered (used to
+    /// fetch the topology from `augment` for the orientation breadcrumb); `None`
+    /// otherwise.
+    topology_name: Option<String>,
 }
 
 /// An in-flight ask-Claude call: the channel the background thread answers on,
@@ -703,6 +723,7 @@ impl Reviewing {
             augment: AugmentCache::open(Path::new("")),
             present_seq: now_ms(),
             original_fronts: HashMap::new(),
+            topology_name: build.topology_name,
         }
     }
 
@@ -2162,6 +2183,16 @@ fn review_state(
     // the browser can show it on reveal (the same live read a trace walk does).
     let card_with_citation = card.map(|c| {
         let mut dto = card_dto(c);
+        // The "where am I" region breadcrumb, when topology-ordered.
+        if let Some(name) = &r.topology_name
+            && let Some(topo) = r.augment.topology(name)
+            && let Some((regions, current)) = topo.region_path(c.id())
+        {
+            dto.crumb = Some(CrumbDto {
+                regions: regions.into_iter().map(str::to_string).collect(),
+                current,
+            });
+        }
         if let Some(locator) = c.at.as_deref() {
             dto.at = Some(locator.to_string());
             if let Some(base) = r.source_bases.get(&*c.subject) {
@@ -2459,6 +2490,9 @@ fn card_dto(card: &Card) -> CardDto {
         at: None,
         citation: None,
         citation_error: None,
+        // Resolved by `review_state`, which holds the topology; browse and
+        // non-topology sessions leave it empty.
+        crumb: None,
     }
 }
 
@@ -2749,6 +2783,7 @@ mod tests {
             links: HashMap::new(),
             source_roots: HashMap::new(),
             source_bases: HashMap::new(),
+            topology_name: None,
         });
         (reviewing, card, deck)
     }

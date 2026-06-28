@@ -7,6 +7,14 @@
 //! in as the front each time a card is shown). Each is an additive field on
 //! [`Augmentation`].
 //!
+//! Alongside those per-card fields sit deck-level [`Topology`] entries (one or
+//! more): each is a relational graph (labeled edges plus a suggested walk order)
+//! over *all* the cards, so review can present them in a connected order ("same
+//! module", "also in Europe") rather than at random. A deck can hold several —
+//! one per organizing principle ("north to south" vs "by continent") — keyed by
+//! the guidance that produced it. Being whole-deck rather than per-card, they
+//! live beside the card map, not inside an [`Augmentation`]. (Experimental.)
+//!
 //! Everything here is **regenerable**, so the cache is best-effort: a missing,
 //! corrupt, or future-versioned file just yields an empty cache rather than an
 //! error — a bad cache must never block a review. It is keyed by the card's
@@ -54,6 +62,102 @@ pub struct Augmentation {
     pub variants: Vec<String>,
 }
 
+/// A deck-level relational augmentation: an AI-derived graph over the cards plus
+/// a suggested order to walk it, so review can move along the connective tissue
+/// of the material instead of shuffling. Unlike [`Augmentation`] this is a
+/// whole-deck object, so it sits beside the card map, not inside one entry. A
+/// deck can hold several, each identified by its [`name`](Self::name).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Topology {
+    /// The selection handle: the `--with` guidance that produced this topology
+    /// ("north to south"), or `"auto"` when none was given. Stable and
+    /// user-chosen, so it's how a deck's several topologies are told apart and
+    /// (later) which one the scheduler is asked to walk.
+    pub name: String,
+    /// The organizing principle the walk follows — what the model chose or
+    /// articulated from the guidance. Shown so the order's rationale is legible
+    /// ("why this next card"). Usually richer than [`name`](Self::name).
+    pub principle: String,
+    /// Directed, labeled edges between cards (by identity hash): `from` → `to`
+    /// reads as "after `from`, `to` is a natural next step", and `label` says
+    /// why ("calls into", "same continent").
+    pub edges: Vec<TopologyEdge>,
+    /// A suggested order to visit the cards (by identity hash) such that
+    /// consecutive cards relate — the model's default walk of the graph.
+    pub walk: Vec<u64>,
+    /// Coarse named groupings of the cards (stages / themes), in the order the
+    /// walk passes through them — the "where am I" map shown as a review
+    /// breadcrumb. Deliberately high-level so a region name orients without
+    /// revealing any card's answer. Additive: caches without it still load.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub regions: Vec<TopologyRegion>,
+}
+
+/// One directed, labeled relationship between two cards in a [`Topology`]. Edges
+/// power the walk order (and a future graph view); they are not shown during a
+/// drill, since a label *into* a card tends to reveal that card's answer.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TopologyEdge {
+    /// The card this edge leads *from* (its identity hash).
+    pub from: u64,
+    /// The card this edge leads *to* (its identity hash).
+    pub to: u64,
+    /// A short reason the two relate ("same module", "also in Europe").
+    pub label: String,
+}
+
+/// A coarse, named group of cards in a [`Topology`] — one stage/theme of the
+/// walk ("Parsing", "Persistence"). Its name is the orientation cue shown at
+/// review time; being high-level, it situates without spoiling an answer.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TopologyRegion {
+    /// A short human place-name for the group (not a sentence).
+    pub name: String,
+    /// The cards in this region (by identity hash).
+    pub cards: Vec<u64>,
+}
+
+impl Topology {
+    /// The region breadcrumb for orienting on `card`: the region names in walk
+    /// order plus the index of the region containing `card`, so a frontend can
+    /// render a "…prev › **current** › next…" trail (windowed to fit its width).
+    /// `None` when the topology has no regions or the card isn't in one.
+    pub fn region_path(&self, card: u64) -> Option<(Vec<&str>, usize)> {
+        let current = self.regions.iter().position(|r| r.cards.contains(&card))?;
+        let names = self.regions.iter().map(|r| r.name.as_str()).collect();
+        Some((names, current))
+    }
+}
+
+/// A topology's walk projected to a session-ready lookup: each card id mapped to
+/// its position in the walk, so a queue can be sorted by it. Cards absent from
+/// the walk have no rank and sort to the end (keeping scheduler order). Lives
+/// here, beside [`Topology`], so `session` only imports the type and stays free
+/// of cache logic.
+#[derive(Clone, Debug, Default)]
+pub struct TopologyOrder {
+    rank: HashMap<u64, usize>,
+}
+
+impl TopologyOrder {
+    /// Builds the lookup from a topology's walk (card ids in walk order).
+    pub fn from_walk(walk: &[u64]) -> Self {
+        Self {
+            rank: walk
+                .iter()
+                .copied()
+                .enumerate()
+                .map(|(i, id)| (id, i))
+                .collect(),
+        }
+    }
+
+    /// The card's position in the walk, or `None` if it isn't on the walk.
+    pub fn rank_of(&self, card_id: u64) -> Option<usize> {
+        self.rank.get(&card_id).copied()
+    }
+}
+
 /// On-disk representation of the cache.
 #[derive(Serialize, Deserialize)]
 struct AugmentFile {
@@ -64,12 +168,18 @@ struct AugmentFile {
     /// Augmentations keyed by the decimal string of the card's identity hash
     /// (JSON object keys must be strings).
     cards: HashMap<String, Augmentation>,
+    /// The deck-level topologies, one per organizing principle. Additive and
+    /// defaulted so caches without it keep loading.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    topologies: Vec<Topology>,
 }
 
-/// A best-effort, id-keyed cache of AI augmentations for cards.
+/// A best-effort, id-keyed cache of AI augmentations for cards, plus an optional
+/// deck-level [`Topology`].
 pub struct AugmentCache {
     path: PathBuf,
     cards: HashMap<u64, Augmentation>,
+    topologies: Vec<Topology>,
 }
 
 /// An error *saving* the cache. Loading never errors (see the module docs): a
@@ -96,8 +206,12 @@ impl AugmentCache {
     /// regenerable, so a bad cache must never fail a review.
     pub fn open(path: impl AsRef<Path>) -> Self {
         let path = path.as_ref().to_path_buf();
-        let cards = load(&path).unwrap_or_default();
-        Self { path, cards }
+        let Loaded { cards, topologies } = load(&path).unwrap_or_default();
+        Self {
+            path,
+            cards,
+            topologies,
+        }
     }
 
     /// Saves the cache atomically (write to a temp file, then rename).
@@ -118,6 +232,7 @@ impl AugmentCache {
                 .iter()
                 .map(|(id, aug)| (id.to_string(), aug.clone()))
                 .collect(),
+            topologies: self.topologies.clone(),
         };
         let json = serde_json::to_string_pretty(&file).map_err(|source| AugmentError::Format {
             path: self.path.clone(),
@@ -192,6 +307,27 @@ impl AugmentCache {
         self.cards.entry(card_id).or_default().variants = variants;
     }
 
+    /// All cached deck-level topologies, one per organizing principle.
+    pub fn topologies(&self) -> &[Topology] {
+        &self.topologies
+    }
+
+    /// The cached topology with the given [`name`](Topology::name), if any — how
+    /// the scheduler selects which one to walk.
+    pub fn topology(&self, name: &str) -> Option<&Topology> {
+        self.topologies.iter().find(|t| t.name == name)
+    }
+
+    /// Stores a topology, replacing any existing one with the same
+    /// [`name`](Topology::name) (re-running a principle refreshes it) and
+    /// otherwise appending (a new principle adds another). Does not save.
+    pub fn add_topology(&mut self, topology: Topology) {
+        match self.topologies.iter_mut().find(|t| t.name == topology.name) {
+            Some(existing) => *existing = topology,
+            None => self.topologies.push(topology),
+        }
+    }
+
     /// The number of cards with cached augmentations.
     pub fn len(&self) -> usize {
         self.cards.len()
@@ -203,9 +339,17 @@ impl AugmentCache {
     }
 }
 
+/// The decoded contents of a cache file: the per-card map plus the deck-level
+/// topology.
+#[derive(Default)]
+struct Loaded {
+    cards: HashMap<u64, Augmentation>,
+    topologies: Vec<Topology>,
+}
+
 /// Loads the cache, returning `None` on any problem (missing/corrupt/newer file)
 /// so [`AugmentCache::open`] can fall back to empty.
-fn load(path: &Path) -> Option<HashMap<u64, Augmentation>> {
+fn load(path: &Path) -> Option<Loaded> {
     let text = std::fs::read_to_string(path).ok()?;
     let file: AugmentFile = serde_json::from_str(&text).ok()?;
     // A cache from a newer alix may hold a shape we'd mangle — ignore it and
@@ -221,7 +365,10 @@ fn load(path: &Path) -> Option<HashMap<u64, Augmentation>> {
             cards.insert(id, aug);
         }
     }
-    Some(cards)
+    Some(Loaded {
+        cards,
+        topologies: file.topologies,
+    })
 }
 
 /// Serde default for a cache file with no `version` field: the oldest format.
@@ -343,6 +490,148 @@ pub fn generate_variants(
         }
     }
     Ok(out)
+}
+
+/// The model's raw topology before card indices are mapped back to identity
+/// hashes.
+#[derive(Deserialize)]
+struct RawTopology {
+    #[serde(default)]
+    principle: String,
+    #[serde(default)]
+    edges: Vec<RawEdge>,
+    #[serde(default)]
+    walk: Vec<usize>,
+    #[serde(default)]
+    regions: Vec<RawRegion>,
+}
+
+/// A raw edge addressed by the cards' positions in the prompt listing.
+#[derive(Deserialize)]
+struct RawEdge {
+    from: usize,
+    to: usize,
+    #[serde(default)]
+    label: String,
+}
+
+/// A raw region: a name plus the cards' positions in the prompt listing.
+#[derive(Deserialize)]
+struct RawRegion {
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    cards: Vec<usize>,
+}
+
+/// Derives a single deck-level [`Topology`] over `items` in one batched,
+/// tool-free call, steered by `guidance` (the favored organizing principle).
+/// Indices the model returns are mapped back to card identity hashes; any out of
+/// range are dropped rather than failing the whole call.
+pub fn generate_topology(
+    items: &[WarmItem],
+    guidance: Option<&str>,
+    ask_cfg: &AskConfig,
+) -> Result<Topology> {
+    if items.is_empty() {
+        return Ok(Topology::default());
+    }
+    let prompt = topology_prompt(items, guidance);
+    let raw = ask::run(&tool_free(ask_cfg), &prompt, &[])?;
+    let parsed: RawTopology = parse_json(&raw).context("parsing the generated topology")?;
+    let mut topology = to_topology(parsed, items);
+    topology.name = guidance
+        .map(|g| g.trim())
+        .filter(|g| !g.is_empty())
+        .unwrap_or("auto")
+        .to_string();
+    Ok(topology)
+}
+
+/// Maps a [`RawTopology`]'s card indices back to identity hashes, dropping any
+/// index outside `items` and any card repeated in the walk.
+fn to_topology(raw: RawTopology, items: &[WarmItem]) -> Topology {
+    let id_of = |idx: usize| items.get(idx).map(|it| it.id);
+    let edges = raw
+        .edges
+        .into_iter()
+        .filter_map(|e| {
+            Some(TopologyEdge {
+                from: id_of(e.from)?,
+                to: id_of(e.to)?,
+                label: e.label.trim().to_string(),
+            })
+        })
+        .collect();
+    let mut seen = HashSet::new();
+    let walk = raw
+        .walk
+        .into_iter()
+        .filter_map(id_of)
+        .filter(|id| seen.insert(*id))
+        .collect();
+    let regions = raw
+        .regions
+        .into_iter()
+        .map(|r| TopologyRegion {
+            name: r.name.trim().to_string(),
+            cards: r.cards.into_iter().filter_map(id_of).collect(),
+        })
+        .filter(|r| !r.name.is_empty() && !r.cards.is_empty())
+        .collect();
+    Topology {
+        // Filled in by the caller from the `--with` guidance.
+        name: String::new(),
+        principle: raw.principle.trim().to_string(),
+        edges,
+        walk,
+        regions,
+    }
+}
+
+/// Builds the topology prompt: list the cards, ask for an organizing principle, a
+/// labeled edge set, and a walk that visits every card so consecutive ones relate.
+fn topology_prompt(items: &[WarmItem], guidance: Option<&str>) -> String {
+    let mut s = String::from(
+        "You are organizing a set of flashcards into a TOPOLOGY: a graph of how \
+         the facts relate, so a learner can be quizzed in a connected order \
+         instead of at random. The aim is that each card feels like a natural \
+         follow-up to the one before it (\"same module\", \"also in Europe\", \
+         \"this type is built from that one\").\n\n\
+         Decide an organizing principle, then give:\n\
+         - edges: directed links `from` → `to` meaning \"after the `from` card, \
+         the `to` card is a sensible next step\", each with a short `label` \
+         saying why they relate;\n\
+         - walk: an order to visit EVERY card (by index) such that consecutive \
+         cards are related — your default path through the graph;\n\
+         - regions: 3–7 coarse named groups (stages or themes) covering the \
+         cards, listed in the order the walk passes through them. Each region \
+         has a short place-NAME (one or two words, not a sentence) and the \
+         indices of its cards; every card belongs to exactly one region. The \
+         name must orient WITHOUT giving away any card's answer — name the area, \
+         never the fact (\"Persistence\", not \"saves to progress.json\").\n\
+         Use the card indices below. Relate cards by their meaning, not their \
+         wording.\n",
+    );
+    if let Some(g) = guidance {
+        s.push_str(&format!("\nFavored organizing principle: {}\n", g.trim()));
+    }
+    s.push_str("\nCards (index. question — answer):\n");
+    for (i, item) in items.iter().enumerate() {
+        s.push_str(&format!(
+            "{i}. {} — {}\n",
+            one_line(&item.question),
+            one_line(&item.answer)
+        ));
+    }
+    s.push_str(
+        "\nOutput ONLY JSON in exactly this shape, no prose, no code fences:\n\
+         {\"principle\": \"...\", \
+         \"edges\": [{\"from\": 0, \"to\": 1, \"label\": \"...\"}], \
+         \"walk\": [0, 1, ...], \
+         \"regions\": [{\"name\": \"...\", \"cards\": [0, 1]}]}\n",
+    );
+    s
 }
 
 /// A copy of `ask` with the tool allowlist cleared — generation is a pure text
@@ -774,6 +1063,157 @@ mod tests {
         let out = generate_variants(&[item(1, "What year?", "1589")], 3, None, &ask_config(&cli))
             .unwrap();
         assert_eq!(vec!["In which year?", "Which year was it?"], out[&1]);
+    }
+
+    // ── topology ──
+
+    #[test]
+    fn generate_topology_parses_graph_and_walk() {
+        let _g = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = fake_reply(
+            dir.path(),
+            r#"{"principle":"by topic","edges":[{"from":0,"to":1,"label":"leads to"}],"walk":[0,1]}"#,
+        );
+        let items = vec![item(10, "q0", "a0"), item(20, "q1", "a1")];
+        let topo = generate_topology(&items, None, &ask_config(&cli)).unwrap();
+        assert_eq!("by topic", topo.principle);
+        assert_eq!(vec![10, 20], topo.walk);
+        assert_eq!(1, topo.edges.len());
+        assert_eq!(10, topo.edges[0].from);
+        assert_eq!(20, topo.edges[0].to);
+        assert_eq!("leads to", topo.edges[0].label);
+    }
+
+    #[test]
+    fn generate_topology_drops_out_of_range_indices() {
+        let _g = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        // Index 5 doesn't exist (only 0 and 1), so it's dropped from the edge and
+        // from the walk rather than failing the whole call.
+        let cli = fake_reply(
+            dir.path(),
+            r#"{"principle":"p","edges":[{"from":0,"to":5,"label":"l"}],"walk":[0,5,1]}"#,
+        );
+        let items = vec![item(10, "q", "a"), item(20, "q", "a")];
+        let topo = generate_topology(&items, None, &ask_config(&cli)).unwrap();
+        assert_eq!(vec![10, 20], topo.walk);
+        assert!(topo.edges.is_empty());
+    }
+
+    fn topology(name: &str, walk: Vec<u64>) -> Topology {
+        Topology {
+            name: name.into(),
+            principle: format!("principle for {name}"),
+            edges: vec![TopologyEdge {
+                from: walk[0],
+                to: walk[1],
+                label: "x".into(),
+            }],
+            walk,
+            regions: Vec::new(),
+        }
+    }
+
+    fn region(name: &str, cards: Vec<u64>) -> TopologyRegion {
+        TopologyRegion {
+            name: name.into(),
+            cards,
+        }
+    }
+
+    fn topo_regions(regions: Vec<TopologyRegion>) -> Topology {
+        Topology {
+            name: "n".into(),
+            principle: "p".into(),
+            edges: Vec::new(),
+            walk: Vec::new(),
+            regions,
+        }
+    }
+
+    #[test]
+    fn topology_roundtrips_through_the_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("augment.json");
+        let mut cache = AugmentCache::open(&path);
+        assert!(cache.topologies().is_empty());
+        cache.add_topology(topology("auto", vec![1, 2]));
+        cache.save().unwrap();
+
+        let reloaded = AugmentCache::open(&path);
+        let t = reloaded.topology("auto").unwrap();
+        assert_eq!("principle for auto", t.principle);
+        assert_eq!(vec![1, 2], t.walk);
+        assert_eq!(1, t.edges.len());
+    }
+
+    #[test]
+    fn add_topology_appends_new_names_and_replaces_same_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cache = AugmentCache::open(dir.path().join("augment.json"));
+        cache.add_topology(topology("north to south", vec![1, 2]));
+        cache.add_topology(topology("by continent", vec![3, 4]));
+        assert_eq!(2, cache.topologies().len());
+
+        // Re-running the same principle refreshes it in place, not appends.
+        cache.add_topology(topology("north to south", vec![5, 6]));
+        assert_eq!(2, cache.topologies().len());
+        assert_eq!(vec![5, 6], cache.topology("north to south").unwrap().walk);
+        assert_eq!(vec![3, 4], cache.topology("by continent").unwrap().walk);
+        assert!(cache.topology("alphabetical").is_none());
+    }
+
+    #[test]
+    fn generate_topology_names_auto_when_unguided() {
+        let _g = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = fake_reply(dir.path(), r#"{"principle":"p","edges":[],"walk":[0]}"#);
+        let unguided = generate_topology(&[item(10, "q", "a")], None, &ask_config(&cli)).unwrap();
+        assert_eq!("auto", unguided.name);
+    }
+
+    #[test]
+    fn region_path_locates_the_card_and_lists_regions_in_walk_order() {
+        let t = topo_regions(vec![
+            region("Parsing", vec![1, 2]),
+            region("Session", vec![3, 4]),
+            region("Persistence", vec![5]),
+        ]);
+        let (names, current) = t.region_path(3).unwrap();
+        assert_eq!(vec!["Parsing", "Session", "Persistence"], names);
+        assert_eq!(1, current); // card 3 lives in "Session"
+    }
+
+    #[test]
+    fn region_path_none_when_card_absent_or_no_regions() {
+        let t = topo_regions(vec![region("A", vec![1])]);
+        assert!(t.region_path(99).is_none()); // card in no region
+        assert!(topo_regions(vec![]).region_path(1).is_none()); // no regions at all
+    }
+
+    #[test]
+    fn generate_topology_parses_regions_and_maps_card_indices() {
+        let _g = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = fake_reply(
+            dir.path(),
+            r#"{"principle":"p","edges":[],"walk":[0,1],"regions":[{"name":"Start","cards":[0]},{"name":"End","cards":[1]}]}"#,
+        );
+        let items = vec![item(10, "q0", "a0"), item(20, "q1", "a1")];
+        let topo = generate_topology(&items, None, &ask_config(&cli)).unwrap();
+        assert_eq!(2, topo.regions.len());
+        assert_eq!("Start", topo.regions[0].name);
+        assert_eq!(vec![10], topo.regions[0].cards);
+        assert_eq!(vec![20], topo.regions[1].cards);
+    }
+
+    #[test]
+    fn topology_order_from_walk_ranks_present_and_misses_absent() {
+        let order = TopologyOrder::from_walk(&[10, 20, 30]);
+        assert_eq!(Some(0), order.rank_of(10));
+        assert_eq!(Some(2), order.rank_of(30));
+        assert_eq!(None, order.rank_of(99));
     }
 
     #[test]
