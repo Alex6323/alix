@@ -14,10 +14,16 @@ use std::{
 
 use tempfile::TempDir;
 
-/// Runs `alix <args...>` and returns its captured output.
+/// Runs `alix <args...>` and returns its captured output. The child's `HOME` and
+/// XDG dirs are pointed at a throwaway temp dir, so the suite never reads the
+/// developer's real `~/.config/alix` or platform data dir — it's hermetic.
 fn alix(args: &[&str]) -> Output {
+    let home = TempDir::new().unwrap();
     Command::new(env!("CARGO_BIN_EXE_alix"))
         .args(args)
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path())
+        .env("XDG_DATA_HOME", home.path())
         .output()
         .expect("failed to run the alix binary")
 }
@@ -56,16 +62,7 @@ fn review_rejects_multiple_decks() {
     let a = write(dir.path(), "a.txt", VALID_DECK);
     let b = write(dir.path(), "b.txt", VALID_DECK);
     let store = dir.path().join("p.json");
-    let cfg = write(dir.path(), "cfg.toml", ""); // isolate from any global config
-    let out = alix(&[
-        "review",
-        &a,
-        &b,
-        "--store",
-        store.to_str().unwrap(),
-        "--config",
-        &cfg,
-    ]);
+    let out = alix(&["review", &a, &b, "--store", store.to_str().unwrap()]);
     assert!(!out.status.success(), "reviewing two decks should error");
     assert!(
         stderr(&out).contains("one deck"),
@@ -82,14 +79,11 @@ fn review_rejects_a_workspace_directory() {
     std::fs::create_dir(&ws).unwrap();
     std::fs::write(ws.join("m.txt"), VALID_DECK).unwrap();
     let store = dir.path().join("p.json");
-    let cfg = write(dir.path(), "cfg.toml", "");
     let out = alix(&[
         "review",
         ws.to_str().unwrap(),
         "--store",
         store.to_str().unwrap(),
-        "--config",
-        &cfg,
     ]);
     assert!(
         !out.status.success(),

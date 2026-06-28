@@ -993,11 +993,15 @@ mod tests {
     }
 
     #[test]
-    fn default_config_when_no_file() {
-        let config = Config::load(None);
-        // No assertion on the file system; defaults must always parse.
-        assert!(config.is_ok());
+    fn defaults_are_consistent_and_an_empty_file_loads() {
+        // Hermetic: never reads the user's real config dir (`Config::load(None)`
+        // would). Defaults must be self-consistent, and a present-but-empty config
+        // file loads as all-defaults.
         assert_eq!(Bindings::default(), Config::default().keys);
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = dir.path().join("config.toml");
+        std::fs::write(&cfg, "").unwrap();
+        assert!(Config::load(Some(&cfg)).is_ok());
     }
 
     #[test]
