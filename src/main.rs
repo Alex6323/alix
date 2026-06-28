@@ -753,6 +753,10 @@ struct ReviewBuild {
 /// `target`-frontend filter, builds the `Session`, and records the decks as
 /// recent. The store is borrowed (the caller owns it), so the web server can
 /// reuse one store across repeated selections.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each is a distinct build input; grouping them would only hide the dependency"
+)]
 fn build_review(
     deck_paths: Vec<PathBuf>,
     args: &ReviewArgs,
@@ -760,6 +764,11 @@ fn build_review(
     store: &Store,
     recent: &mut RecentDecks,
     target: Frontend,
+    // Topology + region focus, resolved here rather than read from `args` so the
+    // web picker's focus drawer can override them per-launch (the CLI passes
+    // `args.topology` / `args.region`).
+    topology_sel: Option<&str>,
+    region_sel: Option<&str>,
 ) -> Result<ReviewBuild> {
     // A session is exactly one deck file's cards — no merging of several loose
     // decks, and no reviewing a whole workspace at once. Workspaces are an
@@ -818,13 +827,13 @@ fn build_review(
     // a session-ready order. The resolved name travels on `ReviewBuild` so the
     // web frontend can show the "why this card follows the last" cue from the
     // same topology.
-    let topology = resolve_topology(args.topology.as_deref(), &augment)?;
+    let topology = resolve_topology(topology_sel, &augment)?;
     let topology_name = topology.map(|t| t.name.clone());
     let topology_order = topology.map(|t| TopologyOrder::from_walk(&t.walk));
 
     // `--region` focuses the session on one region of the topology — drill a
     // weak area. SRS still picks what's due *within* that region.
-    if let Some(region_name) = args.region.as_deref() {
+    if let Some(region_name) = region_sel {
         let Some(topology) = topology else {
             bail!("--region needs a topology — pass --topology, or augment one for this deck");
         };
@@ -1008,7 +1017,16 @@ fn load_review_session(
             focus: focus_deck,
         }));
     }
-    let build = build_review(deck_paths, args, &config, &store, &mut recent, target)?;
+    let build = build_review(
+        deck_paths,
+        args,
+        &config,
+        &store,
+        &mut recent,
+        target,
+        args.topology.as_deref(),
+        args.region.as_deref(),
+    )?;
     Ok(Some(LoadedSession {
         started: Started::Review(Box::new(ReviewSession {
             session: build.session,
@@ -1424,6 +1442,8 @@ fn review_serve(args: ReviewArgs) -> Result<()> {
             &store,
             &mut recent,
             Frontend::Web,
+            args.topology.as_deref(),
+            args.region.as_deref(),
         )?;
         Some(to_build(b))
     };
@@ -1443,8 +1463,22 @@ fn review_serve(args: ReviewArgs) -> Result<()> {
         ask: config.ask.clone(),
         exam: config.exam.clone(),
     };
-    let build = |paths: Vec<PathBuf>, store: &Store, recent: &mut RecentDecks| {
-        build_review(paths, &args, &config, store, recent, Frontend::Web).map(to_build)
+    let build = |paths: Vec<PathBuf>,
+                 topology: Option<&str>,
+                 region: Option<&str>,
+                 store: &Store,
+                 recent: &mut RecentDecks| {
+        build_review(
+            paths,
+            &args,
+            &config,
+            store,
+            recent,
+            Frontend::Web,
+            topology,
+            region,
+        )
+        .map(to_build)
     };
     // A single trace picked from the in-browser picker walks (predict → verify),
     // mirroring the terminal picker; a trace named on the CLI took the `initial`

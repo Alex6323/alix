@@ -172,6 +172,27 @@ struct CrumbDto {
     cells: Vec<Vec<f32>>,
 }
 
+/// A deck's stored topologies with their region heatmaps, fetched on demand for
+/// the picker's pre-launch **focus drawer** (`/api/deck-topology`): choose a
+/// topology, see each region's strength, tap one to drill it.
+#[derive(Debug, Serialize, Default)]
+struct DeckTopologyDto {
+    topologies: Vec<TopologyInfoDto>,
+}
+
+#[derive(Debug, Serialize)]
+struct TopologyInfoDto {
+    name: String,
+    regions: Vec<RegionInfoDto>,
+}
+
+#[derive(Debug, Serialize)]
+struct RegionInfoDto {
+    name: String,
+    /// Per-card strength (`0..=1`), red → green — the region's heatmap bar.
+    cells: Vec<f32>,
+}
+
 /// The current review state sent to the browser after every action.
 #[derive(Debug, Serialize)]
 struct StateDto {
@@ -971,7 +992,13 @@ pub fn run_review(
     decks_dir: PathBuf,
     addr: SocketAddr,
     opts: ReviewOptions,
-    mut build: impl FnMut(Vec<PathBuf>, &Store, &mut RecentDecks) -> Result<SessionBuild>,
+    mut build: impl FnMut(
+        Vec<PathBuf>,
+        Option<&str>,
+        Option<&str>,
+        &Store,
+        &mut RecentDecks,
+    ) -> Result<SessionBuild>,
     // Builds a walk when the picked decks are a single trace (else `None`, so the
     // caller flattens to a review); mirrors the terminal picker's trace → walk.
     mut build_walk: impl FnMut(&[PathBuf]) -> Result<Option<WalkBuild>>,
@@ -1052,9 +1079,10 @@ pub fn run_review(
                 &review_state(reviewing.as_ref(), &store, mode_override),
             ),
             (Method::Post, "/api/select") => {
-                match select_deck(&mut request, &decks_dir, &recent) {
-                    Some(deck) => {
-                        let paths = vec![deck];
+                match read_selection(&mut request, &decks_dir, &recent) {
+                    Some(sel) => {
+                        let (topology, region) = (sel.topology.clone(), sel.region.clone());
+                        let paths = vec![sel.deck];
                         // Write to the deck's own store — a workspace's `progress.json`
                         // when they share one, else the global store — so the browser
                         // records progress where the TUI would and where the picker's
@@ -1071,7 +1099,13 @@ pub fn run_review(
                                 examining = None;
                                 respond_json(request, &WalkRedirect { redirect: "/walk" });
                             }
-                            Ok(None) => match build(paths, &store, &mut recent) {
+                            Ok(None) => match build(
+                                paths,
+                                topology.as_deref(),
+                                region.as_deref(),
+                                &store,
+                                &mut recent,
+                            ) {
                                 Ok(b) => {
                                     let mut r = Reviewing::new(b);
                                     r.open_augment(store.path());
@@ -1099,35 +1133,53 @@ pub fn run_review(
             }
             // The picker's "Browse" action: build a read-only card list and tell
             // the page to navigate to `/browse` (hosted here, like `/walk`).
-            (Method::Post, "/api/browse") => match select_deck(&mut request, &decks_dir, &recent) {
-                Some(deck) => {
-                    let paths = vec![deck];
-                    if let Err(e) = store_for(&paths).map(|s| store = s) {
-                        eprintln!("warning: could not open the progress store: {e}");
-                        respond_status(request, 400);
-                        continue;
-                    }
-                    match build_browse(paths, &mut recent) {
-                        Ok(b) => {
-                            browsing = Some(Browsing::new(b));
-                            reviewing = None;
-                            walking = None;
-                            examining = None;
-                            respond_json(
-                                request,
-                                &WalkRedirect {
-                                    redirect: "/browse",
-                                },
-                            );
-                        }
-                        Err(e) => {
-                            eprintln!("warning: could not load the selected decks: {e}");
+            (Method::Post, "/api/browse") => {
+                match read_selection(&mut request, &decks_dir, &recent) {
+                    Some(sel) => {
+                        let paths = vec![sel.deck];
+                        if let Err(e) = store_for(&paths).map(|s| store = s) {
+                            eprintln!("warning: could not open the progress store: {e}");
                             respond_status(request, 400);
+                            continue;
+                        }
+                        match build_browse(paths, &mut recent) {
+                            Ok(b) => {
+                                browsing = Some(Browsing::new(b));
+                                reviewing = None;
+                                walking = None;
+                                examining = None;
+                                respond_json(
+                                    request,
+                                    &WalkRedirect {
+                                        redirect: "/browse",
+                                    },
+                                );
+                            }
+                            Err(e) => {
+                                eprintln!("warning: could not load the selected decks: {e}");
+                                respond_status(request, 400);
+                            }
                         }
                     }
+                    None => respond_status(request, 400),
                 }
-                None => respond_status(request, 400),
-            },
+            }
+            // The focus drawer asks for a deck's stored topologies + region
+            // heatmaps when it's selected. Read-only: open the deck's own store
+            // transiently, never disturbing the active session store.
+            (Method::Post, "/api/deck-topology") => {
+                let dto = match read_selection(&mut request, &decks_dir, &recent) {
+                    Some(sel) => match store_for(std::slice::from_ref(&sel.deck)) {
+                        Ok(s) => {
+                            let augment = AugmentCache::open(augment::augment_path_for(s.path()));
+                            deck_topology_dto(&augment, &s)
+                        }
+                        Err(_) => DeckTopologyDto::default(),
+                    },
+                    None => DeckTopologyDto::default(),
+                };
+                respond_json(request, &dto);
+            }
             (Method::Post, "/api/deselect") => {
                 reviewing = None;
                 walking = None;
@@ -2085,19 +2137,21 @@ pub fn run_browse(
             (Method::Get, "/api/cards") => {
                 respond_json(request, &browse_payload(browsing.as_ref()))
             }
-            (Method::Post, "/api/select") => match select_deck(&mut request, &decks_dir, &recent) {
-                Some(deck) => match build(vec![deck], &mut recent) {
-                    Ok(b) => {
-                        browsing = Some(Browsing::new(b));
-                        respond_json(request, &browse_payload(browsing.as_ref()));
-                    }
-                    Err(e) => {
-                        eprintln!("warning: could not load the selected decks: {e}");
-                        respond_status(request, 400);
-                    }
-                },
-                None => respond_status(request, 400),
-            },
+            (Method::Post, "/api/select") => {
+                match read_selection(&mut request, &decks_dir, &recent) {
+                    Some(sel) => match build(vec![sel.deck], &mut recent) {
+                        Ok(b) => {
+                            browsing = Some(Browsing::new(b));
+                            respond_json(request, &browse_payload(browsing.as_ref()));
+                        }
+                        Err(e) => {
+                            eprintln!("warning: could not load the selected decks: {e}");
+                            respond_status(request, 400);
+                        }
+                    },
+                    None => respond_status(request, 400),
+                }
+            }
             (Method::Post, "/api/deselect") => {
                 browsing = None;
                 respond_json(request, &browse_payload(browsing.as_ref()));
@@ -2481,10 +2535,26 @@ fn deck_catalog(
 /// path via the live catalog. Returns `None` (→ 400) for an empty or malformed
 /// body, or any name not in the catalog — so no filesystem path is ever built
 /// from request input, keeping selection safe under `--lan`.
-fn select_deck(request: &mut Request, decks_dir: &Path, recent: &RecentDecks) -> Option<PathBuf> {
+/// A deck chosen from the picker, optionally scoped by the focus drawer to one
+/// topology and/or region.
+struct Selection {
+    deck: PathBuf,
+    topology: Option<String>,
+    region: Option<String>,
+}
+
+fn read_selection(
+    request: &mut Request,
+    decks_dir: &Path,
+    recent: &RecentDecks,
+) -> Option<Selection> {
     #[derive(Deserialize)]
     struct Body {
         deck: String,
+        #[serde(default)]
+        topology: Option<String>,
+        #[serde(default)]
+        region: Option<String>,
     }
     let body: Body = serde_json::from_reader(request.as_reader()).ok()?;
     if body.deck.is_empty() {
@@ -2501,7 +2571,11 @@ fn select_deck(request: &mut Request, decks_dir: &Path, recent: &RecentDecks) ->
         }
         known.insert(e.name, e.path);
     }
-    resolve_name(&body.deck, &known)
+    Some(Selection {
+        deck: resolve_name(&body.deck, &known)?,
+        topology: body.topology,
+        region: body.region,
+    })
 }
 
 /// Maps a requested deck name to its catalog path, or `None` if it isn't known —
@@ -2509,6 +2583,27 @@ fn select_deck(request: &mut Request, decks_dir: &Path, recent: &RecentDecks) ->
 /// than reaching the filesystem.
 fn resolve_name(name: &str, known: &HashMap<String, PathBuf>) -> Option<PathBuf> {
     known.get(name).cloned()
+}
+
+/// Builds the focus-drawer payload for a deck: its stored topologies, each with
+/// its regions' per-card strength heatmaps (read from the deck's `store`).
+fn deck_topology_dto(augment: &AugmentCache, store: &Store) -> DeckTopologyDto {
+    let topologies = augment
+        .topologies()
+        .iter()
+        .map(|t| TopologyInfoDto {
+            name: t.name.clone(),
+            regions: t
+                .regions
+                .iter()
+                .map(|r| RegionInfoDto {
+                    name: r.name.clone(),
+                    cells: crate::session::card_strengths(&r.cards, store),
+                })
+                .collect(),
+        })
+        .collect();
+    DeckTopologyDto { topologies }
 }
 
 /// Serializes a card for the browser, structuring its note via the shared
