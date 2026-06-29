@@ -310,6 +310,11 @@ struct DeckItemDto {
     /// Dim location hint (parent dir) for entries outside the decks dir; `null`
     /// keeps the row clean. Disambiguates same-named decks/workspaces.
     path: Option<String>,
+    /// The `/img/<key>` URL of the workspace's icon, or `null` for the chevron.
+    icon: Option<String>,
+    /// `true` when `icon` is an SVG (rendered as a theme-tinted mask); a raster
+    /// icon renders as a plain `<img>`.
+    icon_svg: bool,
 }
 
 /// A workspace member deck in the drill-in list: a qualified selection `name`
@@ -1054,6 +1059,9 @@ pub fn run_review(
     // The picker's "Browse" action opens a read-only card list (the page
     // navigates to `/browse`, hosted here too).
     let mut browsing: Option<Browsing> = None;
+    // Workspace icons resolved while building the picker, served via `/img/` at
+    // launcher time (when no review/browse session owns the registry).
+    let mut launcher_icons: HashMap<String, PathBuf> = HashMap::new();
     let server = Server::http(addr).map_err(|e| anyhow!("cannot start server on {addr}: {e}"))?;
     for mut request in server.incoming_requests() {
         let method = request.method().clone();
@@ -1074,7 +1082,8 @@ pub fn run_review(
             (Method::Get, "/api/ask-info") => respond_json(request, &ask_info),
             (Method::Get, "/api/decks") => {
                 // Review enforces locking; the picker won't start a locked deck.
-                respond_json(request, &deck_catalog(&decks_dir, &recent, &store, true))
+                let catalog = deck_catalog(&decks_dir, &recent, &store, true, &mut launcher_icons);
+                respond_json(request, &catalog)
             }
             (Method::Get, "/api/cards") => {
                 respond_json(request, &browse_payload(browsing.as_ref()))
@@ -1087,7 +1096,7 @@ pub fn run_review(
                 } else if let Some(b) = &browsing {
                     serve_image(request, &b.images, name)
                 } else {
-                    respond_status(request, 404)
+                    serve_image(request, &launcher_icons, name)
                 }
             }
             (Method::Get, "/api/state") => respond_json(
@@ -2151,6 +2160,9 @@ pub fn run_browse(
     let keys = BrowseKeys::from(&bindings);
     let picker_keys = PickerKeysDto::from(&picker);
     let mut browsing = initial.map(Browsing::new);
+    // Workspace icons resolved while building the picker, served via `/img/` when
+    // no browse session owns the registry.
+    let mut launcher_icons: HashMap<String, PathBuf> = HashMap::new();
     let server = Server::http(addr).map_err(|e| anyhow!("cannot start server on {addr}: {e}"))?;
     for mut request in server.incoming_requests() {
         let method = request.method().clone();
@@ -2167,11 +2179,12 @@ pub fn run_browse(
             (Method::Get, "/api/picker-keys") => respond_json(request, &picker_keys),
             (Method::Get, "/api/decks") => {
                 // Browse is read-only — any deck is browsable, so no lock gating.
-                respond_json(request, &deck_catalog(&decks_dir, &recent, &store, false))
+                let catalog = deck_catalog(&decks_dir, &recent, &store, false, &mut launcher_icons);
+                respond_json(request, &catalog)
             }
             (Method::Get, key) if key.starts_with("/img/") => match &browsing {
                 Some(b) => serve_image(request, &b.images, &key["/img/".len()..]),
-                None => respond_status(request, 404),
+                None => serve_image(request, &launcher_icons, &key["/img/".len()..]),
             },
             (Method::Get, "/api/cards") => {
                 respond_json(request, &browse_payload(browsing.as_ref()))
@@ -2435,6 +2448,8 @@ fn deck_item_dto(
                 description: None,
                 members: Vec::new(),
                 path: e.path_hint.clone(),
+                icon: None,
+                icon_svg: false,
             }
         }
         // A deck that fails to load stays launchable so the error surfaces.
@@ -2454,6 +2469,8 @@ fn deck_item_dto(
             description: None,
             members: Vec::new(),
             path: e.path_hint.clone(),
+            icon: None,
+            icon_svg: false,
         },
     }
 }
@@ -2537,11 +2554,27 @@ fn workspace_members(e: &picker::DeckEntry, decks_dir: &Path, with_lock: bool) -
 /// (each with its last-progress time), recent loose decks, and plain folders —
 /// each deck's badge/lock from `store`. `with_lock` is false for the browse
 /// screen: locking gates *review* only, so any deck is browsable.
+/// The picker icon URL for a resolved icon path, registering it in the launcher
+/// image map so `/img/<key>` can serve it. Returns the URL and whether it is an
+/// SVG (a mask) or a raster (`<img>`).
+fn icon_field(icon: Option<&Path>, icons: &mut HashMap<String, PathBuf>) -> (Option<String>, bool) {
+    match icon {
+        Some(path) => {
+            let key = img_key(path);
+            icons.insert(key.clone(), path.to_path_buf());
+            let is_svg = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("svg"));
+            (Some(format!("/img/{key}")), is_svg)
+        }
+        None => (None, false),
+    }
+}
+
 fn deck_catalog(
     decks_dir: &Path,
     recent: &RecentDecks,
     store: &Store,
     with_lock: bool,
+    icons: &mut HashMap<String, PathBuf>,
 ) -> DeckListDto {
     let mut workspaces = Vec::new();
     let mut recent_decks = Vec::new();
@@ -2561,6 +2594,7 @@ fn deck_catalog(
             } else {
                 format!("{} decks", members.len())
             };
+            let (icon, icon_svg) = icon_field(e.icon.as_deref(), icons);
             let dto = DeckItemDto {
                 meta: Some(meta),
                 state: if is_ws { "workspace" } else { "folder" },
@@ -2577,6 +2611,8 @@ fn deck_catalog(
                 path: e.path_hint,
                 name: e.name,
                 label: e.label,
+                icon,
+                icon_svg,
             };
             if is_ws {
                 workspaces.push(dto);
@@ -2857,6 +2893,21 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
+
+    #[test]
+    fn icon_field_registers_an_svg_and_flags_it() {
+        let mut icons = HashMap::new();
+        let (url, is_svg) = icon_field(Some(Path::new("/ws/assets/icon.svg")), &mut icons);
+        let url = url.unwrap();
+        assert!(url.starts_with("/img/"));
+        assert!(is_svg);
+        assert_eq!(icons.len(), 1);
+        assert!(icons.values().any(|p| p.ends_with("assets/icon.svg")));
+
+        let (none, flag) = icon_field(None, &mut icons);
+        assert!(none.is_none() && !flag);
+        assert_eq!(icons.len(), 1);
+    }
 
     #[test]
     fn card_dto_structures_the_note() {

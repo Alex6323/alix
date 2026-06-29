@@ -488,6 +488,9 @@ pub struct DeckEntry {
     /// Dim location hint (parent dir, `~`-abbreviated) when not in the decks
     /// dir.
     pub path_hint: Option<String>,
+    /// A workspace's resolved picker icon file, or `None`. Members and decks
+    /// never carry one.
+    pub icon: Option<PathBuf>,
 }
 
 /// The catalog the pickers show, as plain data: recent entries first (recency
@@ -499,7 +502,7 @@ pub fn catalog(decks_dir: &Path, recent: &RecentDecks) -> Vec<DeckEntry> {
         .into_iter()
         .map(|c| {
             if c.is_workspace {
-                let (label, description, members) = match workspace::Workspace::load(&c.path) {
+                let (label, description, members, icon) = match workspace::Workspace::load(&c.path) {
                     Ok(ws) => {
                         let members = ws
                             .members
@@ -517,12 +520,13 @@ pub fn catalog(decks_dir: &Path, recent: &RecentDecks) -> Vec<DeckEntry> {
                                     description: None,
                                     members: Vec::new(),
                                     path_hint: None, // shown only in the drill-in
+                                    icon: None,
                                 }
                             })
                             .collect();
-                        (ws.display_name(), ws.description, members)
+                        (ws.display_name(), ws.description, members, ws.icon)
                     }
-                    Err(_) => (c.name.clone(), None, Vec::new()),
+                    Err(_) => (c.name.clone(), None, Vec::new(), None),
                 };
                 DeckEntry {
                     path_hint: location_hint(&c.path, decks_dir),
@@ -533,6 +537,7 @@ pub fn catalog(decks_dir: &Path, recent: &RecentDecks) -> Vec<DeckEntry> {
                     is_workspace: true,
                     description,
                     members,
+                    icon,
                 }
             } else {
                 DeckEntry {
@@ -544,6 +549,7 @@ pub fn catalog(decks_dir: &Path, recent: &RecentDecks) -> Vec<DeckEntry> {
                     is_workspace: false,
                     description: None,
                     members: Vec::new(),
+                    icon: None,
                 }
             }
         })
