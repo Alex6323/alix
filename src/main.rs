@@ -802,6 +802,11 @@ fn build_review(
     // One deck per session, so the label is the deck's own subject.
     let label = deck_label;
 
+    // Every card id in this deck — used to pick out *this* deck's topologies from
+    // a cache that may be shared with other decks (one store). Taken before the
+    // frontend filter so it reflects the whole deck, not just the visible cards.
+    let deck_ids: std::collections::HashSet<u64> = cards.iter().map(|c| c.id()).collect();
+
     // Keep only the cards reviewable in the target frontend; a card declares
     // `Any` (default), or its specific frontend. Image cards are web-only, so
     // they drop out of the TUI here (and the caller reports the count).
@@ -827,7 +832,7 @@ fn build_review(
     // a session-ready order. The resolved name travels on `ReviewBuild` so the
     // web frontend can show the "why this card follows the last" cue from the
     // same topology.
-    let topology = resolve_topology(topology_sel, &augment)?;
+    let topology = resolve_topology(topology_sel, &augment, &deck_ids)?;
     let topology_name = topology.map(|t| t.name.clone());
     let topology_order = topology.map(|t| TopologyOrder::from_walk(&t.walk));
 
@@ -899,16 +904,20 @@ fn build_review(
 fn resolve_topology<'a>(
     name: Option<&str>,
     augment: &'a AugmentCache,
+    deck_ids: &std::collections::HashSet<u64>,
 ) -> Result<Option<&'a Topology>> {
+    // Only this deck's topologies — a shared cache (decks sharing a store) holds
+    // others', which must not be auto-applied or named here.
+    let mine = augment.topologies_for(deck_ids);
     match name {
-        Some(name) => match augment.topology(name) {
+        Some(name) => match mine.into_iter().find(|t| t.name == name) {
             Some(topology) => Ok(Some(topology)),
             None => bail!(
                 "no topology named `{name}` is cached for this deck — run `alix deck augment <deck> --target topology`"
             ),
         },
-        None => Ok(match augment.topologies() {
-            [single] => Some(single),
+        None => Ok(match mine.as_slice() {
+            [single] => Some(*single),
             _ => None,
         }),
     }
@@ -2078,7 +2087,11 @@ fn augment_cmd(args: AugmentArgs) -> Result<()> {
             print_topology(&topo, &deck.cards);
             let walked = topo.walk.len();
             cache.add_topology(topo);
-            let n = cache.topologies().len();
+            // Count only this deck's topologies — the cache may be shared with
+            // other decks that share a store.
+            let deck_ids: std::collections::HashSet<u64> =
+                deck.cards.iter().map(|c| c.id()).collect();
+            let n = cache.topologies_for(&deck_ids).len();
             println!(
                 "({n} topolog{} stored for this deck)",
                 if n == 1 { "y" } else { "ies" }

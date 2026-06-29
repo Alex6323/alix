@@ -128,6 +128,15 @@ impl Topology {
         Some((names, current))
     }
 
+    /// Whether this topology was built over the deck whose cards are `deck_ids` —
+    /// true when its walk shares any card with the deck. Card ids embed the deck's
+    /// file name, so they never collide across decks; this is what keeps one cache
+    /// shared by several decks (decks sharing a store) from leaking one deck's
+    /// topology onto another.
+    pub fn covers(&self, deck_ids: &HashSet<u64>) -> bool {
+        self.walk.iter().any(|id| deck_ids.contains(id))
+    }
+
     /// The card ids of the region named `name` (matched case-insensitively), for
     /// focusing a session on one area. `None` when no region matches.
     pub fn region_cards(&self, name: &str) -> Option<&[u64]> {
@@ -321,17 +330,36 @@ impl AugmentCache {
         &self.topologies
     }
 
+    /// The cached topologies belonging to the deck whose cards are `deck_ids`. A
+    /// cache file is shared by every deck that shares a store (e.g. all loose
+    /// decks under the global store), so this filters out other decks' topologies
+    /// by card membership — see [`Topology::covers`].
+    pub fn topologies_for(&self, deck_ids: &HashSet<u64>) -> Vec<&Topology> {
+        self.topologies
+            .iter()
+            .filter(|t| t.covers(deck_ids))
+            .collect()
+    }
+
     /// The cached topology with the given [`name`](Topology::name), if any — how
     /// the scheduler selects which one to walk.
     pub fn topology(&self, name: &str) -> Option<&Topology> {
         self.topologies.iter().find(|t| t.name == name)
     }
 
-    /// Stores a topology, replacing any existing one with the same
-    /// [`name`](Topology::name) (re-running a principle refreshes it) and
-    /// otherwise appending (a new principle adds another). Does not save.
+    /// Stores a topology. It replaces an existing one with the same
+    /// [`name`](Topology::name) **only when it's the same deck's** — its walk
+    /// overlaps, so re-running a principle refreshes it — and otherwise appends.
+    /// The deck check matters because a cache can be shared by several decks (one
+    /// store): a like-named topology from another deck (e.g. both defaulting to
+    /// `auto`) must not be clobbered. Does not save.
     pub fn add_topology(&mut self, topology: Topology) {
-        match self.topologies.iter_mut().find(|t| t.name == topology.name) {
+        let ids: HashSet<u64> = topology.walk.iter().copied().collect();
+        match self
+            .topologies
+            .iter_mut()
+            .find(|t| t.name == topology.name && t.covers(&ids))
+        {
             Some(existing) => *existing = topology,
             None => self.topologies.push(topology),
         }
@@ -1165,12 +1193,50 @@ mod tests {
         cache.add_topology(topology("by continent", vec![3, 4]));
         assert_eq!(2, cache.topologies().len());
 
-        // Re-running the same principle refreshes it in place, not appends.
-        cache.add_topology(topology("north to south", vec![5, 6]));
+        // Re-running the same principle over the same deck (the walk still covers
+        // its cards) refreshes it in place, not appends.
+        cache.add_topology(topology("north to south", vec![1, 2, 7]));
         assert_eq!(2, cache.topologies().len());
-        assert_eq!(vec![5, 6], cache.topology("north to south").unwrap().walk);
+        assert_eq!(
+            vec![1, 2, 7],
+            cache.topology("north to south").unwrap().walk
+        );
         assert_eq!(vec![3, 4], cache.topology("by continent").unwrap().walk);
         assert!(cache.topology("alphabetical").is_none());
+    }
+
+    #[test]
+    fn add_topology_keeps_like_named_topologies_for_different_decks() {
+        // Two decks sharing a store both default to the name `auto`; their walks
+        // are disjoint (different decks), so the second must NOT clobber the first.
+        let mut cache = AugmentCache::open(std::path::Path::new("unused.json"));
+        cache.add_topology(topology("auto", vec![1, 2, 3])); // deck A
+        cache.add_topology(topology("auto", vec![10, 20, 30])); // deck B
+        assert_eq!(2, cache.topologies().len());
+
+        let a: HashSet<u64> = [1, 2, 3].into_iter().collect();
+        let b: HashSet<u64> = [10, 20, 30].into_iter().collect();
+        assert_eq!(vec![1, 2, 3], cache.topologies_for(&a)[0].walk);
+        assert_eq!(vec![10, 20, 30], cache.topologies_for(&b)[0].walk);
+    }
+
+    #[test]
+    fn topologies_for_keeps_only_the_decks_own() {
+        // One cache shared by two decks (they share a store): each deck's cards
+        // have disjoint ids, so `topologies_for` must return only the topology
+        // whose walk overlaps the asked-for deck — no cross-deck leak.
+        let mut cache = AugmentCache::open(std::path::Path::new("unused.json"));
+        cache.add_topology(topology("architecture", vec![1, 2, 3]));
+        cache.add_topology(topology("capitals", vec![10, 20, 30]));
+
+        let arch: HashSet<u64> = [1, 2, 3].into_iter().collect();
+        let mine = cache.topologies_for(&arch);
+        assert_eq!(1, mine.len());
+        assert_eq!("architecture", mine[0].name);
+
+        // A deck sharing the store but with none of these cards sees no topology.
+        let other: HashSet<u64> = [99].into_iter().collect();
+        assert!(cache.topologies_for(&other).is_empty());
     }
 
     #[test]
