@@ -959,7 +959,6 @@ self-contained, **without copying whole source files**. A re-based snippet loses
 its original line numbers, so when those matter the original `file:lines` is kept
 in the card's note (`! from scheduler.rs:90-98`). It's automatic for explored
 workspaces, not a command; a loose trace over a live `% source:` is left as-is.
-See [docs/traces.md](docs/traces.md) for the rationale.
 
 **Checking the locators.** For a trace that *isn't* frozen — a loose `.txt` over
 a live `% source:` — **`alix check`** validates that every `% at:` still

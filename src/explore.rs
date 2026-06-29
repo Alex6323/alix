@@ -51,7 +51,7 @@ pub fn explore(source: &str, goal: &str, cfg: &TraceConfig, ask_cfg: &AskConfig)
 /// Builds the exploration prompt: explore the source and emit an ordered,
 /// prerequisite-sorted plan of means (decks + traces) sized to the goal by
 /// saturation. The counterpart to [`crate::trace::suggest`]'s recon prompt, one
-/// tier up (see `docs/traces.md`, "Goals and exploration").
+/// tier up.
 fn explore_prompt(source: &str, goal: &str, url: bool, cfg: &TraceConfig) -> String {
     let explore = if url {
         format!("Read the source page at {source} with the WebFetch tool (fetch it once).")

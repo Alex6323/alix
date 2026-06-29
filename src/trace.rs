@@ -577,7 +577,7 @@ pub(crate) fn build_run_config(
 }
 
 /// Builds the path-discovery prompt: the goal, the scope, how to explore it,
-/// the checkpoint format, and the chain-not-a-set rules (see `docs/traces.md`).
+/// the checkpoint format, and the chain-not-a-set rules.
 fn build_prompt(description: &str, source: &str, url: bool, cfg: &TraceConfig) -> String {
     let explore = if url {
         format!("Read the source page at {source} with the WebFetch tool (fetch it once).")
@@ -715,8 +715,7 @@ fn build_prompt(description: &str, source: &str, url: bool, cfg: &TraceConfig) -
 
 /// Builds the recon prompt for `--suggest`: survey the scope and propose a
 /// ranked menu of candidate traces (path + spine sketch + scope) WITHOUT tracing
-/// any of them in depth. The cheap counterpart to [`build_prompt`] (see
-/// `docs/traces.md`, "Suggesting traces").
+/// any of them in depth. The cheap counterpart to [`build_prompt`].
 fn suggest_prompt(source: &str, url: bool, cfg: &TraceConfig) -> String {
     let explore = if url {
         format!("Read the source page at {source} with the WebFetch tool (fetch it once).")

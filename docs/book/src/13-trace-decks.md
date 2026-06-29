@@ -156,8 +156,7 @@ snippet per checkpoint — and repoints each `% at:` at them, so they never drif
 the workspace is self-contained, without copying whole files. (A re-based snippet
 loses its original line numbers, so when those matter the original is kept in the
 card's note: `! from scheduler.rs:90-98`.) It's automatic for explored workspaces;
-a loose trace over a live source is left as-is. The rationale is in
-[`docs/traces.md`](../traces.md).
+a loose trace over a live source is left as-is.
 
 ## Checking the locators
 
