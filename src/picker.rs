@@ -502,7 +502,8 @@ pub fn catalog(decks_dir: &Path, recent: &RecentDecks) -> Vec<DeckEntry> {
         .into_iter()
         .map(|c| {
             if c.is_workspace {
-                let (label, description, members, icon) = match workspace::Workspace::load(&c.path) {
+                let (label, description, members, icon) = match workspace::Workspace::load(&c.path)
+                {
                     Ok(ws) => {
                         let members = ws
                             .members

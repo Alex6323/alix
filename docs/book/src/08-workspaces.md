@@ -61,6 +61,14 @@ and the drill-in is a single-launch list: `Enter` on a facts deck reviews it,
 `Enter` on a trace **walks** it. Typing a filter flattens the tree to a plain
 search.
 
+In the **web** picker, a workspace can show a small **emblem** in place of the
+chevron, so a long list of similar-named workspaces is quicker to scan. Drop an
+image in the workspace's `assets/` and point `icon = "assets/<file>"` at it in the
+`alix.toml` (or just name it `assets/icon.{svg,png,jpg}` and skip the key); an SVG
+is tinted to the active theme, a raster shows as-is. When you build a workspace
+with `alix explore --into <dir> --build`, Claude draws an abstract SVG emblem from
+the topic automatically, unless you pass `--icon <file>`.
+
 `alix workspace <dir>` jumps straight into that drill-in view, routing each
 member to the right experience — a facts deck to a review, a trace to a walk — and
 returning you to the picker when you finish one. (`alix review <dir>` no longer

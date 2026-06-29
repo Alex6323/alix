@@ -212,6 +212,12 @@ pub fn manifest_source_access(dir: &Path) -> Option<bool> {
     toml::from_str::<Manifest>(&text).ok()?.source_access
 }
 
+/// The raw `icon = "..."` value from the workspace's manifest, if any.
+pub fn manifest_icon(dir: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(dir.join(MANIFEST)).ok()?;
+    toml::from_str::<Manifest>(&text).ok()?.icon
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -344,7 +350,10 @@ mod tests {
 
         // Convention file present → resolves it.
         std::fs::write(assets.join("icon.svg"), "<svg/>").unwrap();
-        assert_eq!(resolve_icon(dir.path(), None), Some(assets.join("icon.svg")));
+        assert_eq!(
+            resolve_icon(dir.path(), None),
+            Some(assets.join("icon.svg"))
+        );
 
         // Manifest key pointing at a real file wins over the convention.
         std::fs::write(assets.join("logo.png"), b"x").unwrap();

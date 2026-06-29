@@ -3118,6 +3118,20 @@ fn check(decks: Vec<PathBuf>) -> Result<()> {
     let mut errors = 0usize;
     let mut warnings = 0usize;
     for path in &decks {
+        // A workspace directory: validate its declared icon, then skip the
+        // deck-load (which would error on a directory).
+        if path.is_dir() && alix::workspace::is_workspace(path) {
+            if let Some(rel) = alix::workspace::manifest_icon(path)
+                && !path.join(&rel).is_file()
+            {
+                warnings += 1;
+                eprintln!(
+                    "warning: {}: `icon = \"{rel}\"` points at a missing file",
+                    path.display()
+                );
+            }
+            continue;
+        }
         match Deck::load(path) {
             Err(e) => {
                 errors += 1;
@@ -3326,6 +3340,15 @@ mod tests {
 
     fn card(front: &str, back: &str) -> Card {
         Card::plain(Arc::from("d.txt"), front.into(), vec![back.into()], None, 1)
+    }
+
+    #[test]
+    fn check_warns_on_a_missing_workspace_icon() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("alix.toml"), "icon = \"assets/gone.svg\"\n").unwrap();
+        std::fs::write(dir.path().join("a.txt"), "# a\n\t1\n").unwrap();
+        // Warnings don't fail the check; the missing-icon path just adds one.
+        assert!(check(vec![dir.path().to_path_buf()]).is_ok());
     }
 
     #[test]

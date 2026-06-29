@@ -311,6 +311,7 @@ shared by every deck:
 title = "English"
 description = "everyday conversational vocabulary"
 # source_access = true   # let the ask-tutor read this workspace's % source:
+# icon = "assets/logo.svg"  # a picker emblem (else assets/icon.*; SVGs are themed)
 
 [defaults]
 direction = "both"
@@ -334,6 +335,13 @@ decks, its `assets/` (frozen trace excerpts), and its progress all live in one
 folder you can move or share, and its history stays isolated from everything
 else. Decks *outside* a workspace keep using the global store; `--store <path>`
 overrides either.
+
+**A workspace can carry an icon** shown next to it in the web picker, for quick
+recognition in a long list. Drop an image in the workspace's `assets/` and point
+`icon = "assets/<file>"` at it (or just name it `assets/icon.{svg,png,jpg}` and
+skip the key); an **SVG is tinted to the active theme**, a raster shows as-is.
+Building a workspace with `alix explore --into <dir> --build` draws an abstract
+SVG emblem from the topic automatically, unless you pass `--icon <file>`.
 
 **Workspaces** and plain **Folders** appear in their own picker sections
 (terminal and web): a folder *with* an `alix.toml` shows under **Workspaces**, one

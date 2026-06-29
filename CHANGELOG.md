@@ -29,6 +29,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the same way choice mode skips cards with no usable distractor. Tune the maximum
   with `[ai] keypoint_count` (default 5). First step toward an acquire → explain →
   maintain card lifecycle.
+- **Workspace icons in the web picker.** A workspace can show a small emblem next
+  to it in the picker for quick recognition. Generated as an abstract SVG by
+  `alix explore --into <dir> --build` (grounded in the workspace's topic), or
+  supplied yourself with `--icon <file>` or an `icon = "assets/<file>"` key in
+  `alix.toml` (else a conventional `assets/icon.*`). SVGs are tinted to the active
+  theme; rasters show as-is.
 - **Topology-ordered review (experimental).** `alix deck augment <deck> --target
   topology` derives a graph of how a deck's cards relate — labeled edges, a
   suggested walk, and coarse named **regions** — cached beside your progress (a

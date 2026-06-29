@@ -2562,7 +2562,9 @@ fn icon_field(icon: Option<&Path>, icons: &mut HashMap<String, PathBuf>) -> (Opt
         Some(path) => {
             let key = img_key(path);
             icons.insert(key.clone(), path.to_path_buf());
-            let is_svg = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("svg"));
+            let is_svg = path
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("svg"));
             (Some(format!("/img/{key}")), is_svg)
         }
         None => (None, false),

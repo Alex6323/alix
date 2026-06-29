@@ -2,16 +2,14 @@
 //! drawn by the model at `--build` or supplied by the user. Generation is
 //! best-effort — a failure never blocks a build.
 
-use std::fs;
-use std::io;
-use std::path::{Path, PathBuf};
+use std::{
+    fs, io,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Result, anyhow};
 
-use crate::ask;
-use crate::config::AskConfig;
-use crate::deck::Deck;
-use crate::workspace::Workspace;
+use crate::{ask, config::AskConfig, deck::Deck, workspace::Workspace};
 
 /// Draw an abstract monochrome SVG emblem for the workspace at `dir`, grounded
 /// in its title, description, and member topics, and write it to
@@ -130,7 +128,10 @@ pub fn sanitize_svg(raw: &str) -> Option<String> {
     if !raw.to_ascii_lowercase().contains("<svg") {
         return None;
     }
-    let cleaned = strip_attrs(&remove_blocks(&remove_blocks(raw, "script"), "foreignObject"));
+    let cleaned = strip_attrs(&remove_blocks(
+        &remove_blocks(raw, "script"),
+        "foreignObject",
+    ));
     let lower = cleaned.to_ascii_lowercase();
     let start = lower.find("<svg")?;
     let end = lower.rfind("</svg>")? + "</svg>".len();
