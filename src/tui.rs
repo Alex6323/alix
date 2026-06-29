@@ -27,7 +27,7 @@ use crate::{
     deck::{self, Deck, DeckState},
     exam,
     render::{self, ContextSpan, NoteUnit},
-    scheduler::Grade,
+    scheduler::{Grade, keypoint_grade},
     session::{Session, SessionStats},
     store::Store,
     time,
@@ -201,6 +201,11 @@ pub struct App {
     /// The authored front of each card we've rotated a variant into, so the
     /// original phrasing stays in the rotation (generated variants drop it).
     original_fronts: HashMap<u64, String>,
+    /// The Explain key-point checklist for the current card (one ✓/✗ per cached
+    /// key point) and the highlighted row. Empty when the card has no key points;
+    /// reset and sized when an explain card with key points is revealed.
+    kp_covered: Vec<bool>,
+    kp_cursor: usize,
 }
 
 /// What the user chose at the session-end summary, for `main` to act on after
@@ -249,6 +254,8 @@ impl App {
             augment,
             present_seq: time::now_ms(),
             original_fronts: HashMap::new(),
+            kp_covered: Vec::new(),
+            kp_cursor: 0,
         };
         app.start_card();
         app
@@ -474,6 +481,24 @@ impl App {
                 }
             }
         };
+        // Size the Explain key-point checklist for this card — empty unless it's
+        // an explain card with cached key points (then the reveal is a checklist
+        // whose coverage derives the grade, instead of a gut self-grade).
+        self.kp_covered = self
+            .explain_keypoints()
+            .map(|kp| vec![false; kp.len()])
+            .unwrap_or_default();
+        self.kp_cursor = 0;
+    }
+
+    /// The current card's cached key points, but only in Explain mode (the one
+    /// reconstruction mode the checklist applies to). `None` otherwise — the card
+    /// keeps its plain self-graded reveal.
+    fn explain_keypoints(&self) -> Option<&[String]> {
+        let card = self.session.current()?;
+        (effective_mode(card, self.options.mode_override) == Mode::Explain)
+            .then(|| self.augment.keypoints(card.id()))
+            .flatten()
     }
 
     /// Applies a grade for the current card and persists the progress.
@@ -842,6 +867,28 @@ impl App {
                         KeyCode::Char(c) if !ctrl => input.push(c),
                         _ => {}
                     }
+                } else if !self.kp_covered.is_empty() {
+                    // Key-point checklist: move the cursor, toggle a point, and
+                    // submit — the coverage derives the grade (no gut-grade keys).
+                    let n = self.kp_covered.len();
+                    match key.code {
+                        KeyCode::Char('j') | KeyCode::Down => {
+                            self.kp_cursor = (self.kp_cursor + 1).min(n - 1);
+                        }
+                        KeyCode::Char('k') | KeyCode::Up => {
+                            self.kp_cursor = self.kp_cursor.saturating_sub(1);
+                        }
+                        KeyCode::Char(' ') => {
+                            let c = &mut self.kp_covered[self.kp_cursor];
+                            *c = !*c;
+                        }
+                        KeyCode::Enter => {
+                            let covered = self.kp_covered.iter().filter(|&&b| b).count();
+                            self.finish_card_and_advance(keypoint_grade(covered, n))?;
+                        }
+                        _ if ask_hit => self.enter_ask(),
+                        _ => {}
+                    }
                 } else if failed_hit {
                     self.finish_card_and_advance(Grade::Fail)?;
                 } else if partly_hit {
@@ -1182,6 +1229,12 @@ impl App {
                 l(&k.remove),
                 l(&k.quit)
             ),
+            Phase::Explain { revealed: true, .. } if !self.kp_covered.is_empty() => format!(
+                "SPACE toggle │ j/k move │ ENTER done │ {} remove │ {} ask │ {} leave",
+                l(&k.remove),
+                l(&k.ask),
+                l(&k.quit)
+            ),
             Phase::Explain { revealed: true, .. } => format!(
                 "{} failed │ {} partly │ {} nailed │ {} remove │ {} ask │ {} leave",
                 l(&k.failed),
@@ -1446,16 +1499,55 @@ impl App {
                         lines.push(Line::from(format!("  {input}")));
                         lines.push(Line::default());
                     }
-                    lines.push(Line::from("your answer should cover:".dim()));
-                    for point in &card.back {
-                        lines.push(Line::from(Span::styled(
-                            format!("  • {point}"),
-                            Style::new().fg(Color::Green),
-                        )));
+                    if let Some(points) = self.explain_keypoints() {
+                        // The authored answer (ground truth) first, then a checklist
+                        // of the claims it makes — the coverage derives the grade.
+                        lines.push(Line::from("the answer:".dim()));
+                        for line in &card.back {
+                            lines.push(Line::from(Span::styled(
+                                format!("  {line}"),
+                                Style::new().fg(Color::Green),
+                            )));
+                        }
+                        lines.push(Line::default());
+                        lines.push(Line::from("did your answer cover these?".dim()));
+                        for (i, point) in points.iter().enumerate() {
+                            let on = self.kp_covered.get(i).copied().unwrap_or(false);
+                            let mark = if on { "[x]" } else { "[ ]" };
+                            let mut style =
+                                Style::new().fg(if on { Color::Green } else { Color::Gray });
+                            if i == self.kp_cursor {
+                                style =
+                                    style
+                                        .bold()
+                                        .fg(if on { Color::Green } else { Color::White });
+                            }
+                            lines
+                                .push(Line::from(Span::styled(format!("  {mark} {point}"), style)));
+                        }
+                        push_note(&mut lines, card, area.width);
+                        lines.push(Line::default());
+                        let covered = self.kp_covered.iter().filter(|&&b| b).count();
+                        let verdict = match keypoint_grade(covered, points.len()) {
+                            Grade::Pass => "nailed",
+                            Grade::Partial => "partly",
+                            Grade::Fail => "failed",
+                        };
+                        lines.push(Line::from(
+                            format!("{covered}/{} covered → {verdict}", points.len()).italic(),
+                        ));
+                    } else {
+                        lines.push(Line::from("your answer should cover:".dim()));
+                        for point in &card.back {
+                            lines.push(Line::from(Span::styled(
+                                format!("  • {point}"),
+                                Style::new().fg(Color::Green),
+                            )));
+                        }
+                        push_note(&mut lines, card, area.width);
+                        lines.push(Line::default());
+                        lines.push(Line::from("How well did you cover them?".italic()));
                     }
-                    push_note(&mut lines, card, area.width);
-                    lines.push(Line::default());
-                    lines.push(Line::from("How well did you cover them?".italic()));
                 } else {
                     cursor = Some((
                         area.x + 2 + input.chars().count() as u16,

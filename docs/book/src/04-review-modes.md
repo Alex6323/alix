@@ -96,6 +96,13 @@ tier beneath the AI exam (a later chapter).
     % mode: explain
 ```
 
+Augment the deck with **key points** (`alix deck augment <deck> --target
+keypoints`) and the reveal becomes a **checklist**: you tick each cached point you
+covered and the grade is *derived* from the coverage —
+all → nailed, some → partly, none → failed — so the self-grade is a per-claim
+check rather than a gut call. Atomic-answer cards get no key points and keep the
+plain reveal.
+
 ---
 
 To drop a card mid-session, press the **remove** key (`Ctrl-X` by default) instead

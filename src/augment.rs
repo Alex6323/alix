@@ -60,6 +60,12 @@ pub struct Augmentation {
     /// can't be answered by recognizing a fixed wording. Empty when none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub variants: Vec<String>,
+    /// The load-bearing claims the card's answer makes, decomposed so Explain
+    /// mode can check a reconstruction against them one by one (the grade is
+    /// derived from how many are covered). Empty for an atomic answer that
+    /// doesn't decompose — such a card keeps its plain self-graded reveal.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub keypoints: Vec<String>,
 }
 
 /// A deck-level relational augmentation: an AI-derived graph over the cards plus
@@ -325,6 +331,22 @@ impl AugmentCache {
         self.cards.entry(card_id).or_default().variants = variants;
     }
 
+    /// The cached key points for a card (the Explain-mode checklist rubric), or
+    /// `None` when absent or empty — so the caller can fall back to the plain
+    /// self-graded reveal with one check.
+    pub fn keypoints(&self, card_id: u64) -> Option<&[String]> {
+        self.cards
+            .get(&card_id)
+            .map(|aug| aug.keypoints.as_slice())
+            .filter(|k| !k.is_empty())
+    }
+
+    /// Stores the key points for a card, replacing any previous ones. Does not
+    /// save.
+    pub fn set_keypoints(&mut self, card_id: u64, keypoints: Vec<String>) {
+        self.cards.entry(card_id).or_default().keypoints = keypoints;
+    }
+
     /// All cached deck-level topologies, one per organizing principle.
     pub fn topologies(&self) -> &[Topology] {
         &self.topologies
@@ -493,6 +515,41 @@ pub fn generate_notes(
             if !note.is_empty() {
                 out.insert(item.id, note.to_string());
             }
+        }
+    }
+    Ok(out)
+}
+
+/// Decomposes each card's answer into the few load-bearing, independently
+/// checkable claims (the Explain-mode checklist rubric), up to `count`, optionally
+/// steered by `guidance`. Returns card id → its key points, **omitting a card
+/// whose answer is atomic** — fewer than two claims means there's nothing to check
+/// off one by one, so the card keeps its plain self-graded reveal (just as choice
+/// mode omits cards with no usable distractor).
+pub fn generate_keypoints(
+    items: &[WarmItem],
+    count: usize,
+    guidance: Option<&str>,
+    ask_cfg: &AskConfig,
+) -> Result<HashMap<u64, Vec<String>>> {
+    if items.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let prompt = keypoints_prompt(items, count, guidance);
+    let raw = ask::run(&tool_free(ask_cfg), &prompt, &[])?;
+    let parsed: HashMap<String, Vec<String>> =
+        parse_json(&raw).context("parsing the generated key points")?;
+
+    let mut out = HashMap::new();
+    for (index, item) in items.iter().enumerate() {
+        let Some(raw_points) = parsed.get(&index.to_string()) else {
+            continue;
+        };
+        let cleaned = clean_keypoints(raw_points, count);
+        // An atomic answer yields fewer than two checkable claims — nothing to
+        // tick off — so omit it; the card keeps its plain self-graded reveal.
+        if cleaned.len() >= 2 {
+            out.insert(item.id, cleaned);
         }
     }
     Ok(out)
@@ -753,6 +810,53 @@ fn notes_prompt(items: &[WarmItem], guidance: Option<&str>) -> String {
     s
 }
 
+/// Builds the batched key-points prompt: decompose each answer into its
+/// load-bearing claims, keyed by index. Atomic answers return an empty list so
+/// they aren't forced into a meaningless single "point".
+fn keypoints_prompt(items: &[WarmItem], count: usize, guidance: Option<&str>) -> String {
+    let mut s = format!(
+        "Break each flashcard's ANSWER into its load-bearing claims — a checklist \
+         a learner ticks off after recalling the card. Give at most {count} per card.\n\
+         Condense each point to the BARE MINIMUM: a 2–5 word telegraphic tag, not a \
+         sentence and not a rephrasing of the answer. Drop articles, verbs of being, \
+         and any word the point survives without — but ALWAYS keep the relation that \
+         carries the claim (a comparison like \"more than\", \">\", or \"beats\"; a \
+         cause; an order; a negation): dropping it loses or inverts the meaning. \
+         \"retrieval > re-study\" or \"retrieval beats re-study\" is right; \
+         \"retrieval, re-study\" is wrong.\n\
+         - One distinct idea per point; points must be independent (none restates \
+         another).\n\
+         - Use ONLY what the answer states; invent nothing.\n\
+         - If the answer is atomic — a single fact, term, name, number, or date with \
+         nothing to decompose — return an EMPTY list. Never pad it into one point.\n\
+         Example — answer: \"Reviewing a card just before you would forget it forces \
+         effortful retrieval, which strengthens memory far more than re-reading; \
+         spacing keeps reviews near that forgetting edge, while cramming only loads \
+         short-term memory that soon fades.\"\n\
+         GOOD (condensed): [\"retrieval > re-study\", \"effortful recall\", \"timed \
+         near forgetting\", \"cramming = short-term only\"]\n\
+         BAD (too wordy): [\"Reviewing just before you forget forces effortful \
+         retrieval that strengthens memory more than re-reading\"]\n"
+    );
+    if let Some(g) = guidance {
+        s.push_str(&format!("\nExtra guidance: {}\n", g.trim()));
+    }
+    s.push_str("\nCards (index. question — answer):\n");
+    for (i, item) in items.iter().enumerate() {
+        s.push_str(&format!(
+            "{i}. {} — {}\n",
+            one_line(&item.question),
+            one_line(&item.answer)
+        ));
+    }
+    s.push_str(
+        "\nOutput ONLY JSON, no prose, no code fences — the key is the card index, \
+         the value its list of key points (an empty list for an atomic answer):\n\
+         {\"0\": [\"...\", \"...\"], \"1\": [], ...}\n",
+    );
+    s
+}
+
 /// Builds the batched variants prompt: rephrase each question, keep the answer.
 fn variants_prompt(items: &[WarmItem], count: usize, guidance: Option<&str>) -> String {
     let mut s = format!(
@@ -796,6 +900,25 @@ fn clean_variants(raw: &[String], original: &str, count: usize) -> Vec<String> {
             continue;
         }
         if seen.insert(norm(trimmed)) {
+            out.push(trimmed.to_string());
+            if out.len() == count {
+                break;
+            }
+        }
+    }
+    out
+}
+
+/// Trims, drops empties, dedups (case-insensitively), and caps at `count`.
+fn clean_keypoints(raw: &[String], count: usize) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut out = Vec::new();
+    for point in raw {
+        let trimmed = point.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if seen.insert(trimmed.to_lowercase()) {
             out.push(trimmed.to_string());
             if out.len() == count {
                 break;
@@ -978,6 +1101,21 @@ mod tests {
         assert_eq!(None, reloaded.pick_front(6, "ORIG", 0)); // no variants
     }
 
+    #[test]
+    fn keypoints_roundtrip_through_the_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("augment.json");
+        let mut cache = AugmentCache::open(&path);
+        cache.set_keypoints(9, vec!["claim a".into(), "claim b".into()]);
+        cache.save().unwrap();
+        let reloaded = AugmentCache::open(&path);
+        assert_eq!(
+            Some(["claim a".to_string(), "claim b".to_string()].as_slice()),
+            reloaded.keypoints(9)
+        );
+        assert_eq!(None, reloaded.keypoints(10)); // none cached
+    }
+
     // ── generation ──
 
     fn item(id: u64, question: &str, answer: &str) -> WarmItem {
@@ -1003,6 +1141,52 @@ mod tests {
         let out = generate(&items, 3, None, &ask_config(&cli)).unwrap();
         assert_eq!(vec!["w1", "w2", "w3"], out[&10]);
         assert_eq!(vec!["x1", "x2", "x3"], out[&20]);
+    }
+
+    #[test]
+    fn generate_keypoints_parses_and_maps_each_card() {
+        let _g = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = fake_reply(dir.path(), r#"{"0": ["it moves a", "use_it owns a"]}"#);
+        let items = vec![item(10, "What happens to a?", "a is moved into use_it")];
+        let out = generate_keypoints(&items, 5, None, &ask_config(&cli)).unwrap();
+        assert_eq!(vec!["it moves a", "use_it owns a"], out[&10]);
+    }
+
+    #[test]
+    fn generate_keypoints_omits_an_atomic_card() {
+        let _g = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        // The model returns an empty list for the atomic card and a real
+        // decomposition for the conceptual one — only the latter is kept.
+        let cli = fake_reply(dir.path(), r#"{"0": [], "1": ["claim a", "claim b"]}"#);
+        let items = vec![
+            item(10, "Capital of France?", "Paris"),
+            item(20, "How does X work?", "first A, then B"),
+        ];
+        let out = generate_keypoints(&items, 5, None, &ask_config(&cli)).unwrap();
+        assert!(!out.contains_key(&10)); // atomic → omitted
+        assert_eq!(vec!["claim a", "claim b"], out[&20]);
+    }
+
+    #[test]
+    fn generate_keypoints_omits_a_single_point_as_atomic() {
+        let _g = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        // One lone point isn't a checklist — treated as atomic and dropped.
+        let cli = fake_reply(dir.path(), r#"{"0": ["the only claim"]}"#);
+        let items = vec![item(10, "Q?", "a single fact")];
+        let out = generate_keypoints(&items, 5, None, &ask_config(&cli)).unwrap();
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn generate_keypoints_malformed_json_is_an_error() {
+        let _g = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = fake_reply(dir.path(), "not json at all");
+        let items = vec![item(10, "Q?", "A")];
+        assert!(generate_keypoints(&items, 5, None, &ask_config(&cli)).is_err());
     }
 
     #[test]
@@ -1313,6 +1497,7 @@ mod tests {
             model: Some("haiku".into()),
             distractor_count: 3,
             variant_count: 4,
+            keypoint_count: 5,
             timeout_secs: 42,
         };
         let cfg = run_config(&ai, &ask);

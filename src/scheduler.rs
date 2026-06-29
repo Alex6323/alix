@@ -33,6 +33,20 @@ impl Grade {
     }
 }
 
+/// Derives a [`Grade`] from how many of a card's key points a reconstruction
+/// covered (the Explain-mode checklist): none → `Fail`, all → `Pass`, some →
+/// `Partial`. A `total` of 0 is a `Pass` — there's no rubric to miss. This is the
+/// one place the rule lives; both frontends call it.
+pub fn keypoint_grade(covered: usize, total: usize) -> Grade {
+    if total == 0 || covered >= total {
+        Grade::Pass
+    } else if covered == 0 {
+        Grade::Fail
+    } else {
+        Grade::Partial
+    }
+}
+
 /// Which scheduling algorithm to use.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
 pub enum SchedulerKind {
@@ -270,6 +284,15 @@ mod tests {
         assert_eq!(0, s.streak); // partly resets the streak
         assert_eq!(1, s.total_passes); // ...and doesn't count as a pass
         assert!(!s.history.last().unwrap().passed); // logged as not-passed
+    }
+
+    #[test]
+    fn keypoint_grade_derives_from_coverage() {
+        assert_eq!(Grade::Fail, keypoint_grade(0, 5)); // none covered
+        assert_eq!(Grade::Partial, keypoint_grade(1, 5)); // any coverage is "some"
+        assert_eq!(Grade::Partial, keypoint_grade(4, 5));
+        assert_eq!(Grade::Pass, keypoint_grade(5, 5)); // all covered
+        assert_eq!(Grade::Pass, keypoint_grade(0, 0)); // no rubric → pass
     }
 
     #[test]

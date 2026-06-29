@@ -7,6 +7,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Explain-mode key points — a checklist that derives the grade.** A new
+  augmentation, `alix deck augment <deck> --target keypoints`, has Claude break
+  each card's answer into the few load-bearing claims a reconstruction must hit
+  (cached beside your progress, like distractors/notes). In **explain** mode the
+  reveal then becomes a **checklist**: you tick the points you covered and the
+  grade is *derived* — all → nailed, some → partly, none → failed — turning the
+  self-grade from a vibe into a per-claim check (TUI and web). An *atomic* answer
+  (a single fact/term/date) is left without key points and keeps its plain reveal,
+  the same way choice mode skips cards with no usable distractor. Tune the maximum
+  with `[ai] keypoint_count` (default 5). First step toward an acquire → explain →
+  maintain card lifecycle.
 - **Topology-ordered review (experimental).** `alix deck augment <deck> --target
   topology` derives a graph of how a deck's cards relate — labeled edges, a
   suggested walk, and coarse named **regions** — cached beside your progress (a
@@ -122,6 +133,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   workspace. Up / down still move between decks. (The drawer is new this release,
   so only the Browse-key and click-to-select changes affect existing muscle
   memory.)
+- **`alix deck augment` says what it's doing.** It now prints which augmentation
+  it's generating, for which deck, and with which model before the (foreground,
+  possibly slow) Claude call, instead of hanging silently until the result.
 - **Breaking — one deck per session.** `alix review` and `alix browse` now take
   exactly one deck *file*: merging several loose decks into a combined session is
   gone, and a whole workspace is no longer reviewed at once. Workspaces stay an

@@ -315,6 +315,13 @@
   .chip.failed:hover { border-color: var(--again); color: var(--again); }
   .chip.partly:hover { border-color: var(--warn); color: var(--warn); }
   .chip.nailed:hover { border-color: var(--good); color: var(--good); }
+  /* the explain checklist's submit button, once every point is answered: a
+     filled chip tinted by the derived verdict (red / amber / green). */
+  .chip.v-failed, .chip.v-partly, .chip.v-nailed { color: var(--void); }
+  .chip.v-failed { background: var(--again); border-color: var(--again); }
+  .chip.v-partly { background: var(--warn); border-color: var(--warn); }
+  .chip.v-nailed { background: var(--good); border-color: var(--good); }
+  .chip.v-failed:hover, .chip.v-partly:hover, .chip.v-nailed:hover { filter: brightness(1.08); color: var(--void); }
 
   /* ── ask Claude ── */
   .ask { width: var(--card-w); max-width: 92vw; display: flex; flex-direction: column; gap: 12px; animation: deal 0.3s both; }
@@ -343,6 +350,16 @@
   .explain-input:focus { outline: none; border-color: var(--bolt); }
   .explain-label { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); margin: 6px 0 4px; }
   .explain-answer { white-space: pre-wrap; color: var(--ink); opacity: 0.85; margin-bottom: 6px; }
+  /* explain key-point checklist — mirrors the trace walk's key-points list
+     (green ▸ bullets), with a per-point yes/no the cursor walks top to bottom. */
+  .kp-list { margin: 0; padding: 0; list-style: none; text-align: left; }
+  .kp-list .lbl { display: block; font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--good); margin-bottom: 6px; }
+  .kp-list li.pt { position: relative; padding: 5px 8px 5px 22px; color: var(--ink); line-height: 1.45; border-radius: 7px; cursor: pointer; }
+  .kp-list li.pt::before { content: "▸"; position: absolute; left: 6px; color: var(--good); }
+  .kp-list li.pt.cur { background: rgba(255,255,255,0.05); box-shadow: inset 2px 0 0 var(--bolt); }
+  .kp-list li.pt.yes::before { content: "✓"; color: var(--good); }
+  .kp-list li.pt.no { color: var(--dim); }
+  .kp-list li.pt.no::before { content: "✗"; color: var(--again); }
 
   /* ── AI exam ── */
   .exam { width: var(--card-w); max-width: 92vw; display: flex; flex-direction: column; gap: 12px; animation: deal 0.3s both; max-height: 78vh; overflow-y: auto; padding-right: 4px; }
@@ -416,6 +433,8 @@ let lastWorkspace = null; // name of the workspace you launched from, to return 
 let drawerSel = { deck: null, topology: null, region: null };
 let topoCache = {};
 let explainInput = ""; // the typed reconstruction on an explain card (client-side)
+let marks = [];        // per-key-point yes/no/pending for an explain checklist (client-side)
+let kpCur = 0;         // the key point the cursor is on, walked top to bottom
 let asking = false;   // the ask-Claude overlay is open
 let askData = { transcript: [], thinking: false, status: null, error: null };
 let askInfo = { model: "default", effort: "default" }; // the tutor's model + effort, from /api/ask-info
@@ -470,7 +489,8 @@ function renderLeaveConfirm() {
   chip("Stay", "primary", cancelLeave, "esc");
 }
 
-function apply(s) { state = s; revealed = 0; citationView = false; feedback = null; explainInput = ""; render(); }
+function apply(s) { state = s; revealed = 0; citationView = false; feedback = null; explainInput = ""; marks = []; kpCur = 0; render(); }
+function hasKeypoints() { return isExplain() && state.keypoints && state.keypoints.length > 0; }
 function isChoice() { return state.mode === "choice" && state.choices; }
 function isInput() { return state.mode === "typing" || state.mode === "fuzzy"; }
 function isExplain() { return state.mode === "explain"; }
@@ -1518,12 +1538,15 @@ function renderChoiceFeedback(a) {
 function renderExplain(a) {
   if (revealed === 0) {
     const ta = el("textarea", "explain-input");
-    ta.placeholder = "Type your answer… (optional)";
+    ta.placeholder = "Type your answer… (Shift+Enter to reveal)";
     ta.rows = 3;
     ta.value = explainInput;
     ta.addEventListener("input", () => { explainInput = ta.value; });
     ta.addEventListener("keydown", e => {
-      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); explainReveal(); }
+      // Enter inserts a newline (compose freely); Shift+Enter reveals. Stop the
+      // event here so the same keypress doesn't also reach the document handler
+      // and submit the (now visible) checklist in one go.
+      if (e.key === "Enter" && e.shiftKey) { e.preventDefault(); e.stopPropagation(); explainReveal(); }
     });
     a.appendChild(ta);
     setTimeout(() => ta.focus(), 0);
@@ -1533,10 +1556,53 @@ function renderExplain(a) {
     a.appendChild(el("div", "explain-label", "your answer"));
     a.appendChild(el("div", "explain-answer", explainInput));
   }
+  // With cached key points, the reveal is the same green ▸ list a trace walk
+  // shows — but you walk it top to bottom marking each yes/no, and the coverage
+  // derives the grade. Otherwise show the plain back lines.
+  if (hasKeypoints()) {
+    if (marks.length !== state.keypoints.length) marks = state.keypoints.map(() => undefined);
+    // The authored answer (the ground truth) first, then the checklist of the
+    // claims it makes — the key points are a decomposition, not a replacement.
+    a.appendChild(el("div", "explain-label", "the answer"));
+    const ans = el("div", "reveal");
+    for (const p of state.card.back) ans.appendChild(el("div", "answer", p));
+    a.appendChild(ans);
+    const ul = el("ul", "kp-list reveal");
+    ul.appendChild(el("li", "lbl", "did your answer cover these?"));
+    state.keypoints.forEach((p, i) => {
+      let cls = "pt";
+      if (marks[i] === true) cls += " yes";
+      else if (marks[i] === false) cls += " no";
+      if (i === kpCur) cls += " cur";
+      const li = el("li", cls, p);
+      li.addEventListener("click", () => clickKeypoint(i));
+      ul.appendChild(li);
+    });
+    a.appendChild(ul);
+    return;
+  }
   a.appendChild(el("div", "explain-label", "your answer should cover"));
   const pts = el("div", "reveal");
   for (const p of state.card.back) pts.appendChild(el("div", "answer", "• " + p));
   a.appendChild(pts);
+}
+// Walk the key-point list: mark the current point yes/no and advance; move the
+// cursor; click toggles a point (and lands the cursor on it).
+function answerKeypoint(val) { marks[kpCur] = val; kpCur = Math.min(kpCur + 1, marks.length - 1); fillBottom(); renderLegend(); }
+function moveKeypoint(d) { kpCur = Math.max(0, Math.min(kpCur + d, marks.length - 1)); fillBottom(); }
+function clickKeypoint(i) { kpCur = i; marks[i] = marks[i] === true ? false : true; fillBottom(); renderLegend(); }
+function keypointsYes() { return marks.filter(m => m === true).length; }
+function keypointsAnswered() { return marks.length > 0 && marks.every(m => m !== undefined); }
+// Display-only mirror of the lib's keypoint_grade (the server stays authoritative
+// on submit) — recomputed each render, so re-toggling a point updates the verdict.
+function keypointVerdict() {
+  const yes = keypointsYes(), total = state.keypoints.length;
+  return (total === 0 || yes >= total) ? "nailed" : yes === 0 ? "failed" : "partly";
+}
+// Submit: the server derives failed/partly/nailed from how many points were
+// covered (the one keypoint_grade rule, in the lib). Unanswered = not covered.
+function submitKeypoints() {
+  api("/api/grade", post({ covered: keypointsYes(), total: state.keypoints.length })).then(apply);
 }
 function explainReveal() {
   const ta = document.querySelector(".explain-input");
@@ -1609,11 +1675,24 @@ function renderLegend() {
     chip("Submit", "primary", submitCheck, "enter");
     chip("Skip", "", skip, label(KEYS.skip));
   } else if (isExplain() && !fullyRevealed()) {
-    chip("Reveal points", "primary", explainReveal, "enter");
+    chip("Reveal", "primary", explainReveal, "shift+enter");
     chip("Skip", "", skip, label(KEYS.skip));
   } else if (!fullyRevealed()) {
     chip(state.mode === "line" && revealed > 0 ? "Reveal next" : "Reveal", "primary", reveal, label(KEYS.reveal));
     chip("Skip", "", skip, label(KEYS.skip));
+  } else if (hasKeypoints()) {
+    chip("Yes", "nailed", () => answerKeypoint(true), "y");
+    chip("No", "failed", () => answerKeypoint(false), "n");
+    if (keypointsAnswered()) {
+      // Every point judged: the submit button becomes the derived verdict
+      // (re-derived each render, so changing a point updates it).
+      const v = keypointVerdict();
+      chip(v[0].toUpperCase() + v.slice(1), "v-" + v, submitKeypoints, "enter");
+    } else {
+      const answered = marks.filter(m => m !== undefined).length;
+      chip(`Done ${answered}/${state.keypoints.length}`, "primary", submitKeypoints, "enter").disabled = true;
+    }
+    chip("Ask", "", openAsk, label(KEYS.ask));
   } else {
     chip("Failed", "failed", () => grade("failed"), label(KEYS.failed));
     chip("Partly", "partly", () => grade("partly"), label(KEYS.partly));
@@ -1745,10 +1824,12 @@ document.addEventListener("keydown", (e) => {
     else if (e.ctrlKey && hit(e, KEYS.skip)) { e.preventDefault(); skip(); }
     return;
   }
-  // Explain before reveal: the textarea takes plain keys and Enter-to-reveal;
-  // only Ctrl shortcuts act here.
+  // Explain before reveal: the textarea takes plain keys (Enter = newline) and
+  // Shift+Enter reveals. The textarea handles Shift+Enter when focused (and stops
+  // it there); this covers the case where focus has left the textarea.
   if (isExplain() && !fullyRevealed()) {
-    if (e.ctrlKey && hit(e, KEYS.remove)) { e.preventDefault(); remove(); }
+    if (e.key === "Enter" && e.shiftKey) { e.preventDefault(); explainReveal(); }
+    else if (e.ctrlKey && hit(e, KEYS.remove)) { e.preventDefault(); remove(); }
     else if (e.ctrlKey && hit(e, KEYS.skip)) { e.preventDefault(); skip(); }
     return;
   }
@@ -1767,6 +1848,17 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   if (hit(e, KEYS.ask)) { e.preventDefault(); openAsk(); return; }
+  // The key-point checklist replaces the grade buttons: walk the list top to
+  // bottom with y/n (auto-advancing), j/k or arrows to move, Enter to submit once
+  // every point is answered (the server derives the grade from coverage).
+  if (hasKeypoints()) {
+    if (e.key === "y" || e.key === "Y") { e.preventDefault(); answerKeypoint(true); }
+    else if (e.key === "n" || e.key === "N") { e.preventDefault(); answerKeypoint(false); }
+    else if (e.key === "ArrowDown" || e.key === "j") { e.preventDefault(); moveKeypoint(1); }
+    else if (e.key === "ArrowUp" || e.key === "k") { e.preventDefault(); moveKeypoint(-1); }
+    else if (e.key === "Enter" && keypointsAnswered()) { e.preventDefault(); submitKeypoints(); }
+    return;
+  }
   if (hit(e, KEYS.failed)) { e.preventDefault(); grade("failed"); }
   else if (hit(e, KEYS.partly)) { e.preventDefault(); grade("partly"); }
   else if (hit(e, KEYS.nailed)) { e.preventDefault(); grade("nailed"); }

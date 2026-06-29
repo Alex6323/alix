@@ -410,6 +410,9 @@ pub struct AiConfig {
     pub distractor_count: usize,
     /// How many reworded question variants to request per card.
     pub variant_count: usize,
+    /// The most key points to request when decomposing a card's answer (the
+    /// Explain-mode checklist rubric).
+    pub keypoint_count: usize,
     /// How long to wait for a generation call before giving up. A whole-deck
     /// batch is a big call (like `[generate]`/`[exam]`), so this is generous.
     pub timeout_secs: u64,
@@ -421,6 +424,7 @@ impl Default for AiConfig {
             model: None,
             distractor_count: 3,
             variant_count: 4,
+            keypoint_count: 5,
             timeout_secs: 300,
         }
     }
@@ -501,6 +505,7 @@ struct RawAi {
     model: Option<String>,
     distractor_count: Option<usize>,
     variant_count: Option<usize>,
+    keypoint_count: Option<usize>,
     timeout_secs: Option<u64>,
 }
 
@@ -728,6 +733,9 @@ impl Config {
         if let Some(count) = raw.ai.variant_count {
             ai.variant_count = count;
         }
+        if let Some(count) = raw.ai.keypoint_count {
+            ai.keypoint_count = count;
+        }
         if let Some(secs) = raw.ai.timeout_secs {
             ai.timeout_secs = secs;
         }
@@ -917,6 +925,7 @@ pub fn default_config_toml() -> &'static str {
 # model = ""                    # --model override; empty = use [ask] / CLI default
 # distractor_count = 3          # wrong options generated per choice card
 # variant_count = 4             # reworded question variants generated per card
+# keypoint_count = 5            # max key points per card (explain-mode checklist)
 # timeout_secs = 300            # a whole-deck batch is a big call; wait this long
 
 # Local web frontend (`alix serve`). Binds to localhost by default; `--lan`

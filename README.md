@@ -88,6 +88,7 @@ alix browse mydeck.txt          # read through cards, no grading or scheduling
 alix deck generate <url-or-path>   # generate a facts deck from a web page or a file/dir
 alix deck augment mydeck.txt --target choices   # AI distractors (cached; review reads them)
 alix deck augment mydeck.txt --target notes --with "add trivia"   # AI notes
+alix deck augment mydeck.txt --target keypoints   # decompose answers into an explain-mode checklist
 alix import cards.tsv            # import an Anki TSV (front<TAB>back) into a deck
 alix exam mydeck.txt            # AI exam against the deck's % source: (gates unlocks)
 alix trace mytrace.txt          # walk a predict-and-verify path through a % source:
@@ -524,6 +525,14 @@ checked: a self-graded mode can't verify your answer, so it doesn't pretend to
 comparison). It pairs with the ask-Claude helper, and is the day-to-day,
 self-graded tier below the [AI exam](#the-ai-exam-alix-exam).
 
+If you [augment the deck with **key points**](#augment-a-deck--alix-deck-augment)
+(`--target keypoints`), an explain card's reveal becomes a **checklist**: you tick
+each cached key point you covered, and the grade is *derived* from the coverage —
+all → nailed, some → partly, none → failed — instead of a single gut judgment. It
+turns the self-grade from a vibe into a per-claim check (the cheap, in-loop cousin
+of the AI exam). Atomic-answer cards aren't given key points, so they keep the
+plain reveal.
+
 To throw a card away, press the **remove** key (`Ctrl-X` by default) on it
 instead of grading — it is dropped from the session without being asked again
 (cloze siblings go too). The marked cards are deleted from their deck files,
@@ -726,6 +735,7 @@ study stays instant and fully offline — Claude is never called mid-session.
 alix deck augment mydeck.txt --target choices    # multiple-choice distractors
 alix deck augment mydeck.txt --target notes      # a trivia / mnemonic note per card
 alix deck augment mydeck.txt --target questions  # reworded phrasings of each question
+alix deck augment mydeck.txt --target keypoints  # decompose answers into a checklist (explain mode)
 alix deck augment mydeck.txt --target topology   # a graph + walk + regions (experimental)
 alix deck augment mydeck.txt --target choices --with "use common misconceptions"
 ```
@@ -762,6 +772,13 @@ alix deck augment mydeck.txt --target choices --with "use common misconceptions"
 
   So write **self-contained questions** and morphing earns its keep; vague fronts
   like "What is it?" are a smell either way.
+- **`--target keypoints`** decomposes each card's answer into the few
+  load-bearing claims a from-memory reconstruction must hit. In
+  [**explain** mode](#review) the reveal becomes a **checklist** of those points:
+  you tick the ones you covered and the grade is *derived* — all → nailed, some →
+  partly, none → failed — so the self-grade is a per-claim check, not a vibe.
+  An *atomic* answer (a single fact/term/date with nothing to decompose) is left
+  alone, keeping its plain reveal. Tune the maximum with `[ai] keypoint_count`.
 - **`--target topology`** *(experimental)* derives a **graph of how the deck's
   cards relate** — labeled edges, a suggested **walk**, and a handful of coarse
   named **regions** — cached like the rest. A deck can hold several topologies,

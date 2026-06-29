@@ -42,7 +42,7 @@ use crate::{
     exam, picker,
     recent::RecentDecks,
     render::{self, NoteUnit},
-    scheduler::{Grade, SchedulerKind},
+    scheduler::{Grade, SchedulerKind, keypoint_grade},
     session::{Session, now_ms},
     store::Store,
     trace::{self, Delta, Excerpt, Phase, SourceBase, Walk},
@@ -212,6 +212,10 @@ struct StateDto {
     /// otherwise, or when the card has too few distractors (the page then
     /// falls back to reveal). The correct index is never sent here.
     choices: Option<Vec<String>>,
+    /// For `explain` mode with cached key points, the rubric the reveal checks a
+    /// reconstruction against — each ticked ✓/✗, the coverage deriving the grade.
+    /// `null` for any other mode or when none are cached (plain self-grade).
+    keypoints: Option<Vec<String>>,
     /// The answer mode name (`flip`, `line`, …); the page reveals
     /// line-by-line for `line` and flip-style otherwise.
     mode: &'static str,
@@ -2237,6 +2241,7 @@ fn review_state(
             phase: "select",
             card: None,
             choices: None,
+            keypoints: None,
             mode: mode_name(Mode::default()),
             remaining: 0,
             initial: 0,
@@ -2262,6 +2267,13 @@ fn review_state(
             choice::build(c, session.cards(), c.id(), r.augment.distractors(c.id()))
                 .map(|q| q.options)
         })
+    } else {
+        None
+    };
+    // Explain mode with cached key points reveals them as a checklist whose
+    // coverage derives the grade; any other mode keeps the plain reveal.
+    let keypoints = if mode == Mode::Explain {
+        card.and_then(|c| r.augment.keypoints(c.id()).map(<[String]>::to_vec))
     } else {
         None
     };
@@ -2335,6 +2347,7 @@ fn review_state(
         phase: "review",
         card: card_with_citation,
         choices,
+        keypoints,
         mode: mode_name(mode),
         remaining: session.remaining(),
         initial: session.initial_size,
@@ -2726,17 +2739,27 @@ fn mode_name(mode: Mode) -> &'static str {
     }
 }
 
-/// Parses a `{"grade":"failed|partly|got"}` POST body into a [`Grade`].
+/// Parses a grade POST body into a [`Grade`]: either an explicit
+/// `{"grade":"failed|partly|nailed"}`, or `{"covered":n,"total":m}` from the
+/// Explain key-point checklist (derived once, in the lib, via `keypoint_grade`).
 fn read_grade(request: &mut Request) -> Option<Grade> {
     #[derive(Deserialize)]
     struct Body {
-        grade: String,
+        grade: Option<String>,
+        covered: Option<usize>,
+        total: Option<usize>,
     }
     let body: Body = serde_json::from_reader(request.as_reader()).ok()?;
-    match body.grade.as_str() {
-        "failed" => Some(Grade::Fail),
-        "partly" => Some(Grade::Partial),
-        "nailed" => Some(Grade::Pass),
+    if let Some(g) = body.grade.as_deref() {
+        return match g {
+            "failed" => Some(Grade::Fail),
+            "partly" => Some(Grade::Partial),
+            "nailed" => Some(Grade::Pass),
+            _ => None,
+        };
+    }
+    match (body.covered, body.total) {
+        (Some(covered), Some(total)) => Some(keypoint_grade(covered, total)),
         _ => None,
     }
 }

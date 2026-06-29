@@ -243,6 +243,10 @@ enum AugmentTarget {
     /// Reworded question variants, rotated at review time so the card can't be
     /// answered by recognizing one fixed wording. Plain (non-cloze) cards only.
     Questions,
+    /// Key points: the load-bearing claims a card's answer makes, so Explain mode
+    /// can check a reconstruction against them and derive the grade. Atomic
+    /// answers (nothing to decompose) are skipped.
+    Keypoints,
     /// A deck-level topology: a graph of how the cards relate plus a suggested
     /// walk, so review can present them in a connected order. Experimental —
     /// prints the walk so you can judge whether it lands. `--with` steers the
@@ -2031,6 +2035,27 @@ fn augment_cmd(args: AugmentArgs) -> Result<()> {
     let cache_path = augment::augment_path_for(store.path());
     let mut cache = AugmentCache::open(&cache_path);
 
+    // The Claude call below is one batched, foreground request that can take a
+    // while, so say what's happening rather than hang silently.
+    let what = match args.target {
+        AugmentTarget::Choices => "multiple-choice distractors",
+        AugmentTarget::Notes => "trivia / mnemonic notes",
+        AugmentTarget::Questions => "reworded question variants",
+        AugmentTarget::Keypoints => "answer key points",
+        AugmentTarget::Topology => "a topology",
+    };
+    let model = config
+        .ai
+        .model
+        .as_deref()
+        .or(config.ask.model.as_deref())
+        .unwrap_or("the default model");
+    eprintln!(
+        "Generating {what} for \"{}\" with Claude ({model}) — one batched call, \
+         this can take a moment…",
+        deck.subject
+    );
+
     let (made, total, kind) = match args.target {
         AugmentTarget::Choices => {
             let items = warm_items(&deck.cards);
@@ -2076,6 +2101,19 @@ fn augment_cmd(args: AugmentArgs) -> Result<()> {
                 cache.set_variants(*id, variants.clone());
             }
             (map.len(), total, "question variants")
+        }
+        AugmentTarget::Keypoints => {
+            let items = warm_items(&deck.cards);
+            if items.is_empty() {
+                bail!("the deck has no cards to break into key points");
+            }
+            let total = items.len();
+            let map =
+                augment::generate_keypoints(&items, config.ai.keypoint_count, guidance, &ask_cfg)?;
+            for (id, keypoints) in &map {
+                cache.set_keypoints(*id, keypoints.clone());
+            }
+            (map.len(), total, "key points")
         }
         AugmentTarget::Topology => {
             let items = warm_items(&deck.cards);
