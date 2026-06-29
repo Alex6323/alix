@@ -206,4 +206,11 @@ to this codebase. When in doubt, mirror the surrounding code.
   back line resets it. Preserve this whenever you touch the parser,
   `hash_lines`, or deck rewriting — a careless change silently wipes users'
   progress.
-- Roadmap and design rationale live in `ROADMAP.md` (gitignored, local).
+- Roadmap and design rationale live in `ROADMAP.md` (gitignored, local) — the raw
+  idea dump, items tagged `* [ ] -- <P0–P3|--> - (Category) <text>` (`--`/`[x]` =
+  done). `PLAN.md` (also gitignored, local) is the **plan at a glance**: a
+  roadmap-vs-code audit (which items are secretly already shipped), the assigned
+  priorities, and a **mermaid gantt** of the actionable P0–P2 work. The roadmap
+  drifts from the code — items get built without being struck — so re-verify any
+  "open" item against the code before treating it as todo (recent audit found
+  ~7 already shipped); keep both files in sync when you finish or reprioritize work.
