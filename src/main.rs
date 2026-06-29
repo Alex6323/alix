@@ -145,6 +145,11 @@ struct ExploreArgs {
     #[arg(long, requires = "into", conflicts_with = "walk")]
     build: bool,
 
+    /// With --build, use this image file as the workspace icon instead of letting
+    /// Claude draw one. Copied into the workspace's `assets/`. SVG or raster.
+    #[arg(long, requires = "build")]
+    icon: Option<PathBuf>,
+
     /// Build an explore walk instead of a plan: a predict-verify trace over the
     /// source's shape (what it is → its parts → entry → spine → what to trace),
     /// written to a file and walked right away.
@@ -2788,6 +2793,24 @@ fn explore_cmd(args: ExploreArgs) -> Result<()> {
                 }
             }
             Err(e) => eprintln!("warning: could not snapshot the source: {e:#}"),
+        }
+        // A workspace icon: the user's file if given, else an abstract emblem the
+        // model draws from what it just built. Best-effort — never fails the build.
+        match args.icon.as_deref() {
+            Some(src) => match alix::icon::install(&report.dir, src) {
+                Ok(_) => println!(
+                    "{DIM}Installed the workspace icon into {}/assets.{RESET}",
+                    report.dir.display()
+                ),
+                Err(e) => eprintln!("warning: could not install the workspace icon: {e:#}"),
+            },
+            None => match alix::icon::generate(&report.dir, &config.ask) {
+                Ok(_) => println!(
+                    "{DIM}Drew a workspace icon into {}/assets.{RESET}",
+                    report.dir.display()
+                ),
+                Err(e) => eprintln!("warning: could not draw a workspace icon: {e:#}"),
+            },
         }
         println!(
             "{DIM}Walk a trace:  alix trace {}/<file>   ·   review the set:  \
