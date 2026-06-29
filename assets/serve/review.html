@@ -250,7 +250,7 @@
   .summary .row b { color: var(--ink); font-family: var(--mono); font-weight: 600; }
 
   /* ── deck-selection screen ────────────────────────────────────────── */
-  .select { width: var(--card-w); text-align: left; animation: deal 0.3s both; }
+  .select { width: var(--card-w); text-align: left; animation: deal 0.3s both; align-self: stretch; display: flex; flex-direction: column; min-height: 0; }
   .select .lede { font-family: var(--mono); color: var(--bolt); font-size: 0.7rem; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 16px; }
   .select .msg { color: var(--dim); }
   .deck-filter { width: 100%; box-sizing: border-box; margin-bottom: 12px; padding: 11px 14px; background: rgba(0,0,0,0.25); border: 1px solid var(--line); border-radius: 11px; color: var(--ink); font: inherit; font-size: 0.95rem; }
@@ -258,7 +258,7 @@
   .deck-filter:focus { outline: none; border-color: var(--bolt); }
   .decklist { display: flex; flex-direction: column; gap: 8px; }
   /* a single scroll container holds both the deck and workspace sections */
-  .lists { display: flex; flex-direction: column; max-height: 62vh; overflow-y: auto; scrollbar-width: none; }
+  .lists { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none; }
   .lists::-webkit-scrollbar { width: 0; }
   .select .section { font-family: var(--mono); font-size: 0.64rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim); margin: 18px 2px 9px; }
   .lists > .section:first-child { margin-top: 2px; }
