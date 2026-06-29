@@ -41,6 +41,9 @@
   .bar .spacer { flex: 1; }
   /* stage histogram (new|s1|s2|s3|s4|s5) + cards left, like the TUI header */
   .bar .hist { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .bar-filter { flex: 1; min-width: 120px; background: rgba(0,0,0,0.25); border: 1px solid var(--line); border-radius: 8px; color: var(--ink); font: inherit; font-size: 0.82rem; padding: 5px 12px; }
+  .bar-filter::placeholder { color: var(--dim); }
+  .bar-filter:focus { outline: none; border-color: var(--bolt); }
   .muted { color: var(--dim); }
 
   /* overflow menu: only the destructive action lives here */
@@ -402,9 +405,10 @@
       <svg viewBox="0 0 512 512" aria-hidden="true"><path d="M 269 168 L 221 254 L 253 254 L 237 348 L 297 246 L 263 246 L 285 168 Z" fill="currentColor"/></svg>
       alix
     </span>
-    <span class="sep">·</span>
+    <span class="sep" id="sep">·</span>
     <span class="deck" id="deck"></span>
-    <span class="spacer"></span>
+    <input class="bar-filter" id="barFilter" type="text" autocomplete="off" placeholder="Search" style="display:none">
+    <span class="spacer" id="spacer"></span>
     <span class="hist" id="hist"></span>
     <span class="menu-wrap" id="menuWrap">
       <button class="kebab" id="kebab" aria-label="More actions" aria-haspopup="true">⋮</button>
@@ -455,6 +459,15 @@ const deckEl = document.getElementById("deck");
 const histEl = document.getElementById("hist");
 const scoreEl = document.getElementById("score");
 const menuWrap = document.getElementById("menuWrap");
+const sepEl = document.getElementById("sep");
+const spacerEl = document.getElementById("spacer");
+const barFilter = document.getElementById("barFilter");
+// The header shows the picker search (#barFilter, filling the bar), a breadcrumb
+// (#deck, during review/exam), or neither (a drill-in / mastered sub-view) —
+// never the search and a breadcrumb at once.
+function headerSearch() { sepEl.style.display = "none"; deckEl.style.display = "none"; spacerEl.style.display = "none"; barFilter.style.display = ""; }
+function headerBreadcrumb() { barFilter.style.display = "none"; spacerEl.style.display = ""; sepEl.style.display = ""; deckEl.style.display = ""; }
+function headerNone() { barFilter.style.display = "none"; spacerEl.style.display = ""; sepEl.style.display = "none"; deckEl.style.display = "none"; }
 const menu = document.getElementById("menu");
 
 async function api(path, opts) { return (await fetch(path, opts)).json(); }
@@ -553,6 +566,7 @@ function render() {
   if (examData) { renderExam(); return; }
   if (state.phase === "select") { renderSelect(); return; }
 
+  headerBreadcrumb();
   deckEl.textContent = state.label;
   histEl.textContent = ""; // no stage ladder in the header — it's noise (the
                            // per-stage breakdown stays in the session summary)
@@ -772,6 +786,7 @@ function examRemediate() {
 
 function renderExam() {
   const d = examData;
+  headerBreadcrumb();
   deckEl.textContent = "exam · " + d.deck;
   histEl.textContent = d.strictness;
   scoreEl.innerHTML = "";
@@ -870,7 +885,7 @@ function renderExam() {
 // mastered 🎉 decks live in the Mastered window (m). The filter searches every
 // loose deck.
 async function renderSelect() {
-  deckEl.textContent = "select decks";
+  deckEl.textContent = "";
   histEl.textContent = "";
   scoreEl.innerHTML = "";
   menuWrap.style.display = "none";
@@ -1000,10 +1015,20 @@ async function renderSelect() {
     let drawerCycle = null; // (dir)=>{} to step the drawer's region selection, when open
 
     const wrap = el("div", "select");
-    wrap.appendChild(el("div", "lede", opts.lede));
-    const filter = el("input", "deck-filter");
-    filter.type = "text"; filter.placeholder = opts.filterPlaceholder || "Search  ·  / or Ctrl-F"; filter.autocomplete = "off";
-    wrap.appendChild(filter);
+    if (opts.lede) wrap.appendChild(el("div", "lede", opts.lede));
+    let filter;
+    if (opts.headerFilter) {
+      // The picker's search lives in the header bar, filling it; no in-content box.
+      headerSearch();
+      filter = barFilter;
+      filter.value = "";
+    } else {
+      headerNone();
+      filter = el("input", "deck-filter");
+      filter.type = "text"; filter.autocomplete = "off";
+      wrap.appendChild(filter);
+    }
+    filter.placeholder = opts.filterPlaceholder || "Search  ·  / or Ctrl-F";
 
     const lists = el("div", "lists");
     const sectionEls = [];
@@ -1244,14 +1269,14 @@ async function renderSelect() {
       emptyHint.style.display = (q && !visibleRows().length) ? "" : "none";
     }
 
-    filter.addEventListener("input", applyFilter);
-    filter.addEventListener("keydown", (e) => {
+    filter.oninput = applyFilter;
+    filter.onkeydown = (e) => {
       const v = visibleRows();
       if (e.key === "ArrowDown") { e.preventDefault(); if (v.length) v[0].focus(); }
       else if (e.key === "Enter") { e.stopPropagation(); e.preventDefault(); if (v.length) v[0].focus(); } // focus the first match, don't launch it
       else if (e.key === "Escape") { e.stopPropagation(); e.preventDefault(); if (v.length) v[0].focus(); else filter.blur(); }
       else if (e.key === "Backspace") { e.stopPropagation(); } // edit the filter, don't go back
-    });
+    };
 
     lists.addEventListener("keydown", (e) => {
       // Keys inside the open drawer (its native topology picker) belong to it —
@@ -1301,7 +1326,7 @@ async function renderSelect() {
     });
     if (folders.length) sections.push({ title: "Folders", rows: folders.map(openRow) });
     renderList({
-      lede: "pick a deck to start — open a workspace to drill in",
+      headerFilter: true,
       filterPlaceholder: "Search decks & workspaces  ·  / or Ctrl-F",
       sections, back: null, allowMastered: true,
     });
