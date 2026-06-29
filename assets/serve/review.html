@@ -34,6 +34,8 @@
   .bar-inner { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 14px; width: 100%; }
   .bar-center { justify-self: center; min-width: 0; display: flex; align-items: center; }
   .bar-right { justify-self: end; display: flex; align-items: center; gap: 14px; }
+  .bar-chip { display: inline-flex; align-items: center; gap: 6px; background: none; color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 4px 11px; font-family: var(--sans); font-size: 0.8rem; white-space: nowrap; cursor: pointer; transition: border-color 0.12s, color 0.12s; }
+  .bar-chip:hover { border-color: var(--bolt); color: var(--bolt-hi); }
   .bar .brand { display: inline-flex; align-items: center; gap: 7px; color: var(--bolt); font-weight: 600; }
   .bar .brand svg { width: 13px; height: 16px; filter: drop-shadow(0 0 5px rgba(34,211,238,0.6)); }
   /* A long (hand-crafted) title must shorten with an ellipsis — never wrap to a
@@ -414,6 +416,7 @@
       </span>
       <span class="bar-right">
         <span class="hist" id="hist"></span>
+        <button class="bar-chip" id="masteredBtn" style="display:none">Mastered 🎉</button>
         <span class="menu-wrap" id="menuWrap">
           <button class="kebab" id="kebab" aria-label="More actions" aria-haspopup="true">⋮</button>
           <div class="menu" id="menu" role="menu">
@@ -466,11 +469,13 @@ const histEl = document.getElementById("hist");
 const scoreEl = document.getElementById("score");
 const menuWrap = document.getElementById("menuWrap");
 const barFilter = document.getElementById("barFilter");
+const masteredBtn = document.getElementById("masteredBtn");
 // The centered header slot shows the picker search (#barFilter) or a breadcrumb
-// (#deck, during review/exam), or neither (a drill-in / mastered sub-view).
+// (#deck, during review/exam), or neither (a drill-in / mastered sub-view). The
+// Mastered jump (right side) only shows on the top picker; renderList sets it.
 function headerSearch() { deckEl.style.display = "none"; barFilter.style.display = ""; }
-function headerBreadcrumb() { barFilter.style.display = "none"; deckEl.style.display = ""; }
-function headerNone() { barFilter.style.display = "none"; deckEl.style.display = "none"; }
+function headerBreadcrumb() { barFilter.style.display = "none"; deckEl.style.display = ""; masteredBtn.style.display = "none"; }
+function headerNone() { barFilter.style.display = "none"; deckEl.style.display = "none"; masteredBtn.style.display = "none"; }
 const menu = document.getElementById("menu");
 
 async function api(path, opts) { return (await fetch(path, opts)).json(); }
@@ -1021,10 +1026,16 @@ async function renderSelect() {
     if (opts.lede) wrap.appendChild(el("div", "lede", opts.lede));
     let filter;
     if (opts.headerFilter) {
-      // The picker's search lives in the header bar, filling it; no in-content box.
+      // The picker's search and Mastered jump live in the header; no in-content box.
       headerSearch();
       filter = barFilter;
       filter.value = "";
+      if (opts.allowMastered && mastered.length) {
+        masteredBtn.style.display = "";
+        masteredBtn.onclick = renderMastered;
+      } else {
+        masteredBtn.style.display = "none";
+      }
     } else {
       headerNone();
       filter = el("input", "deck-filter");
@@ -1053,12 +1064,6 @@ async function renderSelect() {
     // Start/Take exam a deck (disabled when locked or nothing due).
     function syncPrimary() {
       legend.innerHTML = "";
-      if (opts.allowMastered && mastered.length) {
-        const mb = el("button", "chip", "Mastered \u{1F389}");
-        mb.appendChild(el("span", "k", label(PK.mastered) || "m"));
-        mb.addEventListener("click", renderMastered);
-        legend.appendChild(mb);
-      }
       const f = focusedEl;
       let primary;
       if (f && f._open) {
