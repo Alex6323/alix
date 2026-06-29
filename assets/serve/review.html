@@ -1357,6 +1357,8 @@ async function renderSelect() {
   // A flat list — drop the tree depth a workspace member would otherwise carry.
   function renderMastered() {
     renderList({
+      headerFilter: true,
+      filterPlaceholder: "Search  ·  /",
       lede: "mastered \u{1F389} — reopen a deck to cram or re-examine",
       sections: [{ title: null, rows: mastered.map(d => deckRow({ ...d, depth: 0 }, false, null, true, false)) }],
       back: renderTop, allowMastered: false,
