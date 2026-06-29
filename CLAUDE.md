@@ -96,6 +96,14 @@ noisy diff the way you'd treat a failing test: not done yet.
 | `make site` | Preview the `alix.study` landing page locally (`site/`). |
 | `make install` | `cargo install --path .`. |
 | `make clean` | `cargo clean`. |
+| `make heartbeat` | Release heartbeat — is shipped work piling up unreleased? (see below). |
+
+**Release heartbeat — run `make heartbeat` at the start of a session.** It reports
+the `CHANGELOG.md [Unreleased]` entry count and days since the last `vX.Y.Z` tag;
+if it prints *"a release looks due"*, surface that to the user before other work.
+This is the reminder that backstops the release policy in `RELEASING.md`
+(milestone-driven + a ~monthly heartbeat, no fixed train) — there's no CI cron, so
+this session-start check is what keeps releases from drifting.
 
 ## Formatting is nightly-only
 

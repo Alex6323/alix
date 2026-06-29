@@ -6,7 +6,7 @@
 # toolchain — `+nightly` is handled by rustup before cargo sees it — which is
 # why these live in a Makefile rather than .cargo/config.toml.)
 
-.PHONY: build test lint lint-js fmt fmt-check check coverage eval run serve book site install clean
+.PHONY: build test lint lint-js fmt fmt-check check coverage eval run serve book site install clean heartbeat
 
 # Compile the workspace.
 build:
@@ -88,3 +88,10 @@ install:
 # Remove build artifacts.
 clean:
 	cargo clean
+
+# Release heartbeat: report whether shipped work has piled up unreleased (entries
+# under CHANGELOG's [Unreleased] + days since the last vX.Y.Z tag) and flag when a
+# release looks due. Informational; run at the start of a session (see CLAUDE.md).
+# The policy it backstops is in RELEASING.md.
+heartbeat:
+	@sh scripts/heartbeat.sh
