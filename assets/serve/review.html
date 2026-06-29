@@ -28,10 +28,10 @@
 
   /* ── status bar: the terminal lineage, in monospace ───────────────── */
   .bar {
-    display: flex; align-items: center; gap: 14px;
     padding: 10px 16px; font-family: var(--mono); font-size: 0.78rem;
     color: var(--dim); border-bottom: 1px solid var(--line); background: rgba(6,18,26,0.6);
   }
+  .bar-inner { display: flex; align-items: center; gap: 14px; width: 100%; max-width: var(--card-w); margin: 0 auto; }
   .bar .brand { display: inline-flex; align-items: center; gap: 7px; color: var(--bolt); font-weight: 600; }
   .bar .brand svg { width: 13px; height: 16px; filter: drop-shadow(0 0 5px rgba(34,211,238,0.6)); }
   /* A long (hand-crafted) title must shorten with an ellipsis — never wrap to a
@@ -41,7 +41,7 @@
   .bar .spacer { flex: 1; }
   /* stage histogram (new|s1|s2|s3|s4|s5) + cards left, like the TUI header */
   .bar .hist { color: var(--ink); font-variant-numeric: tabular-nums; }
-  .bar-filter { flex: 1; min-width: 120px; background: rgba(0,0,0,0.25); border: 1px solid var(--line); border-radius: 8px; color: var(--ink); font: inherit; font-size: 0.82rem; padding: 5px 12px; }
+  .bar-filter { flex: none; width: min(320px, 50vw); background: rgba(0,0,0,0.25); border: 1px solid var(--line); border-radius: 8px; color: var(--ink); font: inherit; font-size: 0.82rem; padding: 5px 12px; }
   .bar-filter::placeholder { color: var(--dim); }
   .bar-filter:focus { outline: none; border-color: var(--bolt); }
   .muted { color: var(--dim); }
@@ -401,6 +401,7 @@
 </head>
 <body>
   <div class="bar">
+    <div class="bar-inner">
     <span class="brand">
       <svg viewBox="0 0 512 512" aria-hidden="true"><path d="M 269 168 L 221 254 L 253 254 L 237 348 L 297 246 L 263 246 L 285 168 Z" fill="currentColor"/></svg>
       alix
@@ -418,6 +419,7 @@
         <button id="theme-open" role="menuitem" style="color: var(--ink)">Theme…</button>
       </div>
     </span>
+    </div>
   </div>
   <main class="stage" id="stage"></main>
   <div class="legend">
@@ -465,7 +467,7 @@ const barFilter = document.getElementById("barFilter");
 // The header shows the picker search (#barFilter, filling the bar), a breadcrumb
 // (#deck, during review/exam), or neither (a drill-in / mastered sub-view) —
 // never the search and a breadcrumb at once.
-function headerSearch() { sepEl.style.display = "none"; deckEl.style.display = "none"; spacerEl.style.display = "none"; barFilter.style.display = ""; }
+function headerSearch() { sepEl.style.display = "none"; deckEl.style.display = "none"; spacerEl.style.display = ""; barFilter.style.display = ""; }
 function headerBreadcrumb() { barFilter.style.display = "none"; spacerEl.style.display = ""; sepEl.style.display = ""; deckEl.style.display = ""; }
 function headerNone() { barFilter.style.display = "none"; spacerEl.style.display = ""; sepEl.style.display = "none"; deckEl.style.display = "none"; }
 const menu = document.getElementById("menu");
