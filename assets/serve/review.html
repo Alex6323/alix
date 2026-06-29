@@ -1347,6 +1347,8 @@ async function renderSelect() {
     // reusing the one-shot re-land marker that a launched deck sets.
     const back = () => { lastWorkspace = null; sessionStorage.setItem("alix.lastDeck", grp.name); renderTop(); };
     renderList({
+      headerFilter: true,
+      filterPlaceholder: "Search  ·  /",
       lede: (grp.label || grp.name) + " — pick a deck to start",
       sections: [{ title: null, rows: grp.members.map(m => deckRow(m, true, grp.name, true, true)) }],
       back, allowMastered: false,
