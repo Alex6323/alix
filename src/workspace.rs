@@ -41,6 +41,10 @@ struct Manifest {
     title: Option<String>,
     /// A short description of what the workspace is for (its learning goal).
     description: Option<String>,
+    /// An optional icon for this workspace, shown in the picker. A path relative
+    /// to the workspace (or absolute). Unset → a conventional `assets/icon.*` is
+    /// used if present.
+    icon: Option<String>,
     /// Where this workspace keeps its progress (relative to the workspace, or
     /// absolute). `None` → `<workspace>/progress.json`.
     store: Option<String>,
@@ -67,6 +71,9 @@ pub struct Workspace {
     pub settings: DeckSettings,
     /// Member deck paths: the folder's `*.txt` files, sorted by name.
     pub members: Vec<PathBuf>,
+    /// The resolved icon file shown in the picker (manifest `icon`, else a
+    /// conventional `assets/icon.*`), or `None` for the chevron fallback.
+    pub icon: Option<PathBuf>,
 }
 
 impl Workspace {
@@ -78,13 +85,15 @@ impl Workspace {
     pub fn load(dir: impl AsRef<Path>) -> io::Result<Workspace> {
         let path = dir.as_ref().to_path_buf();
         let members = members(&path)?;
-        let (title, description, settings) = read_manifest(&path.join(MANIFEST));
+        let (title, description, settings, icon_key) = read_manifest(&path.join(MANIFEST));
+        let icon = resolve_icon(&path, icon_key.as_deref());
         Ok(Workspace {
             path,
             title,
             description,
             settings,
             members,
+            icon,
         })
     }
 
@@ -105,12 +114,12 @@ impl Workspace {
 /// The `[defaults]` table is interpreted by [`DeckSettings::from_directives`],
 /// so its keys mean exactly what the matching `% key: value` deck directives
 /// mean.
-fn read_manifest(path: &Path) -> (Option<String>, Option<String>, DeckSettings) {
+fn read_manifest(path: &Path) -> (Option<String>, Option<String>, DeckSettings, Option<String>) {
     let Ok(text) = std::fs::read_to_string(path) else {
-        return (None, None, DeckSettings::default());
+        return (None, None, DeckSettings::default(), None);
     };
     let Ok(manifest) = toml::from_str::<Manifest>(&text) else {
-        return (None, None, DeckSettings::default());
+        return (None, None, DeckSettings::default(), None);
     };
     let directives: Vec<(String, String)> = manifest
         .defaults
@@ -121,7 +130,27 @@ fn read_manifest(path: &Path) -> (Option<String>, Option<String>, DeckSettings) 
         manifest.title,
         manifest.description,
         DeckSettings::from_directives(&directives),
+        manifest.icon,
     )
+}
+
+/// Resolve a workspace's picker icon: the manifest `icon = "…"` file if it
+/// exists, else a conventional `assets/icon.{svg,png,jpg,jpeg,webp}` (first
+/// match), else `None`.
+pub fn resolve_icon(dir: &Path, manifest_icon: Option<&str>) -> Option<PathBuf> {
+    if let Some(rel) = manifest_icon {
+        let p = dir.join(rel);
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+    for ext in ["svg", "png", "jpg", "jpeg", "webp"] {
+        let p = dir.join("assets").join(format!("icon.{ext}"));
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+    None
 }
 
 /// A TOML value as the plain string the directive interpreter expects
@@ -302,5 +331,32 @@ mod tests {
         assert_eq!(Some(true), manifest_source_access(dir.path()));
         write(&dir.path().join(MANIFEST), "source_access = false\n");
         assert_eq!(Some(false), manifest_source_access(dir.path()));
+    }
+
+    #[test]
+    fn resolve_icon_prefers_the_manifest_key_then_the_convention() {
+        let dir = tempfile::tempdir().unwrap();
+        let assets = dir.path().join("assets");
+        std::fs::create_dir_all(&assets).unwrap();
+
+        // Nothing present → None.
+        assert_eq!(resolve_icon(dir.path(), None), None);
+
+        // Convention file present → resolves it.
+        std::fs::write(assets.join("icon.svg"), "<svg/>").unwrap();
+        assert_eq!(resolve_icon(dir.path(), None), Some(assets.join("icon.svg")));
+
+        // Manifest key pointing at a real file wins over the convention.
+        std::fs::write(assets.join("logo.png"), b"x").unwrap();
+        assert_eq!(
+            resolve_icon(dir.path(), Some("assets/logo.png")),
+            Some(assets.join("logo.png"))
+        );
+
+        // Manifest key pointing at a missing file falls back to the convention.
+        assert_eq!(
+            resolve_icon(dir.path(), Some("assets/nope.png")),
+            Some(assets.join("icon.svg"))
+        );
     }
 }
