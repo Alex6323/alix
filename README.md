@@ -770,7 +770,13 @@ alix deck augment mydeck.txt --target choices --with "use common misconceptions"
   instead of at random — SRS still decides *which* cards are due, the topology
   only reorders them — and review shows a thin **region breadcrumb** ("where am
   I", current emphasized) so the sequence reads as a path, not a shuffle. With a
-  single cached topology, `--topology` (no name) picks it automatically.
+  single cached topology, `--topology` (no name) picks it automatically. The
+  breadcrumb doubles as a **strength heatmap** (a per-card bar under each region,
+  red → green) that greens up as you learn the region, and `--region <name>`
+  **drills one region** alone. In the **web picker**, selecting a deck that has a
+  topology opens an inline **focus drawer** — pick the topology and a region
+  (click or ← / →, its heatmap and **due count** shown) to scope the launch — so
+  you set all this before the session starts, never mid-card.
 - **`--with "<guidance>"`** steers *how* (e.g. "use common misconceptions",
   "add a surprising historical fact", "phrase questions as real-world scenarios",
   or a topology principle like "by type dependency" / "north to south").

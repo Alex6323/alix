@@ -16,7 +16,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   only reorders them — and review shows a thin **region breadcrumb** ("where am
   I", current emphasized) so the sequence reads as a path, not a shuffle. A
   single cached topology is picked automatically. Terminal and web; the edge
-  labels (which would reveal answers) stay under the hood.
+  labels (which would reveal answers) stay under the hood. The breadcrumb
+  doubles as a **strength heatmap** — a per-card bar under each region, red
+  (weak) → green (learned) — so a region greens up as you master it.
+  `alix review <deck> --region <name>` **drills one region** (SRS still picks
+  what's due within it). In the **web picker**, selecting a deck that has a
+  topology opens an inline **focus drawer** (sliding open/closed): pick which
+  topology orders the session and pick a region to scope the launch — by click or
+  with **← / →** — with the selection's **due/new count** shown at the right end,
+  all before the session starts (the in-card breadcrumb stays read-only).
 - **The ask-Claude tutor grounds a frozen card in its live source.** For a card
   in a frozen workspace (`alix explore --into --build`), the tutor now reads the
   **original crate** for context — explaining how the cited code fits the
@@ -107,6 +115,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   as `[…]`), are unaffected.
 
 ### Changed
+- **Web picker keys.** Clicking a deck now **selects** it (opening its focus
+  drawer when it has a topology) rather than launching outright — **Review** or
+  Enter launches. **Browse** moved to **`b`**, freeing **← / →**: they step the
+  focus drawer's region selection when one is open, and otherwise enter / leave a
+  workspace. Up / down still move between decks. (The drawer is new this release,
+  so only the Browse-key and click-to-select changes affect existing muscle
+  memory.)
 - **Breaking — one deck per session.** `alix review` and `alix browse` now take
   exactly one deck *file*: merging several loose decks into a combined session is
   gone, and a whole workspace is no longer reviewed at once. Workspaces stay an

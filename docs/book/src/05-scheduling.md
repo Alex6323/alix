@@ -111,8 +111,23 @@ As you go, a thin **region breadcrumb** sits above each card — e.g.
 `Ingestion · Review Engine · Persistence · Frontends`, the one you're in
 emphasized — so you see *where you are* in the material, not just what's in front
 of you. The names are deliberately coarse: they orient without giving away any
-card's answer.
+card's answer. Under each region is a **strength heatmap**: one small bar per
+card, red (weak) → green (learned), so a region visibly greens up as you master
+it — the breadcrumb doubles as a progress map.
 
-If a deck has exactly one cached topology, `--topology` with no name uses it.
-This is experimental — both the terminal and the web show the breadcrumb and the
-ordering; richer map views are still to come.
+To **drill one weak region** on its own, name it:
+
+```sh
+alix review internals.txt --topology auto --region Persistence
+```
+
+SRS still chooses what's due *within* that region — you've just narrowed the
+session to it.
+
+If a deck has exactly one cached topology, `--topology` with no name uses it. In
+the **web picker** you don't type any of this: select a deck that has a topology
+and an inline **focus drawer** opens beneath it — choose which topology orders
+the session and tap a region's heatmap to scope the launch to it, then start.
+The choice is made *before* the session; the in-card breadcrumb itself stays
+read-only. This is experimental — both surfaces show the breadcrumb, the heatmap,
+and the ordering; richer map views are still to come.

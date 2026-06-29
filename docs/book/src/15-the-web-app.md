@@ -17,11 +17,17 @@ alix --serve                              # no decks → pick them in the browse
 ## Choosing decks in the browser
 
 Run `--serve` without naming decks and the page opens the **deck-selection
-screen** — the same list as the terminal picker. Tap a deck to start it — one deck
-per session (in review a locked deck won't start; `browse` ignores locking). After
-a session, "Choose other decks" (on the summary or the ⋮ menu) returns here, so you
-can switch decks without restarting. Naming a deck on the command line skips this
-screen.
+screen** — the same list as the terminal picker. **Up / down** move between
+decks; click a deck (or focus it) to **select** it, then **Review** (or Enter) to
+start — one deck per session (in review a locked deck won't start; `browse`
+ignores locking, and is on **`b`**). Selecting a deck that has a
+[topology](05-scheduling.md) opens an inline **focus drawer** beneath it: choose
+which topology orders the session, and pick a region to drill — click it or step
+through with **← / →** — its strength heatmap and the number of cards **due** in
+it shown as you go ("Whole deck" is the default). On a workspace row instead,
+← / → enter and leave it. After a session, "Choose other decks" (on the summary
+or the ⋮ menu) returns here, so you can switch decks without restarting. Naming a
+deck on the command line skips this screen.
 
 ## Every mode, plus the AI features
 

@@ -141,6 +141,40 @@
   .crumb-region.cur .crumb-name { opacity: 1; font-weight: 600; }
   .crumb-bar { display: flex; gap: 1px; height: 3px; border-radius: 2px; overflow: hidden; }
   .crumb-cell { flex: 1 1 0; min-width: 3px; }
+  /* The picker's focus drawer: opens under a selected deck that has a topology.
+     Pick the ordering (a topology) and, optionally, one region to drill — the
+     heatmap shows where each region is weak (red) or learned (green), and the
+     right end shows how many cards that selection has due. The reveal is a single
+     `height` transition on the clipping wrapper: the drawer's content is laid out
+     once and `overflow: hidden` just moves the clip line, so opening and closing
+     stay smooth, and it always animates to height 0 *before* it's removed (never
+     a snap). */
+  .drawer-wrap { margin-left: 22px; overflow: hidden; flex: 0 0 auto; }
+                 /* height animated via the Web Animations API; flex:0 0 auto stops the
+                    flex column shrinking it to 0 (overflow:hidden ⇒ min-height:0) */
+  .drawer { margin: 2px 0 8px; display: flex; flex-direction: column; gap: 10px;
+            padding: 11px 13px; border: 1px solid var(--line); border-left: 2px solid var(--bolt);
+            border-radius: 9px; background: rgba(255,255,255,0.025); }
+  .drawer-head { display: flex; align-items: center; gap: 8px; }
+  .drawer-label { font-size: 0.7rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--dim); }
+  .drawer-topo { font-family: var(--sans); font-size: 0.82rem; color: var(--ink);
+                 background: var(--menu-bg); border: 1px solid var(--line); border-radius: 7px;
+                 padding: 3px 7px; cursor: pointer; }
+  .drawer-body { display: flex; align-items: center; gap: 16px; }
+  .drawer-regions { display: flex; flex-wrap: wrap; gap: 6px; flex: 1 1 auto; min-width: 0; }
+  .drawer-region { display: flex; flex-direction: column; gap: 3px; min-width: 52px;
+                   padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px;
+                   background: transparent; cursor: pointer; transition: border-color 0.12s; }
+  .drawer-region:hover { border-color: var(--dim); }
+  .drawer-region.sel { border-color: var(--bolt); background: rgba(34,211,238,0.07); }
+  .drawer-region .crumb-name { font-size: 0.68rem; opacity: 0.8; }
+  .drawer-region.sel .crumb-name { opacity: 1; font-weight: 600; }
+  .drawer-region.all { justify-content: center; min-width: 0; }
+  .drawer-due { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end;
+                line-height: 1.02; }
+  .drawer-due .n { font-size: 1.35rem; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink); }
+  .drawer-due .l { font-size: 0.64rem; letter-spacing: 0.07em; text-transform: uppercase; color: var(--dim); }
+  .drawer-due.zero .n { color: var(--dim); }
   .context { color: var(--bolt); font-family: var(--mono); font-size: 0.95rem; white-space: pre-wrap; }
   .context .hole { color: var(--bolt-hi); font-weight: 700; }      /* the active cloze blank */
   .context .muted-hole { color: var(--dim); }                     /* sibling holes, hidden */
@@ -375,6 +409,12 @@ let feedback = null;  // choice result being shown ({chosen, correct, passed})
 let confirmingLeave = false; // showing the "session not finished" leave prompt
 let selectEsc = null; // in the deck-select confirm view, Esc returns to browse
 let lastWorkspace = null; // name of the workspace you launched from, to return into it
+// The focus drawer's current pick for the deck under the cursor: which topology
+// orders the session and (optionally) which one region to drill. `deck` tracks
+// the focused deck so launch only applies the pick to that deck. `topoCache`
+// memoizes each deck's `/api/deck-topology` payload across picker re-renders.
+let drawerSel = { deck: null, topology: null, region: null };
+let topoCache = {};
 let explainInput = ""; // the typed reconstruction on an explain card (client-side)
 let asking = false;   // the ask-Claude overlay is open
 let askData = { transcript: [], thinking: false, status: null, error: null };
@@ -404,7 +444,7 @@ function restart() { api("/api/restart", post({})).then(apply); }
 // A trace picked from the picker walks: the server replies with a redirect to
 // the walk page (hosted at /walk) instead of a review session. The walk runs on
 // its own page, so stash the workspace we launched from to re-open it on return.
-function select(name) { rememberLaunch(name); api("/api/select", post({ deck: name })).then(s => { if (s && s.redirect) { if (lastWorkspace) sessionStorage.setItem("alix.returnWs", lastWorkspace); sessionStorage.setItem("alix.walkName", name || ""); location.href = s.redirect; return; } apply(s); }); }
+function select(name, topology, region) { rememberLaunch(name); api("/api/select", post({ deck: name, topology: topology || null, region: region || null })).then(s => { if (s && s.redirect) { if (lastWorkspace) sessionStorage.setItem("alix.returnWs", lastWorkspace); sessionStorage.setItem("alix.walkName", name || ""); location.href = s.redirect; return; } apply(s); }); }
 // Remember the deck just launched so the picker re-lands the cursor on it when it
 // re-opens (the selection shouldn't move while the user is away). Survives both an
 // in-page return (review/exam) and a page-reload return (walk/browse).
@@ -451,6 +491,9 @@ function el(tag, cls, text) {
   if (text !== undefined) n.textContent = text;
   return n;
 }
+// The drawer's open/close height animation: a calm, slightly-slow reveal.
+const DRAWER_MS = 380;
+const DRAWER_EASE = "cubic-bezier(0.4, 0, 0.2, 1)";
 // Histogram cells [new, s1..s5] as HTML; stages above `top` are unreachable
 // (every card caps below them via % max-stage:), shown as a muted –.
 function histCells(h, top) {
@@ -801,6 +844,9 @@ async function renderSelect() {
   histEl.textContent = "";
   scoreEl.innerHTML = "";
   menuWrap.style.display = "none";
+  // Drop cached topology heatmaps so the drawer reflects progress from any
+  // session just finished (the strengths are recomputed on next focus).
+  topoCache = {};
 
   const data = await api("/api/decks");
   const workspaces = data.workspaces || [];
@@ -835,7 +881,12 @@ async function renderSelect() {
     // "Take exam" button, or the walk's capstone). An exam-due fact deck sits its
     // exam when available (sourced + prerequisites passed); else it reviews.
     if (!it.is_trace && it.state === "examdue" && it.examable) startExam(it.name);
-    else select(it.name);
+    else {
+      // Apply the focus drawer's topology/region pick, but only when it belongs
+      // to the deck being launched (the drawer follows the focused row).
+      const sel = drawerSel.deck === it.name ? drawerSel : {};
+      select(it.name, sel.topology, sel.region);
+    }
   }
 
   // A drillable workspace/folder row (chevron, opens its members).
@@ -878,7 +929,9 @@ async function renderSelect() {
     // 🕒 nothing due — at the line end with the status, so the left gutter stays
     // tree + title. (A finished deck shows its 🎉 in the badge instead.)
     if (gated && !it.reviewable && it.state !== "finished") row.appendChild(el("span", "glyph", "\u{1F552}"));
-    row.addEventListener("click", () => launch(it, wsName, gated));
+    // Click selects (focuses) the deck — opening the focus drawer when it has a
+    // topology — rather than launching outright; Review / Enter then launches.
+    row.addEventListener("click", () => row.focus());
     row._item = it; row._gated = gated; row._wsName = wsName;
     row._search = (it.label || it.name).toLowerCase();
     row._default = dflt !== false;
@@ -893,6 +946,9 @@ async function renderSelect() {
     selectEsc = opts.back || null;
     stage.innerHTML = ""; legend.innerHTML = "";
     let focusedEl = null;
+    let drawerEl = null; // the focus drawer under the focused deck, if it has a topology
+    let closingEl = null; // a drawer mid-close (animating out before removal)
+    let drawerCycle = null; // (dir)=>{} to step the drawer's region selection, when open
 
     const wrap = el("div", "select");
     wrap.appendChild(el("div", "lede", opts.lede));
@@ -949,7 +1005,7 @@ async function renderSelect() {
       // A read-only Browse of the focused deck, bound to the go-right key (l / →).
       if (f && f._item) {
         const br = el("button", "chip", "Browse");
-        br.appendChild(el("span", "k", label(PK.open) || "l"));
+        br.appendChild(el("span", "k", "b"));
         br.addEventListener("click", () => browseDeck(f._item, f._wsName));
         legend.appendChild(br);
       }
@@ -974,10 +1030,151 @@ async function renderSelect() {
       }
     }
 
+    // Closes the focus drawer and forgets its selection: animate its height to 0,
+    // then remove it (so the rows below glide up rather than snapping). A second
+    // close never stacks a closer — the previous one is dropped at once.
+    function clearDrawer() {
+      drawerCycle = null;
+      if (closingEl) { closingEl.remove(); closingEl = null; }
+      if (drawerEl) {
+        const wrap = drawerEl; drawerEl = null;
+        closingEl = wrap;
+        wrap.style.pointerEvents = "none";
+        const done = () => { if (closingEl === wrap) closingEl = null; wrap.remove(); };
+        if (wrap.animate) {
+          const cur = wrap.offsetHeight;        // current height (mid-open if interrupted)
+          if (wrap._anim) wrap._anim.cancel();  // stop an in-flight open
+          wrap.style.height = cur + "px";       // pin so the cancel can't flash to full
+          const a = wrap.animate(
+            [{ height: cur + "px" }, { height: "0px" }],
+            { duration: DRAWER_MS, easing: DRAWER_EASE, fill: "forwards" }
+          );
+          a.onfinish = done;
+        } else {
+          done();
+        }
+      }
+      drawerSel = { deck: null, topology: null, region: null };
+    }
+
+    // Builds the inline drawer for the focused deck once its topologies are known:
+    // a topology picker (only when there's more than one) over a clickable region
+    // heatmap ("Whole deck" first), with a due/new count at the right end that
+    // follows the selection. Selecting a region scopes the launch to it. The
+    // wrapper animates its height open.
+    function renderDrawer(row, data) {
+      const topologies = data.topologies || [];
+      if (!topologies.length) return; // no topology → no drawer
+      drawerSel = { deck: row._item.name, topology: topologies[0].name, region: null };
+      const wrap = el("div", "drawer-wrap");
+      const box = el("div", "drawer");
+
+      const regions = el("div", "drawer-regions");
+      const due = el("div", "drawer-due");
+      const dueN = el("span", "n", "0");
+      due.appendChild(dueN);
+      due.appendChild(el("span", "l", "due"));
+
+      const topoOf = () => topologies.find(t => t.name === drawerSel.topology) || topologies[0];
+      const paint = () => {
+        const topo = topoOf();
+        regions.innerHTML = "";
+        // mousedown preventDefault keeps focus on the deck row, so Enter/b and
+        // ← / → keep working after a region is picked by mouse.
+        const all = el("div", "drawer-region all" + (drawerSel.region ? "" : " sel"));
+        all.appendChild(el("div", "crumb-name", "Whole deck"));
+        all.addEventListener("mousedown", e => e.preventDefault());
+        all.addEventListener("click", () => { drawerSel.region = null; paint(); });
+        regions.appendChild(all);
+        for (const reg of topo.regions) {
+          const cell = el("div", "drawer-region" + (drawerSel.region === reg.name ? " sel" : ""));
+          cell.appendChild(el("div", "crumb-name", reg.name));
+          const bar = el("div", "crumb-bar");
+          for (const s of reg.cells || []) {
+            const c = el("span", "crumb-cell");
+            c.style.background = `hsl(${Math.round(120 * s)}, 62%, ${40 + 12 * s}%)`;
+            bar.appendChild(c);
+          }
+          cell.appendChild(bar);
+          cell.addEventListener("mousedown", e => e.preventDefault());
+          cell.addEventListener("click", () => { drawerSel.region = reg.name; paint(); });
+          regions.appendChild(cell);
+        }
+        // The due readout tracks the selection: a region's own count, else the deck's.
+        const sel = drawerSel.region ? topo.regions.find(r => r.name === drawerSel.region) : null;
+        const n = sel ? sel.due : (data.deck_due || 0);
+        dueN.textContent = n;
+        due.classList.toggle("zero", n === 0);
+      };
+
+      // Move the selection left/right through [Whole deck, …regions], wrapping.
+      drawerCycle = (dir) => {
+        const names = [null, ...topoOf().regions.map(r => r.name)];
+        const i = Math.max(0, names.indexOf(drawerSel.region));
+        drawerSel.region = names[(i + dir + names.length) % names.length];
+        paint();
+      };
+
+      if (topologies.length > 1) {
+        const head = el("div", "drawer-head");
+        head.appendChild(el("span", "drawer-label", "Order"));
+        const sel = el("select", "drawer-topo");
+        for (const t of topologies) {
+          const o = el("option", "", t.principle ? `${t.name} — ${t.principle}` : t.name);
+          o.value = t.name;
+          sel.appendChild(o);
+        }
+        sel.value = drawerSel.topology;
+        sel.addEventListener("change", () => { drawerSel.topology = sel.value; drawerSel.region = null; paint(); });
+        head.appendChild(sel);
+        box.appendChild(head);
+      }
+      paint();
+      const body = el("div", "drawer-body");
+      body.appendChild(regions);
+      body.appendChild(due);
+      box.appendChild(body);
+      wrap.appendChild(box);
+      drawerEl = wrap;
+      row.after(wrap);
+      // The wrap defaults to its natural (auto) height — visible even if animation
+      // is skipped. Animate its height 0 → natural with the Web Animations API
+      // (which animates the property directly, no transition-trigger timing to get
+      // wrong); the base stays `auto`, so it sits at the content height afterward.
+      const h = wrap.offsetHeight;
+      if (h && wrap.animate) {
+        wrap._anim = wrap.animate(
+          [{ height: "0px" }, { height: h + "px" }],
+          { duration: DRAWER_MS, easing: DRAWER_EASE }
+        );
+      }
+    }
+
+    // Opens/updates the drawer for the newly focused deck. Cached payloads render
+    // immediately; a fresh fetch renders only if that row is still focused.
+    function syncDrawer(row) {
+      if (!row || !row._item) { clearDrawer(); return; }
+      const name = row._item.name;
+      if (drawerSel.deck === name && drawerEl) return; // already open for this deck
+      clearDrawer();
+      drawerSel = { deck: name, topology: null, region: null };
+      const cached = topoCache[name];
+      if (cached) { renderDrawer(row, cached); return; }
+      api("/api/deck-topology", post({ deck: name })).then(d => {
+        const data = d || { topologies: [], deck_due: 0 };
+        topoCache[name] = data;
+        if (focusedEl === row) renderDrawer(row, data);
+      });
+    }
+
     wrap.addEventListener("focusin", (e) => {
+      // Focus moving into the open drawer (its dropdown or a region cell) keeps the
+      // deck focused — don't treat it as leaving the row or rebuild the drawer.
+      if (e.target.closest && e.target.closest(".drawer")) return;
       const row = e.target.closest ? e.target.closest(".deckrow") : null;
       focusedEl = row;
       syncPrimary();
+      syncDrawer(row);
     });
 
     // No filter → show each row's default set (Recent hides finished/locked and
@@ -1008,23 +1205,28 @@ async function renderSelect() {
     });
 
     lists.addEventListener("keydown", (e) => {
+      // Keys inside the open drawer (its native topology picker) belong to it —
+      // don't hijack them for row navigation.
+      if (e.target.closest(".drawer")) return;
       const v = visibleRows();
       const cur = e.target.closest(".deckrow");
       const idx = cur ? v.indexOf(cur) : -1;
-      // Vim/arrow nav; g/G/Home/End jump to ends; / or Ctrl-F focus the filter;
-      // Enter reviews the focused deck; l/→ browses it (a workspace/folder opens);
-      // m opens Mastered; h backs out.
+      // Up/down move between decks. Left/right are context-sensitive: with a
+      // drawer open they step its region selection; on a workspace/folder they
+      // enter (right) / leave (left); otherwise left backs out. g/G/Home/End jump
+      // to ends; / or Ctrl-F focus the filter; b browses; m opens Mastered.
       if (e.key === "ArrowDown" || hit(e, PK.down)) { e.preventDefault(); if (idx < v.length - 1) v[idx + 1].focus(); }
       else if (e.key === "ArrowUp" || hit(e, PK.up)) { e.preventDefault(); if (idx > 0) v[idx - 1].focus(); } // stays on the first row; the filter is only reachable via / or Ctrl-F
       else if (e.key === "g" || e.key === "Home") { e.preventDefault(); if (v.length) v[0].focus(); }
       else if (e.key === "G" || e.key === "End") { e.preventDefault(); if (v.length) v[v.length - 1].focus(); }
       else if (hit(e, PK.filter)) { e.preventDefault(); filter.focus(); }
-      else if (e.key === "ArrowRight" || hit(e, PK.open)) { e.preventDefault(); if (cur && cur._item) browseDeck(cur._item, cur._wsName); else if (cur) cur.click(); }
+      else if (e.key === "ArrowRight" || hit(e, PK.open)) { e.preventDefault(); if (drawerCycle) drawerCycle(1); else if (cur && cur._open) renderDrill(cur._open); }
+      else if (e.key === "ArrowLeft" || hit(e, PK.back)) { e.preventDefault(); if (drawerCycle) drawerCycle(-1); else if (opts.back) opts.back(); }
+      else if (e.key === "b" && cur && cur._item) { e.preventDefault(); browseDeck(cur._item, cur._wsName); }
       else if (opts.allowMastered && hit(e, PK.mastered)) { e.preventDefault(); renderMastered(); }
       else if (e.key === "x" && cur && cur._item && cur._item.examable) {
         e.preventDefault(); lastWorkspace = cur._wsName || null; startExam(cur._item.name);
       }
-      else if (opts.back && hit(e, PK.back)) { e.preventDefault(); opts.back(); }
     });
 
     applyFilter();
@@ -1489,6 +1691,9 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   if (state.phase === "select") {
+    // The open focus drawer's native picker owns its own keys (Enter to choose an
+    // option must not launch the deck).
+    if (e.target.closest && e.target.closest(".drawer")) return;
     if (e.key === "Enter") {
       const b = legend.querySelector(".chip.primary");
       if (b && !b.disabled) { e.preventDefault(); b.click(); }

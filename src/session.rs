@@ -401,22 +401,43 @@ pub fn card_strengths(card_ids: &[u64], store: &Store) -> Vec<f32> {
         .collect()
 }
 
+/// Whether one card would be served at `now_ms`: never-seen (fresh), or seen and
+/// due, but not retired. The per-card decision [`build_queue`] makes (minus cram
+/// and the new-card cap), factored out so callers can both test and *count* it.
+pub fn is_reviewable(card: &Card, store: &Store, scheduler: &dyn Scheduler, now_ms: u64) -> bool {
+    match store.get(card.id()) {
+        Some(_) if is_retired(card, store) => false,
+        Some(state) => scheduler.is_due(state, now_ms),
+        None => true,
+    }
+}
+
 /// Whether these cards would yield anything to review at `now_ms` under
-/// `scheduler`: a never-seen (fresh) card, or a seen card that is due. Retired
-/// cards never count. Mirrors [`build_queue`]'s per-card decision (minus cram and
-/// the new-card cap), so a caller — e.g. the picker — can tell, *before* building
-/// a session, whether a deck has anything to do right now.
+/// `scheduler`, so a caller — e.g. the picker — can tell, *before* building a
+/// session, whether a deck has anything to do right now. See [`is_reviewable`].
 pub fn has_reviewable(
     cards: &[Card],
     store: &Store,
     scheduler: &dyn Scheduler,
     now_ms: u64,
 ) -> bool {
-    cards.iter().any(|card| match store.get(card.id()) {
-        Some(_) if is_retired(card, store) => false,
-        Some(state) => scheduler.is_due(state, now_ms),
-        None => true,
-    })
+    cards
+        .iter()
+        .any(|card| is_reviewable(card, store, scheduler, now_ms))
+}
+
+/// How many of these cards would be served right now — the due/new count for a
+/// region or a whole deck (shown in the focus drawer). See [`is_reviewable`].
+pub fn count_reviewable(
+    cards: &[&Card],
+    store: &Store,
+    scheduler: &dyn Scheduler,
+    now_ms: u64,
+) -> usize {
+    cards
+        .iter()
+        .filter(|card| is_reviewable(card, store, scheduler, now_ms))
+        .count()
 }
 
 /// Per-stage counts for a set of cards (stage 0 = never seen).

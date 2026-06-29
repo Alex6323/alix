@@ -14,7 +14,7 @@
 //! opt-in).
 
 use std::{
-    collections::{BTreeSet, HashMap},
+    collections::{BTreeSet, HashMap, HashSet},
     hash::Hasher,
     net::SocketAddr,
     path::{Path, PathBuf},
@@ -178,11 +178,17 @@ struct CrumbDto {
 #[derive(Debug, Serialize, Default)]
 struct DeckTopologyDto {
     topologies: Vec<TopologyInfoDto>,
+    /// Cards due/new across the whole deck right now — the count shown for the
+    /// drawer's "Whole deck" option.
+    deck_due: usize,
 }
 
 #[derive(Debug, Serialize)]
 struct TopologyInfoDto {
     name: String,
+    /// The one-line ordering principle (e.g. "north to south"), shown beside the
+    /// name in the drawer's topology picker so several are told apart.
+    principle: String,
     regions: Vec<RegionInfoDto>,
 }
 
@@ -191,6 +197,8 @@ struct RegionInfoDto {
     name: String,
     /// Per-card strength (`0..=1`), red → green — the region's heatmap bar.
     cells: Vec<f32>,
+    /// Cards due/new in this region right now — shown when it's the selection.
+    due: usize,
 }
 
 /// The current review state sent to the browser after every action.
@@ -1169,13 +1177,19 @@ pub fn run_review(
             // transiently, never disturbing the active session store.
             (Method::Post, "/api/deck-topology") => {
                 let dto = match read_selection(&mut request, &decks_dir, &recent) {
-                    Some(sel) => match store_for(std::slice::from_ref(&sel.deck)) {
-                        Ok(s) => {
-                            let augment = AugmentCache::open(augment::augment_path_for(s.path()));
-                            deck_topology_dto(&augment, &s)
+                    Some(sel) => {
+                        match (
+                            Deck::load(&sel.deck),
+                            store_for(std::slice::from_ref(&sel.deck)),
+                        ) {
+                            (Ok(deck), Ok(s)) => {
+                                let augment =
+                                    AugmentCache::open(augment::augment_path_for(s.path()));
+                                deck_topology_dto(&augment, &s, &deck)
+                            }
+                            _ => DeckTopologyDto::default(),
                         }
-                        Err(_) => DeckTopologyDto::default(),
-                    },
+                    }
                     None => DeckTopologyDto::default(),
                 };
                 respond_json(request, &dto);
@@ -2275,10 +2289,17 @@ fn review_state(
     // the browser can show it on reveal (the same live read a trace walk does).
     let card_with_citation = card.map(|c| {
         let mut dto = card_dto(c);
-        // The "where am I" region breadcrumb, when topology-ordered.
+        // The "where am I" region breadcrumb, when topology-ordered. A cache can
+        // hold several like-named topologies (decks sharing a store), so pick the
+        // one of this principle that actually contains the current card — the card
+        // itself disambiguates which deck's topology applies.
         if let Some(name) = &r.topology_name
-            && let Some(topo) = r.augment.topology(name)
-            && let Some((regions, current)) = topo.region_path(c.id())
+            && let Some((topo, regions, current)) = r
+                .augment
+                .topologies()
+                .iter()
+                .filter(|t| t.name == *name)
+                .find_map(|t| t.region_path(c.id()).map(|(rg, cur)| (t, rg, cur)))
         {
             dto.crumb = Some(CrumbDto {
                 regions: regions.into_iter().map(str::to_string).collect(),
@@ -2585,25 +2606,47 @@ fn resolve_name(name: &str, known: &HashMap<String, PathBuf>) -> Option<PathBuf>
     known.get(name).cloned()
 }
 
-/// Builds the focus-drawer payload for a deck: its stored topologies, each with
-/// its regions' per-card strength heatmaps (read from the deck's `store`).
-fn deck_topology_dto(augment: &AugmentCache, store: &Store) -> DeckTopologyDto {
-    let topologies = augment
-        .topologies()
+/// Builds the focus-drawer payload for a `deck`: its own stored topologies (the
+/// cache can be shared by several decks on one store, so they're scoped by card
+/// membership), each region's per-card strength heatmap and due/new count, and
+/// the whole-deck due count — all read against the deck's `store`.
+fn deck_topology_dto(augment: &AugmentCache, store: &Store, deck: &Deck) -> DeckTopologyDto {
+    let by_id: HashMap<u64, &Card> = deck.cards.iter().map(|c| (c.id(), c)).collect();
+    let deck_ids: HashSet<u64> = by_id.keys().copied().collect();
+    let scheduler = deck.settings.scheduler.unwrap_or_default().scheduler();
+    let now = now_ms();
+    // Cards in a region resolved back to the deck (ids absent from the deck —
+    // e.g. a topology built before an edit — are skipped).
+    let due_of = |ids: &[u64]| {
+        let cards: Vec<&Card> = ids.iter().filter_map(|id| by_id.get(id).copied()).collect();
+        crate::session::count_reviewable(&cards, store, scheduler.as_ref(), now)
+    };
+    let deck_due = deck
+        .cards
         .iter()
+        .filter(|c| crate::session::is_reviewable(c, store, scheduler.as_ref(), now))
+        .count();
+    let topologies = augment
+        .topologies_for(&deck_ids)
+        .into_iter()
         .map(|t| TopologyInfoDto {
             name: t.name.clone(),
+            principle: t.principle.clone(),
             regions: t
                 .regions
                 .iter()
                 .map(|r| RegionInfoDto {
                     name: r.name.clone(),
                     cells: crate::session::card_strengths(&r.cards, store),
+                    due: due_of(&r.cards),
                 })
                 .collect(),
         })
         .collect();
-    DeckTopologyDto { topologies }
+    DeckTopologyDto {
+        topologies,
+        deck_due,
+    }
 }
 
 /// Serializes a card for the browser, structuring its note via the shared
