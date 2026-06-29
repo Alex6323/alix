@@ -53,6 +53,12 @@
   /* overflow menu: only the destructive action lives here */
   .menu-wrap { position: relative; flex: none; }
   .kebab { background: none; border: 0; color: var(--dim); cursor: pointer; font-size: 1.15rem; line-height: 1; padding: 4px 8px; border-radius: 8px; }
+  .sheet { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: grid; place-items: center; z-index: 60; }
+  .sheet[hidden] { display: none; }
+  .sheet-panel { background: var(--void); border: 1px solid var(--line); border-radius: 14px; padding: 20px 24px; max-width: min(440px, 90vw); color: var(--ink); box-shadow: 0 12px 44px rgba(0,0,0,0.45); animation: deal 0.2s both; }
+  .sheet-panel h2 { margin: 0 0 14px; font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--bolt); }
+  .sheet-keys { display: grid; grid-template-columns: auto 1fr; gap: 9px 16px; align-items: center; font-size: 0.9rem; }
+  .sheet-keys kbd { justify-self: start; font-family: var(--mono); font-size: 0.72rem; color: var(--dim); border: 1px solid var(--line); border-radius: 5px; padding: 2px 7px; }
   .kebab:hover { color: var(--ink); background: rgba(255,255,255,0.06); }
   .menu { position: absolute; right: 0; top: calc(100% + 8px); z-index: 20; display: none; min-width: 172px; padding: 6px; background: var(--menu-bg); border: 1px solid var(--line); border-radius: 11px; box-shadow: 0 14px 34px -12px rgba(0,0,0,0.8); }
   .menu.open { display: block; }
@@ -418,10 +424,12 @@
         <span class="hist" id="hist"></span>
         <button class="bar-chip" id="masteredBtn" style="display:none">Mastered 🎉</button>
         <span class="menu-wrap" id="menuWrap">
-          <button class="kebab" id="kebab" aria-label="More actions" aria-haspopup="true">⋮</button>
+          <button class="kebab" id="kebab" aria-label="Menu" aria-haspopup="true">☰</button>
           <div class="menu" id="menu" role="menu">
-            <button id="mAsk" role="menuitem">Ask Claude <span class="mk" id="mAskKey">?</span></button>
-            <button id="mRemove" role="menuitem">Remove card <span class="mk">x</span></button>
+            <button id="mAsk" class="m-review" role="menuitem">Ask Claude <span class="mk" id="mAskKey">?</span></button>
+            <button id="mRemove" class="m-review" role="menuitem">Remove card <span class="mk">x</span></button>
+            <button id="mShortcuts" class="m-picker" role="menuitem">Keyboard shortcuts</button>
+            <button id="mRefresh" class="m-picker" role="menuitem">Refresh decks</button>
             <button id="theme-open" role="menuitem" style="color: var(--ink)">Theme…</button>
           </div>
         </span>
@@ -429,6 +437,9 @@
     </div>
   </div>
   <main class="stage" id="stage"></main>
+  <div class="sheet" id="sheet" hidden>
+    <div class="sheet-panel" id="sheetPanel" role="dialog" aria-modal="true"></div>
+  </div>
   <div class="legend">
     <div class="keys" id="legend"></div>
     <span class="score" id="score"></span>
@@ -580,6 +591,7 @@ function render() {
                            // per-stage breakdown stays in the session summary)
   scoreEl.innerHTML = `<b>${state.passed}✓</b> <s>${state.failed}✗</s><span class="left">${state.remaining}↓</span>`;
   menuWrap.style.display = state.finished ? "none" : "";
+  setMenuContext("review");
 
   if (asking) { renderAsk(); return; }
   if (state.finished) renderSummary();
@@ -896,7 +908,8 @@ async function renderSelect() {
   deckEl.textContent = "";
   histEl.textContent = "";
   scoreEl.innerHTML = "";
-  menuWrap.style.display = "none";
+  menuWrap.style.display = "";
+  setMenuContext("picker");
   // Drop cached topology heatmaps so the drawer reflects progress from any
   // session just finished (the strengths are recomputed on next focus).
   topoCache = {};
@@ -1995,6 +2008,38 @@ menu.addEventListener("click", (e) => e.stopPropagation());
 document.getElementById("mAsk").addEventListener("click", () => { menu.classList.remove("open"); if (isAnswered()) openAsk(); });
 document.getElementById("mRemove").addEventListener("click", () => { menu.classList.remove("open"); remove(); });
 document.addEventListener("click", () => menu.classList.remove("open"));
+
+// A small modal sheet (keyboard shortcuts, about). Esc or a backdrop click closes.
+const sheet = document.getElementById("sheet");
+const sheetPanel = document.getElementById("sheetPanel");
+function openSheet(html) { sheetPanel.innerHTML = html; sheet.hidden = false; }
+function closeSheet() { sheet.hidden = true; sheetPanel.innerHTML = ""; }
+sheet.addEventListener("click", (e) => { if (e.target === sheet) closeSheet(); });
+document.addEventListener("keydown", (e) => { if (!sheet.hidden && e.key === "Escape") { e.stopPropagation(); e.preventDefault(); closeSheet(); } }, true);
+
+function openShortcuts() {
+  openSheet(
+    '<h2>Picker shortcuts</h2><div class="sheet-keys">' +
+    '<kbd>/</kbd><span>filter the list</span>' +
+    '<kbd>↑ ↓</kbd><span>move</span>' +
+    '<kbd>enter</kbd><span>open / start</span>' +
+    '<kbd>b</kbd><span>browse the deck</span>' +
+    '<kbd>x</kbd><span>take the exam</span>' +
+    '<kbd>m</kbd><span>mastered decks</span>' +
+    '<kbd>g / G</kbd><span>top / bottom</span>' +
+    '<kbd>esc</kbd><span>back</span>' +
+    '</div>'
+  );
+}
+
+// Show the right menu items for the current screen (picker vs review).
+function setMenuContext(ctx) {
+  document.querySelectorAll("#menu .m-picker").forEach((b) => { b.style.display = ctx === "picker" ? "" : "none"; });
+  document.querySelectorAll("#menu .m-review").forEach((b) => { b.style.display = ctx === "review" ? "" : "none"; });
+}
+
+document.getElementById("mRefresh").addEventListener("click", () => { menu.classList.remove("open"); renderSelect(); });
+document.getElementById("mShortcuts").addEventListener("click", () => { menu.classList.remove("open"); openShortcuts(); });
 
 // Load the configured key bindings first, then the session. The picker-keys
 // endpoint falls back to the Vim defaults if an older server lacks it.
