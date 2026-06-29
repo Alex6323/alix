@@ -31,17 +31,19 @@
     padding: 10px 16px; font-family: var(--mono); font-size: 0.78rem;
     color: var(--dim); border-bottom: 1px solid var(--line); background: rgba(6,18,26,0.6);
   }
-  .bar-inner { display: flex; align-items: center; gap: 14px; width: 100%; max-width: var(--card-w); margin: 0 auto; }
+  .bar-inner { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 14px; width: 100%; max-width: var(--card-w); margin: 0 auto; }
+  .bar-center { justify-self: center; min-width: 0; display: flex; align-items: center; }
+  .bar-right { justify-self: end; display: flex; align-items: center; gap: 14px; }
   .bar .brand { display: inline-flex; align-items: center; gap: 7px; color: var(--bolt); font-weight: 600; }
   .bar .brand svg { width: 13px; height: 16px; filter: drop-shadow(0 0 5px rgba(34,211,238,0.6)); }
   /* A long (hand-crafted) title must shorten with an ellipsis — never wrap to a
      second line and grow the header's height. */
-  .bar .deck { color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
+  .bar .deck { color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; max-width: min(52vw, 420px); }
   .bar .sep { color: var(--line); }
   .bar .spacer { flex: 1; }
   /* stage histogram (new|s1|s2|s3|s4|s5) + cards left, like the TUI header */
   .bar .hist { color: var(--ink); font-variant-numeric: tabular-nums; }
-  .bar-filter { flex: none; width: min(320px, 50vw); background: rgba(0,0,0,0.25); border: 1px solid var(--line); border-radius: 8px; color: var(--ink); font: inherit; font-size: 0.82rem; padding: 5px 12px; }
+  .bar-filter { width: min(220px, 46vw); background: rgba(0,0,0,0.25); border: 1px solid var(--line); border-radius: 8px; color: var(--ink); font: inherit; font-size: 0.82rem; padding: 5px 12px; }
   .bar-filter::placeholder { color: var(--dim); }
   .bar-filter:focus { outline: none; border-color: var(--bolt); }
   .muted { color: var(--dim); }
@@ -402,23 +404,25 @@
 <body>
   <div class="bar">
     <div class="bar-inner">
-    <span class="brand">
-      <svg viewBox="0 0 512 512" aria-hidden="true"><path d="M 269 168 L 221 254 L 253 254 L 237 348 L 297 246 L 263 246 L 285 168 Z" fill="currentColor"/></svg>
-      alix
-    </span>
-    <span class="sep" id="sep">·</span>
-    <span class="deck" id="deck"></span>
-    <input class="bar-filter" id="barFilter" type="text" autocomplete="off" placeholder="Search" style="display:none">
-    <span class="spacer" id="spacer"></span>
-    <span class="hist" id="hist"></span>
-    <span class="menu-wrap" id="menuWrap">
-      <button class="kebab" id="kebab" aria-label="More actions" aria-haspopup="true">⋮</button>
-      <div class="menu" id="menu" role="menu">
-        <button id="mAsk" role="menuitem">Ask Claude <span class="mk" id="mAskKey">?</span></button>
-        <button id="mRemove" role="menuitem">Remove card <span class="mk">x</span></button>
-        <button id="theme-open" role="menuitem" style="color: var(--ink)">Theme…</button>
-      </div>
-    </span>
+      <span class="brand">
+        <svg viewBox="0 0 512 512" aria-hidden="true"><path d="M 269 168 L 221 254 L 253 254 L 237 348 L 297 246 L 263 246 L 285 168 Z" fill="currentColor"/></svg>
+        alix
+      </span>
+      <span class="bar-center">
+        <span class="deck" id="deck"></span>
+        <input class="bar-filter" id="barFilter" type="text" autocomplete="off" placeholder="Search…" style="display:none">
+      </span>
+      <span class="bar-right">
+        <span class="hist" id="hist"></span>
+        <span class="menu-wrap" id="menuWrap">
+          <button class="kebab" id="kebab" aria-label="More actions" aria-haspopup="true">⋮</button>
+          <div class="menu" id="menu" role="menu">
+            <button id="mAsk" role="menuitem">Ask Claude <span class="mk" id="mAskKey">?</span></button>
+            <button id="mRemove" role="menuitem">Remove card <span class="mk">x</span></button>
+            <button id="theme-open" role="menuitem" style="color: var(--ink)">Theme…</button>
+          </div>
+        </span>
+      </span>
     </div>
   </div>
   <main class="stage" id="stage"></main>
@@ -461,15 +465,12 @@ const deckEl = document.getElementById("deck");
 const histEl = document.getElementById("hist");
 const scoreEl = document.getElementById("score");
 const menuWrap = document.getElementById("menuWrap");
-const sepEl = document.getElementById("sep");
-const spacerEl = document.getElementById("spacer");
 const barFilter = document.getElementById("barFilter");
-// The header shows the picker search (#barFilter, filling the bar), a breadcrumb
-// (#deck, during review/exam), or neither (a drill-in / mastered sub-view) —
-// never the search and a breadcrumb at once.
-function headerSearch() { sepEl.style.display = "none"; deckEl.style.display = "none"; spacerEl.style.display = ""; barFilter.style.display = ""; }
-function headerBreadcrumb() { barFilter.style.display = "none"; spacerEl.style.display = ""; sepEl.style.display = ""; deckEl.style.display = ""; }
-function headerNone() { barFilter.style.display = "none"; spacerEl.style.display = ""; sepEl.style.display = "none"; deckEl.style.display = "none"; }
+// The centered header slot shows the picker search (#barFilter) or a breadcrumb
+// (#deck, during review/exam), or neither (a drill-in / mastered sub-view).
+function headerSearch() { deckEl.style.display = "none"; barFilter.style.display = ""; }
+function headerBreadcrumb() { barFilter.style.display = "none"; deckEl.style.display = ""; }
+function headerNone() { barFilter.style.display = "none"; deckEl.style.display = "none"; }
 const menu = document.getElementById("menu");
 
 async function api(path, opts) { return (await fetch(path, opts)).json(); }
@@ -1329,7 +1330,7 @@ async function renderSelect() {
     if (folders.length) sections.push({ title: "Folders", rows: folders.map(openRow) });
     renderList({
       headerFilter: true,
-      filterPlaceholder: "Search decks & workspaces  ·  / or Ctrl-F",
+      filterPlaceholder: "Search  ·  /",
       sections, back: null, allowMastered: true,
     });
   }
