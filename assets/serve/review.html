@@ -409,6 +409,34 @@
   .exam-missed li { color: var(--again); opacity: 0.8; }
   .exam-ready { color: var(--warn); margin-top: 8px; }
 
+  /* ── AI augment screen ── */
+  .aug { width: var(--card-w); max-width: 92vw; display: flex; flex-direction: column; gap: 0; animation: deal 0.3s both; max-height: 78vh; overflow-y: auto; padding-right: 4px; }
+  .aug-row { display: flex; align-items: center; gap: 14px; padding: 13px 4px; border-bottom: 1px solid var(--line); }
+  .aug-row:last-of-type { border-bottom: 0; }
+  .aug-label { flex: 0 0 88px; color: var(--ink); font-size: 0.95rem; }
+  .aug-bar { flex: 1 1 auto; height: 7px; min-width: 60px; border-radius: 999px; background: rgba(255,255,255,0.07); overflow: hidden; }
+  .aug-bar i { display: block; height: 100%; width: 0; background: var(--bolt); border-radius: 999px; transition: width 0.3s; }
+  .aug-bar i.full { background: var(--good); }
+  .aug-count { flex: 0 0 auto; min-width: 46px; text-align: right; font-family: var(--mono); font-size: 0.74rem; color: var(--dim); font-variant-numeric: tabular-nums; }
+  .aug-actions { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 7px; }
+  .aug-btn { background: none; color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 5px 12px; font-family: var(--sans); font-size: 0.8rem; cursor: pointer; transition: border-color 0.12s, color 0.12s; }
+  .aug-btn:hover:not(:disabled) { border-color: var(--bolt); color: var(--bolt-hi); }
+  .aug-btn:disabled { opacity: 0.35; cursor: default; }
+  .aug-btn.ghost { color: var(--dim); }
+  .aug-btn.ghost:hover:not(:disabled) { border-color: var(--again); color: var(--again); }
+  .aug-row-topo { align-items: flex-start; }
+  .aug-topos { flex: 1 1 auto; display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+  .aug-topo { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; border: 1px solid var(--line); border-radius: 999px; padding: 2px 5px 2px 10px; font-size: 0.76rem; color: var(--ink); }
+  .aug-topo > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .aug-x { background: none; border: 0; color: var(--dim); cursor: pointer; font-size: 0.74rem; line-height: 1; padding: 2px 4px; border-radius: 6px; }
+  .aug-x:hover { color: var(--again); }
+  .aug-none { color: var(--dim); font-size: 0.8rem; font-style: italic; }
+  .aug-foot { display: flex; flex-direction: column; gap: 8px; padding: 16px 4px 2px; }
+  .aug-guide-input { width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.25); border: 1px solid var(--line); border-radius: 10px; color: var(--ink); font: inherit; font-size: 0.84rem; padding: 8px 12px; }
+  .aug-guide-input::placeholder { color: var(--dim); }
+  .aug-guide-input:focus { outline: none; border-color: var(--bolt); }
+  .aug-cost { color: var(--dim); font-size: 0.74rem; }
+
   @media (prefers-reduced-motion: reduce) {
     .stack, .summary, .reveal, .exam-elapsed .dot { animation: none; }
   }
@@ -476,6 +504,8 @@ let askPoll = null;   // setInterval handle while a reply is pending
 let examData = null;  // the ExamDto while an exam is active (null otherwise)
 let examConfirmingQuit = false; // showing the "abandon the exam?" confirmation
 let examPoll = null;  // setInterval handle while an exam call is in flight
+let augmentData = null; // the AugmentDto while the Augment screen is open (null otherwise)
+let augmentPoll = null; // setInterval handle while a generation is in flight
 let KEYS = {};        // configured review key bindings, from /api/keys
 let PK = {};          // configured deck-picker nav keys, from /api/picker-keys
 
@@ -589,6 +619,7 @@ function render() {
   menu.classList.remove("open");
 
   if (examData) { renderExam(); return; }
+  if (augmentData) { renderAugment(); return; }
   if (state.phase === "select") { renderSelect(); return; }
 
   headerBreadcrumb();
@@ -903,6 +934,156 @@ function renderExam() {
   }
 }
 
+// ── AI augment (the picker's "Augment a" action, decks only) ────────────────
+// Reports what a deck's augmentation cache holds, fills the gaps (a costed
+// background call, polled like the exam), and removes. Generation is one job at
+// a time; the page polls /api/augment while it runs.
+function openAugment(deck) {
+  rememberLaunch(deck);
+  api("/api/augment/open", post({ deck })).then(d => {
+    if (d && d.rows) { augmentData = d; render(); }
+  });
+}
+function closeAugment() {
+  stopAugmentPoll();
+  api("/api/augment/close", post({})).then(s => { augmentData = null; apply(s); });
+}
+// The shared guidance box's text, read when a Generate/Add is clicked.
+function augGuidance() {
+  const i = document.querySelector(".aug-guide-input");
+  return i ? i.value.trim() : "";
+}
+function augmentGenerate(target, guidance) {
+  if (augmentData.busy) return;
+  api("/api/augment/generate", post({ target, with: guidance || null })).then(d => {
+    augmentData = d; render(); if (d.busy) startAugmentPoll();
+  });
+}
+function augmentRemove(target, topology) {
+  api("/api/augment/remove", post({ target, topology: topology || null }))
+    .then(d => { augmentData = d; render(); });
+}
+function startAugmentPoll() {
+  stopAugmentPoll();
+  augmentPoll = setInterval(() => {
+    api("/api/augment").then(d => {
+      const prev = augmentData;
+      augmentData = d;
+      if (!d.busy) stopAugmentPoll();
+      // Re-render when the in-flight state changed (a job started or finished, so
+      // the coverage bars move); otherwise tick the elapsed counter in place so
+      // the spinner's entrance animation doesn't restart (flicker).
+      if (!prev || prev.busy !== d.busy || prev.error !== d.error) render();
+      else {
+        const e = document.querySelector(".exam-elapsed");
+        if (e) { e.innerHTML = ""; e.appendChild(el("span", "dot"));
+                 e.appendChild(document.createTextNode(augElapsedText(d))); }
+      }
+    });
+  }, 600);
+}
+function stopAugmentPoll() { if (augmentPoll) { clearInterval(augmentPoll); augmentPoll = null; } }
+function augElapsedText(d) {
+  const s = d.elapsed || 0;
+  if (s < 2) return "Claude is working…";
+  if (s < 90) return `Claude is working… ${s}s`;
+  return `Claude is working… ${Math.floor(s / 60)}m ${s % 60}s — this can take a couple of minutes`;
+}
+// The in-flight spinner cell (reuses the exam's pulsing dot + elapsed styling).
+function augBusyCell(d) {
+  const sp = el("span", "exam-elapsed");
+  sp.appendChild(el("span", "dot"));
+  sp.appendChild(document.createTextNode(augElapsedText(d)));
+  return sp;
+}
+// A per-card target row: a coverage bar + Generate (fills the gap) and Remove.
+function augCardRow(d, row) {
+  const r = el("div", "aug-row");
+  r.appendChild(el("span", "aug-label", row.label));
+  const bar = el("span", "aug-bar");
+  const fill = el("i");
+  const frac = row.eligible ? row.covered / row.eligible : 0;
+  fill.style.width = Math.round(frac * 100) + "%";
+  const full = row.eligible && row.covered >= row.eligible;
+  if (full) fill.className = "full";
+  bar.appendChild(fill);
+  r.appendChild(bar);
+  r.appendChild(el("span", "aug-count", row.covered + "/" + row.eligible));
+  const actions = el("span", "aug-actions");
+  if (row.busy) actions.appendChild(augBusyCell(d));
+  else {
+    const gen = el("button", "aug-btn", full ? "Complete" : "Generate");
+    gen.disabled = !!d.busy || !row.eligible || !!full;
+    gen.addEventListener("click", () => augmentGenerate(row.kind, augGuidance()));
+    actions.appendChild(gen);
+    if (row.covered > 0) {
+      const rm = el("button", "aug-btn ghost", "Remove");
+      rm.disabled = !!d.busy;
+      rm.addEventListener("click", () => augmentRemove(row.kind, null));
+      actions.appendChild(rm);
+    }
+  }
+  r.appendChild(actions);
+  return r;
+}
+// The topology row: its named topologies (each removable) + Add (uses guidance).
+function augTopologyRow(d, row) {
+  const r = el("div", "aug-row aug-row-topo");
+  r.appendChild(el("span", "aug-label", row.label));
+  const list = el("span", "aug-topos");
+  if (!row.items.length) list.appendChild(el("span", "aug-none", "none yet"));
+  for (const name of row.items) {
+    const pill = el("span", "aug-topo");
+    pill.appendChild(el("span", null, name));
+    if (!d.busy) {
+      const x = el("button", "aug-x", "✕");
+      x.title = "Remove this topology";
+      x.addEventListener("click", () => augmentRemove("topology", name));
+      pill.appendChild(x);
+    }
+    list.appendChild(pill);
+  }
+  r.appendChild(list);
+  const actions = el("span", "aug-actions");
+  if (row.busy) actions.appendChild(augBusyCell(d));
+  else {
+    const add = el("button", "aug-btn", "Add");
+    add.disabled = !!d.busy;
+    add.addEventListener("click", () => augmentGenerate("topology", augGuidance()));
+    actions.appendChild(add);
+  }
+  r.appendChild(actions);
+  return r;
+}
+function renderAugment() {
+  const d = augmentData;
+  headerBreadcrumb();
+  deckEl.textContent = "augment · " + d.deck;
+  histEl.textContent = d.cards + (d.cards === 1 ? " card" : " cards");
+  scoreEl.innerHTML = "";
+  menuWrap.style.display = "none";
+  const wrap = el("div", "aug");
+  if (d.error) wrap.appendChild(el("div", "exam-error", "⚠ " + d.error));
+  for (const row of d.rows)
+    wrap.appendChild(row.kind === "topology" ? augTopologyRow(d, row) : augCardRow(d, row));
+  const foot = el("div", "aug-foot");
+  const gi = el("input", "aug-guide-input");
+  gi.type = "text";
+  gi.placeholder = "Guidance for generation (optional) — e.g. use common misconceptions";
+  foot.appendChild(gi);
+  foot.appendChild(el("div", "aug-cost",
+    "Generating runs Claude and costs tokens. It fills only the cards a target is missing."));
+  wrap.appendChild(foot);
+  stage.appendChild(wrap);
+  // Footer: "remove everything" sits behind a confirm; Close exits to the picker.
+  legend.innerHTML = "";
+  const rmAll = chip("Remove all", "", () => {
+    if (confirm("Remove every augmentation for this deck?")) augmentRemove("all");
+  });
+  rmAll.disabled = !!d.busy;
+  chip("Close", "", closeAugment, "esc");
+}
+
 // The deck-selection screen, mirroring the terminal picker. Three sections —
 // Workspaces (each with its last-progress time), Recent loose decks, and
 // Folders — and single-launch: click a deck to start it (a trace walks, a deck
@@ -1110,6 +1291,13 @@ async function renderSelect() {
         br.appendChild(el("span", "k", "b"));
         br.addEventListener("click", () => browseDeck(f._item, f._wsName));
         legend.appendChild(br);
+      }
+      // Augment the focused deck (key a): add / remove AI augmentations.
+      if (f && f._item) {
+        const ag = el("button", "chip", "Augment");
+        ag.appendChild(el("span", "k", "a"));
+        ag.addEventListener("click", () => { lastWorkspace = f._wsName || null; openAugment(f._item.name); });
+        legend.appendChild(ag);
       }
       if (opts.back) {
         const bb = el("button", "chip", "Back");
@@ -1337,6 +1525,7 @@ async function renderSelect() {
       else if (e.key === "ArrowRight" || hit(e, PK.open)) { e.preventDefault(); if (drawerCycle) drawerCycle(1); else if (cur && cur._open) renderDrill(cur._open); else if (cur && cur._item) { const b = legend.querySelector(".chip.primary"); if (b && !b.disabled) b.click(); } }
       else if (e.key === "ArrowLeft" || hit(e, PK.back)) { e.preventDefault(); if (drawerCycle) drawerCycle(-1); else if (opts.back) opts.back(); }
       else if (e.key === "b" && cur && cur._item) { e.preventDefault(); browseDeck(cur._item, cur._wsName); }
+      else if (e.key === "a" && cur && cur._item) { e.preventDefault(); lastWorkspace = cur._wsName || null; openAugment(cur._item.name); }
       else if (opts.allowMastered && hit(e, PK.mastered)) { e.preventDefault(); renderMastered(); }
       else if (e.key === "x" && cur && cur._item && cur._item.examable) {
         e.preventDefault(); lastWorkspace = cur._wsName || null; startExam(cur._item.name);
@@ -1901,6 +2090,12 @@ document.addEventListener("keydown", (e) => {
       return;
     }
     if (e.key === "Escape") { e.preventDefault(); quitExam(); }
+    return;
+  }
+  // The augment overlay: Esc closes it; other keys (typing in the guidance box)
+  // pass through untouched.
+  if (augmentData) {
+    if (e.key === "Escape") { e.preventDefault(); closeAugment(); }
     return;
   }
   if (state.phase === "select") {
