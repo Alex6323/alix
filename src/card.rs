@@ -163,19 +163,29 @@ impl Card {
 
     /// Returns the identity hash of this card.
     ///
-    /// Plain cards hash the subject bytes followed by the bytes of each
-    /// (trimmed) back line with an unseeded `XxHash64`, ignoring front and
-    /// note, so progress survives rewording the front and adding notes. Cloze
-    /// cards hash `hash_lines` instead of the back — the delimiter-free line
-    /// structure plus a per-hole index (see that field's doc) — so restyling the
-    /// `{{ }}` markup never reshuffles ids. This value keys the progress store
-    /// and must stay stable across versions, or existing progress would be
-    /// orphaned.
+    /// Plain cards hash the subject bytes followed by a whitespace-normalized
+    /// version of the answer (all back lines joined and collapsed to single
+    /// spaces), ignoring front and note, so progress survives rewording the
+    /// front, adding notes, or reformatting the answer across lines. Cloze
+    /// cards hash `hash_lines` instead — each line whitespace-normalized — so
+    /// restyling the `{{ }}` markup never reshuffles ids. A change in words
+    /// still changes the id. This value keys the progress store and must stay
+    /// stable across versions, or existing progress would be orphaned.
     pub fn id(&self) -> u64 {
         let mut hasher = XxHash64::default();
         hasher.write(self.subject.as_bytes());
-        for line in self.hash_lines.as_ref().unwrap_or(&self.back) {
-            hasher.write(line.as_bytes());
+        match &self.hash_lines {
+            // Cloze: keep the per-line (per-hole) structure, but normalize each
+            // line's internal whitespace so restyling never reshuffles ids.
+            Some(lines) => {
+                for line in lines {
+                    hasher.write(normalize_ws(line).as_bytes());
+                }
+            }
+            // Plain: hash the answer as one whitespace-normalized string, so the
+            // same words across any number of lines (or any indentation) give the
+            // same id, while a change in words still changes it.
+            None => hasher.write(normalize_ws(&self.back.join(" ")).as_bytes()),
         }
         hasher.finish()
     }
@@ -196,6 +206,13 @@ impl Card {
             slot => *slot = Some(addition),
         }
     }
+}
+
+/// Collapses every run of whitespace (spaces, tabs, newlines) to a single space
+/// and trims the ends, so reformatting an answer's layout never changes its
+/// identity ([`Card::id`]) while a change in words still does.
+fn normalize_ws(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 impl Eq for Card {}
@@ -330,5 +347,28 @@ mod tests {
             None,
         );
         assert_eq!(9405983226316857161, c.id());
+    }
+
+    #[test]
+    fn id_is_whitespace_insensitive_across_lines() {
+        // The same answer as one line vs. split across several lines (the exact
+        // reshape the formatter and generate produce) must be the same card.
+        let one_line = card("d.txt", "f", &["A, B, C"], None);
+        let many_lines = card("d.txt", "f", &["A,", "B,", "C"], None);
+        assert_eq!(one_line.id(), many_lines.id());
+    }
+
+    #[test]
+    fn id_ignores_irregular_internal_whitespace() {
+        let a = card("d.txt", "f", &["foo bar"], None);
+        let b = card("d.txt", "f", &["foo    bar"], None);
+        assert_eq!(a.id(), b.id());
+    }
+
+    #[test]
+    fn id_still_changes_on_word_edit() {
+        let a = card("d.txt", "f", &["A, B, C"], None);
+        let b = card("d.txt", "f", &["A, B, D"], None);
+        assert_ne!(a.id(), b.id());
     }
 }
