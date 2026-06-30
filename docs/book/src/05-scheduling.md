@@ -20,7 +20,7 @@ Grading moves the card between stages:
 
 - **failed** → back to stage 1
 - **partly** → down one stage (floored at 1)
-- **nailed** → up one stage
+- **passed** → up one stage
 
 So a card you keep getting right climbs to longer and longer intervals, a miss
 sends it back to the bottom of the ladder, and a **partly** — you got the gist but

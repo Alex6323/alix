@@ -166,6 +166,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   as `[…]`), are unaffected.
 
 ### Changed
+- **The top self-grade is now "Passed", not "Nailed"** — the plainer, more serious
+  term (it was "Got" → "Nailed" → now "Passed"). Renamed everywhere it shows: the
+  review grade button, the trace walk delta, and the terminal. **Breaking:** the
+  `[keys]` config key `nailed` is now `passed` (rebind if you'd set it).
 - **Browse is now an in-page mode of the web app — no separate `/browse` page.**
   Hitting **Browse** in the web picker (or `alix browse <deck> --serve`) opens a
   read-only overlay right in the main app — step through every card with

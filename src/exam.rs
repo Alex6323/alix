@@ -1681,7 +1681,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cli = fake_reply(
             dir.path(),
-            "{\"verdict\":\"pass\",\"feedback\":\"nailed the chain\",\"missed\":[]}",
+            "{\"verdict\":\"pass\",\"feedback\":\"passed the chain\",\"missed\":[]}",
         );
         let result = grade_compression(
             "how X becomes Y",

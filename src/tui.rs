@@ -757,7 +757,7 @@ impl App {
         let reveal_hit = hit(&self.options.keys.reveal);
         let failed_hit = hit(&self.options.keys.failed);
         let partly_hit = hit(&self.options.keys.partly);
-        let nailed_hit = hit(&self.options.keys.nailed);
+        let passed_hit = hit(&self.options.keys.passed);
         let cont_hit = hit(&self.options.keys.cont);
 
         if quit_hit {
@@ -888,7 +888,7 @@ impl App {
                     self.finish_card_and_advance(Grade::Fail)?;
                 } else if partly_hit {
                     self.finish_card_and_advance(Grade::Partial)?;
-                } else if nailed_hit {
+                } else if passed_hit {
                     self.finish_card_and_advance(Grade::Pass)?;
                 } else if ask_hit {
                     self.enter_ask();
@@ -962,7 +962,7 @@ impl App {
                     self.finish_card_and_advance(Grade::Fail)?;
                 } else if partly_hit {
                     self.finish_card_and_advance(Grade::Partial)?;
-                } else if nailed_hit {
+                } else if passed_hit {
                     self.finish_card_and_advance(Grade::Pass)?;
                 } else if ask_hit {
                     self.enter_ask();
@@ -981,7 +981,7 @@ impl App {
                     self.finish_card_and_advance(Grade::Fail)?;
                 } else if partly_hit {
                     self.finish_card_and_advance(Grade::Partial)?;
-                } else if nailed_hit {
+                } else if passed_hit {
                     self.finish_card_and_advance(Grade::Pass)?;
                 } else if ask_hit {
                     self.enter_ask();
@@ -1285,10 +1285,10 @@ impl App {
                 )
             }
             Phase::Flip { revealed: true } => format!(
-                "{} failed │ {} partly │ {} nailed │ {} remove │ {} ask │ {} leave",
+                "{} failed │ {} partly │ {} passed │ {} remove │ {} ask │ {} leave",
                 l(&k.failed),
                 l(&k.partly),
-                l(&k.nailed),
+                l(&k.passed),
                 l(&k.remove),
                 l(&k.ask),
                 l(&k.quit)
@@ -1339,10 +1339,10 @@ impl App {
                 l(&k.quit)
             ),
             Phase::Explain { revealed: true, .. } => format!(
-                "{} failed │ {} partly │ {} nailed │ {} remove │ {} ask │ {} leave",
+                "{} failed │ {} partly │ {} passed │ {} remove │ {} ask │ {} leave",
                 l(&k.failed),
                 l(&k.partly),
-                l(&k.nailed),
+                l(&k.passed),
                 l(&k.remove),
                 l(&k.ask),
                 l(&k.quit)
@@ -1362,10 +1362,10 @@ impl App {
                     )
                 } else {
                     format!(
-                        "{} failed │ {} partly │ {} nailed │ {} remove │ {} ask │ {} leave",
+                        "{} failed │ {} partly │ {} passed │ {} remove │ {} ask │ {} leave",
                         l(&k.failed),
                         l(&k.partly),
-                        l(&k.nailed),
+                        l(&k.passed),
                         l(&k.remove),
                         l(&k.ask),
                         l(&k.quit)
@@ -1683,7 +1683,7 @@ impl App {
                         lines.push(Line::default());
                         let covered = self.kp_covered.iter().filter(|&&b| b).count();
                         let verdict = match keypoint_grade(covered, points.len()) {
-                            Grade::Pass => "nailed",
+                            Grade::Pass => "passed",
                             Grade::Partial => "partly",
                             Grade::Fail => "failed",
                         };

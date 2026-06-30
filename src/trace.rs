@@ -4,7 +4,7 @@
 //! `% at:` locator into a `% source:`) is walked hop by hop: at each checkpoint
 //! you commit a **prediction**, then the real **excerpt** from the source is
 //! revealed alongside the key points a good prediction should hit, and you
-//! judge the **delta** (nailed / partly / failed). The miss is recorded for SRS —
+//! judge the **delta** (passed / partly / failed). The miss is recorded for SRS —
 //! a weak edge resurfaces sooner — but never derails the chain; you advance
 //! from the revealed truth. After the last hop you **compress** the whole path
 //! into a couple of sentences, which is the trace's own exam.
@@ -40,8 +40,8 @@ const MAX_EXCERPT_LINES: usize = 60;
 /// truth at a checkpoint.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Delta {
-    /// The prediction covered the key points ("nailed it").
-    Nailed,
+    /// The prediction covered the key points ("passed it").
+    Passed,
     /// Partly right — something important was missing or wrong.
     Partial,
     /// The prediction missed the point ("failed").
@@ -52,7 +52,7 @@ impl Delta {
     /// The single-letter answer a learner types to record this delta.
     pub fn from_key(c: char) -> Option<Delta> {
         match c.to_ascii_lowercase() {
-            'n' => Some(Delta::Nailed),
+            'n' => Some(Delta::Passed),
             'p' => Some(Delta::Partial),
             'f' => Some(Delta::Failed),
             _ => None,
@@ -62,19 +62,19 @@ impl Delta {
     /// The label shown to the learner.
     pub fn label(self) -> &'static str {
         match self {
-            Delta::Nailed => "NAILED",
+            Delta::Passed => "PASSED",
             Delta::Partial => "PARTLY",
             Delta::Failed => "FAILED",
         }
     }
 
     /// How this delta schedules the checkpoint, sharing the review grades. A
-    /// nailed hop advances (and fades); a **partly** one is a weak edge that
+    /// passed hop advances (and fades); a **partly** one is a weak edge that
     /// drops a stage so it resurfaces sooner; a **failed** one resets — recorded,
     /// not punished (the walk still continues).
     pub fn grade(self) -> Grade {
         match self {
-            Delta::Nailed => Grade::Pass,
+            Delta::Passed => Grade::Pass,
             Delta::Partial => Grade::Partial,
             Delta::Failed => Grade::Fail,
         }
@@ -869,11 +869,11 @@ fn grade_prompt(checkpoint: &Checkpoint, prediction: &str) -> String {
          judge the substance). Reply with EXACTLY ONE line: the verdict word, then \
          a dash and ONE short sentence of feedback naming what was right or \
          missing. The verdict is one of:\n\
-         NAILED — covers the key points with nothing important wrong\n\
+         PASSED — covers the key points with nothing important wrong\n\
          PARTLY — some right, but an important point is missed, muddled, or \
          stated wrongly\n\
          FAILED — misses the point, or its core claim is wrong\n\
-         Do NOT award NAILED to a prediction that asserts something the key points \
+         Do NOT award PASSED to a prediction that asserts something the key points \
          CONTRADICT — a confident error is PARTLY at best (FAILED if the core \
          claim is wrong).\n\
          Example: `PARTLY — right that it reschedules, but you missed the \
@@ -883,7 +883,7 @@ fn grade_prompt(checkpoint: &Checkpoint, prediction: &str) -> String {
 }
 
 /// Parses a `VERDICT — feedback` grading reply into a [`Delta`] and the feedback
-/// text. The verdict must be one of `NAILED` / `PARTLY` / `FAILED` (what the
+/// text. The verdict must be one of `PASSED` / `PARTLY` / `FAILED` (what the
 /// prompt asks for); any other reply is an **error** — a grader that ignores the
 /// instruction (a weak local model, say) must not be papered over with a
 /// fabricated grade, so the caller aborts the AI grade rather than scoring a hop
@@ -891,14 +891,14 @@ fn grade_prompt(checkpoint: &Checkpoint, prediction: &str) -> String {
 fn parse_grade(raw: &str) -> Result<(Delta, String)> {
     let line = raw.trim().lines().next().unwrap_or("").trim();
     let upper = line.to_ascii_uppercase();
-    let delta = if upper.starts_with("NAILED") {
-        Delta::Nailed
+    let delta = if upper.starts_with("PASSED") {
+        Delta::Passed
     } else if upper.starts_with("PARTLY") {
         Delta::Partial
     } else if upper.starts_with("FAILED") {
         Delta::Failed
     } else {
-        bail!("the grader did not return a NAILED, PARTLY, or FAILED verdict: {line:?}");
+        bail!("the grader did not return a PASSED, PARTLY, or FAILED verdict: {line:?}");
     };
     let feedback = line
         .split_once(['—', '-'])
@@ -1024,7 +1024,7 @@ impl Walk {
         let mut s = Summary::default();
         for (i, delta) in self.deltas.iter().enumerate() {
             match delta {
-                Some(Delta::Nailed) => s.nailed += 1,
+                Some(Delta::Passed) => s.passed += 1,
                 Some(Delta::Partial) => {
                     s.partly += 1;
                     s.weak.push(i);
@@ -1043,7 +1043,7 @@ impl Walk {
 /// The outcome of a walk: how the checkpoints landed and which were weak.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Summary {
-    pub nailed: usize,
+    pub passed: usize,
     pub partly: usize,
     pub failed: usize,
     /// 0-based indices of the checkpoints judged partly or failed — the weak
@@ -1723,13 +1723,13 @@ mod tests {
 
     #[test]
     fn delta_keys_and_grades() {
-        assert_eq!(Some(Delta::Nailed), Delta::from_key('N'));
+        assert_eq!(Some(Delta::Passed), Delta::from_key('N'));
         assert_eq!(Some(Delta::Partial), Delta::from_key('p'));
         assert_eq!(Some(Delta::Failed), Delta::from_key('f'));
         assert_eq!(None, Delta::from_key('x'));
-        // Nailed advances; partly drops a stage; failed resets — each shares the
+        // Passed advances; partly drops a stage; failed resets — each shares the
         // review grade, so a partly is now a distinct, gentler outcome.
-        assert_eq!(Grade::Pass, Delta::Nailed.grade());
+        assert_eq!(Grade::Pass, Delta::Passed.grade());
         assert_eq!(Grade::Partial, Delta::Partial.grade());
         assert_eq!(Grade::Fail, Delta::Failed.grade());
     }
@@ -1761,7 +1761,7 @@ mod tests {
         for round in 0..MAX_STAGE + 1 {
             let mut walk = Walk::new(Trace::from_deck(&deck).unwrap(), SchedulerKind::Leitner);
             walk.predict("p".to_string());
-            walk.grade(&mut store, Delta::Nailed, u64::from(round) + 1);
+            walk.grade(&mut store, Delta::Passed, u64::from(round) + 1);
             assert_eq!(Phase::Done, walk.phase()); // no compress step
         }
 
@@ -2034,14 +2034,14 @@ mod tests {
         assert_eq!(Phase::Predict, walk.phase());
         assert_eq!(2, walk.total());
 
-        // Hop 1: predict -> reveal -> Nailed advances the checkpoint.
+        // Hop 1: predict -> reveal -> Passed advances the checkpoint.
         walk.predict("my guess".to_string());
         assert_eq!(Phase::Reveal, walk.phase());
         assert_eq!(Some("my guess"), walk.prediction(0));
-        walk.grade(&mut store, Delta::Nailed, 1000);
+        walk.grade(&mut store, Delta::Passed, 1000);
         assert_eq!(Phase::Predict, walk.phase());
         assert_eq!(1, walk.current_index());
-        assert_eq!(2, store.get(card0).unwrap().stage); // Nailed -> stage up
+        assert_eq!(2, store.get(card0).unwrap().stage); // Passed -> stage up
 
         // Hop 2 (last): a Failed resets to stage 1 and finishes the walk (no
         // compress step — verification is the separate trace exam).
@@ -2052,7 +2052,7 @@ mod tests {
         assert_eq!(1, store.get(card1).unwrap().stage); // Failed -> reset
 
         let summary = walk.summary();
-        assert_eq!(1, summary.nailed);
+        assert_eq!(1, summary.passed);
         assert_eq!(1, summary.failed);
         assert_eq!(vec![1], summary.weak); // the failed hop is the weak edge
     }
@@ -2081,7 +2081,7 @@ mod tests {
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let mut walk = Walk::new(trace, SchedulerKind::Leitner);
         // In Predict phase, grading does nothing.
-        walk.grade(&mut store, Delta::Nailed, 1000);
+        walk.grade(&mut store, Delta::Passed, 1000);
         assert_eq!(Phase::Predict, walk.phase());
         assert_eq!(0, walk.current_index());
         assert!(store.is_empty());
@@ -2095,7 +2095,7 @@ mod tests {
             parse_grade("PARTLY — right that it reschedules, but missed the clamp.").unwrap();
         assert_eq!(Delta::Partial, d);
         assert_eq!("right that it reschedules, but missed the clamp.", f);
-        assert_eq!(Delta::Nailed, parse_grade("NAILED — spot on").unwrap().0);
+        assert_eq!(Delta::Passed, parse_grade("PASSED — spot on").unwrap().0);
         assert_eq!(
             Delta::Failed,
             parse_grade("FAILED - wrong direction").unwrap().0
@@ -2104,7 +2104,7 @@ mod tests {
 
     #[test]
     fn parse_grade_errors_on_an_unrecognized_verdict() {
-        // A grader that ignores the NAILED/PARTLY/FAILED instruction (e.g. a weak
+        // A grader that ignores the PASSED/PARTLY/FAILED instruction (e.g. a weak
         // local model) must surface an error — never a fabricated grade the model
         // didn't give. The caller then aborts the AI grade (and self-grades).
         assert!(parse_grade("hmm not sure").is_err());

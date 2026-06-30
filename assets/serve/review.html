@@ -342,14 +342,14 @@
   .chip.again:hover { border-color: var(--again); color: var(--again); }
   .chip.failed:hover { border-color: var(--again); color: var(--again); }
   .chip.partly:hover { border-color: var(--warn); color: var(--warn); }
-  .chip.nailed:hover { border-color: var(--good); color: var(--good); }
+  .chip.passed:hover { border-color: var(--good); color: var(--good); }
   /* the explain checklist's submit button, once every point is answered: a
      filled chip tinted by the derived verdict (red / amber / green). */
-  .chip.v-failed, .chip.v-partly, .chip.v-nailed { color: var(--void); }
+  .chip.v-failed, .chip.v-partly, .chip.v-passed { color: var(--void); }
   .chip.v-failed { background: var(--again); border-color: var(--again); }
   .chip.v-partly { background: var(--warn); border-color: var(--warn); }
-  .chip.v-nailed { background: var(--good); border-color: var(--good); }
-  .chip.v-failed:hover, .chip.v-partly:hover, .chip.v-nailed:hover { filter: brightness(1.08); color: var(--void); }
+  .chip.v-passed { background: var(--good); border-color: var(--good); }
+  .chip.v-failed:hover, .chip.v-partly:hover, .chip.v-passed:hover { filter: brightness(1.08); color: var(--void); }
 
   /* ── ask Claude ── */
   .ask { width: var(--card-w); max-width: 92vw; display: flex; flex-direction: column; gap: 12px; animation: deal 0.3s both; }
@@ -610,7 +610,7 @@ function submitCheck() {
   api("/api/check", post({ lines })).then(f => { feedback = f; render(); });
 }
 // Continue from a result (choice or typed) applies the grade and advances.
-function continueAfter() { grade(feedback.passed ? "nailed" : "failed"); }
+function continueAfter() { grade(feedback.passed ? "passed" : "failed"); }
 
 function el(tag, cls, text) {
   const n = document.createElement(tag);
@@ -1972,9 +1972,9 @@ function keypointsAnswered() { return marks.length > 0 && marks.every(m => m !==
 // on submit) — recomputed each render, so re-toggling a point updates the verdict.
 function keypointVerdict() {
   const yes = keypointsYes(), total = state.keypoints.length;
-  return (total === 0 || yes >= total) ? "nailed" : yes === 0 ? "failed" : "partly";
+  return (total === 0 || yes >= total) ? "passed" : yes === 0 ? "failed" : "partly";
 }
-// Submit: the server derives failed/partly/nailed from how many points were
+// Submit: the server derives failed/partly/passed from how many points were
 // covered (the one keypoint_grade rule, in the lib). Unanswered = not covered.
 function submitKeypoints() {
   api("/api/grade", post({ covered: keypointsYes(), total: state.keypoints.length })).then(apply);
@@ -2089,7 +2089,7 @@ function renderLegend() {
     chip(state.mode === "line" && revealed > 0 ? "Reveal next" : "Reveal", "primary", reveal, label(KEYS.reveal));
     chip("Skip", "", skip, label(KEYS.skip));
   } else if (hasKeypoints()) {
-    chip("Yes", "nailed", () => answerKeypoint(true), "y");
+    chip("Yes", "passed", () => answerKeypoint(true), "y");
     chip("No", "failed", () => answerKeypoint(false), "n");
     if (keypointsAnswered()) {
       // Every point judged: the submit button becomes the derived verdict
@@ -2104,7 +2104,7 @@ function renderLegend() {
   } else {
     chip("Failed", "failed", () => grade("failed"), label(KEYS.failed));
     chip("Partly", "partly", () => grade("partly"), label(KEYS.partly));
-    chip("Nailed", "nailed", () => grade("nailed"), label(KEYS.nailed));
+    chip("Passed", "passed", () => grade("passed"), label(KEYS.passed));
     chip("Ask", "", openAsk, label(KEYS.ask));
   }
   chip("Leave", "", leaveSession, "esc"); // return to the deck picker
@@ -2309,7 +2309,7 @@ document.addEventListener("keydown", (e) => {
   }
   if (hit(e, KEYS.failed)) { e.preventDefault(); grade("failed"); }
   else if (hit(e, KEYS.partly)) { e.preventDefault(); grade("partly"); }
-  else if (hit(e, KEYS.nailed)) { e.preventDefault(); grade("nailed"); }
+  else if (hit(e, KEYS.passed)) { e.preventDefault(); grade("passed"); }
 });
 
 document.getElementById("kebab").addEventListener("click", (e) => { e.stopPropagation(); menu.classList.toggle("open"); });

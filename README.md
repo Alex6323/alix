@@ -478,9 +478,9 @@ source.
 ## Review
 
 The default **flip** mode is Anki-style: you reveal the answer and grade
-yourself **failed / partly / nailed** — the same three grades the trace walk
+yourself **failed / partly / passed** — the same three grades the trace walk
 uses. *Failed* resets the card to stage 1, *partly* drops it one stage (a soft
-miss — it returns sooner but you keep most of your progress), and *nailed*
+miss — it returns sooner but you keep most of your progress), and *passed*
 advances it one stage. The
 **typing** mode has you type the back of the card character by
 character with instant green/red feedback; `TAB` reveals the next two
@@ -512,7 +512,7 @@ In **choice** mode you pick the answer out of four options with `1`–`4`.
 The three wrong options are sampled from the answers of the other cards in
 the session, preferring similar-looking ones (years compete with years), so
 no distractors ever have to be written. Recognition is easier than recall: a
-correct pick grades as *nailed*, a wrong pick *failed* (an auto-graded mode has
+correct pick grades as *passed*, a wrong pick *failed* (an auto-graded mode has
 no *partly*).
 Cloze siblings are never used as distractors, and if a session has fewer
 than four distinct answers the card falls back to flip mode.
@@ -536,7 +536,7 @@ Editing a card's answer regenerates its distractors next time you augment. See
 In **line** mode the back is revealed one line at a time: press the reveal
 key (`Space`) to uncover the next line, recalling it first. It is meant for
 lyrics, poems, or any ordered list. Once every line is shown you grade
-yourself failed / partly / nailed, exactly like flip mode. Pair it with
+yourself failed / partly / passed, exactly like flip mode. Pair it with
 `--order sequential` (or `% order: sequential` in the deck) to walk the
 sections top to bottom — e.g. one card per verse/chorus of a song.
 
@@ -553,7 +553,7 @@ self-graded tier below the [AI exam](#the-ai-exam-alix-exam).
 If you [augment the deck with **key points**](#augment-a-deck--alix-deck-augment)
 (`--target keypoints`), an explain card's reveal becomes a **checklist**: you tick
 each cached key point you covered, and the grade is *derived* from the coverage —
-all → nailed, some → partly, none → failed — instead of a single gut judgment. It
+all → passed, some → partly, none → failed — instead of a single gut judgment. It
 turns the self-grade from a vibe into a per-claim check (the cheap, in-loop cousin
 of the AI exam). Atomic-answer cards aren't given key points, so they keep the
 plain reveal.
@@ -628,7 +628,7 @@ launched inside a workspace returns **into that workspace**. Naming decks on the
 command line skips the screen and goes straight to review/browse.
 
 Every answer mode works in the browser: **flip** (reveal, then self-grade
-Failed / Partly / Nailed), **line** (reveal a verse one line at a time — it
+Failed / Partly / Passed), **line** (reveal a verse one line at a time — it
 auto-scrolls to follow the newest line), **typing** / **fuzzy** (type your
 answer and submit; checked exactly or with your configured typo tolerance, each
 line marked ✓/✗ with the correct answer shown), and **choice** (tap one of the
@@ -807,7 +807,7 @@ alix deck augment mydeck.txt --target choices --with "use common misconceptions"
 - **`--target keypoints`** decomposes each card's answer into the few
   load-bearing claims a from-memory reconstruction must hit. In
   [**explain** mode](#review) the reveal becomes a **checklist** of those points:
-  you tick the ones you covered and the grade is *derived* — all → nailed, some →
+  you tick the ones you covered and the grade is *derived* — all → passed, some →
   partly, none → failed — so the self-grade is a per-claim check, not a vibe.
   An *atomic* answer (a single fact/term/date with nothing to decompose) is left
   alone, keeping its plain reveal. Tune the maximum with `[ai] keypoint_count`.
@@ -1074,12 +1074,12 @@ that has a real sequence.
    point).
 2. **Reveal** — `alix` prints the real excerpt from the source, then the
    checkpoint's key points and note.
-3. **Gap** — you judge yourself **Failed / Partly / Nailed** (the same three
+3. **Gap** — you judge yourself **Failed / Partly / Passed** (the same three
    grades review uses). Grading is self-judged and offline (no model call) by
    default; pass **`--grade`** to have Claude judge your typed prediction against
    the key points and return the verdict plus a line of feedback (a model call per
    hop). Either way, a failed or partly hop is a **weak edge** that resurfaces
-   sooner — a failed one resets, a partly steps back one stage — while a nailed
+   sooner — a failed one resets, a partly steps back one stage — while a passed
    hop advances and fades. Each checkpoint is an ordinary card under the hood, so
    this scheduling is the normal per-card SRS.
 4. **Compress** — after the last hop you restate the whole path in two
@@ -1088,7 +1088,7 @@ that has a real sequence.
 **In the browser** — add **`--serve`** (`alix trace <deck> --serve`) to walk it
 in the web frontend instead of the terminal, the same way `review`/`browse`
 serve. The walk page shows the **path** as a rail you descend (its nodes color in
-by Failed / Partly / Nailed) and reveals each checkpoint's real source in a
+by Failed / Partly / Passed) and reveals each checkpoint's real source in a
 line-numbered excerpt; `--serve --grade` runs the live grading and the page waits
 on Claude per hop. `--port`/`--lan` work as elsewhere. Progress saves to the same
 store, so a walk started in the terminal continues in the browser.
@@ -1180,12 +1180,12 @@ shown in the footer. For example, to grade self-graded cards with j/k/l:
 [keys]
 failed = ["j"]
 partly = ["k"]
-nailed = ["l"]
+passed = ["l"]
 ```
 
 Keys are written as a single character (`"j"`), a special key name
 (`"space"`, `"enter"`, `"tab"`, `"esc"`, `"backspace"`), or either with a
-`ctrl-` prefix (`"ctrl-s"`). Rebindable actions: `failed`, `partly`, `nailed`,
+`ctrl-` prefix (`"ctrl-s"`). Rebindable actions: `failed`, `partly`, `passed`,
 `reveal`, `hint`, `submit`, `skip`, `remove` (mark the card for deletion from
 its deck file, default `ctrl-x`), `continue`, `restart` (start a new session
 from the summary screen, default `r`), `quit`. While you are typing

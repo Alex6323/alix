@@ -13,7 +13,7 @@ recognition, exact recall, or understanding.
 
 You read the question, recall the answer, reveal it, and grade yourself: **failed**
 (missed — reset to stage 1), **partly** (got the gist but stumbled — down one
-stage), or **nailed** (up one stage). The same three grades the trace walk uses.
+stage), or **passed** (up one stage). The same three grades the trace walk uses.
 It's the Anki-style default, and the right choice whenever you can fairly
 judge your own answer — conceptual questions, explanations, anything open-ended.
 
@@ -99,7 +99,7 @@ tier beneath the AI exam (a later chapter).
 Augment the deck with **key points** (`alix deck augment <deck> --target
 keypoints`) and the reveal becomes a **checklist**: you tick each cached point you
 covered and the grade is *derived* from the coverage —
-all → nailed, some → partly, none → failed — so the self-grade is a per-claim
+all → passed, some → partly, none → failed — so the self-grade is a per-claim
 check rather than a gut call. Atomic-answer cards get no key points and keep the
 plain reveal.
 

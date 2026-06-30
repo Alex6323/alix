@@ -3032,14 +3032,14 @@ fn print_excerpt(excerpt: &alix::trace::Excerpt) {
 /// Prints the end-of-walk tally and which checkpoints came out weak.
 fn print_trace_summary(walk: &Walk) {
     let s = walk.summary();
-    let graded = s.nailed + s.partly + s.failed;
+    let graded = s.passed + s.partly + s.failed;
     if graded == 0 {
         println!("\n{DIM}Left the trace early — no checkpoints recorded.{RESET}");
         return;
     }
     println!(
-        "\n{BOLD}Walk complete{RESET}  {} nailed · {} partly · {} failed",
-        s.nailed, s.partly, s.failed
+        "\n{BOLD}Walk complete{RESET}  {} passed · {} partly · {} failed",
+        s.passed, s.partly, s.failed
     );
     if s.weak.is_empty() {
         println!("{DIM}Every hop landed — the path will fade gently.{RESET}");
@@ -3310,7 +3310,7 @@ fn config_cmd(init: bool) -> Result<()> {
     println!("key bindings:");
     show("failed", &keys.failed);
     show("partly", &keys.partly);
-    show("nailed", &keys.nailed);
+    show("passed", &keys.passed);
     show("reveal", &keys.reveal);
     show("hint", &keys.hint);
     show("submit", &keys.submit);
