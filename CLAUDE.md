@@ -9,6 +9,14 @@ weight that when prioritizing. The **library crate is the single source of
 logic**; the TUI, the web server, and the CLI are thin consumers. Put behavior
 in the lib (`src/`), not in a frontend, so both surfaces share it.
 
+Native mobile thin clients (Android/iOS) are anticipated, consuming these same
+web endpoints — so treat the web JSON API as a **client-agnostic contract**:
+review flow and session state live in the lib behind presentation-agnostic
+endpoints, never in page JS (a native client can't reuse logic trapped in the
+page). alix itself stays a plain bind-to-interface HTTP server — reaching it
+beyond the LAN is an operator deployment choice (VPN/reverse proxy), not a
+TLS/auth/accounts subsystem to grow here.
+
 ## Scope & focus
 
 `alix` aims to do a few things well rather than many adequately.
