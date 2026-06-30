@@ -7,6 +7,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Augment decks from the web picker — no CLI needed.** Press **`a`** on a deck
+  (or its new **Augment** button) to open a screen of what its augmentation cache
+  holds: one row per target (choices, notes, questions, key points) with a
+  coverage bar, plus its topologies. **Generate** fills only the cards a target is
+  still missing — a costed background call, with a live spinner — **Remove** clears
+  one target, and the topology row adds or drops named topologies. A shared
+  guidance box feeds the `--with` steer. It writes the same `augment.json` the CLI
+  does, so review reads it unchanged. Decks only; workspaces don't show it. (The
+  terminal surface comes later — the library and server logic are shared.)
 - **New cards are introduced as an *attempt*, not a cold quiz (acquire).** A
   never-seen card no longer drops you into a quiz you can't pass — its first
   encounter is a low-stakes try, then the answer, then one key ("Seen") files it on

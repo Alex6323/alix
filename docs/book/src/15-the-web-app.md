@@ -30,6 +30,19 @@ it shown as you go ("Whole deck" is the default). On a workspace row instead,
 or **Esc** returns here, so you can switch decks without restarting. Naming a
 deck on the command line skips this screen.
 
+## Augmenting a deck from the picker
+
+Focus a deck and press **`a`** (or its **Augment** button) to open the **Augment
+screen** — the browser face of `alix deck augment`. It shows what the deck's
+augmentation cache already holds, one row per target
+([choices](04-review-modes.md), notes, questions, [key points](04-review-modes.md))
+with a coverage bar, alongside its topologies. **Generate** fills only the cards a
+target is still missing, run as a background Claude call while the page polls (a
+spinner shows it working); **Remove** clears a target, and the topology row adds
+or drops named ones. A guidance box feeds the same `--with` steer as the command
+line. It writes the same `augment.json` review reads, so this only saves you the
+trip to the terminal. The action shows on decks, not workspaces.
+
 ## Every mode, plus the AI features
 
 All [answer modes](04-review-modes.md) work in the browser — flip, line (it

@@ -831,6 +831,13 @@ next time you augment. Tuned under `[ai]` (`model`, `distractor_count`,
 `variant_count`, `timeout_secs`). Augmentation needs the `claude` CLI installed
 and logged in.
 
+**From the web picker.** You don't need the command line for any of this: focus a
+deck and press **`a`** (or its **Augment** button) to open a screen of each
+target's coverage, with **Generate** to fill the cards a target is still missing
+and **Remove** to clear one (or all). There generation runs in the **background**
+— the page polls while Claude works — but it writes the same `augment.json`, so
+review reads it identically. Shown on decks, not workspaces.
+
 ## Import an Anki deck (`alix import`)
 
 `alix import <file.tsv>` turns an Anki export into an `alix` deck — no Claude
