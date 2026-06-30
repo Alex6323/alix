@@ -1096,6 +1096,7 @@ impl Augmenting {
             card_row("notes", "Notes", s.notes),
             card_row("questions", "Questions", s.questions),
             card_row("keypoints", "Key points", s.keypoints),
+            card_row("format", "Formatting", s.format),
             AugmentRowDto {
                 kind: "topology",
                 label: "Topology",
@@ -1174,6 +1175,13 @@ impl Augmenting {
                     },
                     "keypoints",
                 )
+            }
+            "format" => {
+                let items = self.cache.missing_format(&self.cards);
+                if items.is_empty() {
+                    return false;
+                }
+                (augment::Job::Format { items }, "format")
             }
             // Topology always adds a new one (named by its guidance); no gap notion.
             "topology" => (
@@ -1262,6 +1270,7 @@ impl Augmenting {
             "notes" => self.cache.clear_notes(&self.deck_ids),
             "questions" => self.cache.clear_variants(&self.deck_ids),
             "keypoints" => self.cache.clear_keypoints(&self.deck_ids),
+            "format" => self.cache.clear_format(&self.deck_ids),
             "topology" => {
                 let Some(name) = topology else {
                     return false;
@@ -3131,7 +3140,7 @@ fn card_dto(card: &Card) -> CardDto {
     CardDto {
         front: card.front.clone(),
         context: card.context.clone(),
-        back: card.back.clone(),
+        back: card.back_for_display().to_vec(),
         note: render::note_units(card)
             .into_iter()
             .map(NoteUnitDto::from)
