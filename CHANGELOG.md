@@ -7,6 +7,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Web picker: browser-style back + refresh buttons in the header**, for people
+  who reach for the mouse/touch over keybindings. `←` goes back a view (disabled
+  at the top level; mirrors `Esc`/`Backspace`) and `⟳` re-scans the deck list
+  (also bound to the new `r` key). Refresh moved out of the burger menu, and the
+  drill-in's footer "Back" chip is gone — the header `←` replaces it.
 - `alix deck augment --target format` — a non-destructive pass that reshapes a
   badly-shaped card (e.g. a list crammed into one prose answer) into clean
   display lines, a tidier front/note, and a suggested answer mode, applied at

@@ -53,6 +53,12 @@
   /* overflow menu: only the destructive action lives here */
   .menu-wrap { position: relative; flex: none; }
   .kebab { background: none; border: 0; color: var(--dim); cursor: pointer; font-size: 1.15rem; line-height: 1; padding: 4px 8px; border-radius: 8px; }
+  /* Browser-style picker nav (back + refresh), for mouse/touch over keys. */
+  .bar-left { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
+  .bar-nav { display: inline-flex; align-items: center; gap: 1px; flex: none; }
+  .navbtn { background: none; border: 0; color: var(--dim); cursor: pointer; font-size: 1.05rem; line-height: 1; padding: 4px 8px; border-radius: 8px; }
+  .navbtn:hover:not(:disabled) { color: var(--ink); background: rgba(255,255,255,0.06); }
+  .navbtn:disabled { opacity: 0.3; cursor: default; }
   .sheet { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: grid; place-items: center; z-index: 60; }
   .sheet[hidden] { display: none; }
   .sheet-panel { background: var(--void); border: 1px solid var(--line); border-radius: 14px; padding: 20px 24px; max-width: min(440px, 90vw); color: var(--ink); box-shadow: 0 12px 44px rgba(0,0,0,0.45); animation: deal 0.2s both; }
@@ -445,9 +451,15 @@
 <body>
   <div class="bar">
     <div class="bar-inner">
-      <span class="brand">
-        <svg viewBox="0 0 512 512" aria-hidden="true"><path d="M 269 168 L 221 254 L 253 254 L 237 348 L 297 246 L 263 246 L 285 168 Z" fill="currentColor"/></svg>
-        alix
+      <span class="bar-left">
+        <span class="brand">
+          <svg viewBox="0 0 512 512" aria-hidden="true"><path d="M 269 168 L 221 254 L 253 254 L 237 348 L 297 246 L 263 246 L 285 168 Z" fill="currentColor"/></svg>
+          alix
+        </span>
+        <span class="bar-nav" id="barNav" style="display:none">
+          <button class="navbtn" id="navBack" aria-label="Back" title="Back">←</button>
+          <button class="navbtn" id="navRefresh" aria-label="Refresh decks" title="Refresh decks (r)">⟳</button>
+        </span>
       </span>
       <span class="bar-center">
         <span class="deck" id="deck"></span>
@@ -462,7 +474,6 @@
             <button id="mAsk" class="m-review" role="menuitem">Ask Claude <span class="mk" id="mAskKey">?</span></button>
             <button id="mRemove" class="m-review" role="menuitem">Remove card <span class="mk">x</span></button>
             <button id="mShortcuts" class="m-picker" role="menuitem">Keyboard shortcuts</button>
-            <button id="mRefresh" class="m-picker" role="menuitem">Refresh decks</button>
             <button id="theme-open" role="menuitem" style="color: var(--ink)">Theme…</button>
             <button id="mAbout" class="m-picker" role="menuitem">About</button>
           </div>
@@ -523,6 +534,14 @@ const masteredBtn = document.getElementById("masteredBtn");
 function headerSearch() { deckEl.style.display = "none"; barFilter.style.display = ""; }
 function headerBreadcrumb() { barFilter.style.display = "none"; deckEl.style.display = ""; masteredBtn.style.display = "none"; }
 function headerNone() { barFilter.style.display = "none"; deckEl.style.display = "none"; masteredBtn.style.display = "none"; }
+// Browser-style picker nav: ← goes back (mirrors Esc; off at the top level), ⟳
+// re-scans the decks (same as the `r` key). Shown only on the picker.
+const barNav = document.getElementById("barNav");
+const navBack = document.getElementById("navBack");
+const navRefresh = document.getElementById("navRefresh");
+function updateNavBack() { navBack.disabled = !selectEsc; }
+navBack.addEventListener("click", () => { if (selectEsc) selectEsc(); });
+navRefresh.addEventListener("click", () => renderSelect());
 const menu = document.getElementById("menu");
 
 async function api(path, opts) { return (await fetch(path, opts)).json(); }
@@ -1216,6 +1235,7 @@ async function renderSelect() {
   // `allowMastered` binds the m key + a chip to the Mastered window.
   function renderList(opts) {
     selectEsc = opts.back || null;
+    updateNavBack();
     stage.innerHTML = ""; legend.innerHTML = "";
     let focusedEl = null;
     let drawerEl = null; // the focus drawer under the focused deck, if it has a topology
@@ -1299,12 +1319,7 @@ async function renderSelect() {
         ag.addEventListener("click", () => { lastWorkspace = f._wsName || null; openAugment(f._item.name); });
         legend.appendChild(ag);
       }
-      if (opts.back) {
-        const bb = el("button", "chip", "Back");
-        bb.appendChild(el("span", "k", "esc"));
-        bb.addEventListener("click", opts.back);
-        legend.appendChild(bb);
-      }
+      // Back is the header ← nav button (and Esc/Backspace); no footer chip.
       // "Take exam" sits to the RIGHT of Back for any deck that HAS an exam but
       // isn't already exam-due (where the primary is the exam): enabled to test
       // out early, or disabled with a 🔒 key hint when its exam is locked. A trace
@@ -1526,6 +1541,7 @@ async function renderSelect() {
       else if (e.key === "ArrowLeft" || hit(e, PK.back)) { e.preventDefault(); if (drawerCycle) drawerCycle(-1); } // back-out is Esc/Backspace only; ←/h just steps the drawer
       else if (e.key === "b" && cur && cur._item) { e.preventDefault(); browseDeck(cur._item, cur._wsName); }
       else if (e.key === "a" && cur && cur._item) { e.preventDefault(); lastWorkspace = cur._wsName || null; openAugment(cur._item.name); }
+      else if (e.key === "r") { e.preventDefault(); renderSelect(); } // re-scan the decks (also the ⟳ nav button)
       else if (opts.allowMastered && hit(e, PK.mastered)) { e.preventDefault(); renderMastered(); }
       else if (e.key === "x" && cur && cur._item && cur._item.examable) {
         e.preventDefault(); lastWorkspace = cur._wsName || null; startExam(cur._item.name);
@@ -2248,6 +2264,7 @@ function openShortcuts() {
     '<kbd>m</kbd><span>mastered decks</span>' +
     '<kbd>g / G</kbd><span>top / bottom</span>' +
     '<kbd>← →</kbd><span>step regions (in the focus drawer)</span>' +
+    '<kbd>r</kbd><span>refresh the deck list</span>' +
     '<kbd>esc / ⌫</kbd><span>back</span>' +
     '</div>'
   );
@@ -2257,9 +2274,10 @@ function openShortcuts() {
 function setMenuContext(ctx) {
   document.querySelectorAll("#menu .m-picker").forEach((b) => { b.style.display = ctx === "picker" ? "" : "none"; });
   document.querySelectorAll("#menu .m-review").forEach((b) => { b.style.display = ctx === "review" ? "" : "none"; });
+  barNav.style.display = ctx === "picker" ? "" : "none";
+  updateNavBack();
 }
 
-document.getElementById("mRefresh").addEventListener("click", () => { menu.classList.remove("open"); renderSelect(); });
 document.getElementById("mShortcuts").addEventListener("click", () => { menu.classList.remove("open"); openShortcuts(); });
 document.getElementById("mAbout").addEventListener("click", () => {
   menu.classList.remove("open");
