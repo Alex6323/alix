@@ -257,6 +257,10 @@ enum AugmentTarget {
     /// prints the walk so you can judge whether it lands. `--with` steers the
     /// organizing principle (e.g. "by module and type dependency").
     Topology,
+    /// A display-only reshape of a badly-shaped card — restructured front/answer/
+    /// note and a suggested mode — applied at review without touching the deck.
+    /// Plain (non-cloze) cards only.
+    Format,
 }
 
 #[derive(Args)]
@@ -832,6 +836,9 @@ fn build_review(
     // are read when a choice question is built.)
     let augment = AugmentCache::open(augment::augment_path_for(store.path()));
     for card in &mut cards {
+        // Reshape first (re-renders the deck note, front, answer, mode) …
+        augment.apply_format(card);
+        // … then stack the notes-target trivia on top of the reshaped note.
         if let Some(note) = augment.note(card.id()) {
             card.append_note(&[note.to_string()]);
         }
@@ -2049,6 +2056,7 @@ fn augment_cmd(args: AugmentArgs) -> Result<()> {
         AugmentTarget::Questions => "reworded question variants",
         AugmentTarget::Keypoints => "answer key points",
         AugmentTarget::Topology => "a topology",
+        AugmentTarget::Format => "card formatting",
     };
     let model = config
         .ai
@@ -2141,6 +2149,26 @@ fn augment_cmd(args: AugmentArgs) -> Result<()> {
                 if n == 1 { "y" } else { "ies" }
             );
             (walked, total, "a topology")
+        }
+        AugmentTarget::Format => {
+            // Reshaping is for plain cards — a cloze card's masked body must not
+            // be restructured.
+            let plain: Vec<Card> = deck
+                .cards
+                .iter()
+                .filter(|c| c.hash_lines.is_none())
+                .cloned()
+                .collect();
+            let items = warm_items(&plain);
+            if items.is_empty() {
+                bail!("the deck has no plain (non-cloze) cards to format");
+            }
+            let total = items.len();
+            let map = augment::generate_format(&items, guidance, &ask_cfg)?;
+            for (id, fmt) in &map {
+                cache.set_format(*id, fmt.clone());
+            }
+            (map.len(), total, "card formats")
         }
     };
     cache.save()?;

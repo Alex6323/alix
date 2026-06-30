@@ -233,3 +233,69 @@ fn exam_on_a_trace_is_gated_by_unfinished_prerequisites() {
         "stderr: {err}"
     );
 }
+
+/// Writes an executable fake `claude` at `dir/fake-claude` that drains stdin
+/// (so the prompt write never races into a broken pipe) then prints `reply`
+/// verbatim, and returns its path. Mirrors `testutil::fake_reply`, but the CLI
+/// suite drives the built binary as a subprocess so it can't reach that crate
+/// helper — the fake is wired in via a `--config` TOML pointing `[ask] command`
+/// at this script.
+fn fake_claude(dir: &Path, reply: &str) -> String {
+    use std::os::unix::fs::PermissionsExt;
+    let reply_path = dir.join("fake-reply.txt");
+    std::fs::write(&reply_path, reply).unwrap();
+    let script = dir.join("fake-claude");
+    std::fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\ncat >/dev/null; cat {}\n",
+            reply_path.to_str().unwrap()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    script.to_str().unwrap().to_string()
+}
+
+#[test]
+fn augment_target_format_caches_a_reshape() {
+    // `deck augment --target format` reshapes a badly-shaped plain card and
+    // writes the result to the sidecar `augment.json` beside the store, without
+    // touching the deck file. The Claude call is faked by a config-wired CLI.
+    let dir = TempDir::new().unwrap();
+    let deck = write(dir.path(), "parts.txt", "# List the parts\n    A, B, C\n");
+    // The model returns a structured reshape for card index 0: a list body and a
+    // line-by-line mode suggestion.
+    let cli = fake_claude(
+        dir.path(),
+        r#"{"0": {"back": ["A", "B", "C"], "mode": "line"}}"#,
+    );
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+    let store = dir.path().join("p.json");
+    let out = alix(&[
+        "deck",
+        "augment",
+        &deck,
+        "--target",
+        "format",
+        "--store",
+        store.to_str().unwrap(),
+        "--config",
+        &config,
+    ]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+
+    // The reshape is cached beside the store, not written back into the deck.
+    let cached = std::fs::read_to_string(dir.path().join("augment.json")).unwrap();
+    assert!(cached.contains("\"A\""), "augment.json: {cached}");
+    assert!(cached.contains("LineByLine"), "augment.json: {cached}");
+    let deck_after = std::fs::read_to_string(&deck).unwrap();
+    assert_eq!(
+        deck_after, "# List the parts\n    A, B, C\n",
+        "deck untouched"
+    );
+}
