@@ -29,7 +29,7 @@ use crate::{
     recent::RecentDecks,
     session,
     store::{Store, default_store_path},
-    workspace,
+    title, workspace,
 };
 
 /// Turns a key event into a [`KeyPattern`] for matching against [`PickerKeys`].
@@ -358,10 +358,14 @@ fn deck_item(
             } else {
                 format!("· {}", status.badge)
             };
-            // Use the explicit `% title:`, else the file name (without `.txt`) —
-            // never a trace's long `% trace:` sentence, which is a paragraph, not
-            // a list label.
-            let label = deck.title.clone().unwrap_or_else(|| stem(&c.name));
+            // Use the explicit `% title:`, else — for a trace — a condensed form
+            // of its `% trace:` path-question (a label, not the whole sentence),
+            // else the file name (without `.txt`).
+            let label = deck
+                .title
+                .clone()
+                .or_else(|| deck.trace.as_deref().map(title::condense))
+                .unwrap_or_else(|| stem(&c.name));
             (
                 label,
                 Some(meta),
@@ -514,7 +518,7 @@ pub fn catalog(decks_dir: &Path, recent: &RecentDecks) -> Vec<DeckEntry> {
                                     // Qualified key so members never collide with
                                     // top-level decks in the resolution map.
                                     name: format!("{}/{}", c.name, file),
-                                    label: deck_title(m).unwrap_or_else(|| stem(&file)),
+                                    label: deck_label(m).unwrap_or_else(|| stem(&file)),
                                     path: m.clone(),
                                     last_used_ms: None,
                                     is_workspace: false,
@@ -542,7 +546,7 @@ pub fn catalog(decks_dir: &Path, recent: &RecentDecks) -> Vec<DeckEntry> {
                 }
             } else {
                 DeckEntry {
-                    label: deck_title(&c.path).unwrap_or_else(|| stem(&c.name)),
+                    label: deck_label(&c.path).unwrap_or_else(|| stem(&c.name)),
                     path_hint: location_hint(&c.path, decks_dir),
                     name: c.name,
                     path: c.path,
@@ -557,11 +561,14 @@ pub fn catalog(decks_dir: &Path, recent: &RecentDecks) -> Vec<DeckEntry> {
         .collect()
 }
 
-/// A deck's `% title:` if it declares one, read without a full parse.
-fn deck_title(path: &Path) -> Option<String> {
-    std::fs::read_to_string(path)
-        .ok()
-        .and_then(|text| parser::parse_title(&text))
+/// A deck's display label, read without a full parse: its explicit `% title:`,
+/// else — for a trace — a condensed form of its `% trace:` path-question (an
+/// `explore` trace's is already short, a `--build`/hand-written one gets cut to
+/// a label-sized head). `None` when it declares neither, so the caller falls
+/// back to the file stem.
+fn deck_label(path: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(path).ok()?;
+    parser::parse_title(&text).or_else(|| parser::parse_trace(&text).map(|t| title::condense(&t)))
 }
 
 /// The outcome of the startup picker: the chosen `decks` (empty if cancelled),
@@ -2119,6 +2126,34 @@ mod tests {
         assert_eq!(vec!["zeta.txt", "alpha.txt"], names); // recent first
         assert_eq!(dir.path().join("zeta.txt"), entries[0].path);
         assert!(entries[0].last_used_ms.is_some());
+    }
+
+    #[test]
+    fn deck_label_condenses_a_trace_path_question_instead_of_the_slug() {
+        let dir = tempfile::tempdir().unwrap();
+        // A trace declares its name in `% trace:`, not `% title:` — the label
+        // comes from a condensed form of it, never the file stem.
+        let trace = dir.path().join("06-how-a-digest-becomes-verified.txt");
+        std::fs::write(
+            &trace,
+            "% trace: how a transaction digest becomes verified effects and events: \
+             fetch the checkpoint, derive the committee, then verify\n",
+        )
+        .unwrap();
+        assert_eq!(
+            Some("How a Transaction Digest Becomes Verified Effects and Events".to_string()),
+            deck_label(&trace),
+        );
+
+        // An explicit `% title:` still wins outright.
+        let titled = dir.path().join("01-the-domain-model.txt");
+        std::fs::write(&titled, "% title: The Domain Model\n# f\n\tb\n").unwrap();
+        assert_eq!(Some("The Domain Model".to_string()), deck_label(&titled));
+
+        // A plain deck with neither yields None (the caller falls back to stem).
+        let plain = dir.path().join("plain.txt");
+        std::fs::write(&plain, "# f\n\tb\n").unwrap();
+        assert_eq!(None, deck_label(&plain));
     }
 
     #[test]

@@ -31,6 +31,7 @@ pub mod serve;
 pub mod session;
 pub mod store;
 pub mod time;
+pub mod title;
 pub mod trace;
 pub mod tui;
 pub mod workspace;

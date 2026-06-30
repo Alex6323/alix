@@ -273,6 +273,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   answers compose freely, and the Next/Submit button now shows the binding.
 
 ### Fixed
+- **The picker labels a trace by its description, not its filename.** A trace row
+  in the picker (web tree and TUI drill-in) showed the raw file stem — a clipped
+  kebab slug like `08-how-a-workout-starts-logs-a` — even though the trace already
+  carries a readable name in `% trace:`. It now labels the row from that
+  description (`How a Workout Starts, Logs a Set, and Advances to the Next`),
+  condensed to a label-sized head so a long `--build`/hand-written path-question
+  doesn't overrun the row. Plain decks (a `% title:` or neither) are unaffected.
 - **A trace `--grade` reply that isn't a real verdict now errors instead of being
   scored as a miss.** The per-hop grader expects the model to answer
   `NAILED`/`PARTLY`/`FAILED`; an unrecognized reply (a weaker model ignoring the
