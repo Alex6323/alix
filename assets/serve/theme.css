@@ -285,12 +285,17 @@
   position: fixed; z-index: 41; top: 50%; left: 50%;
   transform: translate(-50%, -48%) scale(0.98);
   width: min(92vw, 470px); max-height: 80vh; overflow-y: auto;
+  scrollbar-width: thin; scrollbar-color: var(--line) transparent;
   background: var(--menu-bg); color: var(--ink);
   border: 1px solid var(--line); border-radius: 16px;
   box-shadow: 0 24px 60px -12px rgba(0,0,0,0.6); padding: 15px 18px 20px;
   opacity: 0; pointer-events: none; transition: opacity 0.15s, transform 0.15s;
 }
 .theme-panel.show { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
+.theme-panel::-webkit-scrollbar { width: 8px; }
+.theme-panel::-webkit-scrollbar-thumb { background: var(--line); border-radius: 8px; }
+.theme-panel::-webkit-scrollbar-thumb:hover { background: var(--dim); }
+.theme-panel::-webkit-scrollbar-track { background: transparent; }
 
 .theme-head { display: flex; align-items: center; justify-content: space-between; }
 .theme-head span { font-weight: 600; font-size: 1rem; }
