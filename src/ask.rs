@@ -627,7 +627,7 @@ mod tests {
     fn run_reports_failures_with_stderr() {
         let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
-        let cli = fake_cli(dir.path(), "echo 'not logged in' >&2; exit 1");
+        let cli = fake_cli(dir.path(), "cat >/dev/null; echo 'not logged in' >&2; exit 1");
         let err = run(&config(&cli, 10), "x", &[]).unwrap_err();
         assert!(format!("{err:#}").contains("not logged in"));
     }
