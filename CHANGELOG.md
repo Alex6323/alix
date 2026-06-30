@@ -273,6 +273,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   answers compose freely, and the Next/Submit button now shows the binding.
 
 ### Fixed
+- **The web picker's keyboard stays live after using the header burger menu.**
+  Opening the ☰ menu (or clicking empty space in the list) used to pull focus off
+  the selected deck row, so the arrow/`j`/`k`/`g`/`G` navigation went dead until
+  you clicked a row again. The burger no longer steals row focus, and a click on
+  empty picker space re-homes focus to the current row — so the keys keep working
+  no matter where you click.
 - **The picker labels a trace by its description, not its filename.** A trace row
   in the picker (web tree and TUI drill-in) showed the raw file stem — a clipped
   kebab slug like `08-how-a-workout-starts-logs-a` — even though the trace already

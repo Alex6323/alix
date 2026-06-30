@@ -1279,6 +1279,17 @@ async function renderSelect() {
       syncDrawer(row);
     });
 
+    // A click on empty picker space (not a row, chip, input, or the drawer) must
+    // not drop keyboard focus to <body>, where the row-nav keys can't reach.
+    // Keep focus on the current (or first) row so the keyboard stays live.
+    wrap.addEventListener("mousedown", (e) => {
+      if (e.target.closest(".deckrow, button, input, .drawer")) return;
+      e.preventDefault(); // don't blur the row we're keeping focus on
+      const v = visibleRows();
+      const row = (focusedEl && v.includes(focusedEl)) ? focusedEl : v[0];
+      if (row) row.focus();
+    });
+
     // No filter → show each row's default set (Recent hides finished/locked and
     // non-recent decks); with a filter → search every row by label. Empty
     // section headers hide themselves, and the tree flattens.
@@ -2012,6 +2023,12 @@ document.addEventListener("keydown", (e) => {
 });
 
 document.getElementById("kebab").addEventListener("click", (e) => { e.stopPropagation(); menu.classList.toggle("open"); });
+// Opening the burger (or clicking a menu item) must not pull focus off the
+// focused deck row — otherwise the picker's row-nav keys go dead until you click
+// back into the list. preventDefault on mousedown keeps focus where it is (the
+// same trick the focus drawer uses on its cells); the click still fires.
+document.getElementById("kebab").addEventListener("mousedown", (e) => e.preventDefault());
+menu.addEventListener("mousedown", (e) => e.preventDefault());
 menu.addEventListener("click", (e) => e.stopPropagation());
 document.getElementById("mAsk").addEventListener("click", () => { menu.classList.remove("open"); if (isAnswered()) openAsk(); });
 document.getElementById("mRemove").addEventListener("click", () => { menu.classList.remove("open"); remove(); });
