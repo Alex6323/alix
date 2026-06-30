@@ -331,6 +331,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   answers compose freely, and the Next/Submit button now shows the binding.
 
 ### Fixed
+- **Web picker rows have a small gap** so the focused row's highlight frame no
+  longer collides with the border of the row below it.
 - **`explore --build` decks no longer cram an enumeration into one prose answer.**
   The deck-fill prompt now carries the same anti-wall-of-text rule the `generate`
   source prompt got: a list of several items is split into one-idea cards (or

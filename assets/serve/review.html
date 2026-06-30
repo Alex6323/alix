@@ -287,7 +287,7 @@
   /* single-launch rows: click a deck to start it, a workspace/folder to open.
      A leading chevron (›) marks a drillable row; a glyph slot shows 🔒 / 🕒.
      Members nest by --depth in the unlock dependency tree (flattened on filter). */
-  .deckrow { display: flex; align-items: center; gap: 12px; padding: 12px 14px; padding-left: calc(14px + var(--depth, 0) * 18px); min-height: 48px; border: 1px solid var(--line); border-radius: 11px; cursor: pointer; transition: border-color 0.12s, background 0.12s; }
+  .deckrow { display: flex; align-items: center; gap: 12px; padding: 12px 14px; padding-left: calc(14px + var(--depth, 0) * 18px); min-height: 48px; border: 1px solid var(--line); border-radius: 11px; cursor: pointer; transition: border-color 0.12s, background 0.12s; margin-bottom: 5px; }
   .lists.filtering .deckrow { padding-left: 14px; }
   .deckrow:hover { border-color: var(--bolt); }
   .deckrow:focus { outline: none; border-color: var(--bolt); box-shadow: 0 0 0 2px rgba(125,249,232,0.35); }
