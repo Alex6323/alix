@@ -22,6 +22,7 @@ use std::{
         Arc,
         mpsc::{Receiver, TryRecvError},
     },
+    time::Instant,
 };
 
 use anyhow::{Result, anyhow};
@@ -36,7 +37,8 @@ use crate::{
     card::Card,
     choice,
     config::{
-        AskConfig, Bindings, BrowseBindings, ExamConfig, Key, KeyPattern, PickerKeys, Strictness,
+        AiConfig, AskConfig, Bindings, BrowseBindings, ExamConfig, Key, KeyPattern, PickerKeys,
+        Strictness,
     },
     deck::{self, Deck, DeckState},
     exam, picker,
@@ -524,6 +526,9 @@ pub struct ReviewOptions {
     pub ask: AskConfig,
     /// AI-exam settings (model, question count, default strictness, …).
     pub exam: ExamConfig,
+    /// AI augmentation settings (model, per-target counts), for generating
+    /// augmentations from the picker's Augment screen.
+    pub ai: AiConfig,
 }
 
 /// A review session ready to serve: the session, its header label, the
@@ -1006,6 +1011,274 @@ fn exam_dto(ex: &Examining, decks_dir: &Path) -> ExamDto {
     }
 }
 
+/// The server's live deck-augmentation state: one deck's augmentation cache and
+/// any in-flight generation. Opened from the picker's Augment screen
+/// (`/api/augment/open`), it reports coverage, fills gaps, and removes — all
+/// scoped to this deck, since the cache may be shared by other decks on the same
+/// store. The single in-flight `Job` runs on a background thread (`augment::spawn`)
+/// while the page polls `GET /api/augment`.
+struct Augmenting {
+    /// Display name (a workspace member's qualified `<ws>/<file>`, or a deck file).
+    deck: String,
+    cards: Vec<Card>,
+    /// This deck's card ids, for scoping removals against the shared cache.
+    deck_ids: HashSet<u64>,
+    cache: AugmentCache,
+    pending: Option<AugmentPending>,
+    /// The last generation/save error, shown until the next action clears it.
+    error: Option<String>,
+}
+
+/// An augmentation generation in flight: the channel the worker delivers on, the
+/// target it's filling (for the "busy" row), and when it started (for elapsed).
+struct AugmentPending {
+    rx: Receiver<Result<augment::Outcome, String>>,
+    target: &'static str,
+    started: Instant,
+}
+
+/// The Augment screen payload. `rows` is a flat, data-driven list so a new
+/// augmentation target is one more row with no page-layout change.
+#[derive(Serialize)]
+struct AugmentDto {
+    deck: String,
+    cards: usize,
+    rows: Vec<AugmentRowDto>,
+    /// The target currently generating, if any (the page shows a spinner + polls).
+    busy: Option<&'static str>,
+    /// Seconds the in-flight generation has run (progress feedback).
+    elapsed: Option<u64>,
+    error: Option<String>,
+}
+
+/// One target's row. Per-card targets carry `covered`/`eligible`; the topology
+/// row carries its named `items` instead (the page branches on `kind`).
+#[derive(Serialize)]
+struct AugmentRowDto {
+    kind: &'static str,
+    label: &'static str,
+    covered: usize,
+    eligible: usize,
+    items: Vec<String>,
+    busy: bool,
+}
+
+impl Augmenting {
+    /// Opens the Augment screen for a deck: loads its augmentation cache (beside
+    /// the deck's store) and records its cards for coverage + gap computation.
+    fn open(deck: String, cards: Vec<Card>, cache_path: PathBuf) -> Self {
+        let deck_ids = cards.iter().map(Card::id).collect();
+        Self {
+            deck,
+            cards,
+            deck_ids,
+            cache: AugmentCache::open(cache_path),
+            pending: None,
+            error: None,
+        }
+    }
+
+    /// Builds the screen payload from the current cache coverage + any in-flight job.
+    fn dto(&self) -> AugmentDto {
+        let s = self.cache.summarize(&self.cards);
+        let busy = self.pending.as_ref().map(|p| p.target);
+        let card_row =
+            |kind: &'static str, label: &'static str, c: augment::Coverage| AugmentRowDto {
+                kind,
+                label,
+                covered: c.covered,
+                eligible: c.eligible,
+                items: Vec::new(),
+                busy: busy == Some(kind),
+            };
+        let rows = vec![
+            card_row("choices", "Choices", s.choices),
+            card_row("notes", "Notes", s.notes),
+            card_row("questions", "Questions", s.questions),
+            card_row("keypoints", "Key points", s.keypoints),
+            AugmentRowDto {
+                kind: "topology",
+                label: "Topology",
+                covered: 0,
+                eligible: 0,
+                items: s.topologies,
+                busy: busy == Some("topology"),
+            },
+        ];
+        AugmentDto {
+            deck: self.deck.clone(),
+            cards: self.cards.len(),
+            rows,
+            busy,
+            elapsed: self.pending.as_ref().map(|p| p.started.elapsed().as_secs()),
+            error: self.error.clone(),
+        }
+    }
+
+    /// Spawns fill-the-gaps generation for `target` (no-op if one is already
+    /// running, the target is unknown, or a per-card target has no gap to fill).
+    /// `guidance` is the `--with` steer. Returns whether a job started.
+    fn generate(
+        &mut self,
+        target: &str,
+        guidance: Option<String>,
+        ai: &AiConfig,
+        ask: &AskConfig,
+    ) -> bool {
+        if self.pending.is_some() {
+            return false;
+        }
+        let (job, tgt): (augment::Job, &'static str) = match target {
+            "choices" => {
+                let items = self.cache.missing_choices(&self.cards);
+                if items.is_empty() {
+                    return false;
+                }
+                (
+                    augment::Job::Choices {
+                        items,
+                        count: ai.distractor_count,
+                    },
+                    "choices",
+                )
+            }
+            "notes" => {
+                let items = self.cache.missing_notes(&self.cards);
+                if items.is_empty() {
+                    return false;
+                }
+                (augment::Job::Notes { items }, "notes")
+            }
+            "questions" => {
+                let items = self.cache.missing_questions(&self.cards);
+                if items.is_empty() {
+                    return false;
+                }
+                (
+                    augment::Job::Questions {
+                        items,
+                        count: ai.variant_count,
+                    },
+                    "questions",
+                )
+            }
+            "keypoints" => {
+                let items = self.cache.missing_keypoints(&self.cards);
+                if items.is_empty() {
+                    return false;
+                }
+                (
+                    augment::Job::Keypoints {
+                        items,
+                        count: ai.keypoint_count,
+                    },
+                    "keypoints",
+                )
+            }
+            // Topology always adds a new one (named by its guidance); no gap notion.
+            "topology" => (
+                augment::Job::Topology {
+                    items: self
+                        .cards
+                        .iter()
+                        .map(augment::WarmItem::from_card)
+                        .collect(),
+                },
+                "topology",
+            ),
+            _ => return false,
+        };
+        self.error = None;
+        let rx = augment::spawn(job, guidance, augment::run_config(ai, ask));
+        self.pending = Some(AugmentPending {
+            rx,
+            target: tgt,
+            started: Instant::now(),
+        });
+        true
+    }
+
+    /// Drains a finished generation: applies its [`Outcome`](augment::Outcome) to
+    /// the cache and saves, or records the error. A no-op while still running.
+    fn poll(&mut self) {
+        let Some(p) = self.pending.as_ref() else {
+            return;
+        };
+        let outcome = match p.rx.try_recv() {
+            Ok(reply) => reply,
+            Err(TryRecvError::Empty) => return,
+            Err(TryRecvError::Disconnected) => {
+                Err("the augment helper exited unexpectedly".to_string())
+            }
+        };
+        self.pending = None;
+        match outcome {
+            Ok(o) => {
+                self.apply(o);
+                self.save();
+            }
+            Err(e) => self.error = Some(e),
+        }
+    }
+
+    /// Writes a finished outcome into the cache (does not save).
+    fn apply(&mut self, outcome: augment::Outcome) {
+        match outcome {
+            augment::Outcome::Choices(map) => {
+                for (id, v) in map {
+                    self.cache.set_distractors(id, v);
+                }
+            }
+            augment::Outcome::Notes(map) => {
+                for (id, v) in map {
+                    self.cache.set_note(id, v);
+                }
+            }
+            augment::Outcome::Questions(map) => {
+                for (id, v) in map {
+                    self.cache.set_variants(id, v);
+                }
+            }
+            augment::Outcome::Keypoints(map) => {
+                for (id, v) in map {
+                    self.cache.set_keypoints(id, v);
+                }
+            }
+            augment::Outcome::Topology(t) => self.cache.add_topology(t),
+        }
+    }
+
+    /// Removes a target's augmentations for this deck, then saves. `topology`
+    /// names the one to drop when `target` is `"topology"`; `"all"` clears
+    /// everything this deck owns. Returns whether the request was understood.
+    fn remove(&mut self, target: &str, topology: Option<&str>) -> bool {
+        match target {
+            "choices" => self.cache.clear_distractors(&self.deck_ids),
+            "notes" => self.cache.clear_notes(&self.deck_ids),
+            "questions" => self.cache.clear_variants(&self.deck_ids),
+            "keypoints" => self.cache.clear_keypoints(&self.deck_ids),
+            "topology" => {
+                let Some(name) = topology else {
+                    return false;
+                };
+                self.cache.remove_topology(name, &self.deck_ids);
+            }
+            "all" => self.cache.clear_all(&self.deck_ids),
+            _ => return false,
+        }
+        self.error = None;
+        self.save();
+        true
+    }
+
+    /// Persists the cache, recording any I/O error for the page to surface.
+    fn save(&mut self) {
+        if let Err(e) = self.cache.save() {
+            self.error = Some(format!("could not save augmentations: {e}"));
+        }
+    }
+}
+
 /// Serves review at `addr` until the process is stopped. When `initial` is
 /// `None` the server opens at the in-browser deck-selection screen; picking
 /// decks (`POST /api/select`) calls `build` to construct a session in place.
@@ -1046,6 +1319,7 @@ pub fn run_review(
         max_typos,
         ask: ask_cfg,
         exam: exam_cfg,
+        ai: ai_cfg,
     } = opts;
     let keys = ReviewKeys::from(&bindings);
     let picker_keys = PickerKeysDto::from(&picker_keys);
@@ -1059,6 +1333,8 @@ pub fn run_review(
         r.rotate_variant();
     }
     let mut examining: Option<Examining> = None;
+    // The picker's "Augment" action opens a deck's augmentation screen here.
+    let mut augmenting: Option<Augmenting> = None;
     // A trace picked from the selection screen walks here (the page navigates to
     // `/walk`, which this server hosts alongside review).
     let mut walking: Option<Walking> = None;
@@ -1567,6 +1843,106 @@ pub fn run_review(
             // Leave the exam, back to the deck list / summary.
             (Method::Post, "/api/exam/close") => {
                 examining = None;
+                if let Ok(s) = store_for(&[]) {
+                    store = s;
+                }
+                respond_json(
+                    request,
+                    &review_state(reviewing.as_ref(), &store, mode_override),
+                );
+            }
+            // ── Deck augmentation (the picker's "Augment" action, decks only) ──
+            // Open a deck's Augment screen and report what its cache holds. Resolves
+            // the deck through the catalog (incl. workspace members) like the exam.
+            (Method::Post, "/api/augment/open") => {
+                #[derive(Deserialize)]
+                struct Body {
+                    deck: String,
+                }
+                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
+                let mut known: HashMap<String, PathBuf> = HashMap::new();
+                for e in picker::catalog(&decks_dir, &recent) {
+                    for m in &e.members {
+                        known.insert(m.name.clone(), m.path.clone());
+                    }
+                    known.insert(e.name, e.path);
+                }
+                let Some((name, path)) =
+                    body.and_then(|b| known.get(&b.deck).cloned().map(|p| (b.deck, p)))
+                else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                // The cache lives beside the deck's own store (a workspace's, or the
+                // global one), mirroring how review reads it.
+                if let Ok(s) = store_for(std::slice::from_ref(&path)) {
+                    store = s;
+                }
+                match Deck::load(&path) {
+                    Ok(deck) => {
+                        let aug = Augmenting::open(
+                            name,
+                            deck.cards,
+                            augment::augment_path_for(store.path()),
+                        );
+                        let dto = aug.dto();
+                        augmenting = Some(aug);
+                        respond_json(request, &dto);
+                    }
+                    Err(_) => respond_status(request, 409),
+                }
+            }
+            // Start fill-the-gaps generation for one target (a costed background
+            // call); the page polls `GET /api/augment`.
+            (Method::Post, "/api/augment/generate") => {
+                #[derive(Deserialize)]
+                struct Body {
+                    target: String,
+                    with: Option<String>,
+                }
+                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
+                let Some(aug) = augmenting.as_mut() else {
+                    respond_status(request, 409);
+                    continue;
+                };
+                if let Some(b) = body {
+                    let guidance = b
+                        .with
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty());
+                    aug.generate(&b.target, guidance, &ai_cfg, &ask_cfg);
+                }
+                respond_json(request, &aug.dto());
+            }
+            // Poll the in-flight generation: apply a finished outcome, return state.
+            (Method::Get, "/api/augment") => {
+                let Some(aug) = augmenting.as_mut() else {
+                    respond_status(request, 409);
+                    continue;
+                };
+                aug.poll();
+                respond_json(request, &aug.dto());
+            }
+            // Remove a target's augmentations (or `all`) for this deck.
+            (Method::Post, "/api/augment/remove") => {
+                #[derive(Deserialize)]
+                struct Body {
+                    target: String,
+                    topology: Option<String>,
+                }
+                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
+                let Some(aug) = augmenting.as_mut() else {
+                    respond_status(request, 409);
+                    continue;
+                };
+                if let Some(b) = body {
+                    aug.remove(&b.target, b.topology.as_deref());
+                }
+                respond_json(request, &aug.dto());
+            }
+            // Leave the Augment screen, back to the picker (reset to the global store).
+            (Method::Post, "/api/augment/close") => {
+                augmenting = None;
                 if let Ok(s) = store_for(&[]) {
                     store = s;
                 }
@@ -3286,5 +3662,73 @@ mod tests {
             text.contains("the read lock is released first"),
             "deck:\n{text}"
         );
+    }
+
+    // ── Augment screen (the picker's "Augment" action) ──
+
+    fn aug_card(front: &str, back: &str) -> Card {
+        Card::plain(
+            Arc::from("d.txt"),
+            front.to_string(),
+            vec![back.to_string()],
+            None,
+            1,
+        )
+    }
+
+    #[test]
+    fn augmenting_reports_coverage_and_removal_persists() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache_path = dir.path().join("augment.json");
+        let cards = vec![aug_card("Q1", "a"), aug_card("Q2", "b")];
+
+        // Seed the on-disk cache: one card has distractors, the other a note.
+        let mut seed = AugmentCache::open(&cache_path);
+        seed.set_distractors(cards[0].id(), vec!["x".into()]);
+        seed.set_note(cards[1].id(), "n".into());
+        seed.save().unwrap();
+
+        let mut aug = Augmenting::open("d.txt".into(), cards.clone(), cache_path.clone());
+        let dto = aug.dto();
+        assert_eq!(2, dto.cards);
+        assert!(dto.busy.is_none());
+        let choices = dto.rows.iter().find(|r| r.kind == "choices").unwrap();
+        assert_eq!((1, 2), (choices.covered, choices.eligible));
+        let topo = dto.rows.iter().find(|r| r.kind == "topology").unwrap();
+        assert!(topo.items.is_empty());
+
+        // Removing a target writes through to disk; other targets are untouched.
+        assert!(aug.remove("choices", None));
+        assert_eq!(
+            0,
+            aug.dto()
+                .rows
+                .iter()
+                .find(|r| r.kind == "choices")
+                .unwrap()
+                .covered
+        );
+        let reloaded = AugmentCache::open(&cache_path);
+        assert_eq!(None, reloaded.distractors(cards[0].id()));
+        assert_eq!(Some("n"), reloaded.note(cards[1].id()));
+
+        assert!(!aug.remove("bogus", None)); // unknown target → no-op
+    }
+
+    #[test]
+    fn augmenting_generate_is_a_noop_when_a_target_is_fully_covered() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache_path = dir.path().join("augment.json");
+        let cards = vec![aug_card("Q", "a")];
+
+        let mut seed = AugmentCache::open(&cache_path);
+        seed.set_distractors(cards[0].id(), vec!["x".into()]);
+        seed.save().unwrap();
+
+        let mut aug = Augmenting::open("d.txt".into(), cards, cache_path);
+        // Fully covered → no gap → no costed call is started.
+        let started = aug.generate("choices", None, &AiConfig::default(), &AskConfig::default());
+        assert!(!started);
+        assert!(aug.dto().busy.is_none());
     }
 }

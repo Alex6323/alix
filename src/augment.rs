@@ -24,6 +24,7 @@
 use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
+    sync::mpsc::{Receiver, channel},
 };
 
 use anyhow::{Context, Result};
@@ -32,6 +33,7 @@ use thiserror::Error;
 
 use crate::{
     ask,
+    card::Card,
     config::{AiConfig, AskConfig},
 };
 
@@ -66,6 +68,18 @@ pub struct Augmentation {
     /// doesn't decompose — such a card keeps its plain self-graded reveal.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub keypoints: Vec<String>,
+}
+
+impl Augmentation {
+    /// Whether this card holds no augmentation of any kind — the state after the
+    /// last field is cleared. Removal prunes such entries so the cache doesn't
+    /// keep dead keys.
+    fn is_empty(&self) -> bool {
+        self.distractors.is_empty()
+            && self.note.is_none()
+            && self.variants.is_empty()
+            && self.keypoints.is_empty()
+    }
 }
 
 /// A deck-level relational augmentation: an AI-derived graph over the cards plus
@@ -396,6 +410,171 @@ impl AugmentCache {
     pub fn is_empty(&self) -> bool {
         self.cards.is_empty()
     }
+
+    /// What this deck's cache currently holds, per target — the data the Augment
+    /// screen renders. Scoped to `cards` (this deck): the cache may be shared by
+    /// other decks on the same store. Per-card targets report `(covered,
+    /// eligible)`; topology is the list of this deck's topology names.
+    pub fn summarize(&self, cards: &[Card]) -> CoverageSummary {
+        let coverage = |eligible: &[&Card], covered: &dyn Fn(u64) -> bool| Coverage {
+            covered: eligible.iter().filter(|c| covered(c.id())).count(),
+            eligible: eligible.len(),
+        };
+        let all: Vec<&Card> = cards.iter().collect();
+        let plain: Vec<&Card> = cards.iter().filter(|c| c.hash_lines.is_none()).collect();
+        let deck_ids: HashSet<u64> = cards.iter().map(Card::id).collect();
+        CoverageSummary {
+            choices: coverage(&all, &|id| self.distractors(id).is_some()),
+            notes: coverage(&all, &|id| self.note(id).is_some()),
+            questions: coverage(&plain, &|id| self.variants(id).is_some()),
+            keypoints: coverage(&all, &|id| self.keypoints(id).is_some()),
+            topologies: self
+                .topologies_for(&deck_ids)
+                .iter()
+                .map(|t| t.name.clone())
+                .collect(),
+        }
+    }
+
+    /// The eligible cards a target doesn't yet cover, as generation-ready items —
+    /// the **fill-the-gaps** input. `eligible` mirrors each generator's own filter
+    /// (e.g. plain-only for question variants); `covered` is its cache getter.
+    ///
+    /// A card a generator legitimately omits (no usable distractor, an atomic
+    /// answer) stays "missing", so a later fill-the-gaps will re-attempt it. That's
+    /// accepted: generation is explicit and costed, and `--overwrite` (regenerate
+    /// all) is the deliberate alternative.
+    fn missing(
+        &self,
+        cards: &[Card],
+        eligible: impl Fn(&Card) -> bool,
+        covered: impl Fn(u64) -> bool,
+    ) -> Vec<WarmItem> {
+        cards
+            .iter()
+            .filter(|c| eligible(c) && !covered(c.id()))
+            .map(WarmItem::from_card)
+            .collect()
+    }
+
+    /// Cards still missing choice distractors (all cards eligible).
+    pub fn missing_choices(&self, cards: &[Card]) -> Vec<WarmItem> {
+        self.missing(cards, |_| true, |id| self.distractors(id).is_some())
+    }
+
+    /// Cards still missing a note (all cards eligible).
+    pub fn missing_notes(&self, cards: &[Card]) -> Vec<WarmItem> {
+        self.missing(cards, |_| true, |id| self.note(id).is_some())
+    }
+
+    /// Plain cards still missing question variants (cloze cards are ineligible).
+    pub fn missing_questions(&self, cards: &[Card]) -> Vec<WarmItem> {
+        self.missing(
+            cards,
+            |c| c.hash_lines.is_none(),
+            |id| self.variants(id).is_some(),
+        )
+    }
+
+    /// Cards still missing Explain-mode key points (all cards eligible).
+    pub fn missing_keypoints(&self, cards: &[Card]) -> Vec<WarmItem> {
+        self.missing(cards, |_| true, |id| self.keypoints(id).is_some())
+    }
+
+    /// Removes this deck's cached distractors — only the cards in `deck_ids`,
+    /// since the cache may be shared with other decks — pruning any entry left
+    /// empty. Does not save.
+    pub fn clear_distractors(&mut self, deck_ids: &HashSet<u64>) {
+        for id in deck_ids {
+            if let Some(aug) = self.cards.get_mut(id) {
+                aug.distractors.clear();
+            }
+        }
+        self.prune_empty(deck_ids);
+    }
+
+    /// Removes this deck's cached notes (see [`clear_distractors`](Self::clear_distractors)).
+    pub fn clear_notes(&mut self, deck_ids: &HashSet<u64>) {
+        for id in deck_ids {
+            if let Some(aug) = self.cards.get_mut(id) {
+                aug.note = None;
+            }
+        }
+        self.prune_empty(deck_ids);
+    }
+
+    /// Removes this deck's cached question variants (see
+    /// [`clear_distractors`](Self::clear_distractors)).
+    pub fn clear_variants(&mut self, deck_ids: &HashSet<u64>) {
+        for id in deck_ids {
+            if let Some(aug) = self.cards.get_mut(id) {
+                aug.variants.clear();
+            }
+        }
+        self.prune_empty(deck_ids);
+    }
+
+    /// Removes this deck's cached key points (see [`clear_distractors`](Self::clear_distractors)).
+    pub fn clear_keypoints(&mut self, deck_ids: &HashSet<u64>) {
+        for id in deck_ids {
+            if let Some(aug) = self.cards.get_mut(id) {
+                aug.keypoints.clear();
+            }
+        }
+        self.prune_empty(deck_ids);
+    }
+
+    /// Drops any of `deck_ids`' entries that no longer hold any augmentation, so
+    /// clearing the last field leaves no dead key behind.
+    fn prune_empty(&mut self, deck_ids: &HashSet<u64>) {
+        for id in deck_ids {
+            if self.cards.get(id).is_some_and(Augmentation::is_empty) {
+                self.cards.remove(id);
+            }
+        }
+    }
+
+    /// Removes the named topology if it belongs to this deck (its name matches
+    /// **and** it [`covers`](Topology::covers) `deck_ids`, so a like-named
+    /// topology from another deck on a shared store is left alone). Returns
+    /// whether one was removed. Does not save.
+    pub fn remove_topology(&mut self, name: &str, deck_ids: &HashSet<u64>) -> bool {
+        let before = self.topologies.len();
+        self.topologies
+            .retain(|t| !(t.name == name && t.covers(deck_ids)));
+        self.topologies.len() != before
+    }
+
+    /// Removes every augmentation this deck owns — all per-card fields for
+    /// `deck_ids` and all topologies covering them (the "remove all" action).
+    /// Other decks sharing the cache are untouched. Does not save.
+    pub fn clear_all(&mut self, deck_ids: &HashSet<u64>) {
+        for id in deck_ids {
+            self.cards.remove(id);
+        }
+        self.topologies.retain(|t| !t.covers(deck_ids));
+    }
+}
+
+/// One per-card target's coverage for a deck: how many eligible cards already
+/// have it cached. `eligible` is the denominator (e.g. plain-only for question
+/// variants), `covered` the numerator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Coverage {
+    pub covered: usize,
+    pub eligible: usize,
+}
+
+/// What a deck's augmentation cache currently holds, per target — the data the
+/// Augment screen renders. Per-card targets are a [`Coverage`]; topology is the
+/// list of the deck's topology names.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CoverageSummary {
+    pub choices: Coverage,
+    pub notes: Coverage,
+    pub questions: Coverage,
+    pub keypoints: Coverage,
+    pub topologies: Vec<String>,
 }
 
 /// The decoded contents of a cache file: the per-card map plus the deck-level
@@ -459,6 +638,18 @@ pub struct WarmItem {
     pub question: String,
     /// The correct answer the distractors must be wrong about and distinct from.
     pub answer: String,
+}
+
+impl WarmItem {
+    /// Builds the generation input for a card: its identity hash, its front (the
+    /// question), and its joined back (the answer the augmentation must respect).
+    pub fn from_card(card: &Card) -> Self {
+        Self {
+            id: card.id(),
+            question: card.front.clone(),
+            answer: card.back.join("\n"),
+        }
+    }
 }
 
 /// Generates up to `count` distractors per card in `items` with one batched,
@@ -726,6 +917,69 @@ fn topology_prompt(items: &[WarmItem], guidance: Option<&str>) -> String {
          \"regions\": [{\"name\": \"...\", \"cards\": [0, 1]}]}\n",
     );
     s
+}
+
+// ── Background generation ──────────────────────────────────────────────────────
+//
+// The interactive frontends (the web server, the TUI later) can't block their
+// request loop on a costed Claude call, so they run generation on a thread and
+// poll the returned channel — the same shape as `ask::spawn` and
+// `trace::spawn_grade`. The worker only *generates*; the caller applies the
+// [`Outcome`] to the cache and saves, keeping cache writes single-threaded.
+
+/// A generation request for one target. Per-card targets carry the gap items the
+/// caller computed (e.g. via [`AugmentCache::missing_choices`]); topology is
+/// whole-deck.
+pub enum Job {
+    Choices { items: Vec<WarmItem>, count: usize },
+    Notes { items: Vec<WarmItem> },
+    Questions { items: Vec<WarmItem>, count: usize },
+    Keypoints { items: Vec<WarmItem>, count: usize },
+    Topology { items: Vec<WarmItem> },
+}
+
+/// The result of a [`Job`], shaped per target so the caller can apply it to the
+/// cache (`set_distractors` / `set_note` / … or `add_topology`).
+pub enum Outcome {
+    Choices(HashMap<u64, Vec<String>>),
+    Notes(HashMap<u64, String>),
+    Questions(HashMap<u64, Vec<String>>),
+    Keypoints(HashMap<u64, Vec<String>>),
+    Topology(Topology),
+}
+
+/// Runs a generation [`Job`] on a background thread; the [`Outcome`] (or an error
+/// message) arrives on the returned channel, which the caller polls with
+/// `try_recv`. `guidance` is the `--with` steer.
+pub fn spawn(
+    job: Job,
+    guidance: Option<String>,
+    ask_cfg: AskConfig,
+) -> Receiver<Result<Outcome, String>> {
+    let (tx, rx) = channel();
+    std::thread::spawn(move || {
+        let reply = run_job(job, guidance.as_deref(), &ask_cfg).map_err(|e| format!("{e:#}"));
+        // The receiver may be gone if the user left the Augment screen.
+        let _ = tx.send(reply);
+    });
+    rx
+}
+
+/// The synchronous core of [`spawn`]: dispatches to the matching `generate_*`.
+fn run_job(job: Job, guidance: Option<&str>, ask_cfg: &AskConfig) -> Result<Outcome> {
+    Ok(match job {
+        Job::Choices { items, count } => {
+            Outcome::Choices(generate(&items, count, guidance, ask_cfg)?)
+        }
+        Job::Notes { items } => Outcome::Notes(generate_notes(&items, guidance, ask_cfg)?),
+        Job::Questions { items, count } => {
+            Outcome::Questions(generate_variants(&items, count, guidance, ask_cfg)?)
+        }
+        Job::Keypoints { items, count } => {
+            Outcome::Keypoints(generate_keypoints(&items, count, guidance, ask_cfg)?)
+        }
+        Job::Topology { items } => Outcome::Topology(generate_topology(&items, guidance, ask_cfg)?),
+    })
 }
 
 /// A copy of `ask` with the tool allowlist cleared — generation is a pure text
@@ -1514,5 +1768,196 @@ mod tests {
         };
         let cfg = run_config(&AiConfig::default(), &ask);
         assert_eq!(Some("sonnet".to_string()), cfg.model);
+    }
+
+    // ── Coverage / gaps / removal (the web Augment screen's lib backing) ──
+
+    fn plain_card(back: &str) -> Card {
+        Card::plain("deck.txt".into(), "Q".into(), vec![back.into()], None, 1)
+    }
+
+    fn cloze_card(back: &str) -> Card {
+        let mut c = plain_card(back);
+        c.hash_lines = Some(vec![back.into()]);
+        c
+    }
+
+    fn topo_over(name: &str, card: u64) -> Topology {
+        Topology {
+            name: name.into(),
+            principle: String::new(),
+            edges: Vec::new(),
+            walk: vec![card],
+            regions: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn summarize_counts_coverage_against_each_targets_eligible_cards() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cache = AugmentCache::open(dir.path().join("augment.json"));
+        let cards = vec![
+            plain_card("a"),
+            plain_card("b"),
+            plain_card("c"),
+            cloze_card("z"),
+        ];
+        cache.set_distractors(cards[0].id(), vec!["x".into()]);
+        cache.set_distractors(cards[1].id(), vec!["y".into()]);
+        cache.set_note(cards[0].id(), "n".into());
+        cache.set_variants(cards[0].id(), vec!["v".into()]);
+        cache.set_keypoints(cards[2].id(), vec!["k1".into(), "k2".into()]);
+        cache.add_topology(topo_over("auto", cards[0].id()));
+
+        let s = cache.summarize(&cards);
+        assert_eq!(
+            Coverage {
+                covered: 2,
+                eligible: 4
+            },
+            s.choices
+        );
+        assert_eq!(
+            Coverage {
+                covered: 1,
+                eligible: 4
+            },
+            s.notes
+        );
+        // Question variants are plain-only, so the cloze card is out of the denominator.
+        assert_eq!(
+            Coverage {
+                covered: 1,
+                eligible: 3
+            },
+            s.questions
+        );
+        assert_eq!(
+            Coverage {
+                covered: 1,
+                eligible: 4
+            },
+            s.keypoints
+        );
+        assert_eq!(vec!["auto".to_string()], s.topologies);
+    }
+
+    #[test]
+    fn missing_returns_only_uncovered_eligible_cards() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cache = AugmentCache::open(dir.path().join("augment.json"));
+        let cards = vec![plain_card("a"), plain_card("b"), cloze_card("z")];
+        cache.set_distractors(cards[0].id(), vec!["x".into()]);
+
+        let miss: Vec<u64> = cache.missing_choices(&cards).iter().map(|w| w.id).collect();
+        assert_eq!(vec![cards[1].id(), cards[2].id()], miss); // a covered; b + z still need it
+
+        // Questions exclude cloze cards entirely, covered or not.
+        let mq: Vec<u64> = cache
+            .missing_questions(&cards)
+            .iter()
+            .map(|w| w.id)
+            .collect();
+        assert_eq!(vec![cards[0].id(), cards[1].id()], mq);
+    }
+
+    #[test]
+    fn clear_distractors_is_deck_scoped_and_prunes_empty_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cache = AugmentCache::open(dir.path().join("augment.json"));
+        let mine = plain_card("a");
+        let other = plain_card("other-deck-card");
+        cache.set_distractors(mine.id(), vec!["x".into()]);
+        cache.set_distractors(other.id(), vec!["y".into()]);
+
+        let deck_ids: HashSet<u64> = [mine.id()].into_iter().collect();
+        cache.clear_distractors(&deck_ids);
+
+        assert_eq!(None, cache.distractors(mine.id()));
+        assert!(!cache.contains(mine.id())); // held nothing else → pruned
+        // The other deck sharing this cache is untouched.
+        assert_eq!(
+            Some(["y".to_string()].as_slice()),
+            cache.distractors(other.id())
+        );
+    }
+
+    #[test]
+    fn clear_notes_keeps_other_fields_and_does_not_prune() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cache = AugmentCache::open(dir.path().join("augment.json"));
+        let c = plain_card("a");
+        cache.set_note(c.id(), "n".into());
+        cache.set_distractors(c.id(), vec!["x".into()]);
+
+        let deck_ids: HashSet<u64> = [c.id()].into_iter().collect();
+        cache.clear_notes(&deck_ids);
+
+        assert_eq!(None, cache.note(c.id()));
+        assert_eq!(
+            Some(["x".to_string()].as_slice()),
+            cache.distractors(c.id())
+        );
+        assert!(cache.contains(c.id())); // still has distractors → not pruned
+    }
+
+    #[test]
+    fn remove_topology_is_name_and_deck_scoped() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cache = AugmentCache::open(dir.path().join("augment.json"));
+        let mine = plain_card("a");
+        let other = plain_card("other");
+        cache.add_topology(topo_over("auto", mine.id()));
+        cache.add_topology(topo_over("auto", other.id())); // same name, other deck
+
+        let deck_ids: HashSet<u64> = [mine.id()].into_iter().collect();
+        assert!(cache.remove_topology("auto", &deck_ids));
+        assert_eq!(1, cache.topologies().len());
+        let other_ids: HashSet<u64> = [other.id()].into_iter().collect();
+        assert_eq!(1, cache.topologies_for(&other_ids).len()); // the other deck's survives
+        assert!(!cache.remove_topology("nope", &deck_ids)); // no match → false
+    }
+
+    #[test]
+    fn clear_all_removes_only_this_decks_augmentations() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cache = AugmentCache::open(dir.path().join("augment.json"));
+        let mine = plain_card("a");
+        let other = plain_card("other");
+        cache.set_distractors(mine.id(), vec!["x".into()]);
+        cache.set_note(mine.id(), "n".into());
+        cache.add_topology(topo_over("auto", mine.id()));
+        cache.set_distractors(other.id(), vec!["y".into()]);
+        cache.add_topology(topo_over("auto", other.id()));
+
+        let deck_ids: HashSet<u64> = [mine.id()].into_iter().collect();
+        cache.clear_all(&deck_ids);
+
+        assert!(!cache.contains(mine.id()));
+        assert!(cache.topologies_for(&deck_ids).is_empty());
+        // The other deck is intact.
+        assert_eq!(
+            Some(["y".to_string()].as_slice()),
+            cache.distractors(other.id())
+        );
+        let other_ids: HashSet<u64> = [other.id()].into_iter().collect();
+        assert_eq!(1, cache.topologies_for(&other_ids).len());
+    }
+
+    #[test]
+    fn spawn_delivers_an_outcome_on_the_channel() {
+        let _g = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = fake_reply(dir.path(), r#"{"0": ["w1","w2","w3"]}"#);
+        let job = Job::Choices {
+            items: vec![item(10, "Capital of France?", "Paris")],
+            count: 3,
+        };
+        let rx = spawn(job, None, ask_config(&cli));
+        match rx.recv().unwrap() {
+            Ok(Outcome::Choices(map)) => assert_eq!(vec!["w1", "w2", "w3"], map[&10]),
+            Ok(_) => panic!("expected a Choices outcome"),
+            Err(e) => panic!("generation failed: {e}"),
+        }
     }
 }

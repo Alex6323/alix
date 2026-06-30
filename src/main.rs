@@ -1480,6 +1480,7 @@ fn review_serve(args: ReviewArgs) -> Result<()> {
         max_typos: args.max_typos,
         ask: config.ask.clone(),
         exam: config.exam.clone(),
+        ai: config.ai.clone(),
     };
     let build = |paths: Vec<PathBuf>,
                  topology: Option<&str>,
@@ -2153,14 +2154,7 @@ fn augment_cmd(args: AugmentArgs) -> Result<()> {
 
 /// Builds the per-card generation input from `cards`.
 fn warm_items(cards: &[Card]) -> Vec<augment::WarmItem> {
-    cards
-        .iter()
-        .map(|c| augment::WarmItem {
-            id: c.id(),
-            question: c.front.clone(),
-            answer: c.back.join("\n"),
-        })
-        .collect()
+    cards.iter().map(augment::WarmItem::from_card).collect()
 }
 
 /// Prints a generated topology as its suggested walk — each card with the reason
