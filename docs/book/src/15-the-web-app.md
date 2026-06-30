@@ -18,15 +18,16 @@ alix --serve                              # no decks → pick them in the browse
 
 Run `--serve` without naming decks and the page opens the **deck-selection
 screen** — the same list as the terminal picker. **Up / down** move between
-decks; click a deck (or focus it) to **select** it, then **Review** (or Enter) to
-start — one deck per session (in review a locked deck won't start; `browse`
-ignores locking, and is on **`b`**). Selecting a deck that has a
+decks; a **search box in the header** filters the list (focus it with **`/`**).
+Focus a deck and **Learn** it with **`l`** (or Enter) — a facts deck opens a
+review, a [trace](13-trace-decks.md) opens a walk — one deck per session (a locked
+deck won't start; `browse` ignores locking, and is on **`b`**). Selecting a deck that has a
 [topology](05-scheduling.md) opens an inline **focus drawer** beneath it: choose
 which topology orders the session, and pick a region to drill — click it or step
 through with **← / →** — its strength heatmap and the number of cards **due** in
 it shown as you go ("Whole deck" is the default). On a workspace row instead,
-← / → enter and leave it. After a session, "Choose other decks" (on the summary
-or the ⋮ menu) returns here, so you can switch decks without restarting. Naming a
+← / → enter and leave it. After a session, "Choose other decks" (on the summary)
+or **Esc** returns here, so you can switch decks without restarting. Naming a
 deck on the command line skips this screen.
 
 ## Every mode, plus the AI features
@@ -34,8 +35,10 @@ deck on the command line skips this screen.
 All [answer modes](04-review-modes.md) work in the browser — flip, line (it
 auto-scrolls to the newest line), typing/fuzzy (each line marked ✓/✗ with the
 correct answer shown), and choice (tap an option). Controls are big tap targets and
-follow *your* configured key bindings (the page reads them from the server). The ⋮
-menu holds **Remove** and **Choose decks**.
+follow *your* configured key bindings (the page reads them from the server). The
+**☰ menu** is context-aware: during review it holds **Ask Claude** and **Remove
+card**; on the deck picker, **keyboard shortcuts**, **refresh decks**, and
+**about** — with **Theme…** in both.
 
 The AI features come along too: the [ask-Claude tutor](10-ask-claude.md), the
 [AI exam](12-the-ai-exam.md), and [trace walks](13-trace-decks.md) all have a web
@@ -47,7 +50,7 @@ so the single-threaded server never blocks.
 The web UI ships a **gallery** of colour themes — the alix **Dark**/**Light**
 originals and a playful **Kid** theme, plus crowd-favourite editor/slide palettes
 (GitHub, Dracula, Nord, Solarized, Gruvbox, Catppuccin, Tokyo Night, Monokai, One
-Dark, Ayu, Rosé Pine, Everforest). Open the **Theme…** popover from the ⋮ menu (a
+Dark, Ayu, Rosé Pine, Everforest). Open the **Theme…** popover from the ☰ menu (a
 small bar button on the trace walk): a grid grouped Light / Dark that **previews
 the whole UI live as you hover**, and remembers your choice in the browser (kept
 in `localStorage`, not the config). The palette lives in a shared `theme.css` the

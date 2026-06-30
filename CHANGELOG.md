@@ -29,6 +29,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the same way choice mode skips cards with no usable distractor. Tune the maximum
   with `[ai] keypoint_count` (default 5). First step toward an acquire → explain →
   maintain card lifecycle.
+- **Web picker header.** The deck filter moved into the header — a compact box
+  centered on the list — and a **burger menu (☰)** there holds **keyboard
+  shortcuts**, **refresh decks**, **about** (the version, via a new `/api/version`
+  endpoint), and **Theme…**. The **Mastered** jump moved to the header too.
 - **Workspace icons in the web picker.** A workspace can show a small emblem next
   to it in the picker for quick recognition. Generated as an abstract SVG by
   `alix explore --into <dir> --build` (grounded in the workspace's topic), or
@@ -148,6 +152,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   session, so starting another session right away no longer re-serves a card you
   just saw or just missed. In-session drilling is unchanged — a failed card still
   comes back the same run (the queue is served by position, not by due time).
+- **Web picker: Learn.** A deck's primary action now reads **Learn** (key `l`, or
+  Enter) for both facts (review) and traces (walk), replacing Review/Walk. The
+  intro prose and the "select decks" label are gone, and the list fills the space.
 - **Web picker keys.** Clicking a deck now **selects** it (opening its focus
   drawer when it has a topology) rather than launching outright — **Review** or
   Enter launches. **Browse** moved to **`b`**, freeing **← / →**: they step the

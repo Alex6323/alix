@@ -618,7 +618,7 @@ mastered/done decks stay out of Recent (a quick launchpad) but are reachable by
 filtering — the filter searches *every* loose deck. `browse` ignores locking, so any deck opens
 there. Keyboard nav follows your `[picker]` config (`j`/`k` or arrows move, `/`
 or `Ctrl-F` filter, `m` the Mastered window). When you finish a session, "Choose
-other decks" (on the summary, or in the ⋮ menu) returns here — and a session
+other decks" (on the summary) or `Esc` returns here — and a session
 launched inside a workspace returns **into that workspace**. Naming decks on the
 command line skips the screen and goes straight to review/browse.
 
@@ -629,14 +629,15 @@ answer and submit; checked exactly or with your configured typo tolerance, each
 line marked ✓/✗ with the correct answer shown), and **choice** (tap one of the
 options). The note appears once the answer is shown. Controls are big tap
 targets and follow your configured key bindings — the page reads them from the
-server, so the chips show your own keys. The overflow menu (⋮) holds **Remove**,
-which deletes the current card from its deck file and prunes its progress, and
-**Choose decks**, which returns to the deck-selection screen.
+server, so the chips show your own keys. The **☰ menu** is context-aware: during
+review it holds **Ask Claude** and **Remove card** (which deletes the current card
+from its deck file and prunes its progress); on the deck picker, **keyboard
+shortcuts**, **refresh decks**, and **about** — with **Theme…** in both.
 
 A **gallery of themes** ships with the web UI — the alix **Dark**/**Light**
 originals and a playful **Kid** theme, plus crowd-favourite editor/slide palettes
 (GitHub, Dracula, Nord, Solarized, Gruvbox, Catppuccin, Tokyo Night, Monokai, One
-Dark, Ayu, Rosé Pine, Everforest). Open the **Theme…** popover from the ⋮ menu — a
+Dark, Ayu, Rosé Pine, Everforest). Open the **Theme…** popover from the ☰ menu — a
 grid grouped Light / Dark that previews the whole UI live as you hover, and
 remembers your choice in the browser; no configuration needed.
 
