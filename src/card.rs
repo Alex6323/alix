@@ -96,6 +96,10 @@ pub struct Card {
     /// excerpt can stay tight; see [`crate::trace`]). Not part of the
     /// identity hash.
     pub givens: Vec<String>,
+    /// A display-only reshape of the answer lines from `augment --target format`.
+    /// When `Some`, every reveal/render path uses these instead of `back`. NOT
+    /// part of the identity hash — `id()` always hashes the original `back`.
+    pub display_back: Option<Vec<String>>,
 }
 
 impl Card {
@@ -124,6 +128,7 @@ impl Card {
             at_origin: None,
             origin: None,
             givens: Vec::new(),
+            display_back: None,
         }
     }
 
@@ -136,6 +141,12 @@ impl Card {
             } else {
                 Frontend::Any
             })
+    }
+
+    /// The answer lines to reveal/render: the `display_back` reshape when present
+    /// (from `augment --target format`), otherwise the card's own `back`.
+    pub fn back_for_display(&self) -> &[String] {
+        self.display_back.as_deref().unwrap_or(&self.back)
     }
 
     /// The swapped card for dual-direction review: the question becomes the old
@@ -370,5 +381,14 @@ mod tests {
         let a = card("d.txt", "f", &["A, B, C"], None);
         let b = card("d.txt", "f", &["A, B, D"], None);
         assert_ne!(a.id(), b.id());
+    }
+
+    #[test]
+    fn display_back_overrides_render_but_not_identity() {
+        let mut c = card("d.txt", "f", &["Chain, Version"], None);
+        let before = c.id();
+        c.display_back = Some(vec!["Protocol: Chain".into(), "Version".into()]);
+        assert_eq!(c.back_for_display(), ["Protocol: Chain", "Version"]);
+        assert_eq!(c.id(), before); // display_back never enters the hash
     }
 }

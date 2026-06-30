@@ -207,6 +207,7 @@ pub fn expand(
             at_origin: None,
             origin: None,
             givens: Vec::new(),
+            display_back: None,
         });
     }
 

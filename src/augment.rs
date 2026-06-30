@@ -32,6 +32,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
+    answer::Mode,
     ask,
     card::Card,
     config::{AiConfig, AskConfig},
@@ -41,6 +42,27 @@ use crate::{
 /// incompatibly; because the cache is regenerable, a newer version is ignored
 /// (an empty cache is returned) rather than refused.
 const CURRENT_VERSION: u32 = 1;
+
+/// A tidied presentation for a badly-shaped card (e.g. an enumeration crammed
+/// into one prose answer): reshaped display text for the front/answer/note and a
+/// suggested answer mode. Display-only — never part of `Card::id()`, so it
+/// preserves progress. Absent for a card already well-shaped.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Format {
+    /// Reshaped question (readability only). `None` keeps the card's front.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub front: Option<String>,
+    /// Reshaped answer, as display lines. Empty keeps the card's own back.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub back: Vec<String>,
+    /// Reshaped note. `None` keeps the card's deck note.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    /// Suggested answer mode (e.g. `line`). Filled at review only if the card
+    /// declares no mode of its own. Restricted to self-graded/reveal modes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<Mode>,
+}
 
 /// The AI-derived presentation data for a single card, keyed in the cache by the
 /// card's identity hash. Fields are additive: new augmentation kinds (e.g.
@@ -68,6 +90,11 @@ pub struct Augmentation {
     /// doesn't decompose — such a card keeps its plain self-graded reveal.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub keypoints: Vec<String>,
+    /// A display-only reshape for a badly-shaped card (front/answer/note + a
+    /// suggested mode), applied at review without touching the deck or the card's
+    /// identity. `None` for a card already well-shaped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<Format>,
 }
 
 impl Augmentation {
@@ -79,6 +106,7 @@ impl Augmentation {
             && self.note.is_none()
             && self.variants.is_empty()
             && self.keypoints.is_empty()
+            && self.format.is_none()
     }
 }
 

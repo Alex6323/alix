@@ -9,7 +9,7 @@
 //!   module).
 
 /// Which answer mode a review session uses.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum, serde::Serialize, serde::Deserialize)]
 pub enum Mode {
     /// Reveal the answer and grade yourself (again / good / easy).
     #[default]
