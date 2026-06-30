@@ -622,8 +622,8 @@ function el(tag, cls, text) {
   if (text !== undefined) n.textContent = text;
   return n;
 }
-// The drawer's open/close height animation: a calm, slightly-slow reveal.
-const DRAWER_MS = 380;
+// The drawer's open/close height animation: quick.
+const DRAWER_MS = 170;
 const DRAWER_EASE = "cubic-bezier(0.4, 0, 0.2, 1)";
 // Histogram cells [new, s1..s5] as HTML; stages above `top` are unreachable
 // (every card caps below them via % max-stage:), shown as a muted –.
