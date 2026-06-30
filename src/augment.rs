@@ -28,6 +28,7 @@ use std::{
 };
 
 use anyhow::{Context, Result};
+use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -657,25 +658,28 @@ pub fn augment_path_for(store_path: &Path) -> PathBuf {
 // call is pure text transformation — no web or file tools — so its allowlist is
 // cleared like exam remediation.
 
-/// One card to generate distractors for.
+/// One card to generate an augmentation for.
 #[derive(Clone, Debug)]
 pub struct WarmItem {
     /// The card's identity hash (the cache key).
     pub id: u64,
     /// The question shown to the learner (the card front).
     pub question: String,
-    /// The correct answer the distractors must be wrong about and distinct from.
+    /// The correct answer the augmentation must respect.
     pub answer: String,
+    /// The card's deck note, if any — used by the format target to re-render it.
+    pub note: Option<String>,
 }
 
 impl WarmItem {
-    /// Builds the generation input for a card: its identity hash, its front (the
-    /// question), and its joined back (the answer the augmentation must respect).
+    /// Builds the generation input for a card: its identity hash, its front, its
+    /// joined back, and its deck note.
     pub fn from_card(card: &Card) -> Self {
         Self {
             id: card.id(),
             question: card.front.clone(),
             answer: card.back.join("\n"),
+            note: card.note.clone(),
         }
     }
 }
@@ -943,6 +947,142 @@ fn topology_prompt(items: &[WarmItem], guidance: Option<&str>) -> String {
          \"edges\": [{\"from\": 0, \"to\": 1, \"label\": \"...\"}], \
          \"walk\": [0, 1, ...], \
          \"regions\": [{\"name\": \"...\", \"cards\": [0, 1]}]}\n",
+    );
+    s
+}
+
+/// The model's raw reshape for one card (mode is a string here; validated into a
+/// `Mode` by `clean_format`). All fields optional — the model omits a field it
+/// leaves unchanged, and omits the whole entry for an already-clean card.
+#[derive(Deserialize)]
+struct RawFormat {
+    #[serde(default)]
+    front: Option<String>,
+    #[serde(default)]
+    back: Vec<String>,
+    #[serde(default)]
+    note: Option<String>,
+    #[serde(default)]
+    mode: Option<String>,
+}
+
+/// Validates one raw reshape against the card it came from, returning a `Format`
+/// only if it is a real, usable improvement. Trims fields and drops empty ones;
+/// accepts a suggested mode only if it parses and is a self-graded/reveal mode
+/// (`flip`/`line`/`explain`) — never an exact-match mode that the reshaped lines
+/// would break; requires the reshape to actually differ from the original.
+fn clean_format(item: &WarmItem, raw: &RawFormat) -> Option<Format> {
+    let front = raw
+        .front
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty() && *s != item.question.trim());
+
+    let back: Vec<String> = raw
+        .back
+        .iter()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect();
+    // Keep the reshaped answer only if it differs from the original lines.
+    let original_lines: Vec<&str> = item.answer.lines().map(str::trim).collect();
+    let back = if !back.is_empty()
+        && back.iter().map(String::as_str).ne(original_lines)
+    {
+        back
+    } else {
+        Vec::new()
+    };
+
+    let note = raw
+        .note
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty() && item.note.as_deref().map(str::trim) != Some(s.as_str()));
+
+    let mode = raw
+        .mode
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .and_then(|s| Mode::from_str(s, true).ok())
+        .filter(|m| matches!(m, Mode::Flip | Mode::LineByLine | Mode::Explain));
+
+    if front.is_none() && back.is_empty() && note.is_none() && mode.is_none() {
+        return None;
+    }
+    Some(Format {
+        front,
+        back,
+        note,
+        mode,
+    })
+}
+
+/// Reshapes badly-shaped cards with one batched, tool-free call: returns a map
+/// from card id to its validated `Format`. Cards the model judged already clean
+/// (or returned nothing usable for) are omitted.
+pub fn generate_format(
+    items: &[WarmItem],
+    guidance: Option<&str>,
+    ask_cfg: &AskConfig,
+) -> Result<HashMap<u64, Format>> {
+    if items.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let prompt = format_prompt(items, guidance);
+    let raw = ask::run(&tool_free(ask_cfg), &prompt, &[])?;
+    let parsed: HashMap<String, RawFormat> =
+        parse_json(&raw).context("parsing the generated card formats")?;
+
+    let mut out = HashMap::new();
+    for (index, item) in items.iter().enumerate() {
+        if let Some(raw_fmt) = parsed.get(&index.to_string())
+            && let Some(fmt) = clean_format(item, raw_fmt)
+        {
+            out.insert(item.id, fmt);
+        }
+    }
+    Ok(out)
+}
+
+fn format_prompt(items: &[WarmItem], guidance: Option<&str>) -> String {
+    let mut s = String::from(
+        "You improve the PRESENTATION of flashcards. For each card decide whether \
+         it is badly shaped — most often a list of several items crammed into one \
+         prose answer, or a dense unreadable answer/question. If it is, return a \
+         tidied version; if it is already clean or atomic, OMIT it entirely.\n\n\
+         Rules:\n\
+         - Only surface structure that is already there (an enumeration, groups, \
+         ordered steps, embedded code). NEVER invent structure or pad an atomic \
+         answer into a list.\n\
+         - `back` is the answer as display lines: one item or group per line; \
+         keep the same facts and words, only regroup/relabel for clarity.\n\
+         - `front`/`note`: reshape only for readability. The question's layout must \
+         NOT leak the answer (never hint how many items it has).\n\
+         - `mode`: suggest one of `flip`, `line`, or `explain` ONLY when it fits \
+         the reshaped answer (use `line` for an ordered/grouped list revealed one \
+         line at a time). Never suggest typing/fuzzy/choice. Omit `mode` if unsure.\n\
+         - Omit any field you leave unchanged; omit the whole card if it is fine.\n",
+    );
+    if let Some(g) = guidance {
+        s.push_str(&format!("\nExtra guidance: {}\n", g.trim()));
+    }
+    s.push_str("\nCards (index. FRONT / ANSWER / NOTE):\n");
+    for (i, item) in items.iter().enumerate() {
+        s.push_str(&format!(
+            "{i}. {} / {} / {}\n",
+            one_line(&item.question),
+            one_line(&item.answer),
+            item.note.as_deref().map(one_line).unwrap_or_default()
+        ));
+    }
+    s.push_str(
+        "\nOutput ONLY JSON, no prose, no code fences. The key is the card index; \
+         the value is an object with any of \"front\" (string), \"back\" (array of \
+         strings), \"note\" (string), \"mode\" (string). Include only cards that \
+         need reshaping:\n\
+         {\"0\": {\"back\": [\"...\", \"...\"], \"mode\": \"line\"}, ...}\n",
     );
     s
 }
@@ -1405,6 +1545,7 @@ mod tests {
             id,
             question: question.into(),
             answer: answer.into(),
+            note: None,
         }
     }
 
@@ -1987,5 +2128,76 @@ mod tests {
             Ok(_) => panic!("expected a Choices outcome"),
             Err(e) => panic!("generation failed: {e}"),
         }
+    }
+
+    // ── format generation ──
+
+    #[test]
+    fn clean_format_keeps_a_real_reshape_and_validates_mode() {
+        let item = WarmItem {
+            id: 1,
+            question: "List the parts".to_string(),
+            answer: "A, B, C".to_string(),
+            note: None,
+        };
+        let raw = RawFormat {
+            front: None,
+            back: vec!["A".to_string(), "B".to_string(), "C".to_string()],
+            note: None,
+            mode: Some("line".to_string()),
+        };
+        let fmt = clean_format(&item, &raw).expect("a reshape");
+        assert_eq!(fmt.back, ["A", "B", "C"]);
+        assert_eq!(fmt.mode, Some(Mode::LineByLine));
+    }
+
+    #[test]
+    fn clean_format_drops_noop_and_bad_mode() {
+        let item = WarmItem {
+            id: 1,
+            question: "Q".to_string(),
+            answer: "A, B, C".to_string(),
+            note: None,
+        };
+        // Same lines as the original answer, and an exact-match mode -> nothing usable.
+        let raw = RawFormat {
+            front: None,
+            back: vec!["A, B, C".to_string()],
+            note: None,
+            mode: Some("typing".to_string()),
+        };
+        assert!(clean_format(&item, &raw).is_none());
+    }
+
+    #[test]
+    fn generate_format_errors_on_non_json_reply() {
+        let _guard = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = fake_reply(dir.path(), "sorry, I can't do that");
+        let items = vec![WarmItem {
+            id: 1,
+            question: "List the parts".to_string(),
+            answer: "A, B, C".to_string(),
+            note: None,
+        }];
+        let err = generate_format(&items, None, &ask_config(&cli)).unwrap_err();
+        assert!(format!("{err:#}").contains("did not return valid JSON"));
+    }
+
+    #[test]
+    fn generate_format_parses_a_reshape() {
+        let _guard = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = fake_reply(dir.path(), r#"{"0": {"back": ["A", "B"], "mode": "line"}}"#);
+        let items = vec![WarmItem {
+            id: 7,
+            question: "List".to_string(),
+            answer: "A, B".to_string(),
+            note: None,
+        }];
+        let map = generate_format(&items, None, &ask_config(&cli)).unwrap();
+        let fmt = map.get(&7).expect("a format for card 7");
+        assert_eq!(fmt.back, ["A", "B"]);
+        assert_eq!(fmt.mode, Some(Mode::LineByLine));
     }
 }
