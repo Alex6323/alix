@@ -156,6 +156,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   as `[…]`), are unaffected.
 
 ### Changed
+- **Breaking:** card identity is now whitespace-insensitive — an answer's id no
+  longer depends on line breaks, indentation, or repeated spaces (only its
+  words). Cards whose answers span multiple lines or use irregular spacing get a
+  new id once and reset their review progress.
 - **Leitner stage 1 now has a ~5-minute relearn/settle cooldown** (was 0). A newly
   acquired or freshly failed card becomes due ~5 minutes out for the *next*
   session, so starting another session right away no longer re-serves a card you
