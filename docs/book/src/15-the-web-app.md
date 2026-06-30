@@ -21,7 +21,8 @@ screen** — the same list as the terminal picker. **Up / down** move between
 decks; a **search box in the header** filters the list (focus it with **`/`**).
 Focus a deck and **Learn** it with **`l`** (or Enter) — a facts deck opens a
 review, a [trace](13-trace-decks.md) opens a walk — one deck per session (a locked
-deck won't start; `browse` ignores locking, and is on **`b`**). Selecting a deck that has a
+deck won't start; **Browse** on **`b`** ignores locking and opens a read-only,
+in-page read-through — step the cards with Prev/Next, Esc to leave). Selecting a deck that has a
 [topology](05-scheduling.md) opens an inline **focus drawer** beneath it: choose
 which topology orders the session, and pick a region to drill — click it or step
 through with **← / →** — its strength heatmap and the number of cards **due** in

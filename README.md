@@ -587,6 +587,11 @@ keys are configurable in the `[browse]` section of the config file (see below);
 first/last stay `g`/`G`. Run `alix browse` with no deck argument to choose
 decks from the same picker `alix` uses.
 
+In the browser — `alix browse <deck> --serve`, or the **Browse** action in the
+[web picker](#web-frontend) — it's the same read-through, as an in-page overlay
+(Prev / Next / Leave) rather than a separate page. It's read-only there: card
+removal is terminal-only.
+
 ## Web frontend
 
 Add `--serve` to `review` or `browse` to run it in the browser instead of the
@@ -599,7 +604,7 @@ versa.
 alix review rust.txt --serve              # open http://127.0.0.1:7777
 alix review rust.txt --serve --port 8080
 alix review rust.txt --serve --lan        # reachable from other devices on your network
-alix browse rust.txt --serve              # the browse view in the browser
+alix browse rust.txt --serve              # read through a deck in the browser (in-page)
 alix --serve                              # no decks -> pick them in the browser
 ```
 

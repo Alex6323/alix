@@ -166,6 +166,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   as `[…]`), are unaffected.
 
 ### Changed
+- **Browse is now an in-page mode of the web app — no separate `/browse` page.**
+  Hitting **Browse** in the web picker (or `alix browse <deck> --serve`) opens a
+  read-only overlay right in the main app — step through every card with
+  Prev/Next/Leave, seeing the reshaped answers, notes, and images — instead of
+  navigating to a separate page with its own older picker. The standalone
+  `browse.html` page and the `/browse` route are gone; terminal `alix browse` is
+  unchanged. **Breaking:** the web browse is read-only (card removal stays a
+  terminal `alix browse` feature).
 - **Reshaped list answers show as bullet points.** When the `format` augment turns
   a crammed prose answer into a multi-item list, the web review and browse views
   now render each item with a `•`. Single-line tidies and a card's own authored

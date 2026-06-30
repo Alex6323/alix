@@ -517,8 +517,10 @@ let examConfirmingQuit = false; // showing the "abandon the exam?" confirmation
 let examPoll = null;  // setInterval handle while an exam call is in flight
 let augmentData = null; // the AugmentDto while the Augment screen is open (null otherwise)
 let augmentPoll = null; // setInterval handle while a generation is in flight
+let browsing = null;  // {cards, label, i} while the read-only browse overlay is open
 let KEYS = {};        // configured review key bindings, from /api/keys
 let PK = {};          // configured deck-picker nav keys, from /api/picker-keys
+let BK = { next: [{ k: "l", ctrl: false }], prev: [{ k: "h", ctrl: false }] }; // browse pager keys, from /api/browse-keys
 
 const stage = document.getElementById("stage");
 const legend = document.getElementById("legend");
@@ -546,7 +548,9 @@ const menu = document.getElementById("menu");
 
 async function api(path, opts) { return (await fetch(path, opts)).json(); }
 function post(body) { return { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }; }
-function load()    { api("/api/state").then(apply); }
+// On load the page may be seeded in browse mode (a `alix browse --serve` launch):
+// the state then carries the browse phase + cards, so open the overlay directly.
+function load() { api("/api/state").then(s => { if (s.phase === "browse") { browsing = { cards: s.cards, label: s.label, i: 0 }; state = s; render(); } else apply(s); }); }
 function grade(g)  { api("/api/grade", post({ grade: g })).then(apply); }
 function skip()    { api("/api/skip", post({})).then(apply); }
 function acquire() { api("/api/acquire", post({})).then(apply); }
@@ -558,12 +562,18 @@ function restart() { api("/api/restart", post({})).then(apply); }
 function select(name, topology, region) { rememberLaunch(name); api("/api/select", post({ deck: name, topology: topology || null, region: region || null })).then(s => { if (s && s.redirect) { if (lastWorkspace) sessionStorage.setItem("alix.returnWs", lastWorkspace); sessionStorage.setItem("alix.walkName", name || ""); location.href = s.redirect; return; } apply(s); }); }
 // Remember the deck just launched so the picker re-lands the cursor on it when it
 // re-opens (the selection shouldn't move while the user is away). Survives both an
-// in-page return (review/exam) and a page-reload return (walk/browse).
+// in-page return (review/exam/browse) and a page-reload return (walk).
 function rememberLaunch(name) { if (name) sessionStorage.setItem("alix.lastDeck", name); }
-// Browse a deck read-only: the server builds the card list and replies with a
-// redirect to /browse (hosted here). Stash the launching workspace so leaving
-// the browse re-opens it, like a walk.
-function browseDeck(it, wsName) { rememberLaunch(it.name); if (wsName) sessionStorage.setItem("alix.returnWs", wsName); api("/api/browse", post({ deck: it.name })).then(s => { if (s && s.redirect) location.href = s.redirect; }); }
+// Browse a deck read-only: the server builds the card list and returns it; open
+// the in-page browse overlay (no page nav). Leaving returns to the picker, which
+// re-lands on this deck (rememberLaunch + lastWorkspace).
+function browseDeck(it, wsName) {
+  rememberLaunch(it.name);
+  lastWorkspace = wsName || null;
+  api("/api/browse", post({ deck: it.name })).then(d => { browsing = { cards: d.cards, label: d.label, i: 0 }; render(); });
+}
+function closeBrowse() { browsing = null; api("/api/deselect", post({})).then(apply); }
+function browseGo(delta) { if (!browsing) return; const n = browsing.i + delta; if (n >= 0 && n < browsing.cards.length) { browsing.i = n; render(); } }
 function deselect() { confirmingLeave = false; menu.classList.remove("open"); api("/api/deselect", post({})).then(apply); }
 
 // Returning to the picker mid-session abandons the cards still queued, so warn
@@ -639,6 +649,7 @@ function render() {
 
   if (examData) { renderExam(); return; }
   if (augmentData) { renderAugment(); return; }
+  if (browsing) { renderBrowse(); return; }
   if (state.phase === "select") { renderSelect(); return; }
 
   headerBreadcrumb();
@@ -1666,6 +1677,56 @@ function renderCard() {
   renderLegend();
 }
 
+// Read-only browse: step through every card in a deck — front, the revealed
+// answer (with the format reshape's bullets + notes), no grading. An in-page
+// overlay reached from the picker's Browse action or `alix browse --serve`;
+// there is no separate /browse page.
+function renderBrowse() {
+  headerBreadcrumb();
+  deckEl.textContent = browsing.label;
+  histEl.textContent = "";
+  scoreEl.innerHTML = `<span class="left">${browsing.i + 1} / ${browsing.cards.length}</span>`;
+  menuWrap.style.display = "none";
+  const c = browsing.cards[browsing.i];
+
+  const deck = el("div", "stack");
+  deck.dataset.depth = Math.min(3, Math.max(1, browsing.cards.length - browsing.i));
+  deck.appendChild(el("div", "peek p2"));
+  deck.appendChild(el("div", "peek p1"));
+  const card = el("div", "card");
+
+  const q = el("div", "region q");
+  q.appendChild(el("div", "front-text", c.front));
+  for (const ctx of c.context) q.appendChild(contextLine(ctx));
+  if (c.img) q.appendChild(cardImage(c.img));
+  card.appendChild(q);
+
+  card.appendChild(el("div", "divider"));
+
+  const hasNote = c.note && c.note.length > 0;
+  const a = el("div", "region a" + (hasNote ? " withnote" : ""));
+  const sec = el("div", "reveal");
+  const bullet = c.reshaped && c.back.length > 1;
+  for (const b of c.back) sec.appendChild(el("div", "answer", bullet ? "• " + b : b));
+  a.appendChild(sec);
+  if (c.img_back) a.appendChild(cardImage(c.img_back));
+  card.appendChild(a);
+
+  if (hasNote) {
+    card.appendChild(el("div", "divider"));
+    const n = el("div", "region n");
+    renderNote(n, c.note);
+    card.appendChild(n);
+  }
+
+  deck.appendChild(card);
+  stage.appendChild(deck);
+
+  chip("Prev", "", () => browseGo(-1), label(BK.prev)).disabled = browsing.i === 0;
+  chip("Next", "primary", () => browseGo(1), label(BK.next)).disabled = browsing.i >= browsing.cards.length - 1;
+  chip("Leave", "", closeBrowse, "esc");
+}
+
 // Fills the answer region for the current mode/phase, and shows the note (with
 // its own divider) only when it should be visible.
 function fillBottom() {
@@ -2116,6 +2177,16 @@ document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") { e.preventDefault(); quitExam(); }
     return;
   }
+  // The browse overlay: step cards (configurable next/prev + arrows/space/g/G),
+  // Esc/Backspace leaves. Read-only — no grading.
+  if (browsing) {
+    if (e.key === "Escape" || e.key === "Backspace") { e.preventDefault(); closeBrowse(); return; }
+    if (e.key === "ArrowRight" || e.key === " " || hit(e, BK.next)) { e.preventDefault(); browseGo(1); return; }
+    if (e.key === "ArrowLeft" || hit(e, BK.prev)) { e.preventDefault(); browseGo(-1); return; }
+    if (e.key === "g" || e.key === "Home") { e.preventDefault(); browsing.i = 0; render(); return; }
+    if (e.key === "G" || e.key === "End") { e.preventDefault(); browsing.i = browsing.cards.length - 1; render(); return; }
+    return;
+  }
   // The augment overlay: Esc closes it; other keys (typing in the guidance box)
   // pass through untouched.
   if (augmentData) {
@@ -2307,9 +2378,11 @@ Promise.all([
   api("/api/keys"),
   api("/api/picker-keys").catch(() => ({})),
   api("/api/ask-info").catch(() => null),
-]).then(([k, pk, ai]) => {
+  api("/api/browse-keys").catch(() => null),
+]).then(([k, pk, ai, bk]) => {
   KEYS = k;
   if (ai) askInfo = ai;
+  if (bk) BK = bk;
   PK = Object.assign({
     up: [{ k: "k", ctrl: false }], down: [{ k: "j", ctrl: false }],
     open: [{ k: "l", ctrl: false }], back: [{ k: "h", ctrl: false }],

@@ -1213,7 +1213,7 @@ fn subject_paths(decks: HashMap<String, tui::DeckInfo>) -> HashMap<String, PathB
 
 fn review(args: ReviewArgs) -> Result<()> {
     if args.serve.serve {
-        return review_serve(args);
+        return review_serve(args, false);
     }
     // Explicit decks: build and run once, standalone — the activity owns its
     // terminal and prints a summary, as before. No picker, no return-loop.
@@ -1422,7 +1422,10 @@ fn run_review_tui(rs: ReviewSession, args: &ReviewArgs) -> Result<()> {
 /// deck-selection screen; otherwise it goes straight to review. The server
 /// builds new sessions on demand (when the user picks decks) via the builder
 /// closure, reusing one store and recent-decks list.
-fn review_serve(args: ReviewArgs) -> Result<()> {
+/// Serves the unified web app. `browse_mode` makes a CLI-named deck open
+/// directly in the read-only browse overlay (the `alix browse --serve` entry)
+/// rather than a review session; the in-browser picker is identical either way.
+fn review_serve(args: ReviewArgs, browse_mode: bool) -> Result<()> {
     let config = Config::load(args.config.as_deref())?;
     let mut recent = RecentDecks::load(
         recent::default_recent_path().context("cannot determine the data directory")?,
@@ -1470,12 +1473,23 @@ fn review_serve(args: ReviewArgs) -> Result<()> {
         }
     };
 
-    // Build the first session up front only when decks were named on the CLI;
-    // otherwise start at the selection screen.
-    let initial = if args.decks.is_empty() {
-        None
+    // The read-only browse card builder, reused for a CLI browse launch and the
+    // picker's "Browse" action (same builder, one source of truth).
+    let to_cards = |b: BrowseBuild| serve::CardsBuild {
+        cards: b.cards,
+        label: b.label,
+        decks: subject_paths(b.decks),
+    };
+    // What the server opens on. Decks named on the CLI: a read-only browse list
+    // when `browse_mode`, else a review session built up front. None: the picker.
+    let (initial, label) = if args.decks.is_empty() {
+        (serve::Launch::Picker, "select decks".to_string())
+    } else if browse_mode {
+        let cards = to_cards(build_browse(args.decks.clone(), &mut recent, Frontend::Web)?);
+        let label = format!("{} (browse)", cards.label);
+        (serve::Launch::Browse(cards), label)
     } else {
-        let b = build_review(
+        let b = to_build(build_review(
             args.decks.clone(),
             &args,
             &config,
@@ -1484,14 +1498,10 @@ fn review_serve(args: ReviewArgs) -> Result<()> {
             Frontend::Web,
             args.topology.as_deref(),
             args.region.as_deref(),
-        )?;
-        Some(to_build(b))
+        )?);
+        let label = b.label.clone();
+        (serve::Launch::Review(b), label)
     };
-
-    let label = initial
-        .as_ref()
-        .map(|b| b.label.clone())
-        .unwrap_or_else(|| "select decks".to_string());
     announce(addr, args.serve.lan, &label);
 
     let opts = serve::ReviewOptions {
@@ -1543,13 +1553,6 @@ fn review_serve(args: ReviewArgs) -> Result<()> {
     // Picks the right store for whatever decks a selection resolves to (`&[]` →
     // the global store), so the server can switch per session like the TUI.
     let store_for_sel = |paths: &[PathBuf]| store_for(paths, args.store.clone());
-    // The picker's "Browse" action builds a read-only card list — the same
-    // builder the standalone `alix browse` server uses.
-    let to_cards = |b: BrowseBuild| serve::CardsBuild {
-        cards: b.cards,
-        label: b.label,
-        decks: subject_paths(b.decks),
-    };
     let build_browse_sel = |paths: Vec<PathBuf>, recent: &mut RecentDecks| {
         build_browse(paths, recent, Frontend::Web).map(to_cards)
     };
@@ -2003,48 +2006,26 @@ fn browse_loop(
 /// decks are given, else browses them directly. New selections rebuild the card
 /// list via the builder closure.
 fn browse_serve(args: BrowseArgs) -> Result<()> {
-    let config = Config::load(None)?;
-    let mut recent = RecentDecks::load(
-        recent::default_recent_path().context("cannot determine the data directory")?,
-    );
-    let store = open_store(None)?;
-    let decks_dir = config.decks_dir().context("cannot determine ~/decks")?;
-    let addr = serve_addr(args.serve.port, args.serve.lan, &config);
-
-    let to_build = |b: BrowseBuild| serve::CardsBuild {
-        cards: b.cards,
-        label: b.label,
-        decks: subject_paths(b.decks),
-    };
-
-    let initial = if args.decks.is_empty() {
-        None
-    } else {
-        Some(to_build(build_browse(
-            args.decks.clone(),
-            &mut recent,
-            Frontend::Web,
-        )?))
-    };
-
-    let label = initial
-        .as_ref()
-        .map(|b| b.label.clone())
-        .unwrap_or_else(|| "select decks".to_string());
-    announce(addr, args.serve.lan, &format!("{label} (browse)"));
-
-    let build = |paths: Vec<PathBuf>, recent: &mut RecentDecks| {
-        build_browse(paths, recent, Frontend::Web).map(to_build)
-    };
-    serve::run_browse(
-        initial,
-        store,
-        recent,
-        decks_dir,
-        addr,
-        config.browse,
-        config.picker,
-        build,
+    // Browse is a mode of the unified web app: hand the named decks to
+    // `review_serve` with `browse_mode = true`, which opens them in the read-only
+    // browse overlay. The review-only fields are unused for a browse launch.
+    review_serve(
+        ReviewArgs {
+            decks: args.decks,
+            serve: args.serve,
+            mode: None,
+            scheduler: None,
+            order: None,
+            topology: None,
+            region: None,
+            new: 10,
+            limit: None,
+            cram: false,
+            max_typos: 2,
+            store: None,
+            config: None,
+        },
+        true,
     )
 }
 

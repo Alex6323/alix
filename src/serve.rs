@@ -111,7 +111,6 @@ impl DeckFiles {
 }
 
 const REVIEW_HTML: &str = include_str!("../assets/serve/review.html");
-const BROWSE_HTML: &str = include_str!("../assets/serve/browse.html");
 const WALK_HTML: &str = include_str!("../assets/serve/walk.html");
 const THEME_CSS: &str = include_str!("../assets/serve/theme.css");
 const THEME_JS: &str = include_str!("../assets/serve/theme.js");
@@ -575,6 +574,16 @@ pub struct CardsBuild {
     pub cards: Vec<Card>,
     pub label: String,
     pub decks: HashMap<String, PathBuf>,
+}
+
+/// What the review server opens on: a live review session, a read-only browse
+/// list, or — neither — the in-browser deck picker. Browse is a native mode of
+/// the review server (no separate page), so `alix browse --serve` seeds `Browse`
+/// exactly as review seeds `Review`.
+pub enum Launch {
+    Review(SessionBuild),
+    Browse(CardsBuild),
+    Picker,
 }
 
 /// The server's live review state once decks are chosen. Its absence (`None`)
@@ -1297,14 +1306,15 @@ impl Augmenting {
     }
 }
 
-/// Serves review at `addr` until the process is stopped. When `initial` is
-/// `None` the server opens at the in-browser deck-selection screen; picking
-/// decks (`POST /api/select`) calls `build` to construct a session in place.
+/// Serves review at `addr` until the process is stopped. `initial` decides what
+/// it opens on: a review session, a read-only browse list, or (`Launch::Picker`)
+/// the in-browser deck-selection screen; picking decks (`POST /api/select`)
+/// calls `build` to construct a session in place.
 /// `build` borrows the shared `store` and `recent`, so all sessions write one
 /// history and update the recent-decks list, exactly like the CLI.
 #[expect(clippy::too_many_arguments)] // each is a distinct, named server input
 pub fn run_review(
-    initial: Option<SessionBuild>,
+    initial: Launch,
     mut store: Store,
     mut recent: RecentDecks,
     decks_dir: PathBuf,
@@ -1345,7 +1355,13 @@ pub fn run_review(
     // keys, distinct from the review grade keys served at `/api/keys`.
     let browse_keys = BrowseKeys::from(&browse_bindings);
     let ask_info = AskInfoDto::from(&ask_cfg);
-    let mut reviewing = initial.map(Reviewing::new);
+    // Browse is a native mode of the review server: `initial` seeds either a
+    // review session, a read-only browse list, or neither (the picker).
+    let (mut reviewing, mut browsing) = match initial {
+        Launch::Review(b) => (Some(Reviewing::new(b)), None),
+        Launch::Browse(b) => (None, Some(Browsing::new(b))),
+        Launch::Picker => (None, None),
+    };
     if let Some(r) = reviewing.as_mut() {
         r.open_augment(store.path());
         r.rotate_variant();
@@ -1356,9 +1372,8 @@ pub fn run_review(
     // A trace picked from the selection screen walks here (the page navigates to
     // `/walk`, which this server hosts alongside review).
     let mut walking: Option<Walking> = None;
-    // The picker's "Browse" action opens a read-only card list (the page
-    // navigates to `/browse`, hosted here too).
-    let mut browsing: Option<Browsing> = None;
+    // `browsing` (seeded above for a `--serve` browse launch) is also entered
+    // from the picker's "Browse" action (POST /api/browse) — in-page, no page nav.
     // Workspace icons resolved while building the picker, served via `/img/` at
     // launcher time (when no review/browse session owns the registry).
     let mut launcher_icons: HashMap<String, PathBuf> = HashMap::new();
@@ -1369,7 +1384,6 @@ pub fn run_review(
         match (&method, path.as_str()) {
             (Method::Get, "/") => respond_html(request, REVIEW_HTML),
             (Method::Get, "/walk") => respond_html(request, WALK_HTML),
-            (Method::Get, "/browse") => respond_html(request, BROWSE_HTML),
             (Method::Get, "/theme.css") => {
                 respond_asset(request, THEME_CSS, "text/css; charset=utf-8")
             }
@@ -1388,9 +1402,6 @@ pub fn run_review(
                 let catalog = deck_catalog(&decks_dir, &recent, &store, true, &mut launcher_icons);
                 respond_json(request, &catalog)
             }
-            (Method::Get, "/api/cards") => {
-                respond_json(request, &browse_payload(browsing.as_ref()))
-            }
             // Image cards: served from whichever session is live (review or browse).
             (Method::Get, key) if key.starts_with("/img/") => {
                 let name = &key["/img/".len()..];
@@ -1402,10 +1413,19 @@ pub fn run_review(
                     serve_image(request, &launcher_icons, name)
                 }
             }
-            (Method::Get, "/api/state") => respond_json(
-                request,
-                &review_state(reviewing.as_ref(), &store, mode_override),
-            ),
+            (Method::Get, "/api/state") => {
+                // Browse is an in-page mode: when a browse list is live (a
+                // `--serve` browse launch), the page gets the browse payload here
+                // and opens the browse overlay instead of a review session.
+                if let Some(b) = &browsing {
+                    respond_json(request, &browse_payload(Some(b)))
+                } else {
+                    respond_json(
+                        request,
+                        &review_state(reviewing.as_ref(), &store, mode_override),
+                    )
+                }
+            }
             (Method::Post, "/api/select") => {
                 match read_selection(&mut request, &decks_dir, &recent) {
                     Some(sel) => {
@@ -1459,8 +1479,8 @@ pub fn run_review(
                     None => respond_status(request, 400),
                 }
             }
-            // The picker's "Browse" action: build a read-only card list and tell
-            // the page to navigate to `/browse` (hosted here, like `/walk`).
+            // The picker's "Browse" action: build a read-only card list and return
+            // it, so the page opens the browse overlay in place (no page nav).
             (Method::Post, "/api/browse") => {
                 match read_selection(&mut request, &decks_dir, &recent) {
                     Some(sel) => {
@@ -1476,12 +1496,7 @@ pub fn run_review(
                                 reviewing = None;
                                 walking = None;
                                 examining = None;
-                                respond_json(
-                                    request,
-                                    &WalkRedirect {
-                                        redirect: "/browse",
-                                    },
-                                );
+                                respond_json(request, &browse_payload(browsing.as_ref()));
                             }
                             Err(e) => {
                                 eprintln!("warning: could not load the selected decks: {e}");
@@ -2529,7 +2544,6 @@ pub fn run_walk(
 struct Browsing {
     cards: Vec<Card>,
     label: String,
-    files: DeckFiles,
     images: HashMap<String, PathBuf>,
 }
 
@@ -2539,106 +2553,9 @@ impl Browsing {
         Self {
             cards: build.cards,
             label: build.label,
-            files: DeckFiles::new(build.decks),
             images,
         }
     }
-}
-
-/// Serves a read-only walk through cards at `addr`. Like [`run_review`], with
-/// `initial` `None` it opens at the deck-selection screen; `POST /api/select`
-/// builds the card list via `build`. The only thing it writes is card removal
-/// (deletes the card from its deck file and prunes its progress in `store`).
-#[expect(clippy::too_many_arguments)] // each is a distinct, named server input
-pub fn run_browse(
-    initial: Option<CardsBuild>,
-    mut store: Store,
-    mut recent: RecentDecks,
-    decks_dir: PathBuf,
-    addr: SocketAddr,
-    bindings: BrowseBindings,
-    picker: PickerKeys,
-    mut build: impl FnMut(Vec<PathBuf>, &mut RecentDecks) -> Result<CardsBuild>,
-) -> Result<()> {
-    let keys = BrowseKeys::from(&bindings);
-    let picker_keys = PickerKeysDto::from(&picker);
-    let mut browsing = initial.map(Browsing::new);
-    // Workspace icons resolved while building the picker, served via `/img/` when
-    // no browse session owns the registry.
-    let mut launcher_icons: HashMap<String, PathBuf> = HashMap::new();
-    let server = Server::http(addr).map_err(|e| anyhow!("cannot start server on {addr}: {e}"))?;
-    for mut request in server.incoming_requests() {
-        let method = request.method().clone();
-        let path = request_path(&request);
-        match (&method, path.as_str()) {
-            (Method::Get, "/") => respond_html(request, BROWSE_HTML),
-            (Method::Get, "/theme.css") => {
-                respond_asset(request, THEME_CSS, "text/css; charset=utf-8")
-            }
-            (Method::Get, "/theme.js") => {
-                respond_asset(request, THEME_JS, "application/javascript; charset=utf-8")
-            }
-            (Method::Get, "/api/browse-keys") => respond_json(request, &keys),
-            (Method::Get, "/api/picker-keys") => respond_json(request, &picker_keys),
-            (Method::Get, "/api/decks") => {
-                // Browse is read-only — any deck is browsable, so no lock gating.
-                let catalog = deck_catalog(&decks_dir, &recent, &store, false, &mut launcher_icons);
-                respond_json(request, &catalog)
-            }
-            (Method::Get, key) if key.starts_with("/img/") => match &browsing {
-                Some(b) => serve_image(request, &b.images, &key["/img/".len()..]),
-                None => serve_image(request, &launcher_icons, &key["/img/".len()..]),
-            },
-            (Method::Get, "/api/cards") => {
-                respond_json(request, &browse_payload(browsing.as_ref()))
-            }
-            (Method::Post, "/api/select") => {
-                match read_selection(&mut request, &decks_dir, &recent) {
-                    Some(sel) => match build(vec![sel.deck], &mut recent) {
-                        Ok(b) => {
-                            browsing = Some(Browsing::new(b));
-                            respond_json(request, &browse_payload(browsing.as_ref()));
-                        }
-                        Err(e) => {
-                            eprintln!("warning: could not load the selected decks: {e}");
-                            respond_status(request, 400);
-                        }
-                    },
-                    None => respond_status(request, 400),
-                }
-            }
-            (Method::Post, "/api/deselect") => {
-                browsing = None;
-                respond_json(request, &browse_payload(browsing.as_ref()));
-            }
-            (Method::Post, "/api/remove") => {
-                let Some(b) = browsing.as_mut() else {
-                    respond_status(request, 409);
-                    continue;
-                };
-                if let Some(index) = read_index(&mut request)
-                    && index < b.cards.len()
-                {
-                    let subject = b.cards[index].subject.to_string();
-                    let line = b.cards[index].line;
-                    // Drop the card and any cloze siblings, pruning their
-                    // progress as they go.
-                    b.cards.retain(|card| {
-                        let sibling = card.subject.as_ref() == subject && card.line == line;
-                        if sibling {
-                            store.remove(card.id());
-                        }
-                        !sibling
-                    });
-                    let _ = store.save();
-                    b.files.remove_block(&subject, line);
-                }
-                respond_json(request, &browse_payload(browsing.as_ref()));
-            }
-            _ => respond_status(request, 404),
-        }
-    }
-    Ok(())
 }
 
 /// Serializes the current browse phase for the page: the cards in browse phase,
