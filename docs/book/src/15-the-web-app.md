@@ -3,7 +3,7 @@
 Everything `alix` does in the terminal it can also do in a browser. Add `--serve`
 to `review` or `browse` (or run `alix --serve` with no decks) and it runs the same
 session logic over a tiny local web server, writing to the **same progress store**
-— so a card you grade or remove in the browser shows up on the command line and
+— so a card you grade in the browser shows up on the command line and
 vice versa. It's handy on a tablet or phone, where touch (and images) beat a TUI.
 
 ```sh
@@ -20,9 +20,9 @@ Run `--serve` without naming decks and the page opens the **deck-selection
 screen** — the same list as the terminal picker. **Up / down** move between
 decks; a **search box in the header** filters the list (focus it with **`/`**).
 Focus a deck and **Learn** it with **Enter** — a facts deck opens a
-review, a [trace](13-trace-decks.md) opens a walk — one deck per session (a locked
-deck won't start; **Browse** on **`b`** ignores locking and opens a read-only,
-in-page read-through — step the cards with Prev/Next, Esc to leave). Selecting a deck that has a
+review, a [trace](13-trace-decks.md) opens a walk — one deck per session. **Browse**
+on **`b`** opens a read-only, in-page read-through instead — step the cards with
+Prev/Next, Esc to leave. Selecting a deck that has a
 [topology](05-scheduling.md) opens an inline **focus drawer** beneath it: choose
 which topology orders the session, and pick a region to drill — click it or step
 through with **← / →** — its strength heatmap and the number of cards **due** in
@@ -59,9 +59,9 @@ All [answer modes](04-review-modes.md) work in the browser — flip, line (it
 auto-scrolls to the newest line), typing/fuzzy (each line marked ✓/✗ with the
 correct answer shown), and choice (tap an option). Controls are big tap targets and
 follow *your* configured key bindings (the page reads them from the server). The
-**☰ menu** is context-aware: during review it holds **Ask Claude** and **Remove
-card**; on the deck picker, **keyboard shortcuts**, **refresh decks**, and
-**about** — with **Theme…** in both.
+**☰ menu** is context-aware: during review it holds **Ask Claude**; on the deck
+picker, **keyboard shortcuts**, **refresh decks**, and **about** — with **Theme…**
+in both.
 
 The AI features come along too: the [ask-Claude tutor](10-ask-claude.md), the
 [AI exam](12-the-ai-exam.md), and [trace walks](13-trace-decks.md) all have a web
@@ -75,8 +75,9 @@ originals and a playful **Kid** theme, plus crowd-favourite editor/slide palette
 (GitHub, Dracula, Nord, Solarized, Gruvbox, Catppuccin, Tokyo Night, Monokai, One
 Dark, Ayu, Rosé Pine, Everforest). Open the **Theme…** popover from the ☰ menu (a
 small bar button on the trace walk): a grid grouped Light / Dark that **previews
-the whole UI live as you hover**, and remembers your choice in the browser (kept
-in `localStorage`, not the config). The palette lives in a shared `theme.css` the
+on a sample card as you hover** and re-themes the whole app when you click one,
+remembering your choice in the browser (kept in `localStorage`, not the config).
+The palette lives in a shared `theme.css` the
 server hosts, so every screen — review, browse, and trace walks — themes together.
 
 ## Local by design

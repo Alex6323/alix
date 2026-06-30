@@ -62,6 +62,12 @@ responsive while it thinks.
   card for a missed concept, with overlapping gaps merged. Re-drill those and
   re-sit.
 
+A **trace** deck is examined differently: instead of generated questions, its exam
+asks you to *retrace the whole path from memory* in a sentence or two — **the
+compression** — graded holistically against the checkpoints (no question
+generation, no source read). Passing masters the trace; a fail sends you back to
+**re-walk** it. See [trace decks](13-trace-decks.md) for the full flow.
+
 Resetting a whole deck (`alix reset <deck>`) also clears its mastered state, so a
 re-drilled deck must pass again; resetting only individual cards (`--card` /
 `--cards`) leaves mastery intact.

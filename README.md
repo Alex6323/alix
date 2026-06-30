@@ -597,7 +597,7 @@ removal is terminal-only.
 Add `--serve` to `review` or `browse` to run it in the browser instead of the
 terminal — useful on a tablet or phone, where touch (and images) beats a TUI.
 It runs the same session logic and writes to the same progress store, so
-a card you grade or remove in the browser shows up on the command line and vice
+a card you grade in the browser shows up on the command line and vice
 versa.
 
 ```
@@ -643,8 +643,9 @@ A **gallery of themes** ships with the web UI — the alix **Dark**/**Light**
 originals and a playful **Kid** theme, plus crowd-favourite editor/slide palettes
 (GitHub, Dracula, Nord, Solarized, Gruvbox, Catppuccin, Tokyo Night, Monokai, One
 Dark, Ayu, Rosé Pine, Everforest). Open the **Theme…** popover from the ☰ menu — a
-grid grouped Light / Dark that previews the whole UI live as you hover, and
-remembers your choice in the browser; no configuration needed.
+grid grouped Light / Dark that previews on a sample card as you hover and re-themes
+the whole app when you click one, remembering your choice in the browser; no
+configuration needed.
 
 It is deliberately local-only — no accounts, no database. By default it binds
 to `127.0.0.1` (this machine only); `--lan` binds all interfaces so a device on
@@ -1023,8 +1024,10 @@ its final step **freezes the cited excerpts** into the workspace's `assets/`
 folder — one tiny snippet per checkpoint — and repoints each `% at:` (and the
 trace's `% source:`) at them. The excerpts never drift and the workspace is
 self-contained, **without copying whole source files**. A re-based snippet loses
-its original line numbers, so when those matter the original `file:lines` is kept
-in the card's note (`! from scheduler.rs:90-98`). It's automatic for explored
+its original line numbers, so when those matter the original location is kept on
+the card's `% at:` line, after ` from ` (`% at: 12.rs from scheduler.rs:90-98`),
+and the freeze records the live source root in an `% origin:` directive so the
+tutor stays grounded and `alix check` can flag drift. It's automatic for explored
 workspaces, not a command; a loose trace over a live `% source:` is left as-is.
 
 **Checking the locators.** For a trace that *isn't* frozen — a loose `.txt` over
@@ -1130,7 +1133,7 @@ config's knobs or a store's on-disk format, becomes a facts deck) — carries it
 and a `% source:` scope. The `--goal` scopes coverage: a broad goal covers every
 subsystem, a narrow one collapses to just its slice (and traces it in more
 detail). By default it's **read-only** — it prints the plan and you author the
-items yourself (`alix trace --build` a trace, `alix deck` a facts deck).
+items yourself (`alix trace --build` a trace, `alix deck generate` a facts deck).
 
 With **`--into <dir>`** it materializes the plan into a ready-made **workspace**:
 
@@ -1141,7 +1144,7 @@ alix explore . --goal "how review scheduling works" \
 
 That writes an `alix.toml` and one stub file per item — a `% trace:` deck for
 each trace (run `alix trace --build` on it) and a `% title:` facts deck for each
-deck (author it or `alix deck`) — wired together with `% requires:` so they
+deck (author it or `alix deck generate`) — wired together with `% requires:` so they
 unlock in dependency order, with each `% source:` pointing back at the real
 source. The `--goal` becomes the workspace's `description`; **`--title`** names
 it (omitted, the folder name is used); **`--unlock-stage <1–5>`** writes a shared

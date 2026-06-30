@@ -53,8 +53,8 @@ order; what `% requires:` controls is **exam order**: a deck with a `% source:`
 can't sit its exam until each of its *sourced* prerequisites has passed its own
 exam, and passing a foundation's exam unlocks the exams that build on it. A
 **source-less** prerequisite has no exam to pass, so it never gates — its edge is
-just a suggested order in the tree. (A **trace** masters by finishing its walk —
-the walk is its exam — so it gates and unlocks like any sourced deck.)
+just a suggested order in the tree. (A **trace** masters by passing its exam —
+retracing the path from memory — so it gates and unlocks like any sourced deck.)
 
 In the picker a deck whose exam is locked shows a 🔒, but it stays **drillable** —
 only the exam waits on the prerequisites.

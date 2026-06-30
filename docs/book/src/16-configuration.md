@@ -64,8 +64,11 @@ own inside its folder; `--store <path>` overrides).
 
 Card identity is an XxHash64 over the deck **file name** plus the card's **back
 lines** — so your progress survives editing a front or adding notes, but renaming a
-deck file or changing a back line resets the affected cards. (That's the "editing is
-safe" rule from [chapter 3](03-the-deck-format.md), stated precisely.)
+deck file or changing a back line resets the affected cards. The hash is
+**whitespace-insensitive**: it depends on the back lines' words, not their line
+breaks, indentation, or repeated spaces, so reflowing or reindenting an answer
+keeps a card's history. (That's the "editing is safe" rule from
+[chapter 3](03-the-deck-format.md), stated precisely.)
 
 `alix reset <deck>` clears progress so cards go "new" again — a whole deck, a
 single card (`--card <id-or-front>`), or the entire store (`--all`); it confirms

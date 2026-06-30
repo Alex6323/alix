@@ -53,6 +53,16 @@ unlike `% source:` (the exam's ground truth, covered next chapter), a `% link:`
 never becomes exam material. And like every directive, they don't affect card
 hashes.
 
+## Grounding a frozen card — `% origin:`
+
+A workspace frozen with `alix explore --into --build` shows you *snapshots* of its
+source (the `assets/` copies), not the live files. When you ask about one of those
+cards, the tutor reads the **live source** the snapshot came from — recorded in the
+deck's `% origin:` — for surrounding context, while keeping the frozen excerpt you
+see as the anchor, so it never reasons about a drifted copy. If the live source is
+gone, it says so plainly instead of guessing. The same grounding applies when you
+ask during a trace walk.
+
 ## How it's sandboxed
 
 Because the CLI runs headless (`claude -p`), it can't show interactive permission

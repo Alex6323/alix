@@ -51,9 +51,9 @@ later in the same session until you get it.
 You choose the answer from four options with `1`–`4`. The three wrong options are
 sampled automatically from the *other* cards' answers (preferring similar-looking
 ones — years compete with years), so you never have to write distractors.
-Recognition is easier than recall, so a correct pick grades **good** (never easy)
-and a wrong pick fails. If a session has fewer than four distinct answers, the
-card falls back to flip.
+A correct pick grades **passed** and a wrong pick **fails** (recognition is easier
+than recall, so there's no bigger reward than a normal pass). If a session has
+fewer than four distinct answers, the card falls back to flip.
 
 **AI distractors.** For wrong options written by Claude instead — plausible,
 tempting answers the kind a half-learned mind would fall for — augment the deck
@@ -102,6 +102,11 @@ covered and the grade is *derived* from the coverage —
 all → got it, some → partly, none → missed it — so the self-grade is a per-claim
 check rather than a gut call. Atomic-answer cards get no key points and keep the
 plain reveal.
+
+A different augment target, `alix deck augment <deck> --target format`, instead
+*reshapes* a badly-shaped card — a list crammed into one prose answer, say — into
+clean display lines, non-destructively: it changes how the card is shown, not the
+deck file or how it's graded.
 
 ---
 

@@ -20,10 +20,10 @@ direction = "both"
 mode = "typing"
 ```
 
-Now review the whole cluster at once:
+Now open the cluster and drill its members one at a time:
 
 ```sh
-alix review ~/decks/spanish/
+alix workspace ~/decks/spanish/
 ```
 
 ## Shared directives

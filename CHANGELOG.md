@@ -8,10 +8,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 - **Web picker: browser-style back + refresh buttons in the header**, for people
-  who reach for the mouse/touch over keybindings. `←` goes back a view (disabled
-  at the top level; mirrors `Esc`/`Backspace`) and `⟳` re-scans the deck list
-  (also bound to the new `r` key). Refresh moved out of the burger menu, and the
-  drill-in's footer "Back" chip is gone — the header `←` replaces it.
+  who reach for the mouse/touch over keybindings. The **←** button goes back a
+  view (disabled at the top level; the keyboard equivalent is `Esc`/`Backspace`,
+  since the `←` *key* steps the focus drawer's regions) and `⟳` re-scans the deck
+  list (also bound to the new `r` key). Refresh moved out of the burger menu, and
+  the drill-in's footer "Back" chip is gone — the header **←** replaces it.
 - `alix deck augment --target format` — a non-destructive pass that reshapes a
   badly-shaped card (e.g. a list crammed into one prose answer) into clean
   display lines, a tidier front/note, and a suggested answer mode, applied at
@@ -43,7 +44,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   each card's answer into the few load-bearing claims a reconstruction must hit
   (cached beside your progress, like distractors/notes). In **explain** mode the
   reveal then becomes a **checklist**: you tick the points you covered and the
-  grade is *derived* — all → nailed, some → partly, none → failed — turning the
+  grade is *derived* — all → passed, some → partly, none → failed — turning the
   self-grade from a vibe into a per-claim check (TUI and web). An *atomic* answer
   (a single fact/term/date) is left without key points and keeps its plain reveal,
   the same way choice mode skips cards with no usable distractor. Tune the maximum
@@ -140,8 +141,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   editor palettes — GitHub, Dracula, Nord, Solarized, Gruvbox, Catppuccin, Tokyo
   Night, Monokai, One Dark, Ayu, Rosé Pine, Everforest (light + dark where they
   have both). Pick one from the **Theme…** popover (the ⋮ menu, or a bar button on
-  the trace walk): a grid grouped Light/Dark that **previews the whole UI live as
-  you hover** and remembers your choice per browser. The palette lives in a shared,
+  the trace walk): a grid grouped Light/Dark that **previews on a small sample card
+  as you hover** (the app re-themes only when you click one) and remembers your
+  choice per browser. The palette lives in a shared,
   server-served `theme.css` so every screen themes together; the default stays the
   original dark, so nothing changes unless you choose.
 - **`alix deck augment` — deliberate AI deck augmentation.** A new command that
@@ -167,16 +169,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   as `[…]`), are unaffected.
 
 ### Changed
-- **Web picker: Learn is now Enter, not `l`.** The focused row's primary action —
-  Learn a deck, Open a workspace, or Take exam — is bound to Enter. `l`/`→` no
-  longer launch a deck (they still step the focus drawer's regions and enter a
-  workspace).
-- **Self-grade labels are now "Missed it / Partly / Got it"** (were Failed / Partly
-  / Nailed). They read as an honest self-report of understanding, not a pass/fail
-  verdict — the real pass/fail is the AI exam. Internally the grade is still
-  pass/partly/fail; only the display changed, everywhere it shows (review buttons,
-  trace walk, terminal). **Breaking:** the `[keys]` config key `nailed` is now
-  `passed` (rebind if you'd set it).
+- **Web picker: the primary action is Learn, bound to Enter.** The focused row's
+  primary action — **Learn** a deck (review or walk), Open a workspace, or Take
+  exam — is bound to **Enter**, replacing the old Review/Walk split. `l`/`→` no
+  longer launch a deck (they step the focus drawer's regions and enter a
+  workspace). The intro prose and the "select decks" label are gone, and the list
+  fills the space.
 - **Browse is now an in-page mode of the web app — no separate `/browse` page.**
   Hitting **Browse** in the web picker (or `alix browse <deck> --serve`) opens a
   read-only overlay right in the main app — step through every card with
@@ -198,17 +196,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   going back is `Esc`/`Backspace` only.** The drawer needs left/right to move
   between regions, so those keys no longer double as "back out"; with no drawer
   open, `→` still enters a workspace / launches a deck and `←` is inert.
-- **The theme picker previews on a sample card, not the whole app.** Hovering a
-  theme used to recolor the entire page; now it re-themes only a small sample
-  card inside the picker dialog, and the app's theme changes solely when you
-  click one. Theme variables are scoped (any `[data-theme]` element, not just
-  `:root`) so the preview can't leak past the dialog.
 - Browse now shows the same display augmentations as review — the `format`
   reshape and `notes` trivia — so the two views render a card the same way
   instead of browse falling back to the raw deck.
 - `alix deck generate` now shapes cards better: it splits enumerations into
   one-idea cards (or uses `% mode: line` for ordered lists) and structures
-  answers and notes instead of producing prose blobs.
+  answers and notes instead of producing prose blobs — the same shaping now
+  applies to `alix explore --build` decks.
 - **Breaking:** card identity is now whitespace-insensitive — an answer's id no
   longer depends on line breaks, indentation, or repeated spaces (only its
   words). Cards whose answers span multiple lines or use irregular spacing get a
@@ -218,9 +212,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   session, so starting another session right away no longer re-serves a card you
   just saw or just missed. In-session drilling is unchanged — a failed card still
   comes back the same run (the queue is served by position, not by due time).
-- **Web picker: Learn.** A deck's primary action now reads **Learn** (key `l`, or
-  Enter) for both facts (review) and traces (walk), replacing Review/Walk. The
-  intro prose and the "select decks" label are gone, and the list fills the space.
 - **Web picker keys.** Clicking a deck now **selects** it (opening its focus
   drawer when it has a topology) rather than launching outright — **Review** or
   Enter launches. **Browse** moved to **`b`**, freeing **← / →**: they step the
@@ -238,19 +229,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `alix workspace <dir>` opens that picker), and a member still inherits the
   workspace's directives and store. `stats`/`list`/`reset` still take multiple
   decks (they're per-deck operations, not a merged session).
-- **Breaking — review grades are now `failed` / `partly` / `nailed`, replacing
-  `again` / `good` / `easy`.** Fact-deck review and the trace walk now share one
+- **Breaking — review grades are now `failed` / `partly` / `passed`, replacing
+  `again` / `good` / `easy`** (shown in the UI as **Missed it / Partly / Got it** —
+  an honest self-report of understanding, not a pass/fail verdict; the real
+  pass/fail is the AI exam). Fact-deck review and the trace walk now share one
   three-outcome grade: **failed** resets the card to stage 1, **partly** drops it
   *one* stage (a soft miss — it returns sooner but you keep most of your
-  progress), and **nailed** advances one stage. The old `easy` (+2 stage jump) is
+  progress), and **passed** advances one stage. The old `easy` (+2 stage jump) is
   gone, and `partly` is a genuinely new middle — previously the trace walk's
   "partial" scheduled identically to a miss (full reset); now it is a distinct,
   gentler outcome on both surfaces. A `partly` does not advance the streak (it
   can't retire a card). **The `[keys]` config keys renamed** — `again`/`good`/
-  `easy` → `failed`/`partly`/`nailed` (defaults `1`/`f`, `2`/`p`, `3`/`n`); an
-  existing config with the old keys must be updated (`alix config --init` shows
-  the new template). Pre-1.0, no shim. Progress files are unaffected — grades were
-  never stored by name.
+  `easy` → `failed`/`partly`/`passed` (defaults `1`/`f`, `2`/`p`, `3`/`n`); an
+  existing config with the old keys is rejected with an error naming the valid
+  keys (`alix config --init` shows the new template). Pre-1.0, no shim. Progress
+  files are unaffected — grades were never stored by name.
 - **Breaking — the freeze format records provenance on the `% at:` line, not a
   note.** Freezing a workspace now writes `% origin:` (the live crate root) and
   appends each card's original location to its locator
@@ -339,18 +332,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   answers compose freely, and the Next/Submit button now shows the binding.
 
 ### Fixed
-- **Web picker rows have a small gap** so the focused row's highlight frame no
-  longer collides with the border of the row below it.
-- **`explore --build` decks no longer cram an enumeration into one prose answer.**
-  The deck-fill prompt now carries the same anti-wall-of-text rule the `generate`
-  source prompt got: a list of several items is split into one-idea cards (or
-  given clean one-point-per-line structure) instead of a single run-on answer.
-- **The web picker's keyboard stays live after using the header burger menu.**
-  Opening the ☰ menu (or clicking empty space in the list) used to pull focus off
-  the selected deck row, so the arrow/`j`/`k`/`g`/`G` navigation went dead until
-  you clicked a row again. The burger no longer steals row focus, and a click on
-  empty picker space re-homes focus to the current row — so the keys keep working
-  no matter where you click.
 - **The picker labels a trace by its description, not its filename.** A trace row
   in the picker (web tree and TUI drill-in) showed the raw file stem — a clipped
   kebab slug like `08-how-a-workout-starts-logs-a` — even though the trace already
@@ -364,17 +345,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instruction) used to silently fall through to a failing grade — fabricating a
   verdict the model never gave. It now surfaces an error and falls back to
   self-grading, so a correct prediction is never quietly marked wrong.
-- **Browsing a deck launched from the web picker shows your configured keys.**
-  When the review server hosts the browse page (the picker → Browse flow), its
-  Prev/Next chips showed the literal `←`/`→` arrows instead of your `[browse]`
-  bindings (`h`/`l` by default): the server replied to the page's key request
-  with the review grade keys, which carry no next/prev. Browse now has its own
-  `/api/browse-keys` endpoint, served by both the standalone and the hosting
-  review server.
-- **Backing out of a workspace re-lands the cursor on it.** Leaving a workspace
-  or folder in the web picker (Esc/`h`) dropped focus back to the very first row;
-  it now returns the cursor to the workspace/folder you came from, reusing the
-  same re-land marker a launched deck already sets.
 - **`alix explore --into --build` now actually freezes its `assets/`.** The
   generated `% source:` paths were silently doubled: when `--source` is a
   subdirectory (a crate) but the plan writes a scope relative to the project root
@@ -404,21 +374,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Frozen-snapshot excerpts show the original file and line numbers.** A walk or
   fact card whose `% source:` is a frozen `assets/` snapshot showed the asset
   (`30.rs`, lines 1-N) instead of the real source; the cited excerpt now relabels
-  to the original `caching.rs:106-120` (from the card's `! from …` provenance
-  note) — in the walk, the fact-card citation and the terminal walk.
+  to the original `caching.rs:106-120` (from the location recorded on its `% at:`
+  line) — in the walk, the fact-card citation and the terminal walk.
 - **A long (hand-crafted) deck title no longer reflows the header.** The
   review/browse/walk headers truncate an over-long title with an ellipsis instead
   of wrapping to a second line and growing the header's height.
-- **No stray blinking caret on the walk and browse slides.** The caret is now
-  suppressed on card/slide prose across the walk and browse pages (review was
-  already fixed), appearing only inside a real text input or a source-code excerpt
-  (e.g. with the browser's caret-browsing on).
+- **No stray blinking caret across the web app.** The caret is suppressed on
+  card/slide prose everywhere — review, browse, and the trace walk — appearing
+  only inside a real text input or a source-code excerpt (e.g. with the browser's
+  caret-browsing on).
 - **Ask-Claude (web): the input re-focuses when a reply lands**, so you can type
   a follow-up immediately instead of clicking back into the box.
-- **Leaving a workspace trace walk returns you to that workspace, not the top
-  picker.** A walk runs on its own `/walk` page, so the launching workspace was
-  forgotten on return; it's now stashed (sessionStorage) and re-opened, matching
-  how a deck review or exam launched from a workspace lands you back in it.
 - **A trace/fact citation against a single-file `% source:` no longer doubles the
   path.** When `% source:` is one file, every `% at:` reads *that* file; a locator
   that repeats the path relative to a different root (e.g. the crate root,
@@ -426,14 +392,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   was joined onto the file's own directory, yielding
   `…/src/executor/src/executor/env.rs` ("no such file"). Both the walk reveal and
   `alix check` now share one `locator_path` resolver, so they can't disagree.
-- **Web picker: ↑ on the first row no longer jumps into the filter box.** The
-  filter is reachable only by `/` or `Ctrl-F` (matching the TUI); arrow keys stay
-  within the deck list.
-- **Web picker: Enter in the filter box focuses the first match** instead of
-  immediately launching it, so you can filter then navigate before committing.
-- The web review UI no longer shows a stray blinking caret (e.g. with the
-  browser's caret-browsing on); a caret now appears only inside a real text
-  input.
 - **Opening a deck with nothing due no longer bumps it to the top of the recent
   list.** A review now records the deck as "recent" only when the session
   actually has cards to review (`!session.is_finished()`), so merely entering a

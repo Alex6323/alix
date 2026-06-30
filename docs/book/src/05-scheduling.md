@@ -80,10 +80,11 @@ does, which marks the deck *mastered*. That's the subject of a later chapter.
 
 ## Unlocks, in one line
 
-Completion also drives dependencies, with no extra syntax: a deck is **locked**
-while any deck it `% requires:` isn't finished, so finishing a foundation unlocks
-what builds on it. The lock is advisory and recomputed live — the dependencies
-chapter covers it in full.
+Completion also drives dependencies, with no extra syntax: a deck's **exam** is
+locked while any of its *sourced* prerequisites hasn't passed its own exam — the
+deck itself stays drillable throughout. Passing a foundation's exam unlocks the
+exams that build on it. The lock is advisory and recomputed live — the
+dependencies chapter covers it in full.
 
 ## Cramming
 

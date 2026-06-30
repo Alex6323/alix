@@ -23,13 +23,16 @@ Common flags: `--mode <m>` ([modes](04-review-modes.md)), `--scheduler <s>` /
 - `alix list <deck>...` — every card with its stage and due time.
 - `alix reset <deck>...` — clear progress (`--card`, `--cards`, `--all`; `-y` to
   skip the prompt).
-- `alix check <deck>...` — lint a deck (syntax, duplicate cards, trace `% at:` locators).
+- `alix check <deck>...` — lint a deck (syntax, duplicate cards, trace `% at:`
+  locators, and frozen cards that have drifted from their `% origin:` source).
 - `alix deps <deck>` (alias `require`) — edit `% requires:` with a checkbox picker
   ([dependencies](09-dependencies.md)).
 
 ## The AI features
 
-- `alix deck <url-or-path>` — [generate a facts deck](11-generating-decks.md).
+- `alix deck generate <url-or-path>` — [generate a facts deck](11-generating-decks.md).
+- `alix deck augment <deck> --target <...>` — precompute AI augmentations
+  (choices, notes, questions, keypoints, format, topology).
 - `alix import <file.tsv>` — import an Anki TSV export (no Claude needed).
 - `alix exam <deck>` — the [AI exam](12-the-ai-exam.md) (`--questions`,
   `--strictness`).
