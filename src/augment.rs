@@ -1112,6 +1112,8 @@ fn format_prompt(items: &[WarmItem], guidance: Option<&str>) -> String {
          answer into a list.\n\
          - `back` is the answer as display lines: one item or group per line; \
          keep the same facts and words, only regroup/relabel for clarity.\n\
+         - In the OUTPUT, do not wrap terms in inline backticks — write a name like \
+         Foo::bar plainly. Single-backtick code spans read as visual noise on a card.\n\
          - `front`/`note`: reshape only for readability. The question's layout must \
          NOT leak the answer (never hint how many items it has).\n\
          - `mode`: suggest one of `flip`, `line`, or `explain` ONLY when it fits \
