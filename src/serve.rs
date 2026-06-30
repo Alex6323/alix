@@ -581,7 +581,7 @@ pub struct CardsBuild {
 /// the review server (no separate page), so `alix browse --serve` seeds `Browse`
 /// exactly as review seeds `Review`.
 pub enum Launch {
-    Review(SessionBuild),
+    Review(Box<SessionBuild>),
     Browse(CardsBuild),
     Picker,
 }
@@ -1358,7 +1358,7 @@ pub fn run_review(
     // Browse is a native mode of the review server: `initial` seeds either a
     // review session, a read-only browse list, or neither (the picker).
     let (mut reviewing, mut browsing) = match initial {
-        Launch::Review(b) => (Some(Reviewing::new(b)), None),
+        Launch::Review(b) => (Some(Reviewing::new(*b)), None),
         Launch::Browse(b) => (None, Some(Browsing::new(b))),
         Launch::Picker => (None, None),
     };

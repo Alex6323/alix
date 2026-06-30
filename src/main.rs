@@ -1504,7 +1504,7 @@ fn review_serve(args: ReviewArgs, browse_mode: bool) -> Result<()> {
             args.region.as_deref(),
         )?);
         let label = b.label.clone();
-        (serve::Launch::Review(b), label)
+        (serve::Launch::Review(Box::new(b)), label)
     };
     announce(addr, args.serve.lan, &label);
 
