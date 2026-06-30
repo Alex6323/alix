@@ -166,6 +166,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   as `[…]`), are unaffected.
 
 ### Changed
+- **Bigger cards in the web review and browse views.** The card was capped small
+  (≤820/720px wide), so it sat in a sea of empty space on a normal screen at 100%
+  zoom. Both views now cap at ~900px wide and use more of the viewport height.
 - **Web picker: `←`/`→` (and `h`/`l`) now step the focus drawer's regions, and
   going back is `Esc`/`Backspace` only.** The drawer needs left/right to move
   between regions, so those keys no longer double as "back out"; with no drawer
