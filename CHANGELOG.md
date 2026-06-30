@@ -297,6 +297,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   answers compose freely, and the Next/Submit button now shows the binding.
 
 ### Fixed
+- **`explore --build` decks no longer cram an enumeration into one prose answer.**
+  The deck-fill prompt now carries the same anti-wall-of-text rule the `generate`
+  source prompt got: a list of several items is split into one-idea cards (or
+  given clean one-point-per-line structure) instead of a single run-on answer.
 - **The web picker's keyboard stays live after using the header burger menu.**
   Opening the ☰ menu (or clicking empty space in the list) used to pull focus off
   the selected deck row, so the arrow/`j`/`k`/`g`/`G` navigation went dead until

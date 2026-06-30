@@ -292,7 +292,10 @@ fn fill_prompt(items: &[Item]) -> String {
          back line(s), plus a `% at: file:start-end` locator citing the REAL lines \
          whenever the fact maps to a specific range (so the card can show its source \
          on reveal; omit it when the fact synthesizes across several places). One \
-         fact per card, concise and recall-oriented.\n\n\
+         fact per card, concise and recall-oriented. Do NOT cram an enumeration \
+         into one prose answer: if the answer is a list of several items, split it \
+         into several one-idea cards (one card per item or group), or give it clean \
+         structure with one point per indented line; keep an atomic answer atomic.\n\n\
          Do NOT repeat any header directive (`% trace:`, `% title:`, `% source:`, \
          `% requires:`) — those are already written; output only the `# ` cards. \
          Output ONLY the delimited item bodies: no preamble, no code fences, nothing \
@@ -723,6 +726,11 @@ mod tests {
         // Fact cards get a `% at:` citation so the card can show its source.
         assert!(p.contains("% at: file:start-end"));
         assert!(p.contains("show its source on reveal"));
+        // A compound answer must be split / shaped, not crammed into one prose
+        // line (mirrors the `generate` source prompt) — otherwise an explore-built
+        // deck shows enumerations as a wall of text.
+        assert!(p.contains("enumeration"));
+        assert!(p.contains("split it"));
     }
 
     #[test]
