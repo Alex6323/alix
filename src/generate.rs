@@ -66,6 +66,16 @@ four layers of understanding:
 
 CARD QUALITY:
 - One idea per card (minimum-information principle); split compound facts.
+- Do not cram an enumeration into one prose answer. If the answer is a list of \
+several items, split it into several one-idea cards instead — one card per item \
+or group. Only when the ordered list ITSELF is the thing to learn (steps, a \
+sequence) keep it as one card with `% mode: line` and one item per indented \
+answer line.
+- Give answers and notes clean structure when the content has it (short lines, \
+one point per line); keep an atomic answer atomic — never pad a one-word answer \
+into a list.
+- Format the question for readability, but never let its layout leak the answer \
+(don't hint how many items the answer has).
 - NO TWO CARDS MAY TEST THE SAME FACT. If a point is already covered, do not \
 add another card for it — vary what each card asks rather than rephrasing the \
 same question.
@@ -132,6 +142,16 @@ four layers of understanding:
 
 CARD QUALITY:
 - One idea per card (minimum-information principle); split compound facts.
+- Do not cram an enumeration into one prose answer. If the answer is a list of \
+several items, split it into several one-idea cards instead — one card per item \
+or group. Only when the ordered list ITSELF is the thing to learn (steps, a \
+sequence) keep it as one card with `% mode: line` and one item per indented \
+answer line.
+- Give answers and notes clean structure when the content has it (short lines, \
+one point per line); keep an atomic answer atomic — never pad a one-word answer \
+into a list.
+- Format the question for readability, but never let its layout leak the answer \
+(don't hint how many items the answer has).
 - NO TWO CARDS MAY TEST THE SAME FACT — vary what each card asks rather than \
 rephrasing the same question.
 - Ground every card in what the source actually shows; do not invent details \
