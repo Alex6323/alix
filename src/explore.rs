@@ -295,7 +295,8 @@ fn fill_prompt(items: &[Item]) -> String {
          fact per card, concise and recall-oriented. Do NOT cram an enumeration \
          into one prose answer: if the answer is a list of several items, split it \
          into several one-idea cards (one card per item or group), or give it clean \
-         structure with one point per indented line; keep an atomic answer atomic.\n\n\
+         structure with one point per indented line (no bullet or dash prefix — \
+         bullets come later from the format augment); keep an atomic answer atomic.\n\n\
          Do NOT repeat any header directive (`% trace:`, `% title:`, `% source:`, \
          `% requires:`) — those are already written; output only the `# ` cards. \
          Output ONLY the delimited item bodies: no preamble, no code fences, nothing \
