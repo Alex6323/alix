@@ -7,6 +7,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- `alix deck augment --target format` — a non-destructive pass that reshapes a
+  badly-shaped card (e.g. a list crammed into one prose answer) into clean
+  display lines, a tidier front/note, and a suggested answer mode, applied at
+  review without touching the deck file or card identity. Also available from the
+  web Augment screen.
 - **Augment decks from the web picker — no CLI needed.** Press **`a`** on a deck
   (or its new **Augment** button) to open a screen of what its augmentation cache
   holds: one row per target (choices, notes, questions, key points) with a

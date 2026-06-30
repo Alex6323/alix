@@ -35,13 +35,21 @@ deck on the command line skips this screen.
 Focus a deck and press **`a`** (or its **Augment** button) to open the **Augment
 screen** — the browser face of `alix deck augment`. It shows what the deck's
 augmentation cache already holds, one row per target
-([choices](04-review-modes.md), notes, questions, [key points](04-review-modes.md))
-with a coverage bar, alongside its topologies. **Generate** fills only the cards a
-target is still missing, run as a background Claude call while the page polls (a
-spinner shows it working); **Remove** clears a target, and the topology row adds
-or drops named ones. A guidance box feeds the same `--with` steer as the command
-line. It writes the same `augment.json` review reads, so this only saves you the
-trip to the terminal. The action shows on decks, not workspaces.
+([choices](04-review-modes.md), notes, questions, [key points](04-review-modes.md),
+format) with a coverage bar, alongside its topologies. **Generate** fills only
+the cards a target is still missing, run as a background Claude call while the
+page polls (a spinner shows it working); **Remove** clears a target, and the
+topology row adds or drops named ones. A guidance box feeds the same `--with`
+steer as the command line. It writes the same `augment.json` review reads, so
+this only saves you the trip to the terminal. The action shows on decks, not
+workspaces.
+
+The **format** target is a non-destructive reshaping pass: for each plain card
+whose answer is poorly shaped (a list crammed into prose, a run-on sentence that
+wants to be lines) it caches a tidier front, split answer lines, an optional
+note, and a suggested mode — applied at review time without touching the deck
+file or card identity. It's an AI heuristic, so it can miss or produce an
+unhelpful reshape; **Remove** clears it with no lasting effect.
 
 ## Every mode, plus the AI features
 

@@ -762,6 +762,7 @@ alix deck augment mydeck.txt --target choices    # multiple-choice distractors
 alix deck augment mydeck.txt --target notes      # a trivia / mnemonic note per card
 alix deck augment mydeck.txt --target questions  # reworded phrasings of each question
 alix deck augment mydeck.txt --target keypoints  # decompose answers into a checklist (explain mode)
+alix deck augment mydeck.txt --target format     # reshape badly-shaped cards for cleaner display
 alix deck augment mydeck.txt --target topology   # a graph + walk + regions (experimental)
 alix deck augment mydeck.txt --target choices --with "use common misconceptions"
 ```
@@ -805,6 +806,16 @@ alix deck augment mydeck.txt --target choices --with "use common misconceptions"
   partly, none → failed — so the self-grade is a per-claim check, not a vibe.
   An *atomic* answer (a single fact/term/date with nothing to decompose) is left
   alone, keeping its plain reveal. Tune the maximum with `[ai] keypoint_count`.
+- **`--target format`** reshapes badly-shaped cards — most often a list crammed
+  into a single prose answer — into clean display lines, a tidier front, an
+  optional note, and a **suggested answer mode** (`line`, `explain`, or `flip`).
+  It is purely cosmetic: it never edits the deck file, never changes card
+  identity, and your progress is untouched. The reshaped text and mode suggestion
+  are cached in `augment.json`; review applies them at display time. Plain (non-
+  cloze) cards only — cloze cards are left alone. An explicit `% mode:` you
+  wrote always wins over the suggestion. Because it's an AI heuristic it can miss
+  or mis-shape a card; the result is easy to discard via **Remove** in the Augment
+  screen or by running `--target` removal. Stacks well under `notes` (trivia).
 - **`--target topology`** *(experimental)* derives a **graph of how the deck's
   cards relate** — labeled edges, a suggested **walk**, and a handful of coarse
   named **regions** — cached like the rest. A deck can hold several topologies,
