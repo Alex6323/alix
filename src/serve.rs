@@ -1245,6 +1245,11 @@ impl Augmenting {
                 }
             }
             augment::Outcome::Topology(t) => self.cache.add_topology(t),
+            augment::Outcome::Format(map) => {
+                for (id, v) in map {
+                    self.cache.set_format(id, v);
+                }
+            }
         }
     }
 

@@ -1158,6 +1158,7 @@ pub enum Job {
     Questions { items: Vec<WarmItem>, count: usize },
     Keypoints { items: Vec<WarmItem>, count: usize },
     Topology { items: Vec<WarmItem> },
+    Format { items: Vec<WarmItem> },
 }
 
 /// The result of a [`Job`], shaped per target so the caller can apply it to the
@@ -1168,6 +1169,7 @@ pub enum Outcome {
     Questions(HashMap<u64, Vec<String>>),
     Keypoints(HashMap<u64, Vec<String>>),
     Topology(Topology),
+    Format(HashMap<u64, Format>),
 }
 
 /// Runs a generation [`Job`] on a background thread; the [`Outcome`] (or an error
@@ -1201,6 +1203,7 @@ fn run_job(job: Job, guidance: Option<&str>, ask_cfg: &AskConfig) -> Result<Outc
             Outcome::Keypoints(generate_keypoints(&items, count, guidance, ask_cfg)?)
         }
         Job::Topology { items } => Outcome::Topology(generate_topology(&items, guidance, ask_cfg)?),
+        Job::Format { items } => Outcome::Format(generate_format(&items, guidance, ask_cfg)?),
     })
 }
 
