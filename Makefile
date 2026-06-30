@@ -95,3 +95,7 @@ clean:
 # The policy it backstops is in RELEASING.md.
 heartbeat:
 	@sh scripts/heartbeat.sh
+
+# Local, gitignored maintainer-only targets (e.g. wish-triage). The leading `-`
+# makes this a silent no-op for anyone whose tree doesn't have the file.
+-include docs/product/local.mk
