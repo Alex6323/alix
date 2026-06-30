@@ -2,9 +2,10 @@
 ROADMAP.md
 QUALITY.md
 PLAN.md
-# local design/planning artifacts (specs + plans) — local working notes, not committed
+# local design/planning artifacts (specs + plans + product discovery) — local working notes, not committed
 /docs/plans/
 /docs/specs/*
+/docs/product/
 # transient screenshots dropped at the repo root (current.png, crates-io.png, …)
 /*.png
 /assets/logo-drafts
