@@ -285,13 +285,13 @@
   /* a single scroll container holds both the deck and workspace sections */
   .lists { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none; }
   .lists::-webkit-scrollbar { width: 0; }
-  .select .section { font-family: var(--mono); font-size: 0.64rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim); margin: 18px 2px 9px; }
+  .select .section { font-family: var(--mono); font-size: 0.64rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim); margin: 18px 2px 9px; flex: none; }
   .lists > .section:first-child { margin-top: 2px; }
   .select .empty-hint { color: var(--dim); font-size: 0.85rem; padding: 4px 2px 0; }
   /* single-launch rows: click a deck to start it, a workspace/folder to open.
      A leading chevron (›) marks a drillable row; a glyph slot shows 🔒 / 🕒.
      Members nest by --depth in the unlock dependency tree (flattened on filter). */
-  .deckrow { display: flex; align-items: center; gap: 12px; padding: 12px 14px; padding-left: calc(14px + var(--depth, 0) * 18px); min-height: 48px; border: 1px solid var(--line); border-radius: 11px; cursor: pointer; transition: border-color 0.12s, background 0.12s; margin-bottom: 5px; }
+  .deckrow { display: flex; align-items: center; gap: 12px; padding: 12px 14px; padding-left: calc(14px + var(--depth, 0) * 18px); min-height: 48px; border: 1px solid var(--line); border-radius: 11px; cursor: pointer; transition: border-color 0.12s, background 0.12s; margin-bottom: 5px; flex: none; }
   .lists.filtering .deckrow { padding-left: 14px; }
   .deckrow:hover { border-color: var(--bolt); }
   .deckrow:focus { outline: none; border-color: var(--bolt); box-shadow: 0 0 0 2px rgba(125,249,232,0.35); }
