@@ -1926,6 +1926,14 @@ function explainReveal() {
   renderLegend();
 }
 
+// A reshaped multi-item answer (the `format` augment's list) reveals with
+// bullets; the card's own authored back lines (a poem, typing answers) are not
+// bulleted — only the reshape is, gated by `reshaped` from the server.
+function answerText(text) {
+  const c = state.card;
+  return c && c.reshaped && c.back.length > 1 ? "• " + text : text;
+}
+
 // Fill the answer region for reveal modes (flip / line / choice fallback).
 // The acquire view: a never-seen card shown answer-first, so you read it before
 // it's ever quizzed. One key ("Seen") records it; its first quiz is a later session.
@@ -1933,7 +1941,7 @@ function fillAcquire(a) {
   if (!a) return;
   const c = state.card;
   const sec = el("div", "reveal");
-  for (const b of c.back) sec.appendChild(el("div", "answer", b));
+  for (const b of c.back) sec.appendChild(el("div", "answer", answerText(b)));
   a.appendChild(sec);
   if (c.img_back) a.appendChild(cardImage(c.img_back));
   a.appendChild(el("div", "acquire-hint", "new card — you'll be quizzed on it in a later session."));
@@ -1947,7 +1955,7 @@ function fillAnswer(a) {
   const c = state.card;
   const shown = state.mode === "line" ? Math.min(revealed, c.back.length) : c.back.length;
   const sec = el("div", "reveal");
-  for (let i = 0; i < shown; i++) sec.appendChild(el("div", "answer", c.back[i]));
+  for (let i = 0; i < shown; i++) sec.appendChild(el("div", "answer", answerText(c.back[i])));
   if (state.mode === "line" && shown < c.back.length) sec.appendChild(el("div", "answer pending", "···"));
   a.appendChild(sec);
   // Attach the answer image to the region itself (a flex column), not to the

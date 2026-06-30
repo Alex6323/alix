@@ -141,6 +141,10 @@ struct CardDto {
     front: String,
     context: Vec<String>,
     back: Vec<String>,
+    /// True when `back` is a reshaped answer (a `format` augment's `display_back`),
+    /// so the frontend bullets a multi-line list. Never set for the card's own
+    /// authored back lines (a poem, typing answers) — only the reshape.
+    reshaped: bool,
     note: Vec<NoteUnitDto>,
     /// `/img/<key>` URL for the question-side image, or `null`.
     img: Option<String>,
@@ -3141,6 +3145,7 @@ fn card_dto(card: &Card) -> CardDto {
         front: card.front.clone(),
         context: card.context.clone(),
         back: card.back_for_display().to_vec(),
+        reshaped: card.display_back.is_some(),
         note: render::note_units(card)
             .into_iter()
             .map(NoteUnitDto::from)

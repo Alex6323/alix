@@ -254,7 +254,9 @@ function render() {
   for (const ctx of c.context) card.appendChild(contextLine(ctx));
   if (c.img) card.appendChild(cardImage(c.img));
   card.appendChild(el("div", "divider"));
-  for (const b of c.back) card.appendChild(el("div", "answer", b));
+  // A reshaped multi-item list (the `format` augment) shows as bullets; the
+  // card's own authored back lines are left as-is.
+  for (const b of c.back) card.appendChild(el("div", "answer", c.reshaped && c.back.length > 1 ? "• " + b : b));
   if (c.img_back) card.appendChild(cardImage(c.img_back));
   renderNote(card, c.note);
   deck.appendChild(card);

@@ -166,6 +166,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   as `[…]`), are unaffected.
 
 ### Changed
+- **Reshaped list answers show as bullet points.** When the `format` augment turns
+  a crammed prose answer into a multi-item list, the web review and browse views
+  now render each item with a `•`. Single-line tidies and a card's own authored
+  back lines (a poem, typing answers) are left unbulleted.
 - **Bigger cards in the web review and browse views.** The card was capped small
   (≤820/720px wide), so it sat in a sea of empty space on a normal screen at 100%
   zoom. Both views now cap at ~900px wide and use more of the viewport height.
