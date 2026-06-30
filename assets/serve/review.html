@@ -212,6 +212,8 @@
   .reveal { animation: revealIn 0.26s ease both; }
   /* A reshaped list reveals as a left-aligned block, centered as a whole. */
   .reveal.list { text-align: left; width: max-content; max-width: 100%; margin-inline: auto; }
+  /* A fenced code snippet in a reshaped answer: monospace, indentation kept. */
+  .code-block { text-align: left; font: 0.86rem/1.5 var(--mono); color: var(--ink); background: rgba(0,0,0,0.28); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; margin: 5px 0; overflow-x: auto; white-space: pre; }
   @keyframes revealIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
   .answer { color: var(--good); font-size: clamp(1.15rem, 3.6vw, 1.5rem); line-height: 1.4; margin: 0 0 4px; white-space: pre-wrap; }
   .answer.pending { color: var(--dim); }
@@ -1710,7 +1712,7 @@ function renderBrowse() {
   const a = el("div", "region a" + (hasNote ? " withnote" : ""));
   const list = isReshapedList(c);
   const sec = el("div", "reveal" + (list ? " list" : ""));
-  for (const b of c.back) sec.appendChild(el("div", "answer", list ? "• " + b : b));
+  appendReveal(sec, c.back, list);
   a.appendChild(sec);
   if (c.img_back) a.appendChild(cardImage(c.img_back));
   card.appendChild(a);
@@ -1994,7 +1996,26 @@ function explainReveal() {
 // bullets; the card's own authored back lines (a poem, typing answers) are not
 // bulleted — only the reshape is, gated by `reshaped` from the server.
 function isReshapedList(c) { return !!(c && c.reshaped && c.back.length > 1); }
-function answerText(text) { return isReshapedList(state.card) ? "• " + text : text; }
+// Render revealed answer lines: a fenced ```code``` block becomes a <pre>
+// (monospace, indentation preserved); other lines are .answer divs, bulleted
+// when it's a reshaped list.
+function appendReveal(sec, lines, isList) {
+  let i = 0;
+  while (i < lines.length) {
+    if (/^```/.test(lines[i].trim())) {
+      const code = [];
+      i++;
+      while (i < lines.length && lines[i].trim() !== "```") { code.push(lines[i]); i++; }
+      i++; // skip the closing fence
+      const pre = el("pre", "code-block");
+      pre.textContent = code.join("\n");
+      sec.appendChild(pre);
+    } else {
+      sec.appendChild(el("div", "answer", isList ? "• " + lines[i] : lines[i]));
+      i++;
+    }
+  }
+}
 
 // Fill the answer region for reveal modes (flip / line / choice fallback).
 // The acquire view: a never-seen card shown answer-first, so you read it before
@@ -2003,7 +2024,7 @@ function fillAcquire(a) {
   if (!a) return;
   const c = state.card;
   const sec = el("div", "reveal" + (isReshapedList(c) ? " list" : ""));
-  for (const b of c.back) sec.appendChild(el("div", "answer", answerText(b)));
+  appendReveal(sec, c.back, isReshapedList(c));
   a.appendChild(sec);
   if (c.img_back) a.appendChild(cardImage(c.img_back));
   a.appendChild(el("div", "acquire-hint", "new card — you'll be quizzed on it in a later session."));
@@ -2017,7 +2038,7 @@ function fillAnswer(a) {
   const c = state.card;
   const shown = state.mode === "line" ? Math.min(revealed, c.back.length) : c.back.length;
   const sec = el("div", "reveal" + (isReshapedList(c) ? " list" : ""));
-  for (let i = 0; i < shown; i++) sec.appendChild(el("div", "answer", answerText(c.back[i])));
+  appendReveal(sec, c.back.slice(0, shown), isReshapedList(c));
   if (state.mode === "line" && shown < c.back.length) sec.appendChild(el("div", "answer pending", "···"));
   a.appendChild(sec);
   // Attach the answer image to the region itself (a flex column), not to the

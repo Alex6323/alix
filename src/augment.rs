@@ -1114,6 +1114,9 @@ fn format_prompt(items: &[WarmItem], guidance: Option<&str>) -> String {
          keep the same facts and words, only regroup/relabel for clarity.\n\
          - In the OUTPUT, do not wrap terms in inline backticks — write a name like \
          Foo::bar plainly. Single-backtick code spans read as visual noise on a card.\n\
+         - A real code snippet (more than a short token) goes in a fenced block \
+         inside `back`: a line ```lang, then the code lines indented the way the \
+         language wants, then a closing ``` line — best-effort on the language tag.\n\
          - `front`/`note`: reshape only for readability. The question's layout must \
          NOT leak the answer (never hint how many items it has).\n\
          - `mode`: suggest one of `flip`, `line`, or `explain` ONLY when it fits \
@@ -1134,7 +1137,8 @@ fn format_prompt(items: &[WarmItem], guidance: Option<&str>) -> String {
         ));
     }
     s.push_str(
-        "\nOutput ONLY JSON, no prose, no code fences. The key is the card index; \
+        "\nOutput ONLY JSON, no prose, and no markdown fence around the JSON itself \
+         (a code snippet inside a `back` string may still be fenced). The key is the card index; \
          the value is an object with any of \"front\" (string), \"back\" (array of \
          strings), \"note\" (string), \"mode\" (string). Include only cards that \
          need reshaping:\n\
