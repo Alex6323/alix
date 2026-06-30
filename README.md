@@ -811,7 +811,8 @@ alix deck augment mydeck.txt --target choices --with "use common misconceptions"
   optional note, and a **suggested answer mode** (`line`, `explain`, or `flip`).
   It is purely cosmetic: it never edits the deck file, never changes card
   identity, and your progress is untouched. The reshaped text and mode suggestion
-  are cached in `augment.json`; review applies them at display time. Plain (non-
+  are cached in `augment.json`; both review and browse apply them at display
+  time, so the two views show the same card. Plain (non-
   cloze) cards only — cloze cards are left alone. An explicit `% mode:` you
   wrote always wins over the suggestion. Because it's an AI heuristic it can miss
   or mis-shape a card; the result is easy to discard via **Remove** in the Augment

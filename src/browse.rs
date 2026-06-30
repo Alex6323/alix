@@ -215,7 +215,7 @@ fn draw(frame: &mut Frame, cards: &[Card], label: &str, current: usize, keys: &B
         lines.push(context_line(ctx));
     }
     lines.push(Line::default());
-    for back in &card.back {
+    for back in card.back_for_display() {
         lines.push(Line::from(Span::styled(
             format!("  {back}"),
             Style::new().fg(Color::Green),

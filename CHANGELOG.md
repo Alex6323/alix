@@ -161,6 +161,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   as `[…]`), are unaffected.
 
 ### Changed
+- Browse now shows the same display augmentations as review — the `format`
+  reshape and `notes` trivia — so the two views render a card the same way
+  instead of browse falling back to the raw deck.
 - `alix deck generate` now shapes cards better: it splits enumerations into
   one-idea cards (or uses `% mode: line` for ordered lists) and structures
   answers and notes instead of producing prose blobs.

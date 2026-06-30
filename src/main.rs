@@ -1157,10 +1157,25 @@ fn build_browse(
     let expanded = expand_workspaces(&deck_paths)?;
     let (cards, deck_label, decks, _) = load_decks(&expanded.decks, &expanded.defaults)?;
     let label = deck_label;
-    let cards: Vec<_> = cards
+    let mut cards: Vec<_> = cards
         .into_iter()
         .filter(|c| matches!(c.frontend(), Frontend::Any) || c.frontend() == target)
         .collect();
+
+    // Merge in the display augmentations review shows, from the decks' own store
+    // (a workspace's when they share one) — so browse renders the same view, not
+    // the raw deck. The raw card stays in the deck file; this is display-only.
+    let store = store_for(&expanded.decks, None)?;
+    let augment = AugmentCache::open(augment::augment_path_for(store.path()));
+    for card in &mut cards {
+        // Reshape first (re-renders the deck note, front, answer, mode) …
+        augment.apply_format(card);
+        // … then stack the notes-target trivia on top of the reshaped note.
+        if let Some(note) = augment.note(card.id()) {
+            card.append_note(&[note.to_string()]);
+        }
+    }
+
     recent.record(&deck_paths, now_ms());
     let _ = recent.save();
     Ok(BrowseBuild {
@@ -3459,6 +3474,47 @@ mod tests {
 
         let web = build_browse(vec![path], &mut recent, Frontend::Web).unwrap();
         assert_eq!(2, web.cards.len());
+    }
+
+    #[test]
+    fn build_browse_applies_a_cached_format_reshape() {
+        // A deck in a workspace, so `build_browse` resolves the workspace's own
+        // store (a deterministic temp path) rather than the global store.
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path().join("eng");
+        std::fs::create_dir(&ws).unwrap();
+        std::fs::write(ws.join("alix.toml"), "title = \"Eng\"\n").unwrap();
+        let path = ws.join("d.txt");
+        std::fs::write(&path, "# List the parts\n\tA, B, C\n").unwrap();
+        let mut recent = RecentDecks::load(dir.path().join("recent.json"));
+
+        // Without a cached format, browse shows the raw deck answer.
+        let raw = build_browse(vec![path.clone()], &mut recent, Frontend::Tui).unwrap();
+        let id = raw.cards[0].id();
+        assert_eq!(raw.cards[0].back_for_display(), ["A, B, C"]);
+
+        // Cache a format reshape (and a notes-target trivia) for that card in the
+        // workspace's augment sidecar.
+        let store = store_for(std::slice::from_ref(&path), None).unwrap();
+        let mut cache = AugmentCache::open(augment::augment_path_for(store.path()));
+        cache.set_format(
+            id,
+            augment::Format {
+                front: Some("Name the parts".to_string()),
+                back: vec!["A".to_string(), "B".to_string(), "C".to_string()],
+                note: None,
+                mode: None,
+            },
+        );
+        cache.set_note(id, "the parts are well known".to_string());
+        cache.save().unwrap();
+
+        // Browsing now shows the reshaped front/answer and the trivia note.
+        let merged = build_browse(vec![path], &mut recent, Frontend::Tui).unwrap();
+        assert_eq!(merged.cards[0].front, "Name the parts");
+        assert_eq!(merged.cards[0].back_for_display(), ["A", "B", "C"]);
+        let note = merged.cards[0].note.clone().unwrap_or_default();
+        assert!(note.contains("the parts are well known"), "{note}");
     }
 
     #[test]

@@ -47,9 +47,10 @@ workspaces.
 The **format** target is a non-destructive reshaping pass: for each plain card
 whose answer is poorly shaped (a list crammed into prose, a run-on sentence that
 wants to be lines) it caches a tidier front, split answer lines, an optional
-note, and a suggested mode — applied at review time without touching the deck
-file or card identity. It's an AI heuristic, so it can miss or produce an
-unhelpful reshape; **Remove** clears it with no lasting effect.
+note, and a suggested mode — applied at display time without touching the deck
+file or card identity. Both review and browse show the reshape, so the two views
+match. It's an AI heuristic, so it can miss or produce an unhelpful reshape;
+**Remove** clears it with no lasting effect.
 
 ## Every mode, plus the AI features
 
