@@ -1512,18 +1512,18 @@ async function renderSelect() {
       const v = visibleRows();
       const cur = e.target.closest(".deckrow");
       const idx = cur ? v.indexOf(cur) : -1;
-      // Up/down move between decks. Left/right are context-sensitive: with a
-      // drawer open they step its region selection; on a workspace/folder they
-      // enter (right) / leave (left); otherwise left backs out. g/G/Home/End jump
-      // to ends; / or Ctrl-F focus the filter; l/→ learn (or open a workspace);
-      // b browses; m opens Mastered.
+      // Up/down move between decks. Left/right step the drawer's region selection
+      // when it's open (the drawer owns h/l/←/→); with no drawer, right enters a
+      // workspace / launches a deck and left is inert — returning is Esc/Backspace
+      // only. g/G/Home/End jump to ends; / or Ctrl-F focus the filter; b browses;
+      // a augments; m opens Mastered.
       if (e.key === "ArrowDown" || hit(e, PK.down)) { e.preventDefault(); if (idx < v.length - 1) v[idx + 1].focus(); }
       else if (e.key === "ArrowUp" || hit(e, PK.up)) { e.preventDefault(); if (idx > 0) v[idx - 1].focus(); } // stays on the first row; the filter is only reachable via / or Ctrl-F
       else if (e.key === "g" || e.key === "Home") { e.preventDefault(); if (v.length) v[0].focus(); }
       else if (e.key === "G" || e.key === "End") { e.preventDefault(); if (v.length) v[v.length - 1].focus(); }
       else if (hit(e, PK.filter)) { e.preventDefault(); filter.focus(); }
       else if (e.key === "ArrowRight" || hit(e, PK.open)) { e.preventDefault(); if (drawerCycle) drawerCycle(1); else if (cur && cur._open) renderDrill(cur._open); else if (cur && cur._item) { const b = legend.querySelector(".chip.primary"); if (b && !b.disabled) b.click(); } }
-      else if (e.key === "ArrowLeft" || hit(e, PK.back)) { e.preventDefault(); if (drawerCycle) drawerCycle(-1); else if (opts.back) opts.back(); }
+      else if (e.key === "ArrowLeft" || hit(e, PK.back)) { e.preventDefault(); if (drawerCycle) drawerCycle(-1); } // back-out is Esc/Backspace only; ←/h just steps the drawer
       else if (e.key === "b" && cur && cur._item) { e.preventDefault(); browseDeck(cur._item, cur._wsName); }
       else if (e.key === "a" && cur && cur._item) { e.preventDefault(); lastWorkspace = cur._wsName || null; openAugment(cur._item.name); }
       else if (opts.allowMastered && hit(e, PK.mastered)) { e.preventDefault(); renderMastered(); }
@@ -2247,7 +2247,8 @@ function openShortcuts() {
     '<kbd>x</kbd><span>take the exam</span>' +
     '<kbd>m</kbd><span>mastered decks</span>' +
     '<kbd>g / G</kbd><span>top / bottom</span>' +
-    '<kbd>esc</kbd><span>back</span>' +
+    '<kbd>← →</kbd><span>step regions (in the focus drawer)</span>' +
+    '<kbd>esc / ⌫</kbd><span>back</span>' +
     '</div>'
   );
 }

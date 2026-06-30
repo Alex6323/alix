@@ -161,6 +161,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   as `[…]`), are unaffected.
 
 ### Changed
+- **Web picker: `←`/`→` (and `h`/`l`) now step the focus drawer's regions, and
+  going back is `Esc`/`Backspace` only.** The drawer needs left/right to move
+  between regions, so those keys no longer double as "back out"; with no drawer
+  open, `→` still enters a workspace / launches a deck and `←` is inert.
 - Browse now shows the same display augmentations as review — the `format`
   reshape and `notes` trivia — so the two views render a card the same way
   instead of browse falling back to the raw deck.
