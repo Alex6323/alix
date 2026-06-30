@@ -7,6 +7,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+## [0.2.0] - 2026-06-30
+
+### Added
 - **Web picker: browser-style back + refresh buttons in the header**, for people
   who reach for the mouse/touch over keybindings. The **←** button goes back a
   view (disabled at the top level; the keyboard equivalent is `Esc`/`Backspace`,
