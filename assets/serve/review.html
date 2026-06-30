@@ -210,6 +210,8 @@
   .divider { flex: none; height: 1px; width: 70%; margin: 0 auto; background: linear-gradient(90deg, transparent, var(--line) 18%, var(--line) 82%, transparent); }
 
   .reveal { animation: revealIn 0.26s ease both; }
+  /* A reshaped list reveals as a left-aligned block, centered as a whole. */
+  .reveal.list { text-align: left; width: max-content; max-width: 100%; margin-inline: auto; }
   @keyframes revealIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
   .answer { color: var(--good); font-size: clamp(1.15rem, 3.6vw, 1.5rem); line-height: 1.4; margin: 0 0 4px; white-space: pre-wrap; }
   .answer.pending { color: var(--dim); }
@@ -1706,9 +1708,9 @@ function renderBrowse() {
 
   const hasNote = c.note && c.note.length > 0;
   const a = el("div", "region a" + (hasNote ? " withnote" : ""));
-  const sec = el("div", "reveal");
-  const bullet = c.reshaped && c.back.length > 1;
-  for (const b of c.back) sec.appendChild(el("div", "answer", bullet ? "• " + b : b));
+  const list = isReshapedList(c);
+  const sec = el("div", "reveal" + (list ? " list" : ""));
+  for (const b of c.back) sec.appendChild(el("div", "answer", list ? "• " + b : b));
   a.appendChild(sec);
   if (c.img_back) a.appendChild(cardImage(c.img_back));
   card.appendChild(a);
@@ -1991,10 +1993,8 @@ function explainReveal() {
 // A reshaped multi-item answer (the `format` augment's list) reveals with
 // bullets; the card's own authored back lines (a poem, typing answers) are not
 // bulleted — only the reshape is, gated by `reshaped` from the server.
-function answerText(text) {
-  const c = state.card;
-  return c && c.reshaped && c.back.length > 1 ? "• " + text : text;
-}
+function isReshapedList(c) { return !!(c && c.reshaped && c.back.length > 1); }
+function answerText(text) { return isReshapedList(state.card) ? "• " + text : text; }
 
 // Fill the answer region for reveal modes (flip / line / choice fallback).
 // The acquire view: a never-seen card shown answer-first, so you read it before
@@ -2002,7 +2002,7 @@ function answerText(text) {
 function fillAcquire(a) {
   if (!a) return;
   const c = state.card;
-  const sec = el("div", "reveal");
+  const sec = el("div", "reveal" + (isReshapedList(c) ? " list" : ""));
   for (const b of c.back) sec.appendChild(el("div", "answer", answerText(b)));
   a.appendChild(sec);
   if (c.img_back) a.appendChild(cardImage(c.img_back));
@@ -2016,7 +2016,7 @@ function fillAnswer(a) {
 
   const c = state.card;
   const shown = state.mode === "line" ? Math.min(revealed, c.back.length) : c.back.length;
-  const sec = el("div", "reveal");
+  const sec = el("div", "reveal" + (isReshapedList(c) ? " list" : ""));
   for (let i = 0; i < shown; i++) sec.appendChild(el("div", "answer", answerText(c.back[i])));
   if (state.mode === "line" && shown < c.back.length) sec.appendChild(el("div", "answer pending", "···"));
   a.appendChild(sec);

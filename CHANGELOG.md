@@ -182,10 +182,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `browse.html` page and the `/browse` route are gone; terminal `alix browse` is
   unchanged. **Breaking:** the web browse is read-only (card removal stays a
   terminal `alix browse` feature).
-- **Reshaped list answers show as bullet points.** When the `format` augment turns
-  a crammed prose answer into a multi-item list, the web review and browse views
-  now render each item with a `•`. Single-line tidies and a card's own authored
-  back lines (a poem, typing answers) are left unbulleted.
+- **Reshaped list answers show as a left-aligned bullet list.** When the `format`
+  augment turns a crammed prose answer into a multi-item list, the web review and
+  browse views render each item with a `•`, **left-aligned** (the list block is
+  centered as a whole). Single-line tidies and a card's own authored back lines (a
+  poem, typing answers) are left as-is.
 - **Bigger cards in the web review and browse views.** The card was capped small
   (≤820/720px wide), so it sat in a sea of empty space on a normal screen at 100%
   zoom and long questions/answers wrapped early. It now caps at ~1200px wide (94vw)
