@@ -156,6 +156,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   as `[…]`), are unaffected.
 
 ### Changed
+- `alix deck generate` now shapes cards better: it splits enumerations into
+  one-idea cards (or uses `% mode: line` for ordered lists) and structures
+  answers and notes instead of producing prose blobs.
 - **Breaking:** card identity is now whitespace-insensitive — an answer's id no
   longer depends on line breaks, indentation, or repeated spaces (only its
   words). Cards whose answers span multiple lines or use irregular spacing get a
