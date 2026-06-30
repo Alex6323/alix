@@ -1602,7 +1602,7 @@ async function renderSelect() {
     renderList({
       headerFilter: true,
       filterPlaceholder: "Search  ·  /",
-      lede: (grp.label || grp.name) + " — pick a deck to start",
+      lede: grp.label || grp.name,
       sections: [{ title: null, rows: grp.members.map(m => deckRow(m, true, grp.name, true, true)) }],
       back, allowMastered: false,
     });
