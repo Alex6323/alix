@@ -569,7 +569,7 @@ impl App {
     fn answered(&self, card: &Card) -> bool {
         match &self.phase {
             Phase::Flip { revealed } | Phase::Explain { revealed, .. } => *revealed,
-            Phase::LineByLine { revealed } => *revealed >= card.back.len(),
+            Phase::LineByLine { revealed } => *revealed >= card.back_for_display().len(),
             Phase::Feedback { .. } => true,
             Phase::Choice { selected, .. } => selected.is_some(),
             _ => false,
@@ -969,7 +969,10 @@ impl App {
                 }
             }
             Phase::LineByLine { revealed } => {
-                let total = self.session.current().map_or(0, |c| c.back.len());
+                let total = self
+                    .session
+                    .current()
+                    .map_or(0, |c| c.back_for_display().len());
                 if *revealed < total {
                     if reveal_hit {
                         *revealed += 1;
@@ -1345,7 +1348,10 @@ impl App {
                 l(&k.quit)
             ),
             Phase::LineByLine { revealed } => {
-                let total = self.session.current().map_or(0, |c| c.back.len());
+                let total = self
+                    .session
+                    .current()
+                    .map_or(0, |c| c.back_for_display().len());
                 if *revealed < total {
                     format!(
                         "{} reveal next │ {} skip │ {} remove │ {} leave",
@@ -1575,7 +1581,7 @@ impl App {
             }
             Phase::Flip { revealed } => {
                 if *revealed {
-                    for back in &card.back {
+                    for back in card.back_for_display() {
                         lines.push(Line::from(Span::styled(
                             format!("  {back}"),
                             Style::new().fg(Color::Green),
@@ -1593,7 +1599,7 @@ impl App {
             }
             Phase::Acquire { revealed } => {
                 if *revealed {
-                    for back in &card.back {
+                    for back in card.back_for_display() {
                         lines.push(Line::from(Span::styled(
                             format!("  {back}"),
                             Style::new().fg(Color::Green),
@@ -1651,7 +1657,7 @@ impl App {
                         // The authored answer (ground truth) first, then a checklist
                         // of the claims it makes — the coverage derives the grade.
                         lines.push(Line::from("the answer:".dim()));
-                        for line in &card.back {
+                        for line in card.back_for_display() {
                             lines.push(Line::from(Span::styled(
                                 format!("  {line}"),
                                 Style::new().fg(Color::Green),
@@ -1686,7 +1692,7 @@ impl App {
                         ));
                     } else {
                         lines.push(Line::from("your answer should cover:".dim()));
-                        for point in &card.back {
+                        for point in card.back_for_display() {
                             lines.push(Line::from(Span::styled(
                                 format!("  • {point}"),
                                 Style::new().fg(Color::Green),
@@ -1709,13 +1715,13 @@ impl App {
                 }
             }
             Phase::LineByLine { revealed } => {
-                for back in card.back.iter().take(*revealed) {
+                for back in card.back_for_display().iter().take(*revealed) {
                     lines.push(Line::from(Span::styled(
                         format!("  {back}"),
                         Style::new().fg(Color::Green),
                     )));
                 }
-                if *revealed < card.back.len() {
+                if *revealed < card.back_for_display().len() {
                     let reveal = Bindings::label(&self.options.keys.reveal);
                     lines.push(Line::from(
                         format!("[ press {reveal} to reveal the next line ]").dim(),
@@ -1832,7 +1838,7 @@ impl App {
         for ctx in &card.context {
             lines.push(context_line(ctx));
         }
-        for back in &card.back {
+        for back in card.back_for_display() {
             lines.push(Line::from(Span::styled(
                 format!("> {back}"),
                 Style::new().fg(Color::Green),
