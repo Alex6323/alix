@@ -344,6 +344,16 @@ impl AugmentCache {
         self.cards.entry(card_id).or_default().note = Some(note);
     }
 
+    /// The cached presentation reshape for a card, if any.
+    pub fn format(&self, card_id: u64) -> Option<&Format> {
+        self.cards.get(&card_id).and_then(|aug| aug.format.as_ref())
+    }
+
+    /// Caches a presentation reshape for a card.
+    pub fn set_format(&mut self, card_id: u64, format: Format) {
+        self.cards.entry(card_id).or_default().format = Some(format);
+    }
+
     /// The cached question variants for a card (a pool to rotate through), or
     /// `None` when absent or empty.
     pub fn variants(&self, card_id: u64) -> Option<&[String]> {
@@ -457,6 +467,7 @@ impl AugmentCache {
             notes: coverage(&all, &|id| self.note(id).is_some()),
             questions: coverage(&plain, &|id| self.variants(id).is_some()),
             keypoints: coverage(&all, &|id| self.keypoints(id).is_some()),
+            format: coverage(&plain, &|id| self.format(id).is_some()),
             topologies: self
                 .topologies_for(&deck_ids)
                 .iter()
@@ -510,6 +521,15 @@ impl AugmentCache {
         self.missing(cards, |_| true, |id| self.keypoints(id).is_some())
     }
 
+    /// Plain cards (cloze excluded) that have no cached reshape yet.
+    pub fn missing_format(&self, cards: &[Card]) -> Vec<WarmItem> {
+        self.missing(
+            cards,
+            |c| c.hash_lines.is_none(),
+            |id| self.format(id).is_some(),
+        )
+    }
+
     /// Removes this deck's cached distractors — only the cards in `deck_ids`,
     /// since the cache may be shared with other decks — pruning any entry left
     /// empty. Does not save.
@@ -551,6 +571,39 @@ impl AugmentCache {
             }
         }
         self.prune_empty(deck_ids);
+    }
+
+    /// Removes cached reshapes for this deck, then prunes empty entries.
+    pub fn clear_format(&mut self, deck_ids: &HashSet<u64>) {
+        for id in deck_ids {
+            if let Some(aug) = self.cards.get_mut(id) {
+                aug.format = None;
+            }
+        }
+        self.prune_empty(deck_ids);
+    }
+
+    /// Applies a cached presentation reshape to `card` for display: overwrites the
+    /// (un-hashed) front and re-renders the deck note, sets the display-only
+    /// `display_back` for the answer, and fills the mode only if the card declares
+    /// none. Never touches `card.back`, so `card.id()` is unchanged. A no-op when
+    /// the card has no cached reshape.
+    pub fn apply_format(&self, card: &mut Card) {
+        let Some(fmt) = self.format(card.id()) else {
+            return;
+        };
+        if let Some(front) = &fmt.front {
+            card.front = front.clone();
+        }
+        if let Some(note) = &fmt.note {
+            card.note = Some(note.clone());
+        }
+        if !fmt.back.is_empty() {
+            card.display_back = Some(fmt.back.clone());
+        }
+        if card.mode.is_none() {
+            card.mode = fmt.mode;
+        }
     }
 
     /// Drops any of `deck_ids`' entries that no longer hold any augmentation, so
@@ -603,6 +656,7 @@ pub struct CoverageSummary {
     pub notes: Coverage,
     pub questions: Coverage,
     pub keypoints: Coverage,
+    pub format: Coverage,
     pub topologies: Vec<String>,
 }
 
@@ -2199,5 +2253,53 @@ mod tests {
         let fmt = map.get(&7).expect("a format for card 7");
         assert_eq!(fmt.back, ["A", "B"]);
         assert_eq!(fmt.mode, Some(Mode::LineByLine));
+    }
+
+    #[test]
+    fn apply_format_reshapes_display_without_changing_identity() {
+        use std::sync::Arc;
+        let mut card = Card::plain(
+            Arc::from("d.txt"),
+            "List the parts".to_string(),
+            vec!["A, B, C".to_string()],
+            None,
+            1,
+        );
+        let id = card.id();
+        let mut cache = AugmentCache::open(std::env::temp_dir().join("nonexistent-augment.json"));
+        cache.set_format(
+            id,
+            Format {
+                front: Some("Name the parts".to_string()),
+                back: vec!["A".to_string(), "B".to_string(), "C".to_string()],
+                note: None,
+                mode: Some(Mode::LineByLine),
+            },
+        );
+        cache.apply_format(&mut card);
+        assert_eq!(card.front, "Name the parts");
+        assert_eq!(card.back_for_display(), ["A", "B", "C"]);
+        assert_eq!(card.mode, Some(Mode::LineByLine));
+        assert_eq!(card.id(), id); // identity preserved
+    }
+
+    #[test]
+    fn apply_format_respects_an_explicit_mode() {
+        use std::sync::Arc;
+        let mut card = Card::plain(Arc::from("d.txt"), "f".into(), vec!["a".into()], None, 1);
+        card.mode = Some(Mode::Typing); // user's explicit choice
+        let id = card.id();
+        let mut cache = AugmentCache::open(std::env::temp_dir().join("nonexistent-augment2.json"));
+        cache.set_format(
+            id,
+            Format {
+                front: None,
+                back: Vec::new(),
+                note: None,
+                mode: Some(Mode::LineByLine),
+            },
+        );
+        cache.apply_format(&mut card);
+        assert_eq!(card.mode, Some(Mode::Typing)); // suggestion does not override
     }
 }
