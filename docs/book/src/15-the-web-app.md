@@ -19,7 +19,7 @@ alix --serve                              # no decks → pick them in the browse
 Run `--serve` without naming decks and the page opens the **deck-selection
 screen** — the same list as the terminal picker. **Up / down** move between
 decks; a **search box in the header** filters the list (focus it with **`/`**).
-Focus a deck and **Learn** it with **`l`** (or Enter) — a facts deck opens a
+Focus a deck and **Learn** it with **Enter** — a facts deck opens a
 review, a [trace](13-trace-decks.md) opens a walk — one deck per session (a locked
 deck won't start; **Browse** on **`b`** ignores locking and opens a read-only,
 in-page read-through — step the cards with Prev/Next, Esc to leave). Selecting a deck that has a

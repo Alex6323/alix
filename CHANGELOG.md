@@ -166,6 +166,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   as `[…]`), are unaffected.
 
 ### Changed
+- **Web picker: Learn is now Enter, not `l`.** The focused row's primary action —
+  Learn a deck, Open a workspace, or Take exam — is bound to Enter. `l`/`→` no
+  longer launch a deck (they still step the focus drawer's regions and enter a
+  workspace).
 - **The top self-grade is now "Passed", not "Nailed"** — the plainer, more serious
   term (it was "Got" → "Nailed" → now "Passed"). Renamed everywhere it shows: the
   review grade button, the trace walk delta, and the terminal. **Breaking:** the
