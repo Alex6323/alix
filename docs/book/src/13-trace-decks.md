@@ -105,7 +105,7 @@ goes hop by hop:
 1. **Predict** — type a guess before anything reveals (committing is the point).
 2. **Reveal** — `alix` prints the real excerpt from the source, then the key points
    and note.
-3. **Gap** — you judge yourself **Failed / Partly / Passed** (the same three
+3. **Gap** — you judge yourself **Missed it / Partly / Got it** (the same three
    grades review uses). Self-judged and offline by default; pass **`--grade`** to
    have Claude judge your typed prediction against the key points and return a
    verdict plus a line of feedback (a model call per hop). Either way, a failed or
@@ -116,7 +116,7 @@ goes hop by hop:
    *verification* (what masters the trace) is its separate **exam**, below.
 
 **In the browser:** `alix trace <deck> --serve` walks it in the web frontend — a
-**path rail** you descend (nodes coloring in by Failed / Partly / Passed) with each
+**path rail** you descend (nodes coloring in by Missed it / Partly / Got it) with each
 checkpoint's source shown in a line-numbered excerpt; `--serve --grade` does the
 live grading. Progress saves to the same store, so a walk started in the terminal
 continues in the browser.

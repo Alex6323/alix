@@ -3559,7 +3559,7 @@ mod tests {
         w.grade_result = Some((Delta::Partial, "right idea, missed a detail".to_string()));
         let d = walk_dto(&w);
         assert!(d.auto_grade);
-        assert_eq!(Some("PARTLY"), d.verdict);
+        assert_eq!(Some("Partly"), d.verdict);
         assert_eq!(Some("right idea, missed a detail".to_string()), d.feedback);
 
         w.clear_grade();

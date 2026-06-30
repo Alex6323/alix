@@ -1285,7 +1285,7 @@ impl App {
                 )
             }
             Phase::Flip { revealed: true } => format!(
-                "{} failed │ {} partly │ {} passed │ {} remove │ {} ask │ {} leave",
+                "{} missed it │ {} partly │ {} got it │ {} remove │ {} ask │ {} leave",
                 l(&k.failed),
                 l(&k.partly),
                 l(&k.passed),
@@ -1339,7 +1339,7 @@ impl App {
                 l(&k.quit)
             ),
             Phase::Explain { revealed: true, .. } => format!(
-                "{} failed │ {} partly │ {} passed │ {} remove │ {} ask │ {} leave",
+                "{} missed it │ {} partly │ {} got it │ {} remove │ {} ask │ {} leave",
                 l(&k.failed),
                 l(&k.partly),
                 l(&k.passed),
@@ -1362,7 +1362,7 @@ impl App {
                     )
                 } else {
                     format!(
-                        "{} failed │ {} partly │ {} passed │ {} remove │ {} ask │ {} leave",
+                        "{} missed it │ {} partly │ {} got it │ {} remove │ {} ask │ {} leave",
                         l(&k.failed),
                         l(&k.partly),
                         l(&k.passed),
@@ -1683,9 +1683,9 @@ impl App {
                         lines.push(Line::default());
                         let covered = self.kp_covered.iter().filter(|&&b| b).count();
                         let verdict = match keypoint_grade(covered, points.len()) {
-                            Grade::Pass => "passed",
+                            Grade::Pass => "got it",
                             Grade::Partial => "partly",
-                            Grade::Fail => "failed",
+                            Grade::Fail => "missed it",
                         };
                         lines.push(Line::from(
                             format!("{covered}/{} covered → {verdict}", points.len()).italic(),

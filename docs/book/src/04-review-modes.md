@@ -99,7 +99,7 @@ tier beneath the AI exam (a later chapter).
 Augment the deck with **key points** (`alix deck augment <deck> --target
 keypoints`) and the reveal becomes a **checklist**: you tick each cached point you
 covered and the grade is *derived* from the coverage —
-all → passed, some → partly, none → failed — so the self-grade is a per-claim
+all → got it, some → partly, none → missed it — so the self-grade is a per-claim
 check rather than a gut call. Atomic-answer cards get no key points and keep the
 plain reveal.
 

@@ -2124,9 +2124,9 @@ function renderLegend() {
     }
     chip("Ask", "", openAsk, label(KEYS.ask));
   } else {
-    chip("Failed", "failed", () => grade("failed"), label(KEYS.failed));
+    chip("Missed it", "failed", () => grade("failed"), label(KEYS.failed));
     chip("Partly", "partly", () => grade("partly"), label(KEYS.partly));
-    chip("Passed", "passed", () => grade("passed"), label(KEYS.passed));
+    chip("Got it", "passed", () => grade("passed"), label(KEYS.passed));
     chip("Ask", "", openAsk, label(KEYS.ask));
   }
   chip("Leave", "", leaveSession, "esc"); // return to the deck picker

@@ -3038,7 +3038,7 @@ fn print_trace_summary(walk: &Walk) {
         return;
     }
     println!(
-        "\n{BOLD}Walk complete{RESET}  {} passed · {} partly · {} failed",
+        "\n{BOLD}Walk complete{RESET}  {} got it · {} partly · {} missed it",
         s.passed, s.partly, s.failed
     );
     if s.weak.is_empty() {

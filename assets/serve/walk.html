@@ -484,7 +484,7 @@ function renderReveal() {
     a.appendChild(t);
   } else if (state.verdict) {
     const v = el("div", "verdict");
-    v.appendChild(el("span", "badge " + verdictClass(state.verdict), state.verdict));
+    v.appendChild(el("span", "badge " + verdictMeta(state.verdict).cls, state.verdict));
     if (state.feedback) v.appendChild(el("p", null, state.feedback));
     a.appendChild(v);
   } else if (state.grade_error) {
@@ -502,22 +502,24 @@ function renderReveal() {
   renderRevealActions();
 }
 
-function verdictClass(v) {
+// The AI verdict string (Delta::label) matches a DELTAS entry; map to it for the
+// badge class and the grade key (robust to the label wording).
+function verdictMeta(v) {
   v = (v || "").toLowerCase();
-  return v.startsWith("nail") ? "passed" : v.startsWith("part") ? "partly" : "failed";
+  return DELTAS.find(d => d.label.toLowerCase() === v) || DELTAS[0];
 }
 
 // the three deltas map onto review's failed/partly/passed keys
 const DELTAS = [
-  { delta: "f", cls: "failed", label: "Failed", keys: () => KEYS.failed },
+  { delta: "f", cls: "failed", label: "Missed it", keys: () => KEYS.failed },
   { delta: "p", cls: "partly", label: "Partly", keys: () => KEYS.partly },
-  { delta: "n", cls: "passed", label: "Passed", keys: () => KEYS.passed },
+  { delta: "n", cls: "passed", label: "Got it", keys: () => KEYS.passed },
 ];
 
 function renderRevealActions() {
   if (state.thinking) { chip("Grading…", "", () => {}).disabled = true; return; }
   if (state.verdict) {
-    chip(state.current < state.total ? "Next checkpoint" : "Finish", "primary", () => grade(verdictClass(state.verdict)[0]), label(KEYS.reveal) || "↵");
+    chip(state.current < state.total ? "Next checkpoint" : "Finish", "primary", () => grade(verdictMeta(state.verdict).delta), label(KEYS.reveal) || "↵");
   } else {
     // self-grade (also the fallback after a live-grade error)
     DELTAS.forEach(d => chip(d.label, d.cls, () => grade(d.delta), label(d.keys())));
@@ -537,9 +539,9 @@ function renderDone() {
     r.appendChild(el("b", cls || null, v));
     wrap.appendChild(r);
   };
-  row("passed", String(s.passed), "passed");
+  row("got it", String(s.passed), "passed");
   row("partly", String(s.partly), "partly");
-  row("failed", String(s.failed), "failed");
+  row("missed it", String(s.failed), "failed");
   if (s.weak && s.weak.length) row("weak (resurface sooner)", s.weak.map(h => "#" + h).join(" · "));
   else if (s.total) row("every checkpoint landed", "✓");
   // The exam (the compression) is what verifies and masters the trace.

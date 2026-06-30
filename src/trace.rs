@@ -62,9 +62,9 @@ impl Delta {
     /// The label shown to the learner.
     pub fn label(self) -> &'static str {
         match self {
-            Delta::Passed => "PASSED",
-            Delta::Partial => "PARTLY",
-            Delta::Failed => "FAILED",
+            Delta::Passed => "Got it",
+            Delta::Partial => "Partly",
+            Delta::Failed => "Missed it",
         }
     }
 
