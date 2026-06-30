@@ -1040,9 +1040,7 @@ fn clean_format(item: &WarmItem, raw: &RawFormat) -> Option<Format> {
         .collect();
     // Keep the reshaped answer only if it differs from the original lines.
     let original_lines: Vec<&str> = item.answer.lines().map(str::trim).collect();
-    let back = if !back.is_empty()
-        && back.iter().map(String::as_str).ne(original_lines)
-    {
+    let back = if !back.is_empty() && back.iter().map(String::as_str).ne(original_lines) {
         back
     } else {
         Vec::new()

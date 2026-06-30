@@ -1391,9 +1391,12 @@ pub fn run_review(
                 respond_asset(request, THEME_JS, "application/javascript; charset=utf-8")
             }
             (Method::Get, "/api/keys") => respond_json(request, &keys),
-            (Method::Get, "/api/version") => {
-                respond_json(request, &VersionDto { version: env!("CARGO_PKG_VERSION") })
-            }
+            (Method::Get, "/api/version") => respond_json(
+                request,
+                &VersionDto {
+                    version: env!("CARGO_PKG_VERSION"),
+                },
+            ),
             (Method::Get, "/api/browse-keys") => respond_json(request, &browse_keys),
             (Method::Get, "/api/picker-keys") => respond_json(request, &picker_keys),
             (Method::Get, "/api/ask-info") => respond_json(request, &ask_info),

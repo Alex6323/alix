@@ -1485,7 +1485,11 @@ fn review_serve(args: ReviewArgs, browse_mode: bool) -> Result<()> {
     let (initial, label) = if args.decks.is_empty() {
         (serve::Launch::Picker, "select decks".to_string())
     } else if browse_mode {
-        let cards = to_cards(build_browse(args.decks.clone(), &mut recent, Frontend::Web)?);
+        let cards = to_cards(build_browse(
+            args.decks.clone(),
+            &mut recent,
+            Frontend::Web,
+        )?);
         let label = format!("{} (browse)", cards.label);
         (serve::Launch::Browse(cards), label)
     } else {
