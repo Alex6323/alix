@@ -7,6 +7,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **New cards are introduced as an *attempt*, not a cold quiz (acquire).** A
+  never-seen card no longer drops you into a quiz you can't pass — its first
+  encounter is a low-stakes try, then the answer, then one key ("Seen") files it on
+  the ladder at stage 1, *ungraded*, with its first real quiz a later session. By
+  default it's **recall** (the front shows first — try, then reveal); for a deck
+  augmented with AI distractors (`--target choices`), an **atomic** card instead
+  greets you as a **multiple-choice** question (pick one, see which was right). A
+  guess never promotes or punishes — stage 1 either way. Start another session to
+  drill what you've met (the per-session `--new` cap is unchanged — 10 per session).
+  Terminal and web. The **acquire** step of the acquire → explain → maintain card
+  lifecycle (the explain step shipped below).
 - **Explain-mode key points — a checklist that derives the grade.** A new
   augmentation, `alix deck augment <deck> --target keypoints`, has Claude break
   each card's answer into the few load-bearing claims a reconstruction must hit
@@ -126,6 +137,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   as `[…]`), are unaffected.
 
 ### Changed
+- **Leitner stage 1 now has a ~5-minute relearn/settle cooldown** (was 0). A newly
+  acquired or freshly failed card becomes due ~5 minutes out for the *next*
+  session, so starting another session right away no longer re-serves a card you
+  just saw or just missed. In-session drilling is unchanged — a failed card still
+  comes back the same run (the queue is served by position, not by due time).
 - **Web picker keys.** Clicking a deck now **selects** it (opening its focus
   drawer when it has a topology) rather than launching outright — **Review** or
   Enter launches. **Browse** moved to **`b`**, freeing **← / →**: they step the

@@ -216,6 +216,10 @@ struct StateDto {
     /// reconstruction against — each ticked ✓/✗, the coverage deriving the grade.
     /// `null` for any other mode or when none are cached (plain self-grade).
     keypoints: Option<Vec<String>>,
+    /// Whether the current card has never been seen and should be *acquired*
+    /// (shown, then acknowledged with one key) rather than quizzed cold. The page
+    /// shows the answer with a single "Seen" button and no grade controls.
+    acquire: bool,
     /// The answer mode name (`flip`, `line`, …); the page reveals
     /// line-by-line for `line` and flip-style otherwise.
     mode: &'static str,
@@ -1244,6 +1248,23 @@ pub fn run_review(
                     &review_state(reviewing.as_ref(), &store, mode_override),
                 );
             }
+            (Method::Post, "/api/acquire") => {
+                // Acknowledge a never-seen card: record it at stage 1 (no grade)
+                // and move on. Its first quiz comes on a later session.
+                let Some(r) = reviewing.as_mut() else {
+                    respond_status(request, 409);
+                    continue;
+                };
+                r.session.acquire_current(&mut store, now_ms());
+                if let Err(e) = store.save() {
+                    eprintln!("warning: could not save progress: {e}");
+                }
+                r.rotate_variant(); // a fresh phrasing for the next card
+                respond_json(
+                    request,
+                    &review_state(reviewing.as_ref(), &store, mode_override),
+                );
+            }
             (Method::Post, "/api/check") => {
                 let Some(r) = reviewing.as_ref() else {
                     respond_status(request, 409);
@@ -2242,6 +2263,7 @@ fn review_state(
             card: None,
             choices: None,
             keypoints: None,
+            acquire: false,
             mode: mode_name(Mode::default()),
             remaining: 0,
             initial: 0,
@@ -2262,7 +2284,17 @@ fn review_state(
     let mode = mode_override
         .or(card.and_then(|c| c.mode))
         .unwrap_or_default();
-    let choices = if mode == Mode::Choice {
+    // A never-seen card is *acquired* (an attempt, then reveal), not quizzed cold.
+    let acquire = session.current_unseen(store);
+    let choices = if acquire {
+        // First encounter: a recognition question only under the strict bar (atomic
+        // answer + a full set of cached AI distractors); otherwise recall-then-reveal
+        // (`choices: None`). Same `c.id()` seed `/api/choose` rebuilds from.
+        card.and_then(|c| {
+            choice::recognition_question(c, session.cards(), c.id(), r.augment.distractors(c.id()))
+                .map(|q| q.options)
+        })
+    } else if mode == Mode::Choice {
         card.and_then(|c| {
             choice::build(c, session.cards(), c.id(), r.augment.distractors(c.id()))
                 .map(|q| q.options)
@@ -2271,8 +2303,9 @@ fn review_state(
         None
     };
     // Explain mode with cached key points reveals them as a checklist whose
-    // coverage derives the grade; any other mode keeps the plain reveal.
-    let keypoints = if mode == Mode::Explain {
+    // coverage derives the grade; any other mode keeps the plain reveal. Not on a
+    // first encounter — acquiring just reveals the answer.
+    let keypoints = if !acquire && mode == Mode::Explain {
         card.and_then(|c| r.augment.keypoints(c.id()).map(<[String]>::to_vec))
     } else {
         None
@@ -2348,6 +2381,7 @@ fn review_state(
         card: card_with_citation,
         choices,
         keypoints,
+        acquire,
         mode: mode_name(mode),
         remaining: session.remaining(),
         initial: session.initial_size,

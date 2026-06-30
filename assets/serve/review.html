@@ -189,6 +189,7 @@
   @keyframes revealIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
   .answer { color: var(--good); font-size: clamp(1.15rem, 3.6vw, 1.5rem); line-height: 1.4; margin: 0 0 4px; white-space: pre-wrap; }
   .answer.pending { color: var(--dim); }
+  .acquire-hint { color: var(--dim); font-size: 0.85rem; margin-top: 12px; font-style: italic; }
   /* a wrong typed line recedes (dim + small) so the correct answer leads */
   .answer.miss { color: var(--again); opacity: 0.5; font-size: clamp(0.92rem, 2.6vw, 1.08rem); }
   .answer .mark { margin-left: 10px; font-weight: 700; }   /* ✓ / ✗ after the line */
@@ -458,6 +459,7 @@ function post(body) { return { method: "POST", headers: { "Content-Type": "appli
 function load()    { api("/api/state").then(apply); }
 function grade(g)  { api("/api/grade", post({ grade: g })).then(apply); }
 function skip()    { api("/api/skip", post({})).then(apply); }
+function acquire() { api("/api/acquire", post({})).then(apply); }
 function remove()  { api("/api/remove", post({})).then(apply); }
 function restart() { api("/api/restart", post({})).then(apply); }
 // A trace picked from the picker walks: the server replies with a redirect to
@@ -491,10 +493,15 @@ function renderLeaveConfirm() {
 
 function apply(s) { state = s; revealed = 0; citationView = false; feedback = null; explainInput = ""; marks = []; kpCur = 0; render(); }
 function hasKeypoints() { return isExplain() && state.keypoints && state.keypoints.length > 0; }
+// A never-seen card: an attempt then reveal, acknowledged with one key (not graded).
+function isAcquire() { return !!(state && state.acquire); }
+// First encounter as a recognition question (strictly-augmented atomic card).
+function isAcquireChoice() { return isAcquire() && !!state.choices; }
 function isChoice() { return state.mode === "choice" && state.choices; }
 function isInput() { return state.mode === "typing" || state.mode === "fuzzy"; }
 function isExplain() { return state.mode === "explain"; }
 function modeLabel() {
+  if (isAcquire()) return "new card";
   return { typing: "typing exact", fuzzy: "typing fuzzy", line: "line by line", explain: "understanding" }[state.mode] || state.mode;
 }
 function choose(i) { api("/api/choose", post({ index: i })).then(f => { feedback = f; render(); }); }
@@ -1376,7 +1383,18 @@ function fillBottom() {
     if (state.card.citation) renderExcerpt(a, state.card.citation);
     else a.appendChild(el("div", "cite-err", state.card.citation_error || "source unavailable"));
     setNote(true);
-  } else if (feedback) { (isChoice() ? renderChoiceFeedback : renderCheckFeedback)(a); setNote(true); }
+  } else if (isAcquire()) {
+    if (isAcquireChoice()) {
+      if (feedback) renderChoiceFeedback(a); else renderChoices(a);
+      setNote(!!feedback);
+    } else if (revealed > 0) {
+      fillAcquire(a); setNote(true);          // recall: answer shown after reveal
+    } else {
+      a.appendChild(el("div", "acquire-hint", "new card — try to recall it, then reveal."));
+      setNote(false);                          // recall: front only until revealed
+    }
+  }
+  else if (feedback) { (isChoice() ? renderChoiceFeedback : renderCheckFeedback)(a); setNote(true); }
   else if (isChoice()) { renderChoices(a); setNote(false); }
   else if (isInput()) { renderInput(a); setNote(false); }
   else if (isExplain()) { renderExplain(a); setNote(fullyRevealed()); }
@@ -1613,6 +1631,18 @@ function explainReveal() {
 }
 
 // Fill the answer region for reveal modes (flip / line / choice fallback).
+// The acquire view: a never-seen card shown answer-first, so you read it before
+// it's ever quizzed. One key ("Seen") records it; its first quiz is a later session.
+function fillAcquire(a) {
+  if (!a) return;
+  const c = state.card;
+  const sec = el("div", "reveal");
+  for (const b of c.back) sec.appendChild(el("div", "answer", b));
+  a.appendChild(sec);
+  if (c.img_back) a.appendChild(cardImage(c.img_back));
+  a.appendChild(el("div", "acquire-hint", "new card — you'll be quizzed on it in a later session."));
+}
+
 function fillAnswer(a) {
   if (!a) return;
   // fillBottom already cleared the region and added the mode badge; don't wipe it.
@@ -1667,8 +1697,21 @@ function renderNote(parent, units) {
 function renderLegend() {
   legend.innerHTML = "";
   if (feedback) {
-    chip("Continue", "primary", continueAfter, label(KEYS.reveal));
-    chip("Ask", "", openAsk, label(KEYS.ask));
+    if (isAcquire()) {
+      chip("Seen", "primary", acquire, label(KEYS.reveal)); // a pick acknowledges, never grades
+    } else {
+      chip("Continue", "primary", continueAfter, label(KEYS.reveal));
+      chip("Ask", "", openAsk, label(KEYS.ask));
+    }
+  } else if (isAcquire()) {
+    if (isAcquireChoice()) {
+      chip("Skip", "", skip, label(KEYS.skip));            // options are tappable
+    } else if (revealed > 0) {
+      chip("Seen", "primary", acquire, label(KEYS.reveal));
+    } else {
+      chip("Reveal", "primary", reveal, label(KEYS.reveal));
+      chip("Skip", "", skip, label(KEYS.skip));
+    }
   } else if (isChoice()) {
     chip("Skip", "", skip, label(KEYS.skip));
   } else if (isInput()) {
@@ -1810,6 +1853,30 @@ document.addEventListener("keydown", (e) => {
   // `s` swaps a cited card between its answer and its source, once answered.
   if (state.card.at && isAnswered() && !e.ctrlKey && e.key.toLowerCase() === "s") {
     e.preventDefault(); toggleCitation(); return;
+  }
+  // A never-seen card (acquire): recognition pick or recall reveal, then "Seen".
+  // Handled before the feedback/grade paths so a pick never grades the card.
+  if (isAcquire()) {
+    if (hit(e, KEYS.remove)) { e.preventDefault(); remove(); return; }
+    if (isAcquireChoice()) {
+      if (!feedback) {
+        if (hit(e, KEYS.skip)) { e.preventDefault(); skip(); return; }
+        if (e.key >= "1" && e.key <= "9") {
+          const i = +e.key - 1;
+          if (i < state.choices.length) { e.preventDefault(); choose(i); }
+        }
+      } else if (hit(e, KEYS.reveal) || e.key === "Enter" || e.key === " ") {
+        e.preventDefault(); acquire();
+      }
+      return;
+    }
+    if (revealed === 0) {
+      if (hit(e, KEYS.skip)) { e.preventDefault(); skip(); return; }
+      if (hit(e, KEYS.reveal)) { e.preventDefault(); reveal(); return; }
+    } else if (hit(e, KEYS.reveal) || e.key === "Enter" || e.key === " ") {
+      e.preventDefault(); acquire();
+    }
+    return;
   }
   if (feedback) {
     if (hit(e, KEYS.ask)) { e.preventDefault(); openAsk(); return; }

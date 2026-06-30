@@ -60,6 +60,17 @@ enum Phase {
     },
     /// Looking at the front, answer hidden until revealed.
     Flip { revealed: bool },
+    /// Introducing a never-seen card by recall: the front is shown first, then —
+    /// once `revealed` — the answer, then one key ("seen") records it at stage 1
+    /// without a grade. The first graded quiz comes a later session.
+    Acquire { revealed: bool },
+    /// Introducing a never-seen card by recognition: a multiple-choice question,
+    /// built only for a strictly-augmented atomic card. Picking shows which option
+    /// was right; "seen" then records it at stage 1 — ungraded either way.
+    AcquireChoice {
+        question: ChoiceQuestion,
+        selected: Option<usize>,
+    },
     /// Understanding card: type an explanation (optional, free text — not
     /// checked), reveal the back lines (the key points), then self-grade on
     /// whether you covered them. `input` is the typed reconstruction.
@@ -444,6 +455,23 @@ impl App {
             self.phase = Phase::Summary;
             return;
         };
+        // A never-seen card is *acquired* — an attempt, then reveal — not quizzed
+        // cold. A strictly-augmented atomic card greets you as a recognition
+        // question; everything else is recall-then-reveal.
+        if self.store.get(card.id()).is_none() {
+            let ai = self.augment.distractors(card.id());
+            self.phase =
+                match choice::recognition_question(card, self.session.cards(), card.id(), ai) {
+                    Some(question) => Phase::AcquireChoice {
+                        question,
+                        selected: None,
+                    },
+                    None => Phase::Acquire { revealed: false },
+                };
+            self.kp_covered = Vec::new();
+            self.kp_cursor = 0;
+            return;
+        }
         let mode = effective_mode(card, self.options.mode_override);
         self.phase = match mode {
             Mode::Typing => {
@@ -612,6 +640,17 @@ impl App {
     /// extra keypress).
     fn finish_card_and_advance(&mut self, grade: Grade) -> Result<()> {
         self.apply_grade(grade)?;
+        self.start_card();
+        Ok(())
+    }
+
+    /// Acknowledges the current never-seen card (acquire): records it at stage 1
+    /// without a grade and moves on. Its first quiz comes in a later session.
+    fn acquire_and_advance(&mut self) -> Result<()> {
+        self.session
+            .acquire_current(&mut self.store, time::now_ms());
+        self.totals.acquired += 1;
+        self.store.save()?;
         self.start_card();
         Ok(())
     }
@@ -853,6 +892,36 @@ impl App {
                     self.finish_card_and_advance(Grade::Pass)?;
                 } else if ask_hit {
                     self.enter_ask();
+                }
+            }
+            Phase::Acquire { revealed } => {
+                // Front first: reveal, then "seen". No grading — it's a first
+                // exposure; reveal/continue/space/enter all acknowledge it.
+                if !*revealed {
+                    if reveal_hit {
+                        *revealed = true;
+                    }
+                } else if reveal_hit
+                    || cont_hit
+                    || matches!(key.code, KeyCode::Enter | KeyCode::Char(' '))
+                {
+                    self.acquire_and_advance()?;
+                }
+            }
+            Phase::AcquireChoice { question, selected } => {
+                // Pick a number to attempt; the answer is shown but never graded.
+                if selected.is_none() {
+                    if let KeyCode::Char(c @ '1'..='9') = key.code {
+                        let index = c as usize - '1' as usize;
+                        if index < question.options.len() {
+                            *selected = Some(index);
+                        }
+                    }
+                } else if cont_hit
+                    || reveal_hit
+                    || matches!(key.code, KeyCode::Enter | KeyCode::Char(' '))
+                {
+                    self.acquire_and_advance()?;
                 }
             }
             Phase::Explain { input, revealed } => {
@@ -1221,6 +1290,37 @@ impl App {
                 l(&k.ask),
                 l(&k.quit)
             ),
+            Phase::Acquire { revealed: false } => format!(
+                "{} reveal │ {} skip │ {} remove │ {} leave",
+                l(&k.reveal),
+                l(&k.skip),
+                l(&k.remove),
+                l(&k.quit)
+            ),
+            Phase::Acquire { revealed: true } => format!(
+                "{} seen │ {} remove │ {} leave",
+                l(&k.reveal),
+                l(&k.remove),
+                l(&k.quit)
+            ),
+            Phase::AcquireChoice {
+                question,
+                selected: None,
+            } => format!(
+                "1-{} pick │ {} skip │ {} remove │ {} leave",
+                question.options.len(),
+                l(&k.skip),
+                l(&k.remove),
+                l(&k.quit)
+            ),
+            Phase::AcquireChoice {
+                selected: Some(_), ..
+            } => format!(
+                "{} seen │ {} remove │ {} leave",
+                l(&k.reveal),
+                l(&k.remove),
+                l(&k.quit)
+            ),
             Phase::Explain {
                 revealed: false, ..
             } => format!(
@@ -1384,6 +1484,7 @@ impl App {
             Phase::Typing { .. } => "TYPING EXACT",
             Phase::Fuzzy { .. } => "TYPING FUZZY",
             Phase::Flip { .. } => "FLIP",
+            Phase::Acquire { .. } | Phase::AcquireChoice { .. } => "NEW CARD",
             Phase::Explain { .. } => "EXPLAIN",
             Phase::LineByLine { .. } => "LINE BY LINE",
             Phase::Choice { .. } => "CHOICE",
@@ -1487,6 +1588,53 @@ impl App {
                     let reveal = Bindings::label(&self.options.keys.reveal);
                     lines.push(Line::from(
                         format!("[ press {reveal} to reveal the answer ]").dim(),
+                    ));
+                }
+            }
+            Phase::Acquire { revealed } => {
+                if *revealed {
+                    for back in &card.back {
+                        lines.push(Line::from(Span::styled(
+                            format!("  {back}"),
+                            Style::new().fg(Color::Green),
+                        )));
+                    }
+                    push_note(&mut lines, card, area.width);
+                    lines.push(Line::default());
+                    lines.push(Line::from(
+                        "new card — you'll be quizzed on it in a later session.".dim(),
+                    ));
+                } else {
+                    let reveal = Bindings::label(&self.options.keys.reveal);
+                    lines.push(Line::from(
+                        format!("[ try to recall it, then press {reveal} to reveal ]").dim(),
+                    ));
+                }
+            }
+            Phase::AcquireChoice { question, selected } => {
+                // Options 1..N; after a pick, the correct one greens, a wrong pick
+                // reds — but no PASSED/FAILED badge, since acquiring isn't graded.
+                for (i, option) in question.options.iter().enumerate() {
+                    let style = match selected {
+                        None => Style::new(),
+                        Some(_) if i == question.correct => Style::new().fg(Color::Green),
+                        Some(s) if i == *s => Style::new().fg(Color::Red),
+                        Some(_) => Style::new().fg(Color::DarkGray),
+                    };
+                    for (j, text) in option.lines().enumerate() {
+                        let prefix = if j == 0 {
+                            format!("  {}) ", i + 1)
+                        } else {
+                            "     ".into()
+                        };
+                        lines.push(Line::from(Span::styled(format!("{prefix}{text}"), style)));
+                    }
+                }
+                if selected.is_some() {
+                    push_note(&mut lines, card, area.width);
+                    lines.push(Line::default());
+                    lines.push(Line::from(
+                        "new card — you'll be quizzed on it in a later session.".dim(),
                     ));
                 }
             }
@@ -1772,17 +1920,21 @@ impl App {
             }
         }
 
-        let mut lines = vec![
-            Line::from("Session complete!".bold()),
-            Line::default(),
-            Line::from(format!(
-                "  reviews:  {} ({} passed, {} failed)",
-                stats.reviews, stats.passed, stats.failed
-            )),
-            Line::from(format!("  accuracy: {accuracy}")),
-            Line::default(),
-            Line::from(stage_spans),
-        ];
+        let mut lines = vec![Line::from("Session complete!".bold()), Line::default()];
+        if stats.acquired > 0 {
+            lines.push(Line::from(format!(
+                "  new:      {} card{} introduced",
+                stats.acquired,
+                if stats.acquired == 1 { "" } else { "s" }
+            )));
+        }
+        lines.push(Line::from(format!(
+            "  reviews:  {} ({} passed, {} failed)",
+            stats.reviews, stats.passed, stats.failed
+        )));
+        lines.push(Line::from(format!("  accuracy: {accuracy}")));
+        lines.push(Line::default());
+        lines.push(Line::from(stage_spans));
 
         if self.nothing_due {
             lines.push(Line::default());

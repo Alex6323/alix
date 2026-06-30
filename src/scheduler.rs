@@ -2,8 +2,9 @@
 //!
 //! Two schedulers are available:
 //!
-//! - [`Leitner`]: a 6-stage box system. Stage cooldowns are 0 / 1h / 6h / 24h / 1w. Passing moves a
-//!   card up one stage (it stays in stage 5 once there), failing sends it back to stage 1.
+//! - [`Leitner`]: a 6-stage box system. Stage cooldowns are 5m / 1h / 6h / 24h / 1w. Passing moves
+//!   a card up one stage (it stays in stage 5 once there), failing sends it back to stage 1 (the 5m
+//!   cooldown is a short relearn gap before the next session, not an in-session delay).
 //! - [`Sm2`]: a SuperMemo-2 style scheduler with per-card ease factors and growing intervals.
 //!
 //! Both schedulers keep the card's Leitner `stage` field up to date, so it is
@@ -50,7 +51,7 @@ pub fn keypoint_grade(covered: usize, total: usize) -> Grade {
 /// Which scheduling algorithm to use.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
 pub enum SchedulerKind {
-    /// A 6-stage Leitner box (cooldowns 0 / 1h / 6h / 24h / 1w).
+    /// A 6-stage Leitner box (cooldowns 5m / 1h / 6h / 24h / 1w).
     #[default]
     Leitner,
     /// SuperMemo-2 style intervals with per-card ease factors.
@@ -82,8 +83,13 @@ impl SchedulerKind {
 }
 
 /// Cooldowns per Leitner stage in milliseconds, indexed by `stage - 1`.
+///
+/// Stage 1 is a short **relearn/settle gap**: a newly acquired or freshly failed
+/// card is due ~5 min out, gating only the *next* session/restart. An in-session
+/// retry of a failed card is position-based (pushed to the back of the queue and
+/// served by position, not by due time), so it is unaffected.
 pub const STAGE_COOLDOWNS_MS: [u64; MAX_STAGE as usize] = [
-    0,              // stage 1: immediately
+    5 * 60 * 1000,  // stage 1: ~5 min (relearn/settle gap)
     3_600 * 1000,   // stage 2: 1 hour
     21_600 * 1000,  // stage 3: 6 hours
     86_400 * 1000,  // stage 4: 1 day
@@ -215,7 +221,7 @@ mod tests {
 
     #[test]
     fn leitner_cooldowns_are_stable() {
-        assert_eq!(0, stage_cooldown_ms(1));
+        assert_eq!(5 * 60 * 1000, stage_cooldown_ms(1));
         assert_eq!(3_600_000, stage_cooldown_ms(2));
         assert_eq!(21_600_000, stage_cooldown_ms(3));
         assert_eq!(86_400_000, stage_cooldown_ms(4));
@@ -229,9 +235,12 @@ mod tests {
         assert!(!Leitner.is_due(&s, 1_000_000 + 3_599_999));
         assert!(Leitner.is_due(&s, 1_000_000 + 3_600_000));
 
-        // Stage 1 is always due.
+        // Stage 1 carries the short 5-minute relearn/settle gap (so a restart
+        // right after acquiring or failing a card doesn't re-serve it instantly).
         let s = state_at_stage(1, 1_000_000);
-        assert!(Leitner.is_due(&s, 1_000_000));
+        assert!(!Leitner.is_due(&s, 1_000_000));
+        assert!(!Leitner.is_due(&s, 1_000_000 + 5 * 60 * 1000 - 1));
+        assert!(Leitner.is_due(&s, 1_000_000 + 5 * 60 * 1000));
     }
 
     #[test]

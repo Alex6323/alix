@@ -1,9 +1,11 @@
 //! Review session logic, independent of any UI.
 //!
 //! A session takes the cards of one or more decks, asks the store which are
-//! due, builds a review queue and applies grades. Failed cards are re-queued
-//! at the end of the session until they pass (a failed card drops to stage 1,
-//! whose cooldown is 0, so it comes up again in the same run).
+//! due, builds a review queue and applies grades. Failed cards are re-queued at
+//! the end of the session until they pass: the queue is served *by position*
+//! (front of the queue), so a re-queued card comes up again in the same run
+//! regardless of its cooldown. A never-seen card is *acquired* first — shown,
+//! recorded at stage 1, then left for a later session to quiz.
 
 use std::collections::VecDeque;
 
@@ -65,6 +67,8 @@ pub struct SessionStats {
     pub passed: usize,
     /// Number of failed reviews.
     pub failed: usize,
+    /// Number of never-seen cards introduced (acquired) this session.
+    pub acquired: usize,
 }
 
 /// Per-stage card counts for the loaded decks; index 0 holds unseen cards.
@@ -173,6 +177,14 @@ impl Session {
         Some(&mut self.cards[i])
     }
 
+    /// Whether the current card has never been seen (no stored progress). Such a
+    /// card is *acquired* — shown via [`acquire_current`](Self::acquire_current) —
+    /// rather than quizzed cold.
+    pub fn current_unseen(&self, store: &Store) -> bool {
+        self.current()
+            .is_some_and(|card| store.get(card.id()).is_none())
+    }
+
     /// All cards of this session's decks (e.g. as the distractor pool for
     /// multiple-choice questions).
     pub fn cards(&self) -> &[Card] {
@@ -212,6 +224,21 @@ impl Session {
             self.stats.failed += 1;
             self.queue.push_back(index);
         }
+    }
+
+    /// Introduces the current never-seen card: records it on the Leitner ladder
+    /// at stage 1 and drops it from this session's queue. It is *not* graded and
+    /// gets *no* history entry — acquiring is a first exposure, not a review. The
+    /// card is not re-queued, so its first quiz comes on a later session, once the
+    /// stage-1 relearn cooldown (~5 min) has passed. Does nothing on an empty queue.
+    pub fn acquire_current(&mut self, store: &mut Store, now_ms: u64) {
+        let Some(index) = self.queue.pop_front() else {
+            return;
+        };
+        // `get_or_insert` creates the state at stage 1, due ~5 min out via the
+        // stage-1 cooldown — no `scheduler.apply`, no recorded review.
+        store.get_or_insert(self.cards[index].id(), now_ms);
+        self.stats.acquired += 1;
     }
 
     /// Moves the current card to the back of the queue without grading it.
@@ -501,10 +528,82 @@ mod tests {
     }
 
     #[test]
+    fn acquire_current_introduces_a_stage_one_card_without_a_review() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(1);
+        let id = all[0].id();
+        let mut session = Session::new(
+            all,
+            &store,
+            SchedulerKind::Leitner,
+            SessionOptions::default(),
+            1000,
+        );
+        assert!(session.current_unseen(&store)); // a fresh card is acquired, not quizzed
+
+        session.acquire_current(&mut store, 1000);
+
+        let state = store.get(id).expect("acquired card is recorded");
+        assert_eq!(1, state.stage);
+        assert!(state.history.is_empty()); // acquiring is not a review
+        assert_eq!(0, state.total_reviews);
+        assert_eq!(1, session.stats.acquired);
+        assert_eq!(0, session.stats.reviews);
+        assert!(session.is_finished()); // dropped from the queue, not re-queued
+    }
+
+    #[test]
+    fn acquired_cards_are_not_due_until_the_relearn_cooldown() {
+        let (mut store, _dir) = empty_store();
+        let mut session = Session::new(
+            cards(1),
+            &store,
+            SchedulerKind::Leitner,
+            SessionOptions::default(),
+            1000,
+        );
+        session.acquire_current(&mut store, 1000);
+
+        // Just acquired: a restart right away finds nothing due (the 5-min gap),
+        // so it cannot be quizzed the instant it was seen.
+        assert!(!session.has_due_now(&store, 1000));
+        assert!(!session.has_due_now(&store, 1000 + 5 * 60 * 1000 - 1));
+        // Once the relearn cooldown passes, a fresh session quizzes it.
+        assert!(session.has_due_now(&store, 1000 + 5 * 60 * 1000));
+    }
+
+    #[test]
+    fn failed_card_reappears_in_the_same_session_despite_the_cooldown() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(1);
+        let id = all[0].id();
+        store.get_or_insert(id, 0); // already seen, stage 1
+        let now = 5 * 60 * 1000; // past the relearn cooldown, so it is due
+        let mut session = Session::new(
+            all,
+            &store,
+            SchedulerKind::Leitner,
+            SessionOptions::default(),
+            now,
+        );
+        assert_eq!(1, session.remaining());
+
+        session.grade(&mut store, Grade::Fail, now);
+
+        // Failing pushes the card to the back of the queue; serving is by
+        // position, so it returns this same session even though its due time is
+        // now ~5 min out.
+        assert_eq!(1, session.remaining());
+        assert!(!session.is_finished());
+        assert_eq!(id, session.current().unwrap().id());
+    }
+
+    #[test]
     fn due_cards_take_priority_over_new_under_limit() {
         let (mut store, _dir) = empty_store();
         let all = cards(10);
-        // Cards 7, 8, 9 were seen and are due (stage 1, cooldown 0).
+        // Cards 7, 8, 9 were seen at t=0 and are due once the 5-min stage-1
+        // cooldown has passed.
         for c in &all[7..] {
             store.get_or_insert(c.id(), 0);
         }
@@ -519,7 +618,7 @@ mod tests {
                 order: Order::Scheduled,
                 topology: None,
             },
-            1000,
+            5 * 60 * 1000,
         );
         assert_eq!(3, session.initial_size);
         // The queue holds exactly the due cards, not the new ones.
@@ -959,7 +1058,8 @@ mod tests {
     fn topology_reorders_the_due_set() {
         let (mut store, _dir) = empty_store();
         let all = cards(3);
-        // All three seen and due (stage 1, cooldown 0); scheduler order is 0,1,2.
+        // All three seen at t=0 and due once the 5-min stage-1 cooldown passes;
+        // scheduler order is 0,1,2.
         for c in &all {
             store.get_or_insert(c.id(), 0);
         }
@@ -973,12 +1073,12 @@ mod tests {
                 topology: Some(topo),
                 ..Default::default()
             },
-            1000,
+            1_000_000,
         );
         assert_eq!("front 2", session.current().unwrap().front);
-        session.grade(&mut store, Grade::Pass, 1000);
+        session.grade(&mut store, Grade::Pass, 1_000_000);
         assert_eq!("front 1", session.current().unwrap().front);
-        session.grade(&mut store, Grade::Pass, 1000);
+        session.grade(&mut store, Grade::Pass, 1_000_000);
         assert_eq!("front 0", session.current().unwrap().front);
     }
 
@@ -1024,12 +1124,12 @@ mod tests {
                 topology: Some(topo),
                 ..Default::default()
             },
-            1000,
+            1_000_000,
         );
         assert_eq!("front 1", session.current().unwrap().front); // ranked first
-        session.grade(&mut store, Grade::Pass, 1000);
+        session.grade(&mut store, Grade::Pass, 1_000_000);
         assert_eq!("front 0", session.current().unwrap().front); // then 0, 2 in order
-        session.grade(&mut store, Grade::Pass, 1000);
+        session.grade(&mut store, Grade::Pass, 1_000_000);
         assert_eq!("front 2", session.current().unwrap().front);
     }
 
@@ -1090,13 +1190,13 @@ mod tests {
                 topology: Some(topo),
                 ..Default::default()
             },
-            1000,
+            1_000_000,
         );
         // Siblings stay adjacent (walk order), not split by `other`.
         assert_eq!("front a", session.current().unwrap().front);
-        session.grade(&mut store, Grade::Pass, 1000);
+        session.grade(&mut store, Grade::Pass, 1_000_000);
         assert_eq!("front b", session.current().unwrap().front);
-        session.grade(&mut store, Grade::Pass, 1000);
+        session.grade(&mut store, Grade::Pass, 1_000_000);
         assert_eq!("front 3", session.current().unwrap().front);
     }
 
@@ -1121,7 +1221,7 @@ mod tests {
                 topology: Some(topo),
                 ..Default::default()
             },
-            1000,
+            1_000_000,
         );
         assert_eq!(2, session.initial_size);
         assert_eq!("front 1", session.current().unwrap().front);

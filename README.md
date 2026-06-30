@@ -483,6 +483,23 @@ card goes back to stage 1 and reappears later in the same session until you
 get it right. Whichever mode a card uses is shown as a small badge above the
 answer (`flip`, `typing exact`, `typing fuzzy`, `choice`, `line by line`).
 
+**New cards are introduced as an *attempt*, not a hand-out.** A card you've never
+seen isn't quizzed cold (you can't recall what you haven't read), but it isn't just
+shown to you either. The first encounter is a low-stakes try, then the answer, then
+one key (**Seen** / `Space`) files it on the ladder at stage 1 — *ungraded either
+way*, with its first real quiz a **later session** (after a ~5-minute settle), so
+nothing is tested the instant you've seen it. Two forms:
+
+- **Recall** (default): the **front shows first** — try to bring it to mind — then
+  you reveal the answer and press Seen.
+- **Recognition**: if the deck was augmented with AI distractors (`alix deck augment
+  <deck> --target choices`), an **atomic** card greets you as a **multiple-choice**
+  question instead — pick one, see which was right, press Seen. A correct guess
+  doesn't promote it and a wrong one doesn't punish — stage 1 either way.
+
+How many new cards a session introduces is the `--new N` cap (default 10) — run
+another session for the next batch.
+
 In **choice** mode you pick the answer out of four options with `1`–`4`.
 The three wrong options are sampled from the answers of the other cards in
 the session, preferring similar-looking ones (years compete with years), so

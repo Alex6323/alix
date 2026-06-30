@@ -14,7 +14,7 @@ the card comes due again:
 
 | Stage | 1 | 2 | 3 | 4 | 5 |
 | --- | --- | --- | --- | --- | --- |
-| Cooldown | now | 1 hour | 6 hours | 1 day | 1 week |
+| Cooldown | ~5 min | 1 hour | 6 hours | 1 day | 1 week |
 
 Grading moves the card between stages:
 
@@ -26,6 +26,26 @@ So a card you keep getting right climbs to longer and longer intervals, a miss
 sends it back to the bottom of the ladder, and a **partly** — you got the gist but
 stumbled — only steps it back one rung, so you keep most of your progress but see
 it sooner. It's predictable and needs no tuning — a good default.
+
+Stage 1's cooldown is a short **relearn/settle gap** (~5 minutes): a card that just
+failed — or a brand-new one you've just met (see below) — comes due a few minutes
+later rather than instantly, so a new session started right away won't re-test
+something you only just saw. Within a session a failed card still comes back the
+same run, as soon as the queue cycles round to it.
+
+### New cards: an attempt before they're tested
+
+A card you've never seen isn't quizzed cold — you can't reconstruct what you've
+never read — but it isn't simply handed to you either. The first encounter is a
+**low-stakes attempt**, then the answer, then one key (**Seen**) records it at
+stage 1 *without a grade*. By default it's **recall**: the front shows first, you
+try, then reveal. If the deck has AI distractors (`alix deck augment --target
+choices`), an **atomic** card instead greets you as a **multiple-choice** question —
+pick one, see which was right. Either way a guess never promotes or punishes
+(stage 1 regardless), and the first *graded* quiz comes a **later session**, once
+the ~5-minute settle has passed. Each session introduces up to `--new N` new cards
+(default 10); start another session for more. This is the first step of a card's
+life — *acquire*, then drill it up the ladder.
 
 ## SM-2
 

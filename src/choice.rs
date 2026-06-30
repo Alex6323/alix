@@ -132,6 +132,28 @@ pub fn build(
     Some(ChoiceQuestion { options, correct })
 }
 
+/// Builds a recognition question for a card's *first encounter* (acquire), under
+/// the strict bar that makes a guess worth the trouble: an **atomic** card (a
+/// single-line answer) whose deck supplies a full set of *AI* distractors
+/// (`alix deck augment --target choices`). Offline-sampled distractors are
+/// deliberately not enough here — a junk multiple-choice is worse than an honest
+/// reveal — so a card without cached AI distractors (or with a multi-line answer)
+/// returns `None`, and the frontend shows the recall-then-reveal acquire instead.
+pub fn recognition_question(
+    card: &Card,
+    pool: &[Card],
+    seed: u64,
+    ai_distractors: Option<&[String]>,
+) -> Option<ChoiceQuestion> {
+    if card.back.len() != 1 {
+        return None;
+    }
+    // A full set of AI distractors, or nothing — never top up from offline sampling
+    // for a first encounter.
+    let ai = ai_distractors.filter(|d| d.len() >= NUM_OPTIONS - 1)?;
+    build(card, pool, seed, Some(ai))
+}
+
 /// Distractor candidates sampled from `pool`: every other card's answer, minus
 /// the card's own cloze siblings (same file + line), empty answers, and anything
 /// in `exclude` (the correct answer plus any already-chosen options).
@@ -351,5 +373,32 @@ mod tests {
             let q = build(&cards[0], &cards, seed, Some(&ai)).unwrap();
             assert_eq!(1, q.options.iter().filter(|o| *o == "alpha").count());
         }
+    }
+
+    #[test]
+    fn recognition_question_needs_atomic_answer_and_full_ai_distractors() {
+        let cards = pool(&["alpha", "beta", "gamma", "delta", "epsilon"]);
+        let ai = ["w1".to_string(), "w2".to_string(), "w3".to_string()];
+        let q = recognition_question(&cards[0], &cards, 1, Some(&ai)).unwrap();
+        assert_eq!(NUM_OPTIONS, q.options.len());
+        assert_eq!("alpha", q.options[q.correct]);
+    }
+
+    #[test]
+    fn recognition_question_rejects_too_few_ai_distractors() {
+        // A short AI set must NOT be rescued by offline sampling — a junk MC is
+        // worse than an honest reveal, so it falls back to recall-acquire (None).
+        let cards = pool(&["alpha", "beta", "gamma", "delta", "epsilon"]);
+        let ai = ["w1".to_string(), "w2".to_string()];
+        assert!(recognition_question(&cards[0], &cards, 1, Some(&ai)).is_none());
+        assert!(recognition_question(&cards[0], &cards, 1, None).is_none());
+    }
+
+    #[test]
+    fn recognition_question_rejects_multi_line_answers() {
+        // An open / multi-line answer can't be a meaningful pick-one.
+        let cards = pool(&["line a\nline b", "x", "y", "z", "w"]);
+        let ai = ["w1".to_string(), "w2".to_string(), "w3".to_string()];
+        assert!(recognition_question(&cards[0], &cards, 1, Some(&ai)).is_none());
     }
 }
