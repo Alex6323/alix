@@ -12,7 +12,8 @@
  * --note-*, --excerpt-bg). */
 
 /* ── Dark — the default ─────────────────────────────────────────────── */
-:root {
+:root,
+[data-theme="dark"] {
   --void: #06121a;
   --panel-top: #103241;
   --panel-bot: #0a212b;
@@ -38,7 +39,7 @@
 }
 
 /* ── Light — paper & ink, the teal accent kept for identity ─────────── */
-:root[data-theme="light"] {
+[data-theme="light"] {
   --void: #f5f7f6;
   --panel-top: #ffffff;
   --panel-bot: #eef2f2;
@@ -59,7 +60,7 @@
 }
 
 /* ── Kid — warm, rounded, candy accents (the bold one) ──────────────── */
-:root[data-theme="kid"] {
+[data-theme="kid"] {
   --void: #fff2db;
   --panel-top: #ffffff;
   --panel-bot: #fff6ea;
@@ -87,7 +88,7 @@
  * ───────────────────────────────────────────────────────────────────── */
 
 /* ── GitHub Dark ── */
-:root[data-theme="github-dark"] {
+[data-theme="github-dark"] {
   --void: #0d1117; --panel-top: #161b22; --panel-bot: #161b22;
   --ink: #e6edf3; --dim: #7d8590; --line: #30363d;
   --bolt: #2f81f7; --bolt-hi: #2f81f7;
@@ -98,7 +99,7 @@
 }
 
 /* ── GitHub Light ── */
-:root[data-theme="github-light"] {
+[data-theme="github-light"] {
   --void: #ffffff; --panel-top: #f6f8fa; --panel-bot: #f6f8fa;
   --ink: #1f2328; --dim: #656d76; --line: #d0d7de;
   --bolt: #0969da; --bolt-hi: #0969da;
@@ -109,7 +110,7 @@
 }
 
 /* ── One Dark ── */
-:root[data-theme="one-dark"] {
+[data-theme="one-dark"] {
   --void: #282c34; --panel-top: #3e4451; --panel-bot: #3e4451;
   --ink: #abb2bf; --dim: #5c6370; --line: #181a1f;
   --bolt: #61afef; --bolt-hi: #61afef;
@@ -120,7 +121,7 @@
 }
 
 /* ── Dracula ── */
-:root[data-theme="dracula"] {
+[data-theme="dracula"] {
   --void: #282a36; --panel-top: #44475a; --panel-bot: #44475a;
   --ink: #f8f8f2; --dim: #6272a4; --line: #6272a4;
   --bolt: #bd93f9; --bolt-hi: #bd93f9;
@@ -131,7 +132,7 @@
 }
 
 /* ── Monokai ── */
-:root[data-theme="monokai"] {
+[data-theme="monokai"] {
   --void: #272822; --panel-top: #1e1f1c; --panel-bot: #1e1f1c;
   --ink: #f8f8f2; --dim: #88846f; --line: #1e1f1c;
   --bolt: #f92672; --bolt-hi: #f92672;
@@ -142,7 +143,7 @@
 }
 
 /* ── Catppuccin Mocha ── */
-:root[data-theme="catppuccin-mocha"] {
+[data-theme="catppuccin-mocha"] {
   --void: #1e1e2e; --panel-top: #181825; --panel-bot: #181825;
   --ink: #cdd6f4; --dim: #a6adc8; --line: #45475a;
   --bolt: #cba6f7; --bolt-hi: #cba6f7;
@@ -153,7 +154,7 @@
 }
 
 /* ── Catppuccin Latte ── */
-:root[data-theme="catppuccin-latte"] {
+[data-theme="catppuccin-latte"] {
   --void: #eff1f5; --panel-top: #e6e9ef; --panel-bot: #e6e9ef;
   --ink: #4c4f69; --dim: #6c6f85; --line: #bcc0cc;
   --bolt: #8839ef; --bolt-hi: #8839ef;
@@ -164,7 +165,7 @@
 }
 
 /* ── Tokyo Night ── */
-:root[data-theme="tokyo-night"] {
+[data-theme="tokyo-night"] {
   --void: #1a1b26; --panel-top: #16161e; --panel-bot: #16161e;
   --ink: #c0caf5; --dim: #565f89; --line: #15161e;
   --bolt: #7aa2f7; --bolt-hi: #7aa2f7;
@@ -175,7 +176,7 @@
 }
 
 /* ── Solarized Dark ── */
-:root[data-theme="solarized-dark"] {
+[data-theme="solarized-dark"] {
   --void: #002b36; --panel-top: #073642; --panel-bot: #073642;
   --ink: #839496; --dim: #586e75; --line: #073642;
   --bolt: #268bd2; --bolt-hi: #268bd2;
@@ -186,7 +187,7 @@
 }
 
 /* ── Solarized Light ── */
-:root[data-theme="solarized-light"] {
+[data-theme="solarized-light"] {
   --void: #fdf6e3; --panel-top: #eee8d5; --panel-bot: #eee8d5;
   --ink: #657b83; --dim: #93a1a1; --line: #eee8d5;
   --bolt: #268bd2; --bolt-hi: #268bd2;
@@ -197,7 +198,7 @@
 }
 
 /* ── Gruvbox Dark ── */
-:root[data-theme="gruvbox-dark"] {
+[data-theme="gruvbox-dark"] {
   --void: #282828; --panel-top: #3c3836; --panel-bot: #3c3836;
   --ink: #ebdbb2; --dim: #a89984; --line: #504945;
   --bolt: #83a598; --bolt-hi: #83a598;
@@ -208,7 +209,7 @@
 }
 
 /* ── Gruvbox Light ── */
-:root[data-theme="gruvbox-light"] {
+[data-theme="gruvbox-light"] {
   --void: #fbf1c7; --panel-top: #ebdbb2; --panel-bot: #ebdbb2;
   --ink: #3c3836; --dim: #7c6f64; --line: #d5c4a1;
   --bolt: #458588; --bolt-hi: #458588;
@@ -219,7 +220,7 @@
 }
 
 /* ── Nord ── */
-:root[data-theme="nord"] {
+[data-theme="nord"] {
   --void: #2e3440; --panel-top: #3b4252; --panel-bot: #3b4252;
   --ink: #d8dee9; --dim: #4c566a; --line: #4c566a;
   --bolt: #88c0d0; --bolt-hi: #88c0d0;
@@ -230,7 +231,7 @@
 }
 
 /* ── Ayu Dark ── */
-:root[data-theme="ayu-dark"] {
+[data-theme="ayu-dark"] {
   --void: #0d1017; --panel-top: #10141c; --panel-bot: #10141c;
   --ink: #bfbdb6; --dim: #5c6773; --line: #1b1f29;
   --bolt: #e6b450; --bolt-hi: #e6b450;
@@ -241,7 +242,7 @@
 }
 
 /* ── Rosé Pine ── */
-:root[data-theme="rose-pine"] {
+[data-theme="rose-pine"] {
   --void: #191724; --panel-top: #1f1d2e; --panel-bot: #1f1d2e;
   --ink: #e0def4; --dim: #6e6a86; --line: #26233a;
   --bolt: #c4a7e7; --bolt-hi: #c4a7e7;
@@ -252,7 +253,7 @@
 }
 
 /* ── Everforest Dark ── */
-:root[data-theme="everforest-dark"] {
+[data-theme="everforest-dark"] {
   --void: #2d353b; --panel-top: #343f44; --panel-bot: #343f44;
   --ink: #d3c6aa; --dim: #859289; --line: #3d484d;
   --bolt: #a7c080; --bolt-hi: #a7c080;
@@ -295,6 +296,24 @@
 .theme-head span { font-weight: 600; font-size: 1rem; }
 .theme-x { background: none; border: 0; color: var(--dim); font-size: 0.9rem; cursor: pointer; padding: 4px 7px; border-radius: 6px; }
 .theme-x:hover { color: var(--ink); background: rgba(127,127,127,0.14); }
+
+/* The live preview: a mini card themed by the hovered swatch. Scoped via
+   data-theme on .theme-sample (not <html>), so only this card re-themes. */
+.theme-sample {
+  background: var(--void); border: 1px solid var(--line); border-radius: 13px;
+  padding: 12px; margin-top: 13px;
+}
+.ts-card {
+  background: linear-gradient(160deg, var(--panel-top), var(--panel-bot));
+  border: 1px solid var(--line); border-radius: 11px; padding: 12px 13px;
+}
+.ts-q { color: var(--ink); font-weight: 600; font-size: 0.84rem; margin-bottom: 9px; }
+.ts-a { color: var(--good); font-size: 0.82rem; margin-bottom: 9px; }
+.ts-note {
+  color: var(--note-ink); background: var(--note-bg);
+  border-left: 2px solid var(--note-border); border-radius: 6px;
+  padding: 5px 9px; font-size: 0.72rem;
+}
 
 .theme-group-label {
   font-size: 0.66rem; letter-spacing: 0.09em; text-transform: uppercase;

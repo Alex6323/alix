@@ -6,9 +6,9 @@
  * remembered in localStorage. The initial theme is applied by a tiny inline
  * <head> script (before first paint, so no flash); this file builds the picker
  * popover, opened from the page's "Theme…" trigger (`#theme-open`):
- *   hover a swatch  → preview it live
- *   click a swatch  → commit + remember
- *   close (Esc / outside / re-trigger) without clicking → revert to saved. */
+ *   hover a swatch  → preview it in the sample card inside the dialog
+ *   click a swatch  → commit it to the whole app + remember
+ *   close without clicking → the app theme is unchanged (preview was local). */
 (function () {
   "use strict";
   var KEY = "alix-theme";
@@ -40,8 +40,11 @@
   function saved() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }
   function setTheme(id) { document.documentElement.dataset.theme = id; }
   function commit(id) { setTheme(id); try { localStorage.setItem(KEY, id); } catch (e) {} }
+  // Preview re-themes only the sample card in the dialog (a scoped data-theme),
+  // never the whole app — the app theme changes on commit (a click) alone.
+  function previewSample(id) { if (sample) sample.dataset.theme = id; }
 
-  var panel = null, backdrop = null, isOpen = false;
+  var panel = null, backdrop = null, sample = null, isOpen = false;
 
   function build() {
     backdrop = document.createElement("div");
@@ -62,6 +65,18 @@
     head.appendChild(x);
     panel.appendChild(head);
 
+    // A mini card that shows the previewed theme without touching the app.
+    sample = document.createElement("div");
+    sample.className = "theme-sample";
+    sample.dataset.theme = saved() || DEFAULT;
+    sample.innerHTML =
+      '<div class="ts-card">' +
+        '<div class="ts-q">What guarantee does ownership give each value?</div>' +
+        '<div class="ts-a">Exactly one owner at a time.</div>' +
+        '<div class="ts-note">Lets Rust free memory with no garbage collector.</div>' +
+      '</div>';
+    panel.appendChild(sample);
+
     ["light", "dark", "kids"].forEach(function (mode) {
       var group = THEMES.filter(function (t) { return t.mode === mode; });
       if (!group.length) return;
@@ -75,7 +90,7 @@
         var cell = document.createElement("button");
         cell.type = "button";
         cell.className = "theme-cell";
-        cell.dataset.theme = t.id;
+        cell.dataset.tid = t.id;
         cell.setAttribute("aria-label", t.name + " theme");
         var prev = document.createElement("span");
         prev.className = "theme-prev";
@@ -91,16 +106,16 @@
         name.textContent = t.name;
         cell.appendChild(prev);
         cell.appendChild(name);
-        cell.addEventListener("mouseenter", function () { setTheme(t.id); }); // live preview
-        cell.addEventListener("focus", function () { setTheme(t.id); });
-        cell.addEventListener("click", function () { commit(t.id); mark(); });
+        cell.addEventListener("mouseenter", function () { previewSample(t.id); }); // preview in the sample card only
+        cell.addEventListener("focus", function () { previewSample(t.id); });
+        cell.addEventListener("click", function () { commit(t.id); previewSample(t.id); mark(); });
         grid.appendChild(cell);
       });
       panel.appendChild(grid);
     });
 
-    // Leaving the panel without committing reverts to the saved theme.
-    panel.addEventListener("mouseleave", function () { setTheme(saved() || DEFAULT); });
+    // Leaving the panel without committing resets the preview card to the saved theme.
+    panel.addEventListener("mouseleave", function () { previewSample(saved() || DEFAULT); });
 
     document.body.appendChild(backdrop);
     document.body.appendChild(panel);
@@ -112,7 +127,7 @@
     var active = saved() || DEFAULT;
     var cells = panel.querySelectorAll(".theme-cell");
     Array.prototype.forEach.call(cells, function (c) {
-      var on = c.dataset.theme === active;
+      var on = c.dataset.tid === active;
       c.classList.toggle("on", on);
       c.setAttribute("aria-pressed", on ? "true" : "false");
     });
@@ -121,6 +136,7 @@
   function openPanel() {
     if (!panel) build();
     mark();
+    previewSample(saved() || DEFAULT); // open showing the committed theme
     backdrop.classList.add("show");
     panel.classList.add("show");
     isOpen = true;
@@ -130,7 +146,7 @@
     backdrop.classList.remove("show");
     panel.classList.remove("show");
     isOpen = false;
-    setTheme(saved() || DEFAULT); // discard any uncommitted hover preview
+    previewSample(saved() || DEFAULT); // app theme is untouched by preview; just reset the sample
   }
   function toggle() { isOpen ? close() : openPanel(); }
 

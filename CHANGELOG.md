@@ -170,6 +170,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   going back is `Esc`/`Backspace` only.** The drawer needs left/right to move
   between regions, so those keys no longer double as "back out"; with no drawer
   open, `→` still enters a workspace / launches a deck and `←` is inert.
+- **The theme picker previews on a sample card, not the whole app.** Hovering a
+  theme used to recolor the entire page; now it re-themes only a small sample
+  card inside the picker dialog, and the app's theme changes solely when you
+  click one. Theme variables are scoped (any `[data-theme]` element, not just
+  `:root`) so the preview can't leak past the dialog.
 - Browse now shows the same display augmentations as review — the `format`
   reshape and `notes` trivia — so the two views render a card the same way
   instead of browse falling back to the raw deck.
