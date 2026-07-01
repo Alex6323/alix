@@ -301,7 +301,16 @@
   .deckrow .glyph { flex: none; line-height: 1; }
   /* dependency-tree branch lines (├─ └─ │) — muted, monospace; the trailing
      space separates them from the title, so cancel the row gap. */
-  .deckrow .tree { flex: none; font-family: var(--mono); font-size: 0.92rem; line-height: 1; color: var(--dim); white-space: pre; margin-right: -6px; }
+  .deckrow .tree { flex: none; display: flex; align-self: stretch; margin-right: -3px; }
+  .deckrow .tree .guide { position: relative; width: 18px; align-self: stretch; }
+  /* Verticals extend past the row's padding + margin (~15px each way) so a parent's
+     line runs continuously through all its children instead of breaking up per row. */
+  .deckrow .tree .guide.line::before, .deckrow .tree .guide.tee::before,
+  .deckrow .tree .guide.ell::before { content: ""; position: absolute; left: 50%; top: -12px; border-left: 1px dotted var(--line); }
+  .deckrow .tree .guide.line::before, .deckrow .tree .guide.tee::before { bottom: -12px; }
+  .deckrow .tree .guide.ell::before { height: calc(50% + 12px); }  /* last child: stop at the middle */
+  /* Elbow: a horizontal from the vertical out to the label, at the row's middle. */
+  .deckrow .tree .guide.tee::after, .deckrow .tree .guide.ell::after { content: ""; position: absolute; left: 50%; right: -6px; top: 50%; border-top: 1px dotted var(--line); }
   .lists.filtering .deckrow .tree { display: none; }
   .deckrow .name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* a workspace row stacks its title over a dim description line */
@@ -707,6 +716,19 @@ function updateBusy() {
 function replayLogo() {
   var logo = document.querySelector(".brand alix-logo");
   if (logo && logo.replay) logo.replay();
+}
+// Render the dependency-tree prefix as CSS-drawn guides instead of box-drawing
+// glyphs. The prefix is 3-char groups ("│  "/"   " ancestors, "├─ "/"└─ " branch);
+// each group becomes a fixed-width cell whose CSS vertical extends past the row gap,
+// so adjacent rows' verticals connect into continuous lines (glyphs can't span it).
+function treeGuides(prefix) {
+  const box = el("span", "tree");
+  for (let i = 0; i + 3 <= prefix.length; i += 3) {
+    const c = prefix[i];
+    const cls = c === "│" ? "line" : c === "├" ? "tee" : c === "└" ? "ell" : "empty";
+    box.appendChild(el("span", "guide " + cls));
+  }
+  return box;
 }
 function startAskPoll() {
   stopAskPoll();
@@ -1235,7 +1257,7 @@ async function renderSelect() {
     // like the TUI; it provides the indentation, and is hidden while filtering
     // (a filtered subset is no longer a tree). An exam-locked deck has no row
     // glyph — the footer names the lock for the focused row.
-    if (it.tree) row.appendChild(el("span", "tree", it.tree));
+    if (it.tree) row.appendChild(treeGuides(it.tree));
     row.appendChild(el("span", "name", it.label || it.name));
     if (showKind && it.is_trace) row.appendChild(el("span", "kind", "trace"));
     if (it.path) row.appendChild(el("span", "loc", it.path));

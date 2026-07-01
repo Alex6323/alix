@@ -9,6 +9,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 ### Changed
+- **Web picker: cleaner dependency-tree lines.** The workspace drill-in's tree
+  connectors (`├─` / `└─` / `│`) are now drawn as subtle dotted CSS guides in the row
+  border colour — aligned under each parent's label and stopping at each row's border
+  rather than crossing the gaps between rows — instead of single-line box-drawing
+  glyphs that broke into disconnected segments on the tall rows.
 - **Multi-line review answers left-align by default.** An answer with more than one
   line (a list, or several sentences) now renders as a left-aligned block, centered
   as a whole, instead of each line being independently centered (which read as ragged
