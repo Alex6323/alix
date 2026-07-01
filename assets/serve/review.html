@@ -1770,9 +1770,10 @@ function renderBrowse() {
 
   const hasNote = c.note && c.note.length > 0;
   const a = el("div", "region a" + (hasNote ? " withnote" : ""));
-  const list = isReshapedList(c);
-  const sec = el("div", "reveal" + (list ? " list" : ""));
-  appendReveal(sec, c.back, list);
+  // Match the review path: any multi-line answer is a left-aligned block (centered
+  // as a whole); only a reshaped-list answer gets bullets.
+  const sec = el("div", "reveal" + (leftAlignAnswer(c) ? " list" : ""));
+  appendReveal(sec, c.back, isReshapedList(c));
   a.appendChild(sec);
   if (c.img_back) a.appendChild(cardImage(c.img_back));
   a.classList.add("has-body"); // browse always shows the full answer

@@ -49,6 +49,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   server) so review.html and walk.html no longer drift.
 
 ### Fixed
+- **Browse left-aligns multi-line answers like review.** The read-only browser
+  decided the left-aligned-block layout from the reshaped-list flag alone, so an
+  unaugmented multi-line answer rendered centered (ragged, each line on its own axis)
+  instead of as a left-aligned block. It now uses the same rule as review — any
+  multi-line answer is a left-aligned block centered as a whole; only reshaped lists
+  get bullets.
 - **Web: Backspace leaves the augment view.** The augment screen accepted only `Esc`
   to return to the picker, while browse and the picker also honour `Backspace` — so
   `Backspace` felt inconsistent across views. It now leaves the augment view too, while
