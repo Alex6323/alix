@@ -7,6 +7,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Web picker: a drawer indicator.** A quiet `▾` at the bottom-centre of a picker
+  row marks a deck that has a focus drawer (a cached topology), so you can see at a
+  glance which rows expand on focus instead of discovering it only after selecting.
+  The marker lights to the accent colour on the focused row.
 
 ### Changed
 - **Web picker: cleaner dependency-tree lines.** The workspace drill-in's tree

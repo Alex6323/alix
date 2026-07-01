@@ -289,7 +289,7 @@
   /* single-launch rows: click a deck to start it, a workspace/folder to open.
      A leading chevron (›) marks a drillable row; a glyph slot shows 🔒 / 🕒.
      Members nest by --depth in the unlock dependency tree (flattened on filter). */
-  .deckrow { display: flex; align-items: center; gap: 12px; padding: 12px 14px; padding-left: calc(14px + var(--depth, 0) * 18px); min-height: 48px; border: 1px solid var(--line); border-radius: 11px; cursor: pointer; transition: border-color 0.12s, background 0.12s; margin-bottom: 5px; flex: none; }
+  .deckrow { position: relative; display: flex; align-items: center; gap: 12px; padding: 12px 14px; padding-left: calc(14px + var(--depth, 0) * 18px); min-height: 48px; border: 1px solid var(--line); border-radius: 11px; cursor: pointer; transition: border-color 0.12s, background 0.12s; margin-bottom: 5px; flex: none; }
   .lists.filtering .deckrow { padding-left: 14px; }
   .deckrow:hover { border-color: var(--bolt); }
   .deckrow:focus { outline: none; border-color: var(--bolt); box-shadow: 0 0 0 2px rgba(125,249,232,0.35); }
@@ -299,6 +299,11 @@
   .deckrow img.icon { object-fit: contain; border-radius: 5px; }
   .deckrow:hover .open { color: var(--bolt); }
   .deckrow .glyph { flex: none; line-height: 1; }
+  /* marks a deck whose focus drawer will open below it — a quiet ▾ tucked at the
+     bottom-centre of the box (out of flow, so it never nudges the badge column),
+     pointing down at where the drawer drops open; accent-lit on the focused row. */
+  .deckrow .drawer-hint { position: absolute; left: 50%; bottom: 2px; transform: translateX(-50%); color: var(--dim); font-size: 0.72rem; line-height: 1; pointer-events: none; }
+  .deckrow:focus .drawer-hint { color: var(--bolt); }
   /* dependency-tree branch lines (├─ └─ │) — muted, monospace; the trailing
      space separates them from the title, so cancel the row gap. */
   .deckrow .tree { flex: none; display: flex; align-self: stretch; margin-right: -3px; }
@@ -1265,6 +1270,13 @@ async function renderSelect() {
     // 🕒 nothing due — at the line end with the status, so the left gutter stays
     // tree + title. (A finished deck shows its 🎉 in the badge instead.)
     if (gated && !it.reviewable && it.state !== "finished") row.appendChild(el("span", "glyph", "\u{1F552}"));
+    // A quiet ▾ marks a deck with a focus drawer, so you can see at a glance which
+    // rows expand on focus (rather than discovering it only after selecting).
+    if (it.has_topology) {
+      const hint = el("span", "drawer-hint", "▾");
+      hint.title = "opens a focus drawer";
+      row.appendChild(hint);
+    }
     // Click selects (focuses) the deck — opening the focus drawer when it has a
     // topology — rather than launching outright; Review / Enter then launches.
     row.addEventListener("click", () => row.focus());

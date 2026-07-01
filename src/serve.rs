@@ -337,6 +337,9 @@ struct DeckItemDto {
     /// `true` when `icon` is an SVG (rendered as a theme-tinted mask); a raster
     /// icon renders as a plain `<img>`.
     icon_svg: bool,
+    /// `true` when the deck has a cached topology, so the picker's focus drawer
+    /// would open for it — the row shows a small drawer indicator.
+    has_topology: bool,
 }
 
 /// A workspace member deck in the drill-in list: a qualified selection `name`
@@ -359,6 +362,8 @@ struct MemberDto {
     /// The `├─`/`└─`/`│` tree-branch prefix drawn before the label, so the web
     /// shows the dependency tree like the TUI (not just indentation).
     tree: String,
+    /// `true` when the member deck has a cached topology (a focus drawer).
+    has_topology: bool,
 }
 
 /// The result of answering a choice card: which option was picked, which is
@@ -2772,11 +2777,13 @@ fn deck_item_dto(
     store: &Store,
     decks_dir: &Path,
     with_lock: bool,
+    augment: &AugmentCache,
 ) -> DeckItemDto {
     let recent = e.last_used_ms.is_some();
     match Deck::load(&e.path) {
         Ok(deck) => {
             let s = picker::deck_status(&deck, store, Some(decks_dir), with_lock);
+            let deck_ids: HashSet<u64> = deck.cards.iter().map(|c| c.id()).collect();
             DeckItemDto {
                 name: e.name.clone(),
                 label: e.label.clone(),
@@ -2795,6 +2802,7 @@ fn deck_item_dto(
                 path: e.path_hint.clone(),
                 icon: None,
                 icon_svg: false,
+                has_topology: augment.has_topology_for(&deck_ids),
             }
         }
         // A deck that fails to load stays launchable so the error surfaces.
@@ -2816,6 +2824,7 @@ fn deck_item_dto(
             path: e.path_hint.clone(),
             icon: None,
             icon_svg: false,
+            has_topology: false,
         },
     }
 }
@@ -2832,13 +2841,29 @@ fn workspace_members(e: &picker::DeckEntry, decks_dir: &Path, with_lock: bool) -
         crate::store::default_store_path().and_then(|p| Store::open(p).ok())
     };
     let paths: Vec<PathBuf> = e.members.iter().map(|m| m.path.clone()).collect();
-    let statuses: Vec<Option<picker::DeckStatus>> = paths
+    // The workspace's own sidecar tells each member whether it has a focus
+    // drawer (topology); opened once, alongside the status pass.
+    let augment = store
+        .as_ref()
+        .map(|s| AugmentCache::open(augment::augment_path_for(s.path())));
+    // Load each member deck once, deriving both its status and whether it has a
+    // topology from the same parse.
+    let loaded: Vec<(Option<picker::DeckStatus>, bool)> = paths
         .iter()
         .map(|p| {
-            let st = store.as_ref()?;
-            Deck::load(p)
-                .ok()
-                .map(|d| picker::deck_status(&d, st, Some(decks_dir), with_lock))
+            let deck = Deck::load(p).ok();
+            let status = match (store.as_ref(), deck.as_ref()) {
+                (Some(st), Some(d)) => Some(picker::deck_status(d, st, Some(decks_dir), with_lock)),
+                _ => None,
+            };
+            let has_topology = match (augment.as_ref(), deck.as_ref()) {
+                (Some(a), Some(d)) => {
+                    let ids: HashSet<u64> = d.cards.iter().map(|c| c.id()).collect();
+                    a.has_topology_for(&ids)
+                }
+                _ => false,
+            };
+            (status, has_topology)
         })
         .collect();
     // Order siblings startable-first (blocked = locked, or — when gating —
@@ -2849,7 +2874,8 @@ fn workspace_members(e: &picker::DeckEntry, decks_dir: &Path, with_lock: bool) -
         .iter()
         .enumerate()
         .map(|(i, m)| {
-            let blocked = statuses[i]
+            let blocked = loaded[i]
+                .0
                 .as_ref()
                 .is_some_and(|s| s.locked || (with_lock && !s.reviewable));
             (blocked, m.label.clone())
@@ -2861,7 +2887,8 @@ fn workspace_members(e: &picker::DeckEntry, decks_dir: &Path, with_lock: bool) -
             let m = &e.members[i];
             // Each tree branch segment is three columns wide (see picker).
             let depth = prefix.chars().count() / 3;
-            match &statuses[i] {
+            let has_topology = loaded[i].1;
+            match &loaded[i].0 {
                 Some(s) => MemberDto {
                     name: m.name.clone(),
                     label: m.label.clone(),
@@ -2875,6 +2902,7 @@ fn workspace_members(e: &picker::DeckEntry, decks_dir: &Path, with_lock: bool) -
                     has_exam: s.has_exam,
                     depth,
                     tree: prefix.clone(),
+                    has_topology,
                 },
                 None => MemberDto {
                     name: m.name.clone(),
@@ -2889,6 +2917,7 @@ fn workspace_members(e: &picker::DeckEntry, decks_dir: &Path, with_lock: bool) -
                     has_exam: false,
                     depth,
                     tree: prefix.clone(),
+                    has_topology,
                 },
             }
         })
@@ -2926,6 +2955,9 @@ fn deck_catalog(
     let mut workspaces = Vec::new();
     let mut recent_decks = Vec::new();
     let mut folders = Vec::new();
+    // Opened once for the whole catalog: the global store's sidecar tells each
+    // loose deck whether it has a focus drawer (topology).
+    let augment = AugmentCache::open(augment::augment_path_for(store.path()));
     for e in picker::catalog(decks_dir, recent) {
         // A workspace/folder row: its members open on click; it has no state of
         // its own. A folder with an `alix.toml` is a workspace (shown with its
@@ -2960,6 +2992,7 @@ fn deck_catalog(
                 label: e.label,
                 icon,
                 icon_svg,
+                has_topology: false,
             };
             if is_ws {
                 workspaces.push(dto);
@@ -2973,7 +3006,7 @@ fn deck_catalog(
         if e.path.parent().is_some_and(crate::workspace::is_workspace) {
             continue;
         }
-        recent_decks.push(deck_item_dto(&e, store, decks_dir, with_lock));
+        recent_decks.push(deck_item_dto(&e, store, decks_dir, with_lock, &augment));
     }
     DeckListDto {
         workspaces,

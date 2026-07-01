@@ -416,6 +416,14 @@ impl AugmentCache {
             .collect()
     }
 
+    /// Whether any cached topology covers the deck whose cards are `deck_ids` —
+    /// i.e. the picker's focus drawer would open for it. Cheaper than
+    /// [`topologies_for`](Self::topologies_for) when only presence matters (no
+    /// allocation).
+    pub fn has_topology_for(&self, deck_ids: &HashSet<u64>) -> bool {
+        self.topologies.iter().any(|t| t.covers(deck_ids))
+    }
+
     /// The cached topology with the given [`name`](Topology::name), if any — how
     /// the scheduler selects which one to walk.
     pub fn topology(&self, name: &str) -> Option<&Topology> {
@@ -1905,6 +1913,19 @@ mod tests {
         // A deck sharing the store but with none of these cards sees no topology.
         let other: HashSet<u64> = [99].into_iter().collect();
         assert!(cache.topologies_for(&other).is_empty());
+    }
+
+    #[test]
+    fn has_topology_for_reports_presence_without_cross_deck_leak() {
+        let mut cache = AugmentCache::open(std::path::Path::new("unused.json"));
+        cache.add_topology(topology("architecture", vec![1, 2, 3]));
+
+        let mine: HashSet<u64> = [1, 2, 3].into_iter().collect();
+        assert!(cache.has_topology_for(&mine));
+
+        // A deck sharing the store but with none of these cards has no drawer.
+        let other: HashSet<u64> = [99].into_iter().collect();
+        assert!(!cache.has_topology_for(&other));
     }
 
     #[test]
