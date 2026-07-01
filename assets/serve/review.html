@@ -1505,16 +1505,22 @@ async function renderSelect() {
       syncDrawer(row);
     });
 
-    // A click on empty picker space (not a row, chip, input, or the drawer) must
-    // not drop keyboard focus to <body>, where the row-nav keys can't reach.
-    // Keep focus on the current (or first) row so the keyboard stays live.
-    wrap.addEventListener("mousedown", (e) => {
+    // A click on empty picker space — anywhere in the stage, not just inside the
+    // list, and not on a row/chip/input/drawer — must not drop keyboard focus to
+    // <body>, where the row-nav keys can't reach. Keep focus on the current (or
+    // first) row. Bound to the whole stage (the list is centered inside it, so the
+    // margins around it count too), de-duped across renders, and inert once the
+    // picker is replaced by another view.
+    if (stage._refocus) stage.removeEventListener("mousedown", stage._refocus);
+    stage._refocus = (e) => {
+      if (!stage.contains(wrap)) return; // picker no longer showing
       if (e.target.closest(".deckrow, button, input, .drawer")) return;
       e.preventDefault(); // don't blur the row we're keeping focus on
       const v = visibleRows();
       const row = (focusedEl && v.includes(focusedEl)) ? focusedEl : v[0];
       if (row) row.focus();
-    });
+    };
+    stage.addEventListener("mousedown", stage._refocus);
 
     // No filter → show each row's default set (Recent hides finished/locked and
     // non-recent decks); with a filter → search every row by label. Empty

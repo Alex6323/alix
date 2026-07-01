@@ -18,6 +18,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   server) so review.html and walk.html no longer drift.
 
 ### Fixed
+- **Web picker: clicking empty space keeps keyboard focus.** A click anywhere in the
+  picker area that isn't a row or control — including the margins around the centered
+  list, not just inside it — no longer drops focus to `<body>` (where the row-nav keys
+  go dead); it re-homes to the current (or first) row so arrow-key navigation stays live.
 - **`alix explore --build` freezes cited excerpts more reliably.** When a generated
   `% at:` locator dropped (or added) a leading subdirectory — e.g. `chapter.md`
   when the file is at `src/chapter.md` — freezing couldn't find it and skipped it
