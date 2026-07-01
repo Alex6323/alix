@@ -1139,6 +1139,8 @@ function renderAugment() {
   const gi = el("input", "aug-guide-input");
   gi.type = "text";
   gi.placeholder = "Guidance for generation (optional) — e.g. use common misconceptions";
+  // Backspace edits the guidance, it doesn't leave the view (like the picker filter).
+  gi.addEventListener("keydown", (e) => { if (e.key === "Backspace") e.stopPropagation(); });
   foot.appendChild(gi);
   foot.appendChild(el("div", "aug-cost",
     "Generating runs Claude and costs tokens. It fills only the cards a target is missing."));
@@ -2260,10 +2262,10 @@ document.addEventListener("keydown", (e) => {
     if (e.key === "G" || e.key === "End") { e.preventDefault(); browsing.i = browsing.cards.length - 1; render(); return; }
     return;
   }
-  // The augment overlay: Esc closes it; other keys (typing in the guidance box)
-  // pass through untouched.
+  // The augment overlay: Esc/Backspace leaves it (like browse and the picker);
+  // the guidance box swallows its own Backspace, so typing there is untouched.
   if (augmentData) {
-    if (e.key === "Escape") { e.preventDefault(); closeAugment(); }
+    if (e.key === "Escape" || e.key === "Backspace") { e.preventDefault(); closeAugment(); }
     return;
   }
   if (state.phase === "select") {

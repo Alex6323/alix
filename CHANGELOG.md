@@ -32,6 +32,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   server) so review.html and walk.html no longer drift.
 
 ### Fixed
+- **Web: Backspace leaves the augment view.** The augment screen accepted only `Esc`
+  to return to the picker, while browse and the picker also honour `Backspace` — so
+  `Backspace` felt inconsistent across views. It now leaves the augment view too, while
+  the guidance box still edits its own text with `Backspace`.
 - **Web picker: the header buttons are legible on light themes.** The ☰ menu and the
   ← / ⟳ nav buttons used the muted `--dim` colour, too low-contrast on some light
   themes (e.g. Solarized Light); they now use the main text colour, so they read on
