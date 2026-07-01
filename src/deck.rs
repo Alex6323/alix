@@ -9,7 +9,7 @@ use clap::ValueEnum;
 use thiserror::Error;
 
 use crate::{
-    answer::Mode,
+    answer::{Input, Mode},
     card::{Card, Direction, Frontend},
     config::Strictness,
     parser::{self, ParseError},
@@ -26,6 +26,8 @@ use crate::{
 pub struct DeckSettings {
     /// Default answer mode for this deck (`% mode: ...`).
     pub mode: Option<Mode>,
+    /// Default input method for this deck (`% input: ...`).
+    pub input: Option<Input>,
     /// Default scheduler for this deck (`% scheduler: ...`).
     pub scheduler: Option<SchedulerKind>,
     /// Default card order for this deck (`% order: ...`).
@@ -60,6 +62,7 @@ impl DeckSettings {
         for (key, value) in directives {
             match key.as_str() {
                 "mode" => settings.mode = Mode::from_str(value, true).ok(),
+                "input" => settings.input = Input::from_str(value, true).ok(),
                 "scheduler" => settings.scheduler = SchedulerKind::from_str(value, true).ok(),
                 "order" => settings.order = Order::from_str(value, true).ok(),
                 "direction" => settings.direction = Direction::from_str(value, true).ok(),
@@ -90,6 +93,7 @@ impl DeckSettings {
     /// precedence deck > workspace.
     fn fill_from(&mut self, defaults: &DeckSettings) {
         self.mode = self.mode.or(defaults.mode);
+        self.input = self.input.or(defaults.input);
         self.scheduler = self.scheduler.or(defaults.scheduler);
         self.order = self.order.or(defaults.order);
         self.direction = self.direction.or(defaults.direction);
@@ -206,6 +210,7 @@ impl Deck {
         // card carries its effective declared mode (card override, else deck).
         for card in &mut cards {
             card.mode = card.mode.or(settings.mode);
+            card.input = card.input.or(settings.input);
         }
         // Fold the declared frontend (card override, else deck) and resolve each
         // card's image filenames to absolute paths against the deck's `img-dir`
@@ -1387,6 +1392,17 @@ mod tests {
         let deck = Deck::load(&path).unwrap();
         assert_eq!(Some(Mode::Choice), deck.cards[0].mode); // card override wins
         assert_eq!(Some(Mode::Flip), deck.cards[1].mode); // inherits the deck's
+    }
+
+    #[test]
+    fn card_input_is_card_override_else_deck_input() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.txt");
+        std::fs::write(&path, "% input: draw\n# a\n% input: type\n\tx\n# b\n\ty\n").unwrap();
+
+        let deck = Deck::load(&path).unwrap();
+        assert_eq!(Some(Input::Type), deck.cards[0].input); // card override wins
+        assert_eq!(Some(Input::Draw), deck.cards[1].input); // inherits the deck's
     }
 
     #[test]

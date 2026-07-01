@@ -199,6 +199,7 @@ pub fn expand(
             line,
             hash_lines: Some(hash_lines),
             mode: None,
+            input: None,
             direction: None,
             image: None,
             image_back: None,

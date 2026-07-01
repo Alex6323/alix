@@ -27,7 +27,7 @@ use clap::ValueEnum;
 use thiserror::Error;
 
 use crate::{
-    answer::Mode,
+    answer::{Input, Mode},
     card::{Card, Direction, Frontend},
     cloze,
 };
@@ -96,6 +96,8 @@ struct PartialCard {
     cloze: bool,
     /// Per-card `% mode:` override, if the card declares one.
     mode: Option<Mode>,
+    /// Per-card `% input:` override, if the card declares one.
+    input: Option<Input>,
     /// Per-card `% direction:`, if the card declares one.
     direction: Option<Direction>,
     /// Per-card `% img:` (question side), raw value as written.
@@ -130,6 +132,7 @@ impl PartialCard {
                 self.line,
             )? {
                 card.mode = self.mode;
+                card.input = self.input;
                 cards.push(card);
             }
         } else {
@@ -141,6 +144,7 @@ impl PartialCard {
                 self.line,
             );
             card.mode = self.mode;
+            card.input = self.input;
             card.direction = self.direction;
             card.image = self.image.map(PathBuf::from);
             card.image_back = self.image_back.map(PathBuf::from);
@@ -307,6 +311,7 @@ pub fn parse_str(subject: &str, text: &str) -> Result<Vec<Card>, ParseError> {
                     line: lineno,
                     cloze,
                     mode: None,
+                    input: None,
                     direction: None,
                     image: None,
                     image_back: None,
@@ -355,6 +360,11 @@ pub fn parse_str(subject: &str, text: &str) -> Result<Vec<Card>, ParseError> {
                         "mode" => {
                             if let Ok(m) = Mode::from_str(&value, true) {
                                 partial.mode = Some(m);
+                            }
+                        }
+                        "input" => {
+                            if let Ok(i) = Input::from_str(&value, true) {
+                                partial.input = Some(i);
                             }
                         }
                         "direction" => {
@@ -613,6 +623,13 @@ mod tests {
         let cards = parse_str("s", text).unwrap();
         assert_eq!(Some(Mode::Choice), cards[0].mode);
         assert_eq!(None, cards[1].mode); // no per-card directive
+    }
+
+    #[test]
+    fn per_card_input_directive_is_parsed() {
+        let cards = parse_str("d.txt", "# a\n% input: draw\n\tx\n# b\n\ty\n").unwrap();
+        assert_eq!(Some(Input::Draw), cards[0].input);
+        assert_eq!(None, cards[1].input);
     }
 
     #[test]

@@ -4,7 +4,7 @@ use std::{hash::Hasher, path::PathBuf, sync::Arc};
 
 use twox_hash::XxHash64;
 
-use crate::answer::Mode;
+use crate::answer::{Input, Mode};
 
 /// Which way a card is reviewed. Set per card (or per deck) with
 /// `% direction:`; `both` generates a forward and a reversed card.
@@ -61,6 +61,10 @@ pub struct Card {
     /// `% mode:`). `None` falls back to the CLI flag / built-in default. Not
     /// part of the identity hash — mode is a review property, not content.
     pub mode: Option<Mode>,
+    /// Per-card input method (`% input:` on the card, else the deck's). `None`
+    /// falls back to `Input::Type`. Not part of the identity hash — how you
+    /// answer is a review property, not content.
+    pub input: Option<Input>,
     /// Declared review direction (`% direction:`), consumed when the deck is
     /// loaded to expand `both`/`reverse` into cards. `None` means forward. Not
     /// part of the identity hash.
@@ -120,6 +124,7 @@ impl Card {
             line,
             hash_lines: None,
             mode: None,
+            input: None,
             direction: None,
             image: None,
             image_back: None,
@@ -164,6 +169,7 @@ impl Card {
             self.line,
         );
         card.mode = self.mode;
+        card.input = self.input;
         card.frontend = self.frontend;
         // Swap the image sides: a question-side image becomes the answer's, and
         // vice versa, so a `direction: both` visual card reverses sensibly.
@@ -390,5 +396,14 @@ mod tests {
         c.display_back = Some(vec!["Protocol: Chain".into(), "Version".into()]);
         assert_eq!(c.back_for_display(), ["Protocol: Chain", "Version"]);
         assert_eq!(c.id(), before); // display_back never enters the hash
+    }
+
+    #[test]
+    fn input_does_not_affect_card_identity() {
+        let mut a = card("d.txt", "front", &["the answer"], None);
+        let mut b = card("d.txt", "front", &["the answer"], None);
+        a.input = Some(Input::Draw);
+        b.input = None;
+        assert_eq!(a.id(), b.id()); // input is a review property, not content
     }
 }
