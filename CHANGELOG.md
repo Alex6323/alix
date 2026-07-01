@@ -18,6 +18,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   server) so review.html and walk.html no longer drift.
 
 ### Fixed
+- **Web picker: the ☰ menu button is legible on light themes.** It used the muted
+  `--dim` colour, which is too low-contrast on some light themes (e.g. Solarized
+  Light); it now uses the main text colour, so it reads on every theme.
 - **Web picker: clicking empty space keeps keyboard focus.** A click anywhere in the
   picker area that isn't a row or control — including the margins around the centered
   list, not just inside it — no longer drops focus to `<body>` (where the row-nav keys
