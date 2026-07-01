@@ -9,6 +9,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 ### Changed
+- **Multi-line review answers left-align by default.** An answer with more than one
+  line (a list, or several sentences) now renders as a left-aligned block, centered
+  as a whole, instead of each line being independently centered (which read as ragged
+  — especially for lists). Single-line answers stay centered, and reshaped-list
+  bullets are unchanged.
 - **The web UI header shows an animated `alix` wordmark.** The lightning-bolt mark in
   the review/picker and trace-walk headers is now a self-contained `<alix-logo>` web
   component — a flat orange "mitosis" wordmark that plays a one-time reveal on load

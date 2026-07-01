@@ -208,7 +208,7 @@
   .divider { flex: none; height: 1px; width: 70%; margin: 0 auto; background: linear-gradient(90deg, transparent, var(--line) 18%, var(--line) 82%, transparent); }
 
   .reveal { animation: revealIn 0.26s ease both; }
-  /* A reshaped list reveals as a left-aligned block, centered as a whole. */
+  /* A reshaped list — or any multi-line answer — reveals as a left-aligned block, centered as a whole. */
   .reveal.list { text-align: left; width: max-content; max-width: 100%; margin-inline: auto; }
   /* A fenced code snippet in a reshaped answer: monospace, indentation kept. */
   .code-block { text-align: left; font: 0.86rem/1.5 var(--mono); color: var(--ink); background: rgba(0,0,0,0.28); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; margin: 5px 0; overflow-x: auto; white-space: pre; }
@@ -2034,10 +2034,13 @@ function appendReveal(sec, lines, isList) {
 // Fill the answer region for reveal modes (flip / line / choice fallback).
 // The acquire view: a never-seen card shown answer-first, so you read it before
 // it's ever quizzed. One key ("Seen") records it; its first quiz is a later session.
+// Multi-line answers (a list, or several sentences) read better left-aligned as a
+// block centered as a whole — like a reshaped list, but without the added bullets.
+function leftAlignAnswer(c) { return isReshapedList(c) || (c.back && c.back.length > 1); }
 function fillAcquire(a) {
   if (!a) return;
   const c = state.card;
-  const sec = el("div", "reveal" + (isReshapedList(c) ? " list" : ""));
+  const sec = el("div", "reveal" + (leftAlignAnswer(c) ? " list" : ""));
   appendReveal(sec, c.back, isReshapedList(c));
   a.appendChild(sec);
   if (c.img_back) a.appendChild(cardImage(c.img_back));
@@ -2051,7 +2054,7 @@ function fillAnswer(a) {
 
   const c = state.card;
   const shown = state.mode === "line" ? Math.min(revealed, c.back.length) : c.back.length;
-  const sec = el("div", "reveal" + (isReshapedList(c) ? " list" : ""));
+  const sec = el("div", "reveal" + (leftAlignAnswer(c) ? " list" : ""));
   appendReveal(sec, c.back.slice(0, shown), isReshapedList(c));
   if (state.mode === "line" && shown < c.back.length) sec.appendChild(el("div", "answer pending", "···"));
   a.appendChild(sec);
