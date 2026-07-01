@@ -7,6 +7,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Web picker: a workspace's goal shows in its drill-in.** Opening a workspace now
+  shows its goal (the one-line description) under the title eyebrow, the same goal the
+  top-level list shows on the workspace row — so the context stays visible while you
+  pick a member deck.
 - **Web picker: a drawer indicator.** A quiet `▾` at the bottom-centre of a picker
   row marks a deck that has a focus drawer (a cached topology), so you can see at a
   glance which rows expand on focus instead of discovering it only after selecting.

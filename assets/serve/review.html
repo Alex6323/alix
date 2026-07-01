@@ -275,6 +275,8 @@
   /* ── deck-selection screen ────────────────────────────────────────── */
   .select { width: var(--card-w); text-align: left; animation: deal 0.3s both; align-self: stretch; display: flex; flex-direction: column; min-height: 0; }
   .select .lede { font-family: var(--mono); color: var(--bolt); font-size: 0.7rem; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 16px; }
+  /* a workspace drill-in's goal, shown under the eyebrow (pulled up close to it). */
+  .select .lede-desc { color: var(--dim); font-size: 0.85rem; line-height: 1.4; max-width: 64ch; margin: -10px 0 16px; }
   .select .msg { color: var(--dim); }
   .deck-filter { width: 100%; box-sizing: border-box; margin-bottom: 12px; padding: 11px 14px; background: rgba(0,0,0,0.25); border: 1px solid var(--line); border-radius: 11px; color: var(--ink); font: inherit; font-size: 0.95rem; }
   .deck-filter::placeholder { color: var(--dim); }
@@ -1303,6 +1305,8 @@ async function renderSelect() {
 
     const wrap = el("div", "select");
     if (opts.lede) wrap.appendChild(el("div", "lede", opts.lede));
+    // A workspace drill-in shows its goal (description) under the eyebrow.
+    if (opts.ledeDesc) wrap.appendChild(el("div", "lede-desc", opts.ledeDesc));
     let filter;
     if (opts.headerFilter) {
       // The picker's search and Mastered jump live in the header; no in-content box.
@@ -1653,6 +1657,7 @@ async function renderSelect() {
       headerFilter: true,
       filterPlaceholder: "Search  ·  /",
       lede: grp.label || grp.name,
+      ledeDesc: grp.description || null,
       sections: [{ title: null, rows: grp.members.map(m => deckRow(m, true, grp.name, true, true)) }],
       back, allowMastered: false,
     });
