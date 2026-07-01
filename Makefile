@@ -6,7 +6,7 @@
 # toolchain — `+nightly` is handled by rustup before cargo sees it — which is
 # why these live in a Makefile rather than .cargo/config.toml.)
 
-.PHONY: build test lint lint-js fmt fmt-check check coverage eval run serve book site install clean heartbeat
+.PHONY: build test lint lint-js fmt fmt-check check ci coverage eval run serve book site install clean heartbeat
 
 # Compile the workspace.
 build:
@@ -43,6 +43,18 @@ fmt-check:
 # The gates that must stay green before work is done. (fmt is intentionally
 # separate — formatting uses nightly and is run deliberately, not as a gate.)
 check: lint test
+
+# Full CI parity, run the way GitHub does (see .github/workflows/ci.yml): the
+# nightly fmt check, then clippy + tests under `-Dwarnings`, then coverage with
+# the warnings gate cleared (coverage instruments its own flags). A green
+# `make ci` predicts a green CI — so this is the pre-push / pre-release gate.
+# It's heavier than `make check` (adds nightly fmt + a full coverage run, and the
+# -Dwarnings/coverage flag split forces a recompile between steps), which is why
+# `make check` stays the fast, lenient inner-loop gate rather than carrying these.
+ci:
+	$(MAKE) fmt-check
+	RUSTFLAGS="-Dwarnings" $(MAKE) check
+	RUSTFLAGS= $(MAKE) coverage
 
 # Test coverage (needs cargo-llvm-cov: `cargo install cargo-llvm-cov`). Prints a
 # per-file summary and writes a browsable report to target/llvm-cov/html/. A

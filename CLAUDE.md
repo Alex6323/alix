@@ -95,7 +95,8 @@ noisy diff the way you'd treat a failing test: not done yet.
 | `make lint` | `cargo clippy --all-targets`. |
 | `make fmt` | Format — **nightly** rustfmt (see below). |
 | `make fmt-check` | Verify formatting without writing. |
-| `make check` | `lint` + `test` — run before considering work done. |
+| `make check` | `lint` + `test` — the fast, lenient inner-loop gate; run before considering work done. |
+| `make ci` | **Full CI parity** — `fmt-check` + `check` under `-Dwarnings` + `coverage`, exactly as `.github/workflows/ci.yml` runs them. A green `make ci` predicts a green CI; run it before a push/release. |
 | `make coverage` | Coverage report via `cargo-llvm-cov` (HTML). |
 | `make eval` | Real-Claude grader-calibration evals (`tests/eval.rs`, costed) — before touching `grade_*`. |
 | `make run ARGS="exam mydeck.txt"` | Run the binary with args. |
