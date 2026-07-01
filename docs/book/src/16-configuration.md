@@ -7,11 +7,13 @@ inspect the active key bindings with `alix config`.
 
 ## Key bindings
 
-Every action takes a list of keys (the first is shown in the footer). To grade
-self-graded cards with `j`/`k`/`l`:
+All keybindings live under `[keys]`, one subtable per surface: `[keys.review]`
+(the review screen), `[keys.picker]` (the deck picker), and `[keys.browse]`
+(`alix browse`). Every action takes a list of keys (the first is shown in the
+footer). To grade self-graded cards with `j`/`k`/`l`:
 
 ```toml
-[keys]
+[keys.review]
 failed = ["j"]
 partly = ["k"]
 passed = ["l"]
@@ -19,17 +21,18 @@ passed = ["l"]
 
 Keys are a single character (`"j"`), a special name (`"space"`, `"enter"`, `"tab"`,
 `"esc"`, `"backspace"`), or either with a `ctrl-` prefix (`"ctrl-s"`). The
-rebindable actions are `failed`, `partly`, `passed`, `reveal`, `hint`, `submit`, `skip`,
+rebindable `[keys.review]` actions are `failed`, `partly`, `passed`, `reveal`, `hint`, `submit`, `skip`,
 `remove` (default `ctrl-x`), `continue`, `restart` (default `r`), and `quit`. While
 you're typing an answer (typing/fuzzy mode), plain-character bindings are ignored so
 they can't shadow your input — use `ctrl-`/special keys for `hint`, `skip`, and
 `quit` there. Pass a different file with `--config <path>`.
 
-`alix browse` has its own `[browse]` bindings, and the web server reads its
-default port from `[serve]`:
+The picker's navigation is `[keys.picker]` (`up`, `down`, `open`, `back`,
+`filter`, `mastered`), `alix browse` has its own `[keys.browse]` bindings, and
+the web server reads its default port from `[serve]`:
 
 ```toml
-[browse]
+[keys.browse]
 next = ["l", "n", "space"]
 prev = ["h", "p"]
 remove = ["x"]

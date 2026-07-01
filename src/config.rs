@@ -151,11 +151,11 @@ impl Bindings {
     }
 }
 
-/// Rebindable navigation keys for the deck picker, configured in the `[picker]`
-/// section. Vim-style by default. The arrow keys, `Enter` (open) and `Esc`
-/// (back) always work regardless of these; jumping to the first/last row stays
-/// fixed at `g`/`G`/Home/End (letter bindings are case-insensitive, so `g` and
-/// `G` can't be told apart — same as the `[browse]` pager).
+/// Rebindable navigation keys for the deck picker, configured in the
+/// `[keys.picker]` section. Vim-style by default. The arrow keys, `Enter` (open)
+/// and `Esc` (back) always work regardless of these; jumping to the first/last
+/// row stays fixed at `g`/`G`/Home/End (letter bindings are case-insensitive, so
+/// `g` and `G` can't be told apart — same as the `[keys.browse]` pager).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PickerKeys {
     /// Move up / down the list.
@@ -186,7 +186,7 @@ impl Default for PickerKeys {
 }
 
 /// Key bindings for the read-only browser (`alix browse`), configured in the
-/// `[browse]` section. Jumping to the first/last card stays fixed at
+/// `[keys.browse]` section. Jumping to the first/last card stays fixed at
 /// `g`/`G`/Home/End — letter bindings are case-insensitive, so `g` and `G`
 /// cannot be told apart — and the arrow keys always work for next/previous.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -481,10 +481,6 @@ struct RawConfig {
     #[serde(default)]
     keys: RawKeys,
     #[serde(default)]
-    picker: RawPicker,
-    #[serde(default)]
-    browse: RawBrowse,
-    #[serde(default)]
     ask: RawAsk,
     #[serde(default)]
     generate: RawGenerate,
@@ -579,9 +575,22 @@ struct RawAsk {
     source_access: Option<bool>,
 }
 
+/// The `[keys]` table: one subtable per surface (`[keys.review]`,
+/// `[keys.picker]`, `[keys.browse]`), so every keybinding lives under `keys`.
 #[derive(Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 struct RawKeys {
+    #[serde(default)]
+    review: RawReview,
+    #[serde(default)]
+    picker: RawPicker,
+    #[serde(default)]
+    browse: RawBrowse,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct RawReview {
     failed: Option<Vec<String>>,
     partly: Option<Vec<String>>,
     passed: Option<Vec<String>>,
@@ -617,33 +626,38 @@ impl Config {
             Ok(())
         };
 
-        assign(&mut keys.failed, raw.keys.failed, "failed")?;
-        assign(&mut keys.partly, raw.keys.partly, "partly")?;
-        assign(&mut keys.passed, raw.keys.passed, "passed")?;
-        assign(&mut keys.reveal, raw.keys.reveal, "reveal")?;
-        assign(&mut keys.hint, raw.keys.hint, "hint")?;
-        assign(&mut keys.submit, raw.keys.submit, "submit")?;
-        assign(&mut keys.skip, raw.keys.skip, "skip")?;
-        assign(&mut keys.remove, raw.keys.remove, "remove")?;
-        assign(&mut keys.cont, raw.keys.r#continue, "continue")?;
-        assign(&mut keys.restart, raw.keys.restart, "restart")?;
-        assign(&mut keys.ask, raw.keys.ask, "ask")?;
-        assign(&mut keys.save_note, raw.keys.save_note, "save_note")?;
-        assign(&mut keys.quit, raw.keys.quit, "quit")?;
+        let review = raw.keys.review;
+        assign(&mut keys.failed, review.failed, "review.failed")?;
+        assign(&mut keys.partly, review.partly, "review.partly")?;
+        assign(&mut keys.passed, review.passed, "review.passed")?;
+        assign(&mut keys.reveal, review.reveal, "review.reveal")?;
+        assign(&mut keys.hint, review.hint, "review.hint")?;
+        assign(&mut keys.submit, review.submit, "review.submit")?;
+        assign(&mut keys.skip, review.skip, "review.skip")?;
+        assign(&mut keys.remove, review.remove, "review.remove")?;
+        assign(&mut keys.cont, review.r#continue, "review.continue")?;
+        assign(&mut keys.restart, review.restart, "review.restart")?;
+        assign(&mut keys.ask, review.ask, "review.ask")?;
+        assign(&mut keys.save_note, review.save_note, "review.save_note")?;
+        assign(&mut keys.quit, review.quit, "review.quit")?;
 
         let mut picker = PickerKeys::default();
-        assign(&mut picker.up, raw.picker.up, "picker.up")?;
-        assign(&mut picker.down, raw.picker.down, "picker.down")?;
-        assign(&mut picker.open, raw.picker.open, "picker.open")?;
-        assign(&mut picker.back, raw.picker.back, "picker.back")?;
-        assign(&mut picker.filter, raw.picker.filter, "picker.filter")?;
-        assign(&mut picker.mastered, raw.picker.mastered, "picker.mastered")?;
+        assign(&mut picker.up, raw.keys.picker.up, "picker.up")?;
+        assign(&mut picker.down, raw.keys.picker.down, "picker.down")?;
+        assign(&mut picker.open, raw.keys.picker.open, "picker.open")?;
+        assign(&mut picker.back, raw.keys.picker.back, "picker.back")?;
+        assign(&mut picker.filter, raw.keys.picker.filter, "picker.filter")?;
+        assign(
+            &mut picker.mastered,
+            raw.keys.picker.mastered,
+            "picker.mastered",
+        )?;
 
         let mut browse = BrowseBindings::default();
-        assign(&mut browse.next, raw.browse.next, "browse.next")?;
-        assign(&mut browse.prev, raw.browse.prev, "browse.prev")?;
-        assign(&mut browse.remove, raw.browse.remove, "browse.remove")?;
-        assign(&mut browse.quit, raw.browse.quit, "browse.quit")?;
+        assign(&mut browse.next, raw.keys.browse.next, "browse.next")?;
+        assign(&mut browse.prev, raw.keys.browse.prev, "browse.prev")?;
+        assign(&mut browse.remove, raw.keys.browse.remove, "browse.remove")?;
+        assign(&mut browse.quit, raw.keys.browse.quit, "browse.quit")?;
 
         let mut ask = AskConfig::default();
         if let Some(command) = raw.ask.command {
@@ -812,9 +826,9 @@ pub fn default_config_toml() -> &'static str {
 # Every option below is shown commented out at its default value, as a
 # reference. Uncomment a line and edit it to override that default; lines you
 # leave commented keep the built-in default, so improvements to the defaults
-# in newer versions still reach you. Keep the section headers ([keys], [picker],
-# [browse], [ask], [generate], [exam], [trace], [ai], [serve]) so an uncommented
-# line lands in the right section.
+# in newer versions still reach you. Keep the section headers ([keys.review],
+# [keys.picker], [keys.browse], [ask], [generate], [exam], [trace], [ai],
+# [serve]) so an uncommented line lands in the right section.
 #
 # Keys are written as a single character ("j"), a special key name
 # ("space", "enter", "tab", "esc", "backspace"), or either with a "ctrl-"
@@ -829,7 +843,7 @@ pub fn default_config_toml() -> &'static str {
 # decks_dir = "~/decks"
 
 # Review key bindings (flip / typing / fuzzy / choice modes).
-[keys]
+[keys.review]
 # failed = ["1", "f"]           # self-graded: grade as failed (reset)
 # partly = ["2", "p"]           # self-graded: grade as partly (demote one stage)
 # passed = ["3", "n"]           # self-graded: grade as passed (advance)
@@ -846,8 +860,8 @@ pub fn default_config_toml() -> &'static str {
 
 # Navigation keys for the deck picker (Vim-style by default). The arrow keys,
 # Enter (open) and Esc (back) always work regardless of these; jumping to the
-# first/last row is fixed at g / G / Home / End (like [browse]).
-[picker]
+# first/last row is fixed at g / G / Home / End (like [keys.browse]).
+[keys.picker]
 # up = ["k"]                    # move up
 # down = ["j"]                  # move down
 # open = ["l"]                  # open the focused row
@@ -858,7 +872,7 @@ pub fn default_config_toml() -> &'static str {
 # Key bindings for `alix browse` (the read-only reader). Jumping to the first
 # and last card is fixed to g / G / Home / End, and the arrow keys always
 # move next/previous; these three are configurable:
-[browse]
+[keys.browse]
 # next = ["l", "n", "space"]    # next card
 # prev = ["h", "p"]             # previous card
 # remove = ["x"]                # mark the card for removal from the deck file
@@ -1015,9 +1029,10 @@ mod tests {
 
     #[test]
     fn rebind_grades_to_jkl() {
-        let config =
-            Config::from_toml("[keys]\nfailed = [\"j\"]\npartly = [\"k\"]\npassed = [\"l\"]\n")
-                .unwrap();
+        let config = Config::from_toml(
+            "[keys.review]\nfailed = [\"j\"]\npartly = [\"k\"]\npassed = [\"l\"]\n",
+        )
+        .unwrap();
         assert_eq!(vec![parse_key("j").unwrap()], config.keys.failed);
         assert_eq!(vec![parse_key("k").unwrap()], config.keys.partly);
         assert_eq!(vec![parse_key("l").unwrap()], config.keys.passed);
@@ -1027,13 +1042,13 @@ mod tests {
 
     #[test]
     fn continue_is_a_valid_table_key() {
-        let config = Config::from_toml("[keys]\ncontinue = [\"ctrl-n\"]\n").unwrap();
+        let config = Config::from_toml("[keys.review]\ncontinue = [\"ctrl-n\"]\n").unwrap();
         assert_eq!(vec![parse_key("ctrl-n").unwrap()], config.keys.cont);
     }
 
     #[test]
     fn picker_keys_override_and_default() {
-        let config = Config::from_toml("[picker]\ndown = [\"n\"]\nopen = [\"o\"]\n").unwrap();
+        let config = Config::from_toml("[keys.picker]\ndown = [\"n\"]\nopen = [\"o\"]\n").unwrap();
         assert_eq!(vec![parse_key("n").unwrap()], config.picker.down);
         assert_eq!(vec![parse_key("o").unwrap()], config.picker.open);
         // Unmentioned picker keys keep their Vim defaults.
@@ -1043,7 +1058,7 @@ mod tests {
 
     #[test]
     fn unknown_action_is_rejected() {
-        assert!(Config::from_toml("[keys]\nfrobnicate = [\"x\"]\n").is_err());
+        assert!(Config::from_toml("[keys.review]\nfrobnicate = [\"x\"]\n").is_err());
     }
 
     #[test]
@@ -1052,8 +1067,17 @@ mod tests {
     }
 
     #[test]
+    fn pre_nesting_key_sections_are_rejected() {
+        // The old top-level [picker]/[browse] tables moved under [keys]; the old
+        // spelling now errors loudly (no compat shim, pre-1.0), pointing the user
+        // at the rename.
+        assert!(Config::from_toml("[picker]\ndown = [\"n\"]\n").is_err());
+        assert!(Config::from_toml("[browse]\nnext = [\"n\"]\n").is_err());
+    }
+
+    #[test]
     fn bad_key_in_binding_is_rejected() {
-        let err = Config::from_toml("[keys]\nfailed = [\"jj\"]\n").unwrap_err();
+        let err = Config::from_toml("[keys.review]\nfailed = [\"jj\"]\n").unwrap_err();
         assert!(format!("{err:#}").contains("failed"));
     }
 
@@ -1213,7 +1237,7 @@ mod tests {
         assert_eq!(parse_key("l").unwrap(), defaults.next[0]);
         assert_eq!(parse_key("h").unwrap(), defaults.prev[0]);
 
-        let config = Config::from_toml("[browse]\nnext = [\"j\"]\nprev = [\"k\"]\n").unwrap();
+        let config = Config::from_toml("[keys.browse]\nnext = [\"j\"]\nprev = [\"k\"]\n").unwrap();
         assert_eq!(vec![parse_key("j").unwrap()], config.browse.next);
         assert_eq!(vec![parse_key("k").unwrap()], config.browse.prev);
         // Unmentioned browse actions keep their defaults.
@@ -1222,6 +1246,6 @@ mod tests {
 
     #[test]
     fn unknown_browse_setting_is_rejected() {
-        assert!(Config::from_toml("[browse]\nfirst = [\"g\"]\n").is_err());
+        assert!(Config::from_toml("[keys.browse]\nfirst = [\"g\"]\n").is_err());
     }
 }

@@ -13,6 +13,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   The marker lights to the accent colour on the focused row.
 
 ### Changed
+- **Breaking — config keybindings are namespaced under `[keys]`.** Every key table
+  is now a `[keys.*]` subtable: `[keys]` → `[keys.review]`, `[picker]` →
+  `[keys.picker]`, and `[browse]` → `[keys.browse]`. This groups all bindings in one
+  place and disambiguates the shared `remove`/`quit` action names per surface. Update
+  your `~/.config/alix/config.toml` — the old top-level `[picker]` / `[browse]` and a
+  bare `[keys]` section now error (no compat shim, pre-1.0). `alix config --init`
+  writes the new layout.
 - **Web picker: cleaner dependency-tree lines.** The workspace drill-in's tree
   connectors (`├─` / `└─` / `│`) are now drawn as subtle dotted CSS guides in the row
   border colour — aligned under each parent's label and stopping at each row's border

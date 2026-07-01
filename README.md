@@ -117,12 +117,12 @@ are kept out of Recent (it's a quick launchpad) but stay reachable by filtering;
 an exam-locked deck that's still drillable stays in Recent. Decks live in the
 decks directory (`~/decks` by default,
 set `decks_dir` in the config). The focus is on the **list** by default, with
-Vim-style keys (rebindable in the config's `[picker]` section): `j`/`k` (or
+Vim-style keys (rebindable in the config's `[keys.picker]` section): `j`/`k` (or
 `↑`/`↓`) move, `l` (or `Enter`) opens the focused row, `h` (or `Esc`/`Backspace`)
 steps back, `m` opens the **Mastered** window (your completed decks, kept out of
 Recent), and `/` (or `Ctrl-F`) starts **filtering** by name (searching *every*
 loose deck, not just the recent ones); `Esc` leaves the filter. Jumping to the
-first/last row stays fixed at `g`/`G` (or Home/End), like the `[browse]` pager.
+first/last row stays fixed at `g`/`G` (or Home/End), like the `[keys.browse]` pager.
 A deck with nothing to launch right now is dimmed and `Enter` on it does nothing:
 🕒 nothing due (all on cooldown — `--cram` reviews it anyway), or a fully-drilled
 deck whose exam is locked. A 🔒 marks a deck whose
@@ -584,7 +584,7 @@ arrow keys, and `Space` also work), `g`/`G` (first/last, also Home/End), and
 `q` to quit. Pressing the remove key (`x` by default) marks the current card;
 on quit the marked cards are deleted from their deck files and their progress
 is pruned — the only thing browsing ever writes. The next/previous/remove/quit
-keys are configurable in the `[browse]` section of the config file (see below);
+keys are configurable in the `[keys.browse]` section of the config file (see below);
 first/last stay `g`/`G`. Run `alix browse` with no deck argument to choose
 decks from the same picker `alix` uses.
 
@@ -622,7 +622,7 @@ prerequisite that gates it. A 🔒 marks a deck whose **exam** is locked (a sour
 due. A `mastered 🎉` deck is tucked into the **Mastered window** (press `m`), and
 mastered/done decks stay out of Recent (a quick launchpad) but are reachable by
 filtering — the filter searches *every* loose deck. `browse` ignores locking, so any deck opens
-there. Keyboard nav follows your `[picker]` config (`j`/`k` or arrows move, `/`
+there. Keyboard nav follows your `[keys.picker]` config (`j`/`k` or arrows move, `/`
 or `Ctrl-F` filter, `m` the Mastered window). When you finish a session, "Choose
 other decks" (on the summary) or `Esc` returns here — and a session
 launched inside a workspace returns **into that workspace**. Naming decks on the
@@ -1180,8 +1180,12 @@ file with `alix config --init`, inspect the active bindings with
 `alix config`. Every action takes a list of keys; the first one is
 shown in the footer. For example, to grade self-graded cards with j/k/l:
 
+All keybindings live under `[keys]`, one subtable per surface — `[keys.review]`
+(the review screen), `[keys.picker]` (the deck picker), and `[keys.browse]`
+(`alix browse`):
+
 ```toml
-[keys]
+[keys.review]
 failed = ["j"]
 partly = ["k"]
 passed = ["l"]
@@ -1189,18 +1193,20 @@ passed = ["l"]
 
 Keys are written as a single character (`"j"`), a special key name
 (`"space"`, `"enter"`, `"tab"`, `"esc"`, `"backspace"`), or either with a
-`ctrl-` prefix (`"ctrl-s"`). Rebindable actions: `failed`, `partly`, `passed`,
-`reveal`, `hint`, `submit`, `skip`, `remove` (mark the card for deletion from
-its deck file, default `ctrl-x`), `continue`, `restart` (start a new session
-from the summary screen, default `r`), `quit`. While you are typing
+`ctrl-` prefix (`"ctrl-s"`). Rebindable `[keys.review]` actions: `failed`,
+`partly`, `passed`, `reveal`, `hint`, `submit`, `skip`, `remove` (mark the card
+for deletion from its deck file, default `ctrl-x`), `continue`, `restart` (start
+a new session from the summary screen, default `r`), `quit`. While you are typing
 an answer (typing and fuzzy mode), plain character bindings are ignored so
 they cannot shadow text input — use `ctrl-`/special keys for `hint`, `skip`
 and `quit`. A different config file can be passed with `--config <path>`.
 
-The browser (`alix browse`) has its own bindings in a `[browse]` section:
+The picker's Vim-style navigation is under `[keys.picker]` (`up`, `down`, `open`,
+`back`, `filter`, `mastered`), and the read-only browser (`alix browse`) has its
+own bindings under `[keys.browse]`:
 
 ```toml
-[browse]
+[keys.browse]
 next = ["l", "n", "space"]    # default vim-style l, plus n and space
 prev = ["h", "p"]
 remove = ["x"]                # mark the current card for removal
