@@ -32,7 +32,11 @@ jobs:
       matrix:
         include:
           - { target: aarch64-apple-darwin,     os: macos-latest }
-          - { target: x86_64-apple-darwin,      os: macos-13 }
+          # Build the Intel binary on the arm runner too (cross-compile): GitHub's
+          # Intel `macos-13` runners are being wound down and queue for hours, while
+          # `macos-latest` (arm64) is plentiful and builds x86_64 fine via the added
+          # target. Keeps both macOS assets reliable.
+          - { target: x86_64-apple-darwin,      os: macos-latest }
           - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest }
           - { target: x86_64-pc-windows-msvc,   os: windows-latest }
     steps:
