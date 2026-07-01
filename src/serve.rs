@@ -114,6 +114,23 @@ const REVIEW_HTML: &str = include_str!("../assets/serve/review.html");
 const WALK_HTML: &str = include_str!("../assets/serve/walk.html");
 const THEME_CSS: &str = include_str!("../assets/serve/theme.css");
 const THEME_JS: &str = include_str!("../assets/serve/theme.js");
+const ALIX_LOGO_JS: &str = include_str!("../assets/serve/alix-logo.js");
+const HEAD_HTML: &str = include_str!("../assets/serve/_head.html");
+const BRAND_HTML: &str = include_str!("../assets/serve/_brand.html");
+
+/// The served pages with their shared-chrome placeholders filled once, so the head
+/// boilerplate (`<!--%head%-->`) and brand mark (`<!--%brand%-->`) live in one
+/// place instead of being duplicated across review.html and walk.html.
+static REVIEW_PAGE: std::sync::LazyLock<String> =
+    std::sync::LazyLock::new(|| compose_page(REVIEW_HTML));
+static WALK_PAGE: std::sync::LazyLock<String> =
+    std::sync::LazyLock::new(|| compose_page(WALK_HTML));
+
+/// Fill the shared-chrome placeholders in a served page.
+fn compose_page(html: &str) -> String {
+    html.replace("<!--%head%-->", HEAD_HTML)
+        .replace("<!--%brand%-->", BRAND_HTML)
+}
 
 /// One display unit of a card's note, ready for JSON. Mirrors
 /// [`render::NoteUnit`]; the web page renders `sentence` as a paragraph and
@@ -1382,14 +1399,19 @@ pub fn run_review(
         let method = request.method().clone();
         let path = request_path(&request);
         match (&method, path.as_str()) {
-            (Method::Get, "/") => respond_html(request, REVIEW_HTML),
-            (Method::Get, "/walk") => respond_html(request, WALK_HTML),
+            (Method::Get, "/") => respond_html(request, &REVIEW_PAGE),
+            (Method::Get, "/walk") => respond_html(request, &WALK_PAGE),
             (Method::Get, "/theme.css") => {
                 respond_asset(request, THEME_CSS, "text/css; charset=utf-8")
             }
             (Method::Get, "/theme.js") => {
                 respond_asset(request, THEME_JS, "application/javascript; charset=utf-8")
             }
+            (Method::Get, "/alix-logo.js") => respond_asset(
+                request,
+                ALIX_LOGO_JS,
+                "application/javascript; charset=utf-8",
+            ),
             (Method::Get, "/api/keys") => respond_json(request, &keys),
             (Method::Get, "/api/version") => respond_json(
                 request,
@@ -2487,7 +2509,7 @@ pub fn run_walk(
         let method = request.method().clone();
         let path = request_path(&request);
         match (&method, path.as_str()) {
-            (Method::Get, "/") => respond_html(request, WALK_HTML),
+            (Method::Get, "/") => respond_html(request, &WALK_PAGE),
             (Method::Get, "/api/keys") => respond_json(request, &keys),
             // Poll: drain any finished background grade, return state.
             (Method::Get, "/api/walk") => {

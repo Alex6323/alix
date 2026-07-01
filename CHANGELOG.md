@@ -9,6 +9,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 ### Changed
+- **The web UI header shows an animated `alix` wordmark.** The lightning-bolt mark in
+  the review/picker and trace-walk headers is now a self-contained `<alix-logo>` web
+  component — a flat orange "mitosis" wordmark that plays a one-time reveal on load
+  (and on reload / `r`) and loops as a calm loading indicator while a Claude/server
+  call is in flight. The shared header chrome — the `<head>` boilerplate and the
+  brand mark — is now single-sourced (`_head.html` / `_brand.html`, filled in by the
+  server) so review.html and walk.html no longer drift.
 
 ### Fixed
 - **`alix explore --build` freezes cited excerpts more reliably.** When a generated

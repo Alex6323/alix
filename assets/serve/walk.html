@@ -2,10 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>alix · trace</title>
-<link rel="stylesheet" href="/theme.css">
-<script>document.documentElement.dataset.theme=(function(){try{return localStorage.getItem("alix-theme")}catch(e){return null}})()||"dark";</script>
+<!--%head%-->
 <style>
   :root {
     --card-w: min(92vw, 860px);
@@ -194,10 +192,7 @@
 </head>
 <body>
   <div class="bar">
-    <span class="brand">
-      <svg viewBox="0 0 512 512" aria-hidden="true"><path d="M 269 168 L 221 254 L 253 254 L 237 348 L 297 246 L 263 246 L 285 168 Z" fill="currentColor"/></svg>
-      alix
-    </span>
+    <!--%brand%-->
     <span class="sep">·</span>
     <span class="deck" id="deck">trace</span>
     <span class="spacer"></span>
@@ -265,8 +260,14 @@ function saveAskNote() {
   if (askData.thinking || !askData.transcript.length) return;
   api("/api/walk/ask/note", post({})).then(d => { askData = d; if (asking) syncAsk(); startAskPoll(); });
 }
-function startAskPoll() { stopAskPoll(); askPoll = setInterval(() => { api("/api/walk/ask").then(d => { askData = d; if (!d.thinking) stopAskPoll(); if (asking) syncAsk(); }); }, 400); }
-function stopAskPoll() { if (askPoll) { clearInterval(askPoll); askPoll = null; } }
+// Loop the header logo while a walk grade or ask reply is in flight — a calm
+// loader that complements the inline spinner; rest it otherwise.
+function updateBusy() {
+  var logo = document.querySelector(".brand alix-logo");
+  if (logo) logo.toggleAttribute("loop", !!(askPoll || poll));
+}
+function startAskPoll() { stopAskPoll(); askPoll = setInterval(() => { api("/api/walk/ask").then(d => { askData = d; if (!d.thinking) stopAskPoll(); if (asking) syncAsk(); }); }, 400); updateBusy(); }
+function stopAskPoll() { if (askPoll) { clearInterval(askPoll); askPoll = null; } updateBusy(); }
 function fillAskLog(log) {
   log.innerHTML = "";
   for (const ex of askData.transcript) { log.appendChild(el("div", "ask-q", ex.q)); log.appendChild(el("div", "ask-a", ex.a)); }
@@ -331,8 +332,9 @@ function cancelLeave() { confirmingLeave = false; render(); }
 function startPoll() {
   if (poll) return;
   poll = setInterval(() => api("/api/walk").then(d => { state = d; if (!d.thinking) stopPoll(); render(); }), 700);
+  updateBusy();
 }
-function stopPoll() { if (poll) { clearInterval(poll); poll = null; } }
+function stopPoll() { if (poll) { clearInterval(poll); poll = null; } updateBusy(); }
 
 // ── top chrome + the running tally (got · partial · missed) ────────────────
 function renderChrome() {

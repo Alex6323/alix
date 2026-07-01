@@ -2,10 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>alix</title>
-<link rel="stylesheet" href="/theme.css">
-<script>document.documentElement.dataset.theme=(function(){try{return localStorage.getItem("alix-theme")}catch(e){return null}})()||"dark";</script>
+<!--%head%-->
 <style>
   :root {
     --card-w: min(94vw, 1200px);
@@ -456,10 +454,7 @@
   <div class="bar">
     <div class="bar-inner">
       <span class="bar-left">
-        <span class="brand">
-          <svg viewBox="0 0 512 512" aria-hidden="true"><path d="M 269 168 L 221 254 L 253 254 L 237 348 L 297 246 L 263 246 L 285 168 Z" fill="currentColor"/></svg>
-          alix
-        </span>
+        <!--%brand%-->
         <span class="bar-nav" id="barNav" style="display:none">
           <button class="navbtn" id="navBack" aria-label="Back" title="Back">←</button>
           <button class="navbtn" id="navRefresh" aria-label="Refresh decks" title="Refresh decks (r)">⟳</button>
@@ -547,7 +542,7 @@ const navBack = document.getElementById("navBack");
 const navRefresh = document.getElementById("navRefresh");
 function updateNavBack() { navBack.disabled = !selectEsc; }
 navBack.addEventListener("click", () => { if (selectEsc) selectEsc(); });
-navRefresh.addEventListener("click", () => renderSelect());
+navRefresh.addEventListener("click", () => { replayLogo(); renderSelect(); });
 const menu = document.getElementById("menu");
 
 async function api(path, opts) { return (await fetch(path, opts)).json(); }
@@ -702,13 +697,25 @@ function saveAskNote() {
   if (askData.thinking || !askData.transcript.length) return;
   api("/api/ask/note", post({})).then(d => { askData = d; if (asking) syncAsk(); startAskPoll(); });
 }
+// Loop the header logo while any Claude/server call is in flight — a calm loader
+// that complements the inline spinners; rest it otherwise.
+function updateBusy() {
+  var logo = document.querySelector(".brand alix-logo");
+  if (logo) logo.toggleAttribute("loop", !!(askPoll || examPoll));
+}
+// Replay the header logo's reveal once — the reload button and the `r` key.
+function replayLogo() {
+  var logo = document.querySelector(".brand alix-logo");
+  if (logo && logo.replay) logo.replay();
+}
 function startAskPoll() {
   stopAskPoll();
   askPoll = setInterval(() => {
     api("/api/ask").then(d => { askData = d; if (!d.thinking) stopAskPoll(); if (asking) syncAsk(); });
   }, 400);
+  updateBusy();
 }
-function stopAskPoll() { if (askPoll) { clearInterval(askPoll); askPoll = null; } }
+function stopAskPoll() { if (askPoll) { clearInterval(askPoll); askPoll = null; } updateBusy(); }
 
 // (Re)fill just the transcript log from askData.
 function fillAskLog(log) {
@@ -849,8 +856,9 @@ function startExamPoll() {
       }
     });
   }, 600);
+  updateBusy();
 }
-function stopExamPoll() { if (examPoll) { clearInterval(examPoll); examPoll = null; } }
+function stopExamPoll() { if (examPoll) { clearInterval(examPoll); examPoll = null; } updateBusy(); }
 // Progress line under the spinner: a live "Claude is working" counter — the only
 // honest signal we get from a `claude -p` call that streams no token-level state.
 function examElapsedText(d) {
@@ -1557,7 +1565,7 @@ async function renderSelect() {
       else if (e.key === "ArrowLeft" || hit(e, PK.back)) { e.preventDefault(); if (drawerCycle) drawerCycle(-1); } // back-out is Esc/Backspace only; ←/h just steps the drawer
       else if (e.key === "b" && cur && cur._item) { e.preventDefault(); browseDeck(cur._item, cur._wsName); }
       else if (e.key === "a" && cur && cur._item) { e.preventDefault(); lastWorkspace = cur._wsName || null; openAugment(cur._item.name); }
-      else if (e.key === "r") { e.preventDefault(); renderSelect(); } // re-scan the decks (also the ⟳ nav button)
+      else if (e.key === "r") { e.preventDefault(); replayLogo(); renderSelect(); } // re-scan the decks (also the ⟳ nav button)
       else if (opts.allowMastered && hit(e, PK.mastered)) { e.preventDefault(); renderMastered(); }
       else if (e.key === "x" && cur && cur._item && cur._item.examable) {
         e.preventDefault(); lastWorkspace = cur._wsName || null; startExam(cur._item.name);
