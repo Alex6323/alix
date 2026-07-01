@@ -126,10 +126,15 @@
   .more-hint { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); font-family: var(--mono); font-size: 0.64rem; letter-spacing: 0.05em; color: var(--bolt); background: var(--panel-bot, rgba(6,18,26,0.95)); border: 1px solid var(--line); border-radius: 999px; padding: 3px 11px; pointer-events: none; opacity: 0; transition: opacity 0.15s; box-shadow: 0 5px 16px -7px rgba(0,0,0,0.8); }
   .more-hint.show { opacity: 0.94; }
   .region.q { flex: 0 0 auto; max-height: 38%; }   /* question */
-  /* the answer can use almost the whole card; only when the card has a note do
-     we cap it shorter, to leave room for the note below */
-  .region.a { flex: 0 1 auto; max-height: 82%; }
+  /* the answer grows to fill the slack between the top-anchored question and the
+     bottom-pinned note (a note caps it shorter, to leave room). When its content
+     fits, it centers — a short answer settles below the midline instead of
+     clustering under the question; when it overflows it top-aligns and scrolls, so
+     long answers still use the whole card. The class is set by updateFade. */
+  .region.a { flex: 1 1 auto; max-height: 82%; }
   .region.a.withnote { max-height: 52%; }
+  .region.a.balanced { justify-content: center; }
+  .region.a.filled { justify-content: flex-start; }
   .region.n { flex: 0 0 auto; max-height: 30%; }   /* note */
   /* keep the note (and its divider) pinned to the bottom of the card */
   #noteDivider { margin-top: auto; }
@@ -1770,6 +1775,8 @@ function renderBrowse() {
   appendReveal(sec, c.back, list);
   a.appendChild(sec);
   if (c.img_back) a.appendChild(cardImage(c.img_back));
+  a.classList.add("has-body"); // browse always shows the full answer
+  a.addEventListener("scroll", () => updateFade(a));
   card.appendChild(a);
 
   if (hasNote) {
@@ -1781,6 +1788,7 @@ function renderBrowse() {
 
   deck.appendChild(card);
   stage.appendChild(deck);
+  updateFade(a); // content-aware placement: center a short answer, top-align a long one
 
   chip("Prev", "", () => browseGo(-1), label(BK.prev)).disabled = browsing.i === 0;
   chip("Next", "primary", () => browseGo(1), label(BK.next)).disabled = browsing.i >= browsing.cards.length - 1;
@@ -1829,6 +1837,13 @@ function fillBottom() {
   }
   // keep the newest line in view as a verse is revealed line by line
   if (state.mode === "line" && revealed > 0) a.scrollTop = a.scrollHeight;
+  // Content-aware placement (applied by updateFade): a short answer centers below
+  // the midline once there's real body content. Line mode (auto-scrolls per line)
+  // and the cited source excerpt (scrolls, drives the more-hint) stay top-aligned;
+  // the pre-reveal badge/hint alone isn't body to center.
+  const forceFilled = state.mode === "line" || (citable && citationView);
+  a.classList.toggle("has-body", !forceFilled && !!a.querySelector(
+    ".reveal, .options, .inputs, .excerpt, .kp-list, .explain-answer, img.card-img, .cite-err"));
   updateFade(a);
 }
 
@@ -1860,12 +1875,19 @@ function hiddenLineCount(a) {
 
 function updateFade(a) {
   if (!a) return;
+  // Content-aware placement: center a short answer that fits (it settles below the
+  // midline), top-align one that overflows so its top stays reachable. `has-body`
+  // (set by fillBottom) gates it, so a badge-only pre-reveal region isn't centered.
+  const overflows = a.scrollHeight > a.clientHeight + 2;
+  const hasBody = a.classList.contains("has-body");
+  a.classList.toggle("balanced", hasBody && !overflows);
+  a.classList.toggle("filled", !hasBody || overflows);
   const atBottom = a.scrollTop + a.clientHeight >= a.scrollHeight - 2;
   a.classList.toggle("fade-top", a.scrollTop > 2);
   a.classList.toggle("fade-bottom", !atBottom);
   const more = a.parentElement && a.parentElement.querySelector(".more-hint");
   if (!more) return;
-  if (!atBottom && a.scrollHeight > a.clientHeight + 2) {
+  if (!atBottom && overflows) {
     const n = hiddenLineCount(a);
     more.textContent = n > 0 ? `⌵ ${n} more line${n === 1 ? "" : "s"}` : "⌵ more below";
     more.classList.add("show");

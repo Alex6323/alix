@@ -24,6 +24,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   your `~/.config/alix/config.toml` — the old top-level `[picker]` / `[browse]` and a
   bare `[keys]` section now error (no compat shim, pre-1.0). `alix config --init`
   writes the new layout.
+- **Review cards settle a short answer below the midline.** The answer region now
+  grows to fill the space between the question and the note and centers its content
+  when it fits — so a short answer sits just below the card's middle instead of
+  clustering under the question, and the lower half no longer reads as empty. Long
+  answers and cited excerpts still top-align and scroll (using the whole card), and
+  the question never shifts when the answer is revealed. Applies in browse too.
 - **Web picker: cleaner dependency-tree lines.** The workspace drill-in's tree
   connectors (`├─` / `└─` / `│`) are now drawn as subtle dotted CSS guides in the row
   border colour — aligned under each parent's label and stopping at each row's border
