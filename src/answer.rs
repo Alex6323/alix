@@ -41,6 +41,31 @@ pub enum Mode {
     Explain,
 }
 
+/// How the learner *produces* an answer — orthogonal to [`Mode`] (the grading
+/// mode). `Draw` swaps the typed/flip input for a canvas (web only) and
+/// self-grades against the card's normal reveal. Set with `% input:` (card
+/// override, else deck); absent falls back to `Type`.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    clap::ValueEnum,
+    serde::Serialize,
+    serde::Deserialize,
+)]
+pub enum Input {
+    /// Type the answer (the default).
+    #[default]
+    #[value(name = "type")]
+    Type,
+    /// Draw / handwrite the answer on a canvas (web only), then self-grade.
+    #[value(name = "draw")]
+    Draw,
+}
+
 /// The state of one typed character.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Typed {
@@ -250,6 +275,15 @@ pub fn grade_fuzzy(input: &str, expected: &str, max_typos: usize) -> FuzzyResult
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn input_parses_its_value_names_and_defaults_to_type() {
+        use clap::ValueEnum;
+        assert_eq!(Input::Draw, Input::from_str("draw", true).unwrap());
+        assert_eq!(Input::Type, Input::from_str("type", true).unwrap());
+        assert!(Input::from_str("scribble", true).is_err());
+        assert_eq!(Input::Type, Input::default());
+    }
 
     #[test]
     fn typing_correct_line_passes() {
