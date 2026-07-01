@@ -11,6 +11,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 ### Fixed
+- **`alix explore --build` freezes cited excerpts more reliably.** When a generated
+  `% at:` locator dropped (or added) a leading subdirectory — e.g. `chapter.md`
+  when the file is at `src/chapter.md` — freezing couldn't find it and skipped it
+  (`cited file not found, not frozen`), leaving a checkpoint without its source.
+  Resolution now falls back to a basename search under the source root to recover
+  the excerpt, and the fill prompt pins every locator to one consistent root so the
+  mix is less likely to arise.
+- **Workspace icons draw fast, without timing out.** The `explore --build` icon
+  prompt now caps the emblem at a few compact primitive shapes instead of letting
+  the model emit long `<path>` coordinate data — the token-heavy part that made the
+  draw slow enough to time out (`could not draw a workspace icon: 'claude' timed out
+  after 120s`). The draw also retries once. (Supplying `--icon`, or dropping a
+  conventional `assets/icon.*`, still skips generation entirely.)
 
 ## [0.2.0] - 2026-06-30
 

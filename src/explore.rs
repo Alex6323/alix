@@ -297,6 +297,10 @@ fn fill_prompt(items: &[Item]) -> String {
          into several one-idea cards (one card per item or group), or give it clean \
          structure with one point per indented line (no bullet or dash prefix — \
          bullets come later from the format augment); keep an atomic answer atomic.\n\n\
+         Every `% at:` `file` part MUST be written relative to the SAME root — the \
+         source root you explored (your working directory) — as ONE consistent path \
+         per file across ALL items; never drop or add a leading directory (always \
+         `src/foo.rs`, never sometimes `foo.rs`), so the frozen citations all resolve.\n\n\
          Do NOT repeat any header directive (`% trace:`, `% title:`, `% source:`, \
          `% requires:`) — those are already written; output only the `# ` cards. \
          Output ONLY the delimited item bodies: no preamble, no code fences, nothing \
@@ -727,6 +731,8 @@ mod tests {
         // Fact cards get a `% at:` citation so the card can show its source.
         assert!(p.contains("% at: file:start-end"));
         assert!(p.contains("show its source on reveal"));
+        // Every `% at:` path is pinned to one consistent root, so freezing resolves.
+        assert!(p.contains("relative to the SAME root"));
         // A compound answer must be split / shaped, not crammed into one prose
         // line (mirrors the `generate` source prompt) — otherwise an explore-built
         // deck shows enumerations as a wall of text.

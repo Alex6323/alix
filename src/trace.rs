@@ -1316,7 +1316,46 @@ pub(crate) fn resolve_under_base(base_dir: &Path, file: &str) -> PathBuf {
         }
         ancestor = dir.parent();
     }
+    // Last resort: the locator dropped (or added) a leading subdirectory, so
+    // neither the direct join nor any ancestor resolves — e.g. a `% at:
+    // ch12-03-…md` whose file actually lives at `<base>/src/ch12-03-…md`. Search
+    // the source subtree for a file of the same name; a hit recovers it. Only
+    // reached once path-relative resolution has failed, so it is best-effort,
+    // taking the first name match if several exist.
+    if let Some(name) = Path::new(file).file_name()
+        && let Some(found) = find_under(base_dir, name)
+    {
+        return found;
+    }
     direct
+}
+
+/// Depth-first search under `root` for the first entry named `name`, skipping
+/// version-control and build directories so a large tree stays cheap — the
+/// fallback for [`resolve_under_base`] when a locator's relative path is written
+/// against a different subtree than the source base.
+fn find_under(root: &Path, name: &std::ffi::OsStr) -> Option<PathBuf> {
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                let skip = path
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .is_some_and(|b| b.starts_with('.') || matches!(b, "target" | "node_modules"));
+                if !skip {
+                    stack.push(path);
+                }
+            } else if path.file_name() == Some(name) {
+                return Some(path);
+            }
+        }
+    }
+    None
 }
 
 /// Relabels a freshly-read `excerpt` to its ORIGINAL source for *display*, using
@@ -1598,6 +1637,20 @@ mod tests {
         write(dir.path(), "src/executor/local_vm.rs", "a\nb\nc\nd\n");
         let base_dir = dir.path().join("src/executor"); // the `% source:` dir
         let ex = excerpt_at(&base_dir, None, "src/executor/local_vm.rs:2-3").unwrap();
+        assert_eq!(vec![(2, "b".to_string()), (3, "c".to_string())], ex.lines);
+    }
+
+    #[test]
+    fn excerpt_at_recovers_a_dropped_subdirectory_via_basename_search() {
+        // The locator DROPPED its `src/` prefix (`chapter.md` when the file lives
+        // at `<root>/src/chapter.md`) — the exact shape the Rust-book explore hit.
+        // Neither the direct join nor an ancestor resolves, so a basename search
+        // under the source root must recover it.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        write(dir.path(), "src/chapter.md", "a\nb\nc\nd\n");
+        let base_dir = dir.path().to_path_buf(); // the source root; chapter.md is a level down
+        let ex = excerpt_at(&base_dir, None, "chapter.md:2-3").unwrap();
         assert_eq!(vec![(2, "b".to_string()), (3, "c".to_string())], ex.lines);
     }
 

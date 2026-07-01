@@ -22,8 +22,10 @@ pub fn generate(dir: &Path, ask_cfg: &AskConfig) -> Result<PathBuf> {
         ws.description.as_deref().unwrap_or(""),
         &topics,
     );
-    let raw = ask::run(&icon_run_config(ask_cfg), &prompt, &[])?;
-    let svg = sanitize_svg(&raw).ok_or_else(|| anyhow!("the model returned no usable svg"))?;
+    let run_cfg = icon_run_config(ask_cfg);
+    // Drawing an SVG is latency-variable and the whole step is best-effort, so one
+    // retry turns a lone slow or empty response into a drawn icon.
+    let svg = draw(&run_cfg, &prompt).or_else(|_| draw(&run_cfg, &prompt))?;
     let out = dir.join("assets").join("icon.svg");
     clear_existing_icons(dir);
     write_atomic(&out, svg.as_bytes())?;
@@ -81,12 +83,24 @@ fn build_prompt(title: &str, description: &str, topics: &[String]) -> String {
          - Abstract and emblematic, not a literal picture, and no text or letters.\n\
          - Monochrome: use currentColor for every fill/stroke and a transparent \
          background (it is tinted by the theme).\n\
-         - Simple geometry, a handful of shapes. No <script>, no event handlers, \
-         no external references, no embedded raster images."
+         - Keep it SMALL and cheap to draw: at most 6 shapes, and PREFER primitives \
+         (<circle>, <rect>, <line>, <polygon>) over <path> — a short path of a few \
+         points is fine, but never dozens of bezier coordinates.\n\
+         - Use whole or half-integer coordinates on the 24 grid; no long decimals.\n\
+         - No <script>, event handlers, external references, gradients, filters, or \
+         embedded raster images."
     )
 }
 
-/// A no-tools, no-source run config for the one-shot icon prompt.
+/// One draw attempt: run the model and sanitize its reply into usable SVG.
+fn draw(run_cfg: &AskConfig, prompt: &str) -> Result<String> {
+    let raw = ask::run(run_cfg, prompt, &[])?;
+    sanitize_svg(&raw).ok_or_else(|| anyhow!("the model returned no usable svg"))
+}
+
+/// A no-tools, no-source run config for the one-shot icon prompt. The prompt keeps
+/// the emblem to a few compact primitives, so the draw stays well within the normal
+/// `[ask]` timeout — no special extension needed.
 fn icon_run_config(ask_cfg: &AskConfig) -> AskConfig {
     AskConfig {
         allowed_tools: Vec::new(),
@@ -213,7 +227,7 @@ fn strip_attrs(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testutil::{ask_config, exec_lock, fake_reply};
+    use crate::testutil::{ask_config, exec_lock, fake_cli, fake_reply};
 
     fn write_workspace(dir: &std::path::Path) {
         std::fs::create_dir_all(dir.join("assets")).unwrap();
@@ -279,6 +293,38 @@ mod tests {
         let err = generate(ws.path(), &ask_config(&cli)).unwrap_err();
         assert!(err.to_string().contains("no usable svg"));
         assert!(!ws.path().join("assets").join("icon.svg").exists());
+    }
+
+    #[test]
+    fn build_prompt_bounds_the_output_for_a_fast_draw() {
+        let p = build_prompt("Rust", "ownership and borrowing", &["moves".to_string()]);
+        // The emblem is capped and steered to compact primitives so the model
+        // can't emit long <path> coordinate data — the slow, timeout-prone part.
+        assert!(p.contains("at most 6 shapes"));
+        assert!(p.contains("PREFER primitives"));
+    }
+
+    #[test]
+    fn generate_retries_once_after_a_failed_draw() {
+        let _lock = exec_lock();
+        let ws = tempfile::tempdir().unwrap();
+        write_workspace(ws.path());
+        let cli_dir = tempfile::tempdir().unwrap();
+        // A stateful fake CLI: fail the first call (exit 1), draw on the second.
+        // Drains stdin first to avoid the broken-pipe race.
+        let c = cli_dir.path().join("n");
+        let cli = fake_cli(
+            cli_dir.path(),
+            &format!(
+                "cat >/dev/null; n=$(cat {c} 2>/dev/null || echo 0); echo $((n+1)) > {c}; \
+                 [ \"$n\" = 0 ] && exit 1; echo '<svg viewBox=\"0 0 24 24\"><circle r=\"8\"/></svg>'",
+                c = c.display()
+            ),
+        );
+
+        let out = generate(ws.path(), &ask_config(&cli)).unwrap();
+        let svg = std::fs::read_to_string(&out).unwrap();
+        assert!(svg.contains("<circle"));
     }
 
     #[test]
