@@ -120,6 +120,12 @@ fn workspace_path(reviews_dir: &Path, repo: &str, kind: Kind, id: &str) -> PathB
     reviews_dir.join(format!("{repo}-{}-{id}", kind.slug()))
 }
 
+/// Whether to warn about a stale/mismatched checkout: true when more than half
+/// the changed files are missing from the working tree.
+fn most_files_missing(total: usize, missing: usize) -> bool {
+    total > 0 && missing * 2 > total
+}
+
 /// The learning goal that scopes `explore` to the change/issue and its context.
 fn build_goal(kind: Kind, id: &str, title: &str, file_name: &str) -> String {
     match kind {
@@ -222,6 +228,33 @@ fn fetch_source(kind: Kind, id: &str, dest: &Path) -> Result<String> {
     Ok(title)
 }
 
+/// For a PR, warn (non-fatally) if most of its changed files are absent from the
+/// working tree — a sign you're in the wrong repo or on a branch without the
+/// change, which weakens the blast-radius context. Best-effort: a failed probe
+/// is silently skipped, and a warning never blocks the build.
+fn warn_if_source_stale(id: &str, display: &str, root: &Path) {
+    let Ok(files) = run_gh(&["pr", "view", id, "--json", "files", "-q", ".files[].path"]) else {
+        return;
+    };
+    let paths: Vec<&str> = files
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect();
+    let missing = paths
+        .iter()
+        .filter(|path| !root.join(path).exists())
+        .count();
+    if most_files_missing(paths.len(), missing) {
+        eprintln!(
+            "warning: {missing} of {} changed files from PR #{display} aren't in your working \
+             tree — you may be in the wrong repo or on a branch without this change; consider \
+             `gh pr checkout {display}` for fuller context",
+            paths.len()
+        );
+    }
+}
+
 /// The five library calls that turn (source, goal) into a filled, snapshotted
 /// workspace — the same sequence `alix explore --build` runs internally.
 fn build_workspace(
@@ -268,6 +301,9 @@ fn cmd_build(kind: Kind, id: &str) -> Result<()> {
             ws.display(),
             kind.slug()
         );
+    }
+    if kind == Kind::Pr {
+        warn_if_source_stale(id, &slug, &root);
     }
     let file_name = context_file_name(kind, &slug);
     let file = root.join(&file_name);
@@ -439,5 +475,19 @@ mod tests {
         assert!(g.contains("issue #5"));
         assert!(g.contains("actually being asked"));
         assert!(g.contains(".alix-review-issue-5.md"));
+    }
+
+    #[test]
+    fn most_files_missing_true_when_majority_absent() {
+        assert!(most_files_missing(4, 3));
+        assert!(most_files_missing(2, 2));
+        assert!(most_files_missing(5, 3));
+    }
+
+    #[test]
+    fn most_files_missing_false_at_half_or_below_or_empty() {
+        assert!(!most_files_missing(4, 2)); // exactly half → no warn
+        assert!(!most_files_missing(5, 2));
+        assert!(!most_files_missing(0, 0)); // no files → no signal
     }
 }
