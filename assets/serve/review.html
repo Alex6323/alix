@@ -641,6 +641,7 @@ function isExplain() { return state.mode === "explain"; }
 // is on — but only for the self-graded modes L1 supports, and never while acquiring.
 function effectiveDraw() {
   if (!state || !state.card || isAcquire()) return false;
+  if (state.card.context && state.card.context.length) return false; // cloze cards don't draw in L1 (a mode-less cloze resolves to flip)
   if (state.mode !== "flip" && state.mode !== "explain") return false;
   return state.input === "draw" || drawToggle;
 }
@@ -2321,7 +2322,7 @@ function renderLegend() {
       chip("Skip", "", skip, label(KEYS.skip));
     }
   } else if (effectiveDraw() && revealed === 0) {
-    chip("Reveal", "primary", drawReveal, "enter");
+    chip("Reveal", "primary", drawReveal, label(KEYS.reveal));
     chip("Skip", "", skip, label(KEYS.skip));
   } else if (isChoice()) {
     chip("Skip", "", skip, label(KEYS.skip));
@@ -2522,8 +2523,9 @@ document.addEventListener("keydown", (e) => {
   // (freezing the drawing) to match the "Reveal" chip; placed before the explain
   // and generic reveal branches so a flip/explain draw card reveals via drawReveal().
   if (effectiveDraw() && revealed === 0) {
-    if (e.key === "Enter") { e.preventDefault(); drawReveal(); }
+    if (hit(e, KEYS.reveal)) { e.preventDefault(); drawReveal(); }
     else if (hit(e, KEYS.skip)) { e.preventDefault(); skip(); }
+    else if (hit(e, KEYS.remove)) { e.preventDefault(); remove(); }
     return;
   }
   // Explain before reveal: the textarea takes plain keys (Enter = newline) and
