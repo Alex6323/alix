@@ -505,6 +505,7 @@
             <button id="mRemove" class="m-review" role="menuitem">Remove card <span class="mk">x</span></button>
             <button id="mShortcuts" class="m-picker" role="menuitem">Keyboard shortcuts</button>
             <button id="theme-open" role="menuitem" style="color: var(--ink)">Theme…</button>
+            <button id="mDraw" role="menuitem" style="color: var(--ink)">Draw answers <span class="mk" id="mDrawState">off</span></button>
             <button id="mAbout" class="m-picker" role="menuitem">About</button>
           </div>
         </span>
@@ -2575,6 +2576,16 @@ menu.addEventListener("mousedown", (e) => e.preventDefault());
 menu.addEventListener("click", (e) => e.stopPropagation());
 document.getElementById("mAsk").addEventListener("click", () => { menu.classList.remove("open"); if (isAnswered()) openAsk(); });
 document.getElementById("mRemove").addEventListener("click", () => { menu.classList.remove("open"); remove(); });
+const mDraw = document.getElementById("mDraw");
+function syncDrawMenu() { document.getElementById("mDrawState").textContent = drawToggle ? "on" : "off"; }
+syncDrawMenu();
+mDraw.addEventListener("click", () => {
+  drawToggle = !drawToggle;
+  try { localStorage.setItem("alix-draw", drawToggle ? "1" : "0"); } catch (e) {}
+  syncDrawMenu();
+  menu.classList.remove("open");
+  render(); // show/hide the canvas on the current card
+});
 document.addEventListener("click", () => menu.classList.remove("open"));
 
 // A small modal sheet (keyboard shortcuts, about). Esc or a backdrop click closes.
