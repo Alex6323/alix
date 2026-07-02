@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 - An `examples/gh-review-prep.rs` showing how to compose the library into an ephemeral, goal-scoped workspace for understanding a change you must read closely (a GitHub PR or issue) before acting on it. Read-only; a demonstration of composability, not a GitHub feature.
+- **Gemini backend (`[ask] backend = "gemini"`).** alix's AI calls can now run
+  through the Google Gemini CLI (`gemini -p`, headless) instead of Claude. Tool
+  access maps to Gemini's read-only tools via an `--allowed-tools` allowlist
+  (`read_file`/`glob`/`search_file_content` for source reading, `web_fetch`,
+  `google_web_search`) — no write or shell tool is granted, and none is
+  auto-approved. Trace building picks each backend's own strong model (Claude
+  still defaults to `opus`; other backends inherit the CLI's default), so leaving
+  `[trace] model` unset does the right thing per backend.
 - **Web picker: a workspace's goal shows in its drill-in.** Opening a workspace now
   shows its goal (the one-line description) under the title eyebrow, the same goal the
   top-level list shows on the workspace row — so the context stays visible while you

@@ -11,8 +11,10 @@
 //! CLI-specific tool.
 
 mod claude;
+mod gemini;
 
 pub use claude::ClaudeBackend;
+pub use gemini::GeminiBackend;
 
 use crate::config::{AskConfig, BackendKind};
 
@@ -115,6 +117,14 @@ pub trait Backend: Send + Sync {
 
     /// Flags whose presence in `--help` confirms this is the expected CLI.
     fn required_help_flags(&self) -> &'static [&'static str];
+
+    /// A backend-specific strong model for **trace building**, or `None` to
+    /// inherit the CLI's own default. Trace is agentic and correctness-critical,
+    /// so a backend that has a stronger model names it here; the config default
+    /// is left unset so each backend can pick its own.
+    fn default_trace_model(&self) -> Option<&'static str> {
+        None
+    }
 }
 
 /// Selects the backend for a config, returning an error for backends that are
@@ -122,7 +132,7 @@ pub trait Backend: Send + Sync {
 pub fn backend_for(cfg: &AskConfig) -> anyhow::Result<Box<dyn Backend>> {
     match cfg.backend {
         BackendKind::Claude => Ok(Box::new(ClaudeBackend)),
-        BackendKind::Gemini => anyhow::bail!("the gemini backend isn't available yet"),
+        BackendKind::Gemini => Ok(Box::new(GeminiBackend)),
         BackendKind::Codex => anyhow::bail!("the codex backend isn't available yet"),
         BackendKind::Copilot => anyhow::bail!("the copilot backend isn't available yet"),
     }
@@ -138,16 +148,12 @@ mod tests {
     }
 
     #[test]
-    fn backend_for_claude_ok_others_not_yet() {
+    fn backend_for_wires_claude_and_gemini_others_not_yet() {
         let mut cfg = AskConfig::default();
         assert!(backend_for(&cfg).is_ok(), "claude should be wired");
 
         cfg.backend = BackendKind::Gemini;
-        let err = backend_for(&cfg).err().expect("gemini should error");
-        assert!(
-            format!("{err}").contains("gemini"),
-            "error should name the backend"
-        );
+        assert!(backend_for(&cfg).is_ok(), "gemini should be wired");
 
         cfg.backend = BackendKind::Codex;
         let err = backend_for(&cfg).err().expect("codex should error");

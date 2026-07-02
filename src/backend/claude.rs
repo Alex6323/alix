@@ -78,6 +78,13 @@ impl Backend for ClaudeBackend {
             "--output-format",
         ]
     }
+
+    fn default_trace_model(&self) -> Option<&'static str> {
+        // Trace building is agentic and correctness-critical; Opus is the strong
+        // model, so Claude defaults trace to it (other backends inherit the CLI
+        // default).
+        Some("opus")
+    }
 }
 
 #[cfg(test)]

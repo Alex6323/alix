@@ -25,6 +25,7 @@ use anyhow::{Context, Result, anyhow, bail};
 
 use crate::{
     ask,
+    backend::backend_for,
     config::{AskConfig, TraceConfig},
     deck::{Deck, is_url},
     scheduler::{Grade, SchedulerKind},
@@ -564,12 +565,24 @@ pub(crate) fn build_run_config(
     if url {
         allowed_tools.push("WebFetch".to_string());
     }
+    // Model precedence: an explicit `[trace] model`, then the `[ask]` model,
+    // then the backend's own strong trace model (Claude → opus; others fall back
+    // to the CLI default via `None`).
+    let model = cfg
+        .model
+        .clone()
+        .or_else(|| ask_cfg.model.clone())
+        .or_else(|| {
+            backend_for(ask_cfg)
+                .ok()
+                .and_then(|b| b.default_trace_model().map(str::to_string))
+        });
     AskConfig {
         backend: ask_cfg.backend,
         command: ask_cfg.command.clone(),
         permission_mode: ask_cfg.permission_mode.clone(),
         allowed_tools,
-        model: cfg.model.clone().or_else(|| ask_cfg.model.clone()),
+        model,
         effort: cfg.effort.clone().or_else(|| ask_cfg.effort.clone()),
         timeout_secs: cfg.timeout_secs,
         cwd,
@@ -2251,6 +2264,42 @@ mod tests {
         assert_eq!(vec!["Read", "Glob", "Grep"], cfg.allowed_tools);
         assert_eq!(Some(cwd), cfg.cwd);
         assert_eq!(600, cfg.timeout_secs); // the trace timeout, not ask's 120
+    }
+
+    #[test]
+    fn trace_defaults_to_opus_on_claude_none_elsewhere() {
+        use crate::config::BackendKind;
+
+        // Claude backend with an unset trace/ask model → the backend's strong
+        // trace model (opus).
+        let claude = build_run_config(&TraceConfig::default(), &AskConfig::default(), None, false);
+        assert_eq!(Some("opus".to_string()), claude.model);
+
+        // Gemini backend has no strong trace model, so it inherits the CLI
+        // default (None) when nothing is configured.
+        let gemini_ask = AskConfig {
+            backend: BackendKind::Gemini,
+            ..AskConfig::default()
+        };
+        let gemini = build_run_config(&TraceConfig::default(), &gemini_ask, None, false);
+        assert_eq!(None, gemini.model);
+
+        // An explicit [trace] model wins over the backend default on any backend.
+        let pinned = TraceConfig {
+            model: Some("sonnet".to_string()),
+            ..TraceConfig::default()
+        };
+        let cfg = build_run_config(&pinned, &AskConfig::default(), None, false);
+        assert_eq!(Some("sonnet".to_string()), cfg.model);
+
+        // An [ask] model is used when [trace] is unset, ahead of the backend
+        // default.
+        let ask = AskConfig {
+            model: Some("haiku".to_string()),
+            ..AskConfig::default()
+        };
+        let cfg = build_run_config(&TraceConfig::default(), &ask, None, false);
+        assert_eq!(Some("haiku".to_string()), cfg.model);
     }
 
     #[test]

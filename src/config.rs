@@ -388,9 +388,13 @@ impl Default for ExamConfig {
 /// working directory. No write or shell tool is ever granted.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TraceConfig {
-    /// Model passed as `--model`. Defaults to `"opus"` — trace building is an
-    /// agentic, correctness-critical, one-shot call where quality dominates, so
-    /// it breaks the inherit-the-CLI-default pattern the other AI features use.
+    /// Model passed as `--model`. Left unset by default so each backend picks
+    /// its own strong model for trace ([`Backend::default_trace_model`] — Claude
+    /// → `opus`); an explicit value here or in `[ask]` overrides it. Trace
+    /// building is agentic, correctness-critical and one-shot, so it wants the
+    /// strong model rather than the CLI's cheap default.
+    ///
+    /// [`Backend::default_trace_model`]: crate::backend::Backend::default_trace_model
     pub model: Option<String>,
     /// `--effort` level; defaults to `"high"` for the same reason. `None` omits
     /// the flag. Shared by `--build`, `--suggest` and `--grade`.
@@ -406,10 +410,12 @@ pub struct TraceConfig {
 impl Default for TraceConfig {
     fn default() -> Self {
         Self {
-            // Building runs one-shot and amortized over many reviews, and a weak
-            // model fails silently (a parseable but loose chain), so trace alone
-            // defaults to a strong model + high effort.
-            model: Some("opus".to_string()),
+            // Trace building is one-shot, amortized over many reviews, and a weak
+            // model fails silently (a parseable but loose chain), so it wants a
+            // strong model + high effort. The *model* is left unset here so each
+            // backend picks its own strong model (`Backend::default_trace_model`);
+            // effort still defaults high across backends.
+            model: None,
             effort: Some("high".to_string()),
             timeout_secs: 600,
             extra: None,
@@ -959,7 +965,7 @@ pub fn default_config_toml() -> &'static str {
 # but runs with read-only file tools (Read/Glob/Grep, + WebFetch for a URL
 # source) and the source root as the working directory — never a write/shell tool.
 [trace]
-# model = "opus"                # default (correctness-critical); empty = use [ask] / CLI default
+# model = ""                    # empty = each backend's strong model (Claude: opus), then [ask] / CLI default
 # effort = "high"               # default; --effort: low|medium|high|xhigh|max
 # timeout_secs = 600            # exploring a source is the slowest call
 # extra = ""                    # extra guidance appended to the build prompt
@@ -1167,11 +1173,14 @@ mod tests {
     }
 
     #[test]
-    fn trace_defaults_to_a_strong_model_and_high_effort() {
-        // The one AI feature that breaks the inherit-the-CLI-default pattern:
-        // trace building is correctness-critical and fails silently.
+    fn trace_defaults_to_high_effort_and_backend_chosen_model() {
+        // Trace still breaks the inherit-the-CLI-default pattern on effort
+        // (correctness-critical, fails silently), but the *model* is now left
+        // unset here so each backend picks its own strong model
+        // (`Backend::default_trace_model`); the effective model is resolved in
+        // `trace::build_run_config`.
         let trace = Config::default().trace;
-        assert_eq!(Some("opus".to_string()), trace.model);
+        assert_eq!(None, trace.model);
         assert_eq!(Some("high".to_string()), trace.effort);
     }
 
