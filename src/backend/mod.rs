@@ -42,6 +42,28 @@ pub enum Access {
     },
 }
 
+impl Access {
+    /// Derives the abstract tool grant from a Claude-style allowlist, so a
+    /// caller can hand a backend a CLI-independent grant. `files` is true when
+    /// any of `Read`, `Glob`, or `Grep` appear; `fetch` maps to `WebFetch`;
+    /// `search` maps to `WebSearch`. An empty allowlist yields `Access::None`.
+    pub fn from_allowed_tools(tools: &[String]) -> Self {
+        let has = |name: &str| tools.iter().any(|t| t == name);
+        let files = has("Read") || has("Glob") || has("Grep");
+        let fetch = has("WebFetch");
+        let search = has("WebSearch");
+        if !files && !fetch && !search {
+            Access::None
+        } else {
+            Access::ReadOnly {
+                files,
+                fetch,
+                search,
+            }
+        }
+    }
+}
+
 /// The per-call knobs a backend turns into argv: model, effort, the tool
 /// [`Access`] grant, and any session arguments (Claude `--session-id`/
 /// `--resume`; ignored by backends without sessions).
@@ -99,4 +121,41 @@ pub trait Backend: Send + Sync {
 /// backend; Task 3 adds the match on a configured backend name.
 pub fn backend_for(_cfg: &AskConfig) -> Box<dyn Backend> {
     Box::new(ClaudeBackend)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tools(names: &[&str]) -> Vec<String> {
+        names.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn access_from_askconfig_maps_tools_to_grant() {
+        // Read + Glob + Grep + WebFetch → files + fetch, no search
+        let a = Access::from_allowed_tools(&tools(&["Read", "Glob", "Grep", "WebFetch"]));
+        assert!(matches!(
+            a,
+            Access::ReadOnly { files: true, fetch: true, search: false }
+        ));
+
+        // WebFetch + WebSearch → no files, fetch + search
+        let b = Access::from_allowed_tools(&tools(&["WebFetch", "WebSearch"]));
+        assert!(matches!(
+            b,
+            Access::ReadOnly { files: false, fetch: true, search: true }
+        ));
+
+        // Read only → files, no fetch, no search
+        let c = Access::from_allowed_tools(&tools(&["Read"]));
+        assert!(matches!(
+            c,
+            Access::ReadOnly { files: true, fetch: false, search: false }
+        ));
+
+        // Empty → no tools at all
+        let d = Access::from_allowed_tools(&[]);
+        assert!(matches!(d, Access::None));
+    }
 }

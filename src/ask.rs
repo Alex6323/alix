@@ -24,25 +24,6 @@ use crate::{
     config::AskConfig,
 };
 
-/// Derives the abstract tool [`Access`] grant from a Claude-style allowlist, so
-/// `run` can hand a backend a CLI-independent grant. `files` covers any of the
-/// read-only file tools; `fetch`/`search` map to `WebFetch`/`WebSearch`. An
-/// empty allowlist means no tools at all.
-fn access_of(allowed_tools: &[String]) -> Access {
-    let has = |name: &str| allowed_tools.iter().any(|t| t == name);
-    let files = has("Read") || has("Glob") || has("Grep");
-    let fetch = has("WebFetch");
-    let search = has("WebSearch");
-    if !files && !fetch && !search {
-        Access::None
-    } else {
-        Access::ReadOnly {
-            files,
-            fetch,
-            search,
-        }
-    }
-}
 
 /// One question/answer exchange.
 pub type Exchange = (String, String);
@@ -343,7 +324,7 @@ pub(crate) fn run(config: &AskConfig, prompt: &str, extra_args: &[String]) -> Re
         } else {
             Some(config.permission_mode.as_str())
         },
-        access: access_of(&config.allowed_tools),
+        access: Access::from_allowed_tools(&config.allowed_tools),
         session_args: extra_args,
     };
     let argv = backend.build_argv(&opts);
