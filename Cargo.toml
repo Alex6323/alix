@@ -35,3 +35,11 @@ path = "src/lib.rs"
 [[bin]]
 name = "alix"
 path = "src/main.rs"
+
+# examples/ is excluded from the published package (see `exclude` above), but
+# `test = true` still makes plain `cargo test` build and run this example's
+# `#[cfg(test)]` unit tests locally and in CI — otherwise `cargo clippy
+# --all-targets` compiles them but `cargo test` never executes them.
+[[example]]
+name = "understand"
+test = true
