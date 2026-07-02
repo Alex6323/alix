@@ -3,7 +3,7 @@
 //! the same `--allowedTools`/`--permission-mode`/`--model`/`--effort` flags,
 //! prompt on stdin, answer trimmed off stdout.
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 
 use super::{Access, Backend, PromptDelivery, RunOpts};
 
@@ -44,10 +44,10 @@ impl Backend for ClaudeBackend {
         if !tools.is_empty() {
             argv.push("--allowedTools".to_string());
             argv.extend(tools.into_iter().map(String::from));
-            // `dontAsk` silently denies any tool outside the allowlist instead
-            // of hanging on an approval that `-p` mode cannot receive.
+        }
+        if let Some(mode) = opts.permission_mode {
             argv.push("--permission-mode".to_string());
-            argv.push("dontAsk".to_string());
+            argv.push(mode.to_string());
         }
 
         if let Some(model) = opts.model {
@@ -67,11 +67,7 @@ impl Backend for ClaudeBackend {
     }
 
     fn extract(&self, stdout: &str) -> Result<String> {
-        let answer = stdout.trim().to_string();
-        if answer.is_empty() {
-            bail!("the assistant returned an empty answer");
-        }
-        Ok(answer)
+        Ok(stdout.trim().to_string())
     }
 
     fn required_help_flags(&self) -> &'static [&'static str] {
@@ -92,6 +88,7 @@ mod tests {
         RunOpts {
             model: None,
             effort: None,
+            permission_mode: None,
             access,
             session_args,
         }
@@ -102,6 +99,7 @@ mod tests {
         let argv = ClaudeBackend.build_argv(&RunOpts {
             model: Some("opus"),
             effort: Some("high"),
+            permission_mode: Some("dontAsk"),
             access: Access::ReadOnly {
                 files: true,
                 fetch: true,
@@ -156,5 +154,46 @@ mod tests {
         assert!(!argv.iter().any(|a| a == "--allowedTools"));
         assert!(!argv.iter().any(|a| a == "--permission-mode"));
         assert_eq!(vec!["-p", "--output-format", "text"], argv);
+    }
+
+    #[test]
+    fn claude_emits_permission_mode_independent_of_grant() {
+        // dontAsk with no tool grant — e.g. a grading call with the config default set.
+        let argv = ClaudeBackend.build_argv(&RunOpts {
+            model: None,
+            effort: None,
+            permission_mode: Some("dontAsk"),
+            access: Access::None,
+            session_args: &[],
+        });
+        assert!(!argv.iter().any(|a| a == "--allowedTools"));
+        assert!(argv.iter().any(|a| a == "--permission-mode"));
+        assert!(argv.iter().any(|a| a == "dontAsk"));
+
+        // bypassPermissions with a ReadOnly grant — both flags present.
+        let argv = ClaudeBackend.build_argv(&RunOpts {
+            model: None,
+            effort: None,
+            permission_mode: Some("bypassPermissions"),
+            access: Access::ReadOnly {
+                files: true,
+                fetch: false,
+                search: false,
+            },
+            session_args: &[],
+        });
+        assert!(argv.iter().any(|a| a == "--allowedTools"));
+        let pm_pos = argv.iter().position(|a| a == "--permission-mode").unwrap();
+        assert_eq!(argv[pm_pos + 1], "bypassPermissions");
+
+        // No permission_mode set — flag absent.
+        let argv = ClaudeBackend.build_argv(&RunOpts {
+            model: None,
+            effort: None,
+            permission_mode: None,
+            access: Access::None,
+            session_args: &[],
+        });
+        assert!(!argv.iter().any(|a| a == "--permission-mode"));
     }
 }

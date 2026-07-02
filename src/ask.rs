@@ -338,6 +338,11 @@ pub(crate) fn run(config: &AskConfig, prompt: &str, extra_args: &[String]) -> Re
     let opts = RunOpts {
         model: config.model.as_deref(),
         effort: config.effort.as_deref(),
+        permission_mode: if config.permission_mode.is_empty() {
+            None
+        } else {
+            Some(config.permission_mode.as_str())
+        },
         access: access_of(&config.allowed_tools),
         session_args: extra_args,
     };
@@ -414,9 +419,11 @@ pub(crate) fn run(config: &AskConfig, prompt: &str, extra_args: &[String]) -> Re
         };
         bail!("'{}' failed: {}", config.command, truncate(detail, 300));
     }
-    backend
-        .extract(&stdout)
-        .with_context(|| format!("'{}'", config.command))
+    let answer = backend.extract(&stdout)?;
+    if answer.is_empty() {
+        bail!("'{}' returned an empty answer", config.command);
+    }
+    Ok(answer)
 }
 
 fn truncate(s: &str, max: usize) -> &str {

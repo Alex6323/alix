@@ -50,6 +50,8 @@ pub struct RunOpts<'a> {
     pub model: Option<&'a str>,
     /// Effort level (`--effort`); `None` omits the flag.
     pub effort: Option<&'a str>,
+    /// Permission mode (`--permission-mode`); `None` omits the flag.
+    pub permission_mode: Option<&'a str>,
     /// The tool access this call grants.
     pub access: Access,
     /// Session arguments; forwarded verbatim by backends that support them.
@@ -70,7 +72,8 @@ pub trait Backend: Send + Sync {
     /// How the prompt reaches the CLI.
     fn prompt_delivery(&self) -> PromptDelivery;
 
-    /// Pulls the answer out of the CLI's stdout, erroring on empty output.
+    /// Pulls the answer out of the CLI's stdout. Returns the trimmed text;
+    /// an empty result is handled by the caller.
     fn extract(&self, stdout: &str) -> anyhow::Result<String>;
 
     /// Whether the backend can use tools (an agent), vs. a plain text model.
