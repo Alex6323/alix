@@ -72,7 +72,8 @@
   .menu { position: absolute; right: 0; top: calc(100% + 8px); z-index: 20; display: none; min-width: 172px; padding: 6px; background: var(--menu-bg); border: 1px solid var(--line); border-radius: 11px; box-shadow: 0 14px 34px -12px rgba(0,0,0,0.8); }
   .menu.open { display: block; }
   .menu button { display: block; width: 100%; text-align: left; background: none; color: var(--again); border: 0; border-radius: 7px; padding: 11px 12px; font-size: 0.92rem; font-weight: 500; cursor: pointer; }
-  .menu button:hover { background: rgba(255,255,255,0.07); }
+  .menu button:hover:not(:disabled) { background: rgba(255,255,255,0.07); }
+  .menu button:disabled { opacity: 0.5; cursor: default; }
   .menu .mk { font-family: var(--mono); font-size: 0.72rem; color: var(--dim); float: right; }
 
   /* ── stage + card ─────────────────────────────────────────────────── */
@@ -413,14 +414,16 @@
   .kp-list li.pt.no::before { content: "✗"; color: var(--again); }
 
   /* ── draw (canvas) input ── */
-  .draw-wrap { display: flex; flex-direction: column; gap: 8px; width: 100%; flex: 1 1 auto; min-height: 0; }
+  .draw-wrap { position: relative; display: flex; flex-direction: column; gap: 8px; width: 100%; flex: 1 1 auto; min-height: 0; }
   .draw-canvas { flex: 1 1 auto; min-height: 200px; width: 100%; border: 1px solid var(--line); border-radius: 12px; background: rgba(0,0,0,0.18); touch-action: none; cursor: crosshair; }
+  /* a ring that tracks the pointer so the eraser's size and reach are visible; sized in JS to the eraser width */
+  .eraser-ring { position: absolute; box-sizing: border-box; border: 1.5px solid var(--ink); background: rgba(255,255,255,0.08); border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; display: none; z-index: 4; }
   .draw-tools { display: flex; gap: 8px; flex: none; }
   .draw-tool { background: none; border: 1px solid var(--line); color: var(--dim); border-radius: 8px; padding: 6px 12px; font: inherit; font-size: 0.85rem; cursor: pointer; }
   .draw-tool:hover { color: var(--ink); }
   .draw-tool.on { color: var(--ink); border-color: var(--bolt); }
   .draw-frozen { width: 100%; margin-bottom: 8px; flex: none; }
-  .draw-frozen img { max-width: 100%; max-height: 40vh; border: 1px solid var(--line); border-radius: 12px; display: block; }
+  .draw-frozen img { max-width: 100%; max-height: 30vh; border: 1px solid var(--line); border-radius: 12px; display: block; margin: 0 auto; }
 
   /* ── AI exam ── */
   .exam { width: var(--card-w); max-width: 92vw; display: flex; flex-direction: column; gap: 12px; animation: deal 0.3s both; max-height: 78vh; overflow-y: auto; padding-right: 4px; }
@@ -640,7 +643,7 @@ function isExplain() { return state.mode === "explain"; }
 // Draw is effective when the card is authored draw-only OR the per-device toggle
 // is on — but only for the self-graded modes L1 supports, and never while acquiring.
 function effectiveDraw() {
-  if (!state || !state.card || isAcquire()) return false;
+  if (!state || !state.card) return false;
   if (state.card.context && state.card.context.length) return false; // cloze cards don't draw in L1 (a mode-less cloze resolves to flip)
   if (state.mode !== "flip" && state.mode !== "explain") return false;
   return state.input === "draw" || drawToggle;
@@ -1835,7 +1838,14 @@ function fillBottom() {
     else a.appendChild(el("div", "cite-err", state.card.citation_error || "source unavailable"));
     setNote(true);
   } else if (isAcquire()) {
-    if (isAcquireChoice()) {
+    if (effectiveDraw()) {
+      // Attempt-first, ungraded: draw your answer, then reveal it to compare.
+      if (revealed === 0) { renderDrawCanvas(a); setNote(false); }
+      else {
+        if (drawSnapshot) a.appendChild(frozenDrawImg(drawSnapshot)); // your attempt, kept for comparison
+        fillAcquire(a); setNote(true);         // then the answer (still just "Seen")
+      }
+    } else if (isAcquireChoice()) {
       if (feedback) renderChoiceFeedback(a); else renderChoices(a);
       setNote(!!feedback);
     } else if (revealed > 0) {
@@ -2107,10 +2117,14 @@ function explainReveal() {
 // The canvas you draw/handwrite on, with Pen · Eraser · Undo · Clear. Strokes
 // live in `drawStrokes`; the drawing is ephemeral — snapshotted on reveal for
 // side-by-side comparison, never persisted or sent to the server.
+const ERASER_WIDTH = 40;                        // eraser stroke width, and the diameter of its cursor ring
 function renderDrawCanvas(a) {
   const wrap = el("div", "draw-wrap");
   const canvas = el("canvas", "draw-canvas");
   wrap.appendChild(canvas);
+  const ring = el("div", "eraser-ring");        // shows the eraser's size/position; hidden until the eraser is over the canvas
+  ring.style.width = ring.style.height = ERASER_WIDTH + "px";
+  wrap.appendChild(ring);
   const tools = el("div", "draw-tools");
   const pen = drawToolBtn("Pen", () => setDrawTool("pen"));
   const erase = drawToolBtn("Eraser", () => setDrawTool("erase"));
@@ -2122,7 +2136,7 @@ function renderDrawCanvas(a) {
   tools.appendChild(drawToolBtn("Clear", drawClear));
   wrap.appendChild(tools);
   a.appendChild(wrap);
-  setupDrawCanvas(canvas);
+  setupDrawCanvas(canvas, ring);
 }
 function drawToolBtn(text, onClick) {
   const b = el("button", "draw-tool", text);
@@ -2136,7 +2150,7 @@ function drawClear() { drawStrokes = []; redrawStrokes(); }
 
 // Size the canvas to its box (crisp under devicePixelRatio), wire pointer
 // drawing (pen/touch/mouse), and replay existing strokes.
-function setupDrawCanvas(canvas) {
+function setupDrawCanvas(canvas, ring) {
   drawCanvasEl = canvas;
   const dpr = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
@@ -2147,30 +2161,43 @@ function setupDrawCanvas(canvas) {
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   canvas._ctx = ctx;
+  // In eraser mode the ring stands in for the cursor; the pen keeps a crosshair.
+  canvas.style.cursor = drawTool === "erase" ? "none" : "crosshair";
   redrawStrokes();
   let cur = null;
   const pos = e => { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  const moveRing = e => {
+    if (drawTool !== "erase") { ring.style.display = "none"; return; }
+    const p = pos(e);
+    ring.style.left = p.x + "px";
+    ring.style.top = p.y + "px";
+    ring.style.display = "block";
+  };
+  const hideRing = () => { ring.style.display = "none"; };
   canvas.addEventListener("pointerdown", e => {
     e.preventDefault();
     try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
     cur = { tool: drawTool, points: [pos(e)] };
     drawStrokes.push(cur);
+    moveRing(e);
   });
   canvas.addEventListener("pointermove", e => {
+    moveRing(e);
     if (!cur) return;
     cur.points.push(pos(e));
     drawSeg(ctx, cur);
   });
+  canvas.addEventListener("pointerenter", moveRing);
   const end = () => { cur = null; };
   canvas.addEventListener("pointerup", end);
-  canvas.addEventListener("pointercancel", end);
-  canvas.addEventListener("pointerleave", end);
+  canvas.addEventListener("pointercancel", () => { end(); hideRing(); });
+  canvas.addEventListener("pointerleave", () => { end(); hideRing(); });
 }
 // Ink is the theme's --ink; the eraser cuts pixels with destination-out.
 function drawStyle(ctx, tool) {
   ctx.globalCompositeOperation = tool === "erase" ? "destination-out" : "source-over";
   ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--ink").trim() || "#e6e6e6";
-  ctx.lineWidth = tool === "erase" ? 18 : 2.5;
+  ctx.lineWidth = tool === "erase" ? ERASER_WIDTH : 2.5;
 }
 // Draw the newest segment (incremental, so live strokes are smooth).
 function drawSeg(ctx, s) {
@@ -2313,7 +2340,14 @@ function renderLegend() {
       chip("Ask", "", openAsk, label(KEYS.ask));
     }
   } else if (isAcquire()) {
-    if (isAcquireChoice()) {
+    if (effectiveDraw()) {
+      if (revealed === 0) {
+        chip("Reveal", "primary", drawReveal, label(KEYS.reveal)); // reveal freezes your attempt
+        chip("Skip", "", skip, label(KEYS.skip));
+      } else {
+        chip("Seen", "primary", acquire, label(KEYS.reveal));      // ungraded acknowledgment
+      }
+    } else if (isAcquireChoice()) {
       chip("Skip", "", skip, label(KEYS.skip));            // options are tappable
     } else if (revealed > 0) {
       chip("Seen", "primary", acquire, label(KEYS.reveal));
@@ -2486,6 +2520,15 @@ document.addEventListener("keydown", (e) => {
   // Handled before the feedback/grade paths so a pick never grades the card.
   if (isAcquire()) {
     if (hit(e, KEYS.remove)) { e.preventDefault(); remove(); return; }
+    if (effectiveDraw()) {
+      if (revealed === 0) {
+        if (hit(e, KEYS.skip)) { e.preventDefault(); skip(); return; }
+        if (hit(e, KEYS.reveal)) { e.preventDefault(); drawReveal(); return; }
+      } else if (hit(e, KEYS.reveal) || e.key === "Enter" || e.key === " ") {
+        e.preventDefault(); acquire();
+      }
+      return;
+    }
     if (isAcquireChoice()) {
       if (!feedback) {
         if (hit(e, KEYS.skip)) { e.preventDefault(); skip(); return; }
@@ -2568,7 +2611,7 @@ document.addEventListener("keydown", (e) => {
   else if (hit(e, KEYS.passed)) { e.preventDefault(); grade("passed"); }
 });
 
-document.getElementById("kebab").addEventListener("click", (e) => { e.stopPropagation(); menu.classList.toggle("open"); });
+document.getElementById("kebab").addEventListener("click", (e) => { e.stopPropagation(); syncDrawMenu(); menu.classList.toggle("open"); });
 // Opening the burger (or clicking a menu item) must not pull focus off the
 // focused deck row — otherwise the picker's row-nav keys go dead until you click
 // back into the list. preventDefault on mousedown keeps focus where it is (the
@@ -2579,7 +2622,14 @@ menu.addEventListener("click", (e) => e.stopPropagation());
 document.getElementById("mAsk").addEventListener("click", () => { menu.classList.remove("open"); if (isAnswered()) openAsk(); });
 document.getElementById("mRemove").addEventListener("click", () => { menu.classList.remove("open"); remove(); });
 const mDraw = document.getElementById("mDraw");
-function syncDrawMenu() { document.getElementById("mDrawState").textContent = drawToggle ? "on" : "off"; }
+function syncDrawMenu() {
+  // Sticky only when the card is *actually* drawing because it's authored draw:
+  // gate on effectiveDraw() (flip/explain, non-cloze) so an authored `input:draw`
+  // on a non-drawable card can't show a misleading disabled "on" with no canvas.
+  const authored = effectiveDraw() && state.input === "draw";
+  document.getElementById("mDrawState").textContent = (authored || drawToggle) ? "on" : "off";
+  mDraw.disabled = authored;
+}
 syncDrawMenu();
 mDraw.addEventListener("click", () => {
   drawToggle = !drawToggle;
