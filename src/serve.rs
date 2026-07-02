@@ -31,7 +31,7 @@ use tiny_http::{Header, Method, Request, Response, Server};
 use twox_hash::XxHash64;
 
 use crate::{
-    answer::{Mode, grade_lines_unordered},
+    answer::{Input, Mode, grade_lines_unordered},
     ask::{self, CliSession, Exchange, Reply},
     augment::{self, AugmentCache},
     card::Card,
@@ -245,6 +245,10 @@ struct StateDto {
     /// The answer mode name (`flip`, `line`, …); the page reveals
     /// line-by-line for `line` and flip-style otherwise.
     mode: &'static str,
+    /// The input method (`type` / `draw`). `draw` tells the page to show the
+    /// canvas for a self-graded card; orthogonal to `mode`. The runtime "Draw
+    /// answers" toggle lives in the browser and never appears here.
+    input: &'static str,
     remaining: usize,
     initial: usize,
     reviews: usize,
@@ -2628,6 +2632,7 @@ fn review_state(
             keypoints: None,
             acquire: false,
             mode: mode_name(Mode::default()),
+            input: input_name(Input::default()),
             remaining: 0,
             initial: 0,
             reviews: 0,
@@ -2746,6 +2751,7 @@ fn review_state(
         keypoints,
         acquire,
         mode: mode_name(mode),
+        input: input_name(card.and_then(|c| c.input).unwrap_or_default()),
         remaining: session.remaining(),
         initial: session.initial_size,
         reviews: session.stats.reviews,
@@ -3190,6 +3196,14 @@ fn mode_name(mode: Mode) -> &'static str {
     }
 }
 
+/// The CLI/value name of an input method, matching `Input`'s clap names.
+fn input_name(input: Input) -> &'static str {
+    match input {
+        Input::Type => "type",
+        Input::Draw => "draw",
+    }
+}
+
 /// Parses a grade POST body into a [`Grade`]: either an explicit
 /// `{"grade":"failed|partly|passed"}`, or `{"covered":n,"total":m}` from the
 /// Explain key-point checklist (derived once, in the lib, via `keypoint_grade`).
@@ -3406,6 +3420,12 @@ mod tests {
         assert_eq!(mode_name(Mode::LineByLine), "line");
         assert_eq!(mode_name(Mode::Flip), "flip");
         assert_eq!(mode_name(Mode::Explain), "explain");
+    }
+
+    #[test]
+    fn input_name_matches_clap_value_names() {
+        assert_eq!(input_name(Input::Type), "type");
+        assert_eq!(input_name(Input::Draw), "draw");
     }
 
     // ---- ask-Claude server state machine -------------------------------
