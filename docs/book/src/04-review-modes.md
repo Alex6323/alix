@@ -108,6 +108,33 @@ A different augment target, `alix deck augment <deck> --target format`, instead
 clean display lines, non-destructively: it changes how the card is shown, not the
 deck file or how it's graded.
 
+## input: draw — draw instead of type *(web only)*
+
+`% input:` is a separate axis from `% mode:` — it changes how you *produce* an
+answer, not how it's graded. `draw` swaps the usual typed/reveal input for a
+canvas: instead of typing (or just reading) the answer, you draw or handwrite
+it, then self-grade against the card's normal reveal. The mode's grading is
+untouched — a `draw` `flip` card still reveals and asks Missed it / Partly / Got
+it, a `draw` `explain` card still reveals its key points.
+
+Two ways to reach it:
+
+- **Draw-only cards.** Set `% input: draw` on a card (or deck-wide) when the
+  answer *can't* be typed in the first place — a diagram, a circuit, a piece of
+  notation. The reveal is whatever the card already uses for that: an
+  `% img-back:` image, or an explain card's key points.
+- **The per-device toggle.** For a card that *can* be typed, the web ☰ menu's
+  **Draw answers** switch lets you answer on the canvas anyway — for the
+  retention of writing by hand — without changing the deck file. It's
+  remembered per browser, not written to the deck.
+
+Grading a draw card is entirely **self-reported**: there is no OCR or vision
+model reading the canvas, so it works exactly like a self-graded flip/explain
+card — you judge your own drawing against the reveal. `% input:` only applies
+to self-graded cards and is web-only; **`choice` mode is excluded** (there's
+nothing to draw when you're picking from four options), and the terminal
+ignores it.
+
 ---
 
 To drop a card mid-session, press the **remove** key (`Ctrl-X` by default) instead

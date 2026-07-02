@@ -173,6 +173,7 @@ card's front. Follow a link for the full explanation.
 | `!` line | card | A note shown after you answer. |
 | `%` line | anywhere | A comment — ignored, unless it is one of the directives below. |
 | `% mode:` | deck · card | [Answer mode](#deck-directives): `flip`, `typing`, `fuzzy`, `choice`, `line`, `explain`. |
+| `% input:` | deck · card | Answer input: `type` (default) or [`draw`](#review) — draw/handwrite the answer on a web canvas instead of typing, then self-grade. Web-only; honored on self-graded `flip`/`explain` cards; ignored elsewhere and in the TUI. |
 | `% order:` | deck | [Card order](#deck-directives): `scheduled` (default) or `sequential`. |
 | `% scheduler:` | deck | [Scheduler](#deck-directives): `leitner` (default) or `sm2`. |
 | `% direction:` | deck · card | [Review direction](#dual-direction-cards--direction): `forward`, `reverse`, or `both`. |
@@ -558,6 +559,16 @@ all → got it, some → partly, none → missed it — instead of a single gut 
 turns the self-grade from a vibe into a per-claim check (the cheap, in-loop cousin
 of the AI exam). Atomic-answer cards aren't given key points, so they keep the
 plain reveal.
+
+**Draw input (web).** A `flip` or `explain` card marked `% input: draw` is
+answered by drawing or handwriting on a canvas (pen, touch, or mouse) instead
+of typing — for diagrams, circuits, math, or just the retention of writing by
+hand — then self-graded against the card's normal reveal (an answer image, key
+points, or text). Nothing is typed or sent to the server; the drawing is
+discarded once you grade. For a card that *can* be typed, the web ☰ menu's
+**Draw answers** toggle switches it to the canvas too, per device (remembered
+in the browser). Drawn answers are self-assessed, not machine-checked — there
+is no OCR or vision model reading the canvas.
 
 To throw a card away, press the **remove** key (`Ctrl-X` by default) on it
 instead of grading — it is dropped from the session without being asked again

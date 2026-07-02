@@ -15,6 +15,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   row marks a deck that has a focus drawer (a cached topology), so you can see at a
   glance which rows expand on focus instead of discovering it only after selecting.
   The marker lights to the accent colour on the focused row.
+- Draw input (web): answer a `flip`/`explain` card by drawing or handwriting on a
+  canvas, then self-grade — either authored per card/deck with `% input: draw`
+  (for answers that can't be typed, e.g. diagrams) or via a per-device "Draw
+  answers" toggle in the review menu. Web-only; the drawing is ephemeral (never
+  persisted or sent to the server).
 
 ### Changed
 - **Breaking — config keybindings are namespaced under `[keys]`.** Every key table
