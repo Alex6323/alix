@@ -8,14 +8,22 @@
 //! This demonstrates the library's composability; it is not a GitHub-integration
 //! feature of alix.
 //!
-//! Run from inside the repo the item belongs to. Requires `gh` on PATH and a
-//! working `claude` CLI (alix shells out to it). The workspace is disposable —
-//! retire it with `clean` after you merge or close.
+//! Because this is a cargo *example*, `cargo run --example` works only from the
+//! alix checkout — but the tool acts on whatever repo it runs *in*. So build it
+//! once, then run the compiled binary from inside the repo you're reviewing (or
+//! symlink it onto your PATH):
 //!
-//! Usage:
-//!   cargo run --example gh-review-prep -- [pr] <n|url>          build a PR workspace
-//!   cargo run --example gh-review-prep -- issue <n|url>         build an issue workspace
-//!   cargo run --example gh-review-prep -- clean [pr|issue] <n>  retire a workspace
+//!   cargo build --example gh-review-prep     # once, from the alix repo
+//!   cd /path/to/repo-under-review            # the repo the PR/issue belongs to
+//!   <alix>/target/debug/examples/gh-review-prep [pr] <n|url>          # a PR workspace
+//!   <alix>/target/debug/examples/gh-review-prep issue <n|url>         # an issue workspace
+//!   <alix>/target/debug/examples/gh-review-prep clean [pr|issue] <n>  # retire it
+//!
+//! Tip: symlink that binary onto your PATH (e.g. ~/.local/bin/gh-review-prep) and
+//! just run `gh-review-prep pr <n>` from the repo under review.
+//!
+//! Requires `gh` on PATH and a working `claude` CLI (alix shells out to it). The
+//! workspace is disposable — retire it with `clean` after you merge or close.
 //!
 //! Env: ALIX_REVIEWS_DIR (default ~/reviews), ALIX_REVIEW_ICON=1 (draw an icon).
 
@@ -353,11 +361,12 @@ fn print_help() {
     println!(
         "gh-review-prep — build an ephemeral alix workspace to understand a GitHub PR or issue\n\
          \n\
-         USAGE (run from inside the repo the item belongs to):\n\
-         \x20 cargo run --example gh-review-prep -- [pr] <n|url>          build a PR workspace\n\
-         \x20 cargo run --example gh-review-prep -- issue <n|url>         build an issue workspace\n\
-         \x20 cargo run --example gh-review-prep -- clean [pr|issue] <n>  retire a workspace\n\
+         USAGE (run this built binary from inside the repo the PR/issue belongs to):\n\
+         \x20 gh-review-prep [pr] <n|url>          build a PR workspace\n\
+         \x20 gh-review-prep issue <n|url>         build an issue workspace\n\
+         \x20 gh-review-prep clean [pr|issue] <n>  retire a workspace\n\
          \n\
+         Build it from the alix repo: cargo build --example gh-review-prep\n\
          ENV: ALIX_REVIEWS_DIR (default ~/reviews), ALIX_REVIEW_ICON=1 (draw an icon)"
     );
 }
