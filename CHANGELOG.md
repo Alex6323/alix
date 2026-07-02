@@ -7,7 +7,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- An `examples/understand.rs` showing how to compose the library into an ephemeral, goal-scoped workspace for understanding a change you must read closely (e.g. a GitHub PR or issue) before acting on it. Read-only; a demonstration of composability, not a GitHub feature.
+- An `examples/gh-review-prep.rs` showing how to compose the library into an ephemeral, goal-scoped workspace for understanding a change you must read closely (a GitHub PR or issue) before acting on it. Read-only; a demonstration of composability, not a GitHub feature.
 - **Web picker: a workspace's goal shows in its drill-in.** Opening a workspace now
   shows its goal (the one-line description) under the title eyebrow, the same goal the
   top-level list shows on the workspace row — so the context stays visible while you

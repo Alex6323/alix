@@ -13,9 +13,9 @@
 //! retire it with `clean` after you merge or close.
 //!
 //! Usage:
-//!   cargo run --example understand -- [pr] <n|url>          build a PR workspace
-//!   cargo run --example understand -- issue <n|url>         build an issue workspace
-//!   cargo run --example understand -- clean [pr|issue] <n>  retire a workspace
+//!   cargo run --example gh-review-prep -- [pr] <n|url>          build a PR workspace
+//!   cargo run --example gh-review-prep -- issue <n|url>         build an issue workspace
+//!   cargo run --example gh-review-prep -- clean [pr|issue] <n>  retire a workspace
 //!
 //! Env: ALIX_REVIEWS_DIR (default ~/reviews), ALIX_REVIEW_ICON=1 (draw an icon).
 
@@ -297,7 +297,7 @@ fn cmd_build(kind: Kind, id: &str) -> Result<()> {
     let ws = workspace_path(&reviews_dir(), &repo, kind, &slug);
     if ws.exists() {
         bail!(
-            "review workspace already exists: {} (retire it with: understand clean {} {slug})",
+            "review workspace already exists: {} (retire it with: gh-review-prep clean {} {slug})",
             ws.display(),
             kind.slug()
         );
@@ -351,12 +351,12 @@ fn print_next_steps(ws: &Path, report: &alix::explore::Materialized) -> Result<(
 
 fn print_help() {
     println!(
-        "understand — build an ephemeral alix workspace to understand a GitHub PR or issue\n\
+        "gh-review-prep — build an ephemeral alix workspace to understand a GitHub PR or issue\n\
          \n\
          USAGE (run from inside the repo the item belongs to):\n\
-         \x20 cargo run --example understand -- [pr] <n|url>          build a PR workspace\n\
-         \x20 cargo run --example understand -- issue <n|url>         build an issue workspace\n\
-         \x20 cargo run --example understand -- clean [pr|issue] <n>  retire a workspace\n\
+         \x20 cargo run --example gh-review-prep -- [pr] <n|url>          build a PR workspace\n\
+         \x20 cargo run --example gh-review-prep -- issue <n|url>         build an issue workspace\n\
+         \x20 cargo run --example gh-review-prep -- clean [pr|issue] <n>  retire a workspace\n\
          \n\
          ENV: ALIX_REVIEWS_DIR (default ~/reviews), ALIX_REVIEW_ICON=1 (draw an icon)"
     );

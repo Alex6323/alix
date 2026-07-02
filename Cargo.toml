@@ -41,5 +41,5 @@ path = "src/main.rs"
 # `#[cfg(test)]` unit tests locally and in CI — otherwise `cargo clippy
 # --all-targets` compiles them but `cargo test` never executes them.
 [[example]]
-name = "understand"
+name = "gh-review-prep"
 test = true
