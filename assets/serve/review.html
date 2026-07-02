@@ -412,6 +412,16 @@
   .kp-list li.pt.no { color: var(--dim); }
   .kp-list li.pt.no::before { content: "✗"; color: var(--again); }
 
+  /* ── draw (canvas) input ── */
+  .draw-wrap { display: flex; flex-direction: column; gap: 8px; width: 100%; flex: 1 1 auto; min-height: 0; }
+  .draw-canvas { flex: 1 1 auto; min-height: 200px; width: 100%; border: 1px solid var(--line); border-radius: 12px; background: rgba(0,0,0,0.18); touch-action: none; cursor: crosshair; }
+  .draw-tools { display: flex; gap: 8px; flex: none; }
+  .draw-tool { background: none; border: 1px solid var(--line); color: var(--dim); border-radius: 8px; padding: 6px 12px; font: inherit; font-size: 0.85rem; cursor: pointer; }
+  .draw-tool:hover { color: var(--ink); }
+  .draw-tool.on { color: var(--ink); border-color: var(--bolt); }
+  .draw-frozen { width: 100%; margin-bottom: 8px; flex: none; }
+  .draw-frozen img { max-width: 100%; max-height: 40vh; border: 1px solid var(--line); border-radius: 12px; display: block; }
+
   /* ── AI exam ── */
   .exam { width: var(--card-w); max-width: 92vw; display: flex; flex-direction: column; gap: 12px; animation: deal 0.3s both; max-height: 78vh; overflow-y: auto; padding-right: 4px; }
   .exam-wait { color: var(--dim); font-style: italic; }
@@ -528,6 +538,12 @@ let topoCache = {};
 let explainInput = ""; // the typed reconstruction on an explain card (client-side)
 let marks = [];        // per-key-point yes/no/pending for an explain checklist (client-side)
 let kpCur = 0;         // the key point the cursor is on, walked top to bottom
+let drawStrokes = [];    // strokes on a draw card this reveal: [{tool, points:[{x,y}]}]
+let drawSnapshot = null; // frozen dataURL of the drawing, kept visible during self-grade
+let drawTool = "pen";    // "pen" | "erase"
+let drawCanvasEl = null; // the live <canvas> while drawing
+// Per-device "Draw answers" preference (wired to the menu in Task 5).
+let drawToggle = (function () { try { return localStorage.getItem("alix-draw") === "1"; } catch (e) { return false; } })();
 let asking = false;   // the ask-Claude overlay is open
 let askData = { transcript: [], thinking: false, status: null, error: null };
 let askInfo = { model: "default", effort: "default" }; // the tutor's model + effort, from /api/ask-info
@@ -611,7 +627,7 @@ function renderLeaveConfirm() {
   chip("Stay", "primary", cancelLeave, "esc");
 }
 
-function apply(s) { state = s; revealed = 0; citationView = false; feedback = null; explainInput = ""; marks = []; kpCur = 0; render(); }
+function apply(s) { state = s; revealed = 0; citationView = false; feedback = null; explainInput = ""; marks = []; kpCur = 0; drawStrokes = []; drawSnapshot = null; drawTool = "pen"; drawCanvasEl = null; render(); }
 function hasKeypoints() { return isExplain() && state.keypoints && state.keypoints.length > 0; }
 // A never-seen card: an attempt then reveal, acknowledged with one key (not graded).
 function isAcquire() { return !!(state && state.acquire); }
@@ -620,6 +636,13 @@ function isAcquireChoice() { return isAcquire() && !!state.choices; }
 function isChoice() { return state.mode === "choice" && state.choices; }
 function isInput() { return state.mode === "typing" || state.mode === "fuzzy"; }
 function isExplain() { return state.mode === "explain"; }
+// Draw is effective when the card is authored draw-only OR the per-device toggle
+// is on — but only for the self-graded modes L1 supports, and never while acquiring.
+function effectiveDraw() {
+  if (!state || !state.card || isAcquire()) return false;
+  if (state.mode !== "flip" && state.mode !== "explain") return false;
+  return state.input === "draw" || drawToggle;
+}
 function modeLabel() {
   if (isAcquire()) return "new card";
   return { typing: "typing exact", fuzzy: "typing fuzzy", line: "line by line", explain: "understanding" }[state.mode] || state.mode;
@@ -1823,6 +1846,14 @@ function fillBottom() {
   else if (feedback) { (isChoice() ? renderChoiceFeedback : renderCheckFeedback)(a); setNote(true); }
   else if (isChoice()) { renderChoices(a); setNote(false); }
   else if (isInput()) { renderInput(a); setNote(false); }
+  else if (effectiveDraw()) {
+    if (revealed === 0) { renderDrawCanvas(a); setNote(false); }
+    else {
+      if (drawSnapshot) a.appendChild(frozenDrawImg(drawSnapshot)); // your drawing, for comparison
+      if (isExplain()) { renderExplain(a); setNote(true); }         // key-points checklist reveal
+      else { fillAnswer(a); setNote(true); }                        // flip reveal (back / img_back)
+    }
+  }
   else if (isExplain()) { renderExplain(a); setNote(fullyRevealed()); }
   else { fillAnswer(a); setNote(fullyRevealed()); }
   // A cited card: the whole region toggles answer ⟷ source (click it, or `s`).
@@ -2070,6 +2101,114 @@ function explainReveal() {
   renderLegend();
 }
 
+// ── draw input ──────────────────────────────────────────────────────
+// The canvas you draw/handwrite on, with Pen · Eraser · Undo · Clear. Strokes
+// live in `drawStrokes`; the drawing is ephemeral — snapshotted on reveal for
+// side-by-side comparison, never persisted or sent to the server.
+function renderDrawCanvas(a) {
+  const wrap = el("div", "draw-wrap");
+  const canvas = el("canvas", "draw-canvas");
+  wrap.appendChild(canvas);
+  const tools = el("div", "draw-tools");
+  const pen = drawToolBtn("Pen", () => setDrawTool("pen"));
+  const erase = drawToolBtn("Eraser", () => setDrawTool("erase"));
+  pen.classList.toggle("on", drawTool === "pen");
+  erase.classList.toggle("on", drawTool === "erase");
+  tools.appendChild(pen);
+  tools.appendChild(erase);
+  tools.appendChild(drawToolBtn("Undo", drawUndo));
+  tools.appendChild(drawToolBtn("Clear", drawClear));
+  wrap.appendChild(tools);
+  a.appendChild(wrap);
+  setupDrawCanvas(canvas);
+}
+function drawToolBtn(text, onClick) {
+  const b = el("button", "draw-tool", text);
+  b.type = "button";
+  b.addEventListener("click", e => { e.preventDefault(); e.stopPropagation(); onClick(); });
+  return b;
+}
+function setDrawTool(t) { drawTool = t; render(); }
+function drawUndo() { drawStrokes.pop(); redrawStrokes(); }
+function drawClear() { drawStrokes = []; redrawStrokes(); }
+
+// Size the canvas to its box (crisp under devicePixelRatio), wire pointer
+// drawing (pen/touch/mouse), and replay existing strokes.
+function setupDrawCanvas(canvas) {
+  drawCanvasEl = canvas;
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = Math.max(1, Math.round(rect.width * dpr));
+  canvas.height = Math.max(1, Math.round(rect.height * dpr));
+  const ctx = canvas.getContext("2d");
+  ctx.scale(dpr, dpr);
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  canvas._ctx = ctx;
+  redrawStrokes();
+  let cur = null;
+  const pos = e => { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  canvas.addEventListener("pointerdown", e => {
+    e.preventDefault();
+    try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+    cur = { tool: drawTool, points: [pos(e)] };
+    drawStrokes.push(cur);
+  });
+  canvas.addEventListener("pointermove", e => {
+    if (!cur) return;
+    cur.points.push(pos(e));
+    drawSeg(ctx, cur);
+  });
+  const end = () => { cur = null; };
+  canvas.addEventListener("pointerup", end);
+  canvas.addEventListener("pointercancel", end);
+  canvas.addEventListener("pointerleave", end);
+}
+// Ink is the theme's --ink; the eraser cuts pixels with destination-out.
+function drawStyle(ctx, tool) {
+  ctx.globalCompositeOperation = tool === "erase" ? "destination-out" : "source-over";
+  ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--ink").trim() || "#e6e6e6";
+  ctx.lineWidth = tool === "erase" ? 18 : 2.5;
+}
+// Draw the newest segment (incremental, so live strokes are smooth).
+function drawSeg(ctx, s) {
+  const p = s.points;
+  if (p.length < 2) return;
+  drawStyle(ctx, s.tool);
+  const a = p[p.length - 2], b = p[p.length - 1];
+  ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+}
+// Replay every stroke onto a cleared canvas (undo / clear).
+function redrawStrokes() {
+  const canvas = drawCanvasEl;
+  if (!canvas || !canvas._ctx) return;
+  const ctx = canvas._ctx, dpr = window.devicePixelRatio || 1;
+  ctx.globalCompositeOperation = "source-over";
+  ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+  for (const s of drawStrokes) {
+    for (let i = 1; i < s.points.length; i++) {
+      drawStyle(ctx, s.tool);
+      const a = s.points[i - 1], b = s.points[i];
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    }
+  }
+}
+// Reveal: freeze the drawing (kept on screen to self-check against the answer),
+// then reveal. Use max(1, …) so an image-only answer (no back lines) still reveals.
+function drawReveal() {
+  drawSnapshot = drawCanvasEl ? drawCanvasEl.toDataURL() : null;
+  revealed = Math.max(1, backCount());
+  render();
+}
+function frozenDrawImg(dataUrl) {
+  const wrap = el("div", "draw-frozen");
+  const img = el("img", null);
+  img.src = dataUrl;
+  img.alt = "your drawing";
+  wrap.appendChild(img);
+  return wrap;
+}
+
 // A reshaped multi-item answer (the `format` augment's list) reveals with
 // bullets; the card's own authored back lines (a poem, typing answers) are not
 // bulleted — only the reshape is, gated by `reshaped` from the server.
@@ -2180,6 +2319,9 @@ function renderLegend() {
       chip("Reveal", "primary", reveal, label(KEYS.reveal));
       chip("Skip", "", skip, label(KEYS.skip));
     }
+  } else if (effectiveDraw() && revealed === 0) {
+    chip("Reveal", "primary", drawReveal, "enter");
+    chip("Skip", "", skip, label(KEYS.skip));
   } else if (isChoice()) {
     chip("Skip", "", skip, label(KEYS.skip));
   } else if (isInput()) {
