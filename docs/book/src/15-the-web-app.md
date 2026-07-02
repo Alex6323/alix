@@ -59,9 +59,9 @@ All [answer modes](04-review-modes.md) work in the browser — flip, line (it
 auto-scrolls to the newest line), typing/fuzzy (each line marked ✓/✗ with the
 correct answer shown), and choice (tap an option). Controls are big tap targets and
 follow *your* configured key bindings (the page reads them from the server). The
-**☰ menu** is context-aware: during review it holds **Ask Claude** and **Draw
-answers** (a per-device toggle, see below); on the deck picker, **keyboard
-shortcuts**, **refresh decks**, and **about** — with **Theme…** in both.
+**☰ menu** is context-aware: during review it holds **Ask Claude**; on the
+deck picker, **keyboard shortcuts**, **refresh decks**, and **about** — with
+**Theme…** and **Draw answers** (a per-device toggle, see below) in both.
 
 The AI features come along too: the [ask-Claude tutor](10-ask-claude.md), the
 [AI exam](12-the-ai-exam.md), and [trace walks](13-trace-decks.md) all have a web
@@ -70,14 +70,15 @@ so the single-threaded server never blocks.
 
 ## Draw input
 
-A [`% input: draw`](04-review-modes.md) card, or any self-graded card with the
-☰ menu's **Draw answers** toggle switched on, swaps the usual typed/reveal
+A [`% input: draw`](04-review-modes.md) card, or a `flip`/`explain` card with
+the ☰ menu's **Draw answers** toggle switched on, swaps the usual typed/reveal
 input for a small canvas: **Pen** · **Eraser** · **Undo** · **Clear**, then
 **Reveal**. The drawing stays on screen — frozen, not editable — while you
 self-grade against the card's normal reveal, then it's discarded; nothing you
 draw is saved or sent anywhere beyond rendering it in the browser. It's
-web-only (no canvas in the terminal) and there's no OCR or vision model
-reading it back — grading is on you, same as any other self-graded card.
+web-only (no canvas in the terminal), honored on `flip`/`explain` cards only,
+and there's no OCR or vision model reading it back — grading is on you, same as
+any other self-graded card.
 
 ## Themes
 

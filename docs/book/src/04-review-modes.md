@@ -122,18 +122,22 @@ Two ways to reach it:
 - **Draw-only cards.** Set `% input: draw` on a card (or deck-wide) when the
   answer *can't* be typed in the first place — a diagram, a circuit, a piece of
   notation. The reveal is whatever the card already uses for that: an
-  `% img-back:` image, or an explain card's key points.
+  `% img-back:` image, or an explain card's key points. An authored `% input:
+  draw` card always uses the canvas — the per-device toggle below can't turn it
+  off (you can't type a diagram).
 - **The per-device toggle.** For a card that *can* be typed, the web ☰ menu's
   **Draw answers** switch lets you answer on the canvas anyway — for the
   retention of writing by hand — without changing the deck file. It's
-  remembered per browser, not written to the deck.
+  remembered per browser, not written to the deck, and it only *adds* drawing
+  to an otherwise-typed `flip`/`explain` card.
 
 Grading a draw card is entirely **self-reported**: there is no OCR or vision
 model reading the canvas, so it works exactly like a self-graded flip/explain
-card — you judge your own drawing against the reveal. `% input:` only applies
-to self-graded cards and is web-only; **`choice` mode is excluded** (there's
-nothing to draw when you're picking from four options), and the terminal
-ignores it.
+card — you judge your own drawing against the reveal. In this version `%
+input:` is honored on **`flip` and `explain`** cards only, and is web-only (the
+terminal ignores it); it's an input axis meant to extend to other self-graded
+modes later, but `line`, `typing`, `fuzzy`, `cloze`, and `choice` don't draw
+yet.
 
 ---
 
