@@ -2517,6 +2517,14 @@ document.addEventListener("keydown", (e) => {
     else if (e.ctrlKey && hit(e, KEYS.skip)) { e.preventDefault(); skip(); }
     return;
   }
+  // Draw before reveal: the canvas takes pointer input, not keys. Enter reveals
+  // (freezing the drawing) to match the "Reveal" chip; placed before the explain
+  // and generic reveal branches so a flip/explain draw card reveals via drawReveal().
+  if (effectiveDraw() && revealed === 0) {
+    if (e.key === "Enter") { e.preventDefault(); drawReveal(); }
+    else if (hit(e, KEYS.skip)) { e.preventDefault(); skip(); }
+    return;
+  }
   // Explain before reveal: the textarea takes plain keys (Enter = newline) and
   // Shift+Enter reveals. The textarea handles Shift+Enter when focused (and stops
   // it there); this covers the case where focus has left the textarea.
