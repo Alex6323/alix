@@ -12,10 +12,12 @@
 
 mod claude;
 mod codex;
+mod copilot;
 mod gemini;
 
 pub use claude::ClaudeBackend;
 pub use codex::CodexBackend;
+pub use copilot::CopilotBackend;
 pub use gemini::GeminiBackend;
 
 use crate::config::{AskConfig, BackendKind};
@@ -136,7 +138,7 @@ pub fn backend_for(cfg: &AskConfig) -> anyhow::Result<Box<dyn Backend>> {
         BackendKind::Claude => Ok(Box::new(ClaudeBackend)),
         BackendKind::Gemini => Ok(Box::new(GeminiBackend)),
         BackendKind::Codex => Ok(Box::new(CodexBackend)),
-        BackendKind::Copilot => anyhow::bail!("the copilot backend isn't available yet"),
+        BackendKind::Copilot => Ok(Box::new(CopilotBackend)),
     }
 }
 
@@ -150,7 +152,7 @@ mod tests {
     }
 
     #[test]
-    fn backend_for_wires_claude_gemini_codex_copilot_not_yet() {
+    fn backend_for_wires_all_four_backends() {
         let mut cfg = AskConfig::default();
         assert!(backend_for(&cfg).is_ok(), "claude should be wired");
 
@@ -161,11 +163,7 @@ mod tests {
         assert!(backend_for(&cfg).is_ok(), "codex should be wired");
 
         cfg.backend = BackendKind::Copilot;
-        let err = backend_for(&cfg).err().expect("copilot should error");
-        assert!(
-            format!("{err}").contains("copilot"),
-            "error should name the backend"
-        );
+        assert!(backend_for(&cfg).is_ok(), "copilot should be wired");
     }
 
     #[test]
