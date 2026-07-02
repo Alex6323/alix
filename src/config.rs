@@ -215,17 +215,17 @@ impl Default for BrowseBindings {
 
 /// Which AI CLI backend to use for assistant calls.
 ///
-/// Only `Claude` is wired today; the other variants are recognised by the
-/// parser and round-trip cleanly, but `backend_for` returns an error for
-/// them until the matching task lands.
+/// `Claude`, `Gemini`, and `Codex` are wired; `Copilot` is recognised by the
+/// parser and round-trips cleanly, but `backend_for` returns an error for it
+/// until the matching task lands.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum BackendKind {
     /// The Claude Code CLI (`claude -p`). The default.
     #[default]
     Claude,
-    /// Google Gemini CLI (not yet wired).
+    /// Google Gemini CLI (`gemini -p`, headless).
     Gemini,
-    /// OpenAI Codex CLI (not yet wired).
+    /// OpenAI Codex CLI (`codex exec`, headless).
     Codex,
     /// GitHub Copilot CLI (not yet wired).
     Copilot,

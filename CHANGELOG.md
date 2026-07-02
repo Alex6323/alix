@@ -16,6 +16,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   auto-approved. Trace building picks each backend's own strong model (Claude
   still defaults to `opus`; other backends inherit the CLI's default), so leaving
   `[trace] model` unset does the right thing per backend.
+- **Codex backend (`[ask] backend = "codex"`).** alix's AI calls can now run
+  through the OpenAI Codex CLI (`codex exec`, headless). Codex takes the prompt
+  as a command-line argument rather than on stdin, and its access is governed by
+  a sandbox rather than a tool allowlist: it runs `--sandbox read-only` with
+  `--ask-for-approval never`, which permits reading local source but blocks
+  writes, shell escalation, and the network — so a fetch/search grant can't be
+  honoured under this backend (source reading still works).
 - **Web picker: a workspace's goal shows in its drill-in.** Opening a workspace now
   shows its goal (the one-line description) under the title eyebrow, the same goal the
   top-level list shows on the workspace row — so the context stays visible while you

@@ -47,6 +47,17 @@ pub(crate) fn fake_reply(dir: &Path, reply: &str) -> PathBuf {
     fake_cli(dir, &format!("cat >/dev/null; cat {}", out.display()))
 }
 
+/// A fake CLI for **arg-delivery** backends (Codex `exec`): it prints `reply`
+/// verbatim and needs no stdin, because the prompt arrives as a command-line
+/// argument, not on stdin. `ask::run` closes stdin immediately for arg
+/// delivery, so unlike [`fake_reply`] this script deliberately does *not* drain
+/// it. The reply is `cat`-ed from a file so it needs no shell escaping.
+pub(crate) fn fake_arg_reply(dir: &Path, reply: &str) -> PathBuf {
+    let out = dir.join("fake-arg-reply");
+    std::fs::write(&out, reply).unwrap();
+    fake_cli(dir, &format!("cat {}", out.display()))
+}
+
 /// An [`AskConfig`] pointing at `command`, with a short test timeout.
 pub(crate) fn ask_config(command: &Path) -> AskConfig {
     AskConfig {

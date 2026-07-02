@@ -11,9 +11,11 @@
 //! CLI-specific tool.
 
 mod claude;
+mod codex;
 mod gemini;
 
 pub use claude::ClaudeBackend;
+pub use codex::CodexBackend;
 pub use gemini::GeminiBackend;
 
 use crate::config::{AskConfig, BackendKind};
@@ -128,12 +130,12 @@ pub trait Backend: Send + Sync {
 }
 
 /// Selects the backend for a config, returning an error for backends that are
-/// not yet wired (Gemini, Codex, Copilot — later tasks flip each arm).
+/// not yet wired (Copilot — a later task flips its arm).
 pub fn backend_for(cfg: &AskConfig) -> anyhow::Result<Box<dyn Backend>> {
     match cfg.backend {
         BackendKind::Claude => Ok(Box::new(ClaudeBackend)),
         BackendKind::Gemini => Ok(Box::new(GeminiBackend)),
-        BackendKind::Codex => anyhow::bail!("the codex backend isn't available yet"),
+        BackendKind::Codex => Ok(Box::new(CodexBackend)),
         BackendKind::Copilot => anyhow::bail!("the copilot backend isn't available yet"),
     }
 }
@@ -148,7 +150,7 @@ mod tests {
     }
 
     #[test]
-    fn backend_for_wires_claude_and_gemini_others_not_yet() {
+    fn backend_for_wires_claude_gemini_codex_copilot_not_yet() {
         let mut cfg = AskConfig::default();
         assert!(backend_for(&cfg).is_ok(), "claude should be wired");
 
@@ -156,11 +158,7 @@ mod tests {
         assert!(backend_for(&cfg).is_ok(), "gemini should be wired");
 
         cfg.backend = BackendKind::Codex;
-        let err = backend_for(&cfg).err().expect("codex should error");
-        assert!(
-            format!("{err}").contains("codex"),
-            "error should name the backend"
-        );
+        assert!(backend_for(&cfg).is_ok(), "codex should be wired");
 
         cfg.backend = BackendKind::Copilot;
         let err = backend_for(&cfg).err().expect("copilot should error");

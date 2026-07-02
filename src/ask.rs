@@ -326,7 +326,16 @@ pub(crate) fn run(config: &AskConfig, prompt: &str, extra_args: &[String]) -> Re
         access: Access::from_allowed_tools(&config.allowed_tools),
         session_args: extra_args,
     };
-    let argv = backend.build_argv(&opts);
+    let mut argv = backend.build_argv(&opts);
+    // Arg-delivery backends (Codex `exec`) take the prompt as the final
+    // positional argument rather than on stdin; append it here so the backend's
+    // `build_argv` stays prompt-free.
+    if matches!(
+        backend.prompt_delivery(),
+        PromptDelivery::Arg | PromptDelivery::ExecArg
+    ) {
+        argv.push(prompt.to_string());
+    }
 
     let mut cmd = Command::new(&config.command);
     cmd.args(&argv);
@@ -572,7 +581,7 @@ mod tests {
         assert!(extract_note_lines("  \n\n").is_empty());
     }
 
-    use crate::testutil::{exec_lock, fake_cli};
+    use crate::testutil::{exec_lock, fake_arg_reply, fake_cli};
 
     fn config(command: &std::path::Path, timeout_secs: u64) -> AskConfig {
         AskConfig {
@@ -665,6 +674,49 @@ mod tests {
             ..AskConfig::default()
         };
         assert!(run(&config, "x", &[]).is_err());
+    }
+
+    #[test]
+    fn arg_delivery_appends_the_prompt_and_reads_the_reply() {
+        use crate::config::BackendKind;
+        let _lock = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        // An arg-delivery fake that ignores stdin and replies with fixed text.
+        let cli = fake_arg_reply(dir.path(), "the codex answer");
+        let config = AskConfig {
+            backend: BackendKind::Codex,
+            command: cli.to_str().unwrap().to_string(),
+            timeout_secs: 10,
+            ..AskConfig::default()
+        };
+        let answer = run(&config, "explain this card", &[]).unwrap();
+        assert_eq!("the codex answer", answer);
+    }
+
+    #[test]
+    fn arg_delivery_passes_the_prompt_as_the_final_argument() {
+        use crate::config::BackendKind;
+        let _lock = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        // Echo the received arguments; arg delivery must append the prompt last.
+        let cli = fake_cli(dir.path(), "echo \"$@\"");
+        let config = AskConfig {
+            backend: BackendKind::Codex,
+            command: cli.to_str().unwrap().to_string(),
+            timeout_secs: 10,
+            ..AskConfig::default()
+        };
+        let answer = run(&config, "the-prompt-text", &[]).unwrap();
+        // The Codex invocation, with the prompt as the final positional arg.
+        assert!(answer.contains("exec"), "args were: {answer}");
+        assert!(
+            answer.contains("--sandbox read-only"),
+            "args were: {answer}"
+        );
+        assert!(
+            answer.trim().ends_with("the-prompt-text"),
+            "args were: {answer}"
+        );
     }
 
     #[test]
