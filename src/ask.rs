@@ -18,7 +18,31 @@ use std::{
 
 use anyhow::{Context, Result, bail};
 
-use crate::{card::Card, config::AskConfig};
+use crate::{
+    backend::{Access, PromptDelivery, RunOpts, backend_for},
+    card::Card,
+    config::AskConfig,
+};
+
+/// Derives the abstract tool [`Access`] grant from a Claude-style allowlist, so
+/// `run` can hand a backend a CLI-independent grant. `files` covers any of the
+/// read-only file tools; `fetch`/`search` map to `WebFetch`/`WebSearch`. An
+/// empty allowlist means no tools at all.
+fn access_of(allowed_tools: &[String]) -> Access {
+    let has = |name: &str| allowed_tools.iter().any(|t| t == name);
+    let files = has("Read") || has("Glob") || has("Grep");
+    let fetch = has("WebFetch");
+    let search = has("WebSearch");
+    if !files && !fetch && !search {
+        Access::None
+    } else {
+        Access::ReadOnly {
+            files,
+            fetch,
+            search,
+        }
+    }
+}
 
 /// One question/answer exchange.
 pub type Exchange = (String, String);
@@ -302,33 +326,30 @@ pub fn spawn(config: AskConfig, prompt: String, extra_args: Vec<String>) -> Rece
     rx
 }
 
-/// Runs the CLI in print mode, feeding the prompt through stdin, with a
-/// timeout. The permission mode and tool allowlist come from the config; the
-/// default `dontAsk` + `[WebFetch, WebSearch]` lets Claude consult deck links
-/// without ever blocking on an (unanswerable) permission prompt, while
-/// denying every other tool.
+/// Runs the assistant CLI with a timeout, delegating the CLI-specific argv,
+/// prompt delivery, and answer extraction to the [`Backend`] for `config`;
+/// the spawn/drain/timeout plumbing lives here. The tool allowlist becomes an
+/// abstract [`Access`] grant the backend renders back into its flags — for
+/// Claude, the default `[WebFetch, WebSearch]` under `dontAsk` lets it consult
+/// deck links without ever blocking on an (unanswerable) permission prompt,
+/// while denying every other tool.
 pub(crate) fn run(config: &AskConfig, prompt: &str, extra_args: &[String]) -> Result<String> {
+    let backend = backend_for(config);
+    let opts = RunOpts {
+        model: config.model.as_deref(),
+        effort: config.effort.as_deref(),
+        access: access_of(&config.allowed_tools),
+        session_args: extra_args,
+    };
+    let argv = backend.build_argv(&opts);
+
     let mut cmd = Command::new(&config.command);
-    cmd.args(["-p", "--output-format", "text"]);
-    if !config.allowed_tools.is_empty() {
-        cmd.arg("--allowedTools");
-        cmd.args(&config.allowed_tools);
-    }
-    if !config.permission_mode.is_empty() {
-        cmd.args(["--permission-mode", &config.permission_mode]);
-    }
-    if let Some(model) = &config.model {
-        cmd.args(["--model", model]);
-    }
-    if let Some(effort) = &config.effort {
-        cmd.args(["--effort", effort]);
-    }
+    cmd.args(&argv);
     // Trace building runs in the `% source:` root so Claude explores it with
     // relative paths; other callers inherit this process's directory.
     if let Some(dir) = &config.cwd {
         cmd.current_dir(dir);
     }
-    cmd.args(extra_args);
     let mut child = cmd
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -337,12 +358,18 @@ pub(crate) fn run(config: &AskConfig, prompt: &str, extra_args: &[String]) -> Re
         .with_context(|| format!("cannot run '{}' — is it installed?", config.command))?;
 
     // Feed the prompt and close stdin so the CLI starts processing.
-    child
-        .stdin
-        .take()
-        .expect("stdin was piped")
-        .write_all(prompt.as_bytes())
-        .context("cannot write the prompt")?;
+    let stdin = child.stdin.take().expect("stdin was piped");
+    match backend.prompt_delivery() {
+        PromptDelivery::Stdin => {
+            let mut stdin = stdin;
+            stdin
+                .write_all(prompt.as_bytes())
+                .context("cannot write the prompt")?;
+        }
+        // Backends that take the prompt as an argument carry it in `build_argv`;
+        // stdin is closed immediately so the CLI stops waiting on it.
+        PromptDelivery::Arg | PromptDelivery::ExecArg => drop(stdin),
+    }
 
     // Drain output on reader threads so the child never blocks on a full
     // pipe while this thread watches the deadline.
@@ -387,11 +414,9 @@ pub(crate) fn run(config: &AskConfig, prompt: &str, extra_args: &[String]) -> Re
         };
         bail!("'{}' failed: {}", config.command, truncate(detail, 300));
     }
-    let answer = stdout.trim().to_string();
-    if answer.is_empty() {
-        bail!("'{}' returned an empty answer", config.command);
-    }
-    Ok(answer)
+    backend
+        .extract(&stdout)
+        .with_context(|| format!("'{}'", config.command))
 }
 
 fn truncate(s: &str, max: usize) -> &str {
