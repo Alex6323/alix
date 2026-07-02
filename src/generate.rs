@@ -243,6 +243,7 @@ fn run_config(
         vec!["Read".to_string(), "Glob".to_string(), "Grep".to_string()]
     };
     AskConfig {
+        backend: ask_cfg.backend,
         command: ask_cfg.command.clone(),
         permission_mode: ask_cfg.permission_mode.clone(),
         allowed_tools,

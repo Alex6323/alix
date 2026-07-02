@@ -213,9 +213,29 @@ impl Default for BrowseBindings {
     }
 }
 
+/// Which AI CLI backend to use for assistant calls.
+///
+/// Only `Claude` is wired today; the other variants are recognised by the
+/// parser and round-trip cleanly, but `backend_for` returns an error for
+/// them until the matching task lands.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum BackendKind {
+    /// The Claude Code CLI (`claude -p`). The default.
+    #[default]
+    Claude,
+    /// Google Gemini CLI (not yet wired).
+    Gemini,
+    /// OpenAI Codex CLI (not yet wired).
+    Codex,
+    /// GitHub Copilot CLI (not yet wired).
+    Copilot,
+}
+
 /// Settings for the ask-Claude integration (`[ask]` in the config file).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AskConfig {
+    /// Which AI CLI backend to use.
+    pub backend: BackendKind,
     /// The CLI executable to run.
     pub command: String,
     /// Model passed as `--model`; `None` uses the CLI's own default.
@@ -250,6 +270,7 @@ pub struct AskConfig {
 impl Default for AskConfig {
     fn default() -> Self {
         Self {
+            backend: BackendKind::Claude,
             command: "claude".to_string(),
             model: None,
             effort: None,
@@ -566,6 +587,7 @@ struct RawBrowse {
 #[derive(Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 struct RawAsk {
+    backend: Option<String>,
     command: Option<String>,
     model: Option<String>,
     effort: Option<String>,
@@ -660,6 +682,15 @@ impl Config {
         assign(&mut browse.quit, raw.keys.browse.quit, "browse.quit")?;
 
         let mut ask = AskConfig::default();
+        if let Some(b) = raw.ask.backend.filter(|s| !s.trim().is_empty()) {
+            ask.backend = match b.trim().to_ascii_lowercase().as_str() {
+                "claude" => BackendKind::Claude,
+                "gemini" => BackendKind::Gemini,
+                "codex" => BackendKind::Codex,
+                "copilot" => BackendKind::Copilot,
+                _ => bail!("invalid ask.backend {b:?}: expected claude, gemini, codex, or copilot"),
+            };
+        }
         if let Some(command) = raw.ask.command {
             ask.command = command;
         }
@@ -881,6 +912,7 @@ pub fn default_config_toml() -> &'static str {
 # Settings for the ask-Claude integration. Questions are sent to the
 # command below (the Claude Code CLI) together with the card as context.
 [ask]
+# backend = "claude"            # AI CLI backend: claude | gemini | codex | copilot
 # command = "claude"            # executable to run
 # model = ""                    # --model override; empty = the CLI's default
 # effort = ""                   # --effort: low|medium|high|xhigh|max; empty = CLI default
@@ -1247,5 +1279,41 @@ mod tests {
     #[test]
     fn unknown_browse_setting_is_rejected() {
         assert!(Config::from_toml("[keys.browse]\nfirst = [\"g\"]\n").is_err());
+    }
+
+    #[test]
+    fn backend_defaults_to_claude() {
+        assert_eq!(BackendKind::Claude, Config::default().ask.backend);
+        // An empty config file also yields the default.
+        let config = Config::from_toml("").unwrap();
+        assert_eq!(BackendKind::Claude, config.ask.backend);
+    }
+
+    #[test]
+    fn backend_gemini_parses() {
+        let config = Config::from_toml("[ask]\nbackend = \"gemini\"\n").unwrap();
+        assert_eq!(BackendKind::Gemini, config.ask.backend);
+        // Other [ask] fields keep their defaults.
+        assert_eq!("claude", config.ask.command);
+    }
+
+    #[test]
+    fn backend_parsing_is_case_insensitive() {
+        let config = Config::from_toml("[ask]\nbackend = \"Claude\"\n").unwrap();
+        assert_eq!(BackendKind::Claude, config.ask.backend);
+        let config = Config::from_toml("[ask]\nbackend = \"CODEX\"\n").unwrap();
+        assert_eq!(BackendKind::Codex, config.ask.backend);
+        let config = Config::from_toml("[ask]\nbackend = \"Copilot\"\n").unwrap();
+        assert_eq!(BackendKind::Copilot, config.ask.backend);
+    }
+
+    #[test]
+    fn unknown_backend_is_rejected() {
+        let err = Config::from_toml("[ask]\nbackend = \"grok\"\n").unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("backend"),
+            "error should mention 'backend': {msg}"
+        );
     }
 }

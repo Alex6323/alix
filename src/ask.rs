@@ -24,7 +24,6 @@ use crate::{
     config::AskConfig,
 };
 
-
 /// One question/answer exchange.
 pub type Exchange = (String, String);
 
@@ -315,7 +314,7 @@ pub fn spawn(config: AskConfig, prompt: String, extra_args: Vec<String>) -> Rece
 /// deck links without ever blocking on an (unanswerable) permission prompt,
 /// while denying every other tool.
 pub(crate) fn run(config: &AskConfig, prompt: &str, extra_args: &[String]) -> Result<String> {
-    let backend = backend_for(config);
+    let backend = backend_for(config)?;
     let opts = RunOpts {
         model: config.model.as_deref(),
         effort: config.effort.as_deref(),

@@ -716,6 +716,7 @@ fn passed(grades: &[AnswerGrade], threshold: f64) -> bool {
 /// the exam's own model and (longer) timeout.
 fn run_config(cfg: &ExamConfig, ask_cfg: &AskConfig) -> AskConfig {
     AskConfig {
+        backend: ask_cfg.backend,
         command: ask_cfg.command.clone(),
         permission_mode: ask_cfg.permission_mode.clone(),
         allowed_tools: ask_cfg.allowed_tools.clone(),

@@ -565,6 +565,7 @@ pub(crate) fn build_run_config(
         allowed_tools.push("WebFetch".to_string());
     }
     AskConfig {
+        backend: ask_cfg.backend,
         command: ask_cfg.command.clone(),
         permission_mode: ask_cfg.permission_mode.clone(),
         allowed_tools,

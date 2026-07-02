@@ -14,7 +14,7 @@ mod claude;
 
 pub use claude::ClaudeBackend;
 
-use crate::config::AskConfig;
+use crate::config::{AskConfig, BackendKind};
 
 /// How a backend receives the prompt text.
 pub enum PromptDelivery {
@@ -117,18 +117,51 @@ pub trait Backend: Send + Sync {
     fn required_help_flags(&self) -> &'static [&'static str];
 }
 
-/// Selects the backend for a config. Today it always returns the Claude
-/// backend; Task 3 adds the match on a configured backend name.
-pub fn backend_for(_cfg: &AskConfig) -> Box<dyn Backend> {
-    Box::new(ClaudeBackend)
+/// Selects the backend for a config, returning an error for backends that are
+/// not yet wired (Gemini, Codex, Copilot — later tasks flip each arm).
+pub fn backend_for(cfg: &AskConfig) -> anyhow::Result<Box<dyn Backend>> {
+    match cfg.backend {
+        BackendKind::Claude => Ok(Box::new(ClaudeBackend)),
+        BackendKind::Gemini => anyhow::bail!("the gemini backend isn't available yet"),
+        BackendKind::Codex => anyhow::bail!("the codex backend isn't available yet"),
+        BackendKind::Copilot => anyhow::bail!("the copilot backend isn't available yet"),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::AskConfig;
 
     fn tools(names: &[&str]) -> Vec<String> {
         names.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn backend_for_claude_ok_others_not_yet() {
+        let mut cfg = AskConfig::default();
+        assert!(backend_for(&cfg).is_ok(), "claude should be wired");
+
+        cfg.backend = BackendKind::Gemini;
+        let err = backend_for(&cfg).err().expect("gemini should error");
+        assert!(
+            format!("{err}").contains("gemini"),
+            "error should name the backend"
+        );
+
+        cfg.backend = BackendKind::Codex;
+        let err = backend_for(&cfg).err().expect("codex should error");
+        assert!(
+            format!("{err}").contains("codex"),
+            "error should name the backend"
+        );
+
+        cfg.backend = BackendKind::Copilot;
+        let err = backend_for(&cfg).err().expect("copilot should error");
+        assert!(
+            format!("{err}").contains("copilot"),
+            "error should name the backend"
+        );
     }
 
     #[test]
@@ -137,21 +170,33 @@ mod tests {
         let a = Access::from_allowed_tools(&tools(&["Read", "Glob", "Grep", "WebFetch"]));
         assert!(matches!(
             a,
-            Access::ReadOnly { files: true, fetch: true, search: false }
+            Access::ReadOnly {
+                files: true,
+                fetch: true,
+                search: false
+            }
         ));
 
         // WebFetch + WebSearch → no files, fetch + search
         let b = Access::from_allowed_tools(&tools(&["WebFetch", "WebSearch"]));
         assert!(matches!(
             b,
-            Access::ReadOnly { files: false, fetch: true, search: true }
+            Access::ReadOnly {
+                files: false,
+                fetch: true,
+                search: true
+            }
         ));
 
         // Read only → files, no fetch, no search
         let c = Access::from_allowed_tools(&tools(&["Read"]));
         assert!(matches!(
             c,
-            Access::ReadOnly { files: true, fetch: false, search: false }
+            Access::ReadOnly {
+                files: true,
+                fetch: false,
+                search: false
+            }
         ));
 
         // Empty → no tools at all
