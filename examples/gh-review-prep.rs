@@ -8,19 +8,16 @@
 //! This demonstrates the library's composability; it is not a GitHub-integration
 //! feature of alix.
 //!
-//! Because this is a cargo *example*, `cargo run --example` works only from the
-//! alix checkout — but the tool acts on whatever repo it runs *in*. So build it
-//! once, then run the compiled binary from inside the repo you're reviewing (or
-//! symlink it onto your PATH):
+//! Run it against the repo whose PR/issue you're reviewing. Point it there with
+//! `--repo <path>` so you can `cargo run --example` straight from the alix repo:
 //!
-//!   cargo build --example gh-review-prep     # once, from the alix repo
-//!   cd /path/to/repo-under-review            # the repo the PR/issue belongs to
-//!   <alix>/target/debug/examples/gh-review-prep [pr] <n|url>          # a PR workspace
-//!   <alix>/target/debug/examples/gh-review-prep issue <n|url>         # an issue workspace
-//!   <alix>/target/debug/examples/gh-review-prep clean [pr|issue] <n>  # retire it
+//!   cargo run --example gh-review-prep -- --repo /path/to/repo pr <n|url>
+//!   cargo run --example gh-review-prep -- --repo /path/to/repo issue <n|url>
+//!   cargo run --example gh-review-prep -- --repo /path/to/repo clean [pr|issue] <n>
 //!
-//! Tip: symlink that binary onto your PATH (e.g. ~/.local/bin/gh-review-prep) and
-//! just run `gh-review-prep pr <n>` from the repo under review.
+//! Without --repo it uses the current directory's repo — so from inside the repo
+//! under review you can drop the flag (handy if you `cargo build --example` it
+//! and symlink the binary onto your PATH as `gh-review-prep`).
 //!
 //! Requires `gh` on PATH and a working `claude` CLI (alix shells out to it). The
 //! workspace is disposable — retire it with `clean` after you merge or close.
@@ -66,14 +63,38 @@ enum Cmd {
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    match parse_args(&args)? {
+    let (repo, rest) = extract_repo(&args)?;
+    match parse_args(&rest)? {
         Cmd::Help => {
             print_help();
             Ok(())
         }
-        Cmd::Build { kind, id } => cmd_build(kind, &id),
-        Cmd::Clean { kind, id } => cmd_clean(kind, &id),
+        Cmd::Build { kind, id } => cmd_build(kind, &id, repo.as_deref()),
+        Cmd::Clean { kind, id } => cmd_clean(kind, &id, repo.as_deref()),
     }
+}
+
+/// Pull an optional `--repo <path>` out of the args (it may appear anywhere),
+/// returning it plus the remaining args for [`parse_args`]. `--repo` points the
+/// tool at a repo other than the current directory's, so you can `cargo run
+/// --example` it from the alix checkout.
+fn extract_repo(args: &[String]) -> Result<(Option<PathBuf>, Vec<String>)> {
+    let mut repo = None;
+    let mut rest = Vec::new();
+    let mut i = 0;
+    while i < args.len() {
+        if args[i] == "--repo" {
+            let path = args
+                .get(i + 1)
+                .ok_or_else(|| anyhow::anyhow!("--repo needs a path"))?;
+            repo = Some(PathBuf::from(path));
+            i += 2;
+        } else {
+            rest.push(args[i].clone());
+            i += 1;
+        }
+    }
+    Ok((repo, rest))
 }
 
 /// Parse argv (without the program name) into a [`Cmd`].
@@ -156,9 +177,10 @@ fn build_goal(kind: Kind, id: &str, title: &str, file_name: &str) -> String {
     }
 }
 
-/// Run `gh` with args, returning trimmed stdout; error on non-zero exit.
-fn run_gh(args: &[&str]) -> Result<String> {
+/// Run `gh` with args in `dir`, returning trimmed stdout; error on non-zero exit.
+fn run_gh(dir: &Path, args: &[&str]) -> Result<String> {
     let out = std::process::Command::new("gh")
+        .current_dir(dir)
         .args(args)
         .output()
         .context("failed to run gh — is the GitHub CLI installed and on PATH?")?;
@@ -172,21 +194,31 @@ fn run_gh(args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
-/// The git work-tree root (the source alix explores).
-fn repo_root() -> Result<PathBuf> {
-    let out = std::process::Command::new("git")
+/// The git work-tree root the tool acts on: `--repo <path>` if given, else the
+/// current directory's repo.
+fn resolve_repo(repo: Option<&Path>) -> Result<PathBuf> {
+    let mut cmd = std::process::Command::new("git");
+    if let Some(dir) = repo {
+        cmd.current_dir(dir);
+    }
+    let out = cmd
         .args(["rev-parse", "--show-toplevel"])
         .output()
         .context("failed to run git")?;
     if !out.status.success() {
-        bail!("run this from inside the repo the item belongs to");
+        match repo {
+            Some(dir) => bail!("{} is not inside a git work tree", dir.display()),
+            None => {
+                bail!("run this from inside the repo the item belongs to, or pass --repo <path>")
+            }
+        }
     }
     Ok(PathBuf::from(String::from_utf8_lossy(&out.stdout).trim()))
 }
 
 /// The repo's GitHub name, else the work-tree directory name.
 fn repo_slug(root: &Path) -> String {
-    if let Ok(name) = run_gh(&["repo", "view", "--json", "name", "-q", ".name"])
+    if let Ok(name) = run_gh(root, &["repo", "view", "--json", "name", "-q", ".name"])
         && !name.is_empty()
     {
         return name;
@@ -208,25 +240,34 @@ fn reviews_dir() -> PathBuf {
 
 /// Fetch the PR/issue text (and, for a PR, the diff) from GitHub, write it to
 /// `dest`, and return the item's title.
-fn fetch_source(kind: Kind, id: &str, dest: &Path) -> Result<String> {
-    let title = run_gh(&[kind.slug(), "view", id, "--json", "title", "-q", ".title"])?;
-    let body = run_gh(&[kind.slug(), "view", id, "--json", "body", "-q", ".body"])?;
+fn fetch_source(kind: Kind, id: &str, dest: &Path, root: &Path) -> Result<String> {
+    let title = run_gh(
+        root,
+        &[kind.slug(), "view", id, "--json", "title", "-q", ".title"],
+    )?;
+    let body = run_gh(
+        root,
+        &[kind.slug(), "view", id, "--json", "body", "-q", ".body"],
+    )?;
     let mut content = format!("# {} #{id}: {title}\n\n{body}\n", kind.label());
     match kind {
         Kind::Pr => {
-            let diff = run_gh(&["pr", "diff", id])?;
+            let diff = run_gh(root, &["pr", "diff", id])?;
             content.push_str(&format!("\n## Diff\n\n{diff}\n"));
         }
         Kind::Issue => {
-            let comments = run_gh(&[
-                "issue",
-                "view",
-                id,
-                "--json",
-                "comments",
-                "-q",
-                r#".comments[] | "\(.author.login):\n\(.body)\n""#,
-            ])?;
+            let comments = run_gh(
+                root,
+                &[
+                    "issue",
+                    "view",
+                    id,
+                    "--json",
+                    "comments",
+                    "-q",
+                    r#".comments[] | "\(.author.login):\n\(.body)\n""#,
+                ],
+            )?;
             if !comments.is_empty() {
                 content.push_str(&format!("\n## Comments\n\n{comments}\n"));
             }
@@ -241,7 +282,10 @@ fn fetch_source(kind: Kind, id: &str, dest: &Path) -> Result<String> {
 /// change, which weakens the blast-radius context. Best-effort: a failed probe
 /// is silently skipped, and a warning never blocks the build.
 fn warn_if_source_stale(id: &str, display: &str, root: &Path) {
-    let Ok(files) = run_gh(&["pr", "view", id, "--json", "files", "-q", ".files[].path"]) else {
+    let Ok(files) = run_gh(
+        root,
+        &["pr", "view", id, "--json", "files", "-q", ".files[].path"],
+    ) else {
         return;
     };
     let paths: Vec<&str> = files
@@ -298,16 +342,23 @@ fn build_workspace(
     Ok(report)
 }
 
-fn cmd_build(kind: Kind, id: &str) -> Result<()> {
-    let root = repo_root()?;
+fn cmd_build(kind: Kind, id: &str, repo: Option<&Path>) -> Result<()> {
+    let root = resolve_repo(repo)?;
     let slug = slug_id(id);
-    let repo = repo_slug(&root);
-    let ws = workspace_path(&reviews_dir(), &repo, kind, &slug);
+    let repo_name = repo_slug(&root);
+    let ws = workspace_path(&reviews_dir(), &repo_name, kind, &slug);
     if ws.exists() {
+        let retire = match repo {
+            Some(p) => format!(
+                "gh-review-prep --repo {} clean {} {slug}",
+                p.display(),
+                kind.slug()
+            ),
+            None => format!("gh-review-prep clean {} {slug}", kind.slug()),
+        };
         bail!(
-            "review workspace already exists: {} (retire it with: gh-review-prep clean {} {slug})",
-            ws.display(),
-            kind.slug()
+            "review workspace already exists: {} (retire it with: {retire})",
+            ws.display()
         );
     }
     if kind == Kind::Pr {
@@ -315,7 +366,7 @@ fn cmd_build(kind: Kind, id: &str) -> Result<()> {
     }
     let file_name = context_file_name(kind, &slug);
     let file = root.join(&file_name);
-    let item_title = fetch_source(kind, id, &file)?;
+    let item_title = fetch_source(kind, id, &file, &root)?;
     let goal = build_goal(kind, &slug, &item_title, &file_name);
     let title = format!("Review: {} #{slug} — {item_title}", kind.label());
     let result = build_workspace(&root, &ws, &title, &goal);
@@ -324,11 +375,11 @@ fn cmd_build(kind: Kind, id: &str) -> Result<()> {
     print_next_steps(&ws, &report)
 }
 
-fn cmd_clean(kind: Kind, id: &str) -> Result<()> {
-    let root = repo_root()?;
+fn cmd_clean(kind: Kind, id: &str, repo: Option<&Path>) -> Result<()> {
+    let root = resolve_repo(repo)?;
     let slug = slug_id(id);
-    let repo = repo_slug(&root);
-    let ws = workspace_path(&reviews_dir(), &repo, kind, &slug);
+    let repo_name = repo_slug(&root);
+    let ws = workspace_path(&reviews_dir(), &repo_name, kind, &slug);
     if !ws.is_dir() {
         bail!("no review workspace at {}", ws.display());
     }
@@ -361,12 +412,13 @@ fn print_help() {
     println!(
         "gh-review-prep — build an ephemeral alix workspace to understand a GitHub PR or issue\n\
          \n\
-         USAGE (run this built binary from inside the repo the PR/issue belongs to):\n\
-         \x20 gh-review-prep [pr] <n|url>          build a PR workspace\n\
-         \x20 gh-review-prep issue <n|url>         build an issue workspace\n\
-         \x20 gh-review-prep clean [pr|issue] <n>  retire a workspace\n\
+         USAGE:\n\
+         \x20 gh-review-prep [--repo <path>] [pr] <n|url>          build a PR workspace\n\
+         \x20 gh-review-prep [--repo <path>] issue <n|url>         build an issue workspace\n\
+         \x20 gh-review-prep [--repo <path>] clean [pr|issue] <n>  retire a workspace\n\
          \n\
-         Build it from the alix repo: cargo build --example gh-review-prep\n\
+         --repo <path> targets that repo; omit it to use the current directory's repo.\n\
+         Via cargo from the alix repo: cargo run --example gh-review-prep -- --repo <path> pr <n>\n\
          ENV: ALIX_REVIEWS_DIR (default ~/reviews), ALIX_REVIEW_ICON=1 (draw an icon)"
     );
 }
@@ -498,5 +550,31 @@ mod tests {
         assert!(!most_files_missing(4, 2)); // exactly half → no warn
         assert!(!most_files_missing(5, 2));
         assert!(!most_files_missing(0, 0)); // no files → no signal
+    }
+
+    #[test]
+    fn extract_repo_pulls_flag_and_leaves_rest() {
+        let (repo, rest) = extract_repo(&s(&["--repo", "/x", "pr", "5"])).unwrap();
+        assert_eq!(repo, Some(PathBuf::from("/x")));
+        assert_eq!(rest, s(&["pr", "5"]));
+    }
+
+    #[test]
+    fn extract_repo_none_when_absent() {
+        let (repo, rest) = extract_repo(&s(&["pr", "5"])).unwrap();
+        assert_eq!(repo, None);
+        assert_eq!(rest, s(&["pr", "5"]));
+    }
+
+    #[test]
+    fn extract_repo_flag_can_appear_anywhere() {
+        let (repo, rest) = extract_repo(&s(&["issue", "--repo", "/x", "7"])).unwrap();
+        assert_eq!(repo, Some(PathBuf::from("/x")));
+        assert_eq!(rest, s(&["issue", "7"]));
+    }
+
+    #[test]
+    fn extract_repo_errors_without_a_path() {
+        assert!(extract_repo(&s(&["--repo"])).is_err());
     }
 }
