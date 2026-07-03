@@ -6,7 +6,7 @@
 # toolchain — `+nightly` is handled by rustup before cargo sees it — which is
 # why these live in a Makefile rather than .cargo/config.toml.)
 
-.PHONY: build test lint lint-js fmt fmt-check check ci coverage eval run serve book site install clean heartbeat
+.PHONY: build test lint lint-js fmt fmt-check check ci coverage eval run serve book site install clean heartbeat check-backends
 
 # Compile the workspace.
 build:
@@ -107,6 +107,11 @@ clean:
 # The policy it backstops is in RELEASING.md.
 heartbeat:
 	@sh scripts/heartbeat.sh
+
+# Probe all four backends end-to-end (real tiny request through each installed
+# CLI). Needs each CLI installed and the maintainer's own logins configured.
+check-backends:
+	cargo run --quiet -- backend check --all
 
 # Local, gitignored maintainer-only targets (e.g. wish-triage). The leading `-`
 # makes this a silent no-op for anyone whose tree doesn't have the file.

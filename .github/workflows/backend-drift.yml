@@ -1,0 +1,55 @@
+name: Backend flag-drift smoke test
+
+# Nightly smoke test: installs each AI backend CLI (no login needed) and checks
+# that every flag alix hardcodes still appears in that CLI's `--help` output.
+# A missing flag means the CLI renamed or removed something alix depends on.
+on:
+  schedule:
+    # 03:17 UTC daily — stagger slightly to avoid the top-of-hour GH Actions rush.
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    name: CLI flag-drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      # Install Node so we can pull the backend CLIs from npm.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # Install each backend CLI. --help works without a login on all four, so
+      # no credentials are needed here. Each install is independent; a package
+      # rename or registry outage on one CLI should not mask drift on the others,
+      # so failures are surfaced per-step rather than short-circuiting the job.
+      - name: Install Claude CLI (@anthropic-ai/claude-code)
+        run: npm install -g @anthropic-ai/claude-code
+        continue-on-error: true
+
+      - name: Install Gemini CLI (@google/gemini-cli)
+        run: npm install -g @google/gemini-cli
+        continue-on-error: true
+
+      - name: Install Codex CLI (@openai/codex)
+        run: npm install -g @openai/codex
+        continue-on-error: true
+
+      - name: Install Copilot CLI (@githubnext/github-copilot-cli)
+        run: npm install -g @githubnext/github-copilot-cli
+        continue-on-error: true
+
+      # Run the drift tests with --ignored to un-skip the #[ignore]d suite.
+      # The test skips any CLI not on PATH (graceful degradation for install
+      # failures above) but fails hard on any flag mismatch it does find.
+      - name: Run backend help drift tests
+        run: cargo test --test backend_help -- --ignored --nocapture

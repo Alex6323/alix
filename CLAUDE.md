@@ -106,6 +106,7 @@ noisy diff the way you'd treat a failing test: not done yet.
 | `make install` | `cargo install --path .`. |
 | `make clean` | `cargo clean`. |
 | `make heartbeat` | Release heartbeat — is shipped work piling up unreleased? (see below). |
+| `make check-backends` | End-to-end probe of all four backends (real tiny request; needs logins). Maintainer-only. |
 
 **Release heartbeat — run `make heartbeat` at the start of a session.** It reports
 the `CHANGELOG.md [Unreleased]` entry count and days since the last `vX.Y.Z` tag;

@@ -167,6 +167,24 @@ today). That splits testing into two jobs, and it helps to know which you're in:
 Rule of thumb: a code change must pass layer 1 (`make check`); a *prompt* change
 must also clear layer 2 (`make eval`).
 
+### Backend flag-drift checks
+
+Each AI backend (`claude`, `gemini`, `codex`, `copilot`) hardcodes the CLI
+flags it relies on in `required_help_flags()`. A nightly CI job
+(`.github/workflows/backend-drift.yml`) installs each CLI without login and
+checks that every flag still appears in `--help`. If a CLI update renames or
+removes a flag the workflow fails and surfaces it before any user hits it.
+
+To run the drift check locally (needs each CLI installed, no login required):
+
+```
+cargo test --test backend_help -- --ignored --nocapture
+```
+
+To do a full end-to-end probe — a real tiny request through each backend — use
+`make check-backends` (needs each CLI installed and your own logins configured;
+this is a maintainer-only check, not part of the normal contributor flow).
+
 ## Commits & pull requests
 
 - **Don't break the build, and run `make check` before pushing.**
