@@ -2416,6 +2416,13 @@ fn exam_cmd(args: ExamArgs) -> Result<()> {
             deck.subject
         );
     }
+    // Refuse before opening the terminal UI (a side effect) if the backend can't
+    // reach a `% source:` this exam grades against — e.g. a URL source under a
+    // read-only backend that can't fetch. A trace deck grades a compression with
+    // no source fetch, so its sources aren't gated here.
+    if !deck.is_trace() {
+        alix::exam::ensure_backend_can_examine(&deck, &config.ask)?;
+    }
     if !std::io::stdin().is_terminal() {
         bail!("`alix exam` needs a terminal");
     }

@@ -23,6 +23,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `--ask-for-approval never`, which permits reading local source but blocks
   writes, shell escalation, and the network — so a fetch/search grant can't be
   honoured under this backend (source reading still works).
+- **Backends degrade gracefully.** An AI feature now checks the selected
+  backend's capabilities *before* doing any work and refuses cleanly when they
+  don't match — e.g. an exam or `deck generate` over a URL `% source:` under a
+  read-only backend that can't fetch the web says so and names the fix (point
+  the source at a local file, or switch `[ask] backend`), instead of crashing
+  or fabricating a result. Trace `build`/`suggest` and `explore` gate the same
+  way. A failed AI CLI now also leads with actionable guidance: a rate-limit or
+  quota error suggests waiting or switching backend; an unauthenticated error
+  suggests running the CLI's login once (the raw detail is still shown).
 - **Web picker: a workspace's goal shows in its drill-in.** Opening a workspace now
   shows its goal (the one-line description) under the title eyebrow, the same goal the
   top-level list shows on the workspace row — so the context stays visible while you
@@ -38,6 +47,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ephemeral (never persisted or sent to the server).
 
 ### Changed
+- **The tutor runs statelessly on non-Claude backends.** Multi-turn tutoring
+  uses Claude's session flags (`--session-id`/`--resume`), which other CLIs
+  don't have; alix now drops them for a backend without a session mechanism so
+  the tutor runs each turn fresh (it still has the card context, just not
+  prior-turn memory) instead of erroring on unknown flags. Re-inlining the prior
+  transcript for full multi-turn memory is a planned follow-up.
 - **Breaking — config keybindings are namespaced under `[keys]`.** Every key table
   is now a `[keys.*]` subtable: `[keys]` → `[keys.review]`, `[picker]` →
   `[keys.picker]`, and `[browse]` → `[keys.browse]`. This groups all bindings in one

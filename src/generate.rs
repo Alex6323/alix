@@ -13,6 +13,7 @@ use anyhow::{Result, bail};
 
 use crate::{
     ask,
+    backend::ensure_source_reachable,
     config::{AskConfig, GenerateDeckConfig},
     deck::is_url,
     trace::resolve_source,
@@ -198,6 +199,10 @@ pub fn generate_deck(
     ask_cfg: &AskConfig,
 ) -> Result<String> {
     let url = is_url(source);
+    // Gate on the backend's capability before building a prompt or resolving the
+    // source: a read-only backend can't fetch a URL, and a future non-file
+    // backend can't read a local path.
+    ensure_source_reachable(ask_cfg, url)?;
     let cwd = if url {
         None
     } else {

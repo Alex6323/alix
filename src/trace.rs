@@ -25,7 +25,7 @@ use anyhow::{Context, Result, anyhow, bail};
 
 use crate::{
     ask,
-    backend::backend_for,
+    backend::{backend_for, ensure_source_reachable},
     config::{AskConfig, TraceConfig},
     deck::{Deck, is_url},
     scheduler::{Grade, SchedulerKind},
@@ -316,6 +316,8 @@ pub fn build(deck: &Deck, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<Stri
         .first()
         .ok_or_else(|| anyhow!("{} declares no `% source:` scope to trace", deck.subject))?;
     let url = is_url(source);
+    // Gate on backend capability before resolving the source or exploring it.
+    ensure_source_reachable(ask_cfg, url)?;
     let cwd = if url {
         None
     } else {
@@ -536,6 +538,8 @@ fn write_snippet(dest: &Path, excerpt: &Excerpt) -> Result<()> {
 /// repo `.`, a directory, a file, or a URL), not a deck.
 pub fn suggest(source: &str, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<String> {
     let url = is_url(source);
+    // Gate on backend capability before resolving the source or surveying it.
+    ensure_source_reachable(ask_cfg, url)?;
     let cwd = if url {
         None
     } else {

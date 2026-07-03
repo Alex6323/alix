@@ -93,6 +93,10 @@ impl Backend for CopilotBackend {
     fn required_help_flags(&self) -> &'static [&'static str] {
         &["-p", "--deny-tool", "--available-tools"]
     }
+
+    fn name(&self) -> &'static str {
+        "copilot"
+    }
 }
 
 #[cfg(test)]

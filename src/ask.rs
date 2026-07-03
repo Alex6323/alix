@@ -315,6 +315,17 @@ pub fn spawn(config: AskConfig, prompt: String, extra_args: Vec<String>) -> Rece
 /// while denying every other tool.
 pub(crate) fn run(config: &AskConfig, prompt: &str, extra_args: &[String]) -> Result<String> {
     let backend = backend_for(config)?;
+    // Session flags (Claude's `--session-id`/`--resume`) are Claude-specific;
+    // forwarding them to a backend without a session mechanism would error on an
+    // unknown flag. Drop them there so the tutor runs statelessly (each turn
+    // fresh — it still carries the card context, just not prior-turn memory).
+    // TODO: re-inline the prior transcript so non-session backends get multi-turn
+    // memory back (a documented follow-up).
+    let session_args: &[String] = if backend.supports_session() {
+        extra_args
+    } else {
+        &[]
+    };
     let opts = RunOpts {
         model: config.model.as_deref(),
         effort: config.effort.as_deref(),
@@ -324,7 +335,7 @@ pub(crate) fn run(config: &AskConfig, prompt: &str, extra_args: &[String]) -> Re
             Some(config.permission_mode.as_str())
         },
         access: Access::from_allowed_tools(&config.allowed_tools),
-        session_args: extra_args,
+        session_args,
     };
     let mut argv = backend.build_argv(&opts);
     // Arg-delivery backends (Codex `exec`) take the prompt as the final
@@ -406,7 +417,7 @@ pub(crate) fn run(config: &AskConfig, prompt: &str, extra_args: &[String]) -> Re
         } else {
             detail
         };
-        bail!("'{}' failed: {}", config.command, truncate(detail, 300));
+        bail!("{}", map_run_failure(&config.command, detail));
     }
     let answer = backend.extract(&stdout)?;
     if answer.is_empty() {
@@ -419,6 +430,43 @@ fn truncate(s: &str, max: usize) -> &str {
     match s.char_indices().nth(max) {
         Some((i, _)) => &s[..i],
         None => s,
+    }
+}
+
+/// Turns a failed CLI's stderr/stdout `detail` into a clearer message, leading
+/// with actionable guidance for the two failures a raw dump hides worst —
+/// exhausted quota and a signed-out CLI — while keeping the raw detail appended.
+/// Any other failure passes through as `'<command>' failed: <detail>`. The
+/// detail is matched case-insensitively; the mapping never turns an error into a
+/// success — it only reframes it.
+fn map_run_failure(command: &str, detail: &str) -> String {
+    let detail = truncate(detail, 300);
+    let lower = detail.to_ascii_lowercase();
+    let hit = |needles: &[&str]| needles.iter().any(|n| lower.contains(n));
+    if hit(&[
+        "rate limit",
+        "rate-limit",
+        "quota",
+        "429",
+        "usage limit",
+        "too many requests",
+    ]) {
+        format!(
+            "'{command}' hit its usage limit — wait and retry, or switch [ask] backend: {detail}"
+        )
+    } else if hit(&[
+        "not logged in",
+        "not signed in",
+        "unauthenticated",
+        "unauthorized",
+        "authentication",
+        "401",
+        "log in",
+        "login",
+    ]) {
+        format!("'{command}' isn't signed in — run its login once: {detail}")
+    } else {
+        format!("'{command}' failed: {detail}")
     }
 }
 
@@ -716,6 +764,76 @@ mod tests {
         assert!(
             answer.trim().ends_with("the-prompt-text"),
             "args were: {answer}"
+        );
+    }
+
+    #[test]
+    fn rate_limit_stderr_maps_to_the_usage_limit_message() {
+        let msg = map_run_failure("claude", "Error: 429 rate limit exceeded, retry later");
+        assert!(msg.contains("hit its usage limit"), "{msg}");
+        assert!(msg.contains("switch [ask] backend"), "{msg}");
+        // The raw detail is kept for the user.
+        assert!(msg.contains("429"), "{msg}");
+    }
+
+    #[test]
+    fn quota_stderr_also_maps_to_the_usage_limit_message() {
+        let msg = map_run_failure("gemini", "you have exceeded your quota for this model");
+        assert!(msg.contains("hit its usage limit"), "{msg}");
+    }
+
+    #[test]
+    fn not_signed_in_stderr_maps_to_the_login_message() {
+        let msg = map_run_failure("codex", "error: 401 Unauthorized — you are not logged in");
+        assert!(msg.contains("isn't signed in"), "{msg}");
+        assert!(msg.contains("run its login once"), "{msg}");
+        assert!(msg.contains("401"), "{msg}");
+    }
+
+    #[test]
+    fn other_failures_pass_through_with_the_command() {
+        let msg = map_run_failure("claude", "segmentation fault");
+        assert!(msg.contains("'claude' failed"), "{msg}");
+        assert!(msg.contains("segmentation fault"), "{msg}");
+        // Not misclassified as quota or auth.
+        assert!(!msg.contains("usage limit"), "{msg}");
+        assert!(!msg.contains("signed in"), "{msg}");
+    }
+
+    #[test]
+    fn session_args_are_dropped_for_a_non_session_backend() {
+        use crate::config::BackendKind;
+        let _lock = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        // Echo the received arguments; the prompt is an arg for Codex, so the
+        // session flags — if forwarded — would appear before it.
+        let cli = fake_cli(dir.path(), "echo \"$@\"");
+        let config = AskConfig {
+            backend: BackendKind::Codex,
+            command: cli.to_str().unwrap().to_string(),
+            timeout_secs: 10,
+            ..AskConfig::default()
+        };
+        let extra = vec!["--resume".to_string(), "sess-123".to_string()];
+        let answer = run(&config, "x", &extra).unwrap();
+        // Codex has no session mechanism, so the flags are dropped, not passed on.
+        assert!(
+            !answer.contains("--resume") && !answer.contains("sess-123"),
+            "session args must be dropped for codex: {answer}"
+        );
+    }
+
+    #[test]
+    fn session_args_are_forwarded_for_claude() {
+        let _lock = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = fake_cli(dir.path(), "echo \"$@\"; cat > /dev/null");
+        let extra = vec!["--resume".to_string(), "sess-123".to_string()];
+        let answer = run(&config(&cli, 10), "x", &extra).unwrap();
+        // Claude supports sessions, so the flags are forwarded.
+        assert!(
+            answer.contains("--resume sess-123"),
+            "session args must reach claude: {answer}"
         );
     }
 

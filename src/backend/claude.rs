@@ -79,6 +79,15 @@ impl Backend for ClaudeBackend {
         ]
     }
 
+    fn name(&self) -> &'static str {
+        "claude"
+    }
+
+    fn supports_session(&self) -> bool {
+        // Claude's `--session-id`/`--resume` give the tutor multi-turn memory.
+        true
+    }
+
     fn default_trace_model(&self) -> Option<&'static str> {
         // Trace building is agentic and correctness-critical; Opus is the strong
         // model, so Claude defaults trace to it (other backends inherit the CLI

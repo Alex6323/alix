@@ -93,6 +93,10 @@ impl Backend for GeminiBackend {
     fn required_help_flags(&self) -> &'static [&'static str] {
         &["-p", "--allowed-tools", "--model"]
     }
+
+    fn name(&self) -> &'static str {
+        "gemini"
+    }
 }
 
 #[cfg(test)]

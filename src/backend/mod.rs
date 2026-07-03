@@ -119,6 +119,19 @@ pub trait Backend: Send + Sync {
         true
     }
 
+    /// Whether the backend has a multi-turn session mechanism that
+    /// [`ask::run`](crate::ask::run) can drive via `session_args`
+    /// (Claude's `--session-id`/`--resume`). Default `false`: a backend without
+    /// one runs each tutor turn statelessly rather than erroring on unknown
+    /// flags.
+    fn supports_session(&self) -> bool {
+        false
+    }
+
+    /// The human-readable backend name, used in capability-refusal messages
+    /// (e.g. "the codex backend can't fetch a url …").
+    fn name(&self) -> &'static str;
+
     /// Flags whose presence in `--help` confirms this is the expected CLI.
     fn required_help_flags(&self) -> &'static [&'static str];
 
@@ -140,6 +153,33 @@ pub fn backend_for(cfg: &AskConfig) -> anyhow::Result<Box<dyn Backend>> {
         BackendKind::Codex => Ok(Box::new(CodexBackend)),
         BackendKind::Copilot => Ok(Box::new(CopilotBackend)),
     }
+}
+
+/// Checks that the configured backend can reach a source before an agentic
+/// feature does any work, erroring cleanly *before* any prompt is built, source
+/// resolved, or file written. A URL source (`is_url`) needs
+/// [`Backend::can_fetch_web`]; a local file/directory needs
+/// [`Backend::can_read_source`]. Every agentic entry point (exam over a URL,
+/// deck `generate`, trace `build`/`suggest`, `explore`) calls this at its top so
+/// a capability gap is a plain refusal naming the gap and the fix, never a crash
+/// or a fabricated result.
+pub fn ensure_source_reachable(cfg: &AskConfig, is_url: bool) -> anyhow::Result<()> {
+    let backend = backend_for(cfg)?;
+    if is_url && !backend.can_fetch_web() {
+        anyhow::bail!(
+            "the {} backend can't fetch a url under read-only — point % source: at a local file, \
+             or use a backend that can fetch",
+            backend.name()
+        );
+    }
+    if !is_url && !backend.can_read_source() {
+        anyhow::bail!(
+            "the {} backend can't read a local source — point % source: at a url, or use a backend \
+             that can read files",
+            backend.name()
+        );
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -164,6 +204,49 @@ mod tests {
 
         cfg.backend = BackendKind::Copilot;
         assert!(backend_for(&cfg).is_ok(), "copilot should be wired");
+    }
+
+    #[test]
+    fn codex_backend_refuses_a_url_source_cleanly() {
+        // Codex is read-only with no network → it can't fetch a URL source. The
+        // gate refuses with a message naming the backend and the fix.
+        let cfg = AskConfig {
+            backend: BackendKind::Codex,
+            ..AskConfig::default()
+        };
+        let err = ensure_source_reachable(&cfg, true).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("codex"), "{msg}");
+        assert!(msg.contains("can't fetch"), "{msg}");
+        // A local source is fine for Codex.
+        assert!(ensure_source_reachable(&cfg, false).is_ok());
+    }
+
+    #[test]
+    fn fetch_capable_backends_pass_the_url_gate() {
+        for backend in [
+            BackendKind::Claude,
+            BackendKind::Gemini,
+            BackendKind::Copilot,
+        ] {
+            let cfg = AskConfig {
+                backend,
+                ..AskConfig::default()
+            };
+            assert!(
+                ensure_source_reachable(&cfg, true).is_ok(),
+                "{backend:?} should pass the URL gate"
+            );
+            assert!(ensure_source_reachable(&cfg, false).is_ok());
+        }
+    }
+
+    #[test]
+    fn only_claude_supports_sessions() {
+        assert!(ClaudeBackend.supports_session());
+        assert!(!GeminiBackend.supports_session());
+        assert!(!CodexBackend.supports_session());
+        assert!(!CopilotBackend.supports_session());
     }
 
     #[test]

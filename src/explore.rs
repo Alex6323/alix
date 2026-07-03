@@ -19,6 +19,7 @@ use anyhow::{Result, bail};
 
 use crate::{
     ask,
+    backend::ensure_source_reachable,
     config::{AskConfig, TraceConfig},
     deck::{Deck, is_url},
     title,
@@ -33,6 +34,8 @@ use crate::{
 /// (a repo `.`, a directory, a file, or a URL), not a deck.
 pub fn explore(source: &str, goal: &str, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<String> {
     let url = is_url(source);
+    // Gate on backend capability before resolving or exploring the source.
+    ensure_source_reachable(ask_cfg, url)?;
     let cwd = if url {
         None
     } else {
@@ -143,6 +146,8 @@ fn explore_prompt(source: &str, goal: &str, url: bool, cfg: &TraceConfig) -> Str
 /// the same read-only exploration as [`explore`].
 pub fn walk(source: &str, goal: &str, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<String> {
     let url = is_url(source);
+    // Gate on backend capability before resolving or exploring the source.
+    ensure_source_reachable(ask_cfg, url)?;
     let cwd = if url {
         None
     } else {
@@ -231,6 +236,8 @@ pub fn explore_and_fill(
     ask_cfg: &AskConfig,
 ) -> Result<(String, HashMap<usize, String>)> {
     let url = is_url(source);
+    // Gate on backend capability before resolving or exploring the source.
+    ensure_source_reachable(ask_cfg, url)?;
     let cwd = if url {
         None
     } else {

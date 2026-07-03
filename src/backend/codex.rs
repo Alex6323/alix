@@ -74,6 +74,10 @@ impl Backend for CodexBackend {
     fn required_help_flags(&self) -> &'static [&'static str] {
         &["exec", "--sandbox", "--ask-for-approval"]
     }
+
+    fn name(&self) -> &'static str {
+        "codex"
+    }
 }
 
 #[cfg(test)]

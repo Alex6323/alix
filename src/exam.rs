@@ -118,7 +118,20 @@ pub fn generate_questions(
     if deck.sources.is_empty() {
         bail!("the deck declares no `% source:` to examine against");
     }
+    ensure_backend_can_examine(deck, ask_cfg)?;
     generate_questions_from(&deck.sources, deck.path.parent(), cfg, ask_cfg)
+}
+
+/// Checks the configured backend can reach every `% source:` this exam grades
+/// against, before any question is generated or side effect taken. A URL source
+/// needs a fetch-capable backend; a local source a file-reading one. Called by
+/// [`generate_questions`] and by the CLI/web launch sites (before opening the
+/// terminal UI) so a capability gap is a clean refusal, not a mid-exam crash.
+pub fn ensure_backend_can_examine(deck: &Deck, ask_cfg: &AskConfig) -> Result<()> {
+    for source in &deck.sources {
+        crate::backend::ensure_source_reachable(ask_cfg, deck::is_url(source))?;
+    }
+    Ok(())
 }
 
 /// Owned-input core of [`generate_questions`]: takes the source list and the

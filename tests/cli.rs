@@ -299,3 +299,60 @@ fn augment_target_format_caches_a_reshape() {
         "deck untouched"
     );
 }
+
+#[test]
+fn url_source_exam_on_codex_refuses_cleanly() {
+    // The Codex backend runs read-only with no network, so it can't fetch a URL
+    // `% source:`. `alix exam` must refuse before touching anything — a plain
+    // message naming the gap and the fix, and it writes no progress store.
+    let dir = TempDir::new().unwrap();
+    let deck = write(
+        dir.path(),
+        "web.txt",
+        "% source: https://example.org/page\n# q?\n\ta\n",
+    );
+    let config = write(dir.path(), "config.toml", "[ask]\nbackend = \"codex\"\n");
+    let store = dir.path().join("p.json");
+    let out = alix(&[
+        "exam",
+        &deck,
+        "--store",
+        store.to_str().unwrap(),
+        "--config",
+        &config,
+    ]);
+    let err = stderr(&out);
+    assert!(!out.status.success(), "the exam must refuse, stderr: {err}");
+    assert!(
+        err.contains("codex") && err.contains("can't fetch"),
+        "refusal must name the gap: {err}"
+    );
+    // Refused before any side effect: no progress store was written.
+    assert!(!store.exists(), "a refused exam must not write the store");
+}
+
+#[test]
+fn missing_backend_reports_install_hint() {
+    // Pointing `[ask] command` at a nonexistent binary yields the install hint,
+    // not a raw OS error. Uses `deck generate` (no TTY needed) to reach the runner.
+    let dir = TempDir::new().unwrap();
+    let config = write(
+        dir.path(),
+        "config.toml",
+        "[ask]\ncommand = \"/nonexistent/claude-xyz\"\ntimeout_secs = 5\n",
+    );
+    let out = alix(&[
+        "deck",
+        "generate",
+        "https://example.org/page",
+        "--config",
+        &config,
+        "--print",
+    ]);
+    let err = stderr(&out);
+    assert!(!out.status.success(), "a missing backend must fail: {err}");
+    assert!(
+        err.contains("is it installed"),
+        "should hint at installation: {err}"
+    );
+}
