@@ -109,12 +109,12 @@ a citation to an existing card never resets its progress.
 You rarely have to write these by hand. Generating a deck from a local source —
 [`alix deck generate <path>`](11-generating-decks.md) or
 [`alix explore --build`](14-explore.md) — cites the lines each fact came from,
-and [`alix check`](17-command-reference.md) warns about a citation that no
+and [`alix deck check`](17-command-reference.md) warns about a citation that no
 longer resolves, so a moved or shrunk file is caught before you next review the
 card. A workspace built with `alix explore --into --build` goes one further and
 **freezes** the cited excerpts into its `assets/` (just like trace excerpts), so
 the workspace travels without the original source and the quotes never shift under
 you. It also records where they came from in an `% origin:` directive — so the
 tutor can still reach the live source for context, and
-[`alix check`](17-command-reference.md) can flag a frozen card whose source has
+[`alix deck check`](17-command-reference.md) can flag a frozen card whose source has
 since **drifted**.

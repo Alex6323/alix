@@ -20,9 +20,10 @@ alix --help
 The flashcard **core** — reviewing, scheduling, every answer mode, browse, the
 terminal UI and the web app — runs with nothing else installed, no accounts, no
 network. The **AI features** (deck generation, the exam, traces, explore, and the
-ask-Claude tutor) shell out to the [Claude Code](https://www.anthropic.com/claude-code)
-CLI, so for those you need it installed and logged in — run `claude` once to
-authenticate (it needs a Claude subscription or API access). You can use the
+in-session tutor) shell out to a supported model CLI — [Claude Code](https://www.anthropic.com/claude-code)
+by default; the Gemini, Codex, and Copilot CLIs are also supported. Install at
+least one and authenticate with it. See
+[chapter 16](16-configuration.md#backends) for how to switch backends. You can use the
 entire core without ever touching the AI layer.
 
 ## Your first deck
@@ -72,7 +73,7 @@ desktop launcher opens.
 alix browse srs.txt    # read through the cards — no grading, no scheduling
 alix stats srs.txt     # a progress overview
 alix list srs.txt      # every card with its stage and due time
-alix check srs.txt     # lint the deck (syntax errors, duplicate cards)
+alix deck check srs.txt     # lint the deck (syntax errors, duplicate cards)
 alix reset srs.txt     # clear stored progress (also --card / --all)
 ```
 

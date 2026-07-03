@@ -25,10 +25,10 @@ terminal UI or a local web app.
 The flashcard **core** — review, scheduling, every answer mode, browse, the TUI
 and the web frontend — runs standalone, with no external services or accounts.
 
-The **AI features** shell out to the [Claude Code](https://www.anthropic.com/claude-code)
-CLI, so they need it **installed and logged in** (which in turn needs a Claude
-subscription or API access). Install the CLI and run `claude` once to
-authenticate. The features that require it:
+The **AI features** shell out to a supported model CLI — [Claude Code](https://www.anthropic.com/claude-code)
+by default; the Gemini, Codex, and Copilot CLIs are also supported (see
+[Backends](#backends)). Install at least one and authenticate with it. The
+features that require a model CLI:
 
 - `alix deck generate` — generate a facts deck from a URL or a local
   file/directory; `alix deck augment` — add AI distractors or notes to one;
@@ -36,10 +36,10 @@ authenticate. The features that require it:
 - `alix trace --build` / `--suggest` / `--grade` — discover, suggest, and grade
   traces;
 - `alix explore` — goal-driven learning plans;
-- ask-Claude (`?`) — the in-session tutor, in both the TUI and the web frontend.
+- the in-session tutor (`?`), in both the TUI and the web frontend.
 
-`alix` invokes the CLI headless (`claude -p`) under a locked-down permission
-model (see [Ask Claude](#ask-claude-about-a-card)); the command, model and
+`alix` invokes the CLI headless under a locked-down permission model (see
+[Ask Claude about a card](#ask-claude-about-a-card)); the command, model and
 timeouts are configurable per feature in the [config file](#configuration).
 
 ## Learn a codebase (the main workflow)
@@ -69,8 +69,8 @@ workspace so its line locators never drift. Inside the workspace a **facts deck 
 **trace walks** (predict → reveal → judge the gap), unlocking in dependency
 order, with progress kept in the workspace's own store. See
 [Exploring a source](#exploring-a-source--alix-explore) and
-[Workspaces](#workspaces) for the full details. (The AI steps need the Claude
-CLI — see [Requirements](#requirements).)
+[Workspaces](#workspaces) for the full details. (The AI steps need a model CLI
+— see [Requirements](#requirements).)
 
 ## Usage
 
@@ -100,7 +100,7 @@ alix explore --walk .           # walk an explore tour of the source's shape
 alix deps mydeck.txt            # edit a deck's prerequisites (checkbox picker)
 alix stats mydeck.txt           # progress overview
 alix list mydeck.txt            # every card with stage and due time
-alix check mydeck.txt           # lint a deck (syntax, duplicates, trace locators)
+alix deck check mydeck.txt      # lint a deck (syntax, duplicates, trace locators)
 alix reset mydeck.txt           # clear stored progress (also --card / --all)
 ```
 
@@ -187,7 +187,7 @@ card's front. Follow a link for the full explanation.
 | `% source:` | deck | [Exam ground truth](#the-ai-exam-alix-exam) — a URL or file (repeatable). For a [trace](#traces-alix-trace), the source the path runs through (the frozen `assets/` copy in an explored workspace). Also a tutor reference. |
 | `% trace:` | deck | What a [trace](#traces-alix-trace) walks — a path description ("how X becomes Y"); its presence makes the deck a trace. |
 | `% at:` | card | A locator into the `% source:` (`file:lines`, or just `lines` for a single-file source): a [trace checkpoint's](#traces-alix-trace) reveal target, or a [fact card's source citation](#source-citations--at-on-a-fact-card) shown on reveal. In a frozen workspace it points at the `assets/` snapshot and carries the original location after ` from ` (`29.rs from src/caching.rs:46-66`). |
-| `% origin:` | workspace · deck · card | The live source root a frozen deck's snapshots came from (set in a workspace's `alix.toml` at build time). The ask-tutor grounds in it for context and `alix check` reads it to flag drift; `% source:` itself points at the frozen `assets/`. |
+| `% origin:` | workspace · deck · card | The live source root a frozen deck's snapshots came from (set in a workspace's `alix.toml` at build time). The ask-tutor grounds in it for context and `alix deck check` reads it to flag drift; `% source:` itself points at the frozen `assets/`. |
 | `% given:` | card | A [trace checkpoint's](#traces-alix-trace) "given" (repeatable) — an off-screen symbol the question leans on, as `name — meaning`; shown as a list under the question. |
 | `% title:` | deck | [Display name](#workspaces) shown instead of the file name (a workspace sets `title` in its `alix.toml`). |
 
@@ -237,7 +237,7 @@ These are ordinary `%` comments, so they don't affect parsing and card hashes
 are unaffected. An explicit CLI flag always wins over a directive, which wins over
 the built-in default. Directives are read only from the deck(s) you ask to
 review. When several requested decks disagree on a setting, the default is used.
-`alix check <deck>` prints a deck's directives.
+`alix deck check <deck>` prints a deck's directives.
 
 **Per-card mode.** A `% mode:` directive placed *after* a card's front (and
 before the next one) overrides the deck's mode for that card only, so one deck
@@ -391,7 +391,7 @@ survives rewording its front and even a future change to the hole markup, but
 editing its answer text or hole contents resets the affected holes.
 
 A cloze needs surrounding text to recall *from*: if the whole answer is a
-single hole with nothing around it (e.g. `` `{{IdentStr}}` ``), `alix check`
+single hole with nothing around it (e.g. `` `{{IdentStr}}` ``), `alix deck check`
 rejects it — that is a plain `#` card in disguise, so write it as one. A lone
 hole is fine the moment the answer has other words around it, and answers with
 two or more holes are always allowed (each hole's siblings, shown as `[…]`,
@@ -442,7 +442,7 @@ Images render in the **web frontend only** — the terminal can't draw them — 
 an image card is automatically *web-only* (as if it declared `% frontend: web`).
 In the terminal, `alix review` skips such cards with a note, and if a whole
 deck is web-only it points you at `--serve`. Use `% frontend:` to force a card
-or deck to a frontend explicitly. `alix check` warns about a referenced image
+or deck to a frontend explicitly. `alix deck check` warns about a referenced image
 file that doesn't exist (it doesn't fail the check).
 
 ### Source citations (`% at:` on a fact card)
@@ -471,7 +471,7 @@ changes a card's identity or resets its progress.
 You can write `% at:` by hand, but the deck generator adds them for you:
 [`alix deck generate <local source>`](#generate-a-facts-deck--alix-deck-generate) and
 [`alix explore --build`](#exploring-a-source--alix-explore) cite the lines each
-fact came from, and `alix check` warns about a citation that no longer resolves
+fact came from, and `alix deck check` warns about a citation that no longer resolves
 (a moved or shrunk file). In a workspace built with `alix explore --into
 --build`, the cited excerpts are also **frozen** into `assets/` (like trace
 excerpts), so they never drift and the workspace travels without the upstream
@@ -669,32 +669,36 @@ the config file and `--port` overrides it.
 ## Ask Claude about a card
 
 On any post-answer screen (feedback, revealed flip card, answered choice),
-press `?` to ask Claude about the card without leaving the session. The
-card (front, answer, note, deck name) is sent as context to the Claude Code
-CLI (`claude -p`), so you can ask "why is that the answer?" and follow up.
-One CLI conversation spans the whole review run (`--session-id` on the
-first question, `--resume` afterwards), so Claude remembers earlier cards
-and questions — but the panel shows only the **current card's** exchanges, not
-the whole history. By default the tutor answers from the card text plus its own
-knowledge (tools: `WebFetch`/`WebSearch`), and it uses the **CLI's default
-model** — set `[ask] model`/`effort` to pin a stronger one (the web panel shows
-which model is answering). For a deck built from source, set **`[ask]
-source_access = true`** to let the tutor **read the card's source** to verify its
-answer: it runs `Read`/`Glob`/`Grep` with its working directory at the deck's
-`% source:` project root (the nearest `Cargo.toml`/`.git`/… above the cited
-files) and is told to check the real files before answering. It's off by default
-because it grants the tutor file-read access — only enable it on a machine and
-network you trust (especially with `--serve --lan`). A [workspace](#workspaces)
-can override it per-folder: put `source_access = true` (or `false`) in its
-`alix.toml` to decide for that crate alone, beating the global default. While
-Claude thinks, the session stays responsive; Esc returns exactly where you were.
+press `?` to open a tutor panel without leaving the session. The card
+(front, answer, note, deck name) is sent as context to the configured model
+CLI, so you can ask "why is that the answer?" and follow up. The tutor
+remembers earlier cards and questions across the whole review run — Claude
+does this via its native session flags (`--session-id` / `--resume`); other
+backends re-inline the Q&A transcript into each follow-up so the context
+carries over (the prompt grows with the conversation rather than being
+resumed efficiently, but memory is preserved). The panel shows only the
+**current card's** exchanges. By default the tutor answers from the card
+text plus its own knowledge (tools: `WebFetch`/`WebSearch` where available),
+and uses the **CLI's default model** — set `[ask] model`/`effort` to pin a
+stronger one (the web panel shows which model is answering). For a deck built
+from source, set **`[ask] source_access = true`** to let the tutor **read the
+card's source** to verify its answer: it runs `Read`/`Glob`/`Grep` with its
+working directory at the deck's `% source:` project root (the nearest
+`Cargo.toml`/`.git`/… above the cited files) and is told to check the real
+files before answering. It's off by default because it grants file-read access
+— only enable it on a machine and network you trust (especially with `--serve
+--lan`). A [workspace](#workspaces) can override it per-folder: put
+`source_access = true` (or `false`) in its `alix.toml` to decide for that
+crate alone, beating the global default. While the model CLI runs, the session
+stays responsive; Esc returns exactly where you were.
 
 This works in the **web frontend** too (`--serve`): an "Ask" button (and the
 `?` key) on an answered card opens a chat panel — type a question, **Send**,
-**Save note**, **Close**. The server runs `claude -p` on a background thread and
-the page polls for the reply, so the single-threaded server never blocks. Ask is
-reachable wherever you serve, including `--lan` (the request runs `claude` on the
-host, so — like `--lan` generally — only use it on a network you trust).
+**Save note**, **Close**. The server invokes the model CLI on a background
+thread and the page polls for the reply, so the single-threaded server never
+blocks. Ask is reachable wherever you serve, including `--lan` (the request
+runs the CLI on the host, so — like `--lan` generally — only use it on a
+network you trust).
 
 While typing a question you can edit it like a normal input line: `←`/`→`
 move the caret, `Home`/`End` (or `Ctrl-A`/`Ctrl-E`) jump to the ends, and
@@ -707,29 +711,30 @@ Decks can carry reference links as comment lines:
 % link: https://tokio.rs/tokio/tutorial
 ```
 
-They are handed to Claude with the first question as background material to
+They are handed to the tutor with the first question as background material to
 consult when useful — fetched once, remembered for the rest of the run. These
 lines do not affect card hashes.
 
-Because the CLI runs headless (`-p`), it cannot show interactive permission
-prompts — an unanswerable prompt would hang the call. `alix` therefore
-runs it with `--permission-mode dontAsk` and an exclusive tool allowlist
-(`WebFetch`, `WebSearch` by default): the listed tools work without
-prompting, and every other tool is silently denied, so a malicious page
-behind a deck link cannot make the tutor run shell commands. Both the
-permission mode and the allowlist are configurable in `[ask]`.
+Because the CLI runs headless, it cannot show interactive permission prompts —
+an unanswerable prompt would hang the call. `alix` therefore runs it with a
+locked permission mode and an exclusive tool allowlist (`WebFetch`,
+`WebSearch` by default): the listed tools work without prompting, and every
+other tool is silently denied, so a malicious page behind a deck link cannot
+make the tutor run shell commands. Both the permission mode and the allowlist
+are configurable in `[ask]`. (Codex uses a sandbox rather than a tool
+allowlist — see [Backends](#backends).)
 
 `Ctrl-N` condenses the conversation into at most three short note lines and
 appends them to the card in the deck file (notes are not hashed, so the
-card's progress is untouched). Requires the `claude` CLI to be installed
-and logged in; the command, a `--model` override and the timeout are
+card's progress is untouched). Requires the configured model CLI to be
+installed and logged in; the command, a `--model` override and the timeout are
 configurable in the `[ask]` section of the config file.
 
 ## Generate a facts deck — `alix deck generate`
 
 `alix deck generate <source>` turns a **source** into a deck of fact cards using
-the Claude CLI. The source is a web page URL *or* a local file/directory path
-(the deck-side mirror of `alix trace`):
+the configured model CLI. The source is a web page URL *or* a local file/directory
+path (the deck-side mirror of `alix trace`):
 
 ```sh
 alix deck generate https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html
@@ -740,40 +745,42 @@ alix deck generate <source> --review       # 2nd pass to remove redundant cards
 alix deck generate <source> --print        # print to stdout instead of writing
 ```
 
-For a **web page**, Claude reads it with the **WebFetch** tool and the deck
+For a **web page**, the model CLI reads it with a web-fetch tool and the deck
 starts with a `% link:` line back to it (so you can use the *ask* feature on the
-cards). For a **local source**, Claude explores it read-only with
-`Read`/`Glob`/`Grep` at the source root and the deck starts with a `% source:`
-line (so `alix exam` can later grade your understanding against it); it also
-adds a [`% at:` citation](#source-citations--at-on-a-fact-card) to each fact that
-maps to specific lines, so the card can show its source on reveal. Either way
-Claude only returns text — never a write or shell tool — and `alix` validates it
-(`parse_str`) and writes `~/decks/<slug>.txt`. The cards are spread across four
-layers of understanding (facts → concepts → application → connections) and use
-cloze (`#?`) cards for terminology.
+cards). For a **local source**, the CLI explores it read-only with file-read tools
+at the source root and the deck starts with a `% source:` line (so `alix exam`
+can later grade your understanding against it); it also adds a
+[`% at:` citation](#source-citations--at-on-a-fact-card) to each fact that maps
+to specific lines, so the card can show its source on reveal. The CLI returns
+text only — never a write or shell tool — and `alix` validates it (`parse_str`)
+and writes `~/decks/<slug>.txt`. The cards are spread across four layers of
+understanding (facts → concepts → application → connections) and use cloze
+(`#?`) cards for terminology.
 
-The prompt tells Claude to draft, then re-read the whole set and merge or drop
-cards that test the same fact, so the deck doesn't repeat itself. For a
-stronger pass, `--review` (or `generate.review = true`) runs a **second**
-Claude call that takes the draft and returns a deduplicated, tightened version
-— an extra call, worth it when the source is repetitive.
+The model drafts, then re-reads the whole set and merges or drops cards that
+test the same fact, so the deck doesn't repeat itself. For a stronger pass,
+`--review` (or `generate.review = true`) runs a **second** call that takes the
+draft and returns a deduplicated, tightened version — an extra call, worth it
+when the source is repetitive.
 
 The prompt and limits live in the `[generate]` section of the config:
 `model`, `timeout_secs` (default 300), `max_cards` (default 30), `extra`
 (guidance appended to the built-in prompt), `prompt` (a full override, with
 `{url}` and `{max_cards}` placeholders), and `review`. It reuses the `[ask]`
 command and permission settings. Review the result before relying on it — it is a starting
-point, not a final deck. Generation needs the `claude` CLI installed and
-logged in, and works best on a single page or chapter (a whole book overruns
-the context budget).
+point, not a final deck. Generation needs a model CLI installed and logged in,
+and works best on a single page or chapter (a whole book overruns the context
+budget). Note: backends without web access (Codex) can't generate from a URL —
+point the source at a local file or switch `[ask] backend`.
 
 ## Augment a deck — `alix deck augment`
 
-`alix deck augment <deck> --target <kind>` enriches an *existing* deck with
-Claude. It's a **deliberate, one-off command** — generation happens here, in the
-foreground (so any error surfaces immediately), and the result is cached beside
-your progress (`augment.json`, keyed by card id). Review then reads the cache, so
-study stays instant and fully offline — Claude is never called mid-session.
+`alix deck augment <deck> --target <kind>` enriches an *existing* deck using the
+configured model CLI. It's a **deliberate, one-off command** — generation happens
+here, in the foreground (so any error surfaces immediately), and the result is
+cached beside your progress (`augment.json`, keyed by card id). Review then reads
+the cache, so study stays instant and fully offline — the model CLI is never
+called mid-session.
 
 ```sh
 alix deck augment mydeck.txt --target choices    # multiple-choice distractors
@@ -858,20 +865,20 @@ Nothing here touches a card's identity, so augmenting never resets progress
 (distractors, notes, and variants all key off the answer, which the id hashes —
 not the front); editing a card's answer changes its id, so it simply regenerates
 next time you augment. Tuned under `[ai]` (`model`, `distractor_count`,
-`variant_count`, `timeout_secs`). Augmentation needs the `claude` CLI installed
+`variant_count`, `timeout_secs`). Augmentation needs a model CLI installed
 and logged in.
 
 **From the web picker.** You don't need the command line for any of this: focus a
 deck and press **`a`** (or its **Augment** button) to open a screen of each
 target's coverage, with **Generate** to fill the cards a target is still missing
 and **Remove** to clear one (or all). There generation runs in the **background**
-— the page polls while Claude works — but it writes the same `augment.json`, so
+— the page polls while the model works — but it writes the same `augment.json`, so
 review reads it identically. Shown on decks, not workspaces.
 
 ## Import an Anki deck (`alix import`)
 
-`alix import <file.tsv>` turns an Anki export into an `alix` deck — no Claude
-needed. Export your notes from Anki as **Notes in Plain Text** (`.txt`/`.tsv`)
+`alix import <file.tsv>` turns an Anki export into an `alix` deck — no model
+CLI needed. Export your notes from Anki as **Notes in Plain Text** (`.txt`/`.tsv`)
 with fields separated by a tab; the first field becomes the front, the second
 the back, and any further fields are ignored:
 
@@ -929,14 +936,14 @@ in the terminal and the browser:
 - **Web** (`alix serve`): picking an `exam due` deck in the deck list launches
   the exam in the page; a finished session likewise offers it at the summary.
 
-`alix` asks Claude to read the source (URLs via the **WebFetch** tool; local
-files are embedded) and write fresh **open understanding** questions —
+`alix` asks the configured model CLI to read the source (URLs via a web-fetch
+tool; local files are embedded) and write fresh **open understanding** questions —
 application and connections, not the card facts — each with the key points a
 correct answer must contain. You type a prose answer per question, and an
 examiner grades them Pass / Partial / Fail **against the source's rubric, never
 against your cards** (grading the cards would be circular), at the deck's
-configured strictness (below). The Claude calls run
-on a background thread so the UI stays responsive while it thinks.
+configured strictness (below). The model CLI calls run on a background thread
+so the UI stays responsive.
 
 - **Pass** (every question by default; tune with `pass_threshold`) marks the
   deck **mastered** (shown as `mastered ✓`). Mastery — not mere drilling — is
@@ -973,8 +980,9 @@ Settings live in the `[exam]` section: `model`, `timeout_secs` (default 300),
 `strictness` (default `balanced`), `retry_cooldown_secs` (default 3600 — how long
 a failed *trace* exam waits before a re-sit; `0` disables it), and `extra`
 (guidance appended to question generation). It reuses the `[ask]` command,
-permission mode and tool allowlist, and needs the `claude` CLI installed and
-logged in.
+permission mode and tool allowlist, and needs a model CLI installed and
+logged in. Note: a URL `% source:` requires a backend that can fetch web
+content (Codex cannot — use a local file path or switch `[ask] backend`).
 
 ## Traces (`alix trace`)
 
@@ -1021,12 +1029,12 @@ with a `% given:` line (`% given: state — the parser's position so far`,
 repeatable) — these show as a list under the question, so the excerpt stays
 focused without orphaning the names it leans on.
 
-**Building it with Claude.** Instead of hand-writing the checkpoints, declare
-just the `% trace:` and `% source:`, then run `alix trace --build <deck>`:
-Claude explores the source — with **read-only** `Read`/`Glob`/`Grep` and the
-source root as its working directory (no write or shell access) — traces the
-single load-bearing path, and writes the checkpoints (with their `% at:`
-locators) back into the deck file. The result is cached and version-controlled
+**Building a trace.** Instead of hand-writing the checkpoints, declare just the
+`% trace:` and `% source:`, then run `alix trace --build <deck>`: the model CLI
+explores the source — with **read-only** `Read`/`Glob`/`Grep` and the source
+root as its working directory (no write or shell access) — traces the single
+load-bearing path, and writes the checkpoints (with their `% at:` locators)
+back into the deck file. The result is cached and version-controlled
 there, so review it — especially the locators — and edit freely; re-run
 `--build` to regenerate. The build prompt encodes the chain rules below, so a
 generated trace comes out a path, not a quiz.
@@ -1041,11 +1049,11 @@ self-contained, **without copying whole source files**. A re-based snippet loses
 its original line numbers, so when those matter the original location is kept on
 the card's `% at:` line, after ` from ` (`% at: 12.rs from scheduler.rs:90-98`),
 and the freeze records the live source root in an `% origin:` directive so the
-tutor stays grounded and `alix check` can flag drift. It's automatic for explored
+tutor stays grounded and `alix deck check` can flag drift. It's automatic for explored
 workspaces, not a command; a loose trace over a live `% source:` is left as-is.
 
 **Checking the locators.** For a trace that *isn't* frozen — a loose `.txt` over
-a live `% source:` — **`alix check`** validates that every `% at:` still
+a live `% source:` — **`alix deck check`** validates that every `% at:` still
 resolves into its source: it warns about a locator that names a missing file,
 runs past the end of the file, or (for a single-file source) gives bare line
 numbers it can't place. It's a quick structural check — *does this excerpt still
@@ -1056,9 +1064,10 @@ way.)
 Because building is one-shot, correctness-critical, and **fails silently** when
 the model is weak (you still get parseable checkpoints, just a loose chain you
 then drill), the `[trace]` config section defaults it to a strong model
-(`model = "opus"`) and high reasoning effort (`effort = "high"`) — slower than
-the other AI features, but it runs once and is amortized over many reviews.
-Override `model`, `effort` (`low`–`max`) and `timeout_secs` there. `--suggest`
+(`model = "opus"` for Claude; other backends inherit their CLI's default) and
+high reasoning effort (`effort = "high"`) — slower than the other AI features,
+but it runs once and is amortized over many reviews. Override `model`, `effort`
+(`low`–`max`) and `timeout_secs` there. `--suggest`
 shares these `[trace]` settings (it's also one-shot recon), but **`--grade` does
 not**: judging a prediction is a light, interactive, per-hop call, so it runs at
 the tutor tier — the `[ask]` model, effort and timeout — instead.
@@ -1075,7 +1084,7 @@ rather than forcing them into a fake path — facts are a deck's job, edges are 
 trace's. It writes nothing: pick one, paste its
 header into a new deck, and `--build` it. Knowing *what* is worth
 tracing — and how deep — is itself the hard part (it needs you to already
-understand the source), so this hands that judgment to Claude.
+understand the source), so this hands that judgment to the model.
 
 **Write it as a chain, not a quiz.** A trace's whole value is that it's a *path*:
 each checkpoint should pick up where the last *reveal* left off (note how hop 2
@@ -1236,6 +1245,48 @@ section; `--port` overrides it:
 [serve]
 port = 7777
 ```
+
+### Backends
+
+By default, `alix` routes all AI calls through the [Claude Code](https://www.anthropic.com/claude-code)
+CLI (`claude -p`). You can switch to one of the other supported CLIs by setting
+`backend` in the `[ask]` section:
+
+```toml
+[ask]
+backend = "claude"   # default — Claude Code CLI
+# backend = "gemini"  # Google Gemini CLI
+# backend = "codex"   # OpenAI Codex CLI
+# backend = "copilot" # GitHub Copilot CLI
+```
+
+**Auth is each CLI's own login — alix stores no API keys.** Install the CLI you
+want to use, run its login command once (e.g. `claude`, `gemini login`,
+`codex login`, or `gh auth login`), and alix picks it up.
+
+Each backend is granted **read-only tools only** — file reading and (where the
+CLI supports it) web fetch. No write or shell tool is granted to any backend.
+Backends degrade gracefully when they can't fulfil a request: a backend that
+can't reach the web (Codex runs under a network-blocking sandbox) will refuse
+a URL-based exam or deck generation with a clear message naming the fix — point
+the source at a local file, or switch `[ask] backend`. Rate-limit and
+authentication errors surface as actionable guidance rather than raw CLI output.
+
+**`alix backend check [--all]`** sends a short tool-free request to the
+configured backend (or all four with `--all`) and reports whether each is
+installed, signed in, and responding. Useful for confirming the whole path
+works before running a longer command.
+
+**Pre-flight size guard.** Before an agentic command (`alix deck generate`,
+`alix exam`, `alix trace --build`, `alix explore`) reads a large source, alix
+measures its size and prompts for confirmation. Pass `--yes` to skip the
+prompt in non-interactive scripts.
+
+**Multi-turn tutoring.** Claude's native session flags (`--session-id` /
+`--resume`) keep a running conversation across cards. Other CLIs don't have
+those, so alix re-inlines the accumulated Q&A transcript into each follow-up
+prompt instead — the tutor remembers earlier questions on every backend, though
+the prompt grows with the conversation rather than being resumed efficiently.
 
 ## Card identity and storage
 

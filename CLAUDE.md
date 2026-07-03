@@ -2,12 +2,14 @@
 
 `alix` is an **AI-augmented** spaced-repetition learning tool in Rust, with a
 terminal (TUI) and a web frontend (`--serve`). On top of a plain-text
-flashcard core, Claude is woven in: an ask-Claude tutor on any card, AI deck
-generation (`alix deck`), and the **AI exam** (`alix exam`) that gates
-progression on verified understanding. The tool is increasingly AI-centric —
-weight that when prioritizing. The **library crate is the single source of
-logic**; the TUI, the web server, and the CLI are thin consumers. Put behavior
-in the lib (`src/`), not in a frontend, so both surfaces share it.
+flashcard core, an AI backend is woven in: an in-session tutor on any card, AI
+deck generation (`alix deck`), and the **AI exam** (`alix exam`) that gates
+progression on verified understanding. The AI backend is pluggable (`[ask]
+backend` — Claude by default; Gemini, Codex, and Copilot also supported). The
+tool is increasingly AI-centric — weight that when prioritizing. The **library
+crate is the single source of logic**; the TUI, the web server, and the CLI are
+thin consumers. Put behavior in the lib (`src/`), not in a frontend, so both
+surfaces share it.
 
 Native mobile thin clients (Android/iOS) are anticipated, consuming these same
 web endpoints — so treat the web JSON API as a **client-agnostic contract**:

@@ -8,17 +8,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 - An `examples/gh-review-prep.rs` showing how to compose the library into an ephemeral, goal-scoped workspace for understanding a change you must read closely (a GitHub PR or issue) before acting on it. Read-only; a demonstration of composability, not a GitHub feature.
+- **`[ask] backend` selector.** All AI calls now route through a pluggable
+  backend. Set `backend` in `[ask]` to choose among `claude` (default), `gemini`,
+  `codex`, or `copilot`. Auth is each CLI's own login — alix stores no API keys.
 - **`alix backend check [--all]` health probe.** Sends a trivial tool-free
   request to the configured backend (or all four with `--all`) and reports
   whether each is installed, signed in, and responding. The only reliable way
   to confirm the whole path works end-to-end. Errors are the same actionable
   messages the rest of alix shows (rate limit, not signed in, not installed).
 - **Gemini backend (`[ask] backend = "gemini"`).** alix's AI calls can now run
-  through the Google Gemini CLI (`gemini -p`, headless) instead of Claude. Tool
-  access maps to Gemini's read-only tools via an `--allowed-tools` allowlist
-  (`read_file`/`glob`/`search_file_content` for source reading, `web_fetch`,
-  `google_web_search`) — no write or shell tool is granted, and none is
-  auto-approved. Trace building picks each backend's own strong model (Claude
+  through the Google Gemini CLI (`gemini -p`, headless). Tool access maps to
+  Gemini's read-only tools via an `--allowed-tools` allowlist (the standard
+  read-only file tools plus web fetch and search) — no write or shell tool is
+  granted, and none is auto-approved. Trace building picks each backend's own strong model (Claude
   still defaults to `opus`; other backends inherit the CLI's default), so leaving
   `[trace] model` unset does the right thing per backend.
 - **Codex backend (`[ask] backend = "codex"`).** alix's AI calls can now run
@@ -28,15 +30,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `--ask-for-approval never`, which permits reading local source but blocks
   writes, shell escalation, and the network — so a fetch/search grant can't be
   honoured under this backend (source reading still works).
+- **Copilot backend (`[ask] backend = "copilot"`).** alix's AI calls can now
+  run through the GitHub Copilot CLI, authenticated via `gh auth login`.
 - **Backends degrade gracefully.** An AI feature now checks the selected
   backend's capabilities *before* doing any work and refuses cleanly when they
   don't match — e.g. an exam or `deck generate` over a URL `% source:` under a
-  read-only backend that can't fetch the web says so and names the fix (point
-  the source at a local file, or switch `[ask] backend`), instead of crashing
-  or fabricating a result. Trace `build`/`suggest` and `explore` gate the same
+  backend that can't fetch the web says so and names the fix (point the source
+  at a local file, or switch `[ask] backend`), instead of crashing or
+  fabricating a result. Trace `build`/`suggest` and `explore` gate the same
   way. A failed AI CLI now also leads with actionable guidance: a rate-limit or
   quota error suggests waiting or switching backend; an unauthenticated error
   suggests running the CLI's login once (the raw detail is still shown).
+- **Pre-flight source-size guard.** Before an agentic command (`deck generate`,
+  `exam`, `trace --build`, `explore`) reads a large source, alix measures the
+  estimated size and asks for confirmation. Pass `--yes` to skip the prompt in
+  non-interactive scripts.
 - **Web picker: a workspace's goal shows in its drill-in.** Opening a workspace now
   shows its goal (the one-line description) under the title eyebrow, the same goal the
   top-level list shows on the workspace row — so the context stays visible while you

@@ -23,17 +23,24 @@ Common flags: `--mode <m>` ([modes](04-review-modes.md)), `--scheduler <s>` /
 - `alix list <deck>...` — every card with its stage and due time.
 - `alix reset <deck>...` — clear progress (`--card`, `--cards`, `--all`; `-y` to
   skip the prompt).
-- `alix check <deck>...` — lint a deck (syntax, duplicate cards, trace `% at:`
+- `alix deck check <deck>...` — lint a deck (syntax, duplicate cards, trace `% at:`
   locators, and frozen cards that have drifted from their `% origin:` source).
 - `alix deps <deck>` (alias `require`) — edit `% requires:` with a checkbox picker
   ([dependencies](09-dependencies.md)).
 
 ## The AI features
 
+- `alix backend check [--all]` — health probe: sends a short request to the
+  configured backend (or all four with `--all`) and reports whether each is
+  installed, signed in, and responding.
 - `alix deck generate <url-or-path>` — [generate a facts deck](11-generating-decks.md).
 - `alix deck augment <deck> --target <...>` — precompute AI augmentations
   (choices, notes, questions, keypoints, format, topology).
-- `alix import <file.tsv>` — import an Anki TSV export (no Claude needed).
+- `alix import <file.tsv>` — import an Anki TSV export (no model CLI needed).
+
+The agentic commands (`deck generate`, `exam`, `trace --build`, `explore`)
+measure the source size before running and prompt for confirmation when it's
+large. Pass `--yes` to skip the prompt in non-interactive scripts.
 - `alix exam <deck>` — the [AI exam](12-the-ai-exam.md) (`--questions`,
   `--strictness`).
 - `alix trace <deck>` — walk a [trace](13-trace-decks.md) (`--build`, `--suggest`,

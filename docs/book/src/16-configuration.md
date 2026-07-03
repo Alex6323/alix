@@ -44,13 +44,46 @@ port = 7777
 
 (Jump-to-first/last stays fixed at `g`/`G`, and the arrow keys always move.)
 
+## Backends
+
+By default all AI calls go through the [Claude Code](https://www.anthropic.com/claude-code)
+CLI. You can switch to one of the other supported CLIs with `backend` in `[ask]`:
+
+```toml
+[ask]
+backend = "claude"   # default — Claude Code CLI
+# backend = "gemini"  # Google Gemini CLI
+# backend = "codex"   # OpenAI Codex CLI
+# backend = "copilot" # GitHub Copilot CLI
+```
+
+Auth is each CLI's own login — alix stores no API keys. Install whichever CLI
+you want to use and run its login command once.
+
+Each backend is granted **read-only tools only** (file reading; web fetch where
+the backend supports it). Codex runs under a network-blocking sandbox rather
+than a tool allowlist, so it can read local source files but can't fetch URLs
+— a URL-based exam or `deck generate` will refuse and tell you to use a local
+file instead, or switch backends.
+
+Run `alix backend check` to send a quick test request to the configured
+backend and confirm it's installed, signed in, and responding. `--all` probes
+all four.
+
+The multi-turn tutor works on every backend: Claude uses its native session
+flags (`--session-id` / `--resume`) for efficient continuation; other backends
+re-inline the accumulated Q&A transcript into each follow-up so the context
+carries over (the prompt grows with the conversation rather than being resumed
+efficiently).
+
 ## The AI sections
 
 Each AI feature has its own section, all reusing the `[ask]` command and permission
 settings:
 
-- **`[ask]`** — the tutor: `command` (how to invoke Claude), `permission_mode`, the
-  tool allowlist, a `model` override, `timeout_secs`, and an `effort`.
+- **`[ask]`** — the tutor: `command` (how to invoke the CLI), `backend`,
+  `permission_mode`, the tool allowlist, a `model` override, `timeout_secs`,
+  and an `effort`.
 - **`[generate]`** — `alix deck`: `model`, `timeout_secs` (300), `max_cards` (30),
   `extra`, a full `prompt` override, and `review`.
 - **`[exam]`** — `alix exam`: `model`, `timeout_secs` (300), `num_questions` (5),

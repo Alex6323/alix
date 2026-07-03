@@ -159,18 +159,18 @@ the workspace is self-contained, without copying whole files. The freeze also
 records the live source root in an `% origin:` directive and keeps each snippet's
 original location on its `% at:` line, after ` from ` (`% at: 12.rs from
 scheduler.rs:90-98`) — so the tutor can still reach the real source and
-[`alix check`](17-command-reference.md) can tell when it has drifted. It's
+[`alix deck check`](17-command-reference.md) can tell when it has drifted. It's
 automatic for explored workspaces; a loose trace over a live source is left as-is.
 
 ## Checking the locators
 
 For a trace that *isn't* frozen — a loose `.txt` over a live `% source:` —
-[`alix check`](17-command-reference.md) validates that every `% at:` still
+[`alix deck check`](17-command-reference.md) validates that every `% at:` still
 resolves into its source: it warns about a locator that names a missing file,
 runs past the end of the file, or (for a single-file source) gives bare line
 numbers it can't place. It's a quick structural check — *does this excerpt still
 exist?* — so a moved or trimmed source is caught before you walk into it, not
-mid-hop. (Frozen snapshots don't move, but `alix check` still validates each
+mid-hop. (Frozen snapshots don't move, but `alix deck check` still validates each
 snippet — and, via the `% origin:` they were frozen with, warns when the live
 source has **drifted** from the frozen excerpt.)
 
