@@ -23,17 +23,17 @@ open *predict* prompt and the key points a good prediction should hit — plus a
 `% at:` locator pointing at the real lines in the source:
 
 ```
-% trace: how pressing the Passed key in the browser becomes a saved grade
+% trace: how grading a card in the browser becomes a saved grade
 % source: ..
 
-# You press Passed. What does the page send the server — and what does it not?
+# You press Got it. What does the page send the server — and what does it not?
     grade(g) POSTs to /api/grade with a body of just { grade: g } — no card id.
-    % at: assets/serve/review.html:338-341
+    % at: assets/serve/review.html:594
     ! The page is a thin view; it doesn't even track card identity.
 
 # So the request has no card id. How does the server know which card you graded?
     The handler grabs the live, server-side review session and grades on it.
-    % at: src/serve.rs:682-689
+    % at: src/serve.rs:1580-1587
     ! State lives server-side; the page only ever names the grade.
 ```
 

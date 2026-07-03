@@ -3,46 +3,46 @@
 %
 % Each hop picks up where the last reveal left off — you're following one
 % path (keypress -> request -> session -> scheduler -> disk), not a quiz.
-% trace: how pressing the Good key in the browser becomes a durable saved grade
+% trace: how grading a card in the browser becomes a durable saved grade
 % source: ../..
 
-# You press the Good key in the browser. What does the page send to the server — and, just as telling, what does it *not* send?
-	grade(g) POSTs to /api/grade with a JSON body of just { grade: g }.
+# You press Got it in the browser. What does the page send to the server — and, just as telling, what does it *not* send?
+	grade(g) POSTs to /api/grade with a JSON body of just { grade: g } — here { grade: "passed" }.
 	The request says how you graded — never which card.
-	% at: assets/serve/review.html:349
+	% at: assets/serve/review.html:594
 	! The page is a thin view; it doesn't even track card identity.
 
 # So the request carries only the grade — no card id. How does the server then know *which* card you just graded?
-	The handler grabs `reviewing` — the live, server-side review session.
+	The handler grabs `reviewing` — the live, server-side review session (`r`).
 	It calls .grade on that session; the current card is server state.
 	So the server, not the page, is the source of truth for "which card".
-	% at: src/serve.rs:690-697
+	% at: src/serve.rs:1580-1587
 	! State lives server-side; the page only ever names the grade.
 
 # The server hands the grade to its session's grade(). How does it pick *the* card and turn one keypress into a scheduling change?
 	It pops the front of the queue — that card is the one on screen.
-	It looks up (or creates) that card's stored state by its id() hash.
+	It looks up (or inserts) that card's stored state by its id() hash.
 	Then it delegates the real change to the scheduler's apply.
-	% at: src/session.rs:213-219
+	% at: src/session.rs:207-213
 	! "Which card" = the queue front; its identity is the id() hash.
 
-# The session calls scheduler.apply with your grade. How does a Good actually move the card — and how would a wrong answer differ?
-	Good is a Pass: it bumps the card up one Leitner stage (capped).
-	A Fail drops it back to stage 1; Easy jumps two.
+# The session calls scheduler.apply with your grade. How does a Got it actually move the card — and how would a miss differ?
+	Got it (Pass) bumps the card up one Leitner stage, capped at the top.
+	Missed it (Fail) resets it to stage 1; Partly steps it back one stage.
 	The review is recorded with its timestamp either way.
-	% at: src/scheduler.rs:90-98
+	% at: src/scheduler.rs:114-122
 	! The new stage sets the cooldown before the card is due again.
 
-# session.grade() has returned, and the new stage is now recorded in the store. Back in the /api/grade handler, what's its very next line?
+# session.grade() has returned, and the new stage is now recorded in the in-memory store. Back in the /api/grade handler, what's its very next line?
 	The new stage so far exists only in the in-memory store — not yet on disk.
 	So the handler's very next line is store.save(), which persists it.
 	A save error is only logged, not fatal — the grading itself already happened.
-	% at: src/serve.rs:697-700
+	% at: src/serve.rs:1587-1590
 	! grade() changes memory; persisting is the handler's job, on the very next line.
 
 # store.save() is called — but the store is one JSON file. How does it write the update without risking a half-written file if the process dies mid-save?
-	It serializes the whole store, then writes it to a temp file (.json.tmp).
+	It serializes the whole store to JSON, then writes it to a temp file (.json.tmp).
 	Then it atomically renames the temp file over the real one.
 	A rename can't half-happen, so a crash leaves the old file or the new — never a corrupt one.
-	% at: src/store.rs:205-212
+	% at: src/store.rs:236-243
 	! That rename is the real "saved" moment — the durable saved grade this trace set out to explain.
