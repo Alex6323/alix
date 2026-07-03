@@ -741,11 +741,28 @@ impl Ask {
         // a cwd change starts a fresh conversation, so `started` then reports this
         // as a first message (full subject context).
         let args = self.cli.args_in(run_cfg.cwd.as_deref());
+        // Claude keeps the running conversation via `--resume`, so its follow-up
+        // prompt stays short. A backend without a session (Task 7) runs each turn
+        // statelessly, so re-inline the prior transcript to restore memory.
+        let keeps_session = crate::backend::backend_for(&run_cfg)
+            .map(|b| b.supports_session())
+            .unwrap_or(false);
         let (prompt, purpose) = match question {
-            Some(q) => (
-                ask::question_prompt(card, links, &q, !self.cli.started, root, frozen),
-                Purpose::Question(q),
-            ),
+            Some(q) => {
+                let prompt = if keeps_session {
+                    ask::question_prompt(card, links, &q, !self.cli.started, root, frozen)
+                } else {
+                    ask::question_prompt_with_history(
+                        card,
+                        links,
+                        &self.transcript,
+                        &q,
+                        root,
+                        frozen,
+                    )
+                };
+                (prompt, Purpose::Question(q))
+            }
             None => (
                 ask::condense_prompt(card, &self.transcript),
                 Purpose::Condense,

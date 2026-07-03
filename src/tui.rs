@@ -1165,14 +1165,32 @@ impl App {
                 // a cwd change starts a fresh conversation, so `started` then
                 // reports this as a first message (full card context).
                 let args = self.ask_session.args_in(ask_cfg.cwd.as_deref());
-                let prompt = ask::question_prompt(
-                    card,
-                    links,
-                    &question,
-                    !self.ask_session.started,
-                    live_root,
-                    frozen.as_deref(),
-                );
+                // Claude keeps the running conversation via `--resume`, so its
+                // follow-up prompt stays short. A backend without a session
+                // (Task 7) runs each turn statelessly, so re-inline the prior
+                // transcript to restore cross-turn memory.
+                let keeps_session = crate::backend::backend_for(&ask_cfg)
+                    .map(|b| b.supports_session())
+                    .unwrap_or(false);
+                let prompt = if keeps_session {
+                    ask::question_prompt(
+                        card,
+                        links,
+                        &question,
+                        !self.ask_session.started,
+                        live_root,
+                        frozen.as_deref(),
+                    )
+                } else {
+                    ask::question_prompt_with_history(
+                        card,
+                        links,
+                        transcript,
+                        &question,
+                        live_root,
+                        frozen.as_deref(),
+                    )
+                };
                 *status = None;
                 *waiting = Some(Waiting {
                     rx: ask::spawn(ask_cfg, prompt, args),

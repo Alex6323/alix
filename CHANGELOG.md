@@ -56,12 +56,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   under the `deck` noun-group for consistency with `alix deck generate`/`alix
   deck augment`. The command is identical; only the path changed: `alix check
   <deck>` → `alix deck check <deck>`. No compat shim, pre-1.0.
-- **The tutor runs statelessly on non-Claude backends.** Multi-turn tutoring
-  uses Claude's session flags (`--session-id`/`--resume`), which other CLIs
-  don't have; alix now drops them for a backend without a session mechanism so
-  the tutor runs each turn fresh (it still has the card context, just not
-  prior-turn memory) instead of erroring on unknown flags. Re-inlining the prior
-  transcript for full multi-turn memory is a planned follow-up.
+- **Multi-turn tutoring works on every backend.** Claude keeps a running
+  conversation with its session flags (`--session-id`/`--resume`); other CLIs
+  don't have those, so alix drops them for a backend without a session mechanism.
+  To restore cross-turn memory there, the tutor now re-inlines the accumulated
+  Q&A transcript into each prompt — a follow-up on a non-Claude backend carries
+  the prior questions and answers, so the tutor no longer forgets what you just
+  asked. Claude's efficient `--resume` path is unchanged.
 - **Breaking — config keybindings are namespaced under `[keys]`.** Every key table
   is now a `[keys.*]` subtable: `[keys]` → `[keys.review]`, `[picker]` →
   `[keys.picker]`, and `[browse]` → `[keys.browse]`. This groups all bindings in one

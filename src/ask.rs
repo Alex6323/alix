@@ -155,6 +155,54 @@ pub fn question_prompt(
     source_root: Option<&Path>,
     frozen: Option<&str>,
 ) -> String {
+    let mut p = question_context(card, links, first, source_root, frozen);
+    p.push_str("\nThe user's question: ");
+    p.push_str(question);
+    p
+}
+
+/// The stateless equivalent of Claude's `--resume` follow-up: for backends
+/// without a session ([`Backend::supports_session`](crate::backend::Backend::supports_session)
+/// is false), each tutor turn is a fresh process, so cross-turn memory is
+/// restored by re-inlining the whole conversation. This builds the same
+/// first-turn card context as [`question_prompt`] (instructions, links, source
+/// grounding), then replays each `prior` `(question, answer)` exchange in order,
+/// and finally poses the new `question`. An empty `prior` reduces to exactly the
+/// first-turn [`question_prompt`], so a first turn is identical on every backend.
+pub fn question_prompt_with_history(
+    card: &Card,
+    links: &[String],
+    prior: &[Exchange],
+    question: &str,
+    source_root: Option<&Path>,
+    frozen: Option<&str>,
+) -> String {
+    // Every re-inlined turn is a "first" message: the process has no memory, so
+    // it needs the full instructions, links, and card context each time.
+    let mut p = question_context(card, links, true, source_root, frozen);
+    for (q, a) in prior {
+        p.push_str("\nThe user's question: ");
+        p.push_str(q);
+        p.push_str("\nYour answer: ");
+        p.push_str(a);
+        p.push('\n');
+    }
+    p.push_str("\nThe user's question: ");
+    p.push_str(question);
+    p
+}
+
+/// The shared card context up to (but not including) the trailing question: the
+/// first-turn instructions and deck links (when `first`), the card itself, and
+/// any `source_root`/`frozen` grounding. Both [`question_prompt`] and
+/// [`question_prompt_with_history`] append their question(s) after this.
+fn question_context(
+    card: &Card,
+    links: &[String],
+    first: bool,
+    source_root: Option<&Path>,
+    frozen: Option<&str>,
+) -> String {
     let mut p = String::new();
     if first {
         p.push_str(
@@ -217,8 +265,6 @@ pub fn question_prompt(
         }
         (None, None) => {}
     }
-    p.push_str("\nThe user's question: ");
-    p.push_str(question);
     p
 }
 
@@ -317,10 +363,9 @@ pub(crate) fn run(config: &AskConfig, prompt: &str, extra_args: &[String]) -> Re
     let backend = backend_for(config)?;
     // Session flags (Claude's `--session-id`/`--resume`) are Claude-specific;
     // forwarding them to a backend without a session mechanism would error on an
-    // unknown flag. Drop them there so the tutor runs statelessly (each turn
-    // fresh — it still carries the card context, just not prior-turn memory).
-    // TODO: re-inline the prior transcript so non-session backends get multi-turn
-    // memory back (a documented follow-up).
+    // unknown flag. Drop them there so the tutor runs statelessly. Prior-turn
+    // memory is restored by the frontends re-inlining the transcript into the
+    // prompt (`question_prompt_with_history`) for these backends.
     let session_args: &[String] = if backend.supports_session() {
         extra_args
     } else {
@@ -510,6 +555,43 @@ mod tests {
         // But the card may have changed, so it is always included.
         assert!(p.contains("Front: Why?"));
         assert!(p.ends_with("The user's question: next q"));
+    }
+
+    #[test]
+    fn question_prompt_with_history_includes_prior_exchanges() {
+        let prior = vec![
+            (
+                "what is ownership?".to_string(),
+                "who frees the value".to_string(),
+            ),
+            ("and borrowing?".to_string(), "temporary access".to_string()),
+        ];
+        let p = question_prompt_with_history(&card(), &[], &prior, "and lifetimes?", None, None);
+        // The card context is present, exactly as the first-turn prompt.
+        assert!(p.contains("concise tutor"), "{p}");
+        assert!(p.contains("Front: Why?"), "{p}");
+        // Each prior question AND its answer appear, in order, before the new one.
+        let q1 = p.find("what is ownership?").expect("first question");
+        let a1 = p.find("who frees the value").expect("first answer");
+        let q2 = p.find("and borrowing?").expect("second question");
+        let a2 = p.find("temporary access").expect("second answer");
+        let new_q = p.find("and lifetimes?").expect("new question");
+        assert!(
+            q1 < a1 && a1 < q2 && q2 < a2 && a2 < new_q,
+            "out of order: {p}"
+        );
+        // The new question is the last thing the model reads.
+        assert!(p.ends_with("The user's question: and lifetimes?"), "{p}");
+
+        // An empty history reduces to the same content as the first-turn prompt.
+        let links = vec!["https://docs.rs/tokio".to_string()];
+        let first = question_prompt(&card(), &links, "and lifetimes?", true, None, None);
+        let empty =
+            question_prompt_with_history(&card(), &links, &[], "and lifetimes?", None, None);
+        assert_eq!(
+            first, empty,
+            "empty history must match the first-turn prompt"
+        );
     }
 
     #[test]
