@@ -1568,7 +1568,8 @@ fn review_serve(args: ReviewArgs, browse_mode: bool) -> Result<()> {
         let label = b.label.clone();
         (serve::Launch::Review(Box::new(b)), label)
     };
-    announce(addr, args.serve.lan, &label);
+    let token = resolve_serve_token(args.serve.token.clone(), args.serve.lan, &config);
+    announce(addr, args.serve.lan, token.as_deref(), &label);
 
     let opts = serve::ReviewOptions {
         mode_override: args.mode,
@@ -1579,6 +1580,7 @@ fn review_serve(args: ReviewArgs, browse_mode: bool) -> Result<()> {
         ask: config.ask.clone(),
         exam: config.exam.clone(),
         ai: config.ai.clone(),
+        auth: token,
     };
     let build = |paths: Vec<PathBuf>,
                  topology: Option<&str>,
@@ -1636,19 +1638,23 @@ fn review_serve(args: ReviewArgs, browse_mode: bool) -> Result<()> {
     )
 }
 
-/// Prints where the web frontend is reachable, and a warning when it is
-/// exposed to the network.
-fn announce(addr: SocketAddr, lan: bool, label: &str) {
+/// Prints where the web frontend is reachable, plus pairing info (host/port/
+/// token) when it is exposed to the network with a token — or a warning when
+/// exposed without one.
+fn announce(addr: SocketAddr, lan: bool, token: Option<&str>, label: &str) {
     println!("Serving {label} in the browser.");
-    if lan {
-        println!(
-            "Listening on all interfaces, port {}. On another device open",
-            addr.port()
-        );
-        println!("  http://<this-machine's-IP>:{}", addr.port());
-        println!("warning: no authentication — anyone on your network can reach this.");
-    } else {
-        println!("Open http://127.0.0.1:{} in your browser.", addr.port());
+    match (lan, token) {
+        (true, Some(t)) => {
+            let port = addr.port();
+            println!("On another device, open in a browser:");
+            println!("  http://<this-machine's-IP>:{port}/?token={t}");
+            println!("Or pair the app with:  host <this-machine's-IP>  port {port}  token {t}");
+        }
+        (true, None) => {
+            println!("Listening on all interfaces, port {}.", addr.port());
+            println!("warning: no authentication — anyone on your network can reach this.");
+        }
+        (false, _) => println!("Open http://127.0.0.1:{} in your browser.", addr.port()),
     }
     println!("Press Ctrl-C to stop.");
 }
@@ -2695,7 +2701,7 @@ fn trace_serve(
     config: &Config,
 ) -> Result<()> {
     let addr = serve_addr(args.serve.port, args.serve.lan, config);
-    announce(addr, args.serve.lan, "a trace walk");
+    announce(addr, args.serve.lan, None, "a trace walk");
     let grade = args.grade.then(|| config.ask.clone());
     let walk = Walk::new(trace, scheduler);
     serve::run_walk(walk, store, addr, scheduler, grade, config.keys.clone())

@@ -558,6 +558,9 @@ pub struct ReviewOptions {
     /// AI augmentation settings (model, per-target counts), for generating
     /// augmentations from the picker's Augment screen.
     pub ai: AiConfig,
+    /// Pairing token required on `/api/*` when set (auto-generated for `--lan`);
+    /// `None` leaves the server open (the localhost default).
+    pub auth: Option<String>,
 }
 
 /// A review session ready to serve: the session, its header label, the
@@ -1391,6 +1394,7 @@ pub fn run_review(
         ask: ask_cfg,
         exam: exam_cfg,
         ai: ai_cfg,
+        auth,
     } = opts;
     let keys = ReviewKeys::from(&bindings);
     let picker_keys = PickerKeysDto::from(&picker_keys);
@@ -1424,6 +1428,15 @@ pub fn run_review(
     for mut request in server.incoming_requests() {
         let method = request.method().clone();
         let path = request_path(&request);
+        if !is_authorized(
+            &path,
+            header_value(&request, "Authorization"),
+            query_param(request.url(), "token").as_deref(),
+            auth.as_deref(),
+        ) {
+            respond_status(request, 401);
+            continue;
+        }
         match (&method, path.as_str()) {
             (Method::Get, "/") => respond_html(request, &REVIEW_PAGE),
             (Method::Get, "/walk") => respond_html(request, &WALK_PAGE),
@@ -2631,6 +2644,43 @@ fn request_path(request: &Request) -> String {
     request.url().split('?').next().unwrap_or("").to_string()
 }
 
+/// Whether a request may proceed. Only `/api/*` is guarded; the HTML shell,
+/// theme assets, and images stay open so the browser can bootstrap its token
+/// from the `?token=` URL. No token configured (the localhost default) → open.
+fn is_authorized(
+    path: &str,
+    auth_header: Option<&str>,
+    query_token: Option<&str>,
+    token: Option<&str>,
+) -> bool {
+    let Some(token) = token else { return true };
+    if !path.starts_with("/api/") {
+        return true;
+    }
+    let presented = auth_header
+        .and_then(|h| h.strip_prefix("Bearer "))
+        .or(query_token);
+    presented == Some(token)
+}
+
+/// A request header's value by name (case-insensitive), if present.
+fn header_value<'a>(request: &'a Request, name: &'static str) -> Option<&'a str> {
+    request
+        .headers()
+        .iter()
+        .find(|h| h.field.equiv(name))
+        .map(|h| h.value.as_str())
+}
+
+/// A query parameter's value from a full request URL (`/path?k=v&…`).
+fn query_param(url: &str, key: &str) -> Option<String> {
+    let (_, query) = url.split_once('?')?;
+    query.split('&').find_map(|pair| {
+        let (k, v) = pair.split_once('=')?;
+        (k == key).then(|| v.to_string())
+    })
+}
+
 /// Builds the state payload. In the select phase (`reviewing` is `None`) it
 /// reports `phase: "select"` with no card; otherwise it serializes the live
 /// session and store. For choice mode it also builds the options, seeded by the
@@ -3305,6 +3355,27 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
+
+    #[test]
+    fn unconfigured_token_leaves_everything_open() {
+        assert!(is_authorized("/api/decks", None, None, None));
+        assert!(is_authorized("/", None, None, None));
+    }
+
+    #[test]
+    fn token_guards_only_the_api() {
+        let t = Some("secret");
+        // open surfaces stay open even with a token set
+        assert!(is_authorized("/", None, None, t));
+        assert!(is_authorized("/img/deadbeef", None, None, t));
+        assert!(is_authorized("/theme.css", None, None, t));
+        // /api/* requires the token
+        assert!(!is_authorized("/api/decks", None, None, t));
+        assert!(!is_authorized("/api/decks", Some("Bearer wrong"), None, t));
+        assert!(is_authorized("/api/decks", Some("Bearer secret"), None, t));
+        // ?token= query is accepted as a fallback
+        assert!(is_authorized("/api/decks", None, Some("secret"), t));
+    }
 
     #[test]
     fn icon_field_registers_an_svg_and_flags_it() {
