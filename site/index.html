@@ -215,16 +215,41 @@
   var cap = document.getElementById('shotcap');
   var dots = Array.prototype.slice.call(document.querySelectorAll('#dots .dot'));
   if (!track || !dots.length) return;
-  var i = 0, timer = null;
+  var N = caps.length, i = 0, pos = 0, timer = null;
   var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (reduce) track.style.transition = 'none'; // honor reduced-motion: still rotate, but swap instantly (no slide)
-  function go(n) {
-    i = (n + caps.length) % caps.length;
-    track.style.transform = 'translateX(' + (-i * 100) + '%)';
+
+  // A clone of the first slide sits after the last, so the auto-advance can
+  // roll forward off the end and snap back invisibly — no rewind sweep.
+  track.appendChild(track.children[0].cloneNode(true));
+
+  function apply(p, instant) {
+    track.style.transition = (instant || reduce) ? 'none' : 'transform .5s ease';
+    track.style.transform = 'translateX(' + (-p * 100) + '%)';
+  }
+  function setUI() {
     if (cap) cap.textContent = caps[i];
     dots.forEach(function (d, j) { d.classList.toggle('is-active', j === i); });
   }
-  function start() { if (!timer) timer = setInterval(function () { go(i + 1); }, 7000); }
+  function go(n) { // direct jump (dots): slide straight between real positions
+    i = ((n % N) + N) % N; pos = i;
+    apply(pos); setUI();
+  }
+  function next() { // auto-advance: always roll forward, wrapping via the clone
+    if (pos === N) return; // still settling a wrap; skip this tick
+    pos += 1; i = pos % N;
+    apply(pos); setUI();
+    if (pos === N) {
+      if (reduce) { pos = 0; apply(0, true); return; }
+      var done = function () {
+        track.removeEventListener('transitionend', done);
+        if (pos !== N) return; // a dot click interrupted the wrap
+        pos = 0; apply(0, true);
+        void track.offsetWidth; // flush so the snap never animates
+      };
+      track.addEventListener('transitionend', done);
+    }
+  }
+  function start() { if (!timer) timer = setInterval(next, 7000); }
   function stop() { if (timer) { clearInterval(timer); timer = null; } }
   dots.forEach(function (d, j) { d.addEventListener('click', function () { go(j); stop(); start(); }); });
   var car = document.querySelector('.carousel');
