@@ -234,3 +234,8 @@ to this codebase. When in doubt, mirror the surrounding code.
   drifts from the code — items get built without being struck — so re-verify any
   "open" item against the code before treating it as todo (recent audit found
   ~7 already shipped); keep both files in sync when you finish or reprioritize work.
+  **Strike shipped items in the same session the work merges** — flip `[ ]`→`[x]`,
+  priority →`--`, and append `— SHIPPED (<commit>, <date>): <one line>` (match the
+  existing struck items' shape; sweep the launch-checklist duplicates too). This
+  is the step that historically gets forgotten — treat "merged but not struck"
+  as an unfinished task, same as a failing test.
