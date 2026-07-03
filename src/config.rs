@@ -474,7 +474,10 @@ pub struct ServeConfig {
 
 impl Default for ServeConfig {
     fn default() -> Self {
-        Self { port: 7777, token: None }
+        Self {
+            port: 7777,
+            token: None,
+        }
     }
 }
 
