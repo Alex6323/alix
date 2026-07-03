@@ -19,6 +19,10 @@
 //! under review you can drop the flag (handy if you `cargo build --example` it
 //! and symlink the binary onto your PATH as `gh-review-prep`).
 //!
+//! To ground the review in the right code, check out the branch first:
+//!   … --branch <name>   check out <name> before exploring (works for a PR or issue)
+//!   … --checkout        for a PR, check out its base — the branch it merges into
+//!
 //! Requires `gh` on PATH and a working `claude` CLI (alix shells out to it). The
 //! workspace is disposable — retire it with `clean` after you merge or close.
 //!
@@ -63,38 +67,66 @@ enum Cmd {
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let (repo, rest) = extract_repo(&args)?;
+    let (opts, rest) = extract_opts(&args)?;
     match parse_args(&rest)? {
         Cmd::Help => {
             print_help();
             Ok(())
         }
-        Cmd::Build { kind, id } => cmd_build(kind, &id, repo.as_deref()),
-        Cmd::Clean { kind, id } => cmd_clean(kind, &id, repo.as_deref()),
+        Cmd::Build { kind, id } => cmd_build(kind, &id, &opts),
+        Cmd::Clean { kind, id } => cmd_clean(kind, &id, opts.repo.as_deref()),
     }
 }
 
-/// Pull an optional `--repo <path>` out of the args (it may appear anywhere),
-/// returning it plus the remaining args for [`parse_args`]. `--repo` points the
-/// tool at a repo other than the current directory's, so you can `cargo run
-/// --example` it from the alix checkout.
-fn extract_repo(args: &[String]) -> Result<(Option<PathBuf>, Vec<String>)> {
-    let mut repo = None;
+/// The optional flags this example accepts, pulled out of argv before the
+/// positional `[pr|issue] <n>` is parsed.
+struct Opts {
+    /// `--repo <path>`: act on this repo instead of the current directory's.
+    repo: Option<PathBuf>,
+    /// `--branch <name>`: check out this branch first, so explore reads its code.
+    branch: Option<String>,
+    /// `--checkout`: for a PR, check out its base branch (the branch it merges into).
+    checkout: bool,
+}
+
+/// Pull the optional flags (`--repo`, `--branch`, `--checkout`) out of the args —
+/// they may appear anywhere — returning them plus the remaining args for
+/// [`parse_args`].
+fn extract_opts(args: &[String]) -> Result<(Opts, Vec<String>)> {
+    let mut opts = Opts {
+        repo: None,
+        branch: None,
+        checkout: false,
+    };
     let mut rest = Vec::new();
     let mut i = 0;
     while i < args.len() {
-        if args[i] == "--repo" {
-            let path = args
-                .get(i + 1)
-                .ok_or_else(|| anyhow::anyhow!("--repo needs a path"))?;
-            repo = Some(PathBuf::from(path));
-            i += 2;
-        } else {
-            rest.push(args[i].clone());
-            i += 1;
+        match args[i].as_str() {
+            "--repo" => {
+                let path = args
+                    .get(i + 1)
+                    .ok_or_else(|| anyhow::anyhow!("--repo needs a path"))?;
+                opts.repo = Some(PathBuf::from(path));
+                i += 2;
+            }
+            "--branch" => {
+                let name = args
+                    .get(i + 1)
+                    .ok_or_else(|| anyhow::anyhow!("--branch needs a name"))?;
+                opts.branch = Some(name.clone());
+                i += 2;
+            }
+            "--checkout" => {
+                opts.checkout = true;
+                i += 1;
+            }
+            _ => {
+                rest.push(args[i].clone());
+                i += 1;
+            }
         }
     }
-    Ok((repo, rest))
+    Ok((opts, rest))
 }
 
 /// Parse argv (without the program name) into a [`Cmd`].
@@ -214,6 +246,45 @@ fn resolve_repo(repo: Option<&Path>) -> Result<PathBuf> {
         }
     }
     Ok(PathBuf::from(String::from_utf8_lossy(&out.stdout).trim()))
+}
+
+/// Check out `name` in `root` so the working tree reflects that branch before we
+/// explore it. `git checkout` refuses on a dirty tree or an unknown ref; we
+/// surface that error and stop — never forced, never clobbering your work.
+fn checkout_branch(root: &Path, name: &str) -> Result<()> {
+    let out = std::process::Command::new("git")
+        .current_dir(root)
+        .args(["checkout", name])
+        .output()
+        .context("failed to run git checkout")?;
+    if !out.status.success() {
+        bail!(
+            "could not check out `{name}`: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    println!("checked out `{name}`");
+    Ok(())
+}
+
+/// The base branch a PR targets — the branch it wants to merge into.
+fn pr_base_branch(root: &Path, id: &str) -> Result<String> {
+    let base = run_gh(
+        root,
+        &[
+            "pr",
+            "view",
+            id,
+            "--json",
+            "baseRefName",
+            "-q",
+            ".baseRefName",
+        ],
+    )?;
+    if base.is_empty() {
+        bail!("could not determine the base branch of PR {id}");
+    }
+    Ok(base)
 }
 
 /// The repo's GitHub name, else the work-tree directory name.
@@ -342,13 +413,13 @@ fn build_workspace(
     Ok(report)
 }
 
-fn cmd_build(kind: Kind, id: &str, repo: Option<&Path>) -> Result<()> {
-    let root = resolve_repo(repo)?;
+fn cmd_build(kind: Kind, id: &str, opts: &Opts) -> Result<()> {
+    let root = resolve_repo(opts.repo.as_deref())?;
     let slug = slug_id(id);
     let repo_name = repo_slug(&root);
     let ws = workspace_path(&reviews_dir(), &repo_name, kind, &slug);
     if ws.exists() {
-        let retire = match repo {
+        let retire = match &opts.repo {
             Some(p) => format!(
                 "gh-review-prep --repo {} clean {} {slug}",
                 p.display(),
@@ -360,6 +431,22 @@ fn cmd_build(kind: Kind, id: &str, repo: Option<&Path>) -> Result<()> {
             "review workspace already exists: {} (retire it with: {retire})",
             ws.display()
         );
+    }
+    // Optionally put the working tree on the branch to review, so explore reads
+    // the right code. An explicit --branch wins; --checkout on a PR falls back to
+    // its base (the branch it merges into).
+    if let Some(name) = &opts.branch {
+        checkout_branch(&root, name)?;
+    } else if opts.checkout {
+        match kind {
+            Kind::Pr => {
+                let base = pr_base_branch(&root, id)?;
+                checkout_branch(&root, &base)?;
+            }
+            Kind::Issue => {
+                bail!("an issue has no base branch to check out — name one with --branch <name>")
+            }
+        }
     }
     if kind == Kind::Pr {
         warn_if_source_stale(id, &slug, &root);
@@ -413,11 +500,13 @@ fn print_help() {
         "gh-review-prep — build an ephemeral alix workspace to understand a GitHub PR or issue\n\
          \n\
          USAGE:\n\
-         \x20 gh-review-prep [--repo <path>] [pr] <n|url>          build a PR workspace\n\
-         \x20 gh-review-prep [--repo <path>] issue <n|url>         build an issue workspace\n\
-         \x20 gh-review-prep [--repo <path>] clean [pr|issue] <n>  retire a workspace\n\
+         \x20 gh-review-prep [--repo <path>] [--branch <name>|--checkout] [pr] <n|url>   build a PR workspace\n\
+         \x20 gh-review-prep [--repo <path>] [--branch <name>] issue <n|url>             build an issue workspace\n\
+         \x20 gh-review-prep [--repo <path>] clean [pr|issue] <n>                        retire a workspace\n\
          \n\
-         --repo <path> targets that repo; omit it to use the current directory's repo.\n\
+         --repo <path>    target that repo (default: the current directory's repo)\n\
+         --branch <name>  check out <name> first, so explore reads that branch's code\n\
+         --checkout       for a PR, check out its base — the branch it merges into\n\
          Via cargo from the alix repo: cargo run --example gh-review-prep -- --repo <path> pr <n>\n\
          ENV: ALIX_REVIEWS_DIR (default ~/reviews), ALIX_REVIEW_ICON=1 (draw an icon)"
     );
@@ -553,28 +642,40 @@ mod tests {
     }
 
     #[test]
-    fn extract_repo_pulls_flag_and_leaves_rest() {
-        let (repo, rest) = extract_repo(&s(&["--repo", "/x", "pr", "5"])).unwrap();
-        assert_eq!(repo, Some(PathBuf::from("/x")));
+    fn extract_opts_pulls_repo_and_leaves_rest() {
+        let (opts, rest) = extract_opts(&s(&["--repo", "/x", "pr", "5"])).unwrap();
+        assert_eq!(opts.repo, Some(PathBuf::from("/x")));
         assert_eq!(rest, s(&["pr", "5"]));
     }
 
     #[test]
-    fn extract_repo_none_when_absent() {
-        let (repo, rest) = extract_repo(&s(&["pr", "5"])).unwrap();
-        assert_eq!(repo, None);
+    fn extract_opts_none_when_absent() {
+        let (opts, rest) = extract_opts(&s(&["pr", "5"])).unwrap();
+        assert_eq!(opts.repo, None);
+        assert_eq!(opts.branch, None);
+        assert!(!opts.checkout);
         assert_eq!(rest, s(&["pr", "5"]));
     }
 
     #[test]
-    fn extract_repo_flag_can_appear_anywhere() {
-        let (repo, rest) = extract_repo(&s(&["issue", "--repo", "/x", "7"])).unwrap();
-        assert_eq!(repo, Some(PathBuf::from("/x")));
+    fn extract_opts_flags_can_appear_anywhere() {
+        let (opts, rest) = extract_opts(&s(&["issue", "--repo", "/x", "7"])).unwrap();
+        assert_eq!(opts.repo, Some(PathBuf::from("/x")));
         assert_eq!(rest, s(&["issue", "7"]));
     }
 
     #[test]
-    fn extract_repo_errors_without_a_path() {
-        assert!(extract_repo(&s(&["--repo"])).is_err());
+    fn extract_opts_pulls_branch_and_checkout() {
+        let (opts, rest) =
+            extract_opts(&s(&["--branch", "feature-x", "--checkout", "pr", "5"])).unwrap();
+        assert_eq!(opts.branch.as_deref(), Some("feature-x"));
+        assert!(opts.checkout);
+        assert_eq!(rest, s(&["pr", "5"]));
+    }
+
+    #[test]
+    fn extract_opts_errors_without_a_value() {
+        assert!(extract_opts(&s(&["--repo"])).is_err());
+        assert!(extract_opts(&s(&["--branch"])).is_err());
     }
 }
