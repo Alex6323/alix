@@ -248,15 +248,12 @@ fn run_config(
         vec!["Read".to_string(), "Glob".to_string(), "Grep".to_string()]
     };
     AskConfig {
-        backend: ask_cfg.backend,
-        command: ask_cfg.command.clone(),
-        permission_mode: ask_cfg.permission_mode.clone(),
         allowed_tools,
         model: cfg.model.clone().or_else(|| ask_cfg.model.clone()),
-        effort: ask_cfg.effort.clone(),
         timeout_secs: cfg.timeout_secs,
         cwd,
         source_access: false,
+        ..ask_cfg.clone()
     }
 }
 

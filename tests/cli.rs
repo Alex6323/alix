@@ -356,3 +356,108 @@ fn missing_backend_reports_install_hint() {
         "should hint at installation: {err}"
     );
 }
+
+/// Creates `n` small files in `dir`, each `bytes` bytes, to simulate a large
+/// source tree.
+fn make_large_tree(dir: &std::path::Path, n: usize, bytes: usize) {
+    let content = vec![0u8; bytes];
+    for i in 0..n {
+        std::fs::write(dir.join(format!("f{i}.bin")), &content).unwrap();
+    }
+}
+
+#[test]
+fn oversized_local_source_without_yes_bails_with_guidance() {
+    // An oversized source tree with no TTY and no --yes must bail.
+    let dir = TempDir::new().unwrap();
+    // Write enough bytes to exceed the 5 MB default threshold.
+    make_large_tree(dir.path(), 10, 600_000); // 6 MB total
+    let config = write(
+        dir.path(),
+        "config.toml",
+        // A nonexistent backend: we never reach the model, but we need the guard to fire.
+        "[ask]\ncommand = \"/nonexistent/claude-xyz\"\ntimeout_secs = 5\n",
+    );
+    let src = dir.path().to_str().unwrap();
+    let out = alix(&[
+        "deck",
+        "generate",
+        src,
+        "--config",
+        &config,
+        "--print",
+    ]);
+    let err = stderr(&out);
+    assert!(!out.status.success(), "should fail without --yes: {err}");
+    // The error must name the guard condition and point at the fix.
+    assert!(
+        err.contains("--yes"),
+        "error must mention --yes: {err}"
+    );
+    assert!(
+        err.contains("large source tree") || err.contains("files"),
+        "error must describe the source size: {err}"
+    );
+}
+
+#[test]
+fn oversized_local_source_with_yes_proceeds_past_the_guard() {
+    // With --yes the guard is bypassed and we reach the backend (which may fail
+    // because the binary doesn't exist — that's fine; what matters is we got
+    // past the size check).
+    let dir = TempDir::new().unwrap();
+    make_large_tree(dir.path(), 10, 600_000); // 6 MB total
+    let config = write(
+        dir.path(),
+        "config.toml",
+        "[ask]\ncommand = \"/nonexistent/claude-xyz\"\ntimeout_secs = 5\n",
+    );
+    let src = dir.path().to_str().unwrap();
+    let out = alix(&[
+        "deck",
+        "generate",
+        src,
+        "--yes",
+        "--config",
+        &config,
+        "--print",
+    ]);
+    let err = stderr(&out);
+    // The error must NOT be the guard refusal — it should be the missing-binary
+    // hint (or something from the model runner).
+    assert!(
+        !err.contains("pass --yes to proceed"),
+        "guard must not fire with --yes: {err}"
+    );
+    // It should have reached the backend and failed there instead.
+    assert!(
+        err.contains("is it installed") || err.contains("nonexistent"),
+        "should reach the backend: {err}"
+    );
+}
+
+#[test]
+fn undersized_local_source_proceeds_without_yes() {
+    // A source tree under the threshold passes the guard silently without --yes.
+    let dir = TempDir::new().unwrap();
+    write(dir.path(), "small.txt", "hello world\n");
+    let config = write(
+        dir.path(),
+        "config.toml",
+        "[ask]\ncommand = \"/nonexistent/claude-xyz\"\ntimeout_secs = 5\n",
+    );
+    let out = alix(&[
+        "deck",
+        "generate",
+        dir.path().to_str().unwrap(),
+        "--config",
+        &config,
+        "--print",
+    ]);
+    let err = stderr(&out);
+    // Must not hit the guard — passes through to the backend.
+    assert!(
+        !err.contains("pass --yes to proceed"),
+        "guard must not fire for small trees: {err}"
+    );
+}

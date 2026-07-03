@@ -582,15 +582,13 @@ pub(crate) fn build_run_config(
                 .and_then(|b| b.default_trace_model().map(str::to_string))
         });
     AskConfig {
-        backend: ask_cfg.backend,
-        command: ask_cfg.command.clone(),
-        permission_mode: ask_cfg.permission_mode.clone(),
         allowed_tools,
         model,
         effort: cfg.effort.clone().or_else(|| ask_cfg.effort.clone()),
         timeout_secs: cfg.timeout_secs,
         cwd,
         source_access: false,
+        ..ask_cfg.clone()
     }
 }
 

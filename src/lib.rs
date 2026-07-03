@@ -25,6 +25,7 @@ pub mod icon;
 pub mod import;
 pub mod parser;
 pub mod picker;
+pub mod preflight;
 pub mod recent;
 pub mod render;
 pub mod scheduler;

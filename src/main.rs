@@ -12,7 +12,7 @@ use alix::{
     card::{Card, Frontend},
     config::{self, Config, Strictness},
     deck::{Deck, DeckSettings, DeckState},
-    generate, import, parser, picker,
+    generate, import, parser, picker, preflight,
     recent::{self, RecentDecks},
     scheduler::SchedulerKind,
     serve,
@@ -160,6 +160,10 @@ struct ExploreArgs {
     #[arg(short, long, requires = "walk")]
     output: Option<PathBuf>,
 
+    /// Skip the pre-flight size confirmation for a large local source tree.
+    #[arg(short, long)]
+    yes: bool,
+
     /// Path of the config file (default: platform config dir).
     #[arg(long)]
     config: Option<PathBuf>,
@@ -192,6 +196,10 @@ struct GenerateDeckArgs {
     /// Overwrite the output file if it already exists.
     #[arg(long)]
     force: bool,
+
+    /// Skip the pre-flight size confirmation for a large local source tree.
+    #[arg(short, long)]
+    yes: bool,
 
     /// Path of the config file (default: platform config dir).
     #[arg(long)]
@@ -337,6 +345,11 @@ struct TraceArgs {
     /// (live grading) instead of self-grading. Costs a model call per hop.
     #[arg(long)]
     grade: bool,
+
+    /// Skip the pre-flight size confirmation for a large local source tree
+    /// (applies to --build and --suggest).
+    #[arg(short, long)]
+    yes: bool,
 
     /// Scheduler used to schedule the checkpoints. Overrides the deck's
     /// `% scheduler:` directive; defaults to leitner.
@@ -1732,6 +1745,51 @@ fn confirm(prompt: &str, yes: bool) -> Result<bool> {
     Ok(answer == "y" || answer == "yes")
 }
 
+/// Returns `true` if `source` looks like an HTTP/HTTPS URL.
+fn is_url(source: &str) -> bool {
+    source.starts_with("http://") || source.starts_with("https://")
+}
+
+/// Runs the pre-flight size guard for agentic commands that hand a local
+/// source tree to the model. If the tree is oversized and `yes` is false,
+/// either asks for interactive confirmation (when a TTY is available) or bails
+/// (no TTY). Does nothing when the source is a URL or when the threshold is 0.
+fn preflight_source(source: &str, threshold: u64, yes: bool) -> Result<()> {
+    // URLs are measured server-side (WebFetch); only local paths need a guard.
+    if is_url(source) || threshold == 0 {
+        return Ok(());
+    }
+    let path = std::path::Path::new(source);
+    if !path.exists() {
+        return Ok(());
+    }
+    let size = preflight::tree_size(path);
+    if !preflight::is_oversized(size.bytes, threshold) {
+        return Ok(());
+    }
+    let msg = format!(
+        "source tree is {} files / {} — this may be a large model call",
+        size.files,
+        size.human_bytes()
+    );
+    if yes {
+        eprintln!("warning: {msg}; proceeding (--yes)");
+        return Ok(());
+    }
+    if !std::io::stdin().is_terminal() {
+        bail!("large source tree ({} files / {}); pass --yes to proceed", size.files, size.human_bytes());
+    }
+    print!("{msg}. Proceed? [y/N] ");
+    std::io::stdout().flush().ok();
+    let mut line = String::new();
+    std::io::stdin().read_line(&mut line)?;
+    let answer = line.trim().to_lowercase();
+    if answer != "y" && answer != "yes" {
+        bail!("aborted by user");
+    }
+    Ok(())
+}
+
 fn reset(args: ResetArgs) -> Result<()> {
     // `--all` / a numeric `--card` operate on the global store (or `--store`);
     // a deck-scoped reset re-resolves to the deck's workspace store below.
@@ -2254,6 +2312,7 @@ fn deck_cmd(args: GenerateDeckArgs) -> Result<()> {
         args.source.clone()
     };
 
+    preflight_source(&source, config.ask.preflight_threshold, args.yes)?;
     eprintln!("Generating a deck from {source} (this can take a minute)…");
     let mut text = generate::generate_deck(&source, &gen_cfg, &config.ask)?;
 
@@ -2718,6 +2777,7 @@ fn trace_build(args: &TraceArgs, deck: &Deck) -> Result<()> {
     }
     let config = Config::load(args.config.as_deref())?;
     let source = deck.sources.first().map(String::as_str).unwrap_or_default();
+    preflight_source(source, config.ask.preflight_threshold, args.yes)?;
     eprintln!(
         "Tracing a path through {source} (exploring the source — this can take a \
          few minutes)…"
@@ -2743,6 +2803,7 @@ fn trace_build(args: &TraceArgs, deck: &Deck) -> Result<()> {
 fn trace_suggest(args: &TraceArgs) -> Result<()> {
     let config = Config::load(args.config.as_deref())?;
     let source = args.deck.to_string_lossy();
+    preflight_source(&source, config.ask.preflight_threshold, args.yes)?;
     eprintln!(
         "Reconning {source} for traces worth tracing (one exploration pass — this \
          can take a minute)…"
@@ -2766,6 +2827,8 @@ fn explore_cmd(args: ExploreArgs) -> Result<()> {
         .goal
         .as_deref()
         .unwrap_or("understand the whole source");
+
+    preflight_source(&source, config.ask.preflight_threshold, args.yes)?;
 
     // `--walk`: build an explore walk over the source's shape and walk it.
     if args.walk {

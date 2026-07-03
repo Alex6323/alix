@@ -743,15 +743,11 @@ fn passed(grades: &[AnswerGrade], threshold: f64) -> bool {
 /// the exam's own model and (longer) timeout.
 fn run_config(cfg: &ExamConfig, ask_cfg: &AskConfig) -> AskConfig {
     AskConfig {
-        backend: ask_cfg.backend,
-        command: ask_cfg.command.clone(),
-        permission_mode: ask_cfg.permission_mode.clone(),
-        allowed_tools: ask_cfg.allowed_tools.clone(),
         model: cfg.model.clone().or_else(|| ask_cfg.model.clone()),
-        effort: ask_cfg.effort.clone(),
         timeout_secs: cfg.timeout_secs,
         cwd: None,
         source_access: false,
+        ..ask_cfg.clone()
     }
 }
 
@@ -776,7 +772,15 @@ fn source_section(sources: &[String], base: Option<&Path>) -> Result<String> {
                         .file_name()
                         .map(|n| n.to_string_lossy().into_owned())
                         .unwrap_or_else(|| path.display().to_string());
-                    files.push((label, truncate(&text)));
+                    let (truncated_text, was_truncated) = truncate(&text);
+                    if was_truncated {
+                        eprintln!(
+                            "note: `{}` is larger than {} KB and was truncated for the exam prompt",
+                            label,
+                            MAX_SOURCE_BYTES / 1_000
+                        );
+                    }
+                    files.push((label, truncated_text));
                 }
                 Err(e) => eprintln!(
                     "warning: skipping unreadable `% source:` {}: {e}",
@@ -810,16 +814,20 @@ fn source_section(sources: &[String], base: Option<&Path>) -> Result<String> {
 }
 
 /// Truncates source text to [`MAX_SOURCE_BYTES`] on a char boundary, appending
-/// a marker when it had to cut.
-fn truncate(text: &str) -> String {
+/// a marker when it had to cut. Returns the (possibly truncated) text and a
+/// flag indicating whether truncation occurred.
+fn truncate(text: &str) -> (String, bool) {
     if text.len() <= MAX_SOURCE_BYTES {
-        return text.to_string();
+        return (text.to_string(), false);
     }
     let mut end = MAX_SOURCE_BYTES;
     while !text.is_char_boundary(end) {
         end -= 1;
     }
-    format!("{}\n[... source truncated ...]", &text[..end])
+    (
+        format!("{}\n[... source truncated ...]", &text[..end]),
+        true,
+    )
 }
 
 /// Builds the question-generation prompt from the deck's sources.

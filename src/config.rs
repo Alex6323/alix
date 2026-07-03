@@ -265,6 +265,12 @@ pub struct AskConfig {
     /// grants the served tutor file-read access — only enable it on a machine and
     /// network you trust (especially with `alix serve --lan`).
     pub source_access: bool,
+    /// Source-tree byte threshold for the pre-flight size guard. When a local
+    /// source tree (for `deck generate`, `trace --build`/`--suggest`, `explore`)
+    /// exceeds this many bytes, `alix` warns and asks for confirmation before
+    /// spending a potentially large model call. Default is 5 MB (5_000_000 bytes).
+    /// Set to 0 to disable the guard (always proceed without confirming).
+    pub preflight_threshold: u64,
 }
 
 impl Default for AskConfig {
@@ -279,6 +285,7 @@ impl Default for AskConfig {
             allowed_tools: vec!["WebFetch".to_string(), "WebSearch".to_string()],
             cwd: None,
             source_access: false,
+            preflight_threshold: 5_000_000,
         }
     }
 }
@@ -601,6 +608,7 @@ struct RawAsk {
     permission_mode: Option<String>,
     allowed_tools: Option<Vec<String>>,
     source_access: Option<bool>,
+    preflight_threshold: Option<u64>,
 }
 
 /// The `[keys]` table: one subtable per surface (`[keys.review]`,
@@ -718,6 +726,9 @@ impl Config {
         }
         if let Some(source_access) = raw.ask.source_access {
             ask.source_access = source_access;
+        }
+        if let Some(threshold) = raw.ask.preflight_threshold {
+            ask.preflight_threshold = threshold;
         }
 
         let mut generate = GenerateDeckConfig::default();
@@ -936,6 +947,9 @@ pub fn default_config_toml() -> &'static str {
 # default: it grants the (possibly LAN-served) tutor file-read access — only
 # enable on a machine and network you trust.
 # source_access = false
+# Pre-flight size guard: warn and confirm before spending a large model call on
+# a local source tree bigger than this many bytes (0 = always proceed silently).
+# preflight_threshold = 5000000
 
 # AI deck generation (`alix deck <source>`). Reuses the [ask] command,
 # permission mode and tool allowlist (WebFetch reads the page).
