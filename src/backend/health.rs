@@ -49,19 +49,17 @@ fn check_all(cfg: &AskConfig) -> Result<()> {
     ];
 
     // Collect each backend's command name so the table can be pre-aligned.
-    let rows: Vec<(BackendKind, String, String)> = kinds
-        .iter()
-        .map(|&kind| {
-            let per_kind = AskConfig {
-                backend: kind,
-                ..cfg.clone()
-            };
-            let backend = backend_for(&per_kind).expect("all four kinds are wired in backend_for");
-            let name = backend.name().to_string();
-            let cmd = backend.command().to_string();
-            (kind, name, cmd)
-        })
-        .collect();
+    let mut rows: Vec<(BackendKind, String, String)> = Vec::with_capacity(kinds.len());
+    for kind in kinds {
+        let per_kind = AskConfig {
+            backend: kind,
+            ..cfg.clone()
+        };
+        let backend = backend_for(&per_kind)?;
+        let name = backend.name().to_string();
+        let cmd = backend.command().to_string();
+        rows.push((kind, name, cmd));
+    }
 
     let name_width = rows.iter().map(|(_, n, _)| n.len()).max().unwrap_or(0);
     let cmd_width = rows.iter().map(|(_, _, c)| c.len()).max().unwrap_or(0);

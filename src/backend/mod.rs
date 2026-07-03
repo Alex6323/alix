@@ -145,8 +145,8 @@ pub trait Backend: Send + Sync {
     }
 }
 
-/// Selects the backend for a config, returning an error for backends that are
-/// not yet wired (Copilot — a later task flips its arm).
+/// Selects the backend for a config. All four backends (`claude`, `gemini`,
+/// `codex`, `copilot`) are wired and this returns `Ok` for each.
 pub fn backend_for(cfg: &AskConfig) -> anyhow::Result<Box<dyn Backend>> {
     match cfg.backend {
         BackendKind::Claude => Ok(Box::new(ClaudeBackend)),

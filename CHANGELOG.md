@@ -41,10 +41,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   way. A failed AI CLI now also leads with actionable guidance: a rate-limit or
   quota error suggests waiting or switching backend; an unauthenticated error
   suggests running the CLI's login once (the raw detail is still shown).
-- **Pre-flight source-size guard.** Before an agentic command (`deck generate`,
-  `exam`, `trace --build`, `explore`) reads a large source, alix measures the
+- **Pre-flight source-size guard.** Before `deck generate`, `trace --build`,
+  `trace --suggest`, and `explore` read a large source, alix measures the
   estimated size and asks for confirmation. Pass `--yes` to skip the prompt in
-  non-interactive scripts.
+  non-interactive scripts. `exam` instead truncates the source to 100 KB and
+  prints a notice so the exam can still run unattended.
 - **Web picker: a workspace's goal shows in its drill-in.** Opening a workspace now
   shows its goal (the one-line description) under the title eyebrow, the same goal the
   top-level list shows on the workspace row — so the context stays visible while you

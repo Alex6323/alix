@@ -91,7 +91,7 @@ impl Backend for CopilotBackend {
     }
 
     fn required_help_flags(&self) -> &'static [&'static str] {
-        &["-p", "--deny-tool", "--available-tools"]
+        &["-p", "-s", "--model", "--deny-tool", "--available-tools"]
     }
 
     fn name(&self) -> &'static str {
@@ -255,6 +255,8 @@ mod tests {
         assert!(CopilotBackend.can_fetch_web());
         let flags = CopilotBackend.required_help_flags();
         assert!(flags.contains(&"-p"));
+        assert!(flags.contains(&"-s"));
+        assert!(flags.contains(&"--model"));
         assert!(flags.contains(&"--deny-tool"));
         assert!(flags.contains(&"--available-tools"));
     }
