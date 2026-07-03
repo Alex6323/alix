@@ -11,7 +11,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   auto-generates a token (printed at startup) and requires it on `/api/*`, so the
   LAN endpoint is no longer wide open. Pin your own with `--token` or
   `[serve] token`; the browser picks it up from the printed `…/?token=…` URL, and
-  native clients send it as a bearer token.
+  native clients send it as a bearer token. Opening the web UI without a valid
+  token shows a prompt to paste it (then reloads) instead of a blank page.
 - An `examples/gh-review-prep.rs` showing how to compose the library into an ephemeral, goal-scoped workspace for understanding a change you must read closely (a GitHub PR or issue) before acting on it. Read-only; a demonstration of composability, not a GitHub feature.
 - **`[ask] backend` selector.** All AI calls now route through a pluggable
   backend. Set `backend` in `[ask]` to choose among `claude` (default), `gemini`,

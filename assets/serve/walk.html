@@ -208,8 +208,8 @@
 <script>
 "use strict";
 // Pairing token (alix serve --lan): capture ?token= once, keep it in
-// sessionStorage (survives cross-page navigation, which drops the query), and
-// attach it to every /api request. No token → no-op (the localhost default).
+// sessionStorage, and attach it to every /api request. On a 401 (missing/invalid
+// token) bounce to `/`, which hosts the pairing-token gate.
 (function () {
   const q = new URLSearchParams(location.search).get("token");
   if (q) {
@@ -217,14 +217,18 @@
     const u = new URL(location.href); u.searchParams.delete("token");
     history.replaceState(null, "", u); // don't leave the token in the URL bar/history
   }
-  const tok = sessionStorage.getItem("alix.token");
-  if (!tok) return;
   const orig = window.fetch;
-  window.fetch = (url, opts = {}) => {
-    if (String(url).startsWith("/api")) {
+  window.fetch = async (url, opts = {}) => {
+    const tok = sessionStorage.getItem("alix.token");
+    if (tok && String(url).startsWith("/api")) {
       opts = { ...opts, headers: { ...(opts.headers || {}), Authorization: "Bearer " + tok } };
     }
-    return orig(url, opts);
+    const res = await orig(url, opts);
+    if (res.status === 401 && String(url).startsWith("/api")) {
+      sessionStorage.removeItem("alix.token");
+      location.href = "/"; // the pairing-token gate lives on the review page
+    }
+    return res;
   };
 })();
 let state = null;     // the latest WalkDto

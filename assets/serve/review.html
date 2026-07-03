@@ -482,9 +482,24 @@
   @media (prefers-reduced-motion: reduce) {
     .stack, .summary, .reveal, .exam-elapsed .dot { animation: none; }
   }
+  /* Pairing-token gate (shown on a 401 under `serve --lan`). */
+  #tokengate[hidden] { display: none; }
+  #tokengate .sheet-panel { display: grid; gap: 13px; }
+  #tokengate p { margin: 0; color: var(--dim); font-size: 0.85rem; line-height: 1.5; }
+  #tokengate code { font-family: var(--mono); color: var(--ink); }
+  #tokengate .bar-filter { width: 100%; box-sizing: border-box; }
+  #tokengate .bar-chip { justify-self: end; }
 </style>
 </head>
 <body>
+  <div id="tokengate" class="sheet" hidden>
+    <div class="sheet-panel">
+      <h2>Pairing token required</h2>
+      <p>This alix server is protected. Open the <code>…/?token=…</code> link it printed at startup, or paste the token below.</p>
+      <input id="tokengate-input" class="bar-filter" placeholder="pairing token" autocomplete="off" spellcheck="false">
+      <button id="tokengate-connect" class="bar-chip">Connect</button>
+    </div>
+  </div>
   <div class="bar">
     <div class="bar-inner">
       <span class="bar-left">
@@ -527,8 +542,8 @@
 <script>
 "use strict";
 // Pairing token (alix serve --lan): capture ?token= once, keep it in
-// sessionStorage (it survives the /walk navigation, which drops the query),
-// and attach it to every /api request. No token → no-op (the localhost default).
+// sessionStorage (it survives the /walk navigation, which drops the query), and
+// attach it to every /api request. Missing/invalid token → a 401 opens the gate.
 (function () {
   const q = new URLSearchParams(location.search).get("token");
   if (q) {
@@ -536,16 +551,38 @@
     const u = new URL(location.href); u.searchParams.delete("token");
     history.replaceState(null, "", u); // don't leave the token in the URL bar/history
   }
-  const tok = sessionStorage.getItem("alix.token");
-  if (!tok) return;
   const orig = window.fetch;
-  window.fetch = (url, opts = {}) => {
-    if (String(url).startsWith("/api")) {
+  window.fetch = async (url, opts = {}) => {
+    const tok = sessionStorage.getItem("alix.token");
+    if (tok && String(url).startsWith("/api")) {
       opts = { ...opts, headers: { ...(opts.headers || {}), Authorization: "Bearer " + tok } };
     }
-    return orig(url, opts);
+    const res = await orig(url, opts);
+    if (res.status === 401 && String(url).startsWith("/api")) {
+      sessionStorage.removeItem("alix.token"); // wrong/missing → let the gate re-collect it
+      showTokenGate();
+    }
+    return res;
   };
 })();
+
+// Shown on a 401 (no/invalid pairing token): a full-screen prompt to paste the
+// token the server printed at startup, then reload with it applied.
+function showTokenGate() {
+  const gate = document.getElementById("tokengate");
+  if (!gate || !gate.hidden) return;
+  gate.hidden = false;
+  const input = document.getElementById("tokengate-input");
+  const connect = () => {
+    const t = input.value.trim();
+    if (!t) return;
+    sessionStorage.setItem("alix.token", t);
+    location.reload();
+  };
+  document.getElementById("tokengate-connect").onclick = connect;
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") connect(); });
+  input.focus();
+}
 let state = null;     // last StateDto
 let revealed = 0;     // back lines shown for the current card
 let citationView = false; // showing the source excerpt in place of the answer
