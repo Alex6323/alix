@@ -408,6 +408,11 @@ struct ServeOpts {
     /// on the same network can reach it (no authentication — opt-in).
     #[arg(long, requires = "serve")]
     lan: bool,
+
+    /// Pairing token required on `/api/*` when serving to the network. Defaults
+    /// to a value auto-generated (and printed) for `--lan`.
+    #[arg(long, requires = "serve")]
+    token: Option<String>,
 }
 
 #[derive(Args)]
@@ -1238,6 +1243,26 @@ fn serve_addr(port: Option<u16>, lan: bool, config: &Config) -> SocketAddr {
         Ipv4Addr::LOCALHOST // 127.0.0.1 — this machine only
     };
     SocketAddr::from((ip, port.unwrap_or(config.serve.port)))
+}
+
+/// Resolves the serve pairing token: an explicit `--token` or `[serve] token`
+/// wins; otherwise `--lan` auto-generates one, and localhost stays open (`None`).
+fn resolve_serve_token(cli: Option<String>, lan: bool, config: &Config) -> Option<String> {
+    cli.or_else(|| config.serve.token.clone())
+        .or_else(|| lan.then(generate_token))
+        .filter(|t| !t.is_empty())
+}
+
+/// A random pairing token (16 bytes, hex). Reads `/dev/urandom` to avoid a new
+/// RNG dependency — adequate for a LAN shared secret. Empty on the (practically
+/// impossible) read failure, which `resolve_serve_token` filters out.
+fn generate_token() -> String {
+    use std::io::Read;
+    let mut buf = [0u8; 16];
+    match std::fs::File::open("/dev/urandom").and_then(|mut f| f.read_exact(&mut buf)) {
+        Ok(()) => buf.iter().map(|b| format!("{b:02x}")).collect(),
+        Err(_) => String::new(),
+    }
 }
 
 /// Subject → deck file path, for the web frontend's card removal.
@@ -3079,6 +3104,7 @@ fn workspace_cmd(args: WorkspaceArgs) -> Result<()> {
                 serve: false,
                 port: None,
                 lan: false,
+                token: None,
             },
         })?;
     }
@@ -3465,6 +3491,20 @@ mod tests {
 
     fn card(front: &str, back: &str) -> Card {
         Card::plain(Arc::from("d.txt"), front.into(), vec![back.into()], None, 1)
+    }
+
+    #[test]
+    fn serve_token_is_generated_only_when_exposed() {
+        let cfg = Config::default();
+        // localhost, nothing configured → open (no token)
+        assert_eq!(resolve_serve_token(None, false, &cfg), None);
+        // an explicit --token always wins
+        assert_eq!(
+            resolve_serve_token(Some("abc".into()), true, &cfg),
+            Some("abc".into())
+        );
+        // --lan with nothing configured → a token is generated
+        assert!(resolve_serve_token(None, true, &cfg).is_some_and(|t| !t.is_empty()));
     }
 
     #[test]

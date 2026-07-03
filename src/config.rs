@@ -467,11 +467,14 @@ impl Default for AiConfig {
 pub struct ServeConfig {
     /// Default port to listen on (overridden by `--port`).
     pub port: u16,
+    /// Optional pairing token. When set (or auto-generated for `--lan`), the web
+    /// server requires it on `/api/*` — see `alix serve --lan`.
+    pub token: Option<String>,
 }
 
 impl Default for ServeConfig {
     fn default() -> Self {
-        Self { port: 7777 }
+        Self { port: 7777, token: None }
     }
 }
 
@@ -541,6 +544,7 @@ struct RawAi {
 #[serde(deny_unknown_fields)]
 struct RawServe {
     port: Option<u16>,
+    token: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -804,6 +808,7 @@ impl Config {
         if let Some(port) = raw.serve.port {
             serve.port = port;
         }
+        serve.token = raw.serve.token;
 
         let decks_dir = raw.decks_dir.map(|s| expand_tilde(&s));
 
