@@ -49,7 +49,7 @@ const VALID_DECK: &str = "# What is 2 + 2?\n    4\n";
 fn check_accepts_a_valid_deck() {
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.txt", VALID_DECK);
-    let out = alix(&["check", &deck]);
+    let out = alix(&["deck", "check", &deck]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     assert!(stdout(&out).contains("1 cards"), "stdout: {}", stdout(&out));
 }
@@ -101,7 +101,7 @@ fn check_rejects_a_malformed_deck() {
     let dir = TempDir::new().unwrap();
     // A card front with no answer line is a parse error.
     let deck = write(dir.path(), "broken.txt", "# a front with no answer\n");
-    let out = alix(&["check", &deck]);
+    let out = alix(&["deck", "check", &deck]);
     assert!(
         !out.status.success(),
         "a malformed deck should fail the check"
@@ -460,4 +460,94 @@ fn undersized_local_source_proceeds_without_yes() {
         !err.contains("pass --yes to proceed"),
         "guard must not fire for small trees: {err}"
     );
+}
+
+#[test]
+fn deck_check_validates_like_the_old_check() {
+    // `alix deck check <deck>` must parse and report cards exactly as the old
+    // `alix check <deck>` did.
+    let dir = TempDir::new().unwrap();
+    let deck = write(dir.path(), "math.txt", VALID_DECK);
+    let out = alix(&["deck", "check", &deck]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("1 cards"),
+        "stdout: {}",
+        stdout(&out)
+    );
+}
+
+#[test]
+fn bare_check_is_gone() {
+    // After the move, `alix check <deck>` is no longer a valid subcommand.
+    let dir = TempDir::new().unwrap();
+    let deck = write(dir.path(), "math.txt", VALID_DECK);
+    let out = alix(&["check", &deck]);
+    assert!(
+        !out.status.success(),
+        "the old `alix check` must be gone (clap should error)"
+    );
+}
+
+#[test]
+fn backend_check_reports_not_installed() {
+    // Pointing `[ask] command` at a nonexistent binary → the health probe
+    // reports a not-installed message and the command exits with failure.
+    let dir = TempDir::new().unwrap();
+    let config = write(
+        dir.path(),
+        "config.toml",
+        "[ask]\ncommand = \"/nonexistent/no-such-cli\"\ntimeout_secs = 5\n",
+    );
+    let out = alix(&["backend", "check", "--config", &config]);
+    assert!(
+        !out.status.success(),
+        "a missing backend must exit with failure"
+    );
+    let combined = format!("{}{}", stdout(&out), stderr(&out));
+    assert!(
+        combined.contains("installed") || combined.contains("not found") || combined.contains('✗'),
+        "output should report the failure: {combined}"
+    );
+}
+
+#[test]
+fn backend_check_reports_working() {
+    // A fake CLI that drains stdin and prints a reply → the probe reports ✓.
+    let dir = TempDir::new().unwrap();
+    let cli = fake_claude(dir.path(), "OK");
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+    let out = alix(&["backend", "check", "--config", &config]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let combined = format!("{}{}", stdout(&out), stderr(&out));
+    assert!(
+        combined.contains('✓') || combined.contains("ready") || combined.contains("ok"),
+        "output should report success: {combined}"
+    );
+}
+
+#[test]
+fn backend_check_all_probes_each() {
+    // `--all` probes all four backends and prints a line per backend.  All
+    // will fail (none are installed in CI), but there must be output for each.
+    let dir = TempDir::new().unwrap();
+    let config = write(
+        dir.path(),
+        "config.toml",
+        "[ask]\ntimeout_secs = 5\n",
+    );
+    let out = alix(&["backend", "check", "--all", "--config", &config]);
+    // --all always exits with the overall status but must produce output for
+    // each of the four backends.
+    let combined = format!("{}{}", stdout(&out), stderr(&out));
+    for name in ["claude", "gemini", "codex", "copilot"] {
+        assert!(
+            combined.contains(name),
+            "output must mention '{name}': {combined}"
+        );
+    }
 }

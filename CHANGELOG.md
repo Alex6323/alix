@@ -8,6 +8,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 - An `examples/gh-review-prep.rs` showing how to compose the library into an ephemeral, goal-scoped workspace for understanding a change you must read closely (a GitHub PR or issue) before acting on it. Read-only; a demonstration of composability, not a GitHub feature.
+- **`alix backend check [--all]` health probe.** Sends a trivial tool-free
+  request to the configured backend (or all four with `--all`) and reports
+  whether each is installed, signed in, and responding. The only reliable way
+  to confirm the whole path works end-to-end. Errors are the same actionable
+  messages the rest of alix shows (rate limit, not signed in, not installed).
 - **Gemini backend (`[ask] backend = "gemini"`).** alix's AI calls can now run
   through the Google Gemini CLI (`gemini -p`, headless) instead of Claude. Tool
   access maps to Gemini's read-only tools via an `--allowed-tools` allowlist
@@ -47,6 +52,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ephemeral (never persisted or sent to the server).
 
 ### Changed
+- **Breaking — `alix check` is now `alix deck check`.**  Deck validation moved
+  under the `deck` noun-group for consistency with `alix deck generate`/`alix
+  deck augment`. The command is identical; only the path changed: `alix check
+  <deck>` → `alix deck check <deck>`. No compat shim, pre-1.0.
 - **The tutor runs statelessly on non-Claude backends.** Multi-turn tutoring
   uses Claude's session flags (`--session-id`/`--resume`), which other CLIs
   don't have; alix now drops them for a backend without a session mechanism so

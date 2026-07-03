@@ -52,15 +52,9 @@ enum Command {
     List(DeckArgs),
     /// Clear stored progress for decks, a single card, or everything.
     Reset(ResetArgs),
-    /// Check deck files for syntax errors and duplicate cards.
-    Check {
-        /// Deck files to check.
-        #[arg(required = true)]
-        decks: Vec<PathBuf>,
-    },
     /// Read through decks card by card without grading (no progress is saved).
     Browse(BrowseArgs),
-    /// Create or augment decks with Claude.
+    /// Create, augment, or validate decks.
     #[command(subcommand)]
     Deck(DeckAction),
     /// Import an Anki TSV export (tab-separated `front<TAB>back` lines) into a
@@ -93,6 +87,9 @@ enum Command {
         #[arg(long)]
         init: bool,
     },
+    /// Probe or inspect AI backends.
+    #[command(subcommand)]
+    Backend(BackendAction),
 }
 
 #[derive(Args)]
@@ -206,7 +203,7 @@ struct GenerateDeckArgs {
     config: Option<PathBuf>,
 }
 
-/// The `alix deck` subcommands: create a deck, or augment an existing one.
+/// The `alix deck` subcommands: create, augment, or validate a deck.
 #[derive(Subcommand)]
 enum DeckAction {
     /// Generate a facts deck with Claude from a source — a web page URL or a
@@ -216,6 +213,30 @@ enum DeckAction {
     /// trivia notes. Augmentations are deliberate and persisted, so review stays
     /// instant and fully offline.
     Augment(AugmentArgs),
+    /// Check deck files for syntax errors and duplicate cards.
+    Check {
+        /// Deck files to check.
+        #[arg(required = true)]
+        decks: Vec<PathBuf>,
+    },
+}
+
+/// The `alix backend` subcommands: inspect or probe AI backends.
+#[derive(Subcommand)]
+enum BackendAction {
+    /// Probe the configured backend (or all four with `--all`): send a trivial
+    /// request and report whether it is installed, signed in, and responding.
+    /// This makes a real (tiny) AI call — the only reliable way to confirm the
+    /// whole path works end-to-end.
+    Check {
+        /// Probe all four supported backends instead of the configured one.
+        #[arg(short, long)]
+        all: bool,
+
+        /// Path of the config file (default: platform config dir).
+        #[arg(long)]
+        config: Option<PathBuf>,
+    },
 }
 
 #[derive(Args)]
@@ -510,11 +531,11 @@ fn main() -> Result<()> {
         Some(Command::Stats(args)) => stats(args),
         Some(Command::List(args)) => list(args),
         Some(Command::Reset(args)) => reset(args),
-        Some(Command::Check { decks }) => check(decks),
         Some(Command::Browse(args)) => browse(args),
         Some(Command::Deck(action)) => match action {
             DeckAction::Generate(args) => deck_cmd(args),
             DeckAction::Augment(args) => augment_cmd(args),
+            DeckAction::Check { decks } => check(decks),
         },
         Some(Command::Import(args)) => import_cmd(args),
         Some(Command::Exam(args)) => exam_cmd(args),
@@ -523,6 +544,9 @@ fn main() -> Result<()> {
         Some(Command::Workspace(args)) => workspace_cmd(args),
         Some(Command::Deps { deck }) => deps_cmd(deck),
         Some(Command::Config { init }) => config_cmd(init),
+        Some(Command::Backend(action)) => match action {
+            BackendAction::Check { all, config } => backend_check_cmd(all, config),
+        },
     }
 }
 
@@ -3422,6 +3446,11 @@ fn config_cmd(init: bool) -> Result<()> {
     println!("  max_cards   {}", config.generate.max_cards);
     println!("  review      {}", config.generate.review);
     Ok(())
+}
+
+fn backend_check_cmd(all: bool, config_path: Option<PathBuf>) -> Result<()> {
+    let config = Config::load(config_path.as_deref())?;
+    alix::backend::health::check(&config.ask, all)
 }
 
 #[cfg(test)]

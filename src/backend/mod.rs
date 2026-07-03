@@ -14,6 +14,7 @@ mod claude;
 mod codex;
 mod copilot;
 mod gemini;
+pub mod health;
 
 pub use claude::ClaudeBackend;
 pub use codex::CodexBackend;
