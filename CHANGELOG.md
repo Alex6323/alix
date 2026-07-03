@@ -7,6 +7,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Pairing token for `alix serve --lan`.** Serving to the network now
+  auto-generates a token (printed at startup) and requires it on `/api/*`, so the
+  LAN endpoint is no longer wide open. Pin your own with `--token` or
+  `[serve] token`; the browser picks it up from the printed `…/?token=…` URL, and
+  native clients send it as a bearer token.
 - An `examples/gh-review-prep.rs` showing how to compose the library into an ephemeral, goal-scoped workspace for understanding a change you must read closely (a GitHub PR or issue) before acting on it. Read-only; a demonstration of composability, not a GitHub feature.
 - **`[ask] backend` selector.** All AI calls now route through a pluggable
   backend. Set `backend` in `[ask]` to choose among `claude` (default), `gemini`,
@@ -61,6 +66,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ephemeral (never persisted or sent to the server).
 
 ### Changed
+- **`alix serve --lan` now requires the pairing token** on `/api/*` (auto-generated
+  unless you set one). The HTML shell, theme assets, and images stay open — only
+  the JSON API is guarded; localhost serving is unchanged (open).
 - **The tutor is now backend-agnostic ("Ask Tutor" / "Tutor").** The in-session
   tutor was labelled "Ask Claude" in the UI and docs. It works with every
   supported backend (Claude, Gemini, Codex, Copilot), so it is now called

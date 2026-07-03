@@ -661,10 +661,11 @@ configuration needed.
 
 It is deliberately local-only — no accounts, no database. By default it binds
 to `127.0.0.1` (this machine only); `--lan` binds all interfaces so a device on
-the same network can reach it at `http://<your-machine-ip>:<port>` (no
-authentication, so only use `--lan` on a network you trust). `--port` and
-`--lan` require `--serve`; the default port lives in the `[serve]` section of
-the config file and `--port` overrides it.
+the same network can reach it at `http://<your-machine-ip>:<port>`. Serving with
+`--lan` auto-generates a **pairing token** (printed at startup) and requires it
+on `/api/*`, so the endpoint isn't wide open — pin your own with `--token` or
+`[serve] token`. `--port`, `--lan`, and `--token` require `--serve`; the default
+port lives in the `[serve]` section of the config file and `--port` overrides it.
 
 ## The Tutor
 

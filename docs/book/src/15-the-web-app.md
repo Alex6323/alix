@@ -96,7 +96,10 @@ server hosts, so every screen — review, browse, and trace walks — themes tog
 
 The server is deliberately local-only — no accounts, no database. By default it
 binds to `127.0.0.1` (this machine only). `--lan` binds all interfaces so another
-device on your network can reach it at `http://<your-ip>:<port>`, but there's **no
-authentication**, and AI requests run the model CLI on the host — so only use `--lan` on
-a network you trust. The default port lives in the `[serve]` config section;
-`--port` overrides it.
+device on your network can reach it at `http://<your-ip>:<port>`. Serving with
+`--lan` auto-generates a **pairing token** (printed at startup) and requires it on
+`/api/*`, so the network endpoint isn't wide open; pin your own with `--token` or
+`[serve] token`. Open the printed `…/?token=…` URL in a browser and the page
+attaches the token for you. AI requests still run the model CLI on the host, so
+only use `--lan` on a network you trust. The default port lives in the `[serve]`
+config section; `--port` overrides it.

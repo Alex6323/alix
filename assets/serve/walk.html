@@ -207,6 +207,22 @@
 
 <script>
 "use strict";
+// Pairing token (alix serve --lan): capture ?token= once, keep it in
+// sessionStorage (survives cross-page navigation, which drops the query), and
+// attach it to every /api request. No token → no-op (the localhost default).
+(function () {
+  const q = new URLSearchParams(location.search).get("token");
+  if (q) sessionStorage.setItem("alix.token", q);
+  const tok = sessionStorage.getItem("alix.token");
+  if (!tok) return;
+  const orig = window.fetch;
+  window.fetch = (url, opts = {}) => {
+    if (String(url).startsWith("/api")) {
+      opts = { ...opts, headers: { ...(opts.headers || {}), Authorization: "Bearer " + tok } };
+    }
+    return orig(url, opts);
+  };
+})();
 let state = null;     // the latest WalkDto
 let poll = null;      // setInterval handle while a live grade is in flight
 let KEYS = {};        // configured key bindings, from /api/keys
