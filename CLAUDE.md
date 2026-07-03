@@ -239,3 +239,9 @@ to this codebase. When in doubt, mirror the surrounding code.
   existing struck items' shape; sweep the launch-checklist duplicates too). This
   is the step that historically gets forgotten — treat "merged but not struck"
   as an unfinished task, same as a failing test.
+- **Subagent-driven development cleans up after itself.** When an SDD run
+  finishes — its branch merged or abandoned — delete its scratch: the
+  `.superpowers/sdd/` ledger and any task-brief / review-package files, so a
+  spent ledger doesn't linger in the working tree and get mistaken for active
+  work. The ledger is a live recovery map *during* a run; once the work lands
+  it has done its job.
