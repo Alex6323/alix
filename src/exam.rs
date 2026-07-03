@@ -118,7 +118,10 @@ pub fn generate_questions(
     if deck.sources.is_empty() {
         bail!("the deck declares no `% source:` to examine against");
     }
-    ensure_backend_can_examine(deck, ask_cfg)?;
+    // The capability gate is enforced inside `generate_questions_from`, which
+    // every caller (this fn, `spawn_questions`) routes through. The
+    // `ensure_backend_can_examine` call at the CLI/web launch sites is a
+    // belt-and-braces pre-flight that fires *before* opening any UI.
     generate_questions_from(&deck.sources, deck.path.parent(), cfg, ask_cfg)
 }
 
@@ -137,12 +140,23 @@ pub fn ensure_backend_can_examine(deck: &Deck, ask_cfg: &AskConfig) -> Result<()
 /// Owned-input core of [`generate_questions`]: takes the source list and the
 /// base directory directly (not a `&Deck`), so the background
 /// [`spawn_questions`] can run it on a thread without borrowing a deck.
+///
+/// This is the single choke point for all exam question generation (CLI and
+/// web), so the capability gate lives here: a URL source needs a fetch-capable
+/// backend; a local source needs one that can read files. Both callers
+/// (`generate_questions` and `spawn_questions`) inherit the check, so neither
+/// path can bypass it.
 fn generate_questions_from(
     sources: &[String],
     base: Option<&Path>,
     cfg: &ExamConfig,
     ask_cfg: &AskConfig,
 ) -> Result<Vec<ExamQuestion>> {
+    // Belt-and-braces gate: also checked at CLI/web launch sites (before the
+    // UI opens), but enforcing here means the web path can never bypass it.
+    for source in sources {
+        crate::backend::ensure_source_reachable(ask_cfg, deck::is_url(source))?;
+    }
     let prompt = questions_prompt(sources, base, cfg)?;
     let raw = ask::run(&run_config(cfg, ask_cfg), &prompt, &[])?;
     let parsed: QuestionsDto = parse_json(&raw).context("parsing the generated questions")?;
@@ -1355,6 +1369,42 @@ mod tests {
         )
         .unwrap_err();
         assert!(format!("{err:#}").contains("no `% source:`"));
+    }
+
+    /// The web exam path calls `spawn_questions` → `generate_questions_from`
+    /// directly, bypassing `generate_questions` and the CLI pre-flight. This
+    /// test verifies the gate inside `generate_questions_from` fires for a
+    /// codex-backed URL-source exam, so both paths get the clean capability
+    /// message rather than a raw CLI failure.
+    #[test]
+    fn generate_questions_from_rejects_url_source_on_fetch_incapable_backend() {
+        use crate::config::BackendKind;
+        // Codex is a read-only backend (can_fetch_web() == false); a URL
+        // source with codex must refuse cleanly before any CLI call is made.
+        let ask_cfg = AskConfig {
+            backend: BackendKind::Codex,
+            // The command points at nothing — the gate must fire before it's
+            // invoked, so an unreachable command is fine.
+            command: "/dev/null".to_string(),
+            timeout_secs: 5,
+            ..AskConfig::default()
+        };
+        // Drive the shared private path via `spawn_questions` (as the web
+        // server does) and drain the receiver — no exec_lock needed because
+        // the gate fires before any subprocess is forked.
+        let rx = spawn_questions(
+            vec!["https://example.org/doc".to_string()],
+            None,
+            ExamConfig::default(),
+            ask_cfg,
+        );
+        let err = rx.recv().unwrap().unwrap_err();
+        // The message must name the backend and point to the fix, not surface
+        // a raw CLI invocation failure.
+        assert!(
+            err.contains("codex") && err.contains("can't fetch a url"),
+            "expected capability-refusal message, got: {err}"
+        );
     }
 
     #[test]
