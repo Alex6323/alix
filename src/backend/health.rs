@@ -16,11 +16,7 @@ use crate::{
 /// every probed backend replied successfully, or an error when at least one
 /// failed.
 pub fn check(cfg: &AskConfig, all: bool) -> Result<()> {
-    if all {
-        check_all(cfg)
-    } else {
-        check_one(cfg)
-    }
+    if all { check_all(cfg) } else { check_one(cfg) }
 }
 
 /// Probes the single backend named in `cfg`, printing one status line and
@@ -60,8 +56,7 @@ fn check_all(cfg: &AskConfig) -> Result<()> {
                 backend: kind,
                 ..cfg.clone()
             };
-            let backend = backend_for(&per_kind)
-                .expect("all four kinds are wired in backend_for");
+            let backend = backend_for(&per_kind).expect("all four kinds are wired in backend_for");
             let name = backend.name().to_string();
             let cmd = backend.command().to_string();
             (kind, name, cmd)
@@ -78,13 +73,9 @@ fn check_all(cfg: &AskConfig) -> Result<()> {
             ..cfg.clone()
         };
         match probe(&per_kind) {
-            Ok(_) => println!(
-                "✓ {name:<name_width$}  ({cmd:<cmd_width$}) — ready"
-            ),
+            Ok(_) => println!("✓ {name:<name_width$}  ({cmd:<cmd_width$}) — ready"),
             Err(e) => {
-                eprintln!(
-                    "✗ {name:<name_width$}  ({cmd:<cmd_width$}) — {e}"
-                );
+                eprintln!("✗ {name:<name_width$}  ({cmd:<cmd_width$}) — {e}");
                 any_failed = true;
             }
         }

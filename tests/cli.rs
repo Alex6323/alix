@@ -379,21 +379,11 @@ fn oversized_local_source_without_yes_bails_with_guidance() {
         "[ask]\ncommand = \"/nonexistent/claude-xyz\"\ntimeout_secs = 5\n",
     );
     let src = dir.path().to_str().unwrap();
-    let out = alix(&[
-        "deck",
-        "generate",
-        src,
-        "--config",
-        &config,
-        "--print",
-    ]);
+    let out = alix(&["deck", "generate", src, "--config", &config, "--print"]);
     let err = stderr(&out);
     assert!(!out.status.success(), "should fail without --yes: {err}");
     // The error must name the guard condition and point at the fix.
-    assert!(
-        err.contains("--yes"),
-        "error must mention --yes: {err}"
-    );
+    assert!(err.contains("--yes"), "error must mention --yes: {err}");
     assert!(
         err.contains("large source tree") || err.contains("files"),
         "error must describe the source size: {err}"
@@ -414,13 +404,7 @@ fn oversized_local_source_with_yes_proceeds_past_the_guard() {
     );
     let src = dir.path().to_str().unwrap();
     let out = alix(&[
-        "deck",
-        "generate",
-        src,
-        "--yes",
-        "--config",
-        &config,
-        "--print",
+        "deck", "generate", src, "--yes", "--config", &config, "--print",
     ]);
     let err = stderr(&out);
     // The error must NOT be the guard refusal — it should be the missing-binary
@@ -470,11 +454,7 @@ fn deck_check_validates_like_the_old_check() {
     let deck = write(dir.path(), "math.txt", VALID_DECK);
     let out = alix(&["deck", "check", &deck]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
-    assert!(
-        stdout(&out).contains("1 cards"),
-        "stdout: {}",
-        stdout(&out)
-    );
+    assert!(stdout(&out).contains("1 cards"), "stdout: {}", stdout(&out));
 }
 
 #[test]
@@ -535,11 +515,7 @@ fn backend_check_all_probes_each() {
     // `--all` probes all four backends and prints a line per backend.  All
     // will fail (none are installed in CI), but there must be output for each.
     let dir = TempDir::new().unwrap();
-    let config = write(
-        dir.path(),
-        "config.toml",
-        "[ask]\ntimeout_secs = 5\n",
-    );
+    let config = write(dir.path(), "config.toml", "[ask]\ntimeout_secs = 5\n");
     let out = alix(&["backend", "check", "--all", "--config", &config]);
     // --all always exits with the overall status but must produce output for
     // each of the four backends.

@@ -55,10 +55,7 @@ fn walk(dir: &Path, files: &mut usize, bytes: &mut u64) {
         let Ok(meta) = entry.metadata() else { continue };
         if meta.is_dir() {
             let name = entry.file_name();
-            if SKIP_DIRS
-                .iter()
-                .any(|skip| name.to_str() == Some(skip))
-            {
+            if SKIP_DIRS.iter().any(|skip| name.to_str() == Some(skip)) {
                 continue;
             }
             walk(&path, files, bytes);
@@ -77,9 +74,11 @@ pub fn is_oversized(bytes: u64, threshold: u64) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::fs;
+
     use tempfile::TempDir;
+
+    use super::*;
 
     fn make_file(dir: &Path, name: &str, size: usize) {
         fs::write(dir.join(name), vec![0u8; size]).unwrap();
@@ -142,7 +141,14 @@ mod tests {
 
     #[test]
     fn human_bytes_formats_correctly() {
-        assert_eq!("512 B", TreeSize { files: 1, bytes: 512 }.human_bytes());
+        assert_eq!(
+            "512 B",
+            TreeSize {
+                files: 1,
+                bytes: 512
+            }
+            .human_bytes()
+        );
         assert_eq!(
             "1.0 KB",
             TreeSize {

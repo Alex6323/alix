@@ -1801,7 +1801,11 @@ fn preflight_source(source: &str, threshold: u64, yes: bool) -> Result<()> {
         return Ok(());
     }
     if !std::io::stdin().is_terminal() {
-        bail!("large source tree ({} files / {}); pass --yes to proceed", size.files, size.human_bytes());
+        bail!(
+            "large source tree ({} files / {}); pass --yes to proceed",
+            size.files,
+            size.human_bytes()
+        );
     }
     print!("{msg}. Proceed? [y/N] ");
     std::io::stdout().flush().ok();
