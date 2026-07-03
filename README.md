@@ -1083,7 +1083,7 @@ outcome. If the checkpoints are independent facts that all hang off one thing, y
 written a *set*, which is what cards and the exam already do; reach for a subject
 that has a real sequence.
 
-**Walking it** (`alix trace keypress-to-grade.txt`) goes hop by hop:
+**Walking it** (`alix trace docs/examples/keypress-to-grade.txt`) goes hop by hop:
 
 1. **Predict** — you type a guess before anything reveals (committing is the
    point).
@@ -1124,7 +1124,7 @@ not remediated into cards (a trace is a path, not a card pile); after a fail it
 back — `[exam] retry_cooldown_secs`, default 1h).
 
 A trace deck degrades gracefully — even without `alix trace` it is a valid deck
-of `explain` cards. See `examples/keypress-to-grade.txt` for a complete trace
+of `explain` cards. See `docs/examples/keypress-to-grade.txt` for a complete trace
 over this repo's own source.
 
 ## Exploring a source — `alix explore`

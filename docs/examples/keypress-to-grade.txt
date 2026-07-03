@@ -1,10 +1,10 @@
 % A trace: a guided predict-and-verify walk through real source.
-% Walk it with:  alix trace examples/keypress-to-grade.txt
+% Walk it with:  alix trace docs/examples/keypress-to-grade.txt
 %
 % Each hop picks up where the last reveal left off — you're following one
 % path (keypress -> request -> session -> scheduler -> disk), not a quiz.
 % trace: how pressing the Good key in the browser becomes a durable saved grade
-% source: ..
+% source: ../..
 
 # You press the Good key in the browser. What does the page send to the server — and, just as telling, what does it *not* send?
 	grade(g) POSTs to /api/grade with a JSON body of just { grade: g }.

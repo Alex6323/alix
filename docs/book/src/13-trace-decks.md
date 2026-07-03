@@ -97,7 +97,7 @@ choose a subject with a real sequence instead.
 ## Walking it
 
 ```sh
-alix trace keypress-to-grade.txt
+alix trace docs/examples/keypress-to-grade.txt
 ```
 
 goes hop by hop:
@@ -173,5 +173,5 @@ snippet — and, via the `% origin:` they were frozen with, warns when the live
 source has **drifted** from the frozen excerpt.)
 
 A trace deck degrades gracefully — even without `alix trace` it's a valid deck of
-`explain` cards. See `examples/keypress-to-grade.txt` for a complete trace over
+`explain` cards. See `docs/examples/keypress-to-grade.txt` for a complete trace over
 this repo's own source.
