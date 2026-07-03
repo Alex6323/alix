@@ -377,10 +377,6 @@ struct TraceArgs {
     #[arg(short, long, value_enum)]
     scheduler: Option<SchedulerKind>,
 
-    /// Walk the trace in the browser instead of the terminal.
-    #[command(flatten)]
-    serve: ServeOpts,
-
     /// Path of the progress store (default: platform data dir).
     #[arg(long)]
     store: Option<PathBuf>,
@@ -1246,23 +1242,29 @@ fn serve_addr(port: Option<u16>, lan: bool, config: &Config) -> SocketAddr {
 }
 
 /// Resolves the serve pairing token: an explicit `--token` or `[serve] token`
-/// wins; otherwise `--lan` auto-generates one, and localhost stays open (`None`).
-fn resolve_serve_token(cli: Option<String>, lan: bool, config: &Config) -> Option<String> {
-    cli.or_else(|| config.serve.token.clone())
-        .or_else(|| lan.then(generate_token))
+/// wins; otherwise `--lan` generates one. Localhost (no `--lan`) stays open
+/// (`None`). Fails **closed** — if `--lan` needs a token but generation fails,
+/// this errors rather than leaving the network API open.
+fn resolve_serve_token(cli: Option<String>, lan: bool, config: &Config) -> Result<Option<String>> {
+    if let Some(t) = cli
+        .or_else(|| config.serve.token.clone())
         .filter(|t| !t.is_empty())
+    {
+        return Ok(Some(t));
+    }
+    if lan {
+        return Ok(Some(generate_token()?));
+    }
+    Ok(None)
 }
 
-/// A random pairing token (16 bytes, hex). Reads `/dev/urandom` to avoid a new
-/// RNG dependency — adequate for a LAN shared secret. Empty on the (practically
-/// impossible) read failure, which `resolve_serve_token` filters out.
-fn generate_token() -> String {
-    use std::io::Read;
+/// A cryptographically secure random pairing token (16 bytes, hex), drawn from
+/// the OS CSPRNG via `getrandom` (portable across Linux/macOS/Windows).
+fn generate_token() -> Result<String> {
     let mut buf = [0u8; 16];
-    match std::fs::File::open("/dev/urandom").and_then(|mut f| f.read_exact(&mut buf)) {
-        Ok(()) => buf.iter().map(|b| format!("{b:02x}")).collect(),
-        Err(_) => String::new(),
-    }
+    getrandom::getrandom(&mut buf)
+        .map_err(|e| anyhow::anyhow!("could not generate a serve pairing token: {e}"))?;
+    Ok(buf.iter().map(|b| format!("{b:02x}")).collect())
 }
 
 /// Subject → deck file path, for the web frontend's card removal.
@@ -1568,7 +1570,7 @@ fn review_serve(args: ReviewArgs, browse_mode: bool) -> Result<()> {
         let label = b.label.clone();
         (serve::Launch::Review(Box::new(b)), label)
     };
-    let token = resolve_serve_token(args.serve.token.clone(), args.serve.lan, &config);
+    let token = resolve_serve_token(args.serve.token.clone(), args.serve.lan, &config)?;
     announce(addr, args.serve.lan, token.as_deref(), &label);
 
     let opts = serve::ReviewOptions {
@@ -2670,10 +2672,6 @@ fn trace_cmd(args: TraceArgs) -> Result<()> {
     let store = store_for(std::slice::from_ref(&args.deck), args.store.clone())?;
     let config = Config::load(args.config.as_deref())?;
 
-    // `--serve`: walk it in the browser; otherwise in the terminal.
-    if args.serve.serve {
-        return trace_serve(trace, scheduler, store, &args, &config);
-    }
     if !std::io::stdin().is_terminal() {
         bail!("`alix trace` needs a terminal");
     }
@@ -2687,24 +2685,6 @@ fn trace_cmd(args: TraceArgs) -> Result<()> {
         return offer_trace_exam_capstone(&deck, &config, store);
     }
     Ok(())
-}
-
-/// `alix trace --serve`: walk a trace in the browser. Mirrors the terminal
-/// walk (predict → reveal → grade each checkpoint); `--grade` enables live Claude
-/// grading. One deck, one walk — no deck-selection screen. Verification (the
-/// compression exam) is reached afterwards via the picker's "Take exam".
-fn trace_serve(
-    trace: Trace,
-    scheduler: SchedulerKind,
-    store: Store,
-    args: &TraceArgs,
-    config: &Config,
-) -> Result<()> {
-    let addr = serve_addr(args.serve.port, args.serve.lan, config);
-    announce(addr, args.serve.lan, None, "a trace walk");
-    let grade = args.grade.then(|| config.ask.clone());
-    let walk = Walk::new(trace, scheduler);
-    serve::run_walk(walk, store, addr, scheduler, grade, config.keys.clone())
 }
 
 /// Runs a trace walk in the terminal — predict → reveal → grade each checkpoint
@@ -3503,14 +3483,19 @@ mod tests {
     fn serve_token_is_generated_only_when_exposed() {
         let cfg = Config::default();
         // localhost, nothing configured → open (no token)
-        assert_eq!(resolve_serve_token(None, false, &cfg), None);
+        assert_eq!(resolve_serve_token(None, false, &cfg).unwrap(), None);
         // an explicit --token always wins
         assert_eq!(
-            resolve_serve_token(Some("abc".into()), true, &cfg),
+            resolve_serve_token(Some("abc".into()), true, &cfg).unwrap(),
             Some("abc".into())
         );
-        // --lan with nothing configured → a token is generated
-        assert!(resolve_serve_token(None, true, &cfg).is_some_and(|t| !t.is_empty()));
+        // --lan with nothing configured → a token is generated (fails closed, so
+        // on this platform it must succeed)
+        assert!(
+            resolve_serve_token(None, true, &cfg)
+                .unwrap()
+                .is_some_and(|t| !t.is_empty())
+        );
     }
 
     #[test]

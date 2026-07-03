@@ -531,7 +531,11 @@
 // and attach it to every /api request. No token → no-op (the localhost default).
 (function () {
   const q = new URLSearchParams(location.search).get("token");
-  if (q) sessionStorage.setItem("alix.token", q);
+  if (q) {
+    sessionStorage.setItem("alix.token", q);
+    const u = new URL(location.href); u.searchParams.delete("token");
+    history.replaceState(null, "", u); // don't leave the token in the URL bar/history
+  }
   const tok = sessionStorage.getItem("alix.token");
   if (!tok) return;
   const orig = window.fetch;

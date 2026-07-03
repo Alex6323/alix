@@ -69,6 +69,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`alix serve --lan` now requires the pairing token** on `/api/*` (auto-generated
   unless you set one). The HTML shell, theme assets, and images stay open — only
   the JSON API is guarded; localhost serving is unchanged (open).
+- **Breaking: `alix trace --serve` removed.** Trace walking in the browser now
+  goes through `alix serve`'s deck picker (pick the trace) — the standalone
+  single-trace web server is gone, so there's now exactly one web server. `alix
+  trace <deck>` still walks in the terminal.
 - **The tutor is now backend-agnostic ("Ask Tutor" / "Tutor").** The in-session
   tutor was labelled "Ask Claude" in the UI and docs. It works with every
   supported backend (Claude, Gemini, Codex, Copilot), so it is now called

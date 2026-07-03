@@ -2049,7 +2049,7 @@ pub fn run_review(
                 );
             }
             // ── Trace walk (a single trace picked from the selection screen) ──
-            // The same flow as the standalone `run_walk`, guarded on `walking`.
+            // The web trace-walk flow (predict → reveal → grade), guarded on `walking`.
             (Method::Get, "/api/walk") => {
                 let Some(w) = walking.as_mut() else {
                     respond_status(request, 409);
@@ -2507,102 +2507,6 @@ fn read_delta(request: &mut Request) -> Option<Delta> {
     Delta::from_key(body.delta.chars().next()?)
 }
 
-/// The walk's grade keys — the same `[keys]` review uses. A walk's three deltas
-/// *are* the review grades (failed / partly / passed), so it binds the identical
-/// keys; `reveal` advances to the next checkpoint.
-#[derive(Debug, Serialize)]
-struct WalkKeys {
-    reveal: Vec<KeyDto>,
-    failed: Vec<KeyDto>,
-    partly: Vec<KeyDto>,
-    passed: Vec<KeyDto>,
-}
-
-impl WalkKeys {
-    fn from(b: &Bindings) -> Self {
-        Self {
-            reveal: key_list(&b.reveal),
-            failed: key_list(&b.failed),
-            partly: key_list(&b.partly),
-            passed: key_list(&b.passed),
-        }
-    }
-}
-
-/// Serves a single trace walk at `addr` until the process is stopped. Mirrors
-/// the terminal walk: predict → reveal a live excerpt → grade (self-judged, or
-/// by Claude when `grade` is `Some`) → compress, scheduling each checkpoint in
-/// `store`. One deck, one walk — there is no deck-selection screen.
-pub fn run_walk(
-    walk: Walk,
-    mut store: Store,
-    addr: SocketAddr,
-    scheduler: SchedulerKind,
-    grade: Option<AskConfig>,
-    bindings: Bindings,
-) -> Result<()> {
-    let mut walking = Walking::new(walk, scheduler, grade);
-    let keys = WalkKeys::from(&bindings);
-    let server = Server::http(addr).map_err(|e| anyhow!("cannot start server on {addr}: {e}"))?;
-    for mut request in server.incoming_requests() {
-        let method = request.method().clone();
-        let path = request_path(&request);
-        match (&method, path.as_str()) {
-            (Method::Get, "/") => respond_html(request, &WALK_PAGE),
-            (Method::Get, "/api/keys") => respond_json(request, &keys),
-            // Poll: drain any finished background grade, return state.
-            (Method::Get, "/api/walk") => {
-                walking.poll();
-                respond_json(request, &walk_dto(&walking));
-            }
-            // Commit the prediction and move to the reveal (spawning a live grade
-            // in `--grade` mode).
-            (Method::Post, "/api/walk/predict") => {
-                #[derive(Deserialize)]
-                struct Body {
-                    text: String,
-                }
-                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
-                if let Some(b) = body {
-                    walking.walk.predict(b.text);
-                    walking.start_grade();
-                }
-                respond_json(request, &walk_dto(&walking));
-            }
-            // Record the delta (Claude's if present, else the self-grade in the
-            // body), schedule the checkpoint, and advance.
-            (Method::Post, "/api/walk/grade") => {
-                let self_delta = read_delta(&mut request);
-                let delta = walking
-                    .grade_result
-                    .as_ref()
-                    .map(|(d, _)| *d)
-                    .or(self_delta);
-                match delta {
-                    Some(delta) => {
-                        walking.walk.grade(&mut store, delta, now_ms());
-                        if let Err(e) = store.save() {
-                            eprintln!("warning: could not save progress: {e}");
-                        }
-                        walking.clear_grade();
-                        respond_json(request, &walk_dto(&walking));
-                    }
-                    None => respond_status(request, 400),
-                }
-            }
-            // Walk the same trace again from the top.
-            (Method::Post, "/api/walk/restart") => {
-                let fresh = Walk::new(walking.walk.trace().clone(), walking.scheduler);
-                let grade = walking.grade.take();
-                walking = Walking::new(fresh, walking.scheduler, grade);
-                respond_json(request, &walk_dto(&walking));
-            }
-            _ => respond_status(request, 404),
-        }
-    }
-    Ok(())
-}
-
 /// The server's live browse state once decks are chosen. Its absence (`None`)
 /// means the deck-selection phase.
 struct Browsing {
@@ -2660,7 +2564,16 @@ fn is_authorized(
     let presented = auth_header
         .and_then(|h| h.strip_prefix("Bearer "))
         .or(query_token);
-    presented == Some(token)
+    presented.is_some_and(|p| ct_eq(p.as_bytes(), token.as_bytes()))
+}
+
+/// Constant-time byte comparison, so checking the pairing token doesn't leak it
+/// through timing. Length is not secret — a length mismatch returns early.
+fn ct_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
 /// A request header's value by name (case-insensitive), if present.

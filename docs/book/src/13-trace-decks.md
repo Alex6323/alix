@@ -117,11 +117,11 @@ goes hop by hop:
 4. **Done** — after the last hop the walk is complete. That's the *drill*; the
    *verification* (what masters the trace) is its separate **exam**, below.
 
-**In the browser:** `alix trace <deck> --serve` walks it in the web frontend — a
-**path rail** you descend (nodes coloring in by Missed it / Partly / Got it) with each
-checkpoint's source shown in a line-numbered excerpt; `--serve --grade` does the
-live grading. Progress saves to the same store, so a walk started in the terminal
-continues in the browser.
+**In the browser:** run `alix serve` and pick the trace in the deck list — it walks
+in the web frontend: a **path rail** you descend (nodes coloring in by Missed it /
+Partly / Got it) with each checkpoint's source shown in a line-numbered excerpt.
+Progress saves to the same store, so a walk started in the terminal continues in
+the browser.
 
 `alix trace <deck> --map` prints the route — every prompt, key points, and
 locator — without quizzing.

@@ -1112,13 +1112,11 @@ that has a real sequence.
 4. **Compress** — after the last hop you restate the whole path in two
    sentences: if you can re-derive it, you understood it.
 
-**In the browser** — add **`--serve`** (`alix trace <deck> --serve`) to walk it
-in the web frontend instead of the terminal, the same way `review`/`browse`
-serve. The walk page shows the **path** as a rail you descend (its nodes color in
-by Missed it / Partly / Got it) and reveals each checkpoint's real source in a
-line-numbered excerpt; `--serve --grade` runs the live grading and the page waits
-on the model per hop. `--port`/`--lan` work as elsewhere. Progress saves to the same
-store, so a walk started in the terminal continues in the browser.
+**In the browser** — run **`alix serve`** and pick the trace in the deck list; it
+walks in the web frontend. The walk page shows the **path** as a rail you descend
+(its nodes color in by Missed it / Partly / Got it) and reveals each checkpoint's
+real source in a line-numbered excerpt. Progress saves to the same store, so a
+walk started in the terminal continues in the browser.
 
 `alix trace <deck> --map` prints the path (every prompt, its key points and
 locator) without quizzing — a quick "just show me the route".
