@@ -22,7 +22,7 @@
 
 # Part IV — The AI layer
 
-- [Ask-Claude — the tutor](10-ask-claude.md)
+- [The Tutor](10-tutor.md)
 - [Generating decks](11-generating-decks.md)
 - [The AI exam](12-the-ai-exam.md)
 - [Trace decks](13-trace-decks.md)

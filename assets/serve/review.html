@@ -504,7 +504,7 @@
         <span class="menu-wrap" id="menuWrap">
           <button class="kebab" id="kebab" aria-label="Menu" aria-haspopup="true">☰</button>
           <div class="menu" id="menu" role="menu">
-            <button id="mAsk" class="m-review" role="menuitem">Ask Claude <span class="mk" id="mAskKey">?</span></button>
+            <button id="mAsk" class="m-review" role="menuitem">Ask Tutor <span class="mk" id="mAskKey">?</span></button>
             <button id="mRemove" class="m-review" role="menuitem">Remove card <span class="mk">x</span></button>
             <button id="mShortcuts" class="m-picker" role="menuitem">Keyboard shortcuts</button>
             <button id="theme-open" role="menuitem" style="color: var(--ink)">Theme…</button>
@@ -786,11 +786,11 @@ function fillAskLog(log) {
     log.appendChild(el("div", "ask-q", ex.q));
     log.appendChild(el("div", "ask-a", ex.a));
   }
-  if (askData.thinking) log.appendChild(el("div", "ask-thinking", "Claude is thinking…"));
+  if (askData.thinking) log.appendChild(el("div", "ask-thinking", "Thinking…"));
   if (askData.status) log.appendChild(el("div", "ask-status", askData.status));
   if (askData.error) log.appendChild(el("div", "ask-error", askData.error));
   if (!askData.transcript.length && !askData.thinking && !askData.status && !askData.error)
-    log.appendChild(el("div", "ask-hint", "Ask Claude about this card."));
+    log.appendChild(el("div", "ask-hint", "Ask the tutor about this card."));
   // Keep the newest exchange in view; the card + conversation scroll together
   // now (the card sticks), so scroll their shared container, not just the log.
   const sc = log.closest(".ask-scroll") || log;

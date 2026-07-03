@@ -105,7 +105,7 @@ know least first. That's right for *retention*, but it can feel random: a card
 about parsing, then one about persistence, with no thread between them.
 
 A **topology** gives the session a thread. `alix deck augment <deck> --target
-topology` asks Claude to read the deck and lay out a *graph* of how the cards
+topology` asks the model to read the deck and lay out a *graph* of how the cards
 relate — a suggested **walk** through them, plus a few coarse named **regions**
 (stages or themes). It's cached beside your progress like distractors and notes;
 a deck can hold several, one per `--with` principle:

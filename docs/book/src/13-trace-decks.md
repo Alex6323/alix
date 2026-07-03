@@ -48,7 +48,7 @@ symbol defined off-screen, name it with a `% given:` line (`% given: state — t
 parser's position so far`, repeatable); these show as a list under the question,
 so the excerpt stays focused without orphaning the names it needs.
 
-## Building it with Claude — `--build`
+## Building it with the model — `--build`
 
 You don't have to hand-write checkpoints. Declare just the `% trace:` and
 `% source:`, then:
@@ -57,7 +57,7 @@ You don't have to hand-write checkpoints. Declare just the `% trace:` and
 alix trace --build mytrace.txt
 ```
 
-Claude explores the source — **read-only** `Read`/`Glob`/`Grep`, source root as
+The model explores the source — **read-only** `Read`/`Glob`/`Grep`, source root as
 its working directory, no write or shell access — finds the single load-bearing
 path, and writes the checkpoints (with their `% at:` locators) back into the deck.
 The result is cached and version-controlled there, so review it (especially the
@@ -85,7 +85,7 @@ a config table, a store's on-disk format — as **facts-deck material**, because
 facts are a deck's job and edges are a trace's. It writes nothing: pick one, paste
 its header into a new deck, and `--build` it. Knowing *what* is worth tracing (and
 how deep) is the genuinely hard part — it needs you to already understand the
-source — so this hands that judgment to Claude.
+source — so this hands that judgment to the model.
 
 ## Write it as a chain, not a quiz
 
@@ -109,7 +109,7 @@ goes hop by hop:
    and note.
 3. **Gap** — you judge yourself **Missed it / Partly / Got it** (the same three
    grades review uses). Self-judged and offline by default; pass **`--grade`** to
-   have Claude judge your typed prediction against the key points and return a
+   have the model judge your typed prediction against the key points and return a
    verdict plus a line of feedback (a model call per hop). Either way, a failed or
    partly hop is a **weak edge** that resurfaces sooner — a failed one resets, a
    partly steps back one stage — while a passed hop advances and fades. Each
@@ -129,7 +129,7 @@ locator — without quizzing.
 ## The exam — the compression
 
 A trace's `% trace:` is a *question* ("how X becomes Y"). The **exam** is to
-answer it: retrace the whole path in a sentence or two, from memory. Claude grades
+answer it: retrace the whole path in a sentence or two, from memory. The model grades
 that compression against the path's checkpoints — AI-graded, exactly like a
 [fact deck's exam](12-the-ai-exam.md), at the deck's `% strictness:` — and
 **passing masters the trace**, which unlocks its dependents. So the symmetry is:

@@ -19,7 +19,7 @@ repeatable:
 % source: notes/ownership.md
 ```
 
-A URL `% source:` doubles as an [ask-Claude](10-ask-claude.md) reference, so you
+A URL `% source:` doubles as a [tutor](10-tutor.md) reference, so you
 needn't repeat it as a `% link:`. The reverse doesn't hold: a `% link:` stays
 tutor-only and never becomes exam ground truth — keep supplementary reading (a
 blog post, an SO answer) as `% link:` so the exam ignores it.
@@ -45,12 +45,12 @@ three ways:
   the session-end summary offers it — press `x` in the terminal (or `b` to browse
   the deck instead), a button in the browser.
 
-`alix` asks Claude to read the source (URLs via `WebFetch`, local files embedded)
+`alix` asks the model to read the source (URLs via `WebFetch`, local files embedded)
 and write **fresh understanding questions** — application and connections, *not*
 the card facts — each with the key points a correct answer must hit. You type a
 prose answer per question, and an examiner grades each **Pass / Partial / Fail
 against the source's rubric, never against your cards** (grading the cards would
-be circular). The Claude calls run on a background thread, so the UI stays
+be circular). The model calls run on a background thread, so the UI stays
 responsive while it thinks.
 
 - **Pass** (every question by default — tune with `pass_threshold`) marks the deck

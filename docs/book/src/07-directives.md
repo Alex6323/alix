@@ -21,9 +21,9 @@ full.
 | `% img-dir:` | deck | Base directory image filenames resolve against. [→ ch 6](06-cloze-direction-images.md) |
 | `% title:` | deck | [Display name](08-workspaces.md) shown instead of the file name. |
 | `% requires:` | deck | [Prerequisite deck](09-dependencies.md) that gates unlocks (repeatable). |
-| `% link:` | deck | [ask-Claude reference](10-ask-claude.md) URL — tutor-only (repeatable). |
+| `% link:` | deck | [tutor reference](10-tutor.md) URL — tutor-only (repeatable). |
 | `% source:` | deck | [Exam ground truth](12-the-ai-exam.md) (URL/file, repeatable); also a [trace](13-trace-decks.md)'s path origin, and a tutor reference. |
-| `% origin:` | deck · card | Live source root a [frozen deck](14-explore.md)'s snapshots came from (set in a workspace's `alix.toml`); enables [tutor](10-ask-claude.md) grounding and [`alix deck check`](17-command-reference.md) drift detection — `% source:` itself points at the frozen `assets/`. |
+| `% origin:` | deck · card | Live source root a [frozen deck](14-explore.md)'s snapshots came from (set in a workspace's `alix.toml`); enables [tutor](10-tutor.md) grounding and [`alix deck check`](17-command-reference.md) drift detection — `% source:` itself points at the frozen `assets/`. |
 | `% strictness:` | deck | [Exam grading rigor](12-the-ai-exam.md): strict, balanced, lenient. |
 | `% trace:` | deck | What a [trace](13-trace-decks.md) walks; its presence makes the deck a trace. |
 | `% at:` | card | A locator into the `% source:` (`file:lines`): a [trace checkpoint's](13-trace-decks.md) reveal target, or a [fact card's source citation](06-cloze-direction-images.md#source-citations) shown on reveal. |

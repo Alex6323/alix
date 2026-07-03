@@ -13,8 +13,8 @@ lose all your progress and I won't provide a migration path. You have been warne
 Your **personal AI tutor**, built for understanding — not just remembering.
 Under the hood it's a plain-text spaced-repetition trainer — Leitner and SM-2
 scheduling, several answer modes, cloze and dual-direction cards, images, and
-deck dependencies — and the layer on top is the **Claude integration**: an
-*ask-Claude tutor* on any card, *AI deck generation* from a web page,
+deck dependencies — and the layer on top is the **AI integration**: a
+*tutor* on any card, *AI deck generation* from a web page,
 *understanding cards*, and an **AI exam** (`alix exam`) that checks whether you
 grasped the material — not just recalled it — and gates your progress on
 passing. Decks stay simple plain-text files you own, reviewable in a ratatui
@@ -39,7 +39,7 @@ features that require a model CLI:
 - the in-session tutor (`?`), in both the TUI and the web frontend.
 
 `alix` invokes the CLI headless under a locked-down permission model (see
-[Ask Claude about a card](#ask-claude-about-a-card)); the command, model and
+[The Tutor](#the-tutor)); the command, model and
 timeouts are configurable per feature in the [config file](#configuration).
 
 ## Learn a codebase (the main workflow)
@@ -93,7 +93,7 @@ alix deck augment mydeck.txt --target keypoints   # decompose answers into an ex
 alix import cards.tsv            # import an Anki TSV (front<TAB>back) into a deck
 alix exam mydeck.txt            # AI exam against the deck's % source: (gates unlocks)
 alix trace mytrace.txt          # walk a predict-and-verify path through a % source:
-alix trace --build mytrace.txt  # let Claude discover the path (writes checkpoints back)
+alix trace --build mytrace.txt  # let the model discover the path (writes checkpoints back)
 alix trace --suggest .          # recon a source for candidate traces worth authoring
 alix explore .                  # an ordered learning plan (decks + traces) toward a goal
 alix explore --walk .           # walk an explore tour of the source's shape
@@ -183,18 +183,18 @@ card's front. Follow a link for the full explanation.
 | `% img-dir:` | deck | [Base directory](#images--img--img-back) that image filenames resolve against. |
 | `% strictness:` | deck | [Exam grading rigor](#the-ai-exam-alix-exam): `strict`, `balanced`, or `lenient`. |
 | `% requires:` | deck | [Prerequisite deck](#deck-dependencies) that gates unlocks (repeatable). |
-| `% link:` | deck | [ask-Claude reference](#ask-claude-about-a-card) URL — **tutor only** (repeatable). |
+| `% link:` | deck | [tutor reference](#the-tutor) URL — **tutor only** (repeatable). |
 | `% source:` | deck | [Exam ground truth](#the-ai-exam-alix-exam) — a URL or file (repeatable). For a [trace](#traces-alix-trace), the source the path runs through (the frozen `assets/` copy in an explored workspace). Also a tutor reference. |
 | `% trace:` | deck | What a [trace](#traces-alix-trace) walks — a path description ("how X becomes Y"); its presence makes the deck a trace. |
 | `% at:` | card | A locator into the `% source:` (`file:lines`, or just `lines` for a single-file source): a [trace checkpoint's](#traces-alix-trace) reveal target, or a [fact card's source citation](#source-citations--at-on-a-fact-card) shown on reveal. In a frozen workspace it points at the `assets/` snapshot and carries the original location after ` from ` (`29.rs from src/caching.rs:46-66`). |
-| `% origin:` | workspace · deck · card | The live source root a frozen deck's snapshots came from (set in a workspace's `alix.toml` at build time). The ask-tutor grounds in it for context and `alix deck check` reads it to flag drift; `% source:` itself points at the frozen `assets/`. |
+| `% origin:` | workspace · deck · card | The live source root a frozen deck's snapshots came from (set in a workspace's `alix.toml` at build time). The tutor grounds in it for context and `alix deck check` reads it to flag drift; `% source:` itself points at the frozen `assets/`. |
 | `% given:` | card | A [trace checkpoint's](#traces-alix-trace) "given" (repeatable) — an off-screen symbol the question leans on, as `name — meaning`; shown as a list under the question. |
 | `% title:` | deck | [Display name](#workspaces) shown instead of the file name (a workspace sets `title` in its `alix.toml`). |
 
 **`% link:` vs `% source:`** — both point at the material a deck is about, but
 they are not interchangeable. `% source:` is the **exam's ground truth**:
 questions are generated from it and answers graded against it, and a URL source
-*also* doubles as an ask-Claude reference. `% link:` is **only** a tutor
+*also* doubles as a tutor reference. `% link:` is **only** a tutor
 reference and never becomes exam material — use it for supplementary reading (a
 blog post, a Stack Overflow answer) you don't want the exam to test. The
 implication runs one way: a `% source:` URL is offered to the tutor, but a
@@ -304,7 +304,7 @@ ideal for a cluster like all your vocabulary decks. A folder becomes a workspace
 when you drop a **`alix.toml`** in it — a scoped version of the
 [config file](#configuration) — setting a `title`, an optional one-line
 `description`, an optional `source_access` override (whether the
-[grounded ask-tutor](#ask-claude-about-a-card) may read this workspace's source,
+[grounded tutor](#the-tutor) may read this workspace's source,
 beating the global `[ask] source_access`), and a `[defaults]` table of directives
 shared by every deck:
 
@@ -312,7 +312,7 @@ shared by every deck:
 # ~/decks/english/alix.toml
 title = "English"
 description = "everyday conversational vocabulary"
-# source_access = true   # let the ask-tutor read this workspace's % source:
+# source_access = true   # let the tutor read this workspace's % source:
 # icon = "assets/logo.svg"  # a picker emblem (else assets/icon.*; SVGs are themed)
 
 [defaults]
@@ -526,7 +526,7 @@ tailored to each card — augment the deck ahead of time:
 alix deck augment mydeck.txt --target choices --with "use common misconceptions"
 ```
 
-This generates them once with Claude and caches them by card id (in
+This generates them once with the model and caches them by card id (in
 `augment.json` beside your progress), so review stays instant and fully offline —
 no waiting, no live calls during study. Review reads the cache automatically: a
 card with cached distractors uses them, anything else falls back to the offline
@@ -549,7 +549,7 @@ covered them — for cards aimed at *understanding* rather than recall. Set it w
 `% mode: explain` (per card or deck-wide). The typing is optional and never
 checked: a self-graded mode can't verify your answer, so it doesn't pretend to
 (in the web frontend your typed answer is shown next to the points for honest
-comparison). It pairs with the ask-Claude helper, and is the day-to-day,
+comparison). It pairs with the tutor, and is the day-to-day,
 self-graded tier below the [AI exam](#the-ai-exam-alix-exam).
 
 If you [augment the deck with **key points**](#augment-a-deck--alix-deck-augment)
@@ -647,7 +647,7 @@ line marked ✓/✗ with the correct answer shown), and **choice** (tap one of t
 options). The note appears once the answer is shown. Controls are big tap
 targets and follow your configured key bindings — the page reads them from the
 server, so the chips show your own keys. The **☰ menu** is context-aware: during
-review it holds **Ask Claude** and **Remove card** (which deletes the current card
+review it holds **Ask Tutor** and **Remove card** (which deletes the current card
 from its deck file and prunes its progress); on the deck picker, **keyboard
 shortcuts**, **refresh decks**, and **about** — with **Theme…** in both.
 
@@ -666,7 +666,7 @@ authentication, so only use `--lan` on a network you trust). `--port` and
 `--lan` require `--serve`; the default port lives in the `[serve]` section of
 the config file and `--port` overrides it.
 
-## Ask Claude about a card
+## The Tutor
 
 On any post-answer screen (feedback, revealed flip card, answered choice),
 press `?` to open a tutor panel without leaving the session. The card
@@ -913,7 +913,7 @@ repeatable):
 % source: notes/ownership.md
 ```
 
-A URL `% source:` doubles as an [ask-Claude](#ask-claude-about-a-card) reference,
+A URL `% source:` doubles as a [tutor](#the-tutor) reference,
 so you don't need to repeat it as a `% link:`. The reverse isn't true: a
 `% link:` stays a tutor reference and never becomes exam ground truth — keep
 supplementary links (a blog, an SO answer) as `% link:` so the exam ignores them.
@@ -1102,7 +1102,7 @@ that has a real sequence.
    checkpoint's key points and note.
 3. **Gap** — you judge yourself **Missed it / Partly / Got it** (the same three
    grades review uses). Grading is self-judged and offline (no model call) by
-   default; pass **`--grade`** to have Claude judge your typed prediction against
+   default; pass **`--grade`** to have the model judge your typed prediction against
    the key points and return the verdict plus a line of feedback (a model call per
    hop). Either way, a failed or partly hop is a **weak edge** that resurfaces
    sooner — a failed one resets, a partly steps back one stage — while a passed
@@ -1116,7 +1116,7 @@ in the web frontend instead of the terminal, the same way `review`/`browse`
 serve. The walk page shows the **path** as a rail you descend (its nodes color in
 by Missed it / Partly / Got it) and reveals each checkpoint's real source in a
 line-numbered excerpt; `--serve --grade` runs the live grading and the page waits
-on Claude per hop. `--port`/`--lan` work as elsewhere. Progress saves to the same
+on the model per hop. `--port`/`--lan` work as elsewhere. Progress saves to the same
 store, so a walk started in the terminal continues in the browser.
 
 `alix trace <deck> --map` prints the path (every prompt, its key points and
@@ -1124,7 +1124,7 @@ locator) without quizzing — a quick "just show me the route".
 
 **A trace's exam is the compression.** Walking the checkpoints is the *drill*;
 the *verification* is `alix exam <trace>` — one fixed question, the `% trace:`,
-which you answer by retracing the whole path in a sentence or two. Claude grades
+which you answer by retracing the whole path in a sentence or two. The model grades
 that against the path's checkpoints (AI-graded, like a fact deck's exam), and
 **passing masters the trace** (unlocking its dependents). You reach it three
 ways: directly with `alix exam <trace>`, as the **capstone** offered at the end

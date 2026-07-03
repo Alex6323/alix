@@ -38,7 +38,7 @@ screen** — the browser face of `alix deck augment`. It shows what the deck's
 augmentation cache already holds, one row per target
 ([choices](04-review-modes.md), notes, questions, [key points](04-review-modes.md),
 format) with a coverage bar, alongside its topologies. **Generate** fills only
-the cards a target is still missing, run as a background Claude call while the
+the cards a target is still missing, run as a background model call while the
 page polls (a spinner shows it working); **Remove** clears a target, and the
 topology row adds or drops named ones. A guidance box feeds the same `--with`
 steer as the command line. It writes the same `augment.json` review reads, so
@@ -59,13 +59,13 @@ All [answer modes](04-review-modes.md) work in the browser — flip, line (it
 auto-scrolls to the newest line), typing/fuzzy (each line marked ✓/✗ with the
 correct answer shown), and choice (tap an option). Controls are big tap targets and
 follow *your* configured key bindings (the page reads them from the server). The
-**☰ menu** is context-aware: during review it holds **Ask Claude**; on the
+**☰ menu** is context-aware: during review it holds **Ask Tutor**; on the
 deck picker, **keyboard shortcuts**, **refresh decks**, and **about** — with
 **Theme…** and **Draw answers** (a per-device toggle, see below) in both.
 
-The AI features come along too: the [ask-Claude tutor](10-ask-claude.md), the
+The AI features come along too: the [tutor](10-tutor.md), the
 [AI exam](12-the-ai-exam.md), and [trace walks](13-trace-decks.md) all have a web
-surface, each running its Claude call on a background thread while the page polls —
+surface, each running its model call on a background thread while the page polls —
 so the single-threaded server never blocks.
 
 ## Draw input
@@ -97,6 +97,6 @@ server hosts, so every screen — review, browse, and trace walks — themes tog
 The server is deliberately local-only — no accounts, no database. By default it
 binds to `127.0.0.1` (this machine only). `--lan` binds all interfaces so another
 device on your network can reach it at `http://<your-ip>:<port>`, but there's **no
-authentication**, and AI requests run `claude` on the host — so only use `--lan` on
+authentication**, and AI requests run the model CLI on the host — so only use `--lan` on
 a network you trust. The default port lives in the `[serve]` config section;
 `--port` overrides it.

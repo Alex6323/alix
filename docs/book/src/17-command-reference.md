@@ -47,7 +47,7 @@ large. Pass `--yes` to skip the prompt in non-interactive scripts.
   `--grade`, `--map`, `--serve`).
 - `alix explore <source>` — an [ordered learning plan](14-explore.md) (`--goal`,
   `--into`, `--build`, `--walk`).
-- Ask-Claude — `?` in a session, `Ctrl-N` to save a note ([the tutor](10-ask-claude.md)).
+- Tutor — `?` in a session, `Ctrl-N` to save a note ([the tutor](10-tutor.md)).
 
 ## Config
 

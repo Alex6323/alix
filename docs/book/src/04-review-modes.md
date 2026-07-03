@@ -86,7 +86,7 @@ answer should cover. You optionally type an explanation, reveal the points, and
 grade yourself on whether you hit them. It's for cards aimed at *understanding*
 rather than recall. The typing is never checked — a self-graded mode can't verify
 your answer, so it doesn't pretend to; it's there to make you commit before you
-peek. `explain` pairs with the ask-Claude tutor and is the everyday, self-graded
+peek. `explain` pairs with the tutor and is the everyday, self-graded
 tier beneath the AI exam (a later chapter).
 
 ```

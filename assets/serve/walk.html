@@ -271,10 +271,10 @@ function stopAskPoll() { if (askPoll) { clearInterval(askPoll); askPoll = null; 
 function fillAskLog(log) {
   log.innerHTML = "";
   for (const ex of askData.transcript) { log.appendChild(el("div", "ask-q", ex.q)); log.appendChild(el("div", "ask-a", ex.a)); }
-  if (askData.thinking) log.appendChild(el("div", "ask-thinking", "Claude is thinking…"));
+  if (askData.thinking) log.appendChild(el("div", "ask-thinking", "Thinking…"));
   if (askData.status) log.appendChild(el("div", "ask-status", askData.status));
   if (askData.error) log.appendChild(el("div", "ask-error", askData.error));
-  if (!askData.transcript.length && !askData.thinking && !askData.status && !askData.error) log.appendChild(el("div", "ask-hint", "Ask Claude about this step."));
+  if (!askData.transcript.length && !askData.thinking && !askData.status && !askData.error) log.appendChild(el("div", "ask-hint", "Ask the tutor about this step."));
   const sc = log.closest(".ask-scroll") || log;
   sc.scrollTop = sc.scrollHeight;
 }

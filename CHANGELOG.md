@@ -60,6 +60,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ephemeral (never persisted or sent to the server).
 
 ### Changed
+- **The tutor is now backend-agnostic ("Ask Tutor" / "Tutor").** The in-session
+  tutor was labelled "Ask Claude" in the UI and docs. It works with every
+  supported backend (Claude, Gemini, Codex, Copilot), so it is now called
+  "Tutor" throughout — in the ☰-menu button, the hint text, the README, and
+  the book. The `[ask]` config section name is unchanged (it was already
+  neutral).
 - **Breaking — `alix check` is now `alix deck check`.**  Deck validation moved
   under the `deck` noun-group for consistency with `alix deck generate`/`alix
   deck augment`. The command is identical; only the path changed: `alix check

@@ -1,7 +1,7 @@
 # 11 · Generating decks — `alix deck generate`
 
 Authoring cards by hand is the slow part of any flashcard habit. `alix deck
-generate` removes it: point it at a source and Claude drafts a deck of fact cards
+generate` removes it: point it at a source and the model drafts a deck of fact cards
 for you. (`alix deck` is now a command group — `generate` plus `augment`.)
 
 ```sh
@@ -15,7 +15,7 @@ kinds of source.
 
 ## What you get
 
-Claude reads the source and returns a deck spread across **four layers of
+The model reads the source and returns a deck spread across **four layers of
 understanding** — facts → concepts → application → connections — using cloze
 (`#?`) cards for terminology. The prompt has it draft, then re-read the whole set
 and merge or drop cards that test the same fact, so the deck doesn't repeat
@@ -25,7 +25,7 @@ write or shell command) and writes it to `~/decks/<slug>.txt`.
 How the source is recorded depends on its kind, and it matters later:
 
 - A **web page** is read with the `WebFetch` tool, and the deck opens with a
-  `% link:` line back to it — so the [ask-Claude tutor](10-ask-claude.md) can
+  `% link:` line back to it — so the [tutor](10-tutor.md) can
   consult the page on your cards.
 - A **local source** is explored read-only with `Read`/`Glob`/`Grep`, and the
   deck opens with a `% source:` line — so the **AI exam** can later grade your
@@ -42,7 +42,7 @@ alix deck generate <source> --review        # a 2nd pass that dedups and tighten
 alix deck generate <source> --print         # print to stdout instead of writing a file
 ```
 
-`--review` runs a **second** Claude call that takes the draft and returns a
+`--review` runs a **second** model call that takes the draft and returns a
 deduplicated, tightened version. It costs an extra call, but it's worth it when
 the source is repetitive. The prompt and limits — `model`, `timeout_secs`
 (default 300), `max_cards` (default 30), and an `extra` instruction field — live

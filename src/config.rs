@@ -902,7 +902,7 @@ pub fn default_config_toml() -> &'static str {
 # remove = ["ctrl-x"]           # mark the card for removal from the deck file
 # continue = ["enter", "space"] # leave the feedback screen
 # restart = ["r"]               # start a new session from the summary screen
-# ask = ["?"]                   # ask Claude about an answered card
+# ask = ["?"]                   # ask the tutor about an answered card
 # save_note = ["ctrl-n"]        # ask view: save a condensed note to the deck
 # quit = ["esc", "ctrl-c"]      # quit the session
 
@@ -926,8 +926,8 @@ pub fn default_config_toml() -> &'static str {
 # remove = ["x"]                # mark the card for removal from the deck file
 # quit = ["q", "esc", "ctrl-c"] # leave the browser
 
-# Settings for the ask-Claude integration. Questions are sent to the
-# command below (the Claude Code CLI) together with the card as context.
+# Settings for the tutor integration. Questions are sent to the
+# command below together with the card as context.
 [ask]
 # backend = "claude"            # AI CLI backend: claude | gemini | codex | copilot
 # command = "claude"            # executable to run
