@@ -682,7 +682,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   background thread while the page polls; `--port`/`--lan` work as in `review`.
   `alix trace <deck> --map`
   prints the path without quizzing; the generic AI exam refuses a trace (its
-  verification is the walk itself). See `docs/examples/keypress-to-grade.txt`.
+  verification is the walk itself). See `docs/examples/rust-ownership/ownership-move.txt`.
   **`alix trace --build <deck>`** discovers the path for you: declare just the
   `% trace:` and `% source:`, and Claude explores the source (read-only
   `Read`/`Glob`/`Grep`, with the source root as its working directory — no write

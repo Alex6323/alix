@@ -23,18 +23,20 @@ open *predict* prompt and the key points a good prediction should hit — plus a
 `% at:` locator pointing at the real lines in the source:
 
 ```
-% trace: how grading a card in the browser becomes a saved grade
-% source: ..
+% trace: how `let s2 = s1` moves a String and avoids a double free
+% source: .
 
-# You press Got it. What does the page send the server — and what does it not?
-    grade(g) POSTs to /api/grade with a body of just { grade: g } — no card id.
-    % at: assets/serve/review.html:594
-    ! The page is a thin view; it doesn't even track card identity.
+# You write `let s2 = s1`. What gets copied onto the stack, and what stays shared?
+    Only the stack data — pointer, length, capacity — is copied.
+    So s1 and s2 point at the *same* heap allocation.
+    % at: src/ch04-01-what-is-ownership.md:290-297
+    ! The heap contents themselves are never copied here.
 
-# So the request has no card id. How does the server know which card you graded?
-    The handler grabs the live, server-side review session and grades on it.
-    % at: src/serve.rs:1580-1587
-    ! State lives server-side; the page only ever names the grade.
+# So s1 and s2 point at one heap allocation. What breaks when both go out of scope, and how does Rust stop it?
+    Both would call drop on that memory — a double free.
+    Rust treats the assignment as a move: s1 is invalidated, so only s2 frees it.
+    % at: src/ch04-01-what-is-ownership.md:322-343
+    ! Using s1 after the move is a compile-time error.
 ```
 
 The `% at:` locator is a single contiguous range `file:start-end` (or just line
@@ -88,8 +90,8 @@ source — so this hands that judgment to Claude.
 ## Write it as a chain, not a quiz
 
 A trace's whole value is that it's a *path*: each checkpoint picks up where the
-last *reveal* left off (notice how hop 2 above opens with hop 1's conclusion, "the
-request has no card id"), so you follow one thread — a data flow, a control flow, a
+last *reveal* left off (notice how hop 2 above opens with hop 1's conclusion, "s1
+and s2 point at one heap allocation"), so you follow one thread — a data flow, a control flow, a
 derivation — to an outcome. If the checkpoints are independent facts hanging off
 one thing, you've written a *set*, which is what cards and the exam already do;
 choose a subject with a real sequence instead.
@@ -97,7 +99,7 @@ choose a subject with a real sequence instead.
 ## Walking it
 
 ```sh
-alix trace docs/examples/keypress-to-grade.txt
+alix trace docs/examples/rust-ownership/ownership-move.txt
 ```
 
 goes hop by hop:
@@ -173,5 +175,5 @@ snippet — and, via the `% origin:` they were frozen with, warns when the live
 source has **drifted** from the frozen excerpt.)
 
 A trace deck degrades gracefully — even without `alix trace` it's a valid deck of
-`explain` cards. See `docs/examples/keypress-to-grade.txt` for a complete trace over
-this repo's own source.
+`explain` cards. See `docs/examples/rust-ownership/ownership-move.txt` for a complete
+trace — a frozen snapshot over The Rust Book's ownership chapter, so it walks offline.

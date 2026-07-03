@@ -14,8 +14,9 @@
 use std::{path::Path, process::Command};
 
 #[test]
-fn keypress_to_grade_example_still_checks() {
-    let deck = Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/examples/keypress-to-grade.txt");
+fn rust_ownership_example_still_checks() {
+    let deck = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("docs/examples/rust-ownership/ownership-move.txt");
     let status = Command::new(env!("CARGO_BIN_EXE_alix"))
         .arg("check")
         .arg(&deck)
