@@ -306,7 +306,11 @@ fn build_queue(
     }
 
     // Order due cards by their FSRS due time, earliest first.
-    due.sort_by_key(|&i| store.get(cards[i].id()).map_or(u64::MAX, |s| scheduler.due_at(s)));
+    due.sort_by_key(|&i| {
+        store
+            .get(cards[i].id())
+            .map_or(u64::MAX, |s| scheduler.due_at(s))
+    });
 
     let mut fresh: Vec<usize> = fresh.into_iter().take(options.max_new).collect();
 
@@ -544,13 +548,7 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
         let id = all[0].id();
-        let mut session = Session::new(
-            all,
-            &store,
-            sched(),
-            SessionOptions::default(),
-            1000,
-        );
+        let mut session = Session::new(all, &store, sched(), SessionOptions::default(), 1000);
         assert!(session.current_unseen(&store)); // a fresh card is acquired, not quizzed
 
         session.acquire_current(&mut store, 1000);
@@ -567,13 +565,7 @@ mod tests {
     #[test]
     fn acquired_cards_are_not_due_until_the_relearn_cooldown() {
         let (mut store, _dir) = empty_store();
-        let mut session = Session::new(
-            cards(1),
-            &store,
-            sched(),
-            SessionOptions::default(),
-            1000,
-        );
+        let mut session = Session::new(cards(1), &store, sched(), SessionOptions::default(), 1000);
         session.acquire_current(&mut store, 1000);
 
         // Just acquired: a restart right away finds nothing due (the 5-min gap),
@@ -591,13 +583,7 @@ mod tests {
         let id = all[0].id();
         store.get_or_insert(id, 0); // already seen, stage 1
         let now = 5 * 60 * 1000; // past the relearn cooldown, so it is due
-        let mut session = Session::new(
-            all,
-            &store,
-            sched(),
-            SessionOptions::default(),
-            now,
-        );
+        let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
         assert_eq!(1, session.remaining());
 
         session.grade(&mut store, Grade::Fail, now);
@@ -726,13 +712,7 @@ mod tests {
     #[test]
     fn failed_card_is_requeued_until_passed() {
         let (mut store, _dir) = empty_store();
-        let mut session = Session::new(
-            cards(2),
-            &store,
-            sched(),
-            SessionOptions::default(),
-            1000,
-        );
+        let mut session = Session::new(cards(2), &store, sched(), SessionOptions::default(), 1000);
         assert_eq!(2, session.remaining());
 
         let first = session.current().unwrap().front.clone();
@@ -768,13 +748,7 @@ mod tests {
     #[test]
     fn skip_rotates_queue() {
         let (mut store, _dir) = empty_store();
-        let mut session = Session::new(
-            cards(2),
-            &store,
-            sched(),
-            SessionOptions::default(),
-            1000,
-        );
+        let mut session = Session::new(cards(2), &store, sched(), SessionOptions::default(), 1000);
         let first = session.current().unwrap().front.clone();
         session.skip();
         assert_ne!(first, session.current().unwrap().front);
@@ -789,13 +763,7 @@ mod tests {
     #[test]
     fn remove_current_drops_card_without_grading() {
         let (mut store, _dir) = empty_store();
-        let mut session = Session::new(
-            cards(2),
-            &store,
-            sched(),
-            SessionOptions::default(),
-            1000,
-        );
+        let mut session = Session::new(cards(2), &store, sched(), SessionOptions::default(), 1000);
         let removed = session.remove_current();
         assert_eq!(1, removed.len());
         assert_eq!(1, session.remaining());
@@ -816,13 +784,7 @@ mod tests {
         ];
         all[0].back = vec!["hole a".into()];
         all[1].back = vec!["hole b".into()];
-        let mut session = Session::new(
-            all,
-            &store,
-            sched(),
-            SessionOptions::default(),
-            0,
-        );
+        let mut session = Session::new(all, &store, sched(), SessionOptions::default(), 0);
         assert_eq!(3, session.remaining());
         // Removing one sub-card removes its sibling too, leaving only card 2.
         let removed = session.remove_current();
@@ -847,13 +809,7 @@ mod tests {
                 all.push(c);
             }
         }
-        let mut session = Session::new(
-            all,
-            &store,
-            sched(),
-            SessionOptions::default(),
-            0,
-        );
+        let mut session = Session::new(all, &store, sched(), SessionOptions::default(), 0);
 
         let mut fronts = Vec::new();
         for _ in 0..session.remaining() {
@@ -880,13 +836,7 @@ mod tests {
             c.back = vec![format!("answer {hole}")];
             all.push(c);
         }
-        let session = Session::new(
-            all,
-            &store,
-            sched(),
-            SessionOptions::default(),
-            0,
-        );
+        let session = Session::new(all, &store, sched(), SessionOptions::default(), 0);
         assert_eq!(3, session.initial_size);
     }
 
@@ -919,13 +869,7 @@ mod tests {
     #[test]
     fn restart_with_nothing_due_returns_false_and_keeps_stats() {
         let (mut store, _dir) = empty_store();
-        let mut session = Session::new(
-            cards(1),
-            &store,
-            sched(),
-            SessionOptions::default(),
-            1000,
-        );
+        let mut session = Session::new(cards(1), &store, sched(), SessionOptions::default(), 1000);
         session.grade(&mut store, Grade::Pass, 1000);
         assert!(session.is_finished());
 
@@ -939,13 +883,7 @@ mod tests {
     #[test]
     fn has_due_now_tracks_what_restart_would_find() {
         let (mut store, _dir) = empty_store();
-        let mut session = Session::new(
-            cards(1),
-            &store,
-            sched(),
-            SessionOptions::default(),
-            1000,
-        );
+        let mut session = Session::new(cards(1), &store, sched(), SessionOptions::default(), 1000);
         // A new card is available before it is seen.
         assert!(session.has_due_now(&store, 1000));
         session.grade(&mut store, Grade::Pass, 1000);
@@ -965,7 +903,9 @@ mod tests {
         assert_eq!(None, session.next_due_at(&store)); // nothing seen yet
         session.grade(&mut store, Grade::Pass, 1000);
         // A first Good enters an FSRS learning step, due some time out (sub-day).
-        let due = session.next_due_at(&store).expect("a seen card has a due time");
+        let due = session
+            .next_due_at(&store)
+            .expect("a seen card has a due time");
         assert!(due > 1000 && due < 1000 + 86_400_000, "due {due}");
     }
 
@@ -982,7 +922,10 @@ mod tests {
 
     /// An FSRS state whose interval sits at the retirement cap.
     fn retired_fsrs() -> crate::store::FsrsState {
-        crate::store::FsrsState { scheduled_days: DEFAULT_RETIRE_AFTER_DAYS, ..Default::default() }
+        crate::store::FsrsState {
+            scheduled_days: DEFAULT_RETIRE_AFTER_DAYS,
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -1034,7 +977,13 @@ mod tests {
         let one = std::slice::from_ref(&c);
         let cap = Some(DEFAULT_RETIRE_AFTER_DAYS);
         assert!(!has_reviewable(one, &store, sched.as_ref(), now, cap));
-        assert!(has_reviewable(one, &store, sched.as_ref(), now + 3_600_000, cap));
+        assert!(has_reviewable(
+            one,
+            &store,
+            sched.as_ref(),
+            now + 3_600_000,
+            cap
+        ));
 
         // A retired card (FSRS interval past the cap) never counts, even past due.
         store.get_or_insert(c.id(), now).fsrs = Some(retired_fsrs());
@@ -1090,7 +1039,10 @@ mod tests {
             all.clone(),
             &store,
             sched(),
-            SessionOptions { cram: true, ..Default::default() },
+            SessionOptions {
+                cram: true,
+                ..Default::default()
+            },
             10_000,
         );
         session.grade(&mut store, Grade::Pass, 10_000);
@@ -1119,7 +1071,10 @@ mod tests {
             all.clone(),
             &store,
             sched(),
-            SessionOptions { cram: true, ..Default::default() },
+            SessionOptions {
+                cram: true,
+                ..Default::default()
+            },
             10_000,
         );
         session.grade(&mut store, Grade::Fail, 10_000);
@@ -1146,7 +1101,10 @@ mod tests {
             all.clone(),
             &store,
             sched(),
-            SessionOptions { cram: true, ..Default::default() },
+            SessionOptions {
+                cram: true,
+                ..Default::default()
+            },
             10_000,
         );
         session.grade(&mut store, Grade::Fail, 10_000); // miss → one real lapse, re-queued

@@ -888,16 +888,7 @@ preamble ignored
                 .to_string(),
         );
 
-        let report = materialize(
-            SAMPLE_PLAN,
-            &dir,
-            "g",
-            None,
-            ".",
-            false,
-            Some(&filled),
-        )
-        .unwrap();
+        let report = materialize(SAMPLE_PLAN, &dir, "g", None, ".", false, Some(&filled)).unwrap();
         assert_eq!(1, report.filled); // only item 2 was filled
 
         // item 2 (a trace) keeps its header AND carries the filled checkpoint

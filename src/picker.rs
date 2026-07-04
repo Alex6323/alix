@@ -738,8 +738,14 @@ fn navigate(
     // member just launched, so the selection doesn't jump (the user can then step
     // down to its dependent).
     if let Some(ws) = start_in {
-        let mut sub =
-            workspace_picker(ws, decks_dir, enforce_locks, gate_reviewable, &top.keys, review)?;
+        let mut sub = workspace_picker(
+            ws,
+            decks_dir,
+            enforce_locks,
+            gate_reviewable,
+            &top.keys,
+            review,
+        )?;
         if let Some(f) = focus {
             sub.focus_key(f);
         }

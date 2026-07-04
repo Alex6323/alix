@@ -1454,8 +1454,14 @@ pub fn run_review(
             (Method::Get, "/api/ask-info") => respond_json(request, &ask_info),
             (Method::Get, "/api/decks") => {
                 // Review enforces locking; the picker won't start a locked deck.
-                let catalog =
-                    deck_catalog(&decks_dir, &recent, &store, true, &mut launcher_icons, review_cfg);
+                let catalog = deck_catalog(
+                    &decks_dir,
+                    &recent,
+                    &store,
+                    true,
+                    &mut launcher_icons,
+                    review_cfg,
+                );
                 respond_json(request, &catalog)
             }
             // Image cards: served from whichever session is live (review or browse).
@@ -2838,9 +2844,13 @@ fn workspace_members(
         .map(|p| {
             let deck = Deck::load(p).ok();
             let status = match (store.as_ref(), deck.as_ref()) {
-                (Some(st), Some(d)) => {
-                    Some(picker::deck_status(d, st, Some(decks_dir), with_lock, review))
-                }
+                (Some(st), Some(d)) => Some(picker::deck_status(
+                    d,
+                    st,
+                    Some(decks_dir),
+                    with_lock,
+                    review,
+                )),
                 _ => None,
             };
             let has_topology = match (augment.as_ref(), deck.as_ref()) {
@@ -2994,7 +3004,9 @@ fn deck_catalog(
         if e.path.parent().is_some_and(crate::workspace::is_workspace) {
             continue;
         }
-        recent_decks.push(deck_item_dto(&e, store, decks_dir, with_lock, &augment, review));
+        recent_decks.push(deck_item_dto(
+            &e, store, decks_dir, with_lock, &augment, review,
+        ));
     }
     DeckListDto {
         workspaces,
@@ -3082,7 +3094,9 @@ fn deck_topology_dto(
     let deck_due = deck
         .cards
         .iter()
-        .filter(|c| crate::session::is_reviewable(c, store, &scheduler, now, review.retire_after_days))
+        .filter(|c| {
+            crate::session::is_reviewable(c, store, &scheduler, now, review.retire_after_days)
+        })
         .count();
     let topologies = augment
         .topologies_for(&deck_ids)

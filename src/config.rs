@@ -1183,7 +1183,11 @@ mod tests {
     #[test]
     fn for_workspace_keeps_base_for_unset_keys() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("alix.local.toml"), "[review]\nretention = 0.85\n").unwrap();
+        std::fs::write(
+            dir.path().join("alix.local.toml"),
+            "[review]\nretention = 0.85\n",
+        )
+        .unwrap();
         let base = ReviewConfig {
             retention: 0.9,
             retire_after_days: Some(30),

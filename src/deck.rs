@@ -291,10 +291,7 @@ impl Deck {
         }
         // The graduation gate: every card has reached FSRS `Review` (past the initial
         // learning steps), so the exam opens well before a card's year-long retirement.
-        let gated = self
-            .cards
-            .iter()
-            .all(|c| session::has_graduated(c, store));
+        let gated = self.cards.iter().all(|c| session::has_graduated(c, store));
         if gated {
             // Drilled enough but not yet mastered: a deck with an exam (a sourced
             // fact deck, or a trace — whose exam is its graded compression) is
@@ -947,7 +944,11 @@ mod tests {
     #[test]
     fn a_sourced_deck_is_examdue_once_every_card_graduates() {
         let dir = tempfile::tempdir().unwrap();
-        let path = write_deck(dir.path(), "d.txt", "% source: https://x\n# a\n\t1\n# b\n\t2\n");
+        let path = write_deck(
+            dir.path(),
+            "d.txt",
+            "% source: https://x\n# a\n\t1\n# b\n\t2\n",
+        );
         let deck = Deck::load(&path).unwrap();
         let (mut store, _s) = empty_store();
 

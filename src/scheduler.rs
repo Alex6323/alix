@@ -314,7 +314,10 @@ mod tests {
         let f = s.fsrs.expect("fsrs state set");
         assert_eq!(1, f.state, "a first Good enters Learning, not Review");
         let due = sched.due_at(&s);
-        assert!(due > 0 && due < DAY_MS, "learning step is sub-day (got {due} ms)");
+        assert!(
+            due > 0 && due < DAY_MS,
+            "learning step is sub-day (got {due} ms)"
+        );
     }
 
     #[test]
@@ -326,7 +329,11 @@ mod tests {
         sched.apply(&mut s, Grade::Pass, 0);
         let step_due = sched.due_at(&s);
         sched.apply(&mut s, Grade::Pass, step_due);
-        assert_eq!(2, s.fsrs.expect("fsrs state").state, "second Good reaches Review");
+        assert_eq!(
+            2,
+            s.fsrs.expect("fsrs state").state,
+            "second Good reaches Review"
+        );
         assert!(
             sched.due_at(&s) - step_due >= DAY_MS,
             "a graduated card is scheduled at least a day out"

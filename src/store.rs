@@ -81,7 +81,8 @@ impl FsrsState {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct CardState {
     /// Legacy Leitner stage (1..=5). No longer live scheduling state under FSRS — retained as an
-    /// acquire marker and for the one-time lazy-derive that seeds FSRS from a pre-FSRS card's stage.
+    /// acquire marker and for the one-time lazy-derive that seeds FSRS from a pre-FSRS card's
+    /// stage.
     pub stage: u8,
     /// When the card entered its current stage (Unix ms).
     pub stage_entered_ms: u64,
