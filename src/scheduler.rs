@@ -54,10 +54,12 @@ pub fn keypoint_grade(covered: usize, total: usize) -> Grade {
 /// Which scheduling algorithm to use.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
 pub enum SchedulerKind {
-    /// A 6-stage Leitner box (cooldowns 5m / 1h / 6h / 24h / 1w).
+    /// FSRS (via `rs-fsrs`) — the default, and going forward the only scheduler.
     #[default]
+    Fsrs,
+    /// A 6-stage Leitner box (cooldowns 5m / 1h / 6h / 24h / 1w). Retiring.
     Leitner,
-    /// SuperMemo-2 style intervals with per-card ease factors.
+    /// SuperMemo-2 style intervals with per-card ease factors. Retiring.
     Sm2,
 }
 
@@ -79,6 +81,7 @@ impl SchedulerKind {
     /// Returns the scheduler implementation for this kind.
     pub fn scheduler(self) -> Box<dyn Scheduler> {
         match self {
+            SchedulerKind::Fsrs => Box::new(Fsrs::default()),
             SchedulerKind::Leitner => Box::new(Leitner),
             SchedulerKind::Sm2 => Box::new(Sm2),
         }

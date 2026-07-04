@@ -323,7 +323,7 @@ fn build_queue(
                 (std::cmp::Reverse(state.stage), state.stage_entered_ms)
             });
         }
-        SchedulerKind::Sm2 => {
+        SchedulerKind::Sm2 | SchedulerKind::Fsrs => {
             due.sort_by_key(|&i| {
                 let state = store.get(cards[i].id()).unwrap();
                 scheduler.due_at(state)
@@ -400,21 +400,26 @@ fn separate_siblings(order: Vec<usize>, cards: &[Card]) -> VecDeque<usize> {
     queue
 }
 
-/// Whether a card is *retired* (resting): it has reached the top Leitner stage
-/// ([`MAX_STAGE`]) by passing, so it is no longer scheduled until `alix reset`.
-/// The `streak >= 1` guard ignores a card sitting on the top stage without a
-/// passing streak. Unseen cards are never retired.
+/// Retirement cap: an FSRS card retires once its scheduled interval reaches this many
+/// days (a very stable card rests until `alix reset`). Default for now — per-user
+/// `retire_after` config is a follow-up.
+const RETIRE_AFTER_DAYS: u32 = 365;
+
+/// Whether a card is *retired* (resting), so it is no longer scheduled until
+/// `alix reset`. Under FSRS: its interval has grown past [`RETIRE_AFTER_DAYS`].
+/// Legacy (pre-FSRS) cards fall back to "reached the top Leitner stage by passing".
+/// Unseen cards are never retired.
 pub fn is_retired(card: &Card, store: &Store) -> bool {
     is_retired_id(card.id(), store)
 }
 
-/// Whether the card with `card_id` is retired — at the top stage with a streak.
-/// Lets callers that hold an id but not the [`Card`] (e.g. a trace checkpoint)
-/// share the one retirement rule.
+/// Id-only variant of [`is_retired`], so callers that hold an id but not the
+/// [`Card`] (e.g. a trace checkpoint) share the one retirement rule.
 pub fn is_retired_id(card_id: u64, store: &Store) -> bool {
-    store
-        .get(card_id)
-        .is_some_and(|s| s.stage >= MAX_STAGE && s.streak >= 1)
+    store.get(card_id).is_some_and(|s| match &s.fsrs {
+        Some(f) => f.scheduled_days >= RETIRE_AFTER_DAYS,
+        None => s.stage >= MAX_STAGE && s.streak >= 1,
+    })
 }
 
 /// Each card's normalized Leitner stage (`0.0..=1.0`, unseen = 0, top-stage = 1)
