@@ -111,20 +111,16 @@ impl DeckFiles {
 }
 
 const REVIEW_HTML: &str = include_str!("../assets/serve/review.html");
-const WALK_HTML: &str = include_str!("../assets/serve/walk.html");
 const THEME_CSS: &str = include_str!("../assets/serve/theme.css");
 const THEME_JS: &str = include_str!("../assets/serve/theme.js");
 const ALIX_LOGO_JS: &str = include_str!("../assets/serve/alix-logo.js");
 const HEAD_HTML: &str = include_str!("../assets/serve/_head.html");
 const BRAND_HTML: &str = include_str!("../assets/serve/_brand.html");
 
-/// The served pages with their shared-chrome placeholders filled once, so the head
-/// boilerplate (`<!--%head%-->`) and brand mark (`<!--%brand%-->`) live in one
-/// place instead of being duplicated across review.html and walk.html.
+/// The review page with its shared-chrome placeholders filled once, so the head
+/// boilerplate (`<!--%head%-->`) and brand mark (`<!--%brand%-->`) live in one place.
 static REVIEW_PAGE: std::sync::LazyLock<String> =
     std::sync::LazyLock::new(|| compose_page(REVIEW_HTML));
-static WALK_PAGE: std::sync::LazyLock<String> =
-    std::sync::LazyLock::new(|| compose_page(WALK_HTML));
 
 /// Fill the shared-chrome placeholders in a served page.
 fn compose_page(html: &str) -> String {
@@ -589,13 +585,6 @@ pub struct SessionBuild {
 pub struct WalkBuild {
     pub walk: Walk,
     pub scheduler: SchedulerKind,
-}
-
-/// The `/api/select` reply when a trace was picked: tells the page to navigate to
-/// the walk view (the review server hosts `walk.html` at `/walk`).
-#[derive(Debug, Serialize)]
-struct WalkRedirect {
-    redirect: &'static str,
 }
 
 /// A browse card list ready to serve, with its label and deck paths.
@@ -1416,8 +1405,8 @@ pub fn run_review(
     let mut examining: Option<Examining> = None;
     // The picker's "Augment" action opens a deck's augmentation screen here.
     let mut augmenting: Option<Augmenting> = None;
-    // A trace picked from the selection screen walks here (the page navigates to
-    // `/walk`, which this server hosts alongside review).
+    // A trace picked from the selection screen walks in-page inside review.html
+    // (no navigation to a separate `/walk` page — the walk is an in-page mode).
     let mut walking: Option<Walking> = None;
     // `browsing` (seeded above for a `--serve` browse launch) is also entered
     // from the picker's "Browse" action (POST /api/browse) — in-page, no page nav.
@@ -1439,7 +1428,6 @@ pub fn run_review(
         }
         match (&method, path.as_str()) {
             (Method::Get, "/") => respond_html(request, &REVIEW_PAGE),
-            (Method::Get, "/walk") => respond_html(request, &WALK_PAGE),
             (Method::Get, "/theme.css") => {
                 respond_asset(request, THEME_CSS, "text/css; charset=utf-8")
             }
@@ -1506,10 +1494,12 @@ pub fn run_review(
                         }
                         match build_walk(&paths) {
                             Ok(Some(wb)) => {
-                                walking = Some(Walking::new(wb.walk, wb.scheduler, None));
+                                let w = Walking::new(wb.walk, wb.scheduler, None);
+                                let dto = walk_dto(&w);
+                                walking = Some(w);
                                 reviewing = None;
                                 examining = None;
-                                respond_json(request, &WalkRedirect { redirect: "/walk" });
+                                respond_json(request, &dto);
                             }
                             Ok(None) => match build(
                                 paths,

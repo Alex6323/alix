@@ -482,6 +482,52 @@
   @media (prefers-reduced-motion: reduce) {
     .stack, .summary, .reveal, .exam-elapsed .dot { animation: none; }
   }
+
+  /* ── trace-walk (in-page mode) ──────────────────────────────────────
+     The card shell and chip/legend/score come from the review styles above.
+     Only walk-unique pieces live here: the excerpt panel, key-points list,
+     prediction block, compose box, and done-summary extras. */
+  .walk-eyebrow { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--bolt); }
+  /* givens: off-screen symbols the question leans on */
+  .givens { display: flex; flex-wrap: wrap; gap: 6px; }
+  .given { font-family: var(--mono); font-size: 0.76rem; color: var(--bolt-hi); background: rgba(34,211,238,0.07); border: 1px solid rgba(34,211,238,0.2); border-radius: 7px; padding: 3px 9px; }
+  /* the committed prediction recalled on the question side at reveal */
+  .predicted { border-left: 3px solid var(--dim); padding: 2px 0 2px 12px; }
+  .predicted .wlbl { display: block; margin-bottom: 4px; }
+  .predicted p { margin: 0; color: var(--ink); opacity: 0.8; line-height: 1.45; white-space: pre-wrap; }
+  .predicted.empty p { font-style: italic; opacity: 0.5; }
+  /* shared small label used in walk regions */
+  .wlbl { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); }
+  /* the reveal: the real source (the oracle), in an editor-style excerpt */
+  .reveal-head { display: flex; align-items: baseline; gap: 10px; }
+  .reveal-head .wlbl { color: var(--bolt); }
+  .reveal-head .at { font-family: var(--mono); font-size: 0.74rem; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* walk excerpt: distinct from the fact-card citation excerpt (.excerpt/.exline/.lno) */
+  .wexcerpt { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: rgba(0,0,0,0.25); }
+  .wexcerpt .wfile { font-family: var(--mono); font-size: 0.7rem; color: var(--dim); padding: 7px 13px; border-bottom: 1px solid var(--line); background: rgba(0,0,0,0.25); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .wcode { margin: 0; padding: 9px 0; overflow-x: auto; }
+  .wln { display: flex; font-family: var(--mono); font-size: 0.8rem; line-height: 1.55; }
+  .wln .wn { flex: none; width: 3.2em; padding-right: 13px; text-align: right; color: var(--dim); opacity: 0.55; user-select: none; }
+  .wln .wt { white-space: pre; color: #cfe7ea; padding-right: 16px; }
+  .wtrunc { font-family: var(--mono); font-size: 0.7rem; color: var(--dim); padding: 5px 13px 0; }
+  .excerpt-miss { color: var(--dim); font-size: 0.86rem; font-style: italic; padding: 13px 15px; border: 1px dashed var(--line); border-radius: 12px; }
+  /* key points the revealed truth makes */
+  .wpoints { margin: 0; padding: 0; list-style: none; }
+  .wpoints .wlbl { display: block; color: var(--good); margin-bottom: 6px; }
+  .wpoints li.wpt { position: relative; padding: 4px 0 4px 20px; color: var(--ink); line-height: 1.45; }
+  .wpoints li.wpt::before { content: "▸"; position: absolute; left: 0; color: var(--good); }
+  /* the predict / compress text box fills the answer region */
+  .wcompose { height: 100%; display: flex; flex-direction: column; gap: 10px; }
+  .wfield { flex: 1 1 auto; width: 100%; resize: none; min-height: 120px; padding: 14px 16px; border-radius: 13px; border: 1px solid var(--line); background: rgba(0,0,0,0.25); color: var(--ink); font: 1.02rem/1.5 var(--sans); outline: none; }
+  .wfield:focus { border-color: var(--bolt); box-shadow: 0 0 0 3px rgba(34,211,238,0.12); }
+  .wlede { flex: none; color: var(--dim); font-size: 0.9rem; line-height: 1.5; }
+  /* walk's done summary compression block */
+  .summary .compression { margin-top: 18px; border-left: 3px solid var(--bolt); padding: 4px 0 4px 14px; }
+  .summary .compression .wlbl { display: block; color: var(--bolt); margin-bottom: 6px; }
+  .summary .compression p { margin: 0; line-height: 1.55; white-space: pre-wrap; color: var(--ink); }
+  /* leave-confirmation message, colored for the walk context */
+  .leave-walk-msg { color: var(--dim); font-size: 0.9rem; margin-right: auto; }
+
   /* Pairing-token gate (shown on a 401 under `serve --lan`). */
   #tokengate[hidden] { display: none; }
   #tokengate .sheet-panel { display: grid; gap: 13px; }
@@ -542,8 +588,8 @@
 <script>
 "use strict";
 // Pairing token (alix serve --lan): capture ?token= once, keep it in
-// sessionStorage (it survives the /walk navigation, which drops the query), and
-// attach it to every /api request. Missing/invalid token → a 401 opens the gate.
+// sessionStorage and attach it to every /api request.
+// Missing/invalid token → a 401 opens the gate.
 (function () {
   const q = new URLSearchParams(location.search).get("token");
   if (q) {
@@ -615,6 +661,8 @@ let examPoll = null;  // setInterval handle while an exam call is in flight
 let augmentData = null; // the AugmentDto while the Augment screen is open (null otherwise)
 let augmentPoll = null; // setInterval handle while a generation is in flight
 let browsing = null;  // {cards, label, i} while the read-only browse overlay is open
+let walkData = null;  // the WalkDto while an in-page trace walk is active (null otherwise)
+let walkConfirmingLeave = false; // showing the "leave the walk?" confirmation
 let KEYS = {};        // configured review key bindings, from /api/keys
 let PK = {};          // configured deck-picker nav keys, from /api/picker-keys
 let BK = { next: [{ k: "l", ctrl: false }], prev: [{ k: "h", ctrl: false }] }; // browse pager keys, from /api/browse-keys
@@ -653,10 +701,25 @@ function skip()    { api("/api/skip", post({})).then(apply); }
 function acquire() { api("/api/acquire", post({})).then(apply); }
 function remove()  { api("/api/remove", post({})).then(apply); }
 function restart() { api("/api/restart", post({})).then(apply); }
-// A trace picked from the picker walks: the server replies with a redirect to
-// the walk page (hosted at /walk) instead of a review session. The walk runs on
-// its own page, so stash the workspace we launched from to re-open it on return.
-function select(name, topology, region) { rememberLaunch(name); api("/api/select", post({ deck: name, topology: topology || null, region: region || null })).then(s => { if (s && s.redirect) { if (lastWorkspace) sessionStorage.setItem("alix.returnWs", lastWorkspace); sessionStorage.setItem("alix.walkName", name || ""); location.href = s.redirect; return; } apply(s); }); }
+// A trace picked from the picker returns a WalkDto (phase predict/reveal/done); a fact
+// deck returns a review StateDto (phase select/review). `isWalk` is the single place the
+// two responses are told apart.
+function isWalk(s) {
+  return !!s && ["predict", "reveal", "done"].includes(s.phase);
+}
+
+function select(name, topology, region) {
+  rememberLaunch(name);
+  api("/api/select", post({ deck: name, topology: topology || null, region: region || null })).then(s => {
+    if (isWalk(s)) {
+      walkData = s;
+      walkConfirmingLeave = false;
+      render();
+    } else {
+      apply(s);
+    }
+  });
+}
 // Remember the deck just launched so the picker re-lands the cursor on it when it
 // re-opens (the selection shouldn't move while the user is away). Survives both an
 // in-page return (review/exam/browse) and a page-reload return (walk).
@@ -754,6 +817,7 @@ function render() {
 
   if (examData) { renderExam(); return; }
   if (augmentData) { renderAugment(); return; }
+  if (walkData) { renderWalk(); return; }
   if (browsing) { renderBrowse(); return; }
   if (state.phase === "select") { renderSelect(); return; }
 
@@ -781,27 +845,35 @@ function isAnswered() {
 function openAsk() {
   asking = true;
   render(); // builds the panel once (entrance animation runs once)
-  api("/api/ask").then(d => { askData = d; if (asking) syncAsk(); }); // pick up any prior transcript
+  const ep = walkData ? "/api/walk/ask" : "/api/ask";
+  api(ep).then(d => { askData = d; if (asking) syncAsk(); }); // pick up any prior transcript
 }
 function closeAsk() {
   asking = false;
   stopAskPoll();
-  // A note saved during the chat now lives on the server's card; re-pull the
-  // state so it shows on return without a manual reload. Keep the reveal
-  // position (`revealed`/`feedback` are client-side and the card can't change
-  // while the modal ask panel is open), so we don't reset the card to its front.
-  api("/api/state").then(s => { state = s; render(); }).catch(render);
+  if (walkData) {
+    // Re-pull the walk state (a saved note may have landed on a checkpoint).
+    api("/api/walk").then(d => { walkData = d; render(); }).catch(render);
+  } else {
+    // A note saved during the chat now lives on the server's card; re-pull the
+    // state so it shows on return without a manual reload. Keep the reveal
+    // position (`revealed`/`feedback` are client-side and the card can't change
+    // while the modal ask panel is open), so we don't reset the card to its front.
+    api("/api/state").then(s => { state = s; render(); }).catch(render);
+  }
 }
 function sendAsk(text) {
   const q = (text || "").trim();
   if (!q || askData.thinking) return;
   const ta = document.querySelector(".ask-input");
   if (ta) ta.value = ""; // the textarea persists across syncAsk; clear the sent question
-  api("/api/ask", post({ question: q })).then(d => { askData = d; if (asking) syncAsk(); startAskPoll(); });
+  const ep = walkData ? "/api/walk/ask" : "/api/ask";
+  api(ep, post({ question: q })).then(d => { askData = d; if (asking) syncAsk(); startAskPoll(); });
 }
 function saveAskNote() {
   if (askData.thinking || !askData.transcript.length) return;
-  api("/api/ask/note", post({})).then(d => { askData = d; if (asking) syncAsk(); startAskPoll(); });
+  const ep = walkData ? "/api/walk/ask/note" : "/api/ask/note";
+  api(ep, post({})).then(d => { askData = d; if (asking) syncAsk(); startAskPoll(); });
 }
 // Loop the header logo while any Claude/server call is in flight — a calm loader
 // that complements the inline spinners; rest it otherwise.
@@ -830,7 +902,8 @@ function treeGuides(prefix) {
 function startAskPoll() {
   stopAskPoll();
   askPoll = setInterval(() => {
-    api("/api/ask").then(d => { askData = d; if (!d.thinking) stopAskPoll(); if (asking) syncAsk(); });
+    const ep = walkData ? "/api/walk/ask" : "/api/ask";
+    api(ep).then(d => { askData = d; if (!d.thinking) stopAskPoll(); if (asking) syncAsk(); });
   }, 400);
   updateBusy();
 }
@@ -847,7 +920,7 @@ function fillAskLog(log) {
   if (askData.status) log.appendChild(el("div", "ask-status", askData.status));
   if (askData.error) log.appendChild(el("div", "ask-error", askData.error));
   if (!askData.transcript.length && !askData.thinking && !askData.status && !askData.error)
-    log.appendChild(el("div", "ask-hint", "Ask the tutor about this card."));
+    log.appendChild(el("div", "ask-hint", walkData ? "Ask the tutor about this step." : "Ask the tutor about this card."));
   // Keep the newest exchange in view; the card + conversation scroll together
   // now (the card sticks), so scroll their shared container, not just the log.
   const sc = log.closest(".ask-scroll") || log;
@@ -871,23 +944,33 @@ function syncAsk() {
   if (send) send.disabled = askData.thinking;
 }
 
-function renderAsk() {
+// `subject` is optional: null = use the current review card; an object with
+// {q, items} = walk checkpoint header (prompt as q, key points as items).
+function renderAsk(subject) {
   const wrap = el("div", "ask");
   // Which model is answering (and its effort). The tutor uses the CLI default
   // unless `[ask]` pins one — not the stronger model that built the deck.
   wrap.appendChild(el("div", "ask-model", `claude · model: ${askInfo.model} · effort: ${askInfo.effort}`));
 
-  // The card and the conversation share one scroll region: the card under
-  // discussion (its front + answer) sticks to the top as a reference while
-  // Claude's conversation about it scrolls under it, answer below question.
+  // The card/checkpoint and the conversation share one scroll region: the subject
+  // sticks to the top as a reference while Claude's conversation scrolls under it.
   const scroll = el("div", "ask-scroll");
-  const c = state.card;
-  if (c) {
+  if (subject) {
+    // Walk: show the checkpoint prompt + key points.
     const ref = el("div", "ask-card");
-    ref.appendChild(el("div", "ask-card-q", c.front));
-    for (const ctx of c.context || []) ref.appendChild(el("div", "ask-card-ctx", ctx));
-    for (const b of c.back) ref.appendChild(el("div", "ask-card-a", b));
+    ref.appendChild(el("div", "ask-card-q", subject.q));
+    for (const item of subject.items || []) ref.appendChild(el("div", "ask-card-a", "▸ " + item));
     scroll.appendChild(ref);
+  } else {
+    // Review: show the current card's front + answer lines.
+    const c = state.card;
+    if (c) {
+      const ref = el("div", "ask-card");
+      ref.appendChild(el("div", "ask-card-q", c.front));
+      for (const ctx of c.context || []) ref.appendChild(el("div", "ask-card-ctx", ctx));
+      for (const b of c.back) ref.appendChild(el("div", "ask-card-a", b));
+      scroll.appendChild(ref);
+    }
   }
   const log = el("div", "ask-log");
   fillAskLog(log);
@@ -895,7 +978,7 @@ function renderAsk() {
   wrap.appendChild(scroll);
 
   const input = el("textarea", "ask-input");
-  input.placeholder = "Ask about this card… (Shift+Enter to send)";
+  input.placeholder = subject ? "Ask about this step… (Shift+Enter to send)" : "Ask about this card… (Shift+Enter to send)";
   input.rows = 2;
   input.disabled = askData.thinking;
   input.addEventListener("keydown", e => {
@@ -1770,18 +1853,47 @@ async function renderSelect() {
   if (reopen) renderDrill(reopen); else renderTop();
 }
 
+// Build the shared card scaffold: .stack > .card > (.region.q) + .divider +
+// (.region.a) + (optional .more-hint), appended to `stage`. Returns refs to
+// the empty nodes so callers can fill them without touching the DOM again.
+//   cardId    — set card.id (renderCard needs "card" for setNote lookups)
+//   ansId     — set a.id   (renderCard needs "ansRegion" for fillBottom)
+//   withNote  — adds "withnote" class to the answer region (caps it shorter)
+//   moreHint  — appends .more-hint for the overflow marker (browse omits it)
+//   leftAlign — sets textAlign:"left" on q and a (walk excerpt is always left)
+function buildCardShell({ depth, cardId = null, ansId = null, withNote = false, moreHint = true, leftAlign = false } = {}) {
+  const stack = el("div", "stack");
+  stack.dataset.depth = Math.min(3, Math.max(1, depth));
+  stack.appendChild(el("div", "peek p2"));
+  stack.appendChild(el("div", "peek p1"));
+  const card = el("div", "card");
+  if (cardId) card.id = cardId;
+  const q = el("div", "region q");
+  if (leftAlign) q.style.textAlign = "left";
+  card.appendChild(q);
+  card.appendChild(el("div", "divider"));
+  const a = el("div", "region a" + (withNote ? " withnote" : ""));
+  if (ansId) a.id = ansId;
+  if (leftAlign) a.style.textAlign = "left";
+  a.addEventListener("scroll", () => updateFade(a));
+  card.appendChild(a);
+  if (moreHint) card.appendChild(el("div", "more-hint"));
+  stack.appendChild(card);
+  stage.appendChild(stack);
+  return { stack, card, q, a };
+}
+
 function renderCard() {
   const c = state.card;
-  const deck = el("div", "stack");
-  deck.dataset.depth = Math.min(3, Math.max(1, state.remaining));
-  deck.appendChild(el("div", "peek p2"));
-  deck.appendChild(el("div", "peek p1"));
-
-  const card = el("div", "card");
-  card.id = "card";
+  const hasNote = c.note && c.note.length > 0;
+  const { q } = buildCardShell({
+    depth: state.remaining,
+    cardId: "card",
+    ansId: "ansRegion",
+    withNote: hasNote,
+  });
 
   // question region
-  const q = el("div", "region q");
   // Orientation breadcrumb: each region is its name (bold = where you are) over a
   // thin per-card heatmap bar — every card a cell, red (weak) → green (strong),
   // so the line doubles as a progress map that greens up as a region is learned.
@@ -1806,23 +1918,10 @@ function renderCard() {
   q.appendChild(el("div", "front-text", c.front));
   for (const ctx of c.context) q.appendChild(contextLine(ctx));
   if (c.img) q.appendChild(cardImage(c.img));
-  card.appendChild(q);
 
-  card.appendChild(el("div", "divider"));
-
-  // answer / options region (filled on reveal or answer). The note region and
-  // its divider are added only once the note is shown (see setNote); the answer
+  // The answer region (id="ansRegion") is filled by fillBottom(); the note region
+  // and its divider are added only once the note is shown (see setNote); the answer
   // is capped shorter only when the card has a note, to leave room for it.
-  const hasNote = c.note && c.note.length > 0;
-  const a = el("div", "region a" + (hasNote ? " withnote" : ""));
-  a.id = "ansRegion";
-  a.addEventListener("scroll", () => updateFade(a));
-  card.appendChild(a);
-  card.appendChild(el("div", "more-hint")); // overflow marker (shown by updateFade)
-
-  deck.appendChild(card);
-  stage.appendChild(deck);
-
   fillBottom();
   renderLegend();
 }
@@ -1838,23 +1937,18 @@ function renderBrowse() {
   scoreEl.innerHTML = `<span class="left">${browsing.i + 1} / ${browsing.cards.length}</span>`;
   menuWrap.style.display = "none";
   const c = browsing.cards[browsing.i];
+  const hasNote = c.note && c.note.length > 0;
 
-  const deck = el("div", "stack");
-  deck.dataset.depth = Math.min(3, Math.max(1, browsing.cards.length - browsing.i));
-  deck.appendChild(el("div", "peek p2"));
-  deck.appendChild(el("div", "peek p1"));
-  const card = el("div", "card");
+  const { card, q, a } = buildCardShell({
+    depth: browsing.cards.length - browsing.i,
+    withNote: hasNote,
+    moreHint: false, // browse has no overflow marker
+  });
 
-  const q = el("div", "region q");
   q.appendChild(el("div", "front-text", c.front));
   for (const ctx of c.context) q.appendChild(contextLine(ctx));
   if (c.img) q.appendChild(cardImage(c.img));
-  card.appendChild(q);
 
-  card.appendChild(el("div", "divider"));
-
-  const hasNote = c.note && c.note.length > 0;
-  const a = el("div", "region a" + (hasNote ? " withnote" : ""));
   // Match the review path: any multi-line answer is a left-aligned block (centered
   // as a whole); only a reshaped-list answer gets bullets.
   const sec = el("div", "reveal" + (leftAlignAnswer(c) ? " list" : ""));
@@ -1862,8 +1956,6 @@ function renderBrowse() {
   a.appendChild(sec);
   if (c.img_back) a.appendChild(cardImage(c.img_back));
   a.classList.add("has-body"); // browse always shows the full answer
-  a.addEventListener("scroll", () => updateFade(a));
-  card.appendChild(a);
 
   if (hasNote) {
     card.appendChild(el("div", "divider"));
@@ -1872,8 +1964,6 @@ function renderBrowse() {
     card.appendChild(n);
   }
 
-  deck.appendChild(card);
-  stage.appendChild(deck);
   updateFade(a); // content-aware placement: center a short answer, top-align a long one
 
   chip("Prev", "", () => browseGo(-1), label(BK.prev)).disabled = browsing.i === 0;
@@ -1963,10 +2053,11 @@ function onCiteClick() {
 
 // Show a soft fade on whichever edge of the answer region hides content,
 // instead of a scrollbar.
-// Count the source-excerpt lines (`.ln`) fully below the region's visible bottom,
-// so the marker can say how much more there is.
+// Count the source-excerpt lines (`.ln` for fact-card citations, `.wln` for walk
+// excerpts) fully below the region's visible bottom, so the marker can say how
+// much more there is.
 function hiddenLineCount(a) {
-  const lns = a.querySelectorAll(".ln");
+  const lns = a.querySelectorAll(".ln, .wln");
   if (!lns.length) return 0;
   const foldY = a.getBoundingClientRect().bottom;
   let n = 0;
@@ -2493,6 +2584,206 @@ function reveal() {
   renderLegend();
 }
 
+// ── Trace walk (in-page mode) ─────────────────────────────────────────────
+// A trace walk entered directly from the picker via /api/select (no page nav).
+// `walkData` holds the current WalkDto; `walkConfirmingLeave` flags the leave
+// confirmation. The card shell is the shared buildWalkCard() builder below, so
+// walk checkpoints render at the same size as fact cards.
+
+// The three self-grade deltas map onto review's failed/partly/passed keys.
+const WALK_DELTAS = [
+  { delta: "f", cls: "failed", label: "Missed it", keys: () => KEYS.failed },
+  { delta: "p", cls: "partly", label: "Partly",    keys: () => KEYS.partly },
+  { delta: "n", cls: "passed", label: "Got it",    keys: () => KEYS.passed },
+];
+
+function walkApply(d) { walkData = d; render(); }
+function walkPredict(text) { api("/api/walk/predict", post({ text })).then(walkApply); }
+function walkGrade(delta)  { api("/api/walk/grade",   post({ delta })).then(walkApply); }
+function walkRestart()     { api("/api/walk/restart",  post({})).then(walkApply); }
+// Capstone: leave the walk then open the trace's exam directly (no page nav, no relay).
+// `rememberLaunch` in `select()` stored the deck name in sessionStorage.lastDeck.
+function walkTakeExam() {
+  const deckName = sessionStorage.getItem("alix.lastDeck") || "";
+  fetch("/api/walk/leave", post({})).catch(() => {}).finally(() => {
+    walkData = null;
+    walkConfirmingLeave = false;
+    if (deckName) {
+      // startExam → closeExam → apply(s) lands us back on the picker.
+      startExam(deckName);
+    } else {
+      api("/api/state").then(s => { state = s; render(); });
+    }
+  });
+}
+// Leave the walk: abandon it and return to the picker.
+function walkLeave() {
+  fetch("/api/walk/leave", post({})).catch(() => {}).finally(() => {
+    walkData = null;
+    walkConfirmingLeave = false;
+    api("/api/state").then(s => { state = s; render(); });
+  });
+}
+function walkBackToDecks() {
+  if (!walkData || walkData.phase === "done") { walkLeave(); return; }
+  walkConfirmingLeave = true;
+  renderWalkLeaveConfirm();
+}
+function walkCancelLeave() { walkConfirmingLeave = false; render(); }
+function renderWalkLeaveConfirm() {
+  legend.innerHTML = "";
+  legend.appendChild(el("span", "leave-walk-msg", "Leave the walk before finishing the path?"));
+  chip("Leave anyway", "again", walkLeave, "enter");
+  chip("Stay", "primary", walkCancelLeave, "esc");
+}
+
+// Build the walk card shell (shared by predict and reveal phases). Returns {card, q, a}.
+// Walk excerpts are always left-aligned text (leftAlign:true); there is no withnote
+// cap since walk notes are appended directly to the card, not the answer region.
+function buildWalkCard() {
+  const w = walkData;
+  const { card, q, a } = buildCardShell({
+    depth: w.total - w.current + 1,
+    leftAlign: true,
+  });
+  requestAnimationFrame(() => updateFade(a));
+  return { card, q, a };
+}
+
+// Add the checkpoint prompt (with the checkpoint breadcrumb) to the question region.
+function walkAddPrompt(q, text) {
+  q.appendChild(el("div", "walk-eyebrow", `checkpoint ${walkData.current} / ${walkData.total}`));
+  const ft = el("div", "front-text" + ((text || "").length > 110 ? " long" : ""), text || "");
+  q.appendChild(ft);
+}
+
+function renderWalk() {
+  const w = walkData;
+  headerBreadcrumb();
+  deckEl.textContent = w.description || "trace";
+  deckEl.title = w.description || "";
+  histEl.textContent = "";
+  // Running tally in the score slot: got · partly · missed
+  let g = 0, p = 0, m = 0;
+  (w.path || []).forEach(h => { if (h.delta === "passed") g++; else if (h.delta === "partly") p++; else if (h.delta === "failed") m++; });
+  scoreEl.innerHTML = `<b>${g}✓</b> <i style="color:var(--warn)">${p}◐</i> <s>${m}✗</s>`;
+  menuWrap.style.display = "none";
+
+  if (walkConfirmingLeave) { renderWalkLeaveConfirm(); return; }
+  if (asking) {
+    const subject = { q: w.prompt || "", items: w.points || [] };
+    renderAsk(subject);
+    return;
+  }
+  if (w.phase === "predict")  renderWalkPredict();
+  else if (w.phase === "reveal") renderWalkReveal();
+  else if (w.phase === "done")   renderWalkDone();
+  chip("Leave", "", walkBackToDecks, "esc");
+}
+
+function renderWalkPredict() {
+  const { q, a } = buildWalkCard();
+  walkAddPrompt(q, walkData.prompt);
+  if (walkData.givens && walkData.givens.length) {
+    const g = el("div", "givens");
+    walkData.givens.forEach(x => g.appendChild(el("span", "given", x)));
+    q.appendChild(g);
+  }
+  const wrap = el("div", "wcompose");
+  const ta = el("textarea", "wfield");
+  ta.placeholder = "Predict the next checkpoint — even a hunch beats “I don’t know.”";
+  ta.addEventListener("keydown", e => {
+    if (e.key === "Enter" && (e.shiftKey || e.metaKey || e.ctrlKey)) { e.preventDefault(); walkSubmitPredict(ta); }
+  });
+  wrap.appendChild(ta);
+  wrap.appendChild(el("div", "wlede", "The gap between your guess and the truth is the learning.  ·  Enter for a new line, Shift+Enter to reveal."));
+  a.appendChild(wrap);
+  chip("Reveal", "primary", () => walkSubmitPredict(ta), "⇧↵");
+  setTimeout(() => ta.focus(), 0);
+}
+
+function walkSubmitPredict(ta) { const t = ta.value.trim(); if (t) walkPredict(t); }
+
+function renderWalkReveal() {
+  const { card, q, a } = buildWalkCard();
+  walkAddPrompt(q, walkData.prompt);
+  const pred = el("div", "predicted" + (walkData.prediction ? "" : " empty"));
+  const predLbl = el("span", "wlbl", "you predicted");
+  predLbl.style.display = "block";
+  predLbl.style.marginBottom = "4px";
+  pred.appendChild(predLbl);
+  pred.appendChild(el("p", null, walkData.prediction || "(no prediction)"));
+  q.appendChild(pred);
+
+  // Source excerpt
+  const head = el("div", "reveal-head");
+  const srcLbl = el("span", "wlbl", "the source");
+  srcLbl.style.color = "var(--bolt)";
+  head.appendChild(srcLbl);
+  if (walkData.locator) head.appendChild(el("span", "at", "at " + walkData.locator));
+  a.appendChild(head);
+  if (walkData.excerpt) {
+    const ex = el("div", "wexcerpt");
+    ex.appendChild(el("div", "wfile", walkData.excerpt.path));
+    const code = el("div", "wcode");
+    walkData.excerpt.lines.forEach(ln => {
+      const row = el("div", "wln");
+      row.appendChild(el("span", "wn", String(ln.n)));
+      row.appendChild(el("span", "wt", ln.text));
+      code.appendChild(row);
+    });
+    ex.appendChild(code);
+    if (walkData.excerpt.truncated) ex.appendChild(el("div", "wtrunc", "… excerpt truncated"));
+    a.appendChild(ex);
+  } else {
+    a.appendChild(el("div", "excerpt-miss", walkData.excerpt_error || "no excerpt for this checkpoint"));
+  }
+  if (walkData.points && walkData.points.length) {
+    const ul = el("ul", "wpoints");
+    const ptLbl = el("li", "wlbl", "key points");
+    ul.appendChild(ptLbl);
+    walkData.points.forEach(pt => ul.appendChild(el("li", "wpt", pt)));
+    a.appendChild(ul);
+  }
+  // Note (insight), pinned to the bottom of the card.
+  if (walkData.note) {
+    card.appendChild(el("div", "divider"));
+    const n = el("div", "region n");
+    n.style.textAlign = "left";
+    n.appendChild(el("div", "note", walkData.note));
+    card.appendChild(n);
+  }
+  renderWalkRevealActions();
+}
+
+function renderWalkRevealActions() {
+  // Self-grade only — no live-grade path (Walking::new is always called with None).
+  WALK_DELTAS.forEach(d => chip(d.label, d.cls, () => walkGrade(d.delta), label(d.keys())));
+  chip("Ask", "", openAsk, label(KEYS.ask) || "?");
+}
+
+function renderWalkDone() {
+  const s = walkData.summary || { passed: 0, partly: 0, failed: 0, weak: [], total: 0 };
+  const wrap = el("div", "summary");
+  wrap.appendChild(el("div", "lede", "walk complete · the drill is done"));
+  wrap.appendChild(el("h2", null, walkData.description || "Trace walked."));
+  const row = (k, v, cls) => {
+    const r = el("div", "row");
+    r.appendChild(el("span", null, k));
+    r.appendChild(el("b", cls || null, v));
+    wrap.appendChild(r);
+  };
+  row("got it", String(s.passed), "passed");
+  row("partly", String(s.partly), "partly");
+  row("missed it", String(s.failed), "failed");
+  if (s.weak && s.weak.length) row("weak (resurface sooner)", s.weak.map(h => "#" + h).join(" · "));
+  else if (s.total) row("every checkpoint landed", "✓");
+  wrap.appendChild(el("div", "lede", "Verify it: retrace the whole path in the exam to master this trace."));
+  stage.appendChild(wrap);
+  chip("Take the exam", "primary", walkTakeExam, "↵");
+  chip("Walk again", "", walkRestart, "");
+}
+
 function chip(text, cls, onClick, key) {
   const b = el("button", "chip" + (cls ? " " + cls : ""), text);
   if (key) b.appendChild(el("span", "k", key));
@@ -2502,7 +2793,33 @@ function chip(text, cls, onClick, key) {
 }
 
 document.addEventListener("keydown", (e) => {
-  if (!state || e.altKey || e.metaKey) return; // ctrl handled per-binding below
+  if (e.altKey || e.metaKey) return; // ctrl handled per-binding below
+  // The walk overlay. Ask panel closes on Esc; leave confirmation on Enter/Esc;
+  // grade keys on reveal; Esc triggers the leave confirmation (unfinished) or
+  // leaves immediately (done). Typing in a textarea is left alone.
+  if (walkData) {
+    if (asking) {
+      if (e.key === "Escape") { e.preventDefault(); closeAsk(); }
+      return;
+    }
+    if (walkConfirmingLeave) {
+      if (e.key === "Enter") { e.preventDefault(); walkLeave(); }
+      else if (e.key === "Escape") { e.preventDefault(); walkCancelLeave(); }
+      return;
+    }
+    if (e.key === "Escape") { e.preventDefault(); walkBackToDecks(); return; }
+    if (e.target && /^(TEXTAREA|INPUT)$/.test(e.target.tagName)) return;
+    if (walkData.phase === "reveal") {
+      if (e.key === "?" || hit(e, KEYS.ask)) { e.preventDefault(); openAsk(); return; }
+      for (const d of WALK_DELTAS) if (hit(e, d.keys())) { e.preventDefault(); walkGrade(d.delta); return; }
+    }
+    if (hit(e, KEYS.reveal) || (e.key === "Enter" && !e.ctrlKey)) {
+      const b = legend.querySelector(".chip.primary");
+      if (b && !b.disabled) { e.preventDefault(); b.click(); }
+    }
+    return;
+  }
+  if (!state) return;
   // The exam overlay takes priority. Esc asks to quit (it abandons the exam);
   // while that confirmation is up, Enter quits and Esc keeps going. The textarea
   // handles typing.
@@ -2763,19 +3080,7 @@ Promise.all([
   }, pk || {});
   document.querySelector("#mRemove .mk").textContent = label(KEYS.remove);
   document.getElementById("mAskKey").textContent = label(KEYS.ask);
-  // Returning from a walk launched inside a workspace: re-open that workspace
-  // (the JS `lastWorkspace` didn't survive the navigation to /walk and back).
-  lastWorkspace = sessionStorage.getItem("alix.returnWs");
-  sessionStorage.removeItem("alix.returnWs");
-  // Walk capstone: the walk's "Take the exam" flagged this on its way back here;
-  // open that trace's exam (the compression). `walkName` is the deck the picker
-  // launched the walk for.
-  const takeExam = sessionStorage.getItem("alix.takeExam");
-  const walkName = sessionStorage.getItem("alix.walkName");
-  sessionStorage.removeItem("alix.takeExam");
-  sessionStorage.removeItem("alix.walkName");
   load();
-  if (takeExam && walkName) startExam(walkName);
 });
 </script>
 <script src="/theme.js"></script>

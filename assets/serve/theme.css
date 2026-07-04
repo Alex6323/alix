@@ -267,14 +267,6 @@
    Opened from each page's `#theme-open` trigger. The panel uses the live theme
    variables, so hovering a swatch previews the whole UI — panel included. */
 
-/* walk.html's standalone bar trigger (review/browse open it from the ⋮ menu) */
-.theme-trigger {
-  flex: none; background: none; border: 1px solid var(--line); color: var(--dim);
-  width: 26px; height: 22px; padding: 0; border-radius: 7px; cursor: pointer;
-  font-size: 0.9rem; line-height: 1;
-}
-.theme-trigger:hover { color: var(--ink); border-color: var(--dim); }
-
 .theme-backdrop {
   position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,0.45);
   opacity: 0; pointer-events: none; transition: opacity 0.15s;

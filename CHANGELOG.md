@@ -120,7 +120,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (and on reload / `r`) and loops as a calm loading indicator while a Claude/server
   call is in flight. The shared header chrome — the `<head>` boilerplate and the
   brand mark — is now single-sourced (`_head.html` / `_brand.html`, filled in by the
-  server) so review.html and walk.html no longer drift.
+  server) so all pages stay consistent.
+- **Trace walk is now an in-page mode of the web review UI.** Picking a trace from
+  the deck-selection screen no longer navigates to a separate `/walk` page — the walk
+  runs inside `review.html` with no page reload, and trace cards match fact-card
+  sizing and layout.
 
 ### Fixed
 - **Browse left-aligns multi-line answers like review.** The read-only browser
