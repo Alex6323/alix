@@ -664,6 +664,7 @@ let examConfirmingQuit = false; // showing the "abandon the exam?" confirmation
 let examPoll = null;  // setInterval handle while an exam call is in flight
 let augmentData = null; // the AugmentDto while the Augment screen is open (null otherwise)
 let augmentPoll = null; // setInterval handle while a generation is in flight
+let duePoll = null;   // setInterval handle while the summary waits for a cooling card
 let browsing = null;  // {cards, label, i} while the read-only browse overlay is open
 let walkData = null;  // the WalkDto while an in-page trace walk is active (null otherwise)
 let walkConfirmingLeave = false; // showing the "leave the walk?" confirmation
@@ -814,7 +815,22 @@ function label(binds) {
   return (b.ctrl ? "ctrl-" : "") + name;
 }
 
+// While the summary is showing, a card the user missed may cool back into
+// due-ness. Poll /api/state (which re-checks server-side) so it re-enters review
+// on its own — no manual restart. Only re-renders when a card actually returns,
+// so the summary doesn't re-animate on every tick.
+function stopDuePoll() { if (duePoll) { clearInterval(duePoll); duePoll = null; } }
+function startDuePoll() {
+  if (duePoll) return;
+  duePoll = setInterval(() => {
+    api("/api/state").then(s => {
+      if (s.phase === "review" && !s.finished && s.card) { stopDuePoll(); apply(s); }
+    }).catch(() => {});
+  }, 3000);
+}
+
 function render() {
+  stopDuePoll();
   stage.innerHTML = "";
   legend.innerHTML = "";
   menu.classList.remove("open");
@@ -834,7 +850,7 @@ function render() {
   setMenuContext("review");
 
   if (asking) { renderAsk(); return; }
-  if (state.finished) renderSummary();
+  if (state.finished) { renderSummary(); startDuePoll(); }
   else renderCard();
 }
 

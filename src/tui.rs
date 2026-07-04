@@ -346,8 +346,19 @@ impl App {
                 }
             }
             self.poll_ask();
+            self.poll_due();
         }
         Ok(())
+    }
+
+    /// At the summary, a missed card may have cooled back into due-ness while the
+    /// screen showed; pick it up without a manual restart (stats preserved) and
+    /// re-enter review. Only fires on the summary, so an active card or the
+    /// feedback screen is never swapped out from under the user.
+    fn poll_due(&mut self) {
+        if matches!(self.phase, Phase::Summary) && self.session.poll(&self.store, time::now_ms()) {
+            self.start_card();
+        }
     }
 
     /// Checks whether a pending ask-Claude call has delivered its reply.

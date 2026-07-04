@@ -1482,6 +1482,12 @@ pub fn run_review(
                 if let Some(b) = &browsing {
                     respond_json(request, &browse_payload(Some(b)))
                 } else {
+                    // A missed card may have cooled back into due-ness since the
+                    // last fetch; re-check so it re-enters review on this poll
+                    // (stats preserved), no manual restart needed.
+                    if let Some(r) = reviewing.as_mut() {
+                        r.session.poll(&store, now_ms());
+                    }
                     respond_json(
                         request,
                         &review_state(reviewing.as_ref(), &store, mode_override),
