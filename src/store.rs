@@ -58,6 +58,29 @@ pub struct Sm2State {
     pub due_ms: u64,
 }
 
+/// FSRS memory state for a card — our own representation (all primitives + `u64`
+/// times), kept decoupled from `rs-fsrs`'s `Card` so the store stays all-`u64` and
+/// isn't tied to the crate's type. Present once the card has an FSRS review.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+pub struct FsrsState {
+    /// Days for retrievability to fall from 100% to 90%.
+    pub stability: f64,
+    /// Intrinsic difficulty (1..=10).
+    pub difficulty: f64,
+    /// Successful-review count (rs-fsrs bookkeeping).
+    pub reps: u32,
+    /// Lapse count.
+    pub lapses: u32,
+    /// rs-fsrs learning state (0 = New, 1 = Learning, 2 = Review, 3 = Relearning).
+    pub state: u8,
+    /// The interval this card was last scheduled for, in days — drives retirement.
+    pub scheduled_days: u32,
+    /// When the card was last reviewed (Unix ms).
+    pub last_review_ms: u64,
+    /// When the card is due next (Unix ms).
+    pub due_ms: u64,
+}
+
 /// The stored state of a single card, keyed by its identity hash.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct CardState {
@@ -70,6 +93,10 @@ pub struct CardState {
     /// scheduler (or derived from the stage on first SM-2 review).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sm2: Option<Sm2State>,
+    /// FSRS state; present once the card has been reviewed under FSRS (or derived
+    /// from the Leitner `stage` on its first FSRS review).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fsrs: Option<FsrsState>,
     /// Total number of reviews.
     #[serde(default)]
     pub total_reviews: u32,
@@ -91,6 +118,7 @@ impl CardState {
             stage: 1,
             stage_entered_ms: now_ms,
             sm2: None,
+            fsrs: None,
             total_reviews: 0,
             total_passes: 0,
             streak: 0,
@@ -688,5 +716,25 @@ mod tests {
         let history = &reloaded.get(7).unwrap().history;
         assert_eq!(Grade::Partial, history[0].grade);
         assert_eq!(Grade::Fail, history[1].grade);
+    }
+
+    #[test]
+    fn fsrs_state_survives_save_reload() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("progress.json");
+        let mut store = Store::open(&path).unwrap();
+        store.get_or_insert(9, 0).fsrs = Some(FsrsState {
+            stability: 12.5,
+            difficulty: 6.0,
+            reps: 3,
+            lapses: 1,
+            state: 2,
+            scheduled_days: 12,
+            last_review_ms: 1000,
+            due_ms: 2000,
+        });
+        store.save().unwrap();
+        let reloaded = Store::open(&path).unwrap();
+        assert_eq!(2000, reloaded.get(9).unwrap().fsrs.unwrap().due_ms);
     }
 }
