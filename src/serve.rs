@@ -44,7 +44,7 @@ use crate::{
     exam, picker,
     recent::RecentDecks,
     render::{self, NoteUnit},
-    scheduler::{Grade, SchedulerKind, keypoint_grade},
+    scheduler::{Fsrs, Grade, keypoint_grade},
     session::{Session, now_ms},
     store::Store,
     trace::{self, Delta, Excerpt, Phase, SourceBase, Walk},
@@ -584,7 +584,6 @@ pub struct SessionBuild {
 /// `--grade`), matching the terminal picker's trace → walk.
 pub struct WalkBuild {
     pub walk: Walk,
-    pub scheduler: SchedulerKind,
 }
 
 /// A browse card list ready to serve, with its label and deck paths.
@@ -1494,7 +1493,7 @@ pub fn run_review(
                         }
                         match build_walk(&paths) {
                             Ok(Some(wb)) => {
-                                let w = Walking::new(wb.walk, wb.scheduler, None);
+                                let w = Walking::new(wb.walk, None);
                                 let dto = walk_dto(&w);
                                 walking = Some(w);
                                 reviewing = None;
@@ -2088,10 +2087,9 @@ pub fn run_review(
                     respond_status(request, 409);
                     continue;
                 };
-                let fresh = Walk::new(w.walk.trace().clone(), w.scheduler);
-                let scheduler = w.scheduler;
+                let fresh = Walk::new(w.walk.trace().clone());
                 let grade = w.grade.take();
-                *w = Walking::new(fresh, scheduler, grade);
+                *w = Walking::new(fresh, grade);
                 respond_json(request, &walk_dto(w));
             }
             // Ask-Claude about the current checkpoint — the same tutor a review
@@ -2158,7 +2156,6 @@ pub fn run_review(
 /// reveal.
 struct Walking {
     walk: Walk,
-    scheduler: SchedulerKind,
     /// `Some` in `--grade` mode: the `[ask]` config a background grade uses
     /// (grading runs at the tutor tier, not trace's heavy build defaults).
     grade: Option<AskConfig>,
@@ -2174,10 +2171,9 @@ struct Walking {
 }
 
 impl Walking {
-    fn new(walk: Walk, scheduler: SchedulerKind, grade: Option<AskConfig>) -> Self {
+    fn new(walk: Walk, grade: Option<AskConfig>) -> Self {
         Walking {
             walk,
-            scheduler,
             grade,
             pending: None,
             grade_result: None,
@@ -3052,18 +3048,18 @@ fn resolve_name(name: &str, known: &HashMap<String, PathBuf>) -> Option<PathBuf>
 fn deck_topology_dto(augment: &AugmentCache, store: &Store, deck: &Deck) -> DeckTopologyDto {
     let by_id: HashMap<u64, &Card> = deck.cards.iter().map(|c| (c.id(), c)).collect();
     let deck_ids: HashSet<u64> = by_id.keys().copied().collect();
-    let scheduler = deck.settings.scheduler.unwrap_or_default().scheduler();
+    let scheduler = Fsrs::default();
     let now = now_ms();
     // Cards in a region resolved back to the deck (ids absent from the deck —
     // e.g. a topology built before an edit — are skipped).
     let due_of = |ids: &[u64]| {
         let cards: Vec<&Card> = ids.iter().filter_map(|id| by_id.get(id).copied()).collect();
-        crate::session::count_reviewable(&cards, store, scheduler.as_ref(), now)
+        crate::session::count_reviewable(&cards, store, &scheduler, now)
     };
     let deck_due = deck
         .cards
         .iter()
-        .filter(|c| crate::session::is_reviewable(c, store, scheduler.as_ref(), now))
+        .filter(|c| crate::session::is_reviewable(c, store, &scheduler, now))
         .count();
     let topologies = augment
         .topologies_for(&deck_ids)
@@ -3438,7 +3434,7 @@ mod tests {
         let session = Session::new(
             vec![card.clone()],
             &store,
-            crate::scheduler::SchedulerKind::Leitner,
+            Box::new(Fsrs::default()),
             crate::session::SessionOptions::default(),
             now_ms(),
         );
@@ -3568,8 +3564,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let trace = walk_deck(dir.path());
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let walk = Walk::new(trace, SchedulerKind::Leitner);
-        let mut w = Walking::new(walk, SchedulerKind::Leitner, None);
+        let walk = Walk::new(trace);
+        let mut w = Walking::new(walk, None);
 
         // Predict: prompt + givens, no excerpt yet, the first node is current.
         let d = walk_dto(&w);
@@ -3620,8 +3616,8 @@ mod tests {
     fn walk_dto_surfaces_a_live_grade_and_clears_it() {
         let dir = tempfile::tempdir().unwrap();
         let trace = walk_deck(dir.path());
-        let walk = Walk::new(trace, SchedulerKind::Leitner);
-        let mut w = Walking::new(walk, SchedulerKind::Leitner, Some(AskConfig::default()));
+        let walk = Walk::new(trace);
+        let mut w = Walking::new(walk, Some(AskConfig::default()));
 
         w.walk.predict("g".to_string());
         // Simulate the background grade resolving (no real CLI call in the test).
@@ -3641,8 +3637,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let trace = walk_deck(dir.path());
         let deck_path = trace.deck_path.clone();
-        let walk = Walk::new(trace, SchedulerKind::Leitner);
-        let mut w = Walking::new(walk, SchedulerKind::Leitner, None);
+        let walk = Walk::new(trace);
+        let mut w = Walking::new(walk, None);
         w.walk.predict("guess".to_string()); // reveal hop 1 (a current checkpoint)
 
         // A condense reply is in flight (no real CLI call), about the synthesized

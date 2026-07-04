@@ -45,19 +45,6 @@ fn default_review_grade() -> Grade {
     Grade::Pass
 }
 
-/// Scheduling state of the SM-2 algorithm for a single card.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
-pub struct Sm2State {
-    /// The ease factor (>= 1.3).
-    pub ease: f64,
-    /// Number of successful repetitions in a row.
-    pub reps: u32,
-    /// The current inter-repetition interval in milliseconds.
-    pub interval_ms: u64,
-    /// When the card is due next (Unix ms).
-    pub due_ms: u64,
-}
-
 /// FSRS memory state for a card — our own representation (all primitives + `u64`
 /// times), kept decoupled from `rs-fsrs`'s `Card` so the store stays all-`u64` and
 /// isn't tied to the crate's type. Present once the card has an FSRS review.
@@ -84,15 +71,11 @@ pub struct FsrsState {
 /// The stored state of a single card, keyed by its identity hash.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct CardState {
-    /// The Leitner stage (1..=5). Kept up to date by both schedulers so the
-    /// user can switch between them.
+    /// Legacy Leitner stage (1..=5). No longer live scheduling state under FSRS — retained as an
+    /// acquire marker and for the one-time lazy-derive that seeds FSRS from a pre-FSRS card's stage.
     pub stage: u8,
     /// When the card entered its current stage (Unix ms).
     pub stage_entered_ms: u64,
-    /// SM-2 state; present once the card has been reviewed with the SM-2
-    /// scheduler (or derived from the stage on first SM-2 review).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sm2: Option<Sm2State>,
     /// FSRS state; present once the card has been reviewed under FSRS (or derived
     /// from the Leitner `stage` on its first FSRS review).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -117,7 +100,6 @@ impl CardState {
         Self {
             stage: 1,
             stage_entered_ms: now_ms,
-            sm2: None,
             fsrs: None,
             total_reviews: 0,
             total_passes: 0,
@@ -693,13 +675,13 @@ mod tests {
     }
 
     #[test]
-    fn record_review_stores_the_grade_and_partial_is_not_a_pass() {
+    fn record_review_stores_the_grade_and_partial_counts_as_a_pass() {
         let mut state = CardState::new(0);
         state.record_review(10, Grade::Partial);
         assert_eq!(Grade::Partial, state.history.last().unwrap().grade);
         assert_eq!(1, state.total_reviews);
-        assert_eq!(0, state.total_passes); // Partial is not a clean pass
-        assert_eq!(0, state.streak);
+        assert_eq!(1, state.total_passes); // Partial (a weak success) counts as a pass
+        assert_eq!(1, state.streak);
     }
 
     #[test]

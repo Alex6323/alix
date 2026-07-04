@@ -283,10 +283,10 @@ pub fn deck_status(
     // deck launches its exam (only when its exam isn't locked); otherwise there
     // must be a card due or new. Drilling is never gated by the lock — a
     // prerequisite-locked deck with due cards is still reviewable.
-    let scheduler = deck.settings.scheduler.unwrap_or_default().scheduler();
+    let scheduler = crate::scheduler::Fsrs::default();
     let reviewable = deck.is_trace()
         || (matches!(state, DeckState::ExamDue) && examable)
-        || session::has_reviewable(&deck.cards, store, scheduler.as_ref(), session::now_ms());
+        || session::has_reviewable(&deck.cards, store, &scheduler, session::now_ms());
     DeckStatus {
         state,
         badge,

@@ -28,7 +28,7 @@ use crate::{
     backend::{backend_for, ensure_source_reachable},
     config::{AskConfig, TraceConfig},
     deck::{Deck, is_url},
-    scheduler::{Grade, SchedulerKind},
+    scheduler::{Fsrs, Grade, Scheduler},
     store::Store,
 };
 
@@ -948,7 +948,6 @@ pub enum Phase {
 /// (the compression), not from the walk.
 pub struct Walk {
     trace: Trace,
-    scheduler: SchedulerKind,
     current: usize,
     phase: Phase,
     predictions: Vec<String>,
@@ -956,12 +955,11 @@ pub struct Walk {
 }
 
 impl Walk {
-    /// Starts a walk of `trace`, scheduling checkpoints with `scheduler`.
-    pub fn new(trace: Trace, scheduler: SchedulerKind) -> Walk {
+    /// Starts a walk of `trace`. Checkpoints are scheduled with the FSRS scheduler.
+    pub fn new(trace: Trace) -> Walk {
         let n = trace.checkpoints.len();
         Walk {
             trace,
-            scheduler,
             current: 0,
             phase: Phase::Predict,
             predictions: vec![String::new(); n],
@@ -1013,9 +1011,7 @@ impl Walk {
         }
         if let Some(checkpoint) = self.trace.checkpoints.get(self.current) {
             let state = store.get_or_insert(checkpoint.card_id, now_ms);
-            self.scheduler
-                .scheduler()
-                .apply(state, delta.grade(), now_ms);
+            Fsrs::default().apply(state, delta.grade(), now_ms);
         }
         self.deltas[self.current] = Some(delta);
         if self.current + 1 < self.trace.checkpoints.len() {
@@ -1805,10 +1801,7 @@ mod tests {
 
     #[test]
     fn walking_a_trace_drills_but_does_not_master_it() {
-        use crate::{
-            deck::DeckState,
-            store::{MAX_STAGE, Store},
-        };
+        use crate::{deck::DeckState, store::Store};
         let dir = tempfile::tempdir().unwrap();
         write(dir.path(), "src.rs", "a\nb\nc\n");
         let deck_path = dir.path().join("t.txt");
@@ -1826,12 +1819,15 @@ mod tests {
         assert!(!store.deck_mastered(&deck.subject));
         assert_eq!(DeckState::NotStarted, deck.state(&store));
 
-        // Walk it correctly enough times to retire the single checkpoint.
-        for round in 0..MAX_STAGE + 1 {
-            let mut walk = Walk::new(Trace::from_deck(&deck).unwrap(), SchedulerKind::Leitner);
-            walk.predict("p".to_string());
-            walk.grade(&mut store, Delta::Passed, u64::from(round) + 1);
-            assert_eq!(Phase::Done, walk.phase()); // no compress step
+        // Walk the single checkpoint, then retire it (its FSRS interval grown past
+        // the retirement cap) so the deck's unlock gate — every card retired — is met.
+        let card0 = Trace::from_deck(&deck).unwrap().checkpoints[0].card_id;
+        let mut walk = Walk::new(Trace::from_deck(&deck).unwrap());
+        walk.predict("p".to_string());
+        walk.grade(&mut store, Delta::Passed, 1);
+        assert_eq!(Phase::Done, walk.phase()); // no compress step
+        if let Some(f) = store.get_or_insert(card0, 0).fsrs.as_mut() {
+            f.scheduled_days = 500; // past the ~1y retirement cap
         }
 
         // The walk is the DRILL, not the exam: drilling all checkpoints does NOT
@@ -2098,27 +2094,27 @@ mod tests {
         let trace = Trace::from_deck(&deck).unwrap();
         let card0 = trace.checkpoints[0].card_id;
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let mut walk = Walk::new(trace, SchedulerKind::Leitner);
+        let mut walk = Walk::new(trace);
 
         assert_eq!(Phase::Predict, walk.phase());
         assert_eq!(2, walk.total());
 
-        // Hop 1: predict -> reveal -> Passed advances the checkpoint.
+        // Hop 1: predict -> reveal -> Passed schedules the checkpoint under FSRS.
         walk.predict("my guess".to_string());
         assert_eq!(Phase::Reveal, walk.phase());
         assert_eq!(Some("my guess"), walk.prediction(0));
         walk.grade(&mut store, Delta::Passed, 1000);
         assert_eq!(Phase::Predict, walk.phase());
         assert_eq!(1, walk.current_index());
-        assert_eq!(2, store.get(card0).unwrap().stage); // Passed -> stage up
+        assert!(store.get(card0).unwrap().fsrs.is_some()); // Passed -> FSRS review recorded
 
-        // Hop 2 (last): a Failed resets to stage 1 and finishes the walk (no
-        // compress step — verification is the separate trace exam).
+        // Hop 2 (last): a Failed records a lapse and finishes the walk (no compress
+        // step — verification is the separate trace exam).
         let card1 = walk.checkpoint().unwrap().card_id;
         walk.predict(String::new());
         walk.grade(&mut store, Delta::Failed, 1001);
         assert_eq!(Phase::Done, walk.phase());
-        assert_eq!(1, store.get(card1).unwrap().stage); // Failed -> reset
+        assert_eq!(0, store.get(card1).unwrap().streak); // Failed -> streak reset
 
         let summary = walk.summary();
         assert_eq!(1, summary.passed);
@@ -2127,18 +2123,19 @@ mod tests {
     }
 
     #[test]
-    fn partly_demotes_a_checkpoint_one_stage_not_reset() {
+    fn partly_records_a_weak_success_on_a_checkpoint() {
         let dir = tempfile::tempdir().unwrap();
         let deck = trace_deck(dir.path());
         let trace = Trace::from_deck(&deck).unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let mut walk = Walk::new(trace, SchedulerKind::Leitner);
+        let mut walk = Walk::new(trace);
         let card0 = walk.checkpoint().unwrap().card_id;
-        // Lift the first checkpoint to stage 3, then grade it Partial.
-        store.get_or_insert(card0, 0).stage = 3;
         walk.predict("guess".to_string());
         walk.grade(&mut store, Delta::Partial, 1000);
-        assert_eq!(2, store.get(card0).unwrap().stage); // partly: 3 -> 2, not reset
+        // Partly is a weak success under FSRS: it schedules the card and counts as a pass.
+        let state = store.get(card0).unwrap();
+        assert!(state.fsrs.is_some());
+        assert_eq!(1, state.total_passes);
         assert_eq!(1, walk.summary().partly);
     }
 
@@ -2148,7 +2145,7 @@ mod tests {
         let deck = trace_deck(dir.path());
         let trace = Trace::from_deck(&deck).unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let mut walk = Walk::new(trace, SchedulerKind::Leitner);
+        let mut walk = Walk::new(trace);
         // In Predict phase, grading does nothing.
         walk.grade(&mut store, Delta::Passed, 1000);
         assert_eq!(Phase::Predict, walk.phase());

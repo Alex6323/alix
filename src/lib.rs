@@ -1,12 +1,12 @@
 //! Your personal AI tutor — built for understanding, not just remembering.
 //!
 //! Decks are plain-text files. On top of the flashcard basics it offers a
-//! ratatui TUI, an optional local web frontend (`alix serve`), Leitner and
-//! SM-2 schedulers, several answer modes (flip, typing, fuzzy, multiple choice,
-//! line-by-line, explain), cloze and dual-direction cards, deck dependencies,
-//! and per-card review statistics. The configured model CLI is woven in: a
-//! tutor on any card, AI deck generation, and an AI exam (`alix exam`) that
-//! gates progression on verified understanding.
+//! ratatui TUI, an optional local web frontend (`alix serve`), the FSRS
+//! scheduler (via `rs-fsrs`), several answer modes (flip, typing, fuzzy,
+//! multiple choice, line-by-line, explain), cloze and dual-direction cards,
+//! deck dependencies, and per-card review statistics. The configured model CLI
+//! is woven in: a tutor on any card, AI deck generation, and an AI exam
+//! (`alix exam`) that gates progression on verified understanding.
 
 pub mod answer;
 pub mod ask;

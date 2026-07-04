@@ -13,7 +13,6 @@ use crate::{
     card::{Card, Direction, Frontend},
     config::Strictness,
     parser::{self, ParseError},
-    scheduler::SchedulerKind,
     session::{self, Order},
     store::{MAX_STAGE, Store},
 };
@@ -28,8 +27,6 @@ pub struct DeckSettings {
     pub mode: Option<Mode>,
     /// Default input method for this deck (`% input: ...`).
     pub input: Option<Input>,
-    /// Default scheduler for this deck (`% scheduler: ...`).
-    pub scheduler: Option<SchedulerKind>,
     /// Default card order for this deck (`% order: ...`).
     pub order: Option<Order>,
     /// Default review direction for this deck (`% direction: ...`).
@@ -63,7 +60,6 @@ impl DeckSettings {
             match key.as_str() {
                 "mode" => settings.mode = Mode::from_str(value, true).ok(),
                 "input" => settings.input = Input::from_str(value, true).ok(),
-                "scheduler" => settings.scheduler = SchedulerKind::from_str(value, true).ok(),
                 "order" => settings.order = Order::from_str(value, true).ok(),
                 "direction" => settings.direction = Direction::from_str(value, true).ok(),
                 "frontend" => settings.frontend = Frontend::from_str(value, true).ok(),
@@ -94,7 +90,6 @@ impl DeckSettings {
     fn fill_from(&mut self, defaults: &DeckSettings) {
         self.mode = self.mode.or(defaults.mode);
         self.input = self.input.or(defaults.input);
-        self.scheduler = self.scheduler.or(defaults.scheduler);
         self.order = self.order.or(defaults.order);
         self.direction = self.direction.or(defaults.direction);
         self.frontend = self.frontend.or(defaults.frontend);
@@ -1261,7 +1256,7 @@ mod tests {
         let path = dir.path().join("d.txt");
         std::fs::write(
             &path,
-            "% mode: line\n% order: sequential\n% scheduler: bogus\n# f\n\tb\n",
+            "% mode: line\n% order: sequential\n% direction: bogus\n# f\n\tb\n",
         )
         .unwrap();
 
@@ -1269,7 +1264,7 @@ mod tests {
         assert_eq!(Some(Mode::LineByLine), deck.settings.mode);
         assert_eq!(Some(Order::Sequential), deck.settings.order);
         // An unparseable value is ignored, not an error.
-        assert_eq!(None, deck.settings.scheduler);
+        assert_eq!(None, deck.settings.direction);
     }
 
     #[test]
@@ -1566,7 +1561,7 @@ mod tests {
 
         let deck = Deck::load(&path).unwrap();
         assert_eq!(None, deck.settings.mode);
-        assert_eq!(None, deck.settings.scheduler);
+        assert_eq!(None, deck.settings.input);
         assert_eq!(None, deck.settings.order);
     }
 

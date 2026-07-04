@@ -599,7 +599,7 @@ mod tests {
     #[test]
     fn directives_are_collected() {
         let text = "% mode: line\n\
-                    %  Scheduler:SM2 \n\
+                    %  Order:Sequential \n\
                     % link: https://example.org\n\
                     % Then learn it with: alix\n\
                     % a plain comment\n\
@@ -608,7 +608,7 @@ mod tests {
             vec![
                 ("mode".to_string(), "line".to_string()),
                 // Key is lower-cased; value keeps its case.
-                ("scheduler".to_string(), "SM2".to_string()),
+                ("order".to_string(), "Sequential".to_string()),
             ],
             parse_directives(text)
         );

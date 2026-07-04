@@ -12,7 +12,7 @@ use std::collections::VecDeque;
 use crate::{
     augment::TopologyOrder,
     card::Card,
-    scheduler::{Grade, Scheduler, SchedulerKind},
+    scheduler::{Grade, Scheduler},
     store::{MAX_STAGE, Store},
     time,
 };
@@ -20,8 +20,8 @@ use crate::{
 /// The order in which the due/new cards of a session are presented.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
 pub enum Order {
-    /// The scheduler decides the order (Leitner: higher stages first; SM-2:
-    /// earliest due first), then up to `max_new` new cards.
+    /// The scheduler decides the order (FSRS: earliest due first), then up to
+    /// `max_new` new cards.
     #[default]
     Scheduled,
     /// Present the cards in deck/file order, top to bottom — useful for
@@ -80,7 +80,6 @@ pub struct Session {
     /// Indices into `cards`, front = current card.
     queue: VecDeque<usize>,
     scheduler: Box<dyn Scheduler>,
-    kind: SchedulerKind,
     options: SessionOptions,
     /// Total distinct cards that entered the queue initially.
     pub initial_size: usize,
@@ -91,26 +90,23 @@ pub struct Session {
 impl Session {
     /// Builds a session at time `now_ms`.
     ///
-    /// The queue holds, in order: all due cards (for Leitner, higher stages
-    /// first; for SM-2, earliest due first), then up to `max_new` unseen cards
-    /// in deck order. Sub-cards of the same cloze card are kept apart whenever
-    /// other cards are available.
+    /// The queue holds, in order: all due cards (earliest FSRS due first), then
+    /// up to `max_new` unseen cards in deck order. Sub-cards of the same cloze
+    /// card are kept apart whenever other cards are available.
     pub fn new(
         cards: Vec<Card>,
         store: &Store,
-        kind: SchedulerKind,
+        scheduler: Box<dyn Scheduler>,
         options: SessionOptions,
         now_ms: u64,
     ) -> Self {
-        let scheduler = kind.scheduler();
-        let queue = build_queue(&cards, store, &*scheduler, kind, &options, now_ms);
+        let queue = build_queue(&cards, store, &*scheduler, &options, now_ms);
         let initial_size = queue.len();
 
         Self {
             cards,
             queue,
             scheduler,
-            kind,
             options,
             initial_size,
             stats: SessionStats::default(),
@@ -123,14 +119,7 @@ impl Session {
     /// Returns `false` — leaving queue and stats untouched — if nothing is
     /// due, so a summary screen can keep showing the finished session.
     pub fn restart(&mut self, store: &Store, now_ms: u64) -> bool {
-        let queue = build_queue(
-            &self.cards,
-            store,
-            &*self.scheduler,
-            self.kind,
-            &self.options,
-            now_ms,
-        );
+        let queue = build_queue(&self.cards, store, &*self.scheduler, &self.options, now_ms);
         if queue.is_empty() {
             return false;
         }
@@ -144,15 +133,7 @@ impl Session {
     /// i.e. anything is due (or a new card can be introduced) at `now_ms`.
     /// Non-mutating; runs the same queue build `restart` would.
     pub fn has_due_now(&self, store: &Store, now_ms: u64) -> bool {
-        !build_queue(
-            &self.cards,
-            store,
-            &*self.scheduler,
-            self.kind,
-            &self.options,
-            now_ms,
-        )
-        .is_empty()
+        !build_queue(&self.cards, store, &*self.scheduler, &self.options, now_ms).is_empty()
     }
 
     /// The earliest upcoming due time over all seen cards of this session's
@@ -293,7 +274,6 @@ fn build_queue(
     cards: &[Card],
     store: &Store,
     scheduler: &dyn Scheduler,
-    kind: SchedulerKind,
     options: &SessionOptions,
     now_ms: u64,
 ) -> VecDeque<usize> {
@@ -314,22 +294,8 @@ fn build_queue(
         }
     }
 
-    // Order due cards.
-    match kind {
-        SchedulerKind::Leitner => {
-            // Higher stages first, then by how long they have been waiting.
-            due.sort_by_key(|&i| {
-                let state = store.get(cards[i].id()).unwrap();
-                (std::cmp::Reverse(state.stage), state.stage_entered_ms)
-            });
-        }
-        SchedulerKind::Sm2 | SchedulerKind::Fsrs => {
-            due.sort_by_key(|&i| {
-                let state = store.get(cards[i].id()).unwrap();
-                scheduler.due_at(state)
-            });
-        }
-    }
+    // Order due cards by their FSRS due time, earliest first.
+    due.sort_by_key(|&i| store.get(cards[i].id()).map_or(u64::MAX, |s| scheduler.due_at(s)));
 
     let mut fresh: Vec<usize> = fresh.into_iter().take(options.max_new).collect();
 
@@ -516,13 +482,18 @@ mod tests {
         (store, dir)
     }
 
+    /// A fresh boxed scheduler for a session under test.
+    fn sched() -> Box<dyn Scheduler> {
+        Box::new(crate::scheduler::Fsrs::default())
+    }
+
     #[test]
     fn new_cards_enter_up_to_max_new() {
         let (store, _dir) = empty_store();
         let session = Session::new(
             cards(20),
             &store,
-            SchedulerKind::Leitner,
+            sched(),
             SessionOptions {
                 max_new: 5,
                 ..Default::default()
@@ -540,7 +511,7 @@ mod tests {
         let mut session = Session::new(
             all,
             &store,
-            SchedulerKind::Leitner,
+            sched(),
             SessionOptions::default(),
             1000,
         );
@@ -563,7 +534,7 @@ mod tests {
         let mut session = Session::new(
             cards(1),
             &store,
-            SchedulerKind::Leitner,
+            sched(),
             SessionOptions::default(),
             1000,
         );
@@ -587,7 +558,7 @@ mod tests {
         let mut session = Session::new(
             all,
             &store,
-            SchedulerKind::Leitner,
+            sched(),
             SessionOptions::default(),
             now,
         );
@@ -615,7 +586,7 @@ mod tests {
         let session = Session::new(
             all.clone(),
             &store,
-            SchedulerKind::Leitner,
+            sched(),
             SessionOptions {
                 max_new: 10,
                 limit: Some(3),
@@ -631,25 +602,20 @@ mod tests {
     }
 
     #[test]
-    fn leitner_orders_higher_stages_first() {
+    fn due_cards_are_ordered_by_due_time() {
         let (mut store, _dir) = empty_store();
         let all = cards(3);
-        // Card 0: stage 2, entered long ago -> due. Card 1: stage 5, entered
-        // long ago -> due. Card 2: new.
+        // Two seen-but-unreviewed cards whose fallback due times differ by their
+        // stage cooldown: card 0 (stage 2, ~1h) comes due before card 1 (stage 5,
+        // ~1w). Card 2 is new. FSRS orders the due set by due time, earliest first.
         store.get_or_insert(all[0].id(), 0).stage = 2;
         store.get_or_insert(all[1].id(), 0).stage = 5;
 
         let now = 2 * 604_800_000; // two weeks later, everything is due
-        let mut session = Session::new(
-            all,
-            &store,
-            SchedulerKind::Leitner,
-            SessionOptions::default(),
-            now,
-        );
-        assert_eq!("front 1", session.current().unwrap().front); // stage 5
+        let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
+        assert_eq!("front 0", session.current().unwrap().front); // due earliest (~1h)
         session.grade(&mut store, Grade::Pass, now);
-        assert_eq!("front 0", session.current().unwrap().front); // stage 2
+        assert_eq!("front 1", session.current().unwrap().front); // due later (~1w)
         session.grade(&mut store, Grade::Pass, now);
         assert_eq!("front 2", session.current().unwrap().front); // new
     }
@@ -658,8 +624,8 @@ mod tests {
     fn sequential_order_follows_deck_order() {
         let (mut store, _dir) = empty_store();
         let all = cards(3);
-        // Same setup as the Leitner test: by stage, card 1 (s5) would lead,
-        // then card 0 (s2), then the new card 2. Sequential ignores that.
+        // By due time card 0 (s2) leads, then card 1 (s5), then the new card 2.
+        // Sequential ignores that and follows deck/file order.
         store.get_or_insert(all[0].id(), 0).stage = 2;
         store.get_or_insert(all[1].id(), 0).stage = 5;
 
@@ -667,7 +633,7 @@ mod tests {
         let mut session = Session::new(
             all,
             &store,
-            SchedulerKind::Leitner,
+            sched(),
             SessionOptions {
                 order: Order::Sequential,
                 ..Default::default()
@@ -693,7 +659,7 @@ mod tests {
         let session = Session::new(
             all.clone(),
             &store,
-            SchedulerKind::Leitner,
+            sched(),
             SessionOptions {
                 max_new: 0,
                 ..Default::default()
@@ -706,7 +672,7 @@ mod tests {
         let session = Session::new(
             all,
             &store,
-            SchedulerKind::Leitner,
+            sched(),
             SessionOptions {
                 max_new: 0,
                 limit: None,
@@ -725,7 +691,7 @@ mod tests {
         let mut session = Session::new(
             cards(2),
             &store,
-            SchedulerKind::Leitner,
+            sched(),
             SessionOptions::default(),
             1000,
         );
@@ -748,21 +714,17 @@ mod tests {
     }
 
     #[test]
-    fn grading_updates_store_stages() {
+    fn grading_records_fsrs_state() {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
         let id = all[0].id();
-        let mut session = Session::new(
-            all,
-            &store,
-            SchedulerKind::Leitner,
-            SessionOptions::default(),
-            1000,
-        );
+        let mut session = Session::new(all, &store, sched(), SessionOptions::default(), 1000);
 
         session.grade(&mut store, Grade::Pass, 1000);
-        // New card starts at stage 1; a pass moves it to stage 2.
-        assert_eq!(2, store.get(id).unwrap().stage);
+        // A graded card gains FSRS state and a recorded review (stage is frozen).
+        let state = store.get(id).unwrap();
+        assert!(state.fsrs.is_some());
+        assert_eq!(1, state.total_reviews);
     }
 
     #[test]
@@ -771,7 +733,7 @@ mod tests {
         let mut session = Session::new(
             cards(2),
             &store,
-            SchedulerKind::Leitner,
+            sched(),
             SessionOptions::default(),
             1000,
         );
@@ -792,7 +754,7 @@ mod tests {
         let mut session = Session::new(
             cards(2),
             &store,
-            SchedulerKind::Leitner,
+            sched(),
             SessionOptions::default(),
             1000,
         );
@@ -819,7 +781,7 @@ mod tests {
         let mut session = Session::new(
             all,
             &store,
-            SchedulerKind::Leitner,
+            sched(),
             SessionOptions::default(),
             0,
         );
@@ -850,7 +812,7 @@ mod tests {
         let mut session = Session::new(
             all,
             &store,
-            SchedulerKind::Leitner,
+            sched(),
             SessionOptions::default(),
             0,
         );
@@ -883,7 +845,7 @@ mod tests {
         let session = Session::new(
             all,
             &store,
-            SchedulerKind::Leitner,
+            sched(),
             SessionOptions::default(),
             0,
         );
@@ -896,7 +858,7 @@ mod tests {
         let mut session = Session::new(
             cards(4),
             &store,
-            SchedulerKind::Leitner,
+            sched(),
             SessionOptions {
                 max_new: 2,
                 ..Default::default()
@@ -922,7 +884,7 @@ mod tests {
         let mut session = Session::new(
             cards(1),
             &store,
-            SchedulerKind::Leitner,
+            sched(),
             SessionOptions::default(),
             1000,
         );
@@ -942,17 +904,18 @@ mod tests {
         let mut session = Session::new(
             cards(1),
             &store,
-            SchedulerKind::Leitner,
+            sched(),
             SessionOptions::default(),
             1000,
         );
         // A new card is available before it is seen.
         assert!(session.has_due_now(&store, 1000));
         session.grade(&mut store, Grade::Pass, 1000);
-        // Now at stage 2 (1h cooldown): nothing due, matching restart().
+        // A first Good enters an FSRS learning step (sub-day): nothing due right
+        // after, matching restart().
         assert!(!session.has_due_now(&store, 1001));
         assert!(!session.restart(&store, 1001));
-        // Once the cooldown elapses it is due again.
+        // Once the learning step elapses it is due again (an hour is well past it).
         assert!(session.has_due_now(&store, 1000 + 3_600_000));
     }
 
@@ -960,17 +923,12 @@ mod tests {
     fn next_due_at_reports_earliest_due_time() {
         let (mut store, _dir) = empty_store();
         let all = cards(2);
-        // Stage 2 entered at t=1000 -> due at 1000 + 1h.
-        let mut session = Session::new(
-            all,
-            &store,
-            SchedulerKind::Leitner,
-            SessionOptions::default(),
-            1000,
-        );
+        let mut session = Session::new(all, &store, sched(), SessionOptions::default(), 1000);
         assert_eq!(None, session.next_due_at(&store)); // nothing seen yet
         session.grade(&mut store, Grade::Pass, 1000);
-        assert_eq!(Some(1000 + 3_600_000), session.next_due_at(&store));
+        // A first Good enters an FSRS learning step, due some time out (sub-day).
+        let due = session.next_due_at(&store).expect("a seen card has a due time");
+        assert!(due > 1000 && due < 1000 + 86_400_000, "due {due}");
     }
 
     #[test]
@@ -1002,7 +960,7 @@ mod tests {
     #[test]
     fn has_reviewable_counts_new_and_due_not_cooldown_or_retired() {
         let (mut store, _dir) = empty_store();
-        let sched = SchedulerKind::Leitner.scheduler();
+        let sched = sched();
         let now = 10_000_000;
 
         // A brand-new (unseen) card is reviewable.
@@ -1040,7 +998,7 @@ mod tests {
         let session = Session::new(
             all,
             &store,
-            SchedulerKind::Leitner,
+            sched(),
             SessionOptions {
                 max_new: 10,
                 limit: None,
@@ -1073,7 +1031,7 @@ mod tests {
         let mut session = Session::new(
             all.clone(),
             &store,
-            SchedulerKind::Leitner,
+            sched(),
             SessionOptions {
                 topology: Some(topo),
                 ..Default::default()
@@ -1100,7 +1058,7 @@ mod tests {
         let session = Session::new(
             all.clone(),
             &store,
-            SchedulerKind::Leitner,
+            sched(),
             SessionOptions {
                 max_new: 0,
                 topology: Some(topo),
@@ -1124,7 +1082,7 @@ mod tests {
         let mut session = Session::new(
             all.clone(),
             &store,
-            SchedulerKind::Leitner,
+            sched(),
             SessionOptions {
                 topology: Some(topo),
                 ..Default::default()
@@ -1151,7 +1109,7 @@ mod tests {
         let session = Session::new(
             all.clone(),
             &store,
-            SchedulerKind::Leitner,
+            sched(),
             SessionOptions {
                 topology: Some(topo),
                 ..Default::default()
@@ -1190,7 +1148,7 @@ mod tests {
         let mut session = Session::new(
             all,
             &store,
-            SchedulerKind::Leitner,
+            sched(),
             SessionOptions {
                 topology: Some(topo),
                 ..Default::default()
@@ -1219,7 +1177,7 @@ mod tests {
         let session = Session::new(
             all.clone(),
             &store,
-            SchedulerKind::Leitner,
+            sched(),
             SessionOptions {
                 max_new: 10,
                 limit: Some(2),

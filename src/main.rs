@@ -14,7 +14,7 @@ use alix::{
     deck::{Deck, DeckSettings, DeckState},
     generate, import, parser, picker, preflight,
     recent::{self, RecentDecks},
-    scheduler::SchedulerKind,
+    scheduler::{Fsrs, Scheduler},
     serve,
     session::{Order, Session, SessionOptions, histogram},
     store::{Store, default_store_path},
@@ -372,11 +372,6 @@ struct TraceArgs {
     #[arg(short, long)]
     yes: bool,
 
-    /// Scheduler used to schedule the checkpoints. Overrides the deck's
-    /// `% scheduler:` directive; defaults to leitner.
-    #[arg(short, long, value_enum)]
-    scheduler: Option<SchedulerKind>,
-
     /// Path of the progress store (default: platform data dir).
     #[arg(long)]
     store: Option<PathBuf>,
@@ -426,10 +421,6 @@ struct DeckArgs {
     #[arg(required = true)]
     decks: Vec<PathBuf>,
 
-    /// Scheduler used to compute due times.
-    #[arg(short, long, value_enum, default_value_t)]
-    scheduler: SchedulerKind,
-
     /// Path of the progress store (default: platform data dir).
     #[arg(long)]
     store: Option<PathBuf>,
@@ -472,11 +463,6 @@ struct ReviewArgs {
     /// defaults to flip.
     #[arg(short, long, value_enum)]
     mode: Option<Mode>,
-
-    /// Scheduling algorithm. Overrides a deck's `% scheduler:` directive;
-    /// defaults to leitner.
-    #[arg(short, long, value_enum)]
-    scheduler: Option<SchedulerKind>,
 
     /// Order cards are shown in. Overrides a deck's `% order:` directive;
     /// defaults to scheduled.
@@ -767,7 +753,6 @@ enum Started {
     /// rather than flatten it into a card review.
     Walk {
         trace: Box<Trace>,
-        scheduler: SchedulerKind,
         store: Store,
     },
 }
@@ -782,7 +767,7 @@ struct LoadedSession {
 }
 
 /// Loads the decks named (or picked) for a review, resolves prerequisites and
-/// the mode/scheduler/order settings, and builds the session and store. Shared
+/// the mode/order settings, and builds the session and store. Shared
 /// by `alix review` (TUI) and `alix serve` (web). Returns `Ok(None)` when the
 /// picker was cancelled.
 /// A review session built from an explicit set of deck paths. Shared by the TUI
@@ -906,18 +891,12 @@ fn build_review(
         cards.retain(|c| ids.contains(&c.id()));
     }
 
-    // Directives (scheduler/order) come from the session's decks.
+    // Directives (order) come from the session's decks.
     let target_settings: Vec<&DeckSettings> = settings.iter().collect();
 
-    // scheduler/order are deck/session-level: CLI flag > deck directive >
-    // default. `mode` is now per-card (resolved at review time from the card's
-    // own `% mode:`), so only the CLI override is carried here.
-    let scheduler = resolve(
-        "scheduler",
-        args.scheduler,
-        target_settings.iter().map(|s| s.scheduler),
-        SchedulerKind::default(),
-    );
+    // `order` is deck/session-level: CLI flag > deck directive > default. `mode`
+    // is now per-card (resolved at review time from the card's own `% mode:`), so
+    // only the CLI override is carried here.
     let order = resolve(
         "order",
         args.order,
@@ -932,7 +911,7 @@ fn build_review(
         order,
         topology: topology_order,
     };
-    let session = Session::new(cards, store, scheduler, options, now_ms());
+    let session = Session::new(cards, store, Box::new(Fsrs::default()), options, now_ms());
 
     // Remember these decks for next time's picker — but only when there is
     // actually something to review, so merely opening a deck with nothing due
@@ -1045,15 +1024,10 @@ fn load_review_session(
     // A single trace deck picked interactively launches its walk, not a
     // flattened card review.
     if let Some(deck) = single_trace_to_walk(from_picker, &deck_paths) {
-        let scheduler = args
-            .scheduler
-            .or(deck.settings.scheduler)
-            .unwrap_or_default();
         let trace = Trace::from_deck(&deck)?;
         return Ok(Some(LoadedSession {
             started: Started::Walk {
                 trace: Box::new(trace),
-                scheduler,
                 store,
             },
             workspace,
@@ -1338,11 +1312,7 @@ fn run_started(started: Started, args: &ReviewArgs) -> Result<()> {
             store,
             config,
         } => run_exam_app(*deck, &config, store),
-        Started::Walk {
-            trace,
-            scheduler,
-            mut store,
-        } => run_walk(*trace, scheduler, &mut store, None).map(|_| ()),
+        Started::Walk { trace, mut store } => run_walk(*trace, &mut store, None).map(|_| ()),
         Started::Review(rs) => run_review_tui(*rs, args),
     }
 }
@@ -1361,13 +1331,9 @@ fn run_started_on(
             store,
             config,
         } => run_exam_app_on(terminal, *deck, &config, store),
-        Started::Walk {
-            trace,
-            scheduler,
-            mut store,
-        } => {
+        Started::Walk { trace, mut store } => {
             ratatui::restore();
-            let result = run_walk(*trace, scheduler, &mut store, None).map(|_| ());
+            let result = run_walk(*trace, &mut store, None).map(|_| ());
             *terminal = ratatui::init();
             result
         }
@@ -1607,14 +1573,9 @@ fn review_serve(args: ReviewArgs, browse_mode: bool) -> Result<()> {
     let build_walk = |paths: &[PathBuf]| -> Result<Option<serve::WalkBuild>> {
         match single_trace_to_walk(true, paths) {
             Some(deck) => {
-                let scheduler = args
-                    .scheduler
-                    .or(deck.settings.scheduler)
-                    .unwrap_or_default();
                 let trace = Trace::from_deck(&deck)?;
                 Ok(Some(serve::WalkBuild {
-                    walk: Walk::new(trace, scheduler),
-                    scheduler,
+                    walk: Walk::new(trace),
                 }))
             }
             None => Ok(None),
@@ -1662,7 +1623,7 @@ fn announce(addr: SocketAddr, lan: bool, token: Option<&str>, label: &str) {
 }
 
 fn stats(args: DeckArgs) -> Result<()> {
-    let scheduler = args.scheduler.scheduler();
+    let scheduler = Fsrs::default();
     let now = now_ms();
 
     for path in &args.decks {
@@ -1731,7 +1692,7 @@ fn stats(args: DeckArgs) -> Result<()> {
 }
 
 fn list(args: DeckArgs) -> Result<()> {
-    let scheduler = args.scheduler.scheduler();
+    let scheduler = Fsrs::default();
     let now = now_ms();
 
     for path in &args.decks {
@@ -2137,7 +2098,6 @@ fn browse_serve(args: BrowseArgs) -> Result<()> {
             decks: args.decks,
             serve: args.serve,
             mode: None,
-            scheduler: None,
             order: None,
             topology: None,
             region: None,
@@ -2664,10 +2624,6 @@ fn trace_cmd(args: TraceArgs) -> Result<()> {
         return print_trace_map(&trace);
     }
 
-    let scheduler = args
-        .scheduler
-        .or(deck.settings.scheduler)
-        .unwrap_or_default();
     // A trace in a workspace tracks its progress in that workspace's own store.
     let store = store_for(std::slice::from_ref(&args.deck), args.store.clone())?;
     let config = Config::load(args.config.as_deref())?;
@@ -2677,7 +2633,7 @@ fn trace_cmd(args: TraceArgs) -> Result<()> {
     }
     let mut store = store;
     let grade = args.grade.then_some(&config);
-    let completed = run_walk(trace, scheduler, &mut store, grade)?;
+    let completed = run_walk(trace, &mut store, grade)?;
     // Capstone: a full walk earns the trace's exam — the compression that
     // verifies (and masters) it. Offered here, also reachable any time with
     // `alix exam <trace>`.
@@ -2693,13 +2649,8 @@ fn trace_cmd(args: TraceArgs) -> Result<()> {
 /// `alix explore --walk`. Returns whether every checkpoint was walked (the walk
 /// reached [`Phase::Done`] rather than being quit early), so the caller can offer
 /// the exam as a capstone.
-fn run_walk(
-    trace: Trace,
-    scheduler: SchedulerKind,
-    store: &mut Store,
-    grade: Option<&Config>,
-) -> Result<bool> {
-    let mut walk = Walk::new(trace, scheduler);
+fn run_walk(trace: Trace, store: &mut Store, grade: Option<&Config>) -> Result<bool> {
+    let mut walk = Walk::new(trace);
     let total = walk.total();
     let mut last_prediction = String::new();
     println!("{BOLD}Trace{RESET}  {}", walk.trace().description);
@@ -3027,9 +2978,8 @@ fn explore_walk(args: &ExploreArgs, config: &Config, source: &str, goal: &str) -
 
     let deck = Deck::load(&out)?;
     let trace = Trace::from_deck(&deck)?;
-    let scheduler = deck.settings.scheduler.unwrap_or_default();
     let mut store = store_for(std::slice::from_ref(&out), None)?;
-    run_walk(trace, scheduler, &mut store, None).map(|_| ())
+    run_walk(trace, &mut store, None).map(|_| ())
 }
 
 /// `alix workspace <dir>`: open a workspace into its member picker. Pick a fact
@@ -3067,16 +3017,14 @@ fn workspace_cmd(args: WorkspaceArgs) -> Result<()> {
             let deck = Deck::load(only)?;
             if deck.is_trace() {
                 let trace = Trace::from_deck(&deck)?;
-                let scheduler = deck.settings.scheduler.unwrap_or_default();
                 let mut store = store_for(std::slice::from_ref(only), args.store.clone())?;
-                run_walk(trace, scheduler, &mut store, None)?;
+                run_walk(trace, &mut store, None)?;
                 continue;
             }
         }
         review(ReviewArgs {
             decks: picked,
             mode: None,
-            scheduler: None,
             order: None,
             topology: None,
             region: None,
@@ -3274,7 +3222,6 @@ fn check(decks: Vec<PathBuf>) -> Result<()> {
                 let s = &deck.settings;
                 let declared: Vec<String> = [
                     s.mode.map(|m| format!("mode: {}", val_name(m))),
-                    s.scheduler.map(|s| format!("scheduler: {}", val_name(s))),
                     s.order.map(|o| format!("order: {}", val_name(o))),
                     s.exam_strictness
                         .map(|v| format!("strictness: {}", val_name(v))),
