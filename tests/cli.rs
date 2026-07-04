@@ -144,23 +144,16 @@ fn reset_all_clears_a_seeded_store() {
 }
 
 #[test]
-fn rejects_a_progress_file_from_a_newer_alix_without_touching_it() {
-    // End-to-end version of the store unit test: an older alix run against a
-    // store written by a newer alix must refuse — and never rewrite it.
+fn a_progress_file_of_any_version_loads_pre_1_0() {
+    // Pre-1.0 there is no store version fence: a store written by a "newer" alix
+    // (higher version) loads best-effort rather than being refused — we break the
+    // format freely and never bump or migrate the version.
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.txt", VALID_DECK);
-    let newer = r#"{"version":999,"cards":{}}"#;
-    let store = write(dir.path(), "progress.json", newer);
+    let store = write(dir.path(), "progress.json", r#"{"version":999,"cards":{}}"#);
 
     let out = alix(&["stats", &deck, "--store", &store]);
-    assert!(!out.status.success(), "a newer store should be refused");
-    assert!(
-        stderr(&out).contains("upgrade alix"),
-        "stderr: {}",
-        stderr(&out)
-    );
-    // The file is byte-for-byte what it was — no silent downgrade.
-    assert_eq!(newer, std::fs::read_to_string(&store).unwrap());
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
 }
 
 #[test]

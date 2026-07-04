@@ -11,30 +11,38 @@ use std::{
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::scheduler::Grade;
+
 /// How many of the most recent reviews are kept per card.
 const HISTORY_CAP: usize = 50;
 
 /// The highest Leitner stage. Cards that keep passing stay here.
 pub const MAX_STAGE: u8 = 5;
 
-/// The current on-disk store-format version. Bump it when the persisted shape
-/// changes in a way an older binary couldn't safely read, and add the matching
-/// step in [`migrate`].
-///
-/// v2 made [`DeckProgress::mastered_at_ms`] optional and added
-/// `exam_failed_at_ms` (the re-sit cooldown), so a deck can carry a *failed*
-/// exam with no mastery — an entry an older binary (which required
-/// `mastered_at_ms`) couldn't parse. Reading a v1 file is still fine (the new
-/// fields default), so the bump only fences off the *forward* direction.
-const CURRENT_VERSION: u32 = 2;
+/// The on-disk store-format version. **Pinned at 1 pre-1.0** — per the project
+/// convention we do not bump it or migrate: the shape changes freely and old data
+/// is loaded best-effort via `#[serde(default)]` (surviving progress is a bonus, not
+/// a guarantee). Versioning + migrations are a post-1.0 concern; the field is kept so
+/// that door stays open.
+const CURRENT_VERSION: u32 = 1;
 
 /// One recorded review of a card.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Review {
     /// When the review happened (Unix ms).
     pub ts_ms: u64,
-    /// Whether the card was answered correctly.
-    pub passed: bool,
+    /// The grade the card was answered with. Pre-grade stores logged only a pass/fail
+    /// bool; those entries load with a default grade (a deliberate pre-1.0 break —
+    /// scheduling state is unaffected).
+    #[serde(default = "default_review_grade")]
+    pub grade: Grade,
+}
+
+/// Serde default for a `Review` from a pre-grade store (which had only a `passed`
+/// bool, no `grade`): assume a pass. History is cosmetic (stats + `last_review_ms`),
+/// so a wrong default here cannot corrupt scheduling.
+fn default_review_grade() -> Grade {
+    Grade::Pass
 }
 
 /// Scheduling state of the SM-2 algorithm for a single card.
@@ -91,15 +99,15 @@ impl CardState {
     }
 
     /// Appends a review to the bounded history and updates the counters.
-    pub fn record_review(&mut self, ts_ms: u64, passed: bool) {
+    pub fn record_review(&mut self, ts_ms: u64, grade: Grade) {
         self.total_reviews += 1;
-        if passed {
+        if grade.passed() {
             self.total_passes += 1;
             self.streak += 1;
         } else {
             self.streak = 0;
         }
-        self.history.push(Review { ts_ms, passed });
+        self.history.push(Review { ts_ms, grade });
         if self.history.len() > HISTORY_CAP {
             let excess = self.history.len() - HISTORY_CAP;
             self.history.drain(..excess);
@@ -161,15 +169,6 @@ pub enum StoreError {
         #[source]
         source: serde_json::Error,
     },
-    #[error(
-        "{path}: progress file is version {found}, but this build of alix \
-         understands only up to {supported} — upgrade alix to open it"
-    )]
-    TooNew {
-        path: PathBuf,
-        found: u32,
-        supported: u32,
-    },
 }
 
 impl Store {
@@ -194,7 +193,6 @@ impl Store {
             path: path.clone(),
             source,
         })?;
-        let file = migrate(file, &path)?;
         let mut cards = HashMap::with_capacity(file.cards.len());
         for (key, state) in file.cards {
             let hash = key.parse::<u64>().map_err(|e| StoreError::Format {
@@ -345,23 +343,6 @@ fn default_version() -> u32 {
     1
 }
 
-/// Brings a just-loaded [`StoreFile`] up to [`CURRENT_VERSION`], or fails loudly
-/// if it was written by a newer alix than this one. Refusing is the safety net:
-/// silently saving a newer store back at the current version would drop whatever
-/// fields the newer format added — i.e. quietly wipe progress. Future migrations
-/// step the version up one at a time here, oldest first.
-fn migrate(file: StoreFile, path: &Path) -> Result<StoreFile, StoreError> {
-    if file.version > CURRENT_VERSION {
-        return Err(StoreError::TooNew {
-            path: path.to_path_buf(),
-            found: file.version,
-            supported: CURRENT_VERSION,
-        });
-    }
-    // e.g. `if file.version < 2 { file = v1_to_v2(file); }`
-    Ok(file)
-}
-
 /// The default location of the store file
 /// (`~/.local/share/alix/progress.json` on Linux).
 pub fn default_store_path() -> Option<PathBuf> {
@@ -469,8 +450,8 @@ mod tests {
         let path = dir.path().join("progress.json");
         let mut store = Store::open(&path).unwrap();
         assert_eq!(None, store.last_review_ms());
-        store.get_or_insert(1, 0).record_review(100, true);
-        store.get_or_insert(2, 0).record_review(300, true);
+        store.get_or_insert(1, 0).record_review(100, Grade::Pass);
+        store.get_or_insert(2, 0).record_review(300, Grade::Pass);
         assert_eq!(Some(300), store.last_review_ms());
     }
 
@@ -490,7 +471,7 @@ mod tests {
         let mut store = Store::open(&path).unwrap();
         let state = store.get_or_insert(42, 1000);
         state.stage = 3;
-        state.record_review(1000, true);
+        state.record_review(1000, Grade::Pass);
         store.save().unwrap();
 
         let reloaded = Store::open(&path).unwrap();
@@ -501,7 +482,7 @@ mod tests {
         assert_eq!(
             vec![Review {
                 ts_ms: 1000,
-                passed: true
+                grade: Grade::Pass
             }],
             state.history
         );
@@ -609,18 +590,22 @@ mod tests {
     }
 
     #[test]
-    fn rejects_a_store_from_a_newer_alix_without_touching_it() {
-        // A store written by a future alix (higher version) must NOT be
-        // silently downgraded and re-saved — that would drop fields the newer
-        // format added. Open must fail and leave the file exactly as it was.
+    fn loads_any_version_and_defaults_pre_grade_history() {
+        // Pre-1.0 there is no version fence: any store loads best-effort. A store
+        // whose history entries carried only a `passed` bool (no `grade`) still loads
+        // — the scheduling state survives and the old entries get a default grade.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("progress.json");
-        let newer = "{\"version\":999,\"cards\":{}}";
-        std::fs::write(&path, newer).unwrap();
-
-        let err = Store::open(&path).err().unwrap();
-        assert!(format!("{err}").contains("version 999"));
-        assert_eq!(newer, std::fs::read_to_string(&path).unwrap());
+        std::fs::write(
+            &path,
+            r#"{"version":999,"cards":{"5":{"stage":3,"stage_entered_ms":0,"history":[{"ts_ms":100,"passed":false}]}}}"#,
+        )
+        .unwrap();
+        let store = Store::open(&path).unwrap();
+        let state = store.get(5).unwrap();
+        assert_eq!(3, state.stage); // scheduling state survives
+        assert_eq!(100, state.history[0].ts_ms);
+        assert_eq!(Grade::Pass, state.history[0].grade); // old `passed` dropped → default
     }
 
     #[test]
@@ -660,7 +645,7 @@ mod tests {
     fn history_is_capped() {
         let mut state = CardState::new(0);
         for i in 0..(HISTORY_CAP as u64 + 10) {
-            state.record_review(i, true);
+            state.record_review(i, Grade::Pass);
         }
         assert_eq!(HISTORY_CAP, state.history.len());
         assert_eq!(10, state.history[0].ts_ms);
@@ -670,12 +655,38 @@ mod tests {
     #[test]
     fn streak_resets_on_fail() {
         let mut state = CardState::new(0);
-        state.record_review(1, true);
-        state.record_review(2, true);
+        state.record_review(1, Grade::Pass);
+        state.record_review(2, Grade::Pass);
         assert_eq!(2, state.streak);
-        state.record_review(3, false);
+        state.record_review(3, Grade::Fail);
         assert_eq!(0, state.streak);
         assert_eq!(2, state.total_passes);
         assert_eq!(3, state.total_reviews);
+    }
+
+    #[test]
+    fn record_review_stores_the_grade_and_partial_is_not_a_pass() {
+        let mut state = CardState::new(0);
+        state.record_review(10, Grade::Partial);
+        assert_eq!(Grade::Partial, state.history.last().unwrap().grade);
+        assert_eq!(1, state.total_reviews);
+        assert_eq!(0, state.total_passes); // Partial is not a clean pass
+        assert_eq!(0, state.streak);
+    }
+
+    #[test]
+    fn history_grades_survive_save_reload() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("progress.json");
+        let mut store = Store::open(&path).unwrap();
+        let st = store.get_or_insert(7, 0);
+        st.record_review(100, Grade::Partial);
+        st.record_review(200, Grade::Fail);
+        store.save().unwrap();
+
+        let reloaded = Store::open(&path).unwrap();
+        let history = &reloaded.get(7).unwrap().history;
+        assert_eq!(Grade::Partial, history[0].grade);
+        assert_eq!(Grade::Fail, history[1].grade);
     }
 }

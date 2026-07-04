@@ -14,7 +14,7 @@ use crate::store::{CardState, MAX_STAGE, Sm2State};
 
 /// The outcome of reviewing a card. Three honest outcomes, shared by fact-deck
 /// review and the trace walk: **failed** / **partly** / **got it**.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Grade {
     /// Wrong (or the user asked for hints / graded "failed"). Resets to stage 1.
     Fail,
@@ -118,7 +118,7 @@ impl Scheduler for Leitner {
             Grade::Pass => (state.stage + 1).min(MAX_STAGE),
         };
         state.stage_entered_ms = now_ms;
-        state.record_review(now_ms, grade.passed());
+        state.record_review(now_ms, grade);
     }
 }
 
@@ -205,7 +205,7 @@ impl Scheduler for Sm2 {
             Grade::Pass => (state.stage + 1).min(MAX_STAGE),
         };
         state.stage_entered_ms = now_ms;
-        state.record_review(now_ms, grade.passed());
+        state.record_review(now_ms, grade);
     }
 }
 
@@ -292,7 +292,7 @@ mod tests {
         Leitner.apply(&mut s, Grade::Partial, 1000);
         assert_eq!(0, s.streak); // partly resets the streak
         assert_eq!(1, s.total_passes); // ...and doesn't count as a pass
-        assert!(!s.history.last().unwrap().passed); // logged as not-passed
+        assert!(!s.history.last().unwrap().grade.passed()); // logged as not-passed
     }
 
     #[test]
