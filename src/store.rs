@@ -48,7 +48,7 @@ fn default_review_grade() -> Grade {
 /// FSRS memory state for a card — our own representation (all primitives + `u64`
 /// times), kept decoupled from `rs-fsrs`'s `Card` so the store stays all-`u64` and
 /// isn't tied to the crate's type. Present once the card has an FSRS review.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct FsrsState {
     /// Days for retrievability to fall from 100% to 90%.
     pub stability: f64,

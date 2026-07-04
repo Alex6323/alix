@@ -866,7 +866,6 @@ mod tests {
     use std::io::Write;
 
     use super::*;
-    use crate::store::MAX_STAGE;
 
     fn write_deck(dir: &Path, name: &str, body: &str) -> PathBuf {
         let path = dir.join(name);
@@ -880,11 +879,12 @@ mod tests {
         (store, dir)
     }
 
-    /// Drives a card to retirement: top stage, reached by passing (streak ≥ 1).
+    /// Drives a card to retirement: an FSRS interval grown past the cap.
     fn retire(store: &mut Store, id: u64) {
-        let s = store.get_or_insert(id, 0);
-        s.stage = MAX_STAGE;
-        s.streak = 1;
+        store.get_or_insert(id, 0).fsrs = Some(crate::store::FsrsState {
+            scheduled_days: 100_000, // well past the retirement cap
+            ..Default::default()
+        });
     }
 
     #[test]
@@ -900,11 +900,9 @@ mod tests {
         store.get_or_insert(deck.cards[0].id(), 0).stage = 2;
         assert_eq!(DeckState::Started, deck.state(&store));
 
-        // Every card retired (top stage, reached by passing) -> finished.
+        // Every card retired (FSRS interval past the cap) -> finished.
         for card in &deck.cards {
-            let s = store.get_or_insert(card.id(), 0);
-            s.stage = MAX_STAGE;
-            s.streak = 1;
+            retire(&mut store, card.id());
         }
         assert_eq!(DeckState::Finished, deck.state(&store));
     }

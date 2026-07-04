@@ -372,9 +372,9 @@ fn separate_siblings(order: Vec<usize>, cards: &[Card]) -> VecDeque<usize> {
 const RETIRE_AFTER_DAYS: u32 = 365;
 
 /// Whether a card is *retired* (resting), so it is no longer scheduled until
-/// `alix reset`. Under FSRS: its interval has grown past [`RETIRE_AFTER_DAYS`].
-/// Legacy (pre-FSRS) cards fall back to "reached the top Leitner stage by passing".
-/// Unseen cards are never retired.
+/// `alix reset`: its FSRS interval has grown past [`RETIRE_AFTER_DAYS`]. A card with
+/// no FSRS state yet — unseen, or a legacy card not yet reviewed under FSRS — is
+/// never retired; its first FSRS review is what can push the interval past the cap.
 pub fn is_retired(card: &Card, store: &Store) -> bool {
     is_retired_id(card.id(), store)
 }
@@ -382,10 +382,10 @@ pub fn is_retired(card: &Card, store: &Store) -> bool {
 /// Id-only variant of [`is_retired`], so callers that hold an id but not the
 /// [`Card`] (e.g. a trace checkpoint) share the one retirement rule.
 pub fn is_retired_id(card_id: u64, store: &Store) -> bool {
-    store.get(card_id).is_some_and(|s| match &s.fsrs {
-        Some(f) => f.scheduled_days >= RETIRE_AFTER_DAYS,
-        None => s.stage >= MAX_STAGE && s.streak >= 1,
-    })
+    store
+        .get(card_id)
+        .and_then(|s| s.fsrs.as_ref())
+        .is_some_and(|f| f.scheduled_days >= RETIRE_AFTER_DAYS)
 }
 
 /// Each card's normalized Leitner stage (`0.0..=1.0`, unseen = 0, top-stage = 1)
@@ -942,19 +942,33 @@ mod tests {
         assert_eq!([2, 1, 0, 0, 0, 1], h);
     }
 
+    /// An FSRS state whose interval sits at the retirement cap.
+    fn retired_fsrs() -> crate::store::FsrsState {
+        crate::store::FsrsState { scheduled_days: RETIRE_AFTER_DAYS, ..Default::default() }
+    }
+
     #[test]
-    fn is_retired_needs_top_stage_reached_by_passing() {
+    fn is_retired_once_the_interval_passes_the_cap() {
         let (mut store, _dir) = empty_store();
         let c = card("deck.txt", 0);
 
-        assert!(!is_retired(&c, &store)); // unseen
+        assert!(!is_retired(&c, &store)); // unseen — never retired
+        // An FSRS interval at/past the cap rests.
+        store.get_or_insert(c.id(), 0).fsrs = Some(retired_fsrs());
+        assert!(is_retired(&c, &store));
+        // Just below the cap: still in rotation.
+        store.get_or_insert(c.id(), 0).fsrs = Some(crate::store::FsrsState {
+            scheduled_days: RETIRE_AFTER_DAYS - 1,
+            ..Default::default()
+        });
+        assert!(!is_retired(&c, &store));
+        // A legacy card at the top Leitner stage but with no FSRS state is no longer
+        // retired — retirement now needs a grown FSRS interval, not a stage.
         let s = store.get_or_insert(c.id(), 0);
+        s.fsrs = None;
         s.stage = MAX_STAGE;
         s.streak = 1;
-        assert!(is_retired(&c, &store)); // at the top, passed
-        let s = store.get_or_insert(c.id(), 0);
-        s.stage = MAX_STAGE - 1;
-        assert!(!is_retired(&c, &store)); // below the top
+        assert!(!is_retired(&c, &store));
     }
 
     #[test]
@@ -977,8 +991,8 @@ mod tests {
         assert!(!has_reviewable(one, &store, sched.as_ref(), now));
         assert!(has_reviewable(one, &store, sched.as_ref(), now + 3_600_000));
 
-        // A retired card (at the top stage, passed) never counts, even past due.
-        store.get_or_insert(c.id(), now).stage = MAX_STAGE;
+        // A retired card (FSRS interval past the cap) never counts, even past due.
+        store.get_or_insert(c.id(), now).fsrs = Some(retired_fsrs());
         assert!(!has_reviewable(
             std::slice::from_ref(&c),
             &store,
@@ -991,9 +1005,7 @@ mod tests {
     fn retired_card_excluded_even_under_cram() {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
-        let s = store.get_or_insert(all[0].id(), 0);
-        s.stage = MAX_STAGE;
-        s.streak = 1; // retired
+        store.get_or_insert(all[0].id(), 0).fsrs = Some(retired_fsrs()); // retired
 
         let session = Session::new(
             all,
@@ -1100,9 +1112,7 @@ mod tests {
     fn retired_card_excluded_even_with_a_topology() {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
-        let s = store.get_or_insert(all[0].id(), 0);
-        s.stage = MAX_STAGE;
-        s.streak = 1; // retired
+        store.get_or_insert(all[0].id(), 0).fsrs = Some(retired_fsrs()); // retired
         // A topology listing the retired card cannot resurrect it — the filter
         // runs before the topology sort.
         let topo = topology_order(&[&all[0]]);
