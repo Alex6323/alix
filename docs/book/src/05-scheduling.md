@@ -20,9 +20,15 @@ Grading feeds FSRS a rating:
 So a card you keep getting right stretches to longer and longer intervals, a miss
 pulls it back in, and a **partly** — you got the gist but stumbled — lands in
 between. Early on the first successful reviews are minutes-to-hours apart (FSRS's
-short-term *learning* steps); once a card **graduates** into the review phase the
-intervals grow to days, then weeks. Within a session a failed card still comes back
-the same run, as soon as the queue cycles round to it.
+short-term *learning* steps); a card **graduates** into the review phase — where
+intervals grow to days, then weeks — only after **two** spaced correct recalls,
+and missing it resets that progress, so a slip doesn't shortcut it.
+
+A session shows each due card once. Miss one and it returns **spaced** — after its
+short step, interleaved behind other cards — not drilled again the instant you saw
+the answer (which would test your working memory, not your recall). When nothing is
+due right now the session ends; a card still cooling is picked up the next session,
+or slots back in on its own if you leave the window open.
 
 One knob shapes the whole schedule: **`retention`** — the recall probability FSRS
 aims for (0.70–0.99, default 0.9). Raise it to see cards more often, lower it to

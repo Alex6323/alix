@@ -78,6 +78,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ephemeral (never persisted or sent to the server).
 
 ### Changed
+- **Breaking: a review session scores each card once per appearance.** A missed
+  card is no longer re-drilled immediately in the same sitting; it keeps its
+  short spaced step and re-appears once that step has elapsed, interleaved behind
+  other due cards (so every scored review is genuinely time-separated). When
+  nothing is due right now the session ends — a card still cooling is picked up
+  the next session, or re-enters on its own if you keep the window open. Fixes
+  cards graduating too early from same-session re-drills.
+- **Breaking: a card graduates only after two spaced correct recalls.** A single
+  Good after a miss no longer promotes a card to the long-term review phase faster
+  than two clean passes would; two full Goods graduate it, a miss resets that
+  progress, and a *partly* is neutral. (A lapsed card still re-graduates on one
+  Good.)
 - **Breaking: FSRS is now the only scheduler.** alix schedules with FSRS-5 (via
   the `rs-fsrs` crate) for every review; the Leitner and SM-2 schedulers are
   gone, along with the `% scheduler:` directive and the `--scheduler` flag that
