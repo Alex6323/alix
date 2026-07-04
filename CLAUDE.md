@@ -246,6 +246,10 @@ to this codebase. When in doubt, mirror the surrounding code.
   existing struck items' shape; sweep the launch-checklist duplicates too). This
   is the step that historically gets forgotten — treat "merged but not struck"
   as an unfinished task, same as a failing test.
+- **SDD specs and plans live locally in `docs/specs/` and `docs/plans/`** (gitignored,
+  date-named, e.g. `docs/specs/<date>-<topic>-spec.md`). Before building a spec'd feature,
+  read its spec/plan there; the **memory index** and `PLAN.md` track what's currently in
+  flight — these design docs aren't in the repo, so a fresh session won't see them otherwise.
 - **Subagent-driven development cleans up after itself.** When an SDD run
   finishes — its branch merged or abandoned — delete its scratch: the
   `.superpowers/sdd/` ledger and any task-brief / review-package files, so a
