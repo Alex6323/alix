@@ -209,21 +209,27 @@ to this codebase. When in doubt, mirror the surrounding code.
 - **User-facing changes get a `CHANGELOG.md` entry** under `## [Unreleased]`
   (Keep a Changelog format: Added / Changed / Fixed). Internal refactors and
   test-only changes don't.
+- **Keep the living docs lean — this file, `CHANGELOG.md`, commit/PR text.** Condense each
+  rule/change to its shortest form that still carries the information — cut filler, war-stories,
+  and rationale-at-length (those go in the spec or memory), never the substance. If it can't be
+  shorter without losing something relevant, long is fine. The measure is information-per-word,
+  not line count.
 - **Break freely while pre-1.0.** While the version is `0.x.y`, don't add
   back-compat shims or aliases for renamed or removed commands, flags, config
   keys, or directives — change them outright and record it as a **Breaking** note
   under `## [Unreleased]` → Changed. Compatibility machinery only earns its keep
   after 1.0; before then it's just surface to carry.
-- **Pre-1.0 store format: no versioning, no migrations — just break it.**
-  `CURRENT_VERSION` stays at `1`; never bump it and never add a `migrate` step. When the
-  persisted store/deck shape changes, change it outright and let old data break
-  (`#[serde(default)]` on new fields is a fine soft break; progress that happens to survive
-  is a bonus, not a goal). The version fence and migrations are a *post-1.0* concern; if the
-  version is ever `>1`, collapse it back to `1`. Author's standing instruction — **do not
-  propose a store version bump pre-1.0**, and don't re-raise it.
+- **Pre-1.0 store format: no versioning, no migrations — break it.** `CURRENT_VERSION` stays
+  `1`; never bump it or add a `migrate` step. Change the shape outright and let old data break
+  (`#[serde(default)]` is a fine soft break). **Don't propose a store version bump pre-1.0.**
 - **No new dependency without a one-line reason.** Each crate added is permanent
   maintenance and supply-chain surface — reach for std or an existing dep first,
   and when a new one genuinely earns its place, say why in the commit.
+- **Counterweight to the above: don't hand-roll a correctness-critical commodity.** A standard,
+  well-specified algorithm (scheduler, standard-format parser, crypto) should come from a
+  maintained crate — re-implementing it from a spec is the *higher*-risk choice. Separate a
+  heavy *full package* (e.g. an ML optimizer) from its light *core* before rejecting a dep on
+  weight.
 - **Don't break card identity.** A card's id is
   `XxHash64(deck file name + its back lines)` — or, for **cloze** cards, its
   `hash_lines`: each line's text with the `{{ }}` delimiters stripped (so
