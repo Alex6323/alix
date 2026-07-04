@@ -3313,6 +3313,19 @@ fn check(decks: Vec<PathBuf>) -> Result<()> {
                         }
                     }
                 }
+
+                // A `% requires:` to a source-less deck never gates this deck's exam
+                // (`is_locked` sees through an exam-less prerequisite), so a sourced
+                // deck listing one likely meant it to gate — flag the dead edge.
+                for prereq in alix::deck::nongating_prerequisites(&deck) {
+                    warnings += 1;
+                    eprintln!(
+                        "warning: {}: requires source-less `{prereq}` — this edge \
+                         doesn't gate its exam; add a `% source:` to `{prereq}` to \
+                         make it a real prerequisite",
+                        deck.subject
+                    );
+                }
             }
         }
     }

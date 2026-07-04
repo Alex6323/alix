@@ -440,6 +440,29 @@ pub fn is_locked(deck: &Deck, decks_dir: Option<&Path>, store: &Store) -> bool {
     !prereqs_finished(deck, decks_dir, store, &mut HashSet::new())
 }
 
+/// A deck's non-gating `% requires:` edges: a prerequisite that resolves to a
+/// readable but source-less deck (no exam of its own) is seen through by
+/// `is_locked` and never gates, so listing it is almost certainly a mistake.
+/// Returns each such `% requires:` string. Empty when this deck has no exam of its
+/// own or every prerequisite gates; missing/unreadable prerequisites are skipped
+/// (they don't gate either, but aren't a fixable "add a `% source:`" case).
+pub fn nongating_prerequisites(deck: &Deck) -> Vec<String> {
+    if !deck.has_exam() {
+        return Vec::new();
+    }
+    let dir = deck.path.parent();
+    let mut out = Vec::new();
+    for req in &deck.requires {
+        let sourceless = resolve_dep(req, dir, dir)
+            .and_then(|path| Deck::load(&path).ok())
+            .is_some_and(|prereq| !prereq.has_exam());
+        if sourceless {
+            out.push(req.clone());
+        }
+    }
+    out
+}
+
 /// Whether `s` looks like an http(s) URL (vs a local file path). Used to tell a
 /// fetchable `% source:`/`% link:` from a file path.
 pub(crate) fn is_url(s: &str) -> bool {
@@ -959,6 +982,37 @@ mod tests {
         // Seen but still in a learning step (not graduated) — only `Started`.
         learning(&mut store, deck.cards[0].id());
         assert_eq!(DeckState::Started, deck.state(&store));
+    }
+
+    #[test]
+    fn nongating_prerequisites_flags_a_sourceless_required_deck() {
+        let dir = tempfile::tempdir().unwrap();
+        write_deck(dir.path(), "a.txt", "# a\n\t1\n"); // source-less: no exam
+        write_deck(dir.path(), "c.txt", "% source: https://x\n# c\n\t1\n"); // sourced
+        let b_path = write_deck(
+            dir.path(),
+            "b.txt",
+            "% source: https://x\n% requires: a\n% requires: c\n# b\n\t1\n",
+        );
+        let b = Deck::load(&b_path).unwrap();
+        // Only the source-less `a` is flagged; the sourced `c` gates fine.
+        assert_eq!(vec!["a".to_string()], nongating_prerequisites(&b));
+    }
+
+    #[test]
+    fn nongating_prerequisites_empty_when_no_exam_or_prereq_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        write_deck(dir.path(), "a.txt", "# a\n\t1\n");
+        // A source-less deck has no exam of its own — nothing to gate.
+        let b = write_deck(dir.path(), "b.txt", "% requires: a\n# b\n\t1\n");
+        assert!(nongating_prerequisites(&Deck::load(&b).unwrap()).is_empty());
+        // A sourced deck requiring a MISSING prereq: skipped (not a fixable edge).
+        let c = write_deck(
+            dir.path(),
+            "c.txt",
+            "% source: https://x\n% requires: nope\n# c\n\t1\n",
+        );
+        assert!(nongating_prerequisites(&Deck::load(&c).unwrap()).is_empty());
     }
 
     #[test]
