@@ -23,7 +23,7 @@ use ratatui::{
 };
 
 use crate::{
-    config::{self, KeyPattern, PickerKeys},
+    config::{self, KeyPattern, PickerKeys, ReviewConfig},
     deck::{self, Deck, DeckState},
     parser,
     recent::RecentDecks,
@@ -239,13 +239,14 @@ pub fn deck_status(
     store: &Store,
     decks_dir: Option<&Path>,
     enforce_locks: bool,
+    review: ReviewConfig,
 ) -> DeckStatus {
     let state = deck.state(store);
     let total = deck.cards.len();
     let retired = deck
         .cards
         .iter()
-        .filter(|card| session::is_retired(card, store))
+        .filter(|card| session::is_retired(card, store, review.retire_after_days))
         .count();
     // "mastered" is reserved for passing the exam; a source-less deck that's
     // merely fully drilled stays "done".
@@ -283,10 +284,16 @@ pub fn deck_status(
     // deck launches its exam (only when its exam isn't locked); otherwise there
     // must be a card due or new. Drilling is never gated by the lock — a
     // prerequisite-locked deck with due cards is still reviewable.
-    let scheduler = crate::scheduler::Fsrs::default();
+    let scheduler = crate::scheduler::Fsrs::new(review.retention);
     let reviewable = deck.is_trace()
         || (matches!(state, DeckState::ExamDue) && examable)
-        || session::has_reviewable(&deck.cards, store, &scheduler, session::now_ms());
+        || session::has_reviewable(
+            &deck.cards,
+            store,
+            &scheduler,
+            session::now_ms(),
+            review.retire_after_days,
+        );
     DeckStatus {
         state,
         badge,
@@ -311,6 +318,7 @@ fn deck_item(
     decks_dir: &Path,
     enforce_locks: bool,
     show_kind: bool,
+    review: ReviewConfig,
 ) -> Item<PathBuf> {
     let hint = location_hint(&c.path, decks_dir);
     // A folder row: its title (or folder name) and a deck count; always
@@ -348,7 +356,7 @@ fn deck_item(
     }
     let (label, meta, locked, state, is_trace, reviewable) = match Deck::load(&c.path) {
         Ok(deck) => {
-            let status = deck_status(&deck, store, Some(decks_dir), enforce_locks);
+            let status = deck_status(&deck, store, Some(decks_dir), enforce_locks, review);
             // In a workspace drill-in, badge whether a member is a trace (walked)
             // or a facts deck (reviewed). In Recent, every row is a loose file, so
             // the kind is just noise — drop it.
@@ -598,6 +606,7 @@ pub fn pick(
     start_in: Option<&Path>,
     focus: Option<&Path>,
     keys: &PickerKeys,
+    review: ReviewConfig,
 ) -> Result<Picked> {
     // Runs on the caller's terminal: opening a project, stepping back, *and*
     // returning from a launched review all stay on one live screen — the TUI is
@@ -609,6 +618,7 @@ pub fn pick(
         enforce_locks,
         gate_reviewable,
         keys,
+        review,
     );
     // Land on the just-launched loose deck (a workspace member is focused in its
     // own drill-in, inside `navigate`).
@@ -625,6 +635,7 @@ pub fn pick(
         gate_reviewable,
         start_in,
         focus,
+        review,
     )
 }
 
@@ -638,6 +649,7 @@ fn top_picker(
     enforce_locks: bool,
     gate_reviewable: bool,
     keys: &PickerKeys,
+    review: ReviewConfig,
 ) -> Picker<PathBuf> {
     let (mut workspaces, mut loose, mut folders) = (Vec::new(), Vec::new(), Vec::new());
     for c in build_candidates(decks_dir, recent) {
@@ -657,7 +669,7 @@ fn top_picker(
         };
         let is_recent = c.last_used_ms.is_some();
         // Recent rows drop the trace/deck kind label (it's just noise there).
-        let mut item = deck_item(c, store, decks_dir, enforce_locks, false);
+        let mut item = deck_item(c, store, decks_dir, enforce_locks, false, review);
         item.section = section;
         // Recent shows recent loose decks you can actually start now — finished
         // (mastered / done) ones are hidden by default so the list stays a quick
@@ -704,6 +716,7 @@ fn top_picker(
 /// exactly where it was left — no TUI teardown between views. With `start_in`, it
 /// opens straight into that workspace's drill-in first (used to return there after
 /// an activity); `Esc` from it drops to the top list.
+#[expect(clippy::too_many_arguments)] // each is a distinct, named picker/navigation setting
 fn navigate(
     terminal: &mut ratatui::DefaultTerminal,
     top: &mut Picker<PathBuf>,
@@ -712,12 +725,14 @@ fn navigate(
     gate_reviewable: bool,
     start_in: Option<&Path>,
     focus: Option<&Path>,
+    review: ReviewConfig,
 ) -> Result<Picked> {
     // Resuming straight into a workspace (returning after an activity): land on the
     // member just launched, so the selection doesn't jump (the user can then step
     // down to its dependent).
     if let Some(ws) = start_in {
-        let mut sub = workspace_picker(ws, decks_dir, enforce_locks, gate_reviewable, &top.keys)?;
+        let mut sub =
+            workspace_picker(ws, decks_dir, enforce_locks, gate_reviewable, &top.keys, review)?;
         if let Some(f) = focus {
             sub.focus_key(f);
         }
@@ -754,8 +769,14 @@ fn navigate(
         if let [path] = chosen.as_slice()
             && workspace::has_decks(path)
         {
-            let mut sub =
-                workspace_picker(path, decks_dir, enforce_locks, gate_reviewable, &top.keys)?;
+            let mut sub = workspace_picker(
+                path,
+                decks_dir,
+                enforce_locks,
+                gate_reviewable,
+                &top.keys,
+                review,
+            )?;
             match sub.run(terminal)? {
                 Some(decks) => {
                     return Ok(Picked {
@@ -811,7 +832,11 @@ fn run_mastered_window(
 /// Opens a workspace directly into its member sub-picker (for `alix workspace
 /// <dir>`): the same drill-in list, with the folder itself as the lookup root so
 /// sibling `% requires:` and locks resolve within it. `None` if cancelled.
-pub fn pick_workspace(folder: &Path, enforce_locks: bool) -> Result<Option<Vec<PathBuf>>> {
+pub fn pick_workspace(
+    folder: &Path,
+    enforce_locks: bool,
+    review: ReviewConfig,
+) -> Result<Option<Vec<PathBuf>>> {
     // `alix workspace` is a review context (no `--cram`), so gate unreviewable
     // members just like the review launcher.
     launch(workspace_picker(
@@ -820,6 +845,7 @@ pub fn pick_workspace(folder: &Path, enforce_locks: bool) -> Result<Option<Vec<P
         enforce_locks,
         enforce_locks,
         &PickerKeys::default(),
+        review,
     )?)
 }
 
@@ -951,6 +977,7 @@ fn workspace_picker(
     enforce_locks: bool,
     gate_reviewable: bool,
     keys: &PickerKeys,
+    review: ReviewConfig,
 ) -> Result<Picker<PathBuf>> {
     let ws = workspace::Workspace::load(folder)?;
     let store_path = if workspace::is_workspace(folder) {
@@ -970,7 +997,7 @@ fn workspace_picker(
                 is_workspace: false,
             };
             // Drill-in rows show the trace/deck kind (walk vs review differ).
-            let mut item = deck_item(c, &store, decks_dir, enforce_locks, true);
+            let mut item = deck_item(c, &store, decks_dir, enforce_locks, true, review);
             item.hint = None; // inside the workspace, the folder path is redundant
             item
         })
@@ -1023,10 +1050,11 @@ pub fn pick_to_reset(
     decks_dir: &Path,
     recent: &RecentDecks,
     store: &Store,
+    review: ReviewConfig,
 ) -> Result<Vec<PathBuf>> {
     let items = build_candidates(decks_dir, recent)
         .into_iter()
-        .map(|c| deck_item(c, store, decks_dir, false, false))
+        .map(|c| deck_item(c, store, decks_dir, false, false, review))
         .collect();
     let picker = Picker::new(
         items,

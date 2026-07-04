@@ -44,6 +44,9 @@ pub struct SessionOptions {
     /// Reorder the due/new set by this AI topology walk. `None` keeps the
     /// scheduler's order — only the *sort* changes, never which cards are due.
     pub topology: Option<TopologyOrder>,
+    /// A card retires once its FSRS interval reaches this many days; `None`
+    /// disables retirement. From `[review] retire_after` (per-workspace overridable).
+    pub retire_after_days: Option<u32>,
 }
 
 impl Default for SessionOptions {
@@ -54,6 +57,7 @@ impl Default for SessionOptions {
             cram: false,
             order: Order::Scheduled,
             topology: None,
+            retire_after_days: Some(DEFAULT_RETIRE_AFTER_DAYS),
         }
     }
 }
@@ -291,7 +295,7 @@ fn build_queue(
         match store.get(card.id()) {
             // A retired card rests until `alix reset` — never scheduled, not
             // even under cram.
-            Some(_) if is_retired(card, store) => {}
+            Some(_) if is_retired(card, store, options.retire_after_days) => {}
             Some(state) => {
                 if options.cram || scheduler.is_due(state, now_ms) {
                     due.push(i);
@@ -376,23 +380,30 @@ fn separate_siblings(order: Vec<usize>, cards: &[Card]) -> VecDeque<usize> {
 /// Retirement cap: an FSRS card retires once its scheduled interval reaches this many
 /// days (a very stable card rests until `alix reset`). Default for now — per-user
 /// `retire_after` config is a follow-up.
-const RETIRE_AFTER_DAYS: u32 = 365;
+/// The default retirement cap (1 year), used when a [`SessionOptions`] or config is
+/// built without an explicit one. The effective cap comes from `[review]
+/// retire_after` (see [`crate::config::ReviewConfig`]).
+pub const DEFAULT_RETIRE_AFTER_DAYS: u32 = 365;
 
 /// Whether a card is *retired* (resting), so it is no longer scheduled until
-/// `alix reset`: its FSRS interval has grown past [`RETIRE_AFTER_DAYS`]. A card with
-/// no FSRS state yet — unseen, or a legacy card not yet reviewed under FSRS — is
-/// never retired; its first FSRS review is what can push the interval past the cap.
-pub fn is_retired(card: &Card, store: &Store) -> bool {
-    is_retired_id(card.id(), store)
+/// `alix reset`: its FSRS interval has reached `retire_after_days`. `None` disables
+/// retirement (drill forever). A card with no FSRS state yet — unseen, or a legacy
+/// card not yet reviewed under FSRS — is never retired; its first FSRS review is what
+/// can push the interval past the cap.
+pub fn is_retired(card: &Card, store: &Store, retire_after_days: Option<u32>) -> bool {
+    is_retired_id(card.id(), store, retire_after_days)
 }
 
 /// Id-only variant of [`is_retired`], so callers that hold an id but not the
 /// [`Card`] (e.g. a trace checkpoint) share the one retirement rule.
-pub fn is_retired_id(card_id: u64, store: &Store) -> bool {
+pub fn is_retired_id(card_id: u64, store: &Store, retire_after_days: Option<u32>) -> bool {
+    let Some(cap) = retire_after_days else {
+        return false;
+    };
     store
         .get(card_id)
         .and_then(|s| s.fsrs.as_ref())
-        .is_some_and(|f| f.scheduled_days >= RETIRE_AFTER_DAYS)
+        .is_some_and(|f| f.scheduled_days >= cap)
 }
 
 /// Whether a card has *graduated* — reached FSRS `Review`, past the initial learning
@@ -419,9 +430,15 @@ pub fn card_strengths(card_ids: &[u64], store: &Store) -> Vec<f32> {
 /// Whether one card would be served at `now_ms`: never-seen (fresh), or seen and
 /// due, but not retired. The per-card decision [`build_queue`] makes (minus cram
 /// and the new-card cap), factored out so callers can both test and *count* it.
-pub fn is_reviewable(card: &Card, store: &Store, scheduler: &dyn Scheduler, now_ms: u64) -> bool {
+pub fn is_reviewable(
+    card: &Card,
+    store: &Store,
+    scheduler: &dyn Scheduler,
+    now_ms: u64,
+    retire_after_days: Option<u32>,
+) -> bool {
     match store.get(card.id()) {
-        Some(_) if is_retired(card, store) => false,
+        Some(_) if is_retired(card, store, retire_after_days) => false,
         Some(state) => scheduler.is_due(state, now_ms),
         None => true,
     }
@@ -435,10 +452,11 @@ pub fn has_reviewable(
     store: &Store,
     scheduler: &dyn Scheduler,
     now_ms: u64,
+    retire_after_days: Option<u32>,
 ) -> bool {
     cards
         .iter()
-        .any(|card| is_reviewable(card, store, scheduler, now_ms))
+        .any(|card| is_reviewable(card, store, scheduler, now_ms, retire_after_days))
 }
 
 /// How many of these cards would be served right now — the due/new count for a
@@ -448,10 +466,11 @@ pub fn count_reviewable(
     store: &Store,
     scheduler: &dyn Scheduler,
     now_ms: u64,
+    retire_after_days: Option<u32>,
 ) -> usize {
     cards
         .iter()
-        .filter(|card| is_reviewable(card, store, scheduler, now_ms))
+        .filter(|card| is_reviewable(card, store, scheduler, now_ms, retire_after_days))
         .count()
 }
 
@@ -610,6 +629,7 @@ mod tests {
                 cram: false,
                 order: Order::Scheduled,
                 topology: None,
+                retire_after_days: Some(DEFAULT_RETIRE_AFTER_DAYS),
             },
             5 * 60 * 1000,
         );
@@ -696,6 +716,7 @@ mod tests {
                 cram: true,
                 order: Order::Scheduled,
                 topology: None,
+                retire_after_days: Some(DEFAULT_RETIRE_AFTER_DAYS),
             },
             now + 1,
         );
@@ -961,7 +982,7 @@ mod tests {
 
     /// An FSRS state whose interval sits at the retirement cap.
     fn retired_fsrs() -> crate::store::FsrsState {
-        crate::store::FsrsState { scheduled_days: RETIRE_AFTER_DAYS, ..Default::default() }
+        crate::store::FsrsState { scheduled_days: DEFAULT_RETIRE_AFTER_DAYS, ..Default::default() }
     }
 
     #[test]
@@ -969,23 +990,23 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let c = card("deck.txt", 0);
 
-        assert!(!is_retired(&c, &store)); // unseen — never retired
+        assert!(!is_retired(&c, &store, Some(DEFAULT_RETIRE_AFTER_DAYS))); // unseen — never retired
         // An FSRS interval at/past the cap rests.
         store.get_or_insert(c.id(), 0).fsrs = Some(retired_fsrs());
-        assert!(is_retired(&c, &store));
+        assert!(is_retired(&c, &store, Some(DEFAULT_RETIRE_AFTER_DAYS)));
         // Just below the cap: still in rotation.
         store.get_or_insert(c.id(), 0).fsrs = Some(crate::store::FsrsState {
-            scheduled_days: RETIRE_AFTER_DAYS - 1,
+            scheduled_days: DEFAULT_RETIRE_AFTER_DAYS - 1,
             ..Default::default()
         });
-        assert!(!is_retired(&c, &store));
+        assert!(!is_retired(&c, &store, Some(DEFAULT_RETIRE_AFTER_DAYS)));
         // A legacy card at the top Leitner stage but with no FSRS state is no longer
         // retired — retirement now needs a grown FSRS interval, not a stage.
         let s = store.get_or_insert(c.id(), 0);
         s.fsrs = None;
         s.stage = MAX_STAGE;
         s.streak = 1;
-        assert!(!is_retired(&c, &store));
+        assert!(!is_retired(&c, &store, Some(DEFAULT_RETIRE_AFTER_DAYS)));
     }
 
     #[test]
@@ -995,7 +1016,13 @@ mod tests {
         let now = 10_000_000;
 
         // A brand-new (unseen) card is reviewable.
-        assert!(has_reviewable(&cards(1), &store, sched.as_ref(), now));
+        assert!(has_reviewable(
+            &cards(1),
+            &store,
+            sched.as_ref(),
+            now,
+            Some(DEFAULT_RETIRE_AFTER_DAYS)
+        ));
 
         // A card just passed to stage 2 at `now` is on cooldown (due in 1h):
         // not reviewable now, reviewable once its due time arrives.
@@ -1005,8 +1032,9 @@ mod tests {
         s.streak = 1;
         s.stage_entered_ms = now;
         let one = std::slice::from_ref(&c);
-        assert!(!has_reviewable(one, &store, sched.as_ref(), now));
-        assert!(has_reviewable(one, &store, sched.as_ref(), now + 3_600_000));
+        let cap = Some(DEFAULT_RETIRE_AFTER_DAYS);
+        assert!(!has_reviewable(one, &store, sched.as_ref(), now, cap));
+        assert!(has_reviewable(one, &store, sched.as_ref(), now + 3_600_000, cap));
 
         // A retired card (FSRS interval past the cap) never counts, even past due.
         store.get_or_insert(c.id(), now).fsrs = Some(retired_fsrs());
@@ -1014,7 +1042,8 @@ mod tests {
             std::slice::from_ref(&c),
             &store,
             sched.as_ref(),
-            now + 3_600_000
+            now + 3_600_000,
+            cap
         ));
     }
 
@@ -1034,6 +1063,7 @@ mod tests {
                 cram: true,
                 order: Order::Scheduled,
                 topology: None,
+                retire_after_days: Some(DEFAULT_RETIRE_AFTER_DAYS),
             },
             1000,
         );

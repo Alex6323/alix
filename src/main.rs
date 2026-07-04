@@ -712,6 +712,7 @@ fn pick_decks_if_empty(
         start_in,
         focus,
         &config.picker,
+        config.review,
     )?;
     Ok((!picked.decks.is_empty()).then_some(picked))
 }
@@ -904,8 +905,15 @@ fn build_review(
         cram: args.cram,
         order,
         topology: topology_order,
+        retire_after_days: config.review.retire_after_days,
     };
-    let session = Session::new(cards, store, Box::new(Fsrs::default()), options, now_ms());
+    let session = Session::new(
+        cards,
+        store,
+        Box::new(Fsrs::new(config.review.retention)),
+        options,
+        now_ms(),
+    );
 
     // Remember these decks for next time's picker — but only when there is
     // actually something to review, so merely opening a deck with nothing due
@@ -1538,6 +1546,7 @@ fn review_serve(args: ReviewArgs, browse_mode: bool) -> Result<()> {
         keys: config.keys.clone(),
         picker: config.picker.clone(),
         browse: config.browse.clone(),
+        review: config.review,
         max_typos: args.max_typos,
         ask: config.ask.clone(),
         exam: config.exam.clone(),
@@ -1617,7 +1626,8 @@ fn announce(addr: SocketAddr, lan: bool, token: Option<&str>, label: &str) {
 }
 
 fn stats(args: DeckArgs) -> Result<()> {
-    let scheduler = Fsrs::default();
+    let config = Config::load(None)?;
+    let scheduler = Fsrs::new(config.review.retention);
     let now = now_ms();
 
     for path in &args.decks {
@@ -1635,7 +1645,7 @@ fn stats(args: DeckArgs) -> Result<()> {
             if let Some(state) = store.get(card.id()) {
                 // Retired cards are resting, so they don't count as due (they
                 // still count toward the review totals below).
-                if !alix::session::is_retired(card, &store) {
+                if !alix::session::is_retired(card, &store, config.review.retire_after_days) {
                     let due = scheduler.due_at(state);
                     if due <= now {
                         due_now += 1;
@@ -1686,7 +1696,8 @@ fn stats(args: DeckArgs) -> Result<()> {
 }
 
 fn list(args: DeckArgs) -> Result<()> {
-    let scheduler = Fsrs::default();
+    let config = Config::load(None)?;
+    let scheduler = Fsrs::new(config.review.retention);
     let now = now_ms();
 
     for path in &args.decks {
@@ -1699,7 +1710,8 @@ fn list(args: DeckArgs) -> Result<()> {
                 Some(state) => {
                     // Retired cards rest until `alix reset`; their due time is
                     // moot, so say so instead of showing a misleading interval.
-                    let due = if alix::session::is_retired(card, &store) {
+                    let due = if alix::session::is_retired(card, &store, config.review.retire_after_days)
+                    {
                         "resting".to_string()
                     } else {
                         let due = scheduler.due_at(state);
@@ -1851,7 +1863,7 @@ fn reset(args: ResetArgs) -> Result<()> {
             recent::default_recent_path().context("cannot determine the data directory")?,
         );
         let decks_dir = config.decks_dir().context("cannot determine ~/decks")?;
-        let picked = picker::pick_to_reset(&decks_dir, &recent, &store)?;
+        let picked = picker::pick_to_reset(&decks_dir, &recent, &store, config.review)?;
         if picked.is_empty() {
             return Ok(()); // cancelled or nothing selected
         }
@@ -2994,10 +3006,11 @@ fn workspace_cmd(args: WorkspaceArgs) -> Result<()> {
         }
         bail!("{} is not a workspace (no `alix.toml`)", args.dir.display());
     }
+    let config = Config::load(None)?;
     loop {
         // The picker reads the workspace's own store; review / walk re-resolve it
         // from the picked decks (`store_for`).
-        let Some(picked) = picker::pick_workspace(&args.dir, true)? else {
+        let Some(picked) = picker::pick_workspace(&args.dir, true, config.review)? else {
             return Ok(()); // quit the workspace
         };
         if picked.is_empty() {

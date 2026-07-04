@@ -499,7 +499,7 @@ impl Default for ReviewConfig {
     fn default() -> Self {
         Self {
             retention: 0.9,
-            retire_after_days: Some(365),
+            retire_after_days: Some(crate::session::DEFAULT_RETIRE_AFTER_DAYS),
         }
     }
 }

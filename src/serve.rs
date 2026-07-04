@@ -38,7 +38,7 @@ use crate::{
     choice,
     config::{
         AiConfig, AskConfig, Bindings, BrowseBindings, ExamConfig, Key, KeyPattern, PickerKeys,
-        Strictness,
+        ReviewConfig, Strictness,
     },
     deck::{self, Deck, DeckState},
     exam, picker,
@@ -554,6 +554,9 @@ pub struct ReviewOptions {
     /// AI augmentation settings (model, per-target counts), for generating
     /// augmentations from the picker's Augment screen.
     pub ai: AiConfig,
+    /// Personal review pacing (FSRS retention + retirement interval), for the
+    /// selection screen's badges and due counts.
+    pub review: ReviewConfig,
     /// Pairing token required on `/api/*` when set (auto-generated for `--lan`);
     /// `None` leaves the server open (the localhost default).
     pub auth: Option<String>,
@@ -1382,6 +1385,7 @@ pub fn run_review(
         ask: ask_cfg,
         exam: exam_cfg,
         ai: ai_cfg,
+        review: review_cfg,
         auth,
     } = opts;
     let keys = ReviewKeys::from(&bindings);
@@ -1450,7 +1454,8 @@ pub fn run_review(
             (Method::Get, "/api/ask-info") => respond_json(request, &ask_info),
             (Method::Get, "/api/decks") => {
                 // Review enforces locking; the picker won't start a locked deck.
-                let catalog = deck_catalog(&decks_dir, &recent, &store, true, &mut launcher_icons);
+                let catalog =
+                    deck_catalog(&decks_dir, &recent, &store, true, &mut launcher_icons, review_cfg);
                 respond_json(request, &catalog)
             }
             // Image cards: served from whichever session is live (review or browse).
@@ -1573,7 +1578,7 @@ pub fn run_review(
                             (Ok(deck), Ok(s)) => {
                                 let augment =
                                     AugmentCache::open(augment::augment_path_for(s.path()));
-                                deck_topology_dto(&augment, &s, &deck)
+                                deck_topology_dto(&augment, &s, &deck, review_cfg)
                             }
                             _ => DeckTopologyDto::default(),
                         }
@@ -2750,11 +2755,12 @@ fn deck_item_dto(
     decks_dir: &Path,
     with_lock: bool,
     augment: &AugmentCache,
+    review: ReviewConfig,
 ) -> DeckItemDto {
     let recent = e.last_used_ms.is_some();
     match Deck::load(&e.path) {
         Ok(deck) => {
-            let s = picker::deck_status(&deck, store, Some(decks_dir), with_lock);
+            let s = picker::deck_status(&deck, store, Some(decks_dir), with_lock, review);
             let deck_ids: HashSet<u64> = deck.cards.iter().map(|c| c.id()).collect();
             DeckItemDto {
                 name: e.name.clone(),
@@ -2806,7 +2812,12 @@ fn deck_item_dto(
 /// startable-first, carrying a `depth` for indentation. Badges/locks come from
 /// the workspace's own store (a real workspace) or the global store (a plain
 /// folder), matching what a session will write.
-fn workspace_members(e: &picker::DeckEntry, decks_dir: &Path, with_lock: bool) -> Vec<MemberDto> {
+fn workspace_members(
+    e: &picker::DeckEntry,
+    decks_dir: &Path,
+    with_lock: bool,
+    review: ReviewConfig,
+) -> Vec<MemberDto> {
     let store = if crate::workspace::is_workspace(&e.path) {
         Store::open(crate::workspace::store_path(&e.path)).ok()
     } else {
@@ -2825,7 +2836,9 @@ fn workspace_members(e: &picker::DeckEntry, decks_dir: &Path, with_lock: bool) -
         .map(|p| {
             let deck = Deck::load(p).ok();
             let status = match (store.as_ref(), deck.as_ref()) {
-                (Some(st), Some(d)) => Some(picker::deck_status(d, st, Some(decks_dir), with_lock)),
+                (Some(st), Some(d)) => {
+                    Some(picker::deck_status(d, st, Some(decks_dir), with_lock, review))
+                }
                 _ => None,
             };
             let has_topology = match (augment.as_ref(), deck.as_ref()) {
@@ -2923,6 +2936,7 @@ fn deck_catalog(
     store: &Store,
     with_lock: bool,
     icons: &mut HashMap<String, PathBuf>,
+    review: ReviewConfig,
 ) -> DeckListDto {
     let mut workspaces = Vec::new();
     let mut recent_decks = Vec::new();
@@ -2936,7 +2950,7 @@ fn deck_catalog(
         // last-progress time); without one it's a plain folder.
         if e.is_workspace {
             let is_ws = crate::workspace::is_workspace(&e.path);
-            let members = workspace_members(&e, decks_dir, with_lock);
+            let members = workspace_members(&e, decks_dir, with_lock, review);
             let meta = if is_ws {
                 match picker::workspace_last_progress(&e.path) {
                     Some(when) => format!("{} decks · {when}", members.len()),
@@ -2978,7 +2992,7 @@ fn deck_catalog(
         if e.path.parent().is_some_and(crate::workspace::is_workspace) {
             continue;
         }
-        recent_decks.push(deck_item_dto(&e, store, decks_dir, with_lock, &augment));
+        recent_decks.push(deck_item_dto(&e, store, decks_dir, with_lock, &augment, review));
     }
     DeckListDto {
         workspaces,
@@ -3045,21 +3059,26 @@ fn resolve_name(name: &str, known: &HashMap<String, PathBuf>) -> Option<PathBuf>
 /// cache can be shared by several decks on one store, so they're scoped by card
 /// membership), each region's per-card strength heatmap and due/new count, and
 /// the whole-deck due count — all read against the deck's `store`.
-fn deck_topology_dto(augment: &AugmentCache, store: &Store, deck: &Deck) -> DeckTopologyDto {
+fn deck_topology_dto(
+    augment: &AugmentCache,
+    store: &Store,
+    deck: &Deck,
+    review: ReviewConfig,
+) -> DeckTopologyDto {
     let by_id: HashMap<u64, &Card> = deck.cards.iter().map(|c| (c.id(), c)).collect();
     let deck_ids: HashSet<u64> = by_id.keys().copied().collect();
-    let scheduler = Fsrs::default();
+    let scheduler = Fsrs::new(review.retention);
     let now = now_ms();
     // Cards in a region resolved back to the deck (ids absent from the deck —
     // e.g. a topology built before an edit — are skipped).
     let due_of = |ids: &[u64]| {
         let cards: Vec<&Card> = ids.iter().filter_map(|id| by_id.get(id).copied()).collect();
-        crate::session::count_reviewable(&cards, store, &scheduler, now)
+        crate::session::count_reviewable(&cards, store, &scheduler, now, review.retire_after_days)
     };
     let deck_due = deck
         .cards
         .iter()
-        .filter(|c| crate::session::is_reviewable(c, store, &scheduler, now))
+        .filter(|c| crate::session::is_reviewable(c, store, &scheduler, now, review.retire_after_days))
         .count();
     let topologies = augment
         .topologies_for(&deck_ids)
