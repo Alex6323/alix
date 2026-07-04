@@ -248,6 +248,13 @@ pub fn deck_status(
         .iter()
         .filter(|card| session::is_retired(card, store, review.retire_after_days))
         .count();
+    // Progress toward "finished" is graduation (reaching FSRS review), not
+    // retirement — which is a rare, far-later resting point (a year or more out).
+    let graduated = deck
+        .cards
+        .iter()
+        .filter(|card| session::has_graduated(card, store))
+        .count();
     // "mastered" is reserved for passing the exam; a source-less deck that's
     // merely fully drilled stays "done".
     let mastered = matches!(state, DeckState::Finished) && store.deck_mastered(&deck.subject);
@@ -270,7 +277,7 @@ pub fn deck_status(
         DeckState::Finished => "done ✓".to_string(),
         DeckState::ExamDue => "exam due".to_string(),
         DeckState::NotStarted => "new".to_string(),
-        DeckState::Started => format!("{retired}/{total}"),
+        DeckState::Started => format!("{graduated}/{total}"),
     };
     let actually_locked = deck::is_locked(deck, decks_dir, store);
     let locked = enforce_locks && actually_locked;
