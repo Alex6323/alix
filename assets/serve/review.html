@@ -132,7 +132,10 @@
      fits, it centers — a short answer settles below the midline instead of
      clustering under the question; when it overflows it top-aligns and scrolls, so
      long answers still use the whole card. The class is set by updateFade. */
-  .region.a { flex: 1 1 auto; max-height: 82%; }
+  .region.a { flex: 1 1 auto; max-height: 82%; position: relative; }
+  /* The mode badge is pinned just below the divider, out of the centred flow (see
+     .mode-tag), so a short "balanced" answer no longer drags it down; reserve its row. */
+  .region.a:has(.mode-tag) { padding-top: 34px; }
   .region.a.withnote { max-height: 52%; }
   .region.a.balanced { justify-content: center; }
   .region.a.filled { justify-content: flex-start; }
@@ -237,7 +240,8 @@
   .field:focus { border-color: var(--bolt); }
   /* mode badge on every card — typing and fuzzy look identical otherwise */
   .mode-tag {
-    display: block; width: fit-content; margin: 0 auto 14px;
+    position: absolute; top: 8px; left: 0; right: 0;   /* pinned under the divider */
+    width: fit-content; margin: 0 auto;
     font-family: var(--mono); font-size: 0.6rem;
     letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim);
     border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px;
