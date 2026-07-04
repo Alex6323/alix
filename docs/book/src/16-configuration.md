@@ -44,6 +44,21 @@ port = 7777
 
 (Jump-to-first/last stays fixed at `g`/`G`, and the arrow keys always move.)
 
+## Review pacing
+
+The `[review]` section tunes the FSRS scheduler:
+
+```toml
+[review]
+retention = 0.9       # FSRS target recall probability (0.70–0.99); higher = shorter intervals
+retire_after = "1y"   # a card rests once its interval reaches this ("2w", "6m", "30d", or "never")
+```
+
+`retention` is the recall probability FSRS schedules for. `retire_after` is when
+a card retires (rests until `alix reset`); `"never"` keeps it in rotation forever.
+A workspace can override both for its own decks in an `alix.local.toml` — see
+[Workspaces](08-workspaces.md).
+
 ## Backends
 
 By default all AI calls go through the [Claude Code](https://www.anthropic.com/claude-code)

@@ -1,78 +1,65 @@
-# 5 · Scheduling, stages & completion
+# 5 · Scheduling, retirement & completion
 
 Spaced repetition is really just bookkeeping: each card remembers how well you
 know it and when to show it next. This chapter is that bookkeeping — the
-scheduler, the stages, and how a whole deck reaches "done."
+scheduler, retirement, and how a whole deck reaches "done."
 
-Pick a scheduler with `--scheduler` or a deck's `% scheduler:` directive (it's
-deck-level only).
+## FSRS
 
-## Leitner *(default)*
+alix schedules with **FSRS** — the Free Spaced Repetition Scheduler (FSRS-5, via
+the `rs-fsrs` crate). There's one scheduler and nothing to choose: FSRS keeps a
+small memory model per card (its *stability* and *difficulty*) and, from your
+grade, works out when the card is next due.
 
-A box system. Each card sits at a **stage**, and each stage has a cooldown before
-the card comes due again:
+Grading feeds FSRS a rating:
 
-| Stage | 1 | 2 | 3 | 4 | 5 |
-| --- | --- | --- | --- | --- | --- |
-| Cooldown | ~5 min | 1 hour | 6 hours | 1 day | 1 week |
+- **failed** → *Again* — a lapse; the card comes back soon and its interval shrinks
+- **partly** → *Hard* — a weak success; a shorter next interval than a clean pass
+- **passed** → *Good* — the interval grows
 
-Grading moves the card between stages:
+So a card you keep getting right stretches to longer and longer intervals, a miss
+pulls it back in, and a **partly** — you got the gist but stumbled — lands in
+between. Early on the first successful reviews are minutes-to-hours apart (FSRS's
+short-term *learning* steps); once a card **graduates** into the review phase the
+intervals grow to days, then weeks. Within a session a failed card still comes back
+the same run, as soon as the queue cycles round to it.
 
-- **failed** → back to stage 1
-- **partly** → down one stage (floored at 1)
-- **passed** → up one stage
-
-So a card you keep getting right climbs to longer and longer intervals, a miss
-sends it back to the bottom of the ladder, and a **partly** — you got the gist but
-stumbled — only steps it back one rung, so you keep most of your progress but see
-it sooner. It's predictable and needs no tuning — a good default.
-
-Stage 1's cooldown is a short **relearn/settle gap** (~5 minutes): a card that just
-failed — or a brand-new one you've just met (see below) — comes due a few minutes
-later rather than instantly, so a new session started right away won't re-test
-something you only just saw. Within a session a failed card still comes back the
-same run, as soon as the queue cycles round to it.
+One knob shapes the whole schedule: **`retention`** — the recall probability FSRS
+aims for (0.70–0.99, default 0.9). Raise it to see cards more often, lower it to
+stretch the gaps. Set it in the `[review]` config section, or per workspace in an
+`alix.local.toml` (see [Configuration](16-configuration.md)).
 
 ### New cards: an attempt before they're tested
 
 A card you've never seen isn't quizzed cold — you can't reconstruct what you've
 never read — but it isn't simply handed to you either. The first encounter is a
-**low-stakes attempt**, then the answer, then one key (**Seen**) records it at
-stage 1 *without a grade*. By default it's **recall**: the front shows first, you
+**low-stakes attempt**, then the answer, then one key (**Seen**) records it
+*without a grade*. By default it's **recall**: the front shows first, you
 try, then reveal. If the deck has AI distractors (`alix deck augment --target
 choices`), an **atomic** card instead greets you as a **multiple-choice** question —
-pick one, see which was right. Either way a guess never promotes or punishes
-(stage 1 regardless), and the first *graded* quiz comes a **later session**, once
-the ~5-minute settle has passed. Each session introduces up to `--new N` new cards
-(default 10); start another session for more. This is the first step of a card's
-life — *acquire*, then drill it up the ladder.
-
-## SM-2
-
-SuperMemo-2 spacing, with a per-card **ease factor**. Passing grows the interval
-(roughly 1 day, then 6 days, then `interval × ease`); the ease nudges up or down
-with each grade and never drops below 1.3; a **partly** keeps the card's
-repetition count but halves its next interval (the SM-2 twin of Leitner's
-one-stage demotion); and a **failed** sends the card to a short 10-minute relearn.
-It adapts the spacing to each card's difficulty instead of
-using fixed steps. Switching schedulers is safe: SM-2 seeds itself from your
-existing Leitner progress and keeps the Leitner stage in sync, so you can move
-between the two without losing your place.
+pick one, see which was right. Either way a guess never promotes or punishes, and
+the first *graded* quiz comes a **later session**, once a short (~5-minute) settle
+has passed. Each session introduces up to `--new N` new cards (default 10); start
+another session for more. This is the first step of a card's life — *acquire*,
+then let FSRS space it.
 
 ## Retiring cards
 
-A card doesn't climb forever. Once it reaches the **top stage** (5) by passing, it
-**retires**: it rests and is no longer scheduled, *not even under `--cram`*, until
-you `alix reset`. A deck is *finished* once all its cards have retired.
+A card doesn't stay in rotation forever. Once its interval grows past
+**`retire_after`** (default one year), the card **retires**: it rests and is no
+longer scheduled, *not even under `--cram`*, until you `alix reset` it. Set
+`retire_after = "never"` to keep drilling a deck forever — facts you never want to
+risk forgetting; a workspace can override it in its `alix.local.toml`.
 
 ## Completion states
 
-A deck's **state** is derived from its cards' stages, and shown in the picker and
-`alix stats`:
+A deck's **state** is derived from how far its cards have progressed, and shown in
+the picker and `alix stats`:
 
 - **not started** — you haven't reviewed any card yet
 - **started** — somewhere in between
-- **finished** (`done ✓`) — every card has retired at the top stage
+- **finished** (`done ✓`) — every card has **graduated** (reached FSRS's review
+  phase, past the initial learning steps)
 
 A deck that declares a `% source:` adds one state in between — **exam due**. For
 those decks, drilling the cards no longer finishes them: passing the **AI exam**
@@ -89,19 +76,21 @@ dependencies chapter covers it in full.
 ## Cramming
 
 Need to review everything now, schedule be damned — the night before an exam?
-`--cram` ignores cooldowns and shows every card that isn't retired:
+`--cram` ignores due times and shows every card that isn't retired:
 
 ```sh
 alix --cram mydeck.txt
 ```
 
-Retired cards stay out (that's what retirement is for); everything else is fair
-game regardless of when it's next due.
+Cramming is a **refresh, not a reward**: a correct answer re-anchors the card by
+its current interval — it doesn't grow the schedule or count as a real review — so
+a heavy cram session won't distort your long-term spacing. A card you *miss* under
+cram still lapses normally. Retired cards stay out (that's what retirement is for).
 
 ## Topological order *(experimental)*
 
-By default your due cards come up in scheduler order — for Leitner, the ones you
-know least first. That's right for *retention*, but it can feel random: a card
+By default your due cards come up in scheduler order — soonest-due first. That's
+right for *retention*, but it can feel random: a card
 about parsing, then one about persistence, with no thread between them.
 
 A **topology** gives the session a thread. `alix deck augment <deck> --target

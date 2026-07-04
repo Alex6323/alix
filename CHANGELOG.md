@@ -7,6 +7,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **`[review]` config section — FSRS pacing.** `retention` (target recall
+  probability, 0.70–0.99, default 0.9; higher = shorter intervals) and
+  `retire_after` (a duration `"1y"` / `"6m"` / `"2w"` / `"30d"`, or `"never"` to
+  disable retirement; default `"1y"`).
+- **Per-workspace pacing via `alix.local.toml`.** A workspace can override the
+  global `[review]` retention / retire_after in a personal `alix.local.toml`
+  beside its `alix.toml` — kept separate from the shared manifest, so it never
+  travels when you share the workspace.
+- **`alix deck check` warns on a non-gating prerequisite** — when a sourced deck
+  `% requires:` a source-less deck, that edge can't gate its exam; the lint names
+  it and suggests adding a `% source:`.
 - **Pairing token for `alix serve --lan`.** Serving to the network now
   auto-generates a token (printed at startup) and requires it on `/api/*`, so the
   LAN endpoint is no longer wide open. Pin your own with `--token` or
@@ -67,6 +78,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ephemeral (never persisted or sent to the server).
 
 ### Changed
+- **Breaking: FSRS is now the only scheduler.** alix schedules with FSRS-5 (via
+  the `rs-fsrs` crate) for every review; the Leitner and SM-2 schedulers are
+  gone, along with the `% scheduler:` directive and the `--scheduler` flag that
+  chose between them. Grades map to FSRS ratings (missed it / partly / got it →
+  Again / Hard / Good) and the next interval comes from FSRS, not a fixed stage
+  ladder. The old per-card `stage` is kept only as a seed for a card's first FSRS
+  review, so existing progress isn't reset. No compat shim, pre-1.0.
+- **Breaking: `% unlock-stage:` removed** (the directive, the `--unlock-stage`
+  flag, and the `[defaults] unlock-stage` key). A deck's exam is now gated on
+  **graduation**: it turns *exam due* once every card has reached FSRS's review
+  phase (past the initial learning steps), rather than at a configurable stage bar.
+- **Retirement is now interval-based.** A card retires (rests until `alix reset`)
+  once its FSRS interval reaches `retire_after` (default 1 year, configurable,
+  `never` to disable) — previously it retired at the top Leitner stage.
+- **`--cram` refreshes without rewarding.** A correct answer under `--cram` now
+  re-anchors the card's due date by its current interval — no FSRS update, no
+  reward — so cramming keeps cards fresh without inflating their schedule; a cram
+  miss still lapses normally. Previously `--cram` fully rescheduled every answer.
 - **`alix serve --lan` now requires the pairing token** on `/api/*` (auto-generated
   unless you set one). The HTML shell, theme assets, and images stay open — only
   the JSON API is guarded; localhost serving is unchanged (open).

@@ -26,7 +26,7 @@ cycle is treated as non-blocking — a broken edge never hides a deck.
 
 `% requires:` is about *order and gating*, not session contents. When you review
 (or browse) a deck, the session holds exactly that deck's cards — prerequisites
-are never pulled in, so the `mode`/`order`/`scheduler` you study under is always
+are never pulled in, so the `mode`/`order` you study under is always
 the deck's own. What dependencies shape is the picker's **dependency tree**
 (foundations shown first) and, for a deck with a `% source:`, the **exam gate**
 below.
@@ -53,7 +53,9 @@ order; what `% requires:` controls is **exam order**: a deck with a `% source:`
 can't sit its exam until each of its *sourced* prerequisites has passed its own
 exam, and passing a foundation's exam unlocks the exams that build on it. A
 **source-less** prerequisite has no exam to pass, so it never gates — its edge is
-just a suggested order in the tree. (A **trace** masters by passing its exam —
+just a suggested order in the tree. (`alix deck check` warns when a sourced deck
+requires a source-less one, since that edge can't gate an exam; add a `% source:`
+to the prerequisite to make it real.) (A **trace** masters by passing its exam —
 retracing the path from memory — so it gates and unlocks like any sourced deck.)
 
 In the picker a deck whose exam is locked shows a 🔒, but it stays **drillable** —

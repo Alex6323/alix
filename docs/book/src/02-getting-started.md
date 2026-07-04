@@ -36,8 +36,8 @@ answer on the indented lines beneath it:
     Spaced repetition system.
     ! It schedules each card just before you'd forget it.
 
-# Which scheduler does alix use by default?
-    Leitner — a six-stage box with growing cooldowns.
+# Which scheduler does alix use?
+    FSRS — it predicts when you're about to forget each card.
 ```
 
 Save it as `srs.txt`. Indentation is optional (lines are trimmed) — it's just for
@@ -57,7 +57,7 @@ later chapters cover the modes that make you *type* the answer, pick from
 choices, or reveal it line by line.
 
 When nothing is due, `alix` says so and exits — come back when cards mature, or
-pass `--cram` to review everything regardless of cooldowns.
+pass `--cram` to review everything regardless of when it's next due.
 
 ## The deck picker
 

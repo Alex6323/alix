@@ -8,7 +8,7 @@
 - [Getting started](02-getting-started.md)
 - [The deck format](03-the-deck-format.md)
 - [Review modes](04-review-modes.md)
-- [Scheduling, stages & completion](05-scheduling.md)
+- [Scheduling, retirement & completion](05-scheduling.md)
 
 # Part II — Richer cards
 

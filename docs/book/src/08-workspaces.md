@@ -29,7 +29,7 @@ alix workspace ~/decks/spanish/
 ## Shared directives
 
 The `[defaults]` keys are exactly the deck-directive names from
-[the deck format](03-the-deck-format.md) — `mode`, `direction`, `scheduler`, and
+[the deck format](03-the-deck-format.md) — `mode`, `direction`, `order`, and
 the rest. They fill in only what a deck *doesn't* set for itself, so the
 precedence is one level deeper than before:
 
@@ -38,6 +38,24 @@ precedence is one level deeper than before:
 Set `direction = "both"` once for the whole folder, and a single irregular deck
 can still override it with its own `% direction: forward`. It's the same directive
 system from chapter 3, just sourced from one more place.
+
+## Personal pacing — `alix.local.toml`
+
+The `alix.toml` is shared: it travels with the workspace when you hand it to
+someone. Your **personal** review pacing doesn't belong there. Drop an
+`alix.local.toml` beside it to override the global `[review]` config — FSRS
+`retention` and `retire_after` — for this workspace's decks only:
+
+```toml
+# ~/decks/spanish/alix.local.toml
+[review]
+retention = 0.95        # see these cards more often
+retire_after = "never"  # never let them retire
+```
+
+It uses the same `[review]` keys as the [config file](16-configuration.md), and
+it's kept separate from `alix.toml` on purpose — so it stays yours and never
+travels when you share the workspace. A missing or malformed one is simply ignored.
 
 ## Its own progress
 

@@ -11,7 +11,7 @@ changes to the deck format, to the progress store, and what not. Most likely you
 lose all your progress and I won't provide a migration path. You have been warned!
 
 Your **personal AI tutor**, built for understanding — not just remembering.
-Under the hood it's a plain-text spaced-repetition trainer — Leitner and SM-2
+Under the hood it's a plain-text spaced-repetition trainer — FSRS
 scheduling, several answer modes, cloze and dual-direction cards, images, and
 deck dependencies — and the layer on top is the **AI integration**: a
 *tutor* on any card, *AI deck generation* from a web page,
@@ -78,13 +78,12 @@ The binary is called `alix`:
 
 ```sh
 alix                            # pick decks interactively (recent + ~/decks)
-alix mydeck.txt                 # review due cards (flip mode, Leitner)
+alix mydeck.txt                 # review due cards (flip mode)
 alix --mode typing mydeck.txt   # type the answer character by character
 alix --mode fuzzy mydeck.txt    # whole-line input, small typos tolerated
 alix --mode choice mydeck.txt   # multiple choice (distractors sampled from the deck)
 alix --mode line mydeck.txt     # reveal the answer one line at a time (lyrics)
-alix --scheduler sm2 mydeck.txt # SM-2 intervals instead of Leitner
-alix --cram mydeck.txt          # ignore cooldowns, review everything
+alix --cram mydeck.txt          # review everything now (a correct answer refreshes, doesn't reward)
 alix browse mydeck.txt          # read through cards, no grading or scheduling
 alix deck generate <url-or-path>   # generate a facts deck from a web page or a file/dir
 alix deck augment mydeck.txt --target choices   # AI distractors (cached; review reads them)
@@ -124,7 +123,7 @@ Recent), and `/` (or `Ctrl-F`) starts **filtering** by name (searching *every*
 loose deck, not just the recent ones); `Esc` leaves the filter. Jumping to the
 first/last row stays fixed at `g`/`G` (or Home/End), like the `[keys.browse]` pager.
 A deck with nothing to launch right now is dimmed and `Enter` on it does nothing:
-🕒 nothing due (all on cooldown — `--cram` reviews it anyway), or a fully-drilled
+🕒 nothing due (`--cram` reviews it anyway), or a fully-drilled
 deck whose exam is locked. A 🔒 marks a deck whose
 [exam is locked](#completion-states--unlocks) (a sourced `% requires:` isn't
 passed yet) — but it stays **drillable**, so `Enter` still reviews it if cards are
@@ -175,9 +174,7 @@ card's front. Follow a link for the full explanation.
 | `% mode:` | deck · card | [Answer mode](#deck-directives): `flip`, `typing`, `fuzzy`, `choice`, `line`, `explain`. |
 | `% input:` | deck · card | Answer input: `type` (default) or [`draw`](#review) — draw/handwrite the answer on a web canvas instead of typing, then self-grade. Web-only; honored on self-graded `flip`/`explain` cards; ignored elsewhere and in the TUI. |
 | `% order:` | deck | [Card order](#deck-directives): `scheduled` (default) or `sequential`. |
-| `% scheduler:` | deck | [Scheduler](#deck-directives): `leitner` (default) or `sm2`. |
 | `% direction:` | deck · card | [Review direction](#dual-direction-cards--direction): `forward`, `reverse`, or `both`. |
-| `% unlock-stage:` | deck | [Stage that opens the gate](#deck-directives) `1`–`5`: the exam/unlock fires once every card reaches it (cards keep drilling, no early retirement). |
 | `% frontend:` | deck · card | [Restrict](#deck-directives) a card/deck to `any`, `tui`, or `web`. |
 | `% img:` / `% img-back:` | card | [Image](#images--img--img-back) on the front / back (web frontend). |
 | `% img-dir:` | deck | [Base directory](#images--img--img-back) that image filenames resolve against. |
@@ -209,7 +206,6 @@ command line:
 ```
 % mode: line
 % order: sequential
-% scheduler: sm2
 ```
 
 - `mode` — default answer mode (`flip`, `typing`, `fuzzy`, `choice`, `line`,
@@ -217,19 +213,12 @@ command line:
   can also be overridden per card (see below).
 - `order` — `scheduled` (the default) or `sequential` to walk the deck in
   file order, top to bottom (ideal for lyrics with `% mode: line`).
-- `scheduler` — `leitner` (default) or `sm2`.
 - `direction` — `forward` (default), `reverse`, or `both`; per card or deck-wide
   (see below).
 - `frontend` — `any` (default), `tui`, or `web`; restricts a card (or deck) to a
   frontend. Image cards are `web` automatically (see Images below).
 - `img-dir` — directory that card `% img:` / `% img-back:` filenames resolve
   against (deck header only; see Images below).
-- `unlock-stage` — the Leitner stage (`1`–`5`) every card must reach for the deck
-  to **unlock**: a `% source:` deck becomes *exam due* (its exam opens), a
-  source-less one becomes *finished* (its dependents unlock). The cards are
-  **not** retired — they keep drilling to the top stage; the directive only lowers
-  the unlock bar. Default: the deck unlocks only when every card retires at the
-  top stage.
 - `strictness` — how strictly the AI exam grades answers (`strict`, `balanced`,
   `lenient`); only affects `alix exam` (see [the AI exam](#the-ai-exam-alix-exam)).
 
@@ -243,8 +232,8 @@ review. When several requested decks disagree on a setting, the default is used.
 before the next one) overrides the deck's mode for that card only, so one deck
 can mix modes — e.g. a `line` lyrics card among `flip` cards. The effective mode
 is resolved per card: CLI `--mode` > the card's `% mode:` > the deck's
-`% mode:` > the default (so `--mode` still forces every card). Other directives
-(`order`, `scheduler`) stay deck-level.
+`% mode:` > the default (so `--mode` still forces every card). The `order`
+directive stays deck-level.
 
 ### Deck dependencies
 
@@ -277,10 +266,11 @@ never affects card progress.
 
 ### Completion states & unlocks
 
-Every deck has a **completion state**, derived from its cards' stages:
-*not started* (no card reviewed), *finished* (every card at the top stage), or
-*started* (in between). The deck picker (terminal and web) shows it on each row
-— `new`, `m/total` (cards at the top stage), or `done ✓` — and `alix stats`
+Every deck has a **completion state**, derived from how far its cards have
+progressed: *not started* (no card reviewed), *finished* (every card has
+**graduated** — reached FSRS's review phase, past the initial learning steps),
+or *started* (in between). The deck picker (terminal and web) shows it on each
+row — `new`, `m/total` (graduated cards), or `done ✓` — and `alix stats`
 prints it too. A deck that declares a `% source:` adds one more state between
 drilled and finished — *exam due* (`exam due`, tinted) — because drilling alone
 no longer finishes it; see [the AI exam](#the-ai-exam-alix-exam).
@@ -329,7 +319,7 @@ deck *doesn't* set itself, so precedence runs **CLI flag > card > deck >
 workspace > default** — set `direction = "both"` once for the whole cluster, and
 an individual deck can still override it with its own `% direction:`.
 
-**A workspace keeps its own progress.** Its decks track their stages in a
+**A workspace keeps its own progress.** Its decks track their progress in a
 `progress.json` *inside the workspace folder* (override the path with a
 `store = "..."` line in the `alix.toml`), separate from the global store every
 loose deck shares. So a workspace is a **self-contained, portable unit** — its
@@ -337,6 +327,12 @@ decks, its `assets/` (frozen trace excerpts), and its progress all live in one
 folder you can move or share, and its history stays isolated from everything
 else. Decks *outside* a workspace keep using the global store; `--store <path>`
 overrides either.
+
+**Personal pacing per workspace.** Drop an `alix.local.toml` beside the
+`alix.toml` to override the global `[review]` config (FSRS `retention` and
+`retire_after`) for this workspace's decks only. It uses the same `[review]` keys
+as the [config file](#configuration) and is **personal** — kept separate from the
+shared `alix.toml`, so it never travels when you share the workspace.
 
 **A workspace can carry an icon** shown next to it in the web picker, for quick
 recognition in a long list. Drop an image in the workspace's `assets/` and point
@@ -481,22 +477,23 @@ source.
 
 The default **flip** mode is Anki-style: you reveal the answer and grade
 yourself **missed it / partly / got it** — the same three grades the trace walk
-uses. *Failed* resets the card to stage 1, *partly* drops it one stage (a soft
-miss — it returns sooner but you keep most of your progress), and *passed*
-advances it one stage. The
+uses — *missed it* / *partly* / *got it* map to FSRS *Again* / *Hard* / *Good*.
+A miss lapses the card (it comes back soon and its interval shrinks), *partly*
+is a weak success (a shorter next interval than a clean pass), and *got it*
+grows the interval. The
 **typing** mode has you type the back of the card character by
 character with instant green/red feedback; `TAB` reveals the next two
 characters as a hint, and pressing it again uncovers two more each time until
 the line is fully shown, but a hinted card counts as failed. In **fuzzy** mode
 you submit whole lines with Enter and small typos are tolerated. A wrong
-card goes back to stage 1 and reappears later in the same session until you
+card is re-queued and reappears later in the same session until you
 get it right. Whichever mode a card uses is shown as a small badge above the
 answer (`flip`, `typing exact`, `typing fuzzy`, `choice`, `line by line`).
 
 **New cards are introduced as an *attempt*, not a hand-out.** A card you've never
 seen isn't quizzed cold (you can't recall what you haven't read), but it isn't just
 shown to you either. The first encounter is a low-stakes try, then the answer, then
-one key (**Seen** / `Space`) files it on the ladder at stage 1 — *ungraded either
+one key (**Seen** / `Space`) records it as seen — *ungraded either
 way*, with its first real quiz a **later session** (after a ~5-minute settle), so
 nothing is tested the instant you've seen it. Two forms:
 
@@ -576,14 +573,20 @@ instead of grading — it is dropped from the session without being asked again
 and their progress is pruned, when the session ends. The same key works in
 `alix browse`.
 
-Schedulers:
+**Scheduling.** alix schedules with **FSRS** (the Free Spaced Repetition
+Scheduler, FSRS-5, via the `rs-fsrs` crate) — one scheduler, no choice to make.
+Each review feeds your grade (*missed it* / *partly* / *got it* → FSRS
+*Again* / *Hard* / *Good*) into the card's memory model, and FSRS sets the next
+interval from its estimated stability: successful reviews grow the gap, a lapse
+shrinks it. Two knobs, both in the `[review]` config section (see
+[Configuration](#configuration)):
 
-- **leitner** (default): a 6-stage box system with cooldowns
-  0 / 1 h / 6 h / 24 h / 1 week. Pass moves a card up one stage, fail resets
-  it to stage 1.
-- **sm2**: SuperMemo-2 style with per-card ease factors and growing
-  intervals. Existing Leitner progress is used as a starting point, and the
-  Leitner stage is kept in sync, so you can switch back and forth.
+- `retention` — the recall probability FSRS aims for (0.70–0.99, default 0.9).
+  Higher means shorter intervals (you see cards more often).
+- `retire_after` — once a card's interval reaches this (default `1y`), it
+  **retires**: it rests and is no longer scheduled until you `alix reset` it. Set
+  `never` to keep drilling forever. A workspace can override either knob in its
+  own `alix.local.toml` (see [Workspaces](#workspaces)).
 
 ## Browse
 
@@ -919,11 +922,9 @@ so you don't need to repeat it as a `% link:`. The reverse isn't true: a
 `% link:` stays a tutor reference and never becomes exam ground truth — keep
 supplementary links (a blog, an SO answer) as `% link:` so the exam ignores them.
 
-Once every card in a `% source:` deck reaches the top stage, the deck is **exam
-due** rather than finished (so it does not yet unlock its dependents). To open
-the exam earlier — while the cards keep drilling — set `% unlock-stage: N`: the
-deck turns exam due once every card reaches stage `N` (see
-[deck directives](#deck-directives)).
+Once every card in a `% source:` deck has **graduated** — reached FSRS's review
+phase, past the initial learning steps — the deck is **exam due** rather than
+finished (so it does not yet unlock its dependents).
 
 **Sitting the exam — interactive, in either frontend.** The exam is a guided,
 one-question-at-a-time flow (Back/Next, then a per-question breakdown), the same
@@ -1169,9 +1170,8 @@ each trace (run `alix trace --build` on it) and a `% title:` facts deck for each
 deck (author it or `alix deck generate`) — wired together with `% requires:` so they
 unlock in dependency order, with each `% source:` pointing back at the real
 source. The `--goal` becomes the workspace's `description`; **`--title`** names
-it (omitted, the folder name is used); **`--unlock-stage <1–5>`** writes a shared
-`[defaults]` `unlock-stage` so a member unlocks once its cards reach that stage
-(without retiring early). (Refuses a non-empty folder unless `--force`.)
+it (omitted, the folder name is used). (Refuses a non-empty folder unless
+`--force`.)
 
 Add **`--build`** to go all the way: `alix explore … --into <dir> --build`
 explores the source **once** and then reuses that same session to fill every
@@ -1244,6 +1244,22 @@ section; `--port` overrides it:
 [serve]
 port = 7777
 ```
+
+### Review pacing
+
+A `[review]` section tunes the FSRS scheduler:
+
+```toml
+[review]
+retention = 0.9       # FSRS target recall probability (0.70–0.99); higher = shorter intervals
+retire_after = "1y"   # a card rests once its interval reaches this ("2w", "6m", "30d", or "never")
+```
+
+`retention` is the recall probability FSRS schedules for — raise it to see cards
+more often, lower it to stretch intervals. `retire_after` is when a card
+**retires** (rests until `alix reset`); `"never"` keeps it in rotation forever.
+A workspace can override both for its own decks in an `alix.local.toml` (see
+[Workspaces](#workspaces)) — a personal file that is never shared.
 
 ### Backends
 

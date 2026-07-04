@@ -87,12 +87,12 @@ progress rides on the answers.
 
 ## Deck directives, in one line
 
-A deck can set its own defaults — the answer mode, the scheduler, and more — with
+A deck can set its own defaults — the answer mode, the card order, and more — with
 `% key: value` lines in the **header** (before the first card):
 
 ```
 % mode: typing
-% scheduler: sm2
+% order: sequential
 ```
 
 Because they're just comments, directives don't affect card identity, and an

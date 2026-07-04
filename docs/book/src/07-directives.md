@@ -13,9 +13,7 @@ full.
 | `%` line | anywhere | A comment — ignored, unless it's one of the directives below. |
 | `% mode:` | deck · card | [Answer mode](04-review-modes.md): flip, typing, fuzzy, choice, line, explain. |
 | `% order:` | deck | Card order: `scheduled` (default) or `sequential`. [→ ch 5](05-scheduling.md) |
-| `% scheduler:` | deck | [Scheduler](05-scheduling.md): `leitner` (default) or `sm2`. |
 | `% direction:` | deck · card | [Review direction](06-cloze-direction-images.md): forward, reverse, both. |
-| `% unlock-stage:` | deck | [Stage that opens the gate](12-the-ai-exam.md) 1–5: the exam becomes available once every card reaches it (cards keep drilling; passing the exam is what unlocks). |
 | `% frontend:` | deck · card | Restrict to `any`, `tui`, or `web`. [→ ch 6](06-cloze-direction-images.md) |
 | `% img:` / `% img-back:` | card | [Image](06-cloze-direction-images.md) on the front / back (web only). |
 | `% img-dir:` | deck | Base directory image filenames resolve against. [→ ch 6](06-cloze-direction-images.md) |

@@ -12,8 +12,9 @@ recognition, exact recall, or understanding.
 ## flip — reveal and self-grade *(default)*
 
 You read the question, recall the answer, reveal it, and grade yourself: **failed**
-(missed — reset to stage 1), **partly** (got the gist but stumbled — down one
-stage), or **passed** (up one stage). The same three grades the trace walk uses.
+(missed — the card lapses and comes back soon), **partly** (got the gist but
+stumbled — a shorter interval than a clean pass), or **passed** (the interval
+grows). The same three grades the trace walk uses.
 It's the Anki-style default, and the right choice whenever you can fairly
 judge your own answer — conceptual questions, explanations, anything open-ended.
 
@@ -43,7 +44,7 @@ answer is several lines, each is checked and their order doesn't matter. Reach f
 it when you want the effort of *producing* the answer without being failed for a
 slipped key.
 
-A wrong answer in `typing` or `fuzzy` drops the card to stage 1 and brings it back
+A wrong answer in `typing` or `fuzzy` lapses the card and brings it back
 later in the same session until you get it.
 
 ## choice — pick from four

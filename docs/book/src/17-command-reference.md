@@ -12,7 +12,7 @@ depth, where there is one. Run any command with `--help` for its full flags.
   member you pick to a review or a walk (a workspace is reviewed member-by-member,
   never merged).
 
-Common flags: `--mode <m>` ([modes](04-review-modes.md)), `--scheduler <s>` /
+Common flags: `--mode <m>` ([modes](04-review-modes.md)),
 `--topology <name>` / `--region <name>` ([scheduling](05-scheduling.md)),
 `--cram`, `--new N`, `--limit N`, `--max-typos N`, and `--serve` / `--port` /
 `--lan` ([the web app](15-the-web-app.md)).
