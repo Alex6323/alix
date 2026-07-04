@@ -66,6 +66,12 @@ pub struct FsrsState {
     pub last_review_ms: u64,
     /// When the card is due next (Unix ms).
     pub due_ms: u64,
+    /// Full `Good` grades accumulated in the initial acquisition phase (reset by a
+    /// `Fail`; a `Partial` is neutral). Graduation to `Review` waits for two, so a
+    /// fail can't fast-track a card past `Good → Good`. `serde(default)` so
+    /// pre-existing stores read as 0 (no Goods yet).
+    #[serde(default)]
+    pub learning_goods: u8,
 }
 
 impl FsrsState {
@@ -724,9 +730,12 @@ mod tests {
             scheduled_days: 12,
             last_review_ms: 1000,
             due_ms: 2000,
+            learning_goods: 1,
         });
         store.save().unwrap();
         let reloaded = Store::open(&path).unwrap();
-        assert_eq!(2000, reloaded.get(9).unwrap().fsrs.unwrap().due_ms);
+        let f = reloaded.get(9).unwrap().fsrs.unwrap();
+        assert_eq!(2000, f.due_ms);
+        assert_eq!(1, f.learning_goods);
     }
 }

@@ -1,9 +1,10 @@
 //! Review scheduling.
 //!
 //! One scheduler: [`Fsrs`], FSRS-5 via the `rs-fsrs` crate. Short-term modeling is on, so FSRS owns
-//! both the learning steps (a New card graded Good is due ~10 min out in `Learning`; a second Good
-//! graduates it to `Review`) and the long-term DSR review that follows — one model across the short
-//! and the long term, no box ladder to switch between.
+//! both the learning steps (a New card graded Good is due ~10 min out in `Learning`) and the
+//! long-term DSR review that follows — one model across the short and the long term, no box ladder
+//! to switch between. Graduation to `Review` always takes **two** full Goods in the acquisition
+//! phase (a Fail resets that progress rather than fast-tracking it — see [`Fsrs::apply`]).
 //!
 //! The legacy Leitner `stage` field is retained only as an acquire marker and for the one-time
 //! lazy-derive that seeds FSRS state from a pre-FSRS card's stage on its first FSRS review; it is
@@ -91,6 +92,10 @@ pub fn stage_cooldown_ms(stage: u8) -> u64 {
 /// One day in milliseconds — the unit the legacy stage-cooldown lazy-derive converts to FSRS days.
 const DAY_MS: u64 = 86_400 * 1000;
 
+/// Hold step for a card that passed once but hasn't earned its second Good yet
+/// (10 min, matching FSRS's New+Good step).
+const LEARNING_HOLD_MS: u64 = 10 * 60 * 1000;
+
 // ---- FSRS scheduler (backed by the `rs-fsrs` crate) ----
 //
 // The FSRS *math* lives in `rs-fsrs`; this is only the thin boundary. alix keeps its
@@ -148,6 +153,8 @@ fn from_fsrs_card(c: &FsrsCard) -> FsrsState {
         scheduled_days: c.scheduled_days.max(0) as u32,
         last_review_ms: dt_to_ms(c.last_review),
         due_ms: dt_to_ms(c.due),
+        // The learning-steps counter is alix's, not rs-fsrs's; `apply` carries it.
+        ..Default::default()
     }
 }
 
@@ -172,9 +179,9 @@ fn seed_card(state: &CardState, now_ms: u64) -> FsrsCard {
 
 /// The FSRS scheduler, backed by `rs-fsrs`, built for a desired retention. Short-term
 /// modeling is **on** (`enable_short_term = true`), so FSRS's built-in learning steps own
-/// acquisition (a New card graded Good is due ~10 min out in `Learning`; a second Good
-/// graduates it to `Review`) and the DSR model owns long-term review — one scheduler
-/// across both the short and the long term.
+/// acquisition (a New card graded Good is due ~10 min out in `Learning`) and the DSR model owns
+/// long-term review — one scheduler across both the short and the long term. [`apply`](Fsrs::apply)
+/// gates graduation to `Review` on two full Goods so a fail no longer fast-tracks it.
 pub struct Fsrs {
     fsrs: FSRS,
 }
@@ -212,12 +219,36 @@ impl Scheduler for Fsrs {
     }
 
     fn apply(&self, state: &mut CardState, grade: Grade, now_ms: u64) {
-        let card = match &state.fsrs {
-            Some(s) => to_fsrs_card(s),
-            None => seed_card(state, now_ms),
+        let (card, pre_state, prev_goods) = match &state.fsrs {
+            Some(s) => (to_fsrs_card(s), s.state, s.learning_goods),
+            None => (seed_card(state, now_ms), 0, 0),
         };
         let info = self.fsrs.next(card, ms_to_dt(now_ms), rating_for(grade));
-        state.fsrs = Some(from_fsrs_card(&info.card));
+        let mut next = from_fsrs_card(&info.card);
+
+        // Learning-steps gate: graduation to Review takes two full Goods in the
+        // initial acquisition phase (pre-grade New or Learning), so a fail can't
+        // fast-track a card past the Good -> Good path. A Fail resets the count; a
+        // Partial is neutral (rs-fsrs keeps it in Learning). Relearning (a lapse,
+        // pre-grade state Relearning) is not gated — it re-graduates on one Good.
+        let acquiring = matches!(pre_state, 0 | 1);
+        let mut goods = prev_goods;
+        if acquiring {
+            match grade {
+                Grade::Pass => goods = goods.saturating_add(1),
+                Grade::Fail => goods = 0,
+                Grade::Partial => {}
+            }
+        }
+        if next.state == 2 && acquiring && goods < 2 {
+            // rs-fsrs would graduate on this single Good; hold in Learning instead.
+            next.state = 1;
+            next.scheduled_days = 0;
+            next.due_ms = now_ms.saturating_add(LEARNING_HOLD_MS);
+        }
+        next.learning_goods = if next.state == 2 { 0 } else { goods };
+
+        state.fsrs = Some(next);
         state.record_review(now_ms, grade);
     }
 
@@ -338,6 +369,64 @@ mod tests {
             sched.due_at(&s) - step_due >= DAY_MS,
             "a graduated card is scheduled at least a day out"
         );
+    }
+
+    #[test]
+    fn fail_then_one_good_does_not_graduate() {
+        let sched = Fsrs::new(0.9);
+        let mut s = CardState::new(0);
+        sched.apply(&mut s, Grade::Fail, 0); // New -> Learning
+        sched.apply(&mut s, Grade::Pass, 60_000); // one Good: held, not graduated
+        let f = s.fsrs.unwrap();
+        assert_eq!(1, f.state, "one Good after a fail stays in Learning");
+        assert_eq!(1, f.learning_goods);
+    }
+
+    #[test]
+    fn two_goods_after_a_fail_do_graduate() {
+        let sched = Fsrs::new(0.9);
+        let mut s = CardState::new(0);
+        sched.apply(&mut s, Grade::Fail, 0); // New -> Learning, goods = 0
+        sched.apply(&mut s, Grade::Pass, 60_000); // goods = 1, held
+        assert_eq!(1, s.fsrs.unwrap().state);
+        sched.apply(&mut s, Grade::Pass, 700_000); // goods = 2 -> Review
+        assert_eq!(2, s.fsrs.unwrap().state, "two Goods graduate");
+    }
+
+    #[test]
+    fn a_fail_resets_graduation_progress() {
+        let sched = Fsrs::new(0.9);
+        let mut s = CardState::new(0);
+        sched.apply(&mut s, Grade::Pass, 0); // goods = 1
+        sched.apply(&mut s, Grade::Fail, 60_000); // reset -> goods = 0
+        sched.apply(&mut s, Grade::Pass, 120_000); // goods = 1, held
+        assert_eq!(1, s.fsrs.unwrap().state, "still Learning after the reset");
+        sched.apply(&mut s, Grade::Pass, 700_000); // goods = 2 -> Review
+        assert_eq!(2, s.fsrs.unwrap().state);
+    }
+
+    #[test]
+    fn partial_is_neutral_for_graduation() {
+        let sched = Fsrs::new(0.9);
+        let mut s = CardState::new(0);
+        sched.apply(&mut s, Grade::Pass, 0); // goods = 1, Learning
+        sched.apply(&mut s, Grade::Partial, 600_000); // neutral: stays Learning, goods = 1
+        assert_eq!(1, s.fsrs.unwrap().state);
+        assert_eq!(1, s.fsrs.unwrap().learning_goods);
+        sched.apply(&mut s, Grade::Pass, 1_200_000); // goods = 2 -> Review
+        assert_eq!(2, s.fsrs.unwrap().state);
+    }
+
+    #[test]
+    fn a_lapsed_card_regraduates_on_one_good() {
+        let sched = Fsrs::new(0.9);
+        let mut s = CardState::new(0);
+        sched.apply(&mut s, Grade::Pass, 0);
+        sched.apply(&mut s, Grade::Pass, 600_000); // -> Review
+        sched.apply(&mut s, Grade::Fail, 1_200_000); // lapse -> Relearning
+        assert_eq!(3, s.fsrs.unwrap().state);
+        sched.apply(&mut s, Grade::Pass, 1_800_000); // one Good re-graduates (gate skips relearning)
+        assert_eq!(2, s.fsrs.unwrap().state);
     }
 
     #[test]
