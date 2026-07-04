@@ -483,6 +483,27 @@ impl Default for ServeConfig {
 
 /// The whole user configuration.
 // Not `Eq`: `ExamConfig::pass_threshold` is an `f64`.
+/// Personal review pacing (`[review]` in the config): the FSRS retention target and
+/// the interval past which a card retires. A workspace can override these in its own
+/// `alix.local.toml` (never shared).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ReviewConfig {
+    /// FSRS target retrievability `r` (0.70–0.99). Higher → shorter intervals.
+    pub retention: f64,
+    /// A card retires once its scheduled interval reaches this many days; `None`
+    /// disables retirement (drill forever).
+    pub retire_after_days: Option<u32>,
+}
+
+impl Default for ReviewConfig {
+    fn default() -> Self {
+        Self {
+            retention: 0.9,
+            retire_after_days: Some(365),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Config {
     pub keys: Bindings,
@@ -501,6 +522,8 @@ pub struct Config {
     pub ai: AiConfig,
     /// Local web frontend settings.
     pub serve: ServeConfig,
+    /// Personal review pacing (FSRS retention + retirement interval).
+    pub review: ReviewConfig,
     /// Directory the startup picker lists decks from, and resolves bare deck
     /// names against. `None` uses [`default_decks_dir`].
     pub decks_dir: Option<PathBuf>,
@@ -530,7 +553,17 @@ struct RawConfig {
     ai: RawAi,
     #[serde(default)]
     serve: RawServe,
+    #[serde(default)]
+    review: RawReviewConfig,
     decks_dir: Option<String>,
+}
+
+/// The `[review]` section: personal pacing (FSRS retention + when a card retires).
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct RawReviewConfig {
+    retention: Option<f64>,
+    retire_after: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -813,6 +846,15 @@ impl Config {
         }
         serve.token = raw.serve.token;
 
+        let mut review = ReviewConfig::default();
+        if let Some(retention) = raw.review.retention {
+            review.retention = retention.clamp(MIN_RETENTION, MAX_RETENTION);
+        }
+        if let Some(retire_after) = raw.review.retire_after {
+            review.retire_after_days =
+                parse_retire_after(&retire_after).context("in [review] retire_after")?;
+        }
+
         let decks_dir = raw.decks_dir.map(|s| expand_tilde(&s));
 
         Ok(Self {
@@ -825,6 +867,7 @@ impl Config {
             trace,
             ai,
             serve,
+            review,
             decks_dir,
         })
     }
@@ -867,6 +910,35 @@ fn expand_tilde(path: &str) -> PathBuf {
         return dirs.home_dir().join(rest);
     }
     PathBuf::from(path)
+}
+
+/// Retention is clamped to a sane FSRS band — outside it the schedule degenerates.
+const MIN_RETENTION: f64 = 0.70;
+const MAX_RETENTION: f64 = 0.99;
+
+/// Parses a `retire_after` value: `"never"` → `None` (retirement disabled), or
+/// `<n><unit>` with unit `d`/`w`/`m`/`y` (days/weeks/months/years; a bare number is
+/// days) → `Some(days)`. Weeks ×7, months ×30, years ×365.
+fn parse_retire_after(s: &str) -> Result<Option<u32>> {
+    let s = s.trim();
+    if s.eq_ignore_ascii_case("never") {
+        return Ok(None);
+    }
+    let split = s.find(|c: char| c.is_ascii_alphabetic()).unwrap_or(s.len());
+    let (num, unit) = s.split_at(split);
+    let Ok(n) = num.trim().parse::<u32>() else {
+        bail!("invalid retire_after {s:?}: expected e.g. \"1y\", \"2w\", \"30d\", or \"never\"");
+    };
+    let days = match unit.trim().to_ascii_lowercase().as_str() {
+        "" | "d" => n,
+        "w" => n.saturating_mul(7),
+        "m" => n.saturating_mul(30),
+        "y" => n.saturating_mul(365),
+        other => {
+            bail!("invalid retire_after unit {other:?}: expected d, w, m, or y (or \"never\")")
+        }
+    };
+    Ok(Some(days))
 }
 
 /// A self-documenting template for `config --init`: every option is shown
@@ -1004,12 +1076,62 @@ pub fn default_config_toml() -> &'static str {
 # exposes it to the network and `--port` overrides the port set here.
 [serve]
 # port = 7777                   # default port for `alix serve`
+
+# Review pacing (how the FSRS scheduler paces you). Personal — a workspace can
+# override these in its own alix.local.toml (which is never shared).
+[review]
+# retention = 0.9               # FSRS target retrievability (0.70–0.99); higher = shorter intervals
+# retire_after = "1y"           # a card rests once its interval reaches this ("2w", "6m", "30d", or "never")
 "#
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn review_defaults_when_unset() {
+        let config = Config::from_toml("").unwrap();
+        assert_eq!(0.9, config.review.retention);
+        assert_eq!(Some(365), config.review.retire_after_days);
+    }
+
+    #[test]
+    fn review_parses_retention_and_retire_after() {
+        let config =
+            Config::from_toml("[review]\nretention = 0.95\nretire_after = \"2w\"\n").unwrap();
+        assert_eq!(0.95, config.review.retention);
+        assert_eq!(Some(14), config.review.retire_after_days);
+    }
+
+    #[test]
+    fn review_retire_after_never_disables_retirement() {
+        let config = Config::from_toml("[review]\nretire_after = \"never\"\n").unwrap();
+        assert_eq!(None, config.review.retire_after_days);
+    }
+
+    #[test]
+    fn review_retention_is_clamped_to_a_sane_band() {
+        let config = Config::from_toml("[review]\nretention = 0.5\n").unwrap();
+        assert_eq!(MIN_RETENTION, config.review.retention);
+    }
+
+    #[test]
+    fn review_rejects_a_malformed_retire_after() {
+        assert!(Config::from_toml("[review]\nretire_after = \"soon\"\n").is_err());
+    }
+
+    #[test]
+    fn parse_retire_after_units() {
+        assert_eq!(Some(365), parse_retire_after("1y").unwrap());
+        assert_eq!(Some(180), parse_retire_after("6m").unwrap());
+        assert_eq!(Some(14), parse_retire_after("2w").unwrap());
+        assert_eq!(Some(30), parse_retire_after("30d").unwrap());
+        assert_eq!(Some(45), parse_retire_after("45").unwrap());
+        assert_eq!(None, parse_retire_after("never").unwrap());
+        assert!(parse_retire_after("").is_err());
+        assert!(parse_retire_after("1x").is_err());
+    }
 
     #[test]
     fn parse_single_chars() {
