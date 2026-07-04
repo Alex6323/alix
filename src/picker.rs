@@ -980,6 +980,8 @@ fn workspace_picker(
     review: ReviewConfig,
 ) -> Result<Picker<PathBuf>> {
     let ws = workspace::Workspace::load(folder)?;
+    // Members drill under this workspace's personal pacing override, if any.
+    let review = review.for_workspace(folder);
     let store_path = if workspace::is_workspace(folder) {
         workspace::store_path(folder)
     } else {

@@ -899,18 +899,21 @@ fn build_review(
         Order::default(),
     );
 
+    // A workspace member drills under that workspace's `alix.local.toml` pacing
+    // override (retention + retirement), else the global `[review]` config.
+    let review = config.review.for_deck(deck);
     let options = SessionOptions {
         max_new: args.new,
         limit: args.limit,
         cram: args.cram,
         order,
         topology: topology_order,
-        retire_after_days: config.review.retire_after_days,
+        retire_after_days: review.retire_after_days,
     };
     let session = Session::new(
         cards,
         store,
-        Box::new(Fsrs::new(config.review.retention)),
+        Box::new(Fsrs::new(review.retention)),
         options,
         now_ms(),
     );
@@ -1627,7 +1630,6 @@ fn announce(addr: SocketAddr, lan: bool, token: Option<&str>, label: &str) {
 
 fn stats(args: DeckArgs) -> Result<()> {
     let config = Config::load(None)?;
-    let scheduler = Fsrs::new(config.review.retention);
     let now = now_ms();
 
     for path in &args.decks {
@@ -1635,6 +1637,9 @@ fn stats(args: DeckArgs) -> Result<()> {
         // workspace, not the global store.
         let store = store_for(std::slice::from_ref(path), args.store.clone())?;
         let deck = Deck::load(path)?;
+        // …and its own pacing: a workspace deck honors its `alix.local.toml`.
+        let review = config.review.for_deck(path);
+        let scheduler = Fsrs::new(review.retention);
         let h = histogram(&deck.cards, &store);
 
         let mut due_now = 0usize;
@@ -1645,7 +1650,7 @@ fn stats(args: DeckArgs) -> Result<()> {
             if let Some(state) = store.get(card.id()) {
                 // Retired cards are resting, so they don't count as due (they
                 // still count toward the review totals below).
-                if !alix::session::is_retired(card, &store, config.review.retire_after_days) {
+                if !alix::session::is_retired(card, &store, review.retire_after_days) {
                     let due = scheduler.due_at(state);
                     if due <= now {
                         due_now += 1;
@@ -1697,21 +1702,22 @@ fn stats(args: DeckArgs) -> Result<()> {
 
 fn list(args: DeckArgs) -> Result<()> {
     let config = Config::load(None)?;
-    let scheduler = Fsrs::new(config.review.retention);
     let now = now_ms();
 
     for path in &args.decks {
         // Each deck reads its own store (workspace store for a workspace deck).
         let store = store_for(std::slice::from_ref(path), args.store.clone())?;
         let deck = Deck::load(path)?;
+        // …and its own pacing (workspace `alix.local.toml` override).
+        let review = config.review.for_deck(path);
+        let scheduler = Fsrs::new(review.retention);
         println!("{}", deck.display_name());
         for card in &deck.cards {
             let (stage, due) = match store.get(card.id()) {
                 Some(state) => {
                     // Retired cards rest until `alix reset`; their due time is
                     // moot, so say so instead of showing a misleading interval.
-                    let due = if alix::session::is_retired(card, &store, config.review.retire_after_days)
-                    {
+                    let due = if alix::session::is_retired(card, &store, review.retire_after_days) {
                         "resting".to_string()
                     } else {
                         let due = scheduler.due_at(state);

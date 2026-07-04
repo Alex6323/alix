@@ -2818,6 +2818,8 @@ fn workspace_members(
     with_lock: bool,
     review: ReviewConfig,
 ) -> Vec<MemberDto> {
+    // Member badges reflect this workspace's personal pacing override, if any.
+    let review = review.for_workspace(&e.path);
     let store = if crate::workspace::is_workspace(&e.path) {
         Store::open(crate::workspace::store_path(&e.path)).ok()
     } else {
@@ -3065,6 +3067,8 @@ fn deck_topology_dto(
     deck: &Deck,
     review: ReviewConfig,
 ) -> DeckTopologyDto {
+    // A workspace member's due counts honor its `alix.local.toml` pacing override.
+    let review = review.for_deck(&deck.path);
     let by_id: HashMap<u64, &Card> = deck.cards.iter().map(|c| (c.id(), c)).collect();
     let deck_ids: HashSet<u64> = by_id.keys().copied().collect();
     let scheduler = Fsrs::new(review.retention);

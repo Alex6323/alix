@@ -504,6 +504,44 @@ impl Default for ReviewConfig {
     }
 }
 
+/// A workspace's personal, unshared pacing override (sibling of `alix.toml`).
+const LOCAL_MANIFEST: &str = "alix.local.toml";
+
+impl ReviewConfig {
+    /// Overlays a workspace's `alix.local.toml` `[review]` overrides onto this
+    /// (global) config: only the keys present in the local file win. A missing or
+    /// malformed file leaves the config unchanged. This file is personal and is
+    /// never shared — deliberately separate from the shared `alix.toml`.
+    pub fn for_workspace(self, workspace_dir: &Path) -> Self {
+        let Ok(text) = std::fs::read_to_string(workspace_dir.join(LOCAL_MANIFEST)) else {
+            return self;
+        };
+        let Ok(raw) = toml::from_str::<RawLocalConfig>(&text) else {
+            return self;
+        };
+        let mut review = self;
+        if let Some(retention) = raw.review.retention {
+            review.retention = retention.clamp(MIN_RETENTION, MAX_RETENTION);
+        }
+        if let Some(retire_after) = raw.review.retire_after
+            && let Ok(days) = parse_retire_after(&retire_after)
+        {
+            review.retire_after_days = days;
+        }
+        review
+    }
+
+    /// Like [`for_workspace`](Self::for_workspace) but keyed off a deck path:
+    /// overlays the deck's workspace override when it lives in an explicit
+    /// workspace, else returns `self` unchanged.
+    pub fn for_deck(self, deck_path: &Path) -> Self {
+        match deck_path.parent() {
+            Some(dir) if crate::workspace::is_workspace(dir) => self.for_workspace(dir),
+            _ => self,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Config {
     pub keys: Bindings,
@@ -564,6 +602,14 @@ struct RawConfig {
 struct RawReviewConfig {
     retention: Option<f64>,
     retire_after: Option<String>,
+}
+
+/// The `alix.local.toml` schema: personal per-workspace overrides. Currently just
+/// `[review]`; lenient (unknown top-level tables are ignored) so it can grow.
+#[derive(Deserialize, Default)]
+struct RawLocalConfig {
+    #[serde(default)]
+    review: RawReviewConfig,
 }
 
 #[derive(Deserialize, Default)]
@@ -1119,6 +1165,41 @@ mod tests {
     #[test]
     fn review_rejects_a_malformed_retire_after() {
         assert!(Config::from_toml("[review]\nretire_after = \"soon\"\n").is_err());
+    }
+
+    #[test]
+    fn for_workspace_overlays_local_overrides() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("alix.local.toml"),
+            "[review]\nretention = 0.85\nretire_after = \"never\"\n",
+        )
+        .unwrap();
+        let resolved = ReviewConfig::default().for_workspace(dir.path());
+        assert_eq!(0.85, resolved.retention);
+        assert_eq!(None, resolved.retire_after_days);
+    }
+
+    #[test]
+    fn for_workspace_keeps_base_for_unset_keys() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("alix.local.toml"), "[review]\nretention = 0.85\n").unwrap();
+        let base = ReviewConfig {
+            retention: 0.9,
+            retire_after_days: Some(30),
+        };
+        let resolved = base.for_workspace(dir.path());
+        assert_eq!(0.85, resolved.retention);
+        assert_eq!(Some(30), resolved.retire_after_days); // unset key → base kept
+    }
+
+    #[test]
+    fn for_workspace_ignores_a_missing_or_malformed_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = ReviewConfig::default();
+        assert_eq!(base, base.for_workspace(dir.path())); // missing → unchanged
+        std::fs::write(dir.path().join("alix.local.toml"), "this is = = not toml\n").unwrap();
+        assert_eq!(base, base.for_workspace(dir.path())); // malformed → unchanged
     }
 
     #[test]
