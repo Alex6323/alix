@@ -214,6 +214,13 @@ to this codebase. When in doubt, mirror the surrounding code.
   keys, or directives — change them outright and record it as a **Breaking** note
   under `## [Unreleased]` → Changed. Compatibility machinery only earns its keep
   after 1.0; before then it's just surface to carry.
+- **Pre-1.0 store format: no versioning, no migrations — just break it.**
+  `CURRENT_VERSION` stays at `1`; never bump it and never add a `migrate` step. When the
+  persisted store/deck shape changes, change it outright and let old data break
+  (`#[serde(default)]` on new fields is a fine soft break; progress that happens to survive
+  is a bonus, not a goal). The version fence and migrations are a *post-1.0* concern; if the
+  version is ever `>1`, collapse it back to `1`. Author's standing instruction — **do not
+  propose a store version bump pre-1.0**, and don't re-raise it.
 - **No new dependency without a one-line reason.** Each crate added is permanent
   maintenance and supply-chain surface — reach for std or an existing dep first,
   and when a new one genuinely earns its place, say why in the commit.
