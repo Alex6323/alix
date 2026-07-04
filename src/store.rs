@@ -68,6 +68,15 @@ pub struct FsrsState {
     pub due_ms: u64,
 }
 
+impl FsrsState {
+    /// Whether the card has *graduated* the initial learning steps — reached FSRS
+    /// `Review` (state 2) or beyond. A later lapse to `Relearning` (3) still counts;
+    /// only `New`/`Learning` cards have not graduated.
+    pub fn graduated(&self) -> bool {
+        self.state >= 2
+    }
+}
+
 /// The stored state of a single card, keyed by its identity hash.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct CardState {

@@ -388,6 +388,16 @@ pub fn is_retired_id(card_id: u64, store: &Store) -> bool {
         .is_some_and(|f| f.scheduled_days >= RETIRE_AFTER_DAYS)
 }
 
+/// Whether a card has *graduated* — reached FSRS `Review`, past the initial learning
+/// steps. This is the always-on gate for a deck's exam / done state: a card still in
+/// `New`/`Learning`, or with no FSRS state yet, has not graduated.
+pub fn has_graduated(card: &Card, store: &Store) -> bool {
+    store
+        .get(card.id())
+        .and_then(|s| s.fsrs.as_ref())
+        .is_some_and(|f| f.graduated())
+}
+
 /// Each card's normalized Leitner stage (`0.0..=1.0`, unseen = 0, top-stage = 1)
 /// — the per-card "weak → strong" value for a region's heatmap bar. A region's
 /// bar reads all-red when new and all-green once its cards reach the top stage.

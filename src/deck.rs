@@ -14,7 +14,7 @@ use crate::{
     config::Strictness,
     parser::{self, ParseError},
     session::{self, Order},
-    store::{MAX_STAGE, Store},
+    store::Store,
 };
 
 /// Per-deck defaults declared with `% key: value` header directives, e.g.
@@ -39,12 +39,6 @@ pub struct DeckSettings {
     /// How strictly this deck's AI exam grades answers (`% strictness: ...`).
     /// `None` uses the `[exam]` config default.
     pub exam_strictness: Option<Strictness>,
-    /// The Leitner stage every card must reach to unlock the deck
-    /// (`% unlock-stage: 1..=5`): its exam becomes available (a sourced deck) or
-    /// its dependents unlock (a source-less one). `None` keeps the default gate —
-    /// all cards retired at the top stage. The cards keep drilling to the top —
-    /// the directive only lowers the unlock bar.
-    pub unlock_stage: Option<u8>,
     /// The live source root a frozen deck's `% at:` snapshots came from
     /// (`% origin: <crate>`). Cascades workspace `[defaults]` → deck → card; the
     /// tutor grounds in it for context and drift detection reads it. `None` for a
@@ -65,13 +59,6 @@ impl DeckSettings {
                 "frontend" => settings.frontend = Frontend::from_str(value, true).ok(),
                 "img-dir" => settings.img_dir = Some(PathBuf::from(value)),
                 "strictness" => settings.exam_strictness = Strictness::from_str(value, true).ok(),
-                "unlock-stage" => {
-                    settings.unlock_stage = value
-                        .trim()
-                        .parse::<u8>()
-                        .ok()
-                        .map(|n| n.clamp(1, MAX_STAGE))
-                }
                 "origin" => {
                     let v = value.trim();
                     if !v.is_empty() {
@@ -95,7 +82,6 @@ impl DeckSettings {
         self.frontend = self.frontend.or(defaults.frontend);
         self.img_dir = self.img_dir.clone().or_else(|| defaults.img_dir.clone());
         self.exam_strictness = self.exam_strictness.or(defaults.exam_strictness);
-        self.unlock_stage = self.unlock_stage.or(defaults.unlock_stage);
         self.origin = self.origin.clone().or_else(|| defaults.origin.clone());
     }
 }
@@ -285,14 +271,13 @@ impl Deck {
             })
     }
 
-    /// The deck's completion state, derived from its cards' stages (see
-    /// [`session::is_retired`]) and, for `% source:` decks, its exam result:
-    /// `NotStarted` while no card has been reviewed, `Started` in between, and
-    /// once the unlock gate is met either `ExamDue` (a sourced deck whose exam
-    /// hasn't been passed) or `Finished`. A source-less deck has no exam, so it
-    /// is `Finished` as soon as the gate is met. The gate is "every card retired"
-    /// by default, or "every card at stage ≥ N" with `% unlock-stage: N`. An
-    /// empty deck is `NotStarted`.
+    /// The deck's completion state, derived from its cards' FSRS maturity (see
+    /// [`session::has_graduated`]) and, for `% source:` decks, its exam result:
+    /// `NotStarted` while no card has been reviewed, `Started` in between, and once
+    /// every card has *graduated* (reached FSRS `Review`) either `ExamDue` (a sourced
+    /// deck whose exam hasn't been passed) or `Finished`. A source-less deck has no
+    /// exam, so it is `Finished` as soon as every card graduates. An empty deck is
+    /// `NotStarted`.
     pub fn state(&self, store: &Store) -> DeckState {
         let total = self.cards.len();
         if total == 0 {
@@ -300,20 +285,16 @@ impl Deck {
         }
         // A passed AI exam masters the deck outright — you can test out of the
         // drilling — so it counts as `Finished` (and unlocks its dependents)
-        // however many cards are still un-retired.
+        // however many cards are still un-graduated.
         if store.deck_mastered(&self.subject) {
             return DeckState::Finished;
         }
-        // The unlock gate: every card retired (the default), or — with
-        // `% unlock-stage: N` — every card at stage ≥ N, so a deck unlocks before
-        // its cards retire while they keep drilling to the top.
-        let gated = match self.settings.unlock_stage {
-            Some(n) => self
-                .cards
-                .iter()
-                .all(|c| store.get(c.id()).is_some_and(|s| s.stage >= n)),
-            None => self.cards.iter().all(|c| session::is_retired(c, store)),
-        };
+        // The graduation gate: every card has reached FSRS `Review` (past the initial
+        // learning steps), so the exam opens well before a card's year-long retirement.
+        let gated = self
+            .cards
+            .iter()
+            .all(|c| session::has_graduated(c, store));
         if gated {
             // Drilled enough but not yet mastered: a deck with an exam (a sourced
             // fact deck, or a trace — whose exam is its graded compression) is
@@ -879,16 +860,33 @@ mod tests {
         (store, dir)
     }
 
-    /// Drives a card to retirement: an FSRS interval grown past the cap.
+    /// Marks a card graduated: FSRS `Review`.
+    fn graduate(store: &mut Store, id: u64) {
+        store.get_or_insert(id, 0).fsrs = Some(crate::store::FsrsState {
+            state: 2, // Review
+            ..Default::default()
+        });
+    }
+
+    /// Marks a card seen but still in a learning step (not yet graduated).
+    fn learning(store: &mut Store, id: u64) {
+        store.get_or_insert(id, 0).fsrs = Some(crate::store::FsrsState {
+            state: 1, // Learning
+            ..Default::default()
+        });
+    }
+
+    /// Drives a card to retirement: a year-out FSRS interval (also graduated).
     fn retire(store: &mut Store, id: u64) {
         store.get_or_insert(id, 0).fsrs = Some(crate::store::FsrsState {
+            state: 2,                // Review — a year-out card has graduated
             scheduled_days: 100_000, // well past the retirement cap
             ..Default::default()
         });
     }
 
     #[test]
-    fn deck_state_reflects_card_stages() {
+    fn deck_state_progresses_notstarted_started_finished() {
         let dir = tempfile::tempdir().unwrap();
         let path = write_deck(dir.path(), "d.txt", "# a\n\t1\n# b\n\t2\n");
         let deck = Deck::load(&path).unwrap();
@@ -896,13 +894,13 @@ mod tests {
 
         assert_eq!(DeckState::NotStarted, deck.state(&store));
 
-        // One card seen but not retired -> started.
-        store.get_or_insert(deck.cards[0].id(), 0).stage = 2;
+        // One card seen but still learning (not graduated) -> started.
+        learning(&mut store, deck.cards[0].id());
         assert_eq!(DeckState::Started, deck.state(&store));
 
-        // Every card retired (FSRS interval past the cap) -> finished.
+        // Every card graduated -> finished (source-less, so no exam).
         for card in &deck.cards {
-            retire(&mut store, card.id());
+            graduate(&mut store, card.id());
         }
         assert_eq!(DeckState::Finished, deck.state(&store));
     }
@@ -924,45 +922,42 @@ mod tests {
     }
 
     #[test]
-    fn unlock_stage_makes_a_sourced_deck_examdue_before_retirement() {
+    fn a_sourced_deck_is_examdue_once_every_card_graduates() {
         let dir = tempfile::tempdir().unwrap();
-        let path = write_deck(
-            dir.path(),
-            "d.txt",
-            "% source: https://x\n% unlock-stage: 2\n# a\n\t1\n# b\n\t2\n",
-        );
+        let path = write_deck(dir.path(), "d.txt", "% source: https://x\n# a\n\t1\n# b\n\t2\n");
         let deck = Deck::load(&path).unwrap();
-        assert_eq!(Some(2), deck.settings.unlock_stage);
         let (mut store, _s) = empty_store();
 
-        // Both cards at stage 2 — still drilling, NOT retired — opens the gate.
-        for card in &deck.cards {
-            store.get_or_insert(card.id(), 0).stage = 2;
-        }
+        // One card graduated, one still learning — the gate isn't met yet.
+        graduate(&mut store, deck.cards[0].id());
+        learning(&mut store, deck.cards[1].id());
+        assert_eq!(DeckState::Started, deck.state(&store));
+
+        // Both graduated (reached Review), well before retirement — the exam opens.
+        graduate(&mut store, deck.cards[1].id());
         assert_eq!(DeckState::ExamDue, deck.state(&store));
     }
 
     #[test]
-    fn unlock_stage_finishes_a_sourceless_deck_before_retirement() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = write_deck(dir.path(), "d.txt", "% unlock-stage: 2\n# a\n\t1\n");
-        let deck = Deck::load(&path).unwrap();
-        let (mut store, _s) = empty_store();
-
-        // No `% source:`, so reaching the unlock stage finishes it (unlocks deps).
-        store.get_or_insert(deck.cards[0].id(), 0).stage = 2;
-        assert_eq!(DeckState::Finished, deck.state(&store));
-    }
-
-    #[test]
-    fn without_unlock_stage_a_mid_stage_deck_is_still_started() {
+    fn a_sourceless_deck_finishes_once_every_card_graduates() {
         let dir = tempfile::tempdir().unwrap();
         let path = write_deck(dir.path(), "d.txt", "# a\n\t1\n");
         let deck = Deck::load(&path).unwrap();
         let (mut store, _s) = empty_store();
-        // Stage 4, below MAX_STAGE and not retired: the default gate needs
-        // retirement, so the deck is still only `Started`.
-        store.get_or_insert(deck.cards[0].id(), 0).stage = 4;
+
+        // No `% source:`, so graduating every card finishes it (unlocks deps).
+        graduate(&mut store, deck.cards[0].id());
+        assert_eq!(DeckState::Finished, deck.state(&store));
+    }
+
+    #[test]
+    fn a_deck_still_learning_a_card_is_only_started() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_deck(dir.path(), "d.txt", "# a\n\t1\n");
+        let deck = Deck::load(&path).unwrap();
+        let (mut store, _s) = empty_store();
+        // Seen but still in a learning step (not graduated) — only `Started`.
+        learning(&mut store, deck.cards[0].id());
         assert_eq!(DeckState::Started, deck.state(&store));
     }
 

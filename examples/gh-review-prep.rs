@@ -396,7 +396,6 @@ fn build_workspace(
         ws,
         goal,
         Some(title),
-        None,
         source,
         false,
         Some(&filled),

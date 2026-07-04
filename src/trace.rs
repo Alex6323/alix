@@ -1819,15 +1819,15 @@ mod tests {
         assert!(!store.deck_mastered(&deck.subject));
         assert_eq!(DeckState::NotStarted, deck.state(&store));
 
-        // Walk the single checkpoint, then retire it (its FSRS interval grown past
-        // the retirement cap) so the deck's unlock gate — every card retired — is met.
+        // Walk the single checkpoint, then graduate it (FSRS `Review`) so the deck's
+        // unlock gate — every card graduated — is met.
         let card0 = Trace::from_deck(&deck).unwrap().checkpoints[0].card_id;
         let mut walk = Walk::new(Trace::from_deck(&deck).unwrap());
         walk.predict("p".to_string());
         walk.grade(&mut store, Delta::Passed, 1);
         assert_eq!(Phase::Done, walk.phase()); // no compress step
         if let Some(f) = store.get_or_insert(card0, 0).fsrs.as_mut() {
-            f.scheduled_days = 500; // past the ~1y retirement cap
+            f.state = 2; // Review — graduated
         }
 
         // The walk is the DRILL, not the exam: drilling all checkpoints does NOT

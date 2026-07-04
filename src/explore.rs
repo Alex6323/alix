@@ -434,13 +434,11 @@ fn parse_item_header(t: &str) -> Option<(usize, Kind, String)> {
 /// trace, a `% title:` facts deck for a deck — wired by `% requires:` (item
 /// numbers mapped to the member file names), with each `% source:` rewritten
 /// absolute against the source root. Refuses a non-empty `dir` unless `force`.
-#[expect(clippy::too_many_arguments)] // a manifest + a plan + per-call knobs
 pub fn materialize(
     plan: &str,
     dir: &Path,
     goal: &str,
     title: Option<&str>,
-    unlock_stage: Option<u8>,
     source: &str,
     force: bool,
     filled: Option<&HashMap<usize, String>>,
@@ -490,11 +488,6 @@ pub fn materialize(
         "description = \"{}\"\n\n[defaults]\n",
         toml_escape(goal)
     ));
-    // A workspace-wide unlock stage: members gate (exam / unlock dependents) once
-    // every card reaches it, without retiring early.
-    if let Some(unlock_stage) = unlock_stage {
-        manifest.push_str(&format!("unlock-stage = {unlock_stage}\n"));
-    }
     // The live source root the frozen `% at:` provenance resolves against — the
     // tutor grounds here for context, and drift detection reads it. Cascades into
     // every member deck (`% origin:`), overridable per deck/card.
@@ -802,7 +795,6 @@ Spine   a -> b
             &dir,
             "understand the repo",
             None,
-            None,
             ".",
             false,
             None,
@@ -837,14 +829,14 @@ Spine   a -> b
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("keep.txt"), "existing").unwrap();
 
-        assert!(materialize(SAMPLE_PLAN, &dir, "g", None, None, ".", false, None).is_err());
-        assert!(materialize(SAMPLE_PLAN, &dir, "g", None, None, ".", true, None).is_ok()); // --force writes anyway
+        assert!(materialize(SAMPLE_PLAN, &dir, "g", None, ".", false, None).is_err());
+        assert!(materialize(SAMPLE_PLAN, &dir, "g", None, ".", true, None).is_ok()); // --force writes anyway
 
         let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn materialize_writes_title_and_unlock_stage() {
+    fn materialize_writes_title_and_description() {
         let dir = std::env::temp_dir().join(format!("alix-explore-title-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
 
@@ -853,7 +845,6 @@ Spine   a -> b
             &dir,
             "the goal",
             Some("Repo Internals"),
-            Some(2),
             ".",
             false,
             None,
@@ -862,8 +853,6 @@ Spine   a -> b
         let manifest = fs::read_to_string(dir.join("alix.toml")).unwrap();
         assert!(manifest.contains("title = \"Repo Internals\""));
         assert!(manifest.contains("description = \"the goal\""));
-        // The unlock-stage lands in [defaults], shared by every member deck.
-        assert!(manifest.contains("[defaults]\nunlock-stage = 2"));
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -903,7 +892,6 @@ preamble ignored
             SAMPLE_PLAN,
             &dir,
             "g",
-            None,
             None,
             ".",
             false,
