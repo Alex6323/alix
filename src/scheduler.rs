@@ -57,6 +57,12 @@ pub trait Scheduler {
     /// Applies a review outcome to the card state at time `now_ms`.
     fn apply(&self, state: &mut CardState, grade: Grade, now_ms: u64);
 
+    /// A *cram refresh*: keep the card's memory (stability, difficulty, interval)
+    /// exactly as-is but push its due date out by its current interval, so a correct
+    /// cram answer refreshes without rewarding. No review is recorded. A card with no
+    /// FSRS state yet is left untouched — there's no interval to preserve.
+    fn reanchor(&self, state: &mut CardState, now_ms: u64);
+
     /// Whether the card is due at `now_ms`.
     fn is_due(&self, state: &CardState, now_ms: u64) -> bool {
         self.due_at(state) <= now_ms
@@ -213,6 +219,13 @@ impl Scheduler for Fsrs {
         let info = self.fsrs.next(card, ms_to_dt(now_ms), rating_for(grade));
         state.fsrs = Some(from_fsrs_card(&info.card));
         state.record_review(now_ms, grade);
+    }
+
+    fn reanchor(&self, state: &mut CardState, now_ms: u64) {
+        if let Some(f) = state.fsrs.as_mut() {
+            let interval_ms = u64::from(f.scheduled_days) * DAY_MS;
+            f.due_ms = now_ms.saturating_add(interval_ms);
+        }
     }
 }
 

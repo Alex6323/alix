@@ -191,7 +191,14 @@ impl Session {
         };
         let card = &self.cards[index];
         let state = store.get_or_insert(card.id(), now_ms);
-        self.scheduler.apply(state, grade, now_ms);
+        // Cram refresh: a correct answer keeps the card fresh without rewarding it
+        // (re-anchor its due — no FSRS update, no recorded review). A cram miss is a
+        // genuine lapse, and every normal grade runs the real scheduler.
+        if self.options.cram && grade.passed() {
+            self.scheduler.reanchor(state, now_ms);
+        } else {
+            self.scheduler.apply(state, grade, now_ms);
+        }
         // Safety net: keep the stage within the top (reaching `MAX_STAGE`
         // retires the card). The scheduler already caps a pass at `MAX_STAGE`.
         if state.stage > MAX_STAGE {
@@ -1032,6 +1039,91 @@ mod tests {
         );
         // Resting: not queued, even though cram ignores cooldowns.
         assert!(session.is_finished());
+    }
+
+    #[test]
+    fn cram_correct_refreshes_without_rewarding() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(1);
+        // A mature, graduated card with a real 30-day interval.
+        store.get_or_insert(all[0].id(), 0).fsrs = Some(crate::store::FsrsState {
+            stability: 30.0,
+            difficulty: 5.0,
+            scheduled_days: 30,
+            state: 2,
+            due_ms: 1000,
+            ..Default::default()
+        });
+        let before = store.get(all[0].id()).unwrap().fsrs.unwrap();
+
+        let mut session = Session::new(
+            all.clone(),
+            &store,
+            sched(),
+            SessionOptions { cram: true, ..Default::default() },
+            10_000,
+        );
+        session.grade(&mut store, Grade::Pass, 10_000);
+
+        let after = store.get(all[0].id()).unwrap();
+        let f = after.fsrs.unwrap();
+        assert_eq!(before.stability, f.stability); // no reward
+        assert_eq!(before.scheduled_days, f.scheduled_days); // interval kept
+        assert_eq!(10_000u64 + 30 * 86_400_000, f.due_ms); // re-anchored to now + interval
+        assert!(after.history.is_empty()); // a refresh, not a recorded review
+    }
+
+    #[test]
+    fn cram_miss_lapses_normally() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(1);
+        store.get_or_insert(all[0].id(), 0).fsrs = Some(crate::store::FsrsState {
+            stability: 30.0,
+            difficulty: 5.0,
+            scheduled_days: 30,
+            state: 2,
+            ..Default::default()
+        });
+
+        let mut session = Session::new(
+            all.clone(),
+            &store,
+            sched(),
+            SessionOptions { cram: true, ..Default::default() },
+            10_000,
+        );
+        session.grade(&mut store, Grade::Fail, 10_000);
+
+        // A miss is a real lapse: the scheduler ran (recorded, stability dropped).
+        let after = store.get(all[0].id()).unwrap();
+        assert_eq!(1, after.history.len());
+        assert!(after.fsrs.unwrap().stability < 30.0);
+    }
+
+    #[test]
+    fn cram_runs_the_fsrs_update_once_per_real_review() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(1);
+        store.get_or_insert(all[0].id(), 0).fsrs = Some(crate::store::FsrsState {
+            stability: 30.0,
+            difficulty: 5.0,
+            scheduled_days: 30,
+            state: 2,
+            ..Default::default()
+        });
+
+        let mut session = Session::new(
+            all.clone(),
+            &store,
+            sched(),
+            SessionOptions { cram: true, ..Default::default() },
+            10_000,
+        );
+        session.grade(&mut store, Grade::Fail, 10_000); // miss → one real lapse, re-queued
+        session.grade(&mut store, Grade::Pass, 20_000); // re-drill correct → refresh only
+
+        // Exactly one FSRS update ran (the lapse); the refresh recorded nothing.
+        assert_eq!(1, store.get(all[0].id()).unwrap().history.len());
     }
 
     fn topology_order(walk: &[&Card]) -> TopologyOrder {
