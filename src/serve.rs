@@ -1632,7 +1632,7 @@ pub fn run_review(
                     respond_status(request, 409);
                     continue;
                 };
-                r.session.skip();
+                r.session.skip(&store, now_ms());
                 r.rotate_variant(); // a fresh phrasing for the next card
                 respond_json(
                     request,
@@ -1725,7 +1725,7 @@ pub fn run_review(
                     respond_status(request, 409);
                     continue;
                 };
-                let dropped = r.session.remove_current();
+                let dropped = r.session.remove_current(&store, now_ms());
                 if let Some(first) = dropped.first() {
                     let subject = first.subject.to_string();
                     let line = first.line;

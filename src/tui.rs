@@ -660,7 +660,7 @@ impl App {
     /// progress pruning happen together when the run ends, in
     /// [`flush_removals`].
     fn remove_card(&mut self) {
-        let removed = self.session.remove_current();
+        let removed = self.session.remove_current(&self.store, time::now_ms());
         let Some(first) = removed.first() else {
             return;
         };
@@ -781,7 +781,7 @@ impl App {
                 }
         );
         if skip_hit && answerable {
-            self.session.skip();
+            self.session.skip(&self.store, time::now_ms());
             self.start_card();
             return Ok(());
         }

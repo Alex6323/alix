@@ -1,10 +1,13 @@
 //! Review session logic, independent of any UI.
 //!
-//! A session takes the cards of one or more decks, asks the store which are
-//! due, builds a review queue and applies grades. Failed cards are re-queued at
-//! the end of the session until they pass: the queue is served *by position*
-//! (front of the queue), so a re-queued card comes up again in the same run
-//! regardless of its cooldown. A never-seen card is *acquired* first — shown,
+//! A session takes the cards of one or more decks, asks the store which are due,
+//! and serves them **by FSRS due**: each card is graded at most once per
+//! appearance. A miss is *not* re-drilled immediately — the card keeps the short
+//! due FSRS gave it and re-appears only once that step has elapsed, interleaved
+//! behind other due cards (so every scored review is genuinely time-separated). A
+//! pass (or acquire) leaves the session. When nothing is due right now the
+//! session is finished-for-now; [`Session::poll`] lets a frontend re-enter it
+//! when a cooling card comes back. A never-seen card is *acquired* first — shown,
 //! recorded at stage 1, then left for a later session to quiz.
 
 use std::collections::VecDeque;
@@ -65,7 +68,7 @@ impl Default for SessionOptions {
 /// Counters for a running session.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SessionStats {
-    /// Number of grades given (re-reviews of failed cards count again).
+    /// Number of grades given (a card re-served after its step counts again).
     pub reviews: usize,
     /// Number of passed reviews.
     pub passed: usize,
@@ -81,11 +84,19 @@ pub type StageHistogram = [usize; 6];
 /// A review session over a fixed set of cards.
 pub struct Session {
     cards: Vec<Card>,
-    /// Indices into `cards`, front = current card.
-    queue: VecDeque<usize>,
+    /// In-play card indices in session order (due cards, then new). A card
+    /// leaves on pass/acquire/remove; a miss keeps it — its short FSRS due gates
+    /// when it becomes servable again.
+    roster: Vec<usize>,
+    /// The card currently up for review — pinned once served, so a card that
+    /// cools back into due-ness mid-answer can't be graded by mistake. `None`
+    /// means nothing is servable right now (the session is finished-for-now).
+    current_idx: Option<usize>,
+    /// Roster cards servable at the last `advance` — the "remaining now" count.
+    remaining_now: usize,
     scheduler: Box<dyn Scheduler>,
     options: SessionOptions,
-    /// Total distinct cards that entered the queue initially.
+    /// Total distinct cards that entered the roster initially.
     pub initial_size: usize,
     /// Session counters.
     pub stats: SessionStats,
@@ -94,7 +105,7 @@ pub struct Session {
 impl Session {
     /// Builds a session at time `now_ms`.
     ///
-    /// The queue holds, in order: all due cards (earliest FSRS due first), then
+    /// The roster holds, in order: all due cards (earliest FSRS due first), then
     /// up to `max_new` unseen cards in deck order. Sub-cards of the same cloze
     /// card are kept apart whenever other cards are available.
     pub fn new(
@@ -104,32 +115,38 @@ impl Session {
         options: SessionOptions,
         now_ms: u64,
     ) -> Self {
-        let queue = build_queue(&cards, store, &*scheduler, &options, now_ms);
-        let initial_size = queue.len();
+        let roster: Vec<usize> = build_queue(&cards, store, &*scheduler, &options, now_ms).into();
+        let initial_size = roster.len();
 
-        Self {
+        let mut session = Self {
             cards,
-            queue,
+            roster,
+            current_idx: None,
+            remaining_now: 0,
             scheduler,
             options,
             initial_size,
             stats: SessionStats::default(),
-        }
+        };
+        session.advance(store, now_ms);
+        session
     }
 
     /// Starts a fresh session over the same decks with the same settings,
     /// picking up whatever is due (or new) at `now_ms`.
     ///
-    /// Returns `false` — leaving queue and stats untouched — if nothing is
+    /// Returns `false` — leaving the roster and stats untouched — if nothing is
     /// due, so a summary screen can keep showing the finished session.
     pub fn restart(&mut self, store: &Store, now_ms: u64) -> bool {
-        let queue = build_queue(&self.cards, store, &*self.scheduler, &self.options, now_ms);
-        if queue.is_empty() {
+        let roster: Vec<usize> =
+            build_queue(&self.cards, store, &*self.scheduler, &self.options, now_ms).into();
+        if roster.is_empty() {
             return false;
         }
-        self.initial_size = queue.len();
-        self.queue = queue;
+        self.initial_size = roster.len();
+        self.roster = roster;
         self.stats = SessionStats::default();
+        self.advance(store, now_ms);
         true
     }
 
@@ -150,15 +167,15 @@ impl Session {
             .min()
     }
 
-    /// The card currently up for review.
+    /// The card currently up for review — the pinned cursor set by [`advance`].
     pub fn current(&self) -> Option<&Card> {
-        self.queue.front().map(|&i| &self.cards[i])
+        self.current_idx.map(|i| &self.cards[i])
     }
 
     /// The current card, mutable — e.g. to attach a note just saved from the ask
     /// tutor so the card shows it without re-reading the deck file.
     pub fn current_mut(&mut self) -> Option<&mut Card> {
-        let i = *self.queue.front()?;
+        let i = self.current_idx?;
         Some(&mut self.cards[i])
     }
 
@@ -176,21 +193,26 @@ impl Session {
         &self.cards
     }
 
-    /// Number of cards still in the queue (including the current one).
+    /// Cards servable right now (the current one included) — reaches 0 exactly
+    /// when the session is finished-for-now. A missed card cooling back in nudges
+    /// this up by one when it returns.
     pub fn remaining(&self) -> usize {
-        self.queue.len()
+        self.remaining_now
     }
 
-    /// `true` once every card in the queue has passed.
+    /// `true` when nothing is due right now — the session is finished-for-now.
+    /// Cards still cooling (missed, not yet re-due) are picked up next session,
+    /// or re-enter this one via [`poll`](Self::poll) once their step elapses.
     pub fn is_finished(&self) -> bool {
-        self.queue.is_empty()
+        self.current_idx.is_none()
     }
 
-    /// Grades the current card, updates the store, and advances the queue.
-    /// A failed card is moved to the back of the queue to be retried in this
-    /// session.
+    /// Grades the current card, updates the store, and advances the cursor.
+    /// A pass (or acquire, or any cram grade) leaves the session; a normal miss
+    /// keeps the card in the roster, and it re-appears only once its short FSRS
+    /// due has elapsed — never re-drilled immediately in the same sitting.
     pub fn grade(&mut self, store: &mut Store, grade: Grade, now_ms: u64) {
-        let Some(index) = self.queue.pop_front() else {
+        let Some(index) = self.current_idx else {
             return;
         };
         let card = &self.cards[index];
@@ -210,12 +232,19 @@ impl Session {
         }
 
         self.stats.reviews += 1;
-        if grade.passed() {
+        let passed = grade.passed();
+        if passed {
             self.stats.passed += 1;
         } else {
             self.stats.failed += 1;
-            self.queue.push_back(index);
         }
+        // A pass leaves the session; a cram card is single-pass so it also leaves;
+        // a normal miss stays in the roster and re-appears only once its FSRS due
+        // (its short learning/relearning step) has elapsed.
+        if passed || self.options.cram {
+            self.roster.retain(|&i| i != index);
+        }
+        self.advance(store, now_ms);
     }
 
     /// Introduces the current never-seen card: records it on the Leitner ladder
@@ -224,20 +253,26 @@ impl Session {
     /// card is not re-queued, so its first quiz comes on a later session, once the
     /// stage-1 relearn cooldown (~5 min) has passed. Does nothing on an empty queue.
     pub fn acquire_current(&mut self, store: &mut Store, now_ms: u64) {
-        let Some(index) = self.queue.pop_front() else {
+        let Some(index) = self.current_idx else {
             return;
         };
         // `get_or_insert` creates the state at stage 1, due ~5 min out via the
         // stage-1 cooldown — no `scheduler.apply`, no recorded review.
         store.get_or_insert(self.cards[index].id(), now_ms);
         self.stats.acquired += 1;
+        self.roster.retain(|&i| i != index);
+        self.advance(store, now_ms);
     }
 
-    /// Moves the current card to the back of the queue without grading it.
-    pub fn skip(&mut self) {
-        if let Some(index) = self.queue.pop_front() {
-            self.queue.push_back(index);
-        }
+    /// Defers the current card without grading it: another servable card is
+    /// offered first, and the skipped card returns after the rest.
+    pub fn skip(&mut self, store: &Store, now_ms: u64) {
+        let Some(index) = self.current_idx else {
+            return;
+        };
+        self.roster.retain(|&i| i != index);
+        self.roster.push(index);
+        self.advance(store, now_ms);
     }
 
     /// Drops the current card from the queue without grading it, along with any
@@ -247,22 +282,65 @@ impl Session {
     /// empty vec if the queue was empty. The store is left untouched;
     /// pruning the cards' progress is the caller's job once the deck file
     /// is rewritten.
-    pub fn remove_current(&mut self) -> Vec<Card> {
-        let Some(index) = self.queue.pop_front() else {
+    pub fn remove_current(&mut self, store: &Store, now_ms: u64) -> Vec<Card> {
+        let Some(index) = self.current_idx else {
             return Vec::new();
         };
         let group = sibling_group(&self.cards[index]);
         let mut removed = vec![self.cards[index].clone()];
-        let mut kept = VecDeque::with_capacity(self.queue.len());
-        for &i in &self.queue {
+        let mut kept: Vec<usize> = Vec::with_capacity(self.roster.len());
+        for &i in &self.roster {
+            if i == index {
+                continue; // the current card is already in `removed`, and dropped
+            }
             if sibling_group(&self.cards[i]) == group {
                 removed.push(self.cards[i].clone());
             } else {
-                kept.push_back(i);
+                kept.push(i);
             }
         }
-        self.queue = kept;
+        self.roster = kept;
+        self.advance(store, now_ms);
         removed
+    }
+
+    /// Re-checks due times without rebuilding the roster or resetting stats: a
+    /// missed card cooling back into due-ness becomes current again. The
+    /// frontends call this while idle at the summary so a review re-enters on its
+    /// own (unlike [`restart`](Self::restart), which starts a fresh sitting).
+    /// Returns whether a card is now up.
+    pub fn poll(&mut self, store: &Store, now_ms: u64) -> bool {
+        self.advance(store, now_ms);
+        self.current_idx.is_some()
+    }
+
+    /// Whether roster card `i` can be served right now: under cram, always (the
+    /// single pass drains the roster in order); otherwise unseen or FSRS-due.
+    fn servable(&self, i: usize, store: &Store, now_ms: u64) -> bool {
+        self.options.cram
+            || is_reviewable(
+                &self.cards[i],
+                store,
+                &*self.scheduler,
+                now_ms,
+                self.options.retire_after_days,
+            )
+    }
+
+    /// Re-points the cursor to the first servable roster card (session order) and
+    /// refreshes the servable-now count. Called after every transition.
+    fn advance(&mut self, store: &Store, now_ms: u64) {
+        self.current_idx = self
+            .roster
+            .iter()
+            .copied()
+            .find(|&i| self.servable(i, store, now_ms));
+        self.remaining_now = self
+            .roster
+            .iter()
+            .copied()
+            .filter(|&i| self.servable(i, store, now_ms))
+            .count();
     }
 
     /// Per-stage counts over all cards of this session's decks (stage 0 =
@@ -577,23 +655,111 @@ mod tests {
     }
 
     #[test]
-    fn failed_card_reappears_in_the_same_session_despite_the_cooldown() {
+    fn a_missed_card_is_not_re_served_before_its_fsrs_due() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(2);
+        for c in &all {
+            store.get_or_insert(c.id(), 0);
+        }
+        let now = 5 * 60 * 1000; // past the stage-1 cooldown: both due
+        let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
+
+        let first = session.current().unwrap().id();
+        session.grade(&mut store, Grade::Fail, now);
+        // The other due card is served; the missed card is cooling, not re-served.
+        assert!(session.current().is_some());
+        assert_ne!(first, session.current().unwrap().id());
+    }
+
+    #[test]
+    fn a_missed_card_reappears_once_its_step_elapses() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(2);
+        let first_id = all[0].id();
+        for c in &all {
+            store.get_or_insert(c.id(), 0);
+        }
+        let now = 5 * 60 * 1000;
+        let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
+
+        assert_eq!(first_id, session.current().unwrap().id());
+        session.grade(&mut store, Grade::Fail, now); // card 0 missed → cooling ~1 min
+        session.grade(&mut store, Grade::Pass, now + 1000); // clear card 1
+        // Well past the ~1 min learning step: the missed card is due again.
+        session.poll(&store, now + 5 * 60_000);
+        assert_eq!(first_id, session.current().unwrap().id());
+    }
+
+    #[test]
+    fn same_session_fail_then_pass_does_not_graduate() {
+        // The regression: a fail cannot be followed by an immediate scored pass,
+        // so a fresh card cannot jump to FSRS Review off a sub-step re-drill.
         let (mut store, _dir) = empty_store();
         let all = cards(1);
         let id = all[0].id();
-        store.get_or_insert(id, 0); // already seen, stage 1
-        let now = 5 * 60 * 1000; // past the relearn cooldown, so it is due
+        store.get_or_insert(id, 0);
+        let now = 5 * 60 * 1000;
         let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
-        assert_eq!(1, session.remaining());
 
         session.grade(&mut store, Grade::Fail, now);
+        // Nothing else is due, so no further grade lands this appearance.
+        assert!(session.current().is_none());
+        let f = store.get(id).unwrap().fsrs.unwrap();
+        assert_ne!(
+            2, f.state,
+            "not graduated to Review off an immediate re-drill"
+        );
+    }
 
-        // Failing pushes the card to the back of the queue; serving is by
-        // position, so it returns this same session even though its due time is
-        // now ~5 min out.
-        assert_eq!(1, session.remaining());
-        assert!(!session.is_finished());
-        assert_eq!(id, session.current().unwrap().id());
+    #[test]
+    fn only_cooling_cards_left_finishes_the_session() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(1);
+        store.get_or_insert(all[0].id(), 0);
+        let now = 5 * 60 * 1000;
+        let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
+        session.grade(&mut store, Grade::Fail, now);
+        assert!(session.is_finished(), "nothing due now → finished");
+        assert!(
+            session.next_due_at(&store).is_some(),
+            "the cooling card still has a future due"
+        );
+    }
+
+    #[test]
+    fn passing_removes_a_card_missing_keeps_it() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(2);
+        for c in &all {
+            store.get_or_insert(c.id(), 0);
+        }
+        let now = 5 * 60 * 1000;
+        let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
+        session.grade(&mut store, Grade::Fail, now); // card 0 kept (cooling)
+        session.grade(&mut store, Grade::Pass, now); // card 1 removed
+        // One cooling, one gone: nothing servable right now.
+        assert!(session.is_finished());
+    }
+
+    #[test]
+    fn max_new_is_capped_per_session() {
+        let (mut store, _dir) = empty_store();
+        let mut session = Session::new(
+            cards(5),
+            &store,
+            sched(),
+            SessionOptions {
+                max_new: 2,
+                ..Default::default()
+            },
+            1000,
+        );
+        let mut acquired = 0;
+        while session.current().is_some() {
+            session.acquire_current(&mut store, 1000);
+            acquired += 1;
+        }
+        assert_eq!(2, acquired, "the roster fixes the new set at start");
     }
 
     #[test]
@@ -710,24 +876,21 @@ mod tests {
     }
 
     #[test]
-    fn failed_card_is_requeued_until_passed() {
+    fn stats_count_each_grade_across_the_session() {
         let (mut store, _dir) = empty_store();
-        let mut session = Session::new(cards(2), &store, sched(), SessionOptions::default(), 1000);
+        let all = cards(2);
+        for c in &all {
+            store.get_or_insert(c.id(), 0);
+        }
+        let now = 5 * 60 * 1000;
+        let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
         assert_eq!(2, session.remaining());
 
-        let first = session.current().unwrap().front.clone();
-        session.grade(&mut store, Grade::Fail, 1000);
-        assert_eq!(2, session.remaining()); // still two: failed card requeued
+        session.grade(&mut store, Grade::Fail, now); // card 0 kept (cooling)
+        session.grade(&mut store, Grade::Pass, now); // card 1 passed
 
-        session.grade(&mut store, Grade::Pass, 1001);
-        assert_eq!(1, session.remaining());
-        // The failed card came back.
-        assert_eq!(first, session.current().unwrap().front);
-        session.grade(&mut store, Grade::Pass, 1002);
-        assert!(session.is_finished());
-
-        assert_eq!(3, session.stats.reviews);
-        assert_eq!(2, session.stats.passed);
+        assert_eq!(2, session.stats.reviews);
+        assert_eq!(1, session.stats.passed);
         assert_eq!(1, session.stats.failed);
     }
 
@@ -750,10 +913,10 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let mut session = Session::new(cards(2), &store, sched(), SessionOptions::default(), 1000);
         let first = session.current().unwrap().front.clone();
-        session.skip();
+        session.skip(&store, 1000);
         assert_ne!(first, session.current().unwrap().front);
         assert_eq!(2, session.remaining());
-        session.skip();
+        session.skip(&store, 1000);
         assert_eq!(first, session.current().unwrap().front);
         // Skipping must not touch the store.
         assert!(store.is_empty());
@@ -764,7 +927,7 @@ mod tests {
     fn remove_current_drops_card_without_grading() {
         let (mut store, _dir) = empty_store();
         let mut session = Session::new(cards(2), &store, sched(), SessionOptions::default(), 1000);
-        let removed = session.remove_current();
+        let removed = session.remove_current(&store, 1000);
         assert_eq!(1, removed.len());
         assert_eq!(1, session.remaining());
         assert_ne!(removed[0].front, session.current().unwrap().front);
@@ -787,7 +950,7 @@ mod tests {
         let mut session = Session::new(all, &store, sched(), SessionOptions::default(), 0);
         assert_eq!(3, session.remaining());
         // Removing one sub-card removes its sibling too, leaving only card 2.
-        let removed = session.remove_current();
+        let removed = session.remove_current(&store, 0);
         assert_eq!(2, removed.len());
         assert_eq!(1, session.remaining());
         assert_eq!(2, session.current().unwrap().line);
@@ -814,7 +977,7 @@ mod tests {
         let mut fronts = Vec::new();
         for _ in 0..session.remaining() {
             fronts.push(session.current().unwrap().front.clone());
-            session.skip();
+            session.skip(&store, 0);
         }
         assert_eq!(4, fronts.len());
         for pair in fronts.windows(2) {
@@ -1086,19 +1249,22 @@ mod tests {
     }
 
     #[test]
-    fn cram_runs_the_fsrs_update_once_per_real_review() {
+    fn cram_serves_each_card_once() {
         let (mut store, _dir) = empty_store();
-        let all = cards(1);
-        store.get_or_insert(all[0].id(), 0).fsrs = Some(crate::store::FsrsState {
-            stability: 30.0,
-            difficulty: 5.0,
-            scheduled_days: 30,
-            state: 2,
-            ..Default::default()
-        });
+        let all = cards(2);
+        let id_a = all[0].id();
+        for c in &all {
+            store.get_or_insert(c.id(), 0).fsrs = Some(crate::store::FsrsState {
+                stability: 30.0,
+                difficulty: 5.0,
+                scheduled_days: 30,
+                state: 2,
+                ..Default::default()
+            });
+        }
 
         let mut session = Session::new(
-            all.clone(),
+            all,
             &store,
             sched(),
             SessionOptions {
@@ -1107,11 +1273,14 @@ mod tests {
             },
             10_000,
         );
-        session.grade(&mut store, Grade::Fail, 10_000); // miss → one real lapse, re-queued
-        session.grade(&mut store, Grade::Pass, 20_000); // re-drill correct → refresh only
-
-        // Exactly one FSRS update ran (the lapse); the refresh recorded nothing.
-        assert_eq!(1, store.get(all[0].id()).unwrap().history.len());
+        session.grade(&mut store, Grade::Fail, 10_000); // miss → one real lapse, not re-served
+        session.grade(&mut store, Grade::Pass, 10_000); // the other card, refreshed
+        assert!(
+            session.is_finished(),
+            "cram is a single pass over the roster"
+        );
+        // The missed crammed card recorded exactly one review (no in-session re-drill).
+        assert_eq!(1, store.get(id_a).unwrap().history.len());
     }
 
     fn topology_order(walk: &[&Card]) -> TopologyOrder {
