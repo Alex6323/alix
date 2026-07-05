@@ -3097,13 +3097,22 @@ fn deck_topology_dto(
         let cards: Vec<&Card> = ids.iter().filter_map(|id| by_id.get(id).copied()).collect();
         crate::session::count_reviewable(&cards, store, &scheduler, now, review.retire_after_days)
     };
+    // Whole-deck due count: the deck's own cards, plus any of its virtual
+    // (remediation) cards that are due — never affecting deck size/composition.
     let deck_due = deck
         .cards
         .iter()
         .filter(|c| {
             crate::session::is_reviewable(c, store, &scheduler, now, review.retire_after_days)
         })
-        .count();
+        .count()
+        + crate::session::count_reviewable_virtual(
+            store,
+            &deck.subject,
+            &scheduler,
+            now,
+            review.retire_after_days,
+        );
     let topologies = augment
         .topologies_for(&deck_ids)
         .into_iter()
@@ -3774,5 +3783,49 @@ mod tests {
         let started = aug.generate("choices", None, &AiConfig::default(), &AskConfig::default());
         assert!(!started);
         assert!(aug.dto().busy.is_none());
+    }
+
+    #[test]
+    fn deck_topology_dto_deck_due_includes_a_due_virtual_card() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("rust.txt");
+        std::fs::write(&deck_path, "# q1\n\ta1\n").unwrap();
+        let deck = Deck::load(&deck_path).unwrap();
+
+        let mut store = Store::open(dir.path().join("progress.json")).unwrap();
+        let now = now_ms();
+        // The one deck card has graduated and isn't due — no deck contribution.
+        store.get_or_insert(deck.cards[0].id(), now).fsrs = Some(crate::store::FsrsState {
+            state: 2,
+            scheduled_days: 30,
+            due_ms: now + 30 * 86_400_000,
+            ..Default::default()
+        });
+        let augment = AugmentCache::open(augment::augment_path_for(store.path()));
+
+        let before = deck_topology_dto(&augment, &store, &deck, ReviewConfig::default());
+        assert_eq!(0, before.deck_due);
+
+        // A due virtual card for this deck adds to the whole-deck due count.
+        store.insert_virtual(crate::store::VirtualCard {
+            id: crate::store::virtual_id(
+                crate::store::VirtualKind::Remediation,
+                &deck.subject,
+                "gap-1",
+            ),
+            kind: crate::store::VirtualKind::Remediation,
+            parent: deck.subject.clone(),
+            content: crate::store::VirtualContent {
+                front: "virtual front".to_string(),
+                back: vec!["virtual back".to_string()],
+                mode: None,
+            },
+            state: crate::store::CardState::new(0),
+            created_ms: 0,
+            retired: false,
+        });
+
+        let after = deck_topology_dto(&augment, &store, &deck, ReviewConfig::default());
+        assert_eq!(1, after.deck_due);
     }
 }

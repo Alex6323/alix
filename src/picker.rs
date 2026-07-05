@@ -292,13 +292,15 @@ pub fn deck_status(
     // must be a card due or new. Drilling is never gated by the lock — a
     // prerequisite-locked deck with due cards is still reviewable.
     let scheduler = crate::scheduler::Fsrs::new(review.retention);
+    let now = session::now_ms();
     let reviewable = deck.is_trace()
         || (matches!(state, DeckState::ExamDue) && examable)
-        || session::has_reviewable(
-            &deck.cards,
+        || session::has_reviewable(&deck.cards, store, &scheduler, now, review.retire_after_days)
+        || session::has_reviewable_virtual(
             store,
+            &deck.subject,
             &scheduler,
-            session::now_ms(),
+            now,
             review.retire_after_days,
         );
     DeckStatus {
@@ -2252,5 +2254,84 @@ mod tests {
         let cands = build_candidates(dir.path(), &recent);
         let names: Vec<&str> = cands.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(vec!["real.txt"], names);
+    }
+
+    /// A graduated-and-not-due `FsrsState`, so the deck card it's attached to
+    /// contributes nothing to `reviewable` (Review state, far-out due, well
+    /// under the retirement cap).
+    fn graduated_not_due(now: u64) -> crate::store::FsrsState {
+        crate::store::FsrsState {
+            state: 2, // Review — graduated
+            scheduled_days: 30,
+            due_ms: now + 30 * 86_400_000,
+            ..Default::default()
+        }
+    }
+
+    /// A virtual (remediation) card for `subject`, due immediately (created at
+    /// t=0, so any real `now` is well past its stage-1 cooldown).
+    fn due_virtual_card(subject: &str, discriminator: &str) -> crate::store::VirtualCard {
+        crate::store::VirtualCard {
+            id: crate::store::virtual_id(
+                crate::store::VirtualKind::Remediation,
+                subject,
+                discriminator,
+            ),
+            kind: crate::store::VirtualKind::Remediation,
+            parent: subject.to_string(),
+            content: crate::store::VirtualContent {
+                front: "virtual front".to_string(),
+                back: vec!["virtual back".to_string()],
+                mode: None,
+            },
+            state: crate::store::CardState::new(0),
+            created_ms: 0,
+            retired: false,
+        }
+    }
+
+    #[test]
+    fn deck_status_reviewable_true_when_only_a_virtual_card_is_due() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("rust.txt");
+        std::fs::write(&deck_path, "# q1\n\ta1\n").unwrap();
+        let deck = Deck::load(&deck_path).unwrap();
+
+        let mut store = Store::open(dir.path().join("progress.json")).unwrap();
+        let now = session::now_ms();
+        let card_id = deck.cards[0].id();
+        store.get_or_insert(card_id, now).fsrs = Some(graduated_not_due(now));
+
+        // Fully drilled, nothing due: `done ✓` and not reviewable.
+        let status = deck_status(&deck, &store, None, false, ReviewConfig::default());
+        assert_eq!("done ✓", status.badge);
+        assert!(!status.reviewable);
+
+        // A due virtual card for this deck makes it reviewable even though
+        // every deck card is done.
+        store.insert_virtual(due_virtual_card(&deck.subject, "gap-1"));
+        let status = deck_status(&deck, &store, None, false, ReviewConfig::default());
+        assert!(status.reviewable);
+        assert_eq!("done ✓", status.badge); // unaffected by the virtual card
+    }
+
+    #[test]
+    fn deck_status_total_ignores_virtual_cards() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("rust.txt");
+        std::fs::write(&deck_path, "# q1\n\ta1\n# q2\n\ta2\n# q3\n\ta3\n").unwrap();
+        let deck = Deck::load(&deck_path).unwrap();
+
+        let mut store = Store::open(dir.path().join("progress.json")).unwrap();
+        let now = session::now_ms();
+        // One of the three cards has graduated; the other two are unseen.
+        store.get_or_insert(deck.cards[0].id(), now).fsrs = Some(graduated_not_due(now));
+
+        let before = deck_status(&deck, &store, None, false, ReviewConfig::default());
+        assert_eq!("1/3", before.badge);
+
+        store.insert_virtual(due_virtual_card(&deck.subject, "gap-1"));
+        let after = deck_status(&deck, &store, None, false, ReviewConfig::default());
+        assert_eq!(before.badge, after.badge);
     }
 }

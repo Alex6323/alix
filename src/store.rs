@@ -405,11 +405,20 @@ impl Store {
     }
 
     /// Every virtual card in the store, unfiltered — the raw building block
-    /// `build_review`'s injection filters itself (by `parent` subject and
-    /// `retired`) to find one deck's cards. A `parent`-filtered convenience
-    /// accessor for external due-count callers is a follow-up.
+    /// behind [`virtual_cards_for`](Self::virtual_cards_for).
     pub fn iter_virtual_cards(&self) -> impl Iterator<Item = &VirtualCard> {
         self.virtual_cards.values()
+    }
+
+    /// Every virtual card belonging to deck `subject` (its `parent`), an exact
+    /// match on the deck's file name. Includes archived (`retired`) entries —
+    /// callers filter those themselves for scheduling/counts (see
+    /// [`crate::session::is_virtual_reviewable`]).
+    pub fn virtual_cards_for(&self, subject: &str) -> Vec<&VirtualCard> {
+        self.virtual_cards
+            .values()
+            .filter(|v| v.parent == subject)
+            .collect()
     }
 
     /// Whether the given deck has passed its AI exam ("mastered").
@@ -832,6 +841,40 @@ mod tests {
         let reloaded = Store::open(&path).unwrap();
         let got = reloaded.get_virtual(&id).unwrap();
         assert_eq!(&vc, got);
+    }
+
+    /// A virtual card for an arbitrary `parent` subject (unlike
+    /// `sample_virtual_card`, which is fixed to `"rust.txt"`).
+    fn virtual_card_for(parent: &str, discriminator: &str) -> VirtualCard {
+        VirtualCard {
+            id: virtual_id(VirtualKind::Remediation, parent, discriminator),
+            kind: VirtualKind::Remediation,
+            parent: parent.to_string(),
+            content: VirtualContent {
+                front: "front".to_string(),
+                back: vec!["back".to_string()],
+                mode: None,
+            },
+            state: CardState::new(0),
+            created_ms: 0,
+            retired: false,
+        }
+    }
+
+    #[test]
+    fn virtual_cards_for_matches_on_parent_subject() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        store.insert_virtual(virtual_card_for("rust.txt", "gap-1"));
+        store.insert_virtual(virtual_card_for("rust.txt", "gap-2"));
+        store.insert_virtual(virtual_card_for("other.txt", "gap-1"));
+
+        let rust_cards = store.virtual_cards_for("rust.txt");
+        assert_eq!(2, rust_cards.len());
+        assert!(rust_cards.iter().all(|v| v.parent == "rust.txt"));
+
+        assert_eq!(1, store.virtual_cards_for("other.txt").len());
+        assert!(store.virtual_cards_for("nonexistent.txt").is_empty());
     }
 
     #[test]

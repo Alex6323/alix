@@ -926,8 +926,9 @@ fn build_review(
     let mut virtual_ids: Vec<Option<String>> = vec![None; cards.len()];
     if region_sel.is_none() {
         for (k, vc) in store
-            .iter_virtual_cards()
-            .filter(|v| v.parent.as_str() == subject.as_ref() && !v.retired)
+            .virtual_cards_for(subject.as_ref())
+            .into_iter()
+            .filter(|v| !v.retired)
             .enumerate()
         {
             cards.push(synthesize_virtual(vc, &subject, VIRTUAL_LINE_BASE + k));
@@ -1712,6 +1713,15 @@ fn stats(args: DeckArgs) -> Result<()> {
                 passes += state.total_passes;
             }
         }
+        // Virtual (remediation) cards count toward "due", never toward the
+        // card count/histogram below — they aren't deck content.
+        due_now += alix::session::count_reviewable_virtual(
+            &store,
+            &deck.subject,
+            &scheduler,
+            now,
+            review.retire_after_days,
+        );
 
         let state = match deck.state(&store) {
             DeckState::NotStarted => "not started",

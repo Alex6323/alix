@@ -657,6 +657,39 @@ pub fn is_virtual_reviewable(
     !virtual_retired(vc, retire_after_days) && scheduler.is_due(&vc.state, now_ms)
 }
 
+/// Whether `subject`'s deck has any virtual (remediation) card due right now —
+/// the virtual-card counterpart of [`has_reviewable`], added to a deck's own
+/// due signal (never to its size/card count). See [`is_virtual_reviewable`].
+pub fn has_reviewable_virtual(
+    store: &Store,
+    subject: &str,
+    scheduler: &dyn Scheduler,
+    now_ms: u64,
+    retire_after_days: Option<u32>,
+) -> bool {
+    store
+        .virtual_cards_for(subject)
+        .into_iter()
+        .any(|vc| is_virtual_reviewable(vc, scheduler, now_ms, retire_after_days))
+}
+
+/// How many of `subject`'s virtual (remediation) cards are due right now — the
+/// virtual-card counterpart of [`count_reviewable`], added to a deck's own due
+/// count (never to its size/card count). See [`is_virtual_reviewable`].
+pub fn count_reviewable_virtual(
+    store: &Store,
+    subject: &str,
+    scheduler: &dyn Scheduler,
+    now_ms: u64,
+    retire_after_days: Option<u32>,
+) -> usize {
+    store
+        .virtual_cards_for(subject)
+        .into_iter()
+        .filter(|vc| is_virtual_reviewable(vc, scheduler, now_ms, retire_after_days))
+        .count()
+}
+
 /// Whether a card has *graduated* — reached FSRS `Review`, past the initial learning
 /// steps. This is the always-on gate for a deck's exam / done state: a card still in
 /// `New`/`Learning`, or with no FSRS state yet, has not graduated.
@@ -1785,6 +1818,35 @@ mod tests {
         // Well past the ~1 min learning step: the missed virtual card is due again.
         session.poll(&store, now + 5 * 60_000);
         assert_eq!(synth_id, session.current().unwrap().id());
+    }
+
+    #[test]
+    fn count_reviewable_virtual_counts_due_excludes_archived() {
+        let (mut store, _dir) = empty_store();
+        let now = 61_000; // past the stage-1 cooldown for a t=0 card
+        let cap = Some(DEFAULT_RETIRE_AFTER_DAYS);
+        let sched = sched();
+
+        // Due: created at t=0, past its stage-1 cooldown by `now`.
+        store.insert_virtual(virtual_card("deck.txt", "gap-due", 0));
+        // Not yet due: created at `now`, still cooling down.
+        store.insert_virtual(virtual_card("deck.txt", "gap-not-due", now));
+        // Archived: otherwise due, but excluded.
+        let mut archived = virtual_card("deck.txt", "gap-archived", 0);
+        archived.retired = true;
+        store.insert_virtual(archived);
+
+        assert_eq!(
+            1,
+            count_reviewable_virtual(&store, "deck.txt", sched.as_ref(), now, cap)
+        );
+        assert!(has_reviewable_virtual(
+            &store,
+            "deck.txt",
+            sched.as_ref(),
+            now,
+            cap
+        ));
     }
 
     #[test]
