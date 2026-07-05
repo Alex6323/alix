@@ -56,10 +56,19 @@ responsive while it thinks.
   **mastered** (`mastered ✓`). Mastery, not mere drilling, is what unlocks decks
   that `% requires:` this one. Source-less decks are unaffected: finishing them
   just means drilled (`done ✓`).
-- **Fail** lists the gaps and offers to turn them into **remediation cards**
-  appended to the deck — a cloze/plain card for a missed fact, a `% mode: explain`
-  card for a missed concept, with overlapping gaps merged. Re-drill those and
-  re-sit.
+- **Fail** lists the gaps and offers to turn them into **remediation cards** — a
+  cloze/plain card for a missed fact, a `% mode: explain` card for a missed
+  concept, with overlapping gaps merged. Re-drill those and re-sit.
+
+Those remediation cards are **virtual**: they live in alix's store rather than in
+the deck file. A virtual card drills like any other — its first pass comes about a
+minute later, then FSRS schedules it — and it counts toward the deck's *due* total
+but not toward the deck's card count, and it never rewrites your `.txt`.
+Regenerating the same gap won't duplicate it; once its interval reaches the
+retirement cap it's archived, and re-failing the gap brings it back. When a
+remediation card has earned a permanent place, **promote** it during review
+(`Ctrl-P` in the terminal, or "Promote to deck" in the browser's review menu):
+alix appends it to the deck file and removes the virtual copy.
 
 A **trace** deck is examined differently: instead of generated questions, its exam
 asks you to *retrace the whole path from memory* in a sentence or two — **the

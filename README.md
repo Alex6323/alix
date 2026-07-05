@@ -651,8 +651,10 @@ options). The note appears once the answer is shown. Controls are big tap
 targets and follow your configured key bindings — the page reads them from the
 server, so the chips show your own keys. The **☰ menu** is context-aware: during
 review it holds **Ask Tutor** and **Remove card** (which deletes the current card
-from its deck file and prunes its progress); on the deck picker, **keyboard
-shortcuts**, **refresh decks**, and **about** — with **Theme…** in both.
+from its deck file and prunes its progress) — plus **Promote to deck** while
+reviewing a remediation (virtual) card, which appends it to the deck file; on the
+deck picker, **keyboard shortcuts**, **refresh decks**, and **about** — with
+**Theme…** in both.
 
 A **gallery of themes** ships with the web UI — the alix **Dark**/**Light**
 originals and a playful **Kid** theme, plus crowd-favourite editor/slide palettes
@@ -951,10 +953,20 @@ so the UI stays responsive.
   deck **mastered** (shown as `mastered ✓`). Mastery — not mere drilling — is
   what unlocks decks that `% requires:` it. Source-less decks are unchanged:
   finishing = drilled (`done ✓`).
-- **Fail** lists the gaps and offers to turn them into remediation cards
-  appended to the deck — the card type is picked per gap (a cloze/plain card for
-  a missed fact, a `% mode: explain` card for a missed concept), with overlapping
-  gaps merged into one card. Re-drill those and re-sit.
+- **Fail** lists the gaps and offers to turn them into remediation cards — the
+  card type is picked per gap (a cloze/plain card for a missed fact, a
+  `% mode: explain` card for a missed concept), with overlapping gaps merged into
+  one card. Re-drill those and re-sit.
+
+**Remediation cards are virtual.** They live in alix's store, not your deck file,
+so the deck `.txt` is left unchanged. A virtual card drills like any other — its
+first pass comes about a minute later, then FSRS schedules it — and it counts
+toward a deck's *due* total but not toward its card count. Regenerating the same
+gap won't duplicate it; once its interval reaches the retirement cap
+(`retire_after`) it's archived, and re-failing the gap revives it. If a
+remediation card has earned a permanent place, **promote** it during review
+(`Ctrl-P` in the terminal, or "Promote to deck" in the browser's review menu):
+alix appends it to the deck file and drops the virtual copy.
 
 Resetting a whole deck's progress (`alix reset <deck>`) also clears its mastered
 state, so a re-drilled deck must pass the exam again (resetting only individual
@@ -1216,7 +1228,9 @@ Keys are written as a single character (`"j"`), a special key name
 (`"space"`, `"enter"`, `"tab"`, `"esc"`, `"backspace"`), or either with a
 `ctrl-` prefix (`"ctrl-s"`). Rebindable `[keys.review]` actions: `failed`,
 `partly`, `passed`, `reveal`, `hint`, `submit`, `skip`, `remove` (mark the card
-for deletion from its deck file, default `ctrl-x`), `continue`, `restart` (start
+for deletion from its deck file, default `ctrl-x`), `promote` (append a
+remediation card to its deck and drop the virtual copy — only on virtual cards,
+default `ctrl-p`), `continue`, `restart` (start
 a new session from the summary screen, default `r`), `quit`. While you are typing
 an answer (typing and fuzzy mode), plain character bindings are ignored so
 they cannot shadow text input — use `ctrl-`/special keys for `hint`, `skip`

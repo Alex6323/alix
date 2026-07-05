@@ -7,6 +7,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Remediation cards are now virtual cards in the store.** A failed source
+  exam's remediation cards live in alix's store instead of being written into
+  your deck file. They drill like normal cards and count toward a deck's *due*
+  total (not its card count), dedupe on regeneration, archive when their FSRS
+  interval reaches `retire_after`, and revive if the same gap fails again. See
+  the **Changed** note below for the behavior break.
+- **Promote a virtual card into its deck.** A review-time action appends a
+  remediation card to the deck file and drops the virtual copy — `Ctrl-P` in the
+  terminal (rebindable `[keys.review]` `promote`), or "Promote to deck" in the web
+  review menu. Offered only while reviewing a virtual card.
 - **`[review]` config section — FSRS pacing.** `retention` (target recall
   probability, 0.70–0.99, default 0.9; higher = shorter intervals) and
   `retire_after` (a duration `"1y"` / `"6m"` / `"2w"` / `"30d"`, or `"never"` to
@@ -78,6 +88,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ephemeral (never persisted or sent to the server).
 
 ### Changed
+- **Breaking: a failed exam no longer appends remediation cards to your deck
+  file.** Remediation cards are now created as virtual cards in alix's store, so
+  the deck `.txt` stays byte-for-byte unchanged. Drilling, due counts, and the
+  exam re-sit are otherwise the same; use the new **promote** action to move a
+  remediation card into the deck if you want it there permanently.
 - **Breaking: a review session scores each card once per appearance.** A missed
   card is no longer re-drilled immediately in the same sitting; it keeps its
   short spaced step and re-appears once that step has elapsed, interleaved behind
