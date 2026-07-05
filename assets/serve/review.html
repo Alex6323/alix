@@ -571,6 +571,7 @@
           <div class="menu" id="menu" role="menu">
             <button id="mAsk" class="m-review" role="menuitem">Ask Tutor <span class="mk" id="mAskKey">?</span></button>
             <button id="mRemove" class="m-review" role="menuitem">Remove card <span class="mk">x</span></button>
+            <button id="mPromote" class="m-review" role="menuitem">Promote to deck</button>
             <button id="mShortcuts" class="m-picker" role="menuitem">Keyboard shortcuts</button>
             <button id="theme-open" role="menuitem" style="color: var(--ink)">Theme…</button>
             <button id="mDraw" role="menuitem" style="color: var(--ink)">Draw answers <span class="mk" id="mDrawState">off</span></button>
@@ -705,6 +706,7 @@ function grade(g)  { api("/api/grade", post({ grade: g })).then(apply); }
 function skip()    { api("/api/skip", post({})).then(apply); }
 function acquire() { api("/api/acquire", post({})).then(apply); }
 function remove()  { api("/api/remove", post({})).then(apply); }
+function promote() { api("/api/promote", post({})).then(apply); }
 function restart() { api("/api/restart", post({})).then(apply); }
 // A trace picked from the picker returns a WalkDto (phase predict/reveal/done); a fact
 // deck returns a review StateDto (phase select/review). `isWalk` is the single place the
@@ -3015,6 +3017,7 @@ menu.addEventListener("mousedown", (e) => e.preventDefault());
 menu.addEventListener("click", (e) => e.stopPropagation());
 document.getElementById("mAsk").addEventListener("click", () => { menu.classList.remove("open"); if (isAnswered()) openAsk(); });
 document.getElementById("mRemove").addEventListener("click", () => { menu.classList.remove("open"); remove(); });
+document.getElementById("mPromote").addEventListener("click", () => { menu.classList.remove("open"); promote(); });
 const mDraw = document.getElementById("mDraw");
 function syncDrawMenu() {
   // Sticky only when the card is *actually* drawing because it's authored draw:
@@ -3063,6 +3066,10 @@ function openShortcuts() {
 function setMenuContext(ctx) {
   document.querySelectorAll("#menu .m-picker").forEach((b) => { b.style.display = ctx === "picker" ? "" : "none"; });
   document.querySelectorAll("#menu .m-review").forEach((b) => { b.style.display = ctx === "review" ? "" : "none"; });
+  // Promote is a review action, but only while the current card is virtual
+  // (a remediation card) — narrower than the other .m-review items, so it
+  // gets its own check on top of the context toggle.
+  document.getElementById("mPromote").style.display = ctx === "review" && state.promotable ? "" : "none";
   barNav.style.display = ctx === "picker" ? "" : "none";
   updateNavBack();
 }

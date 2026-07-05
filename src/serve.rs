@@ -46,7 +46,7 @@ use crate::{
     render::{self, NoteUnit},
     scheduler::{Fsrs, Grade, keypoint_grade},
     session::{Session, now_ms},
-    store::Store,
+    store::{self, Store},
     trace::{self, Delta, Excerpt, Phase, SourceBase, Walk},
 };
 
@@ -261,6 +261,11 @@ struct StateDto {
     /// disables "New session" and shows a "nothing due" note when this is
     /// false.
     can_restart: bool,
+    /// Whether the current card is a virtual (remediation) card, so the page
+    /// can offer to promote it into its deck file (appends it, keeping its
+    /// review history). `false` once nothing is current, or for an authored
+    /// deck card.
+    promotable: bool,
     /// The highest reachable stage (always 5 now); the page would dim stages
     /// above it to `–`, but every deck reaches the top stage.
     top_stage: u8,
@@ -1746,6 +1751,37 @@ pub fn run_review(
                     &review_state(reviewing.as_ref(), &store, mode_override),
                 );
             }
+            // Promotes the current virtual (remediation) card into its deck
+            // file, keeping its review history (`store::promote_virtual` does
+            // the append-then-drop). A clean 400 — never a panic — when the
+            // current card isn't virtual or its deck file isn't known.
+            (Method::Post, "/api/promote") => {
+                let Some(r) = reviewing.as_mut() else {
+                    respond_status(request, 409);
+                    continue;
+                };
+                let Some(id) = r.session.current_virtual_id().map(str::to_string) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                let Some(subject) = r.session.current().map(|c| c.subject.to_string()) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                let Some(path) = r.files.paths.get(&subject).cloned() else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                if store::promote_virtual(&mut store, &id, &path).is_err() {
+                    respond_status(request, 400);
+                    continue;
+                }
+                r.session.poll(&store, now_ms());
+                respond_json(
+                    request,
+                    &review_state(reviewing.as_ref(), &store, mode_override),
+                );
+            }
             (Method::Post, "/api/restart") => {
                 let Some(r) = reviewing.as_mut() else {
                     respond_status(request, 409);
@@ -2624,6 +2660,7 @@ fn review_state(
             finished: false,
             exam_due: Vec::new(),
             can_restart: false,
+            promotable: false,
             top_stage: crate::store::MAX_STAGE,
             label: "select decks".to_string(),
         };
@@ -2743,6 +2780,7 @@ fn review_state(
         finished,
         exam_due,
         can_restart: session.has_due_now(store, now_ms()),
+        promotable: session.current_virtual_id().is_some(),
         top_stage: session.top_stage(),
         label: r.label.clone(),
     }

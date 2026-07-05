@@ -29,7 +29,7 @@ use crate::{
     render::{self, ContextSpan, NoteUnit},
     scheduler::{Grade, keypoint_grade},
     session::{Session, SessionStats},
-    store::Store,
+    store::{self, Store},
     time,
 };
 
@@ -686,6 +686,33 @@ impl App {
         self.start_card();
     }
 
+    /// Promotes the current virtual (remediation) card into its deck file,
+    /// keeping its review history, then moves on. The lib does the actual
+    /// work ([`store::promote_virtual`]: append the rendered card, then drop
+    /// the virtual entry); this resolves the deck path for the current
+    /// card's subject — the same lookup [`flush_removals`](Self::flush_removals)
+    /// uses — then re-points the cursor (the promoted slot is no longer
+    /// servable) and renders whatever comes next.
+    fn promote_card(&mut self) {
+        let Some(id) = self.session.current_virtual_id() else {
+            return;
+        };
+        let id = id.to_string();
+        let Some(subject) = self.session.current().map(|c| c.subject.to_string()) else {
+            return;
+        };
+        let Some(path) = self.options.decks.get(&subject).map(|info| info.path.clone()) else {
+            eprintln!("warning: no deck file known for {subject}; cannot promote card");
+            return;
+        };
+        if let Err(e) = store::promote_virtual(&mut self.store, &id, &path) {
+            eprintln!("warning: could not promote card: {e}");
+            return;
+        }
+        self.session.poll(&self.store, time::now_ms());
+        self.start_card();
+    }
+
     /// Deletes every card marked for removal from its deck file and prunes the
     /// matching progress entries. Best-effort: a file that cannot be rewritten
     /// is reported but does not abort the others. Called once, after the
@@ -714,6 +741,23 @@ impl App {
         if files > 0 {
             eprintln!("Removed {cards} card(s) from {files} deck file(s).");
         }
+    }
+
+    /// Whether the current phase is one you'd otherwise answer — skip,
+    /// remove, and promote all only make sense here, not on the summary, a
+    /// graded feedback screen, an already-picked choice result, or the ask
+    /// view.
+    fn answerable(&self) -> bool {
+        !matches!(
+            self.phase,
+            Phase::Summary
+                | Phase::Feedback { .. }
+                | Phase::Ask { .. }
+                | Phase::Choice {
+                    selected: Some(_),
+                    ..
+                }
+        )
     }
 
     fn handle_key(&mut self, key: KeyEvent) -> Result<()> {
@@ -761,6 +805,7 @@ impl App {
         let quit_hit = hit(&self.options.keys.quit);
         let skip_hit = hit(&self.options.keys.skip);
         let remove_hit = hit(&self.options.keys.remove);
+        let promote_hit = hit(&self.options.keys.promote);
         let restart_hit = hit(&self.options.keys.restart);
         let ask_hit = hit(&self.options.keys.ask);
         let hint_hit = hit(&self.options.keys.hint);
@@ -782,15 +827,7 @@ impl App {
             return Ok(());
         }
         // Skipping only makes sense while a card is still unanswered.
-        let answerable = !matches!(
-            self.phase,
-            Phase::Summary
-                | Phase::Feedback { .. }
-                | Phase::Choice {
-                    selected: Some(_),
-                    ..
-                }
-        );
+        let answerable = self.answerable();
         if skip_hit && answerable {
             self.session.skip(&self.store, time::now_ms());
             self.start_card();
@@ -799,6 +836,12 @@ impl App {
         // Marking for removal makes sense on the card you'd otherwise answer.
         if remove_hit && answerable {
             self.remove_card();
+            return Ok(());
+        }
+        // Promoting only makes sense on a virtual (remediation) card, on the
+        // card you'd otherwise answer.
+        if promote_hit && answerable && self.session.current_virtual_id().is_some() {
+            self.promote_card();
             return Ok(());
         }
         // `s` swaps a cited card between its answer and its source excerpt, once
@@ -1287,7 +1330,7 @@ impl App {
         }
         let k = &self.options.keys;
         let l = Bindings::label;
-        let keys = match &self.phase {
+        let mut keys = match &self.phase {
             Phase::Typing { .. } => {
                 format!(
                     "{} hint │ {} skip │ {} remove │ {} leave",
@@ -1445,6 +1488,12 @@ impl App {
                 )
             }
         };
+        // A virtual (remediation) card offers one more action, only while it's
+        // still up for review — kept out of the match above so it doesn't have
+        // to be spelled out in every arm.
+        if self.answerable() && self.session.current_virtual_id().is_some() {
+            keys.push_str(&format!(" │ {} promote", l(&k.promote)));
+        }
         let left = format!(" {keys}");
         // Passed / failed, then the remaining count with a ↓ arrow — same
         // layout as the web frontend's score line.
