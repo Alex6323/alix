@@ -3895,7 +3895,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("rust.txt");
         std::fs::write(&path, "# q1\n\ta1\n").unwrap();
-        let mut store = store_for(std::slice::from_ref(&path), None).unwrap();
+        // Not a workspace, so pass an explicit `--store`-style override — a
+        // bare `None` here would fall through to the real global data dir.
+        let store_path = Some(dir.path().join("store.json"));
+        let mut store = store_for(std::slice::from_ref(&path), store_path).unwrap();
         insert_virtual_card(&mut store, "rust.txt");
 
         let config = Config::default();
@@ -3921,7 +3924,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("rust.txt");
         std::fs::write(&path, "# q1\n\ta1\n").unwrap();
-        let mut store = store_for(std::slice::from_ref(&path), None).unwrap();
+        // Not a workspace, so pass an explicit `--store`-style override — a
+        // bare `None` here would fall through to the real global data dir.
+        let store_path = Some(dir.path().join("store.json"));
+        let mut store = store_for(std::slice::from_ref(&path), store_path).unwrap();
 
         let deck = Deck::load(&path).unwrap();
         let card_id = deck.cards[0].id();
@@ -4004,7 +4010,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("rust.txt");
         std::fs::write(&path, "# q1\n\ta1\n").unwrap();
-        let mut store = store_for(std::slice::from_ref(&path), None).unwrap();
+        // Not a workspace, so pass an explicit `--store`-style override — a
+        // bare `None` here would fall through to the real global data dir.
+        let store_path = Some(dir.path().join("store.json"));
+        let mut store = store_for(std::slice::from_ref(&path), store_path).unwrap();
         insert_virtual_card(&mut store, "rust.txt");
         let virtual_id =
             parser::parse_str("rust.txt", "# virtual front\n\tvirtual back\n").unwrap()[0].id();
