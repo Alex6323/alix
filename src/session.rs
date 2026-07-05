@@ -275,6 +275,23 @@ impl Session {
                 }
             }
         }
+        // Ladder descent-net (spec §3.4 v1): a frontier miss drops one rung and
+        // relearns there. A cram Pass (the reanchor branch above) is `passed()`
+        // and never reaches here; a cram Fail is a real lapse (the `else`/
+        // `scheduler.apply` branch above) and descends like any normal miss.
+        // `passes_since_graduation` resets on any miss (matching its doc), even
+        // when descent floors at `Recall` and `set_rung` doesn't fire below.
+        if !grade.passed() {
+            state.passes_since_graduation = 0;
+            let lower = state.rung.descend();
+            if lower != state.rung {
+                // Only reset the schedule when the rung actually changes — a
+                // Recall miss (floored) just relearns in place via the FSRS
+                // relearn `scheduler.apply` already ran above.
+                state.set_rung(lower);
+            }
+        }
+
         // Safety net: keep the stage within the top (reaching `MAX_STAGE`
         // retires the card). The scheduler already caps a pass at `MAX_STAGE`.
         if state.stage > MAX_STAGE {
@@ -2001,5 +2018,108 @@ mod tests {
         let f = after.fsrs.as_ref().expect("a cram refresh must not reset fsrs");
         assert_eq!(before.stability, f.stability, "no reward under cram");
         assert_eq!(before.scheduled_days, f.scheduled_days, "interval kept");
+    }
+
+    /// An FSRS state at a mature rung, so a miss on it exercises descent rather
+    /// than the fresh-card acquisition path.
+    fn mature_fsrs() -> crate::store::FsrsState {
+        crate::store::FsrsState {
+            stability: 20.0,
+            state: 2,
+            scheduled_days: 15,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_reconstruction_miss_drops_to_recall() {
+        // Ladder descent-net (spec §3.4 v1): a frontier miss drops one rung.
+        let (mut store, _dir) = empty_store();
+        let all = cards(1);
+        let id = all[0].id();
+        let s = store.get_or_insert(id, 0);
+        s.rung = Rung::Reconstruct;
+        s.fsrs = Some(mature_fsrs());
+
+        let mut session = Session::new(all, &store, sched(), SessionOptions::default(), 0);
+        session.grade(&mut store, Grade::Fail, 0);
+
+        let s = store.get(id).unwrap();
+        assert_eq!(Rung::Recall, s.rung, "a reconstruction miss slid down one rung");
+        assert!(s.fsrs.is_none(), "relearning starts fresh at the lower rung");
+    }
+
+    #[test]
+    fn a_recall_miss_stays_at_recall_without_wiping_schedule() {
+        // `descend()` floors at `Recall`, so a Recall miss must not call
+        // `set_rung` — that would needlessly wipe the FSRS relearn state
+        // `scheduler.apply` just produced.
+        let (mut store, _dir) = empty_store();
+        let all = cards(1);
+        let id = all[0].id();
+        let s = store.get_or_insert(id, 0);
+        s.rung = Rung::Recall;
+        s.fsrs = Some(mature_fsrs());
+
+        let mut session = Session::new(all, &store, sched(), SessionOptions::default(), 0);
+        session.grade(&mut store, Grade::Fail, 0);
+
+        let s = store.get(id).unwrap();
+        assert_eq!(Rung::Recall, s.rung);
+        assert!(
+            s.fsrs.is_some(),
+            "a floored miss relearns via FSRS, not a rung reset"
+        );
+    }
+
+    #[test]
+    fn a_cram_fail_still_descends_but_a_cram_pass_does_not() {
+        // A cram Fail is a real lapse (the `else`/`scheduler.apply` branch) and
+        // descends like any normal miss; a cram Pass is the no-reward reanchor
+        // path (`passed()` is true) and must never touch the rung — companion
+        // regression guard to `a_cram_pass_never_climbs_or_resets_the_schedule`.
+        let (mut store, _dir) = empty_store();
+        let all = cards(2);
+        let id_fail = all[0].id();
+        let id_pass = all[1].id();
+        for c in &all {
+            let s = store.get_or_insert(c.id(), 0);
+            s.rung = Rung::Reconstruct;
+            s.fsrs = Some(mature_fsrs());
+        }
+
+        let mut session = Session::new(
+            all,
+            &store,
+            sched(),
+            SessionOptions {
+                cram: true,
+                ..Default::default()
+            },
+            0,
+        );
+        session.grade(&mut store, Grade::Fail, 0);
+        session.grade(&mut store, Grade::Pass, 0);
+
+        assert_eq!(
+            Rung::Recall,
+            store.get(id_fail).unwrap().rung,
+            "a cram miss is a real lapse and descends"
+        );
+        assert_eq!(
+            Rung::Reconstruct,
+            store.get(id_pass).unwrap().rung,
+            "a cram pass is a no-reward refresh and must not descend"
+        );
+    }
+
+    #[test]
+    fn a_freshly_acquired_card_seeds_at_recall() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(1);
+        let id = all[0].id();
+        let mut session = Session::new(all, &store, sched(), SessionOptions::default(), 0);
+        session.acquire_current(&mut store, 0);
+        assert_eq!(Rung::Recall, store.get(id).unwrap().rung);
     }
 }
