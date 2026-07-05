@@ -3,6 +3,7 @@ use std::{
     io::{IsTerminal, Write},
     net::{Ipv4Addr, SocketAddr},
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use alix::{
@@ -17,7 +18,7 @@ use alix::{
     scheduler::{Fsrs, Scheduler},
     serve,
     session::{Order, Session, SessionOptions, histogram},
-    store::{Store, default_store_path},
+    store::{Store, VirtualCard, default_store_path},
     time::{humanize_ms, now_ms},
     trace::{Phase, SourceBase, Trace, Walk},
     tui::{self, AfterReview, App},
@@ -779,6 +780,31 @@ struct ReviewBuild {
     topology_name: Option<String>,
 }
 
+/// Base line number for a synthesized virtual card ([`synthesize_virtual`]) —
+/// far past any real deck's line count, so a virtual card's `line` never
+/// collides with (and so never shares a sibling group with) a real card's
+/// front line.
+const VIRTUAL_LINE_BASE: usize = 1_000_000;
+
+/// Renders a virtual card's content as a normal `Card`, so it drills exactly
+/// like a deck card while its schedule still routes to the store's `v:`
+/// entry (see `Session::state_of`). `subject` is the deck's own subject, so
+/// the card pools and renders as one of that deck's (it shares the
+/// distractor pool and image scan, since both read `Session::cards`).
+/// Deliberately simple: no image, citation, or augment reshape/notes — a
+/// remediation card is self-contained content.
+fn synthesize_virtual(vc: &VirtualCard, subject: &Arc<str>, line: usize) -> Card {
+    let mut card = Card::plain(
+        Arc::clone(subject),
+        vc.content.front.clone(),
+        vc.content.back.clone(),
+        None,
+        line,
+    );
+    card.mode = vc.content.mode;
+    card
+}
+
 /// Builds a review session from explicit `deck_paths` (no interactive picker):
 /// resolves `% requires:` prerequisites, applies deck directives and the
 /// `target`-frontend filter, builds the `Session`, and records the decks as
@@ -886,6 +912,29 @@ fn build_review(
         cards.retain(|c| ids.contains(&c.id()));
     }
 
+    // Inject this deck's virtual (remediation) cards alongside its authored
+    // ones, so both are drilled by the same FSRS-due queue — but not under a
+    // `--region` focus: a region is a deck-topology drill, and virtual cards
+    // aren't part of any topology. `decks` has exactly this one deck's entry
+    // (one deck per session), keyed by its subject — the same string a
+    // virtual card's `parent` is set to.
+    let subject: Arc<str> = decks
+        .keys()
+        .next()
+        .map(|s| Arc::from(s.as_str()))
+        .unwrap_or_else(|| Arc::from(label.as_str()));
+    let mut virtual_ids: Vec<Option<String>> = vec![None; cards.len()];
+    if region_sel.is_none() {
+        for (k, vc) in store
+            .iter_virtual_cards()
+            .filter(|v| v.parent.as_str() == subject.as_ref() && !v.retired)
+            .enumerate()
+        {
+            cards.push(synthesize_virtual(vc, &subject, VIRTUAL_LINE_BASE + k));
+            virtual_ids.push(Some(vc.id.clone()));
+        }
+    }
+
     // Directives (order) come from the session's decks.
     let target_settings: Vec<&DeckSettings> = settings.iter().collect();
 
@@ -910,8 +959,9 @@ fn build_review(
         topology: topology_order,
         retire_after_days: review.retire_after_days,
     };
-    let session = Session::new(
+    let session = Session::new_with_virtual(
         cards,
+        virtual_ids,
         store,
         Box::new(Fsrs::new(review.retention)),
         options,
@@ -3690,5 +3740,120 @@ mod tests {
         let got = select_reset_ids(&cards, Some("verb forms"));
         assert_eq!(2, got.len());
         assert_ne!(got[0].0, got[1].0);
+    }
+
+    /// A bare-bones `ReviewArgs` for a `build_review` test: no CLI overrides,
+    /// the built-in `new`/`max_typos` defaults, no `--serve`.
+    fn review_args(decks: Vec<PathBuf>, region: Option<&str>) -> ReviewArgs {
+        ReviewArgs {
+            decks,
+            mode: None,
+            order: None,
+            topology: None,
+            region: region.map(str::to_string),
+            new: 10,
+            limit: None,
+            cram: false,
+            max_typos: 2,
+            store: None,
+            config: None,
+            serve: ServeOpts {
+                serve: false,
+                port: None,
+                lan: false,
+                token: None,
+            },
+        }
+    }
+
+    /// A virtual card belonging to deck `subject` (its `parent`), due
+    /// immediately (freshly created at `t=0`).
+    fn sample_virtual_card(subject: &str, discriminator: &str) -> VirtualCard {
+        use alix::store::{CardState, VirtualContent, VirtualKind, virtual_id};
+        VirtualCard {
+            id: virtual_id(VirtualKind::Remediation, subject, discriminator),
+            kind: VirtualKind::Remediation,
+            parent: subject.to_string(),
+            content: VirtualContent {
+                front: "virtual front".to_string(),
+                back: vec!["virtual back".to_string()],
+                mode: None,
+            },
+            state: CardState::new(0),
+            created_ms: 0,
+            retired: false,
+        }
+    }
+
+    #[test]
+    fn build_review_injects_a_decks_virtual_cards() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("rust.txt");
+        std::fs::write(&path, "# q1\n\ta1\n").unwrap();
+        let mut store = store_for(std::slice::from_ref(&path), None).unwrap();
+        store.insert_virtual(sample_virtual_card("rust.txt", "gap-1"));
+
+        let config = Config::default();
+        let mut recent = RecentDecks::load(dir.path().join("recent.json"));
+        let args = review_args(vec![], None);
+        let build = build_review(
+            vec![path],
+            &args,
+            &config,
+            &store,
+            &mut recent,
+            Frontend::Tui,
+            None,
+            None,
+        )
+        .unwrap();
+        // The deck's one (new) card, plus the injected due virtual card.
+        assert_eq!(2, build.session.initial_size);
+    }
+
+    #[test]
+    fn region_focus_excludes_virtual_cards() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("rust.txt");
+        std::fs::write(&path, "# q1\n\ta1\n").unwrap();
+        let mut store = store_for(std::slice::from_ref(&path), None).unwrap();
+
+        let deck = Deck::load(&path).unwrap();
+        let card_id = deck.cards[0].id();
+
+        // Cache a one-region topology covering this deck's one card.
+        let mut cache = AugmentCache::open(augment::augment_path_for(store.path()));
+        cache.add_topology(Topology {
+            name: "auto".to_string(),
+            principle: "test".to_string(),
+            edges: vec![],
+            walk: vec![card_id],
+            regions: vec![augment::TopologyRegion {
+                name: "r1".to_string(),
+                cards: vec![card_id],
+            }],
+        });
+        cache.save().unwrap();
+
+        // A matching virtual card for this deck.
+        store.insert_virtual(sample_virtual_card("rust.txt", "gap-1"));
+
+        let config = Config::default();
+        let mut recent = RecentDecks::load(dir.path().join("recent.json"));
+        let args = review_args(vec![], Some("r1"));
+        let build = build_review(
+            vec![path],
+            &args,
+            &config,
+            &store,
+            &mut recent,
+            Frontend::Tui,
+            None,
+            Some("r1"),
+        )
+        .unwrap();
+        // Only the region's one real card — a `--region` focus is a
+        // deck-topology drill, and virtual cards aren't part of any topology.
+        assert_eq!(1, build.session.initial_size);
     }
 }

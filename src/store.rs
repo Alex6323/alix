@@ -404,6 +404,14 @@ impl Store {
         self.virtual_cards.insert(card.id.clone(), card);
     }
 
+    /// Every virtual card in the store, unfiltered — the raw building block
+    /// `build_review`'s injection filters itself (by `parent` subject and
+    /// `retired`) to find one deck's cards. A `parent`-filtered convenience
+    /// accessor for external due-count callers is a follow-up.
+    pub fn iter_virtual_cards(&self) -> impl Iterator<Item = &VirtualCard> {
+        self.virtual_cards.values()
+    }
+
     /// Whether the given deck has passed its AI exam ("mastered").
     pub fn deck_mastered(&self, subject: &str) -> bool {
         self.deck_mastered_at(subject).is_some()
