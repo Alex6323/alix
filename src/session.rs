@@ -50,6 +50,10 @@ pub struct SessionOptions {
     /// A card retires once its FSRS interval reaches this many days; `None`
     /// disables retirement. From `[review] retire_after` (per-workspace overridable).
     pub retire_after_days: Option<u32>,
+    /// The learner's depth-ladder target — the rung a graduated card climbs
+    /// toward on a spaced pass (see [`Session::grade`]). From `[review] target`
+    /// via `ladder::effective_target` (per-workspace overridable).
+    pub target: crate::ladder::Rung,
 }
 
 impl Default for SessionOptions {
@@ -61,6 +65,7 @@ impl Default for SessionOptions {
             order: Order::Scheduled,
             topology: None,
             retire_after_days: Some(DEFAULT_RETIRE_AFTER_DAYS),
+            target: crate::ladder::Rung::default(),
         }
     }
 }
@@ -245,6 +250,20 @@ impl Session {
             self.scheduler.reanchor(state, now_ms);
         } else {
             self.scheduler.apply(state, grade, now_ms);
+        }
+        // Ladder climb (spec §3.3): a graduated rung that survives one spaced Pass
+        // below the deck target promotes to the next rung (fresh schedule there).
+        let target = self.options.target;
+        if state.rung < target {
+            let graduated = state.fsrs.as_ref().is_some_and(|f| f.graduated());
+            let spaced_pass = grade == Grade::Pass
+                && state.fsrs.as_ref().is_some_and(|f| f.scheduled_days >= 3);
+            if graduated && spaced_pass {
+                state.passes_since_graduation = state.passes_since_graduation.saturating_add(1);
+                if state.passes_since_graduation >= 1 {
+                    state.set_rung(state.rung.climb());
+                }
+            }
         }
         // Safety net: keep the stage within the top (reaching `MAX_STAGE`
         // retires the card). The scheduler already caps a pass at `MAX_STAGE`.
@@ -694,7 +713,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::store::Store;
+    use crate::{ladder::Rung, store::Store};
 
     fn card(subject: &str, n: usize) -> Card {
         Card::plain(
@@ -933,6 +952,7 @@ mod tests {
                 order: Order::Scheduled,
                 topology: None,
                 retire_after_days: Some(DEFAULT_RETIRE_AFTER_DAYS),
+                target: crate::ladder::Rung::default(),
             },
             5 * 60 * 1000,
         );
@@ -1020,6 +1040,7 @@ mod tests {
                 order: Order::Scheduled,
                 topology: None,
                 retire_after_days: Some(DEFAULT_RETIRE_AFTER_DAYS),
+                target: crate::ladder::Rung::default(),
             },
             now + 1,
         );
@@ -1327,6 +1348,7 @@ mod tests {
                 order: Order::Scheduled,
                 topology: None,
                 retire_after_days: Some(DEFAULT_RETIRE_AFTER_DAYS),
+                target: crate::ladder::Rung::default(),
             },
             1000,
         );
@@ -1846,5 +1868,76 @@ mod tests {
         session.grade(&mut store, Grade::Pass, now);
 
         assert!(!is_retired_id(id, &store, Some(DEFAULT_RETIRE_AFTER_DAYS)));
+    }
+
+    #[test]
+    fn a_graduated_card_climbs_to_reconstruction_on_a_spaced_pass() {
+        // A card already graduated to FSRS Review at its default Recall rung: a
+        // further spaced pass (resulting interval >= 3 days) promotes it to
+        // Reconstruction, the deck's target.
+        let (mut store, _dir) = empty_store();
+        let all = cards(1);
+        let id = all[0].id();
+        store.get_or_insert(id, 0).fsrs = Some(crate::store::FsrsState {
+            stability: 5.0,
+            difficulty: 5.0,
+            scheduled_days: 5,
+            state: 2, // Review: graduated
+            due_ms: 5 * 86_400_000,
+            ..Default::default()
+        });
+
+        let now = 5 * 86_400_000; // due
+        let mut session = Session::new(
+            all,
+            &store,
+            sched(),
+            SessionOptions {
+                target: Rung::Reconstruct,
+                ..Default::default()
+            },
+            now,
+        );
+        session.grade(&mut store, Grade::Pass, now);
+
+        let s = store.get(id).unwrap();
+        assert_eq!(
+            Rung::Reconstruct,
+            s.rung,
+            "climbed after a spaced pass past graduation"
+        );
+    }
+
+    #[test]
+    fn a_recall_target_card_never_climbs() {
+        // The default target (Recall) is already the card's rung: even a
+        // graduated, well-spaced pass has nowhere to climb.
+        let (mut store, _dir) = empty_store();
+        let all = cards(1);
+        let id = all[0].id();
+        store.get_or_insert(id, 0).fsrs = Some(crate::store::FsrsState {
+            stability: 5.0,
+            difficulty: 5.0,
+            scheduled_days: 5,
+            state: 2, // Review: graduated
+            due_ms: 5 * 86_400_000,
+            ..Default::default()
+        });
+
+        let now = 5 * 86_400_000; // due
+        let mut session = Session::new(
+            all,
+            &store,
+            sched(),
+            SessionOptions {
+                target: Rung::Recall,
+                ..Default::default()
+            },
+            now,
+        );
+        session.grade(&mut store, Grade::Pass, now);
+
+        let s = store.get(id).unwrap();
+        assert_eq!(Rung::Recall, s.rung, "already at target — nothing to climb");
     }
 }
