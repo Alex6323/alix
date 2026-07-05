@@ -5,13 +5,15 @@
 
 use std::{
     collections::HashMap,
+    hash::Hasher,
     path::{Path, PathBuf},
 };
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use twox_hash::XxHash64;
 
-use crate::scheduler::Grade;
+use crate::{answer::Mode, scheduler::Grade};
 
 /// How many of the most recent reviews are kept per card.
 const HISTORY_CAP: usize = 50;
@@ -156,6 +158,86 @@ pub struct DeckProgress {
     pub exam_failed_at_ms: Option<u64>,
 }
 
+/// Which trigger produced a virtual card (see the virtual-cards spec, §2).
+/// Only `Remediation` exists today; a future consumer (contrast, spin-off)
+/// adds a variant here rather than growing a separate mechanism.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum VirtualKind {
+    /// Generated from a failed exam's gap, to drill the specific miss.
+    Remediation,
+}
+
+impl VirtualKind {
+    /// A short, stable tag identifying this kind inside a virtual id's hash
+    /// input (see [`virtual_id`]) — keeps kinds distinguishable even if a
+    /// parent + discriminator happened to coincide.
+    fn tag(self) -> &'static str {
+        match self {
+            VirtualKind::Remediation => "remediation",
+        }
+    }
+}
+
+/// The rendered content of a virtual card — front/back/mode, exactly as
+/// review needs to drill it. Cached here since a virtual card has no deck
+/// file to re-read from.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct VirtualContent {
+    /// The question shown before revealing.
+    pub front: String,
+    /// The answer lines shown on reveal.
+    pub back: Vec<String>,
+    /// The mode this card drills in; `None` falls back to the deck default,
+    /// same as an authored card's absent `% mode:`.
+    pub mode: Option<Mode>,
+}
+
+/// A personally-scheduled card that lives in no deck file — generated or
+/// derived from a personal trigger (e.g. an exam gap) and scheduled with the
+/// same [`CardState`] the scheduler already uses for deck cards. See
+/// `docs/specs/2026-07-03-virtual-cards-remediation-spec.md` §2.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct VirtualCard {
+    /// The derived, `v:`-namespaced id (see [`virtual_id`]); also this
+    /// entry's key in the store's `virtual_cards` map.
+    pub id: String,
+    /// Which trigger produced this card.
+    pub kind: VirtualKind,
+    /// Opaque reference to the source this card was derived from (for
+    /// remediation: the deck subject + a hash of the gap text). Interpreted
+    /// by the creator, not by the store.
+    pub parent: String,
+    /// The rendered card content to drill.
+    pub content: VirtualContent,
+    /// Schedule/history state — reuses `CardState` so a virtual card rides
+    /// the same scheduler as any deck card.
+    pub state: CardState,
+    /// When this virtual card was created (Unix ms).
+    pub created_ms: u64,
+    /// Archive marker: set once the card retires (its schedule interval
+    /// passes the retirement cap). An archived card is kept, for history and
+    /// possible revival, but no longer scheduled. Store-only — never written
+    /// to a deck.
+    #[serde(default)]
+    pub retired: bool,
+}
+
+/// Derives a virtual card's id: `"v:" + hex(XxHash64(kind-tag ++ parent ++
+/// discriminator))`. Stable across regeneration of the same
+/// `(kind, parent, discriminator)` — e.g. re-generating a remediation card
+/// for the same exam gap reuses the existing schedule instead of duplicating
+/// it — and distinct whenever any input differs. The `v:` prefix keeps
+/// virtual ids in a separate keyspace from the `u64` deck-card ids (which
+/// serialize as plain decimal digits, see `save`), so the two can never
+/// collide.
+pub fn virtual_id(kind: VirtualKind, parent: &str, discriminator: &str) -> String {
+    let mut hasher = XxHash64::default();
+    hasher.write(kind.tag().as_bytes());
+    hasher.write(parent.as_bytes());
+    hasher.write(discriminator.as_bytes());
+    format!("v:{:016x}", hasher.finish())
+}
+
 /// On-disk representation of the store.
 #[derive(Serialize, Deserialize)]
 struct StoreFile {
@@ -171,6 +253,11 @@ struct StoreFile {
     /// key.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     decks: HashMap<String, DeckProgress>,
+    /// Virtual cards keyed by their `v:`-namespaced id (see [`virtual_id`]).
+    /// Absent in a store predating this field (additive, pre-1.0: no version
+    /// bump needed).
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    virtual_cards: HashMap<String, VirtualCard>,
 }
 
 /// The progress store for all decks.
@@ -178,6 +265,7 @@ pub struct Store {
     path: PathBuf,
     cards: HashMap<u64, CardState>,
     decks: HashMap<String, DeckProgress>,
+    virtual_cards: HashMap<String, VirtualCard>,
 }
 
 /// An error loading or saving the store.
@@ -208,6 +296,7 @@ impl Store {
                 path,
                 cards: HashMap::new(),
                 decks: HashMap::new(),
+                virtual_cards: HashMap::new(),
             });
         }
 
@@ -234,6 +323,7 @@ impl Store {
             path,
             cards,
             decks: file.decks,
+            virtual_cards: file.virtual_cards,
         })
     }
 
@@ -256,6 +346,7 @@ impl Store {
                 .map(|(hash, state)| (hash.to_string(), state.clone()))
                 .collect(),
             decks: self.decks.clone(),
+            virtual_cards: self.virtual_cards.clone(),
         };
         let json = serde_json::to_string_pretty(&file).map_err(|source| StoreError::Format {
             path: self.path.clone(),
@@ -295,6 +386,22 @@ impl Store {
     /// deck. Returns whether an entry was present. Does not save.
     pub fn remove(&mut self, card_id: u64) -> bool {
         self.cards.remove(&card_id).is_some()
+    }
+
+    /// Returns a virtual card by its `v:`-namespaced id, if one exists.
+    pub fn get_virtual(&self, id: &str) -> Option<&VirtualCard> {
+        self.virtual_cards.get(id)
+    }
+
+    /// Returns a mutable reference to a virtual card by id, if one exists.
+    pub fn get_virtual_mut(&mut self, id: &str) -> Option<&mut VirtualCard> {
+        self.virtual_cards.get_mut(id)
+    }
+
+    /// Inserts or replaces a virtual card, keyed by its own `id`. Does not
+    /// save.
+    pub fn insert_virtual(&mut self, card: VirtualCard) {
+        self.virtual_cards.insert(card.id.clone(), card);
     }
 
     /// Whether the given deck has passed its AI exam ("mastered").
@@ -665,6 +772,85 @@ mod tests {
         assert_eq!(2, store.clear());
         assert!(store.is_empty());
         assert_eq!(0, store.clear()); // already empty
+    }
+
+    fn sample_virtual_card(discriminator: &str) -> VirtualCard {
+        let id = virtual_id(VirtualKind::Remediation, "rust.txt", discriminator);
+        VirtualCard {
+            id,
+            kind: VirtualKind::Remediation,
+            parent: "rust.txt".to_string(),
+            content: VirtualContent {
+                front: "What does the borrow checker enforce?".to_string(),
+                back: vec!["Exactly one mutable borrow, or many shared ones".to_string()],
+                mode: Some(Mode::Flip),
+            },
+            state: CardState::new(1000),
+            created_ms: 1000,
+            retired: false,
+        }
+    }
+
+    #[test]
+    fn insert_virtual_then_get_virtual_returns_it_with_fields_intact() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let vc = sample_virtual_card("gap-1");
+        let id = vc.id.clone();
+
+        store.insert_virtual(vc);
+
+        let got = store.get_virtual(&id).unwrap();
+        assert_eq!("rust.txt", got.parent);
+        assert_eq!(VirtualKind::Remediation, got.kind);
+        assert_eq!(
+            "What does the borrow checker enforce?",
+            got.content.front
+        );
+        assert_eq!(Some(Mode::Flip), got.content.mode);
+        assert!(!got.retired);
+    }
+
+    #[test]
+    fn virtual_card_survives_save_reload() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("progress.json");
+        let mut store = Store::open(&path).unwrap();
+        let vc = sample_virtual_card("gap-2");
+        let id = vc.id.clone();
+        store.insert_virtual(vc.clone());
+        store.save().unwrap();
+
+        let reloaded = Store::open(&path).unwrap();
+        let got = reloaded.get_virtual(&id).unwrap();
+        assert_eq!(&vc, got);
+    }
+
+    #[test]
+    fn virtual_id_is_namespaced_stable_and_collision_free_with_u64_keys() {
+        let a = virtual_id(VirtualKind::Remediation, "rust.txt", "gap-a");
+        let a_again = virtual_id(VirtualKind::Remediation, "rust.txt", "gap-a");
+        let b = virtual_id(VirtualKind::Remediation, "rust.txt", "gap-b");
+
+        assert!(a.starts_with("v:"));
+        assert_eq!(a, a_again, "same inputs must derive the same id");
+        assert_ne!(b, a, "a different discriminator must derive a different id");
+        // A u64 deck-card key is serialized as plain decimal digits (see
+        // `save`); the `v:` prefix guarantees a virtual id never parses as
+        // one, so the two keyspaces can never collide.
+        assert!(a.parse::<u64>().is_err());
+    }
+
+    #[test]
+    fn loads_store_file_without_virtual_cards_field() {
+        // A store written before this field existed must still load — the
+        // additive `#[serde(default)]` soft break, no version bump.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("progress.json");
+        std::fs::write(&path, "{\"version\":1,\"cards\":{}}").unwrap();
+        let store = Store::open(&path).unwrap();
+        assert!(store.is_empty());
+        assert!(store.get_virtual("v:anything").is_none());
     }
 
     #[test]
