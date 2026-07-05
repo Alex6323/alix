@@ -14,7 +14,12 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use twox_hash::XxHash64;
 
-use crate::{answer::Mode, deck, import::escape_leading_markup, scheduler::Grade, serve::mode_name};
+use crate::{
+    answer::{Mode, mode_name},
+    deck,
+    import::escape_leading_markup,
+    scheduler::Grade,
+};
 
 /// How many of the most recent reviews are kept per card.
 const HISTORY_CAP: usize = 50;

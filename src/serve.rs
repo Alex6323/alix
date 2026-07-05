@@ -31,7 +31,7 @@ use tiny_http::{Header, Method, Request, Response, Server};
 use twox_hash::XxHash64;
 
 use crate::{
-    answer::{Input, Mode, grade_lines_unordered},
+    answer::{Input, Mode, grade_lines_unordered, mode_name},
     ask::{self, CliSession, Exchange, Reply},
     augment::{self, AugmentCache},
     card::Card,
@@ -3198,21 +3198,6 @@ fn content_type(path: &Path) -> &'static str {
         Some("webp") => "image/webp",
         Some("svg") => "image/svg+xml",
         _ => "application/octet-stream",
-    }
-}
-
-/// The CLI/value name of an answer mode, matching `Mode`'s clap names.
-///
-/// `pub(crate)`: also reused by [`crate::store::promote_virtual`] to write a
-/// virtual card's `% mode:` line when rendering it to deck text.
-pub(crate) fn mode_name(mode: Mode) -> &'static str {
-    match mode {
-        Mode::Flip => "flip",
-        Mode::Typing => "typing",
-        Mode::Fuzzy => "fuzzy",
-        Mode::Choice => "choice",
-        Mode::LineByLine => "line",
-        Mode::Explain => "explain",
     }
 }
 

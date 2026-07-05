@@ -41,6 +41,21 @@ pub enum Mode {
     Explain,
 }
 
+/// The CLI/value name of an answer mode, matching `Mode`'s clap names.
+///
+/// `pub(crate)`: also reused by [`crate::store::promote_virtual`] to write a
+/// virtual card's `% mode:` line when rendering it to deck text.
+pub(crate) fn mode_name(mode: Mode) -> &'static str {
+    match mode {
+        Mode::Flip => "flip",
+        Mode::Typing => "typing",
+        Mode::Fuzzy => "fuzzy",
+        Mode::Choice => "choice",
+        Mode::LineByLine => "line",
+        Mode::Explain => "explain",
+    }
+}
+
 /// How the learner *produces* an answer — orthogonal to [`Mode`] (the grading
 /// mode). `Draw` swaps the typed/flip input for a canvas (web only) and
 /// self-grades against the card's normal reveal. Set with `% input:` (card
