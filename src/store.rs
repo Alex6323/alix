@@ -109,6 +109,14 @@ pub struct CardState {
     /// The most recent reviews, oldest first (capped).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub history: Vec<Review>,
+    /// The frontier depth rung this card is currently scheduled at. `fsrs`
+    /// always represents *this* rung's schedule; a rung change resets it.
+    #[serde(default)]
+    pub rung: crate::ladder::Rung,
+    /// Spaced passes accumulated since this rung graduated to FSRS `Review` —
+    /// the climb signal (§3.3). Reset on any rung change and on a miss.
+    #[serde(default)]
+    pub passes_since_graduation: u8,
 }
 
 impl CardState {
@@ -122,6 +130,8 @@ impl CardState {
             total_passes: 0,
             streak: 0,
             history: Vec::new(),
+            rung: crate::ladder::Rung::default(),
+            passes_since_graduation: 0,
         }
     }
 
@@ -139,6 +149,14 @@ impl CardState {
             let excess = self.history.len() - HISTORY_CAP;
             self.history.drain(..excess);
         }
+    }
+
+    /// Moves the card to `rung`, starting a fresh schedule there: the higher
+    /// rung is genuinely harder, so no stability is carried across (spec §3.6).
+    pub fn set_rung(&mut self, rung: crate::ladder::Rung) {
+        self.rung = rung;
+        self.fsrs = None;
+        self.passes_since_graduation = 0;
     }
 }
 
@@ -1170,6 +1188,38 @@ mod tests {
         assert_eq!(1, state.total_reviews);
         assert_eq!(1, state.total_passes); // Partial (a weak success) counts as a pass
         assert_eq!(1, state.streak);
+    }
+
+    #[test]
+    fn set_rung_resets_the_fsrs_schedule_and_counter() {
+        use crate::ladder::Rung;
+        let mut s = CardState::new(0);
+        s.rung = Rung::Recall;
+        s.fsrs = Some(FsrsState {
+            stability: 40.0,
+            state: 2,
+            scheduled_days: 30,
+            ..Default::default()
+        });
+        s.passes_since_graduation = 3;
+
+        s.set_rung(Rung::Reconstruct);
+
+        assert_eq!(s.rung, Rung::Reconstruct);
+        assert!(
+            s.fsrs.is_none(),
+            "a rung change starts a fresh schedule at the new rung"
+        );
+        assert_eq!(s.passes_since_graduation, 0);
+    }
+
+    #[test]
+    fn a_pre_ladder_store_loads_cards_at_recall() {
+        // Old stores have no `rung`/`passes_since_graduation` field.
+        let json = r#"{"stage":1,"stage_entered_ms":0}"#;
+        let state: CardState = serde_json::from_str(json).unwrap();
+        assert_eq!(state.rung, crate::ladder::Rung::Recall);
+        assert_eq!(state.passes_since_graduation, 0);
     }
 
     #[test]
