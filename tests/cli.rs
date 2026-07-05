@@ -143,6 +143,80 @@ fn reset_all_clears_a_seeded_store() {
     assert!(!after.contains("123"), "store still has the card: {after}");
 }
 
+/// A minimal virtual card belonging to `parent`, for seeding a store directly
+/// via the lib rather than hand-authoring its on-disk JSON shape.
+fn sample_virtual_card(parent: &str, discriminator: &str) -> alix::store::VirtualCard {
+    alix::store::VirtualCard {
+        id: alix::store::virtual_id(alix::store::VirtualKind::Remediation, parent, discriminator),
+        kind: alix::store::VirtualKind::Remediation,
+        parent: parent.to_string(),
+        content: alix::store::VirtualContent {
+            front: "front".to_string(),
+            back: vec!["back".to_string()],
+            mode: None,
+        },
+        state: alix::store::CardState::new(0),
+        created_ms: 0,
+        retired: false,
+    }
+}
+
+#[test]
+fn reset_all_clears_virtual_cards() {
+    // A store holding ONLY virtual cards (no authored-card progress) must
+    // still be reset by `--all` — both the "anything to reset?" count and the
+    // clear itself need to account for virtual cards, not just `store.cards`.
+    let dir = TempDir::new().unwrap();
+    let store_path = dir.path().join("progress.json");
+    let mut store = alix::store::Store::open(&store_path).unwrap();
+    store.insert_virtual(sample_virtual_card("math.txt", "gap-1"));
+    store.save().unwrap();
+
+    let out = alix(&[
+        "reset",
+        "--all",
+        "--yes",
+        "--store",
+        store_path.to_str().unwrap(),
+    ]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        !stdout(&out).contains("No stored progress"),
+        "a virtual-only store wrongly reported nothing to reset: {}",
+        stdout(&out)
+    );
+
+    let reloaded = alix::store::Store::open(&store_path).unwrap();
+    assert_eq!(0, reloaded.iter_virtual_cards().count());
+}
+
+#[test]
+fn deck_reset_drops_that_decks_virtual_cards() {
+    let dir = TempDir::new().unwrap();
+    let deck = write(dir.path(), "math.txt", VALID_DECK);
+    let store_path = dir.path().join("progress.json");
+
+    let mut store = alix::store::Store::open(&store_path).unwrap();
+    let math_id = sample_virtual_card("math.txt", "gap-1").id;
+    store.insert_virtual(sample_virtual_card("math.txt", "gap-1"));
+    let other_id = sample_virtual_card("other.txt", "gap-1").id;
+    store.insert_virtual(sample_virtual_card("other.txt", "gap-1"));
+    store.save().unwrap();
+
+    let out = alix(&["reset", &deck, "--yes", "--store", store_path.to_str().unwrap()]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+
+    let reloaded = alix::store::Store::open(&store_path).unwrap();
+    assert!(
+        reloaded.get_virtual(&math_id).is_none(),
+        "the reset deck's own virtual card should be dropped"
+    );
+    assert!(
+        reloaded.get_virtual(&other_id).is_some(),
+        "another deck's virtual card should survive"
+    );
+}
+
 #[test]
 fn a_progress_file_of_any_version_loads_pre_1_0() {
     // Pre-1.0 there is no store version fence: a store written by a "newer" alix

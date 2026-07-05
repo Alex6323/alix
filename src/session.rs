@@ -440,10 +440,12 @@ impl Session {
     }
 
     /// Whether roster card `i` can be served right now: a retired/archived
-    /// slot never is (cram included — only `alix reset`, or reviving a
-    /// virtual card, brings it back); otherwise under cram, always; otherwise
-    /// unseen (a deck card) or FSRS-due. A virtual card always has state, so
-    /// a missing entry (a dangling reference) is never servable.
+    /// slot never is (cram included — a retired virtual card is un-retired
+    /// only by re-failing its gap, which revives it; `alix reset` doesn't
+    /// bring it back, it drops the virtual card outright); otherwise under
+    /// cram, always; otherwise unseen (a deck card) or FSRS-due. A virtual
+    /// card always has state, so a missing entry (a dangling reference) is
+    /// never servable.
     fn servable(&self, i: usize, store: &Store, now_ms: u64) -> bool {
         if self.slot_retired(store, i) {
             return false;
@@ -702,6 +704,30 @@ pub fn count_reviewable_virtual(
         .virtual_cards_for(subject)
         .into_iter()
         .filter(|vc| is_virtual_reviewable(vc, scheduler, now_ms, retire_after_days))
+        .count()
+}
+
+/// How many of `subject`'s virtual (remediation) cards become due within
+/// `window_ms` of `now_ms` (not already due now) — the virtual-card
+/// counterpart of `stats`' `due_24h` bucket for deck cards. Archived
+/// (retired) cards never count. See [`count_reviewable_virtual`] for the
+/// "due now" count.
+pub fn count_due_soon_virtual(
+    store: &Store,
+    subject: &str,
+    scheduler: &dyn Scheduler,
+    now_ms: u64,
+    window_ms: u64,
+    retire_after_days: Option<u32>,
+) -> usize {
+    store
+        .virtual_cards_for(subject)
+        .into_iter()
+        .filter(|vc| !virtual_retired(vc, retire_after_days))
+        .filter(|vc| {
+            let due = scheduler.due_at(&vc.state);
+            due > now_ms && due <= now_ms + window_ms
+        })
         .count()
 }
 

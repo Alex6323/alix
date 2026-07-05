@@ -27,7 +27,6 @@ use serde::Deserialize;
 
 use crate::{
     ask,
-    card::Card,
     config::{AskConfig, ExamConfig, Strictness},
     deck::{self, Deck},
     parser,
@@ -364,16 +363,16 @@ fn store_remediation_cards(
             front.push('\n');
             front.push_str(&card.context.join("\n"));
         }
+        let id = virtual_id(
+            VirtualKind::Remediation,
+            subject,
+            &remediation_discriminator(&front, &card.back),
+        );
         let content = VirtualContent {
             front,
             back: card.back.clone(),
             mode: card.mode,
         };
-        let id = virtual_id(
-            VirtualKind::Remediation,
-            subject,
-            &remediation_discriminator(card),
-        );
         match store.get_virtual(&id).map(|vc| vc.retired) {
             None => {
                 store.insert_virtual(VirtualCard {
@@ -400,18 +399,22 @@ fn store_remediation_cards(
     Ok(created_or_revived)
 }
 
-/// The per-card dedupe/revive key for a remediation card: its front + back
-/// lines joined into one string, passed to [`virtual_id`]. The regenerated
-/// batch isn't 1:1 with the gaps it was built from (the model is asked to
-/// merge overlapping gaps into one card per idea), so content is the only
-/// stable per-card key: the same regenerated card reuses its existing
-/// schedule, a reworded one gets a fresh id. Unlike `Card::id` (which hashes
-/// back-only, to preserve history across a front edit), this includes the
-/// front — a virtual card has no edit-history semantics to protect, and the
-/// front avoids collisions between two distinct questions sharing a back.
-fn remediation_discriminator(card: &Card) -> String {
-    let mut s = card.front.clone();
-    for line in &card.back {
+/// The per-card dedupe/revive key for a remediation card: the context-folded
+/// `front` (see the caller, [`store_remediation_cards`]) plus the back lines,
+/// joined into one string, passed to [`virtual_id`]. The regenerated batch
+/// isn't 1:1 with the gaps it was built from (the model is asked to merge
+/// overlapping gaps into one card per idea), so content is the only stable
+/// per-card key: the same regenerated card reuses its existing schedule, a
+/// reworded one gets a fresh id. Unlike `Card::id` (which hashes back-only, to
+/// preserve history across a front edit), this includes the front — a virtual
+/// card has no edit-history semantics to protect, and the front avoids
+/// collisions between two distinct questions sharing a back. Using the
+/// context-folded front (rather than the raw, shared `card.front`) also keeps
+/// sibling cloze holes for the same answer line — which share `front`, and
+/// can share `back` too — from colliding on the same discriminator.
+fn remediation_discriminator(front: &str, back: &[String]) -> String {
+    let mut s = front.to_string();
+    for line in back {
         s.push('\n');
         s.push_str(line);
     }
@@ -1859,6 +1862,21 @@ mod tests {
         let n2 = store_remediation_cards(&mut store, "d.txt", text, 2_000).unwrap();
         assert_eq!(0, n2, "an active dupe is left alone, not recreated");
         assert_eq!(1, store.virtual_cards_for("d.txt").len());
+    }
+
+    #[test]
+    fn multi_hole_cloze_with_repeated_answer_keeps_all_subcards() {
+        // Both holes hold the same token ("be"), so the sub-cards share
+        // `front` and `back` — only `context` (which hole is blanked)
+        // distinguishes them. The discriminator must fold context in, or the
+        // second sub-card collides with the first and is silently dropped.
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let text = "#? Complete the quote\n\tTo {{be}} or not to {{be}}\n";
+
+        let n = store_remediation_cards(&mut store, "d.txt", text, 1_000).unwrap();
+        assert_eq!(2, n, "both cloze sub-cards should be created, not deduped");
+        assert_eq!(2, store.virtual_cards_for("d.txt").len());
     }
 
     #[test]

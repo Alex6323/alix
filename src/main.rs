@@ -1713,13 +1713,22 @@ fn stats(args: DeckArgs) -> Result<()> {
                 passes += state.total_passes;
             }
         }
-        // Virtual (remediation) cards count toward "due", never toward the
-        // card count/histogram below — they aren't deck content.
+        // Virtual (remediation) cards count toward "due" (now and within
+        // 24h), never toward the card count/histogram below — they aren't
+        // deck content.
         due_now += alix::session::count_reviewable_virtual(
             &store,
             &deck.subject,
             &scheduler,
             now,
+            review.retire_after_days,
+        );
+        due_24h += alix::session::count_due_soon_virtual(
+            &store,
+            &deck.subject,
+            &scheduler,
+            now,
+            86_400_000,
             review.retire_after_days,
         );
 
@@ -1890,8 +1899,10 @@ fn reset(args: ResetArgs) -> Result<()> {
     let mut store = open_store(args.store.clone())?;
 
     // `--all`: wipe everything; no decks needed, count up front for the prompt.
+    // Includes virtual cards, so a store holding only those (no authored-card
+    // progress) doesn't wrongly report nothing to reset.
     if args.all {
-        let n = store.len();
+        let n = store.len() + store.virtual_len();
         if n == 0 {
             println!("No stored progress to reset.");
             return Ok(());
@@ -1945,12 +1956,23 @@ fn reset(args: ResetArgs) -> Result<()> {
     let (cards, label, decks, _) = load_decks(&deck_paths, &HashMap::new())?;
 
     // A full-deck reset (no `--card`/`--cards` subset) also drops the decks'
-    // "mastered" exam state, so a re-drilled sourced deck must pass its exam
-    // again before it re-`Finished`es. Persisted by `reset_ids`' save below.
+    // "mastered" exam state and any of the decks' virtual (remediation)
+    // cards — saved here rather than left to `reset_ids`' save below, which is
+    // skipped when the deck has no authored-card progress to reset (e.g. a
+    // deck whose only stored state is virtual cards).
     if !args.cards && args.card.is_none() {
         for subject in decks.keys() {
             store.clear_deck_mastered(subject);
+            let virtual_ids: Vec<String> = store
+                .virtual_cards_for(subject)
+                .iter()
+                .map(|vc| vc.id.clone())
+                .collect();
+            for id in virtual_ids {
+                store.remove_virtual(&id);
+            }
         }
+        store.save()?;
     }
 
     // Choose which cards: a checkbox picker (`--cards`), a direct match

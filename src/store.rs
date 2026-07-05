@@ -272,7 +272,8 @@ pub fn virtual_id(kind: VirtualKind, parent: &str, discriminator: &str) -> Strin
 #[derive(Serialize, Deserialize)]
 struct StoreFile {
     /// Format version. Defaults to 1 for a file written before the field was
-    /// required, so a legacy store still loads. [`migrate`] checks it.
+    /// required, so a legacy store still loads. Read but not gated on — see
+    /// [`CURRENT_VERSION`] for why there is no version check pre-1.0.
     #[serde(default = "default_version")]
     version: u32,
     /// Card states keyed by the decimal string of the card's identity hash
@@ -517,12 +518,14 @@ impl Store {
     }
 
     /// Clears all stored progress, returning how many cards were removed (e.g.
-    /// for `alix reset --all`). Also drops all deck-mastered state. Does not
-    /// save.
+    /// for `alix reset --all`). Also drops all deck-mastered state and every
+    /// virtual card — a reset must not leave orphaned virtual cards behind to
+    /// keep drilling. Does not save.
     pub fn clear(&mut self) -> usize {
         let n = self.cards.len();
         self.cards.clear();
         self.decks.clear();
+        self.virtual_cards.clear();
         n
     }
 
@@ -534,6 +537,11 @@ impl Store {
     /// Returns `true` if no cards are tracked.
     pub fn is_empty(&self) -> bool {
         self.cards.is_empty()
+    }
+
+    /// The number of virtual cards tracked by this store.
+    pub fn virtual_len(&self) -> usize {
+        self.virtual_cards.len()
     }
 
     /// The path of the store file.
