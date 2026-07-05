@@ -434,6 +434,50 @@ fn augment_target_format_caches_a_reshape() {
 }
 
 #[test]
+fn augment_target_format_also_covers_a_decks_virtual_card() {
+    // A deck's synthesized virtual (remediation) cards get the same format
+    // treatment as its authored ones — `set_format` keys by the synth card's
+    // real `Card::id`, so a re-drilled remediation card is reshaped too.
+    let dir = TempDir::new().unwrap();
+    let deck = write(dir.path(), "parts.txt", "# List the parts\n    A, B, C\n");
+
+    let store_path = dir.path().join("p.json");
+    let mut store = alix::store::Store::open(&store_path).unwrap();
+    let vc = sample_virtual_card("parts.txt");
+    let virtual_id = vc.id;
+    store.insert_virtual(vc);
+    store.save().unwrap();
+
+    // The deck's one plain card is warmed at index 0; the deck's one virtual
+    // card follows it at index 1.
+    let cli = fake_claude(dir.path(), r#"{"1": {"back": ["X", "Y"], "mode": "line"}}"#);
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+    let out = alix(&[
+        "deck",
+        "augment",
+        &deck,
+        "--target",
+        "format",
+        "--store",
+        store_path.to_str().unwrap(),
+        "--config",
+        &config,
+    ]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+
+    let cached = std::fs::read_to_string(dir.path().join("augment.json")).unwrap();
+    assert!(
+        cached.contains(&virtual_id.to_string()),
+        "augment.json should key a format entry by the virtual card's id: {cached}"
+    );
+    assert!(cached.contains("\"X\""), "augment.json: {cached}");
+}
+
+#[test]
 fn url_source_exam_on_codex_refuses_cleanly() {
     // The Codex backend runs read-only with no network, so it can't fetch a URL
     // `% source:`. `alix exam` must refuse before touching anything — a plain

@@ -933,7 +933,14 @@ fn build_review(
             .filter(|v| !deck_ids.contains(&v.id)) // collision belt-and-suspenders
             .enumerate()
         {
-            if let Some(card) = synthesize_virtual(vc, &subject, VIRTUAL_LINE_BASE + k) {
+            if let Some(mut card) = synthesize_virtual(vc, &subject, VIRTUAL_LINE_BASE + k) {
+                // Reshape/note a synth card exactly as deck cards are above
+                // (§8.1) — this loop runs after that one, so it must repeat the
+                // same two steps rather than widening the earlier loop's range.
+                augment.apply_format(&mut card);
+                if let Some(note) = augment.note(card.id()) {
+                    card.append_note(&[note.to_string()]);
+                }
                 cards.push(card);
             }
         }
@@ -2361,13 +2368,28 @@ fn augment_cmd(args: AugmentArgs) -> Result<()> {
         }
         AugmentTarget::Format => {
             // Reshaping is for plain cards — a cloze card's masked body must not
-            // be restructured.
-            let plain: Vec<Card> = deck
+            // be restructured. Include this deck's synthesized virtual
+            // (remediation) cards alongside its authored ones: `set_format` keys
+            // by the synth card's real `Card::id`, so the cached entry is exactly
+            // what `apply_format` finds at review time (§8.2).
+            let subject: Arc<str> = Arc::from(deck.subject.as_str());
+            let mut plain: Vec<Card> = deck
                 .cards
                 .iter()
                 .filter(|c| c.hash_lines.is_none())
                 .cloned()
                 .collect();
+            for (k, vc) in store
+                .virtual_cards_for(&deck.subject)
+                .into_iter()
+                .enumerate()
+            {
+                if let Some(card) = synthesize_virtual(vc, &subject, VIRTUAL_LINE_BASE + k)
+                    && card.hash_lines.is_none()
+                {
+                    plain.push(card);
+                }
+            }
             let items = warm_items(&plain);
             if items.is_empty() {
                 bail!("the deck has no plain (non-cloze) cards to format");
@@ -3938,5 +3960,89 @@ mod tests {
         // Only the region's one real card — a `--region` focus is a
         // deck-topology drill, and virtual cards aren't part of any topology.
         assert_eq!(1, build.session.initial_size);
+    }
+
+    #[test]
+    fn a_format_cache_entry_applies_to_a_synthesized_virtual_card() {
+        // A synthesized virtual card has a real `Card::id`, so an existing
+        // format-cache entry for that id applies with no change to
+        // `apply_format` itself — the "free" half of augment-for-virtuals (§8.1).
+        let subject: Arc<str> = Arc::from("rust.txt");
+        let text = "# List the parts\n\tA, B, C\n".to_string();
+        let id = parser::parse_str(&subject, &text).unwrap()[0].id();
+        let vc = VirtualCard {
+            id,
+            kind: alix::store::VirtualKind::Remediation,
+            parent: subject.to_string(),
+            text,
+            created_ms: 0,
+        };
+        let mut synth = synthesize_virtual(&vc, &subject, VIRTUAL_LINE_BASE).unwrap();
+
+        let mut cache =
+            AugmentCache::open(std::env::temp_dir().join("nonexistent-augment-virtual.json"));
+        cache.set_format(
+            id,
+            augment::Format {
+                front: Some("Name the parts".to_string()),
+                back: vec!["A".to_string(), "B".to_string(), "C".to_string()],
+                note: None,
+                mode: Some(Mode::LineByLine),
+            },
+        );
+        cache.apply_format(&mut synth);
+
+        assert_eq!("Name the parts", synth.front);
+        assert_eq!(["A", "B", "C"], *synth.back_for_display());
+        assert_eq!(id, synth.id(), "reshaping must not change identity");
+    }
+
+    #[test]
+    fn build_review_applies_a_cached_format_to_an_injected_virtual_card() {
+        // The display half of augment-for-virtuals (§8.1): `build_review` must
+        // reshape an injected synth card the same way it reshapes deck cards.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("rust.txt");
+        std::fs::write(&path, "# q1\n\ta1\n").unwrap();
+        let mut store = store_for(std::slice::from_ref(&path), None).unwrap();
+        insert_virtual_card(&mut store, "rust.txt");
+        let virtual_id =
+            parser::parse_str("rust.txt", "# virtual front\n\tvirtual back\n").unwrap()[0].id();
+
+        let mut cache = AugmentCache::open(augment::augment_path_for(store.path()));
+        cache.set_format(
+            virtual_id,
+            augment::Format {
+                front: Some("Reshaped virtual front".to_string()),
+                back: vec!["Reshaped virtual back".to_string()],
+                note: None,
+                mode: None,
+            },
+        );
+        cache.save().unwrap();
+
+        let config = Config::default();
+        let mut recent = RecentDecks::load(dir.path().join("recent.json"));
+        let args = review_args(vec![], None);
+        let build = build_review(
+            vec![path],
+            &args,
+            &config,
+            &store,
+            &mut recent,
+            Frontend::Tui,
+            None,
+            None,
+        )
+        .unwrap();
+
+        let synth = build
+            .session
+            .cards()
+            .iter()
+            .find(|c| c.id() == virtual_id)
+            .expect("the injected virtual card should be in the session");
+        assert_eq!("Reshaped virtual front", synth.front);
+        assert_eq!(["Reshaped virtual back"], *synth.back_for_display());
     }
 }
