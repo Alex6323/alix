@@ -247,20 +247,21 @@ impl Session {
         self.advance(store, now_ms);
     }
 
-    /// Introduces the current never-seen card: records it on the Leitner ladder
-    /// at stage 1 and drops it from this session's queue. It is *not* graded and
-    /// gets *no* history entry — acquiring is a first exposure, not a review. The
-    /// card is not re-queued, so its first quiz comes on a later session, once the
-    /// stage-1 relearn cooldown (~5 min) has passed. Does nothing on an empty queue.
+    /// Introduces the current never-seen card: records it at stage 1 and moves on.
+    /// It is *not* graded and gets *no* history entry — acquiring is a first
+    /// exposure, not a review. The card is **kept** in the session, cooling on its
+    /// ~1 min stage-1 gap, so its first real quiz surfaces again later in *this
+    /// same session* once that gap passes. Does nothing when nothing is up.
     pub fn acquire_current(&mut self, store: &mut Store, now_ms: u64) {
         let Some(index) = self.current_idx else {
             return;
         };
-        // `get_or_insert` creates the state at stage 1, due ~5 min out via the
-        // stage-1 cooldown — no `scheduler.apply`, no recorded review.
+        // `get_or_insert` creates the state at stage 1, due ~1 min out via the
+        // stage-1 cooldown — no `scheduler.apply`, no recorded review. The card
+        // stays in the roster so the due-driven serving surfaces it again for its
+        // first real quiz once the gap elapses, in this same session.
         store.get_or_insert(self.cards[index].id(), now_ms);
         self.stats.acquired += 1;
-        self.roster.retain(|&i| i != index);
         self.advance(store, now_ms);
     }
 
@@ -637,7 +638,7 @@ mod tests {
         assert_eq!(0, state.total_reviews);
         assert_eq!(1, session.stats.acquired);
         assert_eq!(0, session.stats.reviews);
-        assert!(session.is_finished()); // dropped from the queue, not re-queued
+        assert!(session.is_finished()); // kept but cooling — nothing servable this instant
     }
 
     #[test]
@@ -646,12 +647,25 @@ mod tests {
         let mut session = Session::new(cards(1), &store, sched(), SessionOptions::default(), 1000);
         session.acquire_current(&mut store, 1000);
 
-        // Just acquired: a restart right away finds nothing due (the 5-min gap),
-        // so it cannot be quizzed the instant it was seen.
+        // Just acquired: nothing is due the instant it was seen (the ~1-min gap).
         assert!(!session.has_due_now(&store, 1000));
-        assert!(!session.has_due_now(&store, 1000 + 5 * 60 * 1000 - 1));
-        // Once the relearn cooldown passes, a fresh session quizzes it.
-        assert!(session.has_due_now(&store, 1000 + 5 * 60 * 1000));
+        assert!(!session.has_due_now(&store, 1000 + 60 * 1000 - 1));
+        // Once the ~1-min cooldown passes, it is due for its first quiz.
+        assert!(session.has_due_now(&store, 1000 + 60 * 1000));
+    }
+
+    #[test]
+    fn an_acquired_card_returns_in_session_after_its_cooldown() {
+        let (mut store, _dir) = empty_store();
+        let mut session = Session::new(cards(1), &store, sched(), SessionOptions::default(), 1000);
+        let id = session.current().unwrap().id();
+        session.acquire_current(&mut store, 1000);
+        // Kept in the roster but cooling: nothing servable the instant it was seen.
+        assert!(session.is_finished());
+        // Once its ~1 min gap elapses the same session serves it for its first quiz.
+        assert!(session.poll(&store, 1000 + 60 * 1000));
+        assert_eq!(session.current().map(|c| c.id()), Some(id));
+        assert!(!session.current_unseen(&store)); // a real quiz now, not another acquire
     }
 
     #[test]

@@ -77,7 +77,7 @@ pub trait Scheduler {
 /// retry of a failed card is position-based (pushed to the back of the queue and
 /// served by position, not by due time), so it is unaffected.
 pub const STAGE_COOLDOWNS_MS: [u64; MAX_STAGE as usize] = [
-    5 * 60 * 1000,  // stage 1: ~5 min (relearn/settle gap)
+    60 * 1000,      // stage 1: ~1 min (settle gap before a just-seen card's first quiz)
     3_600 * 1000,   // stage 2: 1 hour
     21_600 * 1000,  // stage 3: 6 hours
     86_400 * 1000,  // stage 4: 1 day
@@ -266,7 +266,7 @@ mod tests {
 
     #[test]
     fn stage_cooldowns_are_stable() {
-        assert_eq!(5 * 60 * 1000, stage_cooldown_ms(1));
+        assert_eq!(60 * 1000, stage_cooldown_ms(1));
         assert_eq!(3_600_000, stage_cooldown_ms(2));
         assert_eq!(21_600_000, stage_cooldown_ms(3));
         assert_eq!(86_400_000, stage_cooldown_ms(4));

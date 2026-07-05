@@ -90,6 +90,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   than two clean passes would; two full Goods graduate it, a miss resets that
   progress, and a *partly* is neutral. (A lapsed card still re-graduates on one
   Good.)
+- **A just-seen card starts drilling in the same session.** Acquiring a new card
+  (the ungraded "Seen" first exposure) now settles for ~1 minute (was ~5) and the
+  card stays in the sitting, so its first graded quiz comes back interleaved a
+  minute later instead of waiting for a new session.
 - **Breaking: FSRS is now the only scheduler.** alix schedules with FSRS-5 (via
   the `rs-fsrs` crate) for every review; the Leitner and SM-2 schedulers are
   gone, along with the `% scheduler:` directive and the `--scheduler` flag that

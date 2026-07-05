@@ -44,8 +44,9 @@ never read — but it isn't simply handed to you either. The first encounter is 
 try, then reveal. If the deck has AI distractors (`alix deck augment --target
 choices`), an **atomic** card instead greets you as a **multiple-choice** question —
 pick one, see which was right. Either way a guess never promotes or punishes, and
-the first *graded* quiz comes a **later session**, once a short (~5-minute) settle
-has passed. Each session introduces up to `--new N` new cards (default 10); start
+the first *graded* quiz then comes back **later in the same session** — once a
+short (~1-minute) settle passes it resurfaces, interleaved behind the other cards
+you're seeing, so seeing a deck flows straight into drilling it. Each session introduces up to `--new N` new cards (default 10); start
 another session for more. This is the first step of a card's life — *acquire*,
 then let FSRS space it.
 
