@@ -459,8 +459,8 @@ pub enum SittingKind {
 /// the web server (`serve.rs`) and the TUI (`tui.rs`); the CLI keeps its own
 /// linear flow. It owns the exam state and the in-flight background call,
 /// spawns each engine step, and on [`poll`](Sitting::poll) transitions and
-/// applies the side effects (persist "mastered" on a pass, append remediation
-/// cards on confirm). Frontends drive entry/navigation/submit/remediate, call
+/// applies the side effects (persist "mastered" on a pass, create remediation
+/// virtual cards in the store on confirm). Frontends drive entry/navigation/submit/remediate, call
 /// `poll` each tick, and render off `phase()`.
 pub struct Sitting {
     kind: SittingKind,
@@ -693,7 +693,7 @@ impl Sitting {
             && !self.gaps().is_empty()
     }
 
-    /// Generates remediation cards for the gaps and appends them to the deck
+    /// Generates remediation cards for the gaps and stores them as virtual cards
     /// ([`Phase::Results`] → [`Phase::Remediating`]). No-op if nothing to fix.
     pub fn remediate(&mut self) {
         if !self.can_remediate() {

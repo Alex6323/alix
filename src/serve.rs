@@ -1933,7 +1933,7 @@ pub fn run_review(
                 ex.sitting.submit();
                 respond_json(request, &exam_dto(ex, &decks_dir));
             }
-            // On a fail, generate + append remediation cards to the deck.
+            // On a fail, generate remediation cards into the store as virtual cards.
             (Method::Post, "/api/exam/remediate") => {
                 let Some(ex) = examining.as_mut() else {
                     respond_status(request, 409);
