@@ -786,23 +786,21 @@ struct ReviewBuild {
 /// front line.
 const VIRTUAL_LINE_BASE: usize = 1_000_000;
 
-/// Renders a virtual card's content as a normal `Card`, so it drills exactly
-/// like a deck card while its schedule still routes to the store's `v:`
-/// entry (see `Session::state_of`). `subject` is the deck's own subject, so
-/// the card pools and renders as one of that deck's (it shares the
-/// distractor pool and image scan, since both read `Session::cards`).
-/// Deliberately simple: no image, citation, or augment reshape/notes — a
-/// remediation card is self-contained content.
-fn synthesize_virtual(vc: &VirtualCard, subject: &Arc<str>, line: usize) -> Card {
-    let mut card = Card::plain(
-        Arc::clone(subject),
-        vc.content.front.clone(),
-        vc.content.back.clone(),
-        None,
-        line,
-    );
-    card.mode = vc.content.mode;
-    card
+/// Synthesizes a virtual card's stored deck-format `text` into the real `Card`
+/// it stands for — the one in `parse(vc.parent, vc.text)` whose `Card::id`
+/// matches `vc.id` (a cloze block yields several sub-cards; the id picks the
+/// right hole). `subject` MUST equal `vc.parent`, or the id won't reproduce
+/// (`Card::id` hashes the subject). `line` places it far past any real deck
+/// line so it never shares a sibling group with a deck card — id-neutral, since
+/// `Card::id` ignores `line`. Returns `None` if the text can't be parsed or no
+/// card matches (defensive — impossible in practice, but no `unwrap` here).
+fn synthesize_virtual(vc: &VirtualCard, subject: &Arc<str>, line: usize) -> Option<Card> {
+    let mut card = parser::parse_str(subject, &vc.text)
+        .ok()?
+        .into_iter()
+        .find(|c| c.id() == vc.id)?;
+    card.line = line;
+    Some(card)
 }
 
 /// Builds a review session from explicit `deck_paths` (no interactive picker):
@@ -927,16 +925,17 @@ fn build_review(
         .next()
         .map(|s| Arc::from(s.as_str()))
         .unwrap_or_else(|| Arc::from(label.as_str()));
-    let mut virtual_ids: Vec<Option<String>> = vec![None; cards.len()];
     if region_sel.is_none() {
         for (k, vc) in store
             .virtual_cards_for(subject.as_ref())
             .into_iter()
-            .filter(|v| !alix::session::virtual_retired(v, review.retire_after_days))
+            .filter(|v| !alix::session::is_retired_id(v.id, store, review.retire_after_days))
+            .filter(|v| !deck_ids.contains(&v.id)) // collision belt-and-suspenders
             .enumerate()
         {
-            cards.push(synthesize_virtual(vc, &subject, VIRTUAL_LINE_BASE + k));
-            virtual_ids.push(Some(vc.id.clone()));
+            if let Some(card) = synthesize_virtual(vc, &subject, VIRTUAL_LINE_BASE + k) {
+                cards.push(card);
+            }
         }
     }
 
@@ -961,9 +960,8 @@ fn build_review(
         topology: topology_order,
         retire_after_days: review.retire_after_days,
     };
-    let session = Session::new_with_virtual(
+    let session = Session::new(
         cards,
-        virtual_ids,
         store,
         Box::new(Fsrs::new(review.retention)),
         options,
@@ -1902,10 +1900,10 @@ fn reset(args: ResetArgs) -> Result<()> {
     let mut store = open_store(args.store.clone())?;
 
     // `--all`: wipe everything; no decks needed, count up front for the prompt.
-    // Includes virtual cards, so a store holding only those (no authored-card
-    // progress) doesn't wrongly report nothing to reset.
+    // `store.len()` now counts virtual schedules too (they live in `store.cards`),
+    // so a store holding only virtual cards still reports something to reset.
     if args.all {
-        let n = store.len() + store.virtual_len();
+        let n = store.len();
         if n == 0 {
             println!("No stored progress to reset.");
             return Ok(());
@@ -1969,13 +1967,15 @@ fn reset(args: ResetArgs) -> Result<()> {
             .filter(|(id, _)| store.get(*id).is_some())
             .collect();
         let mastered = decks.keys().any(|subject| store.deck_mastered(subject));
-        let virtual_ids: Vec<String> = decks
+        // A virtual card's content is in the sidecar and its schedule in
+        // `store.cards` (both keyed by the same id) — a reset drops both.
+        let virtual_ids: Vec<u64> = decks
             .keys()
             .flat_map(|subject| {
                 store
                     .virtual_cards_for(subject)
                     .iter()
-                    .map(|vc| vc.id.clone())
+                    .map(|vc| vc.id)
                     .collect::<Vec<_>>()
             })
             .collect();
@@ -2000,7 +2000,8 @@ fn reset(args: ResetArgs) -> Result<()> {
             store.clear_deck_mastered(subject);
         }
         for id in &virtual_ids {
-            store.remove_virtual(id);
+            store.remove_virtual(*id); // drop sidecar content …
+            store.remove(*id); // … and the schedule now in `store.cards`
         }
         for (id, _) in &present {
             store.remove(*id);
@@ -3850,22 +3851,21 @@ mod tests {
         }
     }
 
-    /// A virtual card belonging to deck `subject` (its `parent`), due
-    /// immediately (freshly created at `t=0`).
-    fn sample_virtual_card(subject: &str, discriminator: &str) -> VirtualCard {
-        use alix::store::{CardState, VirtualContent, VirtualKind, virtual_id};
-        VirtualCard {
-            id: virtual_id(VirtualKind::Remediation, subject, discriminator),
+    /// Inserts a virtual (remediation) card for deck `subject` into `store` the
+    /// way the substrate does — sidecar content keyed by its `Card::id`, plus a
+    /// fresh schedule seeded at `t=0` (so it's due, not treated as unseen).
+    fn insert_virtual_card(store: &mut Store, subject: &str) {
+        use alix::store::VirtualKind;
+        let text = "# virtual front\n\tvirtual back\n".to_string();
+        let id = parser::parse_str(subject, &text).unwrap()[0].id();
+        store.insert_virtual(VirtualCard {
+            id,
             kind: VirtualKind::Remediation,
             parent: subject.to_string(),
-            content: VirtualContent {
-                front: "virtual front".to_string(),
-                back: vec!["virtual back".to_string()],
-                mode: None,
-            },
-            state: CardState::new(0),
+            text,
             created_ms: 0,
-        }
+        });
+        store.get_or_insert(id, 0);
     }
 
     #[test]
@@ -3874,7 +3874,7 @@ mod tests {
         let path = dir.path().join("rust.txt");
         std::fs::write(&path, "# q1\n\ta1\n").unwrap();
         let mut store = store_for(std::slice::from_ref(&path), None).unwrap();
-        store.insert_virtual(sample_virtual_card("rust.txt", "gap-1"));
+        insert_virtual_card(&mut store, "rust.txt");
 
         let config = Config::default();
         let mut recent = RecentDecks::load(dir.path().join("recent.json"));
@@ -3919,7 +3919,7 @@ mod tests {
         cache.save().unwrap();
 
         // A matching virtual card for this deck.
-        store.insert_virtual(sample_virtual_card("rust.txt", "gap-1"));
+        insert_virtual_card(&mut store, "rust.txt");
 
         let config = Config::default();
         let mut recent = RecentDecks::load(dir.path().join("recent.json"));

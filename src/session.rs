@@ -16,7 +16,7 @@ use crate::{
     augment::TopologyOrder,
     card::Card,
     scheduler::{Grade, Scheduler},
-    store::{CardState, MAX_STAGE, Store, VirtualCard},
+    store::{MAX_STAGE, Store, VirtualCard},
     time,
 };
 
@@ -84,11 +84,6 @@ pub type StageHistogram = [usize; 6];
 /// A review session over a fixed set of cards.
 pub struct Session {
     cards: Vec<Card>,
-    /// Aligned 1:1 with `cards`. `Some(v_id)` marks a virtual card whose
-    /// schedule lives in the store's `v:`-namespaced entry (`v_id`), not in
-    /// `store.cards` keyed by its own `u64` id. See
-    /// [`state_of`](Self::state_of).
-    virtual_ids: Vec<Option<String>>,
     /// In-play card indices in session order (due cards, then new). A card
     /// leaves on pass/acquire/remove; a miss keeps it — its short FSRS due gates
     /// when it becomes servable again.
@@ -112,7 +107,10 @@ impl Session {
     ///
     /// The roster holds, in order: all due cards (earliest FSRS due first), then
     /// up to `max_new` unseen cards in deck order. Sub-cards of the same cloze
-    /// card are kept apart whenever other cards are available.
+    /// card are kept apart whenever other cards are available. A virtual
+    /// (remediation) card is just one more card in `cards` — its schedule is an
+    /// ordinary `store.cards` entry keyed by its `Card::id`, so it needs no
+    /// special routing; `build_review` synthesizes and injects it before this.
     pub fn new(
         cards: Vec<Card>,
         store: &Store,
@@ -120,43 +118,11 @@ impl Session {
         options: SessionOptions,
         now_ms: u64,
     ) -> Self {
-        let virtual_ids = vec![None; cards.len()];
-        Self::build(cards, virtual_ids, store, scheduler, options, now_ms)
-    }
-
-    /// Builds a session whose roster may include virtual cards alongside a
-    /// deck's authored ones: `virtual_ids[i]` marks card `i`'s schedule as
-    /// living in the store's `v:`-namespaced entry rather than its own `u64`
-    /// id (see [`state_of`](Self::state_of)). `build_review` uses this to
-    /// inject a deck's due (remediation) virtual cards into the same queue.
-    pub fn new_with_virtual(
-        cards: Vec<Card>,
-        virtual_ids: Vec<Option<String>>,
-        store: &Store,
-        scheduler: Box<dyn Scheduler>,
-        options: SessionOptions,
-        now_ms: u64,
-    ) -> Self {
-        Self::build(cards, virtual_ids, store, scheduler, options, now_ms)
-    }
-
-    /// The shared constructor body: builds the roster (from both keyspaces)
-    /// and points the cursor at the first servable card.
-    fn build(
-        cards: Vec<Card>,
-        virtual_ids: Vec<Option<String>>,
-        store: &Store,
-        scheduler: Box<dyn Scheduler>,
-        options: SessionOptions,
-        now_ms: u64,
-    ) -> Self {
-        let roster: Vec<usize> =
-            build_queue(&cards, &virtual_ids, store, &*scheduler, &options, now_ms).into();
+        let roster: Vec<usize> = build_queue(&cards, store, &*scheduler, &options, now_ms).into();
         let initial_size = roster.len();
 
         let mut session = Self {
             cards,
-            virtual_ids,
             roster,
             current_idx: None,
             remaining_now: 0,
@@ -175,15 +141,8 @@ impl Session {
     /// Returns `false` — leaving the roster and stats untouched — if nothing is
     /// due, so a summary screen can keep showing the finished session.
     pub fn restart(&mut self, store: &Store, now_ms: u64) -> bool {
-        let roster: Vec<usize> = build_queue(
-            &self.cards,
-            &self.virtual_ids,
-            store,
-            &*self.scheduler,
-            &self.options,
-            now_ms,
-        )
-        .into();
+        let roster: Vec<usize> =
+            build_queue(&self.cards, store, &*self.scheduler, &self.options, now_ms).into();
         if roster.is_empty() {
             return false;
         }
@@ -198,22 +157,16 @@ impl Session {
     /// i.e. anything is due (or a new card can be introduced) at `now_ms`.
     /// Non-mutating; runs the same queue build `restart` would.
     pub fn has_due_now(&self, store: &Store, now_ms: u64) -> bool {
-        !build_queue(
-            &self.cards,
-            &self.virtual_ids,
-            store,
-            &*self.scheduler,
-            &self.options,
-            now_ms,
-        )
-        .is_empty()
+        !build_queue(&self.cards, store, &*self.scheduler, &self.options, now_ms).is_empty()
     }
 
     /// The earliest upcoming due time over all seen cards of this session's
-    /// decks (deck cards and virtual cards alike), if any.
+    /// decks (deck cards and virtual cards alike, which share `store.cards`), if
+    /// any.
     pub fn next_due_at(&self, store: &Store) -> Option<u64> {
-        (0..self.cards.len())
-            .filter_map(|i| self.state_of(store, i))
+        self.cards
+            .iter()
+            .filter_map(|c| store.get(c.id()))
             .map(|state| self.scheduler.due_at(state))
             .min()
     }
@@ -230,12 +183,17 @@ impl Session {
         Some(&mut self.cards[i])
     }
 
-    /// The store's `v:`-namespaced id of the current card, if it is a virtual
-    /// one (`None` for an authored deck card, or when nothing is current). Lets
-    /// a frontend offer to promote the card being reviewed right now.
-    pub fn current_virtual_id(&self) -> Option<&str> {
-        let i = self.current_idx?;
-        self.virtual_ids[i].as_deref()
+    /// The `Card::id` of the current card, if one is up (else `None`). Lets a
+    /// frontend act on the card being reviewed right now (e.g. promote it).
+    pub fn current_id(&self) -> Option<u64> {
+        self.current_idx.map(|i| self.cards[i].id())
+    }
+
+    /// Whether the current card is a virtual (remediation) one — membership in
+    /// the store's content sidecar. `false` for an authored deck card, or when
+    /// nothing is current. Lets a frontend offer to promote it.
+    pub fn current_is_virtual(&self, store: &Store) -> bool {
+        self.current().is_some_and(|c| store.is_virtual(c.id()))
     }
 
     /// Whether the current card has never been seen (no stored progress). Such a
@@ -245,7 +203,7 @@ impl Session {
     /// the attempt-first acquire screen entirely.
     pub fn current_unseen(&self, store: &Store) -> bool {
         self.current_idx
-            .is_some_and(|i| self.state_of(store, i).is_none())
+            .is_some_and(|i| store.get(self.cards[i].id()).is_none())
     }
 
     /// All cards of this session's decks (e.g. as the distractor pool for
@@ -276,47 +234,22 @@ impl Session {
         let Some(index) = self.current_idx else {
             return;
         };
-        match self.virtual_ids[index].as_deref() {
-            Some(vid) => {
-                let Some(vc) = store.get_virtual_mut(vid) else {
-                    // A dangling reference: nothing to grade. Drop it and move
-                    // on rather than fabricate a `u64` entry for it.
-                    self.roster.retain(|&i| i != index);
-                    self.advance(store, now_ms);
-                    return;
-                };
-                // Same cram-refresh-vs-real-review split as a deck card (see
-                // below), applied to the virtual entry's own state. No stage
-                // clamp: a virtual card's `stage` is a frozen legacy marker
-                // seeded once by `CardState::new`, not live scheduling state,
-                // so there is nothing for the scheduler to push past
-                // `MAX_STAGE`.
-                if self.options.cram && grade.passed() {
-                    self.scheduler.reanchor(&mut vc.state, now_ms);
-                } else {
-                    self.scheduler.apply(&mut vc.state, grade, now_ms);
-                }
-                // Nothing to persist: retirement is derived from the interval
-                // this review just set (see `virtual_retired`), read fresh on
-                // every check — not written here.
-            }
-            None => {
-                let card = &self.cards[index];
-                let state = store.get_or_insert(card.id(), now_ms);
-                // Cram refresh: a correct answer keeps the card fresh without rewarding it
-                // (re-anchor its due — no FSRS update, no recorded review). A cram miss is a
-                // genuine lapse, and every normal grade runs the real scheduler.
-                if self.options.cram && grade.passed() {
-                    self.scheduler.reanchor(state, now_ms);
-                } else {
-                    self.scheduler.apply(state, grade, now_ms);
-                }
-                // Safety net: keep the stage within the top (reaching `MAX_STAGE`
-                // retires the card). The scheduler already caps a pass at `MAX_STAGE`.
-                if state.stage > MAX_STAGE {
-                    state.stage = MAX_STAGE;
-                }
-            }
+        // Uniform: a virtual card's schedule is an ordinary `store.cards` entry
+        // keyed by its `Card::id`, so it grades exactly like a deck card.
+        let card = &self.cards[index];
+        let state = store.get_or_insert(card.id(), now_ms);
+        // Cram refresh: a correct answer keeps the card fresh without rewarding it
+        // (re-anchor its due — no FSRS update, no recorded review). A cram miss is a
+        // genuine lapse, and every normal grade runs the real scheduler.
+        if self.options.cram && grade.passed() {
+            self.scheduler.reanchor(state, now_ms);
+        } else {
+            self.scheduler.apply(state, grade, now_ms);
+        }
+        // Safety net: keep the stage within the top (reaching `MAX_STAGE`
+        // retires the card). The scheduler already caps a pass at `MAX_STAGE`.
+        if state.stage > MAX_STAGE {
+            state.stage = MAX_STAGE;
         }
 
         self.stats.reviews += 1;
@@ -344,18 +277,14 @@ impl Session {
         let Some(index) = self.current_idx else {
             return;
         };
-        // Defensive: a virtual card's entry always exists, so `current_unseen`
-        // is never true for one and this branch is unreachable in practice —
-        // but skip cleanly (no `u64` ghost entry) rather than assume a deck
-        // card is at this index.
-        if self.virtual_ids[index].is_none() {
-            // `get_or_insert` creates the state at stage 1, due ~1 min out via the
-            // stage-1 cooldown — no `scheduler.apply`, no recorded review. The card
-            // stays in the roster so the due-driven serving surfaces it again for its
-            // first real quiz once the gap elapses, in this same session.
-            store.get_or_insert(self.cards[index].id(), now_ms);
-            self.stats.acquired += 1;
-        }
+        // `get_or_insert` creates the state at stage 1, due ~1 min out via the
+        // stage-1 cooldown — no `scheduler.apply`, no recorded review. The card
+        // stays in the roster so the due-driven serving surfaces it again for its
+        // first real quiz once the gap elapses, in this same session. A virtual
+        // card always has state (created already-scheduled), so `current_unseen`
+        // is never true for one and this is only ever reached by a deck card.
+        store.get_or_insert(self.cards[index].id(), now_ms);
+        self.stats.acquired += 1;
         self.advance(store, now_ms);
     }
 
@@ -409,46 +338,20 @@ impl Session {
         self.current_idx.is_some()
     }
 
-    /// The stored schedule/history state for roster card `i`: the virtual
-    /// entry's state when `i` is virtual, else the deck-card state keyed by
-    /// its `u64` id. `None` for an unseen deck card (a virtual card always
-    /// has state — see [`current_unseen`](Self::current_unseen)). This is
-    /// the one place a roster index is turned into stored state; every
-    /// reader routes through it (or [`slot_retired`](Self::slot_retired))
-    /// rather than calling `store.get(card.id())` directly.
-    fn state_of<'s>(&self, store: &'s Store, i: usize) -> Option<&'s CardState> {
-        match self.virtual_ids[i].as_deref() {
-            Some(vid) => store.get_virtual(vid).map(|v| &v.state),
-            None => store.get(self.cards[i].id()),
-        }
-    }
-
-    /// Whether roster card `i` is retired/archived (excluded from scheduling):
-    /// the derived interval-cap rule, for a virtual card ([`virtual_retired`])
-    /// or a deck card ([`is_retired`]) alike.
-    fn slot_retired(&self, store: &Store, i: usize) -> bool {
-        let cap = self.options.retire_after_days;
-        match self.virtual_ids[i].as_deref() {
-            Some(vid) => store.get_virtual(vid).is_some_and(|v| virtual_retired(v, cap)),
-            None => is_retired(&self.cards[i], store, cap),
-        }
-    }
-
-    /// Whether roster card `i` can be served right now: a retired/archived
-    /// slot never is (cram included — retirement is derived from the interval,
-    /// so a retired virtual card is un-retired by re-failing its gap, which
-    /// revives it, or by raising `retire_after` past its interval; `alix
-    /// reset` doesn't bring it back, it drops the virtual card outright);
-    /// otherwise under cram, always; otherwise unseen (a deck card) or
-    /// FSRS-due. A virtual card always has state, so a missing entry (a
-    /// dangling reference) is never servable.
+    /// Whether roster card `i` can be served right now: a retired/archived card
+    /// never is (cram included — retirement is derived from the FSRS interval, so
+    /// a retired card is only un-retired by raising `retire_after` past its
+    /// interval, or — for a virtual card — by re-failing its gap, which recreates
+    /// it fresh); otherwise under cram, always; otherwise unseen (fresh) or
+    /// FSRS-due. Deck and virtual cards share the one `store.cards` rule.
     fn servable(&self, i: usize, store: &Store, now_ms: u64) -> bool {
-        if self.slot_retired(store, i) {
+        let card = &self.cards[i];
+        if is_retired(card, store, self.options.retire_after_days) {
             return false;
         }
-        match self.state_of(store, i) {
+        match store.get(card.id()) {
             Some(state) => self.options.cram || self.scheduler.is_due(state, now_ms),
-            None => self.virtual_ids[i].is_none(),
+            None => true,
         }
     }
 
@@ -475,9 +378,8 @@ impl Session {
         let deck_cards: Vec<Card> = self
             .cards
             .iter()
-            .zip(&self.virtual_ids)
-            .filter(|(_, vid)| vid.is_none())
-            .map(|(card, _)| card.clone())
+            .filter(|c| !store.is_virtual(c.id()))
+            .cloned()
             .collect();
         histogram(&deck_cards, store)
     }
@@ -492,13 +394,12 @@ impl Session {
 
 /// Builds the review queue: due cards in scheduler order, then up to
 /// `max_new` unseen cards, capped by `limit`, with cloze siblings separated.
-/// `virtual_ids[i]` routes card `i`'s state to the store's `v:`-namespaced
-/// entry instead of its own `u64` id — a free-fn mirror of
-/// [`Session::state_of`]/[`Session::slot_retired`], needed because this runs
-/// before a `Session` exists to call those methods on.
+/// A virtual (remediation) card is just another `Card` here — its schedule is
+/// an ordinary `store.cards` entry keyed by its `Card::id`, so it flows through
+/// the same rule as a deck card (it simply never lands in `fresh`, being
+/// created already-scheduled).
 fn build_queue(
     cards: &[Card],
-    virtual_ids: &[Option<String>],
     store: &Store,
     scheduler: &dyn Scheduler,
     options: &SessionOptions,
@@ -508,40 +409,24 @@ fn build_queue(
     let mut fresh: Vec<usize> = Vec::new();
 
     for (i, card) in cards.iter().enumerate() {
-        match virtual_ids[i].as_deref() {
-            Some(vid) => {
-                // A virtual card always has state (no "unseen" acquire path)
-                // and, once archived, rests until revived — never scheduled,
-                // not even under cram. A dangling reference is silently
-                // skipped (nothing to schedule).
-                if let Some(vc) = store.get_virtual(vid)
-                    && !virtual_retired(vc, options.retire_after_days)
-                    && (options.cram || scheduler.is_due(&vc.state, now_ms))
-                {
+        match store.get(card.id()) {
+            // A retired card rests until its interval drops below the cap —
+            // never scheduled, not even under cram.
+            Some(_) if is_retired(card, store, options.retire_after_days) => {}
+            Some(state) => {
+                if options.cram || scheduler.is_due(state, now_ms) {
                     due.push(i);
                 }
             }
-            None => match store.get(card.id()) {
-                // A retired card rests until `alix reset` — never scheduled, not
-                // even under cram.
-                Some(_) if is_retired(card, store, options.retire_after_days) => {}
-                Some(state) => {
-                    if options.cram || scheduler.is_due(state, now_ms) {
-                        due.push(i);
-                    }
-                }
-                None => fresh.push(i),
-            },
+            None => fresh.push(i),
         }
     }
 
     // Order due cards by their FSRS due time, earliest first.
     due.sort_by_key(|&i| {
-        let state = match virtual_ids[i].as_deref() {
-            Some(vid) => store.get_virtual(vid).map(|v| &v.state),
-            None => store.get(cards[i].id()),
-        };
-        state.map_or(u64::MAX, |s| scheduler.due_at(s))
+        store
+            .get(cards[i].id())
+            .map_or(u64::MAX, |s| scheduler.due_at(s))
     });
 
     let mut fresh: Vec<usize> = fresh.into_iter().take(options.max_new).collect();
@@ -642,30 +527,22 @@ pub fn is_retired_id(card_id: u64, store: &Store, retire_after_days: Option<u32>
         .is_some_and(|f| f.scheduled_days >= cap)
 }
 
-/// Whether a virtual card is retired/archived: its FSRS interval has reached
-/// the cap. `None` cap disables retirement (drill forever). Purely derived —
-/// mirrors [`is_retired`]'s interval rule exactly, same `CardState` source and
-/// comparison, so the two are symmetric: raising the cap later un-retires a
-/// virtual card whose interval now sits below it, just like a deck card.
-pub fn virtual_retired(vc: &VirtualCard, retire_after_days: Option<u32>) -> bool {
-    retire_after_days.is_some_and(|cap| {
-        vc.state
-            .fsrs
-            .as_ref()
-            .is_some_and(|f| f.scheduled_days >= cap)
-    })
-}
-
-/// Whether a virtual card would be served now: not archived, and FSRS-due. The
+/// Whether a virtual card would be served now: not retired, and FSRS-due. The
 /// virtual-card counterpart of [`is_reviewable`] (a virtual card is never
-/// "new" — it always has state, so there is no fresh/unseen branch).
+/// "new" — it always has state, so there is no fresh/unseen branch). Its
+/// schedule and retirement read from `store.cards[vc.id]`, exactly like a deck
+/// card — so raising the cap un-retires it symmetrically.
 pub fn is_virtual_reviewable(
     vc: &VirtualCard,
+    store: &Store,
     scheduler: &dyn Scheduler,
     now_ms: u64,
     retire_after_days: Option<u32>,
 ) -> bool {
-    !virtual_retired(vc, retire_after_days) && scheduler.is_due(&vc.state, now_ms)
+    !is_retired_id(vc.id, store, retire_after_days)
+        && store
+            .get(vc.id)
+            .is_some_and(|s| scheduler.is_due(s, now_ms))
 }
 
 /// Whether `subject`'s deck has any virtual (remediation) card due right now —
@@ -681,7 +558,7 @@ pub fn has_reviewable_virtual(
     store
         .virtual_cards_for(subject)
         .into_iter()
-        .any(|vc| is_virtual_reviewable(vc, scheduler, now_ms, retire_after_days))
+        .any(|vc| is_virtual_reviewable(vc, store, scheduler, now_ms, retire_after_days))
 }
 
 /// How many of `subject`'s virtual (remediation) cards are due right now — the
@@ -697,7 +574,7 @@ pub fn count_reviewable_virtual(
     store
         .virtual_cards_for(subject)
         .into_iter()
-        .filter(|vc| is_virtual_reviewable(vc, scheduler, now_ms, retire_after_days))
+        .filter(|vc| is_virtual_reviewable(vc, store, scheduler, now_ms, retire_after_days))
         .count()
 }
 
@@ -717,10 +594,12 @@ pub fn count_due_soon_virtual(
     store
         .virtual_cards_for(subject)
         .into_iter()
-        .filter(|vc| !virtual_retired(vc, retire_after_days))
+        .filter(|vc| !is_retired_id(vc.id, store, retire_after_days))
         .filter(|vc| {
-            let due = scheduler.due_at(&vc.state);
-            due > now_ms && due <= now_ms + window_ms
+            store.get(vc.id).is_some_and(|s| {
+                let due = scheduler.due_at(s);
+                due > now_ms && due <= now_ms + window_ms
+            })
         })
         .count()
 }
@@ -842,35 +721,26 @@ mod tests {
         Box::new(crate::scheduler::Fsrs::default())
     }
 
-    /// A virtual card's stored entry: freshly created (stage 1, no FSRS yet —
-    /// due ~1 min after `now_ms`, mirroring an acquired deck card).
-    fn virtual_card(parent: &str, discriminator: &str, now_ms: u64) -> VirtualCard {
-        use crate::store::{VirtualContent, VirtualKind, virtual_id};
-        VirtualCard {
-            id: virtual_id(VirtualKind::Remediation, parent, discriminator),
-            kind: VirtualKind::Remediation,
+    /// Inserts a virtual (remediation) card for `parent` into `store` the way
+    /// the substrate does — sidecar content keyed by its `Card::id`, plus a
+    /// fresh `store.cards` schedule at `created_ms` (stage 1, no FSRS yet, due
+    /// ~1 min out) — and returns its synthesized `Card` (mirroring
+    /// `main::synthesize_virtual`: the parsed card on a far-out `line`). `back`
+    /// drives the id, so distinct `back` values give distinct virtual cards.
+    fn insert_virtual(store: &mut Store, parent: &str, back: &str, created_ms: u64) -> Card {
+        let text = format!("# virtual front\n\t{back}\n");
+        let mut card = crate::parser::parse_str(parent, &text).unwrap().remove(0);
+        card.line = 1_000_000;
+        let id = card.id();
+        store.insert_virtual(VirtualCard {
+            id,
+            kind: crate::store::VirtualKind::Remediation,
             parent: parent.to_string(),
-            content: VirtualContent {
-                front: "virtual front".to_string(),
-                back: vec!["virtual back".to_string()],
-                mode: None,
-            },
-            state: CardState::new(now_ms),
-            created_ms: now_ms,
-        }
-    }
-
-    /// The rendered `Card` a virtual card synthesizes to (mirrors what
-    /// `main::synthesize_virtual` builds): the virtual content on a distinct,
-    /// far-out `line` so it never shares a sibling group with a real card.
-    fn virtual_synth_card(subject: &str, line: usize) -> Card {
-        Card::plain(
-            Arc::from(subject),
-            "virtual front".to_string(),
-            vec!["virtual back".to_string()],
-            None,
-            line,
-        )
+            text,
+            created_ms,
+        });
+        store.get_or_insert(id, created_ms);
+        card
     }
 
     #[test]
@@ -1759,87 +1629,54 @@ mod tests {
     #[test]
     fn virtual_card_joins_the_roster_and_is_served() {
         let (mut store, _dir) = empty_store();
-        let vc = virtual_card("deck.txt", "gap-1", 0);
-        let vid = vc.id.clone();
-        store.insert_virtual(vc);
-
-        let synth = virtual_synth_card("deck.txt", 1_000_000);
+        let synth = insert_virtual(&mut store, "deck.txt", "virtual back", 0);
         let now = 60_000; // past the stage-1 cooldown: due
-        let session = Session::new_with_virtual(
-            vec![synth],
-            vec![Some(vid)],
-            &store,
-            sched(),
-            SessionOptions::default(),
-            now,
-        );
+        let session = Session::new(vec![synth], &store, sched(), SessionOptions::default(), now);
         assert_eq!(1, session.initial_size);
         assert_eq!("virtual front", session.current().unwrap().front);
+        assert!(session.current_is_virtual(&store));
     }
 
     #[test]
-    fn grading_a_virtual_card_updates_its_virtual_state_not_store_cards() {
+    fn grading_a_virtual_card_updates_store_cards() {
         let (mut store, _dir) = empty_store();
-        let vc = virtual_card("deck.txt", "gap-1", 0);
-        let vid = vc.id.clone();
-        store.insert_virtual(vc);
-
-        let synth = virtual_synth_card("deck.txt", 1_000_000);
-        let synth_id = synth.id();
+        let synth = insert_virtual(&mut store, "deck.txt", "virtual back", 0);
+        let id = synth.id();
         let now = 60_000;
-        let mut session = Session::new_with_virtual(
-            vec![synth],
-            vec![Some(vid.clone())],
-            &store,
-            sched(),
-            SessionOptions::default(),
-            now,
-        );
+        let mut session =
+            Session::new(vec![synth], &store, sched(), SessionOptions::default(), now);
 
         session.grade(&mut store, Grade::Pass, now);
 
-        let vc_after = store.get_virtual(&vid).expect("virtual entry kept");
-        assert!(vc_after.state.fsrs.is_some());
-        assert_eq!(1, vc_after.state.total_reviews);
-        // No `u64` ghost written to the deck-card keyspace.
-        assert!(store.get(synth_id).is_none());
+        // A virtual card's schedule now lives in `store.cards`, keyed by its
+        // own `Card::id` — the same entry a deck card would use.
+        let state = store.get(id).expect("virtual schedule in store.cards");
+        assert!(state.fsrs.is_some());
+        assert_eq!(1, state.total_reviews);
+        // Still virtual (sidecar membership), not promoted.
+        assert!(store.is_virtual(id));
     }
 
     #[test]
     fn virtual_card_not_treated_as_unseen() {
         let (mut store, _dir) = empty_store();
-        let vc = virtual_card("deck.txt", "gap-1", 0);
-        let vid = vc.id.clone();
-        store.insert_virtual(vc);
-
-        let synth = virtual_synth_card("deck.txt", 1_000_000);
+        let synth = insert_virtual(&mut store, "deck.txt", "virtual back", 0);
         let now = 60_000;
-        let session = Session::new_with_virtual(
-            vec![synth],
-            vec![Some(vid)],
-            &store,
-            sched(),
-            SessionOptions::default(),
-            now,
-        );
+        let session = Session::new(vec![synth], &store, sched(), SessionOptions::default(), now);
         assert!(!session.current_unseen(&store));
     }
 
     #[test]
     fn a_missed_virtual_card_reappears_on_its_fsrs_due() {
         let (mut store, _dir) = empty_store();
-        let vc = virtual_card("deck.txt", "gap-1", 0);
-        let vid = vc.id.clone();
-        store.insert_virtual(vc);
+        let synth = insert_virtual(&mut store, "deck.txt", "virtual back", 0);
+        let synth_id = synth.id();
         let deck_card = card("deck.txt", 0);
         store.get_or_insert(deck_card.id(), 0);
 
-        let synth = virtual_synth_card("deck.txt", 1_000_000);
-        let synth_id = synth.id();
         let now = 5 * 60 * 1000; // both due (past the stage-1 cooldown)
-        let mut session = Session::new_with_virtual(
+        let mut session = Session::new(
             vec![synth, deck_card],
-            vec![Some(vid), None],
             &store,
             sched(),
             SessionOptions::default(),
@@ -1862,14 +1699,13 @@ mod tests {
         let sched = sched();
 
         // Due: created at t=0, past its stage-1 cooldown by `now`.
-        store.insert_virtual(virtual_card("deck.txt", "gap-due", 0));
+        insert_virtual(&mut store, "deck.txt", "gap-due", 0);
         // Not yet due: created at `now`, still cooling down.
-        store.insert_virtual(virtual_card("deck.txt", "gap-not-due", now));
+        insert_virtual(&mut store, "deck.txt", "gap-not-due", now);
         // Archived: its interval already sits at the cap, so it's excluded —
-        // derived, no stored flag.
-        let mut archived = virtual_card("deck.txt", "gap-archived", 0);
-        archived.state.fsrs = Some(retired_fsrs());
-        store.insert_virtual(archived);
+        // derived from `store.cards`, no stored flag.
+        let archived = insert_virtual(&mut store, "deck.txt", "gap-archived", 0);
+        store.get_or_insert(archived.id(), 0).fsrs = Some(retired_fsrs());
 
         assert_eq!(
             1,
@@ -1887,21 +1723,10 @@ mod tests {
     #[test]
     fn next_due_at_includes_virtual_cards() {
         let (mut store, _dir) = empty_store();
-        let vc = virtual_card("deck.txt", "gap-1", 1000);
-        let vid = vc.id.clone();
-        store.insert_virtual(vc);
-
-        let synth = virtual_synth_card("deck.txt", 1_000_000);
-        let session = Session::new_with_virtual(
-            vec![synth],
-            vec![Some(vid)],
-            &store,
-            sched(),
-            SessionOptions::default(),
-            1000,
-        );
-        // The virtual entry already has state (stage 1 @ t=1000): its FSRS
-        // fallback due is 1000 + the stage-1 cooldown.
+        let synth = insert_virtual(&mut store, "deck.txt", "virtual back", 1000);
+        let session = Session::new(vec![synth], &store, sched(), SessionOptions::default(), 1000);
+        // The virtual card's schedule (stage 1 @ t=1000) has an FSRS fallback
+        // due of 1000 + the stage-1 cooldown.
         let due = session
             .next_due_at(&store)
             .expect("a virtual card's due time is reported");
@@ -1911,9 +1736,8 @@ mod tests {
     #[test]
     fn virtual_card_is_retired_when_interval_reaches_cap() {
         let (mut store, _dir) = empty_store();
-        let vc = virtual_card("deck.txt", "gap-1", 0);
-        let vid = vc.id.clone();
-        store.insert_virtual(vc);
+        let synth = insert_virtual(&mut store, "deck.txt", "virtual back", 0);
+        let id = synth.id();
         let options = SessionOptions {
             retire_after_days: Some(4),
             ..SessionOptions::default()
@@ -1922,52 +1746,35 @@ mod tests {
         // First real review: still acquiring (needs two Goods to graduate), so
         // the interval stays at 0 — well under the cap.
         let now = 60_000;
-        let mut session = Session::new_with_virtual(
-            vec![virtual_synth_card("deck.txt", 1_000_000)],
-            vec![Some(vid.clone())],
-            &store,
-            sched(),
-            options.clone(),
-            now,
-        );
+        let mut session = Session::new(vec![synth.clone()], &store, sched(), options.clone(), now);
         session.grade(&mut store, Grade::Pass, now);
-        assert!(!virtual_retired(
-            store.get_virtual(&vid).unwrap(),
-            options.retire_after_days
-        ));
+        assert!(!is_retired_id(id, &store, options.retire_after_days));
 
         // Second review, once due: graduates to `Review` with a 4-day interval —
         // right at the cap. No stored flag anywhere — retirement is read fresh
-        // from the interval.
+        // from the interval in `store.cards`.
         let now = 86_460_000;
-        let mut session = Session::new_with_virtual(
-            vec![virtual_synth_card("deck.txt", 1_000_000)],
-            vec![Some(vid.clone())],
-            &store,
-            sched(),
-            options.clone(),
-            now,
-        );
+        let mut session = Session::new(vec![synth.clone()], &store, sched(), options.clone(), now);
         session.grade(&mut store, Grade::Pass, now);
 
-        let after = store.get_virtual(&vid).expect("entry + history kept, not deleted");
-        assert!(virtual_retired(after, options.retire_after_days));
-        assert_eq!(4, after.state.fsrs.as_ref().unwrap().scheduled_days);
-        assert_eq!(2, after.state.total_reviews);
+        assert!(is_retired_id(id, &store, options.retire_after_days));
+        let state = store.get(id).expect("schedule kept, not deleted");
+        assert_eq!(4, state.fsrs.as_ref().unwrap().scheduled_days);
+        assert_eq!(2, state.total_reviews);
+        assert!(store.is_virtual(id)); // sidecar kept
 
         // Excluded from the queue and from due counts, same as a deck card.
-        let session = Session::new_with_virtual(
-            vec![virtual_synth_card("deck.txt", 1_000_000)],
-            vec![Some(vid.clone())],
-            &store,
-            sched(),
-            options.clone(),
-            now,
-        );
+        let session = Session::new(vec![synth], &store, sched(), options.clone(), now);
         assert!(session.is_finished());
         assert_eq!(
             0,
-            count_reviewable_virtual(&store, "deck.txt", sched().as_ref(), now, options.retire_after_days)
+            count_reviewable_virtual(
+                &store,
+                "deck.txt",
+                sched().as_ref(),
+                now,
+                options.retire_after_days
+            )
         );
     }
 
@@ -1976,18 +1783,18 @@ mod tests {
         // The symmetry the derived model is for: a card archived at cap C is
         // not retired once the cap is raised above its interval — exactly
         // like a deck card. No stickiness from a stored flag.
-        let mut vc = virtual_card("deck.txt", "gap-1", 0);
-        vc.state.fsrs = Some(crate::store::FsrsState {
+        let (mut store, _dir) = empty_store();
+        let synth = insert_virtual(&mut store, "deck.txt", "virtual back", 0);
+        let id = synth.id();
+        store.get_or_insert(id, 0).fsrs = Some(crate::store::FsrsState {
             scheduled_days: 10,
             ..Default::default()
         });
-        assert!(virtual_retired(&vc, Some(10)));
-        assert!(!virtual_retired(&vc, Some(20)));
+        assert!(is_retired_id(id, &store, Some(10)));
+        assert!(!is_retired_id(id, &store, Some(20)));
 
         // Confirmed through the exclusion path too: the same card is excluded
         // from due counts at the lower cap, and counted at the raised one.
-        let (mut store, _dir) = empty_store();
-        store.insert_virtual(vc);
         let now = 61_000;
         let sched = sched();
         assert_eq!(
@@ -2003,21 +1810,13 @@ mod tests {
     #[test]
     fn retired_virtual_card_is_excluded_from_queue_and_counts() {
         let (mut store, _dir) = empty_store();
-        let mut vc = virtual_card("deck.txt", "gap-1", 0);
-        vc.state.fsrs = Some(retired_fsrs());
-        let vid = vc.id.clone();
-        store.insert_virtual(vc);
+        let synth = insert_virtual(&mut store, "deck.txt", "virtual back", 0);
+        let id = synth.id();
+        store.get_or_insert(id, 0).fsrs = Some(retired_fsrs());
 
         // Otherwise past its stage-1 cooldown: would be due if not archived.
         let now = 61_000;
-        let session = Session::new_with_virtual(
-            vec![virtual_synth_card("deck.txt", 1_000_000)],
-            vec![Some(vid.clone())],
-            &store,
-            sched(),
-            SessionOptions::default(),
-            now,
-        );
+        let session = Session::new(vec![synth], &store, sched(), SessionOptions::default(), now);
         assert!(session.is_finished()); // not served: no roster entry
 
         let cap = Some(DEFAULT_RETIRE_AFTER_DAYS);
@@ -2025,31 +1824,21 @@ mod tests {
             0,
             count_reviewable_virtual(&store, "deck.txt", sched().as_ref(), now, cap)
         );
-        // The entry itself survives — archived, not deleted.
-        assert!(store.get_virtual(&vid).is_some());
+        // The sidecar entry itself survives — archived, not deleted.
+        assert!(store.is_virtual(id));
     }
 
     #[test]
     fn retire_only_at_cap_not_below() {
         let (mut store, _dir) = empty_store();
-        let vc = virtual_card("deck.txt", "gap-1", 0);
-        let vid = vc.id.clone();
-        store.insert_virtual(vc);
+        let synth = insert_virtual(&mut store, "deck.txt", "virtual back", 0);
+        let id = synth.id();
 
         let now = 60_000; // past the stage-1 cooldown
-        let mut session = Session::new_with_virtual(
-            vec![virtual_synth_card("deck.txt", 1_000_000)],
-            vec![Some(vid.clone())],
-            &store,
-            sched(),
-            SessionOptions::default(), // default cap, far above a 0-day interval
-            now,
-        );
+        let mut session =
+            Session::new(vec![synth], &store, sched(), SessionOptions::default(), now);
         session.grade(&mut store, Grade::Pass, now);
 
-        assert!(!virtual_retired(
-            store.get_virtual(&vid).unwrap(),
-            Some(DEFAULT_RETIRE_AFTER_DAYS)
-        ));
+        assert!(!is_retired_id(id, &store, Some(DEFAULT_RETIRE_AFTER_DAYS)));
     }
 }

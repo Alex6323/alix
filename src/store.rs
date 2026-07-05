@@ -4,23 +4,15 @@
 //! `~/.local/share/alix/progress.json`), created on first save.
 
 use std::{
-    collections::{HashMap, hash_map::Entry},
-    hash::Hasher,
+    collections::HashMap,
     path::{Path, PathBuf},
 };
 
 use anyhow::{Context, Result as AnyResult, bail};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use twox_hash::XxHash64;
 
-use crate::{
-    answer::{Mode, mode_name},
-    deck,
-    import::escape_leading_markup,
-    parser,
-    scheduler::Grade,
-};
+use crate::{deck, scheduler::Grade};
 
 /// How many of the most recent reviews are kept per card.
 const HISTORY_CAP: usize = 50;
@@ -174,95 +166,31 @@ pub enum VirtualKind {
     Remediation,
 }
 
-impl VirtualKind {
-    /// A short, stable tag identifying this kind inside a virtual id's hash
-    /// input (see [`virtual_id`]) — keeps kinds distinguishable even if a
-    /// parent + discriminator happened to coincide.
-    fn tag(self) -> &'static str {
-        match self {
-            VirtualKind::Remediation => "remediation",
-        }
-    }
-}
-
-/// The rendered content of a virtual card — front/back/mode, exactly as
-/// review needs to drill it. Cached here since a virtual card has no deck
-/// file to re-read from.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct VirtualContent {
-    /// The question shown before revealing.
-    pub front: String,
-    /// The answer lines shown on reveal.
-    pub back: Vec<String>,
-    /// The mode this card drills in; `None` falls back to the deck default,
-    /// same as an authored card's absent `% mode:`.
-    pub mode: Option<Mode>,
-}
-
-impl VirtualContent {
-    /// Renders this content as parseable deck-format text — a single-line `#`
-    /// front, an optional `% mode:` line, then one escaped, tab-indented back
-    /// line per entry. Used to promote a virtual card into a real deck card
-    /// (see [`promote_virtual`]).
-    ///
-    /// The deck format's front is strictly single-line, but B.3's
-    /// cloze-context fold can leave a `\n` inside `front`; that is collapsed
-    /// to a single space here so the rendered front still parses as one card.
-    pub(crate) fn to_deck_text(&self) -> String {
-        let front_line = self.front.replace('\n', " ");
-        let mut text = format!("# {front_line}\n");
-        if let Some(mode) = self.mode {
-            text.push_str(&format!("% mode: {}\n", mode_name(mode)));
-        }
-        for line in &self.back {
-            text.push('\t');
-            text.push_str(&escape_leading_markup(line));
-            text.push('\n');
-        }
-        text
-    }
-}
-
-/// A personally-scheduled card that lives in no deck file — generated or
-/// derived from a personal trigger (e.g. an exam gap) and scheduled with the
-/// same [`CardState`] the scheduler already uses for deck cards. See
-/// `docs/specs/2026-07-03-virtual-cards-remediation-spec.md` §2.
+/// A personally-scheduled card that lives in no deck file. Content is its
+/// canonical one-card deck-format `text`; its schedule/history is a normal
+/// `CardState` in `store.cards`, keyed by `id` (identical to a deck card).
+/// Membership in `virtual_cards` is what makes a card "virtual".
+///
+/// Invariant: `id` == a `Card::id` in `parse(parent, text)` == the map key ==
+/// the id its `CardState` is keyed under in `store.cards`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct VirtualCard {
-    /// The derived, `v:`-namespaced id (see [`virtual_id`]); also this
-    /// entry's key in the store's `virtual_cards` map.
-    pub id: String,
+    /// The card's identity hash — a plain deck-card `Card::id` (via
+    /// `parse(parent, text)`), also this entry's key in `virtual_cards`.
+    pub id: u64,
     /// Which trigger produced this card.
     pub kind: VirtualKind,
-    /// The deck subject (file name) this card belongs to — just that, not an
-    /// embedded hash of anything. The discriminator that makes a card's id
-    /// unique within that deck (e.g. a hash of the gap text) is a separate
-    /// input to [`virtual_id`], not part of `parent`. Interpreted by the
-    /// creator, not by the store.
+    /// The deck subject (file name) this card belongs to. **Also the subject
+    /// that `synthesize`/`promote` must parse/append under**, or the id won't
+    /// reproduce (`Card::id` hashes the subject).
     pub parent: String,
-    /// The rendered card content to drill.
-    pub content: VirtualContent,
-    /// Schedule/history state — reuses `CardState` so a virtual card rides
-    /// the same scheduler as any deck card.
-    pub state: CardState,
+    /// The card's canonical deck-format block (`# …`/`#? …` + its lines). For a
+    /// cloze card this is the whole multi-hole `#?` block; the hole this entry
+    /// stands for is identified by matching `id` against `parse(parent, text)`,
+    /// not by a stored index.
+    pub text: String,
     /// When this virtual card was created (Unix ms).
     pub created_ms: u64,
-}
-
-/// Derives a virtual card's id: `"v:" + hex(XxHash64(kind-tag ++ parent ++
-/// discriminator))`. Stable across regeneration of the same
-/// `(kind, parent, discriminator)` — e.g. re-generating a remediation card
-/// for the same exam gap reuses the existing schedule instead of duplicating
-/// it — and distinct whenever any input differs. The `v:` prefix keeps
-/// virtual ids in a separate keyspace from the `u64` deck-card ids (which
-/// serialize as plain decimal digits, see `save`), so the two can never
-/// collide.
-pub fn virtual_id(kind: VirtualKind, parent: &str, discriminator: &str) -> String {
-    let mut hasher = XxHash64::default();
-    hasher.write(kind.tag().as_bytes());
-    hasher.write(parent.as_bytes());
-    hasher.write(discriminator.as_bytes());
-    format!("v:{:016x}", hasher.finish())
 }
 
 /// On-disk representation of the store.
@@ -281,11 +209,12 @@ struct StoreFile {
     /// key.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     decks: HashMap<String, DeckProgress>,
-    /// Virtual cards keyed by their `v:`-namespaced id (see [`virtual_id`]).
-    /// Absent in a store predating this field (additive, pre-1.0: no version
-    /// bump needed).
+    /// Virtual cards keyed by the decimal string of their `u64` id. Loaded
+    /// **leniently** (see [`Store::open`]): the raw JSON value is kept so a
+    /// stale/old-shape entry can be dropped without failing the whole file.
+    /// Absent in a store with no virtual cards.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    virtual_cards: HashMap<String, VirtualCard>,
+    virtual_cards: HashMap<String, serde_json::Value>,
 }
 
 /// The progress store for all decks.
@@ -293,7 +222,7 @@ pub struct Store {
     path: PathBuf,
     cards: HashMap<u64, CardState>,
     decks: HashMap<String, DeckProgress>,
-    virtual_cards: HashMap<String, VirtualCard>,
+    virtual_cards: HashMap<u64, VirtualCard>,
 }
 
 /// An error loading or saving the store.
@@ -336,6 +265,8 @@ impl Store {
             path: path.clone(),
             source,
         })?;
+        // The authored `cards` load stays strict: a bad card key is real
+        // corruption, not a regenerable sidecar entry.
         let mut cards = HashMap::with_capacity(file.cards.len());
         for (key, state) in file.cards {
             let hash = key.parse::<u64>().map_err(|e| StoreError::Format {
@@ -347,11 +278,25 @@ impl Store {
             })?;
             cards.insert(hash, state);
         }
+        // Virtual cards load leniently: a store from before this rework has
+        // `v:`-prefixed keys and old-shape values, and a virtual card is a
+        // personal, local, *regenerable* sidecar — so a stale entry is dropped
+        // rather than failing the whole file (which would refuse a user's real
+        // card progress). Keep only well-formed new-shape entries.
+        let mut virtual_cards = HashMap::new();
+        for (key, val) in file.virtual_cards {
+            if let (Ok(id), Ok(vc)) = (
+                key.parse::<u64>(),
+                serde_json::from_value::<VirtualCard>(val),
+            ) {
+                virtual_cards.insert(id, vc);
+            }
+        }
         Ok(Self {
             path,
             cards,
             decks: file.decks,
-            virtual_cards: file.virtual_cards,
+            virtual_cards,
         })
     }
 
@@ -366,6 +311,17 @@ impl Store {
             std::fs::create_dir_all(dir).map_err(io_err)?;
         }
 
+        // Emit the sidecar with decimal-`u64` keys and the real `VirtualCard`
+        // shape (the lenient `Value` field is only for tolerant loading).
+        let mut virtual_cards = HashMap::with_capacity(self.virtual_cards.len());
+        for (id, vc) in &self.virtual_cards {
+            let value = serde_json::to_value(vc).map_err(|source| StoreError::Format {
+                path: self.path.clone(),
+                source,
+            })?;
+            virtual_cards.insert(id.to_string(), value);
+        }
+
         let file = StoreFile {
             version: CURRENT_VERSION,
             cards: self
@@ -374,7 +330,7 @@ impl Store {
                 .map(|(hash, state)| (hash.to_string(), state.clone()))
                 .collect(),
             decks: self.decks.clone(),
-            virtual_cards: self.virtual_cards.clone(),
+            virtual_cards,
         };
         let json = serde_json::to_string_pretty(&file).map_err(|source| StoreError::Format {
             path: self.path.clone(),
@@ -416,60 +372,31 @@ impl Store {
         self.cards.remove(&card_id).is_some()
     }
 
-    /// Seeds a card's state at `id` only if it has none yet — e.g. when
-    /// [`promote_virtual`] transfers a virtual card's schedule to the id its
-    /// content gets once promoted into a deck. Never overwrites an existing
-    /// deck card's own progress. Returns whether the state was inserted. Does
-    /// not save.
-    pub fn seed_card_state(&mut self, id: u64, state: CardState) -> bool {
-        match self.cards.entry(id) {
-            Entry::Vacant(entry) => {
-                entry.insert(state);
-                true
-            }
-            Entry::Occupied(_) => false,
-        }
+    /// Returns a virtual card by its `u64` id, if one exists.
+    pub fn get_virtual(&self, id: u64) -> Option<&VirtualCard> {
+        self.virtual_cards.get(&id)
     }
 
-    /// Returns a virtual card by its `v:`-namespaced id, if one exists.
-    pub fn get_virtual(&self, id: &str) -> Option<&VirtualCard> {
-        self.virtual_cards.get(id)
+    /// Whether a card with this id is a virtual (remediation) card — i.e. it
+    /// lives in the content sidecar rather than any deck file. This membership
+    /// is the sole definition of "virtual"; its schedule is an ordinary
+    /// `store.cards` entry.
+    pub fn is_virtual(&self, id: u64) -> bool {
+        self.virtual_cards.contains_key(&id)
     }
 
-    /// Returns a mutable reference to a virtual card by id, if one exists.
-    pub fn get_virtual_mut(&mut self, id: &str) -> Option<&mut VirtualCard> {
-        self.virtual_cards.get_mut(id)
-    }
-
-    /// Inserts or replaces a virtual card, keyed by its own `id`. Does not
-    /// save.
+    /// Inserts or replaces a virtual card, keyed by its own `id`. The caller
+    /// must uphold `card.id == its Card::id` (the map key). Does not save.
     pub fn insert_virtual(&mut self, card: VirtualCard) {
-        self.virtual_cards.insert(card.id.clone(), card);
+        self.virtual_cards.insert(card.id, card);
     }
 
-    /// Revives an archived (derived-retired) virtual card: resets its schedule
-    /// to a fresh state, keeping its `id`/`kind`/`parent`/`content`/`created_ms`.
-    /// A re-triggered gap means it was forgotten, so it drills from the start
-    /// rather than resuming its old interval — which also drops it back below
-    /// the retirement cap, un-archiving it (retirement is derived purely from
-    /// the interval, see [`crate::session::virtual_retired`]). Returns whether
-    /// an entry with `id` existed. Does not save; the caller (a remediation
-    /// re-creation path) decides when to call this.
-    pub fn revive_virtual(&mut self, id: &str, now_ms: u64) -> bool {
-        match self.virtual_cards.get_mut(id) {
-            Some(vc) => {
-                vc.state = CardState::new(now_ms);
-                true
-            }
-            None => false,
-        }
-    }
-
-    /// Drops a virtual card's entry, e.g. once [`promote_virtual`] has
-    /// graduated it into a real deck card. Returns whether an entry was
+    /// Drops a virtual card's content entry, e.g. once [`promote_virtual`] has
+    /// graduated it into a real deck card. The card's schedule in `store.cards`
+    /// (keyed by the same id) is left in place. Returns whether an entry was
     /// present. Does not save.
-    pub fn remove_virtual(&mut self, id: &str) -> bool {
-        self.virtual_cards.remove(id).is_some()
+    pub fn remove_virtual(&mut self, id: u64) -> bool {
+        self.virtual_cards.remove(&id).is_some()
     }
 
     /// Every virtual card in the store, unfiltered — the raw building block
@@ -563,46 +490,34 @@ impl Store {
     }
 }
 
-/// Graduates a virtual card into a real deck card: renders its content to
-/// deck-format text, appends it to the deck file at `deck_path`, transfers its
-/// schedule to the new deck card, then drops the virtual entry and saves the
-/// store.
+/// Graduates a virtual card into a real deck card: appends its stored
+/// deck-format `text` to the deck file at `deck_path`, then drops the sidecar
+/// content entry and saves the store.
 ///
-/// Appends **before** removing the virtual entry: if the process dies between
-/// the two steps, the card is merely duplicated (a virtual entry plus a deck
+/// The schedule needs no transfer: a virtual card's `CardState` already lives
+/// in `store.cards` under the same id the appended deck card hashes to (the id
+/// was unified at creation, not here), so the promoted card keeps its earned
+/// schedule for free.
+///
+/// Appends **before** removing the sidecar entry: if the process dies between
+/// the two steps, the card is merely duplicated (a sidecar entry plus a deck
 /// card) rather than lost.
 ///
-/// The new card's id is never hand-derived: the rendered text is parsed in
-/// isolation and that parse's card's `.id()` is used, since `Card::id` depends
-/// only on subject + back lines (not file position), so it equals the id the
-/// card gets once it's actually part of the full deck file. The virtual
-/// card's `CardState` is then seeded at that id — without clobbering an
-/// existing deck card's own progress there (see
-/// [`Store::seed_card_state`]) — so the promoted card keeps the schedule it
-/// earned as a virtual card instead of starting fresh.
-pub fn promote_virtual(store: &mut Store, id: &str, deck_path: &Path) -> AnyResult<()> {
+/// Cloze edge: promoting one hole appends the whole `#?` block, so the deck
+/// gains every hole. This hole's schedule carries (its id matches its new deck
+/// sub-card); the others become fresh deck cards. Any sibling sidecar entries
+/// then linger as benign, GC-able orphans (deduped out of the queue by the
+/// deck-id filter in `build_review`).
+pub fn promote_virtual(store: &mut Store, id: u64, deck_path: &Path) -> AnyResult<()> {
     let Some(vc) = store.get_virtual(id) else {
-        bail!("no virtual card with id {id:?} to promote");
+        bail!("no virtual card with id {id} to promote");
     };
-    let text = vc.content.to_deck_text();
-    let subject = vc.parent.clone();
-    let state = vc.state.clone();
-
-    let parsed = parser::parse_str(&subject, &text)
-        .context("parsing the rendered card before promoting it")?;
-    if parsed.len() != 1 {
-        bail!(
-            "promoting a virtual card must render exactly one card, got {}",
-            parsed.len()
-        );
-    }
-    let new_id = parsed[0].id();
+    let text = vc.text.clone();
 
     deck::append_cards(deck_path, &text)
         .with_context(|| format!("appending the promoted card to {}", deck_path.display()))?;
 
-    store.seed_card_state(new_id, state);
-    store.remove_virtual(id);
+    store.remove_virtual(id); // drop the sidecar content; schedule stays in store.cards[id]
     store
         .save()
         .context("saving the store after promoting a virtual card")?;
@@ -912,18 +827,21 @@ mod tests {
         assert_eq!(0, store.clear()); // already empty
     }
 
-    fn sample_virtual_card(discriminator: &str) -> VirtualCard {
-        let id = virtual_id(VirtualKind::Remediation, "rust.txt", discriminator);
+    /// The canonical one-card deck-format `text` of a sample virtual card.
+    const BORROW_TEXT: &str =
+        "# What does the borrow checker enforce?\n\tExactly one mutable borrow, or many shared ones\n";
+
+    /// Builds a virtual card from its canonical deck-format `text` under
+    /// `parent`, deriving its id exactly as the substrate does — the `Card::id`
+    /// of the (plain) card that `parse(parent, text)` yields. Seeds no schedule;
+    /// a caller that needs the card scheduled adds a `store.cards` entry itself.
+    fn virtual_card(parent: &str, text: &str) -> VirtualCard {
+        let id = crate::parser::parse_str(parent, text).unwrap()[0].id();
         VirtualCard {
             id,
             kind: VirtualKind::Remediation,
-            parent: "rust.txt".to_string(),
-            content: VirtualContent {
-                front: "What does the borrow checker enforce?".to_string(),
-                back: vec!["Exactly one mutable borrow, or many shared ones".to_string()],
-                mode: Some(Mode::Flip),
-            },
-            state: CardState::new(1000),
+            parent: parent.to_string(),
+            text: text.to_string(),
             created_ms: 1000,
         }
     }
@@ -932,19 +850,16 @@ mod tests {
     fn insert_virtual_then_get_virtual_returns_it_with_fields_intact() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let vc = sample_virtual_card("gap-1");
-        let id = vc.id.clone();
+        let vc = virtual_card("rust.txt", BORROW_TEXT);
+        let id = vc.id;
 
         store.insert_virtual(vc);
 
-        let got = store.get_virtual(&id).unwrap();
+        let got = store.get_virtual(id).unwrap();
         assert_eq!("rust.txt", got.parent);
         assert_eq!(VirtualKind::Remediation, got.kind);
-        assert_eq!(
-            "What does the borrow checker enforce?",
-            got.content.front
-        );
-        assert_eq!(Some(Mode::Flip), got.content.mode);
+        assert_eq!(BORROW_TEXT, got.text);
+        assert!(store.is_virtual(id));
     }
 
     #[test]
@@ -952,40 +867,24 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("progress.json");
         let mut store = Store::open(&path).unwrap();
-        let vc = sample_virtual_card("gap-2");
-        let id = vc.id.clone();
+        let vc = virtual_card("rust.txt", BORROW_TEXT);
+        let id = vc.id;
         store.insert_virtual(vc.clone());
         store.save().unwrap();
 
         let reloaded = Store::open(&path).unwrap();
-        let got = reloaded.get_virtual(&id).unwrap();
+        let got = reloaded.get_virtual(id).unwrap();
         assert_eq!(&vc, got);
-    }
-
-    /// A virtual card for an arbitrary `parent` subject (unlike
-    /// `sample_virtual_card`, which is fixed to `"rust.txt"`).
-    fn virtual_card_for(parent: &str, discriminator: &str) -> VirtualCard {
-        VirtualCard {
-            id: virtual_id(VirtualKind::Remediation, parent, discriminator),
-            kind: VirtualKind::Remediation,
-            parent: parent.to_string(),
-            content: VirtualContent {
-                front: "front".to_string(),
-                back: vec!["back".to_string()],
-                mode: None,
-            },
-            state: CardState::new(0),
-            created_ms: 0,
-        }
     }
 
     #[test]
     fn virtual_cards_for_matches_on_parent_subject() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        store.insert_virtual(virtual_card_for("rust.txt", "gap-1"));
-        store.insert_virtual(virtual_card_for("rust.txt", "gap-2"));
-        store.insert_virtual(virtual_card_for("other.txt", "gap-1"));
+        // Distinct ids come from distinct content (different back / subject).
+        store.insert_virtual(virtual_card("rust.txt", "# f\n\tback one\n"));
+        store.insert_virtual(virtual_card("rust.txt", "# f\n\tback two\n"));
+        store.insert_virtual(virtual_card("other.txt", "# f\n\tback one\n"));
 
         let rust_cards = store.virtual_cards_for("rust.txt");
         assert_eq!(2, rust_cards.len());
@@ -993,54 +892,6 @@ mod tests {
 
         assert_eq!(1, store.virtual_cards_for("other.txt").len());
         assert!(store.virtual_cards_for("nonexistent.txt").is_empty());
-    }
-
-    #[test]
-    fn virtual_id_is_namespaced_stable_and_collision_free_with_u64_keys() {
-        let a = virtual_id(VirtualKind::Remediation, "rust.txt", "gap-a");
-        let a_again = virtual_id(VirtualKind::Remediation, "rust.txt", "gap-a");
-        let b = virtual_id(VirtualKind::Remediation, "rust.txt", "gap-b");
-
-        assert!(a.starts_with("v:"));
-        assert_eq!(a, a_again, "same inputs must derive the same id");
-        assert_ne!(b, a, "a different discriminator must derive a different id");
-        // A u64 deck-card key is serialized as plain decimal digits (see
-        // `save`); the `v:` prefix guarantees a virtual id never parses as
-        // one, so the two keyspaces can never collide.
-        assert!(a.parse::<u64>().is_err());
-    }
-
-    #[test]
-    fn revive_virtual_resets_the_schedule() {
-        // No `retired` field to clear (it's gone) — a card whose interval sits
-        // at/past the retirement cap is derived-retired; reviving it just resets
-        // the schedule, which drops the interval back below any cap.
-        let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let mut vc = sample_virtual_card("gap-1");
-        vc.state.record_review(500, Grade::Fail);
-        vc.state.fsrs = Some(FsrsState {
-            scheduled_days: 30,
-            state: 2,
-            ..Default::default()
-        });
-        let id = vc.id.clone();
-        let created_ms = vc.created_ms;
-        store.insert_virtual(vc);
-        assert!(crate::session::virtual_retired(
-            store.get_virtual(&id).unwrap(),
-            Some(30)
-        ));
-
-        assert!(store.revive_virtual(&id, 5_000));
-
-        let after = store.get_virtual(&id).expect("entry kept");
-        assert_eq!(CardState::new(5_000), after.state); // fresh — no history/fsrs
-        assert!(!crate::session::virtual_retired(after, Some(30)));
-        assert_eq!(id, after.id);
-        assert_eq!(created_ms, after.created_ms);
-
-        assert!(!store.revive_virtual("v:nonexistent", 5_000));
     }
 
     #[test]
@@ -1052,7 +903,36 @@ mod tests {
         std::fs::write(&path, "{\"version\":1,\"cards\":{}}").unwrap();
         let store = Store::open(&path).unwrap();
         assert!(store.is_empty());
-        assert!(store.get_virtual("v:anything").is_none());
+        assert!(store.get_virtual(123).is_none());
+    }
+
+    #[test]
+    fn an_old_shape_virtual_cards_object_loads_leniently_dropping_stale_entries() {
+        // A store from before this rework carries `v:`-prefixed keys AND old-shape
+        // values (`state` + `content`, no `text`). Both make an entry unparseable
+        // as the new `VirtualCard`; loading must drop them yet keep `cards`/`decks`
+        // intact — refusing the whole file over a regenerable sidecar would lose a
+        // user's real progress.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("progress.json");
+        std::fs::write(
+            &path,
+            r#"{"version":1,
+                "cards":{"5":{"stage":3,"stage_entered_ms":0}},
+                "decks":{"rust.txt":{"mastered_at_ms":1234}},
+                "virtual_cards":{
+                    "v:abc":{"id":"v:abc","kind":"Remediation","parent":"rust.txt",
+                             "content":{"front":"f","back":["b"],"mode":null},
+                             "state":{"stage":1,"stage_entered_ms":0},"created_ms":0}
+                }}"#,
+        )
+        .unwrap();
+        let store = Store::open(&path).unwrap();
+        // Real progress survives …
+        assert_eq!(3, store.get(5).unwrap().stage);
+        assert!(store.deck_mastered("rust.txt"));
+        // … and the stale, regenerable virtual entry is dropped.
+        assert_eq!(0, store.iter_virtual_cards().count());
     }
 
     fn write_deck(dir: &Path, name: &str, body: &str) -> PathBuf {
@@ -1067,13 +947,13 @@ mod tests {
         let deck_path = write_deck(dir.path(), "rust.txt", "# existing\n\tanswer\n");
         let store_path = dir.path().join("progress.json");
         let mut store = Store::open(&store_path).unwrap();
-        let vc = sample_virtual_card("gap-1");
-        let id = vc.id.clone();
+        let vc = virtual_card("rust.txt", BORROW_TEXT);
+        let id = vc.id;
         store.insert_virtual(vc);
 
-        promote_virtual(&mut store, &id, &deck_path).unwrap();
+        promote_virtual(&mut store, id, &deck_path).unwrap();
 
-        assert!(store.get_virtual(&id).is_none());
+        assert!(store.get_virtual(id).is_none());
 
         let text = std::fs::read_to_string(&deck_path).unwrap();
         let cards = crate::parser::parse_str("rust.txt", &text).unwrap();
@@ -1090,7 +970,7 @@ mod tests {
         // The store was saved: reloading it from disk still shows the
         // virtual entry gone.
         let reloaded = Store::open(&store_path).unwrap();
-        assert!(reloaded.get_virtual(&id).is_none());
+        assert!(reloaded.get_virtual(id).is_none());
     }
 
     #[test]
@@ -1105,11 +985,11 @@ mod tests {
         let ids_before: Vec<u64> = before.iter().map(|c| c.id()).collect();
 
         let mut store = Store::open(dir.path().join("progress.json")).unwrap();
-        let vc = sample_virtual_card("gap-1");
-        let id = vc.id.clone();
+        let vc = virtual_card("rust.txt", BORROW_TEXT);
+        let id = vc.id;
         store.insert_virtual(vc);
 
-        promote_virtual(&mut store, &id, &deck_path).unwrap();
+        promote_virtual(&mut store, id, &deck_path).unwrap();
 
         let after = crate::parser::parse_str(
             "rust.txt",
@@ -1122,44 +1002,6 @@ mod tests {
     }
 
     #[test]
-    fn promoting_a_cloze_folded_front_collapses_to_one_line() {
-        let dir = tempfile::tempdir().unwrap();
-        let deck_path = write_deck(dir.path(), "d.txt", "");
-        let mut store = Store::open(dir.path().join("progress.json")).unwrap();
-        let mut vc = sample_virtual_card("gap-multiline");
-        vc.content.front = "line one\nline two".to_string();
-        let id = vc.id.clone();
-        store.insert_virtual(vc);
-
-        promote_virtual(&mut store, &id, &deck_path).unwrap();
-
-        let text = std::fs::read_to_string(&deck_path).unwrap();
-        let cards = crate::parser::parse_str("d.txt", &text).unwrap();
-        assert_eq!(1, cards.len());
-        assert_eq!("line one line two", cards[0].front);
-        assert_eq!(
-            vec!["Exactly one mutable borrow, or many shared ones".to_string()],
-            cards[0].back
-        );
-    }
-
-    #[test]
-    fn render_escapes_leading_markup_and_writes_mode() {
-        let content = VirtualContent {
-            front: "front text".to_string(),
-            back: vec!["% not a comment".to_string(), "plain line".to_string()],
-            mode: Some(Mode::Explain),
-        };
-
-        let text = content.to_deck_text();
-
-        assert_eq!(
-            "# front text\n% mode: explain\n\t\\% not a comment\n\tplain line\n",
-            text
-        );
-    }
-
-    #[test]
     fn promote_unknown_id_errors_and_writes_nothing() {
         let dir = tempfile::tempdir().unwrap();
         let deck_path = write_deck(dir.path(), "d.txt", "# one\n\t1\n");
@@ -1167,7 +1009,7 @@ mod tests {
         let store_path = dir.path().join("progress.json");
         let mut store = Store::open(&store_path).unwrap();
 
-        let result = promote_virtual(&mut store, "v:nonexistent", &deck_path);
+        let result = promote_virtual(&mut store, 999, &deck_path);
 
         assert!(result.is_err());
         assert_eq!(deck_before, std::fs::read_to_string(&deck_path).unwrap());
@@ -1175,13 +1017,18 @@ mod tests {
     }
 
     #[test]
-    fn promoting_a_drilled_virtual_card_keeps_its_schedule() {
+    fn promote_preserves_the_schedule_for_free() {
+        // The schedule lives in `store.cards[id]` (not on the sidecar), keyed by
+        // the same id the appended deck card hashes to — so promoting carries the
+        // drilled schedule with no transfer code.
         let dir = tempfile::tempdir().unwrap();
         let deck_path = write_deck(dir.path(), "rust.txt", "# existing\n\tanswer\n");
         let mut store = Store::open(dir.path().join("progress.json")).unwrap();
-        let mut vc = sample_virtual_card("gap-1");
-        let id = vc.id.clone();
+        let vc = virtual_card("rust.txt", BORROW_TEXT);
+        let id = vc.id;
+        store.insert_virtual(vc);
 
+        // Drill the schedule in `store.cards`, not on the virtual entry.
         let mut state = CardState::new(1000);
         state.record_review(1000, Grade::Pass);
         state.record_review(2000, Grade::Pass);
@@ -1196,12 +1043,11 @@ mod tests {
             due_ms: 900_000,
             learning_goods: 2,
         });
-        vc.state = state.clone();
-        store.insert_virtual(vc);
+        *store.get_or_insert(id, 1000) = state.clone();
 
-        promote_virtual(&mut store, &id, &deck_path).unwrap();
+        promote_virtual(&mut store, id, &deck_path).unwrap();
 
-        assert!(store.get_virtual(&id).is_none());
+        assert!(store.get_virtual(id).is_none());
 
         let text = std::fs::read_to_string(&deck_path).unwrap();
         let cards = crate::parser::parse_str("rust.txt", &text).unwrap();
@@ -1209,38 +1055,11 @@ mod tests {
             .iter()
             .find(|c| c.front == "What does the borrow checker enforce?")
             .expect("promoted card present");
-
+        // The id was unified at the source: the appended deck card hashes to the
+        // very id the schedule was already keyed under.
+        assert_eq!(id, promoted.id());
         let carried = store.get(promoted.id()).expect("schedule carried over");
         assert_eq!(&state, carried);
-    }
-
-    #[test]
-    fn promote_does_not_clobber_existing_deck_card_progress() {
-        let dir = tempfile::tempdir().unwrap();
-        let existing_line =
-            "# What does the borrow checker enforce?\n\tExactly one mutable borrow, or many shared ones\n";
-        let deck_path = write_deck(dir.path(), "rust.txt", existing_line);
-        let existing_cards = crate::parser::parse_str("rust.txt", existing_line).unwrap();
-        let existing_id = existing_cards[0].id();
-
-        let mut store = Store::open(dir.path().join("progress.json")).unwrap();
-        let existing_state = {
-            let s = store.get_or_insert(existing_id, 500);
-            s.record_review(500, Grade::Pass);
-            s.stage = 3;
-            s.clone()
-        };
-
-        // Same content as `existing_line`, so the promoted card lands on the
-        // same id — but with its own (different) schedule.
-        let vc = sample_virtual_card("gap-1");
-        let id = vc.id.clone();
-        store.insert_virtual(vc);
-
-        promote_virtual(&mut store, &id, &deck_path).unwrap();
-
-        let carried = store.get(existing_id).expect("existing progress kept");
-        assert_eq!(&existing_state, carried);
     }
 
     #[test]

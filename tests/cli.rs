@@ -144,31 +144,32 @@ fn reset_all_clears_a_seeded_store() {
 }
 
 /// A minimal virtual card belonging to `parent`, for seeding a store directly
-/// via the lib rather than hand-authoring its on-disk JSON shape.
-fn sample_virtual_card(parent: &str, discriminator: &str) -> alix::store::VirtualCard {
+/// via the lib rather than hand-authoring its on-disk JSON shape. Its id is the
+/// `Card::id` of the card `parse(parent, text)` yields — identical to a deck card.
+fn sample_virtual_card(parent: &str) -> alix::store::VirtualCard {
+    let text = "# front\n\tback\n";
+    let id = alix::parser::parse_str(parent, text).unwrap()[0].id();
     alix::store::VirtualCard {
-        id: alix::store::virtual_id(alix::store::VirtualKind::Remediation, parent, discriminator),
+        id,
         kind: alix::store::VirtualKind::Remediation,
         parent: parent.to_string(),
-        content: alix::store::VirtualContent {
-            front: "front".to_string(),
-            back: vec!["back".to_string()],
-            mode: None,
-        },
-        state: alix::store::CardState::new(0),
+        text: text.to_string(),
         created_ms: 0,
     }
 }
 
 #[test]
 fn reset_all_clears_virtual_cards() {
-    // A store holding ONLY virtual cards (no authored-card progress) must
-    // still be reset by `--all` — both the "anything to reset?" count and the
-    // clear itself need to account for virtual cards, not just `store.cards`.
+    // A store holding ONLY virtual cards must still be reset by `--all`: the
+    // count sees the virtual card's schedule in `store.cards` (seeded beside the
+    // sidecar entry), and the clear must also drop its sidecar content.
     let dir = TempDir::new().unwrap();
     let store_path = dir.path().join("progress.json");
     let mut store = alix::store::Store::open(&store_path).unwrap();
-    store.insert_virtual(sample_virtual_card("math.txt", "gap-1"));
+    let vc = sample_virtual_card("math.txt");
+    let id = vc.id;
+    store.insert_virtual(vc);
+    store.get_or_insert(id, 0); // the virtual card's schedule lives in store.cards
     store.save().unwrap();
 
     let out = alix(&[
@@ -196,10 +197,12 @@ fn deck_reset_drops_that_decks_virtual_cards() {
     let store_path = dir.path().join("progress.json");
 
     let mut store = alix::store::Store::open(&store_path).unwrap();
-    let math_id = sample_virtual_card("math.txt", "gap-1").id;
-    store.insert_virtual(sample_virtual_card("math.txt", "gap-1"));
-    let other_id = sample_virtual_card("other.txt", "gap-1").id;
-    store.insert_virtual(sample_virtual_card("other.txt", "gap-1"));
+    let math_vc = sample_virtual_card("math.txt");
+    let math_id = math_vc.id;
+    store.insert_virtual(math_vc);
+    let other_vc = sample_virtual_card("other.txt");
+    let other_id = other_vc.id;
+    store.insert_virtual(other_vc);
     store.save().unwrap();
 
     let out = alix(&["reset", &deck, "--yes", "--store", store_path.to_str().unwrap()]);
@@ -207,11 +210,11 @@ fn deck_reset_drops_that_decks_virtual_cards() {
 
     let reloaded = alix::store::Store::open(&store_path).unwrap();
     assert!(
-        reloaded.get_virtual(&math_id).is_none(),
+        reloaded.get_virtual(math_id).is_none(),
         "the reset deck's own virtual card should be dropped"
     );
     assert!(
-        reloaded.get_virtual(&other_id).is_some(),
+        reloaded.get_virtual(other_id).is_some(),
         "another deck's virtual card should survive"
     );
 }
@@ -229,7 +232,7 @@ fn deck_reset_without_yes_leaves_store_unchanged() {
     let mut store = alix::store::Store::open(&store_path).unwrap();
     store.get_or_insert(card_id, 0);
     store.set_deck_mastered("math.txt", 0);
-    store.insert_virtual(sample_virtual_card("math.txt", "gap-1"));
+    store.insert_virtual(sample_virtual_card("math.txt"));
     store.save().unwrap();
     let before = std::fs::read_to_string(&store_path).unwrap();
 
@@ -264,7 +267,7 @@ fn confirmed_virtual_only_deck_reset_clears_virtual() {
     let store_path = dir.path().join("progress.json");
 
     let mut store = alix::store::Store::open(&store_path).unwrap();
-    store.insert_virtual(sample_virtual_card("math.txt", "gap-1"));
+    store.insert_virtual(sample_virtual_card("math.txt"));
     store.save().unwrap();
 
     let out = alix(&[

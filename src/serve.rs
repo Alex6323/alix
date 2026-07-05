@@ -1762,7 +1762,11 @@ pub fn run_review(
                     respond_status(request, 409);
                     continue;
                 };
-                let Some(id) = r.session.current_virtual_id().map(str::to_string) else {
+                if !r.session.current_is_virtual(&store) {
+                    respond_status(request, 400);
+                    continue;
+                }
+                let Some(id) = r.session.current_id() else {
                     respond_status(request, 400);
                     continue;
                 };
@@ -1774,7 +1778,7 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                if store::promote_virtual(&mut store, &id, &path).is_err() {
+                if store::promote_virtual(&mut store, id, &path).is_err() {
                     respond_status(request, 400);
                     continue;
                 }
@@ -2785,7 +2789,7 @@ fn review_state(
         finished,
         exam_due,
         can_restart: session.has_due_now(store, now_ms()),
-        promotable: session.current_virtual_id().is_some(),
+        promotable: session.current_is_virtual(store),
         top_stage: session.top_stage(),
         label: r.label.clone(),
     }
@@ -3836,23 +3840,18 @@ mod tests {
         let before = deck_topology_dto(&augment, &store, &deck, ReviewConfig::default());
         assert_eq!(0, before.deck_due);
 
-        // A due virtual card for this deck adds to the whole-deck due count.
+        // A due virtual card for this deck adds to the whole-deck due count —
+        // sidecar content keyed by its `Card::id`, plus a fresh schedule at t=0.
+        let vtext = "# virtual front\n\tvirtual back\n".to_string();
+        let vid = crate::parser::parse_str(&deck.subject, &vtext).unwrap()[0].id();
         store.insert_virtual(crate::store::VirtualCard {
-            id: crate::store::virtual_id(
-                crate::store::VirtualKind::Remediation,
-                &deck.subject,
-                "gap-1",
-            ),
+            id: vid,
             kind: crate::store::VirtualKind::Remediation,
             parent: deck.subject.clone(),
-            content: crate::store::VirtualContent {
-                front: "virtual front".to_string(),
-                back: vec!["virtual back".to_string()],
-                mode: None,
-            },
-            state: crate::store::CardState::new(0),
+            text: vtext,
             created_ms: 0,
         });
+        store.get_or_insert(vid, 0);
 
         let after = deck_topology_dto(&augment, &store, &deck, ReviewConfig::default());
         assert_eq!(1, after.deck_due);

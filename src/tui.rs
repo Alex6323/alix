@@ -696,10 +696,12 @@ impl App {
     /// cursor (the promoted slot is no longer servable) and renders whatever
     /// comes next.
     fn promote_card(&mut self) {
-        let Some(id) = self.session.current_virtual_id() else {
+        if !self.session.current_is_virtual(&self.store) {
+            return;
+        }
+        let Some(id) = self.session.current_id() else {
             return;
         };
-        let id = id.to_string();
         let Some(subject) = self.session.current().map(|c| c.subject.to_string()) else {
             return;
         };
@@ -707,7 +709,7 @@ impl App {
             eprintln!("warning: no deck file known for {subject}; cannot promote card");
             return;
         };
-        if let Err(e) = store::promote_virtual(&mut self.store, &id, &path) {
+        if let Err(e) = store::promote_virtual(&mut self.store, id, &path) {
             eprintln!("warning: could not promote card: {e}");
             return;
         }
@@ -842,7 +844,7 @@ impl App {
         }
         // Promoting only makes sense on a virtual (remediation) card, on the
         // card you'd otherwise answer.
-        if promote_hit && answerable && self.session.current_virtual_id().is_some() {
+        if promote_hit && answerable && self.session.current_is_virtual(&self.store) {
             self.promote_card();
             return Ok(());
         }
@@ -1493,7 +1495,7 @@ impl App {
         // A virtual (remediation) card offers one more action, only while it's
         // still up for review — kept out of the match above so it doesn't have
         // to be spelled out in every arm.
-        if self.answerable() && self.session.current_virtual_id().is_some() {
+        if self.answerable() && self.session.current_is_virtual(&self.store) {
             keys.push_str(&format!(" │ {} promote", l(&k.promote)));
         }
         let left = format!(" {keys}");

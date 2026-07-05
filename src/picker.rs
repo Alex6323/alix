@@ -2268,25 +2268,21 @@ mod tests {
         }
     }
 
-    /// A virtual (remediation) card for `subject`, due immediately (created at
-    /// t=0, so any real `now` is well past its stage-1 cooldown).
-    fn due_virtual_card(subject: &str, discriminator: &str) -> crate::store::VirtualCard {
-        crate::store::VirtualCard {
-            id: crate::store::virtual_id(
-                crate::store::VirtualKind::Remediation,
-                subject,
-                discriminator,
-            ),
+    /// Inserts a virtual (remediation) card for `subject` into `store`, due
+    /// immediately — sidecar content keyed by its `Card::id`, plus a fresh
+    /// schedule seeded at t=0 (so any real `now` is well past its stage-1
+    /// cooldown).
+    fn insert_due_virtual_card(store: &mut Store, subject: &str) {
+        let text = "# virtual front\n\tvirtual back\n".to_string();
+        let id = crate::parser::parse_str(subject, &text).unwrap()[0].id();
+        store.insert_virtual(crate::store::VirtualCard {
+            id,
             kind: crate::store::VirtualKind::Remediation,
             parent: subject.to_string(),
-            content: crate::store::VirtualContent {
-                front: "virtual front".to_string(),
-                back: vec!["virtual back".to_string()],
-                mode: None,
-            },
-            state: crate::store::CardState::new(0),
+            text,
             created_ms: 0,
-        }
+        });
+        store.get_or_insert(id, 0);
     }
 
     #[test]
@@ -2308,7 +2304,7 @@ mod tests {
 
         // A due virtual card for this deck makes it reviewable even though
         // every deck card is done.
-        store.insert_virtual(due_virtual_card(&deck.subject, "gap-1"));
+        insert_due_virtual_card(&mut store, &deck.subject);
         let status = deck_status(&deck, &store, None, false, ReviewConfig::default());
         assert!(status.reviewable);
         assert_eq!("done ✓", status.badge); // unaffected by the virtual card
@@ -2329,7 +2325,7 @@ mod tests {
         let before = deck_status(&deck, &store, None, false, ReviewConfig::default());
         assert_eq!("1/3", before.badge);
 
-        store.insert_virtual(due_virtual_card(&deck.subject, "gap-1"));
+        insert_due_virtual_card(&mut store, &deck.subject);
         let after = deck_status(&deck, &store, None, false, ReviewConfig::default());
         assert_eq!(before.badge, after.badge);
     }
