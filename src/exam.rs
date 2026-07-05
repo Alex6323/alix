@@ -1473,8 +1473,10 @@ mod tests {
         assert_eq!("# Q\n% mode: explain\n\tA", clean_deck_output(raw));
     }
 
-    use crate::answer::Mode;
-    use crate::testutil::{ask_config, exec_lock, fake_cli, fake_reply};
+    use crate::{
+        answer::Mode,
+        testutil::{ask_config, exec_lock, fake_cli, fake_reply},
+    };
 
     #[test]
     fn verdict_labels() {
@@ -2001,7 +2003,10 @@ mod tests {
         assert_eq!(2, n, "both cloze sub-cards should be created, not deduped");
         let virtuals = store.virtual_cards_for("d.txt");
         assert_eq!(2, virtuals.len());
-        assert_ne!(virtuals[0].id, virtuals[1].id, "distinct ids for the two holes");
+        assert_ne!(
+            virtuals[0].id, virtuals[1].id,
+            "distinct ids for the two holes"
+        );
         // They share the same stored block text.
         assert_eq!(virtuals[0].text, virtuals[1].text);
     }
@@ -2017,8 +2022,7 @@ mod tests {
         let deck_id = parser::parse_str("d.txt", text).unwrap()[0].id();
         let deck_ids: HashSet<u64> = [deck_id].into_iter().collect();
 
-        let n =
-            store_remediation_cards(&mut store, "d.txt", &deck_ids, text, 1_000, None).unwrap();
+        let n = store_remediation_cards(&mut store, "d.txt", &deck_ids, text, 1_000, None).unwrap();
         assert_eq!(0, n, "a card already in the deck is not made virtual");
         assert!(store.virtual_cards_for("d.txt").is_empty());
         assert!(store.get(deck_id).is_none(), "no ghost schedule seeded");
@@ -2058,11 +2062,8 @@ mod tests {
             // file, and confirm the matching card carries the same id.
             let vid = virtuals[0].id;
             crate::store::promote_virtual(&mut store, vid, &deck_path).unwrap();
-            let deck = parser::parse_str(
-                "d.txt",
-                &std::fs::read_to_string(&deck_path).unwrap(),
-            )
-            .unwrap();
+            let deck =
+                parser::parse_str("d.txt", &std::fs::read_to_string(&deck_path).unwrap()).unwrap();
             assert!(
                 deck.iter().any(|c| c.id() == vid),
                 "the appended deck card reproduces the id"
@@ -2157,7 +2158,11 @@ mod tests {
 
         for vc in store.virtual_cards_for("d.txt") {
             assert!(
-                !is_retired_id(vc.id, &store, Some(crate::session::DEFAULT_RETIRE_AFTER_DAYS)),
+                !is_retired_id(
+                    vc.id,
+                    &store,
+                    Some(crate::session::DEFAULT_RETIRE_AFTER_DAYS)
+                ),
                 "a passing re-sit must not retire remediation cards"
             );
         }

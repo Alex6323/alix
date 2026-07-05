@@ -1724,7 +1724,13 @@ mod tests {
     fn next_due_at_includes_virtual_cards() {
         let (mut store, _dir) = empty_store();
         let synth = insert_virtual(&mut store, "deck.txt", "virtual back", 1000);
-        let session = Session::new(vec![synth], &store, sched(), SessionOptions::default(), 1000);
+        let session = Session::new(
+            vec![synth],
+            &store,
+            sched(),
+            SessionOptions::default(),
+            1000,
+        );
         // The virtual card's schedule (stage 1 @ t=1000) has an FSRS fallback
         // due of 1000 + the stage-1 cooldown.
         let due = session

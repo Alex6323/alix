@@ -205,7 +205,13 @@ fn deck_reset_drops_that_decks_virtual_cards() {
     store.insert_virtual(other_vc);
     store.save().unwrap();
 
-    let out = alix(&["reset", &deck, "--yes", "--store", store_path.to_str().unwrap()]);
+    let out = alix(&[
+        "reset",
+        &deck,
+        "--yes",
+        "--store",
+        store_path.to_str().unwrap(),
+    ]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
 
     let reloaded = alix::store::Store::open(&store_path).unwrap();

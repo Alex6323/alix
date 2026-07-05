@@ -706,7 +706,12 @@ impl App {
         let Some(subject) = self.session.current().map(|c| c.subject.to_string()) else {
             return;
         };
-        let Some(path) = self.options.decks.get(&subject).map(|info| info.path.clone()) else {
+        let Some(path) = self
+            .options
+            .decks
+            .get(&subject)
+            .map(|info| info.path.clone())
+        else {
             eprintln!("warning: no deck file known for {subject}; cannot promote card");
             return;
         };

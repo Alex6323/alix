@@ -295,7 +295,13 @@ pub fn deck_status(
     let now = session::now_ms();
     let reviewable = deck.is_trace()
         || (matches!(state, DeckState::ExamDue) && examable)
-        || session::has_reviewable(&deck.cards, store, &scheduler, now, review.retire_after_days)
+        || session::has_reviewable(
+            &deck.cards,
+            store,
+            &scheduler,
+            now,
+            review.retire_after_days,
+        )
         || session::has_reviewable_virtual(
             store,
             &deck.subject,

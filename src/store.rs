@@ -828,8 +828,7 @@ mod tests {
     }
 
     /// The canonical one-card deck-format `text` of a sample virtual card.
-    const BORROW_TEXT: &str =
-        "# What does the borrow checker enforce?\n\tExactly one mutable borrow, or many shared ones\n";
+    const BORROW_TEXT: &str = "# What does the borrow checker enforce?\n\tExactly one mutable borrow, or many shared ones\n";
 
     /// Builds a virtual card from its canonical deck-format `text` under
     /// `parent`, deriving its id exactly as the substrate does — the `Card::id`
@@ -977,11 +976,9 @@ mod tests {
     fn promote_leaves_existing_deck_card_ids_untouched() {
         let dir = tempfile::tempdir().unwrap();
         let deck_path = write_deck(dir.path(), "rust.txt", "# one\n\t1\n\n# two\n\t2\n");
-        let before = crate::parser::parse_str(
-            "rust.txt",
-            &std::fs::read_to_string(&deck_path).unwrap(),
-        )
-        .unwrap();
+        let before =
+            crate::parser::parse_str("rust.txt", &std::fs::read_to_string(&deck_path).unwrap())
+                .unwrap();
         let ids_before: Vec<u64> = before.iter().map(|c| c.id()).collect();
 
         let mut store = Store::open(dir.path().join("progress.json")).unwrap();
@@ -991,11 +988,9 @@ mod tests {
 
         promote_virtual(&mut store, id, &deck_path).unwrap();
 
-        let after = crate::parser::parse_str(
-            "rust.txt",
-            &std::fs::read_to_string(&deck_path).unwrap(),
-        )
-        .unwrap();
+        let after =
+            crate::parser::parse_str("rust.txt", &std::fs::read_to_string(&deck_path).unwrap())
+                .unwrap();
         let ids_after: Vec<u64> = after.iter().take(2).map(|c| c.id()).collect();
         assert_eq!(ids_before, ids_after);
         assert_eq!(3, after.len()); // the two originals plus the promoted card
