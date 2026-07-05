@@ -20,6 +20,8 @@ use anyhow::{Context, Result, bail};
 use clap::ValueEnum;
 use serde::Deserialize;
 
+use crate::ladder::Rung;
+
 /// A key without modifiers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Key {
@@ -489,9 +491,9 @@ impl Default for ServeConfig {
 
 /// The whole user configuration.
 // Not `Eq`: `ExamConfig::pass_threshold` is an `f64`.
-/// Personal review pacing (`[review]` in the config): the FSRS retention target and
-/// the interval past which a card retires. A workspace can override these in its own
-/// `alix.local.toml` (never shared).
+/// Personal review pacing (`[review]` in the config): the FSRS retention target, the
+/// interval past which a card retires, and the ladder depth target. A workspace can
+/// override these in its own `alix.local.toml` (never shared).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ReviewConfig {
     /// FSRS target retrievability `r` (0.70–0.99). Higher → shorter intervals.
@@ -499,6 +501,11 @@ pub struct ReviewConfig {
     /// A card retires once its scheduled interval reaches this many days; `None`
     /// disables retirement (drill forever).
     pub retire_after_days: Option<u32>,
+    /// The learner's depth target on the difficulty ladder (`[review] target`).
+    /// Not a deck directive — depth is learner-space, not authored content. See
+    /// [`crate::ladder::effective_target`] for the v1 clamp (`Recognize` is
+    /// acquire-only, so it never becomes a scheduling target).
+    pub target: Rung,
 }
 
 impl Default for ReviewConfig {
@@ -506,6 +513,7 @@ impl Default for ReviewConfig {
         Self {
             retention: 0.9,
             retire_after_days: Some(crate::session::DEFAULT_RETIRE_AFTER_DAYS),
+            target: Rung::default(),
         }
     }
 }
@@ -533,6 +541,9 @@ impl ReviewConfig {
             && let Ok(days) = parse_retire_after(&retire_after)
         {
             review.retire_after_days = days;
+        }
+        if let Some(target) = raw.review.target {
+            review.target = target;
         }
         review
     }
@@ -602,12 +613,13 @@ struct RawConfig {
     decks_dir: Option<String>,
 }
 
-/// The `[review]` section: personal pacing (FSRS retention + when a card retires).
+/// The `[review]` section: personal pacing (FSRS retention, when a card retires, and the ladder depth target).
 #[derive(Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 struct RawReviewConfig {
     retention: Option<f64>,
     retire_after: Option<String>,
+    target: Option<Rung>,
 }
 
 /// The `alix.local.toml` schema: personal per-workspace overrides. Currently just
@@ -908,6 +920,9 @@ impl Config {
             review.retire_after_days =
                 parse_retire_after(&retire_after).context("in [review] retire_after")?;
         }
+        if let Some(target) = raw.review.target {
+            review.target = target;
+        }
 
         let decks_dir = raw.decks_dir.map(|s| expand_tilde(&s));
 
@@ -1137,6 +1152,7 @@ pub fn default_config_toml() -> &'static str {
 [review]
 # retention = 0.9               # FSRS target retrievability (0.70–0.99); higher = shorter intervals
 # retire_after = "1y"           # a card rests once its interval reaches this ("2w", "6m", "30d", or "never")
+# target = "recall"             # depth ladder target: recognize | recall | reconstruct
 "#
 }
 
@@ -1200,10 +1216,34 @@ mod tests {
         let base = ReviewConfig {
             retention: 0.9,
             retire_after_days: Some(30),
+            ..Default::default()
         };
         let resolved = base.for_workspace(dir.path());
         assert_eq!(0.85, resolved.retention);
         assert_eq!(Some(30), resolved.retire_after_days); // unset key → base kept
+    }
+
+    #[test]
+    fn review_target_defaults_to_recall_and_parses_from_config() {
+        assert_eq!(ReviewConfig::default().target, Rung::Recall);
+        let config = Config::from_toml("[review]\ntarget = \"reconstruct\"\n").unwrap();
+        assert_eq!(config.review.target, Rung::Reconstruct);
+    }
+
+    #[test]
+    fn a_workspace_local_toml_overrides_the_global_target() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("alix.local.toml"),
+            "[review]\ntarget = \"reconstruct\"\n",
+        )
+        .unwrap();
+        let base = ReviewConfig {
+            target: Rung::Recall,
+            ..Default::default()
+        };
+        let resolved = base.for_workspace(dir.path());
+        assert_eq!(Rung::Reconstruct, resolved.target);
     }
 
     #[test]
