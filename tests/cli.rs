@@ -218,6 +218,70 @@ fn deck_reset_drops_that_decks_virtual_cards() {
 }
 
 #[test]
+fn deck_reset_without_yes_leaves_store_unchanged() {
+    // A declined/failed confirmation must not partially apply the reset: the
+    // deck's mastered flag, its virtual card, and its authored progress must
+    // all still be there afterwards, byte-for-byte.
+    let dir = TempDir::new().unwrap();
+    let deck = write(dir.path(), "math.txt", VALID_DECK);
+    let store_path = dir.path().join("progress.json");
+
+    let card_id = alix::deck::Deck::load(&deck).unwrap().cards[0].id();
+    let mut store = alix::store::Store::open(&store_path).unwrap();
+    store.get_or_insert(card_id, 0);
+    store.set_deck_mastered("math.txt", 0);
+    store.insert_virtual(sample_virtual_card("math.txt", "gap-1"));
+    store.save().unwrap();
+    let before = std::fs::read_to_string(&store_path).unwrap();
+
+    // No `--yes` and no TTY in the test subprocess: the command must error.
+    let out = alix(&["reset", &deck, "--store", store_path.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "a no-TTY reset without --yes should error"
+    );
+
+    let after = std::fs::read_to_string(&store_path).unwrap();
+    assert_eq!(
+        before, after,
+        "the store on disk must be untouched by a declined/failed reset"
+    );
+    let reloaded = alix::store::Store::open(&store_path).unwrap();
+    assert!(reloaded.deck_mastered("math.txt"), "mastered flag wiped");
+    assert!(reloaded.get(card_id).is_some(), "authored progress wiped");
+    assert_eq!(
+        1,
+        reloaded.virtual_cards_for("math.txt").len(),
+        "virtual card wiped"
+    );
+}
+
+#[test]
+fn confirmed_virtual_only_deck_reset_clears_virtual() {
+    // A deck with ONLY a virtual card (no authored progress, not mastered) must
+    // still have that virtual card cleared and persisted on a confirmed reset.
+    let dir = TempDir::new().unwrap();
+    let deck = write(dir.path(), "math.txt", VALID_DECK);
+    let store_path = dir.path().join("progress.json");
+
+    let mut store = alix::store::Store::open(&store_path).unwrap();
+    store.insert_virtual(sample_virtual_card("math.txt", "gap-1"));
+    store.save().unwrap();
+
+    let out = alix(&[
+        "reset",
+        &deck,
+        "--yes",
+        "--store",
+        store_path.to_str().unwrap(),
+    ]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+
+    let reloaded = alix::store::Store::open(&store_path).unwrap();
+    assert_eq!(0, reloaded.virtual_cards_for("math.txt").len());
+}
+
+#[test]
 fn a_progress_file_of_any_version_loads_pre_1_0() {
     // Pre-1.0 there is no store version fence: a store written by a "newer" alix
     // (higher version) loads best-effort rather than being refused — we break the

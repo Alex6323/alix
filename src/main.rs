@@ -1955,28 +1955,60 @@ fn reset(args: ResetArgs) -> Result<()> {
 
     let (cards, label, decks, _) = load_decks(&deck_paths, &HashMap::new())?;
 
-    // A full-deck reset (no `--card`/`--cards` subset) also drops the decks'
-    // "mastered" exam state and any of the decks' virtual (remediation)
-    // cards — saved here rather than left to `reset_ids`' save below, which is
-    // skipped when the deck has no authored-card progress to reset (e.g. a
-    // deck whose only stored state is virtual cards).
+    // A full-deck reset (no `--card`/`--cards` subset) resets authored-card
+    // progress, the decks' "mastered" exam flag, and their virtual
+    // (remediation) cards together, atomically under one confirmation — a
+    // declined/failed prompt must leave the store on disk untouched by any of
+    // it (not just the authored-card part).
     if !args.cards && args.card.is_none() {
+        let present: Vec<(u64, String)> = select_reset_ids(&cards, None)
+            .into_iter()
+            .filter(|(id, _)| store.get(*id).is_some())
+            .collect();
+        let mastered = decks.keys().any(|subject| store.deck_mastered(subject));
+        let virtual_ids: Vec<String> = decks
+            .keys()
+            .flat_map(|subject| {
+                store
+                    .virtual_cards_for(subject)
+                    .iter()
+                    .map(|vc| vc.id.clone())
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+
+        if present.is_empty() && !mastered && virtual_ids.is_empty() {
+            println!("No stored progress to reset in {label}.");
+            return Ok(());
+        }
+
+        let n = present.len();
+        if !from_deck_picker
+            && !confirm(
+                &format!("Reset progress for {n} card(s) in {label}?"),
+                args.yes,
+            )?
+        {
+            println!("Cancelled.");
+            return Ok(());
+        }
+
         for subject in decks.keys() {
             store.clear_deck_mastered(subject);
-            let virtual_ids: Vec<String> = store
-                .virtual_cards_for(subject)
-                .iter()
-                .map(|vc| vc.id.clone())
-                .collect();
-            for id in virtual_ids {
-                store.remove_virtual(&id);
-            }
+        }
+        for id in &virtual_ids {
+            store.remove_virtual(id);
+        }
+        for (id, _) in &present {
+            store.remove(*id);
         }
         store.save()?;
+        println!("Reset {n} card(s).");
+        return Ok(());
     }
 
-    // Choose which cards: a checkbox picker (`--cards`), a direct match
-    // (`--card`), or every card in the decks.
+    // Choose which cards: a checkbox picker (`--cards`), or a direct match
+    // (`--card`) — a full-deck reset is handled above.
     let (targets, from_picker): (Vec<(u64, String)>, bool) = if args.cards {
         if !std::io::stdout().is_terminal() {
             bail!("the card picker needs a terminal");
