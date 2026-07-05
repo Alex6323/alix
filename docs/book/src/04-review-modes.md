@@ -110,14 +110,13 @@ A different augment target, `alix deck augment <deck> --target format`, instead
 clean display lines, non-destructively: it changes how the card is shown, not the
 deck file or how it's graded.
 
-## The rung badge
+## The reveal badge
 
-In the web frontend a small badge above the answer shows the card's current depth
-(`recognize` / `recall` / `reconstruct`), and its **opacity tracks FSRS
-retrievability** — bright when the memory is fresh, dimming as the card comes due.
-So the badge tells you both where a card sits on the ladder and how well you're
-holding it. The terminal shows the concrete check instead (`flip`, `typing exact`,
-`line by line`, `explain`).
+In the web frontend a small badge above the answer names the check the card gets —
+`flip`, `line`, `typing`, or `explain` — so how you'll interact (reveal-and-self-
+grade, line-by-line, or produce-it) is clear up front. Your *depth* isn't shown
+here: it lives in your config (`[review] target`), and the interaction itself
+already signals it.
 
 ## input: draw — draw instead of type *(web only)*
 

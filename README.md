@@ -559,11 +559,11 @@ and *reconstruct* only, recognition stays the unscheduled acquire on-ramp, and a
 reconstruct check on a rich answer is **self-graded** — there's no machine reading
 of a full explanation.
 
-**The rung badge.** In the web frontend a small badge above the answer shows the
-card's current depth (`recognize` / `recall` / `reconstruct`); its **opacity
-tracks FSRS retrievability** — bright when the memory is fresh, dimming as the card
-comes due. The terminal shows the concrete check instead (`flip`, `typing exact`,
-`line by line`, `explain`).
+**The reveal badge.** In the web frontend a small badge above the answer names the
+check the card gets — `flip`, `line`, `typing`, or `explain` — so how you'll
+interact (reveal-and-self-grade, line-by-line, or produce-it) is clear up front.
+(Your *depth* isn't shown here: it lives in your config, and the interaction itself
+already signals it.)
 
 A `line`-reveal deck pairs with `% order: sequential` to walk its sections top to
 bottom — e.g. one card per verse/chorus of a song.

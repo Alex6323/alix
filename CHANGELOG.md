@@ -18,9 +18,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   card climbs a rung after it graduates and survives one more spaced pass below the
   target, and descends a rung on a miss (floored at recall). v1 schedules recall and
   reconstruct only; recognition stays the unscheduled acquire on-ramp, and a
-  reconstruct check on a rich answer is self-graded. The web review UI shows a rung
-  badge whose opacity tracks FSRS retrievability. See the **Changed** note for the
-  break.
+  reconstruct check on a rich answer is self-graded. The web review UI shows a small
+  badge naming the check (`flip` / `line` / `typing` / `explain`) so how you'll
+  interact is clear up front. See the **Changed** note for the break.
 - **Remediation cards are now virtual cards in the store.** A failed source
   exam's remediation cards live in alix's store instead of being written into
   your deck file. They drill like normal cards and count toward a deck's *due*

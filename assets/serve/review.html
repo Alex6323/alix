@@ -776,14 +776,16 @@ function effectiveDraw() {
   if (state.mode !== "flip" && state.mode !== "explain") return false;
   return state.input === "draw" || drawToggle;
 }
-// The one always-on badge: card provenance (new / remediation) when it
-// applies, else the depth rung it's parked at — "recognize"/"recall"/
-// "reconstruct", the same verb the server and config use. Its opacity (set
-// where the badge is built) tracks FSRS retrievability, not shown here.
+// The badge names the check you're doing *right now* ("flip"/"line"/"typing"/
+// "explain"/"choice") so how you interact is clear up front, prefixed with provenance
+// ("new" / "remediation") when it applies. Crucially it badges the *present*
+// interaction, not the scheduled one: whenever choices are on screen — a recognition
+// MC on a first encounter, or choice mode — it's a pick-one, so show "choice", never
+// the "flip" the card's schedule will use once acquired.
 function modeLabel() {
-  if (state.promotable) return "remediation card";
-  if (isAcquire()) return "new card";
-  return state.rung;
+  const kind = state.promotable ? "remediation" : isAcquire() ? "new" : "";
+  const check = state.choices ? "choice" : state.mode;
+  return kind ? kind + " · " + check : check;
 }
 function choose(i) { api("/api/choose", post({ index: i })).then(f => { feedback = f; render(); }); }
 function submitCheck() {
@@ -2009,10 +2011,7 @@ function fillBottom() {
   const a = document.getElementById("ansRegion");
   if (!a) return;
   a.innerHTML = "";
-  const tag = el("span", "mode-tag", modeLabel()); // badge heads the answer section
-  // Opacity tracks retrievability (0..1); floored so the badge never vanishes.
-  tag.style.opacity = 0.35 + 0.65 * (state.retrievability || 0);
-  a.appendChild(tag);
+  a.appendChild(el("span", "mode-tag", modeLabel())); // badge heads the answer section
   const citable = state.card.at && isAnswered();
   if (citable && citationView) {
     // Source view: the cited excerpt takes the answer's place (swap, not stack).

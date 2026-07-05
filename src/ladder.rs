@@ -46,18 +46,6 @@ impl Rung {
     }
 }
 
-/// The label of a rung, matching `Rung`'s serde wire form — the canonical
-/// lowercase verbs (`"recognize"`/`"recall"`/`"reconstruct"`), not a noun like
-/// "reconstruction". `pub(crate)`: reused by [`crate::serve`] to report a
-/// card's rung badge in its JSON state. Mirrors [`crate::answer::mode_name`].
-pub(crate) fn rung_name(rung: Rung) -> &'static str {
-    match rung {
-        Rung::Recognize => "recognize",
-        Rung::Recall => "recall",
-        Rung::Reconstruct => "reconstruct",
-    }
-}
-
 /// The learner's depth target, clamped to what v1 schedules (L1-as-target is
 /// v2). `Recognize` never becomes a live scheduling target — it's the
 /// unscheduled acquire on-ramp — so it clamps up to `Recall`.
@@ -155,13 +143,6 @@ mod tests {
     #[test]
     fn default_reveal_is_flip() {
         assert_eq!(Reveal::default(), Reveal::Flip);
-    }
-
-    #[test]
-    fn rung_name_matches_the_serde_wire_verbs() {
-        assert_eq!(rung_name(Rung::Recognize), "recognize");
-        assert_eq!(rung_name(Rung::Recall), "recall");
-        assert_eq!(rung_name(Rung::Reconstruct), "reconstruct");
     }
 
     #[test]

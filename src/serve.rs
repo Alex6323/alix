@@ -241,14 +241,6 @@ struct StateDto {
     /// The answer mode name (`flip`, `line`, …); the page reveals
     /// line-by-line for `line` and flip-style otherwise.
     mode: &'static str,
-    /// The current card's depth rung (`recognize`/`recall`/`reconstruct`) —
-    /// the ladder badge, shown in the `.mode-tag` slot the page previously
-    /// used for the mode label.
-    rung: &'static str,
-    /// The current card's FSRS retrievability (`0..=1`), driving the rung
-    /// badge's CSS opacity — a stronger memory renders more opaque. `0.0` in
-    /// the select phase or when there is no current card.
-    retrievability: f32,
     /// The input method (`type` / `draw`). `draw` tells the page to show the
     /// canvas for a self-graded card; orthogonal to `mode`. The runtime "Draw
     /// answers" toggle lives in the browser and never appears here.
@@ -2667,8 +2659,6 @@ fn review_state(reviewing: Option<&Reviewing>, store: &Store) -> StateDto {
             keypoints: None,
             acquire: false,
             mode: mode_name(Mode::default()),
-            rung: ladder::rung_name(ladder::Rung::default()),
-            retrievability: 0.0,
             input: input_name(Input::default()),
             remaining: 0,
             initial: 0,
@@ -2687,8 +2677,8 @@ fn review_state(reviewing: Option<&Reviewing>, store: &Store) -> StateDto {
     let session = &r.session;
     let card = session.current();
     // The frontier depth rung the card is currently scheduled at (persisted in
-    // the store; an unreviewed card defaults to `Rung::default()`). Hoisted out
-    // so both the check (`mode`) and the badge (`rung`) read the same value.
+    // the store; an unreviewed card defaults to `Rung::default()`). Feeds the
+    // concrete check (`mode`) below via `check_for`.
     let rung = card
         .map(|c| store.get(c.id()).map(|s| s.rung).unwrap_or_default())
         .unwrap_or_default();
@@ -2700,16 +2690,6 @@ fn review_state(reviewing: Option<&Reviewing>, store: &Store) -> StateDto {
             ladder::check_for(reveal, rung, c)
         })
         .unwrap_or_default();
-    // FSRS retrievability for the current card only, driving the rung badge's
-    // opacity — stronger memory, more opaque. `0.0` with no current card.
-    let retrievability = card
-        .map(|c| {
-            crate::session::card_strengths(&[c.id()], store, now_ms())
-                .first()
-                .copied()
-                .unwrap_or(0.0)
-        })
-        .unwrap_or(0.0);
     // A never-seen card is *acquired* (an attempt, then reveal), not quizzed cold.
     let acquire = session.current_unseen(store);
     let choices = if acquire {
@@ -2809,8 +2789,6 @@ fn review_state(reviewing: Option<&Reviewing>, store: &Store) -> StateDto {
         keypoints,
         acquire,
         mode: mode_name(mode),
-        rung: ladder::rung_name(rung),
-        retrievability,
         input: input_name(card.and_then(|c| c.input).unwrap_or_default()),
         remaining: session.remaining(),
         initial: session.initial_size,
@@ -3516,18 +3494,6 @@ mod tests {
         assert_eq!(dto.phase, "select");
         assert!(dto.card.is_none());
         assert!(!dto.finished);
-    }
-
-    #[test]
-    fn state_dto_carries_the_cards_rung() {
-        let dir = tempfile::tempdir().unwrap();
-        let (r, card, _deck) = one_card_reviewing(dir.path());
-        let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        store
-            .get_or_insert(card.id(), now_ms())
-            .set_rung(ladder::Rung::Reconstruct);
-        let dto = review_state(Some(&r), &store);
-        assert_eq!(dto.rung, "reconstruct");
     }
 
     #[test]
