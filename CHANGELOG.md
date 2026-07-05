@@ -16,7 +16,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Promote a virtual card into its deck.** A review-time action appends a
   remediation card to the deck file and drops the virtual copy — `Ctrl-P` in the
   terminal (rebindable `[keys.review]` `promote`), or "Promote to deck" in the web
-  review menu. Offered only while reviewing a virtual card.
+  review menu. Offered only while reviewing a virtual card. The promoted card
+  keeps its review schedule; it doesn't restart.
 - **`[review]` config section — FSRS pacing.** `retention` (target recall
   probability, 0.70–0.99, default 0.9; higher = shorter intervals) and
   `retire_after` (a duration `"1y"` / `"6m"` / `"2w"` / `"30d"`, or `"never"` to

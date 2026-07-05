@@ -4,7 +4,7 @@
 //! `~/.local/share/alix/progress.json`), created on first save.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, hash_map::Entry},
     hash::Hasher,
     path::{Path, PathBuf},
 };
@@ -18,6 +18,7 @@ use crate::{
     answer::{Mode, mode_name},
     deck,
     import::escape_leading_markup,
+    parser,
     scheduler::Grade,
 };
 
@@ -419,6 +420,21 @@ impl Store {
         self.cards.remove(&card_id).is_some()
     }
 
+    /// Seeds a card's state at `id` only if it has none yet — e.g. when
+    /// [`promote_virtual`] transfers a virtual card's schedule to the id its
+    /// content gets once promoted into a deck. Never overwrites an existing
+    /// deck card's own progress. Returns whether the state was inserted. Does
+    /// not save.
+    pub fn seed_card_state(&mut self, id: u64, state: CardState) -> bool {
+        match self.cards.entry(id) {
+            Entry::Vacant(entry) => {
+                entry.insert(state);
+                true
+            }
+            Entry::Occupied(_) => false,
+        }
+    }
+
     /// Returns a virtual card by its `v:`-namespaced id, if one exists.
     pub fn get_virtual(&self, id: &str) -> Option<&VirtualCard> {
         self.virtual_cards.get(id)
@@ -551,21 +567,44 @@ impl Store {
 }
 
 /// Graduates a virtual card into a real deck card: renders its content to
-/// deck-format text and appends it to the deck file at `deck_path`, then drops
-/// the virtual entry and saves the store.
+/// deck-format text, appends it to the deck file at `deck_path`, transfers its
+/// schedule to the new deck card, then drops the virtual entry and saves the
+/// store.
 ///
 /// Appends **before** removing the virtual entry: if the process dies between
 /// the two steps, the card is merely duplicated (a virtual entry plus a deck
 /// card) rather than lost.
+///
+/// The new card's id is never hand-derived: the rendered text is parsed in
+/// isolation and that parse's card's `.id()` is used, since `Card::id` depends
+/// only on subject + back lines (not file position), so it equals the id the
+/// card gets once it's actually part of the full deck file. The virtual
+/// card's `CardState` is then seeded at that id — without clobbering an
+/// existing deck card's own progress there (see
+/// [`Store::seed_card_state`]) — so the promoted card keeps the schedule it
+/// earned as a virtual card instead of starting fresh.
 pub fn promote_virtual(store: &mut Store, id: &str, deck_path: &Path) -> AnyResult<()> {
     let Some(vc) = store.get_virtual(id) else {
         bail!("no virtual card with id {id:?} to promote");
     };
     let text = vc.content.to_deck_text();
+    let subject = vc.parent.clone();
+    let state = vc.state.clone();
+
+    let parsed = parser::parse_str(&subject, &text)
+        .context("parsing the rendered card before promoting it")?;
+    if parsed.len() != 1 {
+        bail!(
+            "promoting a virtual card must render exactly one card, got {}",
+            parsed.len()
+        );
+    }
+    let new_id = parsed[0].id();
 
     deck::append_cards(deck_path, &text)
         .with_context(|| format!("appending the promoted card to {}", deck_path.display()))?;
 
+    store.seed_card_state(new_id, state);
     store.remove_virtual(id);
     store
         .save()
@@ -1133,6 +1172,75 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(deck_before, std::fs::read_to_string(&deck_path).unwrap());
         assert!(!store_path.exists()); // save() was never reached
+    }
+
+    #[test]
+    fn promoting_a_drilled_virtual_card_keeps_its_schedule() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = write_deck(dir.path(), "rust.txt", "# existing\n\tanswer\n");
+        let mut store = Store::open(dir.path().join("progress.json")).unwrap();
+        let mut vc = sample_virtual_card("gap-1");
+        let id = vc.id.clone();
+
+        let mut state = CardState::new(1000);
+        state.record_review(1000, Grade::Pass);
+        state.record_review(2000, Grade::Pass);
+        state.fsrs = Some(FsrsState {
+            stability: 12.5,
+            difficulty: 4.2,
+            reps: 2,
+            lapses: 0,
+            state: 2,
+            scheduled_days: 10,
+            last_review_ms: 2000,
+            due_ms: 900_000,
+            learning_goods: 2,
+        });
+        vc.state = state.clone();
+        store.insert_virtual(vc);
+
+        promote_virtual(&mut store, &id, &deck_path).unwrap();
+
+        assert!(store.get_virtual(&id).is_none());
+
+        let text = std::fs::read_to_string(&deck_path).unwrap();
+        let cards = crate::parser::parse_str("rust.txt", &text).unwrap();
+        let promoted = cards
+            .iter()
+            .find(|c| c.front == "What does the borrow checker enforce?")
+            .expect("promoted card present");
+
+        let carried = store.get(promoted.id()).expect("schedule carried over");
+        assert_eq!(&state, carried);
+    }
+
+    #[test]
+    fn promote_does_not_clobber_existing_deck_card_progress() {
+        let dir = tempfile::tempdir().unwrap();
+        let existing_line =
+            "# What does the borrow checker enforce?\n\tExactly one mutable borrow, or many shared ones\n";
+        let deck_path = write_deck(dir.path(), "rust.txt", existing_line);
+        let existing_cards = crate::parser::parse_str("rust.txt", existing_line).unwrap();
+        let existing_id = existing_cards[0].id();
+
+        let mut store = Store::open(dir.path().join("progress.json")).unwrap();
+        let existing_state = {
+            let s = store.get_or_insert(existing_id, 500);
+            s.record_review(500, Grade::Pass);
+            s.stage = 3;
+            s.clone()
+        };
+
+        // Same content as `existing_line`, so the promoted card lands on the
+        // same id — but with its own (different) schedule.
+        let vc = sample_virtual_card("gap-1");
+        let id = vc.id.clone();
+        store.insert_virtual(vc);
+
+        promote_virtual(&mut store, &id, &deck_path).unwrap();
+
+        let carried = store.get(existing_id).expect("existing progress kept");
+        assert_eq!(&existing_state, carried);
     }
 
     #[test]

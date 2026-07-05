@@ -110,9 +110,9 @@ pub struct Bindings {
     /// session ends).
     pub remove: Vec<KeyPattern>,
     /// Promote the current virtual (remediation) card into its deck file,
-    /// dropping the virtual copy and starting a fresh deck card (its review
-    /// history is not carried over). Offered only while reviewing a virtual
-    /// card.
+    /// dropping the virtual copy — the new deck card carries over its review
+    /// schedule rather than starting fresh. Offered only while reviewing a
+    /// virtual card.
     pub promote: Vec<KeyPattern>,
     /// Leave the feedback screen.
     pub cont: Vec<KeyPattern>,

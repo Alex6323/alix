@@ -966,7 +966,8 @@ gap won't duplicate it; once its interval reaches the retirement cap
 (`retire_after`) it's archived, and re-failing the gap revives it. If a
 remediation card has earned a permanent place, **promote** it during review
 (`Ctrl-P` in the terminal, or "Promote to deck" in the browser's review menu):
-alix appends it to the deck file and drops the virtual copy.
+alix appends it to the deck file, drops the virtual copy, and carries over the
+card's review progress — it doesn't restart.
 
 Resetting a whole deck's progress (`alix reset <deck>`) also clears its mastered
 state, so a re-drilled deck must pass the exam again (resetting only individual

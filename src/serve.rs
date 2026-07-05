@@ -262,9 +262,9 @@ struct StateDto {
     /// false.
     can_restart: bool,
     /// Whether the current card is a virtual (remediation) card, so the page
-    /// can offer to promote it into its deck file (appends it as a fresh deck
-    /// card; its review history is not carried over). `false` once nothing is
-    /// current, or for an authored deck card.
+    /// can offer to promote it into its deck file (appends it as a deck card,
+    /// carrying over its review schedule rather than starting fresh). `false`
+    /// once nothing is current, or for an authored deck card.
     promotable: bool,
     /// The highest reachable stage (always 5 now); the page would dim stages
     /// above it to `–`, but every deck reaches the top stage.
@@ -1752,10 +1752,11 @@ pub fn run_review(
                 );
             }
             // Promotes the current virtual (remediation) card into its deck
-            // file (`store::promote_virtual` does the append-then-drop; the
-            // promoted card starts fresh in the deck, its review history is
-            // not carried over). A clean 400 — never a panic — when the
-            // current card isn't virtual or its deck file isn't known.
+            // file (`store::promote_virtual` does the append-then-drop, and
+            // transfers the schedule to the new deck card — it carries over
+            // its review history rather than starting fresh). A clean 400 —
+            // never a panic — when the current card isn't virtual or its
+            // deck file isn't known.
             (Method::Post, "/api/promote") => {
                 let Some(r) = reviewing.as_mut() else {
                     respond_status(request, 409);

@@ -68,7 +68,8 @@ Regenerating the same gap won't duplicate it; once its interval reaches the
 retirement cap it's archived, and re-failing the gap brings it back. When a
 remediation card has earned a permanent place, **promote** it during review
 (`Ctrl-P` in the terminal, or "Promote to deck" in the browser's review menu):
-alix appends it to the deck file and removes the virtual copy.
+alix appends it to the deck file, removes the virtual copy, and carries over
+the card's review progress — it doesn't restart.
 
 A **trace** deck is examined differently: instead of generated questions, its exam
 asks you to *retrace the whole path from memory* in a sentence or two — **the

@@ -688,12 +688,13 @@ impl App {
 
     /// Promotes the current virtual (remediation) card into its deck file,
     /// then moves on. The lib does the actual work ([`store::promote_virtual`]:
-    /// append the rendered card, then drop the virtual entry — the promoted
-    /// card starts fresh in the deck, its review history is not carried
-    /// over); this resolves the deck path for the current card's subject —
-    /// the same lookup [`flush_removals`](Self::flush_removals) uses — then
-    /// re-points the cursor (the promoted slot is no longer servable) and
-    /// renders whatever comes next.
+    /// append the rendered card, transfer its schedule to the new deck card,
+    /// then drop the virtual entry — the promoted card carries over its
+    /// review history rather than starting fresh); this resolves the deck
+    /// path for the current card's subject — the same lookup
+    /// [`flush_removals`](Self::flush_removals) uses — then re-points the
+    /// cursor (the promoted slot is no longer servable) and renders whatever
+    /// comes next.
     fn promote_card(&mut self) {
         let Some(id) = self.session.current_virtual_id() else {
             return;
