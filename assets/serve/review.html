@@ -2433,7 +2433,7 @@ function appendReveal(sec, lines, isList) {
 
 // Fill the answer region for reveal modes (flip / line / choice fallback).
 // The acquire view: a never-seen card shown answer-first, so you read it before
-// it's ever quizzed. One key ("Seen") records it; its first quiz is a later session.
+// it's ever quizzed. One key ("Seen") records it; its first quiz comes ~1 min later.
 // Multi-line answers (a list, or several sentences) read better left-aligned as a
 // block centered as a whole — like a reshaped list, but without the added bullets.
 function leftAlignAnswer(c) { return isReshapedList(c) || (c.back && c.back.length > 1); }
@@ -2444,7 +2444,7 @@ function fillAcquire(a) {
   appendReveal(sec, c.back, isReshapedList(c));
   a.appendChild(sec);
   if (c.img_back) a.appendChild(cardImage(c.img_back));
-  a.appendChild(el("div", "acquire-hint", "new card — you'll be quizzed on it in a later session."));
+  a.appendChild(el("div", "acquire-hint", "new card — you'll be quizzed on it in about a minute."));
 }
 
 function fillAnswer(a) {

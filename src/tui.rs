@@ -62,7 +62,7 @@ enum Phase {
     Flip { revealed: bool },
     /// Introducing a never-seen card by recall: the front is shown first, then —
     /// once `revealed` — the answer, then one key ("seen") records it at stage 1
-    /// without a grade. The first graded quiz comes a later session.
+    /// without a grade. The first graded quiz comes back ~1 min later, same session.
     Acquire { revealed: bool },
     /// Introducing a never-seen card by recognition: a multiple-choice question,
     /// built only for a strictly-augmented atomic card. Picking shows which option
@@ -656,7 +656,7 @@ impl App {
     }
 
     /// Acknowledges the current never-seen card (acquire): records it at stage 1
-    /// without a grade and moves on. Its first quiz comes in a later session.
+    /// without a grade and moves on. Its first quiz comes back ~1 min later.
     fn acquire_and_advance(&mut self) -> Result<()> {
         self.session
             .acquire_current(&mut self.store, time::now_ms());
@@ -1637,7 +1637,7 @@ impl App {
                     push_note(&mut lines, card, area.width);
                     lines.push(Line::default());
                     lines.push(Line::from(
-                        "new card — you'll be quizzed on it in a later session.".dim(),
+                        "new card — you'll be quizzed on it in about a minute.".dim(),
                     ));
                 } else {
                     let reveal = Bindings::label(&self.options.keys.reveal);
@@ -1669,7 +1669,7 @@ impl App {
                     push_note(&mut lines, card, area.width);
                     lines.push(Line::default());
                     lines.push(Line::from(
-                        "new card — you'll be quizzed on it in a later session.".dim(),
+                        "new card — you'll be quizzed on it in about a minute.".dim(),
                     ));
                 }
             }

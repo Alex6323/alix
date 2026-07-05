@@ -8,7 +8,7 @@
 //! pass (or acquire) leaves the session. When nothing is due right now the
 //! session is finished-for-now; [`Session::poll`] lets a frontend re-enter it
 //! when a cooling card comes back. A never-seen card is *acquired* first — shown,
-//! recorded at stage 1, then left for a later session to quiz.
+//! recorded at stage 1, then left to settle ~1 min before its first quiz.
 
 use std::collections::VecDeque;
 
