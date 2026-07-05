@@ -27,9 +27,11 @@ use serde::Deserialize;
 
 use crate::{
     ask,
+    card::Card,
     config::{AskConfig, ExamConfig, Strictness},
     deck::{self, Deck},
-    store::Store,
+    parser,
+    store::{CardState, Store, VirtualCard, VirtualContent, VirtualKind, virtual_id},
 };
 
 /// Largest embedded local source file, in bytes. Larger files are truncated
@@ -333,6 +335,89 @@ pub fn spawn_remediation(
     rx
 }
 
+/// Turns the cleaned remediation deck-text into virtual cards in `store`
+/// (kind [`VirtualKind::Remediation`], `parent = subject`), one per parsed
+/// card. Per card: create it if its id is new, revive it if a matching
+/// archived card exists, or leave it alone if an active match already exists
+/// (dedupe — no schedule reset). Saves the store once after the batch. The
+/// deck file is never touched. Returns how many cards were created or
+/// revived.
+fn store_remediation_cards(
+    store: &mut Store,
+    subject: &str,
+    cards_text: &str,
+    now_ms: u64,
+) -> Result<usize> {
+    let cards = parser::parse_str(subject, cards_text)?;
+    if cards.is_empty() {
+        bail!("remediation produced no cards to store");
+    }
+
+    let mut created_or_revived = 0;
+    for card in &cards {
+        // A multi-hole cloze sub-card carries a `context` line (the sentence
+        // with this hole blanked, others hidden) that tells the user which
+        // blank is asked. `VirtualContent` has no separate context field, so
+        // fold it into the front to keep the card self-contained.
+        let mut front = card.front.clone();
+        if !card.context.is_empty() {
+            front.push('\n');
+            front.push_str(&card.context.join("\n"));
+        }
+        let content = VirtualContent {
+            front,
+            back: card.back.clone(),
+            mode: card.mode,
+        };
+        let id = virtual_id(
+            VirtualKind::Remediation,
+            subject,
+            &remediation_discriminator(card),
+        );
+        match store.get_virtual(&id).map(|vc| vc.retired) {
+            None => {
+                store.insert_virtual(VirtualCard {
+                    id,
+                    kind: VirtualKind::Remediation,
+                    parent: subject.to_string(),
+                    content,
+                    state: CardState::new(now_ms),
+                    created_ms: now_ms,
+                    retired: false,
+                });
+                created_or_revived += 1;
+            }
+            Some(true) => {
+                store.revive_virtual(&id, now_ms);
+                created_or_revived += 1;
+            }
+            Some(false) => {
+                // An active dupe — leave it, no schedule reset.
+            }
+        }
+    }
+    store.save()?;
+    Ok(created_or_revived)
+}
+
+/// The per-card dedupe/revive key for a remediation card: its front + back
+/// lines joined into one string, passed to [`virtual_id`]. The regenerated
+/// batch isn't 1:1 with the gaps it was built from (the model is asked to
+/// merge overlapping gaps into one card per idea), so content is the only
+/// stable per-card key: the same regenerated card reuses its existing
+/// schedule, a reworded one gets a fresh id. Unlike `Card::id` (which hashes
+/// back-only, to preserve history across a front edit), this includes the
+/// front — a virtual card has no edit-history semantics to protect, and the
+/// front avoids collisions between two distinct questions sharing a back.
+fn remediation_discriminator(card: &Card) -> String {
+    let mut s = card.front.clone();
+    for line in &card.back {
+        s.push('\n');
+        s.push_str(line);
+    }
+    s
+}
+
 /// The phase of an exam [`Sitting`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Phase {
@@ -344,9 +429,9 @@ pub enum Phase {
     Grading,
     /// Showing the graded result; `result().passed` says pass or fail.
     Results,
-    /// Generating + appending remediation cards (background call in flight).
+    /// Generating remediation cards (background call in flight).
     Remediating,
-    /// Remediation cards were appended — re-drill the deck and re-sit.
+    /// Remediation cards were stored as virtual cards — re-drill and re-sit.
     Remediated,
 }
 
@@ -380,7 +465,6 @@ pub enum SittingKind {
 pub struct Sitting {
     kind: SittingKind,
     subject: String,
-    deck_path: PathBuf,
     strictness: Strictness,
     cfg: ExamConfig,
     ask_cfg: AskConfig,
@@ -410,7 +494,6 @@ impl Sitting {
         Self {
             kind: SittingKind::Source,
             subject: deck.subject.clone(),
-            deck_path: deck.path.clone(),
             strictness,
             cfg,
             ask_cfg,
@@ -429,14 +512,12 @@ impl Sitting {
     /// `description`), graded by retracing the path against its `rubric` (the
     /// checkpoints' key points). There is no question generation, so it opens
     /// straight in [`Phase::Answering`] with nothing in flight. `subject` keys
-    /// mastery in the store; `deck_path` identifies the trace deck. The caller
-    /// enforces the re-sit cooldown ([`crate::store::Store::exam_failed_at`])
-    /// before starting.
+    /// mastery in the store. The caller enforces the re-sit cooldown
+    /// ([`crate::store::Store::exam_failed_at`]) before starting.
     pub fn start_trace(
         description: String,
         rubric: Vec<String>,
         subject: String,
-        deck_path: PathBuf,
         strictness: Strictness,
         cfg: ExamConfig,
         ask_cfg: AskConfig,
@@ -448,7 +529,6 @@ impl Sitting {
         Self {
             kind: SittingKind::Trace,
             subject,
-            deck_path,
             strictness,
             cfg,
             ask_cfg,
@@ -631,8 +711,8 @@ impl Sitting {
 
     /// Drains a finished background call and advances the phase, applying side
     /// effects: on a passing grade, persist "mastered" and save `store`; on
-    /// remediation, append the cards to the deck file. Returns `true` when the
-    /// phase advanced.
+    /// remediation, create/dedupe/revive virtual cards in `store` (the deck
+    /// file is never touched). Returns `true` when the phase advanced.
     pub fn poll(&mut self, store: &mut Store, now_ms: u64) -> bool {
         let reply = match &self.pending {
             None => return false,
@@ -683,13 +763,15 @@ impl Sitting {
                 self.error = Some(e);
                 self.phase = Phase::Answering;
             }
-            Reply::Remediation(Ok(cards)) => match deck::append_cards(&self.deck_path, &cards) {
-                Ok(()) => self.phase = Phase::Remediated,
-                Err(e) => {
-                    self.error = Some(format!("{e}"));
-                    self.phase = Phase::Results;
+            Reply::Remediation(Ok(cards)) => {
+                match store_remediation_cards(store, &self.subject, &cards, now_ms) {
+                    Ok(_n) => self.phase = Phase::Remediated,
+                    Err(e) => {
+                        self.error = Some(format!("{e}"));
+                        self.phase = Phase::Results;
+                    }
                 }
-            },
+            }
             Reply::Remediation(Err(e)) => {
                 self.error = Some(e);
                 self.phase = Phase::Results;
@@ -1358,6 +1440,7 @@ mod tests {
         assert_eq!("# Q\n% mode: explain\n\tA", clean_deck_output(raw));
     }
 
+    use crate::answer::Mode;
     use crate::testutil::{ask_config, exec_lock, fake_cli, fake_reply};
 
     #[test]
@@ -1675,13 +1758,19 @@ mod tests {
         assert!(!store.deck_mastered("d.txt")); // failed -> not mastered
 
         assert!(s.can_remediate());
+        let snapshot = std::fs::read(dir.path().join("d.txt")).unwrap();
         s.remediate();
         assert_eq!(&Phase::Remediating, s.phase());
         drain(&mut s, &mut store);
         assert_eq!(&Phase::Remediated, s.phase());
-        // The remediation card was appended to the deck file.
-        let text = std::fs::read_to_string(dir.path().join("d.txt")).unwrap();
-        assert!(text.contains("% mode: explain"));
+        // The remediation card became a virtual card in the store — the deck
+        // file itself stays byte-unchanged.
+        assert_eq!(snapshot, std::fs::read(dir.path().join("d.txt")).unwrap());
+        let virtuals = store.virtual_cards_for("d.txt");
+        assert_eq!(1, virtuals.len());
+        assert_eq!(VirtualKind::Remediation, virtuals[0].kind);
+        assert_eq!(Some(Mode::Explain), virtuals[0].content.mode);
+        assert_eq!(vec!["point one".to_string()], virtuals[0].content.back);
     }
 
     #[test]
@@ -1712,6 +1801,165 @@ mod tests {
         assert!(s.result().unwrap().passed);
         assert!(store.deck_mastered("d.txt")); // pass -> mastered + saved
         assert!(!s.can_remediate());
+    }
+
+    // ── Remediation writes virtual cards (B.3) ──────────────────────────────
+
+    #[test]
+    fn a_failed_exam_creates_virtual_cards_and_leaves_the_deck_file_unchanged() {
+        let _lock = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = branching_cli(
+            dir.path(),
+            "{\"grades\":[{\"verdict\":\"fail\",\"feedback\":\"no\",\"missed\":[\"the move rule\"]},\
+             {\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]}]}",
+        );
+        let deck = sourced_deck(dir.path());
+        let deck_path = dir.path().join("d.txt");
+        let before = std::fs::read(&deck_path).unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+
+        let mut s = Sitting::start(
+            &deck,
+            Strictness::Balanced,
+            ExamConfig::default(),
+            ask_config(&cli),
+        );
+        drain(&mut s, &mut store);
+        s.set_answer("a1".to_string());
+        s.next();
+        s.set_answer("a2".to_string());
+        s.submit();
+        drain(&mut s, &mut store);
+        assert!(s.can_remediate());
+
+        s.remediate();
+        drain(&mut s, &mut store);
+        assert_eq!(&Phase::Remediated, s.phase());
+
+        let after = std::fs::read(&deck_path).unwrap();
+        assert_eq!(before, after, "remediation must never touch the deck file");
+
+        let virtuals = store.virtual_cards_for("d.txt");
+        assert_eq!(1, virtuals.len());
+        assert_eq!(VirtualKind::Remediation, virtuals[0].kind);
+        assert_eq!("d.txt", virtuals[0].parent);
+    }
+
+    #[test]
+    fn regenerating_the_same_remediation_dedupes() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let text = "# Why does X?\n% mode: explain\n\tpoint one\n";
+
+        let n1 = store_remediation_cards(&mut store, "d.txt", text, 1_000).unwrap();
+        assert_eq!(1, n1);
+        assert_eq!(1, store.virtual_cards_for("d.txt").len());
+
+        let n2 = store_remediation_cards(&mut store, "d.txt", text, 2_000).unwrap();
+        assert_eq!(0, n2, "an active dupe is left alone, not recreated");
+        assert_eq!(1, store.virtual_cards_for("d.txt").len());
+    }
+
+    #[test]
+    fn reviving_replaces_an_archived_remediation_card() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let text = "# Why does X?\n% mode: explain\n\tpoint one\n";
+
+        store_remediation_cards(&mut store, "d.txt", text, 1_000).unwrap();
+        let id = store.virtual_cards_for("d.txt")[0].id.clone();
+        {
+            let vc = store.get_virtual_mut(&id).unwrap();
+            vc.retired = true;
+            vc.state.total_reviews = 3;
+        }
+
+        let n = store_remediation_cards(&mut store, "d.txt", text, 5_000).unwrap();
+        assert_eq!(1, n);
+        assert_eq!(1, store.virtual_cards_for("d.txt").len());
+        let vc = store.get_virtual(&id).unwrap();
+        assert!(!vc.retired);
+        assert_eq!(0, vc.state.total_reviews, "revive resets to a fresh state");
+    }
+
+    #[test]
+    fn a_re_pass_does_not_retire_the_remediation_batch() {
+        let _lock = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli_dir1 = tempfile::tempdir().unwrap();
+        let cli1 = branching_cli(
+            cli_dir1.path(),
+            "{\"grades\":[{\"verdict\":\"fail\",\"feedback\":\"no\",\"missed\":[\"the move rule\"]},\
+             {\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]}]}",
+        );
+        let deck = sourced_deck(dir.path());
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+
+        // Fail then remediate: the batch exists.
+        let mut s = Sitting::start(
+            &deck,
+            Strictness::Balanced,
+            ExamConfig::default(),
+            ask_config(&cli1),
+        );
+        drain(&mut s, &mut store);
+        s.set_answer("a1".to_string());
+        s.next();
+        s.set_answer("a2".to_string());
+        s.submit();
+        drain(&mut s, &mut store);
+        assert!(!s.result().unwrap().passed);
+        s.remediate();
+        drain(&mut s, &mut store);
+        assert_eq!(&Phase::Remediated, s.phase());
+        assert!(!store.virtual_cards_for("d.txt").is_empty());
+
+        // Re-sit and pass this time.
+        let cli_dir2 = tempfile::tempdir().unwrap();
+        let cli2 = branching_cli(
+            cli_dir2.path(),
+            "{\"grades\":[{\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]},\
+             {\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]}]}",
+        );
+        let mut s2 = Sitting::start(
+            &deck,
+            Strictness::Balanced,
+            ExamConfig::default(),
+            ask_config(&cli2),
+        );
+        drain(&mut s2, &mut store);
+        s2.set_answer("a".to_string());
+        s2.next();
+        s2.set_answer("b".to_string());
+        s2.submit();
+        drain(&mut s2, &mut store);
+        assert!(s2.result().unwrap().passed);
+        assert!(store.deck_mastered("d.txt"));
+
+        for vc in store.virtual_cards_for("d.txt") {
+            assert!(!vc.retired, "a passing re-sit must not retire remediation cards");
+        }
+    }
+
+    #[test]
+    fn remediation_card_mode_is_carried() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let text = "# Why does X?\n% mode: explain\n\tpoint one\n\n# fact card\n\tplain answer\n";
+
+        store_remediation_cards(&mut store, "d.txt", text, 1_000).unwrap();
+        let virtuals = store.virtual_cards_for("d.txt");
+        let explain = virtuals
+            .iter()
+            .find(|c| c.content.front == "Why does X?")
+            .unwrap();
+        let plain = virtuals
+            .iter()
+            .find(|c| c.content.front == "fact card")
+            .unwrap();
+        assert_eq!(Some(Mode::Explain), explain.content.mode);
+        assert_eq!(None, plain.content.mode);
     }
 
     // ── Trace exam (the compression) ────────────────────────────────────────
@@ -1773,7 +2021,6 @@ mod tests {
             "how a moves".to_string(),
             vec!["it advances".to_string()],
             "t.txt".to_string(),
-            std::path::PathBuf::from("/tmp/t.txt"),
             Strictness::Balanced,
             ExamConfig::default(),
             ask_config(cli),

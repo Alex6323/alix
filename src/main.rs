@@ -2625,7 +2625,6 @@ fn run_trace_exam(
         trace.description.clone(),
         trace.compression_rubric(),
         deck.subject.clone(),
-        deck.path.clone(),
         strictness,
         config.exam.clone(),
         config.ask.clone(),

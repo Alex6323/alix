@@ -1858,7 +1858,6 @@ pub fn run_review(
                                         t.description.clone(),
                                         t.compression_rubric(),
                                         deck.subject.clone(),
-                                        deck.path.clone(),
                                         strictness,
                                         exam_cfg.clone(),
                                         ask_cfg.clone(),
