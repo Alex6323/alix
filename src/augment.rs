@@ -60,10 +60,9 @@ pub struct Format {
     /// Reshaped note. `None` keeps the card's deck note.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
-    /// Suggested self-graded presentation (e.g. `line`). Applied at review as a
-    /// reveal-method (`flip`→flip, `line`→line) only if the card declares no
-    /// `% reveal:` of its own; `explain` has no reveal equivalent (depth is
-    /// derived now) and is ignored. Restricted to self-graded/reveal modes.
+    /// Suggested reveal-method (`flip` or `line`). Applied at review only if the
+    /// card declares no `% reveal:` of its own (`flip`→flip, `line`→line). Depth
+    /// modes (explain) aren't suggested — depth is derived now (spec §8).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode: Option<Mode>,
 }
@@ -1045,7 +1044,7 @@ struct RawFormat {
 /// Validates one raw reshape against the card it came from, returning a `Format`
 /// only if it is a real, usable improvement. Trims fields and drops empty ones;
 /// accepts a suggested mode only if it parses and is a self-graded/reveal mode
-/// (`flip`/`line`/`explain`) — never an exact-match mode that the reshaped lines
+/// (`flip`/`line`) — never an exact-match mode that the reshaped lines
 /// would break; requires the reshape to actually differ from the original.
 fn clean_format(item: &WarmItem, raw: &RawFormat) -> Option<Format> {
     let front = raw
@@ -1080,7 +1079,7 @@ fn clean_format(item: &WarmItem, raw: &RawFormat) -> Option<Format> {
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .and_then(|s| Mode::from_str(s, true).ok())
-        .filter(|m| matches!(m, Mode::Flip | Mode::LineByLine | Mode::Explain));
+        .filter(|m| matches!(m, Mode::Flip | Mode::LineByLine));
 
     if front.is_none() && back.is_empty() && note.is_none() && mode.is_none() {
         return None;
@@ -1139,9 +1138,9 @@ fn format_prompt(items: &[WarmItem], guidance: Option<&str>) -> String {
          language wants, then a closing ``` line — best-effort on the language tag.\n\
          - `front`/`note`: reshape only for readability. The question's layout must \
          NOT leak the answer (never hint how many items it has).\n\
-         - `mode`: suggest one of `flip`, `line`, or `explain` ONLY when it fits \
-         the reshaped answer (use `line` for an ordered/grouped list revealed one \
-         line at a time). Never suggest typing/fuzzy/choice. Omit `mode` if unsure.\n\
+         - `mode`: suggest either `flip` or `line` ONLY when it fits the reshaped \
+         answer (use `line` for an ordered/grouped list revealed one line at a \
+         time). Never suggest explain/typing/fuzzy/choice. Omit `mode` if unsure.\n\
          - Omit any field you leave unchanged; omit the whole card if it is fine.\n",
     );
     if let Some(g) = guidance {

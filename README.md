@@ -230,7 +230,10 @@ review. When several requested decks disagree on a setting, the default is used.
 before the next one) overrides the deck's reveal-method for that card only, so one
 deck can mix them — e.g. a `line` lyrics card among `flip` cards. It resolves per
 card: the card's `% reveal:` > the deck's `% reveal:` > the default (`flip`). The
-`order` directive stays deck-level.
+`order` directive stays deck-level. `cloze` is effectively a per-card method: a
+card is turned into fill-in-the-blanks only from its *own* `% reveal: cloze` (with
+`{{spans}}` in the answer), so a deck-wide `% reveal: cloze` default won't convert
+plain cards — mark it on the cards that have gaps.
 
 **Depth is a separate axis — and not a deck directive.** `% reveal:` is *how* an
 answer is shown; how *deeply* you're asked to retrieve it (recognize / recall /
