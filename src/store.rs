@@ -404,6 +404,23 @@ impl Store {
         self.virtual_cards.insert(card.id.clone(), card);
     }
 
+    /// Revives an archived virtual card: resets its schedule to a fresh state
+    /// and clears the `retired` flag, keeping its `id`/`kind`/`parent`/
+    /// `content`/`created_ms`. A re-triggered gap means it was forgotten, so it
+    /// drills from the start rather than resuming its old interval. Returns
+    /// whether an entry with `id` existed. Does not save; the caller (a
+    /// remediation re-creation path) decides when to call this.
+    pub fn revive_virtual(&mut self, id: &str, now_ms: u64) -> bool {
+        match self.virtual_cards.get_mut(id) {
+            Some(vc) => {
+                vc.state = CardState::new(now_ms);
+                vc.retired = false;
+                true
+            }
+            None => false,
+        }
+    }
+
     /// Every virtual card in the store, unfiltered — the raw building block
     /// behind [`virtual_cards_for`](Self::virtual_cards_for).
     pub fn iter_virtual_cards(&self) -> impl Iterator<Item = &VirtualCard> {
@@ -890,6 +907,33 @@ mod tests {
         // `save`); the `v:` prefix guarantees a virtual id never parses as
         // one, so the two keyspaces can never collide.
         assert!(a.parse::<u64>().is_err());
+    }
+
+    #[test]
+    fn revive_virtual_resets_schedule_and_clears_archive() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let mut vc = sample_virtual_card("gap-1");
+        vc.retired = true;
+        vc.state.record_review(500, Grade::Fail);
+        vc.state.fsrs = Some(FsrsState {
+            scheduled_days: 30,
+            state: 2,
+            ..Default::default()
+        });
+        let id = vc.id.clone();
+        let created_ms = vc.created_ms;
+        store.insert_virtual(vc);
+
+        assert!(store.revive_virtual(&id, 5_000));
+
+        let after = store.get_virtual(&id).expect("entry kept");
+        assert!(!after.retired);
+        assert_eq!(CardState::new(5_000), after.state); // fresh — no history/fsrs
+        assert_eq!(id, after.id);
+        assert_eq!(created_ms, after.created_ms);
+
+        assert!(!store.revive_virtual("v:nonexistent", 5_000));
     }
 
     #[test]

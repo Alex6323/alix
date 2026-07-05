@@ -282,11 +282,18 @@ impl Session {
                 // clamp: a virtual card's `stage` is a frozen legacy marker
                 // seeded once by `CardState::new`, not live scheduling state,
                 // so there is nothing for the scheduler to push past
-                // `MAX_STAGE`. Retiring at the interval cap is a follow-up.
+                // `MAX_STAGE`.
                 if self.options.cram && grade.passed() {
                     self.scheduler.reanchor(&mut vc.state, now_ms);
                 } else {
                     self.scheduler.apply(&mut vc.state, grade, now_ms);
+                }
+                // Archive once this review pushes the interval to/past the
+                // cap. Retire at the cap only — never elsewhere (in
+                // particular, never on an exam re-pass; that path must not
+                // touch `retired`).
+                if virtual_retired(vc, self.options.retire_after_days) {
+                    vc.retired = true;
                 }
             }
             None => {
@@ -1871,5 +1878,99 @@ mod tests {
             .next_due_at(&store)
             .expect("a virtual card's due time is reported");
         assert_eq!(1000 + 60_000, due);
+    }
+
+    #[test]
+    fn virtual_card_retires_at_the_interval_cap() {
+        let (mut store, _dir) = empty_store();
+        let vc = virtual_card("deck.txt", "gap-1", 0);
+        let vid = vc.id.clone();
+        store.insert_virtual(vc);
+        let options = SessionOptions {
+            retire_after_days: Some(4),
+            ..SessionOptions::default()
+        };
+
+        // First real review: still acquiring (needs two Goods to graduate), so
+        // the interval stays at 0 — well under the cap.
+        let now = 60_000;
+        let mut session = Session::new_with_virtual(
+            vec![virtual_synth_card("deck.txt", 1_000_000)],
+            vec![Some(vid.clone())],
+            &store,
+            sched(),
+            options.clone(),
+            now,
+        );
+        session.grade(&mut store, Grade::Pass, now);
+        assert!(!store.get_virtual(&vid).unwrap().retired);
+
+        // Second review, once due: graduates to `Review` with a 4-day interval —
+        // right at the cap.
+        let now = 86_460_000;
+        let mut session = Session::new_with_virtual(
+            vec![virtual_synth_card("deck.txt", 1_000_000)],
+            vec![Some(vid.clone())],
+            &store,
+            sched(),
+            options,
+            now,
+        );
+        session.grade(&mut store, Grade::Pass, now);
+
+        let after = store.get_virtual(&vid).expect("entry + history kept, not deleted");
+        assert!(after.retired);
+        assert_eq!(4, after.state.fsrs.as_ref().unwrap().scheduled_days);
+        assert_eq!(2, after.state.total_reviews);
+    }
+
+    #[test]
+    fn retired_virtual_card_is_excluded_from_queue_and_counts() {
+        let (mut store, _dir) = empty_store();
+        let mut vc = virtual_card("deck.txt", "gap-1", 0);
+        vc.retired = true;
+        let vid = vc.id.clone();
+        store.insert_virtual(vc);
+
+        // Otherwise past its stage-1 cooldown: would be due if not archived.
+        let now = 61_000;
+        let session = Session::new_with_virtual(
+            vec![virtual_synth_card("deck.txt", 1_000_000)],
+            vec![Some(vid.clone())],
+            &store,
+            sched(),
+            SessionOptions::default(),
+            now,
+        );
+        assert!(session.is_finished()); // not served: no roster entry
+
+        let cap = Some(DEFAULT_RETIRE_AFTER_DAYS);
+        assert_eq!(
+            0,
+            count_reviewable_virtual(&store, "deck.txt", sched().as_ref(), now, cap)
+        );
+        // The entry itself survives — archived, not deleted.
+        assert!(store.get_virtual(&vid).is_some());
+    }
+
+    #[test]
+    fn retire_only_at_cap_not_below() {
+        let (mut store, _dir) = empty_store();
+        let vc = virtual_card("deck.txt", "gap-1", 0);
+        let vid = vc.id.clone();
+        store.insert_virtual(vc);
+
+        let now = 60_000; // past the stage-1 cooldown
+        let mut session = Session::new_with_virtual(
+            vec![virtual_synth_card("deck.txt", 1_000_000)],
+            vec![Some(vid.clone())],
+            &store,
+            sched(),
+            SessionOptions::default(), // default cap, far above a 0-day interval
+            now,
+        );
+        session.grade(&mut store, Grade::Pass, now);
+
+        assert!(!store.get_virtual(&vid).unwrap().retired);
     }
 }
