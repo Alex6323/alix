@@ -2372,7 +2372,15 @@ fn augment_cmd(args: AugmentArgs) -> Result<()> {
             // (remediation) cards alongside its authored ones: `set_format` keys
             // by the synth card's real `Card::id`, so the cached entry is exactly
             // what `apply_format` finds at review time (§8.2).
+            //
+            // Mirror `build_review`'s injection filters: a partial cloze promote
+            // (see `store::promote_virtual`) can leave an orphaned sidecar entry
+            // whose id collides with a real deck card, and a retired card is
+            // resting — neither should be warmed a second time or at all.
             let subject: Arc<str> = Arc::from(deck.subject.as_str());
+            let deck_ids: std::collections::HashSet<u64> =
+                deck.cards.iter().map(Card::id).collect();
+            let retire_after_days = config.review.for_deck(&deck.path).retire_after_days;
             let mut plain: Vec<Card> = deck
                 .cards
                 .iter()
@@ -2382,6 +2390,8 @@ fn augment_cmd(args: AugmentArgs) -> Result<()> {
             for (k, vc) in store
                 .virtual_cards_for(&deck.subject)
                 .into_iter()
+                .filter(|v| !deck_ids.contains(&v.id))
+                .filter(|v| !alix::session::is_retired_id(v.id, &store, retire_after_days))
                 .enumerate()
             {
                 if let Some(card) = synthesize_virtual(vc, &subject, VIRTUAL_LINE_BASE + k)

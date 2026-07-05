@@ -43,8 +43,8 @@ pub enum Mode {
 
 /// The CLI/value name of an answer mode, matching `Mode`'s clap names.
 ///
-/// `pub(crate)`: also reused by [`crate::store::promote_virtual`] to write a
-/// virtual card's `% mode:` line when rendering it to deck text.
+/// `pub(crate)`: reused by [`crate::serve`] to report a card's mode in its JSON
+/// state.
 pub(crate) fn mode_name(mode: Mode) -> &'static str {
     match mode {
         Mode::Flip => "flip",

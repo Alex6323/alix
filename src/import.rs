@@ -83,9 +83,8 @@ fn clean_field(field: &str) -> String {
 /// (`%`) or note (`!`). A leading `#` needs no escape: the line is indented, so
 /// it's answer content, not a card front (those only count at column 0).
 ///
-/// `pub(crate)`: also reused by [`crate::store::promote_virtual`] when
-/// rendering a virtual card's back lines to deck text.
-pub(crate) fn escape_leading_markup(line: &str) -> String {
+/// Only used within this module, by [`tsv_to_deck`].
+fn escape_leading_markup(line: &str) -> String {
     if line.starts_with('%') || line.starts_with('!') {
         format!("\\{line}")
     } else {

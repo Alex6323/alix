@@ -399,6 +399,20 @@ impl Store {
         self.virtual_cards.remove(&id).is_some()
     }
 
+    /// Drops every sidecar `virtual_cards` entry that belongs to the same
+    /// content block as `parent`/`text` — for a multi-hole cloze remediation
+    /// card this is every hole's entry, not just one. Used by
+    /// [`promote_virtual`] so promoting any one hole cleanly removes the whole
+    /// block, leaving no orphaned sibling entries. Each entry's `store.cards`
+    /// schedule is left in place. Returns how many entries were removed. Does
+    /// not save.
+    pub fn remove_virtual_block(&mut self, parent: &str, text: &str) -> usize {
+        let before = self.virtual_cards.len();
+        self.virtual_cards
+            .retain(|_, vc| !(vc.parent == parent && vc.text == text));
+        before - self.virtual_cards.len()
+    }
+
     /// Every virtual card in the store, unfiltered — the raw building block
     /// behind [`virtual_cards_for`](Self::virtual_cards_for).
     pub fn iter_virtual_cards(&self) -> impl Iterator<Item = &VirtualCard> {
@@ -492,7 +506,7 @@ impl Store {
 
 /// Graduates a virtual card into a real deck card: appends its stored
 /// deck-format `text` to the deck file at `deck_path`, then drops the sidecar
-/// content entry and saves the store.
+/// content entry (or entries — see the cloze edge below) and saves the store.
 ///
 /// The schedule needs no transfer: a virtual card's `CardState` already lives
 /// in `store.cards` under the same id the appended deck card hashes to (the id
@@ -503,21 +517,25 @@ impl Store {
 /// the two steps, the card is merely duplicated (a sidecar entry plus a deck
 /// card) rather than lost.
 ///
-/// Cloze edge: promoting one hole appends the whole `#?` block, so the deck
-/// gains every hole. This hole's schedule carries (its id matches its new deck
-/// sub-card); the others become fresh deck cards. Any sibling sidecar entries
-/// then linger as benign, GC-able orphans (deduped out of the queue by the
-/// deck-id filter in `build_review`).
+/// Cloze edge: a multi-hole `#?` block is stored as one sidecar entry per hole,
+/// all sharing `parent` + the same whole-block `text`. Promoting one hole
+/// appends the whole block, so the deck gains every hole as a real card — so
+/// [`Store::remove_virtual_block`] drops every hole's sidecar entry, not just
+/// the promoted one, leaving no orphans behind. Each hole's schedule carries
+/// (its id matches its new deck sub-card).
 pub fn promote_virtual(store: &mut Store, id: u64, deck_path: &Path) -> AnyResult<()> {
     let Some(vc) = store.get_virtual(id) else {
         bail!("no virtual card with id {id} to promote");
     };
     let text = vc.text.clone();
+    let parent = vc.parent.clone();
 
     deck::append_cards(deck_path, &text)
         .with_context(|| format!("appending the promoted card to {}", deck_path.display()))?;
 
-    store.remove_virtual(id); // drop the sidecar content; schedule stays in store.cards[id]
+    // Drop the whole block's sidecar entries (all holes, for a cloze card);
+    // the schedules stay in store.cards keyed by the same ids.
+    store.remove_virtual_block(&parent, &text);
     store
         .save()
         .context("saving the store after promoting a virtual card")?;
@@ -1009,6 +1027,70 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(deck_before, std::fs::read_to_string(&deck_path).unwrap());
         assert!(!store_path.exists()); // save() was never reached
+    }
+
+    #[test]
+    fn promoting_one_hole_of_a_multi_hole_cloze_removes_every_holes_sidecar_entry() {
+        // A multi-hole cloze remediation card is stored as N sidecar entries (one
+        // per hole), all sharing `parent` + the whole-block `text`, keyed by their
+        // N distinct `Card::id`s. Promoting any one hole must clear the whole
+        // block from the sidecar — not just the promoted hole's entry — or the
+        // sibling holes become orphans whose ids collide with the now-real deck
+        // cards (mis-counted, mis-badged, and a second promote would duplicate
+        // ids in the deck file).
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = write_deck(dir.path(), "rust.txt", "# existing\n\tanswer\n");
+        let store_path = dir.path().join("progress.json");
+        let mut store = Store::open(&store_path).unwrap();
+
+        let text = "#? Complete the quote\n\tTo {{be}} or not to {{be}}\n\t! Hamlet\n";
+        let cards = crate::parser::parse_str("rust.txt", text).unwrap();
+        assert_eq!(2, cards.len());
+        let id0 = cards[0].id();
+        let id1 = cards[1].id();
+        assert_ne!(id0, id1, "the two holes must have distinct ids");
+
+        for id in [id0, id1] {
+            store.insert_virtual(VirtualCard {
+                id,
+                kind: VirtualKind::Remediation,
+                parent: "rust.txt".to_string(),
+                text: text.to_string(),
+                created_ms: 1000,
+            });
+            // Seed a drilled schedule for each hole — promote must preserve these.
+            store
+                .get_or_insert(id, 1000)
+                .record_review(1000, Grade::Pass);
+        }
+
+        promote_virtual(&mut store, id0, &deck_path).unwrap();
+
+        // Both sidecar entries are gone — no orphan left for the sibling hole.
+        assert!(store.get_virtual(id0).is_none());
+        assert!(store.get_virtual(id1).is_none());
+        // Both schedules survive: the promoted deck cards inherit their drilled
+        // history for free.
+        assert!(store.get(id0).is_some());
+        assert!(store.get(id1).is_some());
+
+        // The deck file gained the cloze card (both holes, since a cloze
+        // promotes as one block).
+        let deck_text = std::fs::read_to_string(&deck_path).unwrap();
+        let deck_cards = crate::parser::parse_str("rust.txt", &deck_text).unwrap();
+        assert_eq!(3, deck_cards.len()); // the existing plain card + 2 cloze holes
+
+        // A second promote of the sibling hole now bails cleanly (its sidecar
+        // entry is already gone) instead of re-appending the block and
+        // duplicating ids in the deck file.
+        let deck_before_second = std::fs::read_to_string(&deck_path).unwrap();
+        let second = promote_virtual(&mut store, id1, &deck_path);
+        assert!(second.is_err());
+        assert_eq!(
+            deck_before_second,
+            std::fs::read_to_string(&deck_path).unwrap(),
+            "a bailed second promote must not touch the deck file"
+        );
     }
 
     #[test]

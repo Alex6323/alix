@@ -484,6 +484,62 @@ fn augment_target_format_also_covers_a_decks_virtual_card() {
 }
 
 #[test]
+fn augment_target_format_skips_an_orphaned_virtual_card_colliding_with_a_real_deck_card() {
+    // A partial cloze promote can leave an orphaned sidecar `virtual_cards`
+    // entry whose id collides with a real deck card (see `promote_virtual`).
+    // `deck augment --target format` must filter those out exactly like
+    // `build_review`'s injection does, or the same card gets warmed twice.
+    let dir = TempDir::new().unwrap();
+    let deck_text = "# List the parts\n    A, B, C\n";
+    let deck = write(dir.path(), "parts.txt", deck_text);
+    let real_id = alix::parser::parse_str("parts.txt", deck_text).unwrap()[0].id();
+
+    let store_path = dir.path().join("p.json");
+    let mut store = alix::store::Store::open(&store_path).unwrap();
+    store.insert_virtual(alix::store::VirtualCard {
+        id: real_id, // collides with the real deck card's id — simulates an orphan
+        kind: alix::store::VirtualKind::Remediation,
+        parent: "parts.txt".to_string(),
+        // Must reproduce `real_id` when parsed (`synthesize_virtual` matches by
+        // id), so an orphan left behind by a partial promote uses the same text
+        // as the now-real deck card it collides with.
+        text: deck_text.to_string(),
+        created_ms: 0,
+    });
+    store.save().unwrap();
+
+    // Only one item should ever be warmed (the real deck card) — if the orphan
+    // isn't filtered, the fake reply's index 1 lookup would matter too, but
+    // asserting "1 of 1" below is what actually pins the count down.
+    let cli = fake_claude(
+        dir.path(),
+        r#"{"0": {"back": ["A", "B", "C"], "mode": "line"}}"#,
+    );
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+    let out = alix(&[
+        "deck",
+        "augment",
+        &deck,
+        "--target",
+        "format",
+        "--store",
+        store_path.to_str().unwrap(),
+        "--config",
+        &config,
+    ]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("augmented 1 of 1 cards"),
+        "the colliding orphan must not be double-counted alongside the real card: {}",
+        stdout(&out)
+    );
+}
+
+#[test]
 fn url_source_exam_on_codex_refuses_cleanly() {
     // The Codex backend runs read-only with no network, so it can't fetch a URL
     // `% source:`. `alix exam` must refuse before touching anything — a plain
