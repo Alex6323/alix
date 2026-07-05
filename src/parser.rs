@@ -5,8 +5,8 @@
 //!
 //! - `# <text>`  at column 0 starts a new card; the text is the front side. An *indented* `#` is
 //!   answer content (code comments, Rust attributes, markdown headers), not a card front.
-//! - `#? <text>` at column 0 starts a cloze card; `{{...}}` in its answer lines are holes (see the
-//!   [`cloze`](crate::cloze) module).
+//! - `% reveal: cloze` on a card turns it into a cloze card; `{{...}}` in its answer lines are
+//!   holes (see the [`cloze`](crate::cloze) module).
 //! - `% <text>`  is a comment and ignored (any indentation).
 //! - `% link: <url>` is still a comment to the card parser, but the URL is collected as a
 //!   deck-level reference link (see [`parse_links`]); the ask-Claude view offers these to Claude as
@@ -27,15 +27,14 @@ use clap::ValueEnum;
 use thiserror::Error;
 
 use crate::{
-    answer::{Input, Mode},
+    answer::Input,
     card::{Card, Direction, Frontend},
     cloze,
+    ladder::Reveal,
 };
 
 /// Markup indicating the front side of a card.
 const MARKUP_FRONT: char = '#';
-/// Second markup character turning a front into a cloze card (`#?`).
-const MARKUP_CLOZE: char = '?';
 /// Markup indicating a comment line.
 const MARKUP_COMMENT: char = '%';
 /// Markup indicating a note.
@@ -60,7 +59,7 @@ pub enum ParseError {
     FrontWithoutBack(usize),
     #[error("line {0}: card front is empty")]
     EmptyFront(usize),
-    #[error("line {0}: cloze card ('#?') has no {{{{...}}}} holes in its answer")]
+    #[error("line {0}: cloze card ('% reveal: cloze') has no {{{{...}}}} holes in its answer")]
     ClozeWithoutHoles(usize),
     #[error(
         "line {0}: cloze answer is one hole with no surrounding text — there's nothing to recall it from; use a plain '#' card"
@@ -94,8 +93,8 @@ struct PartialCard {
     note: Option<String>,
     line: usize,
     cloze: bool,
-    /// Per-card `% mode:` override, if the card declares one.
-    mode: Option<Mode>,
+    /// Per-card `% reveal:` method, if the card declares one.
+    reveal: Option<Reveal>,
     /// Per-card `% input:` override, if the card declares one.
     input: Option<Input>,
     /// Per-card `% direction:`, if the card declares one.
@@ -123,7 +122,7 @@ impl PartialCard {
     /// Turns the finished partial into one card (plain) or several (cloze).
     fn build(self, subject: &Arc<str>, cards: &mut Vec<Card>) -> Result<(), ParseError> {
         if self.cloze {
-            // A cloze card's per-card mode applies to each of its sub-cards.
+            // A cloze card's per-card reveal applies to each of its sub-cards.
             for mut card in cloze::expand(
                 subject,
                 &self.front,
@@ -131,7 +130,7 @@ impl PartialCard {
                 self.note.as_deref(),
                 self.line,
             )? {
-                card.mode = self.mode;
+                card.reveal = self.reveal;
                 card.input = self.input;
                 cards.push(card);
             }
@@ -143,7 +142,7 @@ impl PartialCard {
                 self.note,
                 self.line,
             );
-            card.mode = self.mode;
+            card.reveal = self.reveal;
             card.input = self.input;
             card.direction = self.direction;
             card.image = self.image.map(PathBuf::from);
@@ -248,7 +247,7 @@ fn directive(raw: &str) -> Option<(String, String)> {
     (!value.is_empty()).then(|| (key, value.to_string()))
 }
 
-/// Collects deck-level `% key: value` directives (e.g. `% mode: line`) from the
+/// Collects deck-level `% key: value` directives (e.g. `% reveal: line`) from the
 /// header — the lines before the first card. Directives after a card front are
 /// per-card overrides (handled while parsing the card), so deck-level ones must
 /// sit at the top. These are invisible to the card parser and don't affect
@@ -294,13 +293,9 @@ pub fn parse_str(subject: &str, text: &str) -> Result<Vec<Card>, ParseError> {
                     }
                     State::Init => {}
                 }
-                // `#?` (no space in between) marks a cloze card.
-                let rest = &line[MARKUP_FRONT.len_utf8()..];
-                let (cloze, rest) = match rest.strip_prefix(MARKUP_CLOZE) {
-                    Some(rest) => (true, rest),
-                    None => (false, rest),
-                };
-                let front = rest.trim();
+                // A front is always a plain `# ` front; cloze is declared per
+                // card with `% reveal: cloze` (which sets `partial.cloze`).
+                let front = line[MARKUP_FRONT.len_utf8()..].trim();
                 if front.is_empty() {
                     return Err(ParseError::EmptyFront(lineno));
                 }
@@ -309,8 +304,8 @@ pub fn parse_str(subject: &str, text: &str) -> Result<Vec<Card>, ParseError> {
                     back: Vec::new(),
                     note: None,
                     line: lineno,
-                    cloze,
-                    mode: None,
+                    cloze: false,
+                    reveal: None,
                     input: None,
                     direction: None,
                     image: None,
@@ -348,7 +343,7 @@ pub fn parse_str(subject: &str, text: &str) -> Result<Vec<Card>, ParseError> {
             }
             MARKUP_COMMENT => {
                 // A `% key: value` directive inside a card is a per-card
-                // override (`mode`, `direction`, `img`, `img-back`, `frontend`);
+                // override (`reveal`, `direction`, `img`, `img-back`, `frontend`);
                 // unrecognized keys are ignored, like deck-level directives. `%`
                 // lines before the first card are deck-level (handled by
                 // parse_directives).
@@ -357,9 +352,12 @@ pub fn parse_str(subject: &str, text: &str) -> Result<Vec<Card>, ParseError> {
                 {
                     let partial = partial.as_mut().unwrap();
                     match key.as_str() {
-                        "mode" => {
-                            if let Ok(m) = Mode::from_str(&value, true) {
-                                partial.mode = Some(m);
+                        "reveal" => {
+                            if let Ok(r) = Reveal::from_str(&value, true) {
+                                partial.reveal = Some(r);
+                                if r == Reveal::Cloze {
+                                    partial.cloze = true;
+                                }
                             }
                         }
                         "input" => {
@@ -598,7 +596,7 @@ mod tests {
 
     #[test]
     fn directives_are_collected() {
-        let text = "% mode: line\n\
+        let text = "% reveal: line\n\
                     %  Order:Sequential \n\
                     % link: https://example.org\n\
                     % Then learn it with: alix\n\
@@ -606,7 +604,7 @@ mod tests {
                     # front\n\tback\n";
         assert_eq!(
             vec![
-                ("mode".to_string(), "line".to_string()),
+                ("reveal".to_string(), "line".to_string()),
                 // Key is lower-cased; value keeps its case.
                 ("order".to_string(), "Sequential".to_string()),
             ],
@@ -618,11 +616,43 @@ mod tests {
     }
 
     #[test]
-    fn per_card_mode_directive_is_parsed() {
-        let text = "# a\n% mode: choice\n\tx\n# b\n\ty\n";
+    fn reveal_cloze_declares_a_cloze_card_with_a_stable_id() {
+        // The card that used to be written `#? ...` with {{}} gaps keeps its id
+        // when re-declared via a per-card `% reveal: cloze` — ids hash cloze
+        // structure, not the retired `#?` marker. `3946244523907553015` is the
+        // frozen id the `#? capital?` spelling produced before the marker was
+        // retired.
+        let new = "# capital?\n% reveal: cloze\n\tParis is the capital of {{France}}\n";
+        let new_id = parse_str("geo.txt", new).unwrap()[0].id();
+        assert_eq!(
+            3946244523907553015, new_id,
+            "retiring #? must not reshuffle cloze ids"
+        );
+    }
+
+    #[test]
+    fn reveal_line_sets_the_reveal_method() {
+        // A per-card directive (after the front); `parse_str` applies per-card
+        // directives, while a header `% reveal:` is deck-level (folded at load).
+        let cards = parse_str("d.txt", "# steps?\n% reveal: line\n\ta\n\tb\n").unwrap();
+        assert_eq!(cards[0].reveal, Some(Reveal::Line));
+    }
+
+    #[test]
+    fn mode_directive_is_no_longer_parsed() {
+        // `% mode:` is retired; the line is ignored (not an error), no field set.
+        let cards = parse_str("d.txt", "% mode: typing\n# q?\n\ta\n").unwrap();
+        // A card has no `mode` field anymore; assert the card parsed and is plain.
+        assert_eq!(cards[0].front, "q?");
+        assert_eq!(None, cards[0].reveal);
+    }
+
+    #[test]
+    fn per_card_reveal_directive_is_parsed() {
+        let text = "# a\n% reveal: line\n\tx\n# b\n\ty\n";
         let cards = parse_str("s", text).unwrap();
-        assert_eq!(Some(Mode::Choice), cards[0].mode);
-        assert_eq!(None, cards[1].mode); // no per-card directive
+        assert_eq!(Some(Reveal::Line), cards[0].reveal);
+        assert_eq!(None, cards[1].reveal); // no per-card directive
     }
 
     #[test]
@@ -652,7 +682,7 @@ mod tests {
     #[test]
     fn cloze_card_ignores_image_directive() {
         // `% img:` is only stamped on plain cards; cloze sub-cards keep None.
-        let cards = parse_str("s", "#? f\n% img: x.png\n{{a}} b\n").unwrap();
+        let cards = parse_str("s", "# f\n% reveal: cloze\n% img: x.png\n{{a}} b\n").unwrap();
         assert_eq!(None, cards[0].image);
     }
 
@@ -706,12 +736,12 @@ mod tests {
 
     #[test]
     fn directives_are_header_only() {
-        // A `% mode:` after a card front is a per-card override, not deck-level.
-        assert!(parse_directives("# a\n% mode: choice\n\tx\n").is_empty());
+        // A `% reveal:` after a card front is a per-card override, not deck-level.
+        assert!(parse_directives("# a\n% reveal: cloze\n\tx\n").is_empty());
         // In the header it is collected.
         assert_eq!(
-            vec![("mode".to_string(), "line".to_string())],
-            parse_directives("% mode: line\n# a\n\tx\n")
+            vec![("reveal".to_string(), "line".to_string())],
+            parse_directives("% reveal: line\n# a\n\tx\n")
         );
     }
 
@@ -738,14 +768,13 @@ mod tests {
 
     #[test]
     fn multi_line_note_on_cloze_cards() {
-        let cards = parse_str("s", "#? f\n{{a}} b\n! one\n! two").unwrap();
+        let cards = parse_str("s", "# f\n% reveal: cloze\n{{a}} b\n! one\n! two").unwrap();
         assert_eq!(Some("one\ntwo".to_string()), cards[0].note);
     }
 
     #[test]
     fn error_empty_front() {
         assert_eq!(Err(ParseError::EmptyFront(1)), parse_str("s", "#\nback"));
-        assert_eq!(Err(ParseError::EmptyFront(1)), parse_str("s", "#?\nback"));
     }
 
     #[test]
@@ -796,7 +825,7 @@ mod tests {
 
     #[test]
     fn cloze_front_expands_to_sub_cards() {
-        let text = "#? Complete the quote\n\tTo {{be}} or not to {{be}}\n\t! Hamlet\n";
+        let text = "# Complete the quote\n% reveal: cloze\n\tTo {{be}} or not to {{be}}\n\t! Hamlet\n";
         let cards = parse_str("s", text).unwrap();
         assert_eq!(2, cards.len());
         assert_eq!("Complete the quote", cards[0].front);
@@ -808,8 +837,8 @@ mod tests {
     }
 
     #[test]
-    fn cloze_marker_requires_no_space() {
-        // "# ? ..." is a plain card whose front starts with '?'.
+    fn a_question_mark_front_is_a_plain_card() {
+        // With `#?` retired, "# ? ..." is just a plain card whose front is "?...".
         let cards = parse_str("s", "# ? matches one char\n\tglob\n").unwrap();
         assert_eq!(1, cards.len());
         assert_eq!("? matches one char", cards[0].front);
@@ -818,7 +847,7 @@ mod tests {
 
     #[test]
     fn braces_in_plain_cards_stay_literal() {
-        // Code answers contain braces; without the '#?' marker they are never
+        // Code answers contain braces; without `% reveal: cloze` they are never
         // treated as cloze holes, and the identity hash (over the back lines
         // verbatim) is unaffected.
         let cards = parse_str("s", "# main\n\tfunc main() {}\n\tx := T{ a, b }\n").unwrap();
@@ -829,17 +858,19 @@ mod tests {
 
     #[test]
     fn cloze_errors_carry_line_numbers() {
+        // `ClozeWithoutHoles` points at the front line; the hole errors point at
+        // the offending answer line (shifted by the `% reveal: cloze` directive).
         assert_eq!(
             Err(ParseError::ClozeWithoutHoles(1)),
-            parse_str("s", "#? front\n\tno holes\n")
+            parse_str("s", "# front\n% reveal: cloze\n\tno holes\n")
         );
         assert_eq!(
-            Err(ParseError::UnclosedClozeHole(3)),
-            parse_str("s", "#? front\n\tok {{fine}}\n\tbad {{oops\n")
+            Err(ParseError::UnclosedClozeHole(4)),
+            parse_str("s", "# front\n% reveal: cloze\n\tok {{fine}}\n\tbad {{oops\n")
         );
         assert_eq!(
-            Err(ParseError::EmptyClozeHole(2)),
-            parse_str("s", "#? front\n\tbad {{}} here\n")
+            Err(ParseError::EmptyClozeHole(3)),
+            parse_str("s", "# front\n% reveal: cloze\n\tbad {{}} here\n")
         );
     }
 }

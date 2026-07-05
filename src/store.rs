@@ -202,10 +202,10 @@ pub struct VirtualCard {
     /// that `synthesize`/`promote` must parse/append under**, or the id won't
     /// reproduce (`Card::id` hashes the subject).
     pub parent: String,
-    /// The card's canonical deck-format block (`# …`/`#? …` + its lines). For a
-    /// cloze card this is the whole multi-hole `#?` block; the hole this entry
-    /// stands for is identified by matching `id` against `parse(parent, text)`,
-    /// not by a stored index.
+    /// The card's canonical deck-format block (`# …` + its lines). For a
+    /// cloze card (`% reveal: cloze`) this is the whole multi-hole block; the
+    /// hole this entry stands for is identified by matching `id` against
+    /// `parse(parent, text)`, not by a stored index.
     pub text: String,
     /// When this virtual card was created (Unix ms).
     pub created_ms: u64,
@@ -535,8 +535,8 @@ impl Store {
 /// the two steps, the card is merely duplicated (a sidecar entry plus a deck
 /// card) rather than lost.
 ///
-/// Cloze edge: a multi-hole `#?` block is stored as one sidecar entry per hole,
-/// all sharing `parent` + the same whole-block `text`. Promoting one hole
+/// Cloze edge: a multi-hole `% reveal: cloze` block is stored as one sidecar
+/// entry per hole, all sharing `parent` + the same whole-block `text`. Promoting one hole
 /// appends the whole block, so the deck gains every hole as a real card — so
 /// [`Store::remove_virtual_block`] drops every hole's sidecar entry, not just
 /// the promoted one, leaving no orphans behind. Each hole's schedule carries
@@ -1061,7 +1061,7 @@ mod tests {
         let store_path = dir.path().join("progress.json");
         let mut store = Store::open(&store_path).unwrap();
 
-        let text = "#? Complete the quote\n\tTo {{be}} or not to {{be}}\n\t! Hamlet\n";
+        let text = "# Complete the quote\n% reveal: cloze\n\tTo {{be}} or not to {{be}}\n\t! Hamlet\n";
         let cards = crate::parser::parse_str("rust.txt", text).unwrap();
         assert_eq!(2, cards.len());
         let id0 = cards[0].id();

@@ -11,7 +11,7 @@
 //! 2. [`grade_answers`] — a strict examiner grades the typed answers against those points and
 //!    returns an overall pass/fail by threshold.
 //! 3. [`remediation_cards`] — on a fail, turns the missed concepts into cards (cloze/plain for
-//!    facts, `% mode: explain` for concepts), as deck-format text ready to append.
+//!    facts, plain understanding cards for concepts), as deck-format text ready to append.
 //!
 //! The engine is pure: it builds prompts, calls the CLI and parses JSON. A CLI
 //! consumer (`alix exam`) drives the terminal Q&A; a web exam surface can
@@ -235,8 +235,8 @@ pub fn grade_compression(
 }
 
 /// Turns the missed `gaps` into cards — a cloze/plain card for a missed fact, a
-/// `% mode: explain` card for a missed concept — and returns the cleaned
-/// deck-format text, ready to append to the deck file.
+/// plain understanding card (open prompt + key points) for a missed concept —
+/// and returns the cleaned deck-format text, ready to append to the deck file.
 pub fn remediation_cards(gaps: &[String], cfg: &ExamConfig, ask_cfg: &AskConfig) -> Result<String> {
     if gaps.is_empty() {
         bail!("no gaps to remediate");
@@ -1142,8 +1142,8 @@ fn grade_compression_prompt(
 }
 
 /// Builds the remediation prompt: turn missed concepts into cards, choosing the
-/// type per gap — a cloze/plain card for a missed fact or term, a
-/// `% mode: explain` understanding card for a missed concept or connection.
+/// type per gap — a cloze/plain card for a missed fact or term, a plain
+/// understanding card (open prompt + key points) for a missed concept or connection.
 fn remediation_prompt(gaps: &[String]) -> String {
     let mut prompt = String::from(
         "A student failed an understanding exam on the concepts below. Turn them \
@@ -1155,16 +1155,16 @@ fn remediation_prompt(gaps: &[String]) -> String {
          never drop a distinct idea.\n\n\
          CHOOSE THE CARD TYPE per gap, by what the gap actually is:\n\
          - A missed FACT or TERM (a definition, a value, what lives where) -> a \
-         cheap recall card. Prefer a cloze: a `#?` front with a short instruction, \
-         and an indented answer line that states the fact with each hidden span \
-         wrapped in {{double curly braces}} (a lone single brace is literal). If \
-         there is no natural word to blank out, use a plain `# ` card with the \
-         answer on the indented line below instead.\n\
+         cheap recall card. Prefer a cloze: a `# ` front with a short instruction, \
+         then a `% reveal: cloze` line, then an indented answer line that states \
+         the fact with each hidden span wrapped in {{double curly braces}} (a lone \
+         single brace is literal). If there is no natural word to blank out, use a \
+         plain `# ` card with the answer on the indented line below instead.\n\
          - A missed CONCEPT, MECHANISM or CONNECTION (a \"why\", \"how\" or \"what \
-         happens if\") -> an understanding card: a `# ` open prompt, then the next \
-         line exactly `% mode: explain`, then indented key points a good answer \
-         covers. This forces the student to re-derive the idea, which is what the \
-         exam re-tests. When unsure, prefer the understanding card.\n\n\
+         happens if\") -> an understanding card: a `# ` open prompt with indented \
+         key points a good answer covers. This forces the student to re-derive the \
+         idea, which is what the exam re-tests. When unsure, prefer the \
+         understanding card.\n\n\
          CONCEPTS THE STUDENT MISSED:\n",
     );
     for gap in gaps {
@@ -1177,14 +1177,14 @@ fn remediation_prompt(gaps: &[String]) -> String {
          on the indented (tab) line(s) below its front; an indented `! ` line after \
          it adds an optional note (a caveat, example or why it matters). One \
          example of each card type:\n\
-         #? Recall how a String is laid out in memory.\n\
+         # Recall how a String is laid out in memory.\n\
+         % reveal: cloze\n\
          \tA String stores a {{pointer}}, {{length}} and {{capacity}} on the stack, \
          and its bytes live on the {{heap}}.\n\
          # What does `drop` do for a String, and when?\n\
          \tIt returns the String's heap buffer to the allocator, at the end of the \
          owning scope.\n\
          # Why does moving a String invalidate the original binding?\n\
-         % mode: explain\n\
          \tBoth bindings would otherwise point at the same heap buffer.\n\
          \tDropping both would free it twice (a double free).\n\
          \tSo Rust invalidates the source instead of allowing two owners.\n\
@@ -1340,22 +1340,23 @@ mod tests {
     }
 
     #[test]
-    fn remediation_prompt_asks_for_explain_cards() {
+    fn remediation_prompt_asks_for_understanding_cards() {
         let p = remediation_prompt(&["the aliasing rule".to_string()]);
         assert!(p.contains("the aliasing rule"));
-        assert!(p.contains("% mode: explain"));
+        assert!(p.contains("understanding card"));
         assert!(p.contains("Output ONLY the deck text"));
     }
 
     #[test]
     fn remediation_prompt_picks_card_type_per_gap() {
         let p = remediation_prompt(&["x".to_string()]);
-        // Facts get a cheap recall card (cloze/plain); concepts get explain.
+        // Facts get a cheap recall card (cloze/plain); concepts get an
+        // understanding card (plain prompt + key points).
         assert!(p.contains("missed FACT or TERM"));
         assert!(p.contains("missed CONCEPT"));
-        assert!(p.contains("#?")); // cloze front for facts
+        assert!(p.contains("% reveal: cloze")); // cloze declaration for facts
         assert!(p.contains("double curly braces"));
-        assert!(p.contains("% mode: explain")); // understanding card for concepts
+        assert!(p.contains("understanding card")); // for concepts
     }
 
     #[test]
@@ -1469,12 +1470,12 @@ mod tests {
 
     #[test]
     fn clean_deck_output_strips_fences() {
-        let raw = "```text\n# Q\n% mode: explain\n\tA\n```";
-        assert_eq!("# Q\n% mode: explain\n\tA", clean_deck_output(raw));
+        let raw = "```text\n# Q\n% reveal: line\n\tA\n```";
+        assert_eq!("# Q\n% reveal: line\n\tA", clean_deck_output(raw));
     }
 
     use crate::{
-        answer::Mode,
+        ladder::Reveal,
         testutil::{ask_config, exec_lock, fake_cli, fake_reply},
     };
 
@@ -1665,17 +1666,14 @@ mod tests {
         let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
         // A fenced deck; clean_deck_output must strip the fences.
-        let cli = fake_reply(
-            dir.path(),
-            "```text\n# Why?\n% mode: explain\n  point\n```\n",
-        );
+        let cli = fake_reply(dir.path(), "```text\n# Why?\n  point\n```\n");
         let cards = remediation_cards(
             &["the gap".to_string()],
             &ExamConfig::default(),
             &ask_config(&cli),
         )
         .unwrap();
-        assert_eq!("# Why?\n% mode: explain\n  point", cards);
+        assert_eq!("# Why?\n  point", cards);
     }
 
     #[test]
@@ -1739,7 +1737,7 @@ mod tests {
              case \"$input\" in\n\
              *'\"grades\"'*) printf '%s' '{grades}' ;;\n\
              *'\"questions\"'*) printf '%s' '{{\"questions\":[{{\"prompt\":\"Q1\",\"points\":[\"p1\"]}},{{\"prompt\":\"Q2\",\"points\":[\"p2\"]}}]}}' ;;\n\
-             *) printf '# Why does X?\\n%% mode: explain\\n\\tpoint one\\n' ;;\n\
+             *) printf '# Why does X?\\n\\tpoint one\\n' ;;\n\
              esac"
         );
         fake_cli(dir, &body)
@@ -1807,7 +1805,7 @@ mod tests {
         assert_eq!(VirtualKind::Remediation, virtuals[0].kind);
         // Content lives as the stored deck-format `text`; re-parse it to check.
         let synth = parser::parse_str("d.txt", &virtuals[0].text).unwrap();
-        assert_eq!(Some(Mode::Explain), synth[0].mode);
+        assert_eq!("Why does X?", synth[0].front);
         assert_eq!(vec!["point one".to_string()], synth[0].back);
     }
 
@@ -1953,12 +1951,12 @@ mod tests {
 
     #[test]
     fn split_card_blocks_keeps_indented_hash_and_directives_inside_a_block() {
-        // An indented `#` answer line, a per-card `% mode:`, and a `#?`-looking
+        // An indented `#` answer line, a per-card `% reveal:`, and a `#?`-looking
         // indented line all stay inside the one card block.
-        let text = "# front\n% mode: explain\n\t#[derive(Clone)]\n\t#? not a front\n";
+        let text = "# front\n% reveal: line\n\t#[derive(Clone)]\n\t#? not a front\n";
         let blocks = split_card_blocks(text);
         assert_eq!(1, blocks.len());
-        assert!(blocks[0].contains("% mode: explain"));
+        assert!(blocks[0].contains("% reveal: line"));
         assert!(blocks[0].contains("#[derive(Clone)]"));
         assert!(blocks[0].contains("#? not a front"));
     }
@@ -1966,11 +1964,13 @@ mod tests {
     #[test]
     fn split_card_blocks_is_one_block_for_a_cloze_and_drops_preamble() {
         // A leading deck-level directive/blank line is preamble (dropped); the
-        // whole `#?` block is one block.
-        let text = "% source: x\n\n#? Complete the quote\n\tTo {{be}} or not to {{be}}\n";
+        // whole cloze block (front + `% reveal: cloze` + answer) is one block.
+        let text =
+            "% source: x\n\n# Complete the quote\n% reveal: cloze\n\tTo {{be}} or not to {{be}}\n";
         let blocks = split_card_blocks(text);
         assert_eq!(1, blocks.len());
-        assert!(blocks[0].starts_with("#? Complete the quote"));
+        assert!(blocks[0].starts_with("# Complete the quote"));
+        assert!(blocks[0].contains("% reveal: cloze"));
         assert!(!blocks[0].contains("% source:"));
     }
 
@@ -1978,7 +1978,7 @@ mod tests {
     fn regenerating_the_same_remediation_dedupes() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let text = "# Why does X?\n% mode: explain\n\tpoint one\n";
+        let text = "# Why does X?\n\tpoint one\n";
 
         let n1 = store_remediation(&mut store, "d.txt", text, 1_000, None).unwrap();
         assert_eq!(1, n1);
@@ -1997,7 +1997,7 @@ mod tests {
         // entries share one `text` but are keyed by distinct ids.
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let text = "#? Complete the quote\n\tTo {{be}} or not to {{be}}\n";
+        let text = "# Complete the quote\n% reveal: cloze\n\tTo {{be}} or not to {{be}}\n";
 
         let n = store_remediation(&mut store, "d.txt", text, 1_000, None).unwrap();
         assert_eq!(2, n, "both cloze sub-cards should be created, not deduped");
@@ -2037,7 +2037,7 @@ mod tests {
         // `vc.parent`.
         for text in [
             "# Why does X?\n\tpoint one\n",
-            "#? Complete the quote\n\tTo {{be}} or not to {{bee}}\n",
+            "# Complete the quote\n% reveal: cloze\n\tTo {{be}} or not to {{bee}}\n",
         ] {
             let dir = tempfile::tempdir().unwrap();
             let deck_path = dir.path().join("d.txt");
@@ -2075,7 +2075,7 @@ mod tests {
     fn reviving_replaces_an_archived_remediation_card() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let text = "# Why does X?\n% mode: explain\n\tpoint one\n";
+        let text = "# Why does X?\n\tpoint one\n";
         let cap = Some(30);
 
         store_remediation(&mut store, "d.txt", text, 1_000, cap).unwrap();
@@ -2169,27 +2169,27 @@ mod tests {
     }
 
     #[test]
-    fn remediation_card_mode_is_carried() {
-        // The per-card `% mode:` survives in the stored `text` and re-parses on
+    fn remediation_card_reveal_is_carried() {
+        // A per-card `% reveal:` survives in the stored `text` and re-parses on
         // synth.
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let text = "# Why does X?\n% mode: explain\n\tpoint one\n\n# fact card\n\tplain answer\n";
+        let text = "# Why does X?\n% reveal: line\n\tpoint one\n\n# fact card\n\tplain answer\n";
 
         store_remediation(&mut store, "d.txt", text, 1_000, None).unwrap();
-        // Synthesize each virtual card from its stored text to read its mode.
+        // Synthesize each virtual card from its stored text to read its reveal.
         let synthesized: Vec<_> = store
             .virtual_cards_for("d.txt")
             .iter()
             .map(|vc| parser::parse_str(&vc.parent, &vc.text).unwrap().remove(0))
             .collect();
-        let explain = synthesized
+        let lined = synthesized
             .iter()
             .find(|c| c.front == "Why does X?")
             .unwrap();
         let plain = synthesized.iter().find(|c| c.front == "fact card").unwrap();
-        assert_eq!(Some(Mode::Explain), explain.mode);
-        assert_eq!(None, plain.mode);
+        assert_eq!(Some(Reveal::Line), lined.reveal);
+        assert_eq!(None, plain.reveal);
     }
 
     // ── Trace exam (the compression) ────────────────────────────────────────

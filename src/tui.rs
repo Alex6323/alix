@@ -25,7 +25,7 @@ use crate::{
     choice::{self, ChoiceQuestion},
     config::{AskConfig, Bindings, ExamConfig, Key, KeyPattern, Strictness},
     deck::{self, Deck, DeckState},
-    exam,
+    exam, ladder,
     render::{self, ContextSpan, NoteUnit},
     scheduler::{Grade, keypoint_grade},
     session::{Session, SessionStats},
@@ -152,9 +152,6 @@ pub struct DeckInfo {
 
 /// Static settings of a review run.
 pub struct Options {
-    /// CLI `--mode` override, applied to every card. `None` lets each card use
-    /// its own mode (card `% mode:` > deck `% mode:` > built-in default).
-    pub mode_override: Option<Mode>,
     /// Fuzzy-mode typo tolerance per line.
     pub max_typos: usize,
     /// Deck names shown in the header.
@@ -226,12 +223,6 @@ pub enum AfterReview {
     Exam(PathBuf),
     /// Browse the deck — a read-only walk through its cards.
     Browse(PathBuf),
-}
-
-/// The mode a card will be reviewed in: the CLI `--mode` override, else the
-/// card's own `% mode:` (card > deck), else the built-in default.
-fn effective_mode(card: &Card, mode_override: Option<Mode>) -> Mode {
-    mode_override.or(card.mode).unwrap_or_default()
 }
 
 /// A red (weak) → green (strong) colour for a strength in `0.0..=1.0`, with a
@@ -483,7 +474,7 @@ impl App {
             self.kp_cursor = 0;
             return;
         }
-        let mode = effective_mode(card, self.options.mode_override);
+        let mode = self.card_check(card);
         self.phase = match mode {
             Mode::Typing => {
                 let expected = card.back.clone();
@@ -530,12 +521,22 @@ impl App {
         self.kp_cursor = 0;
     }
 
+    /// The concrete review check for `card`: its authored `% reveal:` method
+    /// composed with its current stored rung (spec §8), via [`ladder::check_for`].
+    /// Replaces the old CLI-override `effective_mode` — depth is the deck target,
+    /// not an authored/CLI mode.
+    fn card_check(&self, card: &Card) -> Mode {
+        let reveal = card.reveal.unwrap_or_default();
+        let rung = self.store.get(card.id()).map(|s| s.rung).unwrap_or_default();
+        ladder::check_for(reveal, rung, card)
+    }
+
     /// The current card's cached key points, but only in Explain mode (the one
     /// reconstruction mode the checklist applies to). `None` otherwise — the card
     /// keeps its plain self-graded reveal.
     fn explain_keypoints(&self) -> Option<&[String]> {
         let card = self.session.current()?;
-        (effective_mode(card, self.options.mode_override) == Mode::Explain)
+        (self.card_check(card) == Mode::Explain)
             .then(|| self.augment.keypoints(card.id()))
             .flatten()
     }

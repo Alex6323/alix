@@ -7,7 +7,6 @@ use std::{
 };
 
 use alix::{
-    answer::Mode,
     augment::{self, AugmentCache, Topology, TopologyOrder},
     browse,
     card::{Card, Frontend},
@@ -454,11 +453,6 @@ struct ReviewArgs {
     /// Deck files to review.
     decks: Vec<PathBuf>,
 
-    /// How answers are checked. Overrides a deck's `% mode:` directive;
-    /// defaults to flip.
-    #[arg(short, long, value_enum)]
-    mode: Option<Mode>,
-
     /// Order cards are shown in. Overrides a deck's `% order:` directive;
     /// defaults to scheduled.
     #[arg(short, long, value_enum)]
@@ -724,8 +718,6 @@ fn pick_decks_if_empty(
 struct ReviewSession {
     session: Session,
     store: Store,
-    /// CLI `--mode` override (each card otherwise uses its own mode).
-    mode_override: Option<Mode>,
     label: String,
     decks: HashMap<String, tui::DeckInfo>,
     config: Config,
@@ -1130,7 +1122,6 @@ fn load_review_session(
         started: Started::Review(Box::new(ReviewSession {
             session: build.session,
             store,
-            mode_override: args.mode,
             label: build.label,
             decks: build.decks,
             config,
@@ -1417,7 +1408,6 @@ fn run_review_on(
     let ReviewSession {
         session,
         store,
-        mode_override,
         label,
         decks,
         config,
@@ -1428,7 +1418,6 @@ fn run_review_on(
         return Ok(());
     }
     let ui_options = alix::tui::Options {
-        mode_override,
         max_typos: args.max_typos,
         deck_label: label,
         keys: config.keys.clone(),
@@ -1456,7 +1445,6 @@ fn run_review_tui(rs: ReviewSession, args: &ReviewArgs) -> Result<()> {
     let ReviewSession {
         session,
         store,
-        mode_override,
         label,
         decks,
         config,
@@ -1486,7 +1474,6 @@ fn run_review_tui(rs: ReviewSession, args: &ReviewArgs) -> Result<()> {
     }
 
     let ui_options = alix::tui::Options {
-        mode_override,
         max_typos: args.max_typos,
         deck_label: label,
         keys: config.keys.clone(),
@@ -1604,7 +1591,6 @@ fn review_serve(args: ReviewArgs, browse_mode: bool) -> Result<()> {
     announce(addr, args.serve.lan, token.as_deref(), &label);
 
     let opts = serve::ReviewOptions {
-        mode_override: args.mode,
         keys: config.keys.clone(),
         picker: config.picker.clone(),
         browse: config.browse.clone(),
@@ -2234,7 +2220,6 @@ fn browse_serve(args: BrowseArgs) -> Result<()> {
         ReviewArgs {
             decks: args.decks,
             serve: args.serve,
-            mode: None,
             order: None,
             topology: None,
             region: None,
@@ -3202,7 +3187,6 @@ fn workspace_cmd(args: WorkspaceArgs) -> Result<()> {
         }
         review(ReviewArgs {
             decks: picked,
-            mode: None,
             order: None,
             topology: None,
             region: None,
@@ -3399,7 +3383,7 @@ fn check(decks: Vec<PathBuf>) -> Result<()> {
                 println!("{}: {} cards", deck.subject, deck.cards.len());
                 let s = &deck.settings;
                 let declared: Vec<String> = [
-                    s.mode.map(|m| format!("mode: {}", val_name(m))),
+                    s.reveal.map(|r| format!("reveal: {}", val_name(r))),
                     s.order.map(|o| format!("order: {}", val_name(o))),
                     s.exam_strictness
                         .map(|v| format!("strictness: {}", val_name(v))),
@@ -3610,6 +3594,8 @@ fn backend_check_cmd(all: bool, config_path: Option<PathBuf>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
+
+    use alix::answer::Mode;
 
     use super::*;
 
@@ -3864,7 +3850,6 @@ mod tests {
     fn review_args(decks: Vec<PathBuf>, region: Option<&str>) -> ReviewArgs {
         ReviewArgs {
             decks,
-            mode: None,
             order: None,
             topology: None,
             region: region.map(str::to_string),

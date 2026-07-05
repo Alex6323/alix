@@ -1,6 +1,6 @@
 //! Cloze (fill-in-the-blank) cards.
 //!
-//! A card whose front marker is `#?` (instead of `#`) is a cloze card: every
+//! A card declared with `% reveal: cloze` is a cloze card: every
 //! `{{...}}` in its answer lines is a hole, and the card expands into one
 //! sub-card per hole. Each sub-card shows the answer text with its hole
 //! blanked out (`____`) while the other holes are hidden (`[…]`), so no
@@ -198,7 +198,7 @@ pub fn expand(
             note: note.map(String::from),
             line,
             hash_lines: Some(hash_lines),
-            mode: None,
+            reveal: None,
             input: None,
             direction: None,
             image: None,

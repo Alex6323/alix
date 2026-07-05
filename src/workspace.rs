@@ -221,7 +221,7 @@ pub fn manifest_icon(dir: &Path) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::answer::Mode;
+    use crate::ladder::Reveal;
 
     fn write(path: &Path, text: &str) {
         std::fs::write(path, text).unwrap();
@@ -234,14 +234,14 @@ mod tests {
         write(&dir.path().join("b.txt"), "# b\n\t2\n");
         write(
             &dir.path().join(MANIFEST),
-            "title = \"English\"\ndescription = \"everyday vocab\"\n\n[defaults]\nmode = \"typing\"\ndirection = \"both\"\n",
+            "title = \"English\"\ndescription = \"everyday vocab\"\n\n[defaults]\nreveal = \"line\"\ndirection = \"both\"\n",
         );
 
         let ws = Workspace::load(dir.path()).unwrap();
         assert_eq!(Some("English".to_string()), ws.title);
         assert_eq!(Some("everyday vocab".to_string()), ws.description);
         assert_eq!("English", ws.display_name());
-        assert_eq!(Some(Mode::Typing), ws.settings.mode);
+        assert_eq!(Some(Reveal::Line), ws.settings.reveal);
         // The manifest is not a `.txt`, so it is never a member.
         let names: Vec<_> = ws
             .members
@@ -261,7 +261,7 @@ mod tests {
         let ws = Workspace::load(&folder).unwrap();
         assert_eq!(None, ws.title);
         assert_eq!("rust", ws.display_name());
-        assert!(ws.settings.mode.is_none());
+        assert!(ws.settings.reveal.is_none());
         assert_eq!(1, ws.members.len());
     }
 
@@ -273,7 +273,7 @@ mod tests {
         // A bad manifest doesn't stop the folder from being a workspace.
         let ws = Workspace::load(dir.path()).unwrap();
         assert_eq!(None, ws.title);
-        assert!(ws.settings.mode.is_none());
+        assert!(ws.settings.reveal.is_none());
         assert_eq!(1, ws.members.len());
     }
 

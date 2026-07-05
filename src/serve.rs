@@ -41,7 +41,7 @@ use crate::{
         ReviewConfig, Strictness,
     },
     deck::{self, Deck, DeckState},
-    exam, picker,
+    exam, ladder, picker,
     recent::RecentDecks,
     render::{self, NoteUnit},
     scheduler::{Fsrs, Grade, keypoint_grade},
@@ -541,8 +541,6 @@ impl BrowseKeys {
 /// Global options for a served review, independent of which decks are chosen
 /// (the per-session label and deck paths come from [`SessionBuild`]).
 pub struct ReviewOptions {
-    /// CLI `--mode` override; `None` lets each card use its own mode.
-    pub mode_override: Option<Mode>,
     pub keys: Bindings,
     /// Deck-picker navigation keys (the `[picker]` section), bound on the
     /// selection screen.
@@ -1386,7 +1384,6 @@ pub fn run_review(
     mut store_for: impl FnMut(&[PathBuf]) -> Result<Store>,
 ) -> Result<()> {
     let ReviewOptions {
-        mode_override,
         keys: bindings,
         picker: picker_keys,
         browse: browse_bindings,
@@ -1499,7 +1496,7 @@ pub fn run_review(
                     }
                     respond_json(
                         request,
-                        &review_state(reviewing.as_ref(), &store, mode_override),
+                        &review_state(reviewing.as_ref(), &store),
                     )
                 }
             }
@@ -1541,7 +1538,7 @@ pub fn run_review(
                                     walking = None;
                                     respond_json(
                                         request,
-                                        &review_state(reviewing.as_ref(), &store, mode_override),
+                                        &review_state(reviewing.as_ref(), &store),
                                     );
                                 }
                                 Err(e) => {
@@ -1619,7 +1616,7 @@ pub fn run_review(
                 }
                 respond_json(
                     request,
-                    &review_state(reviewing.as_ref(), &store, mode_override),
+                    &review_state(reviewing.as_ref(), &store),
                 );
             }
             (Method::Post, "/api/grade") => {
@@ -1636,7 +1633,7 @@ pub fn run_review(
                         r.rotate_variant(); // a fresh phrasing for the next card
                         respond_json(
                             request,
-                            &review_state(reviewing.as_ref(), &store, mode_override),
+                            &review_state(reviewing.as_ref(), &store),
                         );
                     }
                     None => respond_status(request, 400),
@@ -1651,7 +1648,7 @@ pub fn run_review(
                 r.rotate_variant(); // a fresh phrasing for the next card
                 respond_json(
                     request,
-                    &review_state(reviewing.as_ref(), &store, mode_override),
+                    &review_state(reviewing.as_ref(), &store),
                 );
             }
             (Method::Post, "/api/acquire") => {
@@ -1668,7 +1665,7 @@ pub fn run_review(
                 r.rotate_variant(); // a fresh phrasing for the next card
                 respond_json(
                     request,
-                    &review_state(reviewing.as_ref(), &store, mode_override),
+                    &review_state(reviewing.as_ref(), &store),
                 );
             }
             (Method::Post, "/api/check") => {
@@ -1686,7 +1683,9 @@ pub fn run_review(
                 let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
                 let result = body.and_then(|body| {
                     let card = r.session.current()?;
-                    let mode = mode_override.or(card.mode).unwrap_or_default();
+                    let reveal = card.reveal.unwrap_or_default();
+                    let rung = store.get(card.id()).map(|s| s.rung).unwrap_or_default();
+                    let mode = ladder::check_for(reveal, rung, card);
                     let tol = if mode == Mode::Typing { 0 } else { max_typos };
                     // Order-independent: a multi-item answer can be typed in any
                     // order, each line matched to its closest expected line.
@@ -1752,7 +1751,7 @@ pub fn run_review(
                 }
                 respond_json(
                     request,
-                    &review_state(reviewing.as_ref(), &store, mode_override),
+                    &review_state(reviewing.as_ref(), &store),
                 );
             }
             // Promotes the current virtual (remediation) card into its deck
@@ -1790,7 +1789,7 @@ pub fn run_review(
                 r.session.poll(&store, now_ms());
                 respond_json(
                     request,
-                    &review_state(reviewing.as_ref(), &store, mode_override),
+                    &review_state(reviewing.as_ref(), &store),
                 );
             }
             (Method::Post, "/api/restart") => {
@@ -1802,7 +1801,7 @@ pub fn run_review(
                 r.rotate_variant(); // a fresh phrasing for the new session's first card
                 respond_json(
                     request,
-                    &review_state(reviewing.as_ref(), &store, mode_override),
+                    &review_state(reviewing.as_ref(), &store),
                 );
             }
             // Ask Claude about the current card — runs the CLI on a background
@@ -2000,7 +1999,7 @@ pub fn run_review(
                 }
                 respond_json(
                     request,
-                    &review_state(reviewing.as_ref(), &store, mode_override),
+                    &review_state(reviewing.as_ref(), &store),
                 );
             }
             // ── Deck augmentation (the picker's "Augment" action, decks only) ──
@@ -2100,7 +2099,7 @@ pub fn run_review(
                 }
                 respond_json(
                     request,
-                    &review_state(reviewing.as_ref(), &store, mode_override),
+                    &review_state(reviewing.as_ref(), &store),
                 );
             }
             // ── Trace walk (a single trace picked from the selection screen) ──
@@ -2651,11 +2650,7 @@ fn query_param(url: &str, key: &str) -> Option<String> {
 /// session and store. For choice mode it also builds the options, seeded by the
 /// card id so they are stable across the `/api/state` and `/api/choose`
 /// requests without any server-side caching.
-fn review_state(
-    reviewing: Option<&Reviewing>,
-    store: &Store,
-    mode_override: Option<Mode>,
-) -> StateDto {
+fn review_state(reviewing: Option<&Reviewing>, store: &Store) -> StateDto {
     let Some(r) = reviewing else {
         return StateDto {
             phase: "select",
@@ -2681,9 +2676,14 @@ fn review_state(
     };
     let session = &r.session;
     let card = session.current();
-    // CLI override wins; otherwise the current card's own mode, else default.
-    let mode = mode_override
-        .or(card.and_then(|c| c.mode))
+    // The concrete check derives from the card's authored `% reveal:` method and
+    // its current stored rung (spec §8); depth is the deck target, not authored.
+    let mode = card
+        .map(|c| {
+            let reveal = c.reveal.unwrap_or_default();
+            let rung = store.get(c.id()).map(|s| s.rung).unwrap_or_default();
+            ladder::check_for(reveal, rung, c)
+        })
         .unwrap_or_default();
     // A never-seen card is *acquired* (an attempt, then reveal), not quizzed cold.
     let acquire = session.current_unseen(store);
@@ -3485,7 +3485,7 @@ mod tests {
     fn review_state_select_phase_has_no_card() {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(dir.path().join("p.json")).unwrap();
-        let dto = review_state(None, &store, None);
+        let dto = review_state(None, &store);
         assert_eq!(dto.phase, "select");
         assert!(dto.card.is_none());
         assert!(!dto.finished);

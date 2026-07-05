@@ -35,18 +35,20 @@ answer. Keep answers short — one fact or a few words; several lines are allowe
 cards: a brief elaboration, a concrete example, a mnemonic, or why it matters \
 — one or two short lines, never just restating the answer. Put each note line \
 on its own `! ` line, after the answer lines.
-- A fill-in-the-blank (cloze) card starts with `#?` instead of `#`. The `#?` \
-line is a short instruction; the INDENTED answer line(s) below it hold the \
-full sentence, with each hidden span wrapped in {{double curly braces}}. A lone \
-single brace is literal, so code with `{}` is fine in a cloze answer. The \
-blanks live in the answer line, NEVER on the `#?` line. Use `#?` only when \
-there is a natural word to blank out; otherwise use a plain `#` card. Example \
-of one plain card followed by one cloze card:
+- A fill-in-the-blank (cloze) card is a plain `# ` card with a `% reveal: cloze` \
+line right below the front. The front is a short instruction; the INDENTED \
+answer line(s) below hold the full sentence, with each hidden span wrapped in \
+{{double curly braces}}. A lone single brace is literal, so code with `{}` is \
+fine in a cloze answer. The blanks live in the answer line, NEVER on the front \
+or the `% reveal: cloze` line. Use `% reveal: cloze` only when there is a \
+natural word to blank out; otherwise use a plain `#` card. Example of one plain \
+card followed by one cloze card:
       # What guarantee does ownership give each value in Rust?
           Exactly one owner at a time.
           ! This is what lets Rust free memory deterministically, with no
           ! garbage collector.
-      #? Fill in the ownership rule about scope.
+      # Fill in the ownership rule about scope.
+      % reveal: cloze
           When the owner goes out of scope, the value is {{dropped}}.
           ! \"Dropped\" means its destructor runs and its memory is freed.
 - `% ` lines are comments, ignored by the trainer.
@@ -60,7 +62,7 @@ The `% link:` line lets the learner ask follow-up questions against the source.
 
 PEDAGOGY — produce a balanced deck of AT MOST {max_cards} cards spread across \
 four layers of understanding:
-  1. Facts & terminology — definitions and key terms. Prefer cloze (#?) here.
+  1. Facts & terminology — definitions and key terms. Prefer cloze (% reveal: cloze) here.
   2. Concepts & mechanisms — \"why\" and \"how\" questions (plain cards).
   3. Application — \"given X, what happens / what would you do?\" (plain cards).
   4. Connections — how ideas relate, contrast, or build on each other.
@@ -70,7 +72,7 @@ CARD QUALITY:
 - Do not cram an enumeration into one prose answer. If the answer is a list of \
 several items, split it into several one-idea cards instead — one card per item \
 or group. Only when the ordered list ITSELF is the thing to learn (steps, a \
-sequence) keep it as one card with `% mode: line` and one item per indented \
+sequence) keep it as one card with `% reveal: line` and one item per indented \
 answer line.
 - Give answers and notes clean structure when the content has it (short lines, \
 one point per line — do NOT prefix items with a bullet or dash; bullets are added \
@@ -115,11 +117,12 @@ answer. Keep answers short — one fact or a few words; several lines are allowe
 - An indented `! ` line adds a note shown AFTER answering. Add a note to most \
 cards: a brief elaboration, a concrete example, a mnemonic, or why it matters \
 — one or two short lines, never just restating the answer.
-- A fill-in-the-blank (cloze) card starts with `#?` instead of `#`. The `#?` \
-line is a short instruction; the INDENTED answer line(s) below it hold the \
-full sentence, with each hidden span wrapped in {{double curly braces}} — the \
-blanks live in the answer line, NEVER on the `#?` line. Use `#?` only when there \
-is a natural word to blank out.
+- A fill-in-the-blank (cloze) card is a plain `# ` card with a `% reveal: cloze` \
+line right below the front. The front is a short instruction; the INDENTED \
+answer line(s) below hold the full sentence, with each hidden span wrapped in \
+{{double curly braces}} — the blanks live in the answer line, NEVER on the front \
+or the `% reveal: cloze` line. Use `% reveal: cloze` only when there is a \
+natural word to blank out.
 - A `% at: file:start-end` line indented under a card cites where its answer \
 lives in the source (e.g. `% at: src/string.rs:120-128`; the path is relative to \
 the source root — your working directory). Add one to every card whose answer \
@@ -137,7 +140,7 @@ your understanding against it.
 
 PEDAGOGY — produce a balanced deck of AT MOST {max_cards} cards spread across \
 four layers of understanding:
-  1. Facts & terminology — definitions and key terms. Prefer cloze (#?) here.
+  1. Facts & terminology — definitions and key terms. Prefer cloze (% reveal: cloze) here.
   2. Concepts & mechanisms — \"why\" and \"how\" questions (plain cards).
   3. Application — \"given X, what happens / what would you do?\" (plain cards).
   4. Connections — how the pieces relate, contrast, or build on each other.
@@ -147,7 +150,7 @@ CARD QUALITY:
 - Do not cram an enumeration into one prose answer. If the answer is a list of \
 several items, split it into several one-idea cards instead — one card per item \
 or group. Only when the ordered list ITSELF is the thing to learn (steps, a \
-sequence) keep it as one card with `% mode: line` and one item per indented \
+sequence) keep it as one card with `% reveal: line` and one item per indented \
 answer line.
 - Give answers and notes clean structure when the content has it (short lines, \
 one point per line — do NOT prefix items with a bullet or dash; bullets are added \
@@ -178,9 +181,10 @@ Apply these edits:
 card must test something distinct. This is the most important fix.
 - Drop cards that are ambiguous or trivial, or whose `! ` note merely restates \
 the answer.
-- Keep the EXACT same file format: the leading `%` comment lines, `# ` and \
-`#?` card fronts at column 0, indented answer lines, and indented `! ` notes. \
-A `#?` cloze card keeps its blanks ({{like this}}) in its indented answer line.
+- Keep the EXACT same file format: the leading `%` comment lines, `# ` card \
+fronts at column 0, indented answer lines, and indented `! ` notes. A cloze \
+card carries a `% reveal: cloze` line below its front and keeps its blanks \
+({{like this}}) in its indented answer line.
 - Preserve the good cards and their order; do not invent filler to hit a count.
 
 Output ONLY the improved deck — no commentary, no markdown code fences.
@@ -421,15 +425,15 @@ mod tests {
         assert!(p.contains("AT MOST 12 cards"));
         assert!(p.contains("% link: https://example.org/page"));
         // It teaches the format and the four layers.
-        assert!(p.contains("#?"));
+        assert!(p.contains("% reveal: cloze"));
         assert!(p.contains("four layers"));
         assert!(!p.contains("{url}"));
         assert!(!p.contains("{max_cards}"));
         // Cloze guidance must use double braces and keep the blank in the
-        // answer, not on the `#?` line (the bug that broke real generations).
+        // answer, not on the front (the bug that broke real generations).
         assert!(p.contains("{{double curly braces}}"));
         assert!(p.contains("{{dropped}}"));
-        assert!(p.contains("NEVER on the `#?` line"));
+        assert!(p.contains("NEVER on the front"));
         assert!(p.contains("never write a front with no answer"));
         // Notes must be actively requested, not just described as optional.
         assert!(p.contains("Add a note to most cards"));

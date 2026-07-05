@@ -9,22 +9,23 @@ use clap::ValueEnum;
 use thiserror::Error;
 
 use crate::{
-    answer::{Input, Mode},
+    answer::Input,
     card::{Card, Direction, Frontend},
     config::Strictness,
+    ladder::Reveal,
     parser::{self, ParseError},
     session::{self, Order},
     store::Store,
 };
 
 /// Per-deck defaults declared with `% key: value` header directives, e.g.
-/// `% mode: line` or `% order: sequential`. Each is `None` unless the deck
+/// `% reveal: line` or `% order: sequential`. Each is `None` unless the deck
 /// sets it; an explicit CLI flag always takes precedence. Unknown keys and
 /// unparseable values are ignored, so the directives never break a deck.
 #[derive(Debug, Default, Clone)]
 pub struct DeckSettings {
-    /// Default answer mode for this deck (`% mode: ...`).
-    pub mode: Option<Mode>,
+    /// Default reveal-method for this deck (`% reveal: ...`).
+    pub reveal: Option<Reveal>,
     /// Default input method for this deck (`% input: ...`).
     pub input: Option<Input>,
     /// Default card order for this deck (`% order: ...`).
@@ -52,7 +53,7 @@ impl DeckSettings {
         let mut settings = Self::default();
         for (key, value) in directives {
             match key.as_str() {
-                "mode" => settings.mode = Mode::from_str(value, true).ok(),
+                "reveal" => settings.reveal = Reveal::from_str(value, true).ok(),
                 "input" => settings.input = Input::from_str(value, true).ok(),
                 "order" => settings.order = Order::from_str(value, true).ok(),
                 "direction" => settings.direction = Direction::from_str(value, true).ok(),
@@ -75,7 +76,7 @@ impl DeckSettings {
     /// so the deck's own directives win and the workspace fills the gaps —
     /// precedence deck > workspace.
     fn fill_from(&mut self, defaults: &DeckSettings) {
-        self.mode = self.mode.or(defaults.mode);
+        self.reveal = self.reveal.or(defaults.reveal);
         self.input = self.input.or(defaults.input);
         self.order = self.order.or(defaults.order);
         self.direction = self.direction.or(defaults.direction);
@@ -187,10 +188,11 @@ impl Deck {
         let mut settings = DeckSettings::from_directives(&parser::parse_directives(&text));
         // Fold the workspace's shared directives in below the deck's own.
         settings.fill_from(defaults);
-        // A card without its own `% mode:` inherits the deck's mode, so each
-        // card carries its effective declared mode (card override, else deck).
+        // A card without its own `% reveal:` inherits the deck's reveal-method,
+        // so each card carries its effective declared reveal (card override,
+        // else deck).
         for card in &mut cards {
-            card.mode = card.mode.or(settings.mode);
+            card.reveal = card.reveal.or(settings.reveal);
             card.input = card.input.or(settings.input);
         }
         // Fold the declared frontend (card override, else deck) and resolve each
@@ -726,8 +728,8 @@ pub fn set_requires(path: &Path, deps: &[String]) -> Result<(), DeckError> {
 /// one of the 1-based `front_lines` is deleted along with its back lines, notes
 /// and trailing blank separator. The block runs from the front (a column-0 `#`
 /// line) to the next card's front, or the end of the file. Passing the front
-/// line of any cloze sub-card removes the whole `#?` source block, since all of
-/// its holes share that line. The file is rewritten atomically (temp + rename).
+/// line of any cloze sub-card removes the whole `% reveal: cloze` source block,
+/// since all of its holes share that line. The file is rewritten atomically (temp + rename).
 /// An empty `front_lines` is a no-op.
 pub fn remove_cards(path: &Path, front_lines: &[usize]) -> Result<(), DeckError> {
     if front_lines.is_empty() {
@@ -1082,10 +1084,10 @@ mod tests {
     fn append_cards_appends_with_separation_and_parses() {
         let dir = tempfile::tempdir().unwrap();
         let path = write_deck(dir.path(), "d.txt", "# one\n\t1\n");
-        append_cards(&path, "# two\n% mode: explain\n\tkey point\n").unwrap();
+        append_cards(&path, "# two\n% reveal: line\n\tkey point\n").unwrap();
 
         let text = std::fs::read_to_string(&path).unwrap();
-        assert_eq!("# one\n\t1\n\n# two\n% mode: explain\n\tkey point\n", text);
+        assert_eq!("# one\n\t1\n\n# two\n% reveal: line\n\tkey point\n", text);
         // The original card's identity survives; the new card is added.
         let cards = crate::parser::parse_str("d.txt", &text).unwrap();
         assert_eq!(2, cards.len());
@@ -1304,12 +1306,12 @@ mod tests {
         let path = dir.path().join("d.txt");
         std::fs::write(
             &path,
-            "% mode: line\n% order: sequential\n% direction: bogus\n# f\n\tb\n",
+            "% reveal: line\n% order: sequential\n% direction: bogus\n# f\n\tb\n",
         )
         .unwrap();
 
         let deck = Deck::load(&path).unwrap();
-        assert_eq!(Some(Mode::LineByLine), deck.settings.mode);
+        assert_eq!(Some(Reveal::Line), deck.settings.reveal);
         assert_eq!(Some(Order::Sequential), deck.settings.order);
         // An unparseable value is ignored, not an error.
         assert_eq!(None, deck.settings.direction);
@@ -1372,13 +1374,13 @@ mod tests {
     }
 
     #[test]
-    fn explain_mode_directive_parses_and_stamps_cards() {
+    fn reveal_directive_parses_and_stamps_cards() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("u.txt");
-        std::fs::write(&path, "% mode: explain\n# why?\n\tpoint one\n\tpoint two\n").unwrap();
+        std::fs::write(&path, "% reveal: line\n# steps?\n\tone\n\ttwo\n").unwrap();
         let deck = Deck::load(&path).unwrap();
-        assert_eq!(Some(Mode::Explain), deck.settings.mode);
-        assert_eq!(Some(Mode::Explain), deck.cards[0].mode); // stamped onto the card
+        assert_eq!(Some(Reveal::Line), deck.settings.reveal);
+        assert_eq!(Some(Reveal::Line), deck.cards[0].reveal); // stamped onto the card
     }
 
     #[test]
@@ -1390,8 +1392,8 @@ mod tests {
 
     #[test]
     fn rewrite_requires_empty_clears_them_keeping_other_comments() {
-        let text = "% requires: old\n% mode: line\n# a\n\tb\n";
-        assert_eq!("% mode: line\n# a\n\tb\n", rewrite_requires(text, &[]));
+        let text = "% requires: old\n% reveal: line\n# a\n\tb\n";
+        assert_eq!("% reveal: line\n# a\n\tb\n", rewrite_requires(text, &[]));
     }
 
     #[test]
@@ -1427,14 +1429,14 @@ mod tests {
     }
 
     #[test]
-    fn card_mode_is_card_override_else_deck_mode() {
+    fn card_reveal_is_card_override_else_deck_reveal() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("d.txt");
-        std::fs::write(&path, "% mode: flip\n# a\n% mode: choice\n\tx\n# b\n\ty\n").unwrap();
+        std::fs::write(&path, "% reveal: flip\n# a\n% reveal: line\n\tx\n# b\n\ty\n").unwrap();
 
         let deck = Deck::load(&path).unwrap();
-        assert_eq!(Some(Mode::Choice), deck.cards[0].mode); // card override wins
-        assert_eq!(Some(Mode::Flip), deck.cards[1].mode); // inherits the deck's
+        assert_eq!(Some(Reveal::Line), deck.cards[0].reveal); // card override wins
+        assert_eq!(Some(Reveal::Flip), deck.cards[1].reveal); // inherits the deck's
     }
 
     #[test]
@@ -1449,11 +1451,11 @@ mod tests {
     }
 
     #[test]
-    fn cards_have_no_mode_without_directives() {
+    fn cards_have_no_reveal_without_directives() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("d.txt");
         std::fs::write(&path, "# a\n\tx\n").unwrap();
-        assert_eq!(None, Deck::load(&path).unwrap().cards[0].mode);
+        assert_eq!(None, Deck::load(&path).unwrap().cards[0].reveal);
     }
 
     #[test]
@@ -1495,7 +1497,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("d.txt");
         // Deck-level `both` must not reverse a cloze card (one hole -> one card).
-        std::fs::write(&path, "% direction: both\n#? fill\n\tThe {{x}} thing.\n").unwrap();
+        std::fs::write(
+            &path,
+            "% direction: both\n# fill\n% reveal: cloze\n\tThe {{x}} thing.\n",
+        )
+        .unwrap();
         assert_eq!(1, Deck::load(&path).unwrap().cards.len());
     }
 
@@ -1559,14 +1565,14 @@ mod tests {
         std::fs::write(&path, "# purported\n\tangeblich\n").unwrap();
         let defaults = DeckSettings {
             direction: Some(Direction::Both),
-            mode: Some(Mode::Typing),
+            reveal: Some(Reveal::Line),
             ..Default::default()
         };
         let deck = Deck::load_with_defaults(&path, &defaults).unwrap();
         // Workspace `direction: both` reached the cards (expanded the pair)...
         assert_eq!(2, deck.cards.len());
-        // ...and `mode` folded onto them.
-        assert_eq!(Some(Mode::Typing), deck.cards[0].mode);
+        // ...and `reveal` folded onto them.
+        assert_eq!(Some(Reveal::Line), deck.cards[0].reveal);
     }
 
     #[test]
@@ -1608,7 +1614,7 @@ mod tests {
         std::fs::write(&path, "% just a comment\n# f\n\tb\n").unwrap();
 
         let deck = Deck::load(&path).unwrap();
-        assert_eq!(None, deck.settings.mode);
+        assert_eq!(None, deck.settings.reveal);
         assert_eq!(None, deck.settings.input);
         assert_eq!(None, deck.settings.order);
     }

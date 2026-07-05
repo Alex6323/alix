@@ -4,7 +4,7 @@ use std::{hash::Hasher, path::PathBuf, sync::Arc};
 
 use twox_hash::XxHash64;
 
-use crate::answer::{Input, Mode};
+use crate::{answer::Input, ladder::Reveal};
 
 /// Which way a card is reviewed. Set per card (or per deck) with
 /// `% direction:`; `both` generates a forward and a reversed card.
@@ -57,10 +57,12 @@ pub struct Card {
     /// stable across rewording the front and unique even when two holes hold the
     /// same text.
     pub hash_lines: Option<Vec<String>>,
-    /// Per-card answer-mode override (`% mode:` on the card, else the deck's
-    /// `% mode:`). `None` falls back to the CLI flag / built-in default. Not
-    /// part of the identity hash — mode is a review property, not content.
-    pub mode: Option<Mode>,
+    /// Per-card reveal-method (`% reveal:` on the card, else the deck's
+    /// `% reveal:`) — how the answer is uncovered (flip / cloze / line),
+    /// independent of depth. `None` falls back to `Reveal::Flip`. Not part of
+    /// the identity hash — how the answer is revealed is a review property, not
+    /// content.
+    pub reveal: Option<Reveal>,
     /// Per-card input method (`% input:` on the card, else the deck's). `None`
     /// falls back to `Input::Type`. Not part of the identity hash — how you
     /// answer is a review property, not content.
@@ -123,7 +125,7 @@ impl Card {
             note,
             line,
             hash_lines: None,
-            mode: None,
+            reveal: None,
             input: None,
             direction: None,
             image: None,
@@ -168,7 +170,7 @@ impl Card {
             self.note.clone(),
             self.line,
         );
-        card.mode = self.mode;
+        card.reveal = self.reveal;
         card.input = self.input;
         card.frontend = self.frontend;
         // Swap the image sides: a question-side image becomes the answer's, and
@@ -272,24 +274,26 @@ mod tests {
     }
 
     #[test]
-    fn id_ignores_mode() {
-        // Mode is a review property, not content — it must not change identity.
+    fn id_ignores_reveal() {
+        // The reveal-method is a review property, not content — it must not
+        // change identity.
         let mut a = card("subject1", "hello", &["world"], None);
-        let b = card("subject1", "hello", &["world"], None);
-        a.mode = Some(Mode::Typing);
+        let mut b = card("subject1", "hello", &["world"], None);
+        a.reveal = Some(Reveal::Flip);
+        b.reveal = Some(Reveal::Line);
         assert_eq!(a.id(), b.id());
     }
 
     #[test]
     fn reversed_swaps_sides_keeps_note_and_line() {
         let mut fwd = card("vocab.txt", "purported", &["angeblich"], Some("a note"));
-        fwd.mode = Some(Mode::Typing);
+        fwd.reveal = Some(Reveal::Line);
         let rev = fwd.reversed();
         assert_eq!("angeblich", rev.front);
         assert_eq!(vec!["purported"], rev.back);
         assert_eq!(fwd.note, rev.note);
         assert_eq!(fwd.line, rev.line); // same source line -> sibling group
-        assert_eq!(fwd.mode, rev.mode);
+        assert_eq!(fwd.reveal, rev.reveal);
         assert_ne!(fwd.id(), rev.id()); // distinct identity (hashes new back)
     }
 

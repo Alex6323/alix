@@ -37,6 +37,7 @@ use crate::{
     ask,
     card::Card,
     config::{AiConfig, AskConfig},
+    ladder::Reveal,
 };
 
 /// The on-disk cache-format version. Bumped only if the persisted shape changes
@@ -59,10 +60,23 @@ pub struct Format {
     /// Reshaped note. `None` keeps the card's deck note.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
-    /// Suggested answer mode (e.g. `line`). Filled at review only if the card
-    /// declares no mode of its own. Restricted to self-graded/reveal modes.
+    /// Suggested self-graded presentation (e.g. `line`). Applied at review as a
+    /// reveal-method (`flip`→flip, `line`→line) only if the card declares no
+    /// `% reveal:` of its own; `explain` has no reveal equivalent (depth is
+    /// derived now) and is ignored. Restricted to self-graded/reveal modes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode: Option<Mode>,
+}
+
+/// Maps a suggested self-graded `Mode` onto the authored reveal axis: `flip` and
+/// `line` have direct reveal equivalents; `explain` (and anything else) does not
+/// — depth is derived now (spec §8), so an explain suggestion is dropped.
+fn reveal_from_suggested(mode: Mode) -> Option<Reveal> {
+    match mode {
+        Mode::Flip => Some(Reveal::Flip),
+        Mode::LineByLine => Some(Reveal::Line),
+        _ => None,
+    }
 }
 
 /// The AI-derived presentation data for a single card, keyed in the cache by the
@@ -593,9 +607,9 @@ impl AugmentCache {
 
     /// Applies a cached presentation reshape to `card` for display: overwrites the
     /// (un-hashed) front and re-renders the deck note, sets the display-only
-    /// `display_back` for the answer, and fills the mode only if the card declares
-    /// none. Never touches `card.back`, so `card.id()` is unchanged. A no-op when
-    /// the card has no cached reshape.
+    /// `display_back` for the answer, and fills the reveal-method only if the card
+    /// declares none. Never touches `card.back`, so `card.id()` is unchanged. A
+    /// no-op when the card has no cached reshape.
     pub fn apply_format(&self, card: &mut Card) {
         let Some(fmt) = self.format(card.id()) else {
             return;
@@ -609,8 +623,8 @@ impl AugmentCache {
         if !fmt.back.is_empty() {
             card.display_back = Some(fmt.back.clone());
         }
-        if card.mode.is_none() {
-            card.mode = fmt.mode;
+        if card.reveal.is_none() {
+            card.reveal = fmt.mode.and_then(reveal_from_suggested);
         }
     }
 
@@ -2307,15 +2321,16 @@ mod tests {
         cache.apply_format(&mut card);
         assert_eq!(card.front, "Name the parts");
         assert_eq!(card.back_for_display(), ["A", "B", "C"]);
-        assert_eq!(card.mode, Some(Mode::LineByLine));
+        // The suggested `line` mode is applied as the `line` reveal-method.
+        assert_eq!(card.reveal, Some(Reveal::Line));
         assert_eq!(card.id(), id); // identity preserved
     }
 
     #[test]
-    fn apply_format_respects_an_explicit_mode() {
+    fn apply_format_respects_an_explicit_reveal() {
         use std::sync::Arc;
         let mut card = Card::plain(Arc::from("d.txt"), "f".into(), vec!["a".into()], None, 1);
-        card.mode = Some(Mode::Typing); // user's explicit choice
+        card.reveal = Some(Reveal::Flip); // user's explicit choice
         let id = card.id();
         let mut cache = AugmentCache::open(std::env::temp_dir().join("nonexistent-augment2.json"));
         cache.set_format(
@@ -2328,6 +2343,6 @@ mod tests {
             },
         );
         cache.apply_format(&mut card);
-        assert_eq!(card.mode, Some(Mode::Typing)); // suggestion does not override
+        assert_eq!(card.reveal, Some(Reveal::Flip)); // suggestion does not override
     }
 }

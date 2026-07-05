@@ -9,6 +9,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::{answer::Mode, card::Card};
+
 /// Retrieval depth. Nested: reconstruction ⊇ recall ⊇ recognition.
 #[derive(
     Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default, Serialize, Deserialize,
@@ -58,6 +60,42 @@ pub enum Reveal {
     Cloze,
     /// Reveal progressively, line by line (ordered material).
     Line,
+}
+
+/// Whether an answer is atomic (a single short line → typed exactly) vs rich
+/// (multi-line / long → explained). The v1 structural heuristic (spec §3.9/§8),
+/// no AI. Mirrors `choice::recognition_question`'s "atomic = single-line" bar.
+fn answer_is_atomic(card: &Card) -> bool {
+    card.back.len() == 1
+}
+
+/// The concrete review check for a card at its frontier `rung`, presented via
+/// its `reveal`-method. Depth is derived, never authored (spec §8): the learner
+/// sets the deck target, the scheduler drives the rung, and this maps
+/// `(reveal, rung, answer shape)` to the existing [`Mode`] rendering.
+pub fn check_for(reveal: Reveal, rung: Rung, card: &Card) -> Mode {
+    match rung {
+        // Recognition is the unscheduled acquire on-ramp in v1; if ever asked,
+        // fall back to the recall check (choice rendering is acquire-only).
+        Rung::Recognize | Rung::Recall => match reveal {
+            // Cloze at Recall renders the gap and self-grades — represented by
+            // `Flip` for grading; the cloze *presentation* is driven by the card
+            // being a cloze sub-card, unchanged, so `check_for` only picks the
+            // grade/interaction mode.
+            Reveal::Flip | Reveal::Cloze => Mode::Flip,
+            Reveal::Line => Mode::LineByLine,
+        },
+        Rung::Reconstruct => match reveal {
+            Reveal::Cloze => Mode::Typing,
+            Reveal::Flip | Reveal::Line => {
+                if answer_is_atomic(card) {
+                    Mode::Typing
+                } else {
+                    Mode::Explain
+                }
+            }
+        },
+    }
 }
 
 #[cfg(test)]
@@ -116,5 +154,41 @@ mod tests {
             assert_eq!(serde_json::to_string(&reveal).unwrap(), s);
             assert_eq!(serde_json::from_str::<Reveal>(s).unwrap(), reveal);
         }
+    }
+
+    #[test]
+    fn recall_rung_maps_reveal_to_its_self_graded_check() {
+        let flip = Card::plain("d".into(), "q".into(), vec!["a".into()], None, 1);
+        assert_eq!(check_for(Reveal::Flip, Rung::Recall, &flip), Mode::Flip);
+        assert_eq!(check_for(Reveal::Line, Rung::Recall, &flip), Mode::LineByLine);
+    }
+
+    #[test]
+    fn reconstruction_rung_types_atomic_and_explains_rich() {
+        let atomic = Card::plain("d".into(), "q".into(), vec!["Paris".into()], None, 1);
+        let rich = Card::plain(
+            "d".into(),
+            "q".into(),
+            vec!["a".into(), "b".into(), "c".into()],
+            None,
+            1,
+        );
+        assert_eq!(
+            check_for(Reveal::Flip, Rung::Reconstruct, &atomic),
+            Mode::Typing
+        );
+        assert_eq!(
+            check_for(Reveal::Flip, Rung::Reconstruct, &rich),
+            Mode::Explain
+        );
+    }
+
+    #[test]
+    fn reconstruction_cloze_types_the_gap() {
+        let cloze = Card::plain("d".into(), "q".into(), vec!["type the {{gap}}".into()], None, 1);
+        assert_eq!(
+            check_for(Reveal::Cloze, Rung::Reconstruct, &cloze),
+            Mode::Typing
+        );
     }
 }
