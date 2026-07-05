@@ -82,7 +82,10 @@ fn clean_field(field: &str) -> String {
 /// Backslash-escapes a back line that would otherwise be read as an alix comment
 /// (`%`) or note (`!`). A leading `#` needs no escape: the line is indented, so
 /// it's answer content, not a card front (those only count at column 0).
-fn escape_leading_markup(line: &str) -> String {
+///
+/// `pub(crate)`: also reused by [`crate::store::promote_virtual`] when
+/// rendering a virtual card's back lines to deck text.
+pub(crate) fn escape_leading_markup(line: &str) -> String {
     if line.starts_with('%') || line.starts_with('!') {
         format!("\\{line}")
     } else {

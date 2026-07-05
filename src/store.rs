@@ -9,11 +9,12 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use anyhow::{Context, Result as AnyResult, bail};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use twox_hash::XxHash64;
 
-use crate::{answer::Mode, scheduler::Grade};
+use crate::{answer::Mode, deck, import::escape_leading_markup, scheduler::Grade, serve::mode_name};
 
 /// How many of the most recent reviews are kept per card.
 const HISTORY_CAP: usize = 50;
@@ -190,6 +191,30 @@ pub struct VirtualContent {
     /// The mode this card drills in; `None` falls back to the deck default,
     /// same as an authored card's absent `% mode:`.
     pub mode: Option<Mode>,
+}
+
+impl VirtualContent {
+    /// Renders this content as parseable deck-format text — a single-line `#`
+    /// front, an optional `% mode:` line, then one escaped, tab-indented back
+    /// line per entry. Used to promote a virtual card into a real deck card
+    /// (see [`promote_virtual`]).
+    ///
+    /// The deck format's front is strictly single-line, but B.3's
+    /// cloze-context fold can leave a `\n` inside `front`; that is collapsed
+    /// to a single space here so the rendered front still parses as one card.
+    pub(crate) fn to_deck_text(&self) -> String {
+        let front_line = self.front.replace('\n', " ");
+        let mut text = format!("# {front_line}\n");
+        if let Some(mode) = self.mode {
+            text.push_str(&format!("% mode: {}\n", mode_name(mode)));
+        }
+        for line in &self.back {
+            text.push('\t');
+            text.push_str(&escape_leading_markup(line));
+            text.push('\n');
+        }
+        text
+    }
 }
 
 /// A personally-scheduled card that lives in no deck file — generated or
@@ -421,6 +446,13 @@ impl Store {
         }
     }
 
+    /// Drops a virtual card's entry, e.g. once [`promote_virtual`] has
+    /// graduated it into a real deck card. Returns whether an entry was
+    /// present. Does not save.
+    pub fn remove_virtual(&mut self, id: &str) -> bool {
+        self.virtual_cards.remove(id).is_some()
+    }
+
     /// Every virtual card in the store, unfiltered — the raw building block
     /// behind [`virtual_cards_for`](Self::virtual_cards_for).
     pub fn iter_virtual_cards(&self) -> impl Iterator<Item = &VirtualCard> {
@@ -503,6 +535,29 @@ impl Store {
     pub fn path(&self) -> &Path {
         &self.path
     }
+}
+
+/// Graduates a virtual card into a real deck card: renders its content to
+/// deck-format text and appends it to the deck file at `deck_path`, then drops
+/// the virtual entry and saves the store.
+///
+/// Appends **before** removing the virtual entry: if the process dies between
+/// the two steps, the card is merely duplicated (a virtual entry plus a deck
+/// card) rather than lost.
+pub fn promote_virtual(store: &mut Store, id: &str, deck_path: &Path) -> AnyResult<()> {
+    let Some(vc) = store.get_virtual(id) else {
+        bail!("no virtual card with id {id:?} to promote");
+    };
+    let text = vc.content.to_deck_text();
+
+    deck::append_cards(deck_path, &text)
+        .with_context(|| format!("appending the promoted card to {}", deck_path.display()))?;
+
+    store.remove_virtual(id);
+    store
+        .save()
+        .context("saving the store after promoting a virtual card")?;
+    Ok(())
 }
 
 /// Serde default for a legacy store with no `version` field: the oldest format.
@@ -946,6 +1001,125 @@ mod tests {
         let store = Store::open(&path).unwrap();
         assert!(store.is_empty());
         assert!(store.get_virtual("v:anything").is_none());
+    }
+
+    fn write_deck(dir: &Path, name: &str, body: &str) -> PathBuf {
+        let path = dir.join(name);
+        std::fs::write(&path, body).unwrap();
+        path
+    }
+
+    #[test]
+    fn promote_virtual_appends_one_card_and_drops_the_virtual_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = write_deck(dir.path(), "rust.txt", "# existing\n\tanswer\n");
+        let store_path = dir.path().join("progress.json");
+        let mut store = Store::open(&store_path).unwrap();
+        let vc = sample_virtual_card("gap-1");
+        let id = vc.id.clone();
+        store.insert_virtual(vc);
+
+        promote_virtual(&mut store, &id, &deck_path).unwrap();
+
+        assert!(store.get_virtual(&id).is_none());
+
+        let text = std::fs::read_to_string(&deck_path).unwrap();
+        let cards = crate::parser::parse_str("rust.txt", &text).unwrap();
+        assert_eq!(2, cards.len());
+        let promoted = cards
+            .iter()
+            .find(|c| c.front == "What does the borrow checker enforce?")
+            .expect("promoted card present");
+        assert_eq!(
+            vec!["Exactly one mutable borrow, or many shared ones".to_string()],
+            promoted.back
+        );
+
+        // The store was saved: reloading it from disk still shows the
+        // virtual entry gone.
+        let reloaded = Store::open(&store_path).unwrap();
+        assert!(reloaded.get_virtual(&id).is_none());
+    }
+
+    #[test]
+    fn promote_leaves_existing_deck_card_ids_untouched() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = write_deck(dir.path(), "rust.txt", "# one\n\t1\n\n# two\n\t2\n");
+        let before = crate::parser::parse_str(
+            "rust.txt",
+            &std::fs::read_to_string(&deck_path).unwrap(),
+        )
+        .unwrap();
+        let ids_before: Vec<u64> = before.iter().map(|c| c.id()).collect();
+
+        let mut store = Store::open(dir.path().join("progress.json")).unwrap();
+        let vc = sample_virtual_card("gap-1");
+        let id = vc.id.clone();
+        store.insert_virtual(vc);
+
+        promote_virtual(&mut store, &id, &deck_path).unwrap();
+
+        let after = crate::parser::parse_str(
+            "rust.txt",
+            &std::fs::read_to_string(&deck_path).unwrap(),
+        )
+        .unwrap();
+        let ids_after: Vec<u64> = after.iter().take(2).map(|c| c.id()).collect();
+        assert_eq!(ids_before, ids_after);
+        assert_eq!(3, after.len()); // the two originals plus the promoted card
+    }
+
+    #[test]
+    fn promoting_a_cloze_folded_front_collapses_to_one_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = write_deck(dir.path(), "d.txt", "");
+        let mut store = Store::open(dir.path().join("progress.json")).unwrap();
+        let mut vc = sample_virtual_card("gap-multiline");
+        vc.content.front = "line one\nline two".to_string();
+        let id = vc.id.clone();
+        store.insert_virtual(vc);
+
+        promote_virtual(&mut store, &id, &deck_path).unwrap();
+
+        let text = std::fs::read_to_string(&deck_path).unwrap();
+        let cards = crate::parser::parse_str("d.txt", &text).unwrap();
+        assert_eq!(1, cards.len());
+        assert_eq!("line one line two", cards[0].front);
+        assert_eq!(
+            vec!["Exactly one mutable borrow, or many shared ones".to_string()],
+            cards[0].back
+        );
+    }
+
+    #[test]
+    fn render_escapes_leading_markup_and_writes_mode() {
+        let content = VirtualContent {
+            front: "front text".to_string(),
+            back: vec!["% not a comment".to_string(), "plain line".to_string()],
+            mode: Some(Mode::Explain),
+        };
+
+        let text = content.to_deck_text();
+
+        assert_eq!(
+            "# front text\n% mode: explain\n\t\\% not a comment\n\tplain line\n",
+            text
+        );
+    }
+
+    #[test]
+    fn promote_unknown_id_errors_and_writes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = write_deck(dir.path(), "d.txt", "# one\n\t1\n");
+        let deck_before = std::fs::read_to_string(&deck_path).unwrap();
+        let store_path = dir.path().join("progress.json");
+        let mut store = Store::open(&store_path).unwrap();
+
+        let result = promote_virtual(&mut store, "v:nonexistent", &deck_path);
+
+        assert!(result.is_err());
+        assert_eq!(deck_before, std::fs::read_to_string(&deck_path).unwrap());
+        assert!(!store_path.exists()); // save() was never reached
     }
 
     #[test]

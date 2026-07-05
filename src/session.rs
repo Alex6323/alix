@@ -230,6 +230,14 @@ impl Session {
         Some(&mut self.cards[i])
     }
 
+    /// The store's `v:`-namespaced id of the current card, if it is a virtual
+    /// one (`None` for an authored deck card, or when nothing is current). Lets
+    /// a frontend offer to promote the card being reviewed right now.
+    pub fn current_virtual_id(&self) -> Option<&str> {
+        let i = self.current_idx?;
+        self.virtual_ids[i].as_deref()
+    }
+
     /// Whether the current card has never been seen (no stored progress). Such a
     /// card is *acquired* — shown via [`acquire_current`](Self::acquire_current) —
     /// rather than quizzed cold. A virtual card's entry always exists (it is
