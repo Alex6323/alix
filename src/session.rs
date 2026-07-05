@@ -12,6 +12,8 @@
 
 use std::collections::VecDeque;
 
+use rs_fsrs::Parameters;
+
 use crate::{
     augment::TopologyOrder,
     card::Card,
@@ -660,15 +662,34 @@ pub fn has_graduated(card: &Card, store: &Store) -> bool {
         .is_some_and(|f| f.graduated())
 }
 
-/// Each card's normalized Leitner stage (`0.0..=1.0`, unseen = 0, top-stage = 1)
-/// — the per-card "weak → strong" value for a region's heatmap bar. A region's
-/// bar reads all-red when new and all-green once its cards reach the top stage.
-/// Deliberately *not* called "mastery", which is the exam's term.
-pub fn card_strengths(card_ids: &[u64], store: &Store) -> Vec<f32> {
+/// Each card's FSRS retrievability (`0.0..=1.0`, the probability of recall at
+/// `now_ms`) — the per-card "weak → strong" value for a region's heatmap bar.
+/// A region's bar reads all-red for a card with no FSRS state yet and
+/// brightens as retrievability nears 1. Deliberately *not* called "mastery",
+/// which is the exam's term. `now_ms` is a parameter (not read internally) so
+/// callers stay testable.
+pub fn card_strengths(card_ids: &[u64], store: &Store, now_ms: u64) -> Vec<f32> {
     card_ids
         .iter()
-        .map(|&id| f32::from(store.get(id).map_or(0, |s| s.stage)) / f32::from(MAX_STAGE))
+        .map(|&id| retrievability(store, id, now_ms))
         .collect()
+}
+
+/// One card's FSRS-5 retrievability at `now_ms`, via `rs_fsrs`'s own
+/// power-forgetting-curve formula (`Parameters::forgetting_curve`) applied to
+/// our stored `FsrsState` (kept as plain `u64` ms, decoupled from
+/// `rs_fsrs::Card`'s `DateTime`-based fields — see [`crate::store::FsrsState`]).
+/// A card not yet under FSRS, or with non-positive stability, has no
+/// meaningful curve — `0.0`.
+fn retrievability(store: &Store, card_id: u64, now_ms: u64) -> f32 {
+    let Some(f) = store.get(card_id).and_then(|s| s.fsrs.as_ref()) else {
+        return 0.0;
+    };
+    if f.stability <= 0.0 {
+        return 0.0;
+    }
+    let elapsed_days = now_ms.saturating_sub(f.last_review_ms) as f64 / 86_400_000.0;
+    Parameters::forgetting_curve(elapsed_days, f.stability).clamp(0.0, 1.0) as f32
 }
 
 /// Whether one card would be served at `now_ms`: never-seen (fresh), or seen and
@@ -740,7 +761,10 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::{ladder::Rung, store::Store};
+    use crate::{
+        ladder::Rung,
+        store::{FsrsState, Store},
+    };
 
     fn card(subject: &str, n: usize) -> Card {
         Card::plain(
@@ -1660,19 +1684,31 @@ mod tests {
     }
 
     #[test]
-    fn card_strengths_normalizes_each_stage() {
+    fn card_strength_is_full_right_after_review_and_decays() {
         let (mut store, _dir) = empty_store();
-        let all = cards(3);
-        store.get_or_insert(all[0].id(), 0).stage = MAX_STAGE; // top → 1.0
-        store.get_or_insert(all[1].id(), 0).stage = 1; // 1/5 → 0.2
-        // all[2] is unseen → 0.0
-        let ids: Vec<u64> = all.iter().map(Card::id).collect();
-        let s = card_strengths(&ids, &store);
-        assert_eq!(3, s.len());
-        assert!((s[0] - 1.0).abs() < 1e-6);
-        assert!((s[1] - 0.2).abs() < 1e-6);
-        assert_eq!(0.0, s[2]);
-        assert!(card_strengths(&[], &store).is_empty());
+        let id = 42;
+        store.get_or_insert(id, 0).fsrs = Some(FsrsState {
+            stability: 10.0,
+            state: 2,
+            ..Default::default()
+        });
+        let ten_days_ms = 10 * 86_400_000;
+        let fresh = card_strengths(&[id], &store, 0);
+        let later = card_strengths(&[id], &store, ten_days_ms);
+        assert!(fresh[0] > 0.99, "R≈1 right after review, got {}", fresh[0]);
+        assert!(
+            later[0] < fresh[0] && later[0] > 0.0,
+            "R should decay with elapsed time, got {} then {}",
+            fresh[0],
+            later[0]
+        );
+    }
+
+    #[test]
+    fn card_with_no_fsrs_has_zero_strength() {
+        let (store, _dir) = empty_store();
+        assert_eq!(vec![0.0], card_strengths(&[7], &store, 0));
+        assert!(card_strengths(&[], &store, 0).is_empty());
     }
 
     #[test]

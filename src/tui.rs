@@ -1540,7 +1540,8 @@ impl App {
                 region.name.clone().dim()
             });
             spans.push(" ".into());
-            for s in crate::session::card_strengths(&region.cards, &self.store) {
+            let now = time::now_ms();
+            for s in crate::session::card_strengths(&region.cards, &self.store, now) {
                 spans.push(Span::styled("▆", Style::new().fg(strength_color(s))));
             }
         }

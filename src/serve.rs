@@ -2753,7 +2753,7 @@ fn review_state(reviewing: Option<&Reviewing>, store: &Store) -> StateDto {
                 cells: topo
                     .regions
                     .iter()
-                    .map(|reg| crate::session::card_strengths(&reg.cards, store))
+                    .map(|reg| crate::session::card_strengths(&reg.cards, store, now_ms()))
                     .collect(),
             });
         }
@@ -3175,7 +3175,7 @@ fn deck_topology_dto(
                 .iter()
                 .map(|r| RegionInfoDto {
                     name: r.name.clone(),
-                    cells: crate::session::card_strengths(&r.cards, store),
+                    cells: crate::session::card_strengths(&r.cards, store, now),
                     due: due_of(&r.cards),
                 })
                 .collect(),
