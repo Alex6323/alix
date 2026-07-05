@@ -8,10 +8,9 @@ full.
 | Token | Scope | What it does |
 | --- | --- | --- |
 | `#` front | card | Starts a card at column 0; the indented lines below are the answer. [→ ch 3](03-the-deck-format.md) |
-| `#?` front | card | A [cloze card](06-cloze-direction-images.md); blanks are `{{spans}}` in the answer line. |
 | `!` line | card | A note, shown after you answer. [→ ch 3](03-the-deck-format.md) |
 | `%` line | anywhere | A comment — ignored, unless it's one of the directives below. |
-| `% mode:` | deck · card | [Answer mode](04-review-modes.md): flip, typing, fuzzy, choice, line, explain. |
+| `% reveal:` | deck · card | [How the answer is uncovered](04-review-modes.md): flip (default), cloze (`{{spans}}`), line. |
 | `% order:` | deck | Card order: `scheduled` (default) or `sequential`. [→ ch 5](05-scheduling.md) |
 | `% direction:` | deck · card | [Review direction](06-cloze-direction-images.md): forward, reverse, both. |
 | `% frontend:` | deck · card | Restrict to `any`, `tui`, or `web`. [→ ch 6](06-cloze-direction-images.md) |
@@ -39,9 +38,15 @@ source.
 
 ## Precedence
 
-Where a setting can come from several places, the more specific wins:
+Where a directive can come from several places, the more specific wins:
 
 > CLI flag > card `%` directive > deck `%` directive > workspace `[defaults]` > built-in default
 
-So `--mode` on the command line overrides a card's `% mode:`, which overrides the
-deck's, which overrides a workspace's `[defaults]`, which overrides `alix`'s default.
+So a card's `% reveal:` overrides the deck's, which overrides a workspace's
+`[defaults]`, which overrides `alix`'s default (`flip`); where a CLI flag exists
+for a directive (e.g. `--strictness` for `% strictness:`) it wins over all of them.
+
+Depth (`[review] target`) is **not** in this chain — it's personal config, not a
+deck directive, so it isn't authored per card. Its own precedence is a workspace's
+`alix.local.toml` over the global `[review]` (see
+[configuration](16-configuration.md)).

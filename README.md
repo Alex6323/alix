@@ -78,11 +78,7 @@ The binary is called `alix`:
 
 ```sh
 alix                            # pick decks interactively (recent + ~/decks)
-alix mydeck.txt                 # review due cards (flip mode)
-alix --mode typing mydeck.txt   # type the answer character by character
-alix --mode fuzzy mydeck.txt    # whole-line input, small typos tolerated
-alix --mode choice mydeck.txt   # multiple choice (distractors sampled from the deck)
-alix --mode line mydeck.txt     # reveal the answer one line at a time (lyrics)
+alix mydeck.txt                 # review due cards
 alix --cram mydeck.txt          # review everything now (a correct answer refreshes, doesn't reward)
 alix browse mydeck.txt          # read through cards, no grading or scheduling
 alix deck generate <url-or-path>   # generate a facts deck from a web page or a file/dir
@@ -104,8 +100,10 @@ alix reset mydeck.txt           # clear stored progress (also --card / --all)
 ```
 
 A session is one deck file — review them one at a time. Useful flags for
-`review`: `--new N` (max unseen cards to introduce, default 10), `--limit N`
-(cap session size), `--max-typos N` (fuzzy tolerance per line, default 2).
+`review`: `--new N` (max unseen cards to introduce, default 10) and `--limit N`
+(cap session size). How each card is checked isn't a flag: it comes from the
+card's authored [`% reveal:`](#deck-directives) method and your personal
+[`[review] target`](#review-pacing) depth (see [Review](#review)).
 
 Run `alix` with no deck arguments (as the desktop launcher does) to open the
 **deck picker**, grouped into three sections: **[Workspaces](#workspaces)**
@@ -168,10 +166,9 @@ card's front. Follow a link for the full explanation.
 | Token | Scope | Meaning |
 | --- | --- | --- |
 | `#` front | card | Starts a card at column 0; the indented lines below are the answer. |
-| `#?` front | card | [Cloze card](#cloze-cards-fill-in-the-blank) — blanks are `{{spans}}` in the answer line. |
 | `!` line | card | A note shown after you answer. |
 | `%` line | anywhere | A comment — ignored, unless it is one of the directives below. |
-| `% mode:` | deck · card | [Answer mode](#deck-directives): `flip`, `typing`, `fuzzy`, `choice`, `line`, `explain`. |
+| `% reveal:` | deck · card | [How the answer is uncovered](#deck-directives): `flip` (default), `cloze` ([fill-in-the-blank](#cloze-cards-fill-in-the-blank), `{{spans}}`), or `line` (one line at a time). |
 | `% input:` | deck · card | Answer input: `type` (default) or [`draw`](#review) — draw/handwrite the answer on a web canvas instead of typing, then self-grade. Web-only; honored on self-graded `flip`/`explain` cards; ignored elsewhere and in the TUI. |
 | `% order:` | deck | [Card order](#deck-directives): `scheduled` (default) or `sequential`. |
 | `% direction:` | deck · card | [Review direction](#dual-direction-cards--direction): `forward`, `reverse`, or `both`. |
@@ -204,15 +201,16 @@ header (before the first card), so you do not have to repeat flags on the
 command line:
 
 ```
-% mode: line
+% reveal: line
 % order: sequential
 ```
 
-- `mode` — default answer mode (`flip`, `typing`, `fuzzy`, `choice`, `line`,
-  `explain`);
-  can also be overridden per card (see below).
+- `reveal` — how a card's answer is uncovered: `flip` (default, all at once),
+  `cloze` ([fill-in-the-blank](#cloze-cards-fill-in-the-blank); `{{spans}}` in the
+  answer mark the gaps), or `line` (one line at a time); can also be overridden per
+  card (see below).
 - `order` — `scheduled` (the default) or `sequential` to walk the deck in
-  file order, top to bottom (ideal for lyrics with `% mode: line`).
+  file order, top to bottom (ideal for lyrics with `% reveal: line`).
 - `direction` — `forward` (default), `reverse`, or `both`; per card or deck-wide
   (see below).
 - `frontend` — `any` (default), `tui`, or `web`; restricts a card (or deck) to a
@@ -228,12 +226,17 @@ the built-in default. Directives are read only from the deck(s) you ask to
 review. When several requested decks disagree on a setting, the default is used.
 `alix deck check <deck>` prints a deck's directives.
 
-**Per-card mode.** A `% mode:` directive placed *after* a card's front (and
-before the next one) overrides the deck's mode for that card only, so one deck
-can mix modes — e.g. a `line` lyrics card among `flip` cards. The effective mode
-is resolved per card: CLI `--mode` > the card's `% mode:` > the deck's
-`% mode:` > the default (so `--mode` still forces every card). The `order`
-directive stays deck-level.
+**Per-card reveal.** A `% reveal:` directive placed *after* a card's front (and
+before the next one) overrides the deck's reveal-method for that card only, so one
+deck can mix them — e.g. a `line` lyrics card among `flip` cards. It resolves per
+card: the card's `% reveal:` > the deck's `% reveal:` > the default (`flip`). The
+`order` directive stays deck-level.
+
+**Depth is a separate axis — and not a deck directive.** `% reveal:` is *how* an
+answer is shown; how *deeply* you're asked to retrieve it (recognize / recall /
+reconstruct) is the learner's choice, not the author's, so it lives in your
+personal config as [`[review] target`](#review-pacing), never in a shared deck.
+The two combine into the check you actually get — see [Review](#review).
 
 ### Deck dependencies
 
@@ -307,7 +310,7 @@ description = "everyday conversational vocabulary"
 
 [defaults]
 direction = "both"
-mode = "typing"
+reveal = "line"
 ```
 
 ```
@@ -329,8 +332,8 @@ else. Decks *outside* a workspace keep using the global store; `--store <path>`
 overrides either.
 
 **Personal pacing per workspace.** Drop an `alix.local.toml` beside the
-`alix.toml` to override the global `[review]` config (FSRS `retention` and
-`retire_after`) for this workspace's decks only. It uses the same `[review]` keys
+`alix.toml` to override the global `[review]` config (FSRS `retention`,
+`retire_after`, and the ladder `target`) for this workspace's decks only. It uses the same `[review]` keys
 as the [config file](#configuration) and is **personal** — kept separate from the
 shared `alix.toml`, so it never travels when you share the workspace.
 
@@ -366,13 +369,14 @@ file path on the command line — and never affects a card's identity.
 
 ### Cloze cards (fill in the blank)
 
-A front marked `#?` (no space) turns the card into a cloze card: every
-`{{...}}` in its answer lines is a hole, and the card expands into one card
-per hole. Each one shows the answer with that hole blanked out and the
-others filled in, and you only produce the hidden text:
+A card marked `% reveal: cloze` becomes a cloze card: every `{{...}}` in its
+answer lines is a hole, and the card expands into one card per hole. Each one
+shows the answer with that hole blanked out and the others filled in, and you
+only produce the hidden text:
 
 ```
-#? Complete the Rust declaration
+# Complete the Rust declaration
+    % reveal: cloze
     let {{mut}} x: {{u64}} = 0;
 ```
 
@@ -407,7 +411,7 @@ other reversible facts:
 `both` makes two cards (`purported → angeblich` and `angeblich → purported`);
 `reverse` keeps only the swapped one; `forward` (the default) is the card as
 written. It works per card, or deck-wide as a header directive (`% direction:
-both` before the first card) with per-card overrides — like `mode`. The two
+both` before the first card) with per-card overrides — like `% reveal:`. The two
 directions get distinct progress, are kept apart in the queue (you won't see one
 right after the other), and are removed together. The reversed card keeps the
 note. Best for single-line cards; it does not apply to cloze cards.
@@ -475,20 +479,43 @@ source.
 
 ## Review
 
-The default **flip** mode is Anki-style: you reveal the answer and grade
-yourself **missed it / partly / got it** — the same three grades the trace walk
-uses — *missed it* / *partly* / *got it* map to FSRS *Again* / *Hard* / *Good*.
-A miss lapses the card (it comes back soon and its interval shrinks), *partly*
-is a weak success (a shorter next interval than a clean pass), and *got it*
-grows the interval. The
-**typing** mode has you type the back of the card character by
-character with instant green/red feedback; `TAB` reveals the next two
-characters as a hint, and pressing it again uncovers two more each time until
-the line is fully shown, but a hinted card counts as failed. In **fuzzy** mode
-you submit whole lines with Enter and small typos are tolerated. A wrong
-card is re-queued and reappears later in the same session until you
-get it right. Whichever mode a card uses is shown as a small badge above the
-answer (`flip`, `typing exact`, `typing fuzzy`, `choice`, `line by line`).
+Two things decide how a card is checked, and alix derives the check from both —
+you don't hand-pick a "mode" per card:
+
+- the card's authored **reveal-method** (`% reveal:` — *how* the answer is
+  uncovered), and
+- your personal **target depth** (`[review] target` — *how deeply* you're asked to
+  produce it).
+
+**Reveal-methods** (authored, `% reveal:`, default `flip`) are `flip` (reveal the
+whole answer at once), `cloze` (reveal with a gap to fill —
+[cloze cards](#cloze-cards-fill-in-the-blank)), and `line` (reveal one line at a
+time). **Target depths** (personal, `[review] target`, default `recall`) form a
+small ladder, `recognize` ⊂ `recall` ⊂ `reconstruct`: *recognize* is picking it
+out (the ungraded acquire on-ramp below), *recall* is bringing the answer to mind,
+*reconstruct* is producing it in full.
+
+**The check is the combination:**
+
+- At **recall**, a `flip`/`cloze` card **reveals** its answer and you self-grade;
+  a `line` card reveals line by line (press `Space` to uncover the next line,
+  recalling it first), then you self-grade.
+- At **reconstruct**, you **produce** the answer: a `cloze` card has you **type**
+  the gap; a card with a short, single-line answer has you **type** it exactly
+  (`TAB` reveals two more characters as a hint, but a hinted card counts as
+  missed); a card with a richer, multi-line answer becomes an **explain** prompt
+  whose back lines are the **key points** you self-grade against.
+
+Grading is always **missed it / partly / got it**, mapping to FSRS *Again* /
+*Hard* / *Good* — a miss lapses the card (it comes back soon, interval shrinks),
+*partly* is a weak pass (a shorter next interval), *got it* grows the interval. A
+typed answer that's wrong or hinted counts as missed and the card returns later in
+the same session.
+
+**A default-target deck reviews as recall** — reveal-and-self-grade — even for
+cards once written to be typed or explained (the retired `% mode:` directive). To
+get the reconstruction checks (typing, explain), raise `[review] target` to
+`reconstruct`.
 
 **New cards are introduced as an *attempt*, not a hand-out.** A card you've never
 seen isn't quizzed cold (you can't recall what you haven't read), but it isn't just
@@ -500,68 +527,60 @@ nothing is tested the instant you've seen it. Two forms:
 - **Recall** (default): the **front shows first** — try to bring it to mind — then
   you reveal the answer and press Seen.
 - **Recognition**: if the deck was augmented with AI distractors (`alix deck augment
-  <deck> --target choices`), an **atomic** card greets you as a **multiple-choice**
-  question instead — pick one, see which was right, press Seen. A correct guess
-  doesn't promote it and a wrong one doesn't punish — stage 1 either way.
+  <deck> --target choices`), an **atomic** (single-line) card greets you as a
+  **multiple-choice** question instead — pick one, see which was right, press Seen.
+  A correct guess doesn't promote it and a wrong one doesn't punish. This is the
+  only place recognition appears in v1; it needs a full set of *AI* distractors, so
+  a card without them (or with a multi-line answer) gets the recall attempt above.
 
 How many new cards a session introduces is the `--new N` cap (default 10) — run
 another session for the next batch.
 
-In **choice** mode you pick the answer out of four options with `1`–`4`.
-The three wrong options are sampled from the answers of the other cards in
-the session, preferring similar-looking ones (years compete with years), so
-no distractors ever have to be written. Recognition is easier than recall: a
-correct pick grades as *passed*, a wrong pick *failed* (an auto-graded mode has
-no *partly*).
-Cloze siblings are never used as distractors, and if a session has fewer
-than four distinct answers the card falls back to flip mode.
-
-For **AI-written** distractors instead — plausible, tempting wrong answers
-tailored to each card — augment the deck ahead of time:
+**AI distractors** — plausible, tempting wrong answers tailored to each card —
+are generated once with the model and cached by card id (in `augment.json` beside
+your progress), so the recognition on-ramp stays instant and fully offline:
 
 ```sh
 alix deck augment mydeck.txt --target choices --with "use common misconceptions"
 ```
 
-This generates them once with the model and caches them by card id (in
-`augment.json` beside your progress), so review stays instant and fully offline —
-no waiting, no live calls during study. Review reads the cache automatically: a
-card with cached distractors uses them, anything else falls back to the offline
-sampler above (so a card never loses its options), and because the AI brings its
-own wrong answers, choice mode works even on a deck too thin to sample from.
 Editing a card's answer regenerates its distractors next time you augment. See
 [Augment a deck](#augment-a-deck--alix-deck-augment).
 
-In **line** mode the back is revealed one line at a time: press the reveal
-key (`Space`) to uncover the next line, recalling it first. It is meant for
-lyrics, poems, or any ordered list. Once every line is shown you grade
-yourself missed it / partly / got it, exactly like flip mode. Pair it with
-`--order sequential` (or `% order: sequential` in the deck) to walk the
-sections top to bottom — e.g. one card per verse/chorus of a song.
+**The ladder climbs and descends per card.** Below your target, a card that has
+graduated (reached FSRS's review phase) and then survives one *more* spaced pass
+**climbs** to the next depth on a fresh schedule — so a card you've settled at
+recall is later asked to reconstruct. A miss **descends** one rung and relearns
+there (never below recall in this version). This is **v1**: it schedules *recall*
+and *reconstruct* only, recognition stays the unscheduled acquire on-ramp, and a
+reconstruct check on a rich answer is **self-graded** — there's no machine reading
+of a full explanation.
 
-In **explain** mode the card is an open prompt and its back lines are the **key
-points** a good answer should cover (not a string to reproduce). You optionally
-type your explanation, reveal the points, and grade yourself on whether you
-covered them — for cards aimed at *understanding* rather than recall. Set it with
-`% mode: explain` (per card or deck-wide). The typing is optional and never
-checked: a self-graded mode can't verify your answer, so it doesn't pretend to
-(in the web frontend your typed answer is shown next to the points for honest
-comparison). It pairs with the tutor, and is the day-to-day,
-self-graded tier below the [AI exam](#the-ai-exam-alix-exam).
+**The rung badge.** In the web frontend a small badge above the answer shows the
+card's current depth (`recognize` / `recall` / `reconstruct`); its **opacity
+tracks FSRS retrievability** — bright when the memory is fresh, dimming as the card
+comes due. The terminal shows the concrete check instead (`flip`, `typing exact`,
+`line by line`, `explain`).
 
-If you [augment the deck with **key points**](#augment-a-deck--alix-deck-augment)
-(`--target keypoints`), an explain card's reveal becomes a **checklist**: you tick
-each cached key point you covered, and the grade is *derived* from the coverage —
-all → got it, some → partly, none → missed it — instead of a single gut judgment. It
-turns the self-grade from a vibe into a per-claim check (the cheap, in-loop cousin
-of the AI exam). Atomic-answer cards aren't given key points, so they keep the
-plain reveal.
+A `line`-reveal deck pairs with `% order: sequential` to walk its sections top to
+bottom — e.g. one card per verse/chorus of a song.
 
-**Draw input (web).** A `flip` or `explain` card marked `% input: draw` is
-answered by drawing or handwriting on a canvas (pen, touch, or mouse) instead
-of typing — for diagrams, circuits, math, or just the retention of writing by
-hand — then self-graded against the card's normal reveal (an answer image, key
-points, or text). Nothing is typed or sent to the server; the drawing is
+The **explain** check (a reconstruct card with a multi-line answer) is the
+day-to-day, self-graded tier below the [AI exam](#the-ai-exam-alix-exam): you
+optionally type an explanation — never checked, just to make you commit before you
+peek (the web shows it next to the points for honest comparison) — reveal the key
+points, and grade whether you covered them. It pairs with the tutor. If you
+[augment the deck with **key points**](#augment-a-deck--alix-deck-augment)
+(`--target keypoints`), the reveal becomes a **checklist**: you tick each cached
+point you covered and the grade is *derived* from the coverage — all → got it,
+some → partly, none → missed it — a per-claim check instead of a gut judgment.
+Atomic-answer cards aren't given key points, so they keep the plain reveal.
+
+**Draw input (web).** A self-graded card marked `% input: draw` — a `flip`-reveal
+card, or an explain check — is answered by drawing or handwriting on a canvas
+(pen, touch, or mouse) instead of typing — for diagrams, circuits, math, or just
+the retention of writing by hand — then self-graded against the card's normal
+reveal (an answer image, key points, or text). Nothing is typed or sent to the server; the drawing is
 discarded once you grade. For a card that *can* be typed, the web ☰ menu's
 **Draw answers** toggle switches it to the canvas too, per device (remembered
 in the browser). Drawn answers are self-assessed, not machine-checked — there
@@ -642,12 +661,13 @@ other decks" (on the summary) or `Esc` returns here — and a session
 launched inside a workspace returns **into that workspace**. Naming decks on the
 command line skips the screen and goes straight to review/browse.
 
-Every answer mode works in the browser: **flip** (reveal, then self-grade
-Missed it / Partly / Got it), **line** (reveal a verse one line at a time — it
-auto-scrolls to follow the newest line), **typing** / **fuzzy** (type your
-answer and submit; checked exactly or with your configured typo tolerance, each
-line marked ✓/✗ with the correct answer shown), and **choice** (tap one of the
-options). The note appears once the answer is shown. Controls are big tap
+Every check works in the browser: a **flip** or **cloze** reveal (reveal, then
+self-grade Missed it / Partly / Got it), a **line** reveal (one line at a time —
+it auto-scrolls to follow the newest line), a **typing** reconstruct (type your
+answer and submit, each line marked ✓/✗ with the correct answer shown), an
+**explain** reconstruct (reveal the key points and self-grade), and the
+recognition **multiple-choice** on-ramp for a new card (tap one of the options).
+The note appears once the answer is shown. Controls are big tap
 targets and follow your configured key bindings — the page reads them from the
 server, so the chips show your own keys. The **☰ menu** is context-aware: during
 review it holds **Ask Tutor** and **Remove card** (which deletes the current card
@@ -760,8 +780,8 @@ can later grade your understanding against it); it also adds a
 to specific lines, so the card can show its source on reveal. The CLI returns
 text only — never a write or shell tool — and `alix` validates it (`parse_str`)
 and writes `~/decks/<slug>.txt`. The cards are spread across four layers of
-understanding (facts → concepts → application → connections) and use cloze
-(`#?`) cards for terminology.
+understanding (facts → concepts → application → connections) and use
+`% reveal: cloze` cards for terminology.
 
 The model drafts, then re-reads the whole set and merges or drops cards that
 test the same fact, so the deck doesn't repeat itself. For a stronger pass,
@@ -839,12 +859,12 @@ alix deck augment mydeck.txt --target choices --with "use common misconceptions"
   alone, keeping its plain reveal. Tune the maximum with `[ai] keypoint_count`.
 - **`--target format`** reshapes badly-shaped cards — most often a list crammed
   into a single prose answer — into clean display lines, a tidier front, an
-  optional note, and a **suggested answer mode** (`line`, `explain`, or `flip`).
+  optional note, and a **suggested reveal-method** (`line` or `flip`).
   It is purely cosmetic: it never edits the deck file, never changes card
-  identity, and your progress is untouched. The reshaped text and mode suggestion
+  identity, and your progress is untouched. The reshaped text and reveal suggestion
   are cached in `augment.json`; both review and browse apply them at display
   time, so the two views show the same card. Plain (non-
-  cloze) cards only — cloze cards are left alone. An explicit `% mode:` you
+  cloze) cards only — cloze cards are left alone. An explicit `% reveal:` you
   wrote always wins over the suggestion. Because it's an AI heuristic it can miss
   or mis-shape a card; the result is easy to discard via **Remove** in the Augment
   screen or by running `--target` removal. Stacks well under `notes` (trivia).
@@ -954,10 +974,10 @@ so the UI stays responsive.
   what unlocks decks that `% requires:` it. Source-less decks are unchanged:
   finishing = drilled (`done ✓`).
 - **Fail** lists the gaps and offers to turn them into remediation cards — the
-  card type is picked per gap (a cloze/plain card for a missed fact, a
-  `% mode: explain` card for a missed concept), with overlapping gaps merged into
-  one card. Re-drill those and re-sit. Once created, the screen reports how many
-  remediation cards it added.
+  card type is picked per gap (a `% reveal: cloze` or plain card for a missed
+  fact, an open understanding card — a prompt plus key points — for a missed
+  concept), with overlapping gaps merged into one card. Re-drill those and re-sit.
+  Once created, the screen reports how many remediation cards it added.
 
 **Remediation cards are virtual.** They live in alix's store, not your deck file,
 so the deck `.txt` is left unchanged. While drilling one, the review screen's
@@ -1236,7 +1256,7 @@ for deletion from its deck file, default `ctrl-x`), `promote` (append a
 remediation card to its deck and drop the virtual copy — only on virtual cards,
 default `ctrl-p`), `continue`, `restart` (start
 a new session from the summary screen, default `r`), `quit`. While you are typing
-an answer (typing and fuzzy mode), plain character bindings are ignored so
+an answer (a reconstruct check), plain character bindings are ignored so
 they cannot shadow text input — use `ctrl-`/special keys for `hint`, `skip`
 and `quit`. A different config file can be passed with `--config <path>`.
 
@@ -1265,18 +1285,29 @@ port = 7777
 
 ### Review pacing
 
-A `[review]` section tunes the FSRS scheduler:
+A `[review]` section tunes the FSRS scheduler and the ladder depth you drill
+toward:
 
 ```toml
 [review]
-retention = 0.9       # FSRS target recall probability (0.70–0.99); higher = shorter intervals
-retire_after = "1y"   # a card rests once its interval reaches this ("2w", "6m", "30d", or "never")
+retention = 0.9         # FSRS target recall probability (0.70–0.99); higher = shorter intervals
+retire_after = "1y"     # a card rests once its interval reaches this ("2w", "6m", "30d", or "never")
+target = "recall"       # depth ladder target: recognize | recall | reconstruct
 ```
 
 `retention` is the recall probability FSRS schedules for — raise it to see cards
 more often, lower it to stretch intervals. `retire_after` is when a card
 **retires** (rests until `alix reset`); `"never"` keeps it in rotation forever.
-A workspace can override both for its own decks in an `alix.local.toml` (see
+
+`target` is how deeply you want to end up retrieving each card (see
+[Review](#review)). It's **personal**, not a deck directive — depth is the
+learner's call, not the author's — so it lives here, never in a shared deck. At
+`recall` (the default) a card reveals and you self-grade; at `reconstruct` a card
+that has settled climbs to producing its answer in full (typing a short answer or
+a cloze gap, or explaining a longer one). `recognize` clamps up to `recall` in v1
+— recognition is the unscheduled acquire on-ramp, not a scheduling target.
+
+A workspace can override all three for its own decks in an `alix.local.toml` (see
 [Workspaces](#workspaces)) — a personal file that is never shared.
 
 ### Backends

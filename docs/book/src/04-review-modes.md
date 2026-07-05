@@ -1,144 +1,147 @@
-# 4 · Review modes
+# 4 · Reveal & depth
 
-A *mode* decides how a card is tested — from "reveal it and be honest with
-yourself" to "type it exactly." `alix` has six. Set one with `--mode` on the
-command line, or per deck or card with a `% mode:` directive; the effective mode
-resolves **`--mode` flag > card's `% mode:` > deck's `% mode:` > the default
-(`flip`)**. A small badge above the answer always shows which mode is in play.
+How a card is checked isn't one setting you pick per card. It falls out of two
+independent axes:
 
-The point of having several is to match the test to what you're training —
-recognition, exact recall, or understanding.
+- **Reveal-method** — *how the answer is uncovered.* Authored per card (or
+  deck-wide) with `% reveal:`, because only the author knows the answer's shape.
+- **Depth** — *how deeply you're asked to retrieve it.* Your personal
+  `[review] target`, because only you know how well you want to know this
+  material. It's not a deck directive — depth is the learner's call, not the
+  author's.
 
-## flip — reveal and self-grade *(default)*
+alix derives the concrete check from the pair, so you never hand-write "type this
+one" or "explain that one." The point of two axes is to separate *presentation*
+(the author's job) from *difficulty* (yours).
 
-You read the question, recall the answer, reveal it, and grade yourself: **failed**
-(missed — the card lapses and comes back soon), **partly** (got the gist but
-stumbled — a shorter interval than a clean pass), or **passed** (the interval
-grows). The same three grades the trace walk uses.
-It's the Anki-style default, and the right choice whenever you can fairly
-judge your own answer — conceptual questions, explanations, anything open-ended.
+## The reveal-method axis — `% reveal:`
 
-```
-# Why is UDP described as connectionless?
-    It sends datagrams with no handshake and no delivery guarantee.
-```
+Three ways to uncover an answer, set with a `% reveal:` directive (per card, or in
+the deck header for all cards; default `flip`):
 
-## typing — type it exactly
-
-You type the back of the card character by character, with instant green/red
-feedback. `Tab` reveals the next two characters as a hint (press again for two
-more), but a card you needed a hint on counts as failed. Use it where the answer
-must be *exact* — syntax, spellings, command flags, a formula.
+- **flip** *(default)* — the whole answer is revealed at once.
+- **cloze** — the answer is shown with a gap to fill; `{{...}}` spans in the answer
+  mark the gaps, and the card expands into one sub-card per gap. See
+  [cloze cards](06-cloze-direction-images.md).
+- **line** — the answer is revealed one line at a time, for ordered material
+  (lyrics, a sequence of steps). Pair it with `% order: sequential` to walk the
+  deck top to bottom.
 
 ```
 # Stage every change in git, including deletions?
     git add -A
-    % mode: typing
+
+# Recite the opening.
+    % reveal: line
+    Now is the winter of our discontent
+    Made glorious summer by this sun of York
 ```
 
-## fuzzy — type it, typos forgiven
+A per-card `% reveal:` overrides the deck's; the deck's overrides the default. It's
+a review property, not content, so it's invisible to a card's identity hash —
+adding or changing it never resets progress.
 
-Like typing, but you submit a whole line with `Enter` and small typos are
-tolerated (the tolerance is configurable; `--max-typos` defaults to 2). When the
-answer is several lines, each is checked and their order doesn't matter. Reach for
-it when you want the effort of *producing* the answer without being failed for a
-slipped key.
+## The depth axis — `[review] target`
 
-A wrong answer in `typing` or `fuzzy` lapses the card and brings it back
-later in the same session until you get it.
+Depth is a small nested ladder, `recognize` ⊂ `recall` ⊂ `reconstruct`:
 
-## choice — pick from four
+- **recognize** — pick the answer out of options. In this version it's only the
+  ungraded *acquire* on-ramp for a brand-new card (see
+  [scheduling](05-scheduling.md)), never a scheduled target.
+- **recall** *(default)* — bring the answer to mind, then reveal and self-grade.
+- **reconstruct** — produce the answer in full.
 
-You choose the answer from four options with `1`–`4`. The three wrong options are
-sampled automatically from the *other* cards' answers (preferring similar-looking
-ones — years compete with years), so you never have to write distractors.
-A correct pick grades **passed** and a wrong pick **fails** (recognition is easier
-than recall, so there's no bigger reward than a normal pass). If a session has
-fewer than four distinct answers, the card falls back to flip.
+You set the target you're aiming for once, in your config (or per workspace in an
+`alix.local.toml`):
 
-**AI distractors.** For wrong options written by Claude instead — plausible,
-tempting answers the kind a half-learned mind would fall for — augment the deck
-ahead of time:
-
-```sh
-alix deck augment mydeck.txt --target choices --with "use common misconceptions"
+```toml
+[review]
+target = "reconstruct"
 ```
 
-This is a deliberate, one-off command: it generates the distractors once and
-caches them by card id (in `augment.json` beside your progress). Review reads the
-cache automatically, so study stays instant and fully offline — Claude is never
-called while you study. A card without cached distractors falls back to the
-sampled ones above, so it never loses its options; and because the AI brings its
-own wrong answers, choice mode works even on a deck too small to sample from. See
-the augmentation chapter for `--target notes` and the rest.
+It's deliberately *not* on the deck: the same deck can be drilled shallowly by one
+person and deeply by another.
 
-## line — one line at a time
+## What you actually get — the two axes combined
 
-The back is revealed one line at a time: press the reveal key (`Space`), recalling
-each line before you uncover it; once the whole card is shown you grade yourself
-like flip. It's for ordered material — lyrics, poems, a sequence of steps. Pair it
-with `% order: sequential` so the deck walks top to bottom (one card per verse,
-say).
+The check derives from the reveal-method, the card's current rung on the ladder,
+and the answer's shape:
 
-## explain — open prompt, key points
+- **At recall**, a `flip` or `cloze` card **reveals** and you self-grade; a `line`
+  card reveals line by line, then you self-grade.
+- **At reconstruct**, you **produce** it: a `cloze` card has you **type** the gap;
+  a card with a short, single-line answer has you **type** it exactly (`Tab`
+  reveals two more characters as a hint, but a hinted card counts as missed); a
+  card with a richer, multi-line answer becomes an **explain** prompt whose back
+  lines are the **key points** you self-grade against.
 
-The back lines aren't a string to reproduce — they're the **key points** a good
-answer should cover. You optionally type an explanation, reveal the points, and
-grade yourself on whether you hit them. It's for cards aimed at *understanding*
-rather than recall. The typing is never checked — a self-graded mode can't verify
-your answer, so it doesn't pretend to; it's there to make you commit before you
-peek. `explain` pairs with the tutor and is the everyday, self-graded
-tier beneath the AI exam (a later chapter).
+Grading is always the same three — **missed it / partly / got it** — feeding FSRS
+*Again* / *Hard* / *Good*. The [scheduling chapter](05-scheduling.md) covers how a
+card climbs the ladder toward your target and drops back on a miss.
+
+> **A default-target deck reviews as recall** — reveal-and-self-grade — even for
+> cards once authored to be typed or explained (the retired `% mode:` directive).
+> Reconstruction checks only appear once you raise `[review] target` to
+> `reconstruct`.
+
+### explain — the self-graded reconstruct check
+
+The reconstruct check for a rich (multi-line) answer is an open prompt: the back
+lines are the **key points** a good answer should cover, not a string to
+reproduce. You optionally type an explanation — never checked, just there to make
+you commit before you peek — reveal the points, and grade whether you hit them.
+It's for cards aimed at *understanding* rather than exact recall, and it's the
+everyday, self-graded tier beneath the AI exam (a later chapter).
 
 ```
 # Explain why spaced repetition beats massed review.
     Retrieval just before forgetting strengthens memory the most.
     Spacing forces effortful recall; cramming lets you coast on short-term memory.
-    % mode: explain
 ```
 
 Augment the deck with **key points** (`alix deck augment <deck> --target
 keypoints`) and the reveal becomes a **checklist**: you tick each cached point you
-covered and the grade is *derived* from the coverage —
-all → got it, some → partly, none → missed it — so the self-grade is a per-claim
-check rather than a gut call. Atomic-answer cards get no key points and keep the
-plain reveal.
+covered and the grade is *derived* from the coverage — all → got it, some →
+partly, none → missed it — a per-claim check rather than a gut call.
+Atomic-answer cards get no key points and keep the plain reveal.
 
 A different augment target, `alix deck augment <deck> --target format`, instead
 *reshapes* a badly-shaped card — a list crammed into one prose answer, say — into
 clean display lines, non-destructively: it changes how the card is shown, not the
 deck file or how it's graded.
 
+## The rung badge
+
+In the web frontend a small badge above the answer shows the card's current depth
+(`recognize` / `recall` / `reconstruct`), and its **opacity tracks FSRS
+retrievability** — bright when the memory is fresh, dimming as the card comes due.
+So the badge tells you both where a card sits on the ladder and how well you're
+holding it. The terminal shows the concrete check instead (`flip`, `typing exact`,
+`line by line`, `explain`).
+
 ## input: draw — draw instead of type *(web only)*
 
-`% input:` is a separate axis from `% mode:` — it changes how you *produce* an
-answer, not how it's graded. `draw` swaps the usual typed/reveal input for a
-canvas: instead of typing (or just reading) the answer, you draw or handwrite
-it, then self-grade against the card's normal reveal. The mode's grading is
-untouched — a `draw` `flip` card still reveals and asks Missed it / Partly / Got
-it, a `draw` `explain` card still reveals its key points.
+`% input:` is a third, separate axis: it changes how you *produce* an answer, not
+how it's graded. `draw` swaps the usual typed/reveal input for a canvas — instead
+of typing (or just reading) the answer, you draw or handwrite it, then self-grade
+against the card's normal reveal.
 
 Two ways to reach it:
 
 - **Draw-only cards.** Set `% input: draw` on a card (or deck-wide) when the
-  answer *can't* be typed in the first place — a diagram, a circuit, a piece of
-  notation. The reveal is whatever the card already uses for that: an
-  `% img-back:` image, or an explain card's key points. An authored `% input:
-  draw` card always uses the canvas — the per-device toggle below can't turn it
-  off (you can't type a diagram).
+  answer *can't* be typed — a diagram, a circuit, a piece of notation. The reveal
+  is whatever the card already uses: an `% img-back:` image, or an explain card's
+  key points. An authored `% input: draw` card always uses the canvas — the
+  per-device toggle below can't turn it off (you can't type a diagram).
 - **The per-device toggle.** For a card that *can* be typed, the web ☰ menu's
-  **Draw answers** switch lets you answer on the canvas anyway — for the
-  retention of writing by hand — without changing the deck file. It's
-  remembered per browser, not written to the deck, and it only *adds* drawing
-  to an otherwise-typed `flip`/`explain` card.
+  **Draw answers** switch lets you answer on the canvas anyway — for the retention
+  of writing by hand — without changing the deck file. It's remembered per browser.
 
-Grading a draw card is entirely **self-reported**: there is no OCR or vision
-model reading the canvas, so it works exactly like a self-graded flip/explain
-card — you judge your own drawing against the reveal. In this version `%
-input:` is honored on **`flip` and `explain`** cards only, and is web-only (the
-terminal ignores it); it's an input axis meant to extend to other self-graded
-modes later, but `line`, `typing`, `fuzzy`, `cloze`, and `choice` don't draw
-yet.
+Grading a draw card is entirely **self-reported**: there's no OCR or vision model
+reading the canvas, so it works like a self-graded flip/explain card — you judge
+your own drawing against the reveal. In this version `% input:` is honored on
+**self-graded** checks only (a `flip` reveal or an explain), and is web-only (the
+terminal ignores it).
 
 ---
 

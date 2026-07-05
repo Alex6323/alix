@@ -7,6 +7,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Difficulty ladder (v1): a `% reveal:` directive and a `[review] target`
+  depth.** How a card is checked now derives from two axes instead of one `% mode:`
+  setting. `% reveal:` (deck or card, default `flip`) is the authored *presentation*
+  — `flip`, `cloze` (`{{spans}}`), or `line`. `[review] target` (personal config,
+  default `recall`) is your *depth* — `recognize` / `recall` / `reconstruct` — kept
+  out of shared decks because depth is the learner's call. At `recall` a card
+  reveals and you self-grade; at `reconstruct` a settled card climbs to producing
+  its answer (typing a short answer or a cloze gap, explaining a longer one). A
+  card climbs a rung after it graduates and survives one more spaced pass below the
+  target, and descends a rung on a miss (floored at recall). v1 schedules recall and
+  reconstruct only; recognition stays the unscheduled acquire on-ramp, and a
+  reconstruct check on a rich answer is self-graded. The web review UI shows a rung
+  badge whose opacity tracks FSRS retrievability. See the **Changed** note for the
+  break.
 - **Remediation cards are now virtual cards in the store.** A failed source
   exam's remediation cards live in alix's store instead of being written into
   your deck file. They drill like normal cards and count toward a deck's *due*
@@ -94,6 +108,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ephemeral (never persisted or sent to the server).
 
 ### Changed
+- **Breaking: `% mode:`, the `#?` cloze marker, and the `--mode` flag are
+  removed** — replaced by the difficulty ladder above. A cloze card is now
+  `% reveal: cloze` (was `#?`); a deck's presentation is `% reveal: flip|cloze|line`
+  (was `% mode:`); and how deeply you drill is `[review] target`, not a per-card
+  mode or a CLI flag. **A deck at the default target (`recall`) reviews as
+  reveal-and-self-grade even for cards once authored `% mode: typing`/`explain`** —
+  set `[review] target = "reconstruct"` to get the reconstruction (typing/explain)
+  checks. **Card ids are preserved**: the retired markers were never part of a
+  card's identity hash, so progress carries over. Upgrade an existing deck with a
+  one-off textual rewrite (`#?` → a `% reveal: cloze` line; `% mode:` → `% reveal:`
+  where a reveal-method applies, dropping `typing`/`fuzzy`/`choice`/`explain`), or
+  re-generate it — either way ids and history survive.
 - **Breaking: a failed exam no longer appends remediation cards to your deck
   file.** Remediation cards are now created as virtual cards in alix's store, so
   the deck `.txt` stays byte-for-byte unchanged. Drilling, due counts, and the

@@ -17,7 +17,7 @@ title = "Spanish"
 
 [defaults]
 direction = "both"
-mode = "typing"
+reveal = "line"
 ```
 
 Now open the cluster and drill its members one at a time:
@@ -29,7 +29,7 @@ alix workspace ~/decks/spanish/
 ## Shared directives
 
 The `[defaults]` keys are exactly the deck-directive names from
-[the deck format](03-the-deck-format.md) — `mode`, `direction`, `order`, and
+[the deck format](03-the-deck-format.md) — `reveal`, `direction`, `order`, and
 the rest. They fill in only what a deck *doesn't* set for itself, so the
 precedence is one level deeper than before:
 
@@ -44,13 +44,15 @@ system from chapter 3, just sourced from one more place.
 The `alix.toml` is shared: it travels with the workspace when you hand it to
 someone. Your **personal** review pacing doesn't belong there. Drop an
 `alix.local.toml` beside it to override the global `[review]` config — FSRS
-`retention` and `retire_after` — for this workspace's decks only:
+`retention`, `retire_after`, and the ladder `target` — for this workspace's decks
+only:
 
 ```toml
 # ~/decks/spanish/alix.local.toml
 [review]
-retention = 0.95        # see these cards more often
-retire_after = "never"  # never let them retire
+retention = 0.95         # see these cards more often
+retire_after = "never"   # never let them retire
+target = "reconstruct"   # drill this cluster all the way to producing answers
 ```
 
 It uses the same `[review]` keys as the [config file](16-configuration.md), and

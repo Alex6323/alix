@@ -16,8 +16,8 @@ kinds of source.
 ## What you get
 
 The model reads the source and returns a deck spread across **four layers of
-understanding** — facts → concepts → application → connections — using cloze
-(`#?`) cards for terminology. The prompt has it draft, then re-read the whole set
+understanding** — facts → concepts → application → connections — using
+`% reveal: cloze` cards for terminology. The prompt has it draft, then re-read the whole set
 and merge or drop cards that test the same fact, so the deck doesn't repeat
 itself. `alix` validates the text it gets back (it only ever accepts cards, never a
 write or shell command) and writes it to `~/decks/<slug>.txt`.

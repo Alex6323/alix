@@ -78,5 +78,5 @@ alix reset srs.txt     # clear stored progress (also --card / --all)
 ```
 
 A session is one deck — review them one at a time. From here the book goes deep:
-the next chapter is the [deck format](03-the-deck-format.md) in full, then the
-answer modes and scheduling.
+the next chapter is the [deck format](03-the-deck-format.md) in full, then
+[reveal & depth](04-review-modes.md) and scheduling.

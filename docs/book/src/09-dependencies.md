@@ -26,7 +26,7 @@ cycle is treated as non-blocking — a broken edge never hides a deck.
 
 `% requires:` is about *order and gating*, not session contents. When you review
 (or browse) a deck, the session holds exactly that deck's cards — prerequisites
-are never pulled in, so the `mode`/`order` you study under is always
+are never pulled in, so the `reveal`/`order` you study under is always
 the deck's own. What dependencies shape is the picker's **dependency tree**
 (foundations shown first) and, for a deck with a `% source:`, the **exam gate**
 below.

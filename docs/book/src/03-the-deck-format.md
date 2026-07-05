@@ -87,15 +87,15 @@ progress rides on the answers.
 
 ## Deck directives, in one line
 
-A deck can set its own defaults — the answer mode, the card order, and more — with
+A deck can set its own defaults — the reveal-method, the card order, and more — with
 `% key: value` lines in the **header** (before the first card):
 
 ```
-% mode: typing
+% reveal: line
 % order: sequential
 ```
 
 Because they're just comments, directives don't affect card identity, and an
 explicit command-line flag always overrides them. The full set gets its own
 *Directives reference* chapter; the next two chapters cover the ones you'll reach
-for first — the answer **modes** and **scheduling**.
+for first — how answers are **revealed** and **scheduled**.

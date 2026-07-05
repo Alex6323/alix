@@ -23,7 +23,7 @@ Keys are a single character (`"j"`), a special name (`"space"`, `"enter"`, `"tab
 `"esc"`, `"backspace"`), or either with a `ctrl-` prefix (`"ctrl-s"`). The
 rebindable `[keys.review]` actions are `failed`, `partly`, `passed`, `reveal`, `hint`, `submit`, `skip`,
 `remove` (default `ctrl-x`), `continue`, `restart` (default `r`), and `quit`. While
-you're typing an answer (typing/fuzzy mode), plain-character bindings are ignored so
+you're typing an answer (a reconstruct check), plain-character bindings are ignored so
 they can't shadow your input — use `ctrl-`/special keys for `hint`, `skip`, and
 `quit` there. Pass a different file with `--config <path>`.
 
@@ -46,18 +46,23 @@ port = 7777
 
 ## Review pacing
 
-The `[review]` section tunes the FSRS scheduler:
+The `[review]` section tunes the FSRS scheduler and the ladder depth you drill
+toward:
 
 ```toml
 [review]
-retention = 0.9       # FSRS target recall probability (0.70–0.99); higher = shorter intervals
-retire_after = "1y"   # a card rests once its interval reaches this ("2w", "6m", "30d", or "never")
+retention = 0.9         # FSRS target recall probability (0.70–0.99); higher = shorter intervals
+retire_after = "1y"     # a card rests once its interval reaches this ("2w", "6m", "30d", or "never")
+target = "recall"       # depth ladder target: recognize | recall | reconstruct
 ```
 
 `retention` is the recall probability FSRS schedules for. `retire_after` is when
 a card retires (rests until `alix reset`); `"never"` keeps it in rotation forever.
-A workspace can override both for its own decks in an `alix.local.toml` — see
-[Workspaces](08-workspaces.md).
+`target` is how deeply you want to end up retrieving each card
+([reveal & depth](04-review-modes.md)) — `recall` reveals and self-grades,
+`reconstruct` climbs settled cards to producing their answers; it's personal, not a
+deck directive. A workspace can override all three for its own decks in an
+`alix.local.toml` — see [Workspaces](08-workspaces.md).
 
 ## Backends
 

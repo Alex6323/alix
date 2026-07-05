@@ -5,12 +5,13 @@ format from chapter 3.
 
 ## Cloze cards — fill in the blank
 
-Mark a front with `#?` (no space) and the card becomes a **cloze**: every `{{...}}`
+Add `% reveal: cloze` to a card and it becomes a **cloze**: every `{{...}}`
 span in its answer lines is a blank, and the card expands into one sub-card per
 blank.
 
 ```
-#? Complete the Rust declaration
+# Complete the Rust declaration
+    % reveal: cloze
     let {{mut}} x: {{u64}} = 0;
 ```
 
@@ -46,7 +47,7 @@ vocabulary and other reversible facts:
 - `reverse` keeps only the swapped one.
 - `forward` (the default) is the card as written.
 
-Like `mode`, it works per card or deck-wide (a `% direction: both` header with
+Like `% reveal:`, it works per card or deck-wide (a `% direction: both` header with
 per-card overrides). The two directions get **distinct progress**, are kept apart
 in the queue (you won't be shown one right after the other), and are removed
 together; the reversed card keeps the note. It's best for single-line cards, and

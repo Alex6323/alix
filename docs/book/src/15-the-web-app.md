@@ -48,16 +48,17 @@ workspaces.
 The **format** target is a non-destructive reshaping pass: for each plain card
 whose answer is poorly shaped (a list crammed into prose, a run-on sentence that
 wants to be lines) it caches a tidier front, split answer lines, an optional
-note, and a suggested mode — applied at display time without touching the deck
+note, and a suggested reveal-method — applied at display time without touching the deck
 file or card identity. Both review and browse show the reshape, so the two views
 match. It's an AI heuristic, so it can miss or produce an unhelpful reshape;
 **Remove** clears it with no lasting effect.
 
 ## Every mode, plus the AI features
 
-All [answer modes](04-review-modes.md) work in the browser — flip, line (it
-auto-scrolls to the newest line), typing/fuzzy (each line marked ✓/✗ with the
-correct answer shown), and choice (tap an option). Controls are big tap targets and
+Every [check](04-review-modes.md) works in the browser — a flip or cloze reveal,
+a line reveal (it auto-scrolls to the newest line), a typing reconstruct (each
+line marked ✓/✗ with the correct answer shown), an explain reconstruct, and the
+recognition multiple-choice on-ramp for a new card (tap an option). Controls are big tap targets and
 follow *your* configured key bindings (the page reads them from the server). The
 **☰ menu** is context-aware: during review it holds **Ask Tutor**; on the
 deck picker, **keyboard shortcuts**, **refresh decks**, and **about** — with
