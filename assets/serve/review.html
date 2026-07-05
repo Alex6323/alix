@@ -776,10 +776,14 @@ function effectiveDraw() {
   if (state.mode !== "flip" && state.mode !== "explain") return false;
   return state.input === "draw" || drawToggle;
 }
+// The one always-on badge: card provenance (new / remediation) when it
+// applies, else the depth rung it's parked at — "recognize"/"recall"/
+// "reconstruct", the same verb the server and config use. Its opacity (set
+// where the badge is built) tracks FSRS retrievability, not shown here.
 function modeLabel() {
   if (state.promotable) return "remediation card";
   if (isAcquire()) return "new card";
-  return { typing: "typing exact", fuzzy: "typing fuzzy", line: "line by line", explain: "understanding" }[state.mode] || state.mode;
+  return state.rung;
 }
 function choose(i) { api("/api/choose", post({ index: i })).then(f => { feedback = f; render(); }); }
 function submitCheck() {
@@ -2005,7 +2009,10 @@ function fillBottom() {
   const a = document.getElementById("ansRegion");
   if (!a) return;
   a.innerHTML = "";
-  a.appendChild(el("span", "mode-tag", modeLabel())); // badge heads the answer section
+  const tag = el("span", "mode-tag", modeLabel()); // badge heads the answer section
+  // Opacity tracks retrievability (0..1); floored so the badge never vanishes.
+  tag.style.opacity = 0.35 + 0.65 * (state.retrievability || 0);
+  a.appendChild(tag);
   const citable = state.card.at && isAnswered();
   if (citable && citationView) {
     // Source view: the cited excerpt takes the answer's place (swap, not stack).
