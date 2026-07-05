@@ -1931,7 +1931,10 @@ pub fn run_review(
                     respond_status(request, 409);
                     continue;
                 };
-                ex.sitting.poll(&mut store, now_ms());
+                // A workspace member's exam remediation honors its own
+                // `alix.local.toml` retirement cap, same as its review session.
+                let retire_after_days = review_cfg.for_deck(&ex.deck_path).retire_after_days;
+                ex.sitting.poll(&mut store, now_ms(), retire_after_days);
                 respond_json(request, &exam_dto(ex, &decks_dir));
             }
             // Save the current answer and (optionally) navigate to another question.
@@ -3849,7 +3852,6 @@ mod tests {
             },
             state: crate::store::CardState::new(0),
             created_ms: 0,
-            retired: false,
         });
 
         let after = deck_topology_dto(&augment, &store, &deck, ReviewConfig::default());

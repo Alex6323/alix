@@ -912,6 +912,10 @@ fn build_review(
         cards.retain(|c| ids.contains(&c.id()));
     }
 
+    // A workspace member drills under that workspace's `alix.local.toml` pacing
+    // override (retention + retirement), else the global `[review]` config.
+    let review = config.review.for_deck(deck);
+
     // Inject this deck's virtual (remediation) cards alongside its authored
     // ones, so both are drilled by the same FSRS-due queue — but not under a
     // `--region` focus: a region is a deck-topology drill, and virtual cards
@@ -928,7 +932,7 @@ fn build_review(
         for (k, vc) in store
             .virtual_cards_for(subject.as_ref())
             .into_iter()
-            .filter(|v| !v.retired)
+            .filter(|v| !alix::session::virtual_retired(v, review.retire_after_days))
             .enumerate()
         {
             cards.push(synthesize_virtual(vc, &subject, VIRTUAL_LINE_BASE + k));
@@ -949,9 +953,6 @@ fn build_review(
         Order::default(),
     );
 
-    // A workspace member drills under that workspace's `alix.local.toml` pacing
-    // override (retention + retirement), else the global `[review]` config.
-    let review = config.review.for_deck(deck);
     let options = SessionOptions {
         max_new: args.new,
         limit: args.limit,
@@ -1194,6 +1195,7 @@ fn exam_app(deck: Deck, config: &Config, store: Store) -> tui::ExamApp {
         .exam_strictness
         .unwrap_or(config.exam.strictness);
     let decks_dir = config.decks_dir();
+    let retire_after_days = config.review.for_deck(&deck.path).retire_after_days;
     tui::ExamApp::new(
         deck,
         strictness,
@@ -1201,6 +1203,7 @@ fn exam_app(deck: Deck, config: &Config, store: Store) -> tui::ExamApp {
         config.ask.clone(),
         store,
         decks_dir,
+        retire_after_days,
     )
 }
 
@@ -2647,7 +2650,17 @@ fn exam_cmd(args: ExamArgs) -> Result<()> {
         return run_trace_exam(&deck, &config, strictness, store);
     }
     let decks_dir = config.decks_dir();
-    tui::ExamApp::new(deck, strictness, exam_cfg, config.ask, store, decks_dir).run()
+    let retire_after_days = config.review.for_deck(&deck.path).retire_after_days;
+    tui::ExamApp::new(
+        deck,
+        strictness,
+        exam_cfg,
+        config.ask,
+        store,
+        decks_dir,
+        retire_after_days,
+    )
+    .run()
 }
 
 /// Sits a **trace's exam** — the compression. One fixed question (the
@@ -2683,7 +2696,15 @@ fn run_trace_exam(
         config.exam.clone(),
         config.ask.clone(),
     );
-    tui::ExamApp::from_sitting(sitting, store, deck.path.clone(), config.decks_dir()).run()
+    let retire_after_days = config.review.for_deck(&deck.path).retire_after_days;
+    tui::ExamApp::from_sitting(
+        sitting,
+        store,
+        deck.path.clone(),
+        config.decks_dir(),
+        retire_after_days,
+    )
+    .run()
 }
 
 /// After a full walk, offers the trace's exam (the compression) as a capstone:
@@ -3844,7 +3865,6 @@ mod tests {
             },
             state: CardState::new(0),
             created_ms: 0,
-            retired: false,
         }
     }
 

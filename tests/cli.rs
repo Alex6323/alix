@@ -157,7 +157,6 @@ fn sample_virtual_card(parent: &str, discriminator: &str) -> alix::store::Virtua
         },
         state: alix::store::CardState::new(0),
         created_ms: 0,
-        retired: false,
     }
 }
 

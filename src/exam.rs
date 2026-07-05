@@ -30,6 +30,7 @@ use crate::{
     config::{AskConfig, ExamConfig, Strictness},
     deck::{self, Deck},
     parser,
+    session::virtual_retired,
     store::{CardState, Store, VirtualCard, VirtualContent, VirtualKind, virtual_id},
 };
 
@@ -336,16 +337,18 @@ pub fn spawn_remediation(
 
 /// Turns the cleaned remediation deck-text into virtual cards in `store`
 /// (kind [`VirtualKind::Remediation`], `parent = subject`), one per parsed
-/// card. Per card: create it if its id is new, revive it if a matching
-/// archived card exists, or leave it alone if an active match already exists
-/// (dedupe — no schedule reset). Saves the store once after the batch. The
-/// deck file is never touched. Returns how many cards were created or
+/// card. Per card: create it if its id is new, revive it if a matching card
+/// exists and is derived-retired (its interval has reached `retire_after_days`
+/// — see [`virtual_retired`]), or leave it alone if an active match already
+/// exists (dedupe — no schedule reset). Saves the store once after the batch.
+/// The deck file is never touched. Returns how many cards were created or
 /// revived.
 fn store_remediation_cards(
     store: &mut Store,
     subject: &str,
     cards_text: &str,
     now_ms: u64,
+    retire_after_days: Option<u32>,
 ) -> Result<usize> {
     let cards = parser::parse_str(subject, cards_text)?;
     if cards.is_empty() {
@@ -373,7 +376,10 @@ fn store_remediation_cards(
             back: card.back.clone(),
             mode: card.mode,
         };
-        match store.get_virtual(&id).map(|vc| vc.retired) {
+        let existing = store
+            .get_virtual(&id)
+            .map(|vc| virtual_retired(vc, retire_after_days));
+        match existing {
             None => {
                 store.insert_virtual(VirtualCard {
                     id,
@@ -382,7 +388,6 @@ fn store_remediation_cards(
                     content,
                     state: CardState::new(now_ms),
                     created_ms: now_ms,
-                    retired: false,
                 });
                 created_or_revived += 1;
             }
@@ -715,8 +720,11 @@ impl Sitting {
     /// Drains a finished background call and advances the phase, applying side
     /// effects: on a passing grade, persist "mastered" and save `store`; on
     /// remediation, create/dedupe/revive virtual cards in `store` (the deck
-    /// file is never touched). Returns `true` when the phase advanced.
-    pub fn poll(&mut self, store: &mut Store, now_ms: u64) -> bool {
+    /// file is never touched). `retire_after_days` is the caller's resolved
+    /// `[review] retire_after` cap (per-workspace), needed to tell an active
+    /// remediation dupe from a derived-retired one to revive — see
+    /// [`store_remediation_cards`]. Returns `true` when the phase advanced.
+    pub fn poll(&mut self, store: &mut Store, now_ms: u64, retire_after_days: Option<u32>) -> bool {
         let reply = match &self.pending {
             None => return false,
             Some(Pending::Questions(rx)) => match rx.try_recv() {
@@ -767,7 +775,7 @@ impl Sitting {
                 self.phase = Phase::Answering;
             }
             Reply::Remediation(Ok(cards)) => {
-                match store_remediation_cards(store, &self.subject, &cards, now_ms) {
+                match store_remediation_cards(store, &self.subject, &cards, now_ms, retire_after_days) {
                     Ok(_n) => self.phase = Phase::Remediated,
                     Err(e) => {
                         self.error = Some(format!("{e}"));
@@ -1686,10 +1694,11 @@ mod tests {
     }
 
     /// Polls a sitting until its in-flight background call lands (or times
-    /// out).
+    /// out). Uses the default retirement cap — none of these tests drive a
+    /// virtual card's interval to it.
     fn drain(s: &mut Sitting, store: &mut Store) {
         for _ in 0..500 {
-            if s.poll(store, 0) {
+            if s.poll(store, 0, Some(crate::session::DEFAULT_RETIRE_AFTER_DAYS)) {
                 return;
             }
             std::thread::sleep(std::time::Duration::from_millis(10));
@@ -1855,11 +1864,11 @@ mod tests {
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let text = "# Why does X?\n% mode: explain\n\tpoint one\n";
 
-        let n1 = store_remediation_cards(&mut store, "d.txt", text, 1_000).unwrap();
+        let n1 = store_remediation_cards(&mut store, "d.txt", text, 1_000, None).unwrap();
         assert_eq!(1, n1);
         assert_eq!(1, store.virtual_cards_for("d.txt").len());
 
-        let n2 = store_remediation_cards(&mut store, "d.txt", text, 2_000).unwrap();
+        let n2 = store_remediation_cards(&mut store, "d.txt", text, 2_000, None).unwrap();
         assert_eq!(0, n2, "an active dupe is left alone, not recreated");
         assert_eq!(1, store.virtual_cards_for("d.txt").len());
     }
@@ -1874,7 +1883,7 @@ mod tests {
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let text = "#? Complete the quote\n\tTo {{be}} or not to {{be}}\n";
 
-        let n = store_remediation_cards(&mut store, "d.txt", text, 1_000).unwrap();
+        let n = store_remediation_cards(&mut store, "d.txt", text, 1_000, None).unwrap();
         assert_eq!(2, n, "both cloze sub-cards should be created, not deduped");
         assert_eq!(2, store.virtual_cards_for("d.txt").len());
     }
@@ -1884,20 +1893,26 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let text = "# Why does X?\n% mode: explain\n\tpoint one\n";
+        let cap = Some(30);
 
-        store_remediation_cards(&mut store, "d.txt", text, 1_000).unwrap();
+        store_remediation_cards(&mut store, "d.txt", text, 1_000, cap).unwrap();
         let id = store.virtual_cards_for("d.txt")[0].id.clone();
         {
+            // Derived-retired: push the interval to the cap rather than
+            // setting a flag (there is none).
             let vc = store.get_virtual_mut(&id).unwrap();
-            vc.retired = true;
+            vc.state.fsrs = Some(crate::store::FsrsState {
+                scheduled_days: 30,
+                ..Default::default()
+            });
             vc.state.total_reviews = 3;
         }
 
-        let n = store_remediation_cards(&mut store, "d.txt", text, 5_000).unwrap();
+        let n = store_remediation_cards(&mut store, "d.txt", text, 5_000, cap).unwrap();
         assert_eq!(1, n);
         assert_eq!(1, store.virtual_cards_for("d.txt").len());
         let vc = store.get_virtual(&id).unwrap();
-        assert!(!vc.retired);
+        assert!(!virtual_retired(vc, cap));
         assert_eq!(0, vc.state.total_reviews, "revive resets to a fresh state");
     }
 
@@ -1956,7 +1971,10 @@ mod tests {
         assert!(store.deck_mastered("d.txt"));
 
         for vc in store.virtual_cards_for("d.txt") {
-            assert!(!vc.retired, "a passing re-sit must not retire remediation cards");
+            assert!(
+                !virtual_retired(vc, Some(crate::session::DEFAULT_RETIRE_AFTER_DAYS)),
+                "a passing re-sit must not retire remediation cards"
+            );
         }
     }
 
@@ -1966,7 +1984,7 @@ mod tests {
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let text = "# Why does X?\n% mode: explain\n\tpoint one\n\n# fact card\n\tplain answer\n";
 
-        store_remediation_cards(&mut store, "d.txt", text, 1_000).unwrap();
+        store_remediation_cards(&mut store, "d.txt", text, 1_000, None).unwrap();
         let virtuals = store.virtual_cards_for("d.txt");
         let explain = virtuals
             .iter()

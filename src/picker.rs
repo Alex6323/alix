@@ -2286,7 +2286,6 @@ mod tests {
             },
             state: crate::store::CardState::new(0),
             created_ms: 0,
-            retired: false,
         }
     }
 

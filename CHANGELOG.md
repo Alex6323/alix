@@ -94,6 +94,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the deck `.txt` stays byte-for-byte unchanged. Drilling, due counts, and the
   exam re-sit are otherwise the same; use the new **promote** action to move a
   remediation card into the deck if you want it there permanently.
+- **A virtual (remediation) card's retirement is now fully derived**, matching a
+  deck card: purely its FSRS interval vs. `retire_after`, no stored archive
+  flag. Raising `retire_after` later un-retires a previously archived virtual
+  card whose interval now sits below the new cap, the same as it would for a
+  deck card.
 - **Breaking: a review session scores each card once per appearance.** A missed
   card is no longer re-drilled immediately in the same sitting; it keeps its
   short spaced step and re-appears once that step has elapsed, interleaved behind

@@ -296,13 +296,9 @@ impl Session {
                 } else {
                     self.scheduler.apply(&mut vc.state, grade, now_ms);
                 }
-                // Archive once this review pushes the interval to/past the
-                // cap. Retire at the cap only — never elsewhere (in
-                // particular, never on an exam re-pass; that path must not
-                // touch `retired`).
-                if virtual_retired(vc, self.options.retire_after_days) {
-                    vc.retired = true;
-                }
+                // Nothing to persist: retirement is derived from the interval
+                // this review just set (see `virtual_retired`), read fresh on
+                // every check — not written here.
             }
             None => {
                 let card = &self.cards[index];
@@ -428,9 +424,8 @@ impl Session {
     }
 
     /// Whether roster card `i` is retired/archived (excluded from scheduling):
-    /// for a virtual card, its stored archive flag or its interval past the
-    /// cap ([`virtual_retired`]); for a deck card, the derived interval-cap
-    /// rule ([`is_retired`]).
+    /// the derived interval-cap rule, for a virtual card ([`virtual_retired`])
+    /// or a deck card ([`is_retired`]) alike.
     fn slot_retired(&self, store: &Store, i: usize) -> bool {
         let cap = self.options.retire_after_days;
         match self.virtual_ids[i].as_deref() {
@@ -440,12 +435,13 @@ impl Session {
     }
 
     /// Whether roster card `i` can be served right now: a retired/archived
-    /// slot never is (cram included — a retired virtual card is un-retired
-    /// only by re-failing its gap, which revives it; `alix reset` doesn't
-    /// bring it back, it drops the virtual card outright); otherwise under
-    /// cram, always; otherwise unseen (a deck card) or FSRS-due. A virtual
-    /// card always has state, so a missing entry (a dangling reference) is
-    /// never servable.
+    /// slot never is (cram included — retirement is derived from the interval,
+    /// so a retired virtual card is un-retired by re-failing its gap, which
+    /// revives it, or by raising `retire_after` past its interval; `alix
+    /// reset` doesn't bring it back, it drops the virtual card outright);
+    /// otherwise under cram, always; otherwise unseen (a deck card) or
+    /// FSRS-due. A virtual card always has state, so a missing entry (a
+    /// dangling reference) is never servable.
     fn servable(&self, i: usize, store: &Store, now_ms: u64) -> bool {
         if self.slot_retired(store, i) {
             return false;
@@ -646,20 +642,18 @@ pub fn is_retired_id(card_id: u64, store: &Store, retire_after_days: Option<u32>
         .is_some_and(|f| f.scheduled_days >= cap)
 }
 
-/// Whether a virtual card is retired/archived: its stored archive flag, or its
-/// FSRS interval has reached the cap. `None` cap disables interval retirement.
-/// Mirrors [`is_retired`]'s interval rule; unlike a deck card's purely-derived
-/// retirement, a virtual card also carries a persisted flag (set at grade
-/// time — see `Session::grade`), because an archived entry must survive to be
-/// revived later.
+/// Whether a virtual card is retired/archived: its FSRS interval has reached
+/// the cap. `None` cap disables retirement (drill forever). Purely derived —
+/// mirrors [`is_retired`]'s interval rule exactly, same `CardState` source and
+/// comparison, so the two are symmetric: raising the cap later un-retires a
+/// virtual card whose interval now sits below it, just like a deck card.
 pub fn virtual_retired(vc: &VirtualCard, retire_after_days: Option<u32>) -> bool {
-    vc.retired
-        || retire_after_days.is_some_and(|cap| {
-            vc.state
-                .fsrs
-                .as_ref()
-                .is_some_and(|f| f.scheduled_days >= cap)
-        })
+    retire_after_days.is_some_and(|cap| {
+        vc.state
+            .fsrs
+            .as_ref()
+            .is_some_and(|f| f.scheduled_days >= cap)
+    })
 }
 
 /// Whether a virtual card would be served now: not archived, and FSRS-due. The
@@ -863,7 +857,6 @@ mod tests {
             },
             state: CardState::new(now_ms),
             created_ms: now_ms,
-            retired: false,
         }
     }
 
@@ -1872,9 +1865,10 @@ mod tests {
         store.insert_virtual(virtual_card("deck.txt", "gap-due", 0));
         // Not yet due: created at `now`, still cooling down.
         store.insert_virtual(virtual_card("deck.txt", "gap-not-due", now));
-        // Archived: otherwise due, but excluded.
+        // Archived: its interval already sits at the cap, so it's excluded —
+        // derived, no stored flag.
         let mut archived = virtual_card("deck.txt", "gap-archived", 0);
-        archived.retired = true;
+        archived.state.fsrs = Some(retired_fsrs());
         store.insert_virtual(archived);
 
         assert_eq!(
@@ -1915,7 +1909,7 @@ mod tests {
     }
 
     #[test]
-    fn virtual_card_retires_at_the_interval_cap() {
+    fn virtual_card_is_retired_when_interval_reaches_cap() {
         let (mut store, _dir) = empty_store();
         let vc = virtual_card("deck.txt", "gap-1", 0);
         let vid = vc.id.clone();
@@ -1937,32 +1931,80 @@ mod tests {
             now,
         );
         session.grade(&mut store, Grade::Pass, now);
-        assert!(!store.get_virtual(&vid).unwrap().retired);
+        assert!(!virtual_retired(
+            store.get_virtual(&vid).unwrap(),
+            options.retire_after_days
+        ));
 
         // Second review, once due: graduates to `Review` with a 4-day interval —
-        // right at the cap.
+        // right at the cap. No stored flag anywhere — retirement is read fresh
+        // from the interval.
         let now = 86_460_000;
         let mut session = Session::new_with_virtual(
             vec![virtual_synth_card("deck.txt", 1_000_000)],
             vec![Some(vid.clone())],
             &store,
             sched(),
-            options,
+            options.clone(),
             now,
         );
         session.grade(&mut store, Grade::Pass, now);
 
         let after = store.get_virtual(&vid).expect("entry + history kept, not deleted");
-        assert!(after.retired);
+        assert!(virtual_retired(after, options.retire_after_days));
         assert_eq!(4, after.state.fsrs.as_ref().unwrap().scheduled_days);
         assert_eq!(2, after.state.total_reviews);
+
+        // Excluded from the queue and from due counts, same as a deck card.
+        let session = Session::new_with_virtual(
+            vec![virtual_synth_card("deck.txt", 1_000_000)],
+            vec![Some(vid.clone())],
+            &store,
+            sched(),
+            options.clone(),
+            now,
+        );
+        assert!(session.is_finished());
+        assert_eq!(
+            0,
+            count_reviewable_virtual(&store, "deck.txt", sched().as_ref(), now, options.retire_after_days)
+        );
+    }
+
+    #[test]
+    fn raising_retire_after_un_retires_a_virtual_card() {
+        // The symmetry the derived model is for: a card archived at cap C is
+        // not retired once the cap is raised above its interval — exactly
+        // like a deck card. No stickiness from a stored flag.
+        let mut vc = virtual_card("deck.txt", "gap-1", 0);
+        vc.state.fsrs = Some(crate::store::FsrsState {
+            scheduled_days: 10,
+            ..Default::default()
+        });
+        assert!(virtual_retired(&vc, Some(10)));
+        assert!(!virtual_retired(&vc, Some(20)));
+
+        // Confirmed through the exclusion path too: the same card is excluded
+        // from due counts at the lower cap, and counted at the raised one.
+        let (mut store, _dir) = empty_store();
+        store.insert_virtual(vc);
+        let now = 61_000;
+        let sched = sched();
+        assert_eq!(
+            0,
+            count_reviewable_virtual(&store, "deck.txt", sched.as_ref(), now, Some(10))
+        );
+        assert_eq!(
+            1,
+            count_reviewable_virtual(&store, "deck.txt", sched.as_ref(), now, Some(20))
+        );
     }
 
     #[test]
     fn retired_virtual_card_is_excluded_from_queue_and_counts() {
         let (mut store, _dir) = empty_store();
         let mut vc = virtual_card("deck.txt", "gap-1", 0);
-        vc.retired = true;
+        vc.state.fsrs = Some(retired_fsrs());
         let vid = vc.id.clone();
         store.insert_virtual(vc);
 
@@ -2005,6 +2047,9 @@ mod tests {
         );
         session.grade(&mut store, Grade::Pass, now);
 
-        assert!(!store.get_virtual(&vid).unwrap().retired);
+        assert!(!virtual_retired(
+            store.get_virtual(&vid).unwrap(),
+            Some(DEFAULT_RETIRE_AFTER_DAYS)
+        ));
     }
 }

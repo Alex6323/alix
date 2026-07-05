@@ -234,9 +234,11 @@ pub struct VirtualCard {
     pub id: String,
     /// Which trigger produced this card.
     pub kind: VirtualKind,
-    /// Opaque reference to the source this card was derived from (for
-    /// remediation: the deck subject + a hash of the gap text). Interpreted
-    /// by the creator, not by the store.
+    /// The deck subject (file name) this card belongs to — just that, not an
+    /// embedded hash of anything. The discriminator that makes a card's id
+    /// unique within that deck (e.g. a hash of the gap text) is a separate
+    /// input to [`virtual_id`], not part of `parent`. Interpreted by the
+    /// creator, not by the store.
     pub parent: String,
     /// The rendered card content to drill.
     pub content: VirtualContent,
@@ -245,12 +247,6 @@ pub struct VirtualCard {
     pub state: CardState,
     /// When this virtual card was created (Unix ms).
     pub created_ms: u64,
-    /// Archive marker: set once the card retires (its schedule interval
-    /// passes the retirement cap). An archived card is kept, for history and
-    /// possible revival, but no longer scheduled. Store-only — never written
-    /// to a deck.
-    #[serde(default)]
-    pub retired: bool,
 }
 
 /// Derives a virtual card's id: `"v:" + hex(XxHash64(kind-tag ++ parent ++
@@ -451,17 +447,18 @@ impl Store {
         self.virtual_cards.insert(card.id.clone(), card);
     }
 
-    /// Revives an archived virtual card: resets its schedule to a fresh state
-    /// and clears the `retired` flag, keeping its `id`/`kind`/`parent`/
-    /// `content`/`created_ms`. A re-triggered gap means it was forgotten, so it
-    /// drills from the start rather than resuming its old interval. Returns
-    /// whether an entry with `id` existed. Does not save; the caller (a
-    /// remediation re-creation path) decides when to call this.
+    /// Revives an archived (derived-retired) virtual card: resets its schedule
+    /// to a fresh state, keeping its `id`/`kind`/`parent`/`content`/`created_ms`.
+    /// A re-triggered gap means it was forgotten, so it drills from the start
+    /// rather than resuming its old interval — which also drops it back below
+    /// the retirement cap, un-archiving it (retirement is derived purely from
+    /// the interval, see [`crate::session::virtual_retired`]). Returns whether
+    /// an entry with `id` existed. Does not save; the caller (a remediation
+    /// re-creation path) decides when to call this.
     pub fn revive_virtual(&mut self, id: &str, now_ms: u64) -> bool {
         match self.virtual_cards.get_mut(id) {
             Some(vc) => {
                 vc.state = CardState::new(now_ms);
-                vc.retired = false;
                 true
             }
             None => false,
@@ -482,8 +479,8 @@ impl Store {
     }
 
     /// Every virtual card belonging to deck `subject` (its `parent`), an exact
-    /// match on the deck's file name. Includes archived (`retired`) entries —
-    /// callers filter those themselves for scheduling/counts (see
+    /// match on the deck's file name. Includes derived-retired (archived)
+    /// entries — callers filter those themselves for scheduling/counts (see
     /// [`crate::session::is_virtual_reviewable`]).
     pub fn virtual_cards_for(&self, subject: &str) -> Vec<&VirtualCard> {
         self.virtual_cards
@@ -928,7 +925,6 @@ mod tests {
             },
             state: CardState::new(1000),
             created_ms: 1000,
-            retired: false,
         }
     }
 
@@ -949,7 +945,6 @@ mod tests {
             got.content.front
         );
         assert_eq!(Some(Mode::Flip), got.content.mode);
-        assert!(!got.retired);
     }
 
     #[test]
@@ -981,7 +976,6 @@ mod tests {
             },
             state: CardState::new(0),
             created_ms: 0,
-            retired: false,
         }
     }
 
@@ -1017,11 +1011,13 @@ mod tests {
     }
 
     #[test]
-    fn revive_virtual_resets_schedule_and_clears_archive() {
+    fn revive_virtual_resets_the_schedule() {
+        // No `retired` field to clear (it's gone) — a card whose interval sits
+        // at/past the retirement cap is derived-retired; reviving it just resets
+        // the schedule, which drops the interval back below any cap.
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let mut vc = sample_virtual_card("gap-1");
-        vc.retired = true;
         vc.state.record_review(500, Grade::Fail);
         vc.state.fsrs = Some(FsrsState {
             scheduled_days: 30,
@@ -1031,12 +1027,16 @@ mod tests {
         let id = vc.id.clone();
         let created_ms = vc.created_ms;
         store.insert_virtual(vc);
+        assert!(crate::session::virtual_retired(
+            store.get_virtual(&id).unwrap(),
+            Some(30)
+        ));
 
         assert!(store.revive_virtual(&id, 5_000));
 
         let after = store.get_virtual(&id).expect("entry kept");
-        assert!(!after.retired);
         assert_eq!(CardState::new(5_000), after.state); // fresh — no history/fsrs
+        assert!(!crate::session::virtual_retired(after, Some(30)));
         assert_eq!(id, after.id);
         assert_eq!(created_ms, after.created_ms);
 

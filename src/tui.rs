@@ -2202,6 +2202,10 @@ pub struct ExamApp {
     /// The deck under exam (for resolving what a pass unlocks).
     deck_path: PathBuf,
     decks_dir: Option<PathBuf>,
+    /// The deck's resolved `[review] retire_after` cap, for the exam's
+    /// remediation dedup (an active vs. derived-retired virtual card — see
+    /// `exam::Sitting::poll`).
+    retire_after_days: Option<u32>,
     /// Scroll offset of the results breakdown.
     scroll: u16,
     quit: bool,
@@ -2217,10 +2221,11 @@ impl ExamApp {
         ask_cfg: AskConfig,
         store: Store,
         decks_dir: Option<PathBuf>,
+        retire_after_days: Option<u32>,
     ) -> Self {
         let deck_path = deck.path.clone();
         let sitting = exam::Sitting::start(&deck, strictness, exam_cfg, ask_cfg);
-        Self::from_sitting(sitting, store, deck_path, decks_dir)
+        Self::from_sitting(sitting, store, deck_path, decks_dir, retire_after_days)
     }
 
     /// Wraps an already-built `sitting` — used for the **trace exam**, whose
@@ -2231,12 +2236,14 @@ impl ExamApp {
         store: Store,
         deck_path: PathBuf,
         decks_dir: Option<PathBuf>,
+        retire_after_days: Option<u32>,
     ) -> Self {
         Self {
             sitting,
             store,
             deck_path,
             decks_dir,
+            retire_after_days,
             scroll: 0,
             quit: false,
         }
@@ -2274,7 +2281,10 @@ impl ExamApp {
             }
             // On a phase transition, reset the scroll so a fresh error banner
             // (or a new result) starts in view rather than scrolled past.
-            if self.sitting.poll(&mut self.store, time::now_ms()) {
+            if self
+                .sitting
+                .poll(&mut self.store, time::now_ms(), self.retire_after_days)
+            {
                 self.scroll = 0;
             }
         }
