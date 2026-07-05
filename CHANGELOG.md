@@ -18,6 +18,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   terminal (rebindable `[keys.review]` `promote`), or "Promote to deck" in the web
   review menu. Offered only while reviewing a virtual card. The promoted card
   keeps its review schedule; it doesn't restart.
+- **Exam-fail remediation count, and a "remediation card" review label.** The
+  post-remediation exam screen (TUI and web) now reports how many remediation
+  cards the failure created or revived. While drilling a still-virtual card,
+  the review screen's existing mode badge reads "remediation card" in place of
+  "new card" — it reverts once the card is promoted.
 - **`[review]` config section — FSRS pacing.** `retention` (target recall
   probability, 0.70–0.99, default 0.9; higher = shorter intervals) and
   `retire_after` (a duration `"1y"` / `"6m"` / `"2w"` / `"30d"`, or `"never"` to

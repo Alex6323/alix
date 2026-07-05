@@ -688,10 +688,11 @@ impl App {
 
     /// Promotes the current virtual (remediation) card into its deck file,
     /// then moves on. The lib does the actual work ([`store::promote_virtual`]:
-    /// append the rendered card, transfer its schedule to the new deck card,
-    /// then drop the virtual entry — the promoted card carries over its
-    /// review history rather than starting fresh); this resolves the deck
-    /// path for the current card's subject — the same lookup
+    /// append the rendered card, then drop the virtual entry — the schedule
+    /// needs no transfer, since it already lives in `store.cards` under the
+    /// id the appended deck card hashes to, so the promoted card keeps its
+    /// earned schedule for free); this resolves the deck path for the current
+    /// card's subject — the same lookup
     /// [`flush_removals`](Self::flush_removals) uses — then re-points the
     /// cursor (the promoted slot is no longer servable) and renders whatever
     /// comes next.
@@ -1568,19 +1569,26 @@ impl App {
 
         // A mode badge at the top of the answer section — typing and fuzzy in
         // particular look identical without it (both are an input prompt).
-        let mode_tag = match &self.phase {
-            Phase::Typing { .. } => "TYPING EXACT",
-            Phase::Fuzzy { .. } => "TYPING FUZZY",
-            Phase::Flip { .. } => "FLIP",
-            Phase::Acquire { .. } | Phase::AcquireChoice { .. } => "NEW CARD",
-            Phase::Explain { .. } => "EXPLAIN",
-            Phase::LineByLine { .. } => "LINE BY LINE",
-            Phase::Choice { .. } => "CHOICE",
-            Phase::Feedback {
-                mode: Mode::Fuzzy, ..
-            } => "TYPING FUZZY",
-            Phase::Feedback { .. } => "TYPING EXACT",
-            _ => "",
+        // Virtual (remediation) cards are a property of the CARD, not the
+        // phase, so that check wins over the phase-based label below; a
+        // virtual card skips acquire, so the two never compete for real.
+        let mode_tag = if self.session.current_is_virtual(&self.store) {
+            "REMEDIATION CARD"
+        } else {
+            match &self.phase {
+                Phase::Typing { .. } => "TYPING EXACT",
+                Phase::Fuzzy { .. } => "TYPING FUZZY",
+                Phase::Flip { .. } => "FLIP",
+                Phase::Acquire { .. } | Phase::AcquireChoice { .. } => "NEW CARD",
+                Phase::Explain { .. } => "EXPLAIN",
+                Phase::LineByLine { .. } => "LINE BY LINE",
+                Phase::Choice { .. } => "CHOICE",
+                Phase::Feedback {
+                    mode: Mode::Fuzzy, ..
+                } => "TYPING FUZZY",
+                Phase::Feedback { .. } => "TYPING EXACT",
+                _ => "",
+            }
         };
         if !mode_tag.is_empty() {
             lines.push(Line::from(mode_tag.dim()));
@@ -2476,7 +2484,16 @@ impl ExamApp {
                 }
             }
             exam::Phase::Remediated => {
-                lines.push(Line::from("Remediation cards added ✓".fg(Color::Green)));
+                let count = self.sitting.remediated_count().unwrap_or(0);
+                let headline = if count == 0 {
+                    "No new remediation cards needed ✓".to_string()
+                } else {
+                    format!(
+                        "Created {count} remediation card{} ✓",
+                        if count == 1 { "" } else { "s" }
+                    )
+                };
+                lines.push(Line::from(headline.fg(Color::Green)));
                 lines.push(Line::default());
                 lines.push(Line::from("Re-drill the deck, then re-sit the exam."));
             }

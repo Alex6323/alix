@@ -58,12 +58,15 @@ responsive while it thinks.
   just means drilled (`done ✓`).
 - **Fail** lists the gaps and offers to turn them into **remediation cards** — a
   cloze/plain card for a missed fact, a `% mode: explain` card for a missed
-  concept, with overlapping gaps merged. Re-drill those and re-sit.
+  concept, with overlapping gaps merged. Re-drill those and re-sit. Once
+  created, the screen reports how many remediation cards it added.
 
 Those remediation cards are **virtual**: they live in alix's store rather than in
-the deck file. A virtual card drills like any other — its first pass comes about a
-minute later, then FSRS schedules it — and it counts toward the deck's *due* total
-but not toward the deck's card count, and it never rewrites your `.txt`.
+the deck file. While drilling one, the review screen's mode badge reads
+"remediation card" in place of the "new card" badge. A virtual card drills like
+any other — its first pass comes about a minute later, then FSRS schedules it
+— and it counts toward the deck's *due* total but not toward the deck's card
+count, and it never rewrites your `.txt`.
 Regenerating the same gap won't duplicate it; once its interval reaches the
 retirement cap it's archived, and re-failing the gap brings it back. When a
 remediation card has earned a permanent place, **promote** it during review

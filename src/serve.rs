@@ -977,6 +977,9 @@ struct ExamDto {
     /// Whether a failed result can be remediated into cards (fact decks only — a
     /// trace is re-walked, not remediated). Drives the remediation button.
     can_remediate: bool,
+    /// How many remediation cards the last remediation created or revived;
+    /// `None` until one completes (the "remediated" phase renders it).
+    remediated_count: Option<usize>,
     /// A trace exam (the compression), so the page shows a "re-walk" hint on a
     /// fail instead of remediation.
     is_trace: bool,
@@ -1058,6 +1061,7 @@ fn exam_dto(ex: &Examining, decks_dir: &Path) -> ExamDto {
         passed,
         gaps: s.gaps(),
         can_remediate: s.can_remediate(),
+        remediated_count: s.remediated_count(),
         is_trace: s.kind() == exam::SittingKind::Trace,
         unlocks,
         thinking: s.thinking(),
@@ -1752,11 +1756,12 @@ pub fn run_review(
                 );
             }
             // Promotes the current virtual (remediation) card into its deck
-            // file (`store::promote_virtual` does the append-then-drop, and
-            // transfers the schedule to the new deck card — it carries over
-            // its review history rather than starting fresh). A clean 400 —
-            // never a panic — when the current card isn't virtual or its
-            // deck file isn't known.
+            // file (`store::promote_virtual` does the append-then-drop; the
+            // schedule needs no transfer, since it already lives in
+            // `store.cards` under the id the appended deck card hashes to, so
+            // the promoted card keeps its earned schedule for free). A clean
+            // 400 — never a panic — when the current card isn't virtual or
+            // its deck file isn't known.
             (Method::Post, "/api/promote") => {
                 let Some(r) = reviewing.as_mut() else {
                     respond_status(request, 409);

@@ -776,6 +776,7 @@ function effectiveDraw() {
   return state.input === "draw" || drawToggle;
 }
 function modeLabel() {
+  if (state.promotable) return "remediation card";
   if (isAcquire()) return "new card";
   return { typing: "typing exact", fuzzy: "typing fuzzy", line: "line by line", explain: "understanding" }[state.mode] || state.mode;
 }
@@ -1192,7 +1193,11 @@ function renderExam() {
   }
 
   if (d.phase === "remediated") {
-    wrap.appendChild(el("div", "exam-pass", "Remediation cards added ✓"));
+    const n = d.remediated_count || 0;
+    const headline = n === 0
+      ? "No new remediation cards needed ✓"
+      : `Created ${n} remediation card${n === 1 ? "" : "s"} ✓`;
+    wrap.appendChild(el("div", "exam-pass", headline));
     wrap.appendChild(el("div", "exam-wait", "Re-drill the deck, then re-sit the exam."));
     stage.appendChild(wrap);
     chip("Close", "", closeExam, "esc");

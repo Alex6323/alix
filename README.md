@@ -956,12 +956,15 @@ so the UI stays responsive.
 - **Fail** lists the gaps and offers to turn them into remediation cards — the
   card type is picked per gap (a cloze/plain card for a missed fact, a
   `% mode: explain` card for a missed concept), with overlapping gaps merged into
-  one card. Re-drill those and re-sit.
+  one card. Re-drill those and re-sit. Once created, the screen reports how many
+  remediation cards it added.
 
 **Remediation cards are virtual.** They live in alix's store, not your deck file,
-so the deck `.txt` is left unchanged. A virtual card drills like any other — its
-first pass comes about a minute later, then FSRS schedules it — and it counts
-toward a deck's *due* total but not toward its card count. Regenerating the same
+so the deck `.txt` is left unchanged. While drilling one, the review screen's
+mode badge reads "remediation card" in place of the "new card" badge. A virtual
+card drills like any other — its first pass comes about a minute later, then
+FSRS schedules it — and it counts toward a deck's *due* total but not toward its
+card count. Regenerating the same
 gap won't duplicate it; once its interval reaches the retirement cap
 (`retire_after`) it's archived, and re-failing the gap revives it. If a
 remediation card has earned a permanent place, **promote** it during review

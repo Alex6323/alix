@@ -483,6 +483,11 @@ pub struct Sitting {
     /// When the in-flight background call started (ms), for an elapsed-time
     /// progress indicator; `None` when idle.
     pending_since: Option<u64>,
+    /// How many remediation cards the last successful remediation created or
+    /// revived ([`store_remediation_cards`]'s return value), so both
+    /// frontends can tell the learner what the failure produced. `None` until
+    /// a remediation completes.
+    remediated_count: Option<usize>,
 }
 
 impl Sitting {
@@ -511,6 +516,7 @@ impl Sitting {
             pending: Some(pending),
             error: None,
             pending_since: Some(crate::time::now_ms()),
+            remediated_count: None,
         }
     }
 
@@ -547,6 +553,7 @@ impl Sitting {
             pending: None,
             error: None,
             pending_since: None,
+            remediated_count: None,
         }
     }
 
@@ -700,6 +707,12 @@ impl Sitting {
             && !self.gaps().is_empty()
     }
 
+    /// How many remediation cards the last successful remediation created or
+    /// revived; `None` until one completes ([`Phase::Remediated`]).
+    pub fn remediated_count(&self) -> Option<usize> {
+        self.remediated_count
+    }
+
     /// Generates remediation cards for the gaps and stores them as virtual cards
     /// ([`Phase::Results`] → [`Phase::Remediating`]). No-op if nothing to fix.
     pub fn remediate(&mut self) {
@@ -782,7 +795,10 @@ impl Sitting {
                     now_ms,
                     retire_after_days,
                 ) {
-                    Ok(_n) => self.phase = Phase::Remediated,
+                    Ok(n) => {
+                        self.remediated_count = Some(n);
+                        self.phase = Phase::Remediated;
+                    }
                     Err(e) => {
                         self.error = Some(format!("{e}"));
                         self.phase = Phase::Results;
@@ -1791,6 +1807,45 @@ mod tests {
         let synth = parser::parse_str("d.txt", &virtuals[0].text).unwrap();
         assert_eq!(Some(Mode::Explain), synth[0].mode);
         assert_eq!(vec!["point one".to_string()], synth[0].back);
+    }
+
+    #[test]
+    fn exam_fail_reports_the_remediation_count() {
+        let _lock = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = branching_cli(
+            dir.path(),
+            "{\"grades\":[{\"verdict\":\"fail\",\"feedback\":\"no\",\"missed\":[\"the move rule\"]},\
+             {\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]}]}",
+        );
+        let deck = sourced_deck(dir.path());
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+
+        let mut s = Sitting::start(
+            &deck,
+            Strictness::Balanced,
+            ExamConfig::default(),
+            ask_config(&cli),
+        );
+        drain(&mut s, &mut store);
+        s.set_answer("a1".to_string());
+        s.next();
+        s.set_answer("a2".to_string());
+        s.submit();
+        drain(&mut s, &mut store);
+        assert!(s.can_remediate());
+        // No remediation has run yet.
+        assert_eq!(None, s.remediated_count());
+
+        s.remediate();
+        drain(&mut s, &mut store);
+        assert_eq!(&Phase::Remediated, s.phase());
+
+        // The count the Sitting carries matches the remediation virtual cards
+        // this failure actually produced for the subject.
+        let virtuals = store.virtual_cards_for("d.txt");
+        assert_eq!(1, virtuals.len());
+        assert_eq!(Some(virtuals.len()), s.remediated_count());
     }
 
     #[test]
