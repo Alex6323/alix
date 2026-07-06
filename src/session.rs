@@ -832,6 +832,93 @@ mod tests {
         card
     }
 
+    /// Property/invariant guard for the serve loop (added pre-v2 as release
+    /// insurance): across a long, deterministically-fuzzed run of acquires,
+    /// grades, and time jumps, the cursor and the servable count must never drift
+    /// out of sync with the roster — the served card is always servable, the
+    /// cursor is the first servable roster card, `remaining()` equals the servable
+    /// roster count, `is_finished()` agrees with "nothing servable", and a card
+    /// that has passed (left the roster) is never served again.
+    #[test]
+    fn serve_loop_invariants_hold_under_a_fuzzed_grade_sequence() {
+        let (mut store, _dir) = empty_store();
+        let n = 12;
+        let mut session = Session::new(cards(n), &store, sched(), SessionOptions::default(), 0);
+
+        // Deterministic pseudo-random driver (an LCG) — reproducible, no `rand` dep.
+        let mut rng: u64 = 0x2545_F491_4F6C_DD1D;
+        let mut roll = |bound: u64| -> u64 {
+            rng = rng
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (rng >> 33) % bound
+        };
+
+        let mut passed = vec![false; n]; // a card index that left the roster on a pass
+        let mut now = 0u64;
+        let mut drained = false;
+
+        for _ in 0..2000 {
+            session.poll(&store, now);
+
+            // The servable universe is the roster; recompute it independently at
+            // this instant and hold the session's bookkeeping to it.
+            let servable: Vec<usize> = session
+                .roster
+                .iter()
+                .copied()
+                .filter(|&i| session.servable(i, &store, now))
+                .collect();
+            assert_eq!(
+                session.remaining(),
+                servable.len(),
+                "remaining() must equal the servable roster count"
+            );
+            assert_eq!(
+                session.is_finished(),
+                servable.is_empty(),
+                "finished iff nothing is servable"
+            );
+
+            let Some(idx) = session.current_idx else {
+                drained = true;
+                break;
+            };
+            assert!(
+                session.servable(idx, &store, now),
+                "the served card must be servable"
+            );
+            assert_eq!(
+                session.current_idx,
+                servable.first().copied(),
+                "the cursor points at the first servable roster card"
+            );
+            assert!(!passed[idx], "a passed card must never be served again");
+
+            if session.current_unseen(&store) {
+                session.acquire_current(&mut store, now);
+            } else {
+                let g = match roll(3) {
+                    0 => Grade::Fail,
+                    1 => Grade::Partial,
+                    _ => Grade::Pass,
+                };
+                session.grade(&mut store, g, now);
+                if g.passed() {
+                    passed[idx] = true;
+                }
+            }
+
+            // Jump forward up to ~2h so cooled cards re-enter on the next poll.
+            now = now.saturating_add(roll(2 * 3600 * 1000));
+        }
+
+        assert!(
+            drained,
+            "with time advancing and passes occurring, the fuzzed session drains to finished"
+        );
+    }
+
     #[test]
     fn new_cards_enter_up_to_max_new() {
         let (store, _dir) = empty_store();
