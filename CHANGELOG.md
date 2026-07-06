@@ -108,6 +108,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ephemeral (never persisted or sent to the server).
 
 ### Changed
+- **Breaking (store):** dropped the legacy Leitner `stage`/`stage_entered_ms`
+  fields now that FSRS is the sole scheduler; `stage_entered_ms` is renamed
+  `acquired_ms`. Pre-FSRS cards lose their stage-derived interval carry-over.
+  Pre-1.0 — no migration path. `alix stats` no longer prints a per-stage
+  histogram and `alix list` shows the FSRS state instead of a Leitner stage.
 - **Breaking: the terminal frontend is removed — alix is web-first.** Bare
   `alix` (or `alix <deck>`) now opens the local web app and prints its URL,
   instead of a `ratatui` TUI; `ratatui` and `crossterm` are dropped as

@@ -129,7 +129,7 @@ fn reset_all_clears_a_seeded_store() {
     let store = write(
         dir.path(),
         "progress.json",
-        r#"{"version":1,"cards":{"123":{"stage":2,"stage_entered_ms":0}}}"#,
+        r#"{"version":1,"cards":{"123":{"acquired_ms":0}}}"#,
     );
     let out = alix(&["reset", "--all", "--yes", "--store", &store]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));

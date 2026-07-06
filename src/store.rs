@@ -17,9 +17,6 @@ use crate::{deck, scheduler::Grade};
 /// How many of the most recent reviews are kept per card.
 const HISTORY_CAP: usize = 50;
 
-/// The highest Leitner stage. Cards that keep passing stay here.
-pub const MAX_STAGE: u8 = 5;
-
 /// The on-disk store-format version. **Pinned at 1 pre-1.0** — per the project
 /// convention we do not bump it or migrate: the shape changes freely and old data
 /// is loaded best-effort via `#[serde(default)]` (surviving progress is a bonus, not
@@ -87,10 +84,6 @@ impl FsrsState {
 /// The stored state of a single card, keyed by its identity hash.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct CardState {
-    /// Legacy Leitner stage (1..=5). No longer live scheduling state under FSRS — retained as an
-    /// acquire marker and for the one-time lazy-derive that seeds FSRS from a pre-FSRS card's
-    /// stage.
-    pub stage: u8,
     /// When the card was first acquired (Unix ms); the acquire-cooldown anchor for a not-yet-scheduled card.
     #[serde(default)]
     pub acquired_ms: u64,
@@ -121,10 +114,9 @@ pub struct CardState {
 }
 
 impl CardState {
-    /// State for a card entering the system now at stage 1.
+    /// State for a card entering the system now.
     pub fn new(now_ms: u64) -> Self {
         Self {
-            stage: 1,
             acquired_ms: now_ms,
             fsrs: None,
             total_reviews: 0,
@@ -660,7 +652,7 @@ mod tests {
         // A valid StoreFile shape, but a card key that isn't a u64 hash.
         std::fs::write(
             &path,
-            r#"{"version":1,"cards":{"not-a-number":{"stage":1,"stage_entered_ms":0}}}"#,
+            r#"{"version":1,"cards":{"not-a-number":{"acquired_ms":0}}}"#,
         )
         .unwrap();
         let err = Store::open(&path).err().unwrap();
@@ -693,14 +685,12 @@ mod tests {
 
         let mut store = Store::open(&path).unwrap();
         let state = store.get_or_insert(42, 1000);
-        state.stage = 3;
         state.record_review(1000, Grade::Pass);
         store.save().unwrap();
 
         let reloaded = Store::open(&path).unwrap();
         assert_eq!(1, reloaded.len());
         let state = reloaded.get(42).unwrap();
-        assert_eq!(3, state.stage);
         assert_eq!(1, state.total_reviews);
         assert_eq!(
             vec![Review {
@@ -821,12 +811,12 @@ mod tests {
         let path = dir.path().join("progress.json");
         std::fs::write(
             &path,
-            r#"{"version":999,"cards":{"5":{"stage":3,"stage_entered_ms":0,"history":[{"ts_ms":100,"passed":false}]}}}"#,
+            r#"{"version":999,"cards":{"5":{"acquired_ms":7,"history":[{"ts_ms":100,"passed":false}]}}}"#,
         )
         .unwrap();
         let store = Store::open(&path).unwrap();
         let state = store.get(5).unwrap();
-        assert_eq!(3, state.stage); // scheduling state survives
+        assert_eq!(7, state.acquired_ms); // scheduling state survives
         assert_eq!(100, state.history[0].ts_ms);
         assert_eq!(Grade::Pass, state.history[0].grade); // old `passed` dropped → default
     }
@@ -954,18 +944,18 @@ mod tests {
         std::fs::write(
             &path,
             r#"{"version":1,
-                "cards":{"5":{"stage":3,"stage_entered_ms":0}},
+                "cards":{"5":{"acquired_ms":7}},
                 "decks":{"rust.txt":{"mastered_at_ms":1234}},
                 "virtual_cards":{
                     "v:abc":{"id":"v:abc","kind":"Remediation","parent":"rust.txt",
                              "content":{"front":"f","back":["b"],"mode":null},
-                             "state":{"stage":1,"stage_entered_ms":0},"created_ms":0}
+                             "state":{"acquired_ms":0},"created_ms":0}
                 }}"#,
         )
         .unwrap();
         let store = Store::open(&path).unwrap();
         // Real progress survives …
-        assert_eq!(3, store.get(5).unwrap().stage);
+        assert_eq!(7, store.get(5).unwrap().acquired_ms);
         assert!(store.deck_mastered("rust.txt"));
         // … and the stale, regenerable virtual entry is dropped.
         assert_eq!(0, store.iter_virtual_cards().count());
@@ -1217,10 +1207,23 @@ mod tests {
     #[test]
     fn a_pre_ladder_store_loads_cards_at_recall() {
         // Old stores have no `rung`/`passes_since_graduation` field.
-        let json = r#"{"stage":1,"stage_entered_ms":0}"#;
+        let json = r#"{"acquired_ms":0}"#;
         let state: CardState = serde_json::from_str(json).unwrap();
         assert_eq!(state.rung, crate::ladder::Rung::Recall);
         assert_eq!(state.passes_since_graduation, 0);
+    }
+
+    #[test]
+    fn card_state_round_trips_without_a_stage_field() {
+        // The new shape carries no `stage`; `acquired_ms` defaults when absent.
+        let json = r#"{"acquired_ms":1234,"fsrs":null}"#;
+        let s: CardState = serde_json::from_str(json).unwrap();
+        assert_eq!(s.acquired_ms, 1234);
+        assert!(s.fsrs.is_none());
+        // A legacy store carrying a stray `stage` key still loads (serde ignores it).
+        let legacy = r#"{"stage":3,"acquired_ms":5}"#;
+        let s2: CardState = serde_json::from_str(legacy).unwrap();
+        assert_eq!(s2.acquired_ms, 5);
     }
 
     #[test]

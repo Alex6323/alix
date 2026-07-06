@@ -18,7 +18,7 @@ use crate::{
     augment::TopologyOrder,
     card::Card,
     scheduler::{Grade, Scheduler},
-    store::{MAX_STAGE, Store, VirtualCard},
+    store::{Store, VirtualCard},
     time,
     trace::SourceBase,
 };
@@ -308,12 +308,6 @@ impl Session {
                 // relearn `scheduler.apply` already ran above.
                 state.set_rung(lower);
             }
-        }
-
-        // Safety net: keep the stage within the top (reaching `MAX_STAGE`
-        // retires the card). The scheduler already caps a pass at `MAX_STAGE`.
-        if state.stage > MAX_STAGE {
-            state.stage = MAX_STAGE;
         }
 
         self.stats.reviews += 1;
@@ -901,7 +895,7 @@ mod tests {
     }
 
     #[test]
-    fn acquire_current_introduces_a_stage_one_card_without_a_review() {
+    fn acquire_current_records_the_card_unscheduled_without_a_review() {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
         let id = all[0].id();
@@ -911,7 +905,8 @@ mod tests {
         session.acquire_current(&mut store, 1000);
 
         let state = store.get(id).expect("acquired card is recorded");
-        assert_eq!(1, state.stage);
+        assert!(state.fsrs.is_none(), "acquiring does not schedule under FSRS");
+        assert_eq!(1000, state.acquired_ms, "acquire stamps the acquire time");
         assert!(state.history.is_empty()); // acquiring is not a review
         assert_eq!(0, state.total_reviews);
         assert_eq!(1, session.stats.acquired);
@@ -1090,8 +1085,8 @@ mod tests {
         // Two seen-but-unreviewed cards whose fallback due times differ by their
         // stage cooldown: card 0 (stage 2, ~1h) comes due before card 1 (stage 5,
         // ~1w). Card 2 is new. FSRS orders the due set by due time, earliest first.
-        store.get_or_insert(all[0].id(), 0).stage = 2;
-        store.get_or_insert(all[1].id(), 0).stage = 5;
+        store.get_or_insert(all[0].id(), 0);
+        store.get_or_insert(all[1].id(), 0);
 
         let now = 2 * 604_800_000; // two weeks later, everything is due
         let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
@@ -1108,8 +1103,8 @@ mod tests {
         let all = cards(3);
         // By due time card 0 (s2) leads, then card 1 (s5), then the new card 2.
         // Sequential ignores that and follows deck/file order.
-        store.get_or_insert(all[0].id(), 0).stage = 2;
-        store.get_or_insert(all[1].id(), 0).stage = 5;
+        store.get_or_insert(all[0].id(), 0);
+        store.get_or_insert(all[1].id(), 0);
 
         let now = 2 * 604_800_000;
         let mut session = Session::new(
@@ -1136,7 +1131,7 @@ mod tests {
         let all = cards(1);
         // Stage 2 entered "now": cooldown 1h, not due.
         let now = 5_000_000;
-        store.get_or_insert(all[0].id(), now).stage = 2;
+        store.get_or_insert(all[0].id(), now);
 
         let session = Session::new(
             all.clone(),
@@ -1393,7 +1388,6 @@ mod tests {
         // retired — retirement now needs a grown FSRS interval, not a stage.
         let s = store.get_or_insert(c.id(), 0);
         s.fsrs = None;
-        s.stage = MAX_STAGE;
         s.streak = 1;
         assert!(!is_retired(&c, &store, Some(DEFAULT_RETIRE_AFTER_DAYS)));
     }
@@ -1417,7 +1411,6 @@ mod tests {
         // not reviewable now, reviewable once its due time arrives.
         let c = card("deck.txt", 0);
         let s = store.get_or_insert(c.id(), now);
-        s.stage = 2;
         s.streak = 1;
         s.acquired_ms = now;
         let one = std::slice::from_ref(&c);
@@ -1607,7 +1600,7 @@ mod tests {
         let now = 5_000_000;
         // Card 0 is due; card 1 is on cooldown (stage 2 entered now, 1h cooldown).
         store.get_or_insert(all[0].id(), 0);
-        store.get_or_insert(all[1].id(), now).stage = 2;
+        store.get_or_insert(all[1].id(), now);
         // A topology listing the not-due card first must NOT pull it in.
         let topo = topology_order(&[&all[1], &all[0]]);
         let session = Session::new(
