@@ -709,11 +709,11 @@ function acquire() { api("/api/acquire", post({})).then(apply); }
 function remove()  { api("/api/remove", post({})).then(apply); }
 function promote() { api("/api/promote", post({})).then(apply); }
 function restart() { api("/api/restart", post({})).then(apply); }
-// A trace picked from the picker returns a WalkDto (phase predict/reveal/done); a fact
-// deck returns a review StateDto (phase select/review). `isWalk` is the single place the
-// two responses are told apart.
+// A trace picked from the picker returns a WalkDto (kind "walk"); a fact deck
+// returns a review StateDto (kind "review"). `isWalk` is the single place the two
+// responses are told apart — by the `kind` tag, not by sniffing phase values.
 function isWalk(s) {
-  return !!s && ["predict", "reveal", "done"].includes(s.phase);
+  return !!s && s.kind === "walk";
 }
 
 function select(name, topology, region) {
@@ -747,7 +747,7 @@ function deselect() { confirmingLeave = false; menu.classList.remove("open"); ap
 // Returning to the picker mid-session abandons the cards still queued, so warn
 // first; a finished session (or the select phase) leaves straight away.
 function leaveSession() {
-  if (!state || state.phase !== "review" || state.finished) { deselect(); return; }
+  if (!state || state.phase !== "review") { deselect(); return; }
   confirmingLeave = true;
   renderLeaveConfirm();
 }
@@ -834,7 +834,7 @@ function startDuePoll() {
   if (duePoll) return;
   duePoll = setInterval(() => {
     api("/api/state").then(s => {
-      if (s.phase === "review" && !s.finished && s.card) { stopDuePoll(); apply(s); }
+      if (s.phase === "review" && s.card) { stopDuePoll(); apply(s); }
     }).catch(() => {});
   }, 3000);
 }
@@ -856,11 +856,11 @@ function render() {
   histEl.textContent = ""; // no stage ladder in the header — it's noise (the
                            // per-stage breakdown stays in the session summary)
   scoreEl.innerHTML = `<b>${state.passed}✓</b> <s>${state.failed}✗</s><span class="left">${state.remaining}↓</span>`;
-  menuWrap.style.display = state.finished ? "none" : "";
+  menuWrap.style.display = state.phase === "done" ? "none" : "";
   setMenuContext("review");
 
   if (asking) { renderAsk(); return; }
-  if (state.finished) { renderSummary(); startDuePoll(); }
+  if (state.phase === "done") { renderSummary(); startDuePoll(); }
   else renderCard();
 }
 
@@ -868,7 +868,7 @@ function render() {
 // Available once a card is answered. Sends run the CLI on the server; we poll
 // /api/ask while it's thinking. One conversation spans the session.
 function isAnswered() {
-  if (!state || state.phase !== "review" || state.finished || !state.card) return false;
+  if (!state || state.phase !== "review" || !state.card) return false;
   if (feedback) return true;
   return !isChoice() && !isInput() && fullyRevealed();
 }
@@ -2910,7 +2910,7 @@ document.addEventListener("keydown", (e) => {
   }
   // Esc returns to the deck picker (with a confirm when the session isn't done).
   if (e.key === "Escape") { e.preventDefault(); leaveSession(); return; }
-  if (state.finished) {
+  if (state.phase === "done") {
     // Enter takes the primary action (the exam, when a deck is exam due).
     if (state.exam_due && state.exam_due.length && e.key === "Enter") {
       const b = legend.querySelector(".chip.primary");

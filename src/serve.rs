@@ -222,7 +222,13 @@ struct RegionInfoDto {
 /// The current review state sent to the browser after every action.
 #[derive(Debug, Serialize)]
 struct StateDto {
-    /// `"select"` while choosing decks (no session yet), else `"review"`.
+    /// Discriminates this payload from the trace-walk [`WalkDto`] for the single
+    /// client dispatcher (`isWalk`): always `"review"` here.
+    kind: &'static str,
+    /// `"select"` while choosing decks (no session yet), `"review"` mid-session,
+    /// `"done"` once nothing is left — the session-end signal. There is no
+    /// separate `finished` flag; a finished session is just the `done` phase
+    /// (matching the walk's own `done`).
     phase: &'static str,
     /// The card up for review, or `null` when finished or in the select phase.
     card: Option<CardDto>,
@@ -252,7 +258,6 @@ struct StateDto {
     failed: usize,
     /// Per-stage counts (index 0 = unseen).
     histogram: [usize; 6],
-    finished: bool,
     /// Subjects of decks in this (finished) session that are now `ExamDue` —
     /// drilled, sourced, and not yet mastered. The summary offers to sit each.
     /// Empty until the session is finished.
@@ -2397,6 +2402,9 @@ struct SummaryDto {
 /// `phase` and polls `GET /api/walk` while `thinking` (a live grade in flight).
 #[derive(Serialize)]
 struct WalkDto {
+    /// Discriminates this trace-walk payload from the review [`StateDto`] for the
+    /// single client dispatcher (`isWalk`): always `"walk"`.
+    kind: &'static str,
     phase: &'static str,
     description: String,
     source: Option<String>,
@@ -2478,6 +2486,7 @@ fn walk_dto(w: &Walking) -> WalkDto {
         .collect();
 
     let mut dto = WalkDto {
+        kind: "walk",
         phase: walk_phase_name(phase),
         description: trace.description.clone(),
         source: trace.source.clone(),
@@ -2653,6 +2662,7 @@ fn query_param(url: &str, key: &str) -> Option<String> {
 fn review_state(reviewing: Option<&Reviewing>, store: &Store) -> StateDto {
     let Some(r) = reviewing else {
         return StateDto {
+            kind: "review",
             phase: "select",
             card: None,
             choices: None,
@@ -2666,7 +2676,6 @@ fn review_state(reviewing: Option<&Reviewing>, store: &Store) -> StateDto {
             passed: 0,
             failed: 0,
             histogram: [0; 6],
-            finished: false,
             exam_due: Vec::new(),
             can_restart: false,
             promotable: false,
@@ -2783,7 +2792,10 @@ fn review_state(reviewing: Option<&Reviewing>, store: &Store) -> StateDto {
         dto
     });
     StateDto {
-        phase: "review",
+        kind: "review",
+        // The session-end signal is a phase value (matching the walk's `done`),
+        // not a side flag.
+        phase: if finished { "done" } else { "review" },
         card: card_with_citation,
         choices,
         keypoints,
@@ -2796,7 +2808,6 @@ fn review_state(reviewing: Option<&Reviewing>, store: &Store) -> StateDto {
         passed: session.stats.passed,
         failed: session.stats.failed,
         histogram: session.stage_histogram(store),
-        finished,
         exam_due,
         can_restart: session.has_due_now(store, now_ms()),
         promotable: session.current_is_virtual(store),
@@ -3492,8 +3503,25 @@ mod tests {
         let store = Store::open(dir.path().join("p.json")).unwrap();
         let dto = review_state(None, &store);
         assert_eq!(dto.phase, "select");
+        assert_eq!(dto.kind, "review");
         assert!(dto.card.is_none());
-        assert!(!dto.finished);
+        // The session-end signal is the `done` phase now, not a `finished` flag:
+        // the field is gone from the wire contract entirely.
+        let json = serde_json::to_value(&dto).unwrap();
+        assert!(json.get("finished").is_none());
+    }
+
+    #[test]
+    fn finished_review_uses_the_done_phase_not_a_finished_flag() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut r, _card, _deck) = one_card_reviewing(dir.path());
+        let mut store = Store::open(dir.path().join("graded.json")).unwrap();
+        // Pass the only card → the queue empties → the session is finished.
+        r.session.grade(&mut store, Grade::Pass, now_ms());
+        assert!(r.session.is_finished());
+        let dto = review_state(Some(&r), &store);
+        assert_eq!(dto.phase, "done");
+        assert_eq!(dto.kind, "review");
     }
 
     #[test]
@@ -3665,6 +3693,7 @@ mod tests {
 
         // Predict: prompt + givens, no excerpt yet, the first node is current.
         let d = walk_dto(&w);
+        assert_eq!("walk", d.kind);
         assert_eq!("predict", d.phase);
         assert_eq!(1, d.current);
         assert_eq!(2, d.total);
