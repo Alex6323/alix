@@ -108,6 +108,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ephemeral (never persisted or sent to the server).
 
 ### Changed
+- **Breaking (config):** the ladder depth dial is now a number — `[review] depth
+  = 1` (recall) or `2` (reconstruct), replacing the v1 `[review] target =
+  "recall"|"reconstruct"` string (out-of-range clamps; a stray `target` key
+  errors). Depth is now also settable **per deck** via `[review.deck."<file>"]
+  depth` in a workspace's `alix.local.toml` (precedence: per-deck > workspace >
+  global).
 - **Breaking (store):** dropped the legacy Leitner `stage`/`stage_entered_ms`
   fields now that FSRS is the sole scheduler; `stage_entered_ms` is renamed
   `acquired_ms`. Pre-FSRS cards lose their stage-derived interval carry-over.

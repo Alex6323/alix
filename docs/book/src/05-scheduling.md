@@ -58,12 +58,14 @@ when it comes up. Every card sits on one rung of the depth ladder — `recognize
 FSRS schedule runs at that current rung, the card's **frontier**. Cards enter
 scheduling at **recall** (recognition is the ungraded acquire on-ramp, not a
 scheduled rung), and you set the depth you're climbing toward with
-[`[review] target`](16-configuration.md) — `recall` by default.
+[`[review] depth`](16-configuration.md) — `1` (recall) by default, `2` for
+reconstruct.
 
-- **Climb.** While a card sits *below* your target, once it has graduated (reached
-  the review phase) and then survives one *more* spaced pass, it **climbs** to the
-  next rung — with a **fresh schedule**, since a harder check is a new thing to
-  learn. So a card you've settled at recall is, later, asked to reconstruct.
+- **Climb.** While a card sits *below* your target depth, once it has graduated
+  (reached the review phase) and then survives one *more* spaced pass, it
+  **climbs** to the next rung — with a **fresh schedule**, since a harder check is
+  a new thing to learn. So a card you've settled at recall is, later, asked to
+  reconstruct.
 - **Descent-net.** A miss **drops the card one rung** and relearns it there,
   floored at recall — you never fall out of the schedule, you fall to an easier
   check and rebuild.
@@ -71,7 +73,7 @@ scheduled rung), and you set the depth you're climbing toward with
 This is **v1**, deliberately narrow: it schedules **recall** and **reconstruct**
 only, recognition stays the acquire on-ramp, and a reconstruct check on a rich
 (multi-line) answer is **self-graded** — alix doesn't read a full explanation for
-you. If you leave `target` at `recall`, the ladder never climbs and every card
+you. If you leave `depth` at `1` (recall), the ladder never climbs and every card
 reviews as reveal-and-self-grade, exactly as before.
 
 ## Retiring cards

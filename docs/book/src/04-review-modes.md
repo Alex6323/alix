@@ -6,7 +6,7 @@ independent axes:
 - **Reveal-method** — *how the answer is uncovered.* Authored per card (or
   deck-wide) with `% reveal:`, because only the author knows the answer's shape.
 - **Depth** — *how deeply you're asked to retrieve it.* Your personal
-  `[review] target`, because only you know how well you want to know this
+  `[review] depth`, because only you know how well you want to know this
   material. It's not a deck directive — depth is the learner's call, not the
   author's.
 
@@ -41,26 +41,33 @@ A per-card `% reveal:` overrides the deck's; the deck's overrides the default. I
 a review property, not content, so it's invisible to a card's identity hash —
 adding or changing it never resets progress.
 
-## The depth axis — `[review] target`
+## The depth axis — `[review] depth`
 
-Depth is a small nested ladder, `recognize` ⊂ `recall` ⊂ `reconstruct`:
+Depth is a small nested ladder, `recognize` ⊂ `recall` ⊂ `reconstruct`, dialed
+with a number:
 
 - **recognize** — pick the answer out of options. In this version it's only the
   ungraded *acquire* on-ramp for a brand-new card (see
-  [scheduling](05-scheduling.md)), never a scheduled target.
-- **recall** *(default)* — bring the answer to mind, then reveal and self-grade.
-- **reconstruct** — produce the answer in full.
+  [scheduling](05-scheduling.md)), never a scheduled target — there's no `depth`
+  value for it.
+- **`depth = 1`, recall** *(default)* — bring the answer to mind, then reveal and
+  self-grade.
+- **`depth = 2`, reconstruct** — produce the answer in full.
 
-You set the target you're aiming for once, in your config (or per workspace in an
+You set the depth you're aiming for once, in your config (or per workspace in an
 `alix.local.toml`):
 
 ```toml
 [review]
-target = "reconstruct"
+depth = 2
 ```
 
-It's deliberately *not* on the deck: the same deck can be drilled shallowly by one
-person and deeply by another.
+An out-of-range value clamps to the nearest end (`≤0` → `1`, `≥2` → `2`). It's
+deliberately *not* on the deck: the same deck can be drilled shallowly by one
+person and deeply by another. A workspace can also set depth **per deck** —
+`[review.deck."<file name>"] depth = 2` in its `alix.local.toml` overrides the
+workspace/global depth for just that one deck (see
+[Workspaces](08-workspaces.md)).
 
 ## What you actually get — the two axes combined
 
@@ -79,10 +86,9 @@ Grading is always the same three — **missed it / partly / got it** — feeding
 *Again* / *Hard* / *Good*. The [scheduling chapter](05-scheduling.md) covers how a
 card climbs the ladder toward your target and drops back on a miss.
 
-> **A default-target deck reviews as recall** — reveal-and-self-grade — even for
+> **A default-depth deck reviews as recall** — reveal-and-self-grade — even for
 > cards once authored to be typed or explained (the retired `% mode:` directive).
-> Reconstruction checks only appear once you raise `[review] target` to
-> `reconstruct`.
+> Reconstruction checks only appear once you raise `[review] depth` to `2`.
 
 ### explain — the self-graded reconstruct check
 
@@ -115,7 +121,7 @@ deck file or how it's graded.
 In the web frontend a small badge above the answer names the check the card gets —
 `flip`, `line`, `typing`, or `explain` — so how you'll interact (reveal-and-self-
 grade, line-by-line, or produce-it) is clear up front. Your *depth* isn't shown
-here: it lives in your config (`[review] target`), and the interaction itself
+here: it lives in your config (`[review] depth`), and the interaction itself
 already signals it.
 
 ## input: draw — draw instead of type *(web only)*

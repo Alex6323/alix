@@ -558,14 +558,25 @@ impl ReviewConfig {
         review
     }
 
-    /// Like [`for_workspace`](Self::for_workspace) but keyed off a deck path:
-    /// overlays the deck's workspace override when it lives in an explicit
-    /// workspace, else returns `self` unchanged.
+    /// Resolves the depth for a specific deck: the workspace `[review]` overrides
+    /// (via [`for_workspace`](Self::for_workspace)), then the deck's own
+    /// `[review.deck."<file name>"]` depth if present. Precedence: per-deck >
+    /// workspace > global > default.
     pub fn for_deck(self, deck_path: &Path) -> Self {
-        match deck_path.parent() {
-            Some(dir) if crate::workspace::is_workspace(dir) => self.for_workspace(dir),
-            _ => self,
+        let Some(dir) = deck_path.parent().filter(|d| crate::workspace::is_workspace(d)) else {
+            return self;
+        };
+        let mut review = self.for_workspace(dir);
+        let Some(name) = deck_path.file_name().and_then(|n| n.to_str()) else {
+            return review;
+        };
+        if let Ok(text) = std::fs::read_to_string(dir.join(LOCAL_MANIFEST))
+            && let Ok(raw) = toml::from_str::<RawLocalConfig>(&text)
+            && let Some(depth) = raw.review.deck.get(name).and_then(|d| d.depth)
+        {
+            review.target = depth_to_rung(depth);
         }
+        review
     }
 }
 
@@ -629,6 +640,16 @@ struct RawConfig {
 struct RawReviewConfig {
     retention: Option<f64>,
     retire_after: Option<String>,
+    depth: Option<i64>,
+    /// Per-deck depth overrides, keyed by deck file name (`[review.deck."<name>"]`).
+    #[serde(default)]
+    deck: std::collections::HashMap<String, RawDeckReview>,
+}
+
+/// One deck's entry under `[review.deck."<name>"]` — currently just a depth.
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct RawDeckReview {
     depth: Option<i64>,
 }
 
@@ -1262,6 +1283,25 @@ mod tests {
         std::fs::write(dir.path().join("alix.local.toml"), "[review]\ndepth = 2\n").unwrap();
         let base = ReviewConfig { target: Rung::Recall, ..Default::default() };
         assert_eq!(Rung::Reconstruct, base.for_workspace(dir.path()).target);
+    }
+
+    #[test]
+    fn for_deck_applies_a_per_deck_depth_override() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("alix.toml"), "title = \"w\"\n").unwrap();
+        std::fs::write(dir.path().join("vocab.txt"), "# q\n\ta\n").unwrap();
+        std::fs::write(dir.path().join("concepts.txt"), "# q\n\ta\n").unwrap();
+        std::fs::write(
+            dir.path().join("alix.local.toml"),
+            "[review]\ndepth = 1\n\n[review.deck.\"vocab.txt\"]\ndepth = 2\n",
+        )
+        .unwrap();
+        // The named deck goes deeper...
+        let vocab = dir.path().join("vocab.txt");
+        assert_eq!(Rung::Reconstruct, ReviewConfig::default().for_deck(&vocab).target);
+        // ...an unnamed deck inherits the workspace depth (1 = recall).
+        let other = dir.path().join("concepts.txt");
+        assert_eq!(Rung::Recall, ReviewConfig::default().for_deck(&other).target);
     }
 
     #[test]

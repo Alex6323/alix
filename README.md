@@ -101,7 +101,7 @@ A session is one deck file — review them one at a time. Useful flags for
 `review`: `--new N` (max unseen cards to introduce, default 10) and `--limit N`
 (cap session size). How each card is checked isn't a flag: it comes from the
 card's authored [`% reveal:`](#deck-directives) method and your personal
-[`[review] target`](#review-pacing) depth (see [Review](#review)).
+[`[review] depth`](#review-pacing) (see [Review](#review)).
 
 Run `alix` with no deck arguments (as the desktop launcher does) to open the
 **deck picker**, grouped into three sections: **[Workspaces](#workspaces)**
@@ -233,7 +233,7 @@ plain cards — mark it on the cards that have gaps.
 **Depth is a separate axis — and not a deck directive.** `% reveal:` is *how* an
 answer is shown; how *deeply* you're asked to retrieve it (recognize / recall /
 reconstruct) is the learner's choice, not the author's, so it lives in your
-personal config as [`[review] target`](#review-pacing), never in a shared deck.
+personal config as [`[review] depth`](#review-pacing), never in a shared deck.
 The two combine into the check you actually get — see [Review](#review).
 
 ### Deck dependencies
@@ -328,9 +328,12 @@ overrides either.
 
 **Personal pacing per workspace.** Drop an `alix.local.toml` beside the
 `alix.toml` to override the global `[review]` config (FSRS `retention`,
-`retire_after`, and the ladder `target`) for this workspace's decks only. It uses the same `[review]` keys
+`retire_after`, and the ladder `depth`) for this workspace's decks only. It uses the same `[review]` keys
 as the [config file](#configuration) and is **personal** — kept separate from the
-shared `alix.toml`, so it never travels when you share the workspace.
+shared `alix.toml`, so it never travels when you share the workspace. A single
+deck within the workspace can go deeper (or shallower) still: `[review.deck."<file
+name>"] depth = 2` in that same `alix.local.toml` overrides the workspace depth for
+just that deck (precedence: per-deck > workspace > global).
 
 **A workspace can carry an icon** shown next to it in the web picker, for quick
 recognition in a long list. Drop an image in the workspace's `assets/` and point
@@ -475,16 +478,17 @@ you don't hand-pick a "mode" per card:
 
 - the card's authored **reveal-method** (`% reveal:` — *how* the answer is
   uncovered), and
-- your personal **target depth** (`[review] target` — *how deeply* you're asked to
+- your personal **depth** (`[review] depth` — *how deeply* you're asked to
   produce it).
 
 **Reveal-methods** (authored, `% reveal:`, default `flip`) are `flip` (reveal the
 whole answer at once), `cloze` (reveal with a gap to fill —
 [cloze cards](#cloze-cards-fill-in-the-blank)), and `line` (reveal one line at a
-time). **Target depths** (personal, `[review] target`, default `recall`) form a
-small ladder, `recognize` ⊂ `recall` ⊂ `reconstruct`: *recognize* is picking it
-out (the ungraded acquire on-ramp below), *recall* is bringing the answer to mind,
-*reconstruct* is producing it in full.
+time). **Depths** (personal, `[review] depth`, default `1`) form a small ladder,
+recognize ⊂ recall ⊂ reconstruct: *recognize* is picking it out (the ungraded
+acquire on-ramp below — never a selectable depth), `depth = 1` (**recall**) is
+bringing the answer to mind, `depth = 2` (**reconstruct**) is producing it in
+full.
 
 **The check is the combination:**
 
@@ -503,10 +507,9 @@ Grading is always **missed it / partly / got it**, mapping to FSRS *Again* /
 typed answer that's wrong or hinted counts as missed and the card returns later in
 the same session.
 
-**A default-target deck reviews as recall** — reveal-and-self-grade — even for
+**A default-depth deck reviews as recall** — reveal-and-self-grade — even for
 cards once written to be typed or explained (the retired `% mode:` directive). To
-get the reconstruction checks (typing, explain), raise `[review] target` to
-`reconstruct`.
+get the reconstruction checks (typing, explain), raise `[review] depth` to `2`.
 
 **New cards are introduced as an *attempt*, not a hand-out.** A card you've never
 seen isn't quizzed cold (you can't recall what you haven't read), but it isn't just
@@ -1265,23 +1268,27 @@ toward:
 [review]
 retention = 0.9         # FSRS target recall probability (0.70–0.99); higher = shorter intervals
 retire_after = "1y"     # a card rests once its interval reaches this ("2w", "6m", "30d", or "never")
-target = "recall"       # depth ladder target: recognize | recall | reconstruct
+depth = 1               # how deep to drill: 1 = recall (default) · 2 = reconstruct
 ```
 
 `retention` is the recall probability FSRS schedules for — raise it to see cards
 more often, lower it to stretch intervals. `retire_after` is when a card
 **retires** (rests until `alix reset`); `"never"` keeps it in rotation forever.
 
-`target` is how deeply you want to end up retrieving each card (see
+`depth` is how deeply you want to end up retrieving each card (see
 [Review](#review)). It's **personal**, not a deck directive — depth is the
 learner's call, not the author's — so it lives here, never in a shared deck. At
-`recall` (the default) a card reveals and you self-grade; at `reconstruct` a card
-that has settled climbs to producing its answer in full (typing a short answer or
-a cloze gap, or explaining a longer one). `recognize` clamps up to `recall` in v1
-— recognition is the unscheduled acquire on-ramp, not a scheduling target.
+`depth = 1` (recall, the default) a card reveals and you self-grade; at `depth =
+2` (reconstruct) a card that has settled climbs to producing its answer in full
+(typing a short answer or a cloze gap, or explaining a longer one). Recognition
+is never a selectable depth — it's the unscheduled acquire on-ramp below recall.
+An out-of-range value clamps to the nearest end (≤0 → 1, ≥2 → 2).
 
-A workspace can override all three for its own decks in an `alix.local.toml` (see
-[Workspaces](#workspaces)) — a personal file that is never shared.
+A workspace can override `retention`/`retire_after`/`depth` for its own decks in
+an `alix.local.toml` (see [Workspaces](#workspaces)) — a personal file that is
+never shared. A single deck can go deeper (or shallower) still with
+`[review.deck."<file name>"] depth = 2` in that same file, which takes
+precedence over the workspace/global depth for just that deck.
 
 ### Backends
 

@@ -45,7 +45,7 @@ So a card's `% reveal:` overrides the deck's, which overrides a workspace's
 `[defaults]`, which overrides `alix`'s default (`flip`); where a CLI flag exists
 for a directive (e.g. `--strictness` for `% strictness:`) it wins over all of them.
 
-Depth (`[review] target`) is **not** in this chain — it's personal config, not a
+Depth (`[review] depth`) is **not** in this chain — it's personal config, not a
 deck directive, so it isn't authored per card. Its own precedence is a workspace's
-`alix.local.toml` over the global `[review]` (see
-[configuration](16-configuration.md)).
+per-deck `[review.deck."<file>"]` over its `[review]` over the global `[review]`
+(see [configuration](16-configuration.md)).

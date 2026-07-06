@@ -20,7 +20,7 @@ web picker rather than as their own commands (see
 Common flags: `--topology <name>` / `--region <name>`
 ([scheduling](05-scheduling.md)), `--cram`, `--new N`, `--limit N`, and
 `--serve` / `--port` / `--lan` ([the web app](15-the-web-app.md)). How each card
-is checked comes from its `% reveal:` and your `[review] target`
+is checked comes from its `% reveal:` and your `[review] depth`
 ([reveal & depth](04-review-modes.md)), not a flag.
 
 ## Progress

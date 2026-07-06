@@ -53,16 +53,18 @@ toward:
 [review]
 retention = 0.9         # FSRS target recall probability (0.70–0.99); higher = shorter intervals
 retire_after = "1y"     # a card rests once its interval reaches this ("2w", "6m", "30d", or "never")
-target = "recall"       # depth ladder target: recognize | recall | reconstruct
+depth = 1               # how deep to drill: 1 = recall (default) · 2 = reconstruct
 ```
 
 `retention` is the recall probability FSRS schedules for. `retire_after` is when
 a card retires (rests until `alix reset`); `"never"` keeps it in rotation forever.
-`target` is how deeply you want to end up retrieving each card
-([reveal & depth](04-review-modes.md)) — `recall` reveals and self-grades,
-`reconstruct` climbs settled cards to producing their answers; it's personal, not a
-deck directive. A workspace can override all three for its own decks in an
-`alix.local.toml` — see [Workspaces](08-workspaces.md).
+`depth` is how deeply you want to end up retrieving each card
+([reveal & depth](04-review-modes.md)) — `1` (recall) reveals and self-grades,
+`2` (reconstruct) climbs settled cards to producing their answers; it's personal,
+not a deck directive. Out-of-range values clamp to the nearest end. A workspace
+can override all three for its own decks in an `alix.local.toml`, and a single
+deck within it can override `depth` again with `[review.deck."<file>"] depth`
+— see [Workspaces](08-workspaces.md).
 
 ## Backends
 
