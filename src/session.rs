@@ -1419,7 +1419,7 @@ mod tests {
         let s = store.get_or_insert(c.id(), now);
         s.stage = 2;
         s.streak = 1;
-        s.stage_entered_ms = now;
+        s.acquired_ms = now;
         let one = std::slice::from_ref(&c);
         let cap = Some(DEFAULT_RETIRE_AFTER_DAYS);
         assert!(!has_reviewable(one, &store, sched.as_ref(), now, cap));

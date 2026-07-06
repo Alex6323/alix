@@ -13,7 +13,7 @@
 use chrono::{DateTime, Utc};
 use rs_fsrs::{Card as FsrsCard, FSRS, Parameters, Rating, State as RawState};
 
-use crate::store::{CardState, FsrsState, MAX_STAGE};
+use crate::store::{CardState, FsrsState};
 
 /// The outcome of reviewing a card. Three honest outcomes, shared by fact-deck
 /// review and the trace walk: **failed** / **partly** / **got it**.
@@ -70,24 +70,10 @@ pub trait Scheduler {
     }
 }
 
-/// Cooldowns per Leitner stage in milliseconds, indexed by `stage - 1`.
-///
-/// Stage 1 is a short **relearn/settle gap**: a newly acquired or freshly failed
-/// card is due ~5 min out, gating only the *next* session/restart. An in-session
-/// retry of a failed card is position-based (pushed to the back of the queue and
-/// served by position, not by due time), so it is unaffected.
-pub const STAGE_COOLDOWNS_MS: [u64; MAX_STAGE as usize] = [
-    60 * 1000,      // stage 1: ~1 min (settle gap before a just-seen card's first quiz)
-    3_600 * 1000,   // stage 2: 1 hour
-    21_600 * 1000,  // stage 3: 6 hours
-    86_400 * 1000,  // stage 4: 1 day
-    604_800 * 1000, // stage 5: 1 week
-];
-
-/// Returns the cooldown of a stage (1..=5) in milliseconds.
-pub fn stage_cooldown_ms(stage: u8) -> u64 {
-    STAGE_COOLDOWNS_MS[(stage.clamp(1, MAX_STAGE) - 1) as usize]
-}
+/// Fixed settle gap between acquiring a card (its answer is shown, acknowledged)
+/// and its first real quiz — ~1 min, gating only the next session/restart. An
+/// in-session retry is position-based and unaffected. Was the stage-1 cooldown.
+pub const ACQUIRE_COOLDOWN_MS: u64 = 60 * 1000;
 
 /// One day in milliseconds — the unit the legacy stage-cooldown lazy-derive converts to FSRS days.
 const DAY_MS: u64 = 86_400 * 1000;
@@ -158,22 +144,13 @@ fn from_fsrs_card(c: &FsrsCard) -> FsrsState {
     }
 }
 
-/// Seeds an `rs-fsrs` `Card` for a card with no FSRS state yet. A never-reviewed card
-/// starts `New` (FSRS seeds its initial stability from the grade); a card carrying legacy
-/// Leitner progress is seeded `Review` with a stability derived from its stage cooldown,
-/// so prior progress carries over roughly — no migration needed.
-fn seed_card(state: &CardState, now_ms: u64) -> FsrsCard {
+/// Seeds an `rs-fsrs` `Card` for a card with no FSRS state yet: always `New`,
+/// so FSRS derives its initial stability from the first grade. (Pre-FSRS
+/// Leitner carry-over was dropped with the stage field — pre-1.0.)
+fn seed_card(_state: &CardState, now_ms: u64) -> FsrsCard {
     let mut c = FsrsCard::new();
     c.last_review = ms_to_dt(now_ms);
     c.due = ms_to_dt(now_ms);
-    if state.total_reviews > 0 {
-        let days = (stage_cooldown_ms(state.stage) as f64 / DAY_MS as f64).max(0.1);
-        c.stability = days;
-        c.difficulty = 5.0;
-        c.scheduled_days = days.round() as i64;
-        c.state = RawState::Review;
-        c.last_review = ms_to_dt(state.stage_entered_ms.max(1));
-    }
     c
 }
 
@@ -210,11 +187,9 @@ impl Scheduler for Fsrs {
     fn due_at(&self, state: &CardState) -> u64 {
         match &state.fsrs {
             Some(s) => s.due_ms,
-            // Not yet reviewed under FSRS — fall back to the Leitner cooldown so a legacy
-            // card still surfaces until its first FSRS review derives real state.
-            None => state
-                .stage_entered_ms
-                .saturating_add(stage_cooldown_ms(state.stage)),
+            // Not yet scheduled under FSRS — a freshly acquired card settles for one
+            // fixed cooldown before its first quiz.
+            None => state.acquired_ms.saturating_add(ACQUIRE_COOLDOWN_MS),
         }
     }
 
@@ -265,12 +240,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn stage_cooldowns_are_stable() {
-        assert_eq!(60 * 1000, stage_cooldown_ms(1));
-        assert_eq!(3_600_000, stage_cooldown_ms(2));
-        assert_eq!(21_600_000, stage_cooldown_ms(3));
-        assert_eq!(86_400_000, stage_cooldown_ms(4));
-        assert_eq!(604_800_000, stage_cooldown_ms(5));
+    fn due_at_for_an_unscheduled_card_is_one_acquire_cooldown_out() {
+        let sched = Fsrs::default();
+        let mut s = CardState::new(1000); // acquired_ms = 1000, fsrs = None
+        // No FSRS state yet: due is exactly the fixed acquire cooldown past acquire.
+        assert_eq!(sched.due_at(&s), 1000 + ACQUIRE_COOLDOWN_MS);
+        // Once graduated to FSRS, the schedule owns the due date, not the cooldown.
+        sched.apply(&mut s, Grade::Pass, 1000);
+        assert!(s.fsrs.is_some());
+        assert!(sched.due_at(&s) != 1000 + ACQUIRE_COOLDOWN_MS);
+    }
+
+    #[test]
+    fn the_acquire_cooldown_is_stable() {
+        // The single acquire cooldown is exactly the old stage-1 gap (~1 min), so
+        // freshly-acquired timing is unchanged by the ladder collapse.
+        assert_eq!(60 * 1000, ACQUIRE_COOLDOWN_MS);
     }
 
     #[test]

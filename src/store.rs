@@ -91,8 +91,9 @@ pub struct CardState {
     /// acquire marker and for the one-time lazy-derive that seeds FSRS from a pre-FSRS card's
     /// stage.
     pub stage: u8,
-    /// When the card entered its current stage (Unix ms).
-    pub stage_entered_ms: u64,
+    /// When the card was first acquired (Unix ms); the acquire-cooldown anchor for a not-yet-scheduled card.
+    #[serde(default)]
+    pub acquired_ms: u64,
     /// FSRS state; present once the card has been reviewed under FSRS (or derived
     /// from the Leitner `stage` on its first FSRS review).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -124,7 +125,7 @@ impl CardState {
     pub fn new(now_ms: u64) -> Self {
         Self {
             stage: 1,
-            stage_entered_ms: now_ms,
+            acquired_ms: now_ms,
             fsrs: None,
             total_reviews: 0,
             total_passes: 0,
