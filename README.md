@@ -1,6 +1,7 @@
 # `alix`
 
 [![CI](https://github.com/Alex6323/alix/actions/workflows/ci.yml/badge.svg)](https://github.com/Alex6323/alix/actions/workflows/ci.yml)
+[![coverage](https://img.shields.io/badge/coverage-84%25-green)](https://github.com/Alex6323/alix/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/alix)](https://crates.io/crates/alix)
 [![docs.rs](https://img.shields.io/docsrs/alix)](https://docs.rs/alix)
 [![License: MIT OR Apache-2.0](https://img.shields.io/crates/l/alix)](https://crates.io/crates/alix)

@@ -45,7 +45,9 @@ four binaries — `alix-aarch64-apple-darwin.tar.gz`,
 at. **crates.io is not automated.**
 
 1. **Green gate.** `make check` (clippy + tests) and `make fmt` clean; README,
-   `docs/book`, and `CHANGELOG.md` in sync with the work being shipped.
+   `docs/book`, and `CHANGELOG.md` in sync with the work being shipped. Refresh the
+   README coverage badge to the current line coverage from `cargo llvm-cov
+   --summary-only` (the badge is a static snapshot — this keeps it honest each cut).
 2. **Bump the version.** Set `version = "X.Y.Z"` in `Cargo.toml`; refresh
    `Cargo.lock` (`cargo build`).
 3. **Finalize the changelog.** Rename `## [Unreleased]` → `## [X.Y.Z] - YYYY-MM-DD`,
