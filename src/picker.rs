@@ -648,7 +648,7 @@ mod tests {
 
     /// Inserts a virtual (remediation) card for `subject` into `store`, due
     /// immediately — sidecar content keyed by its `Card::id`, plus a fresh
-    /// schedule seeded at t=0 (so any real `now` is well past its stage-1
+    /// schedule seeded at t=0 (so any real `now` is well past its acquire
     /// cooldown).
     fn insert_due_virtual_card(store: &mut Store, subject: &str) {
         let text = "# virtual front\n\tvirtual back\n".to_string();

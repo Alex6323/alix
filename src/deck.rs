@@ -83,17 +83,18 @@ impl DeckSettings {
     }
 }
 
-/// How far through a deck the user is, derived from its cards' current stages.
+/// How far through a deck the user is, derived from whether its cards have
+/// graduated (reached FSRS `Review`) and, for `% source:` decks, the exam result.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DeckState {
     /// No card has been reviewed yet.
     NotStarted,
-    /// Some cards reviewed, but not all are at the top stage.
+    /// Some cards reviewed, but not all have graduated.
     Started,
-    /// Every card is at the top stage, but the deck declares `% source:` and
+    /// Every card has graduated, but the deck declares `% source:` and
     /// the AI exam hasn't been passed yet — drilled, ready to be examined.
     ExamDue,
-    /// Done: every card at the top stage, and (for a `% source:` deck) the exam
+    /// Done: every card has graduated, and (for a `% source:` deck) the exam
     /// passed. This is what unlocks dependents.
     Finished,
 }

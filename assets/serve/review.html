@@ -41,7 +41,8 @@
   .bar .deck { color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; max-width: min(52vw, 420px); }
   .bar .sep { color: var(--line); }
   .bar .spacer { flex: 1; }
-  /* stage histogram (new|s1|s2|s3|s4|s5) + cards left, like the TUI header */
+  /* Reused readout: exam strictness while examining, the deck's card count
+     while augmenting; empty during review. */
   .bar .hist { color: var(--ink); font-variant-numeric: tabular-nums; }
   .bar-filter { width: min(300px, 56vw); background: rgba(0,0,0,0.25); border: 1px solid var(--line); border-radius: 8px; color: var(--ink); font: inherit; font-size: 0.82rem; padding: 5px 12px; }
   .bar-filter::placeholder { color: var(--dim); }
@@ -848,8 +849,7 @@ function render() {
 
   headerBreadcrumb();
   deckEl.textContent = state.label;
-  histEl.textContent = ""; // no stage ladder in the header — it's noise (the
-                           // per-stage breakdown stays in the session summary)
+  histEl.textContent = ""; // no per-review readout in the header — it's noise
   scoreEl.innerHTML = `<b>${state.passed}✓</b> <s>${state.failed}✗</s><span class="left">${state.remaining}↓</span>`;
   menuWrap.style.display = state.phase === "done" ? "none" : "";
   setMenuContext("review");

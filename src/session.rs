@@ -8,7 +8,7 @@
 //! pass (or acquire) leaves the session. When nothing is due right now the
 //! session is finished-for-now; [`Session::poll`] lets a frontend re-enter it
 //! when a cooling card comes back. A never-seen card is *acquired* first — shown,
-//! recorded at stage 1, then left to settle ~1 min before its first quiz.
+//! recorded as acquired, then left to settle ~1 min before its first quiz.
 
 use std::{collections::VecDeque, path::PathBuf};
 
@@ -326,17 +326,17 @@ impl Session {
         self.advance(store, now_ms);
     }
 
-    /// Introduces the current never-seen card: records it at stage 1 and moves on.
+    /// Introduces the current never-seen card: records it as acquired and moves on.
     /// It is *not* graded and gets *no* history entry — acquiring is a first
     /// exposure, not a review. The card is **kept** in the session, cooling on its
-    /// ~1 min stage-1 gap, so its first real quiz surfaces again later in *this
+    /// ~1 min acquire cooldown, so its first real quiz surfaces again later in *this
     /// same session* once that gap passes. Does nothing when nothing is up.
     pub fn acquire_current(&mut self, store: &mut Store, now_ms: u64) {
         let Some(index) = self.current_idx else {
             return;
         };
-        // `get_or_insert` creates the state at stage 1, due ~1 min out via the
-        // stage-1 cooldown — no `scheduler.apply`, no recorded review. The card
+        // `get_or_insert` creates the state as freshly acquired, due ~1 min out via
+        // the acquire cooldown — no `scheduler.apply`, no recorded review. The card
         // stays in the roster so the due-driven serving surfaces it again for its
         // first real quiz once the gap elapses, in this same session. A virtual
         // card always has state (created already-scheduled), so `current_unseen`
@@ -771,8 +771,8 @@ mod tests {
 
     /// Inserts a virtual (remediation) card for `parent` into `store` the way
     /// the substrate does — sidecar content keyed by its `Card::id`, plus a
-    /// fresh `store.cards` schedule at `created_ms` (stage 1, no FSRS yet, due
-    /// ~1 min out) — and returns its synthesized `Card` (mirroring
+    /// fresh `store.cards` schedule at `created_ms` (freshly acquired, no FSRS
+    /// yet, due ~1 min out) — and returns its synthesized `Card` (mirroring
     /// `main::synthesize_virtual`: the parsed card on a far-out `line`). `back`
     /// drives the id, so distinct `back` values give distinct virtual cards.
     fn insert_virtual(store: &mut Store, parent: &str, back: &str, created_ms: u64) -> Card {

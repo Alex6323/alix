@@ -70,9 +70,9 @@ impl Delta {
     }
 
     /// How this delta schedules the checkpoint, sharing the review grades. A
-    /// passed hop advances (and fades); a **partly** one is a weak edge that
-    /// drops a stage so it resurfaces sooner; a **failed** one resets — recorded,
-    /// not punished (the walk still continues).
+    /// passed hop advances (and fades); a **partly** one maps to FSRS `Hard` —
+    /// a weak pass that resurfaces sooner than a full Good; a **failed** one
+    /// resets to FSRS `Again` — recorded, not punished (the walk still continues).
     pub fn grade(self) -> Grade {
         match self {
             Delta::Passed => Grade::Pass,
@@ -1792,8 +1792,8 @@ mod tests {
         assert_eq!(Some(Delta::Partial), Delta::from_key('p'));
         assert_eq!(Some(Delta::Failed), Delta::from_key('f'));
         assert_eq!(None, Delta::from_key('x'));
-        // Passed advances; partly drops a stage; failed resets — each shares the
-        // review grade, so a partly is now a distinct, gentler outcome.
+        // Passed advances; partly maps to FSRS Hard; failed resets to FSRS Again —
+        // each shares the review grade, so a partly is a distinct, gentler outcome.
         assert_eq!(Grade::Pass, Delta::Passed.grade());
         assert_eq!(Grade::Partial, Delta::Partial.grade());
         assert_eq!(Grade::Fail, Delta::Failed.grade());

@@ -94,11 +94,11 @@ pub fn parse_key(s: &str) -> Result<KeyPattern> {
 /// All rebindable actions.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Bindings {
-    /// Self-graded modes: grade as failed (reset to stage 1).
+    /// Self-graded modes: grade as failed (FSRS `Again` — resets learning progress).
     pub failed: Vec<KeyPattern>,
-    /// Self-graded modes: grade as partly (demote one stage).
+    /// Self-graded modes: grade as partly (FSRS `Hard` — a weak pass, still drilling).
     pub partly: Vec<KeyPattern>,
-    /// Self-graded modes: grade as passed (advance one stage).
+    /// Self-graded modes: grade as passed (FSRS `Good` — advances toward graduation).
     pub passed: Vec<KeyPattern>,
     /// Flip mode: reveal the answer.
     pub reveal: Vec<KeyPattern>,
@@ -1040,7 +1040,7 @@ pub fn default_config_toml() -> &'static str {
 # Review key bindings (flip / typing / fuzzy / choice modes).
 [keys.review]
 # failed = ["1", "f"]           # self-graded: grade as failed (reset)
-# partly = ["2", "p"]           # self-graded: grade as partly (demote one stage)
+# partly = ["2", "p"]           # self-graded: grade as partly (FSRS Hard, still a pass)
 # passed = ["3", "n"]           # self-graded: grade as passed (advance)
 # reveal = ["space", "enter"]   # flip mode: show the answer
 # hint = ["tab", "ctrl-h", "ctrl-backspace"]  # typing mode (fails the card)

@@ -87,8 +87,8 @@ pub struct CardState {
     /// When the card was first acquired (Unix ms); the acquire-cooldown anchor for a not-yet-scheduled card.
     #[serde(default)]
     pub acquired_ms: u64,
-    /// FSRS state; present once the card has been reviewed under FSRS (or derived
-    /// from the Leitner `stage` on its first FSRS review).
+    /// FSRS state; present once the card has been reviewed under FSRS, absent
+    /// for a not-yet-reviewed (or freshly acquired) card.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fsrs: Option<FsrsState>,
     /// Total number of reviews.
@@ -369,8 +369,8 @@ impl Store {
             .max()
     }
 
-    /// Returns a mutable reference to the state of a card, inserting a fresh
-    /// stage-1 state if the card is new.
+    /// Returns a mutable reference to the state of a card, inserting a freshly
+    /// acquired state (no FSRS schedule yet) if the card is new.
     pub fn get_or_insert(&mut self, card_id: u64, now_ms: u64) -> &mut CardState {
         self.cards
             .entry(card_id)

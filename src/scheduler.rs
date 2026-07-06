@@ -6,9 +6,9 @@
 //! to switch between. Graduation to `Review` always takes **two** full Goods in the acquisition
 //! phase (a Fail resets that progress rather than fast-tracking it — see [`Fsrs::apply`]).
 //!
-//! The legacy Leitner `stage` field is retained only as an acquire marker and for the one-time
-//! lazy-derive that seeds FSRS state from a pre-FSRS card's stage on its first FSRS review; it is
-//! no longer live scheduling state.
+//! The legacy Leitner `stage` field is gone entirely. `acquired_ms` marks when a card was first
+//! shown, and `seed_card` always seeds fresh FSRS state as `New` — there is no pre-FSRS carry-over
+//! to derive from anymore.
 
 use chrono::{DateTime, Utc};
 use rs_fsrs::{Card as FsrsCard, FSRS, Parameters, Rating, State as RawState};
@@ -75,7 +75,8 @@ pub trait Scheduler {
 /// in-session retry is position-based and unaffected. Was the stage-1 cooldown.
 pub const ACQUIRE_COOLDOWN_MS: u64 = 60 * 1000;
 
-/// One day in milliseconds — the unit the legacy stage-cooldown lazy-derive converts to FSRS days.
+/// One day in milliseconds — converts between FSRS's `scheduled_days` and alix's ms timestamps
+/// in [`Fsrs::apply`] and [`Fsrs::reanchor`].
 const DAY_MS: u64 = 86_400 * 1000;
 
 /// Hold step for a card that passed once but hasn't earned its second Good yet

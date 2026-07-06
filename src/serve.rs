@@ -1652,7 +1652,7 @@ pub fn run_review(
                 );
             }
             (Method::Post, "/api/acquire") => {
-                // Acknowledge a never-seen card: record it at stage 1 (no grade)
+                // Acknowledge a never-seen card: record it as acquired (no grade)
                 // and move on. Its first quiz comes back ~1 min later, this session.
                 let Some(r) = reviewing.as_mut() else {
                     respond_status(request, 409);
