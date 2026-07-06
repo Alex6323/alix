@@ -117,11 +117,11 @@ goes hop by hop:
 4. **Done** — after the last hop the walk is complete. That's the *drill*; the
    *verification* (what masters the trace) is its separate **exam**, below.
 
-**In the browser:** run `alix serve` and pick the trace in the deck list — it walks
-in the web frontend: a **path rail** you descend (nodes coloring in by Missed it /
+**In the browser:** pick the trace in the [web picker](15-the-web-app.md) — it
+walks there too: a **path rail** you descend (nodes coloring in by Missed it /
 Partly / Got it) with each checkpoint's source shown in a line-numbered excerpt.
 Progress saves to the same store, so a walk started in the terminal continues in
-the browser.
+the browser, and vice versa.
 
 `alix trace <deck> --map` prints the route — every prompt, key points, and
 locator — without quizzing.
@@ -137,10 +137,11 @@ that compression against the path's checkpoints — AI-graded, exactly like a
 - walking the checkpoints (predict → verify each edge) is the **drill**;
 - the compression is the **exam**.
 
-You reach it three ways: `alix exam <trace>`, the **capstone** offered at the end
-of a walk (`Take the exam?`), or the picker's **"Take exam"** button. Like a fact
-deck, you can sit it **early to test out** — gated only by `% requires:` (a
-trace's sourced prerequisites must be mastered first).
+You reach it in the browser: the **capstone** offered at the end of a walk
+(`Take the exam?` — a terminal walk points you there too), or the picker's
+**"Take exam"** button. Like a fact deck, you can sit it **early to test
+out** — gated only by `% requires:` (a trace's sourced prerequisites must be
+mastered first).
 
 A **failed** trace exam is **re-walked**, not turned into remediation cards (a
 trace is a path, not a card pile) — the weak checkpoints already resurface sooner

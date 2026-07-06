@@ -17,8 +17,8 @@ That puts `alix` on your `PATH`. Check it:
 alix --help
 ```
 
-The flashcard **core** — reviewing, scheduling, every answer mode, browse, the
-terminal UI and the web app — runs with nothing else installed, no accounts, no
+The flashcard **core** — reviewing, scheduling, every answer mode, browse, and
+the web app — runs with nothing else installed, no accounts, no
 network. The **AI features** (deck generation, the exam, traces, explore, and the
 in-session tutor) shell out to a supported model CLI — [Claude Code](https://www.anthropic.com/claude-code)
 by default; the Gemini, Codex, and Copilot CLIs are also supported. Install at
@@ -49,7 +49,8 @@ readability. A line starting with `!` is a **note**, shown after you answer.
 alix srs.txt
 ```
 
-`alix` shows the question; you recall the answer, press a key to reveal it, then
+`alix` opens the web app (printing its URL) and shows the question there; you
+recall the answer, press a key to reveal it, then
 grade yourself — **failed** (you missed it), **partly** (got the gist but
 stumbled), or **passed**. Your grade moves the card along its schedule, so cards
 you know come back rarely and cards you miss come back soon. That self-graded reveal is **flip mode**, the default;
@@ -61,16 +62,16 @@ pass `--cram` to review everything regardless of when it's next due.
 
 ## The deck picker
 
-Run `alix` with no arguments to open the **picker** over your decks directory
-(`~/decks` by default; change it with `decks_dir` in the config). It groups your
-decks into Workspaces, Recent, and Folders and is driven by Vim-style keys
-(`j`/`k` to move, `Enter` to open, `/` to filter by name). This is what the
-desktop launcher opens.
+Run `alix` with no arguments to open the **picker** in your browser, over your
+decks directory (`~/decks` by default; change it with `decks_dir` in the
+config). It groups your decks into Workspaces, Recent, and Folders and is
+driven by Vim-style keys (`j`/`k` to move, `Enter` to open, `/` to filter by
+name). This is what the desktop launcher opens. Focus a deck there and press
+**Browse** to read through its cards with no grading or scheduling.
 
 ## The everyday commands
 
 ```sh
-alix browse srs.txt    # read through the cards — no grading, no scheduling
 alix stats srs.txt     # a progress overview
 alix list srs.txt      # every card with its stage and due time
 alix deck check srs.txt     # lint the deck (syntax errors, duplicate cards)

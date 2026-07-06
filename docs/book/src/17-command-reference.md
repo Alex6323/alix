@@ -5,12 +5,17 @@ depth, where there is one. Run any command with `--help` for its full flags.
 
 ## Reviewing
 
-- `alix` — open the deck [picker](02-getting-started.md) (recent + `~/decks`).
-- `alix <deck>` / `alix review <deck>` — review one deck's due cards.
-- `alix browse <deck>` — read through one deck's cards, no grading or scheduling.
+- `alix` — open the web deck [picker](02-getting-started.md) (recent +
+  `~/decks`), printing its URL.
+- `alix <deck>` / `alix review <deck>` — review one deck's due cards, in the
+  browser.
 - `alix workspace <dir>` — open a [workspace](08-workspaces.md), routing each
   member you pick to a review or a walk (a workspace is reviewed member-by-member,
   never merged).
+
+Browsing a deck read-only, and sitting the AI exam, are both reached from the
+web picker rather than as their own commands (see
+[the web app](15-the-web-app.md)).
 
 Common flags: `--topology <name>` / `--region <name>`
 ([scheduling](05-scheduling.md)), `--cram`, `--new N`, `--limit N`, and
@@ -22,12 +27,13 @@ is checked comes from its `% reveal:` and your `[review] target`
 
 - `alix stats <deck>...` — progress overview and completion state.
 - `alix list <deck>...` — every card with its stage and due time.
-- `alix reset <deck>...` — clear progress (`--card`, `--cards`, `--all`; `-y` to
-  skip the prompt).
+- `alix reset <deck>...` — clear progress (`--card`, `--all`; `-y` to
+  skip the prompt). Non-interactive: name a deck or pass `--card`/`--all`.
 - `alix deck check <deck>...` — lint a deck (syntax, duplicate cards, trace `% at:`
   locators, and frozen cards that have drifted from their `% origin:` source).
-- `alix deps <deck>` (alias `require`) — edit `% requires:` with a checkbox picker
-  ([dependencies](09-dependencies.md)).
+
+Deck [dependencies](09-dependencies.md) (`% requires:`) are edited by hand in
+the deck file — there's no separate command for it.
 
 ## The AI features
 
@@ -39,16 +45,18 @@ is checked comes from its `% reveal:` and your `[review] target`
   (choices, notes, questions, keypoints, format, topology).
 - `alix import <file.tsv>` — import an Anki TSV export (no model CLI needed).
 
-The agentic commands (`deck generate`, `exam`, `trace --build`, `explore`)
+The agentic commands (`deck generate`, `trace --build`, `explore`)
 measure the source size before running and prompt for confirmation when it's
-large. Pass `--yes` to skip the prompt in non-interactive scripts.
-- `alix exam <deck>` — the [AI exam](12-the-ai-exam.md) (`--questions`,
-  `--strictness`).
-- `alix trace <deck>` — walk a [trace](13-trace-decks.md) (`--build`, `--suggest`,
-  `--grade`, `--map`, `--serve`).
+large. Pass `--yes` to skip the prompt in non-interactive scripts. The
+[AI exam](12-the-ai-exam.md) runs unattended in the browser instead, so it
+can't prompt — it truncates an oversized source and notes it.
+- `alix trace <deck>` — walk a [trace](13-trace-decks.md) in the terminal
+  (`--build`, `--suggest`, `--grade`, `--map`); the same trace also walks from
+  the web picker.
 - `alix explore <source>` — an [ordered learning plan](14-explore.md) (`--goal`,
   `--into`, `--build`, `--walk`).
-- Tutor — `?` in a session, `Ctrl-N` to save a note ([the tutor](10-tutor.md)).
+- Tutor — the Ask button (or `?`) in a session, `Ctrl-N` to save a note
+  ([the tutor](10-tutor.md)).
 
 ## Config
 

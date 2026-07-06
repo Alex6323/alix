@@ -1,18 +1,16 @@
-//! Frontend-independent rendering model.
+//! Rendering model for the web frontend.
 //!
 //! Turns a [`Card`]'s free-text note into display structure — prose split into
-//! sentences, fenced code blocks kept verbatim — without committing to any
-//! frontend. There are no colors here, no width-based wrapping, no terminal
-//! glyphs: just the structural decisions that every frontend would otherwise
-//! have to reimplement. The ratatui TUI paints this model with a yellow left
-//! bar; a future web frontend would paint the same model as HTML.
+//! sentences, fenced code blocks kept verbatim — without committing to a
+//! particular layout. There are no colors here, no width-based wrapping: just
+//! the structural decisions the frontend would otherwise have to reimplement.
+//! The web page paints this model as HTML.
 //!
 //! A card's front, context, and back lines need no structuring — they are read
-//! straight off the [`Card`] by each frontend. Only notes carry markup worth
-//! interpreting once and sharing. Width-dependent wrapping is left to the
-//! frontend (terminals wrap manually via [`wrap_text`]; the web lets CSS do
-//! it), as is anything reveal-state-dependent (typing progress, line-by-line,
-//! cloze holes), which belongs with the interactive layer.
+//! straight off the [`Card`]. Only notes carry markup worth interpreting once
+//! and sharing. Width-dependent wrapping (CSS on the web) is left to the
+//! frontend, as is anything reveal-state-dependent (typing progress,
+//! line-by-line, cloze holes), which belongs with the interactive layer.
 
 use crate::{
     card::Card,
@@ -21,9 +19,8 @@ use crate::{
 
 /// A note decomposed into ordered display units.
 ///
-/// Units appear in document order. Frontends separate consecutive units from
-/// one another (the TUI inserts a blank gutter line between them) and apply
-/// their own wrapping and styling.
+/// Units appear in document order. The frontend separates consecutive units
+/// from one another and applies its own wrapping and styling.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum NoteUnit {
     /// One sentence of prose, trimmed, with its terminating period attached.

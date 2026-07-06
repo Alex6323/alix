@@ -12,11 +12,14 @@ The flashcard core never calls it.)
 ## Asking about a card
 
 On any post-answer screen — a revealed flip card, the feedback after a typed
-answer, an answered choice — press `?`. `alix` hands the tutor the card (its front,
-answer, note, and deck name) as context, and you can ask "why is that the
-answer?", "what's a simpler way to see this?", or anything else, and follow up.
-While the model thinks the session stays responsive; `Esc` drops you back exactly
-where you were.
+answer, an answered choice — an **Ask** button (or the `?` key) opens a chat
+panel without leaving the session: type a question, **Send**, **Save note**,
+**Close**. `alix` hands the tutor the card (its front, answer, note, and deck
+name) as context, and you can ask "why is that the answer?", "what's a
+simpler way to see this?", or anything else, and follow up. The server runs
+the model CLI on a background thread and the page polls for the reply, so
+the single-threaded server never blocks and the session stays responsive
+while it works.
 
 One conversation spans the **whole review run**. For Claude, `alix` uses
 `--session-id` for the first question and `--resume` for each follow-up, so the
@@ -25,15 +28,9 @@ the accumulated Q&A transcript into each prompt — so the context carries over,
 the cost of a growing prompt rather than a resumed session. Either way you can ask
 how the current card relates to one from ten minutes ago, and the tutor knows.
 
-## In the browser
-
-It works in the web frontend (`--serve`) too: an **Ask** button (or the `?` key)
-on an answered card opens a chat panel — type a question, **Send**, **Save note**,
-**Close**. The server runs the model CLI on a background thread and the page polls
-for the reply, so the single-threaded server never blocks. Ask is available
-wherever you serve, including over `--lan` — but the request runs the model CLI
-on the host machine, so, like `--lan` in general, only enable it on a network you
-trust.
+Ask is available wherever you serve, including over `--lan` — but the request
+runs the model CLI on the host machine, so, like `--lan` in general, only
+enable it on a network you trust.
 
 ## Saving what you learn — `Ctrl-N`
 

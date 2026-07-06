@@ -28,7 +28,7 @@
 - [Trace decks](13-trace-decks.md)
 - [Explore — goals & curricula](14-explore.md)
 
-# Part V — Surfaces & reference
+# Part V — Surface & reference
 
 - [The web app](15-the-web-app.md)
 - [Configuration](16-configuration.md)

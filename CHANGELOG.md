@@ -28,13 +28,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   interval reaches `retire_after`, and revive if the same gap fails again. See
   the **Changed** note below for the behavior break.
 - **Promote a virtual card into its deck.** A review-time action appends a
-  remediation card to the deck file and drops the virtual copy — `Ctrl-P` in the
-  terminal (rebindable `[keys.review]` `promote`), or "Promote to deck" in the web
-  review menu. Offered only while reviewing a virtual card. The promoted card
+  remediation card to the deck file and drops the virtual copy — "Promote to
+  deck" in the web review menu (rebindable `[keys.review]` `promote`, default
+  `ctrl-p`). Offered only while reviewing a virtual card. The promoted card
   keeps its review schedule; it doesn't restart.
 - **Exam-fail remediation count, and a "remediation card" review label.** The
-  post-remediation exam screen (TUI and web) now reports how many remediation
-  cards the failure created or revived. While drilling a still-virtual card,
+  post-remediation exam screen now reports how many remediation cards the
+  failure created or revived. While drilling a still-virtual card,
   the review screen's existing mode badge reads "remediation card" in place of
   "new card" — it reverts once the card is promoted.
 - **`[review]` config section — FSRS pacing.** `retention` (target recall
@@ -108,6 +108,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ephemeral (never persisted or sent to the server).
 
 ### Changed
+- **Breaking: the terminal frontend is removed — alix is web-first.** Bare
+  `alix` (or `alix <deck>`) now opens the local web app and prints its URL,
+  instead of a `ratatui` TUI; `ratatui` and `crossterm` are dropped as
+  dependencies (~129 transitive crates gone). The standalone `alix exam` and
+  `alix browse` commands are removed — both are reached through the web
+  picker instead (pick an `exam due` deck to sit its exam; press "Browse" on
+  a deck to read through it). The `% frontend:` directive (`any`/`tui`/`web`)
+  is removed — every card just renders in the web app. `alix reset` and deck
+  dependency editing (the old `alix deps`/`alix require`) are now
+  non-interactive: name a deck, or pass `--card <id>`/`--all` to `reset`;
+  edit `% requires:` lines by hand. `alix trace`'s walk is unaffected — it
+  still runs in the terminal (a plain stdin loop, never a TUI).
 - **Breaking: `% mode:`, the `#?` cloze marker, and the `--mode` flag are
   removed** — replaced by the difficulty ladder above. A cloze card is now
   `% reveal: cloze` (was `#?`); a deck's presentation is `% reveal: flip|cloze|line`

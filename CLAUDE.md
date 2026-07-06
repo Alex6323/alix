@@ -1,15 +1,15 @@
 # `alix` — project guide
 
-`alix` is an **AI-augmented** spaced-repetition learning tool in Rust, with a
-terminal (TUI) and a web frontend (`--serve`). On top of a plain-text
+`alix` is an **AI-augmented** spaced-repetition learning tool in Rust,
+web-first (bare `alix` opens its web frontend). On top of a plain-text
 flashcard core, an AI backend is woven in: an in-session tutor on any card, AI
-deck generation (`alix deck`), and the **AI exam** (`alix exam`) that gates
+deck generation (`alix deck`), and the **AI exam** that gates
 progression on verified understanding. The AI backend is pluggable (`[ask]
 backend` — Claude by default; Gemini, Codex, and Copilot also supported). The
 tool is increasingly AI-centric — weight that when prioritizing. The **library
-crate is the single source of logic**; the TUI, the web server, and the CLI are
-thin consumers. Put behavior in the lib (`src/`), not in a frontend, so both
-surfaces share it.
+crate is the single source of logic**; the web server and the CLI are
+thin consumers. Put behavior in the lib (`src/`), not in the frontend, so both
+share it.
 
 Native mobile thin clients (Android/iOS) are anticipated, consuming these same
 web endpoints — so treat the web JSON API as a **client-agnostic contract**:
@@ -55,7 +55,7 @@ them probably shouldn't be built:
   still counts (sharper exam grading deepens *verify*); breadth that sits beside
   the loop doesn't (a calendar, a habit tracker).
 - **Reach counts too, but reach is not scope.** Work that widens access to the
-  same one job — install and onboarding, the web and TUI surfaces, backends,
+  same one job — install and onboarding, the web surface, backends,
   performance, reliability — is admissible even though it deepens no step of
   the loop; it lets more people reach the one job. The guard: widen reach
   *without* adding scope the NOT-list rules out, and never let "it'll bring
@@ -76,8 +76,8 @@ lib/AI error paths, behavior in the lib, README + book + CHANGELOG synced, no ne
 dependency without a one-line reason). The fit gate decides *whether*; the craft
 gate decides *how*.
 
-**UI noise is a gate too — clean, no-distraction surfaces.** Both frontends (TUI
-and web) must stay calm: only what the user needs *right now*, nothing competing
+**UI noise is a gate too — clean, no-distraction surfaces.** The web frontend
+must stay calm: only what the user needs *right now*, nothing competing
 for attention. Every pixel/char earns its place — chrome that's always on but
 rarely useful (status ladders, persistent counters, decorative readouts) is
 noise, not information. When you add UI, the default is *less*: prefer one
@@ -101,7 +101,7 @@ noisy diff the way you'd treat a failing test: not done yet.
 | `make ci` | **Full CI parity** — `fmt-check` + `check` under `-Dwarnings` + `coverage`, exactly as `.github/workflows/ci.yml` runs them. A green `make ci` predicts a green CI; run it before a push/release. |
 | `make coverage` | Coverage report via `cargo-llvm-cov` (HTML). |
 | `make eval` | Real-Claude grader-calibration evals (`tests/eval.rs`, costed) — before touching `grade_*`. |
-| `make run ARGS="exam mydeck.txt"` | Run the binary with args. |
+| `make run ARGS="stats mydeck.txt"` | Run the binary with args. |
 | `make serve ARGS="review mydeck.txt"` | Web frontend (`--serve`); no ARGS → in-browser picker. |
 | `make book` | Serve the mdBook manual (`docs/book`), live reload. |
 | `make site` | Preview the `alix.study` landing page locally (`site/`). |
@@ -163,8 +163,8 @@ to this codebase. When in doubt, mirror the surrounding code.
   fork/exec; poison-tolerant).
 
 - **Keep threading in the lib.** Background work follows the `ask::spawn` shape: a
-  function that spawns a thread and returns a `Receiver`; frontends only
-  `try_recv`/poll. Don't spawn threads from the TUI or the web server.
+  function that spawns a thread and returns a `Receiver`; the frontend only
+  `try_recv`/poll. Don't spawn threads from the web server.
 
 - **Small idioms.** Chain `Option` precedence with `.or(…)`
   (`card.mode.or(deck.mode)`), not `match`. Write deck/store files atomically
@@ -192,7 +192,7 @@ to this codebase. When in doubt, mirror the surrounding code.
 - **Test-first for library logic.** Write the test before (or alongside) new
   `src/` behavior — above all the AI plumbing's error paths, where bugs hide and
   local runs can mask races (the `testutil` fake-CLI tests exist because one such
-  race slipped through). Thin frontend glue (TUI / `serve` wiring) is the
+  race slipped through). Thin frontend glue (`serve` wiring) is the
   exception — a follow-up or manual check is enough there. This is the
   deterministic half of the QUALITY plan; the grader-calibration evals
   (`make eval`) are the AI half, run deliberately before touching `grade_*`.

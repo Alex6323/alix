@@ -1,23 +1,22 @@
-# 15 · The web app — `--serve`
+# 15 · The web app
 
-Everything `alix` does in the terminal it can also do in a browser. Add `--serve`
-to `review` or `browse` (or run `alix --serve` with no decks) and it runs the same
-session logic over a tiny local web server, writing to the **same progress store**
-— so a card you grade in the browser shows up on the command line and
-vice versa. It's handy on a tablet or phone, where touch (and images) beat a TUI.
+alix is a web app: review, browse, and the exam all run here. `alix` opens a
+small local web server and shows you its URL, writing to the **same progress
+store** regardless of how you launch it — so what you grade here is exactly
+what `alix stats`/`alix list` show. It's especially handy on a tablet or
+phone, where touch (and images) work naturally.
 
 ```sh
-alix review rust.txt --serve              # open http://127.0.0.1:7777
-alix review rust.txt --serve --port 8080
-alix review rust.txt --serve --lan        # reachable from other devices on your network
-alix browse rust.txt --serve
-alix --serve                              # no decks → pick them in the browser
+alix review rust.txt                        # open http://127.0.0.1:7777
+alix review rust.txt --serve --port 8080    # a different port
+alix review rust.txt --serve --lan          # reachable from other devices on your network
+alix                                         # no decks → pick them in the browser
 ```
 
 ## Choosing decks in the browser
 
-Run `--serve` without naming decks and the page opens the **deck-selection
-screen** — the same list as the terminal picker. **Up / down** move between
+Run `alix` without naming decks and the page opens the **deck-selection
+screen**. **Up / down** move between
 decks; a **search box in the header** filters the list (focus it with **`/`**).
 Focus a deck and **Learn** it with **Enter** — a facts deck opens a
 review, a [trace](13-trace-decks.md) opens a walk — one deck per session. **Browse**
@@ -77,9 +76,8 @@ input for a small canvas: **Pen** · **Eraser** · **Undo** · **Clear**, then
 **Reveal**. The drawing stays on screen — frozen, not editable — while you
 self-grade against the card's normal reveal, then it's discarded; nothing you
 draw is saved or sent anywhere beyond rendering it in the browser. It's
-web-only (no canvas in the terminal), honored on `flip`/`explain` cards only,
-and there's no OCR or vision model reading it back — grading is on you, same as
-any other self-graded card.
+honored on `flip`/`explain` cards only, and there's no OCR or vision model
+reading it back — grading is on you, same as any other self-graded card.
 
 ## Themes
 

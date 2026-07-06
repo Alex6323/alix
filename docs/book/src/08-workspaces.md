@@ -72,7 +72,7 @@ either.
 
 ## In the picker
 
-Folders show up in the picker (terminal and web) in two flavors: a folder *with* a
+Folders show up in the picker in two flavors: a folder *with* a
 `alix.toml` appears under **Workspaces**, one *without* as a plain **Folder**.
 Opening either drills in to its decks, drawn as a **dependency tree** — each deck
 nested under the prerequisite that gates it, foundations at the roots (the

@@ -9,7 +9,7 @@ inspect the active key bindings with `alix config`.
 
 All keybindings live under `[keys]`, one subtable per surface: `[keys.review]`
 (the review screen), `[keys.picker]` (the deck picker), and `[keys.browse]`
-(`alix browse`). Every action takes a list of keys (the first is shown in the
+(the browse overlay). Every action takes a list of keys (the first is shown in the
 footer). To grade self-graded cards with `j`/`k`/`l`:
 
 ```toml
@@ -28,7 +28,7 @@ they can't shadow your input — use `ctrl-`/special keys for `hint`, `skip`, an
 `quit` there. Pass a different file with `--config <path>`.
 
 The picker's navigation is `[keys.picker]` (`up`, `down`, `open`, `back`,
-`filter`, `mastered`), `alix browse` has its own `[keys.browse]` bindings, and
+`filter`, `mastered`), the browse overlay has its own `[keys.browse]` bindings, and
 the web server reads its default port from `[serve]`:
 
 ```toml
@@ -106,7 +106,7 @@ settings:
   and an `effort`.
 - **`[generate]`** — `alix deck`: `model`, `timeout_secs` (300), `max_cards` (30),
   `extra`, a full `prompt` override, and `review`.
-- **`[exam]`** — `alix exam`: `model`, `timeout_secs` (300), `num_questions` (5),
+- **`[exam]`** — the AI exam: `model`, `timeout_secs` (300), `num_questions` (5),
   `pass_threshold` (1.0), `strictness` (`balanced`), `extra`.
 - **`[trace]`** — `alix trace --build` / `--suggest`: defaults `model = "opus"`
   and `effort = "high"` (the build is correctness-critical and amortized); also

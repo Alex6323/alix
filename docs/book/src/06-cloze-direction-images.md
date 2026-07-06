@@ -75,11 +75,8 @@ header-only directive, absolute or relative to the deck file); without one they
 resolve next to the deck file, and an absolute path written on the card is used
 as-is.
 
-One catch worth knowing: **images render in the web frontend only** — a terminal
-can't draw them. So an image card is automatically *web-only* (as if it declared
-`% frontend: web`): `alix review` in the terminal skips it with a note, and if a
-whole deck is images it points you at `--serve` to open it in the browser. `alix
-check` warns about an image file it can't find, but doesn't fail on it.
+One catch worth knowing: images render in the web app. `alix deck check` warns
+about an image file it can't find, but doesn't fail on it.
 
 ## Source citations
 
@@ -97,9 +94,9 @@ answer for the exact source lines:
 
 The locator is the same shape a [trace checkpoint](13-trace-decks.md) uses:
 `file:lines` (e.g. `src/string.rs:1-3`), or just `lines` when the `% source:` is
-a single file. On reveal a `</>` marker appears on the answer — in the web,
+a single file. On reveal a `</>` marker appears on the answer —
 **click the answer** (or press `s`) to flip it to the line-numbered excerpt and
-back; in the terminal, press **`s`**. The lines are read *live* from the source,
+back. The lines are read *live* from the source,
 so a moved or deleted file shows "source unavailable" rather than a stale quote.
 
 This is the same machinery trace walks use to reveal source, brought to ordinary

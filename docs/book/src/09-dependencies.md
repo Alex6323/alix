@@ -31,20 +31,6 @@ the deck's own. What dependencies shape is the picker's **dependency tree**
 (foundations shown first) and, for a deck with a `% source:`, the **exam gate**
 below.
 
-## Editing without typos — `alix deps`
-
-To change a deck's prerequisites without hand-editing, use `alix deps <deck>`
-(alias `alix require`):
-
-```sh
-alix deps borrowing.txt
-```
-
-It opens the deck picker over your decks directory, pre-ticked to the current
-prerequisites: `Space` toggles, `Enter` saves (rewriting the `% requires:` lines),
-`Esc` cancels, and unticking everything clears them. Because the lines are
-comments, editing dependencies never disturbs card progress.
-
 ## Unlocks
 
 The same `% requires:` graph drives **unlocks**, with no extra syntax — and the

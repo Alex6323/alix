@@ -1,4 +1,4 @@
-# 12 · The AI exam — `alix exam`
+# 12 · The AI exam
 
 This is the feature the whole tool is built around. Drilling cards *loads* a
 deck's material into memory; the **AI exam** checks that you actually *understood*
@@ -33,16 +33,12 @@ its dependents directly.)
 ## Sitting the exam
 
 The exam is a guided, one-question-at-a-time flow — answer, move Back/Next, then a
-per-question breakdown — identical in the terminal and the browser. You reach it
-three ways:
+per-question breakdown — in the browser. You reach it two ways:
 
-- **Directly:** `alix exam ownership.txt` (with `--questions 8`, `--strictness …`
-  if you like).
 - **From the picker:** choosing an `exam due` deck starts the exam instead of an
   empty review.
 - **From the summary:** when you drill a deck's last cards and it turns exam due,
-  the session-end summary offers it — press `x` in the terminal (or `b` to browse
-  the deck instead), a button in the browser.
+  the session-end summary offers it.
 
 `alix` asks the model to read the source (URLs via `WebFetch`, local files embedded)
 and write **fresh understanding questions** — application and connections, *not*
@@ -71,9 +67,9 @@ count, and it never rewrites your `.txt`.
 Regenerating the same gap won't duplicate it; once its interval reaches the
 retirement cap it's archived, and re-failing the gap brings it back. When a
 remediation card has earned a permanent place, **promote** it during review
-(`Ctrl-P` in the terminal, or "Promote to deck" in the browser's review menu):
-alix appends it to the deck file, removes the virtual copy, and carries over
-the card's review progress — it doesn't restart.
+("Promote to deck" in the browser's review menu): alix appends it to the
+deck file, removes the virtual copy, and carries over the card's review
+progress — it doesn't restart.
 
 A **trace** deck is examined differently: instead of generated questions, its exam
 asks you to *retrace the whole path from memory* in a sentence or two — **the
@@ -82,15 +78,15 @@ generation, no source read). Passing masters the trace; a fail sends you back to
 **re-walk** it. See [trace decks](13-trace-decks.md) for the full flow.
 
 Resetting a whole deck (`alix reset <deck>`) also clears its mastered state, so a
-re-drilled deck must pass again; resetting only individual cards (`--card` /
-`--cards`) leaves mastery intact.
+re-drilled deck must pass again; resetting only an individual card (`--card`)
+leaves mastery intact.
 
 ## Strictness — match the rigor to the material
 
 How hard each answer is judged is a property of the *material*, so it's per deck. A
 checklist topic — a procedure, exact syntax, a security drill — should fail you for
 omitting a step; a conceptual topic shouldn't. Set it with a `% strictness:`
-header directive (or `alix exam --strictness …`, or the `[exam]` default):
+header directive (or the `[exam]` default):
 
 - **strict** — completeness required: every rubric point must be present, so
   omitting one is a gap.

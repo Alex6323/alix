@@ -139,8 +139,7 @@ Two ways to reach it:
 Grading a draw card is entirely **self-reported**: there's no OCR or vision model
 reading the canvas, so it works like a self-graded flip/explain card — you judge
 your own drawing against the reveal. In this version `% input:` is honored on
-**self-graded** checks only (a `flip` reveal or an explain), and is web-only (the
-terminal ignores it).
+**self-graded** checks only (a `flip` reveal or an explain); it's ignored elsewhere.
 
 ---
 

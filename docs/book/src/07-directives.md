@@ -13,8 +13,7 @@ full.
 | `% reveal:` | deck · card | [How the answer is uncovered](04-review-modes.md): flip (default), cloze (`{{spans}}`), line. |
 | `% order:` | deck | Card order: `scheduled` (default) or `sequential`. [→ ch 5](05-scheduling.md) |
 | `% direction:` | deck · card | [Review direction](06-cloze-direction-images.md): forward, reverse, both. |
-| `% frontend:` | deck · card | Restrict to `any`, `tui`, or `web`. [→ ch 6](06-cloze-direction-images.md) |
-| `% img:` / `% img-back:` | card | [Image](06-cloze-direction-images.md) on the front / back (web only). |
+| `% img:` / `% img-back:` | card | [Image](06-cloze-direction-images.md) on the front / back. |
 | `% img-dir:` | deck | Base directory image filenames resolve against. [→ ch 6](06-cloze-direction-images.md) |
 | `% title:` | deck | [Display name](08-workspaces.md) shown instead of the file name. |
 | `% requires:` | deck | [Prerequisite deck](09-dependencies.md) that gates unlocks (repeatable). |

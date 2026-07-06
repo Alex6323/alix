@@ -15,15 +15,15 @@ Under the hood it's a plain-text spaced-repetition trainer — FSRS
 scheduling, several answer modes, cloze and dual-direction cards, images, and
 deck dependencies — and the layer on top is the **AI integration**: a
 *tutor* on any card, *AI deck generation* from a web page,
-*understanding cards*, and an **AI exam** (`alix exam`) that checks whether you
+*understanding cards*, and an **AI exam** that checks whether you
 grasped the material — not just recalled it — and gates your progress on
-passing. Decks stay simple plain-text files you own, reviewable in a ratatui
-terminal UI or a local web app.
+passing. Decks stay simple plain-text files you own, reviewed in a local web
+app.
 
 ## Requirements
 
-The flashcard **core** — review, scheduling, every answer mode, browse, the TUI
-and the web frontend — runs standalone, with no external services or accounts.
+The flashcard **core** — review, scheduling, every answer mode, and the web
+app — runs standalone, with no external services or accounts.
 
 The **AI features** shell out to a supported model CLI — [Claude Code](https://www.anthropic.com/claude-code)
 by default; the Gemini, Codex, and Copilot CLIs are also supported (see
@@ -32,11 +32,11 @@ features that require a model CLI:
 
 - `alix deck generate` — generate a facts deck from a URL or a local
   file/directory; `alix deck augment` — add AI distractors or notes to one;
-- `alix exam` — the AI exam;
+- the AI exam, sat through the web picker;
 - `alix trace --build` / `--suggest` / `--grade` — discover, suggest, and grade
   traces;
 - `alix explore` — goal-driven learning plans;
-- the in-session tutor (`?`), in both the TUI and the web frontend.
+- the in-session tutor (`?`), in the web app.
 
 `alix` invokes the CLI headless under a locked-down permission model (see
 [The Tutor](#the-tutor)); the command, model and
@@ -47,7 +47,7 @@ timeouts are configurable per feature in the [config file](#configuration).
 `alix`'s main use: point it at a repo (or any source) and it builds a
 self-contained **learning workspace** — facts decks and predict-and-verify
 [traces](#traces-alix-trace), dependency-ordered — that you then study with
-spaced repetition, the AI tutor, and the [exam](#the-ai-exam-alix-exam). Three
+spaced repetition, the AI tutor, and the [exam](#the-ai-exam). Three
 steps:
 
 ```sh
@@ -58,8 +58,8 @@ alix explore ./my-crate --goal "how the request pipeline works"
 alix explore ./my-crate --goal "how the request pipeline works" \
   --into ~/decks/request-pipeline --title "Request pipeline" --build
 
-# 3. Study it — in the terminal, or the browser with --serve.
-alix workspace ~/decks/request-pipeline    # or: alix --serve, then open it
+# 3. Study it — alix opens the web app and prints its URL.
+alix workspace ~/decks/request-pipeline    # or: alix, then open it
 ```
 
 `--goal` scopes what gets authored (and becomes the workspace's description),
@@ -77,22 +77,19 @@ order, with progress kept in the workspace's own store. See
 The binary is called `alix`:
 
 ```sh
-alix                            # pick decks interactively (recent + ~/decks)
-alix mydeck.txt                 # review due cards
+alix                            # opens the web picker (prints its URL) — recent decks + ~/decks
+alix mydeck.txt                 # review due cards, in the browser
 alix --cram mydeck.txt          # review everything now (a correct answer refreshes, doesn't reward)
-alix browse mydeck.txt          # read through cards, no grading or scheduling
 alix deck generate <url-or-path>   # generate a facts deck from a web page or a file/dir
 alix deck augment mydeck.txt --target choices   # AI distractors (cached; review reads them)
 alix deck augment mydeck.txt --target notes --with "add trivia"   # AI notes
 alix deck augment mydeck.txt --target keypoints   # decompose answers into an explain-mode checklist
 alix import cards.tsv            # import an Anki TSV (front<TAB>back) into a deck
-alix exam mydeck.txt            # AI exam against the deck's % source: (gates unlocks)
-alix trace mytrace.txt          # walk a predict-and-verify path through a % source:
+alix trace mytrace.txt          # walk a predict-and-verify path through a % source: (terminal)
 alix trace --build mytrace.txt  # let the model discover the path (writes checkpoints back)
 alix trace --suggest .          # recon a source for candidate traces worth authoring
 alix explore .                  # an ordered learning plan (decks + traces) toward a goal
 alix explore --walk .           # walk an explore tour of the source's shape
-alix deps mydeck.txt            # edit a deck's prerequisites (checkbox picker)
 alix stats mydeck.txt           # progress overview
 alix list mydeck.txt            # every card with stage and due time
 alix deck check mydeck.txt      # lint a deck (syntax, duplicates, trace locators)
@@ -169,16 +166,15 @@ card's front. Follow a link for the full explanation.
 | `!` line | card | A note shown after you answer. |
 | `%` line | anywhere | A comment — ignored, unless it is one of the directives below. |
 | `% reveal:` | deck · card | [How the answer is uncovered](#deck-directives): `flip` (default), `cloze` ([fill-in-the-blank](#cloze-cards-fill-in-the-blank), `{{spans}}`), or `line` (one line at a time). |
-| `% input:` | deck · card | Answer input: `type` (default) or [`draw`](#review) — draw/handwrite the answer on a web canvas instead of typing, then self-grade. Web-only; honored on self-graded `flip`/`explain` cards; ignored elsewhere and in the TUI. |
+| `% input:` | deck · card | Answer input: `type` (default) or [`draw`](#review) — draw/handwrite the answer on a web canvas instead of typing, then self-grade. Honored on self-graded `flip`/`explain` cards; ignored elsewhere. |
 | `% order:` | deck | [Card order](#deck-directives): `scheduled` (default) or `sequential`. |
 | `% direction:` | deck · card | [Review direction](#dual-direction-cards--direction): `forward`, `reverse`, or `both`. |
-| `% frontend:` | deck · card | [Restrict](#deck-directives) a card/deck to `any`, `tui`, or `web`. |
-| `% img:` / `% img-back:` | card | [Image](#images--img--img-back) on the front / back (web frontend). |
+| `% img:` / `% img-back:` | card | [Image](#images--img--img-back) on the front / back. |
 | `% img-dir:` | deck | [Base directory](#images--img--img-back) that image filenames resolve against. |
-| `% strictness:` | deck | [Exam grading rigor](#the-ai-exam-alix-exam): `strict`, `balanced`, or `lenient`. |
+| `% strictness:` | deck | [Exam grading rigor](#the-ai-exam): `strict`, `balanced`, or `lenient`. |
 | `% requires:` | deck | [Prerequisite deck](#deck-dependencies) that gates unlocks (repeatable). |
 | `% link:` | deck | [tutor reference](#the-tutor) URL — **tutor only** (repeatable). |
-| `% source:` | deck | [Exam ground truth](#the-ai-exam-alix-exam) — a URL or file (repeatable). For a [trace](#traces-alix-trace), the source the path runs through (the frozen `assets/` copy in an explored workspace). Also a tutor reference. |
+| `% source:` | deck | [Exam ground truth](#the-ai-exam) — a URL or file (repeatable). For a [trace](#traces-alix-trace), the source the path runs through (the frozen `assets/` copy in an explored workspace). Also a tutor reference. |
 | `% trace:` | deck | What a [trace](#traces-alix-trace) walks — a path description ("how X becomes Y"); its presence makes the deck a trace. |
 | `% at:` | card | A locator into the `% source:` (`file:lines`, or just `lines` for a single-file source): a [trace checkpoint's](#traces-alix-trace) reveal target, or a [fact card's source citation](#source-citations--at-on-a-fact-card) shown on reveal. In a frozen workspace it points at the `assets/` snapshot and carries the original location after ` from ` (`29.rs from src/caching.rs:46-66`). |
 | `% origin:` | workspace · deck · card | The live source root a frozen deck's snapshots came from (set in a workspace's `alix.toml` at build time). The tutor grounds in it for context and `alix deck check` reads it to flag drift; `% source:` itself points at the frozen `assets/`. |
@@ -213,12 +209,10 @@ command line:
   file order, top to bottom (ideal for lyrics with `% reveal: line`).
 - `direction` — `forward` (default), `reverse`, or `both`; per card or deck-wide
   (see below).
-- `frontend` — `any` (default), `tui`, or `web`; restricts a card (or deck) to a
-  frontend. Image cards are `web` automatically (see Images below).
 - `img-dir` — directory that card `% img:` / `% img-back:` filenames resolve
   against (deck header only; see Images below).
 - `strictness` — how strictly the AI exam grades answers (`strict`, `balanced`,
-  `lenient`); only affects `alix exam` (see [the AI exam](#the-ai-exam-alix-exam)).
+  `lenient`); only affects [the AI exam](#the-ai-exam).
 
 These are ordinary `%` comments, so they don't affect parsing and card hashes
 are unaffected. An explicit CLI flag always wins over a directive, which wins over
@@ -263,23 +257,20 @@ until its sourced prerequisites have passed theirs — see
 [Completion states & unlocks](#completion-states--unlocks). Drilling is never
 gated, so you can review any deck at any time.
 
-You can edit a deck's prerequisites without hand-typing (and without typos)
-with `alix deps <deck>` (alias `alix require`): it opens the deck picker over your
-decks directory, pre-ticked to the current prerequisites. `Space` toggles,
-`Enter` saves (rewriting the `% requires:` lines), `Esc` cancels; unticking
-everything clears them. Since the lines are comments, editing dependencies
-never affects card progress.
+You edit a deck's prerequisites by hand, adding or removing `% requires:`
+lines in the header. Since the lines are comments, editing dependencies never
+affects card progress.
 
 ### Completion states & unlocks
 
 Every deck has a **completion state**, derived from how far its cards have
 progressed: *not started* (no card reviewed), *finished* (every card has
 **graduated** — reached FSRS's review phase, past the initial learning steps),
-or *started* (in between). The deck picker (terminal and web) shows it on each
+or *started* (in between). The deck picker shows it on each
 row — `new`, `m/total` (graduated cards), or `done ✓` — and `alix stats`
 prints it too. A deck that declares a `% source:` adds one more state between
 drilled and finished — *exam due* (`exam due`, tinted) — because drilling alone
-no longer finishes it; see [the AI exam](#the-ai-exam-alix-exam).
+no longer finishes it; see [the AI exam](#the-ai-exam).
 
 Completion drives **unlocks**, with no extra syntax — but the gate is the
 **exam**, not drilling. A sourced deck's **exam is locked** while any of its
@@ -347,8 +338,8 @@ skip the key); an **SVG is tinted to the active theme**, a raster shows as-is.
 Building a workspace with `alix explore --into <dir> --build` draws an abstract
 SVG emblem from the topic automatically, unless you pass `--icon <file>`.
 
-**Workspaces** and plain **Folders** appear in their own picker sections
-(terminal and web): a folder *with* an `alix.toml` shows under **Workspaces**, one
+**Workspaces** and plain **Folders** appear in their own picker sections: a
+folder *with* an `alix.toml` shows under **Workspaces**, one
 *without* as a plain **Folder**. Both open (drill in) to their
 members drawn as an **unlock dependency tree**: a deck nests under the
 `% requires:` prerequisite that gates it, foundations at the roots, and siblings
@@ -441,11 +432,7 @@ against; it may be absolute or relative to the deck file. Without it, filenames
 resolve against the deck file's own folder. A card value that is itself an
 absolute path is used as-is. One image per side.
 
-Images render in the **web frontend only** — the terminal can't draw them — so
-an image card is automatically *web-only* (as if it declared `% frontend: web`).
-In the terminal, `alix review` skips such cards with a note, and if a whole
-deck is web-only it points you at `--serve`. Use `% frontend:` to force a card
-or deck to a frontend explicitly. `alix deck check` warns about a referenced image
+Images render in the web app. `alix deck check` warns about a referenced image
 file that doesn't exist (it doesn't fail the check).
 
 ### Source citations (`% at:` on a fact card)
@@ -464,9 +451,9 @@ worded answer for the exact source lines:
 
 The locator takes the same form a [trace checkpoint](#traces-alix-trace) uses —
 `file:lines` (e.g. `src/string.rs:1-3`), or just `lines` when the `% source:` is
-a single file. On reveal a `</>` marker appears on the answer: in the web,
+a single file. On reveal a `</>` marker appears on the answer:
 **click the answer** (or press `s`) to swap it for the line-numbered excerpt, and
-again to swap back; in the terminal, press **`s`**. The excerpt is read **live**
+again to swap back. The excerpt is read **live**
 from the source, so a moved or missing file shows *"source unavailable"* rather
 than a stale quote. `% at:` is a comment to the scheduler, so adding it never
 changes a card's identity or resets its progress.
@@ -569,7 +556,7 @@ A `line`-reveal deck pairs with `% order: sequential` to walk its sections top t
 bottom — e.g. one card per verse/chorus of a song.
 
 The **explain** check (a reconstruct card with a multi-line answer) is the
-day-to-day, self-graded tier below the [AI exam](#the-ai-exam-alix-exam): you
+day-to-day, self-graded tier below the [AI exam](#the-ai-exam): you
 optionally type an explanation — never checked, just to make you commit before you
 peek (the web shows it next to the points for honest comparison) — reveal the key
 points, and grade whether you covered them. It pairs with the tutor. If you
@@ -592,8 +579,7 @@ is no OCR or vision model reading the canvas.
 To throw a card away, press the **remove** key (`Ctrl-X` by default) on it
 instead of grading — it is dropped from the session without being asked again
 (cloze siblings go too). The marked cards are deleted from their deck files,
-and their progress is pruned, when the session ends. The same key works in
-`alix browse`.
+and their progress is pruned, when the session ends.
 
 **Scheduling.** alix schedules with **FSRS** (the Free Spaced Repetition
 Scheduler, FSRS-5, via the `rs-fsrs` crate) — one scheduler, no choice to make.
@@ -612,57 +598,48 @@ shrinks it. Two knobs, both in the `[review]` config section (see
 
 ## Browse
 
-`alix browse <deck>` is a walk through one deck's cards — front and back shown
-together, in file order — without grading or scheduling. It is for a first
-read-through of a new deck or just checking its contents, without affecting
-your schedule. Navigate with `l`/`h` (next/previous, vim-style — `n`/`p`, the
-arrow keys, and `Space` also work), `g`/`G` (first/last, also Home/End), and
-`q` to quit. Pressing the remove key (`x` by default) marks the current card;
-on quit the marked cards are deleted from their deck files and their progress
-is pruned — the only thing browsing ever writes. The next/previous/remove/quit
-keys are configurable in the `[keys.browse]` section of the config file (see below);
-first/last stay `g`/`G`. Run `alix browse` with no deck argument to choose
-decks from the same picker `alix` uses.
-
-In the browser — `alix browse <deck> --serve`, or the **Browse** action in the
-[web picker](#web-frontend) — it's the same read-through, as an in-page overlay
-(Prev / Next / Leave) rather than a separate page. It's read-only there: card
-removal is terminal-only.
+Pick **Browse** on a deck in the [web picker](#web-frontend) (or press `b`
+while it's focused) to read through its cards — front and back together, in
+file order — without grading or scheduling. It's for a first look at a new
+deck, or just checking its contents, without affecting your schedule. It
+opens as an in-page overlay: **Prev** / **Next** (the arrow keys, `Space`, and
+your configured `[keys.browse]` `next`/`prev` bindings all work) step
+through, and **Leave** (`Esc`) returns to the picker. Browsing is read-only —
+it never edits the deck file or your progress.
 
 ## Web frontend
 
-Add `--serve` to `review` or `browse` to run it in the browser instead of the
-terminal — useful on a tablet or phone, where touch (and images) beats a TUI.
-It runs the same session logic and writes to the same progress store, so
-a card you grade in the browser shows up on the command line and vice
-versa.
+alix is a web app: review, browse, and the exam all run in the browser —
+useful on a tablet or phone too, where touch (and images) work naturally. It
+writes to the same progress store regardless of how you launch it, so what
+you grade here is exactly what `alix stats`/`alix list` show.
 
 ```
-alix review rust.txt --serve              # open http://127.0.0.1:7777
-alix review rust.txt --serve --port 8080
-alix review rust.txt --serve --lan        # reachable from other devices on your network
-alix browse rust.txt --serve              # read through a deck in the browser (in-page)
-alix --serve                              # no decks -> pick them in the browser
+alix mydeck.txt                        # open http://127.0.0.1:7777
+alix mydeck.txt --serve --port 8080    # a different port
+alix mydeck.txt --serve --lan          # reachable from other devices on your network
+alix                                   # no decks -> pick them in the browser
 ```
 
-Run `--serve` **without** naming any decks and the browser opens a
-deck-selection screen that mirrors the terminal [picker](#getting-started): the
-same three sections — **Workspaces** (each with its last-progress time) ·
-**Recent** loose decks · **Folders** — and the same **single-launch**, so you
-**click a deck to start it** (an exam-due deck sits its exam, and a
-[trace](#traces-alix-trace) **walks** — predict → verify — at `/walk`, with a
-**Back to decks** to return to the picker). Open a **Workspace** or **Folder** to
-drill into its **unlock dependency tree**, where each deck nests under the
-prerequisite that gates it. A 🔒 marks a deck whose **exam** is locked (a sourced
-`% requires:` isn't passed) — still drillable; a deck dimmed with 🕒 has nothing
-due. A `mastered 🎉` deck is tucked into the **Mastered window** (press `m`), and
-mastered/done decks stay out of Recent (a quick launchpad) but are reachable by
-filtering — the filter searches *every* loose deck. `browse` ignores locking, so any deck opens
-there. Keyboard nav follows your `[keys.picker]` config (`j`/`k` or arrows move, `/`
-or `Ctrl-F` filter, `m` the Mastered window). When you finish a session, "Choose
-other decks" (on the summary) or `Esc` returns here — and a session
-launched inside a workspace returns **into that workspace**. Naming decks on the
-command line skips the screen and goes straight to review/browse.
+Run `alix` with no decks and the browser opens the deck-selection screen
+described under [Usage](#usage): the same three sections — **Workspaces**
+(each with its last-progress time) · **Recent** loose decks · **Folders** —
+and the same **single-launch**, so you **click a deck to start it** (an
+exam-due deck sits its exam, and a [trace](#traces-alix-trace) **walks** —
+predict → verify — at `/walk`, with a **Back to decks** to return to the
+picker). Open a **Workspace** or **Folder** to drill into its **unlock
+dependency tree**, where each deck nests under the prerequisite that gates
+it. A 🔒 marks a deck whose **exam** is locked (a sourced `% requires:` isn't
+passed) — still drillable; a deck dimmed with 🕒 has nothing due. A
+`mastered 🎉` deck is tucked into the **Mastered window** (press `m`), and
+mastered/done decks stay out of Recent (a quick launchpad) but are reachable
+by filtering — the filter searches *every* loose deck. Browsing ignores
+locking, so any deck opens there. Keyboard nav follows your `[keys.picker]`
+config (`j`/`k` or arrows move, `/` or `Ctrl-F` filter, `m` the Mastered
+window). When you finish a session, "Choose other decks" (on the summary) or
+`Esc` returns here — and a session launched inside a workspace returns
+**into that workspace**. Naming a deck on the command line skips the picker
+and goes straight to review.
 
 Every check works in the browser: a **flip** or **cloze** reveal (reveal, then
 self-grade Missed it / Partly / Got it), a **line** reveal (one line at a time —
@@ -697,8 +674,9 @@ port lives in the `[serve]` section of the config file and `--port` overrides it
 
 ## The Tutor
 
-On any post-answer screen (feedback, revealed flip card, answered choice),
-press `?` to open a tutor panel without leaving the session. The card
+On any post-answer screen (feedback, revealed flip card, answered choice), an
+**Ask** button (and the `?` key) opens a tutor panel without leaving the
+session: type a question, **Send**, **Save note**, **Close**. The card
 (front, answer, note, deck name) is sent as context to the configured model
 CLI, so you can ask "why is that the answer?" and follow up. The tutor
 remembers earlier cards and questions across the whole review run — Claude
@@ -709,25 +687,22 @@ resumed efficiently, but memory is preserved). The panel shows only the
 **current card's** exchanges. By default the tutor answers from the card
 text plus its own knowledge (tools: `WebFetch`/`WebSearch` where available),
 and uses the **CLI's default model** — set `[ask] model`/`effort` to pin a
-stronger one (the web panel shows which model is answering). For a deck built
+stronger one (the panel shows which model is answering). For a deck built
 from source, set **`[ask] source_access = true`** to let the tutor **read the
 card's source** to verify its answer: it runs `Read`/`Glob`/`Grep` with its
 working directory at the deck's `% source:` project root (the nearest
 `Cargo.toml`/`.git`/… above the cited files) and is told to check the real
 files before answering. It's off by default because it grants file-read access
-— only enable it on a machine and network you trust (especially with `--serve
---lan`). A [workspace](#workspaces) can override it per-folder: put
+— only enable it on a machine and network you trust (especially with
+`--lan`). A [workspace](#workspaces) can override it per-folder: put
 `source_access = true` (or `false`) in its `alix.toml` to decide for that
-crate alone, beating the global default. While the model CLI runs, the session
-stays responsive; Esc returns exactly where you were.
+crate alone, beating the global default.
 
-This works in the **web frontend** too (`--serve`): an "Ask" button (and the
-`?` key) on an answered card opens a chat panel — type a question, **Send**,
-**Save note**, **Close**. The server invokes the model CLI on a background
-thread and the page polls for the reply, so the single-threaded server never
-blocks. Ask is reachable wherever you serve, including `--lan` (the request
-runs the CLI on the host, so — like `--lan` generally — only use it on a
-network you trust).
+The server invokes the model CLI on a background thread and the page polls
+for the reply, so the single-threaded server never blocks — the session
+stays responsive while it runs. Ask is reachable wherever you serve,
+including `--lan` (the request runs the CLI on the host, so — like `--lan`
+generally — only use it on a network you trust).
 
 While typing a question you can edit it like a normal input line: `←`/`→`
 move the caret, `Home`/`End` (or `Ctrl-A`/`Ctrl-E`) jump to the ends, and
@@ -777,8 +752,8 @@ alix deck generate <source> --print        # print to stdout instead of writing
 For a **web page**, the model CLI reads it with a web-fetch tool and the deck
 starts with a `% link:` line back to it (so you can use the *ask* feature on the
 cards). For a **local source**, the CLI explores it read-only with file-read tools
-at the source root and the deck starts with a `% source:` line (so `alix exam`
-can later grade your understanding against it); it also adds a
+at the source root and the deck starts with a `% source:` line (so the AI
+exam can later grade your understanding against it); it also adds a
 [`% at:` citation](#source-citations--at-on-a-fact-card) to each fact that maps
 to specific lines, so the card can show its source on reveal. The CLI returns
 text only — never a write or shell tool — and `alix` validates it (`parse_str`)
@@ -926,7 +901,7 @@ result is validated (`parse_str`) and written to `~/decks/<name>.txt`; review it
 and clean up any leftover HTML by hand. It works best on a plain two-field
 export — rich notetypes, media, and tags don't carry over.
 
-## The AI exam (`alix exam`)
+## The AI exam
 
 Mechanical review *loads* a deck's material into memory; the **AI exam**
 *checks whether you understood it* and is what gates progression. The idea: drilling
@@ -951,17 +926,11 @@ Once every card in a `% source:` deck has **graduated** — reached FSRS's revie
 phase, past the initial learning steps — the deck is **exam due** rather than
 finished (so it does not yet unlock its dependents).
 
-**Sitting the exam — interactive, in either frontend.** The exam is a guided,
-one-question-at-a-time flow (Back/Next, then a per-question breakdown), the same
-in the terminal and the browser:
-
-- **Terminal**: `alix exam ownership.txt` (or `--questions 8`, `--strictness …`)
-  opens the exam in the TUI. You also reach it by **picking an `exam due` deck**
-  in the launcher (it starts the exam instead of an empty review), or from the
-  **session-end summary** — when you drill a deck's last cards and it turns exam
-  due, the summary offers "press `x` to take it" (or `b` to browse the deck).
-- **Web** (`alix serve`): picking an `exam due` deck in the deck list launches
-  the exam in the page; a finished session likewise offers it at the summary.
+**Sitting the exam.** The exam is a guided, one-question-at-a-time flow
+(Back/Next, then a per-question breakdown) in the browser. Pick an
+**`exam due`** deck in the picker and it opens the exam instead of an empty
+review; you also reach it from the **session-end summary** — when drilling a
+deck's last cards turns it exam due, the summary offers to take it.
 
 `alix` asks the configured model CLI to read the source (URLs via a web-fetch
 tool; local files are embedded) and write fresh **open understanding** questions —
@@ -991,19 +960,18 @@ card count. Regenerating the same
 gap won't duplicate it; once its interval reaches the retirement cap
 (`retire_after`) it's archived, and re-failing the gap revives it. If a
 remediation card has earned a permanent place, **promote** it during review
-(`Ctrl-P` in the terminal, or "Promote to deck" in the browser's review menu):
-alix appends it to the deck file, drops the virtual copy, and carries over the
-card's review progress — it doesn't restart.
+("Promote to deck" in the browser's review menu): alix appends it to the
+deck file, drops the virtual copy, and carries over the card's review
+progress — it doesn't restart.
 
 Resetting a whole deck's progress (`alix reset <deck>`) also clears its mastered
-state, so a re-drilled deck must pass the exam again (resetting only individual
-cards with `--card`/`--cards` leaves the mastered state intact).
+state, so a re-drilled deck must pass the exam again (resetting only an
+individual card with `--card` leaves the mastered state intact).
 
 **Grading strictness** is a property of the *material*, so it's per deck. A
 checklist-style topic (a procedure, exact syntax, a security drill) should fail
 you for omitting a step; a conceptual topic shouldn't. Set it with a
-`% strictness:` header directive (or `alix exam --strictness …`, or the
-`[exam]` default):
+`% strictness:` header directive (or the `[exam]` default):
 
 - `strict` — completeness required: every rubric point must be present, so
   omitting one is a gap.
@@ -1033,7 +1001,7 @@ content (Codex cannot — use a local file path or switch `[ask] backend`).
 Cards drill *facts* (the nodes of what you know); a **trace** drills the
 *connections between them* (the edges) by walking a **path** through a real
 source and making you **predict each hop before it's revealed**. Where the
-[AI exam](#the-ai-exam-alix-exam) verifies a *set* of independent answers, a
+[AI exam](#the-ai-exam) verifies a *set* of independent answers, a
 trace verifies that you can follow one chain of reasoning — and the gap between
 your prediction and the truth is where the understanding forms.
 
@@ -1152,26 +1120,27 @@ that has a real sequence.
 4. **Compress** — after the last hop you restate the whole path in two
    sentences: if you can re-derive it, you understood it.
 
-**In the browser** — run **`alix serve`** and pick the trace in the deck list; it
-walks in the web frontend. The walk page shows the **path** as a rail you descend
+**In the browser** — pick the trace in the [web picker](#web-frontend); it
+walks there too. The walk page shows the **path** as a rail you descend
 (its nodes color in by Missed it / Partly / Got it) and reveals each checkpoint's
 real source in a line-numbered excerpt. Progress saves to the same store, so a
-walk started in the terminal continues in the browser.
+walk started in the terminal continues in the browser, and vice versa.
 
 `alix trace <deck> --map` prints the path (every prompt, its key points and
 locator) without quizzing — a quick "just show me the route".
 
 **A trace's exam is the compression.** Walking the checkpoints is the *drill*;
-the *verification* is `alix exam <trace>` — one fixed question, the `% trace:`,
-which you answer by retracing the whole path in a sentence or two. The model grades
-that against the path's checkpoints (AI-graded, like a fact deck's exam), and
-**passing masters the trace** (unlocking its dependents). You reach it three
-ways: directly with `alix exam <trace>`, as the **capstone** offered at the end
-of a walk, or via the picker's **"Take exam"** — and, like a fact deck, you can
-sit it early to *test out* without walking. A failed trace exam is **re-walked**,
-not remediated into cards (a trace is a path, not a card pile); after a fail it
-**cools down** before you can re-sit (so the graded feedback can't just be pasted
-back — `[exam] retry_cooldown_secs`, default 1h).
+the *verification* is one fixed question, the `% trace:`, which you answer by
+retracing the whole path in a sentence or two. The model grades that against
+the path's checkpoints (AI-graded, like a fact deck's exam), and **passing
+masters the trace** (unlocking its dependents). You reach it in the browser —
+as the **capstone** offered at the end of a walk (a terminal walk points you
+there too), or via the picker's **"Take exam"** — and, like a fact deck, you
+can sit it early to *test out* without walking. A failed trace exam is
+**re-walked**, not remediated into cards (a trace is a path, not a card
+pile); after a fail it **cools down** before you can re-sit (so the graded
+feedback can't just be pasted back — `[exam] retry_cooldown_secs`, default
+1h).
 
 A trace deck degrades gracefully — even without `alix trace` it is a valid deck
 of `explain` cards. See `docs/examples/rust-ownership/ownership-move.txt` for a
@@ -1242,7 +1211,7 @@ shown in the footer. For example, to grade self-graded cards with j/k/l:
 
 All keybindings live under `[keys]`, one subtable per surface — `[keys.review]`
 (the review screen), `[keys.picker]` (the deck picker), and `[keys.browse]`
-(`alix browse`):
+(the browse overlay):
 
 ```toml
 [keys.review]
@@ -1264,7 +1233,7 @@ they cannot shadow text input — use `ctrl-`/special keys for `hint`, `skip`
 and `quit`. A different config file can be passed with `--config <path>`.
 
 The picker's Vim-style navigation is under `[keys.picker]` (`up`, `down`, `open`,
-`back`, `filter`, `mastered`), and the read-only browser (`alix browse`) has its
+`back`, `filter`, `mastered`), and the read-only browse overlay has its
 own bindings under `[keys.browse]`:
 
 ```toml
@@ -1345,9 +1314,11 @@ installed, signed in, and responding. Useful for confirming the whole path
 works before running a longer command.
 
 **Pre-flight size guard.** Before an agentic command (`alix deck generate`,
-`alix exam`, `alix trace --build`, `alix explore`) reads a large source, alix
+`alix trace --build`, `alix explore`) reads a large source, alix
 measures its size and prompts for confirmation. Pass `--yes` to skip the
-prompt in non-interactive scripts.
+prompt in non-interactive scripts. The AI exam runs unattended in the
+browser, so it can't prompt — it instead truncates a large source to 100 KB
+and prints a notice.
 
 **Multi-turn tutoring.** Claude's native session flags (`--session-id` /
 `--resume`) keep a running conversation across cards. Other CLIs don't have
@@ -1365,9 +1336,8 @@ the prompt grows with the conversation rather than being resumed efficiently.
   `~/.config/alix/config.toml` (created on first use).
 - `alix reset <deck>...` clears stored progress so cards become "new" again —
   for whole decks, a single card (`--card <id-or-front-text>`), or the entire
-  store (`--all`). Run it with no decks to pick from the deck list, or add
-  `--cards` to pick individual cards from a checkbox list. It confirms first
-  unless you pass `-y`/`--yes`.
+  store (`--all`). It's non-interactive: name a deck or pass `--card`/`--all`,
+  there is no picker. It confirms first unless you pass `-y`/`--yes`.
 
 ## Desktop integration
 
@@ -1378,10 +1348,11 @@ assets/install-desktop.sh
 ```
 
 It installs the icon (`assets/alix.svg`, rendered to the standard
-PNG sizes), a launcher that reviews everything due in `~/decks` in a
-terminal, and a `.desktop` entry under `~/.local/share`. Re-run it after
-editing the SVG. The launcher prefers an installed `alix` (`cargo install
---path .`) and falls back to the project build.
+PNG sizes), a launcher that runs bare `alix` — opening the web picker, its
+URL printed to a terminal window — and a `.desktop` entry under
+`~/.local/share`. Re-run it after editing the SVG. The launcher prefers an
+installed `alix` (`cargo install --path .`) and falls back to the project
+build.
 
 ## Development
 
