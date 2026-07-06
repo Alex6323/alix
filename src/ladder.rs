@@ -46,16 +46,6 @@ impl Rung {
     }
 }
 
-/// The learner's depth target, clamped to what v1 schedules (L1-as-target is
-/// v2). `Recognize` never becomes a live scheduling target — it's the
-/// unscheduled acquire on-ramp — so it clamps up to `Recall`.
-pub fn effective_target(cfg: &crate::config::ReviewConfig) -> Rung {
-    match cfg.target {
-        Rung::Recognize => Rung::Recall,
-        other => other,
-    }
-}
-
 /// How a card's answer is presented / uncovered — authored (`% reveal:`),
 /// independent of depth. Composes with any rung.
 #[derive(
@@ -191,15 +181,6 @@ mod tests {
             check_for(Reveal::Flip, Rung::Reconstruct, &rich),
             Mode::Explain
         );
-    }
-
-    #[test]
-    fn effective_target_clamps_recognize_to_recall_in_v1() {
-        let cfg = crate::config::ReviewConfig {
-            target: Rung::Recognize,
-            ..Default::default()
-        };
-        assert_eq!(effective_target(&cfg), Rung::Recall);
     }
 
     #[test]

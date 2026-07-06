@@ -72,8 +72,8 @@ pub struct SessionOptions {
     /// disables retirement. From `[review] retire_after` (per-workspace overridable).
     pub retire_after_days: Option<u32>,
     /// The learner's depth-ladder target — the rung a graduated card climbs
-    /// toward on a spaced pass (see [`Session::grade`]). From `[review] target`
-    /// via `ladder::effective_target` (per-workspace overridable).
+    /// toward on a spaced pass (see [`Session::grade`]). From the resolved
+    /// `[review] depth` (per-workspace overridable).
     pub target: crate::ladder::Rung,
 }
 

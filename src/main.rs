@@ -11,7 +11,7 @@ use alix::{
     card::Card,
     config::{self, Config},
     deck::{Deck, DeckSettings, DeckState},
-    generate, import, ladder, parser, preflight,
+    generate, import, parser, preflight,
     recent::{self, RecentDecks},
     scheduler::{Fsrs, Scheduler},
     serve,
@@ -798,7 +798,7 @@ fn build_review(
         order,
         topology: topology_order,
         retire_after_days: review.retire_after_days,
-        target: ladder::effective_target(&review),
+        target: review.target,
     };
     let session = Session::new(
         cards,
