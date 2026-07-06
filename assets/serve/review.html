@@ -804,11 +804,6 @@ function el(tag, cls, text) {
 // The drawer's open/close height animation: quick.
 const DRAWER_MS = 170;
 const DRAWER_EASE = "cubic-bezier(0.4, 0, 0.2, 1)";
-// Histogram cells [new, s1..s5] as HTML; stages above `top` are unreachable
-// (every card caps below them via % max-stage:), shown as a muted –.
-function histCells(h, top) {
-  return h.map((v, i) => (i >= 1 && i > top) ? '<span class="muted">–</span>' : String(v));
-}
 function backCount() { return state.card ? state.card.back.length : 0; }
 function fullyRevealed() { return backCount() === 0 || revealed >= backCount(); }
 
@@ -2575,7 +2570,6 @@ function renderLegend() {
 
 function renderSummary() {
   const acc = state.reviews > 0 ? Math.round(100 * state.passed / state.reviews) + "%" : "–";
-  const h = state.histogram;
   const wrap = el("div", "summary");
   wrap.appendChild(el("div", "lede", "session complete"));
   wrap.appendChild(el("h2", null, state.reviews > 0 ? "Nicely charged." : "Nothing due."));
@@ -2588,13 +2582,6 @@ function renderSummary() {
   row("reviewed", `${state.reviews}`);
   row("passed / failed", `${state.passed} / ${state.failed}`);
   row("accuracy", acc);
-  // stages s1..s5, with stages above the reachable top shown as a muted –
-  const stagesRow = el("div", "row");
-  stagesRow.appendChild(el("span", null, "stages"));
-  const stagesVal = el("b");
-  stagesVal.innerHTML = histCells(state.histogram, state.top_stage).slice(1).join(" · ");
-  stagesRow.appendChild(stagesVal);
-  wrap.appendChild(stagesRow);
   if (!state.can_restart) {
     wrap.appendChild(el("div", "note", "Nothing due right now — come back later."));
   }

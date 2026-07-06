@@ -104,9 +104,6 @@ pub struct SessionStats {
     pub acquired: usize,
 }
 
-/// Per-stage card counts for the loaded decks; index 0 holds unseen cards.
-pub type StageHistogram = [usize; 6];
-
 /// A review session over a fixed set of cards.
 pub struct Session {
     cards: Vec<Card>,
@@ -437,26 +434,6 @@ impl Session {
             .filter(|&i| self.servable(i, store, now_ms))
             .count();
     }
-
-    /// Per-stage counts over all cards of this session's decks (stage 0 =
-    /// never seen). Deck composition only — a virtual card has no deck stage
-    /// and would only inflate the "new" bucket, so it is excluded here.
-    pub fn stage_histogram(&self, store: &Store) -> StageHistogram {
-        let deck_cards: Vec<Card> = self
-            .cards
-            .iter()
-            .filter(|c| !store.is_virtual(c.id()))
-            .cloned()
-            .collect();
-        histogram(&deck_cards, store)
-    }
-
-    /// The session's top Leitner stage — always [`MAX_STAGE`] now that decks no
-    /// longer cap below it. Kept as the single source for the stage bar's height
-    /// (terminal and the web DTO).
-    pub fn top_stage(&self) -> u8 {
-        MAX_STAGE
-    }
 }
 
 /// Builds the review queue: due cards in scheduler order, then up to
@@ -756,18 +733,6 @@ pub fn count_reviewable(
         .iter()
         .filter(|card| is_reviewable(card, store, scheduler, now_ms, retire_after_days))
         .count()
-}
-
-/// Per-stage counts for a set of cards (stage 0 = never seen).
-pub fn histogram(cards: &[Card], store: &Store) -> StageHistogram {
-    let mut h = [0usize; 6];
-    for card in cards {
-        match store.get(card.id()) {
-            Some(state) => h[state.stage.clamp(1, 5) as usize] += 1,
-            None => h[0] += 1,
-        }
-    }
-    h
 }
 
 /// Builds the current timestamp once; convenience for callers.
@@ -1399,17 +1364,6 @@ mod tests {
             .next_due_at(&store)
             .expect("a seen card has a due time");
         assert!(due > 1000 && due < 1000 + 86_400_000, "due {due}");
-    }
-
-    #[test]
-    fn histogram_counts_stages() {
-        let (mut store, _dir) = empty_store();
-        let all = cards(4);
-        store.get_or_insert(all[0].id(), 0).stage = 1;
-        store.get_or_insert(all[1].id(), 0).stage = 5;
-
-        let h = histogram(&all, &store);
-        assert_eq!([2, 1, 0, 0, 0, 1], h);
     }
 
     /// An FSRS state whose interval sits at the retirement cap.

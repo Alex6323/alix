@@ -256,8 +256,6 @@ struct StateDto {
     reviews: usize,
     passed: usize,
     failed: usize,
-    /// Per-stage counts (index 0 = unseen).
-    histogram: [usize; 6],
     /// Subjects of decks in this (finished) session that are now `ExamDue` —
     /// drilled, sourced, and not yet mastered. The summary offers to sit each.
     /// Empty until the session is finished.
@@ -271,9 +269,6 @@ struct StateDto {
     /// carrying over its review schedule rather than starting fresh). `false`
     /// once nothing is current, or for an authored deck card.
     promotable: bool,
-    /// The highest reachable stage (always 5 now); the page would dim stages
-    /// above it to `–`, but every deck reaches the top stage.
-    top_stage: u8,
     label: String,
 }
 
@@ -2675,11 +2670,9 @@ fn review_state(reviewing: Option<&Reviewing>, store: &Store) -> StateDto {
             reviews: 0,
             passed: 0,
             failed: 0,
-            histogram: [0; 6],
             exam_due: Vec::new(),
             can_restart: false,
             promotable: false,
-            top_stage: crate::store::MAX_STAGE,
             label: "select decks".to_string(),
         };
     };
@@ -2807,11 +2800,9 @@ fn review_state(reviewing: Option<&Reviewing>, store: &Store) -> StateDto {
         reviews: session.stats.reviews,
         passed: session.stats.passed,
         failed: session.stats.failed,
-        histogram: session.stage_histogram(store),
         exam_due,
         can_restart: session.has_due_now(store, now_ms()),
         promotable: session.current_is_virtual(store),
-        top_stage: session.top_stage(),
         label: r.label.clone(),
     }
 }

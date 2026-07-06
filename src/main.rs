@@ -15,7 +15,7 @@ use alix::{
     recent::{self, RecentDecks},
     scheduler::{Fsrs, Scheduler},
     serve,
-    session::{DeckInfo, Order, Session, SessionOptions, histogram},
+    session::{DeckInfo, Order, Session, SessionOptions},
     store::{Store, VirtualCard, default_store_path},
     time::{humanize_ms, now_ms},
     trace::{Phase, SourceBase, Trace, Walk},
@@ -45,7 +45,7 @@ enum Command {
     Review(ReviewArgs),
     /// Show progress statistics for decks.
     Stats(DeckArgs),
-    /// List all cards of decks with their stage and due time.
+    /// List all cards of decks with their state and due time.
     List(DeckArgs),
     /// Clear stored progress for decks, a single card, or everything.
     Reset(ResetArgs),
@@ -1137,7 +1137,6 @@ fn stats(args: DeckArgs) -> Result<()> {
         // …and its own pacing: a workspace deck honors its `alix.local.toml`.
         let review = config.review.for_deck(path);
         let scheduler = Fsrs::new(review.retention);
-        let h = histogram(&deck.cards, &store);
 
         let mut due_now = 0usize;
         let mut due_24h = 0usize;
@@ -1160,8 +1159,7 @@ fn stats(args: DeckArgs) -> Result<()> {
             }
         }
         // Virtual (remediation) cards count toward "due" (now and within
-        // 24h), never toward the card count/histogram below — they aren't
-        // deck content.
+        // 24h), never toward the card count below — they aren't deck content.
         due_now += alix::session::count_reviewable_virtual(
             &store,
             &deck.subject,
@@ -1185,25 +1183,8 @@ fn stats(args: DeckArgs) -> Result<()> {
             DeckState::Finished if store.deck_mastered(&deck.subject) => "mastered ✓",
             DeckState::Finished => "finished ✓",
         };
-        let top = alix::store::MAX_STAGE;
-        let cell = |s: usize| {
-            if s as u8 > top {
-                "–".to_string()
-            } else {
-                h[s].to_string()
-            }
-        };
         println!("{} ({} cards)", deck.display_name(), deck.cards.len());
         println!("  state:   {state}");
-        println!(
-            "  stages:  new {} │ s1 {} │ s2 {} │ s3 {} │ s4 {} │ s5 {}",
-            h[0],
-            cell(1),
-            cell(2),
-            cell(3),
-            cell(4),
-            cell(5)
-        );
         println!("  due:     {due_now} now, {due_24h} within 24h");
         if reviews > 0 {
             println!(
@@ -1228,7 +1209,7 @@ fn list(args: DeckArgs) -> Result<()> {
         let scheduler = Fsrs::new(review.retention);
         println!("{}", deck.display_name());
         for card in &deck.cards {
-            let (stage, due) = match store.get(card.id()) {
+            let (label, due) = match store.get(card.id()) {
                 Some(state) => {
                     // Retired cards rest until `alix reset`; their due time is
                     // moot, so say so instead of showing a misleading interval.
@@ -1242,12 +1223,18 @@ fn list(args: DeckArgs) -> Result<()> {
                             format!("due in {}", humanize_ms(due - now))
                         }
                     };
-                    (format!("s{}", state.stage), due)
+                    let label = match state.fsrs.as_ref().map(|f| f.state) {
+                        Some(1) => "lrn",
+                        Some(2) => "rev",
+                        Some(3) => "rlrn",
+                        _ => "new",
+                    };
+                    (label.to_string(), due)
                 }
                 None => ("new".to_string(), "-".to_string()),
             };
             let front: String = card.front.chars().take(60).collect();
-            println!("  [{stage:>3}] {front:<60} {due}");
+            println!("  [{label:>4}] {front:<60} {due}");
         }
     }
     Ok(())
