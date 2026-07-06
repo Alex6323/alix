@@ -1224,9 +1224,9 @@ fn list(args: DeckArgs) -> Result<()> {
                         }
                     };
                     let label = match state.fsrs.as_ref().map(|f| f.state) {
-                        Some(1) => "lrn",
-                        Some(2) => "rev",
-                        Some(3) => "rlrn",
+                        Some(1) => "learning",
+                        Some(2) => "review",
+                        Some(3) => "relearning",
                         _ => "new",
                     };
                     (label.to_string(), due)
@@ -1234,7 +1234,7 @@ fn list(args: DeckArgs) -> Result<()> {
                 None => ("new".to_string(), "-".to_string()),
             };
             let front: String = card.front.chars().take(60).collect();
-            println!("  [{label:>4}] {front:<60} {due}");
+            println!("  [{label:>10}] {front:<60} {due}");
         }
     }
     Ok(())
