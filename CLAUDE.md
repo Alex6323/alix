@@ -257,8 +257,8 @@ to this codebase. When in doubt, mirror the surrounding code.
   read its spec/plan there; the **memory index** and `PLAN.md` track what's currently in
   flight — these design docs aren't in the repo, so a fresh session won't see them otherwise.
 - **Subagent-driven development cleans up after itself.** When an SDD run
-  finishes — its branch merged or abandoned — delete its scratch: the
-  `.superpowers/sdd/` ledger and any task-brief / review-package files, so a
-  spent ledger doesn't linger in the working tree and get mistaken for active
-  work. The ledger is a live recovery map *during* a run; once the work lands
-  it has done its job.
+  finishes — its branch merged or abandoned — clear its scratch with
+  **`make sdd-clean`** (removes the `.superpowers/sdd/` ledger + task-brief /
+  review-package files, keeps the dir + `.gitignore`), so a spent ledger doesn't
+  linger in the working tree and get mistaken for active work. The ledger is a
+  live recovery map *during* a run; once the work lands it has done its job.

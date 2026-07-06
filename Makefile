@@ -6,7 +6,7 @@
 # toolchain — `+nightly` is handled by rustup before cargo sees it — which is
 # why these live in a Makefile rather than .cargo/config.toml.)
 
-.PHONY: build test lint lint-js fmt fmt-check check ci coverage eval run serve book site install clean heartbeat check-backends
+.PHONY: build test lint lint-js fmt fmt-check check ci coverage eval run serve book site install clean sdd-clean heartbeat check-backends
 
 # Compile the workspace.
 build:
@@ -100,6 +100,14 @@ install:
 # Remove build artifacts.
 clean:
 	cargo clean
+
+# Remove spent subagent-driven-development scratch (task briefs/reports, review
+# packages, the ledger) but keep the dir + its .gitignore. The artifacts are
+# gitignored and recoverable from git log, so this is safe to run anytime — it's
+# how an SDD run cleans up after its branch lands (see CLAUDE.md).
+sdd-clean:
+	@find .superpowers/sdd -maxdepth 1 -type f ! -name .gitignore -delete 2>/dev/null; \
+		echo "cleaned .superpowers/sdd/ (kept the dir + .gitignore)"
 
 # Release heartbeat: report whether shipped work has piled up unreleased (entries
 # under CHANGELOG's [Unreleased] + days since the last vX.Y.Z tag) and flag when a
