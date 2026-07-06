@@ -28,7 +28,7 @@ use thiserror::Error;
 
 use crate::{
     answer::Input,
-    card::{Card, Direction, Frontend},
+    card::{Card, Direction},
     cloze,
     ladder::Reveal,
 };
@@ -103,8 +103,6 @@ struct PartialCard {
     image: Option<String>,
     /// Per-card `% img-back:` (answer side), raw value as written.
     image_back: Option<String>,
-    /// Per-card `% frontend:`, if the card declares one.
-    frontend: Option<Frontend>,
     /// Per-card `% at:` trace locator (a source position), raw value as
     /// written — the asset locator, with any ` from <origin>` suffix split off.
     at: Option<String>,
@@ -147,7 +145,6 @@ impl PartialCard {
             card.direction = self.direction;
             card.image = self.image.map(PathBuf::from);
             card.image_back = self.image_back.map(PathBuf::from);
-            card.frontend = self.frontend;
             card.at = self.at;
             card.at_origin = self.at_origin;
             card.origin = self.origin;
@@ -310,7 +307,6 @@ pub fn parse_str(subject: &str, text: &str) -> Result<Vec<Card>, ParseError> {
                     direction: None,
                     image: None,
                     image_back: None,
-                    frontend: None,
                     at: None,
                     at_origin: None,
                     origin: None,
@@ -343,7 +339,7 @@ pub fn parse_str(subject: &str, text: &str) -> Result<Vec<Card>, ParseError> {
             }
             MARKUP_COMMENT => {
                 // A `% key: value` directive inside a card is a per-card
-                // override (`reveal`, `direction`, `img`, `img-back`, `frontend`);
+                // override (`reveal`, `direction`, `img`, `img-back`);
                 // unrecognized keys are ignored, like deck-level directives. `%`
                 // lines before the first card are deck-level (handled by
                 // parse_directives).
@@ -381,11 +377,6 @@ pub fn parse_str(subject: &str, text: &str) -> Result<Vec<Card>, ParseError> {
                         }
                         "origin" => partial.origin = Some(value),
                         "given" => partial.givens.push(value),
-                        "frontend" => {
-                            if let Ok(f) = Frontend::from_str(&value, true) {
-                                partial.frontend = Some(f);
-                            }
-                        }
                         _ => {}
                     }
                 }
@@ -671,12 +662,11 @@ mod tests {
     }
 
     #[test]
-    fn per_card_image_and_frontend_directives_are_parsed() {
-        let text = "# q\n% img: moon.png\n% img-back: phase.png\n% frontend: web\n\tWaxing\n";
+    fn per_card_image_directives_are_parsed() {
+        let text = "# q\n% img: moon.png\n% img-back: phase.png\n\tWaxing\n";
         let cards = parse_str("s", text).unwrap();
         assert_eq!(Some(PathBuf::from("moon.png")), cards[0].image);
         assert_eq!(Some(PathBuf::from("phase.png")), cards[0].image_back);
-        assert_eq!(Some(Frontend::Web), cards[0].frontend);
     }
 
     #[test]
@@ -825,7 +815,8 @@ mod tests {
 
     #[test]
     fn cloze_front_expands_to_sub_cards() {
-        let text = "# Complete the quote\n% reveal: cloze\n\tTo {{be}} or not to {{be}}\n\t! Hamlet\n";
+        let text =
+            "# Complete the quote\n% reveal: cloze\n\tTo {{be}} or not to {{be}}\n\t! Hamlet\n";
         let cards = parse_str("s", text).unwrap();
         assert_eq!(2, cards.len());
         assert_eq!("Complete the quote", cards[0].front);
@@ -866,7 +857,10 @@ mod tests {
         );
         assert_eq!(
             Err(ParseError::UnclosedClozeHole(4)),
-            parse_str("s", "# front\n% reveal: cloze\n\tok {{fine}}\n\tbad {{oops\n")
+            parse_str(
+                "s",
+                "# front\n% reveal: cloze\n\tok {{fine}}\n\tbad {{oops\n"
+            )
         );
         assert_eq!(
             Err(ParseError::EmptyClozeHole(3)),

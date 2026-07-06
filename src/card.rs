@@ -19,20 +19,6 @@ pub enum Direction {
     Both,
 }
 
-/// Which frontend a card can be reviewed in. Set per card (or per deck) with
-/// `% frontend:`. A card carrying an image is web-only on its own (the TUI
-/// can't draw images); this directive can also force it explicitly.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
-pub enum Frontend {
-    /// Reviewable in either frontend (the default).
-    #[default]
-    Any,
-    /// Terminal only; the web frontend skips it.
-    Tui,
-    /// Browser only; the TUI skips it.
-    Web,
-}
-
 /// A single flashcard.
 #[derive(Clone, Debug)]
 pub struct Card {
@@ -72,16 +58,12 @@ pub struct Card {
     /// part of the identity hash.
     pub direction: Option<Direction>,
     /// Question-side image (`% img:`). Holds the raw value as written after
-    /// parsing; rewritten to an absolute path when the deck is loaded. Rendered
-    /// by the web frontend only. Not part of the identity hash.
+    /// parsing; rewritten to an absolute path when the deck is loaded. Not
+    /// part of the identity hash.
     pub image: Option<PathBuf>,
     /// Answer-side image (`% img-back:`), shown with the revealed back. Same
     /// lifecycle as `image`. Not part of the identity hash.
     pub image_back: Option<PathBuf>,
-    /// Declared frontend (`% frontend:`, card override else deck), folded at
-    /// load. `None` defers to `frontend()` (image cards are web-only). Not part
-    /// of the identity hash.
-    pub frontend: Option<Frontend>,
     /// Source locator for a trace checkpoint (`% at:`): where in the
     /// `% source:` the revealed ground truth lives (e.g. `card.rs:151-158`).
     /// Read live when walking a trace; see [`crate::trace`]. Not part of the
@@ -130,24 +112,12 @@ impl Card {
             direction: None,
             image: None,
             image_back: None,
-            frontend: None,
             at: None,
             at_origin: None,
             origin: None,
             givens: Vec::new(),
             display_back: None,
         }
-    }
-
-    /// Which frontend this card can be reviewed in. An explicit `% frontend:`
-    /// wins; otherwise a card with any image is web-only; otherwise `Any`.
-    pub fn frontend(&self) -> Frontend {
-        self.frontend
-            .unwrap_or(if self.image.is_some() || self.image_back.is_some() {
-                Frontend::Web
-            } else {
-                Frontend::Any
-            })
     }
 
     /// The answer lines to reveal/render: the `display_back` reshape when present
@@ -172,7 +142,6 @@ impl Card {
         );
         card.reveal = self.reveal;
         card.input = self.input;
-        card.frontend = self.frontend;
         // Swap the image sides: a question-side image becomes the answer's, and
         // vice versa, so a `direction: both` visual card reverses sensibly.
         card.image = self.image_back.clone();
@@ -298,33 +267,20 @@ mod tests {
     }
 
     #[test]
-    fn frontend_is_web_for_image_cards_unless_overridden() {
-        let mut c = card("s", "f", &["b"], None);
-        assert_eq!(Frontend::Any, c.frontend()); // no image -> any
-        c.image = Some(PathBuf::from("/imgs/a.png"));
-        assert_eq!(Frontend::Web, c.frontend()); // image -> web
-        c.frontend = Some(Frontend::Tui); // explicit override wins
-        assert_eq!(Frontend::Tui, c.frontend());
-    }
-
-    #[test]
-    fn reversed_swaps_image_sides_and_keeps_frontend() {
+    fn reversed_swaps_image_sides() {
         let mut fwd = card("g.txt", "name this chord", &["G major"], None);
         fwd.image_back = Some(PathBuf::from("/tabs/g.png"));
-        fwd.frontend = Some(Frontend::Web);
         let rev = fwd.reversed();
         // The answer-side image becomes the question-side image and vice versa.
         assert_eq!(Some(PathBuf::from("/tabs/g.png")), rev.image);
         assert_eq!(None, rev.image_back);
-        assert_eq!(Some(Frontend::Web), rev.frontend);
     }
 
     #[test]
-    fn id_ignores_image_and_frontend() {
+    fn id_ignores_image() {
         let mut a = card("s", "f", &["b"], None);
         let b = card("s", "f", &["b"], None);
         a.image = Some(PathBuf::from("/imgs/a.png"));
-        a.frontend = Some(Frontend::Web);
         a.at = Some("card.rs:1-9".to_string());
         a.givens = vec!["state — the parser position".to_string()];
         assert_eq!(a.id(), b.id());

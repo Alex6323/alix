@@ -8,7 +8,7 @@ use std::{
 
 use alix::{
     augment::{self, AugmentCache, Topology, TopologyOrder},
-    card::{Card, Frontend},
+    card::Card,
     config::{self, Config},
     deck::{Deck, DeckSettings, DeckState},
     generate, import, ladder, parser, preflight,
@@ -651,21 +651,16 @@ fn synthesize_virtual(vc: &VirtualCard, subject: &Arc<str>, line: usize) -> Opti
 }
 
 /// Builds a review session from explicit `deck_paths` (no interactive picker):
-/// resolves `% requires:` prerequisites, applies deck directives and the
-/// `target`-frontend filter, builds the `Session`, and records the decks as
-/// recent. The store is borrowed (the caller owns it), so the web server can
-/// reuse one store across repeated selections.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "each is a distinct build input; grouping them would only hide the dependency"
-)]
+/// resolves `% requires:` prerequisites, applies deck directives, builds the
+/// `Session`, and records the decks as recent. The store is borrowed (the
+/// caller owns it), so the web server can reuse one store across repeated
+/// selections.
 fn build_review(
     deck_paths: Vec<PathBuf>,
     args: &ReviewArgs,
     config: &Config,
     store: &Store,
     recent: &mut RecentDecks,
-    target: Frontend,
     // Topology + region focus, resolved here rather than read from `args` so the
     // web picker's focus drawer can override them per-launch (the CLI passes
     // `args.topology` / `args.region`).
@@ -689,7 +684,8 @@ fn build_review(
     // shared directives). `% requires:` prerequisites are NOT pulled in — the
     // dependency graph gates exams, not what a review session contains.
     let expanded = expand_workspaces(&deck_paths)?;
-    let (cards, deck_label, mut decks, settings) = load_decks(&expanded.decks, &expanded.defaults)?;
+    let (mut cards, deck_label, mut decks, settings) =
+        load_decks(&expanded.decks, &expanded.defaults)?;
     // Resolve each deck's effective ask-tutor source access: a deck in a
     // workspace takes that workspace's `source_access` override if it sets one,
     // else the global `[ask] source_access`.
@@ -705,16 +701,8 @@ fn build_review(
     let label = deck_label;
 
     // Every card id in this deck — used to pick out *this* deck's topologies from
-    // a cache that may be shared with other decks (one store). Taken before the
-    // frontend filter so it reflects the whole deck, not just the visible cards.
+    // a cache that may be shared with other decks (one store).
     let deck_ids: std::collections::HashSet<u64> = cards.iter().map(|c| c.id()).collect();
-
-    // Keep only the cards reviewable in the target frontend; a card declares
-    // `Any` (default), or its specific frontend.
-    let mut cards: Vec<_> = cards
-        .into_iter()
-        .filter(|c| matches!(c.frontend(), Frontend::Any) || c.frontend() == target)
-        .collect();
 
     // Merge in any AI-generated notes from the sidecar cache (`alix deck augment
     // --target notes`) — shown with the card's own deck note on reveal. (Question
@@ -877,13 +865,9 @@ fn single_trace_to_walk(from_picker: bool, deck_paths: &[PathBuf]) -> Option<Dec
 }
 
 /// Builds the browse card list from explicit `deck_paths` (no picker). Mirrors
-/// [`build_review`] for the read-only browse view: loads decks and applies the
-/// `target`-frontend filter, but builds no scheduler session.
-fn build_browse(
-    deck_paths: Vec<PathBuf>,
-    recent: &mut RecentDecks,
-    target: Frontend,
-) -> Result<BrowseBuild> {
+/// [`build_review`] for the read-only browse view: loads decks, but builds no
+/// scheduler session.
+fn build_browse(deck_paths: Vec<PathBuf>, recent: &mut RecentDecks) -> Result<BrowseBuild> {
     // One deck file per browse — no merging loose decks or whole workspaces.
     let [deck] = deck_paths.as_slice() else {
         bail!("browse one deck at a time (merging decks was removed)");
@@ -895,12 +879,8 @@ fn build_browse(
         );
     }
     let expanded = expand_workspaces(&deck_paths)?;
-    let (cards, deck_label, decks, _) = load_decks(&expanded.decks, &expanded.defaults)?;
+    let (mut cards, deck_label, decks, _) = load_decks(&expanded.decks, &expanded.defaults)?;
     let label = deck_label;
-    let mut cards: Vec<_> = cards
-        .into_iter()
-        .filter(|c| matches!(c.frontend(), Frontend::Any) || c.frontend() == target)
-        .collect();
 
     // Merge in the display augmentations review shows, from the decks' own store
     // (a workspace's when they share one) — so browse renders the same view, not
@@ -1054,11 +1034,7 @@ fn review_serve(args: ReviewArgs, browse_mode: bool) -> Result<()> {
     let (initial, label) = if args.decks.is_empty() {
         (serve::Launch::Picker, "select decks".to_string())
     } else if browse_mode {
-        let cards = to_cards(build_browse(
-            args.decks.clone(),
-            &mut recent,
-            Frontend::Web,
-        )?);
+        let cards = to_cards(build_browse(args.decks.clone(), &mut recent)?);
         let label = format!("{} (browse)", cards.label);
         (serve::Launch::Browse(cards), label)
     } else {
@@ -1068,7 +1044,6 @@ fn review_serve(args: ReviewArgs, browse_mode: bool) -> Result<()> {
             &config,
             &store,
             &mut recent,
-            Frontend::Web,
             args.topology.as_deref(),
             args.region.as_deref(),
         )?);
@@ -1094,17 +1069,7 @@ fn review_serve(args: ReviewArgs, browse_mode: bool) -> Result<()> {
                  region: Option<&str>,
                  store: &Store,
                  recent: &mut RecentDecks| {
-        build_review(
-            paths,
-            &args,
-            &config,
-            store,
-            recent,
-            Frontend::Web,
-            topology,
-            region,
-        )
-        .map(to_build)
+        build_review(paths, &args, &config, store, recent, topology, region).map(to_build)
     };
     // A single trace picked from the in-browser picker walks (predict → verify),
     // mirroring the terminal picker; a trace named on the CLI took the `initial`
@@ -1123,9 +1088,8 @@ fn review_serve(args: ReviewArgs, browse_mode: bool) -> Result<()> {
     // Picks the right store for whatever decks a selection resolves to (`&[]` →
     // the global store), so the server can switch per session like the TUI.
     let store_for_sel = |paths: &[PathBuf]| store_for(paths, args.store.clone());
-    let build_browse_sel = |paths: Vec<PathBuf>, recent: &mut RecentDecks| {
-        build_browse(paths, recent, Frontend::Web).map(to_cards)
-    };
+    let build_browse_sel =
+        |paths: Vec<PathBuf>, recent: &mut RecentDecks| build_browse(paths, recent).map(to_cards);
     serve::run_review(
         initial,
         store,
@@ -1481,7 +1445,14 @@ fn reset(args: ResetArgs) -> Result<()> {
     // A `--card` subset over the named decks: match by numeric id or front text
     // (a full-deck reset is handled above).
     let targets = select_reset_ids(&cards, args.card.as_deref());
-    reset_ids(&mut store, targets, label, args.card.as_deref(), false, args.yes)
+    reset_ids(
+        &mut store,
+        targets,
+        label,
+        args.card.as_deref(),
+        false,
+        args.yes,
+    )
 }
 
 /// Removes the `(id, front)` targets that have stored progress, after a `y/N`
@@ -2799,10 +2770,10 @@ mod tests {
     }
 
     #[test]
-    fn build_browse_loads_from_explicit_paths_and_filters_frontend() {
+    fn build_browse_loads_from_explicit_paths_including_image_cards() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("d.txt");
-        // A normal card and a web-only image card.
+        // A normal card and an image card — both render in the web frontend.
         std::fs::write(
             &path,
             "% img-dir: /imgs\n# plain\n\tanswer\n# pic\n% img: a.png\n\tphoto\n",
@@ -2810,13 +2781,8 @@ mod tests {
         .unwrap();
         let mut recent = RecentDecks::load(dir.path().join("recent.json"));
 
-        // Tui target drops the image card; Web target keeps both.
-        let tui = build_browse(vec![path.clone()], &mut recent, Frontend::Tui).unwrap();
-        assert_eq!(1, tui.cards.len());
-        assert_eq!("plain", tui.cards[0].front);
-
-        let web = build_browse(vec![path], &mut recent, Frontend::Web).unwrap();
-        assert_eq!(2, web.cards.len());
+        let build = build_browse(vec![path], &mut recent).unwrap();
+        assert_eq!(2, build.cards.len());
     }
 
     #[test]
@@ -2832,7 +2798,7 @@ mod tests {
         let mut recent = RecentDecks::load(dir.path().join("recent.json"));
 
         // Without a cached format, browse shows the raw deck answer.
-        let raw = build_browse(vec![path.clone()], &mut recent, Frontend::Tui).unwrap();
+        let raw = build_browse(vec![path.clone()], &mut recent).unwrap();
         let id = raw.cards[0].id();
         assert_eq!(raw.cards[0].back_for_display(), ["A, B, C"]);
 
@@ -2853,7 +2819,7 @@ mod tests {
         cache.save().unwrap();
 
         // Browsing now shows the reshaped front/answer and the trivia note.
-        let merged = build_browse(vec![path], &mut recent, Frontend::Tui).unwrap();
+        let merged = build_browse(vec![path], &mut recent).unwrap();
         assert_eq!(merged.cards[0].front, "Name the parts");
         assert_eq!(merged.cards[0].back_for_display(), ["A", "B", "C"]);
         let note = merged.cards[0].note.clone().unwrap_or_default();
@@ -2868,9 +2834,7 @@ mod tests {
         std::fs::write(&a, "# q\n\ta\n").unwrap();
         std::fs::write(&b, "# q\n\tb\n").unwrap();
         let mut recent = RecentDecks::load(dir.path().join("recent.json"));
-        let err = build_browse(vec![a, b], &mut recent, Frontend::Tui)
-            .err()
-            .unwrap();
+        let err = build_browse(vec![a, b], &mut recent).err().unwrap();
         assert!(format!("{err}").contains("one deck"), "{err}");
     }
 
@@ -2881,9 +2845,7 @@ mod tests {
         std::fs::create_dir(&ws).unwrap();
         std::fs::write(ws.join("m.txt"), "# q\n\ta\n").unwrap();
         let mut recent = RecentDecks::load(dir.path().join("recent.json"));
-        let err = build_browse(vec![ws], &mut recent, Frontend::Tui)
-            .err()
-            .unwrap();
+        let err = build_browse(vec![ws], &mut recent).err().unwrap();
         assert!(format!("{err}").contains("workspace"), "{err}");
     }
 
@@ -2999,17 +2961,8 @@ mod tests {
         let config = Config::default();
         let mut recent = RecentDecks::load(dir.path().join("recent.json"));
         let args = review_args(vec![], None);
-        let build = build_review(
-            vec![path],
-            &args,
-            &config,
-            &store,
-            &mut recent,
-            Frontend::Tui,
-            None,
-            None,
-        )
-        .unwrap();
+        let build =
+            build_review(vec![path], &args, &config, &store, &mut recent, None, None).unwrap();
         // The deck's one (new) card, plus the injected due virtual card.
         assert_eq!(2, build.session.initial_size);
     }
@@ -3053,7 +3006,6 @@ mod tests {
             &config,
             &store,
             &mut recent,
-            Frontend::Tui,
             None,
             Some("r1"),
         )
@@ -3128,17 +3080,8 @@ mod tests {
         let config = Config::default();
         let mut recent = RecentDecks::load(dir.path().join("recent.json"));
         let args = review_args(vec![], None);
-        let build = build_review(
-            vec![path],
-            &args,
-            &config,
-            &store,
-            &mut recent,
-            Frontend::Tui,
-            None,
-            None,
-        )
-        .unwrap();
+        let build =
+            build_review(vec![path], &args, &config, &store, &mut recent, None, None).unwrap();
 
         let synth = build
             .session

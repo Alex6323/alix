@@ -10,7 +10,7 @@ use thiserror::Error;
 
 use crate::{
     answer::Input,
-    card::{Card, Direction, Frontend},
+    card::{Card, Direction},
     config::Strictness,
     ladder::Reveal,
     parser::{self, ParseError},
@@ -32,8 +32,6 @@ pub struct DeckSettings {
     pub order: Option<Order>,
     /// Default review direction for this deck (`% direction: ...`).
     pub direction: Option<Direction>,
-    /// Default frontend for this deck (`% frontend: ...`).
-    pub frontend: Option<Frontend>,
     /// Directory that card `% img:` / `% img-back:` filenames resolve against
     /// (`% img-dir: ...`). Absolute, or relative to the deck file's folder.
     pub img_dir: Option<PathBuf>,
@@ -57,7 +55,6 @@ impl DeckSettings {
                 "input" => settings.input = Input::from_str(value, true).ok(),
                 "order" => settings.order = Order::from_str(value, true).ok(),
                 "direction" => settings.direction = Direction::from_str(value, true).ok(),
-                "frontend" => settings.frontend = Frontend::from_str(value, true).ok(),
                 "img-dir" => settings.img_dir = Some(PathBuf::from(value)),
                 "strictness" => settings.exam_strictness = Strictness::from_str(value, true).ok(),
                 "origin" => {
@@ -80,7 +77,6 @@ impl DeckSettings {
         self.input = self.input.or(defaults.input);
         self.order = self.order.or(defaults.order);
         self.direction = self.direction.or(defaults.direction);
-        self.frontend = self.frontend.or(defaults.frontend);
         self.img_dir = self.img_dir.clone().or_else(|| defaults.img_dir.clone());
         self.exam_strictness = self.exam_strictness.or(defaults.exam_strictness);
         self.origin = self.origin.clone().or_else(|| defaults.origin.clone());
@@ -195,13 +191,11 @@ impl Deck {
             card.reveal = card.reveal.or(settings.reveal);
             card.input = card.input.or(settings.input);
         }
-        // Fold the declared frontend (card override, else deck) and resolve each
-        // card's image filenames to absolute paths against the deck's `img-dir`
-        // (or the deck file's own folder when none is set). No filesystem check:
-        // a missing image must not stop the deck from loading.
+        // Resolve each card's image filenames to absolute paths against the
+        // deck's `img-dir` (or the deck file's own folder when none is set). No
+        // filesystem check: a missing image must not stop the deck from loading.
         let base_dir = image_base_dir(&path, settings.img_dir.as_deref());
         for card in &mut cards {
-            card.frontend = card.frontend.or(settings.frontend);
             card.image = card.image.take().map(|p| resolve_image(&base_dir, p));
             card.image_back = card.image_back.take().map(|p| resolve_image(&base_dir, p));
         }
@@ -1432,7 +1426,11 @@ mod tests {
     fn card_reveal_is_card_override_else_deck_reveal() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("d.txt");
-        std::fs::write(&path, "% reveal: flip\n# a\n% reveal: line\n\tx\n# b\n\ty\n").unwrap();
+        std::fs::write(
+            &path,
+            "% reveal: flip\n# a\n% reveal: line\n\tx\n# b\n\ty\n",
+        )
+        .unwrap();
 
         let deck = Deck::load(&path).unwrap();
         assert_eq!(Some(Reveal::Line), deck.cards[0].reveal); // card override wins
@@ -1519,7 +1517,6 @@ mod tests {
             Some(PathBuf::from("/assets/imgs/moon.png")),
             deck.cards[0].image
         );
-        assert_eq!(Frontend::Web, deck.cards[0].frontend()); // image -> web
     }
 
     #[test]
@@ -1545,16 +1542,6 @@ mod tests {
             Some(PathBuf::from("/elsewhere/moon.png")),
             deck.cards[0].image
         );
-    }
-
-    #[test]
-    fn deck_level_frontend_applies_to_cards() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("d.txt");
-        std::fs::write(&path, "% frontend: web\n# a\n\tb\n").unwrap();
-        let deck = Deck::load(&path).unwrap();
-        assert_eq!(Some(Frontend::Web), deck.cards[0].frontend);
-        assert_eq!(Frontend::Web, deck.cards[0].frontend());
     }
 
     #[test]

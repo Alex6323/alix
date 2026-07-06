@@ -203,7 +203,6 @@ pub fn expand(
             direction: None,
             image: None,
             image_back: None,
-            frontend: None,
             at: None,
             at_origin: None,
             origin: None,
