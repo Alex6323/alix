@@ -319,60 +319,6 @@ fn a_corrupt_progress_file_fails_without_overwriting_it() {
     assert_eq!(garbage, std::fs::read_to_string(&store).unwrap());
 }
 
-/// A small trace deck over `src` (a single source file in the same dir).
-fn trace_deck(dir: &Path) -> String {
-    write(dir, "src.rs", "let a = b;\nuse_it(a);\n");
-    write(
-        dir,
-        "t.txt",
-        "% trace: how a moves into use_it\n% source: src.rs\n\
-         # what happens to a?\n\tit is moved into use_it\n\t% at: 1-2\n",
-    )
-}
-
-#[test]
-fn exam_on_a_trace_no_longer_refuses_it() {
-    // A trace used to be refused by `alix exam` ("walk it with `alix trace`").
-    // Now its exam IS the compression, so the command enters the exam flow and
-    // (headless, with no TTY) stops only at the terminal requirement — never the
-    // old refusal.
-    let dir = TempDir::new().unwrap();
-    let deck = trace_deck(dir.path());
-    let store = dir.path().join("p.json");
-    let out = alix(&["exam", &deck, "--store", store.to_str().unwrap()]);
-    let err = stderr(&out);
-    assert!(!out.status.success(), "no TTY → it still can't run the UI");
-    assert!(err.contains("needs a terminal"), "stderr: {err}");
-    assert!(
-        !err.contains("walk it") && !err.contains("is a trace"),
-        "the trace is no longer refused: {err}"
-    );
-}
-
-#[test]
-fn exam_on_a_trace_is_gated_by_unfinished_prerequisites() {
-    // A trace's exam runs in dependency order like a fact deck's: a sourced
-    // prerequisite that hasn't been mastered locks it.
-    let dir = TempDir::new().unwrap();
-    write(dir.path(), "base-src.md", "the basics");
-    write(dir.path(), "base.txt", "% source: base-src.md\n# b?\n\tb\n");
-    write(dir.path(), "src.rs", "let a = b;\nuse_it(a);\n");
-    let deck = write(
-        dir.path(),
-        "t.txt",
-        "% trace: how a moves\n% source: src.rs\n% requires: base\n\
-         # what happens?\n\tit moves\n\t% at: 1-2\n",
-    );
-    let store = dir.path().join("p.json");
-    let out = alix(&["exam", &deck, "--store", store.to_str().unwrap()]);
-    let err = stderr(&out);
-    assert!(!out.status.success(), "a locked trace exam can't be sat");
-    assert!(
-        err.contains("prerequisites aren't finished"),
-        "stderr: {err}"
-    );
-}
-
 /// Writes an executable fake `claude` at `dir/fake-claude` that drains stdin
 /// (so the prompt write never races into a broken pipe) then prints `reply`
 /// verbatim, and returns its path. Mirrors `testutil::fake_reply`, but the CLI
@@ -537,37 +483,6 @@ fn augment_target_format_skips_an_orphaned_virtual_card_colliding_with_a_real_de
         "the colliding orphan must not be double-counted alongside the real card: {}",
         stdout(&out)
     );
-}
-
-#[test]
-fn url_source_exam_on_codex_refuses_cleanly() {
-    // The Codex backend runs read-only with no network, so it can't fetch a URL
-    // `% source:`. `alix exam` must refuse before touching anything — a plain
-    // message naming the gap and the fix, and it writes no progress store.
-    let dir = TempDir::new().unwrap();
-    let deck = write(
-        dir.path(),
-        "web.txt",
-        "% source: https://example.org/page\n# q?\n\ta\n",
-    );
-    let config = write(dir.path(), "config.toml", "[ask]\nbackend = \"codex\"\n");
-    let store = dir.path().join("p.json");
-    let out = alix(&[
-        "exam",
-        &deck,
-        "--store",
-        store.to_str().unwrap(),
-        "--config",
-        &config,
-    ]);
-    let err = stderr(&out);
-    assert!(!out.status.success(), "the exam must refuse, stderr: {err}");
-    assert!(
-        err.contains("codex") && err.contains("can't fetch"),
-        "refusal must name the gap: {err}"
-    );
-    // Refused before any side effect: no progress store was written.
-    assert!(!store.exists(), "a refused exam must not write the store");
 }
 
 #[test]

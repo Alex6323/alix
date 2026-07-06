@@ -8,11 +8,10 @@ use std::{
 
 use alix::{
     augment::{self, AugmentCache, Topology, TopologyOrder},
-    browse,
     card::{Card, Frontend},
-    config::{self, Config, Strictness},
+    config::{self, Config},
     deck::{Deck, DeckSettings, DeckState},
-    generate, import, ladder, parser, picker, preflight,
+    generate, import, ladder, parser, preflight,
     recent::{self, RecentDecks},
     scheduler::{Fsrs, Scheduler},
     serve,
@@ -20,12 +19,10 @@ use alix::{
     store::{Store, VirtualCard, default_store_path},
     time::{humanize_ms, now_ms},
     trace::{Phase, SourceBase, Trace, Walk},
-    tui::{self, AfterReview, App},
     workspace,
 };
 use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand};
-use ratatui::DefaultTerminal;
 
 /// Your personal AI tutor — built for understanding, not just remembering.
 ///
@@ -52,17 +49,12 @@ enum Command {
     List(DeckArgs),
     /// Clear stored progress for decks, a single card, or everything.
     Reset(ResetArgs),
-    /// Read through decks card by card without grading (no progress is saved).
-    Browse(BrowseArgs),
     /// Create, augment, or validate decks.
     #[command(subcommand)]
     Deck(DeckAction),
     /// Import an Anki TSV export (tab-separated `front<TAB>back` lines) into a
     /// alix deck.
     Import(ImportArgs),
-    /// Sit the AI exam for a deck: open questions from its `% source:`, graded
-    /// by Claude. Passing marks the deck mastered and unlocks its dependents.
-    Exam(ExamArgs),
     /// Walk a trace: a predict-and-verify path through a `% source:` that
     /// builds understanding. At each checkpoint you predict, then the real
     /// excerpt is revealed and you judge the gap; the path ends with a
@@ -72,15 +64,9 @@ enum Command {
     /// learning plan toward a goal: the facts decks and traces worth authoring,
     /// each tagged and dependency-ordered. Read-only; writes nothing.
     Explore(ExploreArgs),
-    /// Open a workspace folder: pick a facts deck (→ review) or a trace deck
-    /// (→ walk) from its members; you return to the picker when done.
+    /// Open a workspace folder in the browser: its decks and traces, reached
+    /// through the web picker.
     Workspace(WorkspaceArgs),
-    /// Edit a deck's prerequisite decks (`% requires:`) with a checkbox picker.
-    #[command(visible_alias = "require")]
-    Deps {
-        /// The deck whose prerequisites to edit.
-        deck: PathBuf,
-    },
     /// Show the configuration (key bindings) or create the config file.
     Config {
         /// Write a config file with the default bindings to edit.
@@ -310,29 +296,6 @@ struct ImportArgs {
 }
 
 #[derive(Args)]
-struct ExamArgs {
-    /// The deck to examine (must declare at least one `% source:`).
-    deck: PathBuf,
-
-    /// Number of questions (overrides the configured default).
-    #[arg(long)]
-    questions: Option<usize>,
-
-    /// Grading strictness (overrides the deck's `% strictness:` and the
-    /// `[exam]` default): strict, balanced, or lenient.
-    #[arg(long, value_enum)]
-    strictness: Option<Strictness>,
-
-    /// Path of the progress store (default: platform data dir).
-    #[arg(long)]
-    store: Option<PathBuf>,
-
-    /// Path of the config file (default: platform config dir).
-    #[arg(long)]
-    config: Option<PathBuf>,
-}
-
-#[derive(Args)]
 struct TraceArgs {
     /// The trace deck to walk (must declare a `% trace:`). With `--suggest`,
     /// this positional is instead a *source* to recon (a repo `.`, a directory,
@@ -375,9 +338,9 @@ struct TraceArgs {
     config: Option<PathBuf>,
 }
 
-/// Options for serving an activity in the browser instead of the terminal.
-/// Flattened into `review` and `browse`. `--port`/`--lan` require `--serve`, so
-/// they cannot be given without it.
+/// Options for serving the review activity in the browser. Flattened into
+/// `review`. `--port`/`--lan` require `--serve`, so they cannot be given
+/// without it.
 #[derive(Args)]
 struct ServeOpts {
     /// Run in the browser (a local web page) instead of the terminal.
@@ -401,15 +364,6 @@ struct ServeOpts {
 }
 
 #[derive(Args)]
-struct BrowseArgs {
-    /// Deck files to browse (omit to pick interactively).
-    decks: Vec<PathBuf>,
-
-    #[command(flatten)]
-    serve: ServeOpts,
-}
-
-#[derive(Args)]
 struct DeckArgs {
     /// Deck files.
     #[arg(required = true)]
@@ -429,11 +383,6 @@ struct ResetArgs {
     /// within the given decks).
     #[arg(long)]
     card: Option<String>,
-
-    /// Pick cards to reset from a checkbox list (over the given decks, or decks
-    /// chosen interactively).
-    #[arg(long, conflicts_with_all = ["card", "all"])]
-    cards: bool,
 
     /// Clear progress for every card in the store.
     #[arg(long, conflicts_with_all = ["decks", "card"])]
@@ -507,18 +456,15 @@ fn main() -> Result<()> {
         Some(Command::Stats(args)) => stats(args),
         Some(Command::List(args)) => list(args),
         Some(Command::Reset(args)) => reset(args),
-        Some(Command::Browse(args)) => browse(args),
         Some(Command::Deck(action)) => match action {
             DeckAction::Generate(args) => deck_cmd(args),
             DeckAction::Augment(args) => augment_cmd(args),
             DeckAction::Check { decks } => check(decks),
         },
         Some(Command::Import(args)) => import_cmd(args),
-        Some(Command::Exam(args)) => exam_cmd(args),
         Some(Command::Trace(args)) => trace_cmd(args),
         Some(Command::Explore(args)) => explore_cmd(args),
         Some(Command::Workspace(args)) => workspace_cmd(args),
-        Some(Command::Deps { deck }) => deps_cmd(deck),
         Some(Command::Config { init }) => config_cmd(init),
         Some(Command::Backend(action)) => match action {
             BackendAction::Check { all, config } => backend_check_cmd(all, config),
@@ -670,103 +616,12 @@ fn resolve<T: Copy + PartialEq>(
     }
 }
 
-/// Resolves which decks to act on: the given paths, or — when none are given —
-/// the interactive picker (recent decks + the decks directory). Returns
-/// `Ok(None)` if the picker was cancelled or nothing was selected. The picker
-/// needs a terminal.
-#[expect(clippy::too_many_arguments)] // a thin picker shim; grouping would obscure
-fn pick_decks_if_empty(
-    terminal: Option<&mut DefaultTerminal>,
-    decks: Vec<PathBuf>,
-    config: &Config,
-    recent: &RecentDecks,
-    store: &Store,
-    enforce_locks: bool,
-    gate_reviewable: bool,
-    start_in: Option<&Path>,
-    focus: Option<&Path>,
-) -> Result<Option<picker::Picked>> {
-    if !decks.is_empty() {
-        return Ok(Some(picker::Picked {
-            decks,
-            workspace: None, // decks named explicitly: no workspace to return to
-        }));
-    }
-    if !std::io::stdout().is_terminal() {
-        bail!("no deck files given; try `alix <deck.txt>...` or `alix --help`");
-    }
-    let terminal = terminal.expect("the interactive picker needs a terminal");
-    let decks_dir = config.decks_dir().context("cannot determine ~/decks")?;
-    let picked = picker::pick(
-        terminal,
-        &decks_dir,
-        recent,
-        store,
-        enforce_locks,
-        gate_reviewable,
-        start_in,
-        focus,
-        &config.picker,
-        config.review,
-    )?;
-    Ok((!picked.decks.is_empty()).then_some(picked))
-}
-
-/// A review session built from the deck selection and settings, ready to be
-/// driven by either the TUI or the web frontend. `decks` and `config` are only
-/// needed by the TUI (key bindings, ask-Claude, reference links).
-struct ReviewSession {
-    session: Session,
-    store: Store,
-    label: String,
-    decks: HashMap<String, DeckInfo>,
-    config: Config,
-    /// How many cards were filtered out as not reviewable in the target
-    /// frontend (e.g. image cards excluded from the TUI).
-    hidden: usize,
-    /// The resolved topology name when topology-ordered, for the TUI breadcrumb.
-    topology_name: Option<String>,
-}
-
-/// What the TUI picker resolved to: a review session, or — when a single
-/// exam-due deck was chosen — that deck's exam.
-enum Started {
-    Review(Box<ReviewSession>),
-    Exam {
-        deck: Box<Deck>,
-        store: Store,
-        config: Box<Config>,
-    },
-    /// A single trace deck picked interactively: walk it (predict → reveal)
-    /// rather than flatten it into a card review.
-    Walk {
-        trace: Box<Trace>,
-        store: Store,
-    },
-}
-
-/// What [`load_review_session`] resolved: the activity to run, the `workspace` it
-/// was drilled into (to return there afterwards), and the `focus` deck to re-land
-/// the picker's cursor on so the selection doesn't jump while the user is away.
-struct LoadedSession {
-    started: Started,
-    workspace: Option<PathBuf>,
-    focus: Option<PathBuf>,
-}
-
-/// Loads the decks named (or picked) for a review, resolves prerequisites and
-/// the mode/order settings, and builds the session and store. Shared
-/// by `alix review` (TUI) and `alix serve` (web). Returns `Ok(None)` when the
-/// picker was cancelled.
-/// A review session built from an explicit set of deck paths. Shared by the TUI
-/// path and the web frontend's `/api/select` (via a builder closure).
+/// A review session built from an explicit set of deck paths, ready for the web
+/// frontend. Produced by [`build_review`] and consumed by [`review_serve`].
 struct ReviewBuild {
     session: Session,
     label: String,
     decks: HashMap<String, DeckInfo>,
-    /// Cards dropped because they are not reviewable in the target frontend
-    /// (e.g. image cards excluded from the TUI).
-    hidden: usize,
     /// The resolved topology's name, if the session is topology-ordered, so a
     /// frontend can fetch it from the augment cache to show the connective cue.
     topology_name: Option<String>,
@@ -855,14 +710,11 @@ fn build_review(
     let deck_ids: std::collections::HashSet<u64> = cards.iter().map(|c| c.id()).collect();
 
     // Keep only the cards reviewable in the target frontend; a card declares
-    // `Any` (default), or its specific frontend. Image cards are web-only, so
-    // they drop out of the TUI here (and the caller reports the count).
-    let total = cards.len();
+    // `Any` (default), or its specific frontend.
     let mut cards: Vec<_> = cards
         .into_iter()
         .filter(|c| matches!(c.frontend(), Frontend::Any) || c.frontend() == target)
         .collect();
-    let hidden = total - cards.len();
 
     // Merge in any AI-generated notes from the sidecar cache (`alix deck augment
     // --target notes`) — shown with the card's own deck note on reveal. (Question
@@ -980,7 +832,6 @@ fn build_review(
         session,
         label,
         decks,
-        hidden,
         topology_name,
     })
 }
@@ -1023,185 +874,6 @@ fn single_trace_to_walk(from_picker: bool, deck_paths: &[PathBuf]) -> Option<Dec
         [path] => Deck::load(path).ok().filter(|deck| deck.is_trace()),
         _ => None,
     }
-}
-
-/// The TUI review path: pick decks if none were given, then build the session
-/// — unless a single chosen deck is `exam due`, in which case it resolves to
-/// that deck's exam instead of a (cardless) review.
-fn load_review_session(
-    terminal: Option<&mut DefaultTerminal>,
-    args: &ReviewArgs,
-    target: Frontend,
-    start_in: Option<&Path>,
-    focus: Option<&Path>,
-) -> Result<Option<LoadedSession>> {
-    let config = Config::load(args.config.as_deref())?;
-    let mut recent = RecentDecks::load(
-        recent::default_recent_path().context("cannot determine the data directory")?,
-    );
-    // Whether the deck list came from the picker (no decks named on the command
-    // line): only then does a single trace route to a walk — an explicit
-    // `alix review <trace>` still flattens it to a card review.
-    let from_picker = args.decks.is_empty();
-    // The picker's badges/locks for the top-level list read the global store
-    // (its rows are loose decks); a drilled-into workspace shows its own store.
-    let store = open_store(args.store.clone())?;
-    // Review enforces locking — a deck whose prerequisites aren't finished
-    // can't be started from the picker.
-    // Gate unreviewable decks in the picker — but not under `--cram`, which
-    // ignores cooldowns, so everything seen is fair game.
-    let Some(picked) = pick_decks_if_empty(
-        terminal,
-        args.decks.clone(),
-        &config,
-        &recent,
-        &store,
-        true,
-        !args.cram,
-        start_in,
-        focus,
-    )?
-    else {
-        return Ok(None); // picker cancelled or nothing selected
-    };
-    // `workspace` is the folder the decks were drilled into, if any — the caller
-    // returns there after the activity ends.
-    let picker::Picked {
-        decks: deck_paths,
-        workspace,
-    } = picked;
-    // The deck the user launched — handed back so the caller can re-focus it when
-    // the picker re-opens (the selection shouldn't jump while they're away).
-    let focus_deck = deck_paths.first().cloned();
-    // The session tracks progress in the decks' store — a workspace's own store
-    // when they all live in one, else the global store.
-    let store = store_for(&deck_paths, args.store.clone())?;
-    // A single trace deck picked interactively launches its walk, not a
-    // flattened card review.
-    if let Some(deck) = single_trace_to_walk(from_picker, &deck_paths) {
-        let trace = Trace::from_deck(&deck)?;
-        return Ok(Some(LoadedSession {
-            started: Started::Walk {
-                trace: Box::new(trace),
-                store,
-            },
-            workspace,
-            focus: focus_deck,
-        }));
-    }
-    // A single exam-due deck launches its exam rather than an empty review —
-    // unless its exam is locked (a sourced prerequisite isn't passed), in which
-    // case it falls through to a (possibly empty) review instead of opening an
-    // exam the deck isn't allowed to sit yet.
-    if let [path] = deck_paths.as_slice()
-        && let Ok(deck) = Deck::load(path)
-        && !deck.sources.is_empty()
-        && deck.state(&store) == DeckState::ExamDue
-        && !alix::deck::is_locked(&deck, config.decks_dir().as_deref(), &store)
-    {
-        return Ok(Some(LoadedSession {
-            started: Started::Exam {
-                deck: Box::new(deck),
-                store,
-                config: Box::new(config),
-            },
-            workspace,
-            focus: focus_deck,
-        }));
-    }
-    let build = build_review(
-        deck_paths,
-        args,
-        &config,
-        &store,
-        &mut recent,
-        target,
-        args.topology.as_deref(),
-        args.region.as_deref(),
-    )?;
-    Ok(Some(LoadedSession {
-        started: Started::Review(Box::new(ReviewSession {
-            session: build.session,
-            store,
-            label: build.label,
-            decks: build.decks,
-            config,
-            hidden: build.hidden,
-            topology_name: build.topology_name,
-        })),
-        workspace,
-        focus: focus_deck,
-    }))
-}
-
-/// Launches the interactive exam TUI for `deck`, resolving strictness from the
-/// deck's `% strictness:` or the `[exam]` default.
-fn run_exam_app(deck: Deck, config: &Config, store: Store) -> Result<()> {
-    exam_app(deck, config, store).run()
-}
-
-/// Runs the exam TUI on the picker's live `terminal` (no teardown).
-fn run_exam_app_on(
-    terminal: &mut DefaultTerminal,
-    deck: Deck,
-    config: &Config,
-    store: Store,
-) -> Result<()> {
-    exam_app(deck, config, store).run_on(terminal)
-}
-
-/// Browses a single deck from the session-end summary — on the caller's live
-/// `terminal` (the picker flow) when given, else standalone.
-fn browse_one(
-    path: &std::path::Path,
-    store_override: Option<PathBuf>,
-    config: &Config,
-    terminal: Option<&mut DefaultTerminal>,
-) -> Result<()> {
-    let mut recent = RecentDecks::load(
-        recent::default_recent_path().context("cannot determine the data directory")?,
-    );
-    let decks = vec![path.to_path_buf()];
-    let deck_store = store_for(&decks, store_override)?;
-    let build = build_browse(decks, &mut recent, Frontend::Tui)?;
-    let paths = subject_paths(build.decks);
-    match terminal {
-        Some(t) => browse::run_on(
-            t,
-            build.cards,
-            build.label,
-            config.browse.clone(),
-            paths,
-            deck_store,
-        ),
-        None => browse::run(
-            build.cards,
-            build.label,
-            config.browse.clone(),
-            paths,
-            deck_store,
-        ),
-    }
-}
-
-/// Builds the exam TUI, resolving strictness from the deck's `% strictness:` or
-/// the `[exam]` default.
-fn exam_app(deck: Deck, config: &Config, store: Store) -> tui::ExamApp {
-    let strictness = deck
-        .settings
-        .exam_strictness
-        .unwrap_or(config.exam.strictness);
-    let decks_dir = config.decks_dir();
-    let retire_after_days = config.review.for_deck(&deck.path).retire_after_days;
-    tui::ExamApp::new(
-        deck,
-        strictness,
-        config.exam.clone(),
-        config.ask.clone(),
-        store,
-        decks_dir,
-        retire_after_days,
-    )
 }
 
 /// Builds the browse card list from explicit `deck_paths` (no picker). Mirrors
@@ -1305,199 +977,14 @@ fn subject_paths(decks: HashMap<String, DeckInfo>) -> HashMap<String, PathBuf> {
         .collect()
 }
 
+/// Reviewing always runs in the browser (alix is web-first): bare `alix` opens
+/// the in-browser deck picker, and `alix <deck>` goes straight to that deck's
+/// web review. The `--serve`/`--port`/`--lan` flags stay meaningful (LAN,
+/// custom port); either way this routes to the local web server, which prints
+/// its URL. A single trace still walks and a single exam-due deck still opens
+/// its exam — both via the same web app.
 fn review(args: ReviewArgs) -> Result<()> {
-    if args.serve.serve {
-        return review_serve(args, false);
-    }
-    // Explicit decks: build and run once, standalone — the activity owns its
-    // terminal and prints a summary, as before. No picker, no return-loop.
-    if !args.decks.is_empty() {
-        return match load_review_session(None, &args, Frontend::Tui, None, None)? {
-            Some(loaded) => run_started(loaded.started, &args),
-            None => Ok(()),
-        };
-    }
-    // Picker flow: one terminal shared by the picker and every activity it
-    // launches, so opening a deck and returning to its workspace never tear the
-    // TUI down and back up.
-    let mut terminal = ratatui::init();
-    let result = review_loop(&mut terminal, &args);
-    ratatui::restore();
-    result
-}
-
-/// The picker review loop: pick (or reopen a workspace), run the activity on the
-/// shared `terminal`, and — when it came from a workspace — return there for the
-/// next. Stays on one live screen the whole time.
-fn review_loop(terminal: &mut DefaultTerminal, args: &ReviewArgs) -> Result<()> {
-    let mut start_in: Option<PathBuf> = None;
-    let mut focus: Option<PathBuf> = None;
-    loop {
-        let Some(loaded) = load_review_session(
-            Some(&mut *terminal),
-            args,
-            Frontend::Tui,
-            start_in.as_deref(),
-            focus.as_deref(),
-        )?
-        else {
-            return Ok(()); // picker cancelled / nothing selected
-        };
-        let LoadedSession {
-            started,
-            workspace,
-            focus: launched,
-        } = loaded;
-        run_started_on(terminal, started, args)?;
-        // Always return to the picker after an activity — a workspace member
-        // reopens its workspace, a loose deck the top list. Only an `Esc` at the
-        // picker itself (above) quits. Re-focus the deck just launched so the
-        // selection stays put under the user.
-        start_in = workspace;
-        focus = launched;
-    }
-}
-
-/// Runs one resolved activity — a card review, a trace walk, or an exam — to
-/// completion, each managing its own terminal and printing a summary. Used for
-/// explicit `alix <deck>` (no picker).
-fn run_started(started: Started, args: &ReviewArgs) -> Result<()> {
-    match started {
-        Started::Exam {
-            deck,
-            store,
-            config,
-        } => run_exam_app(*deck, &config, store),
-        Started::Walk { trace, mut store } => run_walk(*trace, &mut store, None).map(|_| ()),
-        Started::Review(rs) => run_review_tui(*rs, args),
-    }
-}
-
-/// Like [`run_started`] but on the picker's live `terminal`, so the activity and
-/// the picker share one screen. A trace walk is line-based, so it drops out of
-/// the alt screen and re-enters it for the picker.
-fn run_started_on(
-    terminal: &mut DefaultTerminal,
-    started: Started,
-    args: &ReviewArgs,
-) -> Result<()> {
-    match started {
-        Started::Exam {
-            deck,
-            store,
-            config,
-        } => run_exam_app_on(terminal, *deck, &config, store),
-        Started::Walk { trace, mut store } => {
-            ratatui::restore();
-            let result = run_walk(*trace, &mut store, None).map(|_| ());
-            *terminal = ratatui::init();
-            result
-        }
-        Started::Review(rs) => run_review_on(terminal, *rs, args),
-    }
-}
-
-/// The shared-terminal review: like [`run_review_tui`] but on the picker's
-/// terminal and without the post-run summary print (the App shows its own, and a
-/// print would corrupt the alt screen). The picker gates out empty sessions, so
-/// this just bails quietly if one slips through.
-fn run_review_on(
-    terminal: &mut DefaultTerminal,
-    rs: ReviewSession,
-    args: &ReviewArgs,
-) -> Result<()> {
-    let ReviewSession {
-        session,
-        store,
-        label,
-        decks,
-        config,
-        hidden,
-        topology_name,
-    } = rs;
-    if session.is_finished() || (hidden > 0 && session.cards().is_empty()) {
-        return Ok(());
-    }
-    let ui_options = alix::tui::Options {
-        max_typos: args.max_typos,
-        deck_label: label,
-        keys: config.keys.clone(),
-        ask: config.ask.clone(),
-        decks,
-        topology_name,
-    };
-    let (_stats, next_action) = App::new(session, store, ui_options).run_on(terminal)?;
-    match next_action {
-        Some(AfterReview::Exam(path)) => {
-            let store = store_for(std::slice::from_ref(&path), args.store.clone())?;
-            let deck = Deck::load(&path)?;
-            run_exam_app_on(terminal, deck, &config, store)
-        }
-        Some(AfterReview::Browse(path)) => {
-            browse_one(&path, args.store.clone(), &config, Some(terminal))
-        }
-        None => Ok(()),
-    }
-}
-
-/// Runs the review TUI for a built session: reports cards that need the browser,
-/// the nothing-due case, then the App, its summary, and any follow-on exam.
-fn run_review_tui(rs: ReviewSession, args: &ReviewArgs) -> Result<()> {
-    let ReviewSession {
-        session,
-        store,
-        label,
-        decks,
-        config,
-        hidden,
-        topology_name,
-    } = rs;
-
-    // Some cards can't be shown in the terminal (images need the browser).
-    if hidden > 0 {
-        if session.cards().is_empty() {
-            println!(
-                "All {hidden} card(s) in this deck need the browser. \
-                 Run the same command with --serve to review them."
-            );
-            return Ok(());
-        }
-        println!("{hidden} card(s) need the browser — run with --serve to review them.");
-    }
-
-    if session.is_finished() {
-        println!("Nothing to review right now — all cards are on cooldown.");
-        let now = now_ms();
-        if let Some(due) = session.next_due_at(&store).filter(|&due| due > now) {
-            println!("Next card is due in {}.", humanize_ms(due - now));
-        }
-        return Ok(());
-    }
-
-    let ui_options = alix::tui::Options {
-        max_typos: args.max_typos,
-        deck_label: label,
-        keys: config.keys.clone(),
-        ask: config.ask.clone(),
-        decks,
-        topology_name,
-    };
-    let (stats, next_action) = App::new(session, store, ui_options).run()?;
-    println!(
-        "Reviewed {} cards: {} passed, {} failed.",
-        stats.reviews, stats.passed, stats.failed
-    );
-    // If a deck became exam-due this session, the user can sit its exam or browse
-    // it from the summary; the review app saved the store on exit.
-    match next_action {
-        Some(AfterReview::Exam(path)) => {
-            let store = store_for(std::slice::from_ref(&path), args.store.clone())?;
-            let deck = Deck::load(&path)?;
-            run_exam_app(deck, &config, store)
-        }
-        Some(AfterReview::Browse(path)) => browse_one(&path, args.store.clone(), &config, None),
-        None => Ok(()),
-    }
+    review_serve(args, false)
 }
 
 /// The web review path. With no decks given it opens at the in-browser
@@ -1925,37 +1412,25 @@ fn reset(args: ResetArgs) -> Result<()> {
         );
     }
 
-    // Resolve decks: those named, or chosen from the picker when none are given.
-    let (deck_paths, from_deck_picker) = if args.decks.is_empty() {
-        if !std::io::stdout().is_terminal() {
-            bail!("no deck files given; try `alix reset <deck.txt>...`, `--card <id>`, or `--all`");
-        }
-        let config = Config::load(None)?;
-        let recent = RecentDecks::load(
-            recent::default_recent_path().context("cannot determine the data directory")?,
-        );
-        let decks_dir = config.decks_dir().context("cannot determine ~/decks")?;
-        let picked = picker::pick_to_reset(&decks_dir, &recent, &store, config.review)?;
-        if picked.is_empty() {
-            return Ok(()); // cancelled or nothing selected
-        }
-        (picked, true)
-    } else {
-        (args.decks.clone(), false)
-    };
+    // Otherwise a reset needs an explicit target — there is no interactive
+    // deck picker. Name a deck (optionally with `--card`), or pass `--all`.
+    if args.decks.is_empty() {
+        bail!("name a deck to reset, or pass `--card <id>` or `--all`");
+    }
+    let deck_paths = args.decks.clone();
 
-    // Now that the decks are known, reset against their store (the workspace's
-    // own, if they all live in one).
+    // Reset against the decks' store (the workspace's own, if they all live in
+    // one).
     let mut store = store_for(&deck_paths, args.store.clone())?;
 
     let (cards, label, decks, _) = load_decks(&deck_paths, &HashMap::new())?;
 
-    // A full-deck reset (no `--card`/`--cards` subset) resets authored-card
-    // progress, the decks' "mastered" exam flag, and their virtual
-    // (remediation) cards together, atomically under one confirmation — a
-    // declined/failed prompt must leave the store on disk untouched by any of
-    // it (not just the authored-card part).
-    if !args.cards && args.card.is_none() {
+    // A full-deck reset (no `--card` subset) resets authored-card progress, the
+    // decks' "mastered" exam flag, and their virtual (remediation) cards
+    // together, atomically under one confirmation — a declined/failed prompt
+    // must leave the store on disk untouched by any of it (not just the
+    // authored-card part).
+    if args.card.is_none() {
         let present: Vec<(u64, String)> = select_reset_ids(&cards, None)
             .into_iter()
             .filter(|(id, _)| store.get(*id).is_some())
@@ -1980,12 +1455,10 @@ fn reset(args: ResetArgs) -> Result<()> {
         }
 
         let n = present.len();
-        if !from_deck_picker
-            && !confirm(
-                &format!("Reset progress for {n} card(s) in {label}?"),
-                args.yes,
-            )?
-        {
+        if !confirm(
+            &format!("Reset progress for {n} card(s) in {label}?"),
+            args.yes,
+        )? {
             println!("Cancelled.");
             return Ok(());
         }
@@ -2005,57 +1478,10 @@ fn reset(args: ResetArgs) -> Result<()> {
         return Ok(());
     }
 
-    // Choose which cards: a checkbox picker (`--cards`), or a direct match
-    // (`--card`) — a full-deck reset is handled above.
-    let (targets, from_picker): (Vec<(u64, String)>, bool) = if args.cards {
-        if !std::io::stdout().is_terminal() {
-            bail!("the card picker needs a terminal");
-        }
-        // Only cards with stored progress are worth listing.
-        let rows: Vec<(u64, String, Option<String>)> = cards
-            .iter()
-            .filter_map(|c| {
-                store.get(c.id()).map(|state| {
-                    (
-                        c.id(),
-                        card_label(c),
-                        Some(format!("s{} · {}", state.stage, short_id(c.id()))),
-                    )
-                })
-            })
-            .collect();
-        if rows.is_empty() {
-            println!("No stored progress to reset in {label}.");
-            return Ok(());
-        }
-        let chosen: std::collections::HashSet<u64> =
-            picker::pick_cards(rows, &format!("select cards to reset — {label}"))?
-                .into_iter()
-                .collect();
-        if chosen.is_empty() {
-            return Ok(()); // cancelled or nothing selected
-        }
-        let targets = cards
-            .iter()
-            .filter(|c| chosen.contains(&c.id()))
-            .map(|c| (c.id(), c.front.clone()))
-            .collect();
-        (targets, true)
-    } else {
-        (
-            select_reset_ids(&cards, args.card.as_deref()),
-            from_deck_picker,
-        )
-    };
-
-    reset_ids(
-        &mut store,
-        targets,
-        label,
-        args.card.as_deref(),
-        from_picker,
-        args.yes,
-    )
+    // A `--card` subset over the named decks: match by numeric id or front text
+    // (a full-deck reset is handled above).
+    let targets = select_reset_ids(&cards, args.card.as_deref());
+    reset_ids(&mut store, targets, label, args.card.as_deref(), false, args.yes)
 }
 
 /// Removes the `(id, front)` targets that have stored progress, after a `y/N`
@@ -2109,130 +1535,6 @@ fn reset_ids(
     store.save()?;
     println!("Reset {n} card(s).");
     Ok(())
-}
-
-/// A picker label for a card: its front, or — for cloze sub-cards — the masked
-/// context, so siblings (which share a front) are distinguishable. Truncated.
-fn card_label(card: &Card) -> String {
-    let text = if card.context.is_empty() {
-        card.front.clone()
-    } else {
-        card.context.join(" ")
-    };
-    text.chars().take(70).collect()
-}
-
-/// A shortened card id for display, e.g. `9836…4569`.
-fn short_id(id: u64) -> String {
-    let s = id.to_string();
-    if s.len() > 9 {
-        format!("{}…{}", &s[..4], &s[s.len() - 4..])
-    } else {
-        s
-    }
-}
-
-fn browse(args: BrowseArgs) -> Result<()> {
-    if args.serve.serve {
-        return browse_serve(args);
-    }
-    if !std::io::stdout().is_terminal() {
-        bail!("`alix browse` needs a terminal");
-    }
-    let config = Config::load(None)?;
-    let mut recent = RecentDecks::load(
-        recent::default_recent_path().context("cannot determine the data directory")?,
-    );
-    let store = open_store(None)?;
-    // Explicit decks: browse once, standalone (own terminal).
-    if !args.decks.is_empty() {
-        let deck_store = store_for(&args.decks, None)?;
-        let build = build_browse(args.decks.clone(), &mut recent, Frontend::Tui)?;
-        let paths = subject_paths(build.decks);
-        return browse::run(build.cards, build.label, config.browse, paths, deck_store);
-    }
-    // Picker flow: one shared terminal, returning to the workspace afterwards.
-    let mut terminal = ratatui::init();
-    let result = browse_loop(&mut terminal, &args, &config, &mut recent, &store);
-    ratatui::restore();
-    result
-}
-
-/// The picker browse loop: pick (or reopen a workspace), browse on the shared
-/// `terminal`, and return to the workspace for the next.
-fn browse_loop(
-    terminal: &mut DefaultTerminal,
-    args: &BrowseArgs,
-    config: &Config,
-    recent: &mut RecentDecks,
-    store: &Store,
-) -> Result<()> {
-    let mut start_in: Option<PathBuf> = None;
-    let mut focus: Option<PathBuf> = None;
-    loop {
-        // Browse is read-only traversal — locking gates review only (any deck is
-        // browsable), and nothing is gated as unreviewable.
-        let Some(picker::Picked {
-            decks: deck_paths,
-            workspace,
-        }) = pick_decks_if_empty(
-            Some(&mut *terminal),
-            args.decks.clone(),
-            config,
-            recent,
-            store,
-            false,
-            false,
-            start_in.as_deref(),
-            focus.as_deref(),
-        )?
-        else {
-            return Ok(()); // picker cancelled or nothing selected
-        };
-        let launched = deck_paths.first().cloned();
-        // Removing a card prunes its progress — from the decks' own store (a
-        // workspace's when they all live in one).
-        let deck_store = store_for(&deck_paths, None)?;
-        let build = build_browse(deck_paths, recent, Frontend::Tui)?;
-        let paths = subject_paths(build.decks);
-        browse::run_on(
-            terminal,
-            build.cards,
-            build.label,
-            config.browse.clone(),
-            paths,
-            deck_store,
-        )?;
-        // Always return to the picker (only an `Esc` at the picker quits),
-        // re-focused on the deck just browsed so the selection doesn't jump.
-        start_in = workspace;
-        focus = launched;
-    }
-}
-
-/// The web browse path: opens at the in-browser deck-selection screen when no
-/// decks are given, else browses them directly. New selections rebuild the card
-/// list via the builder closure.
-fn browse_serve(args: BrowseArgs) -> Result<()> {
-    // Browse is a mode of the unified web app: hand the named decks to
-    // `review_serve` with `browse_mode = true`, which opens them in the read-only
-    // browse overlay. The review-only fields are unused for a browse launch.
-    review_serve(
-        ReviewArgs {
-            decks: args.decks,
-            serve: args.serve,
-            order: None,
-            topology: None,
-            region: None,
-            new: 10,
-            limit: None,
-            cram: false,
-            max_typos: 2,
-            store: None,
-            config: None,
-        },
-        true,
-    )
 }
 
 /// `alix deck augment`: deliberately generate AI augmentations for a deck into
@@ -2614,154 +1916,6 @@ fn import_cmd(args: ImportArgs) -> Result<()> {
     }
 }
 
-fn exam_cmd(args: ExamArgs) -> Result<()> {
-    let config = Config::load(args.config.as_deref())?;
-    let mut exam_cfg = config.exam.clone();
-    if let Some(n) = args.questions {
-        exam_cfg.num_questions = n;
-    }
-    // A deck in a workspace is examined against that workspace's own store.
-    let store = store_for(std::slice::from_ref(&args.deck), args.store.clone())?;
-    let deck = Deck::load(&args.deck)?;
-
-    // Every exam needs something to verify against: a fact deck's `% source:`,
-    // or a trace (whose exam is its graded compression). A source-less fact deck
-    // has none.
-    if !deck.has_exam() {
-        bail!(
-            "{} declares no `% source:` — add one (a URL or a file path) to \
-             examine this deck",
-            deck.subject
-        );
-    }
-    // Exams run in dependency order: a deck with unfinished `% requires:` waits
-    // until its prerequisites are mastered (pass their exams first). It need NOT
-    // be drilled, though — you may test out by sitting the exam early; passing
-    // masters it and unlocks its dependents.
-    if alix::deck::is_locked(&deck, config.decks_dir().as_deref(), &store) {
-        bail!(
-            "{}'s prerequisites aren't finished yet — pass their exams first, then sit this one",
-            deck.subject
-        );
-    }
-    // Refuse before opening the terminal UI (a side effect) if the backend can't
-    // reach a `% source:` this exam grades against — e.g. a URL source under a
-    // read-only backend that can't fetch. A trace deck grades a compression with
-    // no source fetch, so its sources aren't gated here.
-    if !deck.is_trace() {
-        alix::exam::ensure_backend_can_examine(&deck, &config.ask)?;
-    }
-    if !std::io::stdin().is_terminal() {
-        bail!("`alix exam` needs a terminal");
-    }
-
-    // Grading strictness: CLI flag > the deck's `% strictness:` > the `[exam]`
-    // default.
-    let strictness = args
-        .strictness
-        .or(deck.settings.exam_strictness)
-        .unwrap_or(config.exam.strictness);
-
-    // A trace's exam is the compression (one fixed question = the `% trace:`),
-    // graded against the path; a fact deck's exam generates questions from its
-    // source.
-    if deck.is_trace() {
-        return run_trace_exam(&deck, &config, strictness, store);
-    }
-    let decks_dir = config.decks_dir();
-    let retire_after_days = config.review.for_deck(&deck.path).retire_after_days;
-    tui::ExamApp::new(
-        deck,
-        strictness,
-        exam_cfg,
-        config.ask,
-        store,
-        decks_dir,
-        retire_after_days,
-    )
-    .run()
-}
-
-/// Sits a **trace's exam** — the compression. One fixed question (the
-/// `% trace:`), graded holistically against the path's checkpoints; a pass
-/// masters the trace (unlocking its dependents) just like a fact deck. Bails if
-/// the exam is cooling down after a recent fail. Shared by `alix exam <trace>`
-/// (test out) and the walk's capstone. The caller has checked the deck is a
-/// trace and isn't locked.
-fn run_trace_exam(
-    deck: &Deck,
-    config: &Config,
-    strictness: Strictness,
-    store: Store,
-) -> Result<()> {
-    let trace = Trace::from_deck(deck)?;
-    if let Some(remaining) = alix::exam::cooldown_remaining_ms(
-        &store,
-        &deck.subject,
-        config.exam.retry_cooldown_secs,
-        now_ms(),
-    ) {
-        bail!(
-            "this trace exam is cooling down after a failed attempt — re-walk it \
-             and try again in {}",
-            humanize_ms(remaining)
-        );
-    }
-    let sitting = alix::exam::Sitting::start_trace(
-        trace.description.clone(),
-        trace.compression_rubric(),
-        deck.subject.clone(),
-        strictness,
-        config.exam.clone(),
-        config.ask.clone(),
-    );
-    let retire_after_days = config.review.for_deck(&deck.path).retire_after_days;
-    tui::ExamApp::from_sitting(
-        sitting,
-        store,
-        deck.path.clone(),
-        config.decks_dir(),
-        retire_after_days,
-    )
-    .run()
-}
-
-/// After a full walk, offers the trace's exam (the compression) as a capstone:
-/// prompts, and on a yes sits it. Skips when the exam is locked (`% requires:`
-/// unmet) or cooling down after a recent fail (it just says so).
-fn offer_trace_exam_capstone(deck: &Deck, config: &Config, store: Store) -> Result<()> {
-    if alix::deck::is_locked(deck, config.decks_dir().as_deref(), &store) {
-        return Ok(()); // its exam is gated on unfinished prerequisites
-    }
-    if alix::exam::cooldown_remaining_ms(
-        &store,
-        &deck.subject,
-        config.exam.retry_cooldown_secs,
-        now_ms(),
-    )
-    .is_some()
-    {
-        println!(
-            "{DIM}(the trace exam is cooling down after a recent fail — re-sit it later){RESET}"
-        );
-        return Ok(());
-    }
-    println!();
-    let prompt =
-        format!("{DIM}Take the exam to verify you can re-derive the path? [Y/n] >{RESET} ");
-    match read_line(&prompt)? {
-        Some(ans) if ans.trim().eq_ignore_ascii_case("n") => Ok(()),
-        None => Ok(()), // EOF (Ctrl-D): just leave
-        _ => {
-            let strictness = deck
-                .settings
-                .exam_strictness
-                .unwrap_or(config.exam.strictness);
-            run_trace_exam(deck, config, strictness, store)
-        }
-    }
-}
-
 // ANSI styling for the linear `alix trace` flow (it requires a terminal).
 const BOLD: &str = "\x1b[1m";
 const DIM: &str = "\x1b[2m";
@@ -2799,11 +1953,14 @@ fn trace_cmd(args: TraceArgs) -> Result<()> {
     let mut store = store;
     let grade = args.grade.then_some(&config);
     let completed = run_walk(trace, &mut store, grade)?;
-    // Capstone: a full walk earns the trace's exam — the compression that
-    // verifies (and masters) it. Offered here, also reachable any time with
-    // `alix exam <trace>`.
+    // A full walk earns the trace's exam — the compression that verifies (and
+    // masters) it. The exam is sat in the browser: run `alix` and pick this
+    // trace to take it.
     if completed {
-        return offer_trace_exam_capstone(&deck, &config, store);
+        println!(
+            "{DIM}Walk complete — take this trace's exam in the browser: run `alix` \
+             and pick it.{RESET}"
+        );
     }
     Ok(())
 }
@@ -3145,49 +2302,27 @@ fn explore_walk(args: &ExploreArgs, config: &Config, source: &str, goal: &str) -
     run_walk(trace, &mut store, None).map(|_| ())
 }
 
-/// `alix workspace <dir>`: open a workspace into its member picker. Pick a fact
-/// deck → review it; pick a trace deck → walk it; back to the picker when done,
-/// until you quit. Unlike `alix review <dir>`, which flattens the whole
-/// workspace into one review (trace decks degrade to flat cards), this routes
-/// each member to the right experience.
+/// `alix workspace <dir>`: open a workspace in the browser. alix is web-first,
+/// so this validates the folder is a workspace (has an `alix.toml`) and then
+/// serves the web app; its decks and traces are reached through the in-browser
+/// picker (which routes a facts deck to review and a trace to a walk).
 fn workspace_cmd(args: WorkspaceArgs) -> Result<()> {
-    if !std::io::stdin().is_terminal() {
-        bail!("`alix workspace` needs a terminal");
-    }
     if !workspace::is_workspace(&args.dir) {
         if workspace::has_decks(&args.dir) {
             bail!(
                 "{} is a folder of decks, not a workspace — add an `alix.toml` to \
-                 make it one, or `alix review {}` to review its decks.",
+                 make it one, or `alix review {}` to review its decks",
                 args.dir.display(),
                 args.dir.display(),
             );
         }
         bail!("{} is not a workspace (no `alix.toml`)", args.dir.display());
     }
-    let config = Config::load(None)?;
-    loop {
-        // The picker reads the workspace's own store; review / walk re-resolve it
-        // from the picked decks (`store_for`).
-        let Some(picked) = picker::pick_workspace(&args.dir, true, config.review)? else {
-            return Ok(()); // quit the workspace
-        };
-        if picked.is_empty() {
-            return Ok(());
-        }
-
-        // A single trace deck is walked; anything else is a facts-deck review.
-        if let [only] = picked.as_slice() {
-            let deck = Deck::load(only)?;
-            if deck.is_trace() {
-                let trace = Trace::from_deck(&deck)?;
-                let mut store = store_for(std::slice::from_ref(only), args.store.clone())?;
-                run_walk(trace, &mut store, None)?;
-                continue;
-            }
-        }
-        review(ReviewArgs {
-            decks: picked,
+    // Web-first: hand off to the browser deck picker; there is no CLI member
+    // picker. The `--serve` machinery serves the same web app bare `alix` opens.
+    review_serve(
+        ReviewArgs {
+            decks: Vec::new(),
             order: None,
             topology: None,
             region: None,
@@ -3195,16 +2330,17 @@ fn workspace_cmd(args: WorkspaceArgs) -> Result<()> {
             limit: None,
             cram: false,
             max_typos: 2,
-            store: args.store.clone(),
-            config: args.config.clone(),
+            store: args.store,
+            config: args.config,
             serve: ServeOpts {
-                serve: false,
+                serve: true,
                 port: None,
                 lan: false,
                 token: None,
             },
-        })?;
-    }
+        },
+        false,
+    )
 }
 
 /// Prints a trace's path (prompts, key points, locators) without quizzing.
@@ -3309,43 +2445,6 @@ fn read_delta() -> Result<Option<alix::trace::Delta>> {
         }
         println!("{DIM}  answer n, p, or f (or q to quit).{RESET}");
     }
-}
-
-fn deps_cmd(deck_path: PathBuf) -> Result<()> {
-    if !std::io::stdout().is_terminal() {
-        bail!("`alix deps` needs a terminal");
-    }
-    let config = Config::load(None)?;
-    let decks_dir = config
-        .decks_dir()
-        .context("cannot determine the decks directory")?;
-    let deck = Deck::load(&deck_path)?;
-
-    let Some(selected) = picker::edit_dependencies(&decks_dir, &deck_path, &deck.requires)? else {
-        return Ok(()); // cancelled — leave the file untouched
-    };
-
-    // Distinct prerequisite names, in selection order.
-    let mut names: Vec<String> = Vec::new();
-    for path in &selected {
-        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-            let name = name.to_string();
-            if !names.contains(&name) {
-                names.push(name);
-            }
-        }
-    }
-    alix::deck::set_requires(&deck_path, &names)?;
-    if names.is_empty() {
-        println!("Cleared all prerequisites of {}.", deck.subject);
-    } else {
-        println!(
-            "Set prerequisites of {}: {}",
-            deck.subject,
-            names.join(", ")
-        );
-    }
-    Ok(())
 }
 
 /// The canonical CLI name of a value-enum value (e.g. `Mode::LineByLine` →
