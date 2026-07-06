@@ -10,7 +10,7 @@
 //! when a cooling card comes back. A never-seen card is *acquired* first — shown,
 //! recorded at stage 1, then left to settle ~1 min before its first quiz.
 
-use std::collections::VecDeque;
+use std::{collections::VecDeque, path::PathBuf};
 
 use rs_fsrs::Parameters;
 
@@ -20,7 +20,26 @@ use crate::{
     scheduler::{Grade, Scheduler},
     store::{MAX_STAGE, Store, VirtualCard},
     time,
+    trace::SourceBase,
 };
+
+/// Per-deck information the TUI needs, keyed by subject.
+pub struct DeckInfo {
+    /// The deck file, for saving notes from the ask view.
+    pub path: PathBuf,
+    /// Reference links (`% link:` lines) offered to Claude as background.
+    pub links: Vec<String>,
+    /// The deck's `% source:` project root, for the grounded ask-tutor
+    /// (`[ask] source_access`); `None` when there's no local source.
+    pub source_root: Option<PathBuf>,
+    /// Whether the grounded tutor may read this deck's source — the *effective*
+    /// value (the deck's workspace `source_access` override, else the global
+    /// `[ask] source_access`).
+    pub source_access: bool,
+    /// The deck's source base, for resolving a card's `% at:` citation excerpt
+    /// on reveal (fact-card citations).
+    pub source_base: SourceBase,
+}
 
 /// The order in which the due/new cards of a session are presented.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]

@@ -16,7 +16,7 @@ use alix::{
     recent::{self, RecentDecks},
     scheduler::{Fsrs, Scheduler},
     serve,
-    session::{Order, Session, SessionOptions, histogram},
+    session::{DeckInfo, Order, Session, SessionOptions, histogram},
     store::{Store, VirtualCard, default_store_path},
     time::{humanize_ms, now_ms},
     trace::{Phase, SourceBase, Trace, Walk},
@@ -567,7 +567,7 @@ fn store_for(decks: &[PathBuf], cli_override: Option<PathBuf>) -> Result<Store> 
 type LoadedDecks = (
     Vec<Card>,
     String,
-    std::collections::HashMap<String, tui::DeckInfo>,
+    std::collections::HashMap<String, DeckInfo>,
     Vec<DeckSettings>,
 );
 
@@ -593,7 +593,7 @@ fn load_decks(paths: &[PathBuf], defaults: &HashMap<String, DeckSettings>) -> Re
         names.push(deck.display_name());
         decks.insert(
             deck.subject.clone(),
-            tui::DeckInfo {
+            DeckInfo {
                 path: deck.path.clone(),
                 // Ask-Claude references include the deck's `% link:`s and any
                 // URL `% source:` (a source doubles as a reference).
@@ -719,7 +719,7 @@ struct ReviewSession {
     session: Session,
     store: Store,
     label: String,
-    decks: HashMap<String, tui::DeckInfo>,
+    decks: HashMap<String, DeckInfo>,
     config: Config,
     /// How many cards were filtered out as not reviewable in the target
     /// frontend (e.g. image cards excluded from the TUI).
@@ -763,7 +763,7 @@ struct LoadedSession {
 struct ReviewBuild {
     session: Session,
     label: String,
-    decks: HashMap<String, tui::DeckInfo>,
+    decks: HashMap<String, DeckInfo>,
     /// Cards dropped because they are not reviewable in the target frontend
     /// (e.g. image cards excluded from the TUI).
     hidden: usize,
@@ -1257,7 +1257,7 @@ fn build_browse(
 struct BrowseBuild {
     cards: Vec<Card>,
     label: String,
-    decks: HashMap<String, tui::DeckInfo>,
+    decks: HashMap<String, DeckInfo>,
 }
 
 /// The IP/port to serve on: localhost unless `--lan`, and the `--port` flag or
@@ -1298,7 +1298,7 @@ fn generate_token() -> Result<String> {
 }
 
 /// Subject → deck file path, for the web frontend's card removal.
-fn subject_paths(decks: HashMap<String, tui::DeckInfo>) -> HashMap<String, PathBuf> {
+fn subject_paths(decks: HashMap<String, DeckInfo>) -> HashMap<String, PathBuf> {
     decks
         .into_iter()
         .map(|(subject, info)| (subject, info.path))

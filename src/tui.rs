@@ -28,7 +28,7 @@ use crate::{
     exam, ladder,
     render::{self, ContextSpan, NoteUnit},
     scheduler::{Grade, keypoint_grade},
-    session::{Session, SessionStats},
+    session::{DeckInfo, Session, SessionStats},
     store::{self, Store},
     time,
 };
@@ -130,24 +130,6 @@ enum Purpose {
     Question(String),
     /// Condensing the conversation into note lines for the deck file.
     Condense,
-}
-
-/// Per-deck information the TUI needs, keyed by subject.
-pub struct DeckInfo {
-    /// The deck file, for saving notes from the ask view.
-    pub path: PathBuf,
-    /// Reference links (`% link:` lines) offered to Claude as background.
-    pub links: Vec<String>,
-    /// The deck's `% source:` project root, for the grounded ask-tutor
-    /// (`[ask] source_access`); `None` when there's no local source.
-    pub source_root: Option<PathBuf>,
-    /// Whether the grounded tutor may read this deck's source — the *effective*
-    /// value (the deck's workspace `source_access` override, else the global
-    /// `[ask] source_access`).
-    pub source_access: bool,
-    /// The deck's source base, for resolving a card's `% at:` citation excerpt
-    /// on reveal (fact-card citations).
-    pub source_base: crate::trace::SourceBase,
 }
 
 /// Static settings of a review run.
