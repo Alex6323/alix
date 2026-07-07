@@ -2,7 +2,7 @@
 //!
 //! Decks are plain-text files. On top of the flashcard basics it offers a
 //! local web frontend (`alix serve`), the FSRS
-//! scheduler (via `rs-fsrs`), several answer modes (flip, typing, fuzzy,
+//! scheduler (via `rs-fsrs`), several answer modes (flip, typing, typeline,
 //! multiple choice, line-by-line, explain), cloze and dual-direction cards,
 //! deck dependencies, and per-card review statistics. The configured model CLI
 //! is woven in: a tutor on any card, AI deck generation, and an AI exam

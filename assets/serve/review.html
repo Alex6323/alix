@@ -231,7 +231,7 @@
   .answer .mark { margin-left: 10px; font-weight: 700; }   /* ✓ / ✗ after the line */
   .expected { color: var(--good); font-size: clamp(1.15rem, 3.6vw, 1.5rem); line-height: 1.4; margin: 2px 0 8px; }
 
-  /* typing / fuzzy input fields */
+  /* typing / typeline input fields */
   .inputs { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 520px; margin: 0 auto; }
   .field {
     width: 100%; background: rgba(255,255,255,0.04); border: 1px solid var(--line);
@@ -239,7 +239,7 @@
     font-family: var(--sans); font-size: 1.1rem; text-align: center; outline: none;
   }
   .field:focus { border-color: var(--bolt); }
-  /* mode badge on every card — typing and fuzzy look identical otherwise */
+  /* mode badge on every card — typing and typeline look identical otherwise */
   .mode-tag {
     position: absolute; top: 8px; left: 0; right: 0;   /* pinned under the divider */
     width: fit-content; margin: 0 auto;

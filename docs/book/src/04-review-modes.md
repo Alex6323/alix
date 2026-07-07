@@ -66,10 +66,9 @@ it: Recall).
   they're two separate practices, so a card can be due for one and not the
   other.
 
-Nothing climbs or descends between levels on its own: unlike an earlier
-difficulty ladder this project tried, a card's Recall and Reconstruct
-schedules just sit there side by side, and which one you exercise is entirely
-your call each time you start a session.
+Nothing climbs or descends between levels on its own: a card's Recall and
+Reconstruct schedules just sit there side by side, and which one you exercise
+is entirely your call each time you start a session.
 
 ## What you actually get — reveal + level combined
 

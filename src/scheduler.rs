@@ -2,8 +2,8 @@
 //!
 //! One scheduler: [`Fsrs`], FSRS-5 via the `rs-fsrs` crate. Short-term modeling is on, so FSRS owns
 //! both the learning steps (a New card graded Good is due ~10 min out in `Learning`) and the
-//! long-term DSR review that follows — one model across the short and the long term, no box ladder
-//! to switch between. Graduation to `Review` always takes **two** full Goods in the acquisition
+//! long-term DSR review that follows — one model across the short and the long term, no separate
+//! box tiers to switch between. Graduation to `Review` always takes **two** full Goods in the acquisition
 //! phase (a Fail resets that progress rather than fast-tracking it — see [`Fsrs::apply`]).
 //!
 //! The legacy Leitner `stage` field is gone entirely. `acquired_ms` marks when a card was first
@@ -315,7 +315,7 @@ mod tests {
     #[test]
     fn the_acquire_cooldown_is_stable() {
         // The single acquire cooldown is exactly the old stage-1 gap (~1 min), so
-        // freshly-acquired timing is unchanged by the ladder collapse.
+        // freshly-acquired timing is unchanged by the depth-dial removal.
         assert_eq!(60 * 1000, ACQUIRE_COOLDOWN_MS);
     }
 

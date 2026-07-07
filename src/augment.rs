@@ -1140,7 +1140,7 @@ fn format_prompt(items: &[WarmItem], guidance: Option<&str>) -> String {
          NOT leak the answer (never hint how many items it has).\n\
          - `mode`: suggest either `flip` or `line` ONLY when it fits the reshaped \
          answer (use `line` for an ordered/grouped list revealed one line at a \
-         time). Never suggest explain/typing/fuzzy/choice. Omit `mode` if unsure.\n\
+         time). Never suggest explain/typing/typeline/choice. Omit `mode` if unsure.\n\
          - Omit any field you leave unchanged; omit the whole card if it is fine.\n",
     );
     if let Some(g) = guidance {

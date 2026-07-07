@@ -1338,8 +1338,8 @@ mod tests {
 
     #[test]
     fn a_pre_levels_store_loads_with_empty_schedules() {
-        // Clean break: the old `fsrs`/`rung` keys are ignored, not aliased.
-        let json = r#"{"version":1,"cards":{"7":{"acquired_ms":5,"fsrs":{"stability":9.0,"difficulty":5.0,"reps":3,"lapses":0,"state":2,"scheduled_days":9,"last_review_ms":1,"due_ms":2},"rung":"reconstruct","total_reviews":3}}}"#;
+        // Clean break: the old `fsrs` key is ignored, not aliased.
+        let json = r#"{"version":1,"cards":{"7":{"acquired_ms":5,"fsrs":{"stability":9.0,"difficulty":5.0,"reps":3,"lapses":0,"state":2,"scheduled_days":9,"last_review_ms":1,"due_ms":2},"total_reviews":3}}}"#;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("store.json");
         std::fs::write(&path, json).unwrap();

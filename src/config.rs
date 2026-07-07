@@ -8,7 +8,7 @@
 //! (`"ctrl-s"`).
 //!
 //! Plain-character bindings are ignored while you are typing an answer
-//! (typing and fuzzy mode), so they cannot shadow text input; use `ctrl-` or
+//! (typing and typeline mode), so they cannot shadow text input; use `ctrl-` or
 //! special keys for actions that must be reachable there (hint, skip, quit).
 
 use std::{
@@ -102,7 +102,7 @@ pub struct Bindings {
     pub reveal: Vec<KeyPattern>,
     /// Typing mode: reveal a hint (fails the card).
     pub hint: Vec<KeyPattern>,
-    /// Fuzzy mode: submit the current line.
+    /// TypeLine mode: submit the current line.
     pub submit: Vec<KeyPattern>,
     /// Put the current card at the end of the queue without grading.
     pub skip: Vec<KeyPattern>,
@@ -1004,7 +1004,7 @@ pub fn default_config_toml() -> &'static str {
 # ("space", "enter", "tab", "esc", "backspace"), or either with a "ctrl-"
 # prefix ("ctrl-s"). The first key of each list is shown in the footer.
 #
-# Note: while you are typing an answer (typing and fuzzy mode), plain
+# Note: while you are typing an answer (typing and typeline mode), plain
 # character bindings are ignored so they cannot shadow text input; use
 # ctrl-/special keys for hint, skip and quit.
 
@@ -1012,14 +1012,14 @@ pub fn default_config_toml() -> &'static str {
 # without deck arguments). A leading ~ is expanded. Defaults to ~/decks.
 # decks_dir = "~/decks"
 
-# Review key bindings (flip / typing / fuzzy / choice modes).
+# Review key bindings (flip / typing / typeline / choice modes).
 [keys.review]
 # failed = ["1", "f"]           # self-graded: grade as failed (reset)
 # partly = ["2", "p"]           # self-graded: grade as partly (FSRS Hard, still a pass)
 # passed = ["3", "n"]           # self-graded: grade as passed (advance)
 # reveal = ["space", "enter"]   # flip mode: show the answer
 # hint = ["tab", "ctrl-h", "ctrl-backspace"]  # typing mode (fails the card)
-# submit = ["enter"]            # fuzzy mode: submit the current line
+# submit = ["enter"]            # typeline mode: submit the current line
 # skip = ["ctrl-s"]             # requeue the current card without grading
 # remove = ["ctrl-x"]           # mark the card for removal from the deck file
 # promote = ["ctrl-p"]          # promote a virtual (remediation) card into its deck file
