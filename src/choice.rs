@@ -12,7 +12,7 @@
 
 use std::{collections::HashSet, sync::Arc};
 
-use crate::{card::Card, cloze};
+use crate::card::Card;
 
 /// Total number of options shown (one correct + three distractors).
 pub const NUM_OPTIONS: usize = 4;
@@ -154,79 +154,12 @@ pub fn recognition_question(
     build(card, pool, seed, Some(ai))
 }
 
-/// Every hole in a card's back lines, in appearance order, extracted via
-/// [`cloze::parse_line`]. A line that fails to parse (unbalanced braces)
-/// contributes no holes — this is best-effort question building, not
-/// validation (the parser already rejects bad decks at load time).
-fn hole_texts(card: &Card) -> Vec<String> {
-    card.back
-        .iter()
-        .enumerate()
-        .filter_map(|(i, line)| cloze::parse_line(line, i + 1).ok())
-        .flatten()
-        .filter_map(|segment| match segment {
-            cloze::Segment::Hole(text) => Some(text),
-            cloze::Segment::Text(_) => None,
-        })
-        .collect()
-}
-
-/// Builds a Recognize-level question for a cloze card: pick the gap-filler.
-/// The correct answer is the card's *first* hole (its later holes, if it has
-/// any, are its own siblings and must stay hidden, same rule as elsewhere).
-/// Distractors come from `ai` first, then top up from the *other holes*
-/// found in `pool`'s cards — never a pool card's whole (possibly multi-hole)
-/// back text — via [`build`], so dedup/shuffle/similarity ranking are shared
-/// with every other question kind. A card with no holes, or too few distinct
-/// gap texts to fill the options, yields `None`.
-///
-/// Caveat: this expects raw `{{...}}` markup in `back`, which real cloze
-/// cards no longer carry after [`cloze::expand`] — see the TODO below.
-// TODO(task 8): post-cloze::expand cards carry the bare hole text as `back` — no {{}}
-// survives and no type retains the raw declaration, so this returns None for every real
-// cloze card. Task 8 must rework this fn's inputs (an expanded card's gap text IS its
-// back, so plain build() over the session pool may replace this) or retire it.
-pub fn gap_question(
-    card: &Card,
-    pool: &[Card],
-    seed: u64,
-    ai: Option<&[String]>,
-) -> Option<ChoiceQuestion> {
-    let correct = hole_texts(card).into_iter().next()?;
-    let target = Card::plain(
-        Arc::clone(&card.subject),
-        card.front.clone(),
-        vec![correct],
-        None,
-        card.line,
-    );
-
-    // One synthetic card per gap, keeping the source card's subject+line so
-    // `build`'s own sibling exclusion (see `offline_candidates`) keeps this
-    // card's own other holes out of its distractors.
-    let mut gap_pool = Vec::new();
-    for other in pool {
-        for hole in hole_texts(other) {
-            gap_pool.push(Card::plain(
-                Arc::clone(&other.subject),
-                other.front.clone(),
-                vec![hole],
-                None,
-                other.line,
-            ));
-        }
-    }
-
-    build(&target, &gap_pool, seed, ai)
-}
-
 /// Builds a Recognize-level question for a line-reveal card: pick the next
 /// line. Distractors prefer the card's OWN other lines first — confusable by
 /// construction, since they belong to the same ordered answer — then `ai`,
-/// via [`build`]. Unlike `gap_question` there is no cross-card pool tier: a
-/// line card's own lines are already the natural distractors. Returns `None`
-/// when `next` is out of range or fewer than `NUM_OPTIONS` distinct options
-/// are available.
+/// via [`build`]. There is no cross-card pool tier: a line card's own lines are
+/// already the natural distractors. Returns `None` when `next` is out of range
+/// or fewer than `NUM_OPTIONS` distinct options are available.
 pub fn line_question(
     card: &Card,
     next: usize,
@@ -503,44 +436,6 @@ mod tests {
     }
 
     #[test]
-    fn gap_question_offers_the_hole_text_among_gap_distractors() {
-        let target = card(1, "To {{be}} or not to {{be}}");
-        // Other cards' individual gaps — not their whole (possibly multi-hole)
-        // backs — are what should compete as distractors.
-        let others = [
-            card(10, "a {{first}} gap"),
-            card(11, "a {{second}} gap"),
-            card(12, "a {{third}} gap"),
-            card(13, "a {{fourth}} gap"),
-        ];
-        let mut all = vec![target.clone()];
-        all.extend(others.iter().cloned());
-
-        let q = gap_question(&target, &all, 1, None).unwrap();
-        assert_eq!(NUM_OPTIONS, q.options.len());
-        assert_eq!("be", q.options[q.correct]);
-        assert!(
-            q.options
-                .iter()
-                .any(|o| ["first", "second", "third", "fourth"].contains(&o.as_str())),
-            "no bare gap text among distractors: {:?}",
-            q.options
-        );
-        // The whole (unparsed) back text of another card must never appear —
-        // only its extracted gap does.
-        assert!(!q.options.contains(&"a {{first}} gap".to_string()));
-    }
-
-    #[test]
-    fn gap_question_with_no_holes_is_none() {
-        let plain = card(1, "no holes here");
-        let others = pool(&["a", "b", "c", "d"]);
-        let mut all = vec![plain.clone()];
-        all.extend(others);
-        assert!(gap_question(&plain, &all, 1, None).is_none());
-    }
-
-    #[test]
     fn line_question_prefers_same_card_lines_as_distractors() {
         let target = card(1, "line a\nline b\nline c\nline d");
         // `line_question` takes no pool — the card's OWN other lines are the
@@ -559,17 +454,9 @@ mod tests {
     }
 
     #[test]
-    fn both_fall_back_to_none_below_four_options() {
-        // Cloze: only one hole anywhere → not enough distinct gap distractors.
-        let target = card(1, "a {{lonely}} hole");
-        let pool_cards = vec![
-            target.clone(),
-            card(2, "no holes here"),
-            card(3, "nor here"),
-        ];
-        assert!(gap_question(&target, &pool_cards, 1, None).is_none());
-
-        // Line: a single-line card has no sibling lines and no pool tier.
+    fn line_question_falls_back_to_none_below_four_options() {
+        // A single-line card has no sibling lines and no cross-card pool tier, so
+        // it can't reach four options — the caller falls back to attempt→reveal.
         let line_card = card(1, "only one line");
         assert!(line_question(&line_card, 0, 1, None).is_none());
     }
