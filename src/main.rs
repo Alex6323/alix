@@ -1145,6 +1145,16 @@ fn announce(addr: SocketAddr, lan: bool, token: Option<&str>, label: &str) {
     println!("Press Ctrl-C to stop.");
 }
 
+/// Convert an FSRS state value to its label, or "-" if the schedule is absent.
+fn state_label(fsrs_state: Option<u8>) -> String {
+    match fsrs_state {
+        Some(1) => "learning".to_string(),
+        Some(2) => "review".to_string(),
+        Some(3) => "relearning".to_string(),
+        _ => "-".to_string(),
+    }
+}
+
 fn stats(args: DeckArgs) -> Result<()> {
     let config = Config::load(None)?;
     let now = now_ms();
@@ -1162,6 +1172,8 @@ fn stats(args: DeckArgs) -> Result<()> {
 
         let mut due_now = 0usize;
         let mut due_24h = 0usize;
+        let mut due_now_recall = 0usize;
+        let mut due_now_reconstruct = 0usize;
         let mut reviews = 0u32;
         let mut passes = 0u32;
         for card in &deck.cards {
@@ -1172,8 +1184,13 @@ fn stats(args: DeckArgs) -> Result<()> {
                     let due = scheduler.due_at(state, Level::Recall);
                     if due <= now {
                         due_now += 1;
+                        due_now_recall += 1;
                     } else if due <= now + 86_400_000 {
                         due_24h += 1;
+                    }
+                    // Count reconstruct separately
+                    if scheduler.is_due(state, Level::Reconstruct, now) {
+                        due_now_reconstruct += 1;
                     }
                 }
                 reviews += state.total_reviews;
@@ -1208,6 +1225,8 @@ fn stats(args: DeckArgs) -> Result<()> {
         println!("{} ({} cards)", deck.display_name(), deck.cards.len());
         println!("  state:   {state}");
         println!("  due:     {due_now} now, {due_24h} within 24h");
+        println!("  due now (recall):       {due_now_recall}");
+        println!("  due now (reconstruct):  {due_now_reconstruct}");
         if reviews > 0 {
             println!(
                 "  reviews: {reviews} total, {:.0}% passed",
@@ -1233,7 +1252,7 @@ fn list(args: DeckArgs) -> Result<()> {
         let scheduler = Fsrs::new(review.retention);
         println!("{}", deck.display_name());
         for card in &deck.cards {
-            let (label, due) = match store.get(card.id()) {
+            let (recall_label, recon_label, recognized_mark, due) = match store.get(card.id()) {
                 Some(state) => {
                     // Retired cards rest until `alix reset`; their due time is
                     // moot, so say so instead of showing a misleading interval.
@@ -1247,18 +1266,24 @@ fn list(args: DeckArgs) -> Result<()> {
                             format!("due in {}", humanize_ms(due - now))
                         }
                     };
-                    let label = match state.recall.as_ref().map(|f| f.state) {
-                        Some(1) => "learning",
-                        Some(2) => "review",
-                        Some(3) => "relearning",
-                        _ => "new",
+                    let recall_label = state_label(state.recall.as_ref().map(|f| f.state));
+                    let recon_label = state_label(state.reconstruct.as_ref().map(|f| f.state));
+                    let recognized_mark = if state.recognized_ms.is_some() {
+                        "✓"
+                    } else {
+                        " "
                     };
-                    (label.to_string(), due)
+                    (recall_label, recon_label, recognized_mark.to_string(), due)
                 }
-                None => ("new".to_string(), "-".to_string()),
+                None => (
+                    state_label(None),
+                    state_label(None),
+                    " ".to_string(),
+                    "-".to_string(),
+                ),
             };
             let front: String = card.front.chars().take(60).collect();
-            println!("  [{label:>10}] {front:<60} {due}");
+            println!("  [{recall_label:>10}|{recon_label:>10}]{recognized_mark} {front:<60} {due}");
         }
     }
     Ok(())

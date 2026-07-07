@@ -681,3 +681,49 @@ fn backend_check_all_probes_each() {
         );
     }
 }
+
+#[test]
+fn list_shows_per_level_labels_and_recognized_mark() {
+    let dir = TempDir::new().unwrap();
+    let deck_text = "# Q1\n\tA1\n";
+    let deck = write(dir.path(), "test.txt", deck_text);
+    let card_id = alix::parser::parse_str("test.txt", deck_text).unwrap()[0].id();
+    let store_content = format!(
+        r#"{{"version":1,"cards":{{"{card_id}":{{"acquired_ms":1000000,"recall":{{"stability":10.0,"difficulty":5.0,"reps":5,"lapses":0,"state":2,"scheduled_days":20,"last_review_ms":1000000,"due_ms":1000000000000,"learning_goods":2}},"reconstruct":{{"stability":8.0,"difficulty":5.0,"reps":3,"lapses":0,"state":1,"scheduled_days":10,"last_review_ms":1000000,"due_ms":1000000000000,"learning_goods":1}},"recognized_ms":1000000,"total_reviews":5,"total_passes":5}}}}}}"#
+    );
+    let store = write(dir.path(), "store.json", &store_content);
+    let out = alix(&["list", &deck, "--store", &store]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let result = stdout(&out);
+    // Check for the new format: [recall|recon]{checkmark}
+    assert!(
+        result.contains("|"),
+        "stdout should contain level separator: {}",
+        result
+    );
+    assert!(
+        result.contains("✓"),
+        "stdout should contain recognized mark: {}",
+        result
+    );
+}
+
+#[test]
+fn stats_shows_per_level_due_counts() {
+    let dir = TempDir::new().unwrap();
+    let deck = write(dir.path(), "test.txt", "# Q1\n\tA1\n");
+    let store = write(dir.path(), "store.json", r#"{"version":1,"cards":{}}"#);
+    let out = alix(&["stats", &deck, "--store", &store]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let result = stdout(&out);
+    assert!(
+        result.contains("due now (recall)"),
+        "stdout should contain recall level count: {}",
+        result
+    );
+    assert!(
+        result.contains("due now (reconstruct)"),
+        "stdout should contain reconstruct level count: {}",
+        result
+    );
+}
