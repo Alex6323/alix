@@ -1145,13 +1145,15 @@ fn announce(addr: SocketAddr, lan: bool, token: Option<&str>, label: &str) {
     println!("Press Ctrl-C to stop.");
 }
 
-/// Convert an FSRS state value to its label, or "-" if the schedule is absent.
-fn state_label(fsrs_state: Option<u8>) -> String {
+/// The `list` label for one level's schedule: the FSRS state name when the
+/// card has a schedule at that level, `-` when it has none.
+fn state_label(fsrs_state: Option<u8>) -> &'static str {
     match fsrs_state {
-        Some(1) => "learning".to_string(),
-        Some(2) => "review".to_string(),
-        Some(3) => "relearning".to_string(),
-        _ => "-".to_string(),
+        Some(1) => "learning",
+        Some(2) => "review",
+        Some(3) => "relearning",
+        Some(_) => "new",
+        None => "-",
     }
 }
 
@@ -1172,7 +1174,6 @@ fn stats(args: DeckArgs) -> Result<()> {
 
         let mut due_now = 0usize;
         let mut due_24h = 0usize;
-        let mut due_now_recall = 0usize;
         let mut due_now_reconstruct = 0usize;
         let mut reviews = 0u32;
         let mut passes = 0u32;
@@ -1184,11 +1185,9 @@ fn stats(args: DeckArgs) -> Result<()> {
                     let due = scheduler.due_at(state, Level::Recall);
                     if due <= now {
                         due_now += 1;
-                        due_now_recall += 1;
                     } else if due <= now + 86_400_000 {
                         due_24h += 1;
                     }
-                    // Count reconstruct separately
                     if scheduler.is_due(state, Level::Reconstruct, now) {
                         due_now_reconstruct += 1;
                     }
@@ -1206,6 +1205,9 @@ fn stats(args: DeckArgs) -> Result<()> {
             now,
             review.retire_after_days,
         );
+        // Virtual cards are Recall-only, so the recall figure IS the due-now
+        // aggregate — derived, not re-counted, so the two lines can't diverge.
+        let due_now_recall = due_now;
         due_24h += alix::session::count_due_soon_virtual(
             &store,
             &deck.subject,
@@ -1225,8 +1227,8 @@ fn stats(args: DeckArgs) -> Result<()> {
         println!("{} ({} cards)", deck.display_name(), deck.cards.len());
         println!("  state:   {state}");
         println!("  due:     {due_now} now, {due_24h} within 24h");
-        println!("  due now (recall):       {due_now_recall}");
-        println!("  due now (reconstruct):  {due_now_reconstruct}");
+        println!("  due now (recall):      {due_now_recall}");
+        println!("  due now (reconstruct): {due_now_reconstruct}");
         if reviews > 0 {
             println!(
                 "  reviews: {reviews} total, {:.0}% passed",
@@ -1273,14 +1275,9 @@ fn list(args: DeckArgs) -> Result<()> {
                     } else {
                         " "
                     };
-                    (recall_label, recon_label, recognized_mark.to_string(), due)
+                    (recall_label, recon_label, recognized_mark, due)
                 }
-                None => (
-                    state_label(None),
-                    state_label(None),
-                    " ".to_string(),
-                    "-".to_string(),
-                ),
+                None => (state_label(None), state_label(None), " ", "-".to_string()),
             };
             let front: String = card.front.chars().take(60).collect();
             println!("  [{recall_label:>10}|{recon_label:>10}]{recognized_mark} {front:<60} {due}");

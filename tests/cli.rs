@@ -682,48 +682,69 @@ fn backend_check_all_probes_each() {
     }
 }
 
+/// A store JSON fragment for one card: a Recall schedule in FSRS state 2
+/// (`review`) due in the past, a Reconstruct schedule in state 1 (`learning`)
+/// also past-due, and a set `recognized_ms`.
+fn both_levels_due_card(card_id: u64) -> String {
+    format!(
+        r#""{card_id}":{{"acquired_ms":1000,"recall":{{"stability":10.0,"difficulty":5.0,"reps":5,"lapses":0,"state":2,"scheduled_days":20,"last_review_ms":1000,"due_ms":2000,"learning_goods":2}},"reconstruct":{{"stability":8.0,"difficulty":5.0,"reps":3,"lapses":0,"state":1,"scheduled_days":10,"last_review_ms":1000,"due_ms":2000,"learning_goods":1}},"recognized_ms":1000,"total_reviews":5,"total_passes":5}}"#
+    )
+}
+
 #[test]
 fn list_shows_per_level_labels_and_recognized_mark() {
     let dir = TempDir::new().unwrap();
-    let deck_text = "# Q1\n\tA1\n";
-    let deck = write(dir.path(), "test.txt", deck_text);
-    let card_id = alix::parser::parse_str("test.txt", deck_text).unwrap()[0].id();
-    let store_content = format!(
-        r#"{{"version":1,"cards":{{"{card_id}":{{"acquired_ms":1000000,"recall":{{"stability":10.0,"difficulty":5.0,"reps":5,"lapses":0,"state":2,"scheduled_days":20,"last_review_ms":1000000,"due_ms":1000000000000,"learning_goods":2}},"reconstruct":{{"stability":8.0,"difficulty":5.0,"reps":3,"lapses":0,"state":1,"scheduled_days":10,"last_review_ms":1000000,"due_ms":1000000000000,"learning_goods":1}},"recognized_ms":1000000,"total_reviews":5,"total_passes":5}}}}}}"#
+    // Card 1: recall=review (state 2), reconstruct=learning (state 1), recognized.
+    // Card 2: recall=learning only — no reconstruct schedule, not recognized.
+    let deck_text = "# Q1\n\tA1\n\n# Q2\n\tA2\n";
+    let deck = write(dir.path(), "cards.txt", deck_text);
+    let cards = alix::parser::parse_str("cards.txt", deck_text).unwrap();
+    let (id1, id2) = (cards[0].id(), cards[1].id());
+    let card1 = both_levels_due_card(id1);
+    let card2 = format!(
+        r#""{id2}":{{"acquired_ms":1000,"recall":{{"stability":1.0,"difficulty":5.0,"reps":1,"lapses":0,"state":1,"scheduled_days":0,"last_review_ms":1000,"due_ms":2000,"learning_goods":1}},"total_reviews":1,"total_passes":1}}"#
     );
-    let store = write(dir.path(), "store.json", &store_content);
+    let store = write(
+        dir.path(),
+        "store.json",
+        &format!(r#"{{"version":1,"cards":{{{card1},{card2}}}}}"#),
+    );
     let out = alix(&["list", &deck, "--store", &store]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     let result = stdout(&out);
-    // Check for the new format: [recall|recon]{checkmark}
+    // Slot order is recall|reconstruct — a swap would print [  learning|    review].
     assert!(
-        result.contains("|"),
-        "stdout should contain level separator: {}",
-        result
+        result.contains("[    review|  learning]✓"),
+        "recall slot first, then reconstruct, then the recognized mark: {result}"
     );
+    // An absent schedule shows `-` in its slot; no recognized mark → space.
     assert!(
-        result.contains("✓"),
-        "stdout should contain recognized mark: {}",
-        result
+        result.contains("[  learning|         -] "),
+        "a level without a schedule shows '-': {result}"
     );
 }
 
 #[test]
 fn stats_shows_per_level_due_counts() {
     let dir = TempDir::new().unwrap();
-    let deck = write(dir.path(), "test.txt", "# Q1\n\tA1\n");
-    let store = write(dir.path(), "store.json", r#"{"version":1,"cards":{}}"#);
+    let deck_text = "# Q1\n\tA1\n";
+    let deck = write(dir.path(), "stats.txt", deck_text);
+    let card_id = alix::parser::parse_str("stats.txt", deck_text).unwrap()[0].id();
+    let card = both_levels_due_card(card_id);
+    let store = write(
+        dir.path(),
+        "store.json",
+        &format!(r#"{{"version":1,"cards":{{{card}}}}}"#),
+    );
     let out = alix(&["stats", &deck, "--store", &store]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     let result = stdout(&out);
     assert!(
-        result.contains("due now (recall)"),
-        "stdout should contain recall level count: {}",
-        result
+        result.contains("due now (recall):      1"),
+        "the past-due recall schedule must be counted: {result}"
     );
     assert!(
-        result.contains("due now (reconstruct)"),
-        "stdout should contain reconstruct level count: {}",
-        result
+        result.contains("due now (reconstruct): 1"),
+        "the past-due reconstruct schedule must be counted: {result}"
     );
 }
