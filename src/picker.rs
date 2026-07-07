@@ -482,7 +482,7 @@ pub fn member_parents(members: &[PathBuf], decks_dir: &Path) -> Vec<Option<usize
 /// prefix drawing the `├─`/`└─`/`│` branch lines. A dependency cycle can't strand
 /// a node — any left unvisited is appended as its own root. Shared with the web
 /// picker: each branch segment is exactly three chars wide, so a row's nesting
-/// depth is `prefix.chars().count() / 3`.
+/// indent is `prefix.chars().count() / 3`.
 pub fn dependency_forest<K: Ord>(parent: &[Option<usize>], key: &[K]) -> Vec<(usize, String)> {
     let n = parent.len();
     let mut children = vec![Vec::new(); n];

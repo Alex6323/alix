@@ -377,7 +377,7 @@ struct DeckItemDto {
 
 /// A workspace member deck in the drill-in list: a qualified selection `name`
 /// (`<workspace>/<file>`), its display `label` and status (badge/state/locked/
-/// reviewable/mastered/trace, from the workspace's own store), and its `depth`
+/// reviewable/mastered/trace, from the workspace's own store), and its `indent`
 /// in the unlock dependency tree (0 = a foundation root).
 #[derive(Debug, Serialize)]
 struct MemberDto {
@@ -396,7 +396,7 @@ struct MemberDto {
     is_trace: bool,
     examable: bool,
     has_exam: bool,
-    depth: usize,
+    indent: usize,
     /// The `├─`/`└─`/`│` tree-branch prefix drawn before the label, so the web
     /// shows the dependency tree like the TUI (not just indentation).
     tree: String,
@@ -2946,7 +2946,7 @@ fn deck_item_dto(
 
 /// A workspace/folder's members as an unlock dependency tree (the drill-in
 /// list): each member nests under the `% requires:` that gates it, siblings
-/// startable-first, carrying a `depth` for indentation. Badges/locks come from
+/// startable-first, carrying an `indent` for the tree nesting. Badges/locks come from
 /// the workspace's own store (a real workspace) or the global store (a plain
 /// folder), matching what a session will write.
 fn workspace_members(
@@ -3019,7 +3019,7 @@ fn workspace_members(
         .map(|(i, prefix)| {
             let m = &e.members[i];
             // Each tree branch segment is three columns wide (see picker).
-            let depth = prefix.chars().count() / 3;
+            let indent = prefix.chars().count() / 3;
             let has_topology = loaded[i].1;
             let last_level = loaded[i].2;
             match &loaded[i].0 {
@@ -3037,7 +3037,7 @@ fn workspace_members(
                     is_trace: s.is_trace,
                     examable: s.examable,
                     has_exam: s.has_exam,
-                    depth,
+                    indent,
                     tree: prefix.clone(),
                     has_topology,
                     badge_level: s.badge_level.map(level_name),
@@ -3061,7 +3061,7 @@ fn workspace_members(
                     is_trace: false,
                     examable: false,
                     has_exam: false,
-                    depth,
+                    indent,
                     tree: prefix.clone(),
                     has_topology,
                     badge_level: None,

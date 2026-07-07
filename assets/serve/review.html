@@ -87,8 +87,8 @@
   .peek { position: absolute; inset: 0; border-radius: 20px; background: var(--panel-bot); border: 1px solid var(--line); }
   .peek.p1 { transform: translate(7px, -7px); opacity: 0.7; }
   .peek.p2 { transform: translate(14px, -14px); opacity: 0.4; }
-  .stack[data-depth="1"] .peek { display: none; }
-  .stack[data-depth="2"] .peek.p2 { display: none; }
+  .stack[data-pile="1"] .peek { display: none; }
+  .stack[data-pile="2"] .peek.p2 { display: none; }
 
   /* fixed-size card, split into a question half and an answer half by the
      separator; each half centers its own content */
@@ -302,9 +302,8 @@
   .select .empty-hint { color: var(--dim); font-size: 0.85rem; padding: 4px 2px 0; }
   /* single-launch rows: click a deck to start it, a workspace/folder to open.
      A leading chevron (›) marks a drillable row; a glyph slot shows 🔒 / 🕒.
-     Members nest by --depth in the unlock dependency tree (flattened on filter). */
-  .deckrow { position: relative; display: flex; align-items: center; gap: 12px; padding: 12px 14px; padding-left: calc(14px + var(--depth, 0) * 18px); min-height: 48px; border: 1px solid var(--line); border-radius: 11px; cursor: pointer; transition: border-color 0.12s, background 0.12s; margin-bottom: 5px; flex: none; }
-  .lists.filtering .deckrow { padding-left: 14px; }
+     Members nest via their tree-branch guides (hidden on filter). */
+  .deckrow { position: relative; display: flex; align-items: center; gap: 12px; padding: 12px 14px; min-height: 48px; border: 1px solid var(--line); border-radius: 11px; cursor: pointer; transition: border-color 0.12s, background 0.12s; margin-bottom: 5px; flex: none; }
   .deckrow:hover { border-color: var(--bolt); }
   .deckrow:focus { outline: none; border-color: var(--bolt); box-shadow: 0 0 0 2px rgba(125,249,232,0.35); }
   .deckrow .open { flex: none; width: 22px; text-align: center; color: var(--dim); font-size: 1.1rem; line-height: 1; }
@@ -2030,13 +2029,13 @@ async function renderSelect() {
   }
 
   // The Mastered window: every exam-passed deck, ungated so it can be reopened.
-  // A flat list — drop the tree depth a workspace member would otherwise carry.
+  // A flat list — drop the tree guides a workspace member would otherwise carry.
   function renderMastered() {
     renderList({
       headerFilter: true,
       filterPlaceholder: "Search  ·  /",
       lede: "mastered \u{1F389} — reopen a deck to cram or re-examine",
-      sections: [{ title: null, rows: mastered.map(d => deckRow({ ...d, depth: 0 }, false, null, true, false)) }],
+      sections: [{ title: null, rows: mastered.map(d => deckRow({ ...d, tree: "" }, false, null, true, false)) }],
       back: renderTop, allowMastered: false,
     });
   }
@@ -2054,9 +2053,9 @@ async function renderSelect() {
 //   withNote  — adds "withnote" class to the answer region (caps it shorter)
 //   moreHint  — appends .more-hint for the overflow marker (browse omits it)
 //   leftAlign — sets textAlign:"left" on q and a (walk excerpt is always left)
-function buildCardShell({ depth, cardId = null, ansId = null, withNote = false, moreHint = true, leftAlign = false } = {}) {
+function buildCardShell({ pile, cardId = null, ansId = null, withNote = false, moreHint = true, leftAlign = false } = {}) {
   const stack = el("div", "stack");
-  stack.dataset.depth = Math.min(3, Math.max(1, depth));
+  stack.dataset.pile = Math.min(3, Math.max(1, pile));
   stack.appendChild(el("div", "peek p2"));
   stack.appendChild(el("div", "peek p1"));
   const card = el("div", "card");
@@ -2080,7 +2079,7 @@ function renderCard() {
   const c = state.card;
   const hasNote = c.note && c.note.length > 0;
   const { q } = buildCardShell({
-    depth: state.remaining,
+    pile: state.remaining,
     cardId: "card",
     ansId: "ansRegion",
     withNote: hasNote,
@@ -2133,7 +2132,7 @@ function renderBrowse() {
   const hasNote = c.note && c.note.length > 0;
 
   const { card, q, a } = buildCardShell({
-    depth: browsing.cards.length - browsing.i,
+    pile: browsing.cards.length - browsing.i,
     withNote: hasNote,
     moreHint: false, // browse has no overflow marker
   });
@@ -2867,7 +2866,7 @@ function renderWalkLeaveConfirm() {
 function buildWalkCard() {
   const w = walkData;
   const { card, q, a } = buildCardShell({
-    depth: w.total - w.current + 1,
+    pile: w.total - w.current + 1,
     leftAlign: true,
   });
   requestAnimationFrame(() => updateFade(a));
