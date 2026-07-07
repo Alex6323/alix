@@ -727,50 +727,68 @@ fn retrievability(store: &Store, card_id: u64, now_ms: u64) -> f32 {
     Parameters::forgetting_curve(elapsed_days, f.stability).clamp(0.0, 1.0) as f32
 }
 
-/// Whether one card would be served at `now_ms`: never-seen (fresh), or seen and
-/// due, but not retired. The per-card decision [`build_queue`] makes (minus cram
-/// and the new-card cap), factored out so callers can both test and *count* it.
+/// Whether one card would be served at `now_ms` at `level`: for Recognize —
+/// unscheduled and boolean — any card whose store entry lacks
+/// `recognized_ms`; for Recall/Reconstruct, never-seen (fresh), or seen and
+/// due under `scheduler` at that level (`scheduler.is_due` owns the
+/// cross-level immediacy rule — see `Fsrs::due_at`). A retired card (always
+/// the Recall-pinned rule, see [`is_retired`]) is never reviewable at any
+/// level. The per-card decision [`build_queue`]/`Session::servable` make
+/// (minus cram and the new-card cap), factored out so callers — e.g. the
+/// picker — can tell, at any level, before building a session.
 pub fn is_reviewable(
     card: &Card,
     store: &Store,
     scheduler: &dyn Scheduler,
+    level: Level,
     now_ms: u64,
     retire_after_days: Option<u32>,
 ) -> bool {
+    if is_retired(card, store, retire_after_days) {
+        return false;
+    }
+    if level == Level::Recognize {
+        return store
+            .get(card.id())
+            .is_none_or(|s| s.recognized_ms.is_none());
+    }
     match store.get(card.id()) {
-        Some(_) if is_retired(card, store, retire_after_days) => false,
-        Some(state) => scheduler.is_due(state, Level::Recall, now_ms),
+        Some(state) => scheduler.is_due(state, level, now_ms),
         None => true,
     }
 }
 
-/// Whether these cards would yield anything to review at `now_ms` under
-/// `scheduler`, so a caller — e.g. the picker — can tell, *before* building a
-/// session, whether a deck has anything to do right now. See [`is_reviewable`].
+/// Whether these cards would yield anything to review at `now_ms` at `level`
+/// under `scheduler`, so a caller — e.g. the picker — can tell, *before*
+/// building a session, whether a deck has anything to do right now at that
+/// level. See [`is_reviewable`].
 pub fn has_reviewable(
     cards: &[Card],
     store: &Store,
     scheduler: &dyn Scheduler,
+    level: Level,
     now_ms: u64,
     retire_after_days: Option<u32>,
 ) -> bool {
     cards
         .iter()
-        .any(|card| is_reviewable(card, store, scheduler, now_ms, retire_after_days))
+        .any(|card| is_reviewable(card, store, scheduler, level, now_ms, retire_after_days))
 }
 
-/// How many of these cards would be served right now — the due/new count for a
-/// region or a whole deck (shown in the focus drawer). See [`is_reviewable`].
+/// How many of these cards would be served right now at `level` — the due/new
+/// count for a region or a whole deck (shown in the focus drawer). See
+/// [`is_reviewable`].
 pub fn count_reviewable(
     cards: &[&Card],
     store: &Store,
     scheduler: &dyn Scheduler,
+    level: Level,
     now_ms: u64,
     retire_after_days: Option<u32>,
 ) -> usize {
     cards
         .iter()
-        .filter(|card| is_reviewable(card, store, scheduler, now_ms, retire_after_days))
+        .filter(|card| is_reviewable(card, store, scheduler, level, now_ms, retire_after_days))
         .count()
 }
 
@@ -1445,6 +1463,7 @@ mod tests {
             &cards(1),
             &store,
             sched.as_ref(),
+            Level::Recall,
             now,
             Some(DEFAULT_RETIRE_AFTER_DAYS)
         ));
@@ -1457,11 +1476,19 @@ mod tests {
         s.acquired_ms = now;
         let one = std::slice::from_ref(&c);
         let cap = Some(DEFAULT_RETIRE_AFTER_DAYS);
-        assert!(!has_reviewable(one, &store, sched.as_ref(), now, cap));
+        assert!(!has_reviewable(
+            one,
+            &store,
+            sched.as_ref(),
+            Level::Recall,
+            now,
+            cap
+        ));
         assert!(has_reviewable(
             one,
             &store,
             sched.as_ref(),
+            Level::Recall,
             now + 3_600_000,
             cap
         ));
@@ -1472,6 +1499,7 @@ mod tests {
             std::slice::from_ref(&c),
             &store,
             sched.as_ref(),
+            Level::Recall,
             now + 3_600_000,
             cap
         ));

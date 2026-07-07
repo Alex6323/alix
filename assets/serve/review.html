@@ -1445,18 +1445,35 @@ async function renderSelect() {
   const mastered = recent.filter(d => d.mastered);
   for (const g of workspaces.concat(folders)) for (const m of g.members) if (m.mastered) mastered.push(m);
 
-  // Can a row be started now? Drilling is never gated by the prerequisite lock
-  // (only the exam is — and an exam-locked deck reports reviewable=false), so a
-  // gated view refuses only a deck with nothing due. The Mastered window is
+  // Can a row be started now, at *any* level? Drilling is never gated by the
+  // prerequisite lock (only the exam is — an exam-locked deck's `examable` is
+  // false), so a gated view refuses only a deck with nothing due at any level.
+  // `reviewable` already folds in the trace/exam-due special cases alongside
+  // the per-level due-ness, so this reads as "any level (or the trace/exam)
+  // is startable" — the gate for the ▾ split button. The Mastered window is
   // ungated — a finished deck can be reopened to cram or re-examine.
   const canStart = (it, gated) => it.reviewable || !gated;
+
+  // Maps a level name to its own due-ness field (`picker::DeckStatus`'s
+  // per-level split), so each level chip — and the plain Learn button, which
+  // targets the deck's own last-used level — gates on its own honest signal
+  // rather than "any level" (recall-settled must not enable a Recall chip
+  // just because Reconstruct is due).
+  const LEVEL_FIELD = { recognize: "reviewable_recognize", recall: "reviewable_recall", reconstruct: "reviewable_reconstruct" };
+  const canStartAt = (it, gated, level) => it[LEVEL_FIELD[level]] || !gated;
+
+  // The plain Learn/primary button's gate: a trace always walks and an
+  // exam-due deck's primary is its exam (both non-level, via `canStart`);
+  // otherwise it reviews at the deck's own last-used level.
+  const canStartPrimary = (it, gated) =>
+    (it.is_trace || it.state === "examdue") ? canStart(it, gated) : canStartAt(it, gated, it.last_level);
 
   // Launch one deck/member. An exam-due deck sits its exam; a trace will walk
   // once the web hosts walks (for now it reviews its explain cards — the single
   // place to change). Launching inside a workspace remembers it so leaving the
   // session returns here.
   function launch(it, wsName, gated) {
-    if (!canStart(it, gated)) return;
+    if (!canStartPrimary(it, gated)) return;
     lastWorkspace = wsName || null;
     // A trace's primary action is always the WALK (its exam is reached via the
     // "Take exam" button, or the walk's capstone). An exam-due fact deck sits its
@@ -1471,10 +1488,10 @@ async function renderSelect() {
   }
 
   // Launch at an explicit level (from the split Learn button's ▾ menu), same
-  // gating + drawer-scope rules as `launch`, but never routes to the exam —
-  // picking a level always means "review".
+  // drawer-scope rules as `launch`, but never routes to the exam — picking a
+  // level always means "review", gated on that level's own due-ness.
   function launchLevel(it, wsName, gated, level) {
-    if (!canStart(it, gated)) return;
+    if (!canStartAt(it, gated, level)) return;
     lastWorkspace = wsName || null;
     const sel = drawerSel.deck === it.name ? drawerSel : {};
     select(it.name, sel.topology, sel.region, level);
@@ -1635,7 +1652,7 @@ async function renderSelect() {
         // onto a button syncPrimary() is about to destroy, stranding it on <body>.
         for (const lvl of ["recognize", "recall", "reconstruct"]) {
           const b = el("button", "chip" + (lvl === it.last_level ? " primary" : ""), lvl[0].toUpperCase() + lvl.slice(1));
-          b.disabled = !canStart(it, f._gated);
+          b.disabled = !canStartAt(it, f._gated, lvl);
           b.addEventListener("mousedown", e => e.preventDefault());
           b.addEventListener("click", () => { levelMenuOpen = false; launchLevel(it, f._wsName, f._gated, lvl); });
           legend.appendChild(b);
@@ -1663,7 +1680,7 @@ async function renderSelect() {
         // Learn (facts → review, trace → walk) is Enter; an exam-due deck's
         // primary is its exam (also enter, or 🔒 when that exam is locked).
         primary.appendChild(el("span", "k", examPrimary && !it.examable ? "\u{1F512}" : "enter"));
-        primary.disabled = !canStart(it, f._gated);
+        primary.disabled = !canStartPrimary(it, f._gated);
         primary.addEventListener("click", () => launch(it, f._wsName, f._gated));
       } else {
         primary = el("button", "chip primary", "Learn");

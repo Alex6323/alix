@@ -103,8 +103,27 @@ pub struct DeckStatus {
     pub locked: bool,
     /// Launching right now would have something to do — a card due/new, a trace
     /// checkpoint, or a due exam. `false` for a fully-drilled / all-on-cooldown
-    /// deck, which the review launcher won't start (shown with a 🕒).
+    /// deck, which the review launcher won't start (shown with a 🕒). The OR of
+    /// [`reviewable_recognize`](Self::reviewable_recognize),
+    /// [`reviewable_recall`](Self::reviewable_recall),
+    /// [`reviewable_reconstruct`](Self::reviewable_reconstruct), plus the
+    /// non-level trace/exam-due special cases (untouched by the per-level
+    /// split) — "anything to do, at any level".
     pub reviewable: bool,
+    /// Any deck card hasn't yet been correctly picked at Recognize
+    /// (`recognized_ms` unset) — Recognize is unscheduled, so this is a plain
+    /// not-yet-done check, not a due time.
+    pub reviewable_recognize: bool,
+    /// A card is due (or fresh) at Recall right now, or a virtual
+    /// (remediation) card is due — the Recall-only signal `reviewable` used
+    /// to be entirely.
+    pub reviewable_recall: bool,
+    /// A non-retired card is due at Reconstruct right now, via the
+    /// level-aware scheduler. The cross-level immediacy rule (`Fsrs::due_at`)
+    /// means this is `true` for essentially any Recall-established deck —
+    /// that's the point: independent Reconstruct practice is reachable the
+    /// moment Recall has settled, not gated behind a separate warm-up.
+    pub reviewable_reconstruct: bool,
     /// Finished *and* exam-passed — reads `mastered 🎉` rather than `done ✓`, and
     /// belongs in the Mastered window rather than Recent.
     pub mastered: bool,
@@ -213,28 +232,54 @@ pub fn deck_status(
     // (trace exams) is enforced at the launch sites, which have the config.
     let has_exam = deck.has_exam();
     let examable = has_exam && !actually_locked;
-    // Is there anything to launch right now? A trace always walks; an exam-due
-    // deck launches its exam (only when its exam isn't locked); otherwise there
-    // must be a card due or new. Drilling is never gated by the lock — a
-    // prerequisite-locked deck with due cards is still reviewable.
+    // Per-level due-ness (spec `{#check-matrix}`): each level's own honest
+    // signal, via the level-aware scheduler. Recognize needs any card not yet
+    // correctly picked; Recall/Reconstruct each read their own independent
+    // schedule — the scheduler's cross-level immediacy rule (`Fsrs::due_at`)
+    // is what makes a Recall-settled deck due right now at Reconstruct too.
     let scheduler = crate::scheduler::Fsrs::new(review.retention);
     let now = session::now_ms();
+    let reviewable_recognize = session::has_reviewable(
+        &deck.cards,
+        store,
+        &scheduler,
+        Level::Recognize,
+        now,
+        review.retire_after_days,
+    );
+    let reviewable_recall = session::has_reviewable(
+        &deck.cards,
+        store,
+        &scheduler,
+        Level::Recall,
+        now,
+        review.retire_after_days,
+    ) || session::has_reviewable_virtual(
+        store,
+        &deck.subject,
+        &scheduler,
+        now,
+        review.retire_after_days,
+    );
+    let reviewable_reconstruct = session::has_reviewable(
+        &deck.cards,
+        store,
+        &scheduler,
+        Level::Reconstruct,
+        now,
+        review.retire_after_days,
+    );
+    // Is there anything to launch right now, at any level? A trace always
+    // walks; an exam-due deck launches its exam (only when its exam isn't
+    // locked) — both non-level special cases, unchanged by the per-level
+    // split above; otherwise it's whichever level currently has something due
+    // (or new, or a due virtual card). Drilling is never gated by the lock —
+    // a prerequisite-locked deck with due cards is still reviewable.
     let reviewable = deck.is_trace()
         || (matches!(state, DeckState::ExamDue) && examable)
-        || session::has_reviewable(
-            &deck.cards,
-            store,
-            &scheduler,
-            now,
-            review.retire_after_days,
-        )
-        || session::has_reviewable_virtual(
-            store,
-            &deck.subject,
-            &scheduler,
-            now,
-            review.retire_after_days,
-        );
+        || reviewable_recognize
+        || reviewable_recall
+        || reviewable_reconstruct;
     let (badge_level, badge_dotted) = badge_level_for(&deck.subject, &deck.cards, store);
     let new_cards = deck.cards.iter().any(|card| store.get(card.id()).is_none());
     DeckStatus {
@@ -242,6 +287,9 @@ pub fn deck_status(
         badge,
         locked,
         reviewable,
+        reviewable_recognize,
+        reviewable_recall,
+        reviewable_reconstruct,
         mastered,
         is_trace: deck.is_trace(),
         examable,
@@ -712,7 +760,14 @@ mod tests {
         let mut store = Store::open(dir.path().join("progress.json")).unwrap();
         let now = session::now_ms();
         let card_id = deck.cards[0].id();
-        store.get_or_insert(card_id, now).recall = Some(graduated_not_due(now));
+        // Fully done at *every* level — recognized, and graduated-not-due at
+        // both Recall and Reconstruct (a real Reconstruct schedule, so the
+        // cross-level immediacy rule doesn't fire) — so only a virtual card
+        // can make this deck reviewable.
+        let entry = store.get_or_insert(card_id, now);
+        entry.recognized_ms = Some(now);
+        entry.recall = Some(graduated_not_due(now));
+        entry.reconstruct = Some(graduated_not_due(now));
 
         // Fully drilled, nothing due: `done ✓` and not reviewable.
         let status = deck_status(&deck, &store, None, false, ReviewConfig::default());
@@ -720,11 +775,58 @@ mod tests {
         assert!(!status.reviewable);
 
         // A due virtual card for this deck makes it reviewable even though
-        // every deck card is done.
+        // every deck card is done at every level.
         insert_due_virtual_card(&mut store, &deck.subject);
         let status = deck_status(&deck, &store, None, false, ReviewConfig::default());
         assert!(status.reviewable);
         assert_eq!("done ✓", status.badge); // unaffected by the virtual card
+    }
+
+    #[test]
+    fn a_recall_settled_deck_is_still_reviewable_at_reconstruct() {
+        // The final-review fix (Important #1): a deck that's mature and not
+        // due at Recall is due *right now* at Reconstruct, via the
+        // scheduler's cross-level immediacy rule — `reviewable_recall` must
+        // say no while `reviewable_reconstruct` (and the overall
+        // `reviewable`) say yes.
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("rust.txt");
+        std::fs::write(&deck_path, "# q1\n\ta1\n").unwrap();
+        let deck = Deck::load(&deck_path).unwrap();
+
+        let mut store = Store::open(dir.path().join("progress.json")).unwrap();
+        let now = session::now_ms();
+        let card_id = deck.cards[0].id();
+        // Mature at Recall, nothing due there — never touched at Reconstruct.
+        store.get_or_insert(card_id, now).recall = Some(mature(now, 25.0));
+
+        let status = deck_status(&deck, &store, None, false, ReviewConfig::default());
+        assert!(!status.reviewable_recall, "nothing due at recall");
+        assert!(
+            status.reviewable_reconstruct,
+            "due now at reconstruct via the immediacy rule"
+        );
+        assert!(status.reviewable, "reviewable overall via reconstruct");
+    }
+
+    #[test]
+    fn recognize_reviewability_tracks_unrecognized_cards() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("rust.txt");
+        std::fs::write(&deck_path, "# q1\n\ta1\n# q2\n\ta2\n").unwrap();
+        let deck = Deck::load(&deck_path).unwrap();
+
+        let mut store = Store::open(dir.path().join("progress.json")).unwrap();
+        let now = session::now_ms();
+        store.get_or_insert(deck.cards[0].id(), now).recognized_ms = Some(now);
+
+        // Card 2 has never been correctly picked at Recognize.
+        let status = deck_status(&deck, &store, None, false, ReviewConfig::default());
+        assert!(status.reviewable_recognize);
+
+        store.get_or_insert(deck.cards[1].id(), now).recognized_ms = Some(now);
+        let status = deck_status(&deck, &store, None, false, ReviewConfig::default());
+        assert!(!status.reviewable_recognize);
     }
 
     #[test]

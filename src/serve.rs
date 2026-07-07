@@ -319,6 +319,15 @@ struct DeckItemDto {
     locked: bool,
     /// Launching now would have something to do; `false` → nothing due (🕒).
     reviewable: bool,
+    /// Any card hasn't yet been correctly picked at Recognize — see
+    /// [`picker::DeckStatus::reviewable_recognize`].
+    reviewable_recognize: bool,
+    /// A card is due (or fresh), or a virtual card is due, at Recall — see
+    /// [`picker::DeckStatus::reviewable_recall`].
+    reviewable_recall: bool,
+    /// A card is due at Reconstruct — see
+    /// [`picker::DeckStatus::reviewable_reconstruct`].
+    reviewable_reconstruct: bool,
     /// Finished *and* exam-passed — lives in the Mastered window, not Recent.
     mastered: bool,
     /// A trace deck (`% trace:`): walked, not card-reviewed.
@@ -378,6 +387,11 @@ struct MemberDto {
     state: &'static str,
     locked: bool,
     reviewable: bool,
+    /// Per-level due-ness — see [`DeckItemDto::reviewable_recognize`] /
+    /// [`DeckItemDto::reviewable_recall`] / [`DeckItemDto::reviewable_reconstruct`].
+    reviewable_recognize: bool,
+    reviewable_recall: bool,
+    reviewable_reconstruct: bool,
     mastered: bool,
     is_trace: bool,
     examable: bool,
@@ -2899,6 +2913,9 @@ fn deck_item_dto(
                 state: state_name(s.state),
                 locked: s.locked,
                 reviewable: s.reviewable,
+                reviewable_recognize: s.reviewable_recognize,
+                reviewable_recall: s.reviewable_recall,
+                reviewable_reconstruct: s.reviewable_reconstruct,
                 mastered: s.mastered,
                 is_trace: s.is_trace,
                 examable: s.examable,
@@ -2925,6 +2942,9 @@ fn deck_item_dto(
             state: "new",
             locked: false,
             reviewable: true,
+            reviewable_recognize: true,
+            reviewable_recall: true,
+            reviewable_reconstruct: true,
             mastered: false,
             is_trace: false,
             examable: false,
@@ -3031,6 +3051,9 @@ fn workspace_members(
                     state: state_name(s.state),
                     locked: s.locked,
                     reviewable: s.reviewable,
+                    reviewable_recognize: s.reviewable_recognize,
+                    reviewable_recall: s.reviewable_recall,
+                    reviewable_reconstruct: s.reviewable_reconstruct,
                     mastered: s.mastered,
                     is_trace: s.is_trace,
                     examable: s.examable,
@@ -3052,6 +3075,9 @@ fn workspace_members(
                     state: "new",
                     locked: false,
                     reviewable: true,
+                    reviewable_recognize: true,
+                    reviewable_recall: true,
+                    reviewable_reconstruct: true,
                     mastered: false,
                     is_trace: false,
                     examable: false,
@@ -3125,6 +3151,9 @@ fn deck_catalog(
                 state: if is_ws { "workspace" } else { "folder" },
                 locked: false,
                 reviewable: true,
+                reviewable_recognize: true,
+                reviewable_recall: true,
+                reviewable_reconstruct: true,
                 mastered: false,
                 is_trace: false,
                 examable: false,
@@ -3245,9 +3274,18 @@ fn deck_topology_dto(
     let now = now_ms();
     // Cards in a region resolved back to the deck (ids absent from the deck —
     // e.g. a topology built before an edit — are skipped).
+    // Pinned to Recall, like `card_strengths`/`retrievability` above — the
+    // focus drawer is a deck-wide signal (spec §4.5), not a per-session one.
     let due_of = |ids: &[u64]| {
         let cards: Vec<&Card> = ids.iter().filter_map(|id| by_id.get(id).copied()).collect();
-        crate::session::count_reviewable(&cards, store, &scheduler, now, review.retire_after_days)
+        crate::session::count_reviewable(
+            &cards,
+            store,
+            &scheduler,
+            Level::Recall,
+            now,
+            review.retire_after_days,
+        )
     };
     // Whole-deck due count: the deck's own cards, plus any of its virtual
     // (remediation) cards that are due — never affecting deck size/composition.
@@ -3255,7 +3293,14 @@ fn deck_topology_dto(
         .cards
         .iter()
         .filter(|c| {
-            crate::session::is_reviewable(c, store, &scheduler, now, review.retire_after_days)
+            crate::session::is_reviewable(
+                c,
+                store,
+                &scheduler,
+                Level::Recall,
+                now,
+                review.retire_after_days,
+            )
         })
         .count()
         + crate::session::count_reviewable_virtual(
