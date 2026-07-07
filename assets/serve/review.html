@@ -1657,14 +1657,16 @@ async function renderSelect() {
         // drawer-cell trick), so row nav and the menu's own Escape keep working
         // after any of these buttons is clicked — a click otherwise moves focus
         // onto a button syncPrimary() is about to destroy, stranding it on <body>.
-        LEVELS.forEach((lvl, i) => {
+        // PK's per-level bindings are keyed by the level names themselves,
+        // so PK[lvl] is each chip's binding (1/2/3 by default).
+        for (const lvl of LEVELS) {
           const b = el("button", "chip" + (lvl === it.last_level ? " primary" : ""), lvl[0].toUpperCase() + lvl.slice(1));
-          b.appendChild(el("span", "k", String(i + 1)));
+          b.appendChild(el("span", "k", label(PK[lvl])));
           b.disabled = !canStartAt(it, f._gated, lvl);
           b.addEventListener("mousedown", e => e.preventDefault());
           b.addEventListener("click", () => { levelMenuOpen = false; launchLevel(it, f._wsName, f._gated, lvl); });
           legend.appendChild(b);
-        });
+        }
         const cancel = el("button", "chip", "Cancel");
         cancel.appendChild(el("span", "k", "esc"));
         cancel.addEventListener("mousedown", e => e.preventDefault());
@@ -1703,7 +1705,7 @@ async function renderSelect() {
         const it = f._item;
         const lv = el("button", "chip split", "▾");
         lv.title = "choose a level";
-        lv.appendChild(el("span", "k", "v"));
+        lv.appendChild(el("span", "k", label(PK.level)));
         lv.disabled = !canStart(it, f._gated);
         // Keep focus on the deck row (see the level menu above): the click
         // rebuilds the footer, which would otherwise strand focus on <body>.
@@ -1937,19 +1939,20 @@ async function renderSelect() {
       // Keys inside the open drawer (its native topology picker) belong to it —
       // don't hijack them for row navigation.
       if (e.target.closest(".drawer")) return;
-      // While the level menu is open it owns the keys: 1/2/3 start that level
-      // (matching the chips' hints; inert when that chip is disabled), Esc — or
-      // v again — closes it back to the row's own chips, and Enter still reaches
-      // the global handler below, which clicks the highlighted level. Every
-      // other row-nav key is inert until the menu closes.
+      // While the level menu is open it owns the keys: the per-level bindings
+      // (1/2/3 by default, matching the chips' hints) start that level — inert
+      // when that chip is disabled — Esc or the level key again closes it back
+      // to the row's own chips, and Enter still reaches the global handler
+      // below, which clicks the highlighted level. Every other row-nav key is
+      // inert until the menu closes.
       if (levelMenuOpen) {
         const f = focusedEl;
-        const n = ["1", "2", "3"].indexOf(e.key);
-        if (n >= 0 && f && f._item && canStartAt(f._item, f._gated, LEVELS[n])) {
+        const lvl = LEVELS.find(l => hit(e, PK[l]));
+        if (lvl && f && f._item && canStartAt(f._item, f._gated, lvl)) {
           e.preventDefault(); e.stopPropagation();
           levelMenuOpen = false;
-          launchLevel(f._item, f._wsName, f._gated, LEVELS[n]);
-        } else if (e.key === "Escape" || e.key === "v") {
+          launchLevel(f._item, f._wsName, f._gated, lvl);
+        } else if (e.key === "Escape" || hit(e, PK.level)) {
           e.preventDefault(); e.stopPropagation(); levelMenuOpen = false; syncPrimary();
         }
         return;
@@ -1962,8 +1965,8 @@ async function renderSelect() {
       // workspace and left is inert (returning is Esc/Backspace). The primary
       // action — Learn a deck / Open a workspace / Take exam — is Enter, not l.
       // g/G/Home/End jump to ends; / or Ctrl-F focus the filter; b browses;
-      // a augments; v opens the level menu (same gate as its ▾ chip, and only
-      // when that chip is enabled); m opens Mastered.
+      // a augments; the level key (v) opens the level menu (same gate as its
+      // ▾ chip, and only when that chip is enabled); m opens Mastered.
       if (e.key === "ArrowDown" || hit(e, PK.down)) { e.preventDefault(); if (idx < v.length - 1) v[idx + 1].focus(); }
       else if (e.key === "ArrowUp" || hit(e, PK.up)) { e.preventDefault(); if (idx > 0) v[idx - 1].focus(); } // stays on the first row; the filter is only reachable via / or Ctrl-F
       else if (e.key === "g" || e.key === "Home") { e.preventDefault(); if (v.length) v[0].focus(); }
@@ -1973,7 +1976,7 @@ async function renderSelect() {
       else if (e.key === "ArrowLeft" || hit(e, PK.back)) { e.preventDefault(); if (drawerCycle) drawerCycle(-1); } // back-out is Esc/Backspace only; ←/h just steps the drawer
       else if (e.key === "b" && cur && cur._item) { e.preventDefault(); browseDeck(cur._item, cur._wsName); }
       else if (e.key === "a" && cur && cur._item) { e.preventDefault(); lastWorkspace = cur._wsName || null; openAugment(cur._item.name); }
-      else if (e.key === "v" && hasLevelSplit(cur) && canStart(cur._item, cur._gated)) { e.preventDefault(); levelMenuOpen = true; syncPrimary(); }
+      else if (hit(e, PK.level) && hasLevelSplit(cur) && canStart(cur._item, cur._gated)) { e.preventDefault(); levelMenuOpen = true; syncPrimary(); }
       else if (e.key === "r") { e.preventDefault(); replayLogo(); renderSelect(); } // re-scan the decks (also the ⟳ nav button)
       else if (opts.allowMastered && hit(e, PK.mastered)) { e.preventDefault(); renderMastered(); }
       else if (e.key === "x" && cur && cur._item && cur._item.examable) {
@@ -3316,6 +3319,8 @@ Promise.all([
     up: [{ k: "k", ctrl: false }], down: [{ k: "j", ctrl: false }],
     open: [{ k: "l", ctrl: false }], back: [{ k: "h", ctrl: false }],
     filter: [{ k: "/", ctrl: false }, { k: "f", ctrl: true }], mastered: [{ k: "m", ctrl: false }],
+    level: [{ k: "v", ctrl: false }], recognize: [{ k: "1", ctrl: false }],
+    recall: [{ k: "2", ctrl: false }], reconstruct: [{ k: "3", ctrl: false }],
   }, pk || {});
   document.querySelector("#mRemove .mk").textContent = label(KEYS.remove);
   document.getElementById("mAskKey").textContent = label(KEYS.ask);

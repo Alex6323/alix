@@ -489,7 +489,8 @@ from both — you don't hand-pick a "mode" per card:
 Every review session runs at one of three independent levels, picked when you
 start it (`--level`, or the web picker's split **Learn** button — its small ▾
 opens **Recognize** / **Recall** / **Reconstruct**; on the keyboard, `v` opens
-that menu and `1`/`2`/`3` pick a level, `Esc` cancels). Plain **Learn** reuses
+that menu and `1`/`2`/`3` pick a level, `Esc` cancels — rebindable in
+[`[keys.picker]`](#configuration)). Plain **Learn** reuses
 the deck's own last-used level, remembered per deck (first time: Recall).
 
 - **Recognize** — unscheduled and boolean: no FSRS schedule, just a per-card
@@ -1268,8 +1269,10 @@ they cannot shadow text input — use `ctrl-`/special keys for `hint`, `skip`
 and `quit`. A different config file can be passed with `--config <path>`.
 
 The picker's Vim-style navigation is under `[keys.picker]` (`up`, `down`, `open`,
-`back`, `filter`, `mastered`), and the read-only browse overlay has its
-own bindings under `[keys.browse]`:
+`back`, `filter`, `mastered`, plus the level menu: `level` opens/closes it,
+default `v`, and `recognize`/`recall`/`reconstruct` start the focused deck at
+that level while it's open, defaults `1`/`2`/`3`), and the read-only browse
+overlay has its own bindings under `[keys.browse]`:
 
 ```toml
 [keys.browse]

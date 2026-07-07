@@ -530,8 +530,9 @@ impl ReviewKeys {
 
 /// The deck-picker navigation keys the selection screen binds, mirroring the
 /// configured `[picker]` section (Vim defaults): move, open/back, focus the
-/// filter, and open the Mastered window. (Jump to first/last is fixed at
-/// `g`/`G`/Home/End on the page, so it isn't sent.)
+/// filter, open the Mastered window, and the level menu (open it + start at
+/// one of the three levels). (Jump to first/last is fixed at `g`/`G`/Home/End
+/// on the page, so it isn't sent.)
 #[derive(Debug, Serialize)]
 struct PickerKeysDto {
     up: Vec<KeyDto>,
@@ -540,6 +541,10 @@ struct PickerKeysDto {
     back: Vec<KeyDto>,
     filter: Vec<KeyDto>,
     mastered: Vec<KeyDto>,
+    level: Vec<KeyDto>,
+    recognize: Vec<KeyDto>,
+    recall: Vec<KeyDto>,
+    reconstruct: Vec<KeyDto>,
 }
 
 impl PickerKeysDto {
@@ -551,6 +556,10 @@ impl PickerKeysDto {
             back: key_list(&k.back),
             filter: key_list(&k.filter),
             mastered: key_list(&k.mastered),
+            level: key_list(&k.level),
+            recognize: key_list(&k.recognize),
+            recall: key_list(&k.recall),
+            reconstruct: key_list(&k.reconstruct),
         }
     }
 }

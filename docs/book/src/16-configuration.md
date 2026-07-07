@@ -28,7 +28,9 @@ they can't shadow your input — use `ctrl-`/special keys for `hint`, `skip`, an
 `quit` there. Pass a different file with `--config <path>`.
 
 The picker's navigation is `[keys.picker]` (`up`, `down`, `open`, `back`,
-`filter`, `mastered`), the browse overlay has its own `[keys.browse]` bindings, and
+`filter`, `mastered`, plus `level` to open the level menu and
+`recognize`/`recall`/`reconstruct` to pick within it — defaults `v` and
+`1`/`2`/`3`), the browse overlay has its own `[keys.browse]` bindings, and
 the web server reads its default port from `[serve]`:
 
 ```toml

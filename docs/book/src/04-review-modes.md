@@ -47,7 +47,8 @@ adding or changing it never resets progress.
 Every review session runs at one of three independent levels, picked when you
 start it: `--level` on the command line, or the web picker's split **Learn**
 button, whose small ▾ opens a menu of the three (on the keyboard: `v`, then
-`1`/`2`/`3` — `Esc` cancels). Plain **Learn** reuses the deck's own last-used
+`1`/`2`/`3` — `Esc` cancels; rebindable in
+[`[keys.picker]`](16-configuration.md)). Plain **Learn** reuses the deck's own last-used
 level, remembered per deck (the first time you ever open it: Recall).
 
 - **Recognize** — unscheduled and boolean. There's no FSRS state for it at

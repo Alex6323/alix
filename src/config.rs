@@ -175,6 +175,14 @@ pub struct PickerKeys {
     pub filter: Vec<KeyPattern>,
     /// Open the Mastered window.
     pub mastered: Vec<KeyPattern>,
+    /// Open (or close) the focused deck's level menu — the split Learn
+    /// button's ▾. `Esc` always closes it too.
+    pub level: Vec<KeyPattern>,
+    /// Start the focused deck at a level while its menu is open. `Enter`
+    /// always starts the highlighted (last-used) level.
+    pub recognize: Vec<KeyPattern>,
+    pub recall: Vec<KeyPattern>,
+    pub reconstruct: Vec<KeyPattern>,
 }
 
 impl Default for PickerKeys {
@@ -187,6 +195,10 @@ impl Default for PickerKeys {
             back: keys(&["h"]),
             filter: keys(&["/", "ctrl-f"]),
             mastered: keys(&["m"]),
+            level: keys(&["v"]),
+            recognize: keys(&["1"]),
+            recall: keys(&["2"]),
+            reconstruct: keys(&["3"]),
         }
     }
 }
@@ -666,6 +678,10 @@ struct RawPicker {
     back: Option<Vec<String>>,
     filter: Option<Vec<String>>,
     mastered: Option<Vec<String>>,
+    level: Option<Vec<String>>,
+    recognize: Option<Vec<String>>,
+    recall: Option<Vec<String>>,
+    reconstruct: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Default)]
@@ -769,6 +785,18 @@ impl Config {
             &mut picker.mastered,
             raw.keys.picker.mastered,
             "picker.mastered",
+        )?;
+        assign(&mut picker.level, raw.keys.picker.level, "picker.level")?;
+        assign(
+            &mut picker.recognize,
+            raw.keys.picker.recognize,
+            "picker.recognize",
+        )?;
+        assign(&mut picker.recall, raw.keys.picker.recall, "picker.recall")?;
+        assign(
+            &mut picker.reconstruct,
+            raw.keys.picker.reconstruct,
+            "picker.reconstruct",
         )?;
 
         let mut browse = BrowseBindings::default();
@@ -1039,6 +1067,10 @@ pub fn default_config_toml() -> &'static str {
 # back = ["h"]                  # step back / cancel
 # filter = ["/", "ctrl-f"]      # start filtering
 # mastered = ["m"]              # open the Mastered window
+# level = ["v"]                 # open the focused deck's level menu (Esc closes it too)
+# recognize = ["1"]             # with the menu open, start at that level;
+# recall = ["2"]                #   Enter always starts the highlighted
+# reconstruct = ["3"]           #   (last-used) one
 
 # Key bindings for `alix browse` (the read-only reader). Jumping to the first
 # and last card is fixed to g / G / Home / End, and the arrow keys always
@@ -1324,6 +1356,21 @@ mod tests {
         // Unmentioned picker keys keep their Vim defaults.
         assert_eq!(PickerKeys::default().up, config.picker.up);
         assert_eq!(PickerKeys::default().mastered, config.picker.mastered);
+    }
+
+    #[test]
+    fn level_menu_keys_override_and_default() {
+        let config =
+            Config::from_toml("[keys.picker]\nlevel = [\"s\"]\nreconstruct = [\"3\", \"e\"]\n")
+                .unwrap();
+        assert_eq!(vec![parse_key("s").unwrap()], config.picker.level);
+        assert_eq!(
+            vec![parse_key("3").unwrap(), parse_key("e").unwrap()],
+            config.picker.reconstruct
+        );
+        // Unmentioned level keys keep their digit defaults.
+        assert_eq!(vec![parse_key("1").unwrap()], config.picker.recognize);
+        assert_eq!(vec![parse_key("2").unwrap()], config.picker.recall);
     }
 
     #[test]
