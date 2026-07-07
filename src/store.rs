@@ -93,7 +93,8 @@ impl FsrsState {
 /// The stored state of a single card, keyed by its identity hash.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct CardState {
-    /// When the card was first acquired (Unix ms); the acquire-cooldown anchor for a not-yet-scheduled card.
+    /// When the card was first acquired (Unix ms); the acquire-cooldown anchor for a
+    /// not-yet-scheduled card.
     #[serde(default)]
     pub acquired_ms: u64,
     /// Recall-level FSRS state; present once the card has been reviewed at
@@ -547,7 +548,10 @@ impl Store {
     /// Records `level` as the last-used session level for `subject`. Does not
     /// save.
     pub fn set_last_level(&mut self, subject: &str, level: Level) {
-        self.decks.entry(subject.to_string()).or_default().last_level = Some(level);
+        self.decks
+            .entry(subject.to_string())
+            .or_default()
+            .last_level = Some(level);
     }
 
     /// When the badge at `level` was first earned for `subject` (Unix ms), if
@@ -1203,7 +1207,8 @@ mod tests {
         let store_path = dir.path().join("progress.json");
         let mut store = Store::open(&store_path).unwrap();
 
-        let text = "# Complete the quote\n% reveal: cloze\n\tTo {{be}} or not to {{be}}\n\t! Hamlet\n";
+        let text =
+            "# Complete the quote\n% reveal: cloze\n\tTo {{be}} or not to {{be}}\n\t! Hamlet\n";
         let cards = crate::parser::parse_str("rust.txt", text).unwrap();
         assert_eq!(2, cards.len());
         let id0 = cards[0].id();

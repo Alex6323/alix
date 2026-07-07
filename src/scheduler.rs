@@ -3,8 +3,9 @@
 //! One scheduler: [`Fsrs`], FSRS-5 via the `rs-fsrs` crate. Short-term modeling is on, so FSRS owns
 //! both the learning steps (a New card graded Good is due ~10 min out in `Learning`) and the
 //! long-term DSR review that follows — one model across the short and the long term, no separate
-//! box tiers to switch between. Graduation to `Review` always takes **two** full Goods in the acquisition
-//! phase (a Fail resets that progress rather than fast-tracking it — see [`Fsrs::apply`]).
+//! box tiers to switch between. Graduation to `Review` always takes **two** full Goods in the
+//! acquisition phase (a Fail resets that progress rather than fast-tracking it — see
+//! [`Fsrs::apply`]).
 //!
 //! The legacy Leitner `stage` field is gone entirely. `acquired_ms` marks when a card was first
 //! shown, and `seed_card` always seeds fresh FSRS state as `New` — there is no pre-FSRS carry-over

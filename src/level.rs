@@ -47,9 +47,7 @@ pub fn level_name(level: Level) -> &'static str {
 
 /// How a card's answer is presented / uncovered — authored (`% reveal:`),
 /// independent of depth. Composes with any level.
-#[derive(
-    Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize, clap::ValueEnum,
-)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize, clap::ValueEnum)]
 #[serde(rename_all = "lowercase")]
 pub enum Reveal {
     /// Reveal the whole answer at once (default).
@@ -95,8 +93,7 @@ pub fn check_for(reveal: Reveal, level: Level, card: &Card) -> Mode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::answer::Mode;
-    use crate::parser;
+    use crate::{answer::Mode, parser};
 
     fn card(back: &str) -> crate::card::Card {
         let text = format!("# q\n{back}");
@@ -106,28 +103,55 @@ mod tests {
     #[test]
     fn recognize_level_always_renders_a_choice_check() {
         for reveal in [Reveal::Flip, Reveal::Cloze, Reveal::Line] {
-            assert_eq!(Mode::Choice, check_for(reveal, Level::Recognize, &card("a")));
+            assert_eq!(
+                Mode::Choice,
+                check_for(reveal, Level::Recognize, &card("a"))
+            );
         }
     }
 
     #[test]
     fn recall_level_maps_reveal_to_its_self_graded_check() {
-        assert_eq!(Mode::Flip, check_for(Reveal::Flip, Level::Recall, &card("a")));
-        assert_eq!(Mode::Flip, check_for(Reveal::Cloze, Level::Recall, &card("a")));
-        assert_eq!(Mode::LineByLine, check_for(Reveal::Line, Level::Recall, &card("a")));
+        assert_eq!(
+            Mode::Flip,
+            check_for(Reveal::Flip, Level::Recall, &card("a"))
+        );
+        assert_eq!(
+            Mode::Flip,
+            check_for(Reveal::Cloze, Level::Recall, &card("a"))
+        );
+        assert_eq!(
+            Mode::LineByLine,
+            check_for(Reveal::Line, Level::Recall, &card("a"))
+        );
     }
 
     #[test]
     fn reconstruct_level_types_atoms_ticks_rich_and_types_lines() {
-        assert_eq!(Mode::Typing, check_for(Reveal::Flip, Level::Reconstruct, &card("a")));
-        assert_eq!(Mode::Explain, check_for(Reveal::Flip, Level::Reconstruct, &card("a\n    b")));
-        assert_eq!(Mode::Typing, check_for(Reveal::Cloze, Level::Reconstruct, &card("a {{b}}")));
-        assert_eq!(Mode::TypeLine, check_for(Reveal::Line, Level::Reconstruct, &card("a\n    b")));
+        assert_eq!(
+            Mode::Typing,
+            check_for(Reveal::Flip, Level::Reconstruct, &card("a"))
+        );
+        assert_eq!(
+            Mode::Explain,
+            check_for(Reveal::Flip, Level::Reconstruct, &card("a\n    b"))
+        );
+        assert_eq!(
+            Mode::Typing,
+            check_for(Reveal::Cloze, Level::Reconstruct, &card("a {{b}}"))
+        );
+        assert_eq!(
+            Mode::TypeLine,
+            check_for(Reveal::Line, Level::Reconstruct, &card("a\n    b"))
+        );
     }
 
     #[test]
     fn level_serializes_lowercase_and_defaults_to_recall() {
         assert_eq!(Level::default(), Level::Recall);
-        assert_eq!("\"recognize\"", serde_json::to_string(&Level::Recognize).unwrap());
+        assert_eq!(
+            "\"recognize\"",
+            serde_json::to_string(&Level::Recognize).unwrap()
+        );
     }
 }

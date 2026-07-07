@@ -997,7 +997,10 @@ mod tests {
         session.acquire_current(&mut store, 1000);
 
         let state = store.get(id).expect("acquired card is recorded");
-        assert!(state.recall.is_none(), "acquiring does not schedule under FSRS");
+        assert!(
+            state.recall.is_none(),
+            "acquiring does not schedule under FSRS"
+        );
         assert_eq!(1000, state.acquired_ms, "acquire stamps the acquire time");
         assert!(state.history.is_empty()); // acquiring is not a review
         assert_eq!(0, state.total_reviews);

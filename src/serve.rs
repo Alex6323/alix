@@ -1527,10 +1527,7 @@ pub fn run_review(
                     if let Some(r) = reviewing.as_mut() {
                         r.session.poll(&store, now_ms());
                     }
-                    respond_json(
-                        request,
-                        &review_state(reviewing.as_ref(), &store),
-                    )
+                    respond_json(request, &review_state(reviewing.as_ref(), &store))
                 }
             }
             (Method::Post, "/api/select") => {
@@ -1660,10 +1657,7 @@ pub fn run_review(
                 if let Ok(s) = store_for(&[]) {
                     store = s;
                 }
-                respond_json(
-                    request,
-                    &review_state(reviewing.as_ref(), &store),
-                );
+                respond_json(request, &review_state(reviewing.as_ref(), &store));
             }
             (Method::Post, "/api/grade") => {
                 let Some(r) = reviewing.as_mut() else {
@@ -1685,10 +1679,7 @@ pub fn run_review(
                             eprintln!("warning: could not save progress: {e}");
                         }
                         r.rotate_variant(); // a fresh phrasing for the next card
-                        respond_json(
-                            request,
-                            &review_state(reviewing.as_ref(), &store),
-                        );
+                        respond_json(request, &review_state(reviewing.as_ref(), &store));
                     }
                     None => respond_status(request, 400),
                 }
@@ -1700,10 +1691,7 @@ pub fn run_review(
                 };
                 r.session.skip(&store, now_ms());
                 r.rotate_variant(); // a fresh phrasing for the next card
-                respond_json(
-                    request,
-                    &review_state(reviewing.as_ref(), &store),
-                );
+                respond_json(request, &review_state(reviewing.as_ref(), &store));
             }
             (Method::Post, "/api/acquire") => {
                 // Acknowledge a never-seen card: record it as acquired (no grade)
@@ -1717,10 +1705,7 @@ pub fn run_review(
                     eprintln!("warning: could not save progress: {e}");
                 }
                 r.rotate_variant(); // a fresh phrasing for the next card
-                respond_json(
-                    request,
-                    &review_state(reviewing.as_ref(), &store),
-                );
+                respond_json(request, &review_state(reviewing.as_ref(), &store));
             }
             (Method::Post, "/api/check") => {
                 let Some(r) = reviewing.as_ref() else {
@@ -1798,10 +1783,7 @@ pub fn run_review(
                     let _ = store.save();
                     r.files.remove_block(&subject, line);
                 }
-                respond_json(
-                    request,
-                    &review_state(reviewing.as_ref(), &store),
-                );
+                respond_json(request, &review_state(reviewing.as_ref(), &store));
             }
             // Promotes the current virtual (remediation) card into its deck
             // file (`store::promote_virtual` does the append-then-drop; the
@@ -1836,10 +1818,7 @@ pub fn run_review(
                     continue;
                 }
                 r.session.poll(&store, now_ms());
-                respond_json(
-                    request,
-                    &review_state(reviewing.as_ref(), &store),
-                );
+                respond_json(request, &review_state(reviewing.as_ref(), &store));
             }
             (Method::Post, "/api/restart") => {
                 let Some(r) = reviewing.as_mut() else {
@@ -1848,10 +1827,7 @@ pub fn run_review(
                 };
                 r.session.restart(&store, now_ms());
                 r.rotate_variant(); // a fresh phrasing for the new session's first card
-                respond_json(
-                    request,
-                    &review_state(reviewing.as_ref(), &store),
-                );
+                respond_json(request, &review_state(reviewing.as_ref(), &store));
             }
             // Ask Claude about the current card — runs the CLI on a background
             // thread (ask::spawn) and returns immediately; the page polls
@@ -2047,10 +2023,7 @@ pub fn run_review(
                 if let Ok(s) = store_for(&[]) {
                     store = s;
                 }
-                respond_json(
-                    request,
-                    &review_state(reviewing.as_ref(), &store),
-                );
+                respond_json(request, &review_state(reviewing.as_ref(), &store));
             }
             // ── Deck augmentation (the picker's "Augment" action, decks only) ──
             // Open a deck's Augment screen and report what its cache holds. Resolves
@@ -2147,10 +2120,7 @@ pub fn run_review(
                 if let Ok(s) = store_for(&[]) {
                     store = s;
                 }
-                respond_json(
-                    request,
-                    &review_state(reviewing.as_ref(), &store),
-                );
+                respond_json(request, &review_state(reviewing.as_ref(), &store));
             }
             // ── Trace walk (a single trace picked from the selection screen) ──
             // The web trace-walk flow (predict → reveal → grade), guarded on `walking`.
