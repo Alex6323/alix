@@ -38,43 +38,49 @@ stretch the gaps. Set it in the `[review]` config section, or per workspace in a
 ### New cards: an attempt before they're tested
 
 A card you've never seen isn't quizzed cold — you can't reconstruct what you've
-never read — but it isn't simply handed to you either. The first encounter is a
-**low-stakes attempt**, then the answer, then one key (**Seen**) records it
-*without a grade*. By default it's **recall**: the front shows first, you
-try, then reveal. If the deck has AI distractors (`alix deck augment --target
-choices`), an **atomic** card instead greets you as a **multiple-choice** question —
-pick one, see which was right. Either way a guess never promotes or punishes, and
-the first *graded* quiz then comes back **later in the same session** — once a
-short (~1-minute) settle passes it resurfaces, interleaved behind the other cards
-you're seeing, so seeing a deck flows straight into drilling it. Each session introduces up to `--new N` new cards (default 10); start
-another session for more. This is the first step of a card's life — *acquire*,
-then let FSRS space it.
+never read — but it isn't simply handed to you either, whichever level you're
+reviewing at. The first encounter is a **low-stakes attempt**, then the answer,
+then one key (**Seen**) records it *without a grade*. Usually: the front shows
+first, you try, then reveal. If the deck has AI distractors (`alix deck augment
+--target choices`) and the card is **atomic** (single-line answer), it instead
+greets you as a **multiple-choice** question — pick one, see which was right.
+Either way a guess never marks it recognized or punishes it, and the first
+*graded* quiz then comes back **later in the same session** — once a short
+(~1-minute) settle passes it resurfaces, interleaved behind the other cards
+you're seeing, so seeing a deck flows straight into drilling it. Each session
+introduces up to `--new N` new cards (default 10); start another session for
+more. This is the first step of a card's life — *acquire*, then let its
+level(s) schedule it.
 
-## The difficulty ladder
+## Session levels — Recognize, Recall, Reconstruct
 
-FSRS decides *when* a card is due; the **ladder** decides *how deeply* it's asked
-when it comes up. Every card sits on one rung of the depth ladder — `recognize` ⊂
-`recall` ⊂ `reconstruct` (see [Reveal & depth](04-review-modes.md)) — and a single
-FSRS schedule runs at that current rung, the card's **frontier**. Cards enter
-scheduling at **recall** (recognition is the ungraded acquire on-ramp, not a
-scheduled rung), and you set the depth you're climbing toward with
-[`[review] depth`](16-configuration.md) — `1` (recall) by default, `2` for
-reconstruct.
+FSRS decides *when* a card is due; the **session level** decides *how deeply*
+it's asked when it comes up. A session runs at one of three independent
+levels, picked when you start it (`--level`, or the web picker's Learn ▾
+menu) — see [Reveal & session levels](04-review-modes.md) for the full check
+matrix. In short:
 
-- **Climb.** While a card sits *below* your target depth, once it has graduated
-  (reached the review phase) and then survives one *more* spaced pass, it
-  **climbs** to the next rung — with a **fresh schedule**, since a harder check is
-  a new thing to learn. So a card you've settled at recall is, later, asked to
-  reconstruct.
-- **Descent-net.** A miss **drops the card one rung** and relearns it there,
-  floored at recall — you never fall out of the schedule, you fall to an easier
-  check and rebuild.
+- **Recognize** has no FSRS schedule at all — just a boolean *recognized* flag.
+- **Recall** and **Reconstruct** each keep their **own** FSRS schedule per
+  card, so a card can be due for one and not the other; nothing here
+  cross-credits between them.
 
-This is **v1**, deliberately narrow: it schedules **recall** and **reconstruct**
-only, recognition stays the acquire on-ramp, and a reconstruct check on a rich
-(multi-line) answer is **self-graded** — alix doesn't read a full explanation for
-you. If you leave `depth` at `1` (recall), the ladder never climbs and every card
-reviews as reveal-and-self-grade, exactly as before.
+Nothing climbs or descends between levels on its own — a card doesn't get
+harder over time just by surviving reviews. Which level you exercise, and
+when, is entirely your call each session.
+
+## Badges
+
+A deck can earn a **badge** at each level, shown in the picker — a quick read
+on how solid it is, never a gate on anything (only passing the [AI
+exam](12-the-ai-exam.md) unlocks a dependent deck). A deck earns a level's
+badge once *every* one of its cards is currently solid at that level:
+recognized, for Recognize; at or past 21 days of FSRS stability, for
+Recall/Reconstruct — in practice a few weeks of regular drilling. Only the
+highest badged level shows: **solid** while the deck still clears the bar,
+**dotted** once a card has since lapsed below it (a badge, once earned, keeps
+its date — a high-water mark, not a live pass/fail). A deck that gains new
+cards after being badged shows a small "new" chip.
 
 ## Retiring cards
 

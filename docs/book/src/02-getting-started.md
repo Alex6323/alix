@@ -73,11 +73,11 @@ name). This is what the desktop launcher opens. Focus a deck there and press
 
 ```sh
 alix stats srs.txt     # a progress overview
-alix list srs.txt      # every card with its stage and due time
+alix list srs.txt      # every card with its per-level schedule and due time
 alix deck check srs.txt     # lint the deck (syntax errors, duplicate cards)
 alix reset srs.txt     # clear stored progress (also --card / --all)
 ```
 
 A session is one deck — review them one at a time. From here the book goes deep:
 the next chapter is the [deck format](03-the-deck-format.md) in full, then
-[reveal & depth](04-review-modes.md) and scheduling.
+[reveal & session levels](04-review-modes.md) and scheduling.

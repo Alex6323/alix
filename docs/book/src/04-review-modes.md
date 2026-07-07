@@ -1,18 +1,19 @@
-# 4 · Reveal & depth
+# 4 · Reveal & session levels
 
 How a card is checked isn't one setting you pick per card. It falls out of two
-independent axes:
+independent things:
 
 - **Reveal-method** — *how the answer is uncovered.* Authored per card (or
   deck-wide) with `% reveal:`, because only the author knows the answer's shape.
-- **Depth** — *how deeply you're asked to retrieve it.* Your personal
-  `[review] depth`, because only you know how well you want to know this
-  material. It's not a deck directive — depth is the learner's call, not the
-  author's.
+- **Session level** — *how deeply you're asked to retrieve it.* Chosen per
+  session — Recognize, Recall, or Reconstruct — because only you know how well
+  you want to know this material right now. It's not a deck directive, and not
+  personal config either: it's a property of the session you start.
 
 alix derives the concrete check from the pair, so you never hand-write "type this
-one" or "explain that one." The point of two axes is to separate *presentation*
-(the author's job) from *difficulty* (yours).
+one" or "explain that one." The point of keeping them separate is to keep
+*presentation* (the author's job) apart from *how deep you're drilling*
+(your call, per session).
 
 ## The reveal-method axis — `% reveal:`
 
@@ -41,58 +42,61 @@ A per-card `% reveal:` overrides the deck's; the deck's overrides the default. I
 a review property, not content, so it's invisible to a card's identity hash —
 adding or changing it never resets progress.
 
-## The depth axis — `[review] depth`
+## Session levels — Recognize, Recall, Reconstruct
 
-Depth is a small nested ladder, `recognize` ⊂ `recall` ⊂ `reconstruct`, dialed
-with a number:
+Every review session runs at one of three independent levels, picked when you
+start it: `--level` on the command line, or the web picker's split **Learn**
+button, whose small ▾ opens a menu of the three. Plain **Learn** reuses the
+deck's own last-used level, remembered per deck (the first time you ever open
+it: Recall).
 
-- **recognize** — pick the answer out of options. In this version it's only the
-  ungraded *acquire* on-ramp for a brand-new card (see
-  [scheduling](05-scheduling.md)), never a scheduled target — there's no `depth`
-  value for it.
-- **`depth = 1`, recall** *(default)* — bring the answer to mind, then reveal and
-  self-grade.
-- **`depth = 2`, reconstruct** — produce the answer in full.
+- **Recognize** — unscheduled and boolean. There's no FSRS state for it at
+  all, just a per-card *recognized* flag. Where there's enough material to
+  build one, it's a genuine multiple-choice pick (AI-generated distractors
+  plus sampling from the rest of the session — a cloze card asks you to pick
+  its gap, a line card to pick the next line); otherwise it falls back to the
+  same attempt-then-reveal a brand-new card gets (below), graded **Knew it** /
+  **Not yet**. A correct pick marks the card recognized; a quiet **"I
+  guessed"** link right after lets you undo that, re-queuing it. A wrong pick
+  re-queues it too.
+- **Recall** *(the default)* — the classic flashcard: bring the answer to
+  mind, reveal it, and self-grade. Its own FSRS schedule.
+- **Reconstruct** — produce the answer in full, on its **own independent FSRS
+  schedule** per card. Recall and Reconstruct never cross-credit each other —
+  they're two separate practices, so a card can be due for one and not the
+  other.
 
-You set the depth you're aiming for once, in your config (or per workspace in an
-`alix.local.toml`):
+Nothing climbs or descends between levels on its own: unlike an earlier
+difficulty ladder this project tried, a card's Recall and Reconstruct
+schedules just sit there side by side, and which one you exercise is entirely
+your call each time you start a session.
 
-```toml
-[review]
-depth = 2
-```
+## What you actually get — reveal + level combined
 
-An out-of-range value clamps to the nearest end (`≤0` → `1`, `≥2` → `2`). It's
-deliberately *not* on the deck: the same deck can be drilled shallowly by one
-person and deeply by another. A workspace can also set depth **per deck** —
-`[review.deck."<file name>"] depth = 2` in its `alix.local.toml` overrides the
-workspace/global depth for just that one deck (see
-[Workspaces](08-workspaces.md)).
+The check derives from the reveal-method and the level:
 
-## What you actually get — the two axes combined
-
-The check derives from the reveal-method, the card's current rung on the ladder,
-and the answer's shape:
-
-- **At recall**, a `flip` or `cloze` card **reveals** and you self-grade; a `line`
+- **At Recall**, a `flip` or `cloze` card **reveals** and you self-grade; a `line`
   card reveals line by line, then you self-grade.
-- **At reconstruct**, you **produce** it: a `cloze` card has you **type** the gap;
-  a card with a short, single-line answer has you **type** it exactly (`Tab`
-  reveals two more characters as a hint, but a hinted card counts as missed); a
-  card with a richer, multi-line answer becomes an **explain** prompt whose back
-  lines are the **key points** you self-grade against.
+- **At Reconstruct**, you **produce** it: a `cloze` card has you **type** the
+  gap; a card with a short, single-line answer has you **type** it; a
+  `line`-reveal card has you **type each line in turn**; a card with a richer,
+  multi-line answer becomes an **explain** prompt whose back lines are the
+  **key points** you self-grade against.
+
+A typed check normalizes both sides (case, whitespace, trailing punctuation)
+and compares exactly — no edit-distance tolerance — then shows the diff. The
+automated comparison is evidence, not the verdict: grading is still yours, so
+a mismatch you recognize as a typo (not a wrong answer) can still be graded
+Got it.
 
 Grading is always the same three — **missed it / partly / got it** — feeding FSRS
-*Again* / *Hard* / *Good*. The [scheduling chapter](05-scheduling.md) covers how a
-card climbs the ladder toward your target and drops back on a miss.
+*Again* / *Hard* / *Good*. See the [scheduling chapter](05-scheduling.md) for how
+Recall and Reconstruct's independent schedules work, and how badges summarize a
+deck's progress at each level.
 
-> **A default-depth deck reviews as recall** — reveal-and-self-grade — even for
-> cards once authored to be typed or explained (the retired `% mode:` directive).
-> Reconstruction checks only appear once you raise `[review] depth` to `2`.
+### explain — the self-graded Reconstruct check
 
-### explain — the self-graded reconstruct check
-
-The reconstruct check for a rich (multi-line) answer is an open prompt: the back
+The Reconstruct check for a rich (multi-line) answer is an open prompt: the back
 lines are the **key points** a good answer should cover, not a string to
 reproduce. You optionally type an explanation — never checked, just there to make
 you commit before you peek — reveal the points, and grade whether you hit them.
@@ -116,13 +120,13 @@ A different augment target, `alix deck augment <deck> --target format`, instead
 clean display lines, non-destructively: it changes how the card is shown, not the
 deck file or how it's graded.
 
-## The reveal badge
+## The check badge
 
-In the web frontend a small badge above the answer names the check the card gets —
-`flip`, `line`, `typing`, or `explain` — so how you'll interact (reveal-and-self-
-grade, line-by-line, or produce-it) is clear up front. Your *depth* isn't shown
-here: it lives in your config (`[review] depth`), and the interaction itself
-already signals it.
+In the web frontend a small badge above the answer names the check you're doing
+right now — `flip`, `line`, `typing`, `choice`, or `explain` — so how you'll
+interact is clear before you commit. It badges the *present* interaction, not the
+level: a brand-new card, or a Recognize pick, shows `choice` even on a card whose
+Recall/Reconstruct schedule will use something else once it's acquired.
 
 ## input: draw — draw instead of type *(web only)*
 

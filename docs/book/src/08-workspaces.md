@@ -44,26 +44,23 @@ system from chapter 3, just sourced from one more place.
 The `alix.toml` is shared: it travels with the workspace when you hand it to
 someone. Your **personal** review pacing doesn't belong there. Drop an
 `alix.local.toml` beside it to override the global `[review]` config — FSRS
-`retention`, `retire_after`, and the ladder `depth` — for this workspace's decks
-only:
+`retention` and `retire_after` — for this workspace's decks only:
 
 ```toml
 # ~/decks/spanish/alix.local.toml
 [review]
 retention = 0.95         # see these cards more often
 retire_after = "never"   # never let them retire
-depth = 2                # drill this cluster all the way to producing answers
-
-# One deck in the workspace can go deeper (or shallower) still:
-[review.deck."verbs.txt"]
-depth = 1                # keep this one deck at recall, even though the workspace is at 2
 ```
 
 It uses the same `[review]` keys as the [config file](16-configuration.md), and
 it's kept separate from `alix.toml` on purpose — so it stays yours and never
 travels when you share the workspace. A missing or malformed one is simply
-ignored. Per-deck depth wins over the workspace depth, which wins over the
-global `[review] depth`.
+ignored.
+
+The session level (Recognize/Recall/Reconstruct) isn't a workspace setting —
+it's picked per session, the same as for a loose deck (see
+[Reveal & session levels](04-review-modes.md)).
 
 ## Its own progress
 

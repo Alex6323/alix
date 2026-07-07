@@ -7,6 +7,37 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Session levels: Recognize, Recall, Reconstruct — replacing the difficulty
+  ladder below.** Every review now happens at one of three independent
+  levels, chosen per session (`--level`, or the web picker's split **Learn**
+  button and its ▾ menu) instead of read from personal config; plain Learn
+  reuses the deck's own last-used level (first use: Recall). **Recall** is the
+  familiar reveal-and-self-grade flashcard. **Reconstruct** keeps its own FSRS
+  schedule per card, independent of Recall — no cross-crediting, two separate
+  practices — and has you type a short answer or a cloze gap, type each line
+  in turn (`% reveal: line`), or explain a longer one. **Recognize** is
+  unscheduled and boolean (no FSRS state at all): a multiple-choice pick where
+  there's material to build one, the same attempt-then-reveal a first
+  encounter gets otherwise. A card no longer climbs or descends between
+  levels on its own.
+- **Two quiet overrides give the learner the final say.** A typed
+  Reconstruct check normalizes both sides (case, whitespace, trailing
+  punctuation) and compares exactly, then shows the diff — but *you* grade it,
+  so a typo you recognize as one can still be Got it (no edit-distance
+  tolerance guessing at "close enough"). A correct Recognize pick can be
+  quietly walked back with an **"I guessed"** link, which un-marks the card
+  and re-queues it.
+- **Per-deck badges for Recognize/Recall/Reconstruct**, shown in the picker.
+  A deck earns a level's badge once every card is currently solid at it
+  (recognized; or at/past 21 days of FSRS stability) — solid while it still
+  clears the bar, dotted once a card has lapsed below it (a badge keeps its
+  earn date once won). Only the highest badged level shows, and a deck that
+  gains cards after being badged gets a small "new" chip. Informational only:
+  badges never gate anything — passing the AI exam is still the only thing
+  that unlocks a dependent deck.
+- **`alix list`/`alix stats` report per level.** `list` now shows each card's
+  Recall and Reconstruct schedule state plus a ✓ once it's recognized;
+  `stats` adds a per-level due count.
 - **Difficulty ladder (v1): a `% reveal:` directive and a `[review] target`
   depth.** How a card is checked now derives from two axes instead of one `% mode:`
   setting. `% reveal:` (deck or card, default `flip`) is the authored *presentation*
@@ -108,6 +139,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ephemeral (never persisted or sent to the server).
 
 ### Changed
+- **Breaking: the ladder's depth dial is gone — session levels replace
+  climb/descend.** `[review] depth` and the per-deck `[review.deck."<file>"]`
+  override (below) no longer exist; a config or `alix.local.toml` that still
+  sets either now fails to load instead of being silently ignored. How deeply
+  you drill is chosen per session (`--level`), not read from personal config,
+  and a card no longer climbs or descends between levels on its own — Recall
+  and Reconstruct are two independent, permanent practices with their own
+  schedules.
+- **Breaking (store): per-level schedules replace the single `fsrs` field.** A
+  card's progress is now stored per level (`recall`/`reconstruct`), plus a
+  `recognized` flag, instead of one shared FSRS state. Pre-1.0, no migration:
+  an existing store loads fine, but every card starts with empty schedules at
+  every level — a one-off rewrite for anyone who wants to seed it otherwise.
+- **Breaking: `--max-typos` and the `fuzzy` check mode are gone.** A typed
+  check now normalizes (case, whitespace, trailing punctuation) and compares
+  exactly, then shows the diff and leaves the pass/fail call to you — no
+  edit-distance tolerance guessing at "close enough" (it used to let "affect"
+  pass for "effect" within tolerance).
 - **Breaking (config):** the ladder depth dial is now a number — `[review] depth
   = 1` (recall) or `2` (reconstruct), replacing the v1 `[review] target =
   "recall"|"reconstruct"` string (out-of-range clamps; a stray `target` key

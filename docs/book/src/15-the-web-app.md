@@ -52,12 +52,15 @@ file or card identity. Both review and browse show the reshape, so the two views
 match. It's an AI heuristic, so it can miss or produce an unhelpful reshape;
 **Remove** clears it with no lasting effect.
 
-## Every mode, plus the AI features
+## Every check, at every level, plus the AI features
 
-Every [check](04-review-modes.md) works in the browser — a flip or cloze reveal,
-a line reveal (it auto-scrolls to the newest line), a typing reconstruct (each
-line marked ✓/✗ with the correct answer shown), an explain reconstruct, and the
-recognition multiple-choice on-ramp for a new card (tap an option). Controls are big tap targets and
+Every [check](04-review-modes.md) works in the browser, at whichever session
+level you picked — a flip or cloze reveal, a line reveal (it auto-scrolls to
+the newest line), a typing Reconstruct check (each line marked ✓/✗ with the
+correct answer shown, then you grade), an explain Reconstruct check, and the
+multiple-choice pick — a new card's attempt-first on-ramp, or a genuine
+Recognize-session question (tap an option; a correct pick offers the quiet "I
+guessed" undo). Controls are big tap targets and
 follow *your* configured key bindings (the page reads them from the server). The
 **☰ menu** is context-aware: during review it holds **Ask Tutor**; on the
 deck picker, **keyboard shortcuts**, **refresh decks**, and **about** — with
