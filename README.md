@@ -505,9 +505,9 @@ deck's own last-used level, remembered per deck (first time: Recall).
   **Got it**. Unchanged from earlier alix versions — it's simply one of three
   named levels now, with its own FSRS schedule.
 - **Reconstruct** — you produce the answer, on its **own independent FSRS
-  schedule** per card (no cross-crediting with Recall — two separate
-  practices, two separate schedules, created lazily on first use at this
-  level). What you produce follows the answer's shape and the reveal method: a
+  schedule** per card (two separate practices, two separate schedules,
+  created lazily on first use at this level — no cross-crediting, except the
+  one downward rule below). What you produce follows the answer's shape and the reveal method: a
   short, single-line answer (`flip`/`cloze` reveal) is **typed**; a richer,
   multi-line answer becomes an **explain** prompt (see below); `% reveal: line`
   has you **type each line in turn**. A typed line is checked by normalizing
@@ -515,6 +515,14 @@ deck's own last-used level, remembered per deck (first time: Recall).
   no edit-distance tolerance — then the diff is shown and *you* grade: a
   mismatch is evidence, not a verdict, so a typo you recognize as one can still
   be graded Got it.
+
+One rule connects the levels, downward and pass-only: a full **Got it** at
+Reconstruct (outside cram) also credits the card's Recall schedule — full
+credit if recall was due at that moment (a recorded review, marked
+*propagated* in the history), just a pushed-out due date if it wasn't — so
+producing an answer isn't followed days later by being asked to merely
+recall it. And any full pass, at any level (cram included), marks the card
+recognized if it wasn't yet; a *Partly* or a miss never propagates anything.
 
 Grading always maps to FSRS *Again* / *Hard* / *Good*: a miss lapses the card
 (it comes back soon, interval shrinks), *partly* is a weak pass (a shorter next

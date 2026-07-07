@@ -20,6 +20,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   there's material to build one, the same attempt-then-reveal a first
   encounter gets otherwise. A card no longer climbs or descends between
   levels on its own.
+- **A full Reconstruct pass credits a due Recall schedule — downward only,
+  pass-only.** Getting a card fully right at Reconstruct (outside cram) now
+  counts for its Recall schedule too: full credit if recall was due at that
+  moment (recorded in the card's history, marked as propagated), only a
+  pushed-out due date if it wasn't (memory untouched, nothing recorded).
+  Partial and failed answers never propagate, and a card drilled only at
+  Reconstruct never gains a recall schedule from this. Alongside it, any
+  full pass at any level — cram included — marks the card recognized if it
+  wasn't yet.
 - **Two quiet overrides give the learner the final say.** A typed
   Reconstruct check normalizes both sides (case, whitespace, trailing
   punctuation) and compares exactly, then shows the diff — but *you* grade it,

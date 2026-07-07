@@ -62,9 +62,9 @@ it: Recall).
 - **Recall** *(the default)* — the classic flashcard: bring the answer to
   mind, reveal it, and self-grade. Its own FSRS schedule.
 - **Reconstruct** — produce the answer in full, on its **own independent FSRS
-  schedule** per card. Recall and Reconstruct never cross-credit each other —
-  they're two separate practices, so a card can be due for one and not the
-  other.
+  schedule** per card. Recall and Reconstruct are two separate practices, so
+  a card can be due for one and not the other; the one pass-only downward
+  credit between them is covered in [Scheduling](05-scheduling.md).
 
 Nothing climbs or descends between levels on its own: a card's Recall and
 Reconstruct schedules just sit there side by side, and which one you exercise

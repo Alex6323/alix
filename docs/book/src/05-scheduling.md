@@ -62,12 +62,24 @@ matrix. In short:
 
 - **Recognize** has no FSRS schedule at all — just a boolean *recognized* flag.
 - **Recall** and **Reconstruct** each keep their **own** FSRS schedule per
-  card, so a card can be due for one and not the other; nothing here
-  cross-credits between them.
+  card, so a card can be due for one and not the other; nothing
+  cross-credits between them, with one downward exception below.
 
 Nothing climbs or descends between levels on its own — a card doesn't get
 harder over time just by surviving reviews. Which level you exercise, and
 when, is entirely your call each session.
+
+The exception flows **downward, and only on a full pass**: get a card fully
+right at Reconstruct (outside cram) and that also counts for its Recall
+schedule — if you can produce the answer, you can certainly recall it, so
+alix won't re-ask the easier form days later. If recall was **due** at that
+moment, the pass stands in for that review: full schedule credit, recorded
+in the card's history and marked as *propagated*. If recall existed but
+wasn't due yet, only its due date is pushed out from now — memory untouched,
+nothing recorded, the same refresh a cram pass gets. A *partly* or a miss
+never propagates, and a card drilled only at Reconstruct never gains a
+recall schedule from this. Separately, **any** full pass at any level — cram
+included — marks the card *recognized* if it wasn't yet.
 
 ## Badges
 
