@@ -256,6 +256,11 @@ to this codebase. When in doubt, mirror the surrounding code.
   date-named, e.g. `docs/specs/<date>-<topic>-spec.md`). Before building a spec'd feature,
   read its spec/plan there; the **memory index** and `PLAN.md` track what's currently in
   flight — these design docs aren't in the repo, so a fresh session won't see them otherwise.
+- **Devil's-advocate a spec before sign-off.** Before a design spec is approved/locked,
+  run an explicit adversarial pass — argue *against* the design, hardest objections first,
+  on the project's own gates (fit gate, north star, the NOT-list, soundness); then prosecute
+  the rebuttals back (steelman the alternative). A spec isn't "locked" until it has survived
+  one. Cheap, and it catches mis-founded designs before a build pays for them.
 - **Subagent-driven development cleans up after itself.** When an SDD run
   finishes — its branch merged or abandoned — clear its scratch with
   **`make sdd-clean`** (removes the `.superpowers/sdd/` ledger + task-brief /
