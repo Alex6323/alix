@@ -12,7 +12,7 @@ use anyhow::{Context, Result as AnyResult, bail};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::{deck, level::Level, scheduler::Grade};
+use crate::{card::Card, deck, level::Level, scheduler::Grade};
 
 /// How many of the most recent reviews are kept per card.
 const HISTORY_CAP: usize = 50;
@@ -174,9 +174,10 @@ impl CardState {
 }
 
 /// Deck-level progress, keyed by deck subject (= file name): whether the deck's
-/// AI exam has been passed ("mastered"), and when it was last *failed* (for the
-/// re-sit cooldown). A deck appears here once either happens; an entry with
-/// neither set is meaningless and is never written.
+/// AI exam has been passed ("mastered"), when it was last *failed* (for the
+/// re-sit cooldown), the learner's last-used session level, and each badge's
+/// first-earn date. A deck appears here once any of these is set; an entry
+/// with nothing set is meaningless and is never written.
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DeckProgress {
     /// When the exam was last passed (Unix ms); `None` until it is.
@@ -186,7 +187,29 @@ pub struct DeckProgress {
     /// `None` if it has never failed (or a later pass cleared it).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exam_failed_at_ms: Option<u64>,
+    /// The session level the learner last chose for this deck — the
+    /// plain-Learn button's memory across sessions. `None` until a level has
+    /// ever been recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_level: Option<Level>,
+    /// When the Recognize badge was first earned (Unix ms); a high-water
+    /// mark — see [`note_badges`]. `None` until earned.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recognized_at_ms: Option<u64>,
+    /// When the Recall badge was first earned (Unix ms); see
+    /// [`note_badges`]. `None` until earned.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recalled_at_ms: Option<u64>,
+    /// When the Reconstruct badge was first earned (Unix ms); see
+    /// [`note_badges`]. `None` until earned.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reconstructed_at_ms: Option<u64>,
 }
+
+/// The community "mature" line (days of stability), in days — the badge
+/// threshold for the Recall/Reconstruct FSRS schedules (`FsrsState::stability`
+/// is already in days). See [`badge_solid`].
+pub const MATURE_STABILITY_DAYS: f64 = 21.0;
 
 /// Which trigger produced a virtual card (see the virtual-cards spec, §2).
 /// Only `Remediation` exists today; a future consumer (contrast, spin-off)
@@ -502,6 +525,31 @@ impl Store {
         self.decks.remove(subject).is_some()
     }
 
+    /// The session level the learner last used for `subject` — the
+    /// plain-Learn button's memory across sessions. `None` until a level has
+    /// ever been recorded for this deck.
+    pub fn last_level(&self, subject: &str) -> Option<Level> {
+        self.decks.get(subject).and_then(|d| d.last_level)
+    }
+
+    /// Records `level` as the last-used session level for `subject`. Does not
+    /// save.
+    pub fn set_last_level(&mut self, subject: &str, level: Level) {
+        self.decks.entry(subject.to_string()).or_default().last_level = Some(level);
+    }
+
+    /// When the badge at `level` was first earned for `subject` (Unix ms), if
+    /// ever — the high-water mark [`note_badges`] maintains. `None` if it has
+    /// never been earned.
+    pub fn badge_earned(&self, subject: &str, level: Level) -> Option<u64> {
+        let deck = self.decks.get(subject)?;
+        match level {
+            Level::Recognize => deck.recognized_at_ms,
+            Level::Recall => deck.recalled_at_ms,
+            Level::Reconstruct => deck.reconstructed_at_ms,
+        }
+    }
+
     /// Clears all stored progress, returning how many cards were removed (e.g.
     /// for `alix reset --all`). Also drops all deck-mastered state and every
     /// virtual card — a reset must not leave orphaned virtual cards behind to
@@ -532,6 +580,48 @@ impl Store {
     /// The path of the store file.
     pub fn path(&self) -> &Path {
         &self.path
+    }
+}
+
+/// Live badge check: whether every card in `cards` is currently solid at
+/// `level` — Recognize needs every card's `recognized_ms` set; Recall and
+/// Reconstruct need every card's `schedule(level)` present with stability at
+/// or past the mature line ([`MATURE_STABILITY_DAYS`]). An empty deck is
+/// never solid. Pure — this only answers the live question; earning a badge
+/// (persisting its first-earn date) is [`note_badges`].
+pub fn badge_solid(cards: &[Card], store: &Store, level: Level) -> bool {
+    if cards.is_empty() {
+        return false;
+    }
+    cards.iter().all(|card| {
+        let Some(state) = store.get(card.id()) else {
+            return false;
+        };
+        match level {
+            Level::Recognize => state.recognized_ms.is_some(),
+            Level::Recall | Level::Reconstruct => state
+                .schedule(level)
+                .is_some_and(|fsrs| fsrs.stability >= MATURE_STABILITY_DAYS),
+        }
+    })
+}
+
+/// Persists the first-earn date for any level of `subject` that is currently
+/// solid, per [`badge_solid`]. High-water: a level already earned keeps its
+/// original date even if it later drops below the mature line. Badges gate
+/// nothing — this is bookkeeping only, never a lifecycle interaction. Does
+/// not save.
+pub fn note_badges(store: &mut Store, subject: &str, cards: &[Card], now_ms: u64) {
+    for level in [Level::Recognize, Level::Recall, Level::Reconstruct] {
+        if store.badge_earned(subject, level).is_some() || !badge_solid(cards, store, level) {
+            continue;
+        }
+        let entry = store.decks.entry(subject.to_string()).or_default();
+        match level {
+            Level::Recognize => entry.recognized_at_ms = Some(now_ms),
+            Level::Recall => entry.recalled_at_ms = Some(now_ms),
+            Level::Reconstruct => entry.reconstructed_at_ms = Some(now_ms),
+        }
     }
 }
 
@@ -1312,5 +1402,87 @@ mod tests {
         let f = reloaded.get(9).unwrap().recall.unwrap();
         assert_eq!(2000, f.due_ms);
         assert_eq!(1, f.learning_goods);
+    }
+
+    /// Parses a tiny two-card deck for the badge tests below.
+    fn two_cards() -> Vec<crate::card::Card> {
+        crate::parser::parse_str("t.txt", "# a\n\t1\n\n# b\n\t2\n").unwrap()
+    }
+
+    #[test]
+    fn a_deck_with_all_mature_recall_cards_is_recall_solid() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let cards = two_cards();
+        for card in &cards {
+            store.get_or_insert(card.id(), 0).recall = Some(FsrsState {
+                stability: 30.0,
+                ..Default::default()
+            });
+        }
+        assert!(badge_solid(&cards, &store, Level::Recall));
+    }
+
+    #[test]
+    fn badge_solid_on_an_empty_deck_is_never_solid() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path().join("p.json")).unwrap();
+        assert!(!badge_solid(&[], &store, Level::Recall));
+        assert!(!badge_solid(&[], &store, Level::Recognize));
+    }
+
+    #[test]
+    fn a_lapsed_card_drops_solid_but_keeps_the_earn_date() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let cards = two_cards();
+        for card in &cards {
+            store.get_or_insert(card.id(), 0).recall = Some(FsrsState {
+                stability: 30.0,
+                ..Default::default()
+            });
+        }
+        note_badges(&mut store, "t.txt", &cards, 1_000);
+        assert_eq!(Some(1_000), store.badge_earned("t.txt", Level::Recall));
+
+        // One card lapses back below the mature line.
+        store.get_or_insert(cards[0].id(), 0).recall = Some(FsrsState {
+            stability: 3.0,
+            ..Default::default()
+        });
+
+        assert!(!badge_solid(&cards, &store, Level::Recall));
+        // The earn date is a high-water mark: it survives the lapse.
+        assert_eq!(Some(1_000), store.badge_earned("t.txt", Level::Recall));
+    }
+
+    #[test]
+    fn recognize_badge_needs_every_card_recognized() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let cards = two_cards();
+        store.get_or_insert(cards[0].id(), 0).recognized_ms = Some(500);
+        assert!(
+            !badge_solid(&cards, &store, Level::Recognize),
+            "second card not yet recognized"
+        );
+
+        store.get_or_insert(cards[1].id(), 0).recognized_ms = Some(600);
+        assert!(badge_solid(&cards, &store, Level::Recognize));
+    }
+
+    #[test]
+    fn last_level_roundtrips_through_save() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("p.json");
+        let mut store = Store::open(&path).unwrap();
+        assert_eq!(None, store.last_level("t.txt"));
+
+        store.set_last_level("t.txt", Level::Reconstruct);
+        assert_eq!(Some(Level::Reconstruct), store.last_level("t.txt"));
+        store.save().unwrap();
+
+        let reloaded = Store::open(&path).unwrap();
+        assert_eq!(Some(Level::Reconstruct), reloaded.last_level("t.txt"));
     }
 }
