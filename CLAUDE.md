@@ -256,6 +256,12 @@ to this codebase. When in doubt, mirror the surrounding code.
   date-named, e.g. `docs/specs/<date>-<topic>-spec.md`). Before building a spec'd feature,
   read its spec/plan there; the **memory index** and `PLAN.md` track what's currently in
   flight — these design docs aren't in the repo, so a fresh session won't see them otherwise.
+- **When a newer spec overrules an older one, stamp the old spec** — a header blockquote,
+  first thing in the file: `**SUPERSEDED <date> by \`<newer-spec-file>\`**` (or
+  DEPRECATED/REPLACED-BY), one line on what still survives, and "do not build from this
+  spec". Do it in the same session the newer spec lands — a fresh session must never
+  build from a stale spec (e.g. the session-levels spec superseding the difficulty-ladder
+  spec). Partial supersession names the surviving sections explicitly.
 - **Devil's-advocate a spec before sign-off.** Before a design spec is approved/locked,
   run an explicit adversarial pass — argue *against* the design, hardest objections first,
   on the project's own gates (fit gate, north star, the NOT-list, soundness); then prosecute
