@@ -2683,8 +2683,7 @@ fn query_param(url: &str, key: &str) -> Option<String> {
 ///
 /// - **Acquire** (first encounter): a recognition MC only under the strict bar (atomic answer + a
 ///   full set of cached AI distractors), and — spec §4.6 — never for a card already recognized
-///   (such a card keeps its store entry, so it isn't acquired cold anyway; the guard states the
-///   invariant outright).
+///   (such a card keeps its store entry, so it isn't acquired cold anyway).
 /// - **Recognize session** (non-acquire): the shape follows the card's `% reveal:` — `Line` picks
 ///   the next line among the card's own lines; `Flip` and `Cloze` pick the back among sibling backs
 ///   via plain `build` (an expanded cloze sub-card's back IS its gap text — T6 review).
@@ -2693,13 +2692,7 @@ fn current_question(r: &Reviewing, store: &Store, card: &Card) -> Option<ChoiceQ
     let ai = r.augment.distractors(card.id());
     if store.get(card.id()).is_none() {
         // Acquire on-ramp. A recognized card has a store entry, so it never lands
-        // here; guard it anyway so the on-ramp can't re-quiz a recognized card.
-        if store
-            .get(card.id())
-            .is_some_and(|s| s.recognized_ms.is_some())
-        {
-            return None;
-        }
+        // here — this branch already established `store.get(card.id())` is `None`.
         return choice::recognition_question(card, r.session.cards(), card.id(), ai);
     }
     if r.session.level() != Level::Recognize {
