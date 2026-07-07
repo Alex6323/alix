@@ -285,24 +285,30 @@ impl Session {
         let id = self.cards[index].id();
         let level = self.options.level;
 
+        let state = store.get_or_insert(id, now_ms);
+        // Recognized cascade (transitive): any full pass — at any level, cram
+        // included, since the flag has no schedule to distort — proves the card
+        // is at least recognizable, so it marks the card recognized if it isn't
+        // already. A Partial or Fail never sets it.
+        if grade == Grade::Pass && state.recognized_ms.is_none() {
+            state.recognized_ms = Some(now_ms);
+        }
+
         if level == Level::Recognize {
             // Recognize is unscheduled and boolean: grading never touches FSRS or
-            // any schedule. A correct pick marks the card recognized for good and
-            // leaves the roster; a wrong pick — or the learner's own "I guessed"
-            // demotion, which the client also maps to `Grade::Fail` — is simply
-            // not recognized and re-queues. No partial credit, nothing to
-            // schedule.
-            let state = store.get_or_insert(id, now_ms);
+            // any schedule. A correct pick marks the card recognized for good
+            // (the cascade above) and leaves the roster; a wrong pick — or the
+            // learner's own "I guessed" demotion, which the client also maps to
+            // `Grade::Fail` — is simply not recognized and re-queues. No partial
+            // credit, nothing to schedule.
             state.record_review(now_ms, grade, Level::Recognize, false);
             if grade == Grade::Pass {
-                state.recognized_ms = Some(now_ms);
                 self.roster.retain(|&i| self.cards[i].id() != id);
             }
             self.advance(store, now_ms);
             return;
         }
 
-        let state = store.get_or_insert(id, now_ms);
         // Cram refresh: a correct answer keeps the card fresh without rewarding it
         // (re-anchor its due — no FSRS update, no recorded review). A cram miss is a
         // genuine lapse, and every normal grade runs the real scheduler. Recall and
@@ -312,6 +318,32 @@ impl Session {
             self.scheduler.reanchor(state, level, now_ms);
         } else {
             self.scheduler.apply(state, level, grade, now_ms, false);
+        }
+
+        // Downward propagation (Reconstruct → Recall) — the one deliberate,
+        // conservative exception to "no cross-crediting" (session-levels spec §4
+        // addendum): a full Reconstruct pass is recall evidence too, so it flows
+        // down, pass-only (a Partial or Fail never does), never under cram, and
+        // only onto a recall schedule that already exists — never creating one.
+        if level == Level::Reconstruct
+            && grade == Grade::Pass
+            && !self.options.cram
+            && state.recall.is_some()
+        {
+            if self.scheduler.is_due(state, Level::Recall, now_ms) {
+                // Recall was due anyway: the pass stands in for that review —
+                // full schedule credit, recorded *marked* so the history stays
+                // honest about what the learner actually answered.
+                self.scheduler
+                    .apply(state, Level::Recall, Grade::Pass, now_ms, true);
+            } else {
+                // Not yet due: only the timing signal is used — re-anchor the
+                // due date from now, memory untouched, no review recorded (the
+                // cram-refresh precedent). Under steady Reconstruct drilling
+                // recall simply never comes due; stop, and it comes due at the
+                // honest time.
+                self.scheduler.reanchor(state, Level::Recall, now_ms);
+            }
         }
 
         self.stats.reviews += 1;
@@ -2154,5 +2186,199 @@ mod tests {
             1_000,
         );
         assert_eq!(1, s.remaining());
+    }
+
+    /// A mature, graduated FSRS schedule due at `due_ms` — the fixture for
+    /// the downward-propagation tests.
+    fn mature_fsrs(due_ms: u64) -> FsrsState {
+        FsrsState {
+            stability: 30.0,
+            difficulty: 5.0,
+            scheduled_days: 30,
+            state: 2,
+            due_ms,
+            ..Default::default()
+        }
+    }
+
+    /// A Reconstruct-level session over `all` at `now`.
+    fn reconstruct_session(all: Vec<Card>, store: &Store, cram: bool, now: u64) -> Session {
+        Session::new(
+            all,
+            store,
+            sched(),
+            SessionOptions {
+                level: Level::Reconstruct,
+                cram,
+                ..Default::default()
+            },
+            now,
+        )
+    }
+
+    #[test]
+    fn a_full_reconstruct_pass_on_a_recall_due_card_credits_recall_marked() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(1);
+        let id = all[0].id();
+        store.get_or_insert(id, 0).recall = Some(mature_fsrs(500)); // long past due
+        let now = 40 * 86_400_000; // 40 days on — well past the 30-day interval
+
+        let mut s = reconstruct_session(all, &store, false, now);
+        s.grade(&mut store, Grade::Pass, now);
+
+        let st = store.get(id).unwrap();
+        let recall = st.recall.unwrap();
+        assert!(recall.due_ms > now, "the due recall schedule advanced");
+        assert!(recall.stability > 30.0, "full credit, not just a re-anchor");
+        // Two history entries: the direct reconstruct review first, then the
+        // propagated recall credit, marked.
+        assert_eq!(2, st.history.len());
+        assert_eq!(Level::Reconstruct, st.history[0].level);
+        assert!(!st.history[0].propagated);
+        assert_eq!(Level::Recall, st.history[1].level);
+        assert_eq!(Grade::Pass, st.history[1].grade);
+        assert!(st.history[1].propagated);
+    }
+
+    #[test]
+    fn a_reconstruct_pass_on_a_not_yet_due_recall_reanchors_without_reward() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(1);
+        let id = all[0].id();
+        let now = 1_000_000;
+        store.get_or_insert(id, 0).recall = Some(mature_fsrs(2_000_000)); // not due yet
+
+        let mut s = reconstruct_session(all, &store, false, now);
+        s.grade(&mut store, Grade::Pass, now);
+
+        let st = store.get(id).unwrap();
+        let recall = st.recall.unwrap();
+        assert_eq!(30.0, recall.stability, "memory untouched — no reward");
+        assert_eq!(30, recall.scheduled_days, "interval kept");
+        assert_eq!(
+            now + 30 * 86_400_000,
+            recall.due_ms,
+            "due re-derived from now"
+        );
+        assert!(recall.due_ms > 2_000_000, "strictly later than before");
+        // Only the direct reconstruct review is recorded — a re-anchor is a
+        // refresh, not a graded review.
+        assert_eq!(1, st.history.len());
+        assert_eq!(Level::Reconstruct, st.history[0].level);
+    }
+
+    #[test]
+    fn no_propagation_without_a_recall_schedule() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(1);
+        let id = all[0].id();
+        let now = 1_000_000;
+        // Drilled only at Reconstruct: no recall schedule to credit — and none
+        // may be created.
+        store.get_or_insert(id, 0).reconstruct = Some(mature_fsrs(500));
+
+        let mut s = reconstruct_session(all, &store, false, now);
+        s.grade(&mut store, Grade::Pass, now);
+
+        let st = store.get(id).unwrap();
+        assert!(st.recall.is_none(), "propagation never creates a schedule");
+        assert_eq!(1, st.history.len());
+        assert_eq!(Level::Reconstruct, st.history[0].level);
+    }
+
+    #[test]
+    fn partials_and_fails_never_propagate() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(2);
+        let now = 1_000_000;
+        for c in &all {
+            store.get_or_insert(c.id(), 0).recall = Some(mature_fsrs(500)); // due
+        }
+
+        let mut s = reconstruct_session(all.clone(), &store, false, now);
+        s.grade(&mut store, Grade::Partial, now);
+        s.grade(&mut store, Grade::Fail, now);
+
+        for c in &all {
+            let st = store.get(c.id()).unwrap();
+            assert_eq!(
+                mature_fsrs(500),
+                st.recall.unwrap(),
+                "recall untouched by a partial or a fail"
+            );
+            assert!(st.recognized_ms.is_none(), "recognized untouched");
+            assert!(st.history.iter().all(|r| !r.propagated));
+        }
+    }
+
+    #[test]
+    fn cram_reconstruct_passes_reanchor_only() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(1);
+        let id = all[0].id();
+        let now = 1_000_000;
+        let state = store.get_or_insert(id, 0);
+        state.recall = Some(mature_fsrs(500)); // due — but cram never credits it
+        state.reconstruct = Some(mature_fsrs(500));
+
+        let mut s = reconstruct_session(all, &store, true, now);
+        s.grade(&mut store, Grade::Pass, now);
+
+        let st = store.get(id).unwrap();
+        assert_eq!(
+            mature_fsrs(500),
+            st.recall.unwrap(),
+            "no recall credit, not even a re-anchor"
+        );
+        let reconstruct = st.reconstruct.unwrap();
+        assert_eq!(30.0, reconstruct.stability, "cram refreshes, never rewards");
+        assert_eq!(now + 30 * 86_400_000, reconstruct.due_ms, "re-anchored");
+        assert!(st.history.is_empty(), "a cram refresh is not a review");
+        // The recognized flag has no schedule to distort, so a cram pass may
+        // still set it.
+        assert_eq!(Some(now), st.recognized_ms);
+    }
+
+    #[test]
+    fn any_full_pass_sets_recognized_transitively() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(3);
+        let now = 1_000_000;
+
+        let mut recall = Session::new(
+            vec![all[0].clone()],
+            &store,
+            sched(),
+            SessionOptions::default(),
+            now,
+        );
+        recall.grade(&mut store, Grade::Pass, now);
+        assert_eq!(
+            Some(now),
+            store.get(all[0].id()).unwrap().recognized_ms,
+            "a recall pass marks recognized"
+        );
+
+        let mut reconstruct = reconstruct_session(vec![all[1].clone()], &store, false, now);
+        reconstruct.grade(&mut store, Grade::Pass, now);
+        assert_eq!(
+            Some(now),
+            store.get(all[1].id()).unwrap().recognized_ms,
+            "a reconstruct pass marks recognized"
+        );
+
+        let mut partial = Session::new(
+            vec![all[2].clone()],
+            &store,
+            sched(),
+            SessionOptions::default(),
+            now,
+        );
+        partial.grade(&mut store, Grade::Partial, now);
+        assert!(
+            store.get(all[2].id()).unwrap().recognized_ms.is_none(),
+            "a partial never marks recognized"
+        );
     }
 }
