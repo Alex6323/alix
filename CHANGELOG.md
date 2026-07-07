@@ -7,6 +7,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+## [0.3.0] - 2026-07-07
+
+### Added
 - **Session depths: Recognize, Recall, Reconstruct — replacing the retired
   `% mode:` checks.** Every review now happens at one of three independent
   depths, chosen per session (`--depth`, or the web picker's split **Learn**
