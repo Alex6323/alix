@@ -7,13 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- **Session levels: Recognize, Recall, Reconstruct — replacing the retired
+- **Session depths: Recognize, Recall, Reconstruct — replacing the retired
   `% mode:` checks.** Every review now happens at one of three independent
-  levels, chosen per session (`--level`, or the web picker's split **Learn**
+  depths, chosen per session (`--depth`, or the web picker's split **Learn**
   button and its ▾ menu — on the keyboard, `v` opens it and `1`/`2`/`3` pick a
-  level, rebindable in `[keys.picker]`) instead of authored per card or set in
+  depth, rebindable in `[keys.picker]`) instead of authored per card or set in
   config; plain
-  Learn reuses the deck's own last-used level (first use: Recall). **Recall** is the
+  Learn reuses the deck's own last-used depth (first use: Recall). **Recall** is the
   familiar reveal-and-self-grade flashcard. **Reconstruct** keeps its own FSRS
   schedule per card, independent of Recall — no cross-crediting, two separate
   practices — and has you type a short answer or a cloze gap, type each line
@@ -21,7 +21,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   unscheduled and boolean (no FSRS state at all): a multiple-choice pick where
   there's material to build one, the same attempt-then-reveal a first
   encounter gets otherwise. A card no longer climbs or descends between
-  levels on its own.
+  depths on its own.
 - **A full Reconstruct pass credits a due Recall schedule — downward only,
   pass-only.** Getting a card fully right at Reconstruct (outside cram) now
   counts for its Recall schedule too: full credit if recall was due at that
@@ -29,7 +29,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   pushed-out due date if it wasn't (memory untouched, nothing recorded).
   Partial and failed answers never propagate, and a card drilled only at
   Reconstruct never gains a recall schedule from this. Alongside it, any
-  full pass at any level — cram included — marks the card recognized if it
+  full pass at any depth — cram included — marks the card recognized if it
   wasn't yet.
 - **Two quiet overrides give the learner the final say.** A typed
   Reconstruct check normalizes both sides (case, whitespace, trailing
@@ -39,20 +39,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   quietly walked back with an **"I guessed"** link, which un-marks the card
   and re-queues it.
 - **Per-deck badges for Recognize/Recall/Reconstruct**, shown in the picker.
-  A deck earns a level's badge once every card is currently solid at it
+  A deck earns a depth's badge once every card is currently solid at it
   (recognized; or at/past 21 days of FSRS stability) — solid while it still
   clears the bar, dotted once a card has lapsed below it (a badge keeps its
-  earn date once won). Only the highest badged level shows, and a deck that
+  earn date once won). Only the highest badged depth shows, and a deck that
   gains cards after being badged gets a small "new" chip. Informational only:
   badges never gate anything — passing the AI exam is still the only thing
   that unlocks a dependent deck.
-- **`alix list`/`alix stats` report per level.** `list` now shows each card's
+- **`alix list`/`alix stats` report per depth.** `list` now shows each card's
   Recall and Reconstruct schedule state plus a ✓ once it's recognized;
-  `stats` adds a per-level due count.
+  `stats` adds a per-depth due count.
 - **`% reveal:` — the authored presentation axis.** How a card is *presented*
   is now its own directive (deck or card, default `flip`): `flip`, `cloze`
   (`{{spans}}`), or `line` — while how deeply it's *checked* is the session
-  level above, never authored into a shared deck. The web review UI shows a
+  depth above, never authored into a shared deck. The web review UI shows a
   small badge naming the check (`flip` / `line` / `typing` / `explain`) so how
   you'll interact is clear up front. See the **Changed** note for the
   `% mode:`/`#?` break.
@@ -143,11 +143,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ephemeral (never persisted or sent to the server).
 
 ### Changed
-- **Breaking (store): per-level schedules replace the single `fsrs` field.** A
-  card's progress is now stored per level (`recall`/`reconstruct`), plus a
+- **Breaking (store): per-depth schedules replace the single `fsrs` field.** A
+  card's progress is now stored per depth (`recall`/`reconstruct`), plus a
   `recognized` flag, instead of one shared FSRS state. Pre-1.0, no migration:
   an existing store loads fine, but every card starts with empty schedules at
-  every level — a one-off rewrite for anyone who wants to seed it otherwise.
+  every depth — a one-off rewrite for anyone who wants to seed it otherwise.
 - **Breaking: `--max-typos` and the `fuzzy` check mode are gone.** A typed
   check now normalizes (case, whitespace, trailing punctuation) and compares
   exactly, then shows the diff and leaves the pass/fail call to you — no
@@ -171,10 +171,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   edit `% requires:` lines by hand. `alix trace`'s walk is unaffected — it
   still runs in the terminal (a plain stdin loop, never a TUI).
 - **Breaking: `% mode:`, the `#?` cloze marker, and the `--mode` flag are
-  removed** — replaced by `% reveal:` and the session levels above. A cloze card
+  removed** — replaced by `% reveal:` and the session depths above. A cloze card
   is now `% reveal: cloze` (was `#?`); a deck's presentation is
   `% reveal: flip|cloze|line` (was `% mode:`); and how deeply you drill is the
-  session level (`--level` or the split Learn button), not a per-card mode or a
+  session depth (`--depth` or the split Learn button), not a per-card mode or a
   CLI flag. **Cards once authored `% mode: typing`/`explain` review as
   reveal-and-self-grade in Recall sessions** — start a **Reconstruct** session
   to get the producing (typing/explain) checks. **Card ids are preserved**: the retired markers were never part of a

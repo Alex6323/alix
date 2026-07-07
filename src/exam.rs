@@ -1475,7 +1475,7 @@ mod tests {
     }
 
     use crate::{
-        level::Reveal,
+        depth::Reveal,
         testutil::{ask_config, exec_lock, fake_cli, fake_reply},
     };
 
@@ -1941,7 +1941,7 @@ mod tests {
     }
 
     #[test]
-    fn split_card_blocks_one_block_per_top_level_front() {
+    fn split_card_blocks_one_block_per_top_depth_front() {
         // Two plain cards separated by a blank line → two blocks.
         let blocks = split_card_blocks("# a\n\t1\n\n# b\n\t2\n");
         assert_eq!(2, blocks.len());

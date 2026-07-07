@@ -4,7 +4,7 @@ use std::{hash::Hasher, path::PathBuf, sync::Arc};
 
 use twox_hash::XxHash64;
 
-use crate::{answer::Input, level::Reveal};
+use crate::{answer::Input, depth::Reveal};
 
 /// Which way a card is reviewed. Set per card (or per deck) with
 /// `% direction:`; `both` generates a forward and a reversed card.

@@ -58,9 +58,9 @@ it's kept separate from `alix.toml` on purpose — so it stays yours and never
 travels when you share the workspace. A missing or malformed one is simply
 ignored.
 
-The session level (Recognize/Recall/Reconstruct) isn't a workspace setting —
+The session depth (Recognize/Recall/Reconstruct) isn't a workspace setting —
 it's picked per session, the same as for a loose deck (see
-[Reveal & session levels](04-review-modes.md)).
+[Reveal & session depths](04-review-modes.md)).
 
 ## Its own progress
 

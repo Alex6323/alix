@@ -175,11 +175,11 @@ pub struct PickerKeys {
     pub filter: Vec<KeyPattern>,
     /// Open the Mastered window.
     pub mastered: Vec<KeyPattern>,
-    /// Open (or close) the focused deck's level menu — the split Learn
+    /// Open (or close) the focused deck's depth menu — the split Learn
     /// button's ▾. `Esc` always closes it too.
-    pub level: Vec<KeyPattern>,
-    /// Start the focused deck at a level while its menu is open. `Enter`
-    /// always starts the highlighted (last-used) level.
+    pub depth: Vec<KeyPattern>,
+    /// Start the focused deck at a depth while its menu is open. `Enter`
+    /// always starts the highlighted (last-used) depth.
     pub recognize: Vec<KeyPattern>,
     pub recall: Vec<KeyPattern>,
     pub reconstruct: Vec<KeyPattern>,
@@ -195,7 +195,7 @@ impl Default for PickerKeys {
             back: keys(&["h"]),
             filter: keys(&["/", "ctrl-f"]),
             mastered: keys(&["m"]),
-            level: keys(&["v"]),
+            depth: keys(&["v"]),
             recognize: keys(&["1"]),
             recall: keys(&["2"]),
             reconstruct: keys(&["3"]),
@@ -678,7 +678,7 @@ struct RawPicker {
     back: Option<Vec<String>>,
     filter: Option<Vec<String>>,
     mastered: Option<Vec<String>>,
-    level: Option<Vec<String>>,
+    depth: Option<Vec<String>>,
     recognize: Option<Vec<String>>,
     recall: Option<Vec<String>>,
     reconstruct: Option<Vec<String>>,
@@ -786,7 +786,7 @@ impl Config {
             raw.keys.picker.mastered,
             "picker.mastered",
         )?;
-        assign(&mut picker.level, raw.keys.picker.level, "picker.level")?;
+        assign(&mut picker.depth, raw.keys.picker.depth, "picker.depth")?;
         assign(
             &mut picker.recognize,
             raw.keys.picker.recognize,
@@ -1067,8 +1067,8 @@ pub fn default_config_toml() -> &'static str {
 # back = ["h"]                  # step back / cancel
 # filter = ["/", "ctrl-f"]      # start filtering
 # mastered = ["m"]              # open the Mastered window
-# level = ["v"]                 # open the focused deck's level menu (Esc closes it too)
-# recognize = ["1"]             # with the menu open, start at that level;
+# depth = ["v"]                 # open the focused deck's depth menu (Esc closes it too)
+# recognize = ["1"]             # with the menu open, start at that depth;
 # recall = ["2"]                #   Enter always starts the highlighted
 # reconstruct = ["3"]           #   (last-used) one
 
@@ -1359,16 +1359,16 @@ mod tests {
     }
 
     #[test]
-    fn level_menu_keys_override_and_default() {
+    fn depth_menu_keys_override_and_default() {
         let config =
-            Config::from_toml("[keys.picker]\nlevel = [\"s\"]\nreconstruct = [\"3\", \"e\"]\n")
+            Config::from_toml("[keys.picker]\ndepth = [\"s\"]\nreconstruct = [\"3\", \"e\"]\n")
                 .unwrap();
-        assert_eq!(vec![parse_key("s").unwrap()], config.picker.level);
+        assert_eq!(vec![parse_key("s").unwrap()], config.picker.depth);
         assert_eq!(
             vec![parse_key("3").unwrap(), parse_key("e").unwrap()],
             config.picker.reconstruct
         );
-        // Unmentioned level keys keep their digit defaults.
+        // Unmentioned depth keys keep their digit defaults.
         assert_eq!(vec![parse_key("1").unwrap()], config.picker.recognize);
         assert_eq!(vec![parse_key("2").unwrap()], config.picker.recall);
     }

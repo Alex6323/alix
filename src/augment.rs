@@ -37,7 +37,7 @@ use crate::{
     ask,
     card::Card,
     config::{AiConfig, AskConfig},
-    level::Reveal,
+    depth::Reveal,
 };
 
 /// The on-disk cache-format version. Bumped only if the persisted shape changes

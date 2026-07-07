@@ -52,10 +52,10 @@ file or card identity. Both review and browse show the reshape, so the two views
 match. It's an AI heuristic, so it can miss or produce an unhelpful reshape;
 **Remove** clears it with no lasting effect.
 
-## Every check, at every level, plus the AI features
+## Every check, at every depth, plus the AI features
 
 Every [check](04-review-modes.md) works in the browser, at whichever session
-level you picked — a flip or cloze reveal, a line reveal (it auto-scrolls to
+depth you picked — a flip or cloze reveal, a line reveal (it auto-scrolls to
 the newest line), a typing Reconstruct check (each line marked ✓/✗ with the
 correct answer shown, then you grade), an explain Reconstruct check, and the
 multiple-choice pick — a new card's attempt-first on-ramp, or a genuine

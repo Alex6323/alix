@@ -340,10 +340,10 @@
   .deckrow .meta { margin-left: auto; padding-left: 10px; font-family: var(--mono); font-size: 0.74rem; color: var(--dim); white-space: nowrap; }
   .deckrow .meta.state-finished { color: var(--good); }
   .deckrow .meta.state-examdue { color: var(--warn); }
-  /* the highest level with a badge: solid border = currently solid, dashed =
+  /* the highest depth with a badge: solid border = currently solid, dashed =
      earned once but lapsed (subsumption — only the highest ever shows). */
-  .deckrow .badge-level { flex: none; font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .deckrow .badge-level.dotted { border-style: dashed; }
+  .deckrow .badge-depth { flex: none; font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .deckrow .badge-depth.dotted { border-style: dashed; }
   .deckrow .badge-new { flex: none; font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--bolt); border: 1px solid var(--bolt); border-radius: 5px; padding: 1px 5px; }
   /* dimmed + not startable: nothing due (🕒). A 🔒 exam-locked deck that's still
      drillable stays bright. */
@@ -384,10 +384,10 @@
   .chip.v-partly { background: var(--warn); border-color: var(--warn); }
   .chip.v-passed { background: var(--good); border-color: var(--good); }
   .chip.v-failed:hover, .chip.v-partly:hover, .chip.v-passed:hover { filter: brightness(1.08); color: var(--void); }
-  /* the split Learn button's level tag ("Learn ·recall") — subtle, truncates
+  /* the split Learn button's depth tag ("Learn ·recall") — subtle, truncates
      rather than growing the chip. */
-  .chip.primary .level-tag { opacity: 0.65; font-size: 0.82em; max-width: 76px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  /* the ▾ beside Learn that opens the level menu — same chip, tighter padding. */
+  .chip.primary .depth-tag { opacity: 0.65; font-size: 0.82em; max-width: 76px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* the ▾ beside Learn that opens the depth menu — same chip, tighter padding. */
   .chip.split { padding-left: 10px; padding-right: 10px; }
   /* a quiet link-style chip ("I guessed") — no border/fill, so it reads as the
      lesser of the two options next to the primary "Next". */
@@ -731,11 +731,11 @@ function isWalk(s) {
   return !!s && s.kind === "walk";
 }
 
-// `level` picks a session depth (Recognize/Recall/Reconstruct) explicitly;
-// omitted, the server resolves the deck's own remembered last level.
-function select(name, topology, region, level) {
+// `depth` picks a session depth (Recognize/Recall/Reconstruct) explicitly;
+// omitted, the server resolves the deck's own remembered last depth.
+function select(name, topology, region, depth) {
   rememberLaunch(name);
-  api("/api/select", post({ deck: name, topology: topology || null, region: region || null, level: level || null })).then(s => {
+  api("/api/select", post({ deck: name, topology: topology || null, region: region || null, depth: depth || null })).then(s => {
     if (isWalk(s)) {
       walkData = s;
       walkConfirmingLeave = false;
@@ -787,12 +787,12 @@ function isInput() { return state.mode === "typing"; }
 function isTypeLine() { return state.mode === "typeline"; }
 function isExplain() { return state.mode === "explain"; }
 // A genuine Recognize-session MC pick (never true for the acquire on-ramp,
-// which shows its own recognition question regardless of level).
+// which shows its own recognition question regardless of depth).
 function isRecognizeMc() { return !isAcquire() && isChoice(); }
 // The Recognize fallback: the session is Recognize but no MC could be built
 // (too few distractors) — attempt→reveal with a plain Knew-it/Not-yet call,
 // not the generic three-way grade.
-function isRecognizeFallback() { return !isAcquire() && state.level === "recognize" && !state.choices; }
+function isRecognizeFallback() { return !isAcquire() && state.depth === "recognize" && !state.choices; }
 // Draw is effective when the card is authored draw-only OR the per-device toggle
 // is on — but only for the self-graded modes L1 supports, and never while acquiring.
 function effectiveDraw() {
@@ -1444,35 +1444,35 @@ async function renderSelect() {
   const mastered = recent.filter(d => d.mastered);
   for (const g of workspaces.concat(folders)) for (const m of g.members) if (m.mastered) mastered.push(m);
 
-  // Can a row be started now, at *any* level? Drilling is never gated by the
+  // Can a row be started now, at *any* depth? Drilling is never gated by the
   // prerequisite lock (only the exam is — an exam-locked deck's `examable` is
-  // false), so a gated view refuses only a deck with nothing due at any level.
+  // false), so a gated view refuses only a deck with nothing due at any depth.
   // `reviewable` already folds in the trace/exam-due special cases alongside
-  // the per-level due-ness, so this reads as "any level (or the trace/exam)
+  // the per-depth due-ness, so this reads as "any depth (or the trace/exam)
   // is startable" — the gate for the ▾ split button. The Mastered window is
   // ungated — a finished deck can be reopened to cram or re-examine.
   const canStart = (it, gated) => it.reviewable || !gated;
 
-  // Maps a level name to its own due-ness field (`picker::DeckStatus`'s
-  // per-level split), so each level chip — and the plain Learn button, which
-  // targets the deck's own last-used level — gates on its own honest signal
-  // rather than "any level" (recall-settled must not enable a Recall chip
+  // Maps a depth name to its own due-ness field (`picker::DeckStatus`'s
+  // per-depth split), so each depth chip — and the plain Learn button, which
+  // targets the deck's own last-used depth — gates on its own honest signal
+  // rather than "any depth" (recall-settled must not enable a Recall chip
   // just because Reconstruct is due).
-  const LEVELS = ["recognize", "recall", "reconstruct"]; // menu/keys order — 1/2/3
-  const LEVEL_FIELD = { recognize: "reviewable_recognize", recall: "reviewable_recall", reconstruct: "reviewable_reconstruct" };
-  const canStartAt = (it, gated, level) => it[LEVEL_FIELD[level]] || !gated;
+  const DEPTHS = ["recognize", "recall", "reconstruct"]; // menu/keys order — 1/2/3
+  const DEPTH_FIELD = { recognize: "reviewable_recognize", recall: "reviewable_recall", reconstruct: "reviewable_reconstruct" };
+  const canStartAt = (it, gated, depth) => it[DEPTH_FIELD[depth]] || !gated;
 
-  // Rows that carry the level split (the Learn ▾ chip and its v key): a deck —
-  // not a workspace/folder — that isn't exam-primary, has a remembered level,
-  // and isn't a trace (walked, not leveled).
-  const hasLevelSplit = (row) => !!(row && row._item && !row._open
-    && row._item.state !== "examdue" && row._item.last_level && !row._item.is_trace);
+  // Rows that carry the depth split (the Learn ▾ chip and its v key): a deck —
+  // not a workspace/folder — that isn't exam-primary, has a remembered depth,
+  // and isn't a trace (walked — depths don't apply).
+  const hasDepthSplit = (row) => !!(row && row._item && !row._open
+    && row._item.state !== "examdue" && row._item.last_depth && !row._item.is_trace);
 
   // The plain Learn/primary button's gate: a trace always walks and an
-  // exam-due deck's primary is its exam (both non-level, via `canStart`);
-  // otherwise it reviews at the deck's own last-used level.
+  // exam-due deck's primary is its exam (both non-depth, via `canStart`);
+  // otherwise it reviews at the deck's own last-used depth.
   const canStartPrimary = (it, gated) =>
-    (it.is_trace || it.state === "examdue") ? canStart(it, gated) : canStartAt(it, gated, it.last_level);
+    (it.is_trace || it.state === "examdue") ? canStart(it, gated) : canStartAt(it, gated, it.last_depth);
 
   // Launch one deck/member. An exam-due deck sits its exam; a trace will walk
   // once the web hosts walks (for now it reviews its explain cards — the single
@@ -1493,14 +1493,14 @@ async function renderSelect() {
     }
   }
 
-  // Launch at an explicit level (from the split Learn button's ▾ menu), same
+  // Launch at an explicit depth (from the split Learn button's ▾ menu), same
   // drawer-scope rules as `launch`, but never routes to the exam — picking a
-  // level always means "review", gated on that level's own due-ness.
-  function launchLevel(it, wsName, gated, level) {
-    if (!canStartAt(it, gated, level)) return;
+  // depth always means "review", gated on that depth's own due-ness.
+  function launchDepth(it, wsName, gated, depth) {
+    if (!canStartAt(it, gated, depth)) return;
     lastWorkspace = wsName || null;
     const sel = drawerSel.deck === it.name ? drawerSel : {};
-    select(it.name, sel.topology, sel.region, level);
+    select(it.name, sel.topology, sel.region, depth);
   }
 
   // The workspace's emblem if it has one, else the chevron. An SVG renders as a
@@ -1558,13 +1558,13 @@ async function renderSelect() {
     row.appendChild(el("span", "name", it.label || it.name));
     if (showKind && it.is_trace) row.appendChild(el("span", "kind", "trace"));
     if (it.path) row.appendChild(el("span", "loc", it.path));
-    // The highest level with a badge (solid border = currently solid, dashed =
+    // The highest depth with a badge (solid border = currently solid, dashed =
     // earned but lapsed — subsumption, spec {#check-matrix}); `new` corner chip
     // when any card is fresh. Both absent on workspace/folder rows (no fields).
-    if (it.badge_level) {
-      const lvl = it.badge_level;
-      const badge = el("span", "badge-level" + (it.badge_dotted ? " dotted" : ""), lvl[0].toUpperCase() + lvl.slice(1));
-      badge.title = it.badge_dotted ? lvl + " badge earned, currently lapsed" : lvl + " badge, currently solid";
+    if (it.badge_depth) {
+      const d = it.badge_depth;
+      const badge = el("span", "badge-depth" + (it.badge_dotted ? " dotted" : ""), d[0].toUpperCase() + d.slice(1));
+      badge.title = it.badge_dotted ? d + " badge earned, currently lapsed" : d + " badge, currently solid";
       row.appendChild(badge);
     }
     if (it.new_cards) row.appendChild(el("span", "badge-new", "new"));
@@ -1600,7 +1600,7 @@ async function renderSelect() {
     let drawerEl = null; // the focus drawer under the focused deck, if it has a topology
     let closingEl = null; // a drawer mid-close (animating out before removal)
     let drawerCycle = null; // (dir)=>{} to step the drawer's region selection, when open
-    let levelMenuOpen = false; // the split Learn button's ▾ menu (Recognize/Recall/Reconstruct) is open
+    let depthMenuOpen = false; // the split Learn button's ▾ menu (Recognize/Recall/Reconstruct) is open
 
     const wrap = el("div", "select");
     if (opts.lede) wrap.appendChild(el("div", "lede", opts.lede));
@@ -1647,29 +1647,29 @@ async function renderSelect() {
     function syncPrimary() {
       legend.innerHTML = "";
       const f = focusedEl;
-      // The split Learn button's level menu: temporarily swaps the whole footer
+      // The split Learn button's depth menu: temporarily swaps the whole footer
       // for Recognize/Recall/Reconstruct + Cancel, focused row's own last-used
-      // level highlighted as the primary. Closed by picking one, Cancel, or Esc.
-      if (f && f._item && levelMenuOpen) {
+      // depth highlighted as the primary. Closed by picking one, Cancel, or Esc.
+      if (f && f._item && depthMenuOpen) {
         const it = f._item;
         // mousedown preventDefault keeps focus on the deck row (the kebab /
         // drawer-cell trick), so row nav and the menu's own Escape keep working
         // after any of these buttons is clicked — a click otherwise moves focus
         // onto a button syncPrimary() is about to destroy, stranding it on <body>.
-        // PK's per-level bindings are keyed by the level names themselves,
-        // so PK[lvl] is each chip's binding (1/2/3 by default).
-        for (const lvl of LEVELS) {
-          const b = el("button", "chip" + (lvl === it.last_level ? " primary" : ""), lvl[0].toUpperCase() + lvl.slice(1));
-          b.appendChild(el("span", "k", label(PK[lvl])));
-          b.disabled = !canStartAt(it, f._gated, lvl);
+        // PK's per-depth bindings are keyed by the depth names themselves,
+        // so PK[d] is each chip's binding (1/2/3 by default).
+        for (const d of DEPTHS) {
+          const b = el("button", "chip" + (d === it.last_depth ? " primary" : ""), d[0].toUpperCase() + d.slice(1));
+          b.appendChild(el("span", "k", label(PK[d])));
+          b.disabled = !canStartAt(it, f._gated, d);
           b.addEventListener("mousedown", e => e.preventDefault());
-          b.addEventListener("click", () => { levelMenuOpen = false; launchLevel(it, f._wsName, f._gated, lvl); });
+          b.addEventListener("click", () => { depthMenuOpen = false; launchDepth(it, f._wsName, f._gated, d); });
           legend.appendChild(b);
         }
         const cancel = el("button", "chip", "Cancel");
         cancel.appendChild(el("span", "k", "esc"));
         cancel.addEventListener("mousedown", e => e.preventDefault());
-        cancel.addEventListener("click", () => { levelMenuOpen = false; syncPrimary(); });
+        cancel.addEventListener("click", () => { depthMenuOpen = false; syncPrimary(); });
         legend.appendChild(cancel);
         return;
       }
@@ -1682,10 +1682,10 @@ async function renderSelect() {
         const it = f._item;
         const examPrimary = it.state === "examdue"; // a drilled deck's main action is its exam
         primary = el("button", "chip primary", examPrimary ? "Take exam" : "Learn");
-        // A plain Learn subtly names the level it'll resume at (the deck's own
-        // remembered last level); an exam-due deck's primary names its exam instead.
-        // A trace has no level (it's walked, not leveled), so it never gets a tag.
-        if (!examPrimary && it.last_level && !it.is_trace) primary.appendChild(el("span", "level-tag", " ·" + it.last_level));
+        // A plain Learn subtly names the depth it'll resume at (the deck's own
+        // remembered last depth); an exam-due deck's primary names its exam instead.
+        // A trace has no depth (it's walked — depths don't apply), so it never gets a tag.
+        if (!examPrimary && it.last_depth && !it.is_trace) primary.appendChild(el("span", "depth-tag", " ·" + it.last_depth));
         // Learn (facts → review, trace → walk) is Enter; an exam-due deck's
         // primary is its exam (also enter, or 🔒 when that exam is locked).
         primary.appendChild(el("span", "k", examPrimary && !it.examable ? "\u{1F512}" : "enter"));
@@ -1697,19 +1697,19 @@ async function renderSelect() {
         primary.disabled = true;
       }
       legend.appendChild(primary);
-      // The level split: a small ▾ beside a plain Learn opens the level menu
-      // above (Recognize/Recall/Reconstruct); see `hasLevelSplit` for which
+      // The depth split: a small ▾ beside a plain Learn opens the depth menu
+      // above (Recognize/Recall/Reconstruct); see `hasDepthSplit` for which
       // rows carry it.
-      if (hasLevelSplit(f)) {
+      if (hasDepthSplit(f)) {
         const it = f._item;
         const lv = el("button", "chip split", "▾");
-        lv.title = "choose a level";
-        lv.appendChild(el("span", "k", label(PK.level)));
+        lv.title = "choose a depth";
+        lv.appendChild(el("span", "k", label(PK.depth)));
         lv.disabled = !canStart(it, f._gated);
-        // Keep focus on the deck row (see the level menu above): the click
+        // Keep focus on the deck row (see the depth menu above): the click
         // rebuilds the footer, which would otherwise strand focus on <body>.
         lv.addEventListener("mousedown", e => e.preventDefault());
-        lv.addEventListener("click", () => { levelMenuOpen = true; syncPrimary(); });
+        lv.addEventListener("click", () => { depthMenuOpen = true; syncPrimary(); });
         legend.appendChild(lv);
       }
       // A read-only Browse of the focused deck (key b).
@@ -1884,7 +1884,7 @@ async function renderSelect() {
       // deck focused — don't treat it as leaving the row or rebuild the drawer.
       if (e.target.closest && e.target.closest(".drawer")) return;
       const row = e.target.closest ? e.target.closest(".deckrow") : null;
-      if (row !== focusedEl) levelMenuOpen = false; // the menu belongs to the row it was opened on
+      if (row !== focusedEl) depthMenuOpen = false; // the menu belongs to the row it was opened on
       focusedEl = row;
       syncPrimary();
       syncDrawer(row);
@@ -1938,21 +1938,21 @@ async function renderSelect() {
       // Keys inside the open drawer (its native topology picker) belong to it —
       // don't hijack them for row navigation.
       if (e.target.closest(".drawer")) return;
-      // While the level menu is open it owns the keys: the per-level bindings
-      // (1/2/3 by default, matching the chips' hints) start that level — inert
-      // when that chip is disabled — Esc or the level key again closes it back
+      // While the depth menu is open it owns the keys: the per-depth bindings
+      // (1/2/3 by default, matching the chips' hints) start that depth — inert
+      // when that chip is disabled — Esc or the depth key again closes it back
       // to the row's own chips, and Enter still reaches the global handler
-      // below, which clicks the highlighted level. Every other row-nav key is
+      // below, which clicks the highlighted depth. Every other row-nav key is
       // inert until the menu closes.
-      if (levelMenuOpen) {
+      if (depthMenuOpen) {
         const f = focusedEl;
-        const lvl = LEVELS.find(l => hit(e, PK[l]));
-        if (lvl && f && f._item && canStartAt(f._item, f._gated, lvl)) {
+        const d = DEPTHS.find(l => hit(e, PK[l]));
+        if (d && f && f._item && canStartAt(f._item, f._gated, d)) {
           e.preventDefault(); e.stopPropagation();
-          levelMenuOpen = false;
-          launchLevel(f._item, f._wsName, f._gated, lvl);
-        } else if (e.key === "Escape" || hit(e, PK.level)) {
-          e.preventDefault(); e.stopPropagation(); levelMenuOpen = false; syncPrimary();
+          depthMenuOpen = false;
+          launchDepth(f._item, f._wsName, f._gated, d);
+        } else if (e.key === "Escape" || hit(e, PK.depth)) {
+          e.preventDefault(); e.stopPropagation(); depthMenuOpen = false; syncPrimary();
         }
         return;
       }
@@ -1964,7 +1964,7 @@ async function renderSelect() {
       // workspace and left is inert (returning is Esc/Backspace). The primary
       // action — Learn a deck / Open a workspace / Take exam — is Enter, not l.
       // g/G/Home/End jump to ends; / or Ctrl-F focus the filter; b browses;
-      // a augments; the level key (v) opens the level menu (same gate as its
+      // a augments; the depth key (v) opens the depth menu (same gate as its
       // ▾ chip, and only when that chip is enabled); m opens Mastered.
       if (e.key === "ArrowDown" || hit(e, PK.down)) { e.preventDefault(); if (idx < v.length - 1) v[idx + 1].focus(); }
       else if (e.key === "ArrowUp" || hit(e, PK.up)) { e.preventDefault(); if (idx > 0) v[idx - 1].focus(); } // stays on the first row; the filter is only reachable via / or Ctrl-F
@@ -1975,7 +1975,7 @@ async function renderSelect() {
       else if (e.key === "ArrowLeft" || hit(e, PK.back)) { e.preventDefault(); if (drawerCycle) drawerCycle(-1); } // back-out is Esc/Backspace only; ←/h just steps the drawer
       else if (e.key === "b" && cur && cur._item) { e.preventDefault(); browseDeck(cur._item, cur._wsName); }
       else if (e.key === "a" && cur && cur._item) { e.preventDefault(); lastWorkspace = cur._wsName || null; openAugment(cur._item.name); }
-      else if (hit(e, PK.level) && hasLevelSplit(cur) && canStart(cur._item, cur._gated)) { e.preventDefault(); levelMenuOpen = true; syncPrimary(); }
+      else if (hit(e, PK.depth) && hasDepthSplit(cur) && canStart(cur._item, cur._gated)) { e.preventDefault(); depthMenuOpen = true; syncPrimary(); }
       else if (e.key === "r") { e.preventDefault(); replayLogo(); renderSelect(); } // re-scan the decks (also the ⟳ nav button)
       else if (opts.allowMastered && hit(e, PK.mastered)) { e.preventDefault(); renderMastered(); }
       else if (e.key === "x" && cur && cur._item && cur._item.examable) {
@@ -3264,7 +3264,7 @@ function openShortcuts() {
     '<kbd>/</kbd><span>filter the list</span>' +
     '<kbd>↑ ↓</kbd><span>move</span>' +
     '<kbd>enter</kbd><span>open / start</span>' +
-    '<kbd>v</kbd><span>choose a level, then <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></span>' +
+    '<kbd>v</kbd><span>choose a depth, then <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></span>' +
     '<kbd>b</kbd><span>browse the deck</span>' +
     '<kbd>x</kbd><span>take the exam</span>' +
     '<kbd>m</kbd><span>mastered decks</span>' +
@@ -3318,7 +3318,7 @@ Promise.all([
     up: [{ k: "k", ctrl: false }], down: [{ k: "j", ctrl: false }],
     open: [{ k: "l", ctrl: false }], back: [{ k: "h", ctrl: false }],
     filter: [{ k: "/", ctrl: false }, { k: "f", ctrl: true }], mastered: [{ k: "m", ctrl: false }],
-    level: [{ k: "v", ctrl: false }], recognize: [{ k: "1", ctrl: false }],
+    depth: [{ k: "v", ctrl: false }], recognize: [{ k: "1", ctrl: false }],
     recall: [{ k: "2", ctrl: false }], reconstruct: [{ k: "3", ctrl: false }],
   }, pk || {});
   document.querySelector("#mRemove .mk").textContent = label(KEYS.remove);

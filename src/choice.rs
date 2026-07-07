@@ -154,7 +154,7 @@ pub fn recognition_question(
     build(card, pool, seed, Some(ai))
 }
 
-/// Builds a Recognize-level question for a line-reveal card: pick the next
+/// Builds a Recognize-depth question for a line-reveal card: pick the next
 /// line. Distractors prefer the card's OWN other lines first — confusable by
 /// construction, since they belong to the same ordered answer — then `ai`,
 /// via [`build`]. There is no cross-card pool tier: a line card's own lines are

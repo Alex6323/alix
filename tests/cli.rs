@@ -685,14 +685,14 @@ fn backend_check_all_probes_each() {
 /// A store JSON fragment for one card: a Recall schedule in FSRS state 2
 /// (`review`) due in the past, a Reconstruct schedule in state 1 (`learning`)
 /// also past-due, and a set `recognized_ms`.
-fn both_levels_due_card(card_id: u64) -> String {
+fn both_depths_due_card(card_id: u64) -> String {
     format!(
         r#""{card_id}":{{"acquired_ms":1000,"recall":{{"stability":10.0,"difficulty":5.0,"reps":5,"lapses":0,"state":2,"scheduled_days":20,"last_review_ms":1000,"due_ms":2000,"learning_goods":2}},"reconstruct":{{"stability":8.0,"difficulty":5.0,"reps":3,"lapses":0,"state":1,"scheduled_days":10,"last_review_ms":1000,"due_ms":2000,"learning_goods":1}},"recognized_ms":1000,"total_reviews":5,"total_passes":5}}"#
     )
 }
 
 #[test]
-fn list_shows_per_level_labels_and_recognized_mark() {
+fn list_shows_per_depth_labels_and_recognized_mark() {
     let dir = TempDir::new().unwrap();
     // Card 1: recall=review (state 2), reconstruct=learning (state 1), recognized.
     // Card 2: recall=learning only — no reconstruct schedule, not recognized.
@@ -700,7 +700,7 @@ fn list_shows_per_level_labels_and_recognized_mark() {
     let deck = write(dir.path(), "cards.txt", deck_text);
     let cards = alix::parser::parse_str("cards.txt", deck_text).unwrap();
     let (id1, id2) = (cards[0].id(), cards[1].id());
-    let card1 = both_levels_due_card(id1);
+    let card1 = both_depths_due_card(id1);
     let card2 = format!(
         r#""{id2}":{{"acquired_ms":1000,"recall":{{"stability":1.0,"difficulty":5.0,"reps":1,"lapses":0,"state":1,"scheduled_days":0,"last_review_ms":1000,"due_ms":2000,"learning_goods":1}},"total_reviews":1,"total_passes":1}}"#
     );
@@ -720,17 +720,17 @@ fn list_shows_per_level_labels_and_recognized_mark() {
     // An absent schedule shows `-` in its slot; no recognized mark → space.
     assert!(
         result.contains("[  learning|         -] "),
-        "a level without a schedule shows '-': {result}"
+        "a depth without a schedule shows '-': {result}"
     );
 }
 
 #[test]
-fn stats_shows_per_level_due_counts() {
+fn stats_shows_per_depth_due_counts() {
     let dir = TempDir::new().unwrap();
     let deck_text = "# Q1\n\tA1\n";
     let deck = write(dir.path(), "stats.txt", deck_text);
     let card_id = alix::parser::parse_str("stats.txt", deck_text).unwrap()[0].id();
-    let card = both_levels_due_card(card_id);
+    let card = both_depths_due_card(card_id);
     let store = write(
         dir.path(),
         "store.json",

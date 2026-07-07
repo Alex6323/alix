@@ -10,8 +10,8 @@
 //! when a cooling card comes back. A never-seen card is *acquired* first — shown,
 //! recorded as acquired, then left to settle ~1 min before its first quiz.
 //!
-//! [`SessionOptions::level`] picks the session's depth (Recognize | Recall |
-//! Reconstruct); see `crate::level`. Recall and Reconstruct are each an
+//! [`SessionOptions::depth`] picks the session's depth (Recognize | Recall |
+//! Reconstruct); see `crate::depth`. Recall and Reconstruct are each an
 //! independent FSRS schedule, served exactly as above. Recognize is a
 //! different shape entirely — unscheduled and boolean, no due-sort, every
 //! card not yet recognized — see [`Session::grade`] and `build_queue`.
@@ -23,7 +23,7 @@ use rs_fsrs::Parameters;
 use crate::{
     augment::TopologyOrder,
     card::Card,
-    level::Level,
+    depth::Depth,
     scheduler::{Grade, Scheduler},
     store::{Store, VirtualCard},
     time,
@@ -79,12 +79,12 @@ pub struct SessionOptions {
     /// disables retirement. From `[review] retire_after` (per-workspace overridable).
     pub retire_after_days: Option<u32>,
     /// The session's chosen depth (spec 2026-07-07-session-levels-spec.md §4):
-    /// Recognize, Recall, or Reconstruct. A session-level property, not a
-    /// per-card one — see `crate::level::Level`. Routes both `build_queue` and
+    /// Recognize, Recall, or Reconstruct. A session-depth property, not a
+    /// per-card one — see `crate::depth::Depth`. Routes both `build_queue` and
     /// `grade`: Recognize is an unscheduled boolean queue; Recall and
     /// Reconstruct each read/write their own independent FSRS schedule (no
-    /// cross-crediting between levels).
-    pub level: Level,
+    /// cross-crediting between depths).
+    pub depth: Depth,
 }
 
 impl Default for SessionOptions {
@@ -96,7 +96,7 @@ impl Default for SessionOptions {
             order: Order::Scheduled,
             topology: None,
             retire_after_days: Some(DEFAULT_RETIRE_AFTER_DAYS),
-            level: Level::default(),
+            depth: Depth::default(),
         }
     }
 }
@@ -195,23 +195,23 @@ impl Session {
 
     /// The earliest upcoming due time over all seen cards of this session's
     /// decks (deck cards and virtual cards alike, which share `store.cards`), at
-    /// this session's own level. `None` for a Recognize session — it is
+    /// this session's own depth. `None` for a Recognize session — it is
     /// unscheduled, so there is no future due time to report.
     pub fn next_due_at(&self, store: &Store) -> Option<u64> {
-        if self.options.level == Level::Recognize {
+        if self.options.depth == Depth::Recognize {
             return None;
         }
         self.cards
             .iter()
             .filter_map(|c| store.get(c.id()))
-            .map(|state| self.scheduler.due_at(state, self.options.level))
+            .map(|state| self.scheduler.due_at(state, self.options.depth))
             .min()
     }
 
     /// This session's chosen depth (Recognize, Recall, or Reconstruct) — see
-    /// [`SessionOptions::level`].
-    pub fn level(&self) -> Level {
-        self.options.level
+    /// [`SessionOptions::depth`].
+    pub fn depth(&self) -> Depth {
+        self.options.depth
     }
 
     /// The card currently up for review — the pinned cursor set by [`advance`].
@@ -273,8 +273,8 @@ impl Session {
     /// A pass (or acquire, or any cram grade) leaves the session; a normal miss
     /// keeps the card in the roster, and it re-appears only once its short FSRS
     /// due has elapsed — never re-drilled immediately in the same sitting.
-    /// Routes entirely by `self.options.level`: nothing ever climbs or descends
-    /// between levels (spec 2026-07-07-session-levels-spec.md §4) — a level is
+    /// Routes entirely by `self.options.depth`: nothing ever climbs or descends
+    /// between depths (spec 2026-07-07-session-levels-spec.md §4) — a depth is
     /// chosen for the whole session, never changed by a grade.
     pub fn grade(&mut self, store: &mut Store, grade: Grade, now_ms: u64) {
         let Some(index) = self.current_idx else {
@@ -283,10 +283,10 @@ impl Session {
         // Uniform: a virtual card's schedule is an ordinary `store.cards` entry
         // keyed by its `Card::id`, so it grades exactly like a deck card.
         let id = self.cards[index].id();
-        let level = self.options.level;
+        let depth = self.options.depth;
 
         let state = store.get_or_insert(id, now_ms);
-        // Recognized cascade (transitive): any full pass — at any level, cram
+        // Recognized cascade (transitive): any full pass — at any depth, cram
         // included, since the flag has no schedule to distort — proves the card
         // is at least recognizable, so it marks the card recognized if it isn't
         // already. A Partial or Fail never sets it.
@@ -294,14 +294,14 @@ impl Session {
             state.recognized_ms = Some(now_ms);
         }
 
-        if level == Level::Recognize {
+        if depth == Depth::Recognize {
             // Recognize is unscheduled and boolean: grading never touches FSRS or
             // any schedule. A correct pick marks the card recognized for good
             // (the cascade above) and leaves the roster; a wrong pick — or the
             // learner's own "I guessed" demotion, which the client also maps to
             // `Grade::Fail` — is simply not recognized and re-queues. No partial
             // credit, nothing to schedule.
-            state.record_review(now_ms, grade, Level::Recognize, false);
+            state.record_review(now_ms, grade, Depth::Recognize, false);
             if grade == Grade::Pass {
                 self.roster.retain(|&i| self.cards[i].id() != id);
             }
@@ -313,36 +313,36 @@ impl Session {
         // (re-anchor its due — no FSRS update, no recorded review). A cram miss is a
         // genuine lapse, and every normal grade runs the real scheduler. Recall and
         // Reconstruct each own an independent schedule (stationarity: no
-        // cross-crediting), so this only ever reads/writes `level`'s own slot.
+        // cross-crediting), so this only ever reads/writes `depth`'s own slot.
         if self.options.cram && grade.passed() {
-            self.scheduler.reanchor(state, level, now_ms);
+            self.scheduler.reanchor(state, depth, now_ms);
         } else {
-            self.scheduler.apply(state, level, grade, now_ms, false);
+            self.scheduler.apply(state, depth, grade, now_ms, false);
         }
 
         // Downward propagation (Reconstruct → Recall) — the one deliberate,
-        // conservative exception to "no cross-crediting" (session-levels spec §4
+        // conservative exception to "no cross-crediting" (session-depths spec §4
         // addendum): a full Reconstruct pass is recall evidence too, so it flows
         // down, pass-only (a Partial or Fail never does), never under cram, and
         // only onto a recall schedule that already exists — never creating one.
-        if level == Level::Reconstruct
+        if depth == Depth::Reconstruct
             && grade == Grade::Pass
             && !self.options.cram
             && state.recall.is_some()
         {
-            if self.scheduler.is_due(state, Level::Recall, now_ms) {
+            if self.scheduler.is_due(state, Depth::Recall, now_ms) {
                 // Recall was due anyway: the pass stands in for that review —
                 // full schedule credit, recorded *marked* so the history stays
                 // honest about what the learner actually answered.
                 self.scheduler
-                    .apply(state, Level::Recall, Grade::Pass, now_ms, true);
+                    .apply(state, Depth::Recall, Grade::Pass, now_ms, true);
             } else {
                 // Not yet due: only the timing signal is used — re-anchor the
                 // due date from now, memory untouched, no review recorded (the
                 // cram-refresh precedent). Under steady Reconstruct drilling
                 // recall simply never comes due; stop, and it comes due at the
                 // honest time.
-                self.scheduler.reanchor(state, Level::Recall, now_ms);
+                self.scheduler.reanchor(state, Depth::Recall, now_ms);
             }
         }
 
@@ -438,23 +438,23 @@ impl Session {
     /// interval, or — for a virtual card — by re-failing its gap, which recreates
     /// it fresh); otherwise a Recognize session serves any card not yet
     /// recognized; otherwise under cram, always; otherwise unseen (fresh) or
-    /// due at this session's level. Deck and virtual cards share the one
+    /// due at this session's depth. Deck and virtual cards share the one
     /// `store.cards` rule.
     fn servable(&self, i: usize, store: &Store, now_ms: u64) -> bool {
         let card = &self.cards[i];
         if is_retired(card, store, self.options.retire_after_days) {
             return false;
         }
-        let level = self.options.level;
-        if level == Level::Recognize {
+        let depth = self.options.depth;
+        if depth == Depth::Recognize {
             return store
                 .get(card.id())
                 .is_none_or(|s| s.recognized_ms.is_none());
         }
         match store.get(card.id()) {
             // Cram serves everything; otherwise the scheduler decides (its `due_at`
-            // owns the cross-level immediacy rule — see `Fsrs::due_at`).
-            Some(state) => self.options.cram || self.scheduler.is_due(state, level, now_ms),
+            // owns the cross-depth immediacy rule — see `Fsrs::due_at`).
+            Some(state) => self.options.cram || self.scheduler.is_due(state, depth, now_ms),
             None => true,
         }
     }
@@ -485,7 +485,7 @@ impl Session {
 /// other session.
 ///
 /// Otherwise (Recall or Reconstruct): due cards in scheduler order at this
-/// session's level, then up to `max_new` unseen cards, capped by `limit`, with
+/// session's depth, then up to `max_new` unseen cards, capped by `limit`, with
 /// cloze siblings separated. A virtual (remediation) card is just another
 /// `Card` here — its schedule is an ordinary `store.cards` entry keyed by its
 /// `Card::id`, so it flows through the same rule as a deck card (it simply
@@ -497,7 +497,7 @@ fn build_queue(
     options: &SessionOptions,
     now_ms: u64,
 ) -> VecDeque<usize> {
-    if options.level == Level::Recognize {
+    if options.depth == Depth::Recognize {
         let mut order: Vec<usize> = (0..cards.len())
             .filter(|&i| !is_retired(&cards[i], store, options.retire_after_days))
             .filter(|&i| {
@@ -512,7 +512,7 @@ fn build_queue(
         return separate_siblings(order, cards);
     }
 
-    let level = options.level;
+    let depth = options.depth;
     let mut due: Vec<usize> = Vec::new();
     let mut fresh: Vec<usize> = Vec::new();
 
@@ -523,8 +523,8 @@ fn build_queue(
             Some(_) if is_retired(card, store, options.retire_after_days) => {}
             Some(state) => {
                 // Cram takes everything; else the scheduler's own `due_at` (which
-                // owns the cross-level immediacy rule) decides.
-                if options.cram || scheduler.is_due(state, level, now_ms) {
+                // owns the cross-depth immediacy rule) decides.
+                if options.cram || scheduler.is_due(state, depth, now_ms) {
                     due.push(i);
                 }
             }
@@ -536,7 +536,7 @@ fn build_queue(
     due.sort_by_key(|&i| {
         store
             .get(cards[i].id())
-            .map_or(u64::MAX, |s| scheduler.due_at(s, level))
+            .map_or(u64::MAX, |s| scheduler.due_at(s, depth))
     });
 
     let mut fresh: Vec<usize> = fresh.into_iter().take(options.max_new).collect();
@@ -621,7 +621,7 @@ pub const DEFAULT_RETIRE_AFTER_DAYS: u32 = 365;
 /// retirement (drill forever). A card with no FSRS state yet — unseen, or a legacy
 /// card not yet reviewed under FSRS — is never retired; its first FSRS review is what
 /// can push the interval past the cap. Pinned to the Recall schedule regardless of
-/// session level — retirement is a deck-lifecycle concept (spec §4.5), not per-level.
+/// session depth — retirement is a deck-lifecycle concept (spec §4.5), not per-depth.
 pub fn is_retired(card: &Card, store: &Store, retire_after_days: Option<u32>) -> bool {
     is_retired_id(card.id(), store, retire_after_days)
 }
@@ -635,7 +635,7 @@ pub fn is_retired_id(card_id: u64, store: &Store, retire_after_days: Option<u32>
     };
     store
         .get(card_id)
-        .and_then(|s| s.schedule(Level::Recall))
+        .and_then(|s| s.schedule(Depth::Recall))
         .is_some_and(|f| f.scheduled_days >= cap)
 }
 
@@ -654,7 +654,7 @@ pub fn is_virtual_reviewable(
     !is_retired_id(vc.id, store, retire_after_days)
         && store
             .get(vc.id)
-            .is_some_and(|s| scheduler.is_due(s, Level::Recall, now_ms))
+            .is_some_and(|s| scheduler.is_due(s, Depth::Recall, now_ms))
 }
 
 /// Whether `subject`'s deck has any virtual (remediation) card due right now —
@@ -709,7 +709,7 @@ pub fn count_due_soon_virtual(
         .filter(|vc| !is_retired_id(vc.id, store, retire_after_days))
         .filter(|vc| {
             store.get(vc.id).is_some_and(|s| {
-                let due = scheduler.due_at(s, Level::Recall);
+                let due = scheduler.due_at(s, Depth::Recall);
                 due > now_ms && due <= now_ms + window_ms
             })
         })
@@ -719,11 +719,11 @@ pub fn count_due_soon_virtual(
 /// Whether a card has *graduated* — reached FSRS `Review`, past the initial learning
 /// steps. This is the always-on gate for a deck's exam / done state: a card still in
 /// `New`/`Learning`, or with no FSRS state yet, has not graduated. Pinned to the
-/// Recall schedule — lifecycle stays on Recall regardless of level (spec §4.5).
+/// Recall schedule — lifecycle stays on Recall regardless of depth (spec §4.5).
 pub fn has_graduated(card: &Card, store: &Store) -> bool {
     store
         .get(card.id())
-        .and_then(|s| s.schedule(Level::Recall))
+        .and_then(|s| s.schedule(Depth::Recall))
         .is_some_and(|f| f.graduated())
 }
 
@@ -733,7 +733,7 @@ pub fn has_graduated(card: &Card, store: &Store) -> bool {
 /// brightens as retrievability nears 1. Deliberately *not* called "mastery",
 /// which is the exam's term. `now_ms` is a parameter (not read internally) so
 /// callers stay testable. Reads the Recall schedule regardless of session
-/// level — this is a picker-facing, deck-wide signal (spec §4.5), not a
+/// depth — this is a picker-facing, deck-wide signal (spec §4.5), not a
 /// per-session one.
 pub fn card_strengths(card_ids: &[u64], store: &Store, now_ms: u64) -> Vec<f32> {
     card_ids
@@ -749,7 +749,7 @@ pub fn card_strengths(card_ids: &[u64], store: &Store, now_ms: u64) -> Vec<f32> 
 /// A card not yet under FSRS, or with non-positive stability, has no
 /// meaningful curve — `0.0`.
 fn retrievability(store: &Store, card_id: u64, now_ms: u64) -> f32 {
-    let Some(f) = store.get(card_id).and_then(|s| s.schedule(Level::Recall)) else {
+    let Some(f) = store.get(card_id).and_then(|s| s.schedule(Depth::Recall)) else {
         return 0.0;
     };
     if f.stability <= 0.0 {
@@ -759,68 +759,68 @@ fn retrievability(store: &Store, card_id: u64, now_ms: u64) -> f32 {
     Parameters::forgetting_curve(elapsed_days, f.stability).clamp(0.0, 1.0) as f32
 }
 
-/// Whether one card would be served at `now_ms` at `level`: for Recognize —
+/// Whether one card would be served at `now_ms` at `depth`: for Recognize —
 /// unscheduled and boolean — any card whose store entry lacks
 /// `recognized_ms`; for Recall/Reconstruct, never-seen (fresh), or seen and
-/// due under `scheduler` at that level (`scheduler.is_due` owns the
-/// cross-level immediacy rule — see `Fsrs::due_at`). A retired card (always
+/// due under `scheduler` at that depth (`scheduler.is_due` owns the
+/// cross-depth immediacy rule — see `Fsrs::due_at`). A retired card (always
 /// the Recall-pinned rule, see [`is_retired`]) is never reviewable at any
-/// level. The per-card decision [`build_queue`]/`Session::servable` each make
+/// depth. The per-card decision [`build_queue`]/`Session::servable` each make
 /// (minus cram and the new-card cap), factored out so callers — e.g. the
-/// picker — can tell, at any level, before building a session.
+/// picker — can tell, at any depth, before building a session.
 pub fn is_reviewable(
     card: &Card,
     store: &Store,
     scheduler: &dyn Scheduler,
-    level: Level,
+    depth: Depth,
     now_ms: u64,
     retire_after_days: Option<u32>,
 ) -> bool {
     if is_retired(card, store, retire_after_days) {
         return false;
     }
-    if level == Level::Recognize {
+    if depth == Depth::Recognize {
         return store
             .get(card.id())
             .is_none_or(|s| s.recognized_ms.is_none());
     }
     match store.get(card.id()) {
-        Some(state) => scheduler.is_due(state, level, now_ms),
+        Some(state) => scheduler.is_due(state, depth, now_ms),
         None => true,
     }
 }
 
-/// Whether these cards would yield anything to review at `now_ms` at `level`
+/// Whether these cards would yield anything to review at `now_ms` at `depth`
 /// under `scheduler`, so a caller — e.g. the picker — can tell, *before*
 /// building a session, whether a deck has anything to do right now at that
-/// level. See [`is_reviewable`].
+/// depth. See [`is_reviewable`].
 pub fn has_reviewable(
     cards: &[Card],
     store: &Store,
     scheduler: &dyn Scheduler,
-    level: Level,
+    depth: Depth,
     now_ms: u64,
     retire_after_days: Option<u32>,
 ) -> bool {
     cards
         .iter()
-        .any(|card| is_reviewable(card, store, scheduler, level, now_ms, retire_after_days))
+        .any(|card| is_reviewable(card, store, scheduler, depth, now_ms, retire_after_days))
 }
 
-/// How many of these cards would be served right now at `level` — the due/new
+/// How many of these cards would be served right now at `depth` — the due/new
 /// count for a region or a whole deck (shown in the focus drawer). See
 /// [`is_reviewable`].
 pub fn count_reviewable(
     cards: &[&Card],
     store: &Store,
     scheduler: &dyn Scheduler,
-    level: Level,
+    depth: Depth,
     now_ms: u64,
     retire_after_days: Option<u32>,
 ) -> usize {
     cards
         .iter()
-        .filter(|card| is_reviewable(card, store, scheduler, level, now_ms, retire_after_days))
+        .filter(|card| is_reviewable(card, store, scheduler, depth, now_ms, retire_after_days))
         .count()
 }
 
@@ -1164,7 +1164,7 @@ mod tests {
                 order: Order::Scheduled,
                 topology: None,
                 retire_after_days: Some(DEFAULT_RETIRE_AFTER_DAYS),
-                level: crate::level::Level::default(),
+                depth: crate::depth::Depth::default(),
             },
             5 * 60 * 1000,
         );
@@ -1252,7 +1252,7 @@ mod tests {
                 order: Order::Scheduled,
                 topology: None,
                 retire_after_days: Some(DEFAULT_RETIRE_AFTER_DAYS),
-                level: crate::level::Level::default(),
+                depth: crate::depth::Depth::default(),
             },
             now + 1,
         );
@@ -1498,7 +1498,7 @@ mod tests {
             &cards(1),
             &store,
             sched.as_ref(),
-            Level::Recall,
+            Depth::Recall,
             now,
             Some(DEFAULT_RETIRE_AFTER_DAYS)
         ));
@@ -1515,7 +1515,7 @@ mod tests {
             one,
             &store,
             sched.as_ref(),
-            Level::Recall,
+            Depth::Recall,
             now,
             cap
         ));
@@ -1523,7 +1523,7 @@ mod tests {
             one,
             &store,
             sched.as_ref(),
-            Level::Recall,
+            Depth::Recall,
             now + 3_600_000,
             cap
         ));
@@ -1534,7 +1534,7 @@ mod tests {
             std::slice::from_ref(&c),
             &store,
             sched.as_ref(),
-            Level::Recall,
+            Depth::Recall,
             now + 3_600_000,
             cap
         ));
@@ -1557,7 +1557,7 @@ mod tests {
                 order: Order::Scheduled,
                 topology: None,
                 retire_after_days: Some(DEFAULT_RETIRE_AFTER_DAYS),
-                level: crate::level::Level::default(),
+                depth: crate::depth::Depth::default(),
             },
             1000,
         );
@@ -2106,7 +2106,7 @@ mod tests {
             &store,
             sched(),
             SessionOptions {
-                level: Level::Reconstruct,
+                depth: Depth::Reconstruct,
                 ..Default::default()
             },
             0,
@@ -2139,7 +2139,7 @@ mod tests {
             &store,
             sched(),
             SessionOptions {
-                level: Level::Reconstruct,
+                depth: Depth::Reconstruct,
                 ..Default::default()
             },
             1_000_000,
@@ -2157,7 +2157,7 @@ mod tests {
             &store,
             sched(),
             SessionOptions {
-                level: Level::Recognize,
+                depth: Depth::Recognize,
                 ..Default::default()
             },
             0,
@@ -2183,7 +2183,7 @@ mod tests {
             &store,
             sched(),
             SessionOptions {
-                level: Level::Recognize,
+                depth: Depth::Recognize,
                 ..Default::default()
             },
             1_000,
@@ -2204,14 +2204,14 @@ mod tests {
         }
     }
 
-    /// A Reconstruct-level session over `all` at `now`.
+    /// A Reconstruct-depth session over `all` at `now`.
     fn reconstruct_session(all: Vec<Card>, store: &Store, cram: bool, now: u64) -> Session {
         Session::new(
             all,
             store,
             sched(),
             SessionOptions {
-                level: Level::Reconstruct,
+                depth: Depth::Reconstruct,
                 cram,
                 ..Default::default()
             },
@@ -2237,9 +2237,9 @@ mod tests {
         // Two history entries: the direct reconstruct review first, then the
         // propagated recall credit, marked.
         assert_eq!(2, st.history.len());
-        assert_eq!(Level::Reconstruct, st.history[0].level);
+        assert_eq!(Depth::Reconstruct, st.history[0].depth);
         assert!(!st.history[0].propagated);
-        assert_eq!(Level::Recall, st.history[1].level);
+        assert_eq!(Depth::Recall, st.history[1].depth);
         assert_eq!(Grade::Pass, st.history[1].grade);
         assert!(st.history[1].propagated);
     }
@@ -2268,7 +2268,7 @@ mod tests {
         // Only the direct reconstruct review is recorded — a re-anchor is a
         // refresh, not a graded review.
         assert_eq!(1, st.history.len());
-        assert_eq!(Level::Reconstruct, st.history[0].level);
+        assert_eq!(Depth::Reconstruct, st.history[0].depth);
     }
 
     #[test]
@@ -2287,7 +2287,7 @@ mod tests {
         let st = store.get(id).unwrap();
         assert!(st.recall.is_none(), "propagation never creates a schedule");
         assert_eq!(1, st.history.len());
-        assert_eq!(Level::Reconstruct, st.history[0].level);
+        assert_eq!(Depth::Reconstruct, st.history[0].depth);
     }
 
     #[test]

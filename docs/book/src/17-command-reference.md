@@ -19,15 +19,15 @@ web picker rather than as their own commands (see
 
 Common flags: `--topology <name>` / `--region <name>`
 ([scheduling](05-scheduling.md)), `--cram`, `--new N`, `--limit N`,
-`--level <recognize|recall|reconstruct>` (default: the deck's own last-used
-level), and `--serve` / `--port` / `--lan` ([the web app](15-the-web-app.md)).
+`--depth <recognize|recall|reconstruct>` (default: the deck's own last-used
+depth), and `--serve` / `--port` / `--lan` ([the web app](15-the-web-app.md)).
 How each card is checked comes from its `% reveal:` combined with the
-session's level ([reveal & session levels](04-review-modes.md)), not a flag.
+session's depth ([reveal & session depths](04-review-modes.md)), not a flag.
 
 ## Progress
 
 - `alix stats <deck>...` — progress overview, completion state, and a
-  per-level due count.
+  per-depth due count.
 - `alix list <deck>...` — every card with its Recall/Reconstruct schedule
   state, a ✓ once it's recognized, and its due time.
 - `alix reset <deck>...` — clear progress (`--card`, `--all`; `-y` to

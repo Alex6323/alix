@@ -1,9 +1,9 @@
-//! Session levels — the depth of practice a learner picks per session.
+//! Session depths — the depth of practice a learner picks per session.
 //!
 //! Recognize | Recall | Reconstruct are independent session types (spec
 //! 2026-07-07-session-levels-spec.md §4): nothing climbs, nothing descends;
-//! the level is a property of the session, never of the card. `check_for`
-//! derives the concrete check from (reveal, level, answer shape).
+//! the depth is a property of the session, never of the card. `check_for`
+//! derives the concrete check from (reveal, depth, answer shape).
 
 use serde::{Deserialize, Serialize};
 
@@ -28,25 +28,25 @@ use crate::{answer::Mode, card::Card};
 )]
 #[serde(rename_all = "lowercase")]
 #[clap(rename_all = "lowercase")]
-pub enum Level {
+pub enum Depth {
     Recognize,
     #[default]
     Recall,
     Reconstruct,
 }
 
-/// The lowercase name of a level, matching its serde/clap rendering — for
-/// reporting the session's level in a JSON state payload (see `crate::serve`).
-pub fn level_name(level: Level) -> &'static str {
-    match level {
-        Level::Recognize => "recognize",
-        Level::Recall => "recall",
-        Level::Reconstruct => "reconstruct",
+/// The lowercase name of a depth, matching its serde/clap rendering — for
+/// reporting the session's depth in a JSON state payload (see `crate::serve`).
+pub fn depth_name(depth: Depth) -> &'static str {
+    match depth {
+        Depth::Recognize => "recognize",
+        Depth::Recall => "recall",
+        Depth::Reconstruct => "reconstruct",
     }
 }
 
 /// How a card's answer is presented / uncovered — authored (`% reveal:`),
-/// independent of depth. Composes with any level.
+/// independent of depth. Composes with any depth.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize, clap::ValueEnum)]
 #[serde(rename_all = "lowercase")]
 pub enum Reveal {
@@ -66,17 +66,17 @@ fn answer_is_atomic(card: &Card) -> bool {
     card.back.len() == 1
 }
 
-/// The check a card renders at a level: the final matrix of the spec (§4).
+/// The check a card renders at a depth: the final matrix of the spec (§4).
 /// Recognize always answers "pick it" — whether that becomes real MC or the
 /// attempt→reveal fallback is the serve layer's distractor decision.
-pub fn check_for(reveal: Reveal, level: Level, card: &Card) -> Mode {
-    match level {
-        Level::Recognize => Mode::Choice,
-        Level::Recall => match reveal {
+pub fn check_for(reveal: Reveal, depth: Depth, card: &Card) -> Mode {
+    match depth {
+        Depth::Recognize => Mode::Choice,
+        Depth::Recall => match reveal {
             Reveal::Flip | Reveal::Cloze => Mode::Flip,
             Reveal::Line => Mode::LineByLine,
         },
-        Level::Reconstruct => match reveal {
+        Depth::Reconstruct => match reveal {
             Reveal::Cloze => Mode::Typing,
             Reveal::Line => Mode::TypeLine,
             Reveal::Flip => {
@@ -101,57 +101,57 @@ mod tests {
     }
 
     #[test]
-    fn recognize_level_always_renders_a_choice_check() {
+    fn recognize_depth_always_renders_a_choice_check() {
         for reveal in [Reveal::Flip, Reveal::Cloze, Reveal::Line] {
             assert_eq!(
                 Mode::Choice,
-                check_for(reveal, Level::Recognize, &card("a"))
+                check_for(reveal, Depth::Recognize, &card("a"))
             );
         }
     }
 
     #[test]
-    fn recall_level_maps_reveal_to_its_self_graded_check() {
+    fn recall_depth_maps_reveal_to_its_self_graded_check() {
         assert_eq!(
             Mode::Flip,
-            check_for(Reveal::Flip, Level::Recall, &card("a"))
+            check_for(Reveal::Flip, Depth::Recall, &card("a"))
         );
         assert_eq!(
             Mode::Flip,
-            check_for(Reveal::Cloze, Level::Recall, &card("a"))
+            check_for(Reveal::Cloze, Depth::Recall, &card("a"))
         );
         assert_eq!(
             Mode::LineByLine,
-            check_for(Reveal::Line, Level::Recall, &card("a"))
+            check_for(Reveal::Line, Depth::Recall, &card("a"))
         );
     }
 
     #[test]
-    fn reconstruct_level_types_atoms_ticks_rich_and_types_lines() {
+    fn reconstruct_depth_types_atoms_ticks_rich_and_types_lines() {
         assert_eq!(
             Mode::Typing,
-            check_for(Reveal::Flip, Level::Reconstruct, &card("a"))
+            check_for(Reveal::Flip, Depth::Reconstruct, &card("a"))
         );
         assert_eq!(
             Mode::Explain,
-            check_for(Reveal::Flip, Level::Reconstruct, &card("a\n    b"))
+            check_for(Reveal::Flip, Depth::Reconstruct, &card("a\n    b"))
         );
         assert_eq!(
             Mode::Typing,
-            check_for(Reveal::Cloze, Level::Reconstruct, &card("a {{b}}"))
+            check_for(Reveal::Cloze, Depth::Reconstruct, &card("a {{b}}"))
         );
         assert_eq!(
             Mode::TypeLine,
-            check_for(Reveal::Line, Level::Reconstruct, &card("a\n    b"))
+            check_for(Reveal::Line, Depth::Reconstruct, &card("a\n    b"))
         );
     }
 
     #[test]
-    fn level_serializes_lowercase_and_defaults_to_recall() {
-        assert_eq!(Level::default(), Level::Recall);
+    fn depth_serializes_lowercase_and_defaults_to_recall() {
+        assert_eq!(Depth::default(), Depth::Recall);
         assert_eq!(
             "\"recognize\"",
-            serde_json::to_string(&Level::Recognize).unwrap()
+            serde_json::to_string(&Depth::Recognize).unwrap()
         );
     }
 }

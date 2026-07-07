@@ -12,7 +12,7 @@ use crate::{
     card::Card,
     config::ReviewConfig,
     deck::{self, Deck, DeckState},
-    level::Level,
+    depth::Depth,
     parser,
     recent::RecentDecks,
     session,
@@ -107,8 +107,8 @@ pub struct DeckStatus {
     /// [`reviewable_recognize`](Self::reviewable_recognize),
     /// [`reviewable_recall`](Self::reviewable_recall),
     /// [`reviewable_reconstruct`](Self::reviewable_reconstruct), plus the
-    /// non-level trace/exam-due special cases (untouched by the per-level
-    /// split) — "anything to do, at any level".
+    /// non-depth trace/exam-due special cases (untouched by the per-depth
+    /// split) — "anything to do, at any depth".
     pub reviewable: bool,
     /// Any deck card hasn't yet been correctly picked at Recognize
     /// (`recognized_ms` unset) — Recognize is unscheduled, so this is a plain
@@ -118,7 +118,7 @@ pub struct DeckStatus {
     /// (remediation) card is due — what `reviewable` used to mean, entirely.
     pub reviewable_recall: bool,
     /// A non-retired card is due at Reconstruct right now, via the
-    /// level-aware scheduler. The cross-level immediacy rule (`Fsrs::due_at`)
+    /// depth-aware scheduler. The cross-depth immediacy rule (`Fsrs::due_at`)
     /// means this is `true` for essentially any Recall-established deck —
     /// that's the point: independent Reconstruct practice is reachable the
     /// moment Recall has settled, not gated behind a separate warm-up.
@@ -141,14 +141,14 @@ pub struct DeckStatus {
     /// now. (`examable` is this AND not locked.) Lets a frontend always show a
     /// "Take exam" control, disabled when locked.
     pub has_exam: bool,
-    /// The highest level with a badge to show, walking `[Reconstruct, Recall,
-    /// Recognize]` high to low: the first level currently solid
+    /// The highest depth with a badge to show, walking `[Reconstruct, Recall,
+    /// Recognize]` high to low: the first depth currently solid
     /// ([`store::badge_solid`]) wins (subsumption — a higher badge implies the
-    /// lower checks were passed too); else the first level with an earn date
+    /// lower checks were passed too); else the first depth with an earn date
     /// ([`Store::badge_earned`]) wins; else `None`. Additive telemetry —
     /// gates nothing.
-    pub badge_level: Option<Level>,
-    /// `true` when `badge_level` was won by an earn date rather than current
+    pub badge_depth: Option<Depth>,
+    /// `true` when `badge_depth` was won by an earn date rather than current
     /// solidity — the badge lapsed (e.g. stability dropped) and should render
     /// dotted rather than solid.
     pub badge_dotted: bool,
@@ -157,20 +157,20 @@ pub struct DeckStatus {
     pub new_cards: bool,
 }
 
-/// The subsumption walk (spec §4.4, `{#check-matrix}`): the highest level
+/// The subsumption walk (spec §4.4, `{#check-matrix}`): the highest depth
 /// that's currently solid wins with `dotted=false`; else the highest with an
 /// earn date wins with `dotted=true`; else `(None, false)`.
-fn badge_level_for(subject: &str, cards: &[Card], store: &Store) -> (Option<Level>, bool) {
-    const LEVELS: [Level; 3] = [Level::Reconstruct, Level::Recall, Level::Recognize];
-    if let Some(level) = LEVELS
+fn badge_depth_for(subject: &str, cards: &[Card], store: &Store) -> (Option<Depth>, bool) {
+    const DEPTHS: [Depth; 3] = [Depth::Reconstruct, Depth::Recall, Depth::Recognize];
+    if let Some(depth) = DEPTHS
         .into_iter()
-        .find(|&level| store::badge_solid(cards, store, level))
+        .find(|&depth| store::badge_solid(cards, store, depth))
     {
-        return (Some(level), false);
+        return (Some(depth), false);
     }
-    let earned = LEVELS
+    let earned = DEPTHS
         .into_iter()
-        .find(|&level| store.badge_earned(subject, level).is_some());
+        .find(|&depth| store.badge_earned(subject, depth).is_some());
     let dotted = earned.is_some();
     (earned, dotted)
 }
@@ -231,10 +231,10 @@ pub fn deck_status(
     // (trace exams) is enforced at the launch sites, which have the config.
     let has_exam = deck.has_exam();
     let examable = has_exam && !actually_locked;
-    // Per-level due-ness (spec `{#check-matrix}`): each level's own honest
-    // signal, via the level-aware scheduler. Recognize needs any card not yet
+    // Per-depth due-ness (spec `{#check-matrix}`): each depth's own honest
+    // signal, via the depth-aware scheduler. Recognize needs any card not yet
     // correctly picked; Recall/Reconstruct each read their own independent
-    // schedule — the scheduler's cross-level immediacy rule (`Fsrs::due_at`)
+    // schedule — the scheduler's cross-depth immediacy rule (`Fsrs::due_at`)
     // is what makes a Recall-settled deck due right now at Reconstruct too.
     let scheduler = crate::scheduler::Fsrs::new(review.retention);
     let now = session::now_ms();
@@ -242,7 +242,7 @@ pub fn deck_status(
         &deck.cards,
         store,
         &scheduler,
-        Level::Recognize,
+        Depth::Recognize,
         now,
         review.retire_after_days,
     );
@@ -250,7 +250,7 @@ pub fn deck_status(
         &deck.cards,
         store,
         &scheduler,
-        Level::Recall,
+        Depth::Recall,
         now,
         review.retire_after_days,
     ) || session::has_reviewable_virtual(
@@ -264,14 +264,14 @@ pub fn deck_status(
         &deck.cards,
         store,
         &scheduler,
-        Level::Reconstruct,
+        Depth::Reconstruct,
         now,
         review.retire_after_days,
     );
-    // Is there anything to launch right now, at any level? A trace always
+    // Is there anything to launch right now, at any depth? A trace always
     // walks; an exam-due deck launches its exam (only when its exam isn't
-    // locked) — both non-level special cases, unchanged by the per-level
-    // split above; otherwise it's whichever level currently has something due
+    // locked) — both non-depth special cases, unchanged by the per-depth
+    // split above; otherwise it's whichever depth currently has something due
     // (or new, or a due virtual card). Drilling is never gated by the lock —
     // a prerequisite-locked deck with due cards is still reviewable.
     let reviewable = deck.is_trace()
@@ -279,7 +279,7 @@ pub fn deck_status(
         || reviewable_recognize
         || reviewable_recall
         || reviewable_reconstruct;
-    let (badge_level, badge_dotted) = badge_level_for(&deck.subject, &deck.cards, store);
+    let (badge_depth, badge_dotted) = badge_depth_for(&deck.subject, &deck.cards, store);
     let new_cards = deck.cards.iter().any(|card| store.get(card.id()).is_none());
     DeckStatus {
         state,
@@ -293,7 +293,7 @@ pub fn deck_status(
         is_trace: deck.is_trace(),
         examable,
         has_exam,
-        badge_level,
+        badge_depth,
         badge_dotted,
         new_cards,
     }
@@ -523,7 +523,7 @@ pub fn dependency_forest<K: Ord>(parent: &[Option<usize>], key: &[K]) -> Vec<(us
 
 /// Pre-order DFS appending `(index, prefix)`. `ancestor` is the branch prefix
 /// inherited from parents, `is_last` whether this node is its parent's last
-/// child, `is_root` whether it sits at the top level (no branch glyph).
+/// child, `is_root` whether it sits at the top depth (no branch glyph).
 fn visit_node(
     i: usize,
     ancestor: &str,
@@ -759,9 +759,9 @@ mod tests {
         let mut store = Store::open(dir.path().join("progress.json")).unwrap();
         let now = session::now_ms();
         let card_id = deck.cards[0].id();
-        // Fully done at *every* level — recognized, and graduated-not-due at
+        // Fully done at *every* depth — recognized, and graduated-not-due at
         // both Recall and Reconstruct (a real Reconstruct schedule, so the
-        // cross-level immediacy rule doesn't fire) — so only a virtual card
+        // cross-depth immediacy rule doesn't fire) — so only a virtual card
         // can make this deck reviewable.
         let entry = store.get_or_insert(card_id, now);
         entry.recognized_ms = Some(now);
@@ -774,7 +774,7 @@ mod tests {
         assert!(!status.reviewable);
 
         // A due virtual card for this deck makes it reviewable even though
-        // every deck card is done at every level.
+        // every deck card is done at every depth.
         insert_due_virtual_card(&mut store, &deck.subject);
         let status = deck_status(&deck, &store, None, false, ReviewConfig::default());
         assert!(status.reviewable);
@@ -785,7 +785,7 @@ mod tests {
     fn a_recall_settled_deck_is_still_reviewable_at_reconstruct() {
         // The final-review fix (Important #1): a deck that's mature and not
         // due at Recall is due *right now* at Reconstruct, via the
-        // scheduler's cross-level immediacy rule — `reviewable_recall` must
+        // scheduler's cross-depth immediacy rule — `reviewable_recall` must
         // say no while `reviewable_reconstruct` (and the overall
         // `reviewable`) say yes.
         let dir = tempfile::tempdir().unwrap();
@@ -862,7 +862,7 @@ mod tests {
     }
 
     #[test]
-    fn the_highest_currently_solid_level_wins_the_badge() {
+    fn the_highest_currently_solid_depth_wins_the_badge() {
         let dir = tempfile::tempdir().unwrap();
         let deck_path = dir.path().join("rust.txt");
         std::fs::write(&deck_path, "# q1\n\ta1\n").unwrap();
@@ -878,7 +878,7 @@ mod tests {
         entry.reconstruct = Some(mature(now, 30.0));
 
         let status = deck_status(&deck, &store, None, false, ReviewConfig::default());
-        assert_eq!(Some(Level::Reconstruct), status.badge_level);
+        assert_eq!(Some(Depth::Reconstruct), status.badge_depth);
         assert!(!status.badge_dotted);
     }
 
@@ -900,7 +900,7 @@ mod tests {
         store.get_or_insert(card_id, now).recall = Some(mature(now, 5.0));
 
         let status = deck_status(&deck, &store, None, false, ReviewConfig::default());
-        assert_eq!(Some(Level::Recall), status.badge_level);
+        assert_eq!(Some(Depth::Recall), status.badge_depth);
         assert!(status.badge_dotted);
     }
 
@@ -918,10 +918,10 @@ mod tests {
 
         let status = deck_status(&deck, &store, None, false, ReviewConfig::default());
         assert!(status.new_cards);
-        // Unaffected by the flag: same state/badge/badge_level this deck would
+        // Unaffected by the flag: same state/badge/badge_depth this deck would
         // have had before `new_cards` existed.
         assert_eq!("1/2", status.badge);
-        assert_eq!(None, status.badge_level);
+        assert_eq!(None, status.badge_depth);
         assert!(!status.badge_dotted);
     }
 }

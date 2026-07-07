@@ -11,9 +11,8 @@ use alix::{
     card::Card,
     config::{self, Config},
     deck::{Deck, DeckSettings, DeckState},
-    generate, import,
-    level::Level,
-    parser, preflight,
+    depth::Depth,
+    generate, import, parser, preflight,
     recent::{self, RecentDecks},
     scheduler::{Fsrs, Scheduler},
     serve,
@@ -432,10 +431,10 @@ struct ReviewArgs {
     #[arg(long)]
     cram: bool,
 
-    /// Session level: `recognize`, `recall`, or `reconstruct` (spec §4). Absent
-    /// reuses the deck's last-used level (first use: recall).
+    /// Session depth: `recognize`, `recall`, or `reconstruct` (spec §4). Absent
+    /// reuses the deck's last-used depth (first use: recall).
     #[arg(long, value_enum)]
-    level: Option<Level>,
+    depth: Option<Depth>,
 
     /// Path of the progress store (default: platform data dir).
     #[arg(long)]
@@ -670,9 +669,9 @@ fn build_review(
     // `args.topology` / `args.region`).
     topology_sel: Option<&str>,
     region_sel: Option<&str>,
-    // The chosen session level, resolved per-launch like topology/region (web
-    // picker or CLI `--level`). `None` falls back to the deck's last-used level.
-    level_sel: Option<Level>,
+    // The chosen session depth, resolved per-launch like topology/region (web
+    // picker or CLI `--depth`). `None` falls back to the deck's last-used depth.
+    depth_sel: Option<Depth>,
 ) -> Result<ReviewBuild> {
     // A session is exactly one deck file's cards — no merging of several loose
     // decks, and no reviewing a whole workspace at once. Workspaces are an
@@ -790,7 +789,7 @@ fn build_review(
     // Directives (order) come from the session's decks.
     let target_settings: Vec<&DeckSettings> = settings.iter().collect();
 
-    // `order` is deck/session-level: CLI flag > deck directive > default. `mode`
+    // `order` is deck/session-depth: CLI flag > deck directive > default. `mode`
     // is now per-card (resolved at review time from the card's own `% mode:`), so
     // only the CLI override is carried here.
     let order = resolve(
@@ -800,12 +799,12 @@ fn build_review(
         Order::default(),
     );
 
-    // The session level: an explicit `--level` / picker choice, else the deck's
-    // last-used level (keyed by deck subject, like the rest of the deck store),
+    // The session depth: an explicit `--depth` / picker choice, else the deck's
+    // last-used depth (keyed by deck subject, like the rest of the deck store),
     // else the default (Recall). The web select handler persists the resolved
     // value back to the store so a plain Learn reopens at it.
-    let level = level_sel
-        .or_else(|| store.last_level(subject.as_ref()))
+    let depth = depth_sel
+        .or_else(|| store.last_depth(subject.as_ref()))
         .unwrap_or_default();
     let options = SessionOptions {
         max_new: args.new,
@@ -814,7 +813,7 @@ fn build_review(
         order,
         topology: topology_order,
         retire_after_days: review.retire_after_days,
-        level,
+        depth,
     };
     let session = Session::new(
         cards,
@@ -1062,7 +1061,7 @@ fn review_serve(args: ReviewArgs, browse_mode: bool) -> Result<()> {
             &mut recent,
             args.topology.as_deref(),
             args.region.as_deref(),
-            args.level,
+            args.depth,
         )?);
         let label = b.label.clone();
         (serve::Launch::Review(Box::new(b)), label)
@@ -1083,11 +1082,11 @@ fn review_serve(args: ReviewArgs, browse_mode: bool) -> Result<()> {
     let build = |paths: Vec<PathBuf>,
                  topology: Option<&str>,
                  region: Option<&str>,
-                 level: Option<Level>,
+                 depth: Option<Depth>,
                  store: &Store,
                  recent: &mut RecentDecks| {
         build_review(
-            paths, &args, &config, store, recent, topology, region, level,
+            paths, &args, &config, store, recent, topology, region, depth,
         )
         .map(to_build)
     };
@@ -1145,8 +1144,8 @@ fn announce(addr: SocketAddr, lan: bool, token: Option<&str>, label: &str) {
     println!("Press Ctrl-C to stop.");
 }
 
-/// The `list` label for one level's schedule: the FSRS state name when the
-/// card has a schedule at that level, `-` when it has none.
+/// The `list` label for one depth's schedule: the FSRS state name when the
+/// card has a schedule at that depth, `-` when it has none.
 fn state_label(fsrs_state: Option<u8>) -> &'static str {
     match fsrs_state {
         Some(1) => "learning",
@@ -1182,13 +1181,13 @@ fn stats(args: DeckArgs) -> Result<()> {
                 // Retired cards are resting, so they don't count as due (they
                 // still count toward the review totals below).
                 if !alix::session::is_retired(card, &store, review.retire_after_days) {
-                    let due = scheduler.due_at(state, Level::Recall);
+                    let due = scheduler.due_at(state, Depth::Recall);
                     if due <= now {
                         due_now += 1;
                     } else if due <= now + 86_400_000 {
                         due_24h += 1;
                     }
-                    if scheduler.is_due(state, Level::Reconstruct, now) {
+                    if scheduler.is_due(state, Depth::Reconstruct, now) {
                         due_now_reconstruct += 1;
                     }
                 }
@@ -1261,7 +1260,7 @@ fn list(args: DeckArgs) -> Result<()> {
                     let due = if alix::session::is_retired(card, &store, review.retire_after_days) {
                         "resting".to_string()
                     } else {
-                        let due = scheduler.due_at(state, Level::Recall);
+                        let due = scheduler.due_at(state, Depth::Recall);
                         if due <= now {
                             "due now".to_string()
                         } else {
@@ -2336,7 +2335,7 @@ fn workspace_cmd(args: WorkspaceArgs) -> Result<()> {
             new: 10,
             limit: None,
             cram: false,
-            level: None,
+            depth: None,
             store: args.store,
             config: args.config,
             serve: ServeOpts {
@@ -2954,7 +2953,7 @@ mod tests {
             new: 10,
             limit: None,
             cram: false,
-            level: None,
+            depth: None,
             store: None,
             config: None,
             serve: ServeOpts {

@@ -12,7 +12,7 @@ use anyhow::{Context, Result as AnyResult, bail};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::{card::Card, deck, level::Level, scheduler::Grade};
+use crate::{card::Card, deck, depth::Depth, scheduler::Grade};
 
 /// How many of the most recent reviews are kept per card.
 const HISTORY_CAP: usize = 50;
@@ -34,11 +34,11 @@ pub struct Review {
     /// scheduling state is unaffected).
     #[serde(default = "default_review_grade")]
     pub grade: Grade,
-    /// The level this review was graded at. Pre-levels stores logged no level at
+    /// The depth this review was graded at. Pre-depth stores logged no depth at
     /// all (there was only ever one schedule) — those entries default to `Recall`.
     #[serde(default)]
-    pub level: Level,
-    /// Whether this review was credited downward from a pass at a higher level
+    pub depth: Depth,
+    /// Whether this review was credited downward from a pass at a higher depth
     /// (a full Reconstruct pass crediting a due Recall schedule) rather than
     /// answered directly. Directly-answered reviews don't serialize the field.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -97,18 +97,18 @@ pub struct CardState {
     /// not-yet-scheduled card.
     #[serde(default)]
     pub acquired_ms: u64,
-    /// Recall-level FSRS state; present once the card has been reviewed at
+    /// Recall-depth FSRS state; present once the card has been reviewed at
     /// Recall, absent for a not-yet-reviewed (or freshly acquired) card. Was
     /// `fsrs` — a clean pre-1.0 rename, no alias: a store carrying an old
     /// `fsrs` key simply loads this as `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recall: Option<FsrsState>,
-    /// Reconstruct-level FSRS state, independent of `recall` (stationarity: one
-    /// schedule, one task, forever — no cross-crediting between levels).
+    /// Reconstruct-depth FSRS state, independent of `recall` (stationarity: one
+    /// schedule, one task, forever — no cross-crediting between depths).
     /// Lazily created on the card's first Reconstruct review.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reconstruct: Option<FsrsState>,
-    /// When the card was first correctly picked at the Recognize level (Unix
+    /// When the card was first correctly picked at the Recognize depth (Unix
     /// ms); `None` until then. Recognize is unscheduled and boolean — this
     /// flag, not an `FsrsState`, is its only stored progress.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -142,30 +142,30 @@ impl CardState {
         }
     }
 
-    /// The card's FSRS schedule at `level`. `Recognize` is never scheduled
+    /// The card's FSRS schedule at `depth`. `Recognize` is never scheduled
     /// (unscheduled + boolean) and always answers `None`.
-    pub fn schedule(&self, level: Level) -> Option<&FsrsState> {
-        match level {
-            Level::Recognize => None,
-            Level::Recall => self.recall.as_ref(),
-            Level::Reconstruct => self.reconstruct.as_ref(),
+    pub fn schedule(&self, depth: Depth) -> Option<&FsrsState> {
+        match depth {
+            Depth::Recognize => None,
+            Depth::Recall => self.recall.as_ref(),
+            Depth::Reconstruct => self.reconstruct.as_ref(),
         }
     }
 
-    /// A mutable handle to the schedule slot at `level`, for a scheduler to
+    /// A mutable handle to the schedule slot at `depth`, for a scheduler to
     /// read/replace. `Recognize` has no slot to hand back.
-    pub fn schedule_slot(&mut self, level: Level) -> Option<&mut Option<FsrsState>> {
-        match level {
-            Level::Recognize => None,
-            Level::Recall => Some(&mut self.recall),
-            Level::Reconstruct => Some(&mut self.reconstruct),
+    pub fn schedule_slot(&mut self, depth: Depth) -> Option<&mut Option<FsrsState>> {
+        match depth {
+            Depth::Recognize => None,
+            Depth::Recall => Some(&mut self.recall),
+            Depth::Reconstruct => Some(&mut self.reconstruct),
         }
     }
 
     /// Appends a review to the bounded history and updates the counters.
     /// `propagated` marks a review the learner never answered directly — credit
-    /// that flowed down from a pass at a higher level (see `Session::grade`).
-    pub fn record_review(&mut self, ts_ms: u64, grade: Grade, level: Level, propagated: bool) {
+    /// that flowed down from a pass at a higher depth (see `Session::grade`).
+    pub fn record_review(&mut self, ts_ms: u64, grade: Grade, depth: Depth, propagated: bool) {
         self.total_reviews += 1;
         if grade.passed() {
             self.total_passes += 1;
@@ -176,7 +176,7 @@ impl CardState {
         self.history.push(Review {
             ts_ms,
             grade,
-            level,
+            depth,
             propagated,
         });
         if self.history.len() > HISTORY_CAP {
@@ -188,7 +188,7 @@ impl CardState {
 
 /// Deck-level progress, keyed by deck subject (= file name): whether the deck's
 /// AI exam has been passed ("mastered"), when it was last *failed* (for the
-/// re-sit cooldown), the learner's last-used session level, and each badge's
+/// re-sit cooldown), the learner's last-used session depth, and each badge's
 /// first-earn date. A deck appears here once any of these is set; an entry
 /// with nothing set is meaningless and is never written.
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -200,11 +200,11 @@ pub struct DeckProgress {
     /// `None` if it has never failed (or a later pass cleared it).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exam_failed_at_ms: Option<u64>,
-    /// The session level the learner last chose for this deck — the
-    /// plain-Learn button's memory across sessions. `None` until a level has
+    /// The session depth the learner last chose for this deck — the
+    /// plain-Learn button's memory across sessions. `None` until a depth has
     /// ever been recorded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_level: Option<Level>,
+    pub last_depth: Option<Depth>,
     /// When the Recognize badge was first earned (Unix ms); a high-water
     /// mark — see [`note_badges`]. `None` until earned.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -538,31 +538,31 @@ impl Store {
         self.decks.remove(subject).is_some()
     }
 
-    /// The session level the learner last used for `subject` — the
-    /// plain-Learn button's memory across sessions. `None` until a level has
+    /// The session depth the learner last used for `subject` — the
+    /// plain-Learn button's memory across sessions. `None` until a depth has
     /// ever been recorded for this deck.
-    pub fn last_level(&self, subject: &str) -> Option<Level> {
-        self.decks.get(subject).and_then(|d| d.last_level)
+    pub fn last_depth(&self, subject: &str) -> Option<Depth> {
+        self.decks.get(subject).and_then(|d| d.last_depth)
     }
 
-    /// Records `level` as the last-used session level for `subject`. Does not
+    /// Records `depth` as the last-used session depth for `subject`. Does not
     /// save.
-    pub fn set_last_level(&mut self, subject: &str, level: Level) {
+    pub fn set_last_depth(&mut self, subject: &str, depth: Depth) {
         self.decks
             .entry(subject.to_string())
             .or_default()
-            .last_level = Some(level);
+            .last_depth = Some(depth);
     }
 
-    /// When the badge at `level` was first earned for `subject` (Unix ms), if
+    /// When the badge at `depth` was first earned for `subject` (Unix ms), if
     /// ever — the high-water mark [`note_badges`] maintains. `None` if it has
     /// never been earned.
-    pub fn badge_earned(&self, subject: &str, level: Level) -> Option<u64> {
+    pub fn badge_earned(&self, subject: &str, depth: Depth) -> Option<u64> {
         let deck = self.decks.get(subject)?;
-        match level {
-            Level::Recognize => deck.recognized_at_ms,
-            Level::Recall => deck.recalled_at_ms,
-            Level::Reconstruct => deck.reconstructed_at_ms,
+        match depth {
+            Depth::Recognize => deck.recognized_at_ms,
+            Depth::Recall => deck.recalled_at_ms,
+            Depth::Reconstruct => deck.reconstructed_at_ms,
         }
     }
 
@@ -600,12 +600,12 @@ impl Store {
 }
 
 /// Live badge check: whether every card in `cards` is currently solid at
-/// `level` — Recognize needs every card's `recognized_ms` set; Recall and
-/// Reconstruct need every card's `schedule(level)` present with stability at
+/// `depth` — Recognize needs every card's `recognized_ms` set; Recall and
+/// Reconstruct need every card's `schedule(depth)` present with stability at
 /// or past the mature line ([`MATURE_STABILITY_DAYS`]). An empty deck is
 /// never solid. Pure — this only answers the live question; earning a badge
 /// (persisting its first-earn date) is [`note_badges`].
-pub fn badge_solid(cards: &[Card], store: &Store, level: Level) -> bool {
+pub fn badge_solid(cards: &[Card], store: &Store, depth: Depth) -> bool {
     if cards.is_empty() {
         return false;
     }
@@ -613,30 +613,30 @@ pub fn badge_solid(cards: &[Card], store: &Store, level: Level) -> bool {
         let Some(state) = store.get(card.id()) else {
             return false;
         };
-        match level {
-            Level::Recognize => state.recognized_ms.is_some(),
-            Level::Recall | Level::Reconstruct => state
-                .schedule(level)
+        match depth {
+            Depth::Recognize => state.recognized_ms.is_some(),
+            Depth::Recall | Depth::Reconstruct => state
+                .schedule(depth)
                 .is_some_and(|fsrs| fsrs.stability >= MATURE_STABILITY_DAYS),
         }
     })
 }
 
-/// Persists the first-earn date for any level of `subject` that is currently
-/// solid, per [`badge_solid`]. High-water: a level already earned keeps its
+/// Persists the first-earn date for any depth of `subject` that is currently
+/// solid, per [`badge_solid`]. High-water: a depth already earned keeps its
 /// original date even if it later drops below the mature line. Badges gate
 /// nothing — this is bookkeeping only, never a lifecycle interaction. Does
 /// not save.
 pub fn note_badges(store: &mut Store, subject: &str, cards: &[Card], now_ms: u64) {
-    for level in [Level::Recognize, Level::Recall, Level::Reconstruct] {
-        if store.badge_earned(subject, level).is_some() || !badge_solid(cards, store, level) {
+    for depth in [Depth::Recognize, Depth::Recall, Depth::Reconstruct] {
+        if store.badge_earned(subject, depth).is_some() || !badge_solid(cards, store, depth) {
             continue;
         }
         let entry = store.decks.entry(subject.to_string()).or_default();
-        match level {
-            Level::Recognize => entry.recognized_at_ms = Some(now_ms),
-            Level::Recall => entry.recalled_at_ms = Some(now_ms),
-            Level::Reconstruct => entry.reconstructed_at_ms = Some(now_ms),
+        match depth {
+            Depth::Recognize => entry.recognized_at_ms = Some(now_ms),
+            Depth::Recall => entry.recalled_at_ms = Some(now_ms),
+            Depth::Reconstruct => entry.reconstructed_at_ms = Some(now_ms),
         }
     }
 }
@@ -793,10 +793,10 @@ mod tests {
         assert_eq!(None, store.last_review_ms());
         store
             .get_or_insert(1, 0)
-            .record_review(100, Grade::Pass, Level::Recall, false);
+            .record_review(100, Grade::Pass, Depth::Recall, false);
         store
             .get_or_insert(2, 0)
-            .record_review(300, Grade::Pass, Level::Recall, false);
+            .record_review(300, Grade::Pass, Depth::Recall, false);
         assert_eq!(Some(300), store.last_review_ms());
     }
 
@@ -815,7 +815,7 @@ mod tests {
 
         let mut store = Store::open(&path).unwrap();
         let state = store.get_or_insert(42, 1000);
-        state.record_review(1000, Grade::Pass, Level::Recall, false);
+        state.record_review(1000, Grade::Pass, Depth::Recall, false);
         store.save().unwrap();
 
         let reloaded = Store::open(&path).unwrap();
@@ -826,7 +826,7 @@ mod tests {
             vec![Review {
                 ts_ms: 1000,
                 grade: Grade::Pass,
-                level: Level::Recall,
+                depth: Depth::Recall,
                 propagated: false
             }],
             state.history
@@ -840,8 +840,8 @@ mod tests {
 
         let mut store = Store::open(&path).unwrap();
         let state = store.get_or_insert(42, 1000);
-        state.record_review(1000, Grade::Pass, Level::Reconstruct, false);
-        state.record_review(1000, Grade::Pass, Level::Recall, true);
+        state.record_review(1000, Grade::Pass, Depth::Reconstruct, false);
+        state.record_review(1000, Grade::Pass, Depth::Recall, true);
         store.save().unwrap();
 
         // The marker round-trips; the unmarked review doesn't serialize the key
@@ -853,7 +853,7 @@ mod tests {
         let history = &reloaded.get(42).unwrap().history;
         assert!(!history[0].propagated);
         assert!(history[1].propagated);
-        assert_eq!(Level::Recall, history[1].level);
+        assert_eq!(Depth::Recall, history[1].depth);
     }
 
     #[test]
@@ -1226,7 +1226,7 @@ mod tests {
             // Seed a drilled schedule for each hole — promote must preserve these.
             store
                 .get_or_insert(id, 1000)
-                .record_review(1000, Grade::Pass, Level::Recall, false);
+                .record_review(1000, Grade::Pass, Depth::Recall, false);
         }
 
         promote_virtual(&mut store, id0, &deck_path).unwrap();
@@ -1272,8 +1272,8 @@ mod tests {
 
         // Drill the schedule in `store.cards`, not on the virtual entry.
         let mut state = CardState::new(1000);
-        state.record_review(1000, Grade::Pass, Level::Recall, false);
-        state.record_review(2000, Grade::Pass, Level::Recall, false);
+        state.record_review(1000, Grade::Pass, Depth::Recall, false);
+        state.record_review(2000, Grade::Pass, Depth::Recall, false);
         state.recall = Some(FsrsState {
             stability: 12.5,
             difficulty: 4.2,
@@ -1308,7 +1308,7 @@ mod tests {
     fn history_is_capped() {
         let mut state = CardState::new(0);
         for i in 0..(HISTORY_CAP as u64 + 10) {
-            state.record_review(i, Grade::Pass, Level::Recall, false);
+            state.record_review(i, Grade::Pass, Depth::Recall, false);
         }
         assert_eq!(HISTORY_CAP, state.history.len());
         assert_eq!(10, state.history[0].ts_ms);
@@ -1318,10 +1318,10 @@ mod tests {
     #[test]
     fn streak_resets_on_fail() {
         let mut state = CardState::new(0);
-        state.record_review(1, Grade::Pass, Level::Recall, false);
-        state.record_review(2, Grade::Pass, Level::Recall, false);
+        state.record_review(1, Grade::Pass, Depth::Recall, false);
+        state.record_review(2, Grade::Pass, Depth::Recall, false);
         assert_eq!(2, state.streak);
-        state.record_review(3, Grade::Fail, Level::Recall, false);
+        state.record_review(3, Grade::Fail, Depth::Recall, false);
         assert_eq!(0, state.streak);
         assert_eq!(2, state.total_passes);
         assert_eq!(3, state.total_reviews);
@@ -1330,7 +1330,7 @@ mod tests {
     #[test]
     fn record_review_stores_the_grade_and_partial_counts_as_a_pass() {
         let mut state = CardState::new(0);
-        state.record_review(10, Grade::Partial, Level::Recall, false);
+        state.record_review(10, Grade::Partial, Depth::Recall, false);
         assert_eq!(Grade::Partial, state.history.last().unwrap().grade);
         assert_eq!(1, state.total_reviews);
         assert_eq!(1, state.total_passes); // Partial (a weak success) counts as a pass
@@ -1340,45 +1340,45 @@ mod tests {
     #[test]
     fn recall_and_reconstruct_schedules_are_independent() {
         let mut s = CardState::new(1_000);
-        *s.schedule_slot(Level::Recall).unwrap() = Some(FsrsState {
+        *s.schedule_slot(Depth::Recall).unwrap() = Some(FsrsState {
             stability: 30.0,
             ..Default::default()
         });
-        assert!(s.schedule(Level::Recall).is_some());
+        assert!(s.schedule(Depth::Recall).is_some());
         assert!(
-            s.schedule(Level::Reconstruct).is_none(),
+            s.schedule(Depth::Reconstruct).is_none(),
             "no cross-crediting: reconstruct starts empty"
         );
         assert!(
-            s.schedule(Level::Recognize).is_none(),
+            s.schedule(Depth::Recognize).is_none(),
             "recognize is never scheduled"
         );
     }
 
     #[test]
-    fn per_level_schedules_and_recognized_flag_survive_save_reload() {
+    fn per_depth_schedules_and_recognized_flag_survive_save_reload() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("store.json")).unwrap();
         let st = store.get_or_insert(7, 1_000);
-        *st.schedule_slot(Level::Reconstruct).unwrap() = Some(FsrsState {
+        *st.schedule_slot(Depth::Reconstruct).unwrap() = Some(FsrsState {
             stability: 4.5,
             ..Default::default()
         });
         st.recognized_ms = Some(2_000);
-        st.record_review(2_000, Grade::Pass, Level::Reconstruct, false);
+        st.record_review(2_000, Grade::Pass, Depth::Reconstruct, false);
         store.save().unwrap();
         let reloaded = Store::open(dir.path().join("store.json")).unwrap();
         let st = reloaded.get(7).unwrap();
         assert_eq!(
             Some(4.5),
-            st.schedule(Level::Reconstruct).map(|f| f.stability)
+            st.schedule(Depth::Reconstruct).map(|f| f.stability)
         );
         assert_eq!(Some(2_000), st.recognized_ms);
-        assert_eq!(Level::Reconstruct, st.history[0].level);
+        assert_eq!(Depth::Reconstruct, st.history[0].depth);
     }
 
     #[test]
-    fn a_pre_levels_store_loads_with_empty_schedules() {
+    fn a_pre_depth_store_loads_with_empty_schedules() {
         // Clean break: the old `fsrs` key is ignored, not aliased.
         let json = r#"{"version":1,"cards":{"7":{"acquired_ms":5,"fsrs":{"stability":9.0,"difficulty":5.0,"reps":3,"lapses":0,"state":2,"scheduled_days":9,"last_review_ms":1,"due_ms":2},"total_reviews":3}}}"#;
         let dir = tempfile::tempdir().unwrap();
@@ -1388,7 +1388,7 @@ mod tests {
         let st = store.get(7).unwrap();
         assert_eq!(5, st.acquired_ms, "known fields still load");
         assert!(
-            st.schedule(Level::Recall).is_none(),
+            st.schedule(Depth::Recall).is_none(),
             "old fsrs key is dropped, not aliased"
         );
     }
@@ -1412,8 +1412,8 @@ mod tests {
         let path = dir.path().join("progress.json");
         let mut store = Store::open(&path).unwrap();
         let st = store.get_or_insert(7, 0);
-        st.record_review(100, Grade::Partial, Level::Recall, false);
-        st.record_review(200, Grade::Fail, Level::Recall, false);
+        st.record_review(100, Grade::Partial, Depth::Recall, false);
+        st.record_review(200, Grade::Fail, Depth::Recall, false);
         store.save().unwrap();
 
         let reloaded = Store::open(&path).unwrap();
@@ -1461,15 +1461,15 @@ mod tests {
                 ..Default::default()
             });
         }
-        assert!(badge_solid(&cards, &store, Level::Recall));
+        assert!(badge_solid(&cards, &store, Depth::Recall));
     }
 
     #[test]
     fn badge_solid_on_an_empty_deck_is_never_solid() {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(dir.path().join("p.json")).unwrap();
-        assert!(!badge_solid(&[], &store, Level::Recall));
-        assert!(!badge_solid(&[], &store, Level::Recognize));
+        assert!(!badge_solid(&[], &store, Depth::Recall));
+        assert!(!badge_solid(&[], &store, Depth::Recognize));
     }
 
     #[test]
@@ -1484,7 +1484,7 @@ mod tests {
             });
         }
         note_badges(&mut store, "t.txt", &cards, 1_000);
-        assert_eq!(Some(1_000), store.badge_earned("t.txt", Level::Recall));
+        assert_eq!(Some(1_000), store.badge_earned("t.txt", Depth::Recall));
 
         // One card lapses back below the mature line.
         store.get_or_insert(cards[0].id(), 0).recall = Some(FsrsState {
@@ -1492,9 +1492,9 @@ mod tests {
             ..Default::default()
         });
 
-        assert!(!badge_solid(&cards, &store, Level::Recall));
+        assert!(!badge_solid(&cards, &store, Depth::Recall));
         // The earn date is a high-water mark: it survives the lapse.
-        assert_eq!(Some(1_000), store.badge_earned("t.txt", Level::Recall));
+        assert_eq!(Some(1_000), store.badge_earned("t.txt", Depth::Recall));
     }
 
     #[test]
@@ -1504,26 +1504,26 @@ mod tests {
         let cards = two_cards();
         store.get_or_insert(cards[0].id(), 0).recognized_ms = Some(500);
         assert!(
-            !badge_solid(&cards, &store, Level::Recognize),
+            !badge_solid(&cards, &store, Depth::Recognize),
             "second card not yet recognized"
         );
 
         store.get_or_insert(cards[1].id(), 0).recognized_ms = Some(600);
-        assert!(badge_solid(&cards, &store, Level::Recognize));
+        assert!(badge_solid(&cards, &store, Depth::Recognize));
     }
 
     #[test]
-    fn last_level_roundtrips_through_save() {
+    fn last_depth_roundtrips_through_save() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("p.json");
         let mut store = Store::open(&path).unwrap();
-        assert_eq!(None, store.last_level("t.txt"));
+        assert_eq!(None, store.last_depth("t.txt"));
 
-        store.set_last_level("t.txt", Level::Reconstruct);
-        assert_eq!(Some(Level::Reconstruct), store.last_level("t.txt"));
+        store.set_last_depth("t.txt", Depth::Reconstruct);
+        assert_eq!(Some(Depth::Reconstruct), store.last_depth("t.txt"));
         store.save().unwrap();
 
         let reloaded = Store::open(&path).unwrap();
-        assert_eq!(Some(Level::Reconstruct), reloaded.last_level("t.txt"));
+        assert_eq!(Some(Depth::Reconstruct), reloaded.last_depth("t.txt"));
     }
 }

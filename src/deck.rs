@@ -12,7 +12,7 @@ use crate::{
     answer::Input,
     card::{Card, Direction},
     config::Strictness,
-    level::Reveal,
+    depth::Reveal,
     parser::{self, ParseError},
     session::{self, Order},
     store::Store,
@@ -1484,7 +1484,7 @@ mod tests {
     }
 
     #[test]
-    fn deck_level_direction_applies_to_cards() {
+    fn deck_depth_direction_applies_to_cards() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("d.txt");
         std::fs::write(&path, "% direction: both\n# a\n\tb\n").unwrap();

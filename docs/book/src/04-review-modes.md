@@ -1,11 +1,11 @@
-# 4 · Reveal & session levels
+# 4 · Reveal & session depths
 
 How a card is checked isn't one setting you pick per card. It falls out of two
 independent things:
 
 - **Reveal-method** — *how the answer is uncovered.* Authored per card (or
   deck-wide) with `% reveal:`, because only the author knows the answer's shape.
-- **Session level** — *how deeply you're asked to retrieve it.* Chosen per
+- **Session depth** — *how deeply you're asked to retrieve it.* Chosen per
   session — Recognize, Recall, or Reconstruct — because only you know how well
   you want to know this material right now. It's not a deck directive, and not
   personal config either: it's a property of the session you start.
@@ -42,14 +42,14 @@ A per-card `% reveal:` overrides the deck's; the deck's overrides the default. I
 a review property, not content, so it's invisible to a card's identity hash —
 adding or changing it never resets progress.
 
-## Session levels — Recognize, Recall, Reconstruct
+## Session depths — Recognize, Recall, Reconstruct
 
-Every review session runs at one of three independent levels, picked when you
-start it: `--level` on the command line, or the web picker's split **Learn**
+Every review session runs at one of three independent depths, picked when you
+start it: `--depth` on the command line, or the web picker's split **Learn**
 button, whose small ▾ opens a menu of the three (on the keyboard: `v`, then
 `1`/`2`/`3` — `Esc` cancels; rebindable in
 [`[keys.picker]`](16-configuration.md)). Plain **Learn** reuses the deck's own last-used
-level, remembered per deck (the first time you ever open it: Recall).
+depth, remembered per deck (the first time you ever open it: Recall).
 
 - **Recognize** — unscheduled and boolean. There's no FSRS state for it at
   all, just a per-card *recognized* flag. Where there's enough material to
@@ -67,13 +67,13 @@ level, remembered per deck (the first time you ever open it: Recall).
   a card can be due for one and not the other; the one pass-only downward
   credit between them is covered in [Scheduling](05-scheduling.md).
 
-Nothing climbs or descends between levels on its own: a card's Recall and
+Nothing climbs or descends between depths on its own: a card's Recall and
 Reconstruct schedules just sit there side by side, and which one you exercise
 is entirely your call each time you start a session.
 
-## What you actually get — reveal + level combined
+## What you actually get — reveal + depth combined
 
-The check derives from the reveal-method and the level:
+The check derives from the reveal-method and the depth:
 
 - **At Recall**, a `flip` or `cloze` card **reveals** and you self-grade; a `line`
   card reveals line by line, then you self-grade.
@@ -92,7 +92,7 @@ Got it.
 Grading is always the same three — **missed it / partly / got it** — feeding FSRS
 *Again* / *Hard* / *Good*. See the [scheduling chapter](05-scheduling.md) for how
 Recall and Reconstruct's independent schedules work, and how badges summarize a
-deck's progress at each level.
+deck's progress at each depth.
 
 ### explain — the self-graded Reconstruct check
 
@@ -125,7 +125,7 @@ deck file or how it's graded.
 In the web frontend a small badge above the answer names the check you're doing
 right now — `flip`, `line`, `typing`, `choice`, or `explain` — so how you'll
 interact is clear before you commit. It badges the *present* interaction, not the
-level: a brand-new card, or a Recognize pick, shows `choice` even on a card whose
+depth: a brand-new card, or a Recognize pick, shows `choice` even on a card whose
 Recall/Reconstruct schedule will use something else once it's acquired.
 
 ## input: draw — draw instead of type *(web only)*

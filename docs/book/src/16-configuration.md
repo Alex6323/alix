@@ -28,7 +28,7 @@ they can't shadow your input — use `ctrl-`/special keys for `hint`, `skip`, an
 `quit` there. Pass a different file with `--config <path>`.
 
 The picker's navigation is `[keys.picker]` (`up`, `down`, `open`, `back`,
-`filter`, `mastered`, plus `level` to open the level menu and
+`filter`, `mastered`, plus `depth` to open the depth menu and
 `recognize`/`recall`/`reconstruct` to pick within it — defaults `v` and
 `1`/`2`/`3`), the browse overlay has its own `[keys.browse]` bindings, and
 the web server reads its default port from `[serve]`:
@@ -49,7 +49,7 @@ port = 7777
 ## Review pacing
 
 The `[review]` section tunes the FSRS scheduler shared by the Recall and
-Reconstruct levels:
+Reconstruct depths:
 
 ```toml
 [review]
@@ -62,11 +62,12 @@ a card retires (rests until `alix reset`); `"never"` keeps it in rotation foreve
 A workspace can override either key for its own decks in an `alix.local.toml` —
 see [Workspaces](08-workspaces.md).
 
-How deeply you drill is no longer a config key: it's the **session level** you
-pick per review (`--level`, or the picker's Learn ▾ menu) — see
-[Reveal & session levels](04-review-modes.md). The old `depth` key (and the
-per-deck `[review.deck."<file>"]` override) are gone; a config that still sets
-either now fails to load.
+How deeply you drill is never configuration: it's the **session depth** you
+pick per review (`--depth`, or the picker's Learn ▾ menu) — see
+[Reveal & session depths](04-review-modes.md). The old `[review] depth` config
+key (and the per-deck `[review.deck."<file>"]` override) — a *dial* that fixed
+the drilling depth from config — is gone, not renamed; a config that still
+sets either now fails to load.
 
 ## Backends
 

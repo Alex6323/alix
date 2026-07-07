@@ -91,20 +91,20 @@ alix trace --build mytrace.txt  # let the model discover the path (writes checkp
 alix trace --suggest .          # recon a source for candidate traces worth authoring
 alix explore .                  # an ordered learning plan (decks + traces) toward a goal
 alix explore --walk .           # walk an explore tour of the source's shape
-alix stats mydeck.txt           # progress overview, per session level
-alix list mydeck.txt            # every card with its per-level schedule and due time
-alix mydeck.txt --level reconstruct   # review this session at a specific level
+alix stats mydeck.txt           # progress overview, per session depth
+alix list mydeck.txt            # every card with its per-depth schedule and due time
+alix mydeck.txt --depth reconstruct   # review this session at a specific depth
 alix deck check mydeck.txt      # lint a deck (syntax, duplicates, trace locators)
 alix reset mydeck.txt           # clear stored progress (also --card / --all)
 ```
 
 A session is one deck file — review them one at a time, at one of three
-[session levels](#sessions-recognize-recall-reconstruct): Recognize, Recall, or
-Reconstruct (`--level`, default: the deck's own last-used level). Other useful
+[session depths](#sessions-recognize-recall-reconstruct): Recognize, Recall, or
+Reconstruct (`--depth`, default: the deck's own last-used depth). Other useful
 flags for `review`: `--new N` (max unseen cards to introduce, default 10) and
 `--limit N` (cap session size). How each card is *checked* comes from the
 card's authored [`% reveal:`](#deck-directives) method combined with the
-session's level — see [Sessions](#sessions-recognize-recall-reconstruct).
+session's depth — see [Sessions](#sessions-recognize-recall-reconstruct).
 
 Run `alix` with no deck arguments (as the desktop launcher does) to open the
 **deck picker**, grouped into three sections: **[Workspaces](#workspaces)**
@@ -233,7 +233,7 @@ card is turned into fill-in-the-blanks only from its *own* `% reveal: cloze` (wi
 `{{spans}}` in the answer), so a deck-wide `% reveal: cloze` default won't convert
 plain cards — mark it on the cards that have gaps.
 
-**The session level is separate from `% reveal:` — and not a deck directive.**
+**The session depth is separate from `% reveal:` — and not a deck directive.**
 `% reveal:` is *how* an answer is shown; *how deeply* you're asked to retrieve
 it (Recognize / Recall / Reconstruct) is a choice you make per session, not the
 author's, so it is never a shared-deck setting. The two combine into the check
@@ -334,7 +334,7 @@ overrides either.
 `retire_after`) for this workspace's decks only. It uses the same `[review]`
 keys as the [config file](#configuration) and is **personal** — kept separate
 from the shared `alix.toml`, so it never travels when you share the workspace.
-The session level itself (Recognize/Recall/Reconstruct) isn't a workspace or
+The session depth itself (Recognize/Recall/Reconstruct) isn't a workspace or
 deck setting — it's chosen per session, the same as for a loose deck (see
 [Sessions](#sessions-recognize-recall-reconstruct)).
 
@@ -481,17 +481,17 @@ from both — you don't hand-pick a "mode" per card:
 
 - the card's authored **reveal-method** (`% reveal:` — *how* the answer is
   uncovered: `flip`, `cloze`, or `line`), and
-- the **session level** you picked for this session (*how deeply* you're
+- the **session depth** you picked for this session (*how deeply* you're
   asked to produce it).
 
 ### Sessions: Recognize, Recall, Reconstruct
 
-Every review session runs at one of three independent levels, picked when you
-start it (`--level`, or the web picker's split **Learn** button — its small ▾
+Every review session runs at one of three independent depths, picked when you
+start it (`--depth`, or the web picker's split **Learn** button — its small ▾
 opens **Recognize** / **Recall** / **Reconstruct**; on the keyboard, `v` opens
-that menu and `1`/`2`/`3` pick a level, `Esc` cancels — rebindable in
+that menu and `1`/`2`/`3` pick a depth, `Esc` cancels — rebindable in
 [`[keys.picker]`](#configuration)). Plain **Learn** reuses
-the deck's own last-used level, remembered per deck (first time: Recall).
+the deck's own last-used depth, remembered per deck (first time: Recall).
 
 - **Recognize** — unscheduled and boolean: no FSRS schedule, just a per-card
   *recognized* flag. Where there's enough material to build one, it's a
@@ -505,10 +505,10 @@ the deck's own last-used level, remembered per deck (first time: Recall).
 - **Recall** — the classic flashcard: reveal the answer (`flip`/`cloze` all at
   once, `line` one line at a time) and self-grade **Missed it** / **Partly** /
   **Got it**. Unchanged from earlier alix versions — it's simply one of three
-  named levels now, with its own FSRS schedule.
+  named depths now, with its own FSRS schedule.
 - **Reconstruct** — you produce the answer, on its **own independent FSRS
   schedule** per card (two separate practices, two separate schedules,
-  created lazily on first use at this level — no cross-crediting, except the
+  created lazily on first use at this depth — no cross-crediting, except the
   one downward rule below). What you produce follows the answer's shape and the reveal method: a
   short, single-line answer (`flip`/`cloze` reveal) is **typed**; a richer,
   multi-line answer becomes an **explain** prompt (see below); `% reveal: line`
@@ -518,12 +518,12 @@ the deck's own last-used level, remembered per deck (first time: Recall).
   mismatch is evidence, not a verdict, so a typo you recognize as one can still
   be graded Got it.
 
-One rule connects the levels, downward and pass-only: a full **Got it** at
+One rule connects the depths, downward and pass-only: a full **Got it** at
 Reconstruct (outside cram) also credits the card's Recall schedule — full
 credit if recall was due at that moment (a recorded review, marked
 *propagated* in the history), just a pushed-out due date if it wasn't — so
 producing an answer isn't followed days later by being asked to merely
-recall it. And any full pass, at any level (cram included), marks the card
+recall it. And any full pass, at any depth (cram included), marks the card
 recognized if it wasn't yet; a *Partly* or a miss never propagates anything.
 
 Grading always maps to FSRS *Again* / *Hard* / *Good*: a miss lapses the card
@@ -532,19 +532,19 @@ interval), *got it* grows the interval.
 
 **Badges**, shown next to a deck in the picker, are informational only — they
 never gate anything (only passing the [AI exam](#the-ai-exam) unlocks a
-dependent deck). A deck earns a level's badge once *every* one of its cards is
-currently solid at that level: recognized, for Recognize; at or past 21 days
+dependent deck). A deck earns a depth's badge once *every* one of its cards is
+currently solid at that depth: recognized, for Recognize; at or past 21 days
 of FSRS stability, for Recall/Reconstruct — in practice a few weeks of regular
-drilling. Only the highest level with a badge is shown: **solid** while the
+drilling. Only the highest depth with a badge is shown: **solid** while the
 deck still clears that bar, **dotted** once a card has since lapsed below it
 (a badge, once earned, keeps its date — it's a high-water mark, not a live
 pass/fail). A deck that gains new cards after being badged shows a small "new"
 chip.
 
 `alix list` marks each card's Recall/Reconstruct schedule state plus a ✓ once
-it's recognized; `alix stats` adds a per-level due count.
+it's recognized; `alix stats` adds a per-depth due count.
 
-**New cards are introduced as an *attempt*, not a hand-out — at every level.**
+**New cards are introduced as an *attempt*, not a hand-out — at every depth.**
 A card you've never seen at all isn't quizzed cold (you can't recall what you
 haven't read), but it isn't just shown to you either. The first encounter is a
 low-stakes try, then the answer, then one key (**Seen** / `Space`) records it
@@ -560,7 +560,7 @@ as seen — *ungraded either way*, with its first real quiz a **later session**
   one doesn't punish — this first encounter is separate from a genuine
   Recognize-session pick, which does mark/unmark the card.
 
-This first-encounter attempt happens once per card, whichever level you're
+This first-encounter attempt happens once per card, whichever depth you're
 reviewing at. How many new cards a session introduces is the `--new N` cap
 (default 10) — run another session for the next batch.
 
@@ -579,7 +579,7 @@ Editing a card's answer regenerates its distractors next time you augment. See
 **The check badge.** In the web frontend a small badge above the answer names
 the check you're doing right now — `flip`, `line`, `typing`, `choice`, or
 `explain` — so how you'll interact is clear before you commit. It badges the
-present interaction, not the level: a first encounter or a Recognize pick
+present interaction, not the depth: a first encounter or a Recognize pick
 shows `choice` even on a card whose Recall/Reconstruct schedule will use
 something else once it's acquired.
 
@@ -617,7 +617,7 @@ Scheduler, FSRS-5, via the `rs-fsrs` crate) — one scheduler, no choice to make
 Recall and Reconstruct each keep their **own** FSRS memory model per card (so
 a card can be due for one and not the other); Recognize has no schedule at
 all. Each review feeds your grade (*missed it* / *partly* / *got it* → FSRS
-*Again* / *Hard* / *Good*) into that level's model, and FSRS sets the next
+*Again* / *Hard* / *Good*) into that depth's model, and FSRS sets the next
 interval from its estimated stability: successful reviews grow the gap, a lapse
 shrinks it. Two knobs, both in the `[review]` config section (see
 [Configuration](#configuration)), apply to both schedules:
@@ -675,7 +675,7 @@ window). When you finish a session, "Choose other decks" (on the summary) or
 **into that workspace**. Naming a deck on the command line skips the picker
 and goes straight to review.
 
-Every check works in the browser, at whichever [session level](#sessions-recognize-recall-reconstruct)
+Every check works in the browser, at whichever [session depth](#sessions-recognize-recall-reconstruct)
 you picked: a **flip** or **cloze** reveal (reveal, then self-grade Missed it /
 Partly / Got it), a **line** reveal (one line at a time — it auto-scrolls to
 follow the newest line), a **typing** Reconstruct check (type your answer and
@@ -1269,9 +1269,9 @@ they cannot shadow text input — use `ctrl-`/special keys for `hint`, `skip`
 and `quit`. A different config file can be passed with `--config <path>`.
 
 The picker's Vim-style navigation is under `[keys.picker]` (`up`, `down`, `open`,
-`back`, `filter`, `mastered`, plus the level menu: `level` opens/closes it,
+`back`, `filter`, `mastered`, plus the depth menu: `depth` opens/closes it,
 default `v`, and `recognize`/`recall`/`reconstruct` start the focused deck at
-that level while it's open, defaults `1`/`2`/`3`), and the read-only browse
+that depth while it's open, defaults `1`/`2`/`3`), and the read-only browse
 overlay has its own bindings under `[keys.browse]`:
 
 ```toml
@@ -1296,7 +1296,7 @@ port = 7777
 ### Review pacing
 
 A `[review]` section tunes the FSRS scheduler shared by the Recall and
-Reconstruct levels:
+Reconstruct depths:
 
 ```toml
 [review]
@@ -1311,9 +1311,10 @@ more often, lower it to stretch intervals. `retire_after` is when a card
 A workspace can override either key for its own decks in an `alix.local.toml`
 (see [Workspaces](#workspaces)) — a personal file that is never shared.
 
-**Breaking:** the old `depth` key (and the per-deck `[review.deck."<file
-name>"]` table) is gone — how deeply you drill is now the session level you
-pick per review (`--level`, or the picker's ▾ menu), not personal config; see
+**Breaking:** the old `[review] depth` config key (and the per-deck
+`[review.deck."<file name>"]` table) — a *dial* that fixed the drilling depth
+from config — is gone, not renamed: how deeply you drill is picked per session
+(`--depth`, or the picker's ▾ menu), never configuration; see
 [Sessions](#sessions-recognize-recall-reconstruct). A config or
 `alix.local.toml` that still sets `[review] depth` (or `[review.deck]`) now
 fails to load instead of being silently ignored.

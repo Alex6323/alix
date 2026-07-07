@@ -45,7 +45,7 @@ So a card's `% reveal:` overrides the deck's, which overrides a workspace's
 `[defaults]`, which overrides `alix`'s default (`flip`); where a CLI flag exists
 for a directive (e.g. `--strictness` for `% strictness:`) it wins over all of them.
 
-The session level (Recognize/Recall/Reconstruct) is **not** in this chain
+The session depth (Recognize/Recall/Reconstruct) is **not** in this chain
 either — it isn't config or a deck directive at all. It's chosen per session
-(`--level`, or the picker's Learn ▾ menu), the same way for every deck (see
-[Reveal & session levels](04-review-modes.md)).
+(`--depth`, or the picker's Learn ▾ menu), the same way for every deck (see
+[Reveal & session depths](04-review-modes.md)).

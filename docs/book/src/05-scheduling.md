@@ -38,7 +38,7 @@ stretch the gaps. Set it in the `[review]` config section, or per workspace in a
 ### New cards: an attempt before they're tested
 
 A card you've never seen isn't quizzed cold — you can't reconstruct what you've
-never read — but it isn't simply handed to you either, whichever level you're
+never read — but it isn't simply handed to you either, whichever depth you're
 reviewing at. The first encounter is a **low-stakes attempt**, then the answer,
 then one key (**Seen**) records it *without a grade*. Usually: the front shows
 first, you try, then reveal. If the deck has AI distractors (`alix deck augment
@@ -50,14 +50,14 @@ Either way a guess never marks it recognized or punishes it, and the first
 you're seeing, so seeing a deck flows straight into drilling it. Each session
 introduces up to `--new N` new cards (default 10); start another session for
 more. This is the first step of a card's life — *acquire*, then let its
-level(s) schedule it.
+depth(s) schedule it.
 
-## Session levels — Recognize, Recall, Reconstruct
+## Session depths — Recognize, Recall, Reconstruct
 
-FSRS decides *when* a card is due; the **session level** decides *how deeply*
+FSRS decides *when* a card is due; the **session depth** decides *how deeply*
 it's asked when it comes up. A session runs at one of three independent
-levels, picked when you start it (`--level`, or the web picker's Learn ▾
-menu) — see [Reveal & session levels](04-review-modes.md) for the full check
+depths, picked when you start it (`--depth`, or the web picker's Learn ▾
+menu) — see [Reveal & session depths](04-review-modes.md) for the full check
 matrix. In short:
 
 - **Recognize** has no FSRS schedule at all — just a boolean *recognized* flag.
@@ -65,8 +65,8 @@ matrix. In short:
   card, so a card can be due for one and not the other; nothing
   cross-credits between them, with one downward exception below.
 
-Nothing climbs or descends between levels on its own — a card doesn't get
-harder over time just by surviving reviews. Which level you exercise, and
+Nothing climbs or descends between depths on its own — a card doesn't get
+harder over time just by surviving reviews. Which depth you exercise, and
 when, is entirely your call each session.
 
 The exception flows **downward, and only on a full pass**: get a card fully
@@ -78,18 +78,18 @@ in the card's history and marked as *propagated*. If recall existed but
 wasn't due yet, only its due date is pushed out from now — memory untouched,
 nothing recorded, the same refresh a cram pass gets. A *partly* or a miss
 never propagates, and a card drilled only at Reconstruct never gains a
-recall schedule from this. Separately, **any** full pass at any level — cram
+recall schedule from this. Separately, **any** full pass at any depth — cram
 included — marks the card *recognized* if it wasn't yet.
 
 ## Badges
 
-A deck can earn a **badge** at each level, shown in the picker — a quick read
+A deck can earn a **badge** at each depth, shown in the picker — a quick read
 on how solid it is, never a gate on anything (only passing the [AI
-exam](12-the-ai-exam.md) unlocks a dependent deck). A deck earns a level's
-badge once *every* one of its cards is currently solid at that level:
+exam](12-the-ai-exam.md) unlocks a dependent deck). A deck earns a depth's
+badge once *every* one of its cards is currently solid at that depth:
 recognized, for Recognize; at or past 21 days of FSRS stability, for
 Recall/Reconstruct — in practice a few weeks of regular drilling. Only the
-highest badged level shows: **solid** while the deck still clears the bar,
+highest badged depth shows: **solid** while the deck still clears the bar,
 **dotted** once a card has since lapsed below it (a badge, once earned, keeps
 its date — a high-water mark, not a live pass/fail). A deck that gains new
 cards after being badged shows a small "new" chip.

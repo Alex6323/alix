@@ -41,9 +41,8 @@ use crate::{
         ReviewConfig, Strictness,
     },
     deck::{self, Deck, DeckState},
-    exam,
-    level::{self, Level, Reveal, level_name},
-    picker,
+    depth::{self, Depth, Reveal, depth_name},
+    exam, picker,
     recent::RecentDecks,
     render::{self, NoteUnit},
     scheduler::{Fsrs, Grade, keypoint_grade},
@@ -248,11 +247,11 @@ struct StateDto {
     acquire: bool,
     /// The answer mode name (`flip`, `line`, `typeline`, …); the page reveals
     /// line-by-line for `line` and flip-style otherwise. Derived from the card's
-    /// `% reveal:` and the session's `level`.
+    /// `% reveal:` and the session's `depth`.
     mode: &'static str,
-    /// The session's chosen level (`recognize` / `recall` / `reconstruct`) — the
+    /// The session's chosen depth (`recognize` / `recall` / `reconstruct`) — the
     /// depth of practice this session runs at (spec §4).
-    level: &'static str,
+    depth: &'static str,
     /// The input method (`type` / `draw`). `draw` tells the page to show the
     /// canvas for a self-graded card; orthogonal to `mode`. The runtime "Draw
     /// answers" toggle lives in the browser and never appears here.
@@ -360,19 +359,19 @@ struct DeckItemDto {
     /// `true` when the deck has a cached topology, so the picker's focus drawer
     /// would open for it — the row shows a small drawer indicator.
     has_topology: bool,
-    /// The highest level with a badge to show (`"reconstruct"` / `"recall"` /
-    /// `"recognize"`), or `null` for none yet — see [`picker::DeckStatus::badge_level`].
+    /// The highest depth with a badge to show (`"reconstruct"` / `"recall"` /
+    /// `"recognize"`), or `null` for none yet — see [`picker::DeckStatus::badge_depth`].
     /// Additive telemetry; gates nothing.
-    badge_level: Option<&'static str>,
-    /// `true` when `badge_level`'s badge lapsed (earned once, not currently
+    badge_depth: Option<&'static str>,
+    /// `true` when `badge_depth`'s badge lapsed (earned once, not currently
     /// solid) and should render dotted rather than solid.
     badge_dotted: bool,
     /// Any deck card has no store entry yet — fresh material, distinct from
     /// `state`/`meta`.
     new_cards: bool,
-    /// The learner's last-used session level for this deck (`"recognize"` /
+    /// The learner's last-used session depth for this deck (`"recognize"` /
     /// `"recall"` / `"reconstruct"`), defaulting to `"recall"`.
-    last_level: &'static str,
+    last_depth: &'static str,
 }
 
 /// A workspace member deck in the drill-in list: a qualified selection `name`
@@ -387,7 +386,7 @@ struct MemberDto {
     state: &'static str,
     locked: bool,
     reviewable: bool,
-    /// Per-level due-ness — see [`DeckItemDto::reviewable_recognize`] /
+    /// Per-depth due-ness — see [`DeckItemDto::reviewable_recognize`] /
     /// [`DeckItemDto::reviewable_recall`] / [`DeckItemDto::reviewable_reconstruct`].
     reviewable_recognize: bool,
     reviewable_recall: bool,
@@ -402,16 +401,16 @@ struct MemberDto {
     tree: String,
     /// `true` when the member deck has a cached topology (a focus drawer).
     has_topology: bool,
-    /// The highest level with a badge to show, from the workspace's own store —
-    /// same semantics as [`DeckItemDto::badge_level`].
-    badge_level: Option<&'static str>,
-    /// `true` when `badge_level`'s badge lapsed (renders dotted, not solid).
+    /// The highest depth with a badge to show, from the workspace's own store —
+    /// same semantics as [`DeckItemDto::badge_depth`].
+    badge_depth: Option<&'static str>,
+    /// `true` when `badge_depth`'s badge lapsed (renders dotted, not solid).
     badge_dotted: bool,
     /// Any member-deck card has no store entry yet — fresh material.
     new_cards: bool,
-    /// The learner's last-used session level for this member deck, defaulting
+    /// The learner's last-used session depth for this member deck, defaulting
     /// to `"recall"` — what a plain Learn launches.
-    last_level: &'static str,
+    last_depth: &'static str,
 }
 
 /// The result of answering a choice card: which option was picked, which is
@@ -530,8 +529,8 @@ impl ReviewKeys {
 
 /// The deck-picker navigation keys the selection screen binds, mirroring the
 /// configured `[picker]` section (Vim defaults): move, open/back, focus the
-/// filter, open the Mastered window, and the level menu (open it + start at
-/// one of the three levels). (Jump to first/last is fixed at `g`/`G`/Home/End
+/// filter, open the Mastered window, and the depth menu (open it + start at
+/// one of the three depths). (Jump to first/last is fixed at `g`/`G`/Home/End
 /// on the page, so it isn't sent.)
 #[derive(Debug, Serialize)]
 struct PickerKeysDto {
@@ -541,7 +540,7 @@ struct PickerKeysDto {
     back: Vec<KeyDto>,
     filter: Vec<KeyDto>,
     mastered: Vec<KeyDto>,
-    level: Vec<KeyDto>,
+    depth: Vec<KeyDto>,
     recognize: Vec<KeyDto>,
     recall: Vec<KeyDto>,
     reconstruct: Vec<KeyDto>,
@@ -556,7 +555,7 @@ impl PickerKeysDto {
             back: key_list(&k.back),
             filter: key_list(&k.filter),
             mastered: key_list(&k.mastered),
-            level: key_list(&k.level),
+            depth: key_list(&k.depth),
             recognize: key_list(&k.recognize),
             recall: key_list(&k.recall),
             reconstruct: key_list(&k.reconstruct),
@@ -1410,7 +1409,7 @@ pub fn run_review(
         Vec<PathBuf>,
         Option<&str>,
         Option<&str>,
-        Option<Level>,
+        Option<Depth>,
         &Store,
         &mut RecentDecks,
     ) -> Result<SessionBuild>,
@@ -1542,8 +1541,8 @@ pub fn run_review(
             (Method::Post, "/api/select") => {
                 match read_selection(&mut request, &decks_dir, &recent) {
                     Some(sel) => {
-                        let (topology, region, level) =
-                            (sel.topology.clone(), sel.region.clone(), sel.level);
+                        let (topology, region, depth) =
+                            (sel.topology.clone(), sel.region.clone(), sel.depth);
                         let paths = vec![sel.deck];
                         // Write to the deck's own store — a workspace's `progress.json`
                         // when they share one, else the global store — so the browser
@@ -1567,21 +1566,21 @@ pub fn run_review(
                                 paths,
                                 topology.as_deref(),
                                 region.as_deref(),
-                                level,
+                                depth,
                                 &store,
                                 &mut recent,
                             ) {
                                 Ok(b) => {
-                                    // Remember the resolved level for this deck so a
+                                    // Remember the resolved depth for this deck so a
                                     // plain Learn next time reopens at it (keyed by
                                     // deck subject, like the rest of the deck store).
-                                    let resolved = b.session.level();
+                                    let resolved = b.session.depth();
                                     let subject = b.decks.keys().next().cloned();
                                     let mut r = Reviewing::new(b);
                                     r.open_augment(store.path());
                                     r.rotate_variant();
                                     if let Some(subject) = subject {
-                                        store.set_last_level(&subject, resolved);
+                                        store.set_last_depth(&subject, resolved);
                                         if let Err(e) = store.save() {
                                             eprintln!("warning: could not save progress: {e}");
                                         }
@@ -1677,10 +1676,10 @@ pub fn run_review(
                     Some(grade) => {
                         let now = now_ms();
                         r.session.grade(&mut store, grade, now);
-                        // Refresh the deck's per-level badge earn dates from this
+                        // Refresh the deck's per-depth badge earn dates from this
                         // session's cards (high-water first-earn marks; badges gate
                         // nothing). Keyed by deck subject, like the rest of the
-                        // deck-level store (exam mastery, last level).
+                        // deck-level store (exam mastery, last depth).
                         if let Some(subject) = r.files.paths.keys().next() {
                             store::note_badges(&mut store, subject, r.session.cards(), now);
                         }
@@ -2690,7 +2689,7 @@ fn query_param(url: &str, key: &str) -> Option<String> {
 /// - **Recognize session** (non-acquire): the shape follows the card's `% reveal:` — `Line` picks
 ///   the next line among the card's own lines; `Flip` and `Cloze` pick the back among sibling backs
 ///   via plain `build` (an expanded cloze sub-card's back IS its gap text — T6 review).
-/// - Any other level renders no pick.
+/// - Any other depth renders no pick.
 fn current_question(r: &Reviewing, store: &Store, card: &Card) -> Option<ChoiceQuestion> {
     let ai = r.augment.distractors(card.id());
     if store.get(card.id()).is_none() {
@@ -2698,7 +2697,7 @@ fn current_question(r: &Reviewing, store: &Store, card: &Card) -> Option<ChoiceQ
         // here — this branch already established `store.get(card.id())` is `None`.
         return choice::recognition_question(card, r.session.cards(), card.id(), ai);
     }
-    if r.session.level() != Level::Recognize {
+    if r.session.depth() != Depth::Recognize {
         return None;
     }
     match card.reveal.unwrap_or_default() {
@@ -2724,7 +2723,7 @@ fn review_state(reviewing: Option<&Reviewing>, store: &Store) -> StateDto {
             keypoints: None,
             acquire: false,
             mode: mode_name(Mode::default()),
-            level: level_name(Level::default()),
+            depth: depth_name(Depth::default()),
             input: input_name(Input::default()),
             remaining: 0,
             initial: 0,
@@ -2739,11 +2738,11 @@ fn review_state(reviewing: Option<&Reviewing>, store: &Store) -> StateDto {
     };
     let session = &r.session;
     let card = session.current();
-    // The session owns its level (Recognize | Recall | Reconstruct); the concrete
+    // The session owns its depth (Recognize | Recall | Reconstruct); the concrete
     // check derives from that and the card's authored `% reveal:` (spec §4).
-    let level = session.level();
+    let depth = session.depth();
     let mode = card
-        .map(|c| level::check_for(c.reveal.unwrap_or_default(), level, c))
+        .map(|c| depth::check_for(c.reveal.unwrap_or_default(), depth, c))
         .unwrap_or_default();
     // A never-seen card is *acquired* (an attempt, then reveal), not quizzed cold.
     let acquire = session.current_unseen(store);
@@ -2845,7 +2844,7 @@ fn review_state(reviewing: Option<&Reviewing>, store: &Store) -> StateDto {
         keypoints,
         acquire,
         mode: mode_name(mode),
-        level: level_name(level),
+        depth: depth_name(depth),
         input: input_name(card.and_then(|c| c.input).unwrap_or_default()),
         remaining: session.remaining(),
         initial: session.initial_size,
@@ -2884,7 +2883,7 @@ fn deck_item_dto(
         Ok(deck) => {
             let s = picker::deck_status(&deck, store, Some(decks_dir), with_lock, review);
             let deck_ids: HashSet<u64> = deck.cards.iter().map(|c| c.id()).collect();
-            let last_level = level_name(store.last_level(&deck.subject).unwrap_or_default());
+            let last_depth = depth_name(store.last_depth(&deck.subject).unwrap_or_default());
             DeckItemDto {
                 name: e.name.clone(),
                 label: e.label.clone(),
@@ -2907,10 +2906,10 @@ fn deck_item_dto(
                 icon: None,
                 icon_svg: false,
                 has_topology: augment.has_topology_for(&deck_ids),
-                badge_level: s.badge_level.map(level_name),
+                badge_depth: s.badge_depth.map(depth_name),
                 badge_dotted: s.badge_dotted,
                 new_cards: s.new_cards,
-                last_level,
+                last_depth,
             }
         }
         // A deck that fails to load stays launchable so the error surfaces.
@@ -2936,10 +2935,10 @@ fn deck_item_dto(
             icon: None,
             icon_svg: false,
             has_topology: false,
-            badge_level: None,
+            badge_depth: None,
             badge_dotted: false,
             new_cards: false,
-            last_level: level_name(Level::default()),
+            last_depth: depth_name(Depth::default()),
         },
     }
 }
@@ -2969,7 +2968,7 @@ fn workspace_members(
         .as_ref()
         .map(|s| AugmentCache::open(augment::augment_path_for(s.path())));
     // Load each member deck once, deriving its status, whether it has a
-    // topology, and its last-used session level from the same parse.
+    // topology, and its last-used session depth from the same parse.
     let loaded: Vec<(Option<picker::DeckStatus>, bool, &'static str)> = paths
         .iter()
         .map(|p| {
@@ -2992,11 +2991,11 @@ fn workspace_members(
                 _ => false,
             };
             // Subject-keyed like `deck_item_dto`, from the workspace's own store.
-            let last_level = match (store.as_ref(), deck.as_ref()) {
-                (Some(st), Some(d)) => st.last_level(&d.subject).unwrap_or_default(),
-                _ => Level::default(),
+            let last_depth = match (store.as_ref(), deck.as_ref()) {
+                (Some(st), Some(d)) => st.last_depth(&d.subject).unwrap_or_default(),
+                _ => Depth::default(),
             };
-            (status, has_topology, level_name(last_level))
+            (status, has_topology, depth_name(last_depth))
         })
         .collect();
     // Order siblings startable-first (blocked = locked, or — when gating —
@@ -3021,7 +3020,7 @@ fn workspace_members(
             // Each tree branch segment is three columns wide (see picker).
             let indent = prefix.chars().count() / 3;
             let has_topology = loaded[i].1;
-            let last_level = loaded[i].2;
+            let last_depth = loaded[i].2;
             match &loaded[i].0 {
                 Some(s) => MemberDto {
                     name: m.name.clone(),
@@ -3040,10 +3039,10 @@ fn workspace_members(
                     indent,
                     tree: prefix.clone(),
                     has_topology,
-                    badge_level: s.badge_level.map(level_name),
+                    badge_depth: s.badge_depth.map(depth_name),
                     badge_dotted: s.badge_dotted,
                     new_cards: s.new_cards,
-                    last_level,
+                    last_depth,
                 },
                 // A member that failed to load: the same neutral defaults as
                 // `deck_item_dto`'s failed-load fallback.
@@ -3064,10 +3063,10 @@ fn workspace_members(
                     indent,
                     tree: prefix.clone(),
                     has_topology,
-                    badge_level: None,
+                    badge_depth: None,
                     badge_dotted: false,
                     new_cards: false,
-                    last_level,
+                    last_depth,
                 },
             }
         })
@@ -3147,10 +3146,10 @@ fn deck_catalog(
                 icon,
                 icon_svg,
                 has_topology: false,
-                badge_level: None,
+                badge_depth: None,
                 badge_dotted: false,
                 new_cards: false,
-                last_level: level_name(Level::default()),
+                last_depth: depth_name(Depth::default()),
             };
             if is_ws {
                 workspaces.push(dto);
@@ -3180,13 +3179,13 @@ fn deck_catalog(
 /// body, or any name not in the catalog — so no filesystem path is ever built
 /// from request input, keeping selection safe under `--lan`.
 /// A deck chosen from the picker, optionally scoped by the focus drawer to one
-/// topology and/or region, and at a chosen session `level` (absent = the deck's
-/// last-used level, defaulting to Recall).
+/// topology and/or region, and at a chosen session `depth` (absent = the deck's
+/// last-used depth, defaulting to Recall).
 struct Selection {
     deck: PathBuf,
     topology: Option<String>,
     region: Option<String>,
-    level: Option<Level>,
+    depth: Option<Depth>,
 }
 
 fn read_selection(
@@ -3202,7 +3201,7 @@ fn read_selection(
         #[serde(default)]
         region: Option<String>,
         #[serde(default)]
-        level: Option<Level>,
+        depth: Option<Depth>,
     }
     let body: Body = serde_json::from_reader(request.as_reader()).ok()?;
     if body.deck.is_empty() {
@@ -3223,7 +3222,7 @@ fn read_selection(
         deck: resolve_name(&body.deck, &known)?,
         topology: body.topology,
         region: body.region,
-        level: body.level,
+        depth: body.depth,
     })
 }
 
@@ -3261,7 +3260,7 @@ fn deck_topology_dto(
             &cards,
             store,
             &scheduler,
-            Level::Recall,
+            Depth::Recall,
             now,
             review.retire_after_days,
         )
@@ -3276,7 +3275,7 @@ fn deck_topology_dto(
                 c,
                 store,
                 &scheduler,
-                Level::Recall,
+                Depth::Recall,
                 now,
                 review.retire_after_days,
             )
@@ -3654,15 +3653,15 @@ mod tests {
         assert_eq!(dto.kind, "review");
     }
 
-    /// Builds a `Reviewing` over a parsed deck at a chosen level, sharing `store`
+    /// Builds a `Reviewing` over a parsed deck at a chosen depth, sharing `store`
     /// (seed it before calling so the session sees the seeded state).
-    fn reviewing_at(deck: PathBuf, cards: Vec<Card>, store: &Store, level: Level) -> Reviewing {
+    fn reviewing_at(deck: PathBuf, cards: Vec<Card>, store: &Store, depth: Depth) -> Reviewing {
         let session = Session::new(
             cards,
             store,
             Box::new(Fsrs::default()),
             crate::session::SessionOptions {
-                level,
+                depth,
                 ..Default::default()
             },
             now_ms(),
@@ -3681,7 +3680,7 @@ mod tests {
     }
 
     #[test]
-    fn state_reports_the_sessions_level_and_typeline_mode() {
+    fn state_reports_the_sessions_depth_and_typeline_mode() {
         let dir = tempfile::tempdir().unwrap();
         let deck = dir.path().join("d.txt");
         let text = "# steps\n% reveal: line\n\tfirst\n\tsecond\n";
@@ -3689,12 +3688,12 @@ mod tests {
         let cards = crate::parser::parse_str("d.txt", text).unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         store.get_or_insert(cards[0].id(), 0); // seen, so it's a quiz not an acquire
-        let r = reviewing_at(deck, cards, &store, Level::Reconstruct);
+        let r = reviewing_at(deck, cards, &store, Depth::Reconstruct);
 
         let dto = review_state(Some(&r), &store);
         assert_eq!(
-            "reconstruct", dto.level,
-            "the DTO reports the session's level"
+            "reconstruct", dto.depth,
+            "the DTO reports the session's depth"
         );
         assert_eq!(
             "typeline", dto.mode,
@@ -3714,7 +3713,7 @@ mod tests {
         assert_eq!(vec!["cat".to_string()], cards[0].back); // gap text is the back
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         store.get_or_insert(cards[0].id(), 0); // seen → the Recognize MC, not the acquire on-ramp
-        let r = reviewing_at(deck, cards, &store, Level::Recognize);
+        let r = reviewing_at(deck, cards, &store, Depth::Recognize);
 
         let dto = review_state(Some(&r), &store);
         let opts = dto
@@ -3740,7 +3739,7 @@ mod tests {
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let state = store.get_or_insert(cards[0].id(), 0);
         state.recognized_ms = Some(500); // recognized, but no Recall schedule yet
-        let r = reviewing_at(deck, cards, &store, Level::Recall);
+        let r = reviewing_at(deck, cards, &store, Depth::Recall);
 
         let dto = review_state(Some(&r), &store);
         assert!(!dto.acquire, "a recognized card isn't acquired cold");
@@ -3748,7 +3747,7 @@ mod tests {
             dto.choices.is_none(),
             "no recognition MC for an already-recognized card"
         );
-        assert_eq!("recall", dto.level);
+        assert_eq!("recall", dto.depth);
     }
 
     #[test]
