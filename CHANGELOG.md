@@ -7,11 +7,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- **Session levels: Recognize, Recall, Reconstruct — replacing the difficulty
-  ladder below.** Every review now happens at one of three independent
+- **Session levels: Recognize, Recall, Reconstruct — replacing the retired
+  `% mode:` checks.** Every review now happens at one of three independent
   levels, chosen per session (`--level`, or the web picker's split **Learn**
-  button and its ▾ menu) instead of read from personal config; plain Learn
-  reuses the deck's own last-used level (first use: Recall). **Recall** is the
+  button and its ▾ menu) instead of authored per card or set in config; plain
+  Learn reuses the deck's own last-used level (first use: Recall). **Recall** is the
   familiar reveal-and-self-grade flashcard. **Reconstruct** keeps its own FSRS
   schedule per card, independent of Recall — no cross-crediting, two separate
   practices — and has you type a short answer or a cloze gap, type each line
@@ -47,20 +47,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`alix list`/`alix stats` report per level.** `list` now shows each card's
   Recall and Reconstruct schedule state plus a ✓ once it's recognized;
   `stats` adds a per-level due count.
-- **Difficulty ladder (v1): a `% reveal:` directive and a `[review] target`
-  depth.** How a card is checked now derives from two axes instead of one `% mode:`
-  setting. `% reveal:` (deck or card, default `flip`) is the authored *presentation*
-  — `flip`, `cloze` (`{{spans}}`), or `line`. `[review] target` (personal config,
-  default `recall`) is your *depth* — `recognize` / `recall` / `reconstruct` — kept
-  out of shared decks because depth is the learner's call. At `recall` a card
-  reveals and you self-grade; at `reconstruct` a settled card climbs to producing
-  its answer (typing a short answer or a cloze gap, explaining a longer one). A
-  card climbs a rung after it graduates and survives one more spaced pass below the
-  target, and descends a rung on a miss (floored at recall). v1 schedules recall and
-  reconstruct only; recognition stays the unscheduled acquire on-ramp, and a
-  reconstruct check on a rich answer is self-graded. The web review UI shows a small
-  badge naming the check (`flip` / `line` / `typing` / `explain`) so how you'll
-  interact is clear up front. See the **Changed** note for the break.
+- **`% reveal:` — the authored presentation axis.** How a card is *presented*
+  is now its own directive (deck or card, default `flip`): `flip`, `cloze`
+  (`{{spans}}`), or `line` — while how deeply it's *checked* is the session
+  level above, never authored into a shared deck. The web review UI shows a
+  small badge naming the check (`flip` / `line` / `typing` / `explain`) so how
+  you'll interact is clear up front. See the **Changed** note for the
+  `% mode:`/`#?` break.
 - **Remediation cards are now virtual cards in the store.** A failed source
   exam's remediation cards live in alix's store instead of being written into
   your deck file. They drill like normal cards and count toward a deck's *due*
@@ -148,14 +141,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ephemeral (never persisted or sent to the server).
 
 ### Changed
-- **Breaking: the ladder's depth dial is gone — session levels replace
-  climb/descend.** `[review] depth` and the per-deck `[review.deck."<file>"]`
-  override (below) no longer exist; a config or `alix.local.toml` that still
-  sets either now fails to load instead of being silently ignored. How deeply
-  you drill is chosen per session (`--level`), not read from personal config,
-  and a card no longer climbs or descends between levels on its own — Recall
-  and Reconstruct are two independent, permanent practices with their own
-  schedules.
 - **Breaking (store): per-level schedules replace the single `fsrs` field.** A
   card's progress is now stored per level (`recall`/`reconstruct`), plus a
   `recognized` flag, instead of one shared FSRS state. Pre-1.0, no migration:
@@ -166,12 +151,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   exactly, then shows the diff and leaves the pass/fail call to you — no
   edit-distance tolerance guessing at "close enough" (it used to let "affect"
   pass for "effect" within tolerance).
-- **Breaking (config):** the ladder depth dial is now a number — `[review] depth
-  = 1` (recall) or `2` (reconstruct), replacing the v1 `[review] target =
-  "recall"|"reconstruct"` string (out-of-range clamps; a stray `target` key
-  errors). Depth is now also settable **per deck** via `[review.deck."<file>"]
-  depth` in a workspace's `alix.local.toml` (precedence: per-deck > workspace >
-  global).
 - **Breaking (store):** dropped the legacy Leitner `stage`/`stage_entered_ms`
   fields now that FSRS is the sole scheduler; `stage_entered_ms` is renamed
   `acquired_ms`. Pre-FSRS cards lose their stage-derived interval carry-over.
@@ -190,13 +169,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   edit `% requires:` lines by hand. `alix trace`'s walk is unaffected — it
   still runs in the terminal (a plain stdin loop, never a TUI).
 - **Breaking: `% mode:`, the `#?` cloze marker, and the `--mode` flag are
-  removed** — replaced by the difficulty ladder above. A cloze card is now
-  `% reveal: cloze` (was `#?`); a deck's presentation is `% reveal: flip|cloze|line`
-  (was `% mode:`); and how deeply you drill is `[review] target`, not a per-card
-  mode or a CLI flag. **A deck at the default target (`recall`) reviews as
-  reveal-and-self-grade even for cards once authored `% mode: typing`/`explain`** —
-  set `[review] target = "reconstruct"` to get the reconstruction (typing/explain)
-  checks. **Card ids are preserved**: the retired markers were never part of a
+  removed** — replaced by `% reveal:` and the session levels above. A cloze card
+  is now `% reveal: cloze` (was `#?`); a deck's presentation is
+  `% reveal: flip|cloze|line` (was `% mode:`); and how deeply you drill is the
+  session level (`--level` or the split Learn button), not a per-card mode or a
+  CLI flag. **Cards once authored `% mode: typing`/`explain` review as
+  reveal-and-self-grade in Recall sessions** — start a **Reconstruct** session
+  to get the producing (typing/explain) checks. **Card ids are preserved**: the retired markers were never part of a
   card's identity hash, so progress carries over. Upgrade an existing deck with a
   one-off textual rewrite (`#?` → a `% reveal: cloze` line; `% mode:` → `% reveal:`
   where a reveal-method applies, dropping `typing`/`fuzzy`/`choice`/`explain`), or
