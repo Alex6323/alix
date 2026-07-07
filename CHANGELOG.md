@@ -284,6 +284,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   sizing and layout.
 
 ### Fixed
+- **The web app can no longer be served stale from the browser cache.** alix
+  sent no cache headers, so after an upgrade the browser could keep showing
+  the previous version's page on the same address. The app shell and its
+  assets now demand revalidation (`no-cache`) and live JSON state is never
+  cached (`no-store`).
 - **Browse left-aligns multi-line answers like review.** The read-only browser
   decided the left-aligned-block layout from the reshaped-list flag alone, so an
   unaugmented multi-line answer rendered centered (ragged, each line on its own axis)
