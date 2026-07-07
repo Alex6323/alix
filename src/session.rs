@@ -25,7 +25,7 @@ use crate::{
     card::Card,
     level::Level,
     scheduler::{Grade, Scheduler},
-    store::{CardState, Store, VirtualCard},
+    store::{Store, VirtualCard},
     time,
     trace::SourceBase,
 };
@@ -420,7 +420,9 @@ impl Session {
                 .is_none_or(|s| s.recognized_ms.is_none());
         }
         match store.get(card.id()) {
-            Some(state) => due_at_level(&*self.scheduler, state, level, now_ms, self.options.cram),
+            // Cram serves everything; otherwise the scheduler decides (its `due_at`
+            // owns the cross-level immediacy rule — see `Fsrs::due_at`).
+            Some(state) => self.options.cram || self.scheduler.is_due(state, level, now_ms),
             None => true,
         }
     }
@@ -440,29 +442,6 @@ impl Session {
             .filter(|&i| self.servable(i, store, now_ms))
             .count();
     }
-}
-
-/// Whether `state` counts as due at `level` right now (or under cram, always).
-/// A card with no schedule yet *at this level* is either genuinely fresh — no
-/// schedule at any level, so it honors the same acquire cooldown a brand-new
-/// card gets at its first schedule (`due_at`'s fallback, anchored on
-/// `acquired_ms`) — or already established at the *other* level, in which case
-/// switching levels is immediate: no second warm-up (spec: "a Recall-drilled
-/// deck immediately due at Reconstruct" — `crate::scheduler::Fsrs::due_at`).
-fn due_at_level(
-    scheduler: &dyn Scheduler,
-    state: &CardState,
-    level: Level,
-    now_ms: u64,
-    cram: bool,
-) -> bool {
-    if cram {
-        return true;
-    }
-    if state.schedule(level).is_none() && (state.recall.is_some() || state.reconstruct.is_some()) {
-        return true;
-    }
-    scheduler.is_due(state, level, now_ms)
 }
 
 /// Builds the review queue.
@@ -511,7 +490,9 @@ fn build_queue(
             // never scheduled, not even under cram.
             Some(_) if is_retired(card, store, options.retire_after_days) => {}
             Some(state) => {
-                if due_at_level(scheduler, state, level, now_ms, options.cram) {
+                // Cram takes everything; else the scheduler's own `due_at` (which
+                // owns the cross-level immediacy rule) decides.
+                if options.cram || scheduler.is_due(state, level, now_ms) {
                     due.push(i);
                 }
             }

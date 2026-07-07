@@ -194,10 +194,15 @@ impl Scheduler for Fsrs {
     fn due_at(&self, state: &CardState, level: Level) -> u64 {
         match state.schedule(level) {
             Some(s) => s.due_ms,
-            // Not yet scheduled under FSRS at this level — a freshly acquired card
-            // (or one never reviewed at this level) settles for one fixed cooldown
-            // before its first quiz. This makes a Recall-drilled deck immediately
-            // due at Reconstruct: a lazily-created schedule, not a warm carry-over.
+            // No schedule yet at this level. If the card is already established at
+            // the *other* level, switching levels is immediate — due now (epoch),
+            // no second acquire warm-up (spec §4.1: a Recall-drilled deck is at once
+            // due at Reconstruct; the schedule is created lazily on the first grade).
+            // This is the one place that rule lives, so `is_due`, the queue sort, and
+            // the picker helpers can't diverge.
+            None if state.recall.is_some() || state.reconstruct.is_some() => 0,
+            // A genuinely fresh card (no schedule anywhere) settles for one fixed
+            // acquire cooldown before its first quiz.
             None => state.acquired_ms.saturating_add(ACQUIRE_COOLDOWN_MS),
         }
     }
@@ -264,6 +269,29 @@ mod tests {
         sched.apply(&mut s, Level::Recall, Grade::Pass, 1000);
         assert!(s.recall.is_some());
         assert!(sched.due_at(&s, Level::Recall) != 1000 + ACQUIRE_COOLDOWN_MS);
+    }
+
+    #[test]
+    fn due_at_is_immediate_at_a_level_scheduled_elsewhere() {
+        // The cross-level immediacy rule (spec §4.1), now owned by `due_at`: a card
+        // established at Recall is due *now* at Reconstruct, skipping the acquire
+        // cooldown a genuinely fresh card would honor.
+        let sched = Fsrs::default();
+        let mut s = CardState::new(1_000);
+        s.recall = Some(FsrsState {
+            due_ms: u64::MAX,
+            ..Default::default()
+        });
+        assert_eq!(0, sched.due_at(&s, Level::Reconstruct), "immediately due");
+        assert!(sched.is_due(&s, Level::Reconstruct, 1)); // due at any `now`
+        // Recall itself still honors its own schedule, not the cross-level rule.
+        assert_eq!(u64::MAX, sched.due_at(&s, Level::Recall));
+        // A card with no schedule anywhere still waits one acquire cooldown.
+        let fresh = CardState::new(1_000);
+        assert_eq!(
+            1_000 + ACQUIRE_COOLDOWN_MS,
+            sched.due_at(&fresh, Level::Reconstruct)
+        );
     }
 
     #[test]
