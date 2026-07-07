@@ -1459,8 +1459,15 @@ async function renderSelect() {
   // targets the deck's own last-used level — gates on its own honest signal
   // rather than "any level" (recall-settled must not enable a Recall chip
   // just because Reconstruct is due).
+  const LEVELS = ["recognize", "recall", "reconstruct"]; // menu/keys order — 1/2/3
   const LEVEL_FIELD = { recognize: "reviewable_recognize", recall: "reviewable_recall", reconstruct: "reviewable_reconstruct" };
   const canStartAt = (it, gated, level) => it[LEVEL_FIELD[level]] || !gated;
+
+  // Rows that carry the level split (the Learn ▾ chip and its v key): a deck —
+  // not a workspace/folder — that isn't exam-primary, has a remembered level,
+  // and isn't a trace (walked, not leveled).
+  const hasLevelSplit = (row) => !!(row && row._item && !row._open
+    && row._item.state !== "examdue" && row._item.last_level && !row._item.is_trace);
 
   // The plain Learn/primary button's gate: a trace always walks and an
   // exam-due deck's primary is its exam (both non-level, via `canStart`);
@@ -1650,13 +1657,14 @@ async function renderSelect() {
         // drawer-cell trick), so row nav and the menu's own Escape keep working
         // after any of these buttons is clicked — a click otherwise moves focus
         // onto a button syncPrimary() is about to destroy, stranding it on <body>.
-        for (const lvl of ["recognize", "recall", "reconstruct"]) {
+        LEVELS.forEach((lvl, i) => {
           const b = el("button", "chip" + (lvl === it.last_level ? " primary" : ""), lvl[0].toUpperCase() + lvl.slice(1));
+          b.appendChild(el("span", "k", String(i + 1)));
           b.disabled = !canStartAt(it, f._gated, lvl);
           b.addEventListener("mousedown", e => e.preventDefault());
           b.addEventListener("click", () => { levelMenuOpen = false; launchLevel(it, f._wsName, f._gated, lvl); });
           legend.appendChild(b);
-        }
+        });
         const cancel = el("button", "chip", "Cancel");
         cancel.appendChild(el("span", "k", "esc"));
         cancel.addEventListener("mousedown", e => e.preventDefault());
@@ -1689,13 +1697,13 @@ async function renderSelect() {
       }
       legend.appendChild(primary);
       // The level split: a small ▾ beside a plain Learn opens the level menu
-      // above (Recognize/Recall/Reconstruct). Not shown for an exam-primary row,
-      // a workspace/folder ("Open"), a trace (no level, just a walk), or a member
-      // row lacking `last_level`.
-      if (f && f._item && !f._open && f._item.state !== "examdue" && f._item.last_level && !f._item.is_trace) {
+      // above (Recognize/Recall/Reconstruct); see `hasLevelSplit` for which
+      // rows carry it.
+      if (hasLevelSplit(f)) {
         const it = f._item;
         const lv = el("button", "chip split", "▾");
         lv.title = "choose a level";
+        lv.appendChild(el("span", "k", "v"));
         lv.disabled = !canStart(it, f._gated);
         // Keep focus on the deck row (see the level menu above): the click
         // rebuilds the footer, which would otherwise strand focus on <body>.
@@ -1929,11 +1937,21 @@ async function renderSelect() {
       // Keys inside the open drawer (its native topology picker) belong to it —
       // don't hijack them for row navigation.
       if (e.target.closest(".drawer")) return;
-      // While the level menu is open it owns the footer (Enter still reaches the
-      // global handler below, which clicks the highlighted level); every other
-      // row-nav key is inert until Escape closes it back to the row's own chips.
+      // While the level menu is open it owns the keys: 1/2/3 start that level
+      // (matching the chips' hints; inert when that chip is disabled), Esc — or
+      // v again — closes it back to the row's own chips, and Enter still reaches
+      // the global handler below, which clicks the highlighted level. Every
+      // other row-nav key is inert until the menu closes.
       if (levelMenuOpen) {
-        if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); levelMenuOpen = false; syncPrimary(); }
+        const f = focusedEl;
+        const n = ["1", "2", "3"].indexOf(e.key);
+        if (n >= 0 && f && f._item && canStartAt(f._item, f._gated, LEVELS[n])) {
+          e.preventDefault(); e.stopPropagation();
+          levelMenuOpen = false;
+          launchLevel(f._item, f._wsName, f._gated, LEVELS[n]);
+        } else if (e.key === "Escape" || e.key === "v") {
+          e.preventDefault(); e.stopPropagation(); levelMenuOpen = false; syncPrimary();
+        }
         return;
       }
       const v = visibleRows();
@@ -1944,7 +1962,8 @@ async function renderSelect() {
       // workspace and left is inert (returning is Esc/Backspace). The primary
       // action — Learn a deck / Open a workspace / Take exam — is Enter, not l.
       // g/G/Home/End jump to ends; / or Ctrl-F focus the filter; b browses;
-      // a augments; m opens Mastered.
+      // a augments; v opens the level menu (same gate as its ▾ chip, and only
+      // when that chip is enabled); m opens Mastered.
       if (e.key === "ArrowDown" || hit(e, PK.down)) { e.preventDefault(); if (idx < v.length - 1) v[idx + 1].focus(); }
       else if (e.key === "ArrowUp" || hit(e, PK.up)) { e.preventDefault(); if (idx > 0) v[idx - 1].focus(); } // stays on the first row; the filter is only reachable via / or Ctrl-F
       else if (e.key === "g" || e.key === "Home") { e.preventDefault(); if (v.length) v[0].focus(); }
@@ -1954,6 +1973,7 @@ async function renderSelect() {
       else if (e.key === "ArrowLeft" || hit(e, PK.back)) { e.preventDefault(); if (drawerCycle) drawerCycle(-1); } // back-out is Esc/Backspace only; ←/h just steps the drawer
       else if (e.key === "b" && cur && cur._item) { e.preventDefault(); browseDeck(cur._item, cur._wsName); }
       else if (e.key === "a" && cur && cur._item) { e.preventDefault(); lastWorkspace = cur._wsName || null; openAugment(cur._item.name); }
+      else if (e.key === "v" && hasLevelSplit(cur) && canStart(cur._item, cur._gated)) { e.preventDefault(); levelMenuOpen = true; syncPrimary(); }
       else if (e.key === "r") { e.preventDefault(); replayLogo(); renderSelect(); } // re-scan the decks (also the ⟳ nav button)
       else if (opts.allowMastered && hit(e, PK.mastered)) { e.preventDefault(); renderMastered(); }
       else if (e.key === "x" && cur && cur._item && cur._item.examable) {
@@ -3242,6 +3262,7 @@ function openShortcuts() {
     '<kbd>/</kbd><span>filter the list</span>' +
     '<kbd>↑ ↓</kbd><span>move</span>' +
     '<kbd>enter</kbd><span>open / start</span>' +
+    '<kbd>v</kbd><span>choose a level, then <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></span>' +
     '<kbd>b</kbd><span>browse the deck</span>' +
     '<kbd>x</kbd><span>take the exam</span>' +
     '<kbd>m</kbd><span>mastered decks</span>' +

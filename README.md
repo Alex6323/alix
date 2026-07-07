@@ -488,8 +488,9 @@ from both — you don't hand-pick a "mode" per card:
 
 Every review session runs at one of three independent levels, picked when you
 start it (`--level`, or the web picker's split **Learn** button — its small ▾
-opens **Recognize** / **Recall** / **Reconstruct**). Plain **Learn** reuses the
-deck's own last-used level, remembered per deck (first time: Recall).
+opens **Recognize** / **Recall** / **Reconstruct**; on the keyboard, `v` opens
+that menu and `1`/`2`/`3` pick a level, `Esc` cancels). Plain **Learn** reuses
+the deck's own last-used level, remembered per deck (first time: Recall).
 
 - **Recognize** — unscheduled and boolean: no FSRS schedule, just a per-card
   *recognized* flag. Where there's enough material to build one, it's a

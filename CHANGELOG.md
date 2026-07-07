@@ -10,7 +10,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Session levels: Recognize, Recall, Reconstruct — replacing the retired
   `% mode:` checks.** Every review now happens at one of three independent
   levels, chosen per session (`--level`, or the web picker's split **Learn**
-  button and its ▾ menu) instead of authored per card or set in config; plain
+  button and its ▾ menu — on the keyboard, `v` opens it and `1`/`2`/`3` pick a
+  level) instead of authored per card or set in config; plain
   Learn reuses the deck's own last-used level (first use: Recall). **Recall** is the
   familiar reveal-and-self-grade flashcard. **Reconstruct** keeps its own FSRS
   schedule per card, independent of Recall — no cross-crediting, two separate
