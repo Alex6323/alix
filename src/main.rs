@@ -430,10 +430,6 @@ struct ReviewArgs {
     #[arg(long)]
     cram: bool,
 
-    /// Tolerated typos (Levenshtein distance) per line in fuzzy mode.
-    #[arg(long, default_value_t = 2)]
-    max_typos: usize,
-
     /// Path of the progress store (default: platform data dir).
     #[arg(long)]
     store: Option<PathBuf>,
@@ -1058,7 +1054,6 @@ fn review_serve(args: ReviewArgs, browse_mode: bool) -> Result<()> {
         picker: config.picker.clone(),
         browse: config.browse.clone(),
         review: config.review,
-        max_typos: args.max_typos,
         ask: config.ask.clone(),
         exam: config.exam.clone(),
         ai: config.ai.clone(),
@@ -2287,7 +2282,6 @@ fn workspace_cmd(args: WorkspaceArgs) -> Result<()> {
             new: 10,
             limit: None,
             cram: false,
-            max_typos: 2,
             store: args.store,
             config: args.config,
             serve: ServeOpts {
@@ -2895,7 +2889,7 @@ mod tests {
     }
 
     /// A bare-bones `ReviewArgs` for a `build_review` test: no CLI overrides,
-    /// the built-in `new`/`max_typos` defaults, no `--serve`.
+    /// the built-in `new` default, no `--serve`.
     fn review_args(decks: Vec<PathBuf>, region: Option<&str>) -> ReviewArgs {
         ReviewArgs {
             decks,
@@ -2905,7 +2899,6 @@ mod tests {
             new: 10,
             limit: None,
             cram: false,
-            max_typos: 2,
             store: None,
             config: None,
             serve: ServeOpts {

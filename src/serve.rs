@@ -380,12 +380,14 @@ struct ChooseFeedbackDto {
     passed: bool,
 }
 
-/// One typed line graded against the expected answer (typing / fuzzy mode).
+/// One typed line graded against the expected answer.
 #[derive(Debug, Serialize)]
 struct LineResultDto {
     input: String,
     expected: String,
     passed: bool,
+    /// `0` if `passed`, `1` otherwise — kept for the frontend's `distance > 0`
+    /// diff check (grading no longer has an edit-distance tolerance to report).
     distance: usize,
 }
 
@@ -548,8 +550,6 @@ pub struct ReviewOptions {
     /// Browse-mode keys (the `[browse]` section), bound on the `/browse` page
     /// this server also hosts.
     pub browse: BrowseBindings,
-    /// Fuzzy-mode typo tolerance per line.
-    pub max_typos: usize,
     /// Ask-Claude settings (command, allowlist, timeout, …).
     pub ask: AskConfig,
     /// AI-exam settings (model, question count, default strictness, …).
@@ -1387,7 +1387,6 @@ pub fn run_review(
         keys: bindings,
         picker: picker_keys,
         browse: browse_bindings,
-        max_typos,
         ask: ask_cfg,
         exam: exam_cfg,
         ai: ai_cfg,
@@ -1673,9 +1672,9 @@ pub fn run_review(
                     respond_status(request, 409);
                     continue;
                 };
-                // Grade the typed lines against the current card — exact for
-                // typing (tolerance 0), typo-tolerant for fuzzy. Like choose,
-                // this only checks; the grade is applied on Continue.
+                // Grade the typed lines against the current card: normalized
+                // then compared exactly, no edit-distance tolerance. Like
+                // choose, this only checks; the grade is applied on Continue.
                 #[derive(Deserialize)]
                 struct Body {
                     lines: Vec<String>,
@@ -1683,26 +1682,16 @@ pub fn run_review(
                 let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
                 let result = body.and_then(|body| {
                     let card = r.session.current()?;
-                    let reveal = card.reveal.unwrap_or_default();
-                    let rung = store.get(card.id()).map(|s| s.rung).unwrap_or_default();
-                    let mode = level::check_for(reveal, rung, card);
-                    // TypeLine checks in order but is still exact typing, not
-                    // fuzzy-tolerant (the endpoint is properly reshaped in Task 2/8).
-                    let tol = if matches!(mode, Mode::Typing | Mode::TypeLine) {
-                        0
-                    } else {
-                        max_typos
-                    };
                     // Order-independent: a multi-item answer can be typed in any
                     // order, each line matched to its closest expected line.
                     let results: Vec<LineResultDto> =
-                        grade_lines_unordered(&body.lines, &card.back, tol)
+                        grade_lines_unordered(&body.lines, &card.back)
                             .into_iter()
                             .map(|r| LineResultDto {
                                 input: r.input,
                                 expected: r.expected,
                                 passed: r.passed,
-                                distance: r.distance,
+                                distance: usize::from(!r.passed),
                             })
                             .collect();
                     let passed = results.iter().all(|r| r.passed);

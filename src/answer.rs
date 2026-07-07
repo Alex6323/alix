@@ -2,8 +2,8 @@
 //!
 //! - **Typing**: the answer must be typed character by character with live feedback
 //!   ([`TypingValidator`]). Revealing hints marks the card failed.
-//! - **Fuzzy**: a whole line is typed and submitted, then compared with a typo tolerance
-//!   ([`grade_fuzzy`]).
+//! - **TypeLine**: a whole line is typed and submitted, then normalized and compared exactly
+//!   ([`grade_typed`]) — no edit-distance tolerance.
 //! - **Flip**: the user reveals the answer and grades themselves; no checking happens here.
 //! - **Choice**: the user picks the answer out of four options (see the [`choice`](crate::choice)
 //!   module).
@@ -213,46 +213,69 @@ impl TypingValidator {
     }
 }
 
-/// The result of grading one line in fuzzy mode.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct FuzzyResult {
+/// Zero-risk normalization: what dies here was never a memory signal.
+/// Anything that survives normalization and still differs is the learner's
+/// call ("typo → Good / wrong → Again"), shown as a diff — never an
+/// edit-distance heuristic (affect↔effect is distance 1 and a different word).
+pub fn normalize_answer(s: &str) -> String {
+    s.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim_end_matches(['.', ',', ';', ':', '!', '?'])
+        .to_lowercase()
+}
+
+/// The result of grading one typed line.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct TypedResult {
     /// What the user typed.
     pub input: String,
     /// The expected line.
     pub expected: String,
-    /// Levenshtein distance between input and expected.
-    pub distance: usize,
-    /// Whether the line counts as correct under the given tolerance.
+    /// Whether the normalized input exactly matches the normalized expected line.
     pub passed: bool,
+}
+
+/// Grades a typed line: normalizes both sides ([`normalize_answer`]) and
+/// compares exactly. No edit-distance tolerance — a typo and a wrong answer
+/// both fail here, and it's the learner who decides which was which.
+pub fn grade_typed(input: &str, expected: &str) -> TypedResult {
+    TypedResult {
+        input: input.trim().to_string(),
+        expected: expected.to_string(),
+        passed: normalize_answer(input) == normalize_answer(expected),
+    }
 }
 
 /// Grades typed lines against the expected lines **without** regard to order:
 /// each input is matched to its closest still-unclaimed expected line (smallest
-/// Levenshtein distance), so a multi-item answer can be entered in any order.
-/// Returns one [`FuzzyResult`] per input, in input order, each paired with the
-/// expected line it was matched to. `max_typos` is the per-line tolerance (`0`
-/// for exact typing). A single-line answer matches trivially.
-pub fn grade_lines_unordered(
-    inputs: &[String],
-    expected: &[String],
-    max_typos: usize,
-) -> Vec<FuzzyResult> {
+/// Levenshtein distance on the normalized text — pairing is display logic, not
+/// tolerance), so a multi-item answer can be entered in any order. Returns one
+/// [`TypedResult`] per input, in input order, each paired with the expected
+/// line it was matched to. A single-line answer matches trivially.
+pub fn grade_lines_unordered(inputs: &[String], expected: &[String]) -> Vec<TypedResult> {
     let mut claimed = vec![false; expected.len()];
     let mut results = Vec::with_capacity(inputs.len());
     for input in inputs {
+        let normalized_input = normalize_answer(input);
         let best = expected
             .iter()
             .enumerate()
             .filter(|(i, _)| !claimed[*i])
-            .map(|(i, exp)| (i, grade_fuzzy(input, exp, max_typos)))
-            .min_by_key(|(_, r)| r.distance);
+            .map(|(i, exp)| {
+                (
+                    i,
+                    strsim::levenshtein(&normalized_input, &normalize_answer(exp)),
+                )
+            })
+            .min_by_key(|(_, distance)| *distance);
         match best {
-            Some((i, r)) => {
+            Some((i, _)) => {
                 claimed[i] = true;
-                results.push(r);
+                results.push(grade_typed(input, &expected[i]));
             }
             // More inputs than expected lines: an extra input matches nothing.
-            None => results.push(grade_fuzzy(input, "", max_typos)),
+            None => results.push(grade_typed(input, "")),
         }
     }
     results
@@ -274,19 +297,6 @@ pub fn best_prefix_match(typed: &str, candidates: &[&str]) -> Option<usize> {
             .count();
         (std::cmp::Reverse(shared), cand.chars().count(), i)
     })
-}
-
-/// Grades a fuzzily typed line. `max_typos` is the maximum tolerated
-/// Levenshtein distance per line.
-pub fn grade_fuzzy(input: &str, expected: &str, max_typos: usize) -> FuzzyResult {
-    let input = input.trim();
-    let distance = strsim::levenshtein(input, expected);
-    FuzzyResult {
-        input: input.to_string(),
-        expected: expected.to_string(),
-        distance,
-        passed: distance <= max_typos,
-    }
 }
 
 #[cfg(test)]
@@ -414,33 +424,14 @@ mod tests {
     }
 
     #[test]
-    fn fuzzy_exact_match_passes_with_zero_tolerance() {
-        let r = grade_fuzzy("hello", "hello", 0);
+    fn grade_typed_exact_match_passes() {
+        let r = grade_typed("hello", "hello");
         assert!(r.passed);
-        assert_eq!(0, r.distance);
     }
 
     #[test]
-    fn fuzzy_within_tolerance_passes() {
-        let r = grade_fuzzy("helo", "hello", 2);
-        assert!(r.passed);
-        assert_eq!(1, r.distance);
-
-        let r = grade_fuzzy("hxllo wxrld", "hello world", 2);
-        assert!(r.passed);
-        assert_eq!(2, r.distance);
-    }
-
-    #[test]
-    fn fuzzy_beyond_tolerance_fails() {
-        let r = grade_fuzzy("hxlxo wxrld", "hello world", 2);
-        assert!(!r.passed);
-        assert_eq!(3, r.distance);
-    }
-
-    #[test]
-    fn fuzzy_input_is_trimmed() {
-        let r = grade_fuzzy("  hello  ", "hello", 0);
+    fn grade_typed_input_is_trimmed() {
+        let r = grade_typed("  hello  ", "hello");
         assert!(r.passed);
     }
 
@@ -452,7 +443,7 @@ mod tests {
     fn unordered_lines_pass_in_any_order() {
         let expected = lines(&["red", "green", "blue"]);
         let inputs = lines(&["blue", "red", "green"]);
-        let results = grade_lines_unordered(&inputs, &expected, 0);
+        let results = grade_lines_unordered(&inputs, &expected);
         assert!(results.iter().all(|r| r.passed));
         // Each input is paired with the matching expected line.
         assert_eq!("blue", results[0].expected);
@@ -465,7 +456,7 @@ mod tests {
         let expected = lines(&["red", "green", "blue"]);
         // "gren" is closest to "green"; the other two are exact.
         let inputs = lines(&["blue", "gren", "red"]);
-        let results = grade_lines_unordered(&inputs, &expected, 0);
+        let results = grade_lines_unordered(&inputs, &expected);
         assert!(results[0].passed); // blue
         assert!(!results[1].passed); // gren vs green
         assert_eq!("green", results[1].expected);
@@ -477,7 +468,7 @@ mod tests {
         let expected = lines(&["aa", "ab"]);
         // Both inputs are equidistant-ish; each expected line is claimed once.
         let inputs = lines(&["ab", "aa"]);
-        let results = grade_lines_unordered(&inputs, &expected, 0);
+        let results = grade_lines_unordered(&inputs, &expected);
         let mut matched: Vec<&str> = results.iter().map(|r| r.expected.as_str()).collect();
         matched.sort_unstable();
         assert_eq!(vec!["aa", "ab"], matched);
@@ -493,6 +484,26 @@ mod tests {
         // No shared prefix: ties broken toward the shorter, earliest candidate.
         assert_eq!(Some(2), best_prefix_match("x", &cands));
         assert_eq!(None, best_prefix_match("x", &[]));
+    }
+
+    #[test]
+    fn normalization_forgives_case_whitespace_and_trailing_punctuation() {
+        assert!(grade_typed("  Borrow  Checker ", "borrow checker.").passed);
+    }
+
+    #[test]
+    fn a_one_letter_different_word_is_not_a_typo_and_fails() {
+        // affect vs effect: edit distance 1, different word — the learner decides
+        // via the override (serve layer), never an edit-distance heuristic here.
+        assert!(!grade_typed("affect", "effect").passed);
+    }
+
+    #[test]
+    fn unordered_lines_pair_each_input_with_its_closest_expected_line() {
+        let inputs = vec!["beta".to_string(), "alpha".to_string()];
+        let expected = vec!["alpha".to_string(), "beta".to_string()];
+        let results = grade_lines_unordered(&inputs, &expected);
+        assert!(results.iter().all(|r| r.passed), "order must not matter");
     }
 
     #[test]
