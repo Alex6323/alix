@@ -31,17 +31,19 @@ use tiny_http::{Header, Method, Request, Response, Server};
 use twox_hash::XxHash64;
 
 use crate::{
-    answer::{Input, Mode, grade_lines_unordered, mode_name},
+    answer::{Input, Mode, TypedResult, grade_lines_ordered, grade_lines_unordered, mode_name},
     ask::{self, CliSession, Exchange, Reply},
     augment::{self, AugmentCache},
     card::Card,
-    choice,
+    choice::{self, ChoiceQuestion},
     config::{
         AiConfig, AskConfig, Bindings, BrowseBindings, ExamConfig, Key, KeyPattern, PickerKeys,
         ReviewConfig, Strictness,
     },
     deck::{self, Deck, DeckState},
-    exam, level, picker,
+    exam,
+    level::{self, Level, Reveal, level_name},
+    picker,
     recent::RecentDecks,
     render::{self, NoteUnit},
     scheduler::{Fsrs, Grade, keypoint_grade},
@@ -244,9 +246,13 @@ struct StateDto {
     /// (shown, then acknowledged with one key) rather than quizzed cold. The page
     /// shows the answer with a single "Seen" button and no grade controls.
     acquire: bool,
-    /// The answer mode name (`flip`, `line`, …); the page reveals
-    /// line-by-line for `line` and flip-style otherwise.
+    /// The answer mode name (`flip`, `line`, `typeline`, …); the page reveals
+    /// line-by-line for `line` and flip-style otherwise. Derived from the card's
+    /// `% reveal:` and the session's `level`.
     mode: &'static str,
+    /// The session's chosen level (`recognize` / `recall` / `reconstruct`) — the
+    /// depth of practice this session runs at (spec §4).
+    level: &'static str,
     /// The input method (`type` / `draw`). `draw` tells the page to show the
     /// canvas for a self-graded card; orthogonal to `mode`. The runtime "Draw
     /// answers" toggle lives in the browser and never appears here.
@@ -380,22 +386,12 @@ struct ChooseFeedbackDto {
     passed: bool,
 }
 
-/// One typed line graded against the expected answer.
-#[derive(Debug, Serialize)]
-struct LineResultDto {
-    input: String,
-    expected: String,
-    passed: bool,
-    /// `0` if `passed`, `1` otherwise — kept for the frontend's `distance > 0`
-    /// diff check (grading no longer has an edit-distance tolerance to report).
-    distance: usize,
-}
-
-/// The result of submitting a typed answer: a result per back line plus whether
-/// they all passed.
+/// The result of submitting a typed answer: an honest `{ input, expected,
+/// passed }` per back line ([`TypedResult`]) plus whether they all passed. Pure
+/// evidence — the grade is the learner's, applied separately via `/api/grade`.
 #[derive(Debug, Serialize)]
 struct CheckFeedbackDto {
-    results: Vec<LineResultDto>,
+    results: Vec<TypedResult>,
     passed: bool,
 }
 
@@ -1368,6 +1364,7 @@ pub fn run_review(
         Vec<PathBuf>,
         Option<&str>,
         Option<&str>,
+        Option<Level>,
         &Store,
         &mut RecentDecks,
     ) -> Result<SessionBuild>,
@@ -1502,7 +1499,8 @@ pub fn run_review(
             (Method::Post, "/api/select") => {
                 match read_selection(&mut request, &decks_dir, &recent) {
                     Some(sel) => {
-                        let (topology, region) = (sel.topology.clone(), sel.region.clone());
+                        let (topology, region, level) =
+                            (sel.topology.clone(), sel.region.clone(), sel.level);
                         let paths = vec![sel.deck];
                         // Write to the deck's own store — a workspace's `progress.json`
                         // when they share one, else the global store — so the browser
@@ -1526,13 +1524,25 @@ pub fn run_review(
                                 paths,
                                 topology.as_deref(),
                                 region.as_deref(),
+                                level,
                                 &store,
                                 &mut recent,
                             ) {
                                 Ok(b) => {
+                                    // Remember the resolved level for this deck so a
+                                    // plain Learn next time reopens at it (keyed by
+                                    // deck subject, like the rest of the deck store).
+                                    let resolved = b.session.level();
+                                    let subject = b.decks.keys().next().cloned();
                                     let mut r = Reviewing::new(b);
                                     r.open_augment(store.path());
                                     r.rotate_variant();
+                                    if let Some(subject) = subject {
+                                        store.set_last_level(&subject, resolved);
+                                        if let Err(e) = store.save() {
+                                            eprintln!("warning: could not save progress: {e}");
+                                        }
+                                    }
                                     reviewing = Some(r);
                                     walking = None;
                                     respond_json(
@@ -1625,7 +1635,15 @@ pub fn run_review(
                 };
                 match read_grade(&mut request) {
                     Some(grade) => {
-                        r.session.grade(&mut store, grade, now_ms());
+                        let now = now_ms();
+                        r.session.grade(&mut store, grade, now);
+                        // Refresh the deck's per-level badge earn dates from this
+                        // session's cards (high-water first-earn marks; badges gate
+                        // nothing). Keyed by deck subject, like the rest of the
+                        // deck-level store (exam mastery, last level).
+                        if let Some(subject) = r.files.paths.keys().next() {
+                            store::note_badges(&mut store, subject, r.session.cards(), now);
+                        }
                         if let Err(e) = store.save() {
                             eprintln!("warning: could not save progress: {e}");
                         }
@@ -1672,28 +1690,27 @@ pub fn run_review(
                     respond_status(request, 409);
                     continue;
                 };
-                // Grade the typed lines against the current card: normalized
-                // then compared exactly, no edit-distance tolerance. Like
-                // choose, this only checks; the grade is applied on Continue.
+                // Grade the typed lines against the current card: normalized then
+                // compared exactly, no edit-distance tolerance. Pure evidence —
+                // like choose, this only checks; the learner-final grade is applied
+                // separately on Continue via `/api/grade`. `ordered` (TypeLine, the
+                // `% reveal: line` reconstruct path) pairs line-by-position; the
+                // default matches each input to its closest expected line so a
+                // multi-item answer can be entered in any order.
                 #[derive(Deserialize)]
                 struct Body {
                     lines: Vec<String>,
+                    #[serde(default)]
+                    ordered: bool,
                 }
                 let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
                 let result = body.and_then(|body| {
                     let card = r.session.current()?;
-                    // Order-independent: a multi-item answer can be typed in any
-                    // order, each line matched to its closest expected line.
-                    let results: Vec<LineResultDto> =
+                    let results: Vec<TypedResult> = if body.ordered {
+                        grade_lines_ordered(&body.lines, &card.back)
+                    } else {
                         grade_lines_unordered(&body.lines, &card.back)
-                            .into_iter()
-                            .map(|r| LineResultDto {
-                                input: r.input,
-                                expected: r.expected,
-                                passed: r.passed,
-                                distance: usize::from(!r.passed),
-                            })
-                            .collect();
+                    };
                     let passed = results.iter().all(|r| r.passed);
                     Some(CheckFeedbackDto { results, passed })
                 });
@@ -1707,14 +1724,14 @@ pub fn run_review(
                     respond_status(request, 409);
                     continue;
                 };
-                // Just reports which option is correct (the question is rebuilt
-                // from the card id, so it matches the one served). The grade is
-                // applied later via /api/grade on Continue, so the session stays
-                // on this card during the result — Remove still works on it.
+                // Just reports which option is correct (the question is rebuilt from
+                // the card id via `current_question`, so it matches the one served
+                // by `review_state` for every question shape). The grade is applied
+                // later via /api/grade on Continue, so the session stays on this card
+                // during the result — Remove still works on it.
                 let picked = read_index(&mut request).and_then(|chosen| {
                     let card = r.session.current()?.clone();
-                    let ai = r.augment.distractors(card.id());
-                    let correct = choice::build(&card, r.session.cards(), card.id(), ai)?.correct;
+                    let correct = current_question(r, &store, &card)?.correct;
                     Some((chosen, correct))
                 });
                 match picked {
@@ -2645,11 +2662,49 @@ fn query_param(url: &str, key: &str) -> Option<String> {
     })
 }
 
+/// The multiple-choice question for `card` right now, or `None` when it doesn't
+/// render as a pick (or has too few distractors — the client then falls back to
+/// attempt→reveal). The one place the question is built, so `review_state`'s
+/// served options and `/api/choose`'s graded correct index stay in lockstep; the
+/// `card.id()` seed keeps it stable across both requests without server caching.
+///
+/// - **Acquire** (first encounter): a recognition MC only under the strict bar (atomic answer + a
+///   full set of cached AI distractors), and — spec §4.6 — never for a card already recognized
+///   (such a card keeps its store entry, so it isn't acquired cold anyway; the guard states the
+///   invariant outright).
+/// - **Recognize session** (non-acquire): the shape follows the card's `% reveal:` — `Line` picks
+///   the next line among the card's own lines; `Flip` and `Cloze` pick the back among sibling backs
+///   via plain `build` (an expanded cloze sub-card's back IS its gap text — T6 review).
+/// - Any other level renders no pick.
+fn current_question(r: &Reviewing, store: &Store, card: &Card) -> Option<ChoiceQuestion> {
+    let ai = r.augment.distractors(card.id());
+    if store.get(card.id()).is_none() {
+        // Acquire on-ramp. A recognized card has a store entry, so it never lands
+        // here; guard it anyway so the on-ramp can't re-quiz a recognized card.
+        if store
+            .get(card.id())
+            .is_some_and(|s| s.recognized_ms.is_some())
+        {
+            return None;
+        }
+        return choice::recognition_question(card, r.session.cards(), card.id(), ai);
+    }
+    if r.session.level() != Level::Recognize {
+        return None;
+    }
+    match card.reveal.unwrap_or_default() {
+        // Progressive next-line tracking is the client's (Task 9); the state offers
+        // the first line, and `/api/choose` rebuilds the same question.
+        Reveal::Line => choice::line_question(card, 0, card.id(), ai),
+        Reveal::Flip | Reveal::Cloze => choice::build(card, r.session.cards(), card.id(), ai),
+    }
+}
+
 /// Builds the state payload. In the select phase (`reviewing` is `None`) it
 /// reports `phase: "select"` with no card; otherwise it serializes the live
-/// session and store. For choice mode it also builds the options, seeded by the
-/// card id so they are stable across the `/api/state` and `/api/choose`
-/// requests without any server-side caching.
+/// session and store. For a choice card it also builds the options via
+/// [`current_question`], seeded by the card id so they are stable across the
+/// `/api/state` and `/api/choose` requests without any server-side caching.
 fn review_state(reviewing: Option<&Reviewing>, store: &Store) -> StateDto {
     let Some(r) = reviewing else {
         return StateDto {
@@ -2660,6 +2715,7 @@ fn review_state(reviewing: Option<&Reviewing>, store: &Store) -> StateDto {
             keypoints: None,
             acquire: false,
             mode: mode_name(Mode::default()),
+            level: level_name(Level::default()),
             input: input_name(Input::default()),
             remaining: 0,
             initial: 0,
@@ -2674,42 +2730,33 @@ fn review_state(reviewing: Option<&Reviewing>, store: &Store) -> StateDto {
     };
     let session = &r.session;
     let card = session.current();
-    // TODO(task 8): `CardState` no longer carries a persisted `rung` (Task 3
-    // deleted it — the depth is now a property of the session, not the card).
-    // Stopgap: always resolve `Level::default()` (Recall) until Task 8 reads
-    // the session's own chosen level (`r.session.level()`, added in Task 5).
-    let level = level::Level::default();
-    // The concrete check derives from the card's authored `% reveal:` method
-    // and the session's level (spec §8).
+    // The session owns its level (Recognize | Recall | Reconstruct); the concrete
+    // check derives from that and the card's authored `% reveal:` (spec §4).
+    let level = session.level();
     let mode = card
-        .map(|c| {
-            let reveal = c.reveal.unwrap_or_default();
-            level::check_for(reveal, level, c)
-        })
+        .map(|c| level::check_for(c.reveal.unwrap_or_default(), level, c))
         .unwrap_or_default();
     // A never-seen card is *acquired* (an attempt, then reveal), not quizzed cold.
     let acquire = session.current_unseen(store);
-    let choices = if acquire {
-        // First encounter: a recognition question only under the strict bar (atomic
-        // answer + a full set of cached AI distractors); otherwise recall-then-reveal
-        // (`choices: None`). Same `c.id()` seed `/api/choose` rebuilds from.
-        card.and_then(|c| {
-            choice::recognition_question(c, session.cards(), c.id(), r.augment.distractors(c.id()))
-                .map(|q| q.options)
-        })
-    } else if mode == Mode::Choice {
-        card.and_then(|c| {
-            choice::build(c, session.cards(), c.id(), r.augment.distractors(c.id()))
-                .map(|q| q.options)
-        })
-    } else {
-        None
-    };
-    // Explain mode with cached key points reveals them as a checklist whose
-    // coverage derives the grade; any other mode keeps the plain reveal. Not on a
-    // first encounter — acquiring just reveals the answer.
+    // The multiple-choice options, if this card renders as a pick — the acquire
+    // on-ramp or a Recognize session. `current_question` is the single source both
+    // this state and `/api/choose` build from (same `c.id()` seed), so the served
+    // options and the graded correct index can never diverge.
+    let choices = card
+        .and_then(|c| current_question(r, store, c))
+        .map(|q| q.options);
+    // Explain mode reveals the key points as a tick-each-line checklist whose
+    // coverage derives the grade: the cached `keypoints` augment when present,
+    // else the card's own back lines (that IS the multi-line reconstruct check —
+    // spec §4.3). Any other mode keeps the plain reveal; never on a first
+    // encounter, where acquiring just reveals the answer.
     let keypoints = if !acquire && mode == Mode::Explain {
-        card.and_then(|c| r.augment.keypoints(c.id()).map(<[String]>::to_vec))
+        card.map(|c| {
+            r.augment
+                .keypoints(c.id())
+                .map(<[String]>::to_vec)
+                .unwrap_or_else(|| c.back.clone())
+        })
     } else {
         None
     };
@@ -2789,6 +2836,7 @@ fn review_state(reviewing: Option<&Reviewing>, store: &Store) -> StateDto {
         keypoints,
         acquire,
         mode: mode_name(mode),
+        level: level_name(level),
         input: input_name(card.and_then(|c| c.input).unwrap_or_default()),
         remaining: session.remaining(),
         initial: session.initial_size,
@@ -3079,11 +3127,13 @@ fn deck_catalog(
 /// body, or any name not in the catalog — so no filesystem path is ever built
 /// from request input, keeping selection safe under `--lan`.
 /// A deck chosen from the picker, optionally scoped by the focus drawer to one
-/// topology and/or region.
+/// topology and/or region, and at a chosen session `level` (absent = the deck's
+/// last-used level, defaulting to Recall).
 struct Selection {
     deck: PathBuf,
     topology: Option<String>,
     region: Option<String>,
+    level: Option<Level>,
 }
 
 fn read_selection(
@@ -3098,6 +3148,8 @@ fn read_selection(
         topology: Option<String>,
         #[serde(default)]
         region: Option<String>,
+        #[serde(default)]
+        level: Option<Level>,
     }
     let body: Body = serde_json::from_reader(request.as_reader()).ok()?;
     if body.deck.is_empty() {
@@ -3118,6 +3170,7 @@ fn read_selection(
         deck: resolve_name(&body.deck, &known)?,
         topology: body.topology,
         region: body.region,
+        level: body.level,
     })
 }
 
@@ -3509,6 +3562,103 @@ mod tests {
         let dto = review_state(Some(&r), &store);
         assert_eq!(dto.phase, "done");
         assert_eq!(dto.kind, "review");
+    }
+
+    /// Builds a `Reviewing` over a parsed deck at a chosen level, sharing `store`
+    /// (seed it before calling so the session sees the seeded state).
+    fn reviewing_at(deck: PathBuf, cards: Vec<Card>, store: &Store, level: Level) -> Reviewing {
+        let session = Session::new(
+            cards,
+            store,
+            Box::new(Fsrs::default()),
+            crate::session::SessionOptions {
+                level,
+                ..Default::default()
+            },
+            now_ms(),
+        );
+        let mut decks = HashMap::new();
+        decks.insert("d.txt".to_string(), deck);
+        Reviewing::new(SessionBuild {
+            session,
+            label: "d.txt".to_string(),
+            decks,
+            links: HashMap::new(),
+            source_roots: HashMap::new(),
+            source_bases: HashMap::new(),
+            topology_name: None,
+        })
+    }
+
+    #[test]
+    fn state_reports_the_sessions_level_and_typeline_mode() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck = dir.path().join("d.txt");
+        let text = "# steps\n% reveal: line\n\tfirst\n\tsecond\n";
+        std::fs::write(&deck, text).unwrap();
+        let cards = crate::parser::parse_str("d.txt", text).unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        store.get_or_insert(cards[0].id(), 0); // seen, so it's a quiz not an acquire
+        let r = reviewing_at(deck, cards, &store, Level::Reconstruct);
+
+        let dto = review_state(Some(&r), &store);
+        assert_eq!(
+            "reconstruct", dto.level,
+            "the DTO reports the session's level"
+        );
+        assert_eq!(
+            "typeline", dto.mode,
+            "reconstruct + `% reveal: line` types the next line"
+        );
+    }
+
+    #[test]
+    fn recognize_state_offers_gap_options_for_a_cloze_card() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck = dir.path().join("d.txt");
+        // A real expanded cloze card (its sub-card's back is the bare gap text)
+        // plus sibling cards whose backs are the gap distractors.
+        let text = "# where\n% reveal: cloze\n\tThe {{cat}} sat here\n# a\n\tdog\n# b\n\tfish\n# c\n\tbird\n";
+        std::fs::write(&deck, text).unwrap();
+        let cards = crate::parser::parse_str("d.txt", text).unwrap();
+        assert_eq!(vec!["cat".to_string()], cards[0].back); // gap text is the back
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        store.get_or_insert(cards[0].id(), 0); // seen → the Recognize MC, not the acquire on-ramp
+        let r = reviewing_at(deck, cards, &store, Level::Recognize);
+
+        let dto = review_state(Some(&r), &store);
+        let opts = dto
+            .choices
+            .expect("a Recognize cloze card offers gap-filler options");
+        assert_eq!(choice::NUM_OPTIONS, opts.len());
+        assert!(
+            opts.contains(&"cat".to_string()),
+            "the gap text is an option"
+        );
+    }
+
+    #[test]
+    fn an_already_recognized_card_skips_the_acquire_mc() {
+        // A card recognized in a prior Recognize session carries `recognized_ms`
+        // and a store entry, so a later Recall session quizzes it directly — never
+        // through the recognition-MC acquire on-ramp (spec §4.6).
+        let dir = tempfile::tempdir().unwrap();
+        let deck = dir.path().join("d.txt");
+        let text = "# q\n\tanswer\n";
+        std::fs::write(&deck, text).unwrap();
+        let cards = crate::parser::parse_str("d.txt", text).unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let state = store.get_or_insert(cards[0].id(), 0);
+        state.recognized_ms = Some(500); // recognized, but no Recall schedule yet
+        let r = reviewing_at(deck, cards, &store, Level::Recall);
+
+        let dto = review_state(Some(&r), &store);
+        assert!(!dto.acquire, "a recognized card isn't acquired cold");
+        assert!(
+            dto.choices.is_none(),
+            "no recognition MC for an already-recognized card"
+        );
+        assert_eq!("recall", dto.level);
     }
 
     #[test]

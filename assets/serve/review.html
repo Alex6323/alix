@@ -2187,9 +2187,9 @@ function renderCheckFeedback(a) {
     line.appendChild(el("span", "txt", r.input || "—"));
     line.appendChild(el("span", "mark", r.passed ? "✓" : "✗"));
     wrap.appendChild(line);
-    // Show the correct answer whenever the input differed — including a fuzzy
-    // pass within tolerance, so typos don't get memorised.
-    if (r.distance > 0) wrap.appendChild(el("div", "expected", r.expected));
+    // Show the correct answer whenever the typed line didn't pass, so a miss (a
+    // typo or a genuinely wrong answer — the learner decides which) isn't memorised.
+    if (!r.passed) wrap.appendChild(el("div", "expected", r.expected));
   });
   a.appendChild(wrap);
 }

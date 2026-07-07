@@ -35,6 +35,16 @@ pub enum Level {
     Reconstruct,
 }
 
+/// The lowercase name of a level, matching its serde/clap rendering — for
+/// reporting the session's level in a JSON state payload (see `crate::serve`).
+pub fn level_name(level: Level) -> &'static str {
+    match level {
+        Level::Recognize => "recognize",
+        Level::Recall => "recall",
+        Level::Reconstruct => "reconstruct",
+    }
+}
+
 /// How a card's answer is presented / uncovered — authored (`% reveal:`),
 /// independent of depth. Composes with any level.
 #[derive(

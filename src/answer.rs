@@ -281,6 +281,19 @@ pub fn grade_lines_unordered(inputs: &[String], expected: &[String]) -> Vec<Type
     results
 }
 
+/// Grades typed lines against the expected lines **in order**: `inputs[i]` vs
+/// `expected[i]` via [`grade_typed`]. An input past the end of `expected` is
+/// graded against nothing (an empty expected line, so it fails). This is
+/// TypeLine's path (Reconstruct + `% reveal: line`), where each line is answered
+/// in sequence and its position carries meaning — unlike [`grade_lines_unordered`].
+pub fn grade_lines_ordered(inputs: &[String], expected: &[String]) -> Vec<TypedResult> {
+    inputs
+        .iter()
+        .enumerate()
+        .map(|(i, input)| grade_typed(input, expected.get(i).map_or("", String::as_str)))
+        .collect()
+}
+
 /// Index of the candidate that best continues `typed` as a prefix: the one
 /// sharing the longest run of leading characters with `typed` wins; ties go to
 /// the shorter candidate, then the earliest. `None` if there are no candidates.
@@ -504,6 +517,25 @@ mod tests {
         let expected = vec!["alpha".to_string(), "beta".to_string()];
         let results = grade_lines_unordered(&inputs, &expected);
         assert!(results.iter().all(|r| r.passed), "order must not matter");
+    }
+
+    #[test]
+    fn ordered_line_grading_respects_position() {
+        let expected = lines(&["red", "green"]);
+        // The same lines in swapped order: position-sensitive grading fails both,
+        // where unordered matching would have passed them.
+        let swapped = grade_lines_ordered(&lines(&["green", "red"]), &expected);
+        assert!(!swapped[0].passed, "green vs red");
+        assert!(!swapped[1].passed, "red vs green");
+        assert_eq!("red", swapped[0].expected); // paired by position, not similarity
+        assert_eq!("green", swapped[1].expected);
+        // In order, each line matches its position and passes.
+        let in_order = grade_lines_ordered(&expected, &expected);
+        assert!(in_order.iter().all(|r| r.passed));
+        // An extra input beyond the expected lines is graded against nothing.
+        let extra = grade_lines_ordered(&lines(&["red", "green", "blue"]), &expected);
+        assert!(!extra[2].passed);
+        assert_eq!("", extra[2].expected);
     }
 
     #[test]

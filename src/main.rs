@@ -432,6 +432,11 @@ struct ReviewArgs {
     #[arg(long)]
     cram: bool,
 
+    /// Session level: `recognize`, `recall`, or `reconstruct` (spec §4). Absent
+    /// reuses the deck's last-used level (first use: recall).
+    #[arg(long, value_enum)]
+    level: Option<Level>,
+
     /// Path of the progress store (default: platform data dir).
     #[arg(long)]
     store: Option<PathBuf>,
@@ -653,6 +658,7 @@ fn synthesize_virtual(vc: &VirtualCard, subject: &Arc<str>, line: usize) -> Opti
 /// `Session`, and records the decks as recent. The store is borrowed (the
 /// caller owns it), so the web server can reuse one store across repeated
 /// selections.
+#[expect(clippy::too_many_arguments)] // each is a distinct, named review input
 fn build_review(
     deck_paths: Vec<PathBuf>,
     args: &ReviewArgs,
@@ -664,6 +670,9 @@ fn build_review(
     // `args.topology` / `args.region`).
     topology_sel: Option<&str>,
     region_sel: Option<&str>,
+    // The chosen session level, resolved per-launch like topology/region (web
+    // picker or CLI `--level`). `None` falls back to the deck's last-used level.
+    level_sel: Option<Level>,
 ) -> Result<ReviewBuild> {
     // A session is exactly one deck file's cards — no merging of several loose
     // decks, and no reviewing a whole workspace at once. Workspaces are an
@@ -791,6 +800,13 @@ fn build_review(
         Order::default(),
     );
 
+    // The session level: an explicit `--level` / picker choice, else the deck's
+    // last-used level (keyed by deck subject, like the rest of the deck store),
+    // else the default (Recall). The web select handler persists the resolved
+    // value back to the store so a plain Learn reopens at it.
+    let level = level_sel
+        .or_else(|| store.last_level(subject.as_ref()))
+        .unwrap_or_default();
     let options = SessionOptions {
         max_new: args.new,
         limit: args.limit,
@@ -798,10 +814,7 @@ fn build_review(
         order,
         topology: topology_order,
         retire_after_days: review.retire_after_days,
-        // TODO(task 8): the config depth dial is gone (Task 4) — this stopgap
-        // always drills at Recall until session-level selection (which level
-        // a CLI/web session runs at) is wired up.
-        level: Level::Recall,
+        level,
     };
     let session = Session::new(
         cards,
@@ -1049,6 +1062,7 @@ fn review_serve(args: ReviewArgs, browse_mode: bool) -> Result<()> {
             &mut recent,
             args.topology.as_deref(),
             args.region.as_deref(),
+            args.level,
         )?);
         let label = b.label.clone();
         (serve::Launch::Review(Box::new(b)), label)
@@ -1069,9 +1083,13 @@ fn review_serve(args: ReviewArgs, browse_mode: bool) -> Result<()> {
     let build = |paths: Vec<PathBuf>,
                  topology: Option<&str>,
                  region: Option<&str>,
+                 level: Option<Level>,
                  store: &Store,
                  recent: &mut RecentDecks| {
-        build_review(paths, &args, &config, store, recent, topology, region).map(to_build)
+        build_review(
+            paths, &args, &config, store, recent, topology, region, level,
+        )
+        .map(to_build)
     };
     // A single trace picked from the in-browser picker walks (predict → verify),
     // mirroring the terminal picker; a trace named on the CLI took the `initial`
@@ -2296,6 +2314,7 @@ fn workspace_cmd(args: WorkspaceArgs) -> Result<()> {
             new: 10,
             limit: None,
             cram: false,
+            level: None,
             store: args.store,
             config: args.config,
             serve: ServeOpts {
@@ -2913,6 +2932,7 @@ mod tests {
             new: 10,
             limit: None,
             cram: false,
+            level: None,
             store: None,
             config: None,
             serve: ServeOpts {
@@ -2955,8 +2975,17 @@ mod tests {
         let config = Config::default();
         let mut recent = RecentDecks::load(dir.path().join("recent.json"));
         let args = review_args(vec![], None);
-        let build =
-            build_review(vec![path], &args, &config, &store, &mut recent, None, None).unwrap();
+        let build = build_review(
+            vec![path],
+            &args,
+            &config,
+            &store,
+            &mut recent,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         // The deck's one (new) card, plus the injected due virtual card.
         assert_eq!(2, build.session.initial_size);
     }
@@ -3002,6 +3031,7 @@ mod tests {
             &mut recent,
             None,
             Some("r1"),
+            None,
         )
         .unwrap();
         // Only the region's one real card — a `--region` focus is a
@@ -3074,8 +3104,17 @@ mod tests {
         let config = Config::default();
         let mut recent = RecentDecks::load(dir.path().join("recent.json"));
         let args = review_args(vec![], None);
-        let build =
-            build_review(vec![path], &args, &config, &store, &mut recent, None, None).unwrap();
+        let build = build_review(
+            vec![path],
+            &args,
+            &config,
+            &store,
+            &mut recent,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
         let synth = build
             .session
