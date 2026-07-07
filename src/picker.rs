@@ -9,12 +9,14 @@ use std::{
 };
 
 use crate::{
+    card::Card,
     config::ReviewConfig,
     deck::{self, Deck, DeckState},
+    level::Level,
     parser,
     recent::RecentDecks,
     session,
-    store::Store,
+    store::{self, Store},
     title, workspace,
 };
 
@@ -121,6 +123,38 @@ pub struct DeckStatus {
     /// now. (`examable` is this AND not locked.) Lets a frontend always show a
     /// "Take exam" control, disabled when locked.
     pub has_exam: bool,
+    /// The highest level with a badge to show, walking `[Reconstruct, Recall,
+    /// Recognize]` high to low: the first level currently solid
+    /// ([`store::badge_solid`]) wins (subsumption — a higher badge implies the
+    /// lower checks were passed too); else the first level with an earn date
+    /// ([`Store::badge_earned`]) wins; else `None`. Additive telemetry —
+    /// gates nothing.
+    pub badge_level: Option<Level>,
+    /// `true` when `badge_level` was won by an earn date rather than current
+    /// solidity — the badge lapsed (e.g. stability dropped) and should render
+    /// dotted rather than solid.
+    pub badge_dotted: bool,
+    /// Any deck card has no store entry at all (never reviewed) — fresh
+    /// material, distinct from `state`/`badge`.
+    pub new_cards: bool,
+}
+
+/// The subsumption walk (spec §4.4, `{#check-matrix}`): the highest level
+/// that's currently solid wins with `dotted=false`; else the highest with an
+/// earn date wins with `dotted=true`; else `(None, false)`.
+fn badge_level_for(subject: &str, cards: &[Card], store: &Store) -> (Option<Level>, bool) {
+    const LEVELS: [Level; 3] = [Level::Reconstruct, Level::Recall, Level::Recognize];
+    if let Some(level) = LEVELS
+        .into_iter()
+        .find(|&level| store::badge_solid(cards, store, level))
+    {
+        return (Some(level), false);
+    }
+    let earned = LEVELS
+        .into_iter()
+        .find(|&level| store.badge_earned(subject, level).is_some());
+    let dotted = earned.is_some();
+    (earned, dotted)
 }
 
 /// Computes a deck's [`DeckStatus`] from the progress `store`, mirroring what a
@@ -201,6 +235,8 @@ pub fn deck_status(
             now,
             review.retire_after_days,
         );
+    let (badge_level, badge_dotted) = badge_level_for(&deck.subject, &deck.cards, store);
+    let new_cards = deck.cards.iter().any(|card| store.get(card.id()).is_none());
     DeckStatus {
         state,
         badge,
@@ -210,6 +246,9 @@ pub fn deck_status(
         is_trace: deck.is_trace(),
         examable,
         has_exam,
+        badge_level,
+        badge_dotted,
+        new_cards,
     }
 }
 
@@ -706,5 +745,82 @@ mod tests {
         insert_due_virtual_card(&mut store, &deck.subject);
         let after = deck_status(&deck, &store, None, false, ReviewConfig::default());
         assert_eq!(before.badge, after.badge);
+    }
+
+    /// A graduated `FsrsState` with the given `stability` (days) — the only
+    /// thing `badge_solid` checks. Far-out due, like `graduated_not_due`, so it
+    /// never contributes to `reviewable`.
+    fn mature(now: u64, stability: f64) -> crate::store::FsrsState {
+        crate::store::FsrsState {
+            state: 2,
+            stability,
+            scheduled_days: 30,
+            due_ms: now + 30 * 86_400_000,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn the_highest_currently_solid_level_wins_the_badge() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("rust.txt");
+        std::fs::write(&deck_path, "# q1\n\ta1\n").unwrap();
+        let deck = Deck::load(&deck_path).unwrap();
+
+        let mut store = Store::open(dir.path().join("progress.json")).unwrap();
+        let now = session::now_ms();
+        let card_id = deck.cards[0].id();
+        // Both Recall and Reconstruct are currently solid — the higher one
+        // (Reconstruct) must win, not Recall.
+        let entry = store.get_or_insert(card_id, now);
+        entry.recall = Some(mature(now, 25.0));
+        entry.reconstruct = Some(mature(now, 30.0));
+
+        let status = deck_status(&deck, &store, None, false, ReviewConfig::default());
+        assert_eq!(Some(Level::Reconstruct), status.badge_level);
+        assert!(!status.badge_dotted);
+    }
+
+    #[test]
+    fn an_earned_but_lapsed_badge_shows_dotted() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("rust.txt");
+        std::fs::write(&deck_path, "# q1\n\ta1\n").unwrap();
+        let deck = Deck::load(&deck_path).unwrap();
+
+        let mut store = Store::open(dir.path().join("progress.json")).unwrap();
+        let now = session::now_ms();
+        let card_id = deck.cards[0].id();
+        store.get_or_insert(card_id, now).recall = Some(mature(now, 25.0));
+        crate::store::note_badges(&mut store, &deck.subject, &deck.cards, now);
+
+        // The card's stability lapses back under the mature line — no longer
+        // solid, but the earn date persists (high-water mark).
+        store.get_or_insert(card_id, now).recall = Some(mature(now, 5.0));
+
+        let status = deck_status(&deck, &store, None, false, ReviewConfig::default());
+        assert_eq!(Some(Level::Recall), status.badge_level);
+        assert!(status.badge_dotted);
+    }
+
+    #[test]
+    fn new_cards_flag_fires_without_touching_badges() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("rust.txt");
+        std::fs::write(&deck_path, "# q1\n\ta1\n# q2\n\ta2\n").unwrap();
+        let deck = Deck::load(&deck_path).unwrap();
+
+        let mut store = Store::open(dir.path().join("progress.json")).unwrap();
+        let now = session::now_ms();
+        // Card 1 has graduated; card 2 has never been touched — no store entry.
+        store.get_or_insert(deck.cards[0].id(), now).recall = Some(graduated_not_due(now));
+
+        let status = deck_status(&deck, &store, None, false, ReviewConfig::default());
+        assert!(status.new_cards);
+        // Unaffected by the flag: same state/badge/badge_level this deck would
+        // have had before `new_cards` existed.
+        assert_eq!("1/2", status.badge);
+        assert_eq!(None, status.badge_level);
+        assert!(!status.badge_dotted);
     }
 }

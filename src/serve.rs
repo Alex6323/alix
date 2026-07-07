@@ -351,6 +351,19 @@ struct DeckItemDto {
     /// `true` when the deck has a cached topology, so the picker's focus drawer
     /// would open for it — the row shows a small drawer indicator.
     has_topology: bool,
+    /// The highest level with a badge to show (`"reconstruct"` / `"recall"` /
+    /// `"recognize"`), or `null` for none yet — see [`picker::DeckStatus::badge_level`].
+    /// Additive telemetry; gates nothing.
+    badge_level: Option<&'static str>,
+    /// `true` when `badge_level`'s badge lapsed (earned once, not currently
+    /// solid) and should render dotted rather than solid.
+    badge_dotted: bool,
+    /// Any deck card has no store entry yet — fresh material, distinct from
+    /// `state`/`meta`.
+    new_cards: bool,
+    /// The learner's last-used session level for this deck (`"recognize"` /
+    /// `"recall"` / `"reconstruct"`), defaulting to `"recall"`.
+    last_level: &'static str,
 }
 
 /// A workspace member deck in the drill-in list: a qualified selection `name`
@@ -2875,6 +2888,7 @@ fn deck_item_dto(
         Ok(deck) => {
             let s = picker::deck_status(&deck, store, Some(decks_dir), with_lock, review);
             let deck_ids: HashSet<u64> = deck.cards.iter().map(|c| c.id()).collect();
+            let last_level = level_name(store.last_level(&deck.subject).unwrap_or_default());
             DeckItemDto {
                 name: e.name.clone(),
                 label: e.label.clone(),
@@ -2894,6 +2908,10 @@ fn deck_item_dto(
                 icon: None,
                 icon_svg: false,
                 has_topology: augment.has_topology_for(&deck_ids),
+                badge_level: s.badge_level.map(level_name),
+                badge_dotted: s.badge_dotted,
+                new_cards: s.new_cards,
+                last_level,
             }
         }
         // A deck that fails to load stays launchable so the error surfaces.
@@ -2916,6 +2934,10 @@ fn deck_item_dto(
             icon: None,
             icon_svg: false,
             has_topology: false,
+            badge_level: None,
+            badge_dotted: false,
+            new_cards: false,
+            last_level: level_name(Level::default()),
         },
     }
 }
@@ -3098,6 +3120,10 @@ fn deck_catalog(
                 icon,
                 icon_svg,
                 has_topology: false,
+                badge_level: None,
+                badge_dotted: false,
+                new_cards: false,
+                last_level: level_name(Level::default()),
             };
             if is_ws {
                 workspaces.push(dto);
