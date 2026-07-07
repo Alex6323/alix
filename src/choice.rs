@@ -179,6 +179,13 @@ fn hole_texts(card: &Card) -> Vec<String> {
 /// back text — via [`build`], so dedup/shuffle/similarity ranking are shared
 /// with every other question kind. A card with no holes, or too few distinct
 /// gap texts to fill the options, yields `None`.
+///
+/// Caveat: this expects raw `{{...}}` markup in `back`, which real cloze
+/// cards no longer carry after [`cloze::expand`] — see the TODO below.
+// TODO(task 8): post-cloze::expand cards carry the bare hole text as `back` — no {{}}
+// survives and no type retains the raw declaration, so this returns None for every real
+// cloze card. Task 8 must rework this fn's inputs (an expanded card's gap text IS its
+// back, so plain build() over the session pool may replace this) or retire it.
 pub fn gap_question(
     card: &Card,
     pool: &[Card],
