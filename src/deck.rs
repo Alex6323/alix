@@ -12,7 +12,7 @@ use crate::{
     answer::Input,
     card::{Card, Direction},
     config::Strictness,
-    ladder::Reveal,
+    level::Reveal,
     parser::{self, ParseError},
     session::{self, Order},
     store::Store,

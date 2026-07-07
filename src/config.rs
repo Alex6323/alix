@@ -20,7 +20,7 @@ use anyhow::{Context, Result, bail};
 use clap::ValueEnum;
 use serde::Deserialize;
 
-use crate::ladder::Rung;
+use crate::level::Level;
 
 /// A key without modifiers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -504,7 +504,7 @@ pub struct ReviewConfig {
     /// The learner's depth on the difficulty ladder, resolved from the numeric
     /// `[review] depth` (1 = recall, 2 = reconstruct). Learner-space, not an
     /// authored deck directive; recognition (L0) is never a target.
-    pub target: Rung,
+    pub target: Level,
 }
 
 impl Default for ReviewConfig {
@@ -512,7 +512,7 @@ impl Default for ReviewConfig {
         Self {
             retention: 0.9,
             retire_after_days: Some(crate::session::DEFAULT_RETIRE_AFTER_DAYS),
-            target: Rung::default(),
+            target: Level::default(),
         }
     }
 }
@@ -524,10 +524,10 @@ const LOCAL_MANIFEST: &str = "alix.local.toml";
 /// schedulable depths: 1 = recall, 2 = reconstruct. Out-of-range coerces to the
 /// nearest (0/neg → recall, ≥2 → reconstruct) — recognition (L0) is the
 /// unscheduled acquire on-ramp, never a target.
-fn depth_to_rung(depth: i64) -> crate::ladder::Rung {
+fn depth_to_rung(depth: i64) -> crate::level::Level {
     match depth.clamp(1, 2) {
-        1 => crate::ladder::Rung::Recall,
-        _ => crate::ladder::Rung::Reconstruct,
+        1 => crate::level::Level::Recall,
+        _ => crate::level::Level::Reconstruct,
     }
 }
 
@@ -1256,18 +1256,18 @@ mod tests {
 
     #[test]
     fn review_depth_defaults_to_recall_and_parses_a_number() {
-        assert_eq!(ReviewConfig::default().target, Rung::Recall);
+        assert_eq!(ReviewConfig::default().target, Level::Recall);
         let config = Config::from_toml("[review]\ndepth = 2\n").unwrap();
-        assert_eq!(config.review.target, Rung::Reconstruct);
+        assert_eq!(config.review.target, Level::Reconstruct);
     }
 
     #[test]
     fn depth_clamps_out_of_range_values() {
-        assert_eq!(depth_to_rung(0), Rung::Recall);
-        assert_eq!(depth_to_rung(-5), Rung::Recall);
-        assert_eq!(depth_to_rung(1), Rung::Recall);
-        assert_eq!(depth_to_rung(2), Rung::Reconstruct);
-        assert_eq!(depth_to_rung(7), Rung::Reconstruct);
+        assert_eq!(depth_to_rung(0), Level::Recall);
+        assert_eq!(depth_to_rung(-5), Level::Recall);
+        assert_eq!(depth_to_rung(1), Level::Recall);
+        assert_eq!(depth_to_rung(2), Level::Reconstruct);
+        assert_eq!(depth_to_rung(7), Level::Reconstruct);
     }
 
     #[test]
@@ -1281,8 +1281,8 @@ mod tests {
     fn a_workspace_local_toml_overrides_the_global_depth() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("alix.local.toml"), "[review]\ndepth = 2\n").unwrap();
-        let base = ReviewConfig { target: Rung::Recall, ..Default::default() };
-        assert_eq!(Rung::Reconstruct, base.for_workspace(dir.path()).target);
+        let base = ReviewConfig { target: Level::Recall, ..Default::default() };
+        assert_eq!(Level::Reconstruct, base.for_workspace(dir.path()).target);
     }
 
     #[test]
@@ -1298,10 +1298,10 @@ mod tests {
         .unwrap();
         // The named deck goes deeper...
         let vocab = dir.path().join("vocab.txt");
-        assert_eq!(Rung::Reconstruct, ReviewConfig::default().for_deck(&vocab).target);
+        assert_eq!(Level::Reconstruct, ReviewConfig::default().for_deck(&vocab).target);
         // ...an unnamed deck inherits the workspace depth (1 = recall).
         let other = dir.path().join("concepts.txt");
-        assert_eq!(Rung::Recall, ReviewConfig::default().for_deck(&other).target);
+        assert_eq!(Level::Recall, ReviewConfig::default().for_deck(&other).target);
     }
 
     #[test]

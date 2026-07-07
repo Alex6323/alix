@@ -17,6 +17,7 @@ use rs_fsrs::Parameters;
 use crate::{
     augment::TopologyOrder,
     card::Card,
+    level::Level,
     scheduler::{Grade, Scheduler},
     store::{Store, VirtualCard},
     time,
@@ -74,7 +75,7 @@ pub struct SessionOptions {
     /// The learner's depth-ladder target — the rung a graduated card climbs
     /// toward on a spaced pass (see [`Session::grade`]). From the resolved
     /// `[review] depth` (per-workspace overridable).
-    pub target: crate::ladder::Rung,
+    pub target: Level,
 }
 
 impl Default for SessionOptions {
@@ -86,7 +87,7 @@ impl Default for SessionOptions {
             order: Order::Scheduled,
             topology: None,
             retire_after_days: Some(DEFAULT_RETIRE_AFTER_DAYS),
-            target: crate::ladder::Rung::default(),
+            target: Level::default(),
         }
     }
 }
@@ -123,6 +124,28 @@ pub struct Session {
     pub initial_size: usize,
     /// Session counters.
     pub stats: SessionStats,
+}
+
+// TODO(task 5): `climb_level`/`descend_level` and their call sites in `grade`
+// are the old `Rung::climb`/`Rung::descend` (`Level` owns no such methods —
+// climbing/descending a card's depth dies with the rung ladder); inlined here
+// only to keep this behavior compiling unchanged until Task 5 deletes it.
+
+/// The next level up, saturating at `Reconstruct`.
+fn climb_level(level: Level) -> Level {
+    match level {
+        Level::Recognize => Level::Recall,
+        Level::Recall => Level::Reconstruct,
+        Level::Reconstruct => Level::Reconstruct,
+    }
+}
+
+/// One level down, floored at `Recall` (`Recognize` is never a live target).
+fn descend_level(level: Level) -> Level {
+    match level {
+        Level::Reconstruct => Level::Recall,
+        Level::Recall | Level::Recognize => Level::Recall,
+    }
 }
 
 impl Session {
@@ -288,7 +311,7 @@ impl Session {
                     state.passes_since_graduation =
                         state.passes_since_graduation.saturating_add(1);
                     if state.passes_since_graduation >= 1 {
-                        state.set_rung(state.rung.climb());
+                        state.set_rung(climb_level(state.rung));
                     }
                 }
             }
@@ -301,7 +324,7 @@ impl Session {
         // when descent floors at `Recall` and `set_rung` doesn't fire below.
         if !grade.passed() {
             state.passes_since_graduation = 0;
-            let lower = state.rung.descend();
+            let lower = descend_level(state.rung);
             if lower != state.rung {
                 // Only reset the schedule when the rung actually changes — a
                 // Recall miss (floored) just relearns in place via the FSRS
@@ -740,7 +763,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        ladder::Rung,
+        level::Level,
         store::{FsrsState, Store},
     };
 
@@ -1069,7 +1092,7 @@ mod tests {
                 order: Order::Scheduled,
                 topology: None,
                 retire_after_days: Some(DEFAULT_RETIRE_AFTER_DAYS),
-                target: crate::ladder::Rung::default(),
+                target: crate::level::Level::default(),
             },
             5 * 60 * 1000,
         );
@@ -1157,7 +1180,7 @@ mod tests {
                 order: Order::Scheduled,
                 topology: None,
                 retire_after_days: Some(DEFAULT_RETIRE_AFTER_DAYS),
-                target: crate::ladder::Rung::default(),
+                target: crate::level::Level::default(),
             },
             now + 1,
         );
@@ -1452,7 +1475,7 @@ mod tests {
                 order: Order::Scheduled,
                 topology: None,
                 retire_after_days: Some(DEFAULT_RETIRE_AFTER_DAYS),
-                target: crate::ladder::Rung::default(),
+                target: crate::level::Level::default(),
             },
             1000,
         );
@@ -2010,7 +2033,7 @@ mod tests {
             &store,
             sched(),
             SessionOptions {
-                target: Rung::Reconstruct,
+                target: Level::Reconstruct,
                 ..Default::default()
             },
             0,
@@ -2027,7 +2050,7 @@ mod tests {
             "two Goods graduate the card to FSRS Review"
         );
         assert_eq!(
-            Rung::Recall,
+            Level::Recall,
             s.rung,
             "the graduating pass must not climb — no spaced practice at Recall yet"
         );
@@ -2045,7 +2068,7 @@ mod tests {
             &store,
             sched(),
             SessionOptions {
-                target: Rung::Reconstruct,
+                target: Level::Reconstruct,
                 ..Default::default()
             },
             0,
@@ -2055,14 +2078,14 @@ mod tests {
         let t1 = fsrs_due(&store, id);
         assert!(session.restart(&store, t1));
         session.grade(&mut store, Grade::Pass, t1); // graduates, no climb
-        assert_eq!(Rung::Recall, store.get(id).unwrap().rung);
+        assert_eq!(Level::Recall, store.get(id).unwrap().rung);
 
         let t2 = fsrs_due(&store, id); // the graduated (multi-day) due
         assert!(session.restart(&store, t2), "the graduated card is due again");
         session.grade(&mut store, Grade::Pass, t2); // spaced pass past graduation
 
         assert_eq!(
-            Rung::Reconstruct,
+            Level::Reconstruct,
             store.get(id).unwrap().rung,
             "a spaced pass after graduation climbs a rung"
         );
@@ -2095,7 +2118,7 @@ mod tests {
             sched(),
             SessionOptions {
                 cram: true,
-                target: Rung::Reconstruct,
+                target: Level::Reconstruct,
                 ..Default::default()
             },
             t2,
@@ -2103,7 +2126,7 @@ mod tests {
         cram.grade(&mut store, Grade::Pass, t2);
 
         let after = store.get(id).unwrap();
-        assert_eq!(Rung::Recall, after.rung, "a cram refresh must not climb");
+        assert_eq!(Level::Recall, after.rung, "a cram refresh must not climb");
         let f = after.fsrs.as_ref().expect("a cram refresh must not reset fsrs");
         assert_eq!(before.stability, f.stability, "no reward under cram");
         assert_eq!(before.scheduled_days, f.scheduled_days, "interval kept");
@@ -2127,14 +2150,14 @@ mod tests {
         let all = cards(1);
         let id = all[0].id();
         let s = store.get_or_insert(id, 0);
-        s.rung = Rung::Reconstruct;
+        s.rung = Level::Reconstruct;
         s.fsrs = Some(mature_fsrs());
 
         let mut session = Session::new(all, &store, sched(), SessionOptions::default(), 0);
         session.grade(&mut store, Grade::Fail, 0);
 
         let s = store.get(id).unwrap();
-        assert_eq!(Rung::Recall, s.rung, "a reconstruction miss slid down one rung");
+        assert_eq!(Level::Recall, s.rung, "a reconstruction miss slid down one rung");
         assert!(s.fsrs.is_none(), "relearning starts fresh at the lower rung");
     }
 
@@ -2147,14 +2170,14 @@ mod tests {
         let all = cards(1);
         let id = all[0].id();
         let s = store.get_or_insert(id, 0);
-        s.rung = Rung::Recall;
+        s.rung = Level::Recall;
         s.fsrs = Some(mature_fsrs());
 
         let mut session = Session::new(all, &store, sched(), SessionOptions::default(), 0);
         session.grade(&mut store, Grade::Fail, 0);
 
         let s = store.get(id).unwrap();
-        assert_eq!(Rung::Recall, s.rung);
+        assert_eq!(Level::Recall, s.rung);
         assert!(
             s.fsrs.is_some(),
             "a floored miss relearns via FSRS, not a rung reset"
@@ -2173,7 +2196,7 @@ mod tests {
         let id_pass = all[1].id();
         for c in &all {
             let s = store.get_or_insert(c.id(), 0);
-            s.rung = Rung::Reconstruct;
+            s.rung = Level::Reconstruct;
             s.fsrs = Some(mature_fsrs());
         }
 
@@ -2191,12 +2214,12 @@ mod tests {
         session.grade(&mut store, Grade::Pass, 0);
 
         assert_eq!(
-            Rung::Recall,
+            Level::Recall,
             store.get(id_fail).unwrap().rung,
             "a cram miss is a real lapse and descends"
         );
         assert_eq!(
-            Rung::Reconstruct,
+            Level::Reconstruct,
             store.get(id_pass).unwrap().rung,
             "a cram pass is a no-reward refresh and must not descend"
         );
@@ -2209,6 +2232,6 @@ mod tests {
         let id = all[0].id();
         let mut session = Session::new(all, &store, sched(), SessionOptions::default(), 0);
         session.acquire_current(&mut store, 0);
-        assert_eq!(Rung::Recall, store.get(id).unwrap().rung);
+        assert_eq!(Level::Recall, store.get(id).unwrap().rung);
     }
 }

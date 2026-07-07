@@ -221,7 +221,7 @@ pub fn manifest_icon(dir: &Path) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ladder::Reveal;
+    use crate::level::Reveal;
 
     fn write(path: &Path, text: &str) {
         std::fs::write(path, text).unwrap();

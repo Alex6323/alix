@@ -41,7 +41,7 @@ use crate::{
         ReviewConfig, Strictness,
     },
     deck::{self, Deck, DeckState},
-    exam, ladder, picker,
+    exam, level, picker,
     recent::RecentDecks,
     render::{self, NoteUnit},
     scheduler::{Fsrs, Grade, keypoint_grade},
@@ -1685,8 +1685,14 @@ pub fn run_review(
                     let card = r.session.current()?;
                     let reveal = card.reveal.unwrap_or_default();
                     let rung = store.get(card.id()).map(|s| s.rung).unwrap_or_default();
-                    let mode = ladder::check_for(reveal, rung, card);
-                    let tol = if mode == Mode::Typing { 0 } else { max_typos };
+                    let mode = level::check_for(reveal, rung, card);
+                    // TypeLine checks in order but is still exact typing, not
+                    // fuzzy-tolerant (the endpoint is properly reshaped in Task 2/8).
+                    let tol = if matches!(mode, Mode::Typing | Mode::TypeLine) {
+                        0
+                    } else {
+                        max_typos
+                    };
                     // Order-independent: a multi-item answer can be typed in any
                     // order, each line matched to its closest expected line.
                     let results: Vec<LineResultDto> =
@@ -2679,7 +2685,7 @@ fn review_state(reviewing: Option<&Reviewing>, store: &Store) -> StateDto {
     let session = &r.session;
     let card = session.current();
     // The frontier depth rung the card is currently scheduled at (persisted in
-    // the store; an unreviewed card defaults to `Rung::default()`). Feeds the
+    // the store; an unreviewed card defaults to `Level::default()`). Feeds the
     // concrete check (`mode`) below via `check_for`.
     let rung = card
         .map(|c| store.get(c.id()).map(|s| s.rung).unwrap_or_default())
@@ -2689,7 +2695,7 @@ fn review_state(reviewing: Option<&Reviewing>, store: &Store) -> StateDto {
     let mode = card
         .map(|c| {
             let reveal = c.reveal.unwrap_or_default();
-            ladder::check_for(reveal, rung, c)
+            level::check_for(reveal, rung, c)
         })
         .unwrap_or_default();
     // A never-seen card is *acquired* (an attempt, then reveal), not quizzed cold.

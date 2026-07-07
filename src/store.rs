@@ -106,7 +106,7 @@ pub struct CardState {
     /// The frontier depth rung this card is currently scheduled at. `fsrs`
     /// always represents *this* rung's schedule; a rung change resets it.
     #[serde(default)]
-    pub rung: crate::ladder::Rung,
+    pub rung: crate::level::Level,
     /// Spaced passes accumulated since this rung graduated to FSRS `Review` —
     /// the climb signal (§3.3). Reset on any rung change and on a miss.
     #[serde(default)]
@@ -123,7 +123,7 @@ impl CardState {
             total_passes: 0,
             streak: 0,
             history: Vec::new(),
-            rung: crate::ladder::Rung::default(),
+            rung: crate::level::Level::default(),
             passes_since_graduation: 0,
         }
     }
@@ -146,7 +146,7 @@ impl CardState {
 
     /// Moves the card to `rung`, starting a fresh schedule there: the higher
     /// rung is genuinely harder, so no stability is carried across (spec §3.6).
-    pub fn set_rung(&mut self, rung: crate::ladder::Rung) {
+    pub fn set_rung(&mut self, rung: crate::level::Level) {
         self.rung = rung;
         self.fsrs = None;
         self.passes_since_graduation = 0;
@@ -1183,9 +1183,9 @@ mod tests {
 
     #[test]
     fn set_rung_resets_the_fsrs_schedule_and_counter() {
-        use crate::ladder::Rung;
+        use crate::level::Level;
         let mut s = CardState::new(0);
-        s.rung = Rung::Recall;
+        s.rung = Level::Recall;
         s.fsrs = Some(FsrsState {
             stability: 40.0,
             state: 2,
@@ -1194,9 +1194,9 @@ mod tests {
         });
         s.passes_since_graduation = 3;
 
-        s.set_rung(Rung::Reconstruct);
+        s.set_rung(Level::Reconstruct);
 
-        assert_eq!(s.rung, Rung::Reconstruct);
+        assert_eq!(s.rung, Level::Reconstruct);
         assert!(
             s.fsrs.is_none(),
             "a rung change starts a fresh schedule at the new rung"
@@ -1209,7 +1209,7 @@ mod tests {
         // Old stores have no `rung`/`passes_since_graduation` field.
         let json = r#"{"acquired_ms":0}"#;
         let state: CardState = serde_json::from_str(json).unwrap();
-        assert_eq!(state.rung, crate::ladder::Rung::Recall);
+        assert_eq!(state.rung, crate::level::Level::Recall);
         assert_eq!(state.passes_since_graduation, 0);
     }
 

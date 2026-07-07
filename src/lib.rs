@@ -22,7 +22,7 @@ pub mod explore;
 pub mod generate;
 pub mod icon;
 pub mod import;
-pub mod ladder;
+pub mod level;
 pub mod parser;
 pub mod picker;
 pub mod preflight;

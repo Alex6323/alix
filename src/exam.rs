@@ -1475,7 +1475,7 @@ mod tests {
     }
 
     use crate::{
-        ladder::Reveal,
+        level::Reveal,
         testutil::{ask_config, exec_lock, fake_cli, fake_reply},
     };
 

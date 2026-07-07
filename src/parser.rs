@@ -30,7 +30,7 @@ use crate::{
     answer::Input,
     card::{Card, Direction},
     cloze,
-    ladder::Reveal,
+    level::Reveal,
 };
 
 /// Markup indicating the front side of a card.

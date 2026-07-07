@@ -26,8 +26,10 @@ pub enum Mode {
     Flip,
     /// Type the answer exactly, character by character.
     Typing,
-    /// Type the answer and submit; small typos are tolerated.
-    Fuzzy,
+    /// Type one line at a time, checked in order (Reconstruct + `% reveal: line`).
+    #[value(name = "typeline")]
+    #[serde(rename = "typeline")]
+    TypeLine,
     /// Pick the right answer out of four; the wrong options are sampled from
     /// the other cards of the session.
     Choice,
@@ -49,7 +51,7 @@ pub(crate) fn mode_name(mode: Mode) -> &'static str {
     match mode {
         Mode::Flip => "flip",
         Mode::Typing => "typing",
-        Mode::Fuzzy => "fuzzy",
+        Mode::TypeLine => "typeline",
         Mode::Choice => "choice",
         Mode::LineByLine => "line",
         Mode::Explain => "explain",
