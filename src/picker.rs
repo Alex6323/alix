@@ -115,8 +115,7 @@ pub struct DeckStatus {
     /// not-yet-done check, not a due time.
     pub reviewable_recognize: bool,
     /// A card is due (or fresh) at Recall right now, or a virtual
-    /// (remediation) card is due — the Recall-only signal `reviewable` used
-    /// to be entirely.
+    /// (remediation) card is due — what `reviewable` used to mean, entirely.
     pub reviewable_recall: bool,
     /// A non-retired card is due at Reconstruct right now, via the
     /// level-aware scheduler. The cross-level immediacy rule (`Fsrs::due_at`)

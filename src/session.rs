@@ -733,7 +733,7 @@ fn retrievability(store: &Store, card_id: u64, now_ms: u64) -> f32 {
 /// due under `scheduler` at that level (`scheduler.is_due` owns the
 /// cross-level immediacy rule — see `Fsrs::due_at`). A retired card (always
 /// the Recall-pinned rule, see [`is_retired`]) is never reviewable at any
-/// level. The per-card decision [`build_queue`]/`Session::servable` make
+/// level. The per-card decision [`build_queue`]/`Session::servable` each make
 /// (minus cram and the new-card cap), factored out so callers — e.g. the
 /// picker — can tell, at any level, before building a session.
 pub fn is_reviewable(
