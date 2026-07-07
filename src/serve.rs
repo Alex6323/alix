@@ -3412,6 +3412,15 @@ fn read_index(request: &mut Request) -> Option<usize> {
     Some(body.index)
 }
 
+/// The app shell and its assets must never be served stale: alix ships no
+/// version in its URLs, so after an upgrade a heuristically-cached page keeps
+/// showing the OLD web app (seen in the wild: a week-old review.html surviving
+/// a `make install`). `no-cache` forces revalidation on every load — cheap on
+/// localhost — and `no-store` keeps live JSON state out of the cache entirely.
+fn cache_header(policy: &'static [u8]) -> Header {
+    Header::from_bytes(&b"Cache-Control"[..], policy).unwrap()
+}
+
 fn respond_json<T: Serialize>(request: Request, value: &T) {
     let body = serde_json::to_string(value).unwrap_or_else(|_| "{}".to_string());
     let header = Header::from_bytes(
@@ -3419,20 +3428,32 @@ fn respond_json<T: Serialize>(request: Request, value: &T) {
         &b"application/json; charset=utf-8"[..],
     )
     .unwrap();
-    let _ = request.respond(Response::from_string(body).with_header(header));
+    let _ = request.respond(
+        Response::from_string(body)
+            .with_header(header)
+            .with_header(cache_header(b"no-store")),
+    );
 }
 
 fn respond_html(request: Request, html: &str) {
     let header =
         Header::from_bytes(&b"Content-Type"[..], &b"text/html; charset=utf-8"[..]).unwrap();
-    let _ = request.respond(Response::from_string(html.to_string()).with_header(header));
+    let _ = request.respond(
+        Response::from_string(html.to_string())
+            .with_header(header)
+            .with_header(cache_header(b"no-cache")),
+    );
 }
 
 /// Serves a static text asset (the shared `theme.css` / `theme.js`) with the
 /// given content type.
 fn respond_asset(request: Request, body: &str, content_type: &str) {
     let header = Header::from_bytes(&b"Content-Type"[..], content_type.as_bytes()).unwrap();
-    let _ = request.respond(Response::from_string(body.to_string()).with_header(header));
+    let _ = request.respond(
+        Response::from_string(body.to_string())
+            .with_header(header)
+            .with_header(cache_header(b"no-cache")),
+    );
 }
 
 fn respond_status(request: Request, code: u16) {

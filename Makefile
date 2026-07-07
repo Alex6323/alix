@@ -6,7 +6,7 @@
 # toolchain — `+nightly` is handled by rustup before cargo sees it — which is
 # why these live in a Makefile rather than .cargo/config.toml.)
 
-.PHONY: build test lint lint-js fmt fmt-check fmt-roadmap check ci coverage eval run serve book site install clean sdd-clean heartbeat check-backends
+.PHONY: build test lint lint-js fmt fmt-check fmt-roadmap check ci coverage eval run serve book site slides install clean sdd-clean heartbeat check-backends
 
 # Compile the workspace.
 build:
@@ -91,6 +91,12 @@ serve:
 # Requires mdBook: `cargo install mdbook`.
 book:
 	mdbook serve docs/book --open
+
+# Preview the presentation slides (site/slides.html) locally. Same server as
+# `make site`, pointed at the slides URL.
+slides:
+	@echo "Slides -> http://localhost:8000/slides.html  (Ctrl-C to stop)"
+	python3 -m http.server -b 127.0.0.1 -d site 8000
 
 # Serve the alix.study landing page locally for a quick preview (static files from
 # site/). Needs python3. The /book/ link only resolves on the deployed Pages
