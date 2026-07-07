@@ -6,7 +6,7 @@
 # toolchain — `+nightly` is handled by rustup before cargo sees it — which is
 # why these live in a Makefile rather than .cargo/config.toml.)
 
-.PHONY: build test lint lint-js fmt fmt-check check ci coverage eval run serve book site install clean sdd-clean heartbeat check-backends
+.PHONY: build test lint lint-js fmt fmt-check fmt-roadmap check ci coverage eval run serve book site install clean sdd-clean heartbeat check-backends
 
 # Compile the workspace.
 build:
@@ -39,6 +39,12 @@ fmt:
 # Verify formatting without writing.
 fmt-check:
 	cargo +nightly fmt --check
+
+# Wrap over-long lines in ROADMAP.md (or files passed via ARGS) onto the
+# roadmap's 13-space continuation indent. Wrap-only: lines already within
+# width are never touched, so hand-made breaks don't churn. Stdlib python3.
+fmt-roadmap:
+	python3 scripts/fmt-roadmap.py $(ARGS)
 
 # The gates that must stay green before work is done. (fmt is intentionally
 # separate — formatting uses nightly and is run deliberately, not as a gate.)
