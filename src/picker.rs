@@ -673,7 +673,7 @@ mod tests {
         let mut store = Store::open(dir.path().join("progress.json")).unwrap();
         let now = session::now_ms();
         let card_id = deck.cards[0].id();
-        store.get_or_insert(card_id, now).fsrs = Some(graduated_not_due(now));
+        store.get_or_insert(card_id, now).recall = Some(graduated_not_due(now));
 
         // Fully drilled, nothing due: `done ✓` and not reviewable.
         let status = deck_status(&deck, &store, None, false, ReviewConfig::default());
@@ -698,7 +698,7 @@ mod tests {
         let mut store = Store::open(dir.path().join("progress.json")).unwrap();
         let now = session::now_ms();
         // One of the three cards has graduated; the other two are unseen.
-        store.get_or_insert(deck.cards[0].id(), now).fsrs = Some(graduated_not_due(now));
+        store.get_or_insert(deck.cards[0].id(), now).recall = Some(graduated_not_due(now));
 
         let before = deck_status(&deck, &store, None, false, ReviewConfig::default());
         assert_eq!("1/3", before.badge);

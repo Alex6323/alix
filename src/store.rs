@@ -12,7 +12,7 @@ use anyhow::{Context, Result as AnyResult, bail};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::{deck, scheduler::Grade};
+use crate::{deck, level::Level, scheduler::Grade};
 
 /// How many of the most recent reviews are kept per card.
 const HISTORY_CAP: usize = 50;
@@ -34,6 +34,10 @@ pub struct Review {
     /// scheduling state is unaffected).
     #[serde(default = "default_review_grade")]
     pub grade: Grade,
+    /// The level this review was graded at. Pre-levels stores logged no level at
+    /// all (there was only ever one schedule) — those entries default to `Recall`.
+    #[serde(default)]
+    pub level: Level,
 }
 
 /// Serde default for a `Review` from a pre-grade store (which had only a `passed`
@@ -87,10 +91,22 @@ pub struct CardState {
     /// When the card was first acquired (Unix ms); the acquire-cooldown anchor for a not-yet-scheduled card.
     #[serde(default)]
     pub acquired_ms: u64,
-    /// FSRS state; present once the card has been reviewed under FSRS, absent
-    /// for a not-yet-reviewed (or freshly acquired) card.
+    /// Recall-level FSRS state; present once the card has been reviewed at
+    /// Recall, absent for a not-yet-reviewed (or freshly acquired) card. Was
+    /// `fsrs` — a clean pre-1.0 rename, no alias: a store carrying an old
+    /// `fsrs` key simply loads this as `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub fsrs: Option<FsrsState>,
+    pub recall: Option<FsrsState>,
+    /// Reconstruct-level FSRS state, independent of `recall` (stationarity: one
+    /// schedule, one task, forever — no cross-crediting between levels).
+    /// Lazily created on the card's first Reconstruct review.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reconstruct: Option<FsrsState>,
+    /// When the card was first correctly picked at the Recognize level (Unix
+    /// ms); `None` until then. Recognize is unscheduled and boolean — this
+    /// flag, not an `FsrsState`, is its only stored progress.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recognized_ms: Option<u64>,
     /// Total number of reviews.
     #[serde(default)]
     pub total_reviews: u32,
@@ -103,15 +119,6 @@ pub struct CardState {
     /// The most recent reviews, oldest first (capped).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub history: Vec<Review>,
-    /// The frontier depth rung this card is currently scheduled at. `fsrs`
-    /// always represents *this* rung's schedule; a rung change resets it.
-    // TODO(task 3): deleted when per-level schedules land.
-    #[serde(default)]
-    pub rung: crate::level::Level,
-    /// Spaced passes accumulated since this rung graduated to FSRS `Review` —
-    /// the climb signal (§3.3). Reset on any rung change and on a miss.
-    #[serde(default)]
-    pub passes_since_graduation: u8,
 }
 
 impl CardState {
@@ -119,18 +126,38 @@ impl CardState {
     pub fn new(now_ms: u64) -> Self {
         Self {
             acquired_ms: now_ms,
-            fsrs: None,
+            recall: None,
+            reconstruct: None,
+            recognized_ms: None,
             total_reviews: 0,
             total_passes: 0,
             streak: 0,
             history: Vec::new(),
-            rung: crate::level::Level::default(),
-            passes_since_graduation: 0,
+        }
+    }
+
+    /// The card's FSRS schedule at `level`. `Recognize` is never scheduled
+    /// (unscheduled + boolean) and always answers `None`.
+    pub fn schedule(&self, level: Level) -> Option<&FsrsState> {
+        match level {
+            Level::Recognize => None,
+            Level::Recall => self.recall.as_ref(),
+            Level::Reconstruct => self.reconstruct.as_ref(),
+        }
+    }
+
+    /// A mutable handle to the schedule slot at `level`, for a scheduler to
+    /// read/replace. `Recognize` has no slot to hand back.
+    pub fn schedule_slot(&mut self, level: Level) -> Option<&mut Option<FsrsState>> {
+        match level {
+            Level::Recognize => None,
+            Level::Recall => Some(&mut self.recall),
+            Level::Reconstruct => Some(&mut self.reconstruct),
         }
     }
 
     /// Appends a review to the bounded history and updates the counters.
-    pub fn record_review(&mut self, ts_ms: u64, grade: Grade) {
+    pub fn record_review(&mut self, ts_ms: u64, grade: Grade, level: Level) {
         self.total_reviews += 1;
         if grade.passed() {
             self.total_passes += 1;
@@ -138,20 +165,11 @@ impl CardState {
         } else {
             self.streak = 0;
         }
-        self.history.push(Review { ts_ms, grade });
+        self.history.push(Review { ts_ms, grade, level });
         if self.history.len() > HISTORY_CAP {
             let excess = self.history.len() - HISTORY_CAP;
             self.history.drain(..excess);
         }
-    }
-
-    /// Moves the card to `rung`, starting a fresh schedule there: the higher
-    /// rung is genuinely harder, so no stability is carried across (spec §3.6).
-    // TODO(task 3): deleted when per-level schedules land.
-    pub fn set_rung(&mut self, rung: crate::level::Level) {
-        self.rung = rung;
-        self.fsrs = None;
-        self.passes_since_graduation = 0;
     }
 }
 
@@ -667,8 +685,12 @@ mod tests {
         let path = dir.path().join("progress.json");
         let mut store = Store::open(&path).unwrap();
         assert_eq!(None, store.last_review_ms());
-        store.get_or_insert(1, 0).record_review(100, Grade::Pass);
-        store.get_or_insert(2, 0).record_review(300, Grade::Pass);
+        store
+            .get_or_insert(1, 0)
+            .record_review(100, Grade::Pass, Level::Recall);
+        store
+            .get_or_insert(2, 0)
+            .record_review(300, Grade::Pass, Level::Recall);
         assert_eq!(Some(300), store.last_review_ms());
     }
 
@@ -687,7 +709,7 @@ mod tests {
 
         let mut store = Store::open(&path).unwrap();
         let state = store.get_or_insert(42, 1000);
-        state.record_review(1000, Grade::Pass);
+        state.record_review(1000, Grade::Pass, Level::Recall);
         store.save().unwrap();
 
         let reloaded = Store::open(&path).unwrap();
@@ -697,7 +719,8 @@ mod tests {
         assert_eq!(
             vec![Review {
                 ts_ms: 1000,
-                grade: Grade::Pass
+                grade: Grade::Pass,
+                level: Level::Recall
             }],
             state.history
         );
@@ -1072,7 +1095,7 @@ mod tests {
             // Seed a drilled schedule for each hole — promote must preserve these.
             store
                 .get_or_insert(id, 1000)
-                .record_review(1000, Grade::Pass);
+                .record_review(1000, Grade::Pass, Level::Recall);
         }
 
         promote_virtual(&mut store, id0, &deck_path).unwrap();
@@ -1118,9 +1141,9 @@ mod tests {
 
         // Drill the schedule in `store.cards`, not on the virtual entry.
         let mut state = CardState::new(1000);
-        state.record_review(1000, Grade::Pass);
-        state.record_review(2000, Grade::Pass);
-        state.fsrs = Some(FsrsState {
+        state.record_review(1000, Grade::Pass, Level::Recall);
+        state.record_review(2000, Grade::Pass, Level::Recall);
+        state.recall = Some(FsrsState {
             stability: 12.5,
             difficulty: 4.2,
             reps: 2,
@@ -1154,7 +1177,7 @@ mod tests {
     fn history_is_capped() {
         let mut state = CardState::new(0);
         for i in 0..(HISTORY_CAP as u64 + 10) {
-            state.record_review(i, Grade::Pass);
+            state.record_review(i, Grade::Pass, Level::Recall);
         }
         assert_eq!(HISTORY_CAP, state.history.len());
         assert_eq!(10, state.history[0].ts_ms);
@@ -1164,10 +1187,10 @@ mod tests {
     #[test]
     fn streak_resets_on_fail() {
         let mut state = CardState::new(0);
-        state.record_review(1, Grade::Pass);
-        state.record_review(2, Grade::Pass);
+        state.record_review(1, Grade::Pass, Level::Recall);
+        state.record_review(2, Grade::Pass, Level::Recall);
         assert_eq!(2, state.streak);
-        state.record_review(3, Grade::Fail);
+        state.record_review(3, Grade::Fail, Level::Recall);
         assert_eq!(0, state.streak);
         assert_eq!(2, state.total_passes);
         assert_eq!(3, state.total_reviews);
@@ -1176,7 +1199,7 @@ mod tests {
     #[test]
     fn record_review_stores_the_grade_and_partial_counts_as_a_pass() {
         let mut state = CardState::new(0);
-        state.record_review(10, Grade::Partial);
+        state.record_review(10, Grade::Partial, Level::Recall);
         assert_eq!(Grade::Partial, state.history.last().unwrap().grade);
         assert_eq!(1, state.total_reviews);
         assert_eq!(1, state.total_passes); // Partial (a weak success) counts as a pass
@@ -1184,35 +1207,59 @@ mod tests {
     }
 
     #[test]
-    fn set_rung_resets_the_fsrs_schedule_and_counter() {
-        use crate::level::Level;
-        let mut s = CardState::new(0);
-        s.rung = Level::Recall;
-        s.fsrs = Some(FsrsState {
-            stability: 40.0,
-            state: 2,
-            scheduled_days: 30,
+    fn recall_and_reconstruct_schedules_are_independent() {
+        let mut s = CardState::new(1_000);
+        *s.schedule_slot(Level::Recall).unwrap() = Some(FsrsState {
+            stability: 30.0,
             ..Default::default()
         });
-        s.passes_since_graduation = 3;
-
-        s.set_rung(Level::Reconstruct);
-
-        assert_eq!(s.rung, Level::Reconstruct);
+        assert!(s.schedule(Level::Recall).is_some());
         assert!(
-            s.fsrs.is_none(),
-            "a rung change starts a fresh schedule at the new rung"
+            s.schedule(Level::Reconstruct).is_none(),
+            "no cross-crediting: reconstruct starts empty"
         );
-        assert_eq!(s.passes_since_graduation, 0);
+        assert!(
+            s.schedule(Level::Recognize).is_none(),
+            "recognize is never scheduled"
+        );
     }
 
     #[test]
-    fn a_pre_ladder_store_loads_cards_at_recall() {
-        // Old stores have no `rung`/`passes_since_graduation` field.
-        let json = r#"{"acquired_ms":0}"#;
-        let state: CardState = serde_json::from_str(json).unwrap();
-        assert_eq!(state.rung, crate::level::Level::Recall);
-        assert_eq!(state.passes_since_graduation, 0);
+    fn per_level_schedules_and_recognized_flag_survive_save_reload() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("store.json")).unwrap();
+        let st = store.get_or_insert(7, 1_000);
+        *st.schedule_slot(Level::Reconstruct).unwrap() = Some(FsrsState {
+            stability: 4.5,
+            ..Default::default()
+        });
+        st.recognized_ms = Some(2_000);
+        st.record_review(2_000, Grade::Pass, Level::Reconstruct);
+        store.save().unwrap();
+        let reloaded = Store::open(dir.path().join("store.json")).unwrap();
+        let st = reloaded.get(7).unwrap();
+        assert_eq!(
+            Some(4.5),
+            st.schedule(Level::Reconstruct).map(|f| f.stability)
+        );
+        assert_eq!(Some(2_000), st.recognized_ms);
+        assert_eq!(Level::Reconstruct, st.history[0].level);
+    }
+
+    #[test]
+    fn a_pre_levels_store_loads_with_empty_schedules() {
+        // Clean break: the old `fsrs`/`rung` keys are ignored, not aliased.
+        let json = r#"{"version":1,"cards":{"7":{"acquired_ms":5,"fsrs":{"stability":9.0,"difficulty":5.0,"reps":3,"lapses":0,"state":2,"scheduled_days":9,"last_review_ms":1,"due_ms":2},"rung":"reconstruct","total_reviews":3}}}"#;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("store.json");
+        std::fs::write(&path, json).unwrap();
+        let store = Store::open(&path).unwrap();
+        let st = store.get(7).unwrap();
+        assert_eq!(5, st.acquired_ms, "known fields still load");
+        assert!(
+            st.schedule(Level::Recall).is_none(),
+            "old fsrs key is dropped, not aliased"
+        );
     }
 
     #[test]
@@ -1221,7 +1268,7 @@ mod tests {
         let json = r#"{"acquired_ms":1234,"fsrs":null}"#;
         let s: CardState = serde_json::from_str(json).unwrap();
         assert_eq!(s.acquired_ms, 1234);
-        assert!(s.fsrs.is_none());
+        assert!(s.recall.is_none());
         // A legacy store carrying a stray `stage` key still loads (serde ignores it).
         let legacy = r#"{"stage":3,"acquired_ms":5}"#;
         let s2: CardState = serde_json::from_str(legacy).unwrap();
@@ -1234,8 +1281,8 @@ mod tests {
         let path = dir.path().join("progress.json");
         let mut store = Store::open(&path).unwrap();
         let st = store.get_or_insert(7, 0);
-        st.record_review(100, Grade::Partial);
-        st.record_review(200, Grade::Fail);
+        st.record_review(100, Grade::Partial, Level::Recall);
+        st.record_review(200, Grade::Fail, Level::Recall);
         store.save().unwrap();
 
         let reloaded = Store::open(&path).unwrap();
@@ -1249,7 +1296,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("progress.json");
         let mut store = Store::open(&path).unwrap();
-        store.get_or_insert(9, 0).fsrs = Some(FsrsState {
+        store.get_or_insert(9, 0).recall = Some(FsrsState {
             stability: 12.5,
             difficulty: 6.0,
             reps: 3,
@@ -1262,7 +1309,7 @@ mod tests {
         });
         store.save().unwrap();
         let reloaded = Store::open(&path).unwrap();
-        let f = reloaded.get(9).unwrap().fsrs.unwrap();
+        let f = reloaded.get(9).unwrap().recall.unwrap();
         assert_eq!(2000, f.due_ms);
         assert_eq!(1, f.learning_goods);
     }

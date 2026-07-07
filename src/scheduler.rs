@@ -13,7 +13,10 @@
 use chrono::{DateTime, Utc};
 use rs_fsrs::{Card as FsrsCard, FSRS, Parameters, Rating, State as RawState};
 
-use crate::store::{CardState, FsrsState};
+use crate::{
+    level::Level,
+    store::{CardState, FsrsState},
+};
 
 /// The outcome of reviewing a card. Three honest outcomes, shared by fact-deck
 /// review and the trace walk: **failed** / **partly** / **got it**.
@@ -184,9 +187,14 @@ impl Default for Fsrs {
     }
 }
 
+// TODO(task 4): the trait (and this impl) gain an explicit `level: Level`
+// parameter, routing every read/write through `CardState::schedule`/
+// `schedule_slot` at that level instead of the `Level::Recall` pinned below —
+// Task 3 only renamed the store's shape (`fsrs` -> `recall` + `reconstruct`),
+// it did not touch the scheduler's own interface.
 impl Scheduler for Fsrs {
     fn due_at(&self, state: &CardState) -> u64 {
-        match &state.fsrs {
+        match state.schedule(Level::Recall) {
             Some(s) => s.due_ms,
             // Not yet scheduled under FSRS — a freshly acquired card settles for one
             // fixed cooldown before its first quiz.
@@ -195,7 +203,7 @@ impl Scheduler for Fsrs {
     }
 
     fn apply(&self, state: &mut CardState, grade: Grade, now_ms: u64) {
-        let (card, pre_state, prev_goods) = match &state.fsrs {
+        let (card, pre_state, prev_goods) = match state.schedule(Level::Recall) {
             Some(s) => (to_fsrs_card(s), s.state, s.learning_goods),
             None => (seed_card(state, now_ms), 0, 0),
         };
@@ -224,12 +232,14 @@ impl Scheduler for Fsrs {
         }
         next.learning_goods = if next.state == 2 { 0 } else { goods };
 
-        state.fsrs = Some(next);
-        state.record_review(now_ms, grade);
+        if let Some(slot) = state.schedule_slot(Level::Recall) {
+            *slot = Some(next);
+        }
+        state.record_review(now_ms, grade, Level::Recall);
     }
 
     fn reanchor(&self, state: &mut CardState, now_ms: u64) {
-        if let Some(f) = state.fsrs.as_mut() {
+        if let Some(Some(f)) = state.schedule_slot(Level::Recall) {
             let interval_ms = u64::from(f.scheduled_days) * DAY_MS;
             f.due_ms = now_ms.saturating_add(interval_ms);
         }
@@ -243,12 +253,12 @@ mod tests {
     #[test]
     fn due_at_for_an_unscheduled_card_is_one_acquire_cooldown_out() {
         let sched = Fsrs::default();
-        let mut s = CardState::new(1000); // acquired_ms = 1000, fsrs = None
+        let mut s = CardState::new(1000); // acquired_ms = 1000, recall = None
         // No FSRS state yet: due is exactly the fixed acquire cooldown past acquire.
         assert_eq!(sched.due_at(&s), 1000 + ACQUIRE_COOLDOWN_MS);
         // Once graduated to FSRS, the schedule owns the due date, not the cooldown.
         sched.apply(&mut s, Grade::Pass, 1000);
-        assert!(s.fsrs.is_some());
+        assert!(s.recall.is_some());
         assert!(sched.due_at(&s) != 1000 + ACQUIRE_COOLDOWN_MS);
     }
 
@@ -264,10 +274,10 @@ mod tests {
         // A partial is a weak success: it advances the streak and counts as a pass, but is still
         // logged as `Partial` (not `Pass`).
         let mut s = CardState::new(0);
-        s.record_review(0, Grade::Pass); // build a streak
+        s.record_review(0, Grade::Pass, Level::Recall); // build a streak
         assert_eq!(1, s.streak);
         assert_eq!(1, s.total_passes);
-        s.record_review(1000, Grade::Partial);
+        s.record_review(1000, Grade::Partial, Level::Recall);
         assert_eq!(2, s.streak); // partly keeps the streak going
         assert_eq!(2, s.total_passes); // ...and counts as a pass
         assert!(s.history.last().unwrap().grade.passed());
@@ -288,7 +298,7 @@ mod tests {
         let sched = Fsrs::new(0.9);
         let mut s = CardState::new(0);
         sched.apply(&mut s, Grade::Pass, 0);
-        let f = s.fsrs.expect("fsrs state set");
+        let f = s.recall.expect("fsrs state set");
         assert!(f.stability > 0.0, "stability should be positive");
         assert!(sched.due_at(&s) > 0, "should be scheduled into the future");
         assert_eq!(1, s.total_reviews);
@@ -303,7 +313,7 @@ mod tests {
         sched.apply(&mut good, Grade::Pass, 0);
         let mut hard = CardState::new(0);
         sched.apply(&mut hard, Grade::Partial, 0);
-        assert!(good.fsrs.unwrap().stability > hard.fsrs.unwrap().stability);
+        assert!(good.recall.unwrap().stability > hard.recall.unwrap().stability);
     }
 
     #[test]
@@ -328,7 +338,7 @@ mod tests {
         let sched = Fsrs::new(0.9);
         let mut s = CardState::new(0);
         sched.apply(&mut s, Grade::Pass, 0);
-        let f = s.fsrs.expect("fsrs state set");
+        let f = s.recall.expect("fsrs state set");
         assert_eq!(1, f.state, "a first Good enters Learning, not Review");
         let due = sched.due_at(&s);
         assert!(
@@ -348,7 +358,7 @@ mod tests {
         sched.apply(&mut s, Grade::Pass, step_due);
         assert_eq!(
             2,
-            s.fsrs.expect("fsrs state").state,
+            s.recall.expect("fsrs state").state,
             "second Good reaches Review"
         );
         assert!(
@@ -363,7 +373,7 @@ mod tests {
         let mut s = CardState::new(0);
         sched.apply(&mut s, Grade::Fail, 0); // New -> Learning
         sched.apply(&mut s, Grade::Pass, 60_000); // one Good: held, not graduated
-        let f = s.fsrs.unwrap();
+        let f = s.recall.unwrap();
         assert_eq!(1, f.state, "one Good after a fail stays in Learning");
         assert_eq!(1, f.learning_goods);
     }
@@ -374,9 +384,9 @@ mod tests {
         let mut s = CardState::new(0);
         sched.apply(&mut s, Grade::Fail, 0); // New -> Learning, goods = 0
         sched.apply(&mut s, Grade::Pass, 60_000); // goods = 1, held
-        assert_eq!(1, s.fsrs.unwrap().state);
+        assert_eq!(1, s.recall.unwrap().state);
         sched.apply(&mut s, Grade::Pass, 700_000); // goods = 2 -> Review
-        assert_eq!(2, s.fsrs.unwrap().state, "two Goods graduate");
+        assert_eq!(2, s.recall.unwrap().state, "two Goods graduate");
     }
 
     #[test]
@@ -386,9 +396,9 @@ mod tests {
         sched.apply(&mut s, Grade::Pass, 0); // goods = 1
         sched.apply(&mut s, Grade::Fail, 60_000); // reset -> goods = 0
         sched.apply(&mut s, Grade::Pass, 120_000); // goods = 1, held
-        assert_eq!(1, s.fsrs.unwrap().state, "still Learning after the reset");
+        assert_eq!(1, s.recall.unwrap().state, "still Learning after the reset");
         sched.apply(&mut s, Grade::Pass, 700_000); // goods = 2 -> Review
-        assert_eq!(2, s.fsrs.unwrap().state);
+        assert_eq!(2, s.recall.unwrap().state);
     }
 
     #[test]
@@ -397,10 +407,10 @@ mod tests {
         let mut s = CardState::new(0);
         sched.apply(&mut s, Grade::Pass, 0); // goods = 1, Learning
         sched.apply(&mut s, Grade::Partial, 600_000); // neutral: stays Learning, goods = 1
-        assert_eq!(1, s.fsrs.unwrap().state);
-        assert_eq!(1, s.fsrs.unwrap().learning_goods);
+        assert_eq!(1, s.recall.unwrap().state);
+        assert_eq!(1, s.recall.unwrap().learning_goods);
         sched.apply(&mut s, Grade::Pass, 1_200_000); // goods = 2 -> Review
-        assert_eq!(2, s.fsrs.unwrap().state);
+        assert_eq!(2, s.recall.unwrap().state);
     }
 
     #[test]
@@ -410,9 +420,9 @@ mod tests {
         sched.apply(&mut s, Grade::Pass, 0);
         sched.apply(&mut s, Grade::Pass, 600_000); // -> Review
         sched.apply(&mut s, Grade::Fail, 1_200_000); // lapse -> Relearning
-        assert_eq!(3, s.fsrs.unwrap().state);
+        assert_eq!(3, s.recall.unwrap().state);
         sched.apply(&mut s, Grade::Pass, 1_800_000); // one Good re-graduates (gate skips relearning)
-        assert_eq!(2, s.fsrs.unwrap().state);
+        assert_eq!(2, s.recall.unwrap().state);
     }
 
     #[test]
@@ -430,7 +440,7 @@ mod tests {
         sched.apply(&mut early, Grade::Pass, due); // on time
         sched.apply(&mut late, Grade::Pass, due * 3); // well overdue
         assert!(
-            late.fsrs.unwrap().stability > early.fsrs.unwrap().stability,
+            late.recall.unwrap().stability > early.recall.unwrap().stability,
             "an overdue-but-recalled card should gain more stability"
         );
     }

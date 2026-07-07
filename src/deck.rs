@@ -879,7 +879,7 @@ mod tests {
 
     /// Marks a card graduated: FSRS `Review`.
     fn graduate(store: &mut Store, id: u64) {
-        store.get_or_insert(id, 0).fsrs = Some(crate::store::FsrsState {
+        store.get_or_insert(id, 0).recall = Some(crate::store::FsrsState {
             state: 2, // Review
             ..Default::default()
         });
@@ -887,7 +887,7 @@ mod tests {
 
     /// Marks a card seen but still in a learning step (not yet graduated).
     fn learning(store: &mut Store, id: u64) {
-        store.get_or_insert(id, 0).fsrs = Some(crate::store::FsrsState {
+        store.get_or_insert(id, 0).recall = Some(crate::store::FsrsState {
             state: 1, // Learning
             ..Default::default()
         });
@@ -895,7 +895,7 @@ mod tests {
 
     /// Drives a card to retirement: a year-out FSRS interval (also graduated).
     fn retire(store: &mut Store, id: u64) {
-        store.get_or_insert(id, 0).fsrs = Some(crate::store::FsrsState {
+        store.get_or_insert(id, 0).recall = Some(crate::store::FsrsState {
             state: 2,                // Review — a year-out card has graduated
             scheduled_days: 100_000, // well past the retirement cap
             ..Default::default()

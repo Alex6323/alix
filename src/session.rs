@@ -292,45 +292,38 @@ impl Session {
             // must never fire here — only a real review can promote a rung.
             self.scheduler.reanchor(state, now_ms);
         } else {
-            // Whether this rung had *already* reached FSRS `Review` before this
-            // review. The pass that graduates a card must not itself trigger the
-            // climb (that would skip the current rung's spaced practice entirely);
-            // only a *later* spaced pass counts. Captured before `apply`, which is
-            // what advances the card into `Review`.
-            let was_graduated_before = state.fsrs.as_ref().is_some_and(|f| f.graduated());
+            // Whether the Recall schedule had *already* reached FSRS `Review`
+            // before this review — pinned to Recall (`.recall`, not a rung:
+            // lifecycle stays on the Recall schedule regardless of level). The
+            // pass that graduates a card must not itself trigger the climb
+            // (that would skip the current rung's spaced practice entirely);
+            // only a *later* spaced pass counts. Captured before `apply`, which
+            // is what advances the card into `Review`.
+            let was_graduated_before = state.recall.as_ref().is_some_and(|f| f.graduated());
             self.scheduler.apply(state, grade, now_ms);
-            // Ladder climb (spec §3.3): a rung already graduated that survives one
-            // *more* spaced Pass (resulting interval >= ~3 days), while still below
-            // the deck target, promotes to the next rung on a fresh schedule
-            // (`set_rung`). Partials and fails never climb.
+            // TODO(task 5): the ladder climb (spec §3.3) used to promote a
+            // graduated rung on a spaced pass via `state.rung` /
+            // `state.passes_since_graduation` / `state.set_rung` — all deleted
+            // from `CardState` in Task 3 (session-owned levels replace
+            // card-owned rungs, so there is nowhere left to persist a climb).
+            // Stood in with a local, non-persisted default per the brief so
+            // `climb_level` keeps compiling unchanged in shape; Task 5 deletes
+            // this block and `climb_level`/`descend_level` for good.
+            let rung = Level::default();
             let target = self.options.target;
-            if was_graduated_before && state.rung < target {
-                let spaced_pass = grade == Grade::Pass
-                    && state.fsrs.as_ref().is_some_and(|f| f.scheduled_days >= 3);
-                if spaced_pass {
-                    state.passes_since_graduation =
-                        state.passes_since_graduation.saturating_add(1);
-                    if state.passes_since_graduation >= 1 {
-                        state.set_rung(climb_level(state.rung));
-                    }
-                }
+            if was_graduated_before
+                && rung < target
+                && grade == Grade::Pass
+                && state.recall.as_ref().is_some_and(|f| f.scheduled_days >= 3)
+            {
+                let _ = climb_level(rung); // nowhere left to persist a climb
             }
         }
-        // Ladder descent-net (spec §3.4 v1): a frontier miss drops one rung and
-        // relearns there. A cram Pass (the reanchor branch above) is `passed()`
-        // and never reaches here; a cram Fail is a real lapse (the `else`/
-        // `scheduler.apply` branch above) and descends like any normal miss.
-        // `passes_since_graduation` resets on any miss (matching its doc), even
-        // when descent floors at `Recall` and `set_rung` doesn't fire below.
+        // TODO(task 5): the descent-net (spec §3.4 v1) similarly read/wrote the
+        // now-deleted `rung`/`passes_since_graduation`/`set_rung` — same
+        // stand-in as the climb block above.
         if !grade.passed() {
-            state.passes_since_graduation = 0;
-            let lower = descend_level(state.rung);
-            if lower != state.rung {
-                // Only reset the schedule when the rung actually changes — a
-                // Recall miss (floored) just relearns in place via the FSRS
-                // relearn `scheduler.apply` already ran above.
-                state.set_rung(lower);
-            }
+            let _ = descend_level(Level::default()); // nowhere left to persist a descent
         }
 
         self.stats.reviews += 1;
@@ -584,7 +577,7 @@ pub fn is_retired_id(card_id: u64, store: &Store, retire_after_days: Option<u32>
     };
     store
         .get(card_id)
-        .and_then(|s| s.fsrs.as_ref())
+        .and_then(|s| s.schedule(Level::Recall))
         .is_some_and(|f| f.scheduled_days >= cap)
 }
 
@@ -667,11 +660,12 @@ pub fn count_due_soon_virtual(
 
 /// Whether a card has *graduated* — reached FSRS `Review`, past the initial learning
 /// steps. This is the always-on gate for a deck's exam / done state: a card still in
-/// `New`/`Learning`, or with no FSRS state yet, has not graduated.
+/// `New`/`Learning`, or with no FSRS state yet, has not graduated. Pinned to the
+/// Recall schedule — lifecycle stays on Recall regardless of level (spec §4.5).
 pub fn has_graduated(card: &Card, store: &Store) -> bool {
     store
         .get(card.id())
-        .and_then(|s| s.fsrs.as_ref())
+        .and_then(|s| s.schedule(Level::Recall))
         .is_some_and(|f| f.graduated())
 }
 
@@ -695,7 +689,7 @@ pub fn card_strengths(card_ids: &[u64], store: &Store, now_ms: u64) -> Vec<f32> 
 /// A card not yet under FSRS, or with non-positive stability, has no
 /// meaningful curve — `0.0`.
 fn retrievability(store: &Store, card_id: u64, now_ms: u64) -> f32 {
-    let Some(f) = store.get(card_id).and_then(|s| s.fsrs.as_ref()) else {
+    let Some(f) = store.get(card_id).and_then(|s| s.schedule(Level::Recall)) else {
         return 0.0;
     };
     if f.stability <= 0.0 {
@@ -762,10 +756,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::{
-        level::Level,
-        store::{FsrsState, Store},
-    };
+    use crate::store::{FsrsState, Store};
 
     fn card(subject: &str, n: usize) -> Card {
         Card::plain(
@@ -928,7 +919,7 @@ mod tests {
         session.acquire_current(&mut store, 1000);
 
         let state = store.get(id).expect("acquired card is recorded");
-        assert!(state.fsrs.is_none(), "acquiring does not schedule under FSRS");
+        assert!(state.recall.is_none(), "acquiring does not schedule under FSRS");
         assert_eq!(1000, state.acquired_ms, "acquire stamps the acquire time");
         assert!(state.history.is_empty()); // acquiring is not a review
         assert_eq!(0, state.total_reviews);
@@ -1014,7 +1005,7 @@ mod tests {
         session.grade(&mut store, Grade::Fail, now);
         // Nothing else is due, so no further grade lands this appearance.
         assert!(session.current().is_none());
-        let f = store.get(id).unwrap().fsrs.unwrap();
+        let f = store.get(id).unwrap().recall.unwrap();
         assert_ne!(
             2, f.state,
             "not graduated to Review off an immediate re-drill"
@@ -1216,7 +1207,7 @@ mod tests {
         session.grade(&mut store, Grade::Pass, 1000);
         // A graded card gains FSRS state and a recorded review (stage is frozen).
         let state = store.get(id).unwrap();
-        assert!(state.fsrs.is_some());
+        assert!(state.recall.is_some());
         assert_eq!(1, state.total_reviews);
     }
 
@@ -1399,10 +1390,10 @@ mod tests {
 
         assert!(!is_retired(&c, &store, Some(DEFAULT_RETIRE_AFTER_DAYS))); // unseen — never retired
         // An FSRS interval at/past the cap rests.
-        store.get_or_insert(c.id(), 0).fsrs = Some(retired_fsrs());
+        store.get_or_insert(c.id(), 0).recall = Some(retired_fsrs());
         assert!(is_retired(&c, &store, Some(DEFAULT_RETIRE_AFTER_DAYS)));
         // Just below the cap: still in rotation.
-        store.get_or_insert(c.id(), 0).fsrs = Some(crate::store::FsrsState {
+        store.get_or_insert(c.id(), 0).recall = Some(crate::store::FsrsState {
             scheduled_days: DEFAULT_RETIRE_AFTER_DAYS - 1,
             ..Default::default()
         });
@@ -1410,7 +1401,7 @@ mod tests {
         // A legacy card at the top Leitner stage but with no FSRS state is no longer
         // retired — retirement now needs a grown FSRS interval, not a stage.
         let s = store.get_or_insert(c.id(), 0);
-        s.fsrs = None;
+        s.recall = None;
         s.streak = 1;
         assert!(!is_retired(&c, &store, Some(DEFAULT_RETIRE_AFTER_DAYS)));
     }
@@ -1448,7 +1439,7 @@ mod tests {
         ));
 
         // A retired card (FSRS interval past the cap) never counts, even past due.
-        store.get_or_insert(c.id(), now).fsrs = Some(retired_fsrs());
+        store.get_or_insert(c.id(), now).recall = Some(retired_fsrs());
         assert!(!has_reviewable(
             std::slice::from_ref(&c),
             &store,
@@ -1462,7 +1453,7 @@ mod tests {
     fn retired_card_excluded_even_under_cram() {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
-        store.get_or_insert(all[0].id(), 0).fsrs = Some(retired_fsrs()); // retired
+        store.get_or_insert(all[0].id(), 0).recall = Some(retired_fsrs()); // retired
 
         let session = Session::new(
             all,
@@ -1488,7 +1479,7 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
         // A mature, graduated card with a real 30-day interval.
-        store.get_or_insert(all[0].id(), 0).fsrs = Some(crate::store::FsrsState {
+        store.get_or_insert(all[0].id(), 0).recall = Some(crate::store::FsrsState {
             stability: 30.0,
             difficulty: 5.0,
             scheduled_days: 30,
@@ -1496,7 +1487,7 @@ mod tests {
             due_ms: 1000,
             ..Default::default()
         });
-        let before = store.get(all[0].id()).unwrap().fsrs.unwrap();
+        let before = store.get(all[0].id()).unwrap().recall.unwrap();
 
         let mut session = Session::new(
             all.clone(),
@@ -1511,7 +1502,7 @@ mod tests {
         session.grade(&mut store, Grade::Pass, 10_000);
 
         let after = store.get(all[0].id()).unwrap();
-        let f = after.fsrs.unwrap();
+        let f = after.recall.unwrap();
         assert_eq!(before.stability, f.stability); // no reward
         assert_eq!(before.scheduled_days, f.scheduled_days); // interval kept
         assert_eq!(10_000u64 + 30 * 86_400_000, f.due_ms); // re-anchored to now + interval
@@ -1522,7 +1513,7 @@ mod tests {
     fn cram_miss_lapses_normally() {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
-        store.get_or_insert(all[0].id(), 0).fsrs = Some(crate::store::FsrsState {
+        store.get_or_insert(all[0].id(), 0).recall = Some(crate::store::FsrsState {
             stability: 30.0,
             difficulty: 5.0,
             scheduled_days: 30,
@@ -1545,7 +1536,7 @@ mod tests {
         // A miss is a real lapse: the scheduler ran (recorded, stability dropped).
         let after = store.get(all[0].id()).unwrap();
         assert_eq!(1, after.history.len());
-        assert!(after.fsrs.unwrap().stability < 30.0);
+        assert!(after.recall.unwrap().stability < 30.0);
     }
 
     #[test]
@@ -1554,7 +1545,7 @@ mod tests {
         let all = cards(2);
         let id_a = all[0].id();
         for c in &all {
-            store.get_or_insert(c.id(), 0).fsrs = Some(crate::store::FsrsState {
+            store.get_or_insert(c.id(), 0).recall = Some(crate::store::FsrsState {
                 stability: 30.0,
                 difficulty: 5.0,
                 scheduled_days: 30,
@@ -1671,7 +1662,7 @@ mod tests {
     fn retired_card_excluded_even_with_a_topology() {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
-        store.get_or_insert(all[0].id(), 0).fsrs = Some(retired_fsrs()); // retired
+        store.get_or_insert(all[0].id(), 0).recall = Some(retired_fsrs()); // retired
         // A topology listing the retired card cannot resurrect it — the filter
         // runs before the topology sort.
         let topo = topology_order(&[&all[0]]);
@@ -1763,7 +1754,7 @@ mod tests {
     fn card_strength_is_full_right_after_review_and_decays() {
         let (mut store, _dir) = empty_store();
         let id = 42;
-        store.get_or_insert(id, 0).fsrs = Some(FsrsState {
+        store.get_or_insert(id, 0).recall = Some(FsrsState {
             stability: 10.0,
             state: 2,
             ..Default::default()
@@ -1812,7 +1803,7 @@ mod tests {
         // A virtual card's schedule now lives in `store.cards`, keyed by its
         // own `Card::id` — the same entry a deck card would use.
         let state = store.get(id).expect("virtual schedule in store.cards");
-        assert!(state.fsrs.is_some());
+        assert!(state.recall.is_some());
         assert_eq!(1, state.total_reviews);
         // Still virtual (sidecar membership), not promoted.
         assert!(store.is_virtual(id));
@@ -1866,7 +1857,7 @@ mod tests {
         // Archived: its interval already sits at the cap, so it's excluded —
         // derived from `store.cards`, no stored flag.
         let archived = insert_virtual(&mut store, "deck.txt", "gap-archived", 0);
-        store.get_or_insert(archived.id(), 0).fsrs = Some(retired_fsrs());
+        store.get_or_insert(archived.id(), 0).recall = Some(retired_fsrs());
 
         assert_eq!(
             1,
@@ -1926,7 +1917,7 @@ mod tests {
 
         assert!(is_retired_id(id, &store, options.retire_after_days));
         let state = store.get(id).expect("schedule kept, not deleted");
-        assert_eq!(4, state.fsrs.as_ref().unwrap().scheduled_days);
+        assert_eq!(4, state.recall.as_ref().unwrap().scheduled_days);
         assert_eq!(2, state.total_reviews);
         assert!(store.is_virtual(id)); // sidecar kept
 
@@ -1953,7 +1944,7 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let synth = insert_virtual(&mut store, "deck.txt", "virtual back", 0);
         let id = synth.id();
-        store.get_or_insert(id, 0).fsrs = Some(crate::store::FsrsState {
+        store.get_or_insert(id, 0).recall = Some(crate::store::FsrsState {
             scheduled_days: 10,
             ..Default::default()
         });
@@ -1979,7 +1970,7 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let synth = insert_virtual(&mut store, "deck.txt", "virtual back", 0);
         let id = synth.id();
-        store.get_or_insert(id, 0).fsrs = Some(retired_fsrs());
+        store.get_or_insert(id, 0).recall = Some(retired_fsrs());
 
         // Otherwise past its stage-1 cooldown: would be due if not archived.
         let now = 61_000;
@@ -2009,229 +2000,20 @@ mod tests {
         assert!(!is_retired_id(id, &store, Some(DEFAULT_RETIRE_AFTER_DAYS)));
     }
 
-    /// The current FSRS due time of card `id` — how these tests advance to "when
-    /// the card is next due" without hard-coding an interval the scheduler owns.
-    fn fsrs_due(store: &Store, id: u64) -> u64 {
-        store
-            .get(id)
-            .and_then(|s| s.fsrs.as_ref())
-            .map(|f| f.due_ms)
-            .unwrap_or_default()
-    }
-
-    #[test]
-    fn the_graduating_pass_does_not_climb_the_rung() {
-        // Drive real graduation: a brand-new card graded Pass, Pass reaches FSRS
-        // Review the honest way. Even with a target above Recall, the pass that
-        // *graduates* the card must not itself climb — the current rung has had no
-        // spaced practice yet (regression guard for C2).
-        let (mut store, _dir) = empty_store();
-        let all = cards(1);
-        let id = all[0].id();
-        let mut session = Session::new(
-            all,
-            &store,
-            sched(),
-            SessionOptions {
-                target: Level::Reconstruct,
-                ..Default::default()
-            },
-            0,
-        );
-
-        session.grade(&mut store, Grade::Pass, 0); // New -> Learning (first Good)
-        let t1 = fsrs_due(&store, id);
-        assert!(session.restart(&store, t1), "the learning card is due again");
-        session.grade(&mut store, Grade::Pass, t1); // Learning -> Review (graduates)
-
-        let s = store.get(id).unwrap();
-        assert!(
-            s.fsrs.as_ref().unwrap().graduated(),
-            "two Goods graduate the card to FSRS Review"
-        );
-        assert_eq!(
-            Level::Recall,
-            s.rung,
-            "the graduating pass must not climb — no spaced practice at Recall yet"
-        );
-    }
-
-    #[test]
-    fn a_spaced_pass_after_graduation_climbs_the_rung() {
-        // Continue the graduated card: one *more* spaced Pass, at its FSRS due
-        // (interval >= ~3 days), now climbs Recall -> Reconstruct.
-        let (mut store, _dir) = empty_store();
-        let all = cards(1);
-        let id = all[0].id();
-        let mut session = Session::new(
-            all,
-            &store,
-            sched(),
-            SessionOptions {
-                target: Level::Reconstruct,
-                ..Default::default()
-            },
-            0,
-        );
-
-        session.grade(&mut store, Grade::Pass, 0); // first Good
-        let t1 = fsrs_due(&store, id);
-        assert!(session.restart(&store, t1));
-        session.grade(&mut store, Grade::Pass, t1); // graduates, no climb
-        assert_eq!(Level::Recall, store.get(id).unwrap().rung);
-
-        let t2 = fsrs_due(&store, id); // the graduated (multi-day) due
-        assert!(session.restart(&store, t2), "the graduated card is due again");
-        session.grade(&mut store, Grade::Pass, t2); // spaced pass past graduation
-
-        assert_eq!(
-            Level::Reconstruct,
-            store.get(id).unwrap().rung,
-            "a spaced pass after graduation climbs a rung"
-        );
-    }
-
-    #[test]
-    fn a_cram_pass_never_climbs_or_resets_the_schedule() {
-        // A graduated, mature card reviewed under --cram is a no-reward refresh:
-        // even with a target above Recall it must not climb the rung nor reset the
-        // FSRS schedule (regression guard for C1 — reanchor is not a real review).
-        let (mut store, _dir) = empty_store();
-        let all = cards(1);
-        let id = all[0].id();
-        let mut session = Session::new(all.clone(), &store, sched(), SessionOptions::default(), 0);
-
-        session.grade(&mut store, Grade::Pass, 0); // first Good
-        let t1 = fsrs_due(&store, id);
-        assert!(session.restart(&store, t1));
-        session.grade(&mut store, Grade::Pass, t1); // graduates to Review
-
-        let before = store.get(id).unwrap().fsrs.unwrap();
-        assert!(before.graduated() && before.scheduled_days >= 3, "mature card");
-
-        // Cram the mature card at a target above Recall — the climb condition
-        // would otherwise be satisfiable.
-        let t2 = fsrs_due(&store, id);
-        let mut cram = Session::new(
-            all,
-            &store,
-            sched(),
-            SessionOptions {
-                cram: true,
-                target: Level::Reconstruct,
-                ..Default::default()
-            },
-            t2,
-        );
-        cram.grade(&mut store, Grade::Pass, t2);
-
-        let after = store.get(id).unwrap();
-        assert_eq!(Level::Recall, after.rung, "a cram refresh must not climb");
-        let f = after.fsrs.as_ref().expect("a cram refresh must not reset fsrs");
-        assert_eq!(before.stability, f.stability, "no reward under cram");
-        assert_eq!(before.scheduled_days, f.scheduled_days, "interval kept");
-    }
-
-    /// An FSRS state at a mature rung, so a miss on it exercises descent rather
-    /// than the fresh-card acquisition path.
-    fn mature_fsrs() -> crate::store::FsrsState {
-        crate::store::FsrsState {
-            stability: 20.0,
-            state: 2,
-            scheduled_days: 15,
-            ..Default::default()
-        }
-    }
-
-    #[test]
-    fn a_reconstruction_miss_drops_to_recall() {
-        // Ladder descent-net (spec §3.4 v1): a frontier miss drops one rung.
-        let (mut store, _dir) = empty_store();
-        let all = cards(1);
-        let id = all[0].id();
-        let s = store.get_or_insert(id, 0);
-        s.rung = Level::Reconstruct;
-        s.fsrs = Some(mature_fsrs());
-
-        let mut session = Session::new(all, &store, sched(), SessionOptions::default(), 0);
-        session.grade(&mut store, Grade::Fail, 0);
-
-        let s = store.get(id).unwrap();
-        assert_eq!(Level::Recall, s.rung, "a reconstruction miss slid down one rung");
-        assert!(s.fsrs.is_none(), "relearning starts fresh at the lower rung");
-    }
-
-    #[test]
-    fn a_recall_miss_stays_at_recall_without_wiping_schedule() {
-        // `descend()` floors at `Recall`, so a Recall miss must not call
-        // `set_rung` — that would needlessly wipe the FSRS relearn state
-        // `scheduler.apply` just produced.
-        let (mut store, _dir) = empty_store();
-        let all = cards(1);
-        let id = all[0].id();
-        let s = store.get_or_insert(id, 0);
-        s.rung = Level::Recall;
-        s.fsrs = Some(mature_fsrs());
-
-        let mut session = Session::new(all, &store, sched(), SessionOptions::default(), 0);
-        session.grade(&mut store, Grade::Fail, 0);
-
-        let s = store.get(id).unwrap();
-        assert_eq!(Level::Recall, s.rung);
-        assert!(
-            s.fsrs.is_some(),
-            "a floored miss relearns via FSRS, not a rung reset"
-        );
-    }
-
-    #[test]
-    fn a_cram_fail_still_descends_but_a_cram_pass_does_not() {
-        // A cram Fail is a real lapse (the `else`/`scheduler.apply` branch) and
-        // descends like any normal miss; a cram Pass is the no-reward reanchor
-        // path (`passed()` is true) and must never touch the rung — companion
-        // regression guard to `a_cram_pass_never_climbs_or_resets_the_schedule`.
-        let (mut store, _dir) = empty_store();
-        let all = cards(2);
-        let id_fail = all[0].id();
-        let id_pass = all[1].id();
-        for c in &all {
-            let s = store.get_or_insert(c.id(), 0);
-            s.rung = Level::Reconstruct;
-            s.fsrs = Some(mature_fsrs());
-        }
-
-        let mut session = Session::new(
-            all,
-            &store,
-            sched(),
-            SessionOptions {
-                cram: true,
-                ..Default::default()
-            },
-            0,
-        );
-        session.grade(&mut store, Grade::Fail, 0);
-        session.grade(&mut store, Grade::Pass, 0);
-
-        assert_eq!(
-            Level::Recall,
-            store.get(id_fail).unwrap().rung,
-            "a cram miss is a real lapse and descends"
-        );
-        assert_eq!(
-            Level::Reconstruct,
-            store.get(id_pass).unwrap().rung,
-            "a cram pass is a no-reward refresh and must not descend"
-        );
-    }
-
-    #[test]
-    fn a_freshly_acquired_card_seeds_at_recall() {
-        let (mut store, _dir) = empty_store();
-        let all = cards(1);
-        let id = all[0].id();
-        let mut session = Session::new(all, &store, sched(), SessionOptions::default(), 0);
-        session.acquire_current(&mut store, 0);
-        assert_eq!(Level::Recall, store.get(id).unwrap().rung);
-    }
+    // TODO(task 5): the climb/descent regression tests that used to live here
+    // (`the_graduating_pass_does_not_climb_the_rung`,
+    // `a_spaced_pass_after_graduation_climbs_the_rung`,
+    // `a_cram_pass_never_climbs_or_resets_the_schedule`,
+    // `a_reconstruction_miss_drops_to_recall`,
+    // `a_recall_miss_stays_at_recall_without_wiping_schedule`,
+    // `a_cram_fail_still_descends_but_a_cram_pass_does_not`,
+    // `a_freshly_acquired_card_seeds_at_recall`) all asserted on `CardState::rung`,
+    // deleted in Task 3 (session-owned levels replace card-owned rungs — there is
+    // nothing left to persist a climb/descent into, so the assertions could no
+    // longer express real behavior). Removed rather than left false-positive;
+    // Task 5's own plan replaces them with level-routed tests
+    // (`a_reconstruct_grade_never_touches_the_recall_schedule`,
+    // `a_recall_drilled_deck_is_immediately_due_at_reconstruct`,
+    // `recognize_marks_a_correct_pick_and_requeues_a_wrong_one`,
+    // `recognize_queue_holds_only_unrecognized_cards`).
 }

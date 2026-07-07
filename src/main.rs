@@ -1218,7 +1218,7 @@ fn list(args: DeckArgs) -> Result<()> {
                             format!("due in {}", humanize_ms(due - now))
                         }
                     };
-                    let label = match state.fsrs.as_ref().map(|f| f.state) {
+                    let label = match state.recall.as_ref().map(|f| f.state) {
                         Some(1) => "learning",
                         Some(2) => "review",
                         Some(3) => "relearning",

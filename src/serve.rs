@@ -2673,18 +2673,17 @@ fn review_state(reviewing: Option<&Reviewing>, store: &Store) -> StateDto {
     };
     let session = &r.session;
     let card = session.current();
-    // The frontier depth rung the card is currently scheduled at (persisted in
-    // the store; an unreviewed card defaults to `Level::default()`). Feeds the
-    // concrete check (`mode`) below via `check_for`.
-    let rung = card
-        .map(|c| store.get(c.id()).map(|s| s.rung).unwrap_or_default())
-        .unwrap_or_default();
-    // The concrete check derives from the card's authored `% reveal:` method and
-    // its current stored rung (spec §8); depth is the deck target, not authored.
+    // TODO(task 8): `CardState` no longer carries a persisted `rung` (Task 3
+    // deleted it — the depth is now a property of the session, not the card).
+    // Stopgap: always resolve `Level::default()` (Recall) until Task 8 reads
+    // the session's own chosen level (`r.session.level()`, added in Task 5).
+    let level = level::Level::default();
+    // The concrete check derives from the card's authored `% reveal:` method
+    // and the session's level (spec §8).
     let mode = card
         .map(|c| {
             let reveal = c.reveal.unwrap_or_default();
-            level::check_for(reveal, rung, c)
+            level::check_for(reveal, level, c)
         })
         .unwrap_or_default();
     // A never-seen card is *acquired* (an attempt, then reveal), not quizzed cold.
@@ -3854,7 +3853,7 @@ mod tests {
         let mut store = Store::open(dir.path().join("progress.json")).unwrap();
         let now = now_ms();
         // The one deck card has graduated and isn't due — no deck contribution.
-        store.get_or_insert(deck.cards[0].id(), now).fsrs = Some(crate::store::FsrsState {
+        store.get_or_insert(deck.cards[0].id(), now).recall = Some(crate::store::FsrsState {
             state: 2,
             scheduled_days: 30,
             due_ms: now + 30 * 86_400_000,

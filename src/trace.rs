@@ -1826,7 +1826,7 @@ mod tests {
         walk.predict("p".to_string());
         walk.grade(&mut store, Delta::Passed, 1);
         assert_eq!(Phase::Done, walk.phase()); // no compress step
-        if let Some(f) = store.get_or_insert(card0, 0).fsrs.as_mut() {
+        if let Some(f) = store.get_or_insert(card0, 0).recall.as_mut() {
             f.state = 2; // Review — graduated
         }
 
@@ -2106,7 +2106,7 @@ mod tests {
         walk.grade(&mut store, Delta::Passed, 1000);
         assert_eq!(Phase::Predict, walk.phase());
         assert_eq!(1, walk.current_index());
-        assert!(store.get(card0).unwrap().fsrs.is_some()); // Passed -> FSRS review recorded
+        assert!(store.get(card0).unwrap().recall.is_some()); // Passed -> FSRS review recorded
 
         // Hop 2 (last): a Failed records a lapse and finishes the walk (no compress
         // step — verification is the separate trace exam).
@@ -2134,7 +2134,7 @@ mod tests {
         walk.grade(&mut store, Delta::Partial, 1000);
         // Partly is a weak success under FSRS: it schedules the card and counts as a pass.
         let state = store.get(card0).unwrap();
-        assert!(state.fsrs.is_some());
+        assert!(state.recall.is_some());
         assert_eq!(1, state.total_passes);
         assert_eq!(1, walk.summary().partly);
     }

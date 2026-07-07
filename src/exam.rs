@@ -2084,7 +2084,7 @@ mod tests {
             // Retired: push the interval (in `store.cards`) to the cap rather
             // than setting a flag (there is none).
             let state = store.get_or_insert(id, 1_000);
-            state.fsrs = Some(crate::store::FsrsState {
+            state.recall = Some(crate::store::FsrsState {
                 scheduled_days: 30,
                 ..Default::default()
             });
