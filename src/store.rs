@@ -105,6 +105,7 @@ pub struct CardState {
     pub history: Vec<Review>,
     /// The frontier depth rung this card is currently scheduled at. `fsrs`
     /// always represents *this* rung's schedule; a rung change resets it.
+    // TODO(task 3): deleted when per-level schedules land.
     #[serde(default)]
     pub rung: crate::level::Level,
     /// Spaced passes accumulated since this rung graduated to FSRS `Review` —
@@ -146,6 +147,7 @@ impl CardState {
 
     /// Moves the card to `rung`, starting a fresh schedule there: the higher
     /// rung is genuinely harder, so no stability is carried across (spec §3.6).
+    // TODO(task 3): deleted when per-level schedules land.
     pub fn set_rung(&mut self, rung: crate::level::Level) {
         self.rung = rung;
         self.fsrs = None;

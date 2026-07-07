@@ -504,6 +504,7 @@ pub struct ReviewConfig {
     /// The learner's depth on the difficulty ladder, resolved from the numeric
     /// `[review] depth` (1 = recall, 2 = reconstruct). Learner-space, not an
     /// authored deck directive; recognition (L0) is never a target.
+    // TODO(task 4): the depth dial is removed with the scheduler rework.
     pub target: Level,
 }
 
@@ -524,6 +525,7 @@ const LOCAL_MANIFEST: &str = "alix.local.toml";
 /// schedulable depths: 1 = recall, 2 = reconstruct. Out-of-range coerces to the
 /// nearest (0/neg → recall, ≥2 → reconstruct) — recognition (L0) is the
 /// unscheduled acquire on-ramp, never a target.
+// TODO(task 4): the depth dial is removed with the scheduler rework.
 fn depth_to_rung(depth: i64) -> crate::level::Level {
     match depth.clamp(1, 2) {
         1 => crate::level::Level::Recall,
