@@ -72,10 +72,14 @@ pub struct SessionOptions {
     /// A card retires once its FSRS interval reaches this many days; `None`
     /// disables retirement. From `[review] retire_after` (per-workspace overridable).
     pub retire_after_days: Option<u32>,
-    /// The learner's depth-ladder target — the rung a graduated card climbs
-    /// toward on a spaced pass (see [`Session::grade`]). From the resolved
-    /// `[review] depth` (per-workspace overridable).
-    pub target: Level,
+    /// The session's chosen depth (spec 2026-07-07-session-levels-spec.md §4):
+    /// Recognize, Recall, or Reconstruct. A session-level property, not a
+    /// per-card one — see `crate::level::Level`.
+    // TODO(task 5): this is a stopgap so `SessionOptions`/`Session::grade`
+    // compile against the new field name; real level-routed session logic
+    // (which schedule `grade` reads/writes, the acquire/quiz flow per level)
+    // is Task 5's job, not this one.
+    pub level: Level,
 }
 
 impl Default for SessionOptions {
@@ -87,7 +91,7 @@ impl Default for SessionOptions {
             order: Order::Scheduled,
             topology: None,
             retire_after_days: Some(DEFAULT_RETIRE_AFTER_DAYS),
-            target: Level::default(),
+            level: Level::default(),
         }
     }
 }
@@ -213,7 +217,7 @@ impl Session {
         self.cards
             .iter()
             .filter_map(|c| store.get(c.id()))
-            .map(|state| self.scheduler.due_at(state))
+            .map(|state| self.scheduler.due_at(state, Level::Recall))
             .min()
     }
 
@@ -290,7 +294,7 @@ impl Session {
         if self.options.cram && grade.passed() {
             // A cram refresh is a documented no-reward path, so the ladder climb
             // must never fire here — only a real review can promote a rung.
-            self.scheduler.reanchor(state, now_ms);
+            self.scheduler.reanchor(state, Level::Recall, now_ms);
         } else {
             // Whether the Recall schedule had *already* reached FSRS `Review`
             // before this review — pinned to Recall (`.recall`, not a rung:
@@ -300,7 +304,7 @@ impl Session {
             // only a *later* spaced pass counts. Captured before `apply`, which
             // is what advances the card into `Review`.
             let was_graduated_before = state.recall.as_ref().is_some_and(|f| f.graduated());
-            self.scheduler.apply(state, grade, now_ms);
+            self.scheduler.apply(state, Level::Recall, grade, now_ms);
             // TODO(task 5): the ladder climb (spec §3.3) used to promote a
             // graduated rung on a spaced pass via `state.rung` /
             // `state.passes_since_graduation` / `state.set_rung` — all deleted
@@ -310,7 +314,7 @@ impl Session {
             // `climb_level` keeps compiling unchanged in shape; Task 5 deletes
             // this block and `climb_level`/`descend_level` for good.
             let rung = Level::default();
-            let target = self.options.target;
+            let target = self.options.level;
             if was_graduated_before
                 && rung < target
                 && grade == Grade::Pass
@@ -424,7 +428,7 @@ impl Session {
             return false;
         }
         match store.get(card.id()) {
-            Some(state) => self.options.cram || self.scheduler.is_due(state, now_ms),
+            Some(state) => self.options.cram || self.scheduler.is_due(state, Level::Recall, now_ms),
             None => true,
         }
     }
@@ -468,7 +472,7 @@ fn build_queue(
             // never scheduled, not even under cram.
             Some(_) if is_retired(card, store, options.retire_after_days) => {}
             Some(state) => {
-                if options.cram || scheduler.is_due(state, now_ms) {
+                if options.cram || scheduler.is_due(state, Level::Recall, now_ms) {
                     due.push(i);
                 }
             }
@@ -480,7 +484,7 @@ fn build_queue(
     due.sort_by_key(|&i| {
         store
             .get(cards[i].id())
-            .map_or(u64::MAX, |s| scheduler.due_at(s))
+            .map_or(u64::MAX, |s| scheduler.due_at(s, Level::Recall))
     });
 
     let mut fresh: Vec<usize> = fresh.into_iter().take(options.max_new).collect();
@@ -596,7 +600,7 @@ pub fn is_virtual_reviewable(
     !is_retired_id(vc.id, store, retire_after_days)
         && store
             .get(vc.id)
-            .is_some_and(|s| scheduler.is_due(s, now_ms))
+            .is_some_and(|s| scheduler.is_due(s, Level::Recall, now_ms))
 }
 
 /// Whether `subject`'s deck has any virtual (remediation) card due right now —
@@ -651,7 +655,7 @@ pub fn count_due_soon_virtual(
         .filter(|vc| !is_retired_id(vc.id, store, retire_after_days))
         .filter(|vc| {
             store.get(vc.id).is_some_and(|s| {
-                let due = scheduler.due_at(s);
+                let due = scheduler.due_at(s, Level::Recall);
                 due > now_ms && due <= now_ms + window_ms
             })
         })
@@ -711,7 +715,7 @@ pub fn is_reviewable(
 ) -> bool {
     match store.get(card.id()) {
         Some(_) if is_retired(card, store, retire_after_days) => false,
-        Some(state) => scheduler.is_due(state, now_ms),
+        Some(state) => scheduler.is_due(state, Level::Recall, now_ms),
         None => true,
     }
 }
@@ -1083,7 +1087,7 @@ mod tests {
                 order: Order::Scheduled,
                 topology: None,
                 retire_after_days: Some(DEFAULT_RETIRE_AFTER_DAYS),
-                target: crate::level::Level::default(),
+                level: crate::level::Level::default(),
             },
             5 * 60 * 1000,
         );
@@ -1171,7 +1175,7 @@ mod tests {
                 order: Order::Scheduled,
                 topology: None,
                 retire_after_days: Some(DEFAULT_RETIRE_AFTER_DAYS),
-                target: crate::level::Level::default(),
+                level: crate::level::Level::default(),
             },
             now + 1,
         );
@@ -1466,7 +1470,7 @@ mod tests {
                 order: Order::Scheduled,
                 topology: None,
                 retire_after_days: Some(DEFAULT_RETIRE_AFTER_DAYS),
-                target: crate::level::Level::default(),
+                level: crate::level::Level::default(),
             },
             1000,
         );

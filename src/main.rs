@@ -11,7 +11,9 @@ use alix::{
     card::Card,
     config::{self, Config},
     deck::{Deck, DeckSettings, DeckState},
-    generate, import, parser, preflight,
+    generate, import,
+    level::Level,
+    parser, preflight,
     recent::{self, RecentDecks},
     scheduler::{Fsrs, Scheduler},
     serve,
@@ -740,7 +742,9 @@ fn build_review(
 
     // A workspace member drills under that workspace's `alix.local.toml` pacing
     // override (retention + retirement), else the global `[review]` config.
-    let review = config.review.for_deck(deck);
+    let review = config
+        .review
+        .for_workspace(deck.parent().unwrap_or_else(|| Path::new("")));
 
     // Inject this deck's virtual (remediation) cards alongside its authored
     // ones, so both are drilled by the same FSRS-due queue — but not under a
@@ -794,7 +798,10 @@ fn build_review(
         order,
         topology: topology_order,
         retire_after_days: review.retire_after_days,
-        target: review.target,
+        // TODO(task 8): the config depth dial is gone (Task 4) — this stopgap
+        // always drills at Recall until session-level selection (which level
+        // a CLI/web session runs at) is wired up.
+        level: Level::Recall,
     };
     let session = Session::new(
         cards,
@@ -1130,7 +1137,9 @@ fn stats(args: DeckArgs) -> Result<()> {
         let store = store_for(std::slice::from_ref(path), args.store.clone())?;
         let deck = Deck::load(path)?;
         // …and its own pacing: a workspace deck honors its `alix.local.toml`.
-        let review = config.review.for_deck(path);
+        let review = config
+            .review
+            .for_workspace(path.parent().unwrap_or_else(|| Path::new("")));
         let scheduler = Fsrs::new(review.retention);
 
         let mut due_now = 0usize;
@@ -1142,7 +1151,7 @@ fn stats(args: DeckArgs) -> Result<()> {
                 // Retired cards are resting, so they don't count as due (they
                 // still count toward the review totals below).
                 if !alix::session::is_retired(card, &store, review.retire_after_days) {
-                    let due = scheduler.due_at(state);
+                    let due = scheduler.due_at(state, Level::Recall);
                     if due <= now {
                         due_now += 1;
                     } else if due <= now + 86_400_000 {
@@ -1200,7 +1209,9 @@ fn list(args: DeckArgs) -> Result<()> {
         let store = store_for(std::slice::from_ref(path), args.store.clone())?;
         let deck = Deck::load(path)?;
         // …and its own pacing (workspace `alix.local.toml` override).
-        let review = config.review.for_deck(path);
+        let review = config
+            .review
+            .for_workspace(path.parent().unwrap_or_else(|| Path::new("")));
         let scheduler = Fsrs::new(review.retention);
         println!("{}", deck.display_name());
         for card in &deck.cards {
@@ -1211,7 +1222,7 @@ fn list(args: DeckArgs) -> Result<()> {
                     let due = if alix::session::is_retired(card, &store, review.retire_after_days) {
                         "resting".to_string()
                     } else {
-                        let due = scheduler.due_at(state);
+                        let due = scheduler.due_at(state, Level::Recall);
                         if due <= now {
                             "due now".to_string()
                         } else {
@@ -1621,7 +1632,10 @@ fn augment_cmd(args: AugmentArgs) -> Result<()> {
             let subject: Arc<str> = Arc::from(deck.subject.as_str());
             let deck_ids: std::collections::HashSet<u64> =
                 deck.cards.iter().map(Card::id).collect();
-            let retire_after_days = config.review.for_deck(&deck.path).retire_after_days;
+            let retire_after_days = config
+                .review
+                .for_workspace(deck.path.parent().unwrap_or_else(|| Path::new("")))
+                .retire_after_days;
             let mut plain: Vec<Card> = deck
                 .cards
                 .iter()

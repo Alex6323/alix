@@ -53,23 +53,26 @@ pub fn keypoint_grade(covered: usize, total: usize) -> Grade {
     }
 }
 
-/// A scheduling algorithm.
+/// A scheduling algorithm. Every method is routed through an explicit
+/// `level`: `Recall` and `Reconstruct` each own an independent schedule on
+/// `CardState` (see `CardState::schedule`/`schedule_slot`), so nothing here
+/// implicitly means "the Recall schedule" — the caller says which.
 pub trait Scheduler {
-    /// When the card is due next (Unix ms).
-    fn due_at(&self, state: &CardState) -> u64;
+    /// When the card is due next (Unix ms) at `level`.
+    fn due_at(&self, state: &CardState, level: Level) -> u64;
 
-    /// Applies a review outcome to the card state at time `now_ms`.
-    fn apply(&self, state: &mut CardState, grade: Grade, now_ms: u64);
+    /// Applies a review outcome to the card state at `level`, at time `now_ms`.
+    fn apply(&self, state: &mut CardState, level: Level, grade: Grade, now_ms: u64);
 
     /// A *cram refresh*: keep the card's memory (stability, difficulty, interval)
     /// exactly as-is but push its due date out by its current interval, so a correct
     /// cram answer refreshes without rewarding. No review is recorded. A card with no
-    /// FSRS state yet is left untouched — there's no interval to preserve.
-    fn reanchor(&self, state: &mut CardState, now_ms: u64);
+    /// FSRS state yet at `level` is left untouched — there's no interval to preserve.
+    fn reanchor(&self, state: &mut CardState, level: Level, now_ms: u64);
 
-    /// Whether the card is due at `now_ms`.
-    fn is_due(&self, state: &CardState, now_ms: u64) -> bool {
-        self.due_at(state) <= now_ms
+    /// Whether the card is due at `level` at `now_ms`.
+    fn is_due(&self, state: &CardState, level: Level, now_ms: u64) -> bool {
+        self.due_at(state, level) <= now_ms
     }
 }
 
@@ -187,23 +190,21 @@ impl Default for Fsrs {
     }
 }
 
-// TODO(task 4): the trait (and this impl) gain an explicit `level: Level`
-// parameter, routing every read/write through `CardState::schedule`/
-// `schedule_slot` at that level instead of the `Level::Recall` pinned below —
-// Task 3 only renamed the store's shape (`fsrs` -> `recall` + `reconstruct`),
-// it did not touch the scheduler's own interface.
 impl Scheduler for Fsrs {
-    fn due_at(&self, state: &CardState) -> u64 {
-        match state.schedule(Level::Recall) {
+    fn due_at(&self, state: &CardState, level: Level) -> u64 {
+        match state.schedule(level) {
             Some(s) => s.due_ms,
-            // Not yet scheduled under FSRS — a freshly acquired card settles for one
-            // fixed cooldown before its first quiz.
+            // Not yet scheduled under FSRS at this level — a freshly acquired card
+            // (or one never reviewed at this level) settles for one fixed cooldown
+            // before its first quiz. This makes a Recall-drilled deck immediately
+            // due at Reconstruct: a lazily-created schedule, not a warm carry-over.
             None => state.acquired_ms.saturating_add(ACQUIRE_COOLDOWN_MS),
         }
     }
 
-    fn apply(&self, state: &mut CardState, grade: Grade, now_ms: u64) {
-        let (card, pre_state, prev_goods) = match state.schedule(Level::Recall) {
+    fn apply(&self, state: &mut CardState, level: Level, grade: Grade, now_ms: u64) {
+        let current = state.schedule(level).copied();
+        let (card, pre_state, prev_goods) = match &current {
             Some(s) => (to_fsrs_card(s), s.state, s.learning_goods),
             None => (seed_card(state, now_ms), 0, 0),
         };
@@ -232,14 +233,17 @@ impl Scheduler for Fsrs {
         }
         next.learning_goods = if next.state == 2 { 0 } else { goods };
 
-        if let Some(slot) = state.schedule_slot(Level::Recall) {
-            *slot = Some(next);
-        }
-        state.record_review(now_ms, grade, Level::Recall);
+        // `Recognize` has no slot (unscheduled + boolean) — a silent no-op, never
+        // reached in practice since Recognize is graded by pick, not by `apply`.
+        let Some(slot) = state.schedule_slot(level) else {
+            return;
+        };
+        *slot = Some(next);
+        state.record_review(now_ms, grade, level);
     }
 
-    fn reanchor(&self, state: &mut CardState, now_ms: u64) {
-        if let Some(Some(f)) = state.schedule_slot(Level::Recall) {
+    fn reanchor(&self, state: &mut CardState, level: Level, now_ms: u64) {
+        if let Some(Some(f)) = state.schedule_slot(level) {
             let interval_ms = u64::from(f.scheduled_days) * DAY_MS;
             f.due_ms = now_ms.saturating_add(interval_ms);
         }
@@ -255,11 +259,29 @@ mod tests {
         let sched = Fsrs::default();
         let mut s = CardState::new(1000); // acquired_ms = 1000, recall = None
         // No FSRS state yet: due is exactly the fixed acquire cooldown past acquire.
-        assert_eq!(sched.due_at(&s), 1000 + ACQUIRE_COOLDOWN_MS);
+        assert_eq!(sched.due_at(&s, Level::Recall), 1000 + ACQUIRE_COOLDOWN_MS);
         // Once graduated to FSRS, the schedule owns the due date, not the cooldown.
-        sched.apply(&mut s, Grade::Pass, 1000);
+        sched.apply(&mut s, Level::Recall, Grade::Pass, 1000);
         assert!(s.recall.is_some());
-        assert!(sched.due_at(&s) != 1000 + ACQUIRE_COOLDOWN_MS);
+        assert!(sched.due_at(&s, Level::Recall) != 1000 + ACQUIRE_COOLDOWN_MS);
+    }
+
+    #[test]
+    fn apply_writes_only_the_chosen_levels_schedule() {
+        let sched = Fsrs::default();
+        let mut st = CardState::new(0);
+        sched.apply(&mut st, Level::Reconstruct, Grade::Pass, 1_000);
+        assert!(st.schedule(Level::Reconstruct).is_some());
+        assert!(st.schedule(Level::Recall).is_none(), "no cross-crediting");
+        assert_eq!(Level::Reconstruct, st.history[0].level);
+    }
+
+    #[test]
+    fn apply_on_recognize_is_a_no_op() {
+        let sched = Fsrs::default();
+        let mut st = CardState::new(0);
+        sched.apply(&mut st, Level::Recognize, Grade::Pass, 1_000);
+        assert!(st.recall.is_none() && st.reconstruct.is_none() && st.history.is_empty());
     }
 
     #[test]
@@ -297,10 +319,13 @@ mod tests {
     fn fsrs_pass_on_a_new_card_sets_stability_and_schedules_out() {
         let sched = Fsrs::new(0.9);
         let mut s = CardState::new(0);
-        sched.apply(&mut s, Grade::Pass, 0);
+        sched.apply(&mut s, Level::Recall, Grade::Pass, 0);
         let f = s.recall.expect("fsrs state set");
         assert!(f.stability > 0.0, "stability should be positive");
-        assert!(sched.due_at(&s) > 0, "should be scheduled into the future");
+        assert!(
+            sched.due_at(&s, Level::Recall) > 0,
+            "should be scheduled into the future"
+        );
         assert_eq!(1, s.total_reviews);
         assert!(s.history.last().unwrap().grade.passed());
     }
@@ -310,9 +335,9 @@ mod tests {
         // partly → Hard (a weak success) grows stability less than Pass → Good.
         let sched = Fsrs::new(0.9);
         let mut good = CardState::new(0);
-        sched.apply(&mut good, Grade::Pass, 0);
+        sched.apply(&mut good, Level::Recall, Grade::Pass, 0);
         let mut hard = CardState::new(0);
-        sched.apply(&mut hard, Grade::Partial, 0);
+        sched.apply(&mut hard, Level::Recall, Grade::Partial, 0);
         assert!(good.recall.unwrap().stability > hard.recall.unwrap().stability);
     }
 
@@ -320,10 +345,12 @@ mod tests {
     fn fsrs_a_miss_shortens_the_next_interval() {
         let sched = Fsrs::new(0.9);
         let mut s = CardState::new(0);
-        sched.apply(&mut s, Grade::Pass, 0);
-        let pass_interval = sched.due_at(&s); // reviewed at t = 0
-        sched.apply(&mut s, Grade::Fail, pass_interval); // miss it when due
-        let fail_interval = sched.due_at(&s).saturating_sub(pass_interval);
+        sched.apply(&mut s, Level::Recall, Grade::Pass, 0);
+        let pass_interval = sched.due_at(&s, Level::Recall); // reviewed at t = 0
+        sched.apply(&mut s, Level::Recall, Grade::Fail, pass_interval); // miss it when due
+        let fail_interval = sched
+            .due_at(&s, Level::Recall)
+            .saturating_sub(pass_interval);
         assert!(!s.history.last().unwrap().grade.passed());
         assert!(
             fail_interval < pass_interval,
@@ -337,10 +364,10 @@ mod tests {
         // (FSRS's built-in ~10 min), in `Learning` — not scheduled days out yet.
         let sched = Fsrs::new(0.9);
         let mut s = CardState::new(0);
-        sched.apply(&mut s, Grade::Pass, 0);
+        sched.apply(&mut s, Level::Recall, Grade::Pass, 0);
         let f = s.recall.expect("fsrs state set");
         assert_eq!(1, f.state, "a first Good enters Learning, not Review");
-        let due = sched.due_at(&s);
+        let due = sched.due_at(&s, Level::Recall);
         assert!(
             due > 0 && due < DAY_MS,
             "learning step is sub-day (got {due} ms)"
@@ -353,16 +380,16 @@ mod tests {
         // scheduled inter-day.
         let sched = Fsrs::new(0.9);
         let mut s = CardState::new(0);
-        sched.apply(&mut s, Grade::Pass, 0);
-        let step_due = sched.due_at(&s);
-        sched.apply(&mut s, Grade::Pass, step_due);
+        sched.apply(&mut s, Level::Recall, Grade::Pass, 0);
+        let step_due = sched.due_at(&s, Level::Recall);
+        sched.apply(&mut s, Level::Recall, Grade::Pass, step_due);
         assert_eq!(
             2,
             s.recall.expect("fsrs state").state,
             "second Good reaches Review"
         );
         assert!(
-            sched.due_at(&s) - step_due >= DAY_MS,
+            sched.due_at(&s, Level::Recall) - step_due >= DAY_MS,
             "a graduated card is scheduled at least a day out"
         );
     }
@@ -371,8 +398,8 @@ mod tests {
     fn fail_then_one_good_does_not_graduate() {
         let sched = Fsrs::new(0.9);
         let mut s = CardState::new(0);
-        sched.apply(&mut s, Grade::Fail, 0); // New -> Learning
-        sched.apply(&mut s, Grade::Pass, 60_000); // one Good: held, not graduated
+        sched.apply(&mut s, Level::Recall, Grade::Fail, 0); // New -> Learning
+        sched.apply(&mut s, Level::Recall, Grade::Pass, 60_000); // one Good: held, not graduated
         let f = s.recall.unwrap();
         assert_eq!(1, f.state, "one Good after a fail stays in Learning");
         assert_eq!(1, f.learning_goods);
@@ -382,10 +409,10 @@ mod tests {
     fn two_goods_after_a_fail_do_graduate() {
         let sched = Fsrs::new(0.9);
         let mut s = CardState::new(0);
-        sched.apply(&mut s, Grade::Fail, 0); // New -> Learning, goods = 0
-        sched.apply(&mut s, Grade::Pass, 60_000); // goods = 1, held
+        sched.apply(&mut s, Level::Recall, Grade::Fail, 0); // New -> Learning, goods = 0
+        sched.apply(&mut s, Level::Recall, Grade::Pass, 60_000); // goods = 1, held
         assert_eq!(1, s.recall.unwrap().state);
-        sched.apply(&mut s, Grade::Pass, 700_000); // goods = 2 -> Review
+        sched.apply(&mut s, Level::Recall, Grade::Pass, 700_000); // goods = 2 -> Review
         assert_eq!(2, s.recall.unwrap().state, "two Goods graduate");
     }
 
@@ -393,11 +420,11 @@ mod tests {
     fn a_fail_resets_graduation_progress() {
         let sched = Fsrs::new(0.9);
         let mut s = CardState::new(0);
-        sched.apply(&mut s, Grade::Pass, 0); // goods = 1
-        sched.apply(&mut s, Grade::Fail, 60_000); // reset -> goods = 0
-        sched.apply(&mut s, Grade::Pass, 120_000); // goods = 1, held
+        sched.apply(&mut s, Level::Recall, Grade::Pass, 0); // goods = 1
+        sched.apply(&mut s, Level::Recall, Grade::Fail, 60_000); // reset -> goods = 0
+        sched.apply(&mut s, Level::Recall, Grade::Pass, 120_000); // goods = 1, held
         assert_eq!(1, s.recall.unwrap().state, "still Learning after the reset");
-        sched.apply(&mut s, Grade::Pass, 700_000); // goods = 2 -> Review
+        sched.apply(&mut s, Level::Recall, Grade::Pass, 700_000); // goods = 2 -> Review
         assert_eq!(2, s.recall.unwrap().state);
     }
 
@@ -405,11 +432,11 @@ mod tests {
     fn partial_is_neutral_for_graduation() {
         let sched = Fsrs::new(0.9);
         let mut s = CardState::new(0);
-        sched.apply(&mut s, Grade::Pass, 0); // goods = 1, Learning
-        sched.apply(&mut s, Grade::Partial, 600_000); // neutral: stays Learning, goods = 1
+        sched.apply(&mut s, Level::Recall, Grade::Pass, 0); // goods = 1, Learning
+        sched.apply(&mut s, Level::Recall, Grade::Partial, 600_000); // neutral: stays Learning, goods = 1
         assert_eq!(1, s.recall.unwrap().state);
         assert_eq!(1, s.recall.unwrap().learning_goods);
-        sched.apply(&mut s, Grade::Pass, 1_200_000); // goods = 2 -> Review
+        sched.apply(&mut s, Level::Recall, Grade::Pass, 1_200_000); // goods = 2 -> Review
         assert_eq!(2, s.recall.unwrap().state);
     }
 
@@ -417,11 +444,11 @@ mod tests {
     fn a_lapsed_card_regraduates_on_one_good() {
         let sched = Fsrs::new(0.9);
         let mut s = CardState::new(0);
-        sched.apply(&mut s, Grade::Pass, 0);
-        sched.apply(&mut s, Grade::Pass, 600_000); // -> Review
-        sched.apply(&mut s, Grade::Fail, 1_200_000); // lapse -> Relearning
+        sched.apply(&mut s, Level::Recall, Grade::Pass, 0);
+        sched.apply(&mut s, Level::Recall, Grade::Pass, 600_000); // -> Review
+        sched.apply(&mut s, Level::Recall, Grade::Fail, 1_200_000); // lapse -> Relearning
         assert_eq!(3, s.recall.unwrap().state);
-        sched.apply(&mut s, Grade::Pass, 1_800_000); // one Good re-graduates (gate skips relearning)
+        sched.apply(&mut s, Level::Recall, Grade::Pass, 1_800_000); // one Good re-graduates (gate skips relearning)
         assert_eq!(2, s.recall.unwrap().state);
     }
 
@@ -432,13 +459,13 @@ mod tests {
         // Review first, then re-pass at different lateness.
         let sched = Fsrs::new(0.9);
         let mut early = CardState::new(0);
-        sched.apply(&mut early, Grade::Pass, 0); // New -> Learning
-        let step_due = sched.due_at(&early);
-        sched.apply(&mut early, Grade::Pass, step_due); // Learning -> Review
-        let due = sched.due_at(&early);
+        sched.apply(&mut early, Level::Recall, Grade::Pass, 0); // New -> Learning
+        let step_due = sched.due_at(&early, Level::Recall);
+        sched.apply(&mut early, Level::Recall, Grade::Pass, step_due); // Learning -> Review
+        let due = sched.due_at(&early, Level::Recall);
         let mut late = early.clone();
-        sched.apply(&mut early, Grade::Pass, due); // on time
-        sched.apply(&mut late, Grade::Pass, due * 3); // well overdue
+        sched.apply(&mut early, Level::Recall, Grade::Pass, due); // on time
+        sched.apply(&mut late, Level::Recall, Grade::Pass, due * 3); // well overdue
         assert!(
             late.recall.unwrap().stability > early.recall.unwrap().stability,
             "an overdue-but-recalled card should gain more stability"

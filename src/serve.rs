@@ -1936,7 +1936,8 @@ pub fn run_review(
                 };
                 // A workspace member's exam remediation honors its own
                 // `alix.local.toml` retirement cap, same as its review session.
-                let retire_after_days = review_cfg.for_deck(&ex.deck_path).retire_after_days;
+                let parent = ex.deck_path.parent().unwrap_or_else(|| Path::new(""));
+                let retire_after_days = review_cfg.for_workspace(parent).retire_after_days;
                 ex.sitting.poll(&mut store, now_ms(), retire_after_days);
                 respond_json(request, &exam_dto(ex, &decks_dir));
             }
@@ -3138,7 +3139,8 @@ fn deck_topology_dto(
     review: ReviewConfig,
 ) -> DeckTopologyDto {
     // A workspace member's due counts honor its `alix.local.toml` pacing override.
-    let review = review.for_deck(&deck.path);
+    let parent = deck.path.parent().unwrap_or_else(|| Path::new(""));
+    let review = review.for_workspace(parent);
     let by_id: HashMap<u64, &Card> = deck.cards.iter().map(|c| (c.id(), c)).collect();
     let deck_ids: HashSet<u64> = by_id.keys().copied().collect();
     let scheduler = Fsrs::new(review.retention);

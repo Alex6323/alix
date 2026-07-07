@@ -20,8 +20,6 @@ use anyhow::{Context, Result, bail};
 use clap::ValueEnum;
 use serde::Deserialize;
 
-use crate::level::Level;
-
 /// A key without modifiers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Key {
@@ -491,9 +489,9 @@ impl Default for ServeConfig {
 
 /// The whole user configuration.
 // Not `Eq`: `ExamConfig::pass_threshold` is an `f64`.
-/// Personal review pacing (`[review]` in the config): the FSRS retention target, the
-/// interval past which a card retires, and the ladder depth target. A workspace can
-/// override these in its own `alix.local.toml` (never shared).
+/// Personal review pacing (`[review]` in the config): the FSRS retention target and
+/// the interval past which a card retires. A workspace can override these in its own
+/// `alix.local.toml` (never shared).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ReviewConfig {
     /// FSRS target retrievability `r` (0.70–0.99). Higher → shorter intervals.
@@ -501,11 +499,6 @@ pub struct ReviewConfig {
     /// A card retires once its scheduled interval reaches this many days; `None`
     /// disables retirement (drill forever).
     pub retire_after_days: Option<u32>,
-    /// The learner's depth on the difficulty ladder, resolved from the numeric
-    /// `[review] depth` (1 = recall, 2 = reconstruct). Learner-space, not an
-    /// authored deck directive; recognition (L0) is never a target.
-    // TODO(task 4): the depth dial is removed with the scheduler rework.
-    pub target: Level,
 }
 
 impl Default for ReviewConfig {
@@ -513,25 +506,12 @@ impl Default for ReviewConfig {
         Self {
             retention: 0.9,
             retire_after_days: Some(crate::session::DEFAULT_RETIRE_AFTER_DAYS),
-            target: Level::default(),
         }
     }
 }
 
 /// A workspace's personal, unshared pacing override (sibling of `alix.toml`).
 const LOCAL_MANIFEST: &str = "alix.local.toml";
-
-/// Maps an authored `depth` number to the scheduling rung, clamped to the two
-/// schedulable depths: 1 = recall, 2 = reconstruct. Out-of-range coerces to the
-/// nearest (0/neg → recall, ≥2 → reconstruct) — recognition (L0) is the
-/// unscheduled acquire on-ramp, never a target.
-// TODO(task 4): the depth dial is removed with the scheduler rework.
-fn depth_to_rung(depth: i64) -> crate::level::Level {
-    match depth.clamp(1, 2) {
-        1 => crate::level::Level::Recall,
-        _ => crate::level::Level::Reconstruct,
-    }
-}
 
 impl ReviewConfig {
     /// Overlays a workspace's `alix.local.toml` `[review]` overrides onto this
@@ -553,30 +533,6 @@ impl ReviewConfig {
             && let Ok(days) = parse_retire_after(&retire_after)
         {
             review.retire_after_days = days;
-        }
-        if let Some(depth) = raw.review.depth {
-            review.target = depth_to_rung(depth);
-        }
-        review
-    }
-
-    /// Resolves the depth for a specific deck: the workspace `[review]` overrides
-    /// (via [`for_workspace`](Self::for_workspace)), then the deck's own
-    /// `[review.deck."<file name>"]` depth if present. Precedence: per-deck >
-    /// workspace > global > default.
-    pub fn for_deck(self, deck_path: &Path) -> Self {
-        let Some(dir) = deck_path.parent().filter(|d| crate::workspace::is_workspace(d)) else {
-            return self;
-        };
-        let mut review = self.for_workspace(dir);
-        let Some(name) = deck_path.file_name().and_then(|n| n.to_str()) else {
-            return review;
-        };
-        if let Ok(text) = std::fs::read_to_string(dir.join(LOCAL_MANIFEST))
-            && let Ok(raw) = toml::from_str::<RawLocalConfig>(&text)
-            && let Some(depth) = raw.review.deck.get(name).and_then(|d| d.depth)
-        {
-            review.target = depth_to_rung(depth);
         }
         review
     }
@@ -636,23 +592,12 @@ struct RawConfig {
     decks_dir: Option<String>,
 }
 
-/// The `[review]` section: personal pacing (FSRS retention, when a card retires, and the ladder depth target).
+/// The `[review]` section: personal pacing (FSRS retention, when a card retires).
 #[derive(Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 struct RawReviewConfig {
     retention: Option<f64>,
     retire_after: Option<String>,
-    depth: Option<i64>,
-    /// Per-deck depth overrides, keyed by deck file name (`[review.deck."<name>"]`).
-    #[serde(default)]
-    deck: std::collections::HashMap<String, RawDeckReview>,
-}
-
-/// One deck's entry under `[review.deck."<name>"]` — currently just a depth.
-#[derive(Deserialize, Default)]
-#[serde(deny_unknown_fields)]
-struct RawDeckReview {
-    depth: Option<i64>,
 }
 
 /// The `alix.local.toml` schema: personal per-workspace overrides. Currently just
@@ -953,9 +898,6 @@ impl Config {
             review.retire_after_days =
                 parse_retire_after(&retire_after).context("in [review] retire_after")?;
         }
-        if let Some(depth) = raw.review.depth {
-            review.target = depth_to_rung(depth);
-        }
 
         let decks_dir = raw.decks_dir.map(|s| expand_tilde(&s));
 
@@ -1185,7 +1127,6 @@ pub fn default_config_toml() -> &'static str {
 [review]
 # retention = 0.9               # FSRS target retrievability (0.70–0.99); higher = shorter intervals
 # retire_after = "1y"           # a card rests once its interval reaches this ("2w", "6m", "30d", or "never")
-# depth = 1                     # how deep to drill: 1 = recall (default) · 2 = reconstruct
 "#
 }
 
@@ -1249,7 +1190,6 @@ mod tests {
         let base = ReviewConfig {
             retention: 0.9,
             retire_after_days: Some(30),
-            ..Default::default()
         };
         let resolved = base.for_workspace(dir.path());
         assert_eq!(0.85, resolved.retention);
@@ -1257,53 +1197,9 @@ mod tests {
     }
 
     #[test]
-    fn review_depth_defaults_to_recall_and_parses_a_number() {
-        assert_eq!(ReviewConfig::default().target, Level::Recall);
-        let config = Config::from_toml("[review]\ndepth = 2\n").unwrap();
-        assert_eq!(config.review.target, Level::Reconstruct);
-    }
-
-    #[test]
-    fn depth_clamps_out_of_range_values() {
-        assert_eq!(depth_to_rung(0), Level::Recall);
-        assert_eq!(depth_to_rung(-5), Level::Recall);
-        assert_eq!(depth_to_rung(1), Level::Recall);
-        assert_eq!(depth_to_rung(2), Level::Reconstruct);
-        assert_eq!(depth_to_rung(7), Level::Reconstruct);
-    }
-
-    #[test]
-    fn a_leftover_target_key_is_rejected() {
-        // `[review] target` was renamed to `depth`; deny_unknown_fields makes the
-        // old key a hard parse error (the loud migration signal).
-        assert!(Config::from_toml("[review]\ntarget = \"recall\"\n").is_err());
-    }
-
-    #[test]
-    fn a_workspace_local_toml_overrides_the_global_depth() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("alix.local.toml"), "[review]\ndepth = 2\n").unwrap();
-        let base = ReviewConfig { target: Level::Recall, ..Default::default() };
-        assert_eq!(Level::Reconstruct, base.for_workspace(dir.path()).target);
-    }
-
-    #[test]
-    fn for_deck_applies_a_per_deck_depth_override() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("alix.toml"), "title = \"w\"\n").unwrap();
-        std::fs::write(dir.path().join("vocab.txt"), "# q\n\ta\n").unwrap();
-        std::fs::write(dir.path().join("concepts.txt"), "# q\n\ta\n").unwrap();
-        std::fs::write(
-            dir.path().join("alix.local.toml"),
-            "[review]\ndepth = 1\n\n[review.deck.\"vocab.txt\"]\ndepth = 2\n",
-        )
-        .unwrap();
-        // The named deck goes deeper...
-        let vocab = dir.path().join("vocab.txt");
-        assert_eq!(Level::Reconstruct, ReviewConfig::default().for_deck(&vocab).target);
-        // ...an unnamed deck inherits the workspace depth (1 = recall).
-        let other = dir.path().join("concepts.txt");
-        assert_eq!(Level::Recall, ReviewConfig::default().for_deck(&other).target);
+    fn a_review_depth_key_is_now_rejected() {
+        // deny_unknown_fields: the removed dial errors loudly, not silently (pre-1.0 break).
+        assert!(Config::from_toml("[review]\ndepth = 2\n").is_err());
     }
 
     #[test]
