@@ -293,7 +293,7 @@ impl Session {
             // not recognized and re-queues. No partial credit, nothing to
             // schedule.
             let state = store.get_or_insert(id, now_ms);
-            state.record_review(now_ms, grade, Level::Recognize);
+            state.record_review(now_ms, grade, Level::Recognize, false);
             if grade == Grade::Pass {
                 state.recognized_ms = Some(now_ms);
                 self.roster.retain(|&i| self.cards[i].id() != id);
@@ -311,7 +311,7 @@ impl Session {
         if self.options.cram && grade.passed() {
             self.scheduler.reanchor(state, level, now_ms);
         } else {
-            self.scheduler.apply(state, level, grade, now_ms);
+            self.scheduler.apply(state, level, grade, now_ms, false);
         }
 
         self.stats.reviews += 1;

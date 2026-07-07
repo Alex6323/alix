@@ -38,6 +38,11 @@ pub struct Review {
     /// all (there was only ever one schedule) — those entries default to `Recall`.
     #[serde(default)]
     pub level: Level,
+    /// Whether this review was credited downward from a pass at a higher level
+    /// (a full Reconstruct pass crediting a due Recall schedule) rather than
+    /// answered directly. Directly-answered reviews don't serialize the field.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub propagated: bool,
 }
 
 /// Serde default for a `Review` from a pre-grade store (which had only a `passed`
@@ -157,7 +162,9 @@ impl CardState {
     }
 
     /// Appends a review to the bounded history and updates the counters.
-    pub fn record_review(&mut self, ts_ms: u64, grade: Grade, level: Level) {
+    /// `propagated` marks a review the learner never answered directly — credit
+    /// that flowed down from a pass at a higher level (see `Session::grade`).
+    pub fn record_review(&mut self, ts_ms: u64, grade: Grade, level: Level, propagated: bool) {
         self.total_reviews += 1;
         if grade.passed() {
             self.total_passes += 1;
@@ -165,7 +172,12 @@ impl CardState {
         } else {
             self.streak = 0;
         }
-        self.history.push(Review { ts_ms, grade, level });
+        self.history.push(Review {
+            ts_ms,
+            grade,
+            level,
+            propagated,
+        });
         if self.history.len() > HISTORY_CAP {
             let excess = self.history.len() - HISTORY_CAP;
             self.history.drain(..excess);
@@ -777,10 +789,10 @@ mod tests {
         assert_eq!(None, store.last_review_ms());
         store
             .get_or_insert(1, 0)
-            .record_review(100, Grade::Pass, Level::Recall);
+            .record_review(100, Grade::Pass, Level::Recall, false);
         store
             .get_or_insert(2, 0)
-            .record_review(300, Grade::Pass, Level::Recall);
+            .record_review(300, Grade::Pass, Level::Recall, false);
         assert_eq!(Some(300), store.last_review_ms());
     }
 
@@ -799,7 +811,7 @@ mod tests {
 
         let mut store = Store::open(&path).unwrap();
         let state = store.get_or_insert(42, 1000);
-        state.record_review(1000, Grade::Pass, Level::Recall);
+        state.record_review(1000, Grade::Pass, Level::Recall, false);
         store.save().unwrap();
 
         let reloaded = Store::open(&path).unwrap();
@@ -810,10 +822,34 @@ mod tests {
             vec![Review {
                 ts_ms: 1000,
                 grade: Grade::Pass,
-                level: Level::Recall
+                level: Level::Recall,
+                propagated: false
             }],
             state.history
         );
+    }
+
+    #[test]
+    fn propagated_flag_survives_save_reload() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("progress.json");
+
+        let mut store = Store::open(&path).unwrap();
+        let state = store.get_or_insert(42, 1000);
+        state.record_review(1000, Grade::Pass, Level::Reconstruct, false);
+        state.record_review(1000, Grade::Pass, Level::Recall, true);
+        store.save().unwrap();
+
+        // The marker round-trips; the unmarked review doesn't serialize the key
+        // at all (no store bloat for the common case).
+        let json = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(1, json.matches("propagated").count());
+
+        let reloaded = Store::open(&path).unwrap();
+        let history = &reloaded.get(42).unwrap().history;
+        assert!(!history[0].propagated);
+        assert!(history[1].propagated);
+        assert_eq!(Level::Recall, history[1].level);
     }
 
     #[test]
@@ -1185,7 +1221,7 @@ mod tests {
             // Seed a drilled schedule for each hole — promote must preserve these.
             store
                 .get_or_insert(id, 1000)
-                .record_review(1000, Grade::Pass, Level::Recall);
+                .record_review(1000, Grade::Pass, Level::Recall, false);
         }
 
         promote_virtual(&mut store, id0, &deck_path).unwrap();
@@ -1231,8 +1267,8 @@ mod tests {
 
         // Drill the schedule in `store.cards`, not on the virtual entry.
         let mut state = CardState::new(1000);
-        state.record_review(1000, Grade::Pass, Level::Recall);
-        state.record_review(2000, Grade::Pass, Level::Recall);
+        state.record_review(1000, Grade::Pass, Level::Recall, false);
+        state.record_review(2000, Grade::Pass, Level::Recall, false);
         state.recall = Some(FsrsState {
             stability: 12.5,
             difficulty: 4.2,
@@ -1267,7 +1303,7 @@ mod tests {
     fn history_is_capped() {
         let mut state = CardState::new(0);
         for i in 0..(HISTORY_CAP as u64 + 10) {
-            state.record_review(i, Grade::Pass, Level::Recall);
+            state.record_review(i, Grade::Pass, Level::Recall, false);
         }
         assert_eq!(HISTORY_CAP, state.history.len());
         assert_eq!(10, state.history[0].ts_ms);
@@ -1277,10 +1313,10 @@ mod tests {
     #[test]
     fn streak_resets_on_fail() {
         let mut state = CardState::new(0);
-        state.record_review(1, Grade::Pass, Level::Recall);
-        state.record_review(2, Grade::Pass, Level::Recall);
+        state.record_review(1, Grade::Pass, Level::Recall, false);
+        state.record_review(2, Grade::Pass, Level::Recall, false);
         assert_eq!(2, state.streak);
-        state.record_review(3, Grade::Fail, Level::Recall);
+        state.record_review(3, Grade::Fail, Level::Recall, false);
         assert_eq!(0, state.streak);
         assert_eq!(2, state.total_passes);
         assert_eq!(3, state.total_reviews);
@@ -1289,7 +1325,7 @@ mod tests {
     #[test]
     fn record_review_stores_the_grade_and_partial_counts_as_a_pass() {
         let mut state = CardState::new(0);
-        state.record_review(10, Grade::Partial, Level::Recall);
+        state.record_review(10, Grade::Partial, Level::Recall, false);
         assert_eq!(Grade::Partial, state.history.last().unwrap().grade);
         assert_eq!(1, state.total_reviews);
         assert_eq!(1, state.total_passes); // Partial (a weak success) counts as a pass
@@ -1324,7 +1360,7 @@ mod tests {
             ..Default::default()
         });
         st.recognized_ms = Some(2_000);
-        st.record_review(2_000, Grade::Pass, Level::Reconstruct);
+        st.record_review(2_000, Grade::Pass, Level::Reconstruct, false);
         store.save().unwrap();
         let reloaded = Store::open(dir.path().join("store.json")).unwrap();
         let st = reloaded.get(7).unwrap();
@@ -1371,8 +1407,8 @@ mod tests {
         let path = dir.path().join("progress.json");
         let mut store = Store::open(&path).unwrap();
         let st = store.get_or_insert(7, 0);
-        st.record_review(100, Grade::Partial, Level::Recall);
-        st.record_review(200, Grade::Fail, Level::Recall);
+        st.record_review(100, Grade::Partial, Level::Recall, false);
+        st.record_review(200, Grade::Fail, Level::Recall, false);
         store.save().unwrap();
 
         let reloaded = Store::open(&path).unwrap();

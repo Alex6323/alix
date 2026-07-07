@@ -1012,7 +1012,7 @@ impl Walk {
         }
         if let Some(checkpoint) = self.trace.checkpoints.get(self.current) {
             let state = store.get_or_insert(checkpoint.card_id, now_ms);
-            Fsrs::default().apply(state, Level::Recall, delta.grade(), now_ms);
+            Fsrs::default().apply(state, Level::Recall, delta.grade(), now_ms, false);
         }
         self.deltas[self.current] = Some(delta);
         if self.current + 1 < self.trace.checkpoints.len() {
