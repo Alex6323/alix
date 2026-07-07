@@ -1629,14 +1629,20 @@ async function renderSelect() {
       // level highlighted as the primary. Closed by picking one, Cancel, or Esc.
       if (f && f._item && levelMenuOpen) {
         const it = f._item;
+        // mousedown preventDefault keeps focus on the deck row (the kebab /
+        // drawer-cell trick), so row nav and the menu's own Escape keep working
+        // after any of these buttons is clicked — a click otherwise moves focus
+        // onto a button syncPrimary() is about to destroy, stranding it on <body>.
         for (const lvl of ["recognize", "recall", "reconstruct"]) {
           const b = el("button", "chip" + (lvl === it.last_level ? " primary" : ""), lvl[0].toUpperCase() + lvl.slice(1));
           b.disabled = !canStart(it, f._gated);
+          b.addEventListener("mousedown", e => e.preventDefault());
           b.addEventListener("click", () => { levelMenuOpen = false; launchLevel(it, f._wsName, f._gated, lvl); });
           legend.appendChild(b);
         }
         const cancel = el("button", "chip", "Cancel");
         cancel.appendChild(el("span", "k", "esc"));
+        cancel.addEventListener("mousedown", e => e.preventDefault());
         cancel.addEventListener("click", () => { levelMenuOpen = false; syncPrimary(); });
         legend.appendChild(cancel);
         return;
@@ -1674,6 +1680,9 @@ async function renderSelect() {
         const lv = el("button", "chip split", "▾");
         lv.title = "choose a level";
         lv.disabled = !canStart(it, f._gated);
+        // Keep focus on the deck row (see the level menu above): the click
+        // rebuilds the footer, which would otherwise strand focus on <body>.
+        lv.addEventListener("mousedown", e => e.preventDefault());
         lv.addEventListener("click", () => { levelMenuOpen = true; syncPrimary(); });
         legend.appendChild(lv);
       }

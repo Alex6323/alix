@@ -388,6 +388,16 @@ struct MemberDto {
     tree: String,
     /// `true` when the member deck has a cached topology (a focus drawer).
     has_topology: bool,
+    /// The highest level with a badge to show, from the workspace's own store —
+    /// same semantics as [`DeckItemDto::badge_level`].
+    badge_level: Option<&'static str>,
+    /// `true` when `badge_level`'s badge lapsed (renders dotted, not solid).
+    badge_dotted: bool,
+    /// Any member-deck card has no store entry yet — fresh material.
+    new_cards: bool,
+    /// The learner's last-used session level for this member deck, defaulting
+    /// to `"recall"` — what a plain Learn launches.
+    last_level: &'static str,
 }
 
 /// The result of answering a choice card: which option was picked, which is
@@ -2959,9 +2969,9 @@ fn workspace_members(
     let augment = store
         .as_ref()
         .map(|s| AugmentCache::open(augment::augment_path_for(s.path())));
-    // Load each member deck once, deriving both its status and whether it has a
-    // topology from the same parse.
-    let loaded: Vec<(Option<picker::DeckStatus>, bool)> = paths
+    // Load each member deck once, deriving its status, whether it has a
+    // topology, and its last-used session level from the same parse.
+    let loaded: Vec<(Option<picker::DeckStatus>, bool, &'static str)> = paths
         .iter()
         .map(|p| {
             let deck = Deck::load(p).ok();
@@ -2982,7 +2992,12 @@ fn workspace_members(
                 }
                 _ => false,
             };
-            (status, has_topology)
+            // Subject-keyed like `deck_item_dto`, from the workspace's own store.
+            let last_level = match (store.as_ref(), deck.as_ref()) {
+                (Some(st), Some(d)) => st.last_level(&d.subject).unwrap_or_default(),
+                _ => Level::default(),
+            };
+            (status, has_topology, level_name(last_level))
         })
         .collect();
     // Order siblings startable-first (blocked = locked, or — when gating —
@@ -3007,6 +3022,7 @@ fn workspace_members(
             // Each tree branch segment is three columns wide (see picker).
             let depth = prefix.chars().count() / 3;
             let has_topology = loaded[i].1;
+            let last_level = loaded[i].2;
             match &loaded[i].0 {
                 Some(s) => MemberDto {
                     name: m.name.clone(),
@@ -3022,7 +3038,13 @@ fn workspace_members(
                     depth,
                     tree: prefix.clone(),
                     has_topology,
+                    badge_level: s.badge_level.map(level_name),
+                    badge_dotted: s.badge_dotted,
+                    new_cards: s.new_cards,
+                    last_level,
                 },
+                // A member that failed to load: the same neutral defaults as
+                // `deck_item_dto`'s failed-load fallback.
                 None => MemberDto {
                     name: m.name.clone(),
                     label: m.label.clone(),
@@ -3037,6 +3059,10 @@ fn workspace_members(
                     depth,
                     tree: prefix.clone(),
                     has_topology,
+                    badge_level: None,
+                    badge_dotted: false,
+                    new_cards: false,
+                    last_level,
                 },
             }
         })
