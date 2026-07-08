@@ -163,6 +163,25 @@ same resolution map `/api/select` uses, never a client-supplied path. Unlike
 400, and the file is removed rather than kept around invalid — the original
 upload still exists on the user's device, so nothing is lost.
 
+### 4.7 Generate
+
+`POST /api/generate {url, guidance?, dest?}` kicks a deck generation from a
+web page — the first polled job of this family, following §3's polling
+pattern: poll `GET /api/generate` while `phase:"generating"`, then read
+`error` or the result. `url` must be `http://`/`https://`; the web surface
+generates from URLs only — unlike the CLI's `alix generate`, which also
+accepts a local path, since a LAN token holder must not be able to point the
+server's AI at the server's own filesystem. `guidance`, when non-empty,
+replaces the configured `[generate] extra` steer for this job only. `dest`
+resolves exactly like `import`'s (§4.6). Unlike `import`, placement is
+**lenient**: a generated deck that fails to parse is still saved, with the
+problem reported in `error` — nothing costed by the model call is thrown
+away. Only one generation runs at a time — `POST` while one is in flight is
+409; a **finished** job (an `error` or `done` phase) is replaced by the next
+`POST`. `POST /api/generate/close` clears the job unconditionally; a
+still-running worker finishes into a discarded channel, the same as leaving
+Augment.
+
 ## 5. Endpoint reference
 
 Statuses: all endpoints can additionally return 401 (token) — omitted below.
@@ -208,6 +227,14 @@ token holder is trusted to call it, the same trust class as `/api/grade`.
 | Method | Path | Body | Response | Errors |
 |---|---|---|---|---|
 | POST | `/api/import` | `{name, text, dest?}` | `ImportDto` | 400 bad body / unrecognized extension / bad TSV / unknown `dest` / parse failure |
+
+### Generate
+
+| Method | Path | Body | Response | Errors |
+|---|---|---|---|---|
+| POST | `/api/generate` | `{url, guidance?, dest?}` | `GenerateDto` | 400 non-http(s) `url` / unknown `dest`; 409 a generation is already in flight |
+| GET | `/api/generate` | – | `GenerateDto` (poll) | 409 no generation |
+| POST | `/api/generate/close` | – | 200 | – |
 
 ### Ask
 
@@ -445,6 +472,21 @@ The result of `POST /api/import`: the placed file's name and its card count.
 | `cards` | number | How many cards it parsed to. |
 
 Example (from the pinned test): `{"deck":"kanji.txt","cards":40}`.
+
+### GenerateDto
+
+The result of `POST`/`GET /api/generate`, polled per §3's pattern (§4.7).
+
+| Key | Type | Meaning |
+|---|---|---|
+| `phase` | string | `generating` \| `done` \| `error` (open set). |
+| `deck` | string? | The placed file's name — set once `done`. |
+| `cards` | number? | Cards it parsed to — set once `done`. |
+| `elapsed` | number? | Seconds since the job started (kept ticking even after it finishes). |
+| `error` | string? | Set on `error` — including a parse failure on a deck that was still saved. |
+
+Example (from the pinned test):
+`{"phase":"done","deck":"rust-ownership.txt","cards":12,"elapsed":41,"error":null}`.
 
 ### ExamDto
 

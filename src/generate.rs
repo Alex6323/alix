@@ -7,7 +7,7 @@
 //! validates and writes it. Claude is never given a write or shell tool, so
 //! the safe `dontAsk` + WebFetch/WebSearch permission story is unchanged.
 
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::mpsc::Receiver};
 
 use anyhow::{Result, bail};
 
@@ -220,6 +220,20 @@ pub fn generate_deck(
         bail!("the model returned no deck content");
     }
     Ok(deck)
+}
+
+/// Spawns [`generate_deck`] on a worker thread — the serve loop polls the
+/// returned channel (the `ask::spawn` shape; the frontend never blocks).
+pub fn spawn(
+    source: String,
+    cfg: GenerateDeckConfig,
+    ask: AskConfig,
+) -> Receiver<Result<String, String>> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(generate_deck(&source, &cfg, &ask).map_err(|e| format!("{e:#}")));
+    });
+    rx
 }
 
 /// Runs a separate review pass over a draft `deck` and returns the cleaned,
@@ -553,5 +567,19 @@ mod tests {
         );
         assert_eq!("example-org", slug_from_url("https://example.org"));
         assert_eq!("page", slug_from_url("https://example.org/page?x=1#frag"));
+    }
+
+    #[test]
+    fn spawn_delivers_generated_deck_text_on_the_channel() {
+        use crate::testutil::{ask_config, exec_lock, fake_reply};
+
+        let _g = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = fake_reply(dir.path(), "% link: https://example.org\n# Q\n\tA\n");
+        let rx = spawn("https://example.org".to_string(), cfg(10), ask_config(&cli));
+        match rx.recv().unwrap() {
+            Ok(text) => assert!(text.contains("# Q")),
+            Err(e) => panic!("generate failed: {e}"),
+        }
     }
 }

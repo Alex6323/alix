@@ -37,12 +37,12 @@ use crate::{
     card::Card,
     choice::{self, ChoiceQuestion},
     config::{
-        AiConfig, AskConfig, Bindings, BrowseBindings, ExamConfig, Key, KeyPattern, PickerKeys,
-        ReviewConfig, Strictness,
+        AiConfig, AskConfig, Bindings, BrowseBindings, ExamConfig, GenerateDeckConfig, Key,
+        KeyPattern, PickerKeys, ReviewConfig, Strictness,
     },
     deck::{self, Deck, DeckState},
     depth::{self, Depth, Reveal, depth_name},
-    doctor, exam, import, picker,
+    doctor, exam, generate, import, picker,
     recent::RecentDecks,
     render::{self, NoteUnit},
     scheduler::{Fsrs, Grade, keypoint_grade},
@@ -664,6 +664,9 @@ pub struct ReviewOptions {
     /// AI augmentation settings (model, per-target counts), for generating
     /// augmentations from the picker's Augment screen.
     pub ai: AiConfig,
+    /// AI deck-generation settings (model, timeout, max cards, guidance, …),
+    /// for `POST /api/generate`.
+    pub generate: GenerateDeckConfig,
     /// Personal review pacing (FSRS retention + retirement interval), for the
     /// selection screen's badges and due counts.
     pub review: ReviewConfig,
@@ -1493,6 +1496,87 @@ impl Augmenting {
     }
 }
 
+/// A deck generation in flight (or just finished): the worker channel, what
+/// was asked, where the deck lands, and the outcome once placed.
+struct Generating {
+    rx: Receiver<Result<String, String>>,
+    url: String,
+    dest: PathBuf,
+    started: Instant,
+    outcome: Option<Result<(String, usize), String>>,
+}
+
+#[derive(Serialize)]
+struct GenerateDto {
+    /// `generating` | `done` | `error` (open set).
+    phase: &'static str,
+    deck: Option<String>,
+    cards: Option<usize>,
+    elapsed: Option<u64>,
+    error: Option<String>,
+}
+
+impl Generating {
+    fn dto(&self) -> GenerateDto {
+        match &self.outcome {
+            None => GenerateDto {
+                phase: "generating",
+                deck: None,
+                cards: None,
+                elapsed: Some(self.started.elapsed().as_secs()),
+                error: None,
+            },
+            Some(Ok((deck, cards))) => GenerateDto {
+                phase: "done",
+                deck: Some(deck.clone()),
+                cards: Some(*cards),
+                elapsed: Some(self.started.elapsed().as_secs()),
+                error: None,
+            },
+            Some(Err(e)) => GenerateDto {
+                phase: "error",
+                deck: None,
+                cards: None,
+                elapsed: Some(self.started.elapsed().as_secs()),
+                error: Some(e.clone()),
+            },
+        }
+    }
+
+    /// Drains a finished worker and places the deck (lenient, like the CLI:
+    /// a parse problem still saves the file and is reported as the error).
+    fn poll(&mut self) {
+        if self.outcome.is_some() {
+            return;
+        }
+        let text = match self.rx.try_recv() {
+            Ok(r) => r,
+            Err(TryRecvError::Empty) => return,
+            Err(TryRecvError::Disconnected) => {
+                self.outcome = Some(Err("the generate worker exited unexpectedly".to_string()));
+                return;
+            }
+        };
+        self.outcome = Some(text.and_then(|t| {
+            let name = generate::deck_name(&self.url);
+            match crate::library::place_deck(&self.dest, &name, &t) {
+                Ok(p) => {
+                    let deck = p
+                        .path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_default();
+                    match p.parse_error {
+                        None => Ok((deck, p.cards)),
+                        Some(e) => Err(format!("saved {deck}, but it does not parse yet: {e}")),
+                    }
+                }
+                Err(e) => Err(format!("{e:#}")),
+            }
+        }));
+    }
+}
+
 /// Serves review on the already-bound `server` until the process is stopped
 /// (binding happens at the call site, *before* the URL is announced — so a
 /// port clash errors before any success-looking output), opening on the
@@ -1543,6 +1627,7 @@ pub fn run_review(
         ask: ask_cfg,
         exam: exam_cfg,
         ai: ai_cfg,
+        generate: generate_cfg,
         review: review_cfg,
         auth,
         config_path,
@@ -1561,6 +1646,8 @@ pub fn run_review(
     let mut examining: Option<Examining> = None;
     // The picker's "Augment" action opens a deck's augmentation screen here.
     let mut augmenting: Option<Augmenting> = None;
+    // The add-sheet's "Generate from URL" action; one deck generation at a time.
+    let mut generating: Option<Generating> = None;
     // A trace picked from the selection screen walks in-page inside review.html
     // (no navigation to a separate `/walk` page — the walk is an in-page mode).
     let mut walking: Option<Walking> = None;
@@ -1909,6 +1996,59 @@ pub fn run_review(
                     }
                     Err(_) => respond_status(request, 400),
                 }
+            }
+            (Method::Post, "/api/generate") => {
+                #[derive(Deserialize)]
+                struct Body {
+                    url: String,
+                    guidance: Option<String>,
+                    dest: Option<String>,
+                }
+                if generating.as_ref().is_some_and(|g| g.outcome.is_none()) {
+                    respond_status(request, 409); // one costed job at a time
+                    continue;
+                }
+                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
+                let Some(b) =
+                    body.filter(|b| b.url.starts_with("http://") || b.url.starts_with("https://"))
+                else {
+                    respond_status(request, 400); // the web generates from URLs only
+                    continue;
+                };
+                let Some(dest) = resolve_dest(b.dest.as_deref(), &decks_dir, &recent) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                let mut cfg = generate_cfg.clone();
+                if let Some(g) = b
+                    .guidance
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                {
+                    cfg.extra = Some(g);
+                }
+                let g = Generating {
+                    rx: generate::spawn(b.url.clone(), cfg, ask_cfg.clone()),
+                    url: b.url,
+                    dest,
+                    started: Instant::now(),
+                    outcome: None,
+                };
+                let dto = g.dto();
+                generating = Some(g);
+                respond_json(request, &dto);
+            }
+            (Method::Get, "/api/generate") => {
+                let Some(g) = generating.as_mut() else {
+                    respond_status(request, 409);
+                    continue;
+                };
+                g.poll();
+                respond_json(request, &g.dto());
+            }
+            (Method::Post, "/api/generate/close") => {
+                generating = None; // a running worker finishes and is discarded
+                respond_status(request, 200);
             }
             (Method::Post, "/api/deselect") => {
                 reviewing = None;
@@ -5262,6 +5402,23 @@ mod tests {
                     "elapsed": 3,
                     "error": null
                 }),
+            );
+        }
+
+        #[test]
+        fn generatedto_done_wire_shape() {
+            let dto = GenerateDto {
+                phase: "done",
+                deck: Some("rust-ownership.txt".to_string()),
+                cards: Some(12),
+                elapsed: Some(41),
+                error: None,
+            };
+            pin(
+                "GenerateDto",
+                &dto,
+                json!({"phase": "done", "deck": "rust-ownership.txt", "cards": 12,
+                       "elapsed": 41, "error": null}),
             );
         }
     }

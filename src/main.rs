@@ -1136,6 +1136,7 @@ fn launch(args: LaunchArgs) -> Result<()> {
         ask: config.ask.clone(),
         exam: config.exam.clone(),
         ai: config.ai.clone(),
+        generate: config.generate.clone(),
         auth: token,
         config_path: args.config.clone(),
         pair,
