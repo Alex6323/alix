@@ -18,7 +18,7 @@ fn rust_ownership_example_still_checks() {
     let deck = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("docs/examples/rust-ownership/ownership-move.txt");
     let status = Command::new(env!("CARGO_BIN_EXE_alix"))
-        .args(["deck", "check"])
+        .args(["doctor"])
         .arg(&deck)
         .status()
         .expect("failed to run the alix binary");

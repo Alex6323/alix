@@ -360,7 +360,7 @@ fn parse_item_delimiter(line: &str) -> Option<usize> {
 
 /// One item of an exploration plan: a facts deck or a trace to author.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Item {
+pub struct Item {
     pub num: usize,
     pub kind: Kind,
     pub title: String,
@@ -370,7 +370,7 @@ pub(crate) struct Item {
 
 /// Whether a plan item is a trace (an edge) or a facts deck (nodes).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Kind {
+pub enum Kind {
     Trace,
     Deck,
 }
@@ -386,8 +386,9 @@ pub struct Materialized {
 
 /// Parses the printed plan back into items (lenient — unrecognized lines, the
 /// header, and prose are skipped). An item starts at a `N. [trace|deck] <title>`
-/// line and absorbs the following `requires:` and `% source:` lines.
-pub(crate) fn parse_plan(plan: &str) -> Vec<Item> {
+/// line and absorbs the following `requires:` and `% source:` lines. Public so
+/// the CLI can count a plan's items before deciding deck-vs-workspace.
+pub fn parse_plan(plan: &str) -> Vec<Item> {
     let mut items: Vec<Item> = Vec::new();
     for line in plan.lines() {
         let t = line.trim();

@@ -631,6 +631,9 @@ pub struct SessionBuild {
 /// `--grade`), matching the terminal picker's trace → walk.
 pub struct WalkBuild {
     pub walk: Walk,
+    /// AI-grades each prediction when set (`[trace] auto_grade` + the ask
+    /// config); `None` = self-graded.
+    pub grade: Option<AskConfig>,
 }
 
 /// A browse card list ready to serve, with its label and deck paths.
@@ -1548,7 +1551,7 @@ pub fn run_review(
                         }
                         match build_walk(&paths) {
                             Ok(Some(wb)) => {
-                                let w = Walking::new(wb.walk, None);
+                                let w = Walking::new(wb.walk, wb.grade);
                                 let dto = walk_dto(&w);
                                 walking = Some(w);
                                 reviewing = None;

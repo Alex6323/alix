@@ -49,7 +49,7 @@ const VALID_DECK: &str = "# What is 2 + 2?\n    4\n";
 fn check_accepts_a_valid_deck() {
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.txt", VALID_DECK);
-    let out = alix(&["deck", "check", &deck]);
+    let out = alix(&["doctor", &deck]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     assert!(stdout(&out).contains("1 cards"), "stdout: {}", stdout(&out));
 }
@@ -85,7 +85,7 @@ fn check_rejects_a_malformed_deck() {
     let dir = TempDir::new().unwrap();
     // A card front with no answer line is a parse error.
     let deck = write(dir.path(), "broken.txt", "# a front with no answer\n");
-    let out = alix(&["deck", "check", &deck]);
+    let out = alix(&["doctor", &deck]);
     assert!(
         !out.status.success(),
         "a malformed deck should fail the check"
@@ -532,7 +532,6 @@ fn missing_backend_reports_install_hint() {
         "[ask]\ncommand = \"/nonexistent/claude-xyz\"\ntimeout_secs = 5\n",
     );
     let out = alix(&[
-        "deck",
         "generate",
         "https://example.org/page",
         "--config",
@@ -569,7 +568,7 @@ fn oversized_local_source_without_yes_bails_with_guidance() {
         "[ask]\ncommand = \"/nonexistent/claude-xyz\"\ntimeout_secs = 5\n",
     );
     let src = dir.path().to_str().unwrap();
-    let out = alix(&["deck", "generate", src, "--config", &config, "--print"]);
+    let out = alix(&["generate", src, "--config", &config, "--print"]);
     let err = stderr(&out);
     assert!(!out.status.success(), "should fail without --yes: {err}");
     // The error must name the guard condition and point at the fix.
@@ -594,7 +593,7 @@ fn oversized_local_source_with_yes_proceeds_past_the_guard() {
     );
     let src = dir.path().to_str().unwrap();
     let out = alix(&[
-        "deck", "generate", src, "--yes", "--config", &config, "--print",
+        "generate", src, "--yes", "--config", &config, "--print",
     ]);
     let err = stderr(&out);
     // The error must NOT be the guard refusal — it should be the missing-binary
@@ -642,7 +641,7 @@ fn deck_check_validates_like_the_old_check() {
     // `alix check <deck>` did.
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.txt", VALID_DECK);
-    let out = alix(&["deck", "check", &deck]);
+    let out = alix(&["doctor", &deck]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     assert!(stdout(&out).contains("1 cards"), "stdout: {}", stdout(&out));
 }

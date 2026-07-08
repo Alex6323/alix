@@ -19,7 +19,7 @@ use alix::{
     session::{DeckInfo, Order, Session, SessionOptions},
     store::{Store, VirtualCard, default_store_path},
     time::{humanize_ms, now_ms},
-    trace::{Phase, SourceBase, Trace, Walk},
+    trace::{SourceBase, Trace, Walk},
     workspace,
 };
 use anyhow::{Context, Result, bail};
@@ -86,30 +86,26 @@ enum Command {
     /// optional external CLIs. Add `--backends` to also probe the configured
     /// AI backend end to end (one real, tiny request).
     Doctor(DoctorArgs),
-    /// Show progress statistics for decks.
+    /// Generate learning material with AI: a deck, a trace, or a workspace.
+    ///
+    /// A web page or file source becomes one deck. A directory source is
+    /// explored first: a one-item plan becomes a deck, a bigger plan becomes
+    /// a workspace (shown and confirmed before building). `--plan` previews,
+    /// `--trace` authors a trace, and naming an existing `% trace:` stub
+    /// builds its checkpoints in place.
+    Generate(GenerateArgs),
+    /// Show progress statistics for a deck, a folder, or a workspace.
     Stats(DeckArgs),
-    /// List all cards of decks with their state and due time.
+    /// List all cards with their state and due time (deck, folder, or workspace).
     List(DeckArgs),
-    /// Clear stored progress for decks, a single card, or everything.
+    /// Clear stored progress for a deck, a folder/workspace, a card, or everything.
     Reset(ResetArgs),
-    /// Create, augment, or validate decks.
+    /// Augment or import decks.
     #[command(subcommand)]
     Deck(DeckAction),
-    /// Import an Anki TSV export into an alix deck.
-    ///
-    /// Expects tab-separated `front<TAB>back` lines.
-    Import(ImportArgs),
-    /// Walk a trace: a predict-and-verify path through a source.
-    ///
-    /// At each checkpoint you predict, then the real excerpt is revealed and
-    /// you judge the gap; the path ends with a compression.
-    Trace(TraceArgs),
-    /// Plan (or build) a learning workspace from a source, toward a goal.
-    ///
-    /// The source can be a repo, directory, file, or URL; the plan is the
-    /// facts decks and traces worth authoring, tagged and dependency-ordered.
-    /// Read-only unless `--into … --build` scaffolds the workspace.
-    Explore(ExploreArgs),
+    /// Create and grow workspaces.
+    #[command(subcommand)]
+    Workspace(WorkspaceAction),
     /// Show the configuration (key bindings) or create the config file.
     Config {
         /// Write a config file with the default bindings to edit.
@@ -120,8 +116,9 @@ enum Command {
 
 #[derive(Args)]
 struct DoctorArgs {
-    /// A decks folder or workspace root to check instead of the configured
-    /// decks directory (with its own store, like `alix <dir>` serves it).
+    /// What to check instead of the configured setup: a decks folder or
+    /// workspace root (with its own store, like `alix <dir>` serves it), or a
+    /// single deck file to lint in depth.
     dir: Option<PathBuf>,
 
     /// Also probe the configured AI backend end to end. This sends one real
@@ -138,52 +135,90 @@ struct DoctorArgs {
     config: Option<PathBuf>,
 }
 
-#[derive(Args)]
-struct ExploreArgs {
-    /// The source to explore: a repo `.`, a directory, a single file, or a URL.
-    source: PathBuf,
+/// The `alix workspace` subcommands: create and grow workspaces.
+#[derive(Subcommand)]
+enum WorkspaceAction {
+    /// Initialize an empty workspace: a folder with an `alix.toml` and an
+    /// `assets/` dir, no decks yet. Grow it with `alix generate … --workspace
+    /// <dir>` or `alix deck import … --workspace <dir>`.
+    Init(WorkspaceInitArgs),
+}
 
-    /// The learning goal that scopes the plan (default: understand the whole
-    /// source). A broad goal covers every subsystem; a narrow one only its parts.
+#[derive(Args)]
+struct WorkspaceInitArgs {
+    /// The folder to create (or to convert, when it exists without an alix.toml).
+    dir: PathBuf,
+
+    /// The workspace's display title (default: the folder name).
+    #[arg(long)]
+    title: Option<String>,
+}
+
+#[derive(Args)]
+struct GenerateArgs {
+    /// What to generate from: a web page URL, a local file, or a directory —
+    /// or an existing `% trace:` stub deck, whose checkpoints are then built
+    /// in place.
+    source: String,
+
+    /// The learning goal that scopes what is generated (default: understand
+    /// the whole source).
     #[arg(long)]
     goal: Option<String>,
 
-    /// Scaffold the plan into a workspace folder at this path: an alix.toml plus
-    /// a stub deck/trace file per item, wired by `% requires:`. Writes files.
+    /// Print the plan (directory source) or the trace suggestions (--trace)
+    /// and stop — generate nothing.
     #[arg(long)]
-    into: Option<PathBuf>,
+    plan: bool,
 
-    /// With --into, the workspace's display title (its `alix.toml` `title`).
-    /// Omitted, the folder name is used; `--goal` becomes the description.
-    #[arg(long, requires = "into")]
-    title: Option<String>,
+    /// Author a trace over the source instead of facts decks: a short
+    /// predict-and-verify walk over its shape, written as a trace deck.
+    #[arg(long)]
+    trace: bool,
 
-    /// With --into, write into the directory even if it already contains files.
-    #[arg(long, requires = "into")]
+    /// Force a single deck from a directory source (skip the plan pass).
+    #[arg(long, conflicts_with = "trace")]
+    deck: bool,
+
+    /// The workspace this lands in: the build destination for a directory
+    /// source (default: a folder under the decks dir), or the folder a single
+    /// generated deck is written into.
+    #[arg(long)]
+    workspace: Option<PathBuf>,
+
+    /// Single deck: output name (default: derived from the source). A `.txt`
+    /// extension is added if missing.
+    #[arg(short, long)]
+    output: Option<String>,
+
+    /// Single deck: maximum number of cards (overrides the configured default).
+    #[arg(long)]
+    cards: Option<usize>,
+
+    /// Single deck: run a second AI pass that reviews the draft and removes
+    /// redundant cards (an extra call; also `generate.review` in the config).
+    #[arg(long)]
+    review: bool,
+
+    /// Single deck: print it to stdout instead of writing a file.
+    #[arg(long)]
+    print: bool,
+
+    /// Overwrite existing output (a deck file, or a non-empty workspace dir).
+    #[arg(long)]
     force: bool,
 
-    /// With --into, fill every stub in one explore session — checkpoints for
-    /// traces, cards for facts decks — instead of leaving them empty. One coherent
-    /// pass (the items know about each other); more model work.
-    #[arg(long, requires = "into", conflicts_with = "walk")]
-    build: bool,
+    /// Workspace build: its display title (default: the folder name).
+    #[arg(long)]
+    title: Option<String>,
 
-    /// With --build, use this image file as the workspace icon instead of letting
-    /// Claude draw one. Copied into the workspace's `assets/`. SVG or raster.
-    #[arg(long, requires = "build")]
+    /// Workspace build: use this image as the workspace icon instead of
+    /// letting the model draw one. Copied into `assets/`.
+    #[arg(long)]
     icon: Option<PathBuf>,
 
-    /// Build an explore walk instead of a plan: a predict-verify trace over the
-    /// source's shape (what it is → its parts → entry → spine → what to trace),
-    /// written to a file and walked right away.
-    #[arg(long, conflicts_with = "into")]
-    walk: bool,
-
-    /// With --walk, the file to write the explore walk to (default explore.txt).
-    #[arg(short, long, requires = "walk")]
-    output: Option<PathBuf>,
-
-    /// Skip the pre-flight size confirmation for a large local source tree.
+    /// Skip confirmations: the large-source pre-flight, and the
+    /// workspace-build go-ahead.
     #[arg(short, long)]
     yes: bool,
 
@@ -232,19 +267,14 @@ struct GenerateDeckArgs {
 /// The `alix deck` subcommands: create, augment, or validate a deck.
 #[derive(Subcommand)]
 enum DeckAction {
-    /// Generate a facts deck with Claude from a source — a web page URL or a
-    /// local file/directory path. (The deck-side mirror of `alix trace`.)
-    Generate(GenerateDeckArgs),
     /// Augment an existing deck with Claude — multiple-choice distractors, or
     /// trivia notes. Augmentations are deliberate and persisted, so review stays
     /// instant and fully offline.
     Augment(AugmentArgs),
-    /// Check deck files for syntax errors and duplicate cards.
-    Check {
-        /// Deck files to check.
-        #[arg(required = true)]
-        decks: Vec<PathBuf>,
-    },
+    /// Import an Anki TSV export into an alix deck.
+    ///
+    /// Expects tab-separated `front<TAB>back` lines.
+    Import(ImportArgs),
 }
 
 #[derive(Args)]
@@ -310,6 +340,10 @@ struct ImportArgs {
     #[arg(short, long)]
     output: Option<String>,
 
+    /// The workspace folder to import the deck into (default: the decks dir).
+    #[arg(long)]
+    workspace: Option<PathBuf>,
+
     /// Print the deck to stdout instead of writing a file.
     #[arg(long)]
     print: bool,
@@ -323,48 +357,6 @@ struct ImportArgs {
     config: Option<PathBuf>,
 }
 
-#[derive(Args)]
-struct TraceArgs {
-    /// The trace deck to walk (must declare a `% trace:`). With `--suggest`,
-    /// this positional is instead a *source* to recon (a repo `.`, a directory,
-    /// a file, or a URL) — not a deck.
-    deck: PathBuf,
-
-    /// Print the path — each checkpoint's prompt, key points and locator —
-    /// without quizzing, then exit.
-    #[arg(long)]
-    map: bool,
-
-    /// Build the trace: explore the `% source:` with Claude to discover the
-    /// path, and write the checkpoints back into the deck file. Read-only
-    /// exploration; overwrites a previous build.
-    #[arg(long, conflicts_with = "map")]
-    build: bool,
-
-    /// Recon a SOURCE (the positional, here a repo/dir/file/URL — not a deck)
-    /// and print a ranked menu of candidate traces to author. Read-only; writes
-    /// nothing. Paste a suggestion into a new deck, then `--build` it.
-    #[arg(long, conflicts_with_all = ["map", "build"])]
-    suggest: bool,
-
-    /// Have Claude grade each prediction against the checkpoint's key points
-    /// (live grading) instead of self-grading. Costs a model call per hop.
-    #[arg(long)]
-    grade: bool,
-
-    /// Skip the pre-flight size confirmation for a large local source tree
-    /// (applies to --build and --suggest).
-    #[arg(short, long)]
-    yes: bool,
-
-    /// Path of the progress store (default: platform data dir).
-    #[arg(long)]
-    store: Option<PathBuf>,
-
-    /// Path of the config file (default: platform config dir).
-    #[arg(long)]
-    config: Option<PathBuf>,
-}
 
 #[derive(Args)]
 struct DeckArgs {
@@ -471,14 +463,14 @@ fn main() -> Result<()> {
         Some(Command::Stats(args)) => stats(args),
         Some(Command::List(args)) => list(args),
         Some(Command::Reset(args)) => reset(args),
+        Some(Command::Generate(args)) => generate_cmd(args),
         Some(Command::Deck(action)) => match action {
-            DeckAction::Generate(args) => deck_cmd(args),
             DeckAction::Augment(args) => augment_cmd(args),
-            DeckAction::Check { decks } => check(decks),
+            DeckAction::Import(args) => import_cmd(args),
         },
-        Some(Command::Import(args)) => import_cmd(args),
-        Some(Command::Trace(args)) => trace_cmd(args),
-        Some(Command::Explore(args)) => explore_cmd(args),
+        Some(Command::Workspace(action)) => match action {
+            WorkspaceAction::Init(args) => workspace_init_cmd(args),
+        },
         Some(Command::Config { init }) => config_cmd(init),
         Some(Command::Doctor(args)) => doctor_cmd(args),
     }
@@ -1105,6 +1097,8 @@ fn launch(args: LaunchArgs) -> Result<()> {
                 let trace = Trace::from_deck(&deck)?;
                 Ok(Some(serve::WalkBuild {
                     walk: Walk::new(trace),
+                    // Opt-in AI grading of predictions (`[trace] auto_grade`).
+                    grade: config.trace.auto_grade.then(|| config.ask.clone()),
                 }))
             }
             None => Ok(None),
@@ -1379,9 +1373,8 @@ fn select_reset_ids(cards: &[Card], card: Option<&str>) -> Vec<(u64, String)> {
         .collect()
 }
 
-/// Asks the user to confirm a destructive action. Returns `true` when `yes` is
-/// set or the user types y/yes. Errors (rather than acting silently) when there
-/// is no terminal and `yes` was not given.
+
+
 fn confirm(prompt: &str, yes: bool) -> Result<bool> {
     if yes {
         return Ok(true);
@@ -1854,8 +1847,211 @@ fn truncate(s: &str, max: usize) -> String {
     format!("{kept}…")
 }
 
-fn deck_cmd(args: GenerateDeckArgs) -> Result<()> {
+/// `alix generate`: one entry for all AI authoring. Routes by what the source
+/// is — an existing `% trace:` stub builds in place; `--trace` authors a trace
+/// over a source; a directory is explored first and the plan's size decides
+/// deck vs workspace (confirmed before the expensive build); anything else
+/// becomes a single deck.
+fn generate_cmd(args: GenerateArgs) -> Result<()> {
     let config = Config::load(args.config.as_deref())?;
+    let goal = args
+        .goal
+        .as_deref()
+        .unwrap_or("understand the whole source");
+    let src_path = PathBuf::from(&args.source);
+
+    // Naming an existing trace stub (`% trace:`) builds its checkpoints in
+    // place; a plain text file without the directive is treated as source
+    // material below.
+    if src_path.is_file()
+        && src_path.extension().is_some_and(|e| e == "txt")
+        && std::fs::read_to_string(&src_path)
+            .is_ok_and(|t| t.lines().any(|l| l.trim_start().starts_with("% trace:")))
+    {
+        let deck = Deck::load(&src_path)?;
+        return trace_build(&src_path, &deck, args.yes, &config);
+    }
+
+    // `--trace`: author a trace over the source — a suggestions menu with
+    // `--plan`, else the explore walk written as a trace deck.
+    if args.trace {
+        if args.plan {
+            return trace_suggest(&args.source, args.yes, &config);
+        }
+        return generate_trace_walk(&args, &config, goal);
+    }
+
+    // A directory source is explored first; the plan's size decides.
+    if src_path.is_dir() && !args.deck {
+        let source = canonical_source(&args.source);
+        preflight_source(&source, config.ask.preflight_threshold, args.yes)?;
+        eprintln!(
+            "Exploring {source} for a learning plan toward \"{goal}\" (one pass — \
+             this can take a minute)…"
+        );
+        let plan = alix::explore::explore(&source, goal, &config.trace, &config.ask)?;
+        let items = alix::explore::parse_plan(&plan).len();
+        println!("{plan}");
+        if args.plan {
+            return Ok(());
+        }
+        if items > 1 {
+            return build_workspace(&args, &config, &source, goal, items);
+        }
+        eprintln!("The plan has one item — generating a single deck.");
+    }
+    generate_single_deck(&args, &config)
+}
+
+/// A local source as an absolute path (so written `% source:` lines resolve
+/// from anywhere); a URL passes through unchanged.
+fn canonical_source(source: &str) -> String {
+    let path = Path::new(source);
+    if path.exists() {
+        std::fs::canonicalize(path)
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|_| source.to_string())
+    } else {
+        source.to_string()
+    }
+}
+
+/// Builds a workspace from a multi-item plan: confirm, then explore + fill in
+/// one session (a second exploration — the coherent fill needs its own pass)
+/// and materialize into the destination. Ported from the old `explore --build`.
+fn build_workspace(
+    args: &GenerateArgs,
+    config: &Config,
+    source: &str,
+    goal: &str,
+    items: usize,
+) -> Result<()> {
+    let dir = match &args.workspace {
+        Some(dir) => dir.clone(),
+        None => {
+            let name = Path::new(source)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("workspace")
+                .to_string();
+            config
+                .decks_dir()
+                .context("cannot determine the decks directory")?
+                .join(name)
+        }
+    };
+    if !confirm(
+        &format!(
+            "Build {items} items into {} (several AI calls, a few minutes)?",
+            dir.display()
+        ),
+        args.yes,
+    )? {
+        println!("Cancelled — `--plan` prints the plan without building.");
+        return Ok(());
+    }
+    eprintln!(
+        "Exploring {source} and filling the workspace toward \"{goal}\" (explore \
+         + fill in one session — this can take a few minutes)…"
+    );
+    let (plan, filled) = alix::explore::explore_and_fill(source, goal, &config.trace, &config.ask)?;
+    println!("{plan}");
+    let report = alix::explore::materialize(
+        &plan,
+        &dir,
+        goal,
+        args.title.as_deref(),
+        source,
+        args.force,
+        Some(&filled),
+    )?;
+    let total = report.traces + report.decks;
+    let stubs = total - report.filled;
+    println!(
+        "\n{BOLD}Built {total} files{RESET} in {} — {} filled, {stubs} stub(s) \
+         ({} traces, {} decks).",
+        report.dir.display(),
+        report.filled,
+        report.traces,
+        report.decks,
+    );
+    // Freeze each cited deck's source into the workspace's `assets/` so its
+    // locators never drift and the workspace is self-contained.
+    match alix::explore::snapshot_workspace(&report.dir) {
+        Ok(summary) => {
+            if summary.decks > 0 {
+                println!(
+                    "{DIM}Froze {} excerpt(s) from {} deck(s) into {}/assets — \
+                     the citations won't drift.{RESET}",
+                    summary.files,
+                    summary.decks,
+                    report.dir.display(),
+                );
+            }
+            for failed in &summary.failed {
+                eprintln!("warning: could not freeze {failed}");
+            }
+        }
+        Err(e) => eprintln!("warning: could not snapshot the source: {e:#}"),
+    }
+    // A workspace icon: the user's file if given, else an abstract emblem the
+    // model draws from what it just built. Best-effort — never fails the build.
+    match args.icon.as_deref() {
+        Some(src) => match alix::icon::install(&report.dir, src) {
+            Ok(_) => println!(
+                "{DIM}Installed the workspace icon into {}/assets.{RESET}",
+                report.dir.display()
+            ),
+            Err(e) => eprintln!("warning: could not install the workspace icon: {e:#}"),
+        },
+        None => match alix::icon::generate(&report.dir, &config.ask) {
+            Ok(_) => println!(
+                "{DIM}Drew a workspace icon into {}/assets.{RESET}",
+                report.dir.display()
+            ),
+            Err(e) => eprintln!("warning: could not draw a workspace icon: {e:#}"),
+        },
+    }
+    println!(
+        "{DIM}Open it:  alix {}{RESET}",
+        report.dir.display()
+    );
+    Ok(())
+}
+
+/// `alix workspace init`: an empty workspace — `alix.toml` + `assets/`, no
+/// decks. Grow it with `alix generate/deck import … --workspace <dir>`.
+fn workspace_init_cmd(args: WorkspaceInitArgs) -> Result<()> {
+    if workspace::is_workspace(&args.dir) {
+        bail!("{} is already a workspace", args.dir.display());
+    }
+    std::fs::create_dir_all(args.dir.join("assets"))
+        .with_context(|| format!("cannot create {}", args.dir.display()))?;
+    let title = match &args.title {
+        Some(t) => t.clone(),
+        None => args
+            .dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("workspace")
+            .to_string(),
+    };
+    let manifest = format!("title = {title:?}\n");
+    std::fs::write(args.dir.join("alix.toml"), manifest)
+        .with_context(|| format!("cannot write {}/alix.toml", args.dir.display()))?;
+    println!(
+        "Initialized {} — add decks with:  alix generate <source> --workspace {}  \
+         or  alix deck import <file.tsv> --workspace {}",
+        args.dir.display(),
+        args.dir.display(),
+        args.dir.display(),
+    );
+    Ok(())
+}
+
+/// Generates one facts deck from `args.source` (a URL or a file), writing it
+/// into `--workspace <dir>` when given, else the decks directory.
+fn generate_single_deck(args: &GenerateArgs, config: &Config) -> Result<()> {
     let mut gen_cfg = config.generate.clone();
     if let Some(cards) = args.cards {
         gen_cfg.max_cards = cards;
@@ -1908,9 +2104,7 @@ fn deck_cmd(args: GenerateDeckArgs) -> Result<()> {
         return Ok(());
     }
 
-    let dir = config
-        .decks_dir()
-        .context("cannot determine the decks directory")?;
+    let dir = deck_out_dir(args.workspace.as_deref(), config)?;
     let path = dir.join(&name);
     if path.exists() && !args.force {
         bail!(
@@ -1934,10 +2128,31 @@ fn deck_cmd(args: GenerateDeckArgs) -> Result<()> {
         // Saved, but not yet valid: tell the user exactly what to fix.
         Err(e) => bail!(
             "Saved the generated deck to {}, but it does not parse yet:\n  {e}\n\
-             Fix that line and run `alix check {}`.",
+             Fix that line and run `alix doctor {}`.",
             path.display(),
             path.display()
         ),
+    }
+}
+
+/// Where a single generated/imported deck lands: the `--workspace <dir>` when
+/// given (it must exist — `alix workspace init` creates one), else the decks
+/// directory.
+fn deck_out_dir(workspace: Option<&Path>, config: &Config) -> Result<PathBuf> {
+    match workspace {
+        Some(dir) => {
+            if !dir.is_dir() {
+                bail!(
+                    "no folder at {} — create the workspace first: alix workspace init {}",
+                    dir.display(),
+                    dir.display()
+                );
+            }
+            Ok(dir.to_path_buf())
+        }
+        None => config
+            .decks_dir()
+            .context("cannot determine the decks directory"),
     }
 }
 
@@ -1972,9 +2187,7 @@ fn import_cmd(args: ImportArgs) -> Result<()> {
         return Ok(());
     }
 
-    let dir = config
-        .decks_dir()
-        .context("cannot determine the decks directory")?;
+    let dir = deck_out_dir(args.workspace.as_deref(), &config)?;
     let path = dir.join(&name);
     if path.exists() && !args.force {
         bail!(
@@ -1998,7 +2211,7 @@ fn import_cmd(args: ImportArgs) -> Result<()> {
         // Saved, but not yet valid: tell the user exactly what to fix.
         Err(e) => bail!(
             "Saved the deck to {}, but it does not parse yet:\n  {e}\n\
-             Fix that line and run `alix check {}`.",
+             Fix that line and run `alix doctor {}`.",
             path.display(),
             path.display()
         ),
@@ -2010,158 +2223,14 @@ const BOLD: &str = "\x1b[1m";
 const DIM: &str = "\x1b[2m";
 const RESET: &str = "\x1b[0m";
 
-fn trace_cmd(args: TraceArgs) -> Result<()> {
-    // `--suggest`: the positional is a SOURCE, not a deck — recon it and print a
-    // menu of candidate traces. Runs before any deck load.
-    if args.suggest {
-        return trace_suggest(&args);
-    }
 
-    let deck = Deck::load(&args.deck)?;
 
-    // `--build`: discover the path with Claude and write it back (no walk; a
-    // fresh trace deck has no checkpoints yet, so this runs before from_deck).
-    if args.build {
-        return trace_build(&args, &deck);
-    }
 
-    let trace = Trace::from_deck(&deck)?;
-
-    // `--map`: just print the path, no quiz, no terminal needed.
-    if args.map {
-        return print_trace_map(&trace);
-    }
-
-    // A trace in a workspace tracks its progress in that workspace's own store.
-    let store = store_for(std::slice::from_ref(&args.deck), args.store.clone())?;
-    let config = Config::load(args.config.as_deref())?;
-
-    if !std::io::stdin().is_terminal() {
-        bail!("`alix trace` needs a terminal");
-    }
-    let mut store = store;
-    let grade = args.grade.then_some(&config);
-    let completed = run_walk(trace, &mut store, grade)?;
-    // A full walk earns the trace's exam — the compression that verifies (and
-    // masters) it. The exam is sat in the browser: run `alix` and pick this
-    // trace to take it.
-    if completed {
-        println!(
-            "{DIM}Walk complete — take this trace's exam in the browser: run `alix` \
-             and pick it.{RESET}"
-        );
-    }
-    Ok(())
-}
-
-/// Runs a trace walk in the terminal — predict → reveal → grade each checkpoint
-/// — scheduling each checkpoint in `store`. The walk is the **drill**; mastery
-/// is the trace's separate exam (the compression). Shared by `alix trace` and
-/// `alix explore --walk`. Returns whether every checkpoint was walked (the walk
-/// reached [`Phase::Done`] rather than being quit early), so the caller can offer
-/// the exam as a capstone.
-fn run_walk(trace: Trace, store: &mut Store, grade: Option<&Config>) -> Result<bool> {
-    let mut walk = Walk::new(trace);
-    let total = walk.total();
-    let mut last_prediction = String::new();
-    println!("{BOLD}Trace{RESET}  {}", walk.trace().description);
-    if let Some(src) = &walk.trace().source {
-        println!("{DIM}source: {src}  ·  {total} checkpoints{RESET}");
-    }
-    println!(
-        "{DIM}At each hop, put down a guess before you reveal — even a hunch beats \
-         \"I don't know\". The gap between your guess and the truth is the learning.{RESET}"
-    );
-
-    'walk: loop {
-        match walk.phase() {
-            Phase::Predict => {
-                let i = walk.current_index();
-                let checkpoint = walk
-                    .checkpoint()
-                    .cloned()
-                    .expect("predict has a checkpoint");
-                println!("\n{BOLD}── Checkpoint {}/{} ──{RESET}", i + 1, total);
-                println!("{}", checkpoint.prompt);
-                print_givens(&checkpoint.givens);
-                match read_line(&format!("{DIM}predict >{RESET} "))? {
-                    None => break 'walk, // EOF (Ctrl-D)
-                    Some(text) => {
-                        last_prediction = text.clone();
-                        walk.predict(text);
-                    }
-                }
-            }
-            Phase::Reveal => {
-                let checkpoint = walk.checkpoint().cloned().expect("reveal has a checkpoint");
-                println!("\n{BOLD}Reveal{RESET}");
-                match walk.trace().excerpt(&checkpoint) {
-                    Ok(excerpt) => {
-                        // A frozen-snapshot asset reads `30.rs`, lines 1-N; relabel
-                        // it back to the real `caching.rs:106-120` for display.
-                        let (excerpt, _) = alix::trace::relabel_for_display(
-                            excerpt,
-                            checkpoint.at_origin.as_deref(),
-                        );
-                        print_excerpt(&excerpt);
-                    }
-                    Err(e) => {
-                        let loc = checkpoint.locator.as_deref().unwrap_or("(none)");
-                        println!("{DIM}  (couldn't read the source — {e})  at: {loc}{RESET}");
-                    }
-                }
-                if !checkpoint.points.is_empty() {
-                    println!("{BOLD}  key points{RESET}");
-                    for point in &checkpoint.points {
-                        println!("    • {point}");
-                    }
-                }
-                // The note is the learner's own (provenance now rides the `% at:`
-                // line), so show it as-is.
-                if let Some(note) = &checkpoint.note {
-                    println!("{DIM}  ! {note}{RESET}");
-                }
-                // `--grade`: Claude judges the prediction; otherwise self-grade.
-                let delta = match grade {
-                    Some(config) => {
-                        eprint!("{DIM}  grading…{RESET}");
-                        match alix::trace::grade_prediction(
-                            &checkpoint,
-                            &last_prediction,
-                            &config.ask,
-                        ) {
-                            Ok((delta, feedback)) => {
-                                println!("\r{BOLD}  {}{RESET} — {feedback}", delta.label());
-                                Some(delta)
-                            }
-                            Err(e) => {
-                                println!(
-                                    "\r{DIM}  (grading failed: {e} — grade it yourself){RESET}"
-                                );
-                                read_delta()?
-                            }
-                        }
-                    }
-                    None => read_delta()?,
-                };
-                match delta {
-                    Some(delta) => walk.grade(store, delta, now_ms()),
-                    None => break 'walk, // quit
-                }
-            }
-            Phase::Done => break 'walk,
-        }
-    }
-
-    store.save().context("cannot save progress")?;
-    print_trace_summary(&walk);
-    Ok(walk.phase() == Phase::Done)
-}
 
 /// Discovers the path with Claude (`alix trace --build`) and writes the
 /// checkpoints back into the deck file, keeping its `% trace:`/`% source:`
 /// header.
-fn trace_build(args: &TraceArgs, deck: &Deck) -> Result<()> {
+fn trace_build(deck_path: &Path, deck: &Deck, yes: bool, config: &Config) -> Result<()> {
     if !deck.is_trace() {
         bail!(
             "{} declares no `% trace:` — add the path you want to understand \
@@ -2176,23 +2245,22 @@ fn trace_build(args: &TraceArgs, deck: &Deck) -> Result<()> {
             deck.subject
         );
     }
-    let config = Config::load(args.config.as_deref())?;
     let source = deck.sources.first().map(String::as_str).unwrap_or_default();
-    preflight_source(source, config.ask.preflight_threshold, args.yes)?;
+    preflight_source(source, config.ask.preflight_threshold, yes)?;
     eprintln!(
         "Tracing a path through {source} (exploring the source — this can take a \
          few minutes)…"
     );
     let cards = alix::trace::build(deck, &config.trace, &config.ask)?;
-    alix::deck::set_trace_checkpoints(&args.deck, &cards)?;
+    alix::deck::set_trace_checkpoints(deck_path, &cards)?;
 
     let n = parser::parse_str(&deck.subject, &cards)
         .map(|c| c.len())
         .unwrap_or(0);
-    let path = args.deck.display();
     println!(
-        "Wrote {n} checkpoints to {path}. Review them and their `% at:` locators, \
-         then walk it:  alix trace {path}"
+        "Wrote {n} checkpoints to {}. Review them and their `% at:` locators, \
+         then walk it from the picker: run `alix` and pick it.",
+        deck_path.display()
     );
     Ok(())
 }
@@ -2201,299 +2269,74 @@ fn trace_build(args: &TraceArgs, deck: &Deck) -> Result<()> {
 /// positional, NOT a deck) and print a ranked menu of candidate traces to
 /// author. Read-only exploration; writes nothing. The cheap precursor to
 /// `--build` — pick a suggestion, paste it into a new deck, then build that.
-fn trace_suggest(args: &TraceArgs) -> Result<()> {
-    let config = Config::load(args.config.as_deref())?;
-    let source = args.deck.to_string_lossy();
-    preflight_source(&source, config.ask.preflight_threshold, args.yes)?;
+fn trace_suggest(source: &str, yes: bool, config: &Config) -> Result<()> {
+    preflight_source(source, config.ask.preflight_threshold, yes)?;
     eprintln!(
         "Reconning {source} for traces worth tracing (one exploration pass — this \
          can take a minute)…"
     );
-    let menu = alix::trace::suggest(&source, &config.trace, &config.ask)?;
+    let menu = alix::trace::suggest(source, &config.trace, &config.ask)?;
     println!("{menu}");
     println!(
         "\n{DIM}Paste a suggestion into a new deck (its `% trace:` + `% source:`), \
-         then:  alix trace --build <deck>{RESET}"
+         then build it:  alix generate <deck>{RESET}"
     );
     Ok(())
 }
 
-/// `alix explore`: explore a source and print an ordered learning plan toward a
-/// goal — the decks and traces worth authoring, dependency-ordered. Read-only
-/// exploration; writes nothing (the first slice of `alix explore`).
-fn explore_cmd(args: ExploreArgs) -> Result<()> {
-    let config = Config::load(args.config.as_deref())?;
-    let source = args.source.to_string_lossy();
-    let goal = args
-        .goal
-        .as_deref()
-        .unwrap_or("understand the whole source");
 
-    preflight_source(&source, config.ask.preflight_threshold, args.yes)?;
-
-    // `--walk`: build an explore walk over the source's shape and walk it.
-    if args.walk {
-        return explore_walk(&args, &config, &source, goal);
-    }
-
-    // `--into --build`: explore once, then fill every stub in the same session.
-    if args.build {
-        let dir = args.into.as_deref().expect("clap: --build requires --into");
-        eprintln!(
-            "Exploring {source} and filling the workspace toward \"{goal}\" (explore \
-             + fill in one session — this can take a few minutes)…"
-        );
-        let (plan, filled) =
-            alix::explore::explore_and_fill(&source, goal, &config.trace, &config.ask)?;
-        println!("{plan}");
-        let report = alix::explore::materialize(
-            &plan,
-            dir,
-            goal,
-            args.title.as_deref(),
-            &source,
-            args.force,
-            Some(&filled),
-        )?;
-        let total = report.traces + report.decks;
-        let stubs = total - report.filled;
-        println!(
-            "\n{BOLD}Built {total} files{RESET} in {} — {} filled, {stubs} stub(s) \
-             ({} traces, {} decks).",
-            report.dir.display(),
-            report.filled,
-            report.traces,
-            report.decks,
-        );
-        // Freeze each cited deck's source into the workspace's `assets/` so its
-        // locators never drift and the workspace is self-contained.
-        match alix::explore::snapshot_workspace(&report.dir) {
-            Ok(summary) => {
-                if summary.decks > 0 {
-                    println!(
-                        "{DIM}Froze {} excerpt(s) from {} deck(s) into {}/assets — \
-                         the citations won't drift.{RESET}",
-                        summary.files,
-                        summary.decks,
-                        report.dir.display(),
-                    );
-                }
-                // A cited deck that froze nothing is a broken/stale `% source:` —
-                // surface it so the empty `assets/` isn't a silent mystery.
-                for failed in &summary.failed {
-                    eprintln!("warning: could not freeze {failed}");
-                }
-            }
-            Err(e) => eprintln!("warning: could not snapshot the source: {e:#}"),
-        }
-        // A workspace icon: the user's file if given, else an abstract emblem the
-        // model draws from what it just built. Best-effort — never fails the build.
-        match args.icon.as_deref() {
-            Some(src) => match alix::icon::install(&report.dir, src) {
-                Ok(_) => println!(
-                    "{DIM}Installed the workspace icon into {}/assets.{RESET}",
-                    report.dir.display()
-                ),
-                Err(e) => eprintln!("warning: could not install the workspace icon: {e:#}"),
-            },
-            None => match alix::icon::generate(&report.dir, &config.ask) {
-                Ok(_) => println!(
-                    "{DIM}Drew a workspace icon into {}/assets.{RESET}",
-                    report.dir.display()
-                ),
-                Err(e) => eprintln!("warning: could not draw a workspace icon: {e:#}"),
-            },
-        }
-        println!(
-            "{DIM}Walk a trace:  alix trace {}/<file>   ·   review the set:  \
-             alix review {}{RESET}",
-            report.dir.display(),
-            report.dir.display(),
-        );
-        return Ok(());
-    }
-
-    eprintln!(
-        "Exploring {source} for a learning plan toward \"{goal}\" (one pass — this \
-         can take a minute)…"
-    );
-    let plan = alix::explore::explore(&source, goal, &config.trace, &config.ask)?;
-    println!("{plan}");
-    if let Some(dir) = &args.into {
-        let report = alix::explore::materialize(
-            &plan,
-            dir,
-            goal,
-            args.title.as_deref(),
-            &source,
-            args.force,
-            None,
-        )?;
-        let total = report.traces + report.decks;
-        println!(
-            "\n{BOLD}Wrote {total} files{RESET} to {} — {} traces, {} decks, + alix.toml.",
-            report.dir.display(),
-            report.traces,
-            report.decks,
-        );
-        println!(
-            "{DIM}Build a trace:  alix trace --build {}/<file>   ·   review the set:  \
-             alix review {}{RESET}",
-            report.dir.display(),
-            report.dir.display(),
-        );
-    } else {
-        println!(
-            "\n{DIM}Each item is a deck or trace to author next — `alix trace --build` \
-             a trace, write a deck by hand or with `alix generate`.{RESET}"
-        );
-    }
-    Ok(())
-}
 
 /// `alix explore --walk`: build an explore walk over a source's shape and walk
 /// it immediately. Writes the trace to a file (default `explore.txt`) with an
 /// absolute `% source:` so it re-walks from anywhere, then runs the shared walk.
-fn explore_walk(args: &ExploreArgs, config: &Config, source: &str, goal: &str) -> Result<()> {
-    if !std::io::stdin().is_terminal() {
-        bail!("`alix explore --walk` needs a terminal to walk");
-    }
+/// Authors a trace over the source's shape (what it is → parts → entry →
+/// spine), written as a trace deck. The old explore-walk, minus the terminal
+/// walk — walking happens in the browser now.
+fn generate_trace_walk(args: &GenerateArgs, config: &Config, goal: &str) -> Result<()> {
+    let source = canonical_source(&args.source);
+    preflight_source(&source, config.ask.preflight_threshold, args.yes)?;
     eprintln!(
         "Exploring {source} to build an explore walk (one pass — this can take a \
          minute)…"
     );
-    let checkpoints = alix::explore::walk(source, goal, &config.trace, &config.ask)?;
+    let checkpoints = alix::explore::walk(&source, goal, &config.trace, &config.ask)?;
 
     // Wrap the checkpoints in a trace deck with an absolute `% source:` root so
     // the saved walk reads the right files from anywhere.
-    let root = std::fs::canonicalize(&args.source).unwrap_or_else(|_| args.source.clone());
-    let name = root.file_name().and_then(|n| n.to_str()).unwrap_or(source);
+    let name = Path::new(&source)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(source.as_str());
     let deck_text = format!(
         "% trace: exploring {name} — what it is, its parts, and its spine\n\
-         % source: {}\n\n{checkpoints}\n",
-        root.display()
+         % source: {source}\n\n{checkpoints}\n"
     );
-    let out = args
-        .output
-        .clone()
-        .unwrap_or_else(|| PathBuf::from("explore.txt"));
+    let out = PathBuf::from(args.output.clone().unwrap_or_else(|| "explore.txt".into()));
+    if out.exists() && !args.force {
+        bail!("{} already exists; pass --force to overwrite", out.display());
+    }
+    let dir = deck_out_dir(args.workspace.as_deref(), config)?;
+    let out = if args.workspace.is_some() { dir.join(out) } else { out };
     std::fs::write(&out, &deck_text).with_context(|| format!("cannot write {}", out.display()))?;
     println!(
-        "{DIM}Wrote the explore walk to {} — re-walk it any time with \
-         `alix trace {}`.{RESET}\n",
-        out.display(),
+        "Wrote the explore walk to {} — walk it from the picker: run `alix` and \
+         pick it.",
         out.display()
     );
-
-    let deck = Deck::load(&out)?;
-    let trace = Trace::from_deck(&deck)?;
-    let mut store = store_for(std::slice::from_ref(&out), None)?;
-    run_walk(trace, &mut store, None).map(|_| ())
-}
-
-/// Prints a trace's path (prompts, key points, locators) without quizzing.
-fn print_trace_map(trace: &Trace) -> Result<()> {
-    println!("{BOLD}Trace{RESET}  {}", trace.description);
-    if let Some(src) = &trace.source {
-        println!("{DIM}source: {src}{RESET}");
-    }
-    for (i, checkpoint) in trace.checkpoints.iter().enumerate() {
-        println!("\n{BOLD}{}.{RESET} {}", i + 1, checkpoint.prompt);
-        for given in &checkpoint.givens {
-            println!("   {DIM}given · {given}{RESET}");
-        }
-        for point in &checkpoint.points {
-            println!("   • {point}");
-        }
-        if let Some(loc) = &checkpoint.locator {
-            println!("   {DIM}at {loc}{RESET}");
-        }
-        if let Some(note) = &checkpoint.note {
-            println!("   {DIM}! {note}{RESET}");
-        }
-    }
     Ok(())
 }
 
-/// Prints a checkpoint's `% given:` list under the question, before predicting
-/// — the off-screen symbols the excerpt leans on, so it can stay tight.
-fn print_givens(givens: &[String]) {
-    if givens.is_empty() {
-        return;
-    }
-    println!("{DIM}given{RESET}");
-    for given in givens {
-        println!("  {DIM}· {given}{RESET}");
-    }
-}
 
-/// Renders an excerpt (one contiguous span) with a line-number gutter.
-fn print_excerpt(excerpt: &alix::trace::Excerpt) {
-    println!("{DIM}  {}{RESET}", excerpt.path.display());
-    for (no, text) in &excerpt.lines {
-        println!("  {DIM}{no:>5}{RESET}  {text}");
-    }
-    if excerpt.truncated {
-        println!("       {DIM}… (truncated){RESET}");
-    }
-}
 
-/// Prints the end-of-walk tally and which checkpoints came out weak.
-fn print_trace_summary(walk: &Walk) {
-    let s = walk.summary();
-    let graded = s.passed + s.partly + s.failed;
-    if graded == 0 {
-        println!("\n{DIM}Left the trace early — no checkpoints recorded.{RESET}");
-        return;
-    }
-    println!(
-        "\n{BOLD}Walk complete{RESET}  {} got it · {} partly · {} missed it",
-        s.passed, s.partly, s.failed
-    );
-    if s.weak.is_empty() {
-        println!("{DIM}Every hop landed — the path will fade gently.{RESET}");
-    } else {
-        let hops: Vec<String> = s.weak.iter().map(|i| (i + 1).to_string()).collect();
-        println!(
-            "{DIM}Weak edges (resurface sooner): checkpoint {}{RESET}",
-            hops.join(", ")
-        );
-    }
-}
 
-/// Reads one line from stdin after printing `prompt`. Returns `None` on EOF
-/// (Ctrl-D), which ends the walk.
-fn read_line(prompt: &str) -> Result<Option<String>> {
-    print!("{prompt}");
-    std::io::stdout().flush().ok();
-    let mut line = String::new();
-    if std::io::stdin().read_line(&mut line)? == 0 {
-        println!();
-        return Ok(None);
-    }
-    Ok(Some(line.trim_end().to_string()))
-}
 
-/// Prompts for the self-judged delta, re-asking until it gets `g`/`p`/`f`.
-/// Returns `None` to quit (a leading `q`, or EOF).
-fn read_delta() -> Result<Option<alix::trace::Delta>> {
-    loop {
-        let prompt = format!("{DIM}  gap?  [n]ailed · [p]artly · [f]ailed  (q to quit) >{RESET} ");
-        let Some(answer) = read_line(&prompt)? else {
-            return Ok(None);
-        };
-        match answer.trim().chars().next() {
-            Some('q') | Some('Q') => return Ok(None),
-            Some(c) => {
-                if let Some(delta) = alix::trace::Delta::from_key(c) {
-                    return Ok(Some(delta));
-                }
-            }
-            None => {}
-        }
-        println!("{DIM}  answer n, p, or f (or q to quit).{RESET}");
-    }
-}
+
+
+
+
+
+
+
 
 /// The canonical CLI name of a value-enum value (e.g. `Mode::LineByLine` →
 /// `"line"`), for echoing a deck's declared settings.
@@ -2663,6 +2506,13 @@ fn check(decks: Vec<PathBuf>) -> Result<()> {
 /// on a fail, so a missing optional binary never breaks a script.
 fn doctor_cmd(args: DoctorArgs) -> Result<()> {
     use alix::doctor::{self, Status};
+    // A deck-file target = lint exactly that deck (syntax, duplicate answers,
+    // trace locators) — the old `deck check`, now one more thing doctor checks.
+    if let Some(path) = &args.dir
+        && path.is_file()
+    {
+        return check(vec![path.clone()]);
+    }
     let (config_finding, config) = doctor::check_config(args.config.as_deref());
     let mut findings = vec![config_finding];
     // The same root/store resolution the launcher applies to `alix <dir>`.
