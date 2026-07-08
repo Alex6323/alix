@@ -2290,9 +2290,17 @@ fn generate_single_deck(args: &GenerateArgs, config: &Config) -> Result<()> {
     }
 
     let dir = deck_out_dir(args.workspace.as_deref(), config)?;
-    if args.force {
+    let target = dir.join(&name);
+    if target.exists() {
+        if !args.force {
+            bail!(
+                "{} already exists; pass --force to overwrite",
+                target.display()
+            );
+        }
         // --force is CLI-only: clear the collision before placing.
-        std::fs::remove_file(dir.join(&name)).ok();
+        std::fs::remove_file(&target)
+            .with_context(|| format!("cannot overwrite {}", target.display()))?;
     }
     let placed = library::place_deck(&dir, &name, &text)?;
     match placed.parse_error {
@@ -2362,9 +2370,17 @@ fn import_cmd(args: ImportArgs) -> Result<()> {
     }
 
     let dir = deck_out_dir(args.workspace.as_deref(), &config)?;
-    if args.force {
+    let target = dir.join(&name);
+    if target.exists() {
+        if !args.force {
+            bail!(
+                "{} already exists; pass --force to overwrite",
+                target.display()
+            );
+        }
         // --force is CLI-only: clear the collision before placing.
-        std::fs::remove_file(dir.join(&name)).ok();
+        std::fs::remove_file(&target)
+            .with_context(|| format!("cannot overwrite {}", target.display()))?;
     }
     let placed = library::place_deck(&dir, &name, &text)?;
     match placed.parse_error {
