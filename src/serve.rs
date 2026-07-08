@@ -4116,20 +4116,41 @@ fn respond_bytes(request: Request, bytes: Vec<u8>, content_type: &str) {
     let _ = request.respond(Response::from_data(bytes).with_header(header));
 }
 
+/// A Content-Disposition-safe file name: ASCII only (tiny_http header
+/// values must be), quotes/backslashes/control characters dropped, and
+/// never empty — a fully non-ASCII name falls back to a generic one.
+///
+/// The alphanumeric check looks only at the stem (before the last `.`):
+/// an extension alone (e.g. a non-ASCII name filtered down to `.zip`) is
+/// not a real file name, so it also falls back.
+fn download_filename(name: &str) -> String {
+    let safe: String = name
+        .chars()
+        .filter(|c| c.is_ascii() && !c.is_ascii_control() && *c != '"' && *c != '\\')
+        .collect();
+    let stem = match safe.rfind('.') {
+        Some(idx) => &safe[..idx],
+        None => safe.as_str(),
+    };
+    if !stem.chars().any(|c| c.is_ascii_alphanumeric()) {
+        "decks.zip".to_string()
+    } else {
+        safe
+    }
+}
+
 /// Like [`respond_bytes`], but marks the response as a file to save rather
 /// than render inline — the zip export is the one non-JSON API response, and
 /// a browser only offers "save as" with `Content-Disposition: attachment`.
 fn respond_download(request: Request, bytes: Vec<u8>, content_type: &str, filename: &str) {
     let content_type_header =
         Header::from_bytes(&b"Content-Type"[..], content_type.as_bytes()).unwrap();
-    let disposition = format!("attachment; filename=\"{filename}\"");
-    let disposition_header =
-        Header::from_bytes(&b"Content-Disposition"[..], disposition.as_bytes()).unwrap();
-    let _ = request.respond(
-        Response::from_data(bytes)
-            .with_header(content_type_header)
-            .with_header(disposition_header),
-    );
+    let disposition = format!("attachment; filename=\"{}\"", download_filename(filename));
+    let response = Response::from_data(bytes).with_header(content_type_header);
+    let _ = match Header::from_bytes(&b"Content-Disposition"[..], disposition.as_bytes()) {
+        Ok(disposition_header) => request.respond(response.with_header(disposition_header)),
+        Err(_) => request.respond(response),
+    };
 }
 
 /// Serves the registered image for `key`, or 404 for an unknown key /
@@ -4184,6 +4205,25 @@ mod tests {
         let (none, flag) = icon_field(None, &mut icons);
         assert!(none.is_none() && !flag);
         assert_eq!(icons.len(), 1);
+    }
+
+    #[test]
+    fn a_non_ascii_deck_name_yields_an_ascii_download_filename() {
+        let name = download_filename("mövenpick-decks.zip");
+        assert!(name.is_ascii());
+        assert!(name.ends_with(".zip"));
+    }
+
+    #[test]
+    fn a_fully_non_ascii_name_falls_back_to_a_generic_filename() {
+        assert_eq!(download_filename("日本語.zip"), "decks.zip");
+    }
+
+    #[test]
+    fn quotes_and_backslashes_are_stripped_from_download_filenames() {
+        let name = download_filename("weird\"na\\me.zip");
+        assert!(!name.contains('"'));
+        assert!(!name.contains('\\'));
     }
 
     #[test]
