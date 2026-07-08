@@ -56,7 +56,7 @@ hashes.
 
 ## Grounding a frozen card — `% origin:`
 
-A workspace frozen with `alix explore --into --build` shows you *snapshots* of its
+A workspace frozen by `alix generate`'s workspace build shows you *snapshots* of its
 source (the `assets/` copies), not the live files. When you ask about one of those
 cards, the tutor reads the **live source** the snapshot came from — recorded in the
 deck's `% origin:` — for surrounding context, while keeping the frozen excerpt you

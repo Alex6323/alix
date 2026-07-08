@@ -592,9 +592,7 @@ fn oversized_local_source_with_yes_proceeds_past_the_guard() {
         "[ask]\ncommand = \"/nonexistent/claude-xyz\"\ntimeout_secs = 5\n",
     );
     let src = dir.path().to_str().unwrap();
-    let out = alix(&[
-        "generate", src, "--yes", "--config", &config, "--print",
-    ]);
+    let out = alix(&["generate", src, "--yes", "--config", &config, "--print"]);
     let err = stderr(&out);
     // The error must NOT be the guard refusal — it should be the missing-binary
     // hint (or something from the model runner).

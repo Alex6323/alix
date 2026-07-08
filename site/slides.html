@@ -334,7 +334,7 @@
     <ul class="pts">
       <li>predict &#8594; reveal &#8594; judge — the retrieval effect, applied to <em>connections</em></li>
       <li>the excerpt is read live from the source; the source stays the oracle</li>
-      <li>the AI can discover the path for you (<span class="dim" style="font-family:var(--mono)">alix trace --build</span>)</li>
+      <li>the AI can discover the path for you (<span class="dim" style="font-family:var(--mono)">alix generate --trace</span>)</li>
     </ul>
   </div>
   <aside class="notes">
@@ -347,8 +347,8 @@
     <p class="eyebrow"><span class="k">II</span> · alix</p>
     <h2>Start from <em class="k">your</em> material.</h2>
     <ul class="pts">
-      <li><span style="font-family:var(--mono)">alix deck generate &lt;url-or-path&gt;</span> — a facts deck from a lecture page, a chapter, a file, a repo — with citations back into the source.</li>
-      <li><span style="font-family:var(--mono)">alix explore --build</span> — a whole learning workspace: decks and traces, ordered by prerequisites, from one goal.</li>
+      <li><span style="font-family:var(--mono)">alix generate &lt;url-or-path&gt;</span> — a facts deck from a lecture page, a chapter, a file, a repo — with citations back into the source.</li>
+      <li><span style="font-family:var(--mono)">alix generate &lt;dir&gt; --goal "&#8230;"</span> — a whole learning workspace: decks and traces, ordered by prerequisites, from one goal.</li>
       <li class="dim">Generated decks are a starting point — read them before you trust them.</li>
     </ul>
   </div>
@@ -427,7 +427,7 @@
     <h2><em class="k">Try it</em> in five minutes.</h2>
     <div class="cmd"><span class="d">$</span> curl -sSf https://alix.study/install.sh | sh</div>
     <table class="tbl">
-      <tr><td>alix deck generate &lt;lecture-url&gt;</td><td>turn something you must learn into a deck</td></tr>
+      <tr><td>alix generate &lt;lecture-url&gt;</td><td>turn something you must learn into a deck</td></tr>
       <tr><td>alix</td><td>review it — the deck picker opens in your browser</td></tr>
       <tr><td>alix &#8594; Exam</td><td>when it&#8217;s drilled: prove you understood it — one click in the picker</td></tr>
     </table>

@@ -19,8 +19,8 @@ alix --help
 
 The flashcard **core** — reviewing, scheduling, every answer mode, browse, and
 the web app — runs with nothing else installed, no accounts, no
-network. The **AI features** (deck generation, the exam, traces, explore, and the
-in-session tutor) shell out to a supported model CLI — [Claude Code](https://www.anthropic.com/claude-code)
+network. The **AI features** (deck generation, the exam, traces, workspace
+generation, and the in-session tutor) shell out to a supported model CLI — [Claude Code](https://www.anthropic.com/claude-code)
 by default; the Gemini, Codex, and Copilot CLIs are also supported. Install at
 least one and authenticate with it. See
 [chapter 16](16-configuration.md#backends) for how to switch backends. You can use the
@@ -77,7 +77,7 @@ and press
 ```sh
 alix stats srs.txt     # a progress overview
 alix list srs.txt      # every card with its per-depth schedule and due time
-alix deck check srs.txt     # lint the deck (syntax errors, duplicate cards)
+alix doctor srs.txt    # lint the deck (syntax errors, duplicate cards)
 alix reset srs.txt     # clear stored progress (also --card / --all)
 ```
 

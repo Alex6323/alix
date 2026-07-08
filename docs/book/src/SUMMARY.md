@@ -26,7 +26,7 @@
 - [Generating decks](11-generating-decks.md)
 - [The AI exam](12-the-ai-exam.md)
 - [Trace decks](13-trace-decks.md)
-- [Explore — goals & curricula](14-explore.md)
+- [Generate a workspace — goals & curricula](14-explore.md)
 
 # Part V — Surface & reference
 

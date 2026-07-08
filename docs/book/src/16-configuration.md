@@ -93,7 +93,7 @@ you want to use and run its login command once.
 Each backend is granted **read-only tools only** (file reading; web fetch where
 the backend supports it). Codex runs under a network-blocking sandbox rather
 than a tool allowlist, so it can read local source files but can't fetch URLs
-— a URL-based exam or `deck generate` will refuse and tell you to use a local
+— a URL-based exam or `alix generate` will refuse and tell you to use a local
 file instead, or switch backends.
 
 Run `alix doctor --backends` to send a quick test request to the configured
@@ -114,20 +114,24 @@ settings:
 - **`[ask]`** — the tutor: `command` (how to invoke the CLI), `backend`,
   `permission_mode`, the tool allowlist, a `model` override, `timeout_secs`,
   and an `effort`.
-- **`[generate]`** — `alix deck`: `model`, `timeout_secs` (300), `max_cards` (30),
+- **`[generate]`** — `alix generate`'s deck drafting: `model`, `timeout_secs` (300), `max_cards` (30),
   `extra`, a full `prompt` override, and `review`.
 - **`[exam]`** — the AI exam: `model`, `timeout_secs` (300), `num_questions` (5),
   `pass_threshold` (1.0), `strictness` (`balanced`), `extra`.
-- **`[trace]`** — `alix trace --build` / `--suggest`: defaults `model = "opus"`
+- **`[trace]`** — `alix generate`'s trace and plan passes: defaults `model = "opus"`
   and `effort = "high"` (the build is correctness-critical and amortized); also
-  `timeout_secs`. `--grade` instead uses the `[ask]` tier.
+  `timeout_secs`. `auto_grade` (default `false`) has the model grade your typed
+  predictions during a [trace walk](13-trace-decks.md) — a model call per hop,
+  at the `[ask]` tier.
 
 ## Decks directory and storage
 
 By default `alix` looks for decks in `~/decks`; set `decks_dir` to change it.
 Progress is stored at `~/.local/share/alix/progress.json` (a workspace — or any
 folder you serve with `alix <dir>` — keeps its own inside the folder; the
-`stats`/`list`/`reset` commands take `--store <path>` to point at one).
+`stats`/`list`/`reset` commands take that deck, folder, or workspace as their
+target and resolve its store the same way, with `--store <path>` as an
+override).
 
 Card identity is an XxHash64 over the deck **file name** plus the card's **back
 lines** — so your progress survives editing a front or adding notes, but renaming a
@@ -137,6 +141,7 @@ breaks, indentation, or repeated spaces, so reflowing or reindenting an answer
 keeps a card's history. (That's the "editing is safe" rule from
 [chapter 3](03-the-deck-format.md), stated precisely.)
 
-`alix reset <deck>` clears progress so cards go "new" again — a whole deck, a
-single card (`--card <id-or-front>`), or the entire store (`--all`); it confirms
-first unless you pass `-y`.
+`alix reset <target>` clears progress so cards go "new" again — a whole deck, a
+folder or workspace (every member deck, plus a workspace's mastered flags and
+virtual cards), a single card (`--card <id-or-front>`), or the entire store
+(`--all`); it confirms once unless you pass `-y`.

@@ -20,6 +20,13 @@ direction = "both"
 reveal = "line"
 ```
 
+Starting from nothing instead? `alix workspace init <dir>` (`--title` to name
+it) scaffolds an empty workspace — the `alix.toml` plus an `assets/` folder, no
+decks yet — which you grow with
+[`alix generate … --workspace <dir>`](11-generating-decks.md) or
+`alix deck import … --workspace <dir>`. Dependencies (`% requires:`) are still
+edited by hand in the deck files.
+
 Now open the cluster and drill its members one at a time:
 
 ```sh
@@ -71,7 +78,10 @@ separate from the global store that loose decks share. That makes a workspace a
 excerpts — covered with traces later), and its history all live in one folder you
 can move, copy, or share, with its progress isolated from everything else. Decks
 outside any workspace keep using the global store; the terminal commands
-(`alix stats`/`list`/`reset`) take `--store <path>` to point at either.
+(`alix stats`/`list`/`reset`) take a deck file, a plain folder, **or a
+workspace** — a folder or workspace expands to its member decks, each resolved
+against the same store the launcher would serve it with (`--store <path>` still
+overrides).
 
 ## In the picker
 
@@ -89,7 +99,7 @@ chevron, so a long list of similar-named workspaces is quicker to scan. Drop an
 image in the workspace's `assets/` and point `icon = "assets/<file>"` at it in the
 `alix.toml` (or just name it `assets/icon.{svg,png,jpg}` and skip the key); an SVG
 is tinted to the active theme, a raster shows as-is. When you build a workspace
-with `alix explore --into <dir> --build`, the model draws an abstract SVG emblem from
+with `alix generate <source> --workspace <dir>`, the model draws an abstract SVG emblem from
 the topic automatically, unless you pass `--icon <file>`.
 
 `alix <dir>` serves a workspace directly: the picker opens drilled into that
@@ -100,6 +110,15 @@ a whole workspace is never reviewed at once; open it and pick a member.)
 
 A folder without a manifest serves the same way with `alix <folder>`; it
 just applies no shared directives.
+
+## Sharing a workspace
+
+A workspace is a self-contained folder, so sharing one is sending the folder.
+`alix share <dir>` does that over magic-wormhole with the personal files
+(progress, recent list, `alix.local.toml`) left home; the other side runs
+`alix receive <code>` and gets it beside their own decks, ready to serve with
+`alix <dir>`. Precomputed augmentations (`augment.json`) travel — the AI
+content comes along, the progress doesn't.
 
 ## Titles
 

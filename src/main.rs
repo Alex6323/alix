@@ -106,6 +106,18 @@ enum Command {
     /// Create and grow workspaces.
     #[command(subcommand)]
     Workspace(WorkspaceAction),
+    /// Send a deck, folder, or workspace to someone over magic-wormhole.
+    ///
+    /// Stages a copy without your personal state (progress, recent list,
+    /// local pacing), then hands it to the `wormhole` binary — tell the
+    /// receiver the code it prints. Needs magic-wormhole installed.
+    Share(ShareArgs),
+    /// Receive a shared deck or folder by its wormhole code.
+    ///
+    /// A received deck lands in the decks directory (or `--workspace <dir>`);
+    /// a received folder lands beside your other decks under its own name.
+    /// Leaked personal files are stripped either way.
+    Receive(ReceiveArgs),
     /// Show the configuration (key bindings) or create the config file.
     Config {
         /// Write a config file with the default bindings to edit.
@@ -152,6 +164,27 @@ struct WorkspaceInitArgs {
     /// The workspace's display title (default: the folder name).
     #[arg(long)]
     title: Option<String>,
+}
+
+#[derive(Args)]
+struct ShareArgs {
+    /// What to send: a deck file, a plain decks folder, or a workspace.
+    path: PathBuf,
+}
+
+#[derive(Args)]
+struct ReceiveArgs {
+    /// The wormhole code the sender read to you (e.g. `7-crossover-clockwork`).
+    code: String,
+
+    /// Put a received DECK into this workspace instead of the decks directory.
+    #[arg(long)]
+    workspace: Option<PathBuf>,
+
+    /// Overwrite an existing deck file of the same name (folders never
+    /// overwrite — move the old one aside first).
+    #[arg(long)]
+    force: bool,
 }
 
 #[derive(Args)]
@@ -357,7 +390,6 @@ struct ImportArgs {
     config: Option<PathBuf>,
 }
 
-
 #[derive(Args)]
 struct DeckArgs {
     /// A deck file, a workspace, or a plain decks folder.
@@ -471,6 +503,8 @@ fn main() -> Result<()> {
         Some(Command::Workspace(action)) => match action {
             WorkspaceAction::Init(args) => workspace_init_cmd(args),
         },
+        Some(Command::Share(args)) => share_cmd(args),
+        Some(Command::Receive(args)) => receive_cmd(args),
         Some(Command::Config { init }) => config_cmd(init),
         Some(Command::Doctor(args)) => doctor_cmd(args),
     }
@@ -1373,8 +1407,6 @@ fn select_reset_ids(cards: &[Card], card: Option<&str>) -> Vec<(u64, String)> {
         .collect()
 }
 
-
-
 fn confirm(prompt: &str, yes: bool) -> Result<bool> {
     if yes {
         return Ok(true);
@@ -2012,10 +2044,107 @@ fn build_workspace(
             Err(e) => eprintln!("warning: could not draw a workspace icon: {e:#}"),
         },
     }
+    println!("{DIM}Open it:  alix {}{RESET}", report.dir.display());
+    Ok(())
+}
+
+/// `alix share`: stage a personal-state-free copy and hand it to wormhole.
+/// The wormhole binary prints the code mnemonic and the progress itself.
+fn share_cmd(args: ShareArgs) -> Result<()> {
+    let path = &args.path;
+    if path.is_file() {
+        // A single deck has no personal state — send the file as-is. (Its
+        // augmentations live in a shared per-store cache and stay home.)
+        println!(
+            "Sharing {} — tell the receiver the code below.",
+            path.display()
+        );
+        return alix::share::wormhole(&["send", &path.to_string_lossy()], None);
+    }
+    if !path.is_dir() {
+        bail!("`{}` is neither a deck file nor a folder", path.display());
+    }
+    if !workspace::has_decks(path) {
+        bail!("no decks in `{}` — nothing to share", path.display());
+    }
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("shared-decks");
+    let tmp = tempfile::tempdir().context("cannot create a staging directory")?;
+    let stage = tmp.path().join(name);
+    let staged = alix::share::stage_dir(path, &stage)?;
     println!(
-        "{DIM}Open it:  alix {}{RESET}",
-        report.dir.display()
+        "Sharing {name} ({staged} files — progress and personal config stay home). \
+         Tell the receiver the code below."
     );
+    alix::share::wormhole(&["send", &stage.to_string_lossy()], None)
+}
+
+/// `alix receive`: run wormhole in a scratch dir, strip any leaked personal
+/// files, and move the result where it belongs.
+fn receive_cmd(args: ReceiveArgs) -> Result<()> {
+    let config = Config::load(None)?;
+    let tmp = tempfile::tempdir().context("cannot create a receiving directory")?;
+    alix::share::wormhole(&["receive", "--accept-file", &args.code], Some(tmp.path()))?;
+
+    // Whatever arrived is the single new entry in the scratch dir.
+    let mut entries: Vec<PathBuf> = std::fs::read_dir(tmp.path())?
+        .flatten()
+        .map(|e| e.path())
+        .collect();
+    let Some(got) = entries.pop().filter(|_| entries.is_empty()) else {
+        bail!("expected exactly one received file or folder");
+    };
+    let name = got
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("received")
+        .to_string();
+
+    if got.is_dir() {
+        if args.workspace.is_some() {
+            bail!(
+                "--workspace places a received deck; a folder lands under the decks dir as `{name}`"
+            );
+        }
+        let removed = alix::share::sanitize_received(&got)?;
+        for r in &removed {
+            println!("stripped a leaked personal file: {r}");
+        }
+        let dest = config
+            .decks_dir()
+            .context("cannot determine the decks directory")?
+            .join(&name);
+        if dest.exists() {
+            bail!(
+                "{} already exists — move it aside first (folders are never overwritten)",
+                dest.display()
+            );
+        }
+        alix::share::move_into(&got, &dest)?;
+        println!(
+            "Received {} — open it:  alix {}",
+            dest.display(),
+            dest.display()
+        );
+    } else {
+        let dest_dir = deck_out_dir(args.workspace.as_deref(), &config)?;
+        std::fs::create_dir_all(&dest_dir)
+            .with_context(|| format!("cannot create {}", dest_dir.display()))?;
+        let dest = dest_dir.join(&name);
+        if dest.exists() && !args.force {
+            bail!(
+                "{} already exists; pass --force to overwrite",
+                dest.display()
+            );
+        }
+        alix::share::move_into(&got, &dest)?;
+        println!(
+            "Received {} — it shows up in the picker (`alix`).",
+            dest.display()
+        );
+    }
     Ok(())
 }
 
@@ -2223,10 +2352,6 @@ const BOLD: &str = "\x1b[1m";
 const DIM: &str = "\x1b[2m";
 const RESET: &str = "\x1b[0m";
 
-
-
-
-
 /// Discovers the path with Claude (`alix trace --build`) and writes the
 /// checkpoints back into the deck file, keeping its `% trace:`/`% source:`
 /// header.
@@ -2284,8 +2409,6 @@ fn trace_suggest(source: &str, yes: bool, config: &Config) -> Result<()> {
     Ok(())
 }
 
-
-
 /// `alix explore --walk`: build an explore walk over a source's shape and walk
 /// it immediately. Writes the trace to a file (default `explore.txt`) with an
 /// absolute `% source:` so it re-walks from anywhere, then runs the shared walk.
@@ -2313,10 +2436,17 @@ fn generate_trace_walk(args: &GenerateArgs, config: &Config, goal: &str) -> Resu
     );
     let out = PathBuf::from(args.output.clone().unwrap_or_else(|| "explore.txt".into()));
     if out.exists() && !args.force {
-        bail!("{} already exists; pass --force to overwrite", out.display());
+        bail!(
+            "{} already exists; pass --force to overwrite",
+            out.display()
+        );
     }
     let dir = deck_out_dir(args.workspace.as_deref(), config)?;
-    let out = if args.workspace.is_some() { dir.join(out) } else { out };
+    let out = if args.workspace.is_some() {
+        dir.join(out)
+    } else {
+        out
+    };
     std::fs::write(&out, &deck_text).with_context(|| format!("cannot write {}", out.display()))?;
     println!(
         "Wrote the explore walk to {} — walk it from the picker: run `alix` and \
@@ -2325,18 +2455,6 @@ fn generate_trace_walk(args: &GenerateArgs, config: &Config, goal: &str) -> Resu
     );
     Ok(())
 }
-
-
-
-
-
-
-
-
-
-
-
-
 
 /// The canonical CLI name of a value-enum value (e.g. `Mode::LineByLine` →
 /// `"line"`), for echoing a deck's declared settings.
@@ -2535,8 +2653,14 @@ fn doctor_cmd(args: DoctorArgs) -> Result<()> {
     findings.push(doctor::check_binary(
         "backend",
         &config.ask.command,
-        "the AI features (tutor, exam, deck generate)",
+        "the AI features (tutor, exam, generate)",
         "install it and log in — or switch `[ask] backend` in the config",
+    ));
+    findings.push(doctor::check_binary(
+        "share",
+        "wormhole",
+        "sharing (`alix share`/`receive`)",
+        "install magic-wormhole (e.g. `pipx install magic-wormhole`, or your package manager)",
     ));
     let mut failed = false;
     for f in &findings {

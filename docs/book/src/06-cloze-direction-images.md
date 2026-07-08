@@ -75,7 +75,7 @@ header-only directive, absolute or relative to the deck file); without one they
 resolve next to the deck file, and an absolute path written on the card is used
 as-is.
 
-One catch worth knowing: images render in the web app. `alix deck check` warns
+One catch worth knowing: images render in the web app. `alix doctor` warns
 about an image file it can't find, but doesn't fail on it.
 
 ## Source citations
@@ -105,14 +105,14 @@ lives. Like all `%` directives, `% at:` is invisible to the identity hash: addin
 a citation to an existing card never resets its progress.
 
 You rarely have to write these by hand. Generating a deck from a local source —
-[`alix deck generate <path>`](11-generating-decks.md) or
-[`alix explore --build`](14-explore.md) — cites the lines each fact came from,
-and [`alix deck check`](17-command-reference.md) warns about a citation that no
+[`alix generate <path>`](11-generating-decks.md), single deck or
+[workspace build](14-explore.md) — cites the lines each fact came from,
+and [`alix doctor`](17-command-reference.md) warns about a citation that no
 longer resolves, so a moved or shrunk file is caught before you next review the
-card. A workspace built with `alix explore --into --build` goes one further and
+card. A workspace built with `alix generate` goes one further and
 **freezes** the cited excerpts into its `assets/` (just like trace excerpts), so
 the workspace travels without the original source and the quotes never shift under
 you. It also records where they came from in an `% origin:` directive — so the
 tutor can still reach the live source for context, and
-[`alix deck check`](17-command-reference.md) can flag a frozen card whose source has
+[`alix doctor`](17-command-reference.md) can flag a frozen card whose source has
 since **drifted**.

@@ -29,7 +29,7 @@ cargo install alix
 curl -sSf https://alix.study/install.sh | sh
 ```
 
-The core needs nothing else. The AI features (`deck generate` / `deck augment`,
+The core needs nothing else. The AI features (`generate` / `deck augment`,
 the exam, the tutor, `trace --build`, `explore`) shell out to a model CLI you
 install and log in to yourself: [Claude Code](https://www.anthropic.com/claude-code)
 by default, or Gemini, Codex, or Copilot via `[ask] backend`. Each backend gets
@@ -41,8 +41,8 @@ read-only tools only, and `alix` stores no API keys. See
 
 ```sh
 # make decks and workspaces from your own material
-alix deck generate <url-or-file>        # -> a deck
-alix explore <source> --goal "how X works" --into ~/decks/topic --build   # -> a workspace
+alix generate <url-or-file>            # -> a deck
+alix generate <repo> --goal "how X works" --workspace ~/decks/topic   # -> a workspace
 
 # then study, always in the web app (pick a deck or workspace, then a depth)
 alix
@@ -73,17 +73,16 @@ directive: [the deck format](docs/book/src/03-the-deck-format.md),
 | Command | What it does |
 |---|---|
 | `alix` | Open the web app to pick a deck or workspace |
-| `alix deck generate <url-or-file>` | Draft a facts deck from a page or a source |
+| `alix generate <source>` | Draft a deck, a trace (`--trace`), or a whole workspace |
 | `alix deck augment <deck> --target …` | Add distractors, notes, or key points |
-| `alix deck check <deck>` | Lint a deck (syntax, duplicates, locators) |
-| `alix explore <source>` | Plan or build a learning workspace from a source |
-| `alix trace <deck>` | Walk a predict-and-verify path (`--build` authors one) |
+| `alix workspace init <dir>` | Scaffold an empty workspace to grow into |
 | `alix <dir>` | Serve a folder or workspace as its own scoped instance |
-| `alix import <file.tsv>` | Import an Anki TSV export |
-| `alix stats <deck>` · `alix list <deck>` | Progress overview · per-card schedule |
-| `alix reset <deck>` | Clear stored progress |
+| `alix deck import <file.tsv>` | Import an Anki TSV export (`--workspace` places it) |
+| `alix stats <path>` · `alix list <path>` | Progress · schedules (deck, folder, or workspace) |
+| `alix reset <path>` | Clear stored progress (deck, folder, or workspace) |
+| `alix share <path>` · `alix receive <code>` | Send/get decks over [magic-wormhole](https://magic-wormhole.readthedocs.io) |
 | `alix config` | Show the config (`--init` writes a starter file) |
-| `alix doctor [--backends]` | Check the setup; optionally probe the AI backend(s) |
+| `alix doctor [path]` | Check the setup, or lint a deck; `--backends` probes the AI |
 
 Every flag and option: [command reference](docs/book/src/17-command-reference.md).
 

@@ -25,8 +25,36 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`[review] max_new` and `limit` config keys** for session pacing, with
   per-instance `--new`/`--limit` overrides on bare `alix` (precedence:
   flag > config > built-in 10 / no cap).
+- **`alix share <path>` and `alix receive <code>` — send decks to someone
+  over magic-wormhole** (shells out to the `wormhole` binary; install it
+  separately). Share takes a deck, folder, or workspace and stages a copy
+  with the personal state left home (progress, recent list, local pacing);
+  receive lands a deck in the decks dir (or `--workspace <dir>`) and a
+  folder under its own name, stripping any leaked personal files. The code
+  mnemonic and transfer progress come straight from wormhole.
+- **`alix workspace init <dir>`** scaffolds an empty workspace (an
+  `alix.toml` and an `assets/` folder, no decks) — grow it with
+  `alix generate … --workspace <dir>` or `alix deck import … --workspace
+  <dir>`, which write their deck into the workspace.
+- **`stats`, `list`, and `reset` take a deck, a folder, or a workspace.**
+  A folder or workspace expands to its member decks against the store that
+  serving uses; `reset` on a workspace clears card progress, virtual cards,
+  and mastered flags together, under one blast-radius confirmation.
 
 ### Changed
+- **Breaking: one `generate` verb for all AI authoring — `explore`, `trace`,
+  `deck generate`, and `deck check` are removed.** `alix generate <source>`
+  routes by the source: a URL/file becomes one deck; a directory is explored
+  first and the plan's size decides (one item → a deck, more → a workspace,
+  shown and confirmed before building; `--plan` previews; `--deck` forces a
+  single deck; `--workspace <dir>` names the destination); `--trace` authors
+  a trace over a source (`--trace --plan` = the suggestions menu); naming an
+  existing `% trace:` stub builds its checkpoints in place. The terminal
+  trace walk is gone — traces are walked in the web picker, and the old
+  `--grade` flag becomes the `[trace] auto_grade` config key (opt-in AI
+  grading per hop, now available in the browser walk too). `alix doctor
+  <deck>` lints a single deck (was `deck check`); `import` moves under
+  `deck` (`alix deck import`).
 - **Breaking: the CLI collapses to `alix [dir]` plus task subcommands —
   every review starts from the picker.** Removed outright (pre-1.0, no
   aliases): `alix <deck>` direct-deck launch, the `review` and `workspace`

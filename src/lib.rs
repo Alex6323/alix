@@ -32,6 +32,7 @@ pub mod render;
 pub mod scheduler;
 pub mod serve;
 pub mod session;
+pub mod share;
 pub mod store;
 pub mod time;
 pub mod title;

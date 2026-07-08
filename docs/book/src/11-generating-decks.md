@@ -1,17 +1,18 @@
-# 11 · Generating decks — `alix deck generate`
+# 11 · Generating decks — `alix generate`
 
-Authoring cards by hand is the slow part of any flashcard habit. `alix deck
+Authoring cards by hand is the slow part of any flashcard habit. `alix
 generate` removes it: point it at a source and the model drafts a deck of fact cards
-for you. (`alix deck` is now a command group — `generate` plus `augment`.)
+for you.
 
 ```sh
-alix deck generate https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html
-alix deck generate src/scheduler.rs   # a local file (or a whole directory)
+alix generate https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html
+alix generate src/scheduler.rs   # a local file
 ```
 
-The source is a **web page URL** or a **local file/directory** — the deck-side
-mirror of `alix trace` (a later chapter), which builds *traces* from the same
-kinds of source.
+The source is a **web page URL** or a **local file**. It's the one AI-authoring
+verb: the same command with `--trace` builds *traces* from the same kinds of
+source, and a **directory** source is explored for a whole learning plan first
+(both later chapters) — pass `--deck` to force a single deck from a directory.
 
 ## What you get
 
@@ -36,10 +37,11 @@ How the source is recorded depends on its kind, and it matters later:
 ## Useful flags
 
 ```sh
-alix deck generate <source> -o ownership    # choose the output file name
-alix deck generate <source> --cards 15      # cap the number of cards
-alix deck generate <source> --review        # a 2nd pass that dedups and tightens
-alix deck generate <source> --print         # print to stdout instead of writing a file
+alix generate <source> -o ownership              # choose the output file name
+alix generate <source> --cards 15                # cap the number of cards
+alix generate <source> --review                  # a 2nd pass that dedups and tightens
+alix generate <source> --print                   # print to stdout instead of writing a file
+alix generate <source> --workspace ~/decks/rust/ # write the deck into that workspace
 ```
 
 `--review` runs a **second** model call that takes the draft and returns a
