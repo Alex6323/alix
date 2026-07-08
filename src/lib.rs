@@ -18,6 +18,7 @@ pub mod cloze;
 pub mod config;
 pub mod deck;
 pub mod depth;
+pub mod doctor;
 pub mod exam;
 pub mod explore;
 pub mod generate;

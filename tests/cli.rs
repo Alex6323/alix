@@ -605,7 +605,7 @@ fn bare_check_is_gone() {
 }
 
 #[test]
-fn backend_check_reports_not_installed() {
+fn doctor_backends_reports_a_missing_backend() {
     // Pointing `[ask] command` at a nonexistent binary → the health probe
     // reports a not-installed message and the command exits with failure.
     let dir = TempDir::new().unwrap();
@@ -614,7 +614,7 @@ fn backend_check_reports_not_installed() {
         "config.toml",
         "[ask]\ncommand = \"/nonexistent/no-such-cli\"\ntimeout_secs = 5\n",
     );
-    let out = alix(&["backend", "check", "--config", &config]);
+    let out = alix(&["doctor", "--backends", "--config", &config]);
     assert!(
         !out.status.success(),
         "a missing backend must exit with failure"
@@ -627,7 +627,7 @@ fn backend_check_reports_not_installed() {
 }
 
 #[test]
-fn backend_check_reports_working() {
+fn doctor_backends_reports_a_working_backend() {
     // A fake CLI that drains stdin and prints a reply → the probe reports ✓.
     let dir = TempDir::new().unwrap();
     let cli = fake_claude(dir.path(), "OK");
@@ -636,7 +636,7 @@ fn backend_check_reports_working() {
         "config.toml",
         &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
     );
-    let out = alix(&["backend", "check", "--config", &config]);
+    let out = alix(&["doctor", "--backends", "--config", &config]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     let combined = format!("{}{}", stdout(&out), stderr(&out));
     assert!(
@@ -646,12 +646,12 @@ fn backend_check_reports_working() {
 }
 
 #[test]
-fn backend_check_all_probes_each() {
+fn doctor_all_backends_probes_each() {
     // `--all` probes all four backends and prints a line per backend.  All
     // will fail (none are installed in CI), but there must be output for each.
     let dir = TempDir::new().unwrap();
     let config = write(dir.path(), "config.toml", "[ask]\ntimeout_secs = 5\n");
-    let out = alix(&["backend", "check", "--all", "--config", &config]);
+    let out = alix(&["doctor", "--all-backends", "--config", &config]);
     // --all always exits with the overall status but must produce output for
     // each of the four backends.
     let combined = format!("{}{}", stdout(&out), stderr(&out));

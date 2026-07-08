@@ -131,7 +131,7 @@ heartbeat:
 # Probe all four backends end-to-end (real tiny request through each installed
 # CLI). Needs each CLI installed and the maintainer's own logins configured.
 check-backends:
-	cargo run --quiet -- backend check --all
+	cargo run --quiet -- doctor --all-backends
 
 # Local, gitignored maintainer-only targets (e.g. wish-triage). The leading `-`
 # makes this a silent no-op for anyone whose tree doesn't have the file.

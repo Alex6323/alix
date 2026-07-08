@@ -81,6 +81,10 @@ struct LaunchArgs {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Check this setup's health: config, progress store, decks, and the
+    /// optional external CLIs — each problem with its one-line fix. Add
+    /// `--backends` to also probe the configured AI backend end to end.
+    Doctor(DoctorArgs),
     /// Show progress statistics for decks.
     Stats(DeckArgs),
     /// List all cards of decks with their state and due time.
@@ -108,9 +112,26 @@ enum Command {
         #[arg(long)]
         init: bool,
     },
-    /// Probe or inspect AI backends.
-    #[command(subcommand)]
-    Backend(BackendAction),
+}
+
+#[derive(Args)]
+struct DoctorArgs {
+    /// A decks folder or workspace root to check instead of the configured
+    /// decks directory (with its own store, like `alix <dir>` serves it).
+    dir: Option<PathBuf>,
+
+    /// Also probe the configured AI backend end to end. This sends one real
+    /// (tiny) request — the only reliable way to confirm login + reachability.
+    #[arg(long)]
+    backends: bool,
+
+    /// Probe all four supported backends (one real request each).
+    #[arg(long, conflicts_with = "backends")]
+    all_backends: bool,
+
+    /// Path of the config file (default: platform config dir).
+    #[arg(long)]
+    config: Option<PathBuf>,
 }
 
 #[derive(Args)]
@@ -222,23 +243,6 @@ enum DeckAction {
     },
 }
 
-/// The `alix backend` subcommands: inspect or probe AI backends.
-#[derive(Subcommand)]
-enum BackendAction {
-    /// Probe the configured backend (or all four with `--all`): send a trivial
-    /// request and report whether it is installed, signed in, and responding.
-    /// This makes a real (tiny) AI call — the only reliable way to confirm the
-    /// whole path works end-to-end.
-    Check {
-        /// Probe all four supported backends instead of the configured one.
-        #[arg(short, long)]
-        all: bool,
-
-        /// Path of the config file (default: platform config dir).
-        #[arg(long)]
-        config: Option<PathBuf>,
-    },
-}
 
 #[derive(Args)]
 struct AugmentArgs {
@@ -419,9 +423,7 @@ fn main() -> Result<()> {
         Some(Command::Trace(args)) => trace_cmd(args),
         Some(Command::Explore(args)) => explore_cmd(args),
         Some(Command::Config { init }) => config_cmd(init),
-        Some(Command::Backend(action)) => match action {
-            BackendAction::Check { all, config } => backend_check_cmd(all, config),
-        },
+        Some(Command::Doctor(args)) => doctor_cmd(args),
     }
 }
 
@@ -2521,6 +2523,63 @@ fn check(decks: Vec<PathBuf>) -> Result<()> {
     Ok(())
 }
 
+/// Runs the health checks and prints the report: `✓` ok, `!` warn (an optional
+/// feature is limited), `✗` fail (the core loop is broken). Exits non-zero only
+/// on a fail, so a missing optional binary never breaks a script.
+fn doctor_cmd(args: DoctorArgs) -> Result<()> {
+    use alix::doctor::{self, Status};
+    let (config_finding, config) = doctor::check_config(args.config.as_deref());
+    let mut findings = vec![config_finding];
+    // The same root/store resolution the launcher applies to `alix <dir>`.
+    let (decks_dir, store_path) = match &args.dir {
+        Some(path) => {
+            let store = if workspace::is_workspace(path) {
+                workspace::store_path(path)
+            } else {
+                path.join(workspace::STORE_FILE)
+            };
+            (path.clone(), Some(store))
+        }
+        None => (
+            config.decks_dir().context("cannot determine ~/decks")?,
+            None,
+        ),
+    };
+    findings.push(doctor::check_store(store_path));
+    findings.push(doctor::check_decks(&decks_dir));
+    findings.push(doctor::check_binary(
+        "backend",
+        &config.ask.command,
+        "the AI features (tutor, exam, deck generate)",
+        "install it and log in — or switch `[ask] backend` in the config",
+    ));
+    let mut failed = false;
+    for f in &findings {
+        let glyph = match f.status {
+            Status::Ok => "✓",
+            Status::Warn => "!",
+            Status::Fail => {
+                failed = true;
+                "✗"
+            }
+        };
+        println!("{glyph} {:<8} {}", f.name, f.detail);
+        if let Some(remedy) = &f.remedy {
+            println!("  ↳ {remedy}");
+        }
+    }
+    // The costed end-to-end probe is opt-in: one real (tiny) request to the
+    // configured backend, or one per backend with --all-backends.
+    if args.backends || args.all_backends {
+        println!();
+        alix::backend::health::check(&config.ask, args.all_backends)?;
+    }
+    if failed {
+        bail!("doctor found problems (✗ above)");
+    }
+    Ok(())
+}
+
 fn config_cmd(init: bool) -> Result<()> {
     let path = config::default_config_path().context("cannot determine the config directory")?;
 
@@ -2595,11 +2654,6 @@ fn config_cmd(init: bool) -> Result<()> {
     println!("  max_cards   {}", config.generate.max_cards);
     println!("  review      {}", config.generate.review);
     Ok(())
-}
-
-fn backend_check_cmd(all: bool, config_path: Option<PathBuf>) -> Result<()> {
-    let config = Config::load(config_path.as_deref())?;
-    alix::backend::health::check(&config.ask, all)
 }
 
 #[cfg(test)]
