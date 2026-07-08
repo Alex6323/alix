@@ -1102,9 +1102,9 @@ function renderAsk(subject) {
 function startExam(deck) {
   rememberLaunch(deck);
   api("/api/exam/start", post({ deck })).then(d => {
-    // A trace exam cooling down after a recent fail replies with the remaining
-    // time instead of a sitting — re-walk and re-sit later.
-    if (d && d.cooldown_ms != null) {
+    // A trace exam cooling down after a recent fail replies with a
+    // phase:"cooldown" ExamDto carrying the remaining time — re-sit later.
+    if (d && d.phase === "cooldown") {
       const mins = Math.max(1, Math.round(d.cooldown_ms / 60000));
       alert("This trace exam is cooling down after a recent fail.\nRe-walk it and try again in about " + mins + " min.");
       return;
@@ -2883,9 +2883,14 @@ function walkTakeExam() {
     }
   });
 }
-// Leave the walk: abandon it and return to the picker.
+// Leave the walk: abandon it and return to the picker. Like every closer,
+// the endpoint returns the picker StateDto directly.
 function walkLeave() {
-  fetch("/api/walk/leave", post({})).catch(() => {}).finally(() => {
+  api("/api/walk/leave", post({})).then(s => {
+    walkData = null;
+    walkConfirmingLeave = false;
+    apply(s);
+  }).catch(() => {
     walkData = null;
     walkConfirmingLeave = false;
     api("/api/state").then(s => { state = s; render(); });

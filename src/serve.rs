@@ -1023,6 +1023,36 @@ struct ExamDto {
     error: Option<String>,
     /// Seconds the in-flight Claude call has been running (progress feedback).
     elapsed: Option<u64>,
+    /// Milliseconds until a failed trace exam may be re-sat — set only in the
+    /// `cooldown` phase, `null` everywhere else.
+    cooldown_ms: Option<u64>,
+}
+
+/// The `phase:"cooldown"` ExamDto for a trace exam still cooling down after a
+/// fail: no sitting exists, so every session field is at its baseline and only
+/// `deck` + `cooldown_ms` carry information.
+fn cooldown_dto(deck: &str, cooldown_ms: u64) -> ExamDto {
+    ExamDto {
+        phase: "cooldown",
+        deck: deck.to_string(),
+        strictness: "balanced",
+        total: 0,
+        current: 0,
+        question: None,
+        answer: String::new(),
+        on_last: false,
+        grades: Vec::new(),
+        passed: None,
+        gaps: Vec::new(),
+        can_remediate: false,
+        remediated_count: None,
+        is_trace: true,
+        unlocks: Vec::new(),
+        thinking: false,
+        error: None,
+        elapsed: None,
+        cooldown_ms: Some(cooldown_ms),
+    }
 }
 
 #[derive(Serialize)]
@@ -1101,6 +1131,7 @@ fn exam_dto(ex: &Examining, decks_dir: &Path) -> ExamDto {
         thinking: s.thinking(),
         error: s.error().map(str::to_string),
         elapsed: s.elapsed_secs(),
+        cooldown_ms: None,
     }
 }
 
@@ -1914,11 +1945,10 @@ pub fn run_review(
                                         exam_cfg.retry_cooldown_secs,
                                         now_ms(),
                                     ) {
-                                        #[derive(Serialize)]
-                                        struct Cooldown {
-                                            cooldown_ms: u64,
-                                        }
-                                        respond_json(request, &Cooldown { cooldown_ms: ms });
+                                        // One shape per endpoint: the cooldown is an
+                                        // ExamDto in its own phase, not an untagged
+                                        // {cooldown_ms} the client must key-sniff.
+                                        respond_json(request, &cooldown_dto(&deck.subject, ms));
                                         continue;
                                     }
                                     exam::Sitting::start_trace(
@@ -2215,7 +2245,8 @@ pub fn run_review(
                 if let Ok(s) = store_for(&[]) {
                     store = s;
                 }
-                respond_status(request, 204);
+                // Every closer returns the picker StateDto — one teardown rule.
+                respond_json(request, &review_state(reviewing.as_ref(), &store));
             }
             _ => respond_status(request, 404),
         }
@@ -2514,7 +2545,7 @@ fn walk_dto(w: &Walking) -> WalkDto {
         note: None,
         auto_grade: w.grade.is_some(),
         thinking: w.pending.is_some(),
-        verdict: w.grade_result.as_ref().map(|(d, _)| d.label()),
+        verdict: w.grade_result.as_ref().map(|(d, _)| delta_name(*d)),
         feedback: w.grade_result.as_ref().map(|(_, f)| f.clone()),
         grade_error: w.grade_error.clone(),
         summary: None,
@@ -3985,7 +4016,7 @@ mod tests {
         w.grade_result = Some((Delta::Partial, "right idea, missed a detail".to_string()));
         let d = walk_dto(&w);
         assert!(d.auto_grade);
-        assert_eq!(Some("Partly"), d.verdict);
+        assert_eq!(Some("partly"), d.verdict); // machine token, not a display label
         assert_eq!(Some("right idea, missed a detail".to_string()), d.feedback);
 
         w.clear_grade();
