@@ -640,16 +640,6 @@ pub struct CardsBuild {
     pub decks: HashMap<String, PathBuf>,
 }
 
-/// What the review server opens on: a live review session, a read-only browse
-/// list, or — neither — the in-browser deck picker. Browse is a native mode of
-/// the review server (no separate page), so `alix browse --serve` seeds `Browse`
-/// exactly as review seeds `Review`.
-pub enum Launch {
-    Review(Box<SessionBuild>),
-    Browse(CardsBuild),
-    Picker,
-}
-
 /// The server's live review state once decks are chosen. Its absence (`None`)
 /// means the page is in the deck-selection phase.
 struct Reviewing {
@@ -1391,15 +1381,13 @@ impl Augmenting {
     }
 }
 
-/// Serves review at `addr` until the process is stopped. `initial` decides what
-/// it opens on: a review session, a read-only browse list, or (`Launch::Picker`)
-/// the in-browser deck-selection screen; picking decks (`POST /api/select`)
+/// Serves review at `addr` until the process is stopped, opening on the
+/// in-browser deck-selection screen; picking decks (`POST /api/select`)
 /// calls `build` to construct a session in place.
 /// `build` borrows the shared `store` and `recent`, so all sessions write one
 /// history and update the recent-decks list, exactly like the CLI.
 #[expect(clippy::too_many_arguments)] // each is a distinct, named server input
 pub fn run_review(
-    initial: Launch,
     mut store: Store,
     mut recent: RecentDecks,
     decks_dir: PathBuf,
@@ -1441,17 +1429,10 @@ pub fn run_review(
     // keys, distinct from the review grade keys served at `/api/keys`.
     let browse_keys = BrowseKeys::from(&browse_bindings);
     let ask_info = AskInfoDto::from(&ask_cfg);
-    // Browse is a native mode of the review server: `initial` seeds either a
-    // review session, a read-only browse list, or neither (the picker).
-    let (mut reviewing, mut browsing) = match initial {
-        Launch::Review(b) => (Some(Reviewing::new(*b)), None),
-        Launch::Browse(b) => (None, Some(Browsing::new(b))),
-        Launch::Picker => (None, None),
-    };
-    if let Some(r) = reviewing.as_mut() {
-        r.open_augment(store.path());
-        r.rotate_variant();
-    }
+    // The server always opens on the picker; review/browse states are entered
+    // from it (`/api/select`, `/api/browse`) — browse is a native mode of the
+    // review server, not a separate page.
+    let (mut reviewing, mut browsing): (Option<Reviewing>, Option<Browsing>) = (None, None);
     let mut examining: Option<Examining> = None;
     // The picker's "Augment" action opens a deck's augmentation screen here.
     let mut augmenting: Option<Augmenting> = None;

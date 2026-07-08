@@ -55,45 +55,26 @@ fn check_accepts_a_valid_deck() {
 }
 
 #[test]
-fn review_rejects_multiple_decks() {
-    // One deck per session — merging several loose decks was removed. The guard
-    // fires before any terminal is opened, so this is testable headless.
+fn a_deck_file_argument_errors_with_a_picker_pointer() {
+    // `alix <deck>` was removed — the picker is the one way into a review. The
+    // guard fires before any server binds, so this is testable headless.
     let dir = TempDir::new().unwrap();
-    let a = write(dir.path(), "a.txt", VALID_DECK);
-    let b = write(dir.path(), "b.txt", VALID_DECK);
-    let store = dir.path().join("p.json");
-    let out = alix(&["review", &a, &b, "--store", store.to_str().unwrap()]);
-    assert!(!out.status.success(), "reviewing two decks should error");
+    let deck = write(dir.path(), "a.txt", VALID_DECK);
+    let out = alix(&[&deck]);
+    assert!(!out.status.success(), "a deck-file argument should error");
     assert!(
-        stderr(&out).contains("one deck"),
+        stderr(&out).contains("was removed"),
         "stderr: {}",
         stderr(&out)
     );
 }
 
 #[test]
-fn review_rejects_a_workspace_directory() {
-    // A workspace is reviewed member-by-member, never as a merged set.
-    let dir = TempDir::new().unwrap();
-    let ws = dir.path().join("eng");
-    std::fs::create_dir(&ws).unwrap();
-    std::fs::write(ws.join("m.txt"), VALID_DECK).unwrap();
-    let store = dir.path().join("p.json");
-    let out = alix(&[
-        "review",
-        ws.to_str().unwrap(),
-        "--store",
-        store.to_str().unwrap(),
-    ]);
-    assert!(
-        !out.status.success(),
-        "reviewing a workspace dir should error"
-    );
-    assert!(
-        stderr(&out).contains("workspace"),
-        "stderr: {}",
-        stderr(&out)
-    );
+fn the_review_subcommand_is_gone() {
+    // `alix review x.txt` now parses as a launcher path plus an unexpected
+    // extra positional — the subcommand no longer exists.
+    let out = alix(&["review", "x.txt"]);
+    assert!(!out.status.success(), "the review subcommand should be gone");
 }
 
 #[test]

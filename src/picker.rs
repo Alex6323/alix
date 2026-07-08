@@ -37,6 +37,17 @@ struct Candidate {
 /// Every `*.txt` deck and every workspace folder directly in `decks_dir`,
 /// sorted by name.
 fn dir_candidates(decks_dir: &Path) -> Vec<Candidate> {
+    // A served root that is itself a workspace lists as that one workspace, so
+    // `alix <workspace-dir>` opens the picker drilled into it — members keep
+    // their dependency tree instead of flattening into loose decks.
+    if workspace::is_workspace(decks_dir) {
+        return vec![Candidate {
+            name: file_name(decks_dir),
+            path: decks_dir.to_path_buf(),
+            last_used_ms: None,
+            is_workspace: true,
+        }];
+    }
     let mut cands: Vec<Candidate> = match std::fs::read_dir(decks_dir) {
         Ok(read_dir) => read_dir
             .filter_map(|r| r.ok().map(|d| d.path()))
@@ -619,6 +630,21 @@ mod tests {
         assert_eq!(vec!["mid.txt", "alpha.txt", "zeta.txt"], names);
         assert!(cands[0].last_used_ms.is_some());
         assert!(cands[1].last_used_ms.is_none());
+    }
+
+    #[test]
+    fn a_workspace_root_lists_as_that_single_workspace() {
+        // Serving a workspace dir directly (`alix <workspace>`) must present
+        // the workspace itself — drill-in intact — not its members flattened
+        // into loose decks.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("alix.toml"), "title = \"T\"\n").unwrap();
+        std::fs::write(dir.path().join("m.txt"), "# f\n\tb\n").unwrap();
+        let recent = RecentDecks::load(dir.path().join("recent.json"));
+        let entries = catalog(dir.path(), &recent);
+        assert_eq!(1, entries.len());
+        assert!(entries[0].is_workspace);
+        assert_eq!(1, entries[0].members.len());
     }
 
     #[test]

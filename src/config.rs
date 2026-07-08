@@ -511,6 +511,11 @@ pub struct ReviewConfig {
     /// A card retires once its scheduled interval reaches this many days; `None`
     /// disables retirement (drill forever).
     pub retire_after_days: Option<u32>,
+    /// Max new (never-seen) cards a session introduces. `None` = unset here —
+    /// the launcher resolves `--new` > this > its built-in default.
+    pub max_new: Option<usize>,
+    /// Session size cap. `None` = unset (no cap unless `--limit` says so).
+    pub limit: Option<usize>,
 }
 
 impl Default for ReviewConfig {
@@ -518,6 +523,8 @@ impl Default for ReviewConfig {
         Self {
             retention: 0.9,
             retire_after_days: Some(crate::session::DEFAULT_RETIRE_AFTER_DAYS),
+            max_new: None,
+            limit: None,
         }
     }
 }
@@ -545,6 +552,12 @@ impl ReviewConfig {
             && let Ok(days) = parse_retire_after(&retire_after)
         {
             review.retire_after_days = days;
+        }
+        if let Some(n) = raw.review.max_new {
+            review.max_new = Some(n);
+        }
+        if let Some(n) = raw.review.limit {
+            review.limit = Some(n);
         }
         review
     }
@@ -610,6 +623,8 @@ struct RawConfig {
 struct RawReviewConfig {
     retention: Option<f64>,
     retire_after: Option<String>,
+    max_new: Option<usize>,
+    limit: Option<usize>,
 }
 
 /// The `alix.local.toml` schema: personal per-workspace overrides. Currently just
@@ -926,6 +941,8 @@ impl Config {
             review.retire_after_days =
                 parse_retire_after(&retire_after).context("in [review] retire_after")?;
         }
+        review.max_new = raw.review.max_new;
+        review.limit = raw.review.limit;
 
         let decks_dir = raw.decks_dir.map(|s| expand_tilde(&s));
 
@@ -1159,6 +1176,8 @@ pub fn default_config_toml() -> &'static str {
 [review]
 # retention = 0.9               # FSRS target retrievability (0.70–0.99); higher = shorter intervals
 # retire_after = "1y"           # a card rests once its interval reaches this ("2w", "6m", "30d", or "never")
+# max_new = 10                  # max never-seen cards a session introduces (--new overrides per instance)
+# limit = 40                    # session size cap (--limit overrides; unset = no cap)
 "#
 }
 
@@ -1222,10 +1241,22 @@ mod tests {
         let base = ReviewConfig {
             retention: 0.9,
             retire_after_days: Some(30),
+            ..Default::default()
         };
         let resolved = base.for_workspace(dir.path());
         assert_eq!(0.85, resolved.retention);
         assert_eq!(Some(30), resolved.retire_after_days); // unset key → base kept
+    }
+
+    #[test]
+    fn review_pacing_keys_parse_and_default_to_unset() {
+        let config = Config::from_toml("[review]\nmax_new = 5\nlimit = 40\n").unwrap();
+        assert_eq!(Some(5), config.review.max_new);
+        assert_eq!(Some(40), config.review.limit);
+        // Absent keys stay unset — the launcher falls back to its built-ins.
+        let bare = Config::from_toml("").unwrap();
+        assert_eq!(None, bare.review.max_new);
+        assert_eq!(None, bare.review.limit);
     }
 
     #[test]
@@ -1426,14 +1457,17 @@ mod tests {
     }
 
     /// `true` if `s` looks like a `key = ...` assignment for a rebindable
-    /// setting (lower-case/underscore key), other than `decks_dir`.
+    /// setting (lower-case/underscore key) — except the keys whose template
+    /// value is the *effective* default while the struct default is `None`
+    /// ("unset, resolved elsewhere"): `decks_dir` (~/decks), `max_new` (the
+    /// launcher's 10), and `limit` (an example; unset = no cap).
     fn is_setting_line(s: &str) -> bool {
         let Some((key, _)) = s.split_once('=') else {
             return false;
         };
         let key = key.trim();
         !key.is_empty()
-            && key != "decks_dir"
+            && !matches!(key, "decks_dir" | "max_new" | "limit")
             && key.chars().all(|c| c.is_ascii_lowercase() || c == '_')
     }
 

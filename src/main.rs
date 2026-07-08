@@ -29,7 +29,8 @@ use clap::{Args, Parser, Subcommand};
 ///
 /// Decks are plain text files: `# question` starts a card, the indented
 /// lines below it are the answer, `! text` adds a note, `% text` is a
-/// comment. Without a subcommand, a review session is started.
+/// comment. Without a subcommand, alix serves its web app: the in-browser
+/// deck picker over your decks directory (or over the folder you name).
 #[derive(Parser)]
 #[command(version, about)]
 struct Cli {
@@ -37,13 +38,49 @@ struct Cli {
     command: Option<Command>,
 
     #[command(flatten)]
-    review: ReviewArgs,
+    launch: LaunchArgs,
+}
+
+/// The bare `alix [dir]` launcher: everything is picked in the browser, so the
+/// top level carries only what it takes to spin up the server itself.
+#[derive(Args)]
+struct LaunchArgs {
+    /// A decks folder or a workspace to serve as this instance's own root:
+    /// scoped to that folder, with its own progress and recent state inside it.
+    /// Default: the configured decks directory with the global state.
+    dir: Option<PathBuf>,
+
+    /// Port to listen on (default: the `[serve]` config port, 7777).
+    #[arg(long)]
+    port: Option<u16>,
+
+    /// Listen on all network interfaces so phones and tablets on the same
+    /// network can reach it; generates and prints a pairing token (and QR).
+    #[arg(long)]
+    lan: bool,
+
+    /// Pairing token required on `/api/*`. Defaults to a value auto-generated
+    /// (and printed) for `--lan`.
+    #[arg(long)]
+    token: Option<String>,
+
+    /// Max new (never-seen) cards a session introduces (default: the
+    /// `[review] max_new` config key, else 10).
+    #[arg(long)]
+    new: Option<usize>,
+
+    /// Max cards per session (default: the `[review] limit` config key,
+    /// else no cap).
+    #[arg(long)]
+    limit: Option<usize>,
+
+    /// Path of the config file (default: platform config dir).
+    #[arg(long)]
+    config: Option<PathBuf>,
 }
 
 #[derive(Subcommand)]
 enum Command {
-    /// Review due cards (the default when deck files are given).
-    Review(ReviewArgs),
     /// Show progress statistics for decks.
     Stats(DeckArgs),
     /// List all cards of decks with their state and due time.
@@ -65,9 +102,6 @@ enum Command {
     /// learning plan toward a goal: the facts decks and traces worth authoring,
     /// each tagged and dependency-ordered. Read-only; writes nothing.
     Explore(ExploreArgs),
-    /// Open a workspace folder in the browser: its decks and traces, reached
-    /// through the web picker.
-    Workspace(WorkspaceArgs),
     /// Show the configuration (key bindings) or create the config file.
     Config {
         /// Write a config file with the default bindings to edit.
@@ -77,20 +111,6 @@ enum Command {
     /// Probe or inspect AI backends.
     #[command(subcommand)]
     Backend(BackendAction),
-}
-
-#[derive(Args)]
-struct WorkspaceArgs {
-    /// The workspace folder to open.
-    dir: PathBuf,
-
-    /// Path of the progress store (default: platform data dir).
-    #[arg(long)]
-    store: Option<PathBuf>,
-
-    /// Path of the config file (default: platform config dir).
-    #[arg(long)]
-    config: Option<PathBuf>,
 }
 
 #[derive(Args)]
@@ -339,31 +359,6 @@ struct TraceArgs {
     config: Option<PathBuf>,
 }
 
-/// Options for serving the review activity in the browser. Flattened into
-/// `review`. `--port`/`--lan` require `--serve`, so they cannot be given
-/// without it.
-#[derive(Args)]
-struct ServeOpts {
-    /// Run in the browser (a local web page) instead of the terminal.
-    #[arg(long)]
-    serve: bool,
-
-    /// Port to listen on with `--serve` (default: the `[serve]` config port,
-    /// 7777).
-    #[arg(long, requires = "serve")]
-    port: Option<u16>,
-
-    /// With `--serve`, listen on all network interfaces so phones and tablets
-    /// on the same network can reach it (no authentication — opt-in).
-    #[arg(long, requires = "serve")]
-    lan: bool,
-
-    /// Pairing token required on `/api/*` when serving to the network. Defaults
-    /// to a value auto-generated (and printed) for `--lan`.
-    #[arg(long, requires = "serve")]
-    token: Option<String>,
-}
-
 #[derive(Args)]
 struct DeckArgs {
     /// Deck files.
@@ -398,54 +393,12 @@ struct ResetArgs {
     store: Option<PathBuf>,
 }
 
-#[derive(Args)]
-struct ReviewArgs {
-    /// Deck files to review.
-    decks: Vec<PathBuf>,
-
-    /// Order cards are shown in. Overrides a deck's `% order:` directive;
-    /// defaults to scheduled.
-    #[arg(short, long, value_enum)]
-    order: Option<Order>,
-
-    /// Reorder the due set by a stored AI topology of this name (see `alix deck
-    /// augment --target topology`). With no name, a deck's single cached topology
-    /// is used automatically.
-    #[arg(long)]
-    topology: Option<String>,
-
-    /// Focus the session on one topology region (e.g. "persistence") — only that
-    /// region's cards are reviewed, to drill a weak area. Needs a topology.
-    #[arg(long)]
-    region: Option<String>,
-
-    /// Maximum number of new (never-seen) cards to introduce.
-    #[arg(short, long, default_value_t = 10)]
-    new: usize,
-
-    /// Maximum number of cards in this session.
-    #[arg(short, long)]
+/// The per-session pacing an instance applies to every session it builds:
+/// CLI flag > `[review]` config key > built-in default.
+#[derive(Clone, Copy)]
+struct Pacing {
+    max_new: usize,
     limit: Option<usize>,
-
-    /// Ignore due times and review all previously seen cards.
-    #[arg(long)]
-    cram: bool,
-
-    /// Session depth: `recognize`, `recall`, or `reconstruct` (spec §4). Absent
-    /// reuses the deck's last-used depth (first use: recall).
-    #[arg(long, value_enum)]
-    depth: Option<Depth>,
-
-    /// Path of the progress store (default: platform data dir).
-    #[arg(long)]
-    store: Option<PathBuf>,
-
-    /// Path of the config file (default: platform config dir).
-    #[arg(long)]
-    config: Option<PathBuf>,
-
-    #[command(flatten)]
-    serve: ServeOpts,
 }
 
 fn main() -> Result<()> {
@@ -453,8 +406,7 @@ fn main() -> Result<()> {
     alix::store::migrate_legacy_data_dir();
     let cli = Cli::parse();
     match cli.command {
-        None => review(cli.review),
-        Some(Command::Review(args)) => review(args),
+        None => launch(cli.launch),
         Some(Command::Stats(args)) => stats(args),
         Some(Command::List(args)) => list(args),
         Some(Command::Reset(args)) => reset(args),
@@ -466,7 +418,6 @@ fn main() -> Result<()> {
         Some(Command::Import(args)) => import_cmd(args),
         Some(Command::Trace(args)) => trace_cmd(args),
         Some(Command::Explore(args)) => explore_cmd(args),
-        Some(Command::Workspace(args)) => workspace_cmd(args),
         Some(Command::Config { init }) => config_cmd(init),
         Some(Command::Backend(action)) => match action {
             BackendAction::Check { all, config } => backend_check_cmd(all, config),
@@ -660,7 +611,7 @@ fn synthesize_virtual(vc: &VirtualCard, subject: &Arc<str>, line: usize) -> Opti
 #[expect(clippy::too_many_arguments)] // each is a distinct, named review input
 fn build_review(
     deck_paths: Vec<PathBuf>,
-    args: &ReviewArgs,
+    pacing: Pacing,
     config: &Config,
     store: &Store,
     recent: &mut RecentDecks,
@@ -682,7 +633,8 @@ fn build_review(
     };
     if workspace::has_decks(deck) {
         bail!(
-            "`{}` is a workspace — review a deck inside it, or open it with `alix workspace`",
+            "`{}` is a folder — serve it (`alix {}`) and pick a deck inside it",
+            deck.display(),
             deck.display()
         );
     }
@@ -786,15 +738,13 @@ fn build_review(
         }
     }
 
-    // Directives (order) come from the session's decks.
+    // Directives (order) come from the session's decks — the `% order:`
+    // directive, else the scheduled default (the CLI override is gone; order
+    // is authored, not launched).
     let target_settings: Vec<&DeckSettings> = settings.iter().collect();
-
-    // `order` is deck/session-depth: CLI flag > deck directive > default. `mode`
-    // is now per-card (resolved at review time from the card's own `% mode:`), so
-    // only the CLI override is carried here.
     let order = resolve(
         "order",
-        args.order,
+        None,
         target_settings.iter().map(|s| s.order),
         Order::default(),
     );
@@ -807,9 +757,11 @@ fn build_review(
         .or_else(|| store.last_depth(subject.as_ref()))
         .unwrap_or_default();
     let options = SessionOptions {
-        max_new: args.new,
-        limit: args.limit,
-        cram: args.cram,
+        max_new: pacing.max_new,
+        limit: pacing.limit,
+        // Cram is not launchable yet — it arrives as a per-launch picker choice
+        // (the ▾ menu tick-box), not a CLI flag.
+        cram: false,
         order,
         topology: topology_order,
         retire_after_days: review.retire_after_days,
@@ -972,35 +924,51 @@ fn subject_paths(decks: HashMap<String, DeckInfo>) -> HashMap<String, PathBuf> {
         .collect()
 }
 
-/// Reviewing always runs in the browser (alix is web-first): bare `alix` opens
-/// the in-browser deck picker, and `alix <deck>` goes straight to that deck's
-/// web review. The `--serve`/`--port`/`--lan` flags stay meaningful (LAN,
-/// custom port); either way this routes to the local web server, which prints
-/// its URL. A single trace still walks and a single exam-due deck still opens
-/// its exam — both via the same web app.
-fn review(args: ReviewArgs) -> Result<()> {
-    review_serve(args, false)
-}
-
-/// The web review path. With no decks given it opens at the in-browser
-/// deck-selection screen; otherwise it goes straight to review. The server
-/// builds new sessions on demand (when the user picks decks) via the builder
-/// closure, reusing one store and recent-decks list.
-/// Serves the unified web app. `browse_mode` makes a CLI-named deck open
-/// directly in the read-only browse overlay (the `alix browse --serve` entry)
-/// rather than a review session; the in-browser picker is identical either way.
-fn review_serve(args: ReviewArgs, browse_mode: bool) -> Result<()> {
+/// Serves the web app: everything is picked in the browser (direct deck launch
+/// was removed — the picker is the one way into a review). A `dir` argument
+/// scopes this instance to that folder as a **self-contained root**: its own
+/// catalog, its own `progress.json` and `recent.json` inside it — so several
+/// instances (say, one per family member, each `--lan` on its own `--port`)
+/// run side by side without sharing any state.
+fn launch(args: LaunchArgs) -> Result<()> {
     let config = Config::load(args.config.as_deref())?;
-    let mut recent = RecentDecks::load(
-        recent::default_recent_path().context("cannot determine the data directory")?,
-    );
-    // The session writes to the decks' own store — a workspace's `progress.json`
-    // when they share one, else the global store — exactly like the TUI. The
-    // server starts on the store for any CLI-named decks (else the global one)
-    // and switches per selection from the in-browser picker.
-    let store = store_for(&args.decks, args.store.clone())?;
-    let decks_dir = config.decks_dir().context("cannot determine ~/decks")?;
-    let addr = serve_addr(args.serve.port, args.serve.lan, &config);
+    // The served root and this instance's state files. No dir → the configured
+    // decks directory with the global store/recent (the classic single-user
+    // setup). A dir → that folder, state kept inside it: a plain folder gets
+    // `progress.json`/`recent.json` at its top; a workspace root already keeps
+    // its store inside by convention (manifest `store =` respected).
+    let (decks_dir, instance_store, recent_path) = match &args.dir {
+        None => (
+            config.decks_dir().context("cannot determine ~/decks")?,
+            None,
+            recent::default_recent_path().context("cannot determine the data directory")?,
+        ),
+        Some(path) if path.is_file() => bail!(
+            "`alix <deck>` was removed — run `alix` and pick the deck there, \
+             or serve its folder: `alix {}`",
+            path.parent().unwrap_or_else(|| Path::new(".")).display()
+        ),
+        Some(path) if !path.is_dir() => bail!("`{}` is not a folder", path.display()),
+        Some(path) => {
+            let store = if workspace::is_workspace(path) {
+                workspace::store_path(path)
+            } else {
+                path.join(workspace::STORE_FILE)
+            };
+            (path.clone(), Some(store), path.join("recent.json"))
+        }
+    };
+    let recent = RecentDecks::load(recent_path);
+    // Sessions write to the decks' own store — a workspace's `progress.json`
+    // when the picked deck lives in one, else this instance's store (the
+    // global default, or the scoped root's own file).
+    let store = open_store(instance_store.clone())?;
+    let addr = serve_addr(args.port, args.lan, &config);
+    // The instance-wide session pacing: flag > `[review]` config > default.
+    let pacing = Pacing {
+        max_new: args.new.or(config.review.max_new).unwrap_or(10),
+        limit: args.limit.or(config.review.limit),
+    };
 
     // Adapts a built review session to what the server holds (session + label +
     // subject→path map for removal, subject→`% link:` links for ask-Claude).
@@ -1037,37 +1005,14 @@ fn review_serve(args: ReviewArgs, browse_mode: bool) -> Result<()> {
         }
     };
 
-    // The read-only browse card builder, reused for a CLI browse launch and the
-    // picker's "Browse" action (same builder, one source of truth).
+    // The read-only browse card builder for the picker's "Browse" action.
     let to_cards = |b: BrowseBuild| serve::CardsBuild {
         cards: b.cards,
         label: b.label,
         decks: subject_paths(b.decks),
     };
-    // What the server opens on. Decks named on the CLI: a read-only browse list
-    // when `browse_mode`, else a review session built up front. None: the picker.
-    let (initial, label) = if args.decks.is_empty() {
-        (serve::Launch::Picker, "select decks".to_string())
-    } else if browse_mode {
-        let cards = to_cards(build_browse(args.decks.clone(), &mut recent)?);
-        let label = format!("{} (browse)", cards.label);
-        (serve::Launch::Browse(cards), label)
-    } else {
-        let b = to_build(build_review(
-            args.decks.clone(),
-            &args,
-            &config,
-            &store,
-            &mut recent,
-            args.topology.as_deref(),
-            args.region.as_deref(),
-            args.depth,
-        )?);
-        let label = b.label.clone();
-        (serve::Launch::Review(Box::new(b)), label)
-    };
-    let token = resolve_serve_token(args.serve.token.clone(), args.serve.lan, &config)?;
-    announce(addr, args.serve.lan, token.as_deref(), &label);
+    let token = resolve_serve_token(args.token.clone(), args.lan, &config)?;
+    announce(addr, args.lan, token.as_deref(), "select decks");
 
     let opts = serve::ReviewOptions {
         keys: config.keys.clone(),
@@ -1086,13 +1031,12 @@ fn review_serve(args: ReviewArgs, browse_mode: bool) -> Result<()> {
                  store: &Store,
                  recent: &mut RecentDecks| {
         build_review(
-            paths, &args, &config, store, recent, topology, region, depth,
+            paths, pacing, &config, store, recent, topology, region, depth,
         )
         .map(to_build)
     };
-    // A single trace picked from the in-browser picker walks (predict → verify),
-    // mirroring the terminal picker; a trace named on the CLI took the `initial`
-    // path above and still flattens to a card review.
+    // A single trace picked from the in-browser picker walks (predict → verify)
+    // rather than flattening to a card review.
     let build_walk = |paths: &[PathBuf]| -> Result<Option<serve::WalkBuild>> {
         match single_trace_to_walk(true, paths) {
             Some(deck) => {
@@ -1104,13 +1048,15 @@ fn review_serve(args: ReviewArgs, browse_mode: bool) -> Result<()> {
             None => Ok(None),
         }
     };
-    // Picks the right store for whatever decks a selection resolves to (`&[]` →
-    // the global store), so the server can switch per session like the TUI.
-    let store_for_sel = |paths: &[PathBuf]| store_for(paths, args.store.clone());
+    // Picks the right store for whatever decks a selection resolves to: a
+    // workspace member's own store, else this instance's store (`&[]` → the
+    // instance store too).
+    let store_for_sel = |paths: &[PathBuf]| {
+        open_store(store_path_for(paths, None).or_else(|| instance_store.clone()))
+    };
     let build_browse_sel =
         |paths: Vec<PathBuf>, recent: &mut RecentDecks| build_browse(paths, recent).map(to_cards);
     serve::run_review(
-        initial,
         store,
         recent,
         decks_dir,
@@ -2308,47 +2254,6 @@ fn explore_walk(args: &ExploreArgs, config: &Config, source: &str, goal: &str) -
     run_walk(trace, &mut store, None).map(|_| ())
 }
 
-/// `alix workspace <dir>`: open a workspace in the browser. alix is web-first,
-/// so this validates the folder is a workspace (has an `alix.toml`) and then
-/// serves the web app; its decks and traces are reached through the in-browser
-/// picker (which routes a facts deck to review and a trace to a walk).
-fn workspace_cmd(args: WorkspaceArgs) -> Result<()> {
-    if !workspace::is_workspace(&args.dir) {
-        if workspace::has_decks(&args.dir) {
-            bail!(
-                "{} is a folder of decks, not a workspace — add an `alix.toml` to \
-                 make it one, or `alix review {}` to review its decks",
-                args.dir.display(),
-                args.dir.display(),
-            );
-        }
-        bail!("{} is not a workspace (no `alix.toml`)", args.dir.display());
-    }
-    // Web-first: hand off to the browser deck picker; there is no CLI member
-    // picker. The `--serve` machinery serves the same web app bare `alix` opens.
-    review_serve(
-        ReviewArgs {
-            decks: Vec::new(),
-            order: None,
-            topology: None,
-            region: None,
-            new: 10,
-            limit: None,
-            cram: false,
-            depth: None,
-            store: args.store,
-            config: args.config,
-            serve: ServeOpts {
-                serve: true,
-                port: None,
-                lan: false,
-                token: None,
-            },
-        },
-        false,
-    )
-}
-
 /// Prints a trace's path (prompts, key points, locators) without quizzing.
 fn print_trace_map(trace: &Trace) -> Result<()> {
     println!("{BOLD}Trace{RESET}  {}", trace.description);
@@ -2942,26 +2847,12 @@ mod tests {
         assert_ne!(got[0].0, got[1].0);
     }
 
-    /// A bare-bones `ReviewArgs` for a `build_review` test: no CLI overrides,
-    /// the built-in `new` default, no `--serve`.
-    fn review_args(decks: Vec<PathBuf>, region: Option<&str>) -> ReviewArgs {
-        ReviewArgs {
-            decks,
-            order: None,
-            topology: None,
-            region: region.map(str::to_string),
-            new: 10,
+    /// The default per-session pacing for a `build_review` test: the built-in
+    /// `max_new`, no session cap.
+    fn test_pacing() -> Pacing {
+        Pacing {
+            max_new: 10,
             limit: None,
-            cram: false,
-            depth: None,
-            store: None,
-            config: None,
-            serve: ServeOpts {
-                serve: false,
-                port: None,
-                lan: false,
-                token: None,
-            },
         }
     }
 
@@ -2995,10 +2886,9 @@ mod tests {
 
         let config = Config::default();
         let mut recent = RecentDecks::load(dir.path().join("recent.json"));
-        let args = review_args(vec![], None);
         let build = build_review(
             vec![path],
-            &args,
+            test_pacing(),
             &config,
             &store,
             &mut recent,
@@ -3043,10 +2933,9 @@ mod tests {
 
         let config = Config::default();
         let mut recent = RecentDecks::load(dir.path().join("recent.json"));
-        let args = review_args(vec![], Some("r1"));
         let build = build_review(
             vec![path],
-            &args,
+            test_pacing(),
             &config,
             &store,
             &mut recent,
@@ -3124,10 +3013,9 @@ mod tests {
 
         let config = Config::default();
         let mut recent = RecentDecks::load(dir.path().join("recent.json"));
-        let args = review_args(vec![], None);
         let build = build_review(
             vec![path],
-            &args,
+            test_pacing(),
             &config,
             &store,
             &mut recent,

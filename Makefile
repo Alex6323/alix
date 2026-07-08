@@ -81,11 +81,11 @@ eval:
 run:
 	cargo run -- $(ARGS)
 
-# Run the web frontend. With no ARGS, opens the in-browser deck picker;
-# pass a session via ARGS, e.g. `make serve ARGS="review mydeck.txt --port 8080"`.
-# `--serve` trails ARGS because it's a review/browse flag, not a global one.
+# Run the web frontend: the in-browser deck picker. ARGS may name a decks
+# folder or workspace to serve as a scoped root, plus launcher flags,
+# e.g. `make serve ARGS="~/decks-test --lan"`.
 serve:
-	cargo run -- $(ARGS) --serve --port 7780
+	cargo run -- $(ARGS) --port 7780
 
 # Serve the user manual (docs/book) with live reload and open it in the browser.
 # Requires mdBook: `cargo install mdbook`.
