@@ -368,27 +368,81 @@ struct TraceArgs {
 
 #[derive(Args)]
 struct DeckArgs {
-    /// Deck files.
-    #[arg(required = true)]
-    decks: Vec<PathBuf>,
+    /// A deck file, a workspace, or a plain decks folder.
+    target: PathBuf,
 
-    /// Path of the progress store (default: platform data dir).
+    /// Path of the progress store (default: resolved from the target).
     #[arg(long)]
     store: Option<PathBuf>,
 }
 
+/// A stats/list/reset target expanded to deck files, plus the store fallback
+/// for decks that belong to no workspace: a plain served folder keeps its own
+/// `progress.json` beside its decks; `None` falls through to the global store.
+struct Target {
+    decks: Vec<PathBuf>,
+    default_store: Option<PathBuf>,
+}
+
+impl Target {
+    /// The store for one member deck: `--store` > its workspace's store > the
+    /// target's own store file (scoped folder) > the global default — the same
+    /// rule the launcher serves by, so every command sees the same progress.
+    fn store_for_deck(&self, deck: &Path, cli_override: Option<&Path>) -> Result<Store> {
+        let path = cli_override
+            .map(Path::to_path_buf)
+            .or_else(|| store_path_for(std::slice::from_ref(&deck.to_path_buf()), None))
+            .or_else(|| self.default_store.clone());
+        open_store(path)
+    }
+}
+
+/// Expands a command target — a deck file, a workspace, or a plain folder —
+/// into its member decks (sorted by name for stable output).
+fn expand_target(path: &Path) -> Result<Target> {
+    if path.is_file() {
+        return Ok(Target {
+            decks: vec![path.to_path_buf()],
+            default_store: None,
+        });
+    }
+    if !path.is_dir() {
+        bail!("`{}` is neither a deck file nor a folder", path.display());
+    }
+    let mut decks: Vec<PathBuf> = std::fs::read_dir(path)?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_file() && p.extension().is_some_and(|e| e == "txt"))
+        .collect();
+    decks.sort();
+    if decks.is_empty() {
+        bail!("no decks in `{}`", path.display());
+    }
+    let default_store = if workspace::is_workspace(path) {
+        None // members resolve to the workspace's own store anyway
+    } else {
+        let scoped = path.join(workspace::STORE_FILE);
+        scoped.exists().then_some(scoped)
+    };
+    Ok(Target {
+        decks,
+        default_store,
+    })
+}
+
 #[derive(Args)]
 struct ResetArgs {
-    /// Deck files whose card progress to clear.
-    decks: Vec<PathBuf>,
+    /// What to clear: a deck file, a workspace, or a plain decks folder
+    /// (clears every deck inside).
+    target: Option<PathBuf>,
 
     /// Reset one card: its numeric id, or text matching its front (searched
-    /// within the given decks).
+    /// within the target's decks).
     #[arg(long)]
     card: Option<String>,
 
     /// Clear progress for every card in the store.
-    #[arg(long, conflicts_with_all = ["decks", "card"])]
+    #[arg(long, conflicts_with_all = ["target", "card"])]
     all: bool,
 
     /// Skip the confirmation prompt (for scripts / test loops).
@@ -1179,10 +1233,11 @@ fn stats(args: DeckArgs) -> Result<()> {
     let config = Config::load(None)?;
     let now = now_ms();
 
-    for path in &args.decks {
+    let target = expand_target(&args.target)?;
+    for path in &target.decks {
         // Each deck reads its own store — a workspace deck's progress lives in the
         // workspace, not the global store.
-        let store = store_for(std::slice::from_ref(path), args.store.clone())?;
+        let store = target.store_for_deck(path, args.store.as_deref())?;
         let deck = Deck::load(path)?;
         // …and its own pacing: a workspace deck honors its `alix.local.toml`.
         let review = config
@@ -1261,9 +1316,10 @@ fn list(args: DeckArgs) -> Result<()> {
     let config = Config::load(None)?;
     let now = now_ms();
 
-    for path in &args.decks {
+    let target = expand_target(&args.target)?;
+    for path in &target.decks {
         // Each deck reads its own store (workspace store for a workspace deck).
-        let store = store_for(std::slice::from_ref(path), args.store.clone())?;
+        let store = target.store_for_deck(path, args.store.as_deref())?;
         let deck = Deck::load(path)?;
         // …and its own pacing (workspace `alix.local.toml` override).
         let review = config
@@ -1414,9 +1470,9 @@ fn reset(args: ResetArgs) -> Result<()> {
         return Ok(());
     }
 
-    // A numeric `--card` with no decks can be removed without loading anything.
+    // A numeric `--card` with no target can be removed without loading anything.
     let numeric_id = args.card.as_deref().and_then(|c| c.parse::<u64>().ok());
-    if let Some(id) = numeric_id.filter(|_| args.decks.is_empty()) {
+    if let Some(id) = numeric_id.filter(|_| args.target.is_none()) {
         return reset_ids(
             &mut store,
             vec![(id, String::new())],
@@ -1428,15 +1484,23 @@ fn reset(args: ResetArgs) -> Result<()> {
     }
 
     // Otherwise a reset needs an explicit target — there is no interactive
-    // deck picker. Name a deck (optionally with `--card`), or pass `--all`.
-    if args.decks.is_empty() {
-        bail!("name a deck to reset, or pass `--card <id>` or `--all`");
-    }
-    let deck_paths = args.decks.clone();
+    // deck picker. Name a deck/folder/workspace (optionally with `--card`),
+    // or pass `--all`.
+    let Some(target_path) = &args.target else {
+        bail!("name a deck, folder, or workspace to reset, or pass `--card <id>` or `--all`");
+    };
+    let target = expand_target(target_path)?;
+    let deck_paths = target.decks.clone();
 
-    // Reset against the decks' store (the workspace's own, if they all live in
-    // one).
-    let mut store = store_for(&deck_paths, args.store.clone())?;
+    // Reset against the target's store: `--store` > the members' shared
+    // workspace store > a scoped folder's own store > the global default —
+    // the launcher's rule, so the reset hits the progress that serving uses.
+    let mut store = open_store(
+        args.store
+            .clone()
+            .or_else(|| store_path_for(&deck_paths, None))
+            .or_else(|| target.default_store.clone()),
+    )?;
 
     let (cards, label, decks, _) = load_decks(&deck_paths, &HashMap::new())?;
 

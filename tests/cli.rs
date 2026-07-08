@@ -94,6 +94,58 @@ fn check_rejects_a_malformed_deck() {
 }
 
 #[test]
+fn stats_on_a_folder_reports_every_deck_inside() {
+    let dir = TempDir::new().unwrap();
+    write(dir.path(), "alpha.txt", "# a?\n    a\n");
+    write(dir.path(), "beta.txt", "# b?\n    b\n");
+    let store = dir.path().join("elsewhere.json");
+    let out = alix(&[
+        "stats",
+        dir.path().to_str().unwrap(),
+        "--store",
+        store.to_str().unwrap(),
+    ]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let text = stdout(&out);
+    assert!(text.contains("alpha"), "stdout: {text}");
+    assert!(text.contains("beta"), "stdout: {text}");
+}
+
+#[test]
+fn reset_on_a_workspace_clears_every_member_in_its_own_store() {
+    // A workspace target expands to its member decks and hits the workspace's
+    // own progress.json — including the mastered flag.
+    let dir = TempDir::new().unwrap();
+    let ws = dir.path().join("eng");
+    std::fs::create_dir(&ws).unwrap();
+    std::fs::write(ws.join("alix.toml"), "title = \"Eng\"\n").unwrap();
+    let a = write(&ws, "a.txt", "# qa\n    ans-a\n");
+    let b = write(&ws, "b.txt", "# qb\n    ans-b\n");
+    let store_path = ws.join("progress.json");
+    let mut store = alix::store::Store::open(&store_path).unwrap();
+    for deck in [&a, &b] {
+        let cards = alix::parser::parse_str(
+            Path::new(deck).file_name().unwrap().to_str().unwrap(),
+            &std::fs::read_to_string(deck).unwrap(),
+        )
+        .unwrap();
+        store.get_or_insert(cards[0].id(), 0);
+    }
+    store.set_deck_mastered("a.txt", 0);
+    store.save().unwrap();
+
+    let out = alix(&["reset", ws.to_str().unwrap(), "--yes"]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+
+    let reloaded = alix::store::Store::open(&store_path).unwrap();
+    assert_eq!(0, reloaded.len(), "member card progress should be gone");
+    assert!(
+        !reloaded.deck_mastered("a.txt"),
+        "the mastered flag should be cleared"
+    );
+}
+
+#[test]
 fn stats_reports_a_fresh_deck_against_an_empty_store() {
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.txt", VALID_DECK);
