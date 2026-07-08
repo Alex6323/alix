@@ -200,6 +200,27 @@ mirroring Generate. `POST /api/share/close` cancels an in-flight transfer
 `GET /api/share/zip[?deck]` is the offline fallback: synchronous, no polling,
 it stages the same way and streams back a `.zip` instead of a wormhole code.
 
+### 4.9 Receive
+
+`POST /api/receive {code, dest?}` starts a `wormhole receive` for the given
+code into a scratch dir, following §3's polling pattern: poll `GET
+/api/receive` while `phase:"receiving"`, then read `error` or `"done"` (the
+landed name plus any `stripped` personal files — see §4.8's `PERSONAL` list —
+that leaked in because the sender didn't use `alix share`). `dest` resolves
+exactly like Generate's (§4.7). Landing never overwrites: an existing entry of
+the same name at `dest` is an `error`, not a silent replace. Only one receive
+runs at a time: `POST` while one is in flight is 409; a **finished** job (an
+`error` or `done` phase) is replaced by the next `POST`, mirroring Share.
+Spawn failure (`wormhole` not installed) also surfaces as an error-phase
+`ReceiveDto` with the install hint, never a bare error status. `POST
+/api/receive/close` cancels an in-flight transfer (kills the wormhole child)
+and clears the job unconditionally.
+
+`POST /api/receive/zip[?dest]` is the offline fallback: synchronous, no
+polling, it takes a `.zip` archive as the raw request body (§8) instead of a
+wormhole code, unpacks it, lands it the same way, and responds a `"done"`-
+phase `ReceiveDto` (`elapsed: 0`).
+
 ## 5. Endpoint reference
 
 Statuses: all endpoints can additionally return 401 (token) — omitted below.
@@ -262,6 +283,15 @@ token holder is trusted to call it, the same trust class as `/api/grade`.
 | GET | `/api/share` | – | `ShareDto` (poll) | 409 no share |
 | POST | `/api/share/close` | – | 200 | – |
 | GET | `/api/share/zip` | – (`?deck=` query, optional) | zip bytes (§8) | 400 unknown `deck` / staging or zip failure |
+
+### Receive
+
+| Method | Path | Body | Response | Errors |
+|---|---|---|---|---|
+| POST | `/api/receive` | `{code, dest?}` | `ReceiveDto` | 400 bad body / unknown `dest`; 409 a receive is already in flight |
+| GET | `/api/receive` | – | `ReceiveDto` (poll) | 409 no receive |
+| POST | `/api/receive/close` | – | 200 | – |
+| POST | `/api/receive/zip` | raw zip bytes (§8; `?dest=` query, optional) | `ReceiveDto` (`done` phase) | 400 oversized (>50 MB) / not a zip / not exactly one entry / unknown `dest` / landing collision |
 
 ### Ask
 
@@ -528,6 +558,22 @@ The result of `POST`/`GET /api/share`, polled per §3's pattern (§4.8).
 
 Example (from the pinned test): `{"phase":"code","code":"7-alpha-bravo","elapsed":3,"error":null}`.
 
+### ReceiveDto
+
+The result of `POST`/`GET /api/receive` (and the synchronous `POST
+/api/receive/zip`), polled per §3's pattern (§4.9).
+
+| Key | Type | Meaning |
+|---|---|---|
+| `phase` | string | `receiving` \| `done` \| `error` (open set). |
+| `landed` | string? | The landed file/folder name — set once `done`. |
+| `stripped` | [string] | Personal files (§4.8) stripped from a leaked folder, if any. |
+| `elapsed` | number? | Seconds since the job started (kept ticking even after it finishes); always `0` for the synchronous `/api/receive/zip`. |
+| `error` | string? | Set on `error` — including a spawn failure (`wormhole` not installed), which surfaces the install hint here rather than a bare error status. |
+
+Example (from the pinned test):
+`{"phase":"done","landed":"rust-decks","stripped":["progress.json"],"elapsed":9,"error":null}`.
+
 ### ExamDto
 
 | Key | Type | Meaning |
@@ -622,6 +668,12 @@ they may change without notice and native clients must not depend on them:
 - **`GET /api/share/zip` is the one non-JSON API response**, deliberately: it
   streams `application/zip` bytes with a `Content-Disposition: attachment`
   header (§4.8's offline fallback to the wormhole flow) rather than a DTO.
+- **`POST /api/receive/zip` is the one non-JSON API *request***, deliberately:
+  the request body is raw `application/zip` bytes (§4.9), not a JSON envelope
+  — avoids a base64 dependency for what's already a binary transfer. Capped at
+  50 MB; rejected with 400 before the body is read when `Content-Length` says
+  it's over, and the read itself is also capped (the header can lie or be
+  absent) so an oversized upload can't be used to exhaust memory.
 
 ## 9. Planned surface (additive)
 

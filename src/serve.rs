@@ -1658,6 +1658,77 @@ fn stage_for_share(path: &Path, tmp: &tempfile::TempDir) -> Result<PathBuf> {
     Ok(stage)
 }
 
+/// A wormhole receive in flight: the scratch dir it lands in, where it goes
+/// afterwards, and the landing outcome.
+struct Receiving {
+    job: share::ShareJob,
+    tmp: tempfile::TempDir,
+    dest: PathBuf,
+    started: Instant,
+    outcome: Option<Result<(String, Vec<String>), String>>,
+}
+
+#[derive(Serialize)]
+struct ReceiveDto {
+    /// `receiving` | `done` | `error` (open set).
+    phase: &'static str,
+    landed: Option<String>,
+    stripped: Vec<String>,
+    elapsed: Option<u64>,
+    error: Option<String>,
+}
+
+impl Receiving {
+    fn poll(&mut self) {
+        if self.outcome.is_some() {
+            return;
+        }
+        while let Ok(ev) = self.job.events.try_recv() {
+            match ev {
+                share::ShareEvent::Code(_) => {} // receive never emits one
+                share::ShareEvent::Done => {
+                    // `land_received`'s collision check is check-then-act;
+                    // safe only because this server loop is single-threaded
+                    // (one request handled at a time, and `poll()` only ever
+                    // runs from inside that loop) — introduce no threads here.
+                    self.outcome = Some(
+                        share::land_received(self.tmp.path(), &self.dest)
+                            .map_err(|e| format!("{e:#}")),
+                    );
+                }
+                share::ShareEvent::Error(e) => self.outcome = Some(Err(e)),
+            }
+        }
+    }
+
+    fn dto(&self) -> ReceiveDto {
+        let elapsed = Some(self.started.elapsed().as_secs());
+        match &self.outcome {
+            None => ReceiveDto {
+                phase: "receiving",
+                landed: None,
+                stripped: Vec::new(),
+                elapsed,
+                error: None,
+            },
+            Some(Ok((landed, stripped))) => ReceiveDto {
+                phase: "done",
+                landed: Some(landed.clone()),
+                stripped: stripped.clone(),
+                elapsed,
+                error: None,
+            },
+            Some(Err(e)) => ReceiveDto {
+                phase: "error",
+                landed: None,
+                stripped: Vec::new(),
+                elapsed,
+                error: Some(e.clone()),
+            },
+        }
+    }
+}
+
 /// Serves review on the already-bound `server` until the process is stopped
 /// (binding happens at the call site, *before* the URL is announced — so a
 /// port clash errors before any success-looking output), opening on the
@@ -1733,6 +1804,10 @@ pub fn run_review(
     // abandoned/replaced job always drops through `Sharing`/`ShareJob` (never
     // leaked), so its child process is cancelled even without a close call.
     let mut sharing: Option<Sharing> = None;
+    // The picker's "Receive" action; one wormhole receive in flight at a time.
+    // Same drop-cancels invariant as `sharing` — an abandoned/replaced job
+    // always drops through `ShareJob`, cancelling its wormhole child.
+    let mut receiving: Option<Receiving> = None;
     // A trace picked from the selection screen walks in-page inside review.html
     // (no navigation to a separate `/walk` page — the walk is an in-page mode).
     let mut walking: Option<Walking> = None;
@@ -2259,6 +2334,136 @@ pub fn run_review(
                             .unwrap_or("shared-decks");
                         respond_download(request, bytes, "application/zip", &format!("{stem}.zip"));
                     }
+                    None => respond_status(request, 400),
+                }
+            }
+            (Method::Post, "/api/receive") => {
+                #[derive(Deserialize)]
+                struct Body {
+                    code: String,
+                    dest: Option<String>,
+                }
+                // Drain a finished-but-unpolled job first — same fix as
+                // generate/share: only a *live* job 409s.
+                if let Some(r) = receiving.as_mut() {
+                    r.poll();
+                }
+                if receiving.as_ref().is_some_and(|r| r.outcome.is_none()) {
+                    respond_status(request, 409); // one receive at a time
+                    continue;
+                }
+                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
+                let Some(b) = body else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                let Some(dest) = resolve_dest(b.dest.as_deref(), &decks_dir, &recent) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                let started = tempfile::tempdir()
+                    .map_err(|e| anyhow!("{e}"))
+                    .and_then(|tmp| {
+                        let job = share::receive_spawn(&b.code, tmp.path())?;
+                        Ok(Receiving {
+                            job,
+                            tmp,
+                            dest,
+                            started: Instant::now(),
+                            outcome: None,
+                        })
+                    });
+                match started {
+                    Ok(r) => {
+                        let dto = r.dto();
+                        receiving = Some(r);
+                        respond_json(request, &dto);
+                    }
+                    // Spawn failures (missing binary) surface as an error-phase
+                    // job so the sheet shows the install hint, not a bare 400.
+                    Err(e) => respond_json(
+                        request,
+                        &ReceiveDto {
+                            phase: "error",
+                            landed: None,
+                            stripped: Vec::new(),
+                            elapsed: Some(0),
+                            error: Some(format!("{e:#}")),
+                        },
+                    ),
+                }
+            }
+            (Method::Get, "/api/receive") => {
+                let Some(r) = receiving.as_mut() else {
+                    respond_status(request, 409);
+                    continue;
+                };
+                r.poll();
+                respond_json(request, &r.dto());
+            }
+            (Method::Post, "/api/receive/close") => {
+                // Dropping the (former) job cancels its wormhole child — see
+                // `ShareJob`'s `Drop`; `cancel()` here is just for clarity.
+                if let Some(r) = receiving.take() {
+                    r.job.cancel();
+                }
+                respond_status(request, 200);
+            }
+            (Method::Post, "/api/receive/zip") => {
+                // `request_path` (used for dispatch) already strips the query
+                // string (Task 10 confirmed), so the plain literal above
+                // matches regardless of `?dest=...` — read the param back off
+                // the full URL here, same as `/api/share/zip`.
+                const MAX_ZIP: usize = 50 * 1024 * 1024;
+                if request.body_length().is_some_and(|l| l > MAX_ZIP) {
+                    respond_status(request, 400);
+                    continue;
+                }
+                let Some(dest) = resolve_dest(
+                    query_param(request.url(), "dest").as_deref(),
+                    &decks_dir,
+                    &recent,
+                ) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                let mut bytes = Vec::new();
+                use std::io::Read;
+                // `body_length` can lie or be absent, so also cap the actual
+                // read: `take(MAX_ZIP + 1)` lets an oversized body read one
+                // byte past the cap, which the length check below catches.
+                if request
+                    .as_reader()
+                    .take(MAX_ZIP as u64 + 1)
+                    .read_to_end(&mut bytes)
+                    .is_err()
+                    || bytes.len() > MAX_ZIP
+                {
+                    respond_status(request, 400);
+                    continue;
+                }
+                // `land_received`'s collision check is check-then-act; safe
+                // only because this server loop is single-threaded — do not
+                // introduce threads here (see `Receiving::poll`'s note).
+                let landed = tempfile::tempdir().ok().and_then(|tmp| {
+                    let zip_path = tmp.path().join("got.zip");
+                    std::fs::write(&zip_path, &bytes).ok()?;
+                    let scratch = tmp.path().join("out");
+                    std::fs::create_dir_all(&scratch).ok()?;
+                    share::unzip_to(&zip_path, &scratch).ok()?;
+                    share::land_received(&scratch, &dest).ok()
+                });
+                match landed {
+                    Some((landed, stripped)) => respond_json(
+                        request,
+                        &ReceiveDto {
+                            phase: "done",
+                            landed: Some(landed),
+                            stripped,
+                            elapsed: Some(0),
+                            error: None,
+                        },
+                    ),
                     None => respond_status(request, 400),
                 }
             }
@@ -5702,6 +5907,23 @@ mod tests {
                 "ShareDto",
                 &dto,
                 json!({"phase": "code", "code": "7-alpha-bravo", "elapsed": 3, "error": null}),
+            );
+        }
+
+        #[test]
+        fn receivedto_done_wire_shape() {
+            let dto = ReceiveDto {
+                phase: "done",
+                landed: Some("rust-decks".to_string()),
+                stripped: vec!["progress.json".to_string()],
+                elapsed: Some(9),
+                error: None,
+            };
+            pin(
+                "ReceiveDto",
+                &dto,
+                json!({"phase": "done", "landed": "rust-decks",
+                       "stripped": ["progress.json"], "elapsed": 9, "error": null}),
             );
         }
     }

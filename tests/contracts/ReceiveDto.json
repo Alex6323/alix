@@ -1,0 +1,9 @@
+{
+  "elapsed": 9,
+  "error": null,
+  "landed": "rust-decks",
+  "phase": "done",
+  "stripped": [
+    "progress.json"
+  ]
+}
