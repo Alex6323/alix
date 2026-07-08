@@ -4,7 +4,12 @@
 //! transfer, the code mnemonic, and the progress output are wormhole's job —
 //! alix only decides what travels and where it lands.
 
-use std::{path::Path, process::Command};
+use std::{
+    io::BufRead,
+    path::{Path, PathBuf},
+    process::{Child, Command, Stdio},
+    sync::{Arc, Mutex, mpsc, mpsc::Receiver},
+};
 
 use anyhow::{Context, Result, bail};
 
@@ -187,6 +192,129 @@ fn wormhole_with(cmd: &str, args: &[&str], cwd: Option<&Path>) -> Result<()> {
     Ok(())
 }
 
+/// Events a UI transfer reports as it progresses. The code arrives long
+/// before the transfer finishes — show it and keep polling.
+#[derive(Debug)]
+pub enum ShareEvent {
+    Code(String),
+    Done,
+    Error(String),
+}
+
+/// One UI-driven wormhole transfer: events stream on `events`; `cancel`
+/// kills the child (a sender waits indefinitely for its receiver, so the
+/// UI must be able to stop it).
+pub struct ShareJob {
+    pub events: Receiver<ShareEvent>,
+    child: Arc<Mutex<Child>>,
+}
+
+impl ShareJob {
+    /// Kills the transfer; the waiter then reports an error event, which the
+    /// caller discards along with the job.
+    pub fn cancel(&self) {
+        if let Ok(mut c) = self.child.lock() {
+            c.kill().ok();
+        }
+    }
+}
+
+/// Spawns `wormhole send <path>` for a UI, scanning its output for the code.
+pub fn send_spawn(path: &Path) -> Result<ShareJob> {
+    spawn_job("wormhole", &["send", &path.to_string_lossy()], None)
+}
+
+/// Spawns `wormhole receive --accept-file <code>` into `dest` for a UI.
+pub fn receive_spawn(code: &str, dest: &Path) -> Result<ShareJob> {
+    spawn_job("wormhole", &["receive", "--accept-file", code], Some(dest))
+}
+
+fn spawn_job(cmd: &str, args: &[&str], cwd: Option<&Path>) -> Result<ShareJob> {
+    let mut command = Command::new(cmd);
+    command
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    if let Some(dir) = cwd {
+        command.current_dir(dir);
+    }
+    let mut child = command.spawn().with_context(|| {
+        format!(
+            "cannot run `{cmd}` — is magic-wormhole installed? \
+             (e.g. `pipx install magic-wormhole`, or your package manager)"
+        )
+    })?;
+    let (tx, rx) = mpsc::channel();
+    // magic-wormhole prints the code line to stderr; scan both pipes to be safe.
+    for pipe in [
+        child
+            .stdout
+            .take()
+            .map(|p| Box::new(p) as Box<dyn std::io::Read + Send>),
+        child
+            .stderr
+            .take()
+            .map(|p| Box::new(p) as Box<dyn std::io::Read + Send>),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        let tx = tx.clone();
+        std::thread::spawn(move || {
+            for line in std::io::BufReader::new(pipe).lines().map_while(|l| l.ok()) {
+                if let Some(code) = line.trim().strip_prefix("Wormhole code is:") {
+                    let _ = tx.send(ShareEvent::Code(code.trim().to_string()));
+                }
+            }
+        });
+    }
+    let child = Arc::new(Mutex::new(child));
+    let waiter = Arc::clone(&child);
+    std::thread::spawn(move || {
+        // Poll-wait so `cancel` never contends with a blocking `wait`.
+        loop {
+            let status = waiter.lock().ok().and_then(|mut c| c.try_wait().ok().flatten());
+            if let Some(status) = status {
+                let _ = tx.send(if status.success() {
+                    ShareEvent::Done
+                } else {
+                    ShareEvent::Error("the wormhole transfer failed or was cancelled".to_string())
+                });
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+    });
+    Ok(ShareJob { events: rx, child })
+}
+
+/// Lands whatever a receive left in `tmp`: expects exactly one entry, strips
+/// leaked personal files, and moves it under `dest_dir` — never overwriting.
+/// Returns the landed name and the stripped (relative) file names.
+pub fn land_received(tmp: &Path, dest_dir: &Path) -> Result<(String, Vec<String>)> {
+    let mut entries: Vec<PathBuf> = std::fs::read_dir(tmp)?.flatten().map(|e| e.path()).collect();
+    let Some(got) = entries.pop().filter(|_| entries.is_empty()) else {
+        bail!("expected exactly one received file or folder");
+    };
+    let name = got
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("received")
+        .to_string();
+    let stripped = if got.is_dir() {
+        sanitize_received(&got)?
+    } else {
+        Vec::new()
+    };
+    let dest = dest_dir.join(&name);
+    if dest.exists() {
+        bail!("{} already exists — move it aside first", dest.display());
+    }
+    move_into(&got, &dest)?;
+    Ok((name, stripped))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -287,5 +415,66 @@ mod tests {
             format!("{err:#}").contains("magic-wormhole installed"),
             "{err:#}"
         );
+    }
+
+    #[test]
+    fn a_send_job_reports_the_code_then_done() {
+        let _lock = crate::testutil::exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let fake = crate::testutil::fake_cli(
+            dir.path(),
+            "echo 'Wormhole code is: 7-alpha-bravo'\nexit 0",
+        );
+        let job = spawn_job(&fake.to_string_lossy(), &["send", "x"], None).unwrap();
+        let mut got = Vec::new();
+        while let Ok(ev) = job.events.recv_timeout(std::time::Duration::from_secs(10)) {
+            got.push(ev);
+        }
+        assert!(matches!(got.first(), Some(ShareEvent::Code(c)) if c == "7-alpha-bravo"), "{got:?}");
+        assert!(matches!(got.last(), Some(ShareEvent::Done)), "{got:?}");
+    }
+
+    #[test]
+    fn a_failing_send_job_reports_an_error() {
+        let _lock = crate::testutil::exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let fake = crate::testutil::fake_cli(dir.path(), "exit 1");
+        let job = spawn_job(&fake.to_string_lossy(), &["send", "x"], None).unwrap();
+        let last = std::iter::from_fn(|| {
+            job.events
+                .recv_timeout(std::time::Duration::from_secs(10))
+                .ok()
+        })
+        .last();
+        assert!(matches!(last, Some(ShareEvent::Error(_))), "{last:?}");
+    }
+
+    #[test]
+    fn landing_a_received_folder_sanitizes_and_moves_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path().join("scratch");
+        std::fs::create_dir_all(tmp.join("ws")).unwrap();
+        std::fs::write(tmp.join("ws/a.txt"), "x").unwrap();
+        std::fs::write(tmp.join("ws/progress.json"), "x").unwrap();
+        let dest = dir.path().join("decks");
+        std::fs::create_dir_all(&dest).unwrap();
+        let (landed, stripped) = land_received(&tmp, &dest).unwrap();
+        assert_eq!("ws", landed);
+        assert_eq!(vec!["progress.json".to_string()], stripped);
+        assert!(dest.join("ws/a.txt").exists());
+        assert!(!dest.join("ws/progress.json").exists());
+    }
+
+    #[test]
+    fn landing_onto_an_existing_name_errors_without_overwriting() {
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path().join("scratch");
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(tmp.join("a.txt"), "new").unwrap();
+        let dest = dir.path().join("decks");
+        std::fs::create_dir_all(&dest).unwrap();
+        std::fs::write(dest.join("a.txt"), "old").unwrap();
+        assert!(land_received(&tmp, &dest).is_err());
+        assert_eq!("old", std::fs::read_to_string(dest.join("a.txt")).unwrap());
     }
 }
