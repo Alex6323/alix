@@ -510,6 +510,14 @@ struct PairDto {
     lan: bool,
 }
 
+/// The result of `POST /api/reset`: the row's resolved display name and how
+/// many card schedules it wiped.
+#[derive(Serialize)]
+struct ResetDto {
+    deck: String,
+    cards_cleared: usize,
+}
+
 impl AskInfoDto {
     fn from(cfg: &AskConfig) -> Self {
         let or_default = |s: &Option<String>| s.clone().unwrap_or_else(|| "default".to_string());
@@ -1777,6 +1785,64 @@ pub fn run_review(
                     None => DeckTopologyDto::default(),
                 };
                 respond_json(request, &dto);
+            }
+            // Wipe a row's review progress (the sheet's typed-name gate is
+            // client UX; a token holder is trusted — same class as grading).
+            (Method::Post, "/api/reset") => {
+                #[derive(Deserialize)]
+                struct Body {
+                    deck: String,
+                }
+                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
+                // Rows resolve to their deck files: a workspace/folder row to
+                // its members, a deck row to itself.
+                let mut groups: HashMap<String, Vec<PathBuf>> = HashMap::new();
+                for e in picker::catalog(&decks_dir, &recent) {
+                    let member_paths: Vec<PathBuf> =
+                        e.members.iter().map(|m| m.path.clone()).collect();
+                    for m in &e.members {
+                        groups.insert(m.name.clone(), vec![m.path.clone()]);
+                    }
+                    groups.insert(
+                        e.name,
+                        if member_paths.is_empty() {
+                            vec![e.path]
+                        } else {
+                            member_paths
+                        },
+                    );
+                }
+                let Some((name, paths)) =
+                    body.and_then(|b| groups.get(&b.deck).cloned().map(|p| (b.deck, p)))
+                else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                let decks: Vec<Deck> = match paths.iter().map(Deck::load).collect() {
+                    Ok(d) => d,
+                    Err(_) => {
+                        respond_status(request, 400);
+                        continue;
+                    }
+                };
+                let cleared = store_for(&paths)
+                    .and_then(|mut s| crate::library::reset_decks(&mut s, decks.iter()));
+                match cleared {
+                    Ok(n) => {
+                        // The in-memory global store may now be stale — reload.
+                        if let Ok(s) = store_for(&[]) {
+                            store = s;
+                        }
+                        respond_json(
+                            request,
+                            &ResetDto {
+                                deck: name,
+                                cards_cleared: n,
+                            },
+                        );
+                    }
+                    Err(_) => respond_status(request, 400),
+                }
             }
             (Method::Post, "/api/deselect") => {
                 reviewing = None;
@@ -5025,6 +5091,19 @@ mod tests {
                 "PairDto",
                 &dto,
                 json!({"url": "http://127.0.0.1:7777/", "svg": null, "lan": false}),
+            );
+        }
+
+        #[test]
+        fn resetdto_wire_shape() {
+            let dto = ResetDto {
+                deck: "rust.txt".to_string(),
+                cards_cleared: 17,
+            };
+            pin(
+                "ResetDto",
+                &dto,
+                json!({"deck": "rust.txt", "cards_cleared": 17}),
             );
         }
 

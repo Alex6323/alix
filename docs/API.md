@@ -177,6 +177,7 @@ Statuses: all endpoints can additionally return 401 (token) — omitted below.
 | POST | `/api/select` | `{deck, topology?, region?, depth?, cram?, max_new?, limit?}` | `StateDto` \| `WalkDto` (branch on `kind`) | 400 bad body / unknown deck / build failure |
 | POST | `/api/browse` | `{deck}` | `BrowseDto` | 400 (same causes) |
 | POST | `/api/deck-topology` | `{deck}` | `DeckTopologyDto` | never errors — empty DTO on any failure |
+| POST | `/api/reset` | `{deck}` | `ResetDto` | 400 bad body / unknown deck / load failure |
 | POST | `/api/deselect` | – | `StateDto` | – |
 | POST | `/api/grade` | `{grade}` or `{covered, total}` | `StateDto` | 400 neither shape; 409 no session |
 | POST | `/api/skip` | – | `StateDto` | 409 |
@@ -186,6 +187,10 @@ Statuses: all endpoints can additionally return 401 (token) — omitted below.
 | POST | `/api/remove` | – | `StateDto` | 409 |
 | POST | `/api/promote` | – | `StateDto` | 400 not a virtual card / promote failed; 409 |
 | POST | `/api/restart` | – | `StateDto` | 409 |
+
+`/api/reset` wipes a row's stored progress (schedules, virtual cards, mastered
+flag) outright — a typed-name confirmation is client UX, not enforced here; a
+token holder is trusted to call it, the same trust class as `/api/grade`.
 
 ### Ask
 
@@ -399,6 +404,19 @@ reach this instance, and a QR of it to scan.
 
 Example (localhost-only, from the pinned test):
 `{"url":"http://127.0.0.1:7777/","svg":null,"lan":false}`.
+
+### ResetDto
+
+The result of `POST /api/reset`: what got wiped.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `deck` | string | The row's resolved display name (as sent in the request). |
+| `cards_cleared` | number | How many card schedules were removed. |
+
+A `deck` naming a workspace/folder row resets every member deck it lists, not
+just one file. Example (from the pinned test):
+`{"deck":"rust.txt","cards_cleared":17}`.
 
 ### ExamDto
 
