@@ -1411,6 +1411,17 @@ function renderAugment() {
   chip("Close", "", closeAugment, "esc");
 }
 
+// A CLI action while the tab is blurred — `alix receive`, `alix generate`, a
+// file dropped into the decks dir — adds decks the open picker can't see. The
+// catalog is read fresh from disk on every fetch, so regaining focus in the
+// select phase just re-scans (same as the ⟳ button). Overlays and sessions
+// are left alone.
+window.addEventListener("focus", () => {
+  if (state && state.phase === "select" && !browsing && !examData && !augmentData && !walkData && !asking) {
+    renderSelect();
+  }
+});
+
 // The deck-selection screen, mirroring the terminal picker. Three sections —
 // Workspaces (each with its last-progress time), Recent loose decks, and
 // Folders — and single-launch: click a deck to start it (a trace walks, a deck

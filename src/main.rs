@@ -184,7 +184,8 @@ struct ShareArgs {
 
 #[derive(Args)]
 struct ReceiveArgs {
-    /// The wormhole code the sender read to you (e.g. `7-crossover-clockwork`).
+    /// The wormhole code the sender read to you (e.g. `7-crossover-clockwork`)
+    /// — or a path to a `.zip` made by `alix share --zip`.
     code: String,
 
     /// Put a received DECK into this workspace instead of the decks directory.
@@ -2114,7 +2115,13 @@ fn share_cmd(args: ShareArgs) -> Result<()> {
 fn receive_cmd(args: ReceiveArgs) -> Result<()> {
     let config = Config::load(None)?;
     let tmp = tempfile::tempdir().context("cannot create a receiving directory")?;
-    alix::share::wormhole(&["receive", "--accept-file", &args.code], Some(tmp.path()))?;
+    // A `.zip` path skips the wormhole entirely — same staging, same landing.
+    let zip_path = Path::new(&args.code);
+    if args.code.ends_with(".zip") && zip_path.is_file() {
+        alix::share::unzip_to(zip_path, tmp.path())?;
+    } else {
+        alix::share::wormhole(&["receive", "--accept-file", &args.code], Some(tmp.path()))?;
+    }
 
     // Whatever arrived is the single new entry in the scratch dir.
     let mut entries: Vec<PathBuf> = std::fs::read_dir(tmp.path())?

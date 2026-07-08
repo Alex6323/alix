@@ -150,6 +150,19 @@ fn zip_walk(
     Ok(())
 }
 
+/// Extracts a `.zip` (made by `alix share --zip`, or compatible) into `dest`.
+/// The zip crate's extract handles hostile paths (zip-slip) itself.
+pub fn unzip_to(zip_path: &Path, dest: &Path) -> Result<()> {
+    let file = std::fs::File::open(zip_path)
+        .with_context(|| format!("cannot open {}", zip_path.display()))?;
+    let mut archive = zip::ZipArchive::new(file)
+        .with_context(|| format!("{} is not a readable zip archive", zip_path.display()))?;
+    archive
+        .extract(dest)
+        .with_context(|| format!("cannot extract {}", zip_path.display()))?;
+    Ok(())
+}
+
 /// Runs the wormhole binary with inherited stdio — the code mnemonic and the
 /// transfer progress print straight to the terminal — and waits for it.
 pub fn wormhole(args: &[&str], cwd: Option<&Path>) -> Result<()> {
@@ -248,6 +261,23 @@ mod tests {
             names.contains(&"ws/assets/icon.svg".to_string()),
             "{names:?}"
         );
+    }
+
+    #[test]
+    fn a_zip_round_trip_restores_the_staged_tree() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("ws");
+        std::fs::create_dir_all(src.join("assets")).unwrap();
+        touch(&src, "a.txt");
+        touch(&src.join("assets"), "icon.svg");
+        let archive = dir.path().join("ws.zip");
+        zip_to(&src, &archive).unwrap();
+
+        let out = dir.path().join("landed");
+        unzip_to(&archive, &out).unwrap();
+
+        assert!(out.join("ws/a.txt").exists());
+        assert!(out.join("ws/assets/icon.svg").exists());
     }
 
     #[test]

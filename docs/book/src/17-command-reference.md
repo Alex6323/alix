@@ -92,7 +92,9 @@ notes it.
   list, `alix.local.toml`, and backup files never travel. Tell the receiver
   the code wormhole prints. No wormhole around? `--zip [--output <path>]`
   writes the same staged copy as a `.zip` to mail or hand over instead.
-- `alix receive <code>` — fetch what someone shared. A deck lands in your
+- `alix receive <code-or-zip>` — fetch what someone shared, by wormhole code
+  or by a `.zip` path (the `--zip` fallback's output — same landing either
+  way). A deck lands in your
   decks directory (`--workspace <dir>` puts it inside a workspace; `--force`
   overwrites a same-named deck); a folder lands under its own name beside
   your other decks and is never overwritten. Personal files that leaked from
