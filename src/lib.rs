@@ -24,6 +24,7 @@ pub mod explore;
 pub mod generate;
 pub mod icon;
 pub mod import;
+pub mod library;
 pub mod parser;
 pub mod picker;
 pub mod preflight;

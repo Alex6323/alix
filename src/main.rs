@@ -12,7 +12,7 @@ use alix::{
     config::{self, Config},
     deck::{Deck, DeckSettings, DeckState},
     depth::Depth,
-    generate, import, parser, preflight,
+    generate, import, library, parser, preflight,
     recent::{self, RecentDecks},
     scheduler::{Fsrs, Scheduler},
     serve,
@@ -2276,14 +2276,13 @@ fn generate_single_deck(args: &GenerateArgs, config: &Config) -> Result<()> {
     } else {
         format!("{name}.txt")
     };
-    let parsed = parser::parse_str(&name, &text);
 
     if args.print {
         print!("{text}");
         if !text.ends_with('\n') {
             println!();
         }
-        match &parsed {
+        match parser::parse_str(&name, &text) {
             Ok(cards) => eprintln!("({} cards — not written; --print)", cards.len()),
             Err(e) => eprintln!("(warning: does not parse yet — {e})"),
         }
@@ -2291,32 +2290,22 @@ fn generate_single_deck(args: &GenerateArgs, config: &Config) -> Result<()> {
     }
 
     let dir = deck_out_dir(args.workspace.as_deref(), config)?;
-    let path = dir.join(&name);
-    if path.exists() && !args.force {
-        bail!(
-            "{} already exists; pass --force to overwrite",
-            path.display()
-        );
+    if args.force {
+        // --force is CLI-only: clear the collision before placing.
+        std::fs::remove_file(dir.join(&name)).ok();
     }
-    std::fs::create_dir_all(&dir).with_context(|| format!("cannot create {}", dir.display()))?;
-    let body = if text.ends_with('\n') {
-        text
-    } else {
-        format!("{text}\n")
-    };
-    std::fs::write(&path, body).with_context(|| format!("cannot write {}", path.display()))?;
-
-    match parsed {
-        Ok(cards) => {
-            println!("Wrote {} cards to {}", cards.len(), path.display());
+    let placed = library::place_deck(&dir, &name, &text)?;
+    match placed.parse_error {
+        None => {
+            println!("Wrote {} cards to {}", placed.cards, placed.path.display());
             Ok(())
         }
         // Saved, but not yet valid: tell the user exactly what to fix.
-        Err(e) => bail!(
+        Some(e) => bail!(
             "Saved the generated deck to {}, but it does not parse yet:\n  {e}\n\
              Fix that line and run `alix doctor {}`.",
-            path.display(),
-            path.display()
+            placed.path.display(),
+            placed.path.display()
         ),
     }
 }
@@ -2359,14 +2348,13 @@ fn import_cmd(args: ImportArgs) -> Result<()> {
     } else {
         format!("{name}.txt")
     };
-    let parsed = parser::parse_str(&name, &text);
 
     if args.print {
         print!("{text}");
         if !text.ends_with('\n') {
             println!();
         }
-        match &parsed {
+        match parser::parse_str(&name, &text) {
             Ok(cards) => eprintln!("({} cards — not written; --print)", cards.len()),
             Err(e) => eprintln!("(warning: does not parse yet — {e})"),
         }
@@ -2374,32 +2362,26 @@ fn import_cmd(args: ImportArgs) -> Result<()> {
     }
 
     let dir = deck_out_dir(args.workspace.as_deref(), &config)?;
-    let path = dir.join(&name);
-    if path.exists() && !args.force {
-        bail!(
-            "{} already exists; pass --force to overwrite",
-            path.display()
-        );
+    if args.force {
+        // --force is CLI-only: clear the collision before placing.
+        std::fs::remove_file(dir.join(&name)).ok();
     }
-    std::fs::create_dir_all(&dir).with_context(|| format!("cannot create {}", dir.display()))?;
-    let body = if text.ends_with('\n') {
-        text
-    } else {
-        format!("{text}\n")
-    };
-    std::fs::write(&path, body).with_context(|| format!("cannot write {}", path.display()))?;
-
-    match parsed {
-        Ok(cards) => {
-            println!("Imported {} cards into {}", cards.len(), path.display());
+    let placed = library::place_deck(&dir, &name, &text)?;
+    match placed.parse_error {
+        None => {
+            println!(
+                "Imported {} cards into {}",
+                placed.cards,
+                placed.path.display()
+            );
             Ok(())
         }
         // Saved, but not yet valid: tell the user exactly what to fix.
-        Err(e) => bail!(
+        Some(e) => bail!(
             "Saved the deck to {}, but it does not parse yet:\n  {e}\n\
              Fix that line and run `alix doctor {}`.",
-            path.display(),
-            path.display()
+            placed.path.display(),
+            placed.path.display()
         ),
     }
 }
