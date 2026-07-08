@@ -51,6 +51,14 @@ fn dir_candidates(decks_dir: &Path) -> Vec<Candidate> {
     let mut cands: Vec<Candidate> = match std::fs::read_dir(decks_dir) {
         Ok(read_dir) => read_dir
             .filter_map(|r| r.ok().map(|d| d.path()))
+            // Hidden by convention, same rule `share::stays_home` applies: in
+            // particular, `alix generate`'s staging dir for a workspace build
+            // (`.<name>.building`) is deliberately kept around on a merge
+            // conflict, holding real `.txt` decks — without this filter it
+            // would show up here as a bogus workspace. An explicitly named
+            // dot-dir (`alix share .foo`, `alix stats .foo`) still works —
+            // this only filters the directory *scan*.
+            .filter(|path| !file_name(path).starts_with('.'))
             .filter_map(|path| {
                 if path.is_file() && path.extension().is_some_and(|e| e == "txt") {
                     Some((path, false))
@@ -744,6 +752,29 @@ mod tests {
         let cands = build_candidates(dir.path(), &recent);
         let names: Vec<&str> = cands.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(vec!["real.txt"], names);
+    }
+
+    #[test]
+    fn a_dot_prefixed_folder_is_invisible_to_the_scan() {
+        // `alix generate`'s staging dir (`.<name>.building`) is deliberately
+        // kept around on a merge conflict, holding real `.txt` decks — it must
+        // never surface in the picker as a bogus workspace.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("real.txt"), "# f\n\tb\n").unwrap();
+        let leftover = dir.path().join(".leftover.building");
+        std::fs::create_dir(&leftover).unwrap();
+        std::fs::write(leftover.join("x.txt"), "# q\n\ta\n").unwrap();
+
+        let names: Vec<String> = dir_candidates(dir.path())
+            .iter()
+            .map(|c| c.name.clone())
+            .collect();
+        assert_eq!(vec!["real.txt".to_string()], names);
+
+        let recent = RecentDecks::load(dir.path().join("recent.json"));
+        let entries = catalog(dir.path(), &recent);
+        assert!(entries.iter().all(|e| !e.name.starts_with('.')));
+        assert_eq!(1, entries.len());
     }
 
     /// A graduated-and-not-due `FsrsState`, so the deck card it's attached to

@@ -1929,6 +1929,19 @@ fn generate_cmd(args: GenerateArgs) -> Result<()> {
     // A directory source is explored first; the plan's size decides.
     if src_path.is_dir() && !args.deck {
         let source = canonical_source(&args.source);
+        // A leftover staging dir from a previous build holds merge-conflict
+        // files that only exist there — confirm before a rebuild wipes them,
+        // and do it before any exploration call so a decline never spends a
+        // backend request. `--plan` never builds (and so never wipes), so it
+        // skips the question.
+        if !args.plan {
+            let staging = staging_dir_for(&workspace_dest(&args, &config, &source)?);
+            if !confirm_stale_staging(&staging, args.yes)? {
+                println!("Cancelled.");
+                return Ok(());
+            }
+            let _ = std::fs::remove_dir_all(&staging);
+        }
         preflight_source(&source, config.ask.preflight_threshold, args.yes)?;
         eprintln!(
             "Exploring {source} for a learning plan toward \"{goal}\" (one pass — \
@@ -1979,6 +1992,39 @@ fn workspace_dest(args: &GenerateArgs, config: &Config, source: &str) -> Result<
     })
 }
 
+/// The scratch dir `build_workspace` stages a build's new files into before
+/// merging them into `dir`: `.<name>.building` beside it. Dot-prefixed, so a
+/// staging dir deliberately kept on a merge conflict never leaks into the
+/// picker as a bogus workspace (`picker::dir_candidates` skips dot-prefixed
+/// entries for exactly this reason).
+fn staging_dir_for(dir: &Path) -> PathBuf {
+    let staging_name = format!(
+        ".{}.building",
+        dir.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("workspace")
+    );
+    dir.with_file_name(staging_name)
+}
+
+/// `Ok(true)` to proceed — `staging` is absent or empty, so there is nothing
+/// to lose. Otherwise a previous build's merge conflicts are the only copy of
+/// their new content, so this asks before a rebuild would silently wipe them;
+/// `Ok(false)` means the caller should stop without building.
+fn confirm_stale_staging(staging: &Path, yes: bool) -> Result<bool> {
+    let has_files = std::fs::read_dir(staging).is_ok_and(|mut entries| entries.next().is_some());
+    if !has_files {
+        return Ok(true);
+    }
+    confirm(
+        &format!(
+            "{} holds files from a previous build — wipe them and rebuild?",
+            staging.display()
+        ),
+        yes,
+    )
+}
+
 /// Builds a workspace from a multi-item plan: confirm, then explore + fill in
 /// one session (a second exploration — the coherent fill needs its own pass),
 /// materialize into a scratch staging dir, and merge that into the
@@ -2013,14 +2059,11 @@ fn build_workspace(
     // Materialize into a fresh staging dir beside the destination, then merge
     // the new files in one by one: a populated destination never blocks the
     // build or loses a file, and exploration tokens are never wasted on a
-    // doomed run — a name collision just keeps the user's original.
-    let staging_name = format!(
-        ".{}.building",
-        dir.file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("workspace")
-    );
-    let staging = dir.with_file_name(staging_name);
+    // doomed run — a name collision just keeps the user's original. Any
+    // leftover from a previous build was already confirmed-and-wiped (or was
+    // empty/absent) by the caller before this build spent a single AI call,
+    // so this is a no-op in the common case.
+    let staging = staging_dir_for(&dir);
     let _ = std::fs::remove_dir_all(&staging);
     let materialized = alix::explore::materialize(
         &plan,

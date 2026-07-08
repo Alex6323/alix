@@ -691,6 +691,69 @@ fn a_populated_workspace_no_longer_blocks_the_build() {
 }
 
 #[test]
+fn a_leftover_staging_dir_blocks_a_headless_rebuild_until_confirmed() {
+    // A staging dir kept from a previous build's merge conflicts holds the
+    // only copy of that content — a rebuild must ask before wiping it, and
+    // ask before spending on exploration, not after.
+    let dir = TempDir::new().unwrap();
+    let src = dir.path().join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    write(&src, "notes.md", "# some source material\n");
+    let ws = dir.path().join("ws");
+    std::fs::create_dir_all(&ws).unwrap();
+    let staging = dir.path().join(".ws.building");
+    std::fs::create_dir_all(&staging).unwrap();
+    write(&staging, "orphan.txt", "# q\n  a\n");
+    let config = write(
+        dir.path(),
+        "config.toml",
+        "[ask]\ncommand = \"/nonexistent/claude-xyz\"\ntimeout_secs = 5\n",
+    );
+
+    // Without --yes: headless (no TTY) — confirm bails before any exploration.
+    let out = alix(&[
+        "generate",
+        src.to_str().unwrap(),
+        "--workspace",
+        ws.to_str().unwrap(),
+        "--config",
+        &config,
+    ]);
+    assert!(!out.status.success(), "should fail without confirmation");
+    let err = stderr(&out);
+    assert!(
+        err.contains(staging.to_str().unwrap())
+            || err.contains("holds files from a previous build"),
+        "should mention the staging path or the confirm question: {err}"
+    );
+    assert!(
+        !err.contains("Exploring"),
+        "should bail before spending on exploration: {err}"
+    );
+    assert!(
+        staging.is_dir(),
+        "declining must leave the staging dir alone"
+    );
+
+    // With --yes: the staging confirm is skipped, so the run reaches the
+    // (fake) backend failure.
+    let out = alix(&[
+        "generate",
+        src.to_str().unwrap(),
+        "--workspace",
+        ws.to_str().unwrap(),
+        "--config",
+        &config,
+        "--yes",
+    ]);
+    let err = stderr(&out);
+    assert!(
+        err.contains("is it installed") || err.contains("nonexistent"),
+        "should get past the staging confirm to the exploration/backend failure: {err}"
+    );
+}
+
+#[test]
 fn deck_check_validates_like_the_old_check() {
     // `alix deck check <deck>` must parse and report cards exactly as the old
     // `alix check <deck>` did.
