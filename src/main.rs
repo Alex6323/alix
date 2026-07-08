@@ -1929,6 +1929,19 @@ fn generate_cmd(args: GenerateArgs) -> Result<()> {
     // A directory source is explored first; the plan's size decides.
     if src_path.is_dir() && !args.deck {
         let source = canonical_source(&args.source);
+        // Check the destination before the costed exploration, not after: a
+        // doomed build caught only at write time (materialize's guard) burns
+        // the whole plan-and-fill spend for nothing.
+        let dest = workspace_dest(&args, &config, &source)?;
+        let populated = std::fs::read_dir(&dest)
+            .map(|mut d| d.next().is_some())
+            .unwrap_or(false);
+        if populated && !args.force {
+            bail!(
+                "{} already has files — choose a new directory or pass --force",
+                dest.display()
+            );
+        }
         preflight_source(&source, config.ask.preflight_threshold, args.yes)?;
         eprintln!(
             "Exploring {source} for a learning plan toward \"{goal}\" (one pass — \
@@ -1961,6 +1974,24 @@ fn canonical_source(source: &str) -> String {
     }
 }
 
+/// Where a directory source's workspace lands: `--workspace` when given, else
+/// a folder named after the source under the decks directory.
+fn workspace_dest(args: &GenerateArgs, config: &Config, source: &str) -> Result<PathBuf> {
+    Ok(match &args.workspace {
+        Some(dir) => dir.clone(),
+        None => {
+            let name = Path::new(source)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("workspace");
+            config
+                .decks_dir()
+                .context("cannot determine the decks directory")?
+                .join(name)
+        }
+    })
+}
+
 /// Builds a workspace from a multi-item plan: confirm, then explore + fill in
 /// one session (a second exploration — the coherent fill needs its own pass)
 /// and materialize into the destination. Ported from the old `explore --build`.
@@ -1971,20 +2002,7 @@ fn build_workspace(
     goal: &str,
     items: usize,
 ) -> Result<()> {
-    let dir = match &args.workspace {
-        Some(dir) => dir.clone(),
-        None => {
-            let name = Path::new(source)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("workspace")
-                .to_string();
-            config
-                .decks_dir()
-                .context("cannot determine the decks directory")?
-                .join(name)
-        }
-    };
+    let dir = workspace_dest(args, config, source)?;
     if !confirm(
         &format!(
             "Build {items} items into {} (several AI calls, a few minutes)?",

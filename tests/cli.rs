@@ -633,7 +633,6 @@ fn undersized_local_source_proceeds_without_yes() {
         "[ask]\ncommand = \"/nonexistent/claude-xyz\"\ntimeout_secs = 5\n",
     );
     let out = alix(&[
-        "deck",
         "generate",
         dir.path().to_str().unwrap(),
         "--config",
@@ -645,6 +644,52 @@ fn undersized_local_source_proceeds_without_yes() {
     assert!(
         !err.contains("pass --yes to proceed"),
         "guard must not fire for small trees: {err}"
+    );
+    // Guard against vacuous passes (this test once kept invoking a deleted
+    // `deck generate` spelling): the run must get as far as the explore pass.
+    assert!(
+        err.contains("Exploring") || err.contains("is it installed"),
+        "should reach the exploration/backend: {err}"
+    );
+}
+
+#[test]
+fn a_directory_source_bails_on_a_populated_workspace_before_exploring() {
+    // The destination check must fire before the costed exploration — a plan
+    // pass that runs first burns real tokens on a build that then dies at the
+    // materialize guard.
+    let dir = TempDir::new().unwrap();
+    let src = dir.path().join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    write(&src, "notes.md", "# some source material\n");
+    let ws = dir.path().join("ws");
+    std::fs::create_dir_all(&ws).unwrap();
+    write(&ws, "existing.txt", "# q\n  a\n");
+    let config = write(
+        dir.path(),
+        "config.toml",
+        "[ask]\ncommand = \"/nonexistent/claude-xyz\"\ntimeout_secs = 5\n",
+    );
+    let out = alix(&[
+        "generate",
+        src.to_str().unwrap(),
+        "--workspace",
+        ws.to_str().unwrap(),
+        "--config",
+        &config,
+    ]);
+    let err = stderr(&out);
+    assert!(
+        !out.status.success(),
+        "must refuse the populated dir: {err}"
+    );
+    assert!(
+        err.contains("already has files"),
+        "names the collision + the fix: {err}"
+    );
+    assert!(
+        !err.contains("Exploring"),
+        "must bail before any costed exploration: {err}"
     );
 }
 

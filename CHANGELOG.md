@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- `alix generate <dir>` now checks the destination workspace *before* the
+  costed exploration: a populated directory fails immediately (same message,
+  same `--force` escape) instead of after the plan-and-fill passes have
+  already burned their tokens.
+
 ### Added
 - **`docs/API.md` — the web JSON API is now a written, tested contract.**
   Endpoints, DTO field tables with nullability, the flows (select→state→grade,
