@@ -161,6 +161,7 @@ Statuses: all endpoints can additionally return 401 (token) — omitted below.
 | Method | Path | Body | Response | Errors |
 |---|---|---|---|---|
 | GET | `/api/version` | – | `VersionDto` | – |
+| GET | `/api/doctor` | – | `DoctorDto` | – |
 | GET | `/api/decks` | – | `DeckListDto` | – |
 | GET | `/api/state` | – | `StateDto` (or `BrowseDto` while browsing) | – |
 | GET | `/api/ask-info` | – | `AskInfoDto` | – |
@@ -363,6 +364,26 @@ choice index is disclosed.
 ### VersionDto
 
 `version: string` (the crate version).
+
+### DoctorDto / DoctorRowDto
+
+The web doctor report (`GET /api/doctor`): the CLI's free checks (config,
+store, decks, backend, share), serialized in that order. The costed
+`--backends` end-to-end probe stays CLI-only — this endpoint never makes a
+network call.
+
+`DoctorDto`: `rows: [DoctorRowDto]`.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `name` | string | The check's name: `config` \| `store` \| `decks` \| `backend` \| `share` (open set — mirrors `alix doctor`'s rows). |
+| `status` | string | `ok` \| `warn` \| `fail` (open set). |
+| `detail` | string | What was found, one line. |
+| `remedy` | string? | The fix; present whenever `status` isn't `ok`. |
+
+Example (from the pinned test, illustrating the shape, not a real report):
+`{"name":"config","status":"ok","detail":"~/.config/alix/config.toml parses","remedy":null}`
+and ``{"name":"wormhole","status":"warn","detail":"`wormhole` not found on PATH","remedy":"pipx install magic-wormhole"}``.
 
 ### ExamDto
 

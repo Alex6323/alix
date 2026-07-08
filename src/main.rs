@@ -1137,6 +1137,7 @@ fn launch(args: LaunchArgs) -> Result<()> {
         exam: config.exam.clone(),
         ai: config.ai.clone(),
         auth: token,
+        config_path: args.config.clone(),
     };
     let build = |paths: Vec<PathBuf>,
                  opts: &serve::SelectOptions,

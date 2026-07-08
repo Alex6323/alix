@@ -1,0 +1,16 @@
+{
+  "rows": [
+    {
+      "detail": "~/.config/alix/config.toml parses",
+      "name": "config",
+      "remedy": null,
+      "status": "ok"
+    },
+    {
+      "detail": "`wormhole` not found on PATH",
+      "name": "wormhole",
+      "remedy": "pipx install magic-wormhole",
+      "status": "warn"
+    }
+  ]
+}

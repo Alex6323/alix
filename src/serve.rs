@@ -42,7 +42,7 @@ use crate::{
     },
     deck::{self, Deck, DeckState},
     depth::{self, Depth, Reveal, depth_name},
-    exam, picker,
+    doctor, exam, picker,
     recent::RecentDecks,
     render::{self, NoteUnit},
     scheduler::{Fsrs, Grade, keypoint_grade},
@@ -468,6 +468,37 @@ struct VersionDto {
     version: &'static str,
 }
 
+/// The web doctor report (`GET /api/doctor`) — the CLI's free checks,
+/// serialized. Costed backend probes stay CLI-only.
+#[derive(Serialize)]
+struct DoctorDto {
+    rows: Vec<DoctorRowDto>,
+}
+
+#[derive(Serialize)]
+struct DoctorRowDto {
+    name: &'static str,
+    /// `ok` | `warn` | `fail` (open set).
+    status: &'static str,
+    detail: String,
+    remedy: Option<String>,
+}
+
+impl From<doctor::Finding> for DoctorRowDto {
+    fn from(f: doctor::Finding) -> Self {
+        DoctorRowDto {
+            name: f.name,
+            status: match f.status {
+                doctor::Status::Ok => "ok",
+                doctor::Status::Warn => "warn",
+                doctor::Status::Fail => "fail",
+            },
+            detail: f.detail,
+            remedy: f.remedy,
+        }
+    }
+}
+
 impl AskInfoDto {
     fn from(cfg: &AskConfig) -> Self {
         let or_default = |s: &Option<String>| s.clone().unwrap_or_else(|| "default".to_string());
@@ -611,6 +642,9 @@ pub struct ReviewOptions {
     /// Pairing token required on `/api/*` when set (auto-generated for `--lan`);
     /// `None` leaves the server open (the localhost default).
     pub auth: Option<String>,
+    /// The `--config` path the launcher loaded config from (`None` → the
+    /// platform default), passed through so `/api/doctor` checks the same file.
+    pub config_path: Option<PathBuf>,
 }
 
 /// A review session ready to serve: the session, its header label, the
@@ -1474,6 +1508,7 @@ pub fn run_review(
         ai: ai_cfg,
         review: review_cfg,
         auth,
+        config_path,
     } = opts;
     let keys = ReviewKeys::from(&bindings);
     let picker_keys = PickerKeysDto::from(&picker_keys);
@@ -1528,6 +1563,33 @@ pub fn run_review(
                     version: env!("CARGO_PKG_VERSION"),
                 },
             ),
+            (Method::Get, "/api/doctor") => {
+                let (cfg, _) = doctor::check_config(config_path.as_deref());
+                let rows = vec![
+                    cfg,
+                    doctor::check_store(Some(store.path().to_path_buf())),
+                    doctor::check_decks(&decks_dir),
+                    // Mirrors `main.rs::doctor_cmd`'s binary lines verbatim
+                    // (names, purposes, remedies) — the web report must match
+                    // the CLI's, minus the costed `--backends` probe.
+                    doctor::check_binary(
+                        "backend",
+                        &ask_cfg.command,
+                        "the AI features (tutor, exam, generate)",
+                        "install it and log in — or switch `[ask] backend` in the config",
+                    ),
+                    doctor::check_binary(
+                        "share",
+                        "wormhole",
+                        "sharing (`alix share`/`receive`)",
+                        "install magic-wormhole (e.g. `pipx install magic-wormhole`, or your package manager)",
+                    ),
+                ]
+                .into_iter()
+                .map(DoctorRowDto::from)
+                .collect();
+                respond_json(request, &DoctorDto { rows })
+            }
             (Method::Get, "/api/browse-keys") => respond_json(request, &browse_keys),
             (Method::Get, "/api/picker-keys") => respond_json(request, &picker_keys),
             (Method::Get, "/api/ask-info") => respond_json(request, &ask_info),
@@ -4864,6 +4926,39 @@ mod tests {
                 "VersionDto",
                 &version,
                 json!({"version": env!("CARGO_PKG_VERSION")}),
+            );
+        }
+
+        #[test]
+        fn doctordto_wire_shape() {
+            let dto = DoctorDto {
+                rows: vec![
+                    DoctorRowDto {
+                        name: "config",
+                        status: "ok",
+                        detail: "~/.config/alix/config.toml parses".to_string(),
+                        remedy: None,
+                    },
+                    DoctorRowDto {
+                        name: "wormhole",
+                        status: "warn",
+                        detail: "`wormhole` not found on PATH".to_string(),
+                        remedy: Some("pipx install magic-wormhole".to_string()),
+                    },
+                ],
+            };
+            pin(
+                "DoctorDto",
+                &dto,
+                json!({
+                    "rows": [
+                        {"name": "config", "status": "ok",
+                         "detail": "~/.config/alix/config.toml parses", "remedy": null},
+                        {"name": "wormhole", "status": "warn",
+                         "detail": "`wormhole` not found on PATH",
+                         "remedy": "pipx install magic-wormhole"}
+                    ]
+                }),
             );
         }
 
