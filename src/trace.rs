@@ -12,7 +12,7 @@
 //! This module is the frontend-agnostic engine: it builds the [`Trace`] from a
 //! [`Deck`], resolves each locator to a live [`Excerpt`] (read fresh from the
 //! source, the oracle), and drives the [`Walk`] state machine + per-checkpoint
-//! scheduling. The CLI (`alix trace`) is a thin reader over it. Grading is
+//! scheduling. The web walk is a thin reader over it. Grading is
 //! self-judged and offline — no model calls — so the mechanic can be validated
 //! cheaply; live Claude grading (`--grade`) is a later layer.
 
@@ -296,7 +296,7 @@ pub struct LocatorIssue {
     pub message: String,
 }
 
-// ── Building (`alix trace --build`) ─────────────────────────────────────────
+// ── Building (`alix generate <trace-stub>`) ──────────────────────────────────
 //
 // Discovering the path is a separate, heavier step from walking it: Claude
 // explores the `% source:` (read-only file tools, cwd at the source root) and
@@ -343,7 +343,7 @@ pub fn build(deck: &Deck, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<Stri
 // + each `% at:` at them: the excerpts then never drift, and the workspace is
 // self-contained — without copying whole (possibly huge) source files. The
 // re-based excerpt loses its original line numbers, which don't matter once the
-// span is frozen. It's the default last step of `alix explore --into --build`;
+// span is frozen. It's the default last step of a workspace `alix generate`;
 // a loose trace over a live path is left untouched. The source is any text file.
 
 /// The directory under a workspace where a snapshotted trace's excerpts are
@@ -836,7 +836,7 @@ pub(crate) fn clean_to_cards(raw: &str) -> String {
     lines[start..end].join("\n")
 }
 
-/// Grades a learner's prediction at a checkpoint with Claude (`alix trace
+/// Grades a learner's prediction at a checkpoint with Claude (`[trace]
 /// --grade`): compares it to the checkpoint's key points and returns the
 /// [`Delta`] plus one line of feedback. Pure reasoning over the supplied text —
 /// no tools. Unlike the one-shot `--build`/`--suggest`, this is a light,
@@ -2154,7 +2154,7 @@ mod tests {
         assert!(store.is_empty());
     }
 
-    // ── build (`alix trace --build`) ────────────────────────────────────────
+    // ── build (`alix generate <trace-stub>`) ────────────────────────────────
 
     #[test]
     fn parse_grade_reads_verdict_and_feedback() {

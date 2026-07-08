@@ -490,7 +490,7 @@ pub struct ServeConfig {
     /// Default port to listen on (overridden by `--port`).
     pub port: u16,
     /// Optional pairing token. When set (or auto-generated for `--lan`), the web
-    /// server requires it on `/api/*` — see `alix serve --lan`.
+    /// server requires it on `/api/*` — see `alix --lan`.
     pub token: Option<String>,
 }
 
@@ -572,7 +572,7 @@ pub struct Config {
     pub keys: Bindings,
     /// Navigation keys for the deck picker.
     pub picker: PickerKeys,
-    /// Key bindings for `alix browse`.
+    /// Key bindings for the Browse overlay.
     pub browse: BrowseBindings,
     pub ask: AskConfig,
     /// AI deck generation settings.

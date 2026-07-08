@@ -32,7 +32,7 @@ pub const MANIFEST: &str = "alix.toml";
 pub const STORE_FILE: &str = "progress.json";
 
 /// The `alix.toml` manifest: a display `title`, a one-line `description` (e.g.
-/// the learning goal `alix explore` was given), an optional `store` path (where
+/// the learning goal the workspace generation was given), an optional `store` path (where
 /// this workspace's progress lives), and a `[defaults]` table of shared
 /// directives (keyed by directive name). Unknown keys/sections are ignored, so
 /// the format stays forgiving and forward-compatible.
@@ -64,7 +64,7 @@ pub struct Workspace {
     /// Display title (manifest `title`), or `None` to use the folder name.
     pub title: Option<String>,
     /// A one-line description of the workspace (manifest `description`), or
-    /// `None`. `alix explore` writes the learning goal here.
+    /// `None`. A workspace `alix generate` writes the learning goal here.
     pub description: Option<String>,
     /// Shared directive defaults from the manifest, folded below each member
     /// deck's own directives.

@@ -1,6 +1,6 @@
 //! A local web frontend.
 //!
-//! `alix serve` starts a small synchronous HTTP server (one request at a
+//! Bare `alix` starts a small synchronous HTTP server (one request at a
 //! time — correct for a single user) that serves an embedded web page and a
 //! JSON API. It is a third consumer of the same logic the TUI and browser use:
 //! the [`Session`]/[`Store`] drive review, and cards are sent to the browser as
@@ -2231,7 +2231,7 @@ pub fn run_review(
     Ok(())
 }
 
-// ── Trace walks (`alix trace --serve`) ──────────────────────────────────────
+// ── Trace walks (in-page, from the picker) ──────────────────────────────────
 //
 // A single walk of one trace deck, mirroring the terminal `run_walk`: predict →
 // reveal a live excerpt → grade → compress. There is no deck-selection screen

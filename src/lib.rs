@@ -1,7 +1,7 @@
 //! A learning tool built for understanding, not just remembering.
 //!
 //! Decks are plain-text files. On top of the flashcard basics it offers a
-//! local web frontend (`alix serve`), the FSRS
+//! local web frontend, the FSRS
 //! scheduler (via `rs-fsrs`), several answer modes (flip, typing, typeline,
 //! multiple choice, line-by-line, explain), cloze and dual-direction cards,
 //! deck dependencies, and per-card review statistics. The configured model CLI
