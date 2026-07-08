@@ -80,9 +80,11 @@ struct LaunchArgs {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Check this setup's health: config, progress store, decks, and the
-    /// optional external CLIs — each problem with its one-line fix. Add
-    /// `--backends` to also probe the configured AI backend end to end.
+    /// Check this setup's health, with a one-line fix per problem.
+    ///
+    /// Covers the config, the progress store, the decks folder, and the
+    /// optional external CLIs. Add `--backends` to also probe the configured
+    /// AI backend end to end (one real, tiny request).
     Doctor(DoctorArgs),
     /// Show progress statistics for decks.
     Stats(DeckArgs),
@@ -93,17 +95,20 @@ enum Command {
     /// Create, augment, or validate decks.
     #[command(subcommand)]
     Deck(DeckAction),
-    /// Import an Anki TSV export (tab-separated `front<TAB>back` lines) into a
-    /// alix deck.
+    /// Import an Anki TSV export into an alix deck.
+    ///
+    /// Expects tab-separated `front<TAB>back` lines.
     Import(ImportArgs),
-    /// Walk a trace: a predict-and-verify path through a `% source:` that
-    /// builds understanding. At each checkpoint you predict, then the real
-    /// excerpt is revealed and you judge the gap; the path ends with a
-    /// compression.
+    /// Walk a trace: a predict-and-verify path through a source.
+    ///
+    /// At each checkpoint you predict, then the real excerpt is revealed and
+    /// you judge the gap; the path ends with a compression.
     Trace(TraceArgs),
-    /// Explore a source (a repo, directory, file, or URL) and print an ordered
-    /// learning plan toward a goal: the facts decks and traces worth authoring,
-    /// each tagged and dependency-ordered. Read-only; writes nothing.
+    /// Plan (or build) a learning workspace from a source, toward a goal.
+    ///
+    /// The source can be a repo, directory, file, or URL; the plan is the
+    /// facts decks and traces worth authoring, tagged and dependency-ordered.
+    /// Read-only unless `--into … --build` scaffolds the workspace.
     Explore(ExploreArgs),
     /// Show the configuration (key bindings) or create the config file.
     Config {
