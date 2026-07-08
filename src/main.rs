@@ -27,10 +27,9 @@ use clap::{Args, Parser, Subcommand};
 
 /// A learning tool built for understanding, not just remembering.
 ///
-/// Decks are plain text files: `# question` starts a card, the indented
-/// lines below it are the answer, `! text` adds a note, `% text` is a
-/// comment. Without a subcommand, alix serves its web app: the in-browser
-/// deck picker over your decks directory (or over the folder you name).
+/// Without a subcommand, alix serves its web app: the in-browser deck
+/// picker over your decks directory, or over the folder you name.
+/// Manual: https://alix.study/book
 #[derive(Parser)]
 #[command(version, about)]
 struct Cli {
