@@ -42,7 +42,7 @@ use crate::{
     },
     deck::{self, Deck, DeckState},
     depth::{self, Depth, Reveal, depth_name},
-    doctor, exam, picker,
+    doctor, exam, import, picker,
     recent::RecentDecks,
     render::{self, NoteUnit},
     scheduler::{Fsrs, Grade, keypoint_grade},
@@ -516,6 +516,15 @@ struct PairDto {
 struct ResetDto {
     deck: String,
     cards_cleared: usize,
+}
+
+/// The result of `POST /api/import`: the placed file's name and its card
+/// count. Unlike `generate`'s lenient save, an upload that doesn't parse is
+/// rejected outright — see the `/api/import` handler.
+#[derive(Serialize)]
+struct ImportDto {
+    deck: String,
+    cards: usize,
 }
 
 impl AskInfoDto {
@@ -1840,6 +1849,63 @@ pub fn run_review(
                                 cards_cleared: n,
                             },
                         );
+                    }
+                    Err(_) => respond_status(request, 400),
+                }
+            }
+            // Land an uploaded `.tsv`/`.txt` file via `place_deck`. Strict
+            // unlike `generate`'s lenient save: an invalid upload is 400 and
+            // no file remains — the upload still exists on the user's
+            // device, so nothing is lost by refusing to keep a broken copy.
+            (Method::Post, "/api/import") => {
+                #[derive(Deserialize)]
+                struct Body {
+                    name: String,
+                    text: String,
+                    dest: Option<String>,
+                }
+                let Some(b) = serde_json::from_reader::<_, Body>(request.as_reader()).ok() else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                let Some(dir) = resolve_dest(b.dest.as_deref(), &decks_dir, &recent) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                // `.tsv` converts (Anki export); `.txt` is a deck as-is.
+                let text = if b.name.ends_with(".tsv") {
+                    match import::tsv_to_deck(&b.text) {
+                        Ok(t) => t,
+                        Err(_) => {
+                            respond_status(request, 400);
+                            continue;
+                        }
+                    }
+                } else if b.name.ends_with(".txt") {
+                    b.text
+                } else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                match crate::library::place_deck(&dir, &b.name, &text) {
+                    Ok(p) if p.parse_error.is_none() => {
+                        let deck = p
+                            .path
+                            .file_name()
+                            .map(|n| n.to_string_lossy().into_owned())
+                            .unwrap_or_default();
+                        respond_json(
+                            request,
+                            &ImportDto {
+                                deck,
+                                cards: p.cards,
+                            },
+                        );
+                    }
+                    // Uploads are strict: don't keep an invalid deck around.
+                    Ok(p) => {
+                        std::fs::remove_file(&p.path).ok();
+                        respond_status(request, 400);
                     }
                     Err(_) => respond_status(request, 400),
                 }
@@ -3443,6 +3509,21 @@ fn resolve_name(name: &str, known: &HashMap<String, PathBuf>) -> Option<PathBuf>
     known.get(name).cloned()
 }
 
+/// Resolves an add-sheet destination: absent/empty → the served root; a name
+/// → a workspace/folder row's directory, looked up through the same catalog
+/// map `/api/select` uses (never a client-crafted path). `None` = unknown
+/// name — the caller rejects with 400. Tasks 9 and 11 (`generate`, `receive`)
+/// reuse this.
+fn resolve_dest(dest: Option<&str>, decks_dir: &Path, recent: &RecentDecks) -> Option<PathBuf> {
+    let Some(name) = dest.filter(|d| !d.is_empty()) else {
+        return Some(decks_dir.to_path_buf());
+    };
+    picker::catalog(decks_dir, recent)
+        .into_iter()
+        .find(|e| e.name == name && e.path.is_dir())
+        .map(|e| e.path)
+}
+
 /// Builds the focus-drawer payload for a `deck`: its own stored topologies (the
 /// cache can be shared by several decks on one store, so they're scoped by card
 /// membership), each region's per-card strength heatmap and due/new count, and
@@ -3827,6 +3908,36 @@ mod tests {
         );
         // An unknown name (e.g. a traversal attempt) resolves to nothing.
         assert_eq!(resolve_name("../etc/passwd", &known), None);
+    }
+
+    #[test]
+    fn resolve_dest_falls_back_to_decks_dir_and_rejects_unknown_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path().join("english");
+        std::fs::create_dir(&ws).unwrap();
+        std::fs::write(ws.join("a.txt"), "# a\n\tb\n").unwrap();
+        let recent = RecentDecks::load(dir.path().join("recent.json"));
+
+        // Absent/empty → the served root, without touching the catalog.
+        assert_eq!(
+            resolve_dest(None, dir.path(), &recent),
+            Some(dir.path().to_path_buf())
+        );
+        assert_eq!(
+            resolve_dest(Some(""), dir.path(), &recent),
+            Some(dir.path().to_path_buf())
+        );
+        // A known workspace name → its directory.
+        assert_eq!(
+            resolve_dest(Some("english"), dir.path(), &recent),
+            Some(ws.clone())
+        );
+        // An unknown name (or a crafted path) resolves to nothing.
+        assert_eq!(
+            resolve_dest(Some("no-such-workspace"), dir.path(), &recent),
+            None
+        );
+        assert_eq!(resolve_dest(Some("../etc"), dir.path(), &recent), None);
     }
 
     #[test]
@@ -5105,6 +5216,15 @@ mod tests {
                 &dto,
                 json!({"deck": "rust.txt", "cards_cleared": 17}),
             );
+        }
+
+        #[test]
+        fn importdto_wire_shape() {
+            let dto = ImportDto {
+                deck: "kanji.txt".to_string(),
+                cards: 40,
+            };
+            pin("ImportDto", &dto, json!({"deck": "kanji.txt", "cards": 40}));
         }
 
         #[test]

@@ -152,6 +152,17 @@ Target names are an open set (currently include `choices`, `notes`,
 `POST /api/ask/note` condenses the exchange into a deck note. The walk has its
 own mirror: `/api/walk/ask`, `/api/walk/ask/note`, `GET /api/walk/ask`.
 
+### 4.6 Import
+
+`POST /api/import {name, text, dest?}` → `ImportDto`, synchronous. `name`'s
+extension picks the path: `.tsv` converts (Anki export, via
+`import::tsv_to_deck`), `.txt` lands as a deck as-is; anything else is 400.
+`dest` names a workspace/folder row (absent/empty → the served root) — the
+same resolution map `/api/select` uses, never a client-supplied path. Unlike
+`generate`'s lenient save, an upload that doesn't parse is rejected outright:
+400, and the file is removed rather than kept around invalid — the original
+upload still exists on the user's device, so nothing is lost.
+
 ## 5. Endpoint reference
 
 Statuses: all endpoints can additionally return 401 (token) — omitted below.
@@ -191,6 +202,12 @@ Statuses: all endpoints can additionally return 401 (token) — omitted below.
 `/api/reset` wipes a row's stored progress (schedules, virtual cards, mastered
 flag) outright — a typed-name confirmation is client UX, not enforced here; a
 token holder is trusted to call it, the same trust class as `/api/grade`.
+
+### Import
+
+| Method | Path | Body | Response | Errors |
+|---|---|---|---|---|
+| POST | `/api/import` | `{name, text, dest?}` | `ImportDto` | 400 bad body / unrecognized extension / bad TSV / unknown `dest` / parse failure |
 
 ### Ask
 
@@ -417,6 +434,17 @@ The result of `POST /api/reset`: what got wiped.
 A `deck` naming a workspace/folder row resets every member deck it lists, not
 just one file. Example (from the pinned test):
 `{"deck":"rust.txt","cards_cleared":17}`.
+
+### ImportDto
+
+The result of `POST /api/import`: the placed file's name and its card count.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `deck` | string | The written file's name (its `name` after sanitizing to a bare file-name and forcing a `.txt` extension). |
+| `cards` | number | How many cards it parsed to. |
+
+Example (from the pinned test): `{"deck":"kanji.txt","cards":40}`.
 
 ### ExamDto
 
