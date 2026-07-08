@@ -1240,29 +1240,11 @@ fn local_lan_ip() -> Option<std::net::IpAddr> {
     Some(socket.local_addr().ok()?.ip())
 }
 
-/// Renders `text` as a unicode half-block QR (two module rows per line, quiet
-/// zone included), so a phone pairs by scanning the terminal.
+/// Renders `text` as a terminal QR so a phone pairs by scanning; silently
+/// skipped when the text is too long (the printed URL above still works).
 fn print_qr(text: &str) {
-    let Ok(qr) = qrcodegen::QrCode::encode_text(text, qrcodegen::QrCodeEcc::Low) else {
-        return; // too long to encode — the printed URL above still works
-    };
-    let quiet = 2i32;
-    let mut row = -quiet;
-    while row < qr.size() + quiet {
-        let mut line = String::from("  ");
-        for col in -quiet..qr.size() + quiet {
-            // Out-of-range modules read as light, which draws the quiet zone.
-            line.push(
-                match (qr.get_module(col, row), qr.get_module(col, row + 1)) {
-                    (true, true) => '█',
-                    (true, false) => '▀',
-                    (false, true) => '▄',
-                    (false, false) => ' ',
-                },
-            );
-        }
-        println!("{line}");
-        row += 2;
+    if let Some(q) = alix::qr::terminal_blocks(text) {
+        print!("{q}");
     }
 }
 
