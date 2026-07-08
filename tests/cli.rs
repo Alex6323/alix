@@ -94,6 +94,21 @@ fn check_rejects_a_malformed_deck() {
 }
 
 #[test]
+fn workspace_init_writes_both_documented_manifests() {
+    let dir = TempDir::new().unwrap();
+    let ws = dir.path().join("fresh");
+    let out = alix(&["workspace", "init", ws.to_str().unwrap(), "--title", "T"]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let manifest = std::fs::read_to_string(ws.join("alix.toml")).unwrap();
+    assert!(manifest.contains("title = \"T\""), "{manifest}");
+    assert!(manifest.contains("[defaults]"), "headers stay uncommented");
+    let local = std::fs::read_to_string(ws.join("alix.local.toml")).unwrap();
+    assert!(local.contains("[review]"), "headers stay uncommented");
+    assert!(local.contains("never shared"), "{local}");
+    assert!(ws.join("assets").is_dir());
+}
+
+#[test]
 fn stats_on_a_folder_reports_every_deck_inside() {
     let dir = TempDir::new().unwrap();
     write(dir.path(), "alpha.txt", "# a?\n    a\n");

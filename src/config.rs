@@ -534,7 +534,7 @@ impl Default for ReviewConfig {
 }
 
 /// A workspace's personal, unshared pacing override (sibling of `alix.toml`).
-const LOCAL_MANIFEST: &str = "alix.local.toml";
+pub const LOCAL_MANIFEST: &str = "alix.local.toml";
 
 impl ReviewConfig {
     /// Overlays a workspace's `alix.local.toml` `[review]` overrides onto this

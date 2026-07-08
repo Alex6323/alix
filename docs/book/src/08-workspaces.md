@@ -21,8 +21,9 @@ reveal = "line"
 ```
 
 Starting from nothing instead? `alix workspace init <dir>` (`--title` to name
-it) scaffolds an empty workspace — the `alix.toml` plus an `assets/` folder, no
-decks yet — which you grow with
+it) scaffolds an empty workspace — an `alix.toml`, an `alix.local.toml`, and an
+`assets/` folder, no decks yet. Both TOML files come fully commented, each key
+explained inline, so they document themselves. Grow the workspace with
 [`alix generate … --workspace <dir>`](11-generating-decks.md) or
 `alix deck import … --workspace <dir>`. Dependencies (`% requires:`) are still
 edited by hand in the deck files.

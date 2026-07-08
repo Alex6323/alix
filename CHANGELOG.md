@@ -37,8 +37,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   one. The open picker re-scans its catalog when the browser tab regains
   focus, so a deck received (or generated) from the terminal shows up when
   you switch back — no manual refresh.
-- **`alix workspace init <dir>`** scaffolds an empty workspace (an
-  `alix.toml` and an `assets/` folder, no decks) — grow it with
+- **`alix workspace init <dir>`** scaffolds an empty workspace — an
+  `alix.toml`, a personal `alix.local.toml`, and an `assets/` folder, no
+  decks. Both TOML files are written fully commented, every key explained
+  inline, so they document themselves. Grow the workspace with
   `alix generate … --workspace <dir>` or `alix deck import … --workspace
   <dir>`, which write their deck into the workspace.
 - **`stats`, `list`, and `reset` take a deck, a folder, or a workspace.**

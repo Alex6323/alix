@@ -2200,12 +2200,42 @@ fn workspace_init_cmd(args: WorkspaceInitArgs) -> Result<()> {
             .unwrap_or("workspace")
             .to_string(),
     };
-    let manifest = format!("title = {title:?}\n");
+    // Both files are written fully commented (except what must be set), so
+    // they document their own keys — the section headers stay UNcommented
+    // because both parse leniently: a key uncommented outside its table would
+    // be silently ignored.
+    let manifest = format!(
+        "# This workspace's shared manifest — it travels when the folder is shared.\n\
+         \n\
+         title = {title:?}\n\
+         \n\
+         # description = \"one line shown under the title in the picker\"\n\
+         # icon = \"assets/icon.svg\"     # picker emblem (svg/png/jpg/webp); default: assets/icon.*\n\
+         \n\
+         # Deck directives every member deck inherits (a deck's own line wins):\n\
+         \n\
+         [defaults]\n\
+         \n\
+         # reveal = \"flip\"              # flip | cloze | line\n\
+         # order = \"scheduled\"          # scheduled | sequential\n"
+    );
     std::fs::write(args.dir.join("alix.toml"), manifest)
         .with_context(|| format!("cannot write {}/alix.toml", args.dir.display()))?;
+    let local = "# Personal pacing for THIS workspace — never shared (`alix share` leaves it\n\
+         # home). Uncomment a key to override your global [review] config here.\n\
+         \n\
+         [review]\n\
+         \n\
+         # retention = 0.9              # FSRS target recall probability (0.70–0.99)\n\
+         # retire_after = \"1y\"          # a card rests at this interval (\"never\" disables)\n\
+         # max_new = 10                 # max never-seen cards a session introduces\n\
+         # limit = 40                   # cap on total cards per session\n";
+    std::fs::write(args.dir.join(config::LOCAL_MANIFEST), local)
+        .with_context(|| format!("cannot write {}/alix.local.toml", args.dir.display()))?;
     println!(
-        "Initialized {} — add decks with:  alix generate <source> --workspace {}  \
-         or  alix deck import <file.tsv> --workspace {}",
+        "Initialized {} — alix.toml (shared manifest) and alix.local.toml (your\n\
+         personal pacing, never shared) document their keys inline. Add decks:\n\
+         alix generate <source> --workspace {}   or   alix deck import <file.tsv> --workspace {}",
         args.dir.display(),
         args.dir.display(),
         args.dir.display(),
