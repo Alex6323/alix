@@ -282,7 +282,10 @@ fn spawn_job(cmd: &str, args: &[&str], cwd: Option<&Path>) -> Result<ShareJob> {
     std::thread::spawn(move || {
         // Poll-wait so `cancel` never contends with a blocking `wait`.
         loop {
-            let status = waiter.lock().ok().and_then(|mut c| c.try_wait().ok().flatten());
+            let status = waiter
+                .lock()
+                .ok()
+                .and_then(|mut c| c.try_wait().ok().flatten());
             if let Some(status) = status {
                 let _ = tx.send(if status.success() {
                     ShareEvent::Done
@@ -301,7 +304,10 @@ fn spawn_job(cmd: &str, args: &[&str], cwd: Option<&Path>) -> Result<ShareJob> {
 /// leaked personal files, and moves it under `dest_dir` — never overwriting.
 /// Returns the landed name and the stripped (relative) file names.
 pub fn land_received(tmp: &Path, dest_dir: &Path) -> Result<(String, Vec<String>)> {
-    let mut entries: Vec<PathBuf> = std::fs::read_dir(tmp)?.flatten().map(|e| e.path()).collect();
+    let mut entries: Vec<PathBuf> = std::fs::read_dir(tmp)?
+        .flatten()
+        .map(|e| e.path())
+        .collect();
     let Some(got) = entries.pop().filter(|_| entries.is_empty()) else {
         bail!("expected exactly one received file or folder");
     };
@@ -429,16 +435,17 @@ mod tests {
     fn a_send_job_reports_the_code_then_done() {
         let _lock = crate::testutil::exec_lock();
         let dir = tempfile::tempdir().unwrap();
-        let fake = crate::testutil::fake_cli(
-            dir.path(),
-            "echo 'Wormhole code is: 7-alpha-bravo'\nexit 0",
-        );
+        let fake =
+            crate::testutil::fake_cli(dir.path(), "echo 'Wormhole code is: 7-alpha-bravo'\nexit 0");
         let job = spawn_job(&fake.to_string_lossy(), &["send", "x"], None).unwrap();
         let mut got = Vec::new();
         while let Ok(ev) = job.events.recv_timeout(std::time::Duration::from_secs(10)) {
             got.push(ev);
         }
-        assert!(matches!(got.first(), Some(ShareEvent::Code(c)) if c == "7-alpha-bravo"), "{got:?}");
+        assert!(
+            matches!(got.first(), Some(ShareEvent::Code(c)) if c == "7-alpha-bravo"),
+            "{got:?}"
+        );
         assert!(matches!(got.last(), Some(ShareEvent::Done)), "{got:?}");
     }
 
