@@ -233,7 +233,10 @@ to this codebase. When in doubt, mirror the surrounding code.
   (`#[serde(default)]` is a fine soft break). **Don't propose a store version bump pre-1.0.**
 - **No new dependency without a one-line reason.** Each crate added is permanent
   maintenance and supply-chain surface — reach for std or an existing dep first,
-  and when a new one genuinely earns its place, say why in the commit.
+  and when a new one genuinely earns its place, say why in the commit. The
+  Cargo.toml comment states only what the dep is *for* (its purpose, one line);
+  the justification against these rules goes in the commit message, never into
+  the file.
 - **Counterweight to the above: don't hand-roll a correctness-critical commodity.** A standard,
   well-specified algorithm (scheduler, standard-format parser, crypto) should come from a
   maintained crate — re-implementing it from a spec is the *higher*-risk choice. Separate a

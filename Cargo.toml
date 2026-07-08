@@ -28,7 +28,7 @@ tiny_http = "0.12"
 tempfile = "3" # scratch dirs for staging `alix share` and landing `alix receive`
 toml = "1"
 twox-hash = "2"
-zip = { version = "8.6.0", default-features = false, features = ["deflate"] } # `alix share --zip` — a correct ZIP writer is a commodity, not hand-rolled
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] } # the .zip archives of `alix share --zip` / `alix receive`
 
 [dev-dependencies]
 
