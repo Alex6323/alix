@@ -966,6 +966,9 @@ fn launch(args: LaunchArgs) -> Result<()> {
     // global default, or the scoped root's own file).
     let store = open_store(instance_store.clone())?;
     let addr = serve_addr(args.port, args.lan, &config);
+    // Bind before announcing, so a taken port errors instead of printing a
+    // success-looking URL first (likely with several instances running).
+    let server = serve::bind(addr)?;
     // The instance-wide session pacing: flag > `[review]` config > default.
     let pacing = Pacing {
         max_new: args.new.or(config.review.max_new).unwrap_or(10),
@@ -1062,7 +1065,7 @@ fn launch(args: LaunchArgs) -> Result<()> {
         store,
         recent,
         decks_dir,
-        addr,
+        server,
         opts,
         build,
         build_walk,
@@ -1072,16 +1075,29 @@ fn launch(args: LaunchArgs) -> Result<()> {
 }
 
 /// Prints where the web frontend is reachable, plus pairing info (host/port/
-/// token) when it is exposed to the network with a token — or a warning when
-/// exposed without one.
+/// token, and a scannable QR of the pairing URL) when it is exposed to the
+/// network with a token — or a warning when exposed without one.
 fn announce(addr: SocketAddr, lan: bool, token: Option<&str>, label: &str) {
     println!("Serving {label} in the browser.");
     match (lan, token) {
         (true, Some(t)) => {
             let port = addr.port();
-            println!("On another device, open in a browser:");
-            println!("  http://<this-machine's-IP>:{port}/?token={t}");
-            println!("Or pair the app with:  host <this-machine's-IP>  port {port}  token {t}");
+            match local_lan_ip() {
+                Some(ip) => {
+                    let url = format!("http://{ip}:{port}/?token={t}");
+                    println!("On another device, open in a browser (or scan):");
+                    println!("  {url}");
+                    print_qr(&url);
+                    println!("Or pair the app with:  host {ip}  port {port}  token {t}");
+                }
+                None => {
+                    println!("On another device, open in a browser:");
+                    println!("  http://<this-machine's-IP>:{port}/?token={t}");
+                    println!(
+                        "Or pair the app with:  host <this-machine's-IP>  port {port}  token {t}"
+                    );
+                }
+            }
         }
         (true, None) => {
             println!("Listening on all interfaces, port {}.", addr.port());
@@ -1090,6 +1106,40 @@ fn announce(addr: SocketAddr, lan: bool, token: Option<&str>, label: &str) {
         (false, _) => println!("Open http://127.0.0.1:{} in your browser.", addr.port()),
     }
     println!("Press Ctrl-C to stop.");
+}
+
+/// This machine's LAN-facing IP, found by "connecting" a UDP socket outward —
+/// a routing-table lookup only; no packet is ever sent. `None` when it can't
+/// be determined (no route), in which case the announce falls back to the
+/// `<this-machine's-IP>` placeholder.
+fn local_lan_ip() -> Option<std::net::IpAddr> {
+    let socket = std::net::UdpSocket::bind(("0.0.0.0", 0)).ok()?;
+    socket.connect(("8.8.8.8", 80)).ok()?;
+    Some(socket.local_addr().ok()?.ip())
+}
+
+/// Renders `text` as a unicode half-block QR (two module rows per line, quiet
+/// zone included), so a phone pairs by scanning the terminal.
+fn print_qr(text: &str) {
+    let Ok(qr) = qrcodegen::QrCode::encode_text(text, qrcodegen::QrCodeEcc::Low) else {
+        return; // too long to encode — the printed URL above still works
+    };
+    let quiet = 2i32;
+    let mut row = -quiet;
+    while row < qr.size() + quiet {
+        let mut line = String::from("  ");
+        for col in -quiet..qr.size() + quiet {
+            // Out-of-range modules read as light, which draws the quiet zone.
+            line.push(match (qr.get_module(col, row), qr.get_module(col, row + 1)) {
+                (true, true) => '█',
+                (true, false) => '▀',
+                (false, true) => '▄',
+                (false, false) => ' ',
+            });
+        }
+        println!("{line}");
+        row += 2;
+    }
 }
 
 /// The `list` label for one depth's schedule: the FSRS state name when the

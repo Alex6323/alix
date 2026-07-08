@@ -1381,17 +1381,28 @@ impl Augmenting {
     }
 }
 
-/// Serves review at `addr` until the process is stopped, opening on the
+/// Serves review on the already-bound `server` until the process is stopped
+/// (binding happens at the call site, *before* the URL is announced — so a
+/// port clash errors before any success-looking output), opening on the
 /// in-browser deck-selection screen; picking decks (`POST /api/select`)
 /// calls `build` to construct a session in place.
 /// `build` borrows the shared `store` and `recent`, so all sessions write one
 /// history and update the recent-decks list, exactly like the CLI.
+/// Binds the server socket — separated from [`run_review`] so a port clash
+/// errors before the caller announces a URL, and with the multi-instance
+/// remedy in the message.
+pub fn bind(addr: SocketAddr) -> Result<Server> {
+    Server::http(addr).map_err(|e| {
+        anyhow!("cannot start the server on {addr}: {e} — is another alix using this port? try --port")
+    })
+}
+
 #[expect(clippy::too_many_arguments)] // each is a distinct, named server input
 pub fn run_review(
     mut store: Store,
     mut recent: RecentDecks,
     decks_dir: PathBuf,
-    addr: SocketAddr,
+    server: Server,
     opts: ReviewOptions,
     mut build: impl FnMut(
         Vec<PathBuf>,
@@ -1444,7 +1455,6 @@ pub fn run_review(
     // Workspace icons resolved while building the picker, served via `/img/` at
     // launcher time (when no review/browse session owns the registry).
     let mut launcher_icons: HashMap<String, PathBuf> = HashMap::new();
-    let server = Server::http(addr).map_err(|e| anyhow!("cannot start server on {addr}: {e}"))?;
     for mut request in server.incoming_requests() {
         let method = request.method().clone();
         let path = request_path(&request);

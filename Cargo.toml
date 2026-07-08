@@ -18,6 +18,7 @@ chrono = { version = "0.4.45", default-features = false, features = ["clock", "s
 clap = { version = "4", features = ["derive"] }
 directories = "6"
 getrandom = "0.2" # portable OS CSPRNG for the serve pairing token (already a transitive dep)
+qrcodegen = "1.8.0" # zero-dep QR encoder for the terminal pairing QR (`--lan`)
 rs-fsrs = { version = "1.2.1", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
