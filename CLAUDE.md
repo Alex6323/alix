@@ -3,7 +3,7 @@
 `alix` is an **AI-augmented** spaced-repetition learning tool in Rust,
 web-first (bare `alix` opens its web frontend). On top of a plain-text
 flashcard core, an AI backend is woven in: an in-session tutor on any card, AI
-deck generation (`alix deck`), and the **AI exam** that gates
+deck/workspace generation (`alix generate`), and the **AI exam** that gates
 progression on verified understanding. The AI backend is pluggable (`[ask]
 backend` — Claude by default; Gemini, Codex, and Copilot also supported). The
 tool is increasingly AI-centric — weight that when prioritizing. The **library
@@ -15,7 +15,10 @@ Native mobile thin clients (Android/iOS) are anticipated, consuming these same
 web endpoints — so treat the web JSON API as a **client-agnostic contract**:
 review flow and session state live in the lib behind presentation-agnostic
 endpoints, never in page JS (a native client can't reuse logic trapped in the
-page). alix itself stays a plain bind-to-interface HTTP server — reaching it
+page). The contract is written down in `docs/API.md`, pinned by the
+`mod contract` snapshot tests in `src/serve.rs` (which also emit the
+`tests/contracts/*.json` codegen corpus) — change code, doc, and CHANGELOG
+together. alix itself stays a plain bind-to-interface HTTP server — reaching it
 beyond the LAN is an operator deployment choice (VPN/reverse proxy), not a
 TLS/auth/accounts subsystem to grow here.
 
@@ -102,13 +105,13 @@ noisy diff the way you'd treat a failing test: not done yet.
 | `make coverage` | Coverage report via `cargo-llvm-cov` (HTML). |
 | `make eval` | Real-Claude grader-calibration evals (`tests/eval.rs`, costed) — before touching `grade_*`. |
 | `make run ARGS="stats mydeck.txt"` | Run the binary with args. |
-| `make serve ARGS="review mydeck.txt"` | Web frontend (`--serve`); no ARGS → in-browser picker. |
+| `make serve ARGS="~/decks-test"` | Web frontend; no ARGS → the picker over the configured decks dir. |
 | `make book` | Serve the mdBook manual (`docs/book`), live reload. |
 | `make site` | Preview the `alix.study` landing page locally (`site/`). |
 | `make install` | `cargo install --path .`. |
 | `make clean` | `cargo clean`. |
 | `make heartbeat` | Release heartbeat — is shipped work piling up unreleased? (see below). |
-| `make check-backends` | End-to-end probe of all four backends (real tiny request; needs logins). Maintainer-only. |
+| `make check-backends` | `alix doctor --all-backends` (real tiny request per backend; needs logins). Maintainer-only. |
 
 **Release heartbeat — run `make heartbeat` at the start of a session.** It reports
 the `CHANGELOG.md [Unreleased]` entry count and days since the last `vX.Y.Z` tag;

@@ -94,6 +94,13 @@ remembering your choice in the browser (kept in `localStorage`, not the config).
 The palette lives in a shared `theme.css` the
 server hosts, so every screen — review, browse, and trace walks — themes together.
 
+## Building a client?
+
+The JSON API the web app itself speaks is a documented, client-agnostic
+contract: `docs/API.md` in the repository — endpoints, DTO field tables, the
+flows, and the stability rules — with every response shape pinned by snapshot
+tests. Native or alternative clients build against that file.
+
 ## Local by design
 
 The server is deliberately local-only — no accounts, no database. By default it

@@ -116,7 +116,8 @@ make fmt     # format (nightly rustfmt, not plain cargo fmt)
 make serve   # run the web frontend
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+Building a client? The web JSON API is a documented contract:
+[docs/API.md](docs/API.md). See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

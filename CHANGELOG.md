@@ -7,6 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **`docs/API.md` — the web JSON API is now a written, tested contract.**
+  Endpoints, DTO field tables with nullability, the flows (select→state→grade,
+  walk, exam, augment, ask), auth, and the stability rules clients may rely on
+  (unknown fields must be ignored; enum vocabularies are open sets unless
+  marked closed). Every response shape is pinned by full-object snapshot tests
+  (`mod contract`), which also emit `tests/contracts/*.json` — canonical
+  examples and a codegen corpus for client models.
 - **Cram is back — as a tick-box in the picker's Learn ▾ menu** (key `c`,
   rebindable as `[keys.picker] cram`), combining with any depth; plain Learn
   never crams. Its semantics got honest and due-aware: cram only changes
@@ -60,6 +67,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and mastered flags together, under one blast-radius confirmation.
 
 ### Changed
+- **Breaking (API): three contract shapes normalized before the freeze.**
+  `WalkDto.verdict` sends `passed`/`partly`/`failed` machine tokens instead
+  of English display labels; `POST /api/walk/leave` returns the picker
+  `StateDto` like every other closer (was a bare 204); a trace exam's re-sit
+  cooldown is an `ExamDto` in a new `cooldown` phase with `cooldown_ms` set
+  (was an untagged `{cooldown_ms}` object).
 - **Breaking: one `generate` verb for all AI authoring — `explore`, `trace`,
   `deck generate`, and `deck check` are removed.** `alix generate <source>`
   routes by the source: a URL/file becomes one deck; a directory is explored

@@ -5,10 +5,12 @@ contract for any other client (native mobile, alternative web UIs). The library
 crate is the single source of logic; this server surface is a thin consumer, and
 so is every client.
 
-> **Draft status.** This is a first transcription of the live surface (v0.3.x).
-> The contract snapshot tests that pin these shapes are not written yet, and a
-> handful of already-planned changes are marked **PLANNED** inline. Expect this
-> file to move with the code until those land.
+> **Teeth.** Every response shape below is pinned by full-object snapshot
+> tests (`mod contract` in `src/serve.rs`); the pinned examples are emitted to
+> `tests/contracts/*.json` — the canonical machine-readable examples, and the
+> input corpus for client-model codegen (e.g. quicktype → Dart). A shape
+> change fails CI and names the section here to update. Code, this file, and
+> the CHANGELOG move in one commit.
 
 ## 0. Stability & versioning
 
@@ -89,12 +91,14 @@ so is every client.
 1. `GET /api/decks` → the picker catalog (`DeckListDto`). Deck `name` values
    are the only keys `/api/select` accepts — names never contain filesystem
    paths, and requests cannot construct paths.
-2. `POST /api/select {deck, topology?, region?, depth?}` builds a session.
-   **The response is either a `StateDto` or a `WalkDto` — branch on `kind`
-   (`"review"` | `"walk"`) before anything else.** A trace deck walks; a fact
-   deck reviews. `depth` is `"recognize" | "recall" | "reconstruct"` *(closed)*;
-   omitted → the deck's remembered last depth.
-   **PLANNED:** optional `cram: bool`, `max_new`, `limit` fields.
+2. `POST /api/select {deck, topology?, region?, depth?, cram?, max_new?,
+   limit?}` builds a session. **The response is either a `StateDto` or a
+   `WalkDto` — branch on `kind` (`"review"` | `"walk"`) before anything
+   else.** A trace deck walks; a fact deck reviews. `depth` is
+   `"recognize" | "recall" | "reconstruct"` *(closed)*; omitted → the deck's
+   remembered last depth. `cram` (default false) also queues cards that
+   aren't due — a due card still grades as a normal review. `max_new` /
+   `limit` override the instance's session pacing for this launch.
 3. Render from `StateDto` (`phase:"review"`, `card`, `mode`, `depth`, counts).
    For typed checks call `POST /api/check {lines, ordered?}`; for a
    multiple-choice pick call `POST /api/choose {index}`. **Both are evidence
@@ -118,9 +122,8 @@ so is every client.
 `POST /api/walk/predict {text}`; grade with `POST /api/walk/grade {delta}`
 where `delta` is a single key `"g"|"p"|"m"` (got it / partly / missed). With
 auto-grade on, poll `GET /api/walk` while `thinking`. `POST /api/walk/restart`
-rewalks; `POST /api/walk/leave` exits — it returns **204 No Content** (the one
-endpoint that does; every other closer returns a fresh `StateDto`), then fetch
-`GET /api/state`.
+rewalks; `POST /api/walk/leave` exits and, like every closer, returns the
+picker `StateDto`.
 
 ### 4.3 The exam
 
@@ -130,9 +133,8 @@ endpoint that does; every other closer returns a fresh `StateDto`), then fetch
 `POST /api/exam/answer {text, goto?}` saves and moves; `POST /api/exam/grade
 {text}` submits the last answer and starts grading; `POST /api/exam/remediate`
 generates remediation cards after a fail; `POST /api/exam/close` → `StateDto`.
-**Quirk:** when a trace re-sit is cooling down, `/api/exam/start` returns
-`{"cooldown_ms": <u64>}` instead of an `ExamDto` — sniff for the key.
-**PLANNED:** this may fold into `ExamDto` as a `"cooldown"` phase.
+When a trace re-sit is cooling down, `/api/exam/start` returns an `ExamDto`
+in the `"cooldown"` phase with `cooldown_ms` set — one shape per endpoint.
 
 ### 4.4 Augment
 
@@ -170,7 +172,7 @@ Statuses: all endpoints can additionally return 401 (token) — omitted below.
 
 | Method | Path | Body | Response | Errors |
 |---|---|---|---|---|
-| POST | `/api/select` | `{deck, topology?, region?, depth?}` | `StateDto` \| `WalkDto` (branch on `kind`) | 400 bad body / unknown deck / build failure |
+| POST | `/api/select` | `{deck, topology?, region?, depth?, cram?, max_new?, limit?}` | `StateDto` \| `WalkDto` (branch on `kind`) | 400 bad body / unknown deck / build failure |
 | POST | `/api/browse` | `{deck}` | `BrowseDto` | 400 (same causes) |
 | POST | `/api/deck-topology` | `{deck}` | `DeckTopologyDto` | never errors — empty DTO on any failure |
 | POST | `/api/deselect` | – | `StateDto` | – |
@@ -195,7 +197,7 @@ Statuses: all endpoints can additionally return 401 (token) — omitted below.
 
 | Method | Path | Body | Response | Errors |
 |---|---|---|---|---|
-| POST | `/api/exam/start` | `{deck}` | `ExamDto` **or** `{cooldown_ms}` | 400 unknown deck; 409 not examable / locked |
+| POST | `/api/exam/start` | `{deck}` | `ExamDto` (phase `cooldown` when a re-sit is cooling down) | 400 unknown deck; 409 not examable / locked |
 | GET | `/api/exam` | – | `ExamDto` (poll) | 409 |
 | POST | `/api/exam/answer` | `{text, goto?}` | `ExamDto` | 409 |
 | POST | `/api/exam/grade` | `{text}` | `ExamDto` | 409 |
@@ -223,7 +225,7 @@ Statuses: all endpoints can additionally return 401 (token) — omitted below.
 | POST | `/api/walk/ask` | `{question}` | `AskDto` | 409 |
 | GET | `/api/walk/ask` | – | `AskDto` | 409 |
 | POST | `/api/walk/ask/note` | – | `AskDto` | 409 |
-| POST | `/api/walk/leave` | – | **204, empty** | 409 |
+| POST | `/api/walk/leave` | – | `StateDto` | 409 |
 
 ### Images
 
@@ -238,7 +240,10 @@ contract — native clients need it to show card images.
 ## 6. DTO reference
 
 Types are JSON types; `?` = nullable (still always present). Anchors are the
-Rust struct names — `grep 'struct StateDto' src/serve.rs` finds the other side.
+Rust struct names — `grep 'struct StateDto' src/serve.rs` finds the other
+side. Canonical example payloads live in `tests/contracts/<Anchor>.json`,
+emitted by the very tests that pin these shapes — always in sync by
+construction.
 
 ### StateDto
 
@@ -363,7 +368,7 @@ choice index is disclosed.
 
 | Key | Type | Meaning |
 |---|---|---|
-| `phase` | string | `generating` \| `answering` \| `grading` \| `results` \| `remediating` \| `remediated` *(closed today; a `cooldown` phase is PLANNED)*. |
+| `phase` | string | `generating` \| `answering` \| `grading` \| `results` \| `remediating` \| `remediated` \| `cooldown` *(closed)*. |
 | `deck` | string | Deck name. |
 | `strictness` | string | `strict` \| `balanced` \| `lenient` *(closed)*. |
 | `total` / `current` | number | Question count / current index. |
@@ -380,6 +385,7 @@ choice index is disclosed.
 | `thinking` | bool | Poll while true. |
 | `error` | string? | |
 | `elapsed` | number? | Seconds the in-flight call has run. |
+| `cooldown_ms` | number? | Milliseconds until a failed trace exam can be re-sat — set only in the `cooldown` phase. |
 
 ### ExamGradeDto
 
@@ -413,7 +419,7 @@ choice index is disclosed.
 | `note` | string? | |
 | `auto_grade` | bool | AI judges the prediction. |
 | `thinking` | bool | Poll while an auto-grade is in flight. |
-| `verdict` | string? | **Currently human display labels** (`"Got it"` / `"Partly"` / `"Missed it"`) — do not parse as an enum. PLANNED: machine tokens. |
+| `verdict` | string? | The auto-grade's verdict: `passed` \| `partly` \| `failed` *(closed — the same tokens as `HopDto.delta`)*. |
 | `feedback` | string? | |
 | `grade_error` | string? | |
 | `summary` | SummaryDto? | Present at `done`. |
@@ -437,20 +443,24 @@ they may change without notice and native clients must not depend on them:
 - `GET /api/keys`, `/api/picker-keys`, `/api/browse-keys` — desktop keyboard
   binding maps (`KeyboardEvent.key` values) for the page's shortcut system.
 
-## 8. Known gaps & quirks
+## 8. Known quirks
 
-- **Session pacing is CLI-only**: `max_new` / `limit` / `cram` are fixed at
-  server startup; `/api/select` cannot set them. **PLANNED:** optional fields
-  on `/api/select`.
-- **Three verdict vocabularies** exist: grade tokens (`passed`/`partly`/
-  `failed`, lowercase), exam verdicts (`PASS`/`PARTIAL`/`FAIL`, uppercase),
-  and `WalkDto.verdict` human labels. The first two are stable, distinct
-  domains; the walk labels are a wart (PLANNED: machine tokens).
+- **Two verdict vocabularies** remain, deliberately: self-grade tokens
+  (`passed`/`partly`/`failed`, lowercase — grades, walk deltas and verdicts)
+  and AI-exam verdicts (`PASS`/`PARTIAL`/`FAIL`, uppercase). Distinct
+  domains, both closed sets.
 - **`/api/deck-topology` never errors** (empty DTO on any failure) and an
   empty `POST /api/ask` silently does nothing — clients cannot distinguish
   "none" from "bad request" there.
-- **`/api/walk/leave` is the lone 204**; every other closer returns `StateDto`.
-  (PLANNED: normalize.)
 - **Request bodies are documented here but not snapshot-tested** (responses
-  will be). Body field names come from the same Rust-field convention.
+  are). Body field names come from the same Rust-field convention.
 - **No CORS** (see §3) — a browser client must be served same-origin by alix.
+
+## 9. Planned surface (additive)
+
+The picker-self-sufficiency wave adds endpoints for: deck **generation from a
+URL**, TSV **import upload**, **share** (wormhole code shown in the UI) and
+**receive** (paste a code), **reset** from the UI, a **doctor report**
+(`GET /api/doctor`-style, free checks only), and a **pairing QR sheet**
+(`GET /api/pair` returning the pairing URL + a server-rendered SVG). All
+additive under §0's rules — clients that ignore unknown surface are unaffected.
