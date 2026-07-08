@@ -219,6 +219,14 @@ impl ShareJob {
     }
 }
 
+impl Drop for ShareJob {
+    /// An abandoned job must not leave a wormhole process running — dropping
+    /// cancels. Killing an already-exited child is a harmless no-op.
+    fn drop(&mut self) {
+        self.cancel();
+    }
+}
+
 /// Spawns `wormhole send <path>` for a UI, scanning its output for the code.
 pub fn send_spawn(path: &Path) -> Result<ShareJob> {
     spawn_job("wormhole", &["send", &path.to_string_lossy()], None)
@@ -447,6 +455,20 @@ mod tests {
         })
         .last();
         assert!(matches!(last, Some(ShareEvent::Error(_))), "{last:?}");
+    }
+
+    #[test]
+    fn cancelling_a_running_job_reports_an_error_event_promptly() {
+        let _lock = crate::testutil::exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let fake = crate::testutil::fake_cli(dir.path(), "sleep 30");
+        let job = spawn_job(&fake.to_string_lossy(), &["send", "x"], None).unwrap();
+        job.cancel();
+        let ev = job
+            .events
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        assert!(matches!(ev, ShareEvent::Error(_)), "{ev:?}");
     }
 
     #[test]
