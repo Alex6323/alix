@@ -654,10 +654,11 @@ fn undersized_local_source_proceeds_without_yes() {
 }
 
 #[test]
-fn a_directory_source_bails_on_a_populated_workspace_before_exploring() {
-    // The destination check must fire before the costed exploration — a plan
-    // pass that runs first burns real tokens on a build that then dies at the
-    // materialize guard.
+fn a_populated_workspace_no_longer_blocks_the_build() {
+    // A populated `--workspace` used to bail before exploring (added, then
+    // reverted the same day, once staging-then-merge landed): the build now
+    // always stages and merges, so a populated destination must never stop
+    // the run before it even reaches exploration/the backend.
     let dir = TempDir::new().unwrap();
     let src = dir.path().join("src");
     std::fs::create_dir_all(&src).unwrap();
@@ -680,16 +681,12 @@ fn a_directory_source_bails_on_a_populated_workspace_before_exploring() {
     ]);
     let err = stderr(&out);
     assert!(
-        !out.status.success(),
-        "must refuse the populated dir: {err}"
+        !err.contains("already has files"),
+        "the populated-dest guard is gone: {err}"
     );
     assert!(
-        err.contains("already has files"),
-        "names the collision + the fix: {err}"
-    );
-    assert!(
-        !err.contains("Exploring"),
-        "must bail before any costed exploration: {err}"
+        err.contains("is it installed") || err.contains("nonexistent"),
+        "should get past the destination check to the exploration/backend failure: {err}"
     );
 }
 

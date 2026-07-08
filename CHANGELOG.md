@@ -7,10 +7,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
-- `alix generate <dir>` now checks the destination workspace *before* the
-  costed exploration: a populated directory fails immediately (same message,
-  same `--force` escape) instead of after the plan-and-fill passes have
-  already burned their tokens.
+- `alix generate <dir>` (workspace build) no longer blocks on, or touches, a
+  populated destination. The build always stages into a scratch dir first,
+  then merges the new files in one by one: a name already present in the
+  destination keeps your original untouched and reports the new version's
+  location (in the kept-around staging dir) instead of failing the whole run
+  or overwriting anything. `--force` overwrites collisions.
 
 ### Added
 - **`docs/API.md` — the web JSON API is now a written, tested contract.**

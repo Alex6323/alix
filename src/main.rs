@@ -1929,19 +1929,6 @@ fn generate_cmd(args: GenerateArgs) -> Result<()> {
     // A directory source is explored first; the plan's size decides.
     if src_path.is_dir() && !args.deck {
         let source = canonical_source(&args.source);
-        // Check the destination before the costed exploration, not after: a
-        // doomed build caught only at write time (materialize's guard) burns
-        // the whole plan-and-fill spend for nothing.
-        let dest = workspace_dest(&args, &config, &source)?;
-        let populated = std::fs::read_dir(&dest)
-            .map(|mut d| d.next().is_some())
-            .unwrap_or(false);
-        if populated && !args.force {
-            bail!(
-                "{} already has files — choose a new directory or pass --force",
-                dest.display()
-            );
-        }
         preflight_source(&source, config.ask.preflight_threshold, args.yes)?;
         eprintln!(
             "Exploring {source} for a learning plan toward \"{goal}\" (one pass — \
@@ -1993,8 +1980,11 @@ fn workspace_dest(args: &GenerateArgs, config: &Config, source: &str) -> Result<
 }
 
 /// Builds a workspace from a multi-item plan: confirm, then explore + fill in
-/// one session (a second exploration — the coherent fill needs its own pass)
-/// and materialize into the destination. Ported from the old `explore --build`.
+/// one session (a second exploration — the coherent fill needs its own pass),
+/// materialize into a scratch staging dir, and merge that into the
+/// destination — so a populated destination never blocks the build or loses a
+/// file (a name collision keeps the user's original; `--force` overwrites).
+/// Ported from the old `explore --build`.
 fn build_workspace(
     args: &GenerateArgs,
     config: &Config,
@@ -2019,28 +2009,53 @@ fn build_workspace(
     );
     let (plan, filled) = alix::explore::explore_and_fill(source, goal, &config.trace, &config.ask)?;
     println!("{plan}");
-    let report = alix::explore::materialize(
+
+    // Materialize into a fresh staging dir beside the destination, then merge
+    // the new files in one by one: a populated destination never blocks the
+    // build or loses a file, and exploration tokens are never wasted on a
+    // doomed run — a name collision just keeps the user's original.
+    let staging_name = format!(
+        ".{}.building",
+        dir.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("workspace")
+    );
+    let staging = dir.with_file_name(staging_name);
+    let _ = std::fs::remove_dir_all(&staging);
+    let materialized = alix::explore::materialize(
         &plan,
-        &dir,
+        &staging,
         goal,
         args.title.as_deref(),
         source,
-        args.force,
         Some(&filled),
     )?;
-    let total = report.traces + report.decks;
-    let stubs = total - report.filled;
+    let merged = alix::explore::merge_built(&staging, &dir, args.force)?;
+
+    let total = materialized.traces + materialized.decks;
+    let stubs = total - materialized.filled;
     println!(
         "\n{BOLD}Built {total} files{RESET} in {} — {} filled, {stubs} stub(s) \
          ({} traces, {} decks).",
-        report.dir.display(),
-        report.filled,
-        report.traces,
-        report.decks,
+        dir.display(),
+        materialized.filled,
+        materialized.traces,
+        materialized.decks,
     );
+    if merged.conflicts.is_empty() {
+        let _ = std::fs::remove_dir_all(&staging);
+    } else {
+        for name in &merged.conflicts {
+            eprintln!(
+                "kept yours: {name} — the new version is at {}/{name}",
+                staging.display()
+            );
+        }
+        eprintln!("re-run with --force to overwrite, or move them in by hand.");
+    }
     // Freeze each cited deck's source into the workspace's `assets/` so its
     // locators never drift and the workspace is self-contained.
-    match alix::explore::snapshot_workspace(&report.dir) {
+    match alix::explore::snapshot_workspace(&dir) {
         Ok(summary) => {
             if summary.decks > 0 {
                 println!(
@@ -2048,7 +2063,7 @@ fn build_workspace(
                      the citations won't drift.{RESET}",
                     summary.files,
                     summary.decks,
-                    report.dir.display(),
+                    dir.display(),
                 );
             }
             for failed in &summary.failed {
@@ -2060,22 +2075,22 @@ fn build_workspace(
     // A workspace icon: the user's file if given, else an abstract emblem the
     // model draws from what it just built. Best-effort — never fails the build.
     match args.icon.as_deref() {
-        Some(src) => match alix::icon::install(&report.dir, src) {
+        Some(src) => match alix::icon::install(&dir, src) {
             Ok(_) => println!(
                 "{DIM}Installed the workspace icon into {}/assets.{RESET}",
-                report.dir.display()
+                dir.display()
             ),
             Err(e) => eprintln!("warning: could not install the workspace icon: {e:#}"),
         },
-        None => match alix::icon::generate(&report.dir, &config.ask) {
+        None => match alix::icon::generate(&dir, &config.ask) {
             Ok(_) => println!(
                 "{DIM}Drew a workspace icon into {}/assets.{RESET}",
-                report.dir.display()
+                dir.display()
             ),
             Err(e) => eprintln!("warning: could not draw a workspace icon: {e:#}"),
         },
     }
-    println!("{DIM}Open it:  alix {}{RESET}", report.dir.display());
+    println!("{DIM}Open it:  alix {}{RESET}", dir.display());
     Ok(())
 }
 

@@ -391,9 +391,8 @@ fn build_workspace(
     let source: &str = &source_text;
     let (plan, filled) = alix::explore::explore_and_fill(source, goal, &config.trace, &config.ask)
         .context("explore/fill failed")?;
-    let report =
-        alix::explore::materialize(&plan, ws, goal, Some(title), source, false, Some(&filled))
-            .context("failed to materialize the workspace")?;
+    let report = alix::explore::materialize(&plan, ws, goal, Some(title), source, Some(&filled))
+        .context("failed to materialize the workspace")?;
     if let Err(e) = alix::explore::snapshot_workspace(&report.dir) {
         eprintln!("warning: source snapshot failed: {e}");
     }

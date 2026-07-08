@@ -45,8 +45,17 @@ cited deck — traces and fact decks with
 the workspace's `assets/`, so it's self-contained and its locators never drift.
 
 The destination is `--workspace <dir>`, defaulting to a folder named after the
-source under your decks directory. (It refuses a non-empty folder unless you
-pass `--force`.)
+source under your decks directory.
+
+### Populated destinations
+
+Pointing a build at a destination that already has files never blocks the run
+or loses anything: `alix` builds into a scratch staging folder next to it
+first, then moves the new files in one by one. A name that's already there
+keeps your existing file untouched — the new version stays behind in the
+staging folder, reported at the end so you can compare and move it in by
+hand — while everything else lands normally. Pass `--force` to overwrite
+collisions instead.
 
 This is the tool's high-water mark: name what you want to understand, and `alix`
 assembles a dependency-ordered curriculum of facts and traces — gated by

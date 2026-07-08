@@ -15,14 +15,14 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 
 use crate::{
     ask,
     backend::ensure_source_reachable,
     config::{AskConfig, TraceConfig},
     deck::{Deck, is_url},
-    title,
+    share, title,
     trace::{self, build_run_config, clean_to_cards, resolve_source},
     workspace,
 };
@@ -434,14 +434,17 @@ fn parse_item_header(t: &str) -> Option<(usize, Kind, String)> {
 /// an empty `[defaults]`) and one stub file per item — a `% trace:` deck for a
 /// trace, a `% title:` facts deck for a deck — wired by `% requires:` (item
 /// numbers mapped to the member file names), with each `% source:` rewritten
-/// absolute against the source root. Refuses a non-empty `dir` unless `force`.
+/// absolute against the source root. `dir` is created if missing; materialize
+/// itself takes no view on a populated `dir` — callers that write straight
+/// into a real destination decide that (`alix generate` instead stages into a
+/// scratch dir and [`merge_built`]s the result, so a populated destination
+/// never blocks it).
 pub fn materialize(
     plan: &str,
     dir: &Path,
     goal: &str,
     title: Option<&str>,
     source: &str,
-    force: bool,
     filled: Option<&HashMap<usize, String>>,
 ) -> Result<Materialized> {
     let mut items = parse_plan(plan);
@@ -453,19 +456,7 @@ pub fn materialize(
     for item in &mut items {
         item.title = title::condense(&item.title);
     }
-    if dir.exists() {
-        let non_empty = fs::read_dir(dir)
-            .map(|mut d| d.next().is_some())
-            .unwrap_or(false);
-        if non_empty && !force {
-            bail!(
-                "{} already has files — choose a new directory or pass --force",
-                dir.display()
-            );
-        }
-    } else {
-        fs::create_dir_all(dir)?;
-    }
+    fs::create_dir_all(dir).with_context(|| format!("cannot create {}", dir.display()))?;
 
     let root = if is_url(source) {
         None
@@ -555,6 +546,47 @@ pub fn materialize(
         decks,
         filled: filled_count,
     })
+}
+
+/// What a merge did: how many files moved in, and the conflicts that
+/// kept the user's originals (the new files stay in `staging`).
+pub struct MergeReport {
+    pub moved: usize,
+    pub conflicts: Vec<String>,
+}
+
+/// Moves everything materialized in `staging` into `dest` (created if
+/// missing), one top-level entry at a time. A name that already exists in
+/// `dest` is a conflict: the existing file is kept and the new one stays
+/// in `staging` — unless `force`, which replaces it. Directories (assets/)
+/// follow the same top-level rule; their contents are not merged inside.
+pub fn merge_built(staging: &Path, dest: &Path, force: bool) -> Result<MergeReport> {
+    fs::create_dir_all(dest).with_context(|| format!("cannot create {}", dest.display()))?;
+    let mut moved = 0;
+    let mut conflicts = Vec::new();
+    for entry in
+        fs::read_dir(staging).with_context(|| format!("cannot read {}", staging.display()))?
+    {
+        let entry = entry?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let from = entry.path();
+        let to = dest.join(&name);
+        if to.exists() {
+            if !force {
+                conflicts.push(name);
+                continue;
+            }
+            if to.is_dir() {
+                fs::remove_dir_all(&to)
+                    .with_context(|| format!("cannot remove {}", to.display()))?;
+            } else {
+                fs::remove_file(&to).with_context(|| format!("cannot remove {}", to.display()))?;
+            }
+        }
+        share::move_into(&from, &to)?;
+        moved += 1;
+    }
+    Ok(MergeReport { moved, conflicts })
 }
 
 /// Outcome of freezing a workspace: how many decks and files were frozen, plus
@@ -791,16 +823,8 @@ Spine   a -> b
         let dir = std::env::temp_dir().join(format!("alix-explore-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
 
-        let report = materialize(
-            SAMPLE_PLAN,
-            &dir,
-            "understand the repo",
-            None,
-            ".",
-            false,
-            None,
-        )
-        .unwrap();
+        let report =
+            materialize(SAMPLE_PLAN, &dir, "understand the repo", None, ".", None).unwrap();
         assert_eq!(2, report.traces);
         assert_eq!(1, report.decks);
         assert_eq!(0, report.filled); // no fill map → all stubs
@@ -824,14 +848,23 @@ Spine   a -> b
     }
 
     #[test]
-    fn materialize_refuses_a_non_empty_dir_without_force() {
+    fn materialize_writes_into_a_pre_existing_populated_dir_without_refusing() {
+        // materialize itself takes no view on a populated `dir` — callers that
+        // write straight into a real destination (none in production anymore;
+        // `alix generate` stages fresh and merges) would decide that, but
+        // materialize just writes alongside whatever's already there.
         let dir = std::env::temp_dir().join(format!("alix-explore-ne-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("keep.txt"), "existing").unwrap();
 
-        assert!(materialize(SAMPLE_PLAN, &dir, "g", None, ".", false, None).is_err());
-        assert!(materialize(SAMPLE_PLAN, &dir, "g", None, ".", true, None).is_ok()); // --force writes anyway
+        materialize(SAMPLE_PLAN, &dir, "g", None, ".", None).unwrap();
+
+        assert_eq!(
+            "existing",
+            fs::read_to_string(dir.join("keep.txt")).unwrap()
+        );
+        assert!(dir.join("alix.toml").exists());
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -847,7 +880,6 @@ Spine   a -> b
             "the goal",
             Some("Repo Internals"),
             ".",
-            false,
             None,
         )
         .unwrap();
@@ -889,7 +921,7 @@ preamble ignored
                 .to_string(),
         );
 
-        let report = materialize(SAMPLE_PLAN, &dir, "g", None, ".", false, Some(&filled)).unwrap();
+        let report = materialize(SAMPLE_PLAN, &dir, "g", None, ".", Some(&filled)).unwrap();
         assert_eq!(1, report.filled); // only item 2 was filled
 
         // item 2 (a trace) keeps its header AND carries the filled checkpoint
@@ -902,6 +934,114 @@ preamble ignored
         assert!(deck.contains("% Stub from `alix generate`"));
 
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Fresh staging + dest dirs under a per-test scratch root; both wiped on
+    /// entry (and left for the caller to clean up).
+    fn merge_test_dirs(label: &str) -> (PathBuf, PathBuf) {
+        let root = std::env::temp_dir().join(format!("alix-merge-{label}-{}", std::process::id()));
+        let staging = root.join("staging");
+        let dest = root.join("dest");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&staging).unwrap();
+        (staging, dest)
+    }
+
+    #[test]
+    fn a_clean_merge_moves_every_entry_and_reports_zero_conflicts() {
+        let (staging, dest) = merge_test_dirs("clean");
+        fs::write(staging.join("alix.toml"), "[defaults]\n").unwrap();
+        fs::write(staging.join("01-a.txt"), "deck a\n").unwrap();
+
+        let report = merge_built(&staging, &dest, false).unwrap();
+
+        assert_eq!(2, report.moved);
+        assert!(report.conflicts.is_empty());
+        assert_eq!(
+            "[defaults]\n",
+            fs::read_to_string(dest.join("alix.toml")).unwrap()
+        );
+        assert_eq!(
+            "deck a\n",
+            fs::read_to_string(dest.join("01-a.txt")).unwrap()
+        );
+        // staging is drained — every entry landed in dest
+        assert_eq!(0, fs::read_dir(&staging).unwrap().count());
+
+        let _ = fs::remove_dir_all(staging.parent().unwrap());
+    }
+
+    #[test]
+    fn a_name_collision_keeps_the_original_content_and_leaves_the_new_file_in_staging() {
+        let (staging, dest) = merge_test_dirs("collide");
+        fs::create_dir_all(&dest).unwrap();
+        fs::write(dest.join("01-a.txt"), "the user's own deck\n").unwrap();
+        fs::write(staging.join("01-a.txt"), "the freshly generated deck\n").unwrap();
+
+        let report = merge_built(&staging, &dest, false).unwrap();
+
+        assert_eq!(0, report.moved);
+        assert_eq!(vec!["01-a.txt".to_string()], report.conflicts);
+        // the original is untouched...
+        assert_eq!(
+            "the user's own deck\n",
+            fs::read_to_string(dest.join("01-a.txt")).unwrap()
+        );
+        // ...and the new version is still sitting in staging, not lost
+        assert_eq!(
+            "the freshly generated deck\n",
+            fs::read_to_string(staging.join("01-a.txt")).unwrap()
+        );
+
+        let _ = fs::remove_dir_all(staging.parent().unwrap());
+    }
+
+    #[test]
+    fn force_replaces_a_colliding_file_with_the_new_version() {
+        let (staging, dest) = merge_test_dirs("force");
+        fs::create_dir_all(&dest).unwrap();
+        fs::write(dest.join("01-a.txt"), "stale\n").unwrap();
+        fs::write(staging.join("01-a.txt"), "fresh\n").unwrap();
+
+        let report = merge_built(&staging, &dest, true).unwrap();
+
+        assert_eq!(1, report.moved);
+        assert!(report.conflicts.is_empty());
+        assert_eq!(
+            "fresh\n",
+            fs::read_to_string(dest.join("01-a.txt")).unwrap()
+        );
+
+        let _ = fs::remove_dir_all(staging.parent().unwrap());
+    }
+
+    #[test]
+    fn a_directory_entry_merges_as_one_unit_under_the_same_collision_rule() {
+        let (staging, dest) = merge_test_dirs("dir");
+        fs::create_dir_all(staging.join("assets")).unwrap();
+        fs::write(staging.join("assets/img.svg"), "new\n").unwrap();
+
+        // clean merge: the whole `assets/` dir moves in as one entry
+        let report = merge_built(&staging, &dest, false).unwrap();
+        assert_eq!(1, report.moved);
+        assert!(report.conflicts.is_empty());
+        assert_eq!(
+            "new\n",
+            fs::read_to_string(dest.join("assets/img.svg")).unwrap()
+        );
+
+        // a second build's `assets/` collides with the whole dir, not its contents
+        fs::create_dir_all(staging.join("assets")).unwrap();
+        fs::write(staging.join("assets/img.svg"), "newer\n").unwrap();
+        let report = merge_built(&staging, &dest, false).unwrap();
+        assert_eq!(0, report.moved);
+        assert_eq!(vec!["assets".to_string()], report.conflicts);
+        assert_eq!(
+            "new\n", // the original dir's content survives untouched
+            fs::read_to_string(dest.join("assets/img.svg")).unwrap()
+        );
+
+        let _ = fs::remove_dir_all(staging.parent().unwrap());
     }
 
     #[test]
