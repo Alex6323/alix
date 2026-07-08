@@ -203,7 +203,7 @@ impl Default for PickerKeys {
     }
 }
 
-/// Key bindings for the read-only browser (`alix browse`), configured in the
+/// Key bindings for the read-only Browse overlay, configured in the
 /// `[keys.browse]` section. Jumping to the first/last card stays fixed at
 /// `g`/`G`/Home/End — letter bindings are case-insensitive, so `g` and `G`
 /// cannot be told apart — and the arrow keys always work for next/previous.
@@ -279,10 +279,10 @@ pub struct AskConfig {
     /// answer (Read/Glob/Grep, working directory at the deck's `% source:`
     /// project root) instead of answering from memory. Off by default because it
     /// grants the served tutor file-read access — only enable it on a machine and
-    /// network you trust (especially with `alix serve --lan`).
+    /// network you trust (especially with `alix --lan`).
     pub source_access: bool,
     /// Source-tree byte threshold for the pre-flight size guard. When a local
-    /// source tree (for `deck generate`, `trace --build`/`--suggest`, `explore`)
+    /// source tree (for `alix generate` in all its forms)
     /// exceeds this many bytes, `alix` warns and asks for confirmation before
     /// spending a potentially large model call. Default is 5 MB (5_000_000 bytes).
     /// Set to 0 to disable the guard (always proceed without confirming).
@@ -404,7 +404,7 @@ impl Default for ExamConfig {
     }
 }
 
-/// Settings for trace building (`alix trace --build`, the `[trace]` section).
+/// Settings for trace building and exploration (the `[trace]` section).
 /// Building explores the deck's `% source:` to discover the path, so — unlike
 /// the other AI calls — it runs the CLI with **read-only** file tools (`Read`,
 /// `Glob`, `Grep`, plus `WebFetch` for a URL source) and the source root as the
@@ -484,7 +484,7 @@ impl Default for AiConfig {
     }
 }
 
-/// Settings for the local web frontend (`alix serve`, the `[serve]` section).
+/// Settings for the web server bare `alix` starts (the `[serve]` section).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ServeConfig {
     /// Default port to listen on (overridden by `--port`).
@@ -1097,7 +1097,7 @@ pub fn default_config_toml() -> &'static str {
 # recall = ["2"]                #   Enter always starts the highlighted
 # reconstruct = ["3"]           #   (last-used) one
 
-# Key bindings for `alix browse` (the read-only reader). Jumping to the first
+# Key bindings for the read-only Browse overlay (b in the picker). Jumping to the first
 # and last card is fixed to g / G / Home / End, and the arrow keys always
 # move next/previous; these three are configurable:
 [keys.browse]
@@ -1154,7 +1154,7 @@ pub fn default_config_toml() -> &'static str {
 # retry_cooldown_secs = 3600    # wait this long before re-sitting a FAILED trace exam (0 = off)
 # extra = ""                    # extra guidance appended to question generation
 
-# Trace building (`alix trace --build <deck>`). Explores the deck's `% source:`
+# Trace building (`alix generate <trace-stub>` / `--trace`). Explores the `% source:`
 # to discover the path and writes the checkpoints back. Reuses the [ask] command,
 # but runs with read-only file tools (Read/Glob/Grep, + WebFetch for a URL
 # source) and the source root as the working directory — never a write/shell tool.
@@ -1175,10 +1175,10 @@ pub fn default_config_toml() -> &'static str {
 # keypoint_count = 5            # max key points per card (explain-mode checklist)
 # timeout_secs = 300            # a whole-deck batch is a big call; wait this long
 
-# Local web frontend (`alix serve`). Binds to localhost by default; `--lan`
+# The web server bare `alix` starts. Binds to localhost by default; `--lan`
 # exposes it to the network and `--port` overrides the port set here.
 [serve]
-# port = 7777                   # default port for `alix serve`
+# port = 7777                   # default port (--port overrides per instance)
 
 # Review pacing (how the FSRS scheduler paces you). Personal — a workspace can
 # override these in its own alix.local.toml (which is never shared).
