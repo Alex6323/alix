@@ -1,4 +1,4 @@
-//! Your personal AI tutor — built for understanding, not just remembering.
+//! Plain-text spaced repetition with an optional AI layer — built for understanding, not just remembering.
 //!
 //! Decks are plain-text files. On top of the flashcard basics it offers a
 //! local web frontend (`alix serve`), the FSRS
