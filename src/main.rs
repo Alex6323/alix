@@ -1016,7 +1016,7 @@ fn launch(args: LaunchArgs) -> Result<()> {
         decks: subject_paths(b.decks),
     };
     let token = resolve_serve_token(args.token.clone(), args.lan, &config)?;
-    announce(addr, args.lan, token.as_deref(), "select decks");
+    announce(addr, args.lan, token.as_deref(), &decks_dir);
 
     let opts = serve::ReviewOptions {
         keys: config.keys.clone(),
@@ -1073,23 +1073,26 @@ fn launch(args: LaunchArgs) -> Result<()> {
     )
 }
 
-/// Prints where the web frontend is reachable, plus pairing info (host/port/
-/// token, and a scannable QR of the pairing URL) when it is exposed to the
-/// network with a token — or a warning when exposed without one.
-fn announce(addr: SocketAddr, lan: bool, token: Option<&str>, label: &str) {
-    println!("Serving {label} in the browser.");
+/// Prints what is served (the decks root) and where it is reachable, plus
+/// pairing info (host/port/token, and a scannable QR of the pairing URL) when
+/// it is exposed to the network with a token — or a warning when exposed
+/// without one. Naming the root is what tells side-by-side instances apart.
+fn announce(addr: SocketAddr, lan: bool, token: Option<&str>, root: &Path) {
+    let root = abbreviate_home(root);
     match (lan, token) {
         (true, Some(t)) => {
             let port = addr.port();
             match local_lan_ip() {
                 Some(ip) => {
                     let url = format!("http://{ip}:{port}/?token={t}");
+                    println!("Serving {root} at http://{ip}:{port}");
                     println!("On another device, open in a browser (or scan):");
                     println!("  {url}");
                     print_qr(&url);
                     println!("Or pair the app with:  host {ip}  port {port}  token {t}");
                 }
                 None => {
+                    println!("Serving {root} on all interfaces, port {port}.");
                     println!("On another device, open in a browser:");
                     println!("  http://<this-machine's-IP>:{port}/?token={t}");
                     println!(
@@ -1099,12 +1102,25 @@ fn announce(addr: SocketAddr, lan: bool, token: Option<&str>, label: &str) {
             }
         }
         (true, None) => {
-            println!("Listening on all interfaces, port {}.", addr.port());
+            println!("Serving {root} on all interfaces, port {}.", addr.port());
             println!("warning: no authentication — anyone on your network can reach this.");
         }
-        (false, _) => println!("Open http://127.0.0.1:{} in your browser.", addr.port()),
+        (false, _) => println!(
+            "Serving {root} at http://127.0.0.1:{} — open it in your browser.",
+            addr.port()
+        ),
     }
     println!("Press Ctrl-C to stop.");
+}
+
+/// `path` with the home directory abbreviated to `~`, for the announce line.
+fn abbreviate_home(path: &Path) -> String {
+    if let Some(dirs) = directories::BaseDirs::new()
+        && let Ok(rest) = path.strip_prefix(dirs.home_dir())
+    {
+        return format!("~/{}", rest.display());
+    }
+    path.display().to_string()
 }
 
 /// This machine's LAN-facing IP, found by "connecting" a UDP socket outward —
