@@ -31,7 +31,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with the personal state left home (progress, recent list, local pacing);
   receive lands a deck in the decks dir (or `--workspace <dir>`) and a
   folder under its own name, stripping any leaked personal files. The code
-  mnemonic and transfer progress come straight from wormhole.
+  mnemonic and transfer progress come straight from wormhole. No wormhole
+  installed? `alix share <path> --zip [--output <path>]` writes the same
+  staged copy as a `.zip` instead.
 - **`alix workspace init <dir>`** scaffolds an empty workspace (an
   `alix.toml` and an `assets/` folder, no decks) — grow it with
   `alix generate … --workspace <dir>` or `alix deck import … --workspace

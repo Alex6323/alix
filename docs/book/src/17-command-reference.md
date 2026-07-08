@@ -90,7 +90,8 @@ notes it.
   `wormhole` binary must be installed — `alix doctor` checks). A folder is
   staged first so your personal state stays home: `progress.json`, the recent
   list, `alix.local.toml`, and backup files never travel. Tell the receiver
-  the code wormhole prints.
+  the code wormhole prints. No wormhole around? `--zip [--output <path>]`
+  writes the same staged copy as a `.zip` to mail or hand over instead.
 - `alix receive <code>` — fetch what someone shared. A deck lands in your
   decks directory (`--workspace <dir>` puts it inside a workspace; `--force`
   overwrites a same-named deck); a folder lands under its own name beside

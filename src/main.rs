@@ -170,6 +170,16 @@ struct WorkspaceInitArgs {
 struct ShareArgs {
     /// What to send: a deck file, a plain decks folder, or a workspace.
     path: PathBuf,
+
+    /// Write a .zip archive instead of sending over wormhole — the offline
+    /// fallback (mail it, put it on a stick).
+    #[arg(long)]
+    zip: bool,
+
+    /// With --zip: where to write the archive — a file name, or a directory
+    /// to put `<name>.zip` in (default: the current directory).
+    #[arg(long, requires = "zip")]
+    output: Option<PathBuf>,
 }
 
 #[derive(Args)]
@@ -2052,33 +2062,51 @@ fn build_workspace(
 /// The wormhole binary prints the code mnemonic and the progress itself.
 fn share_cmd(args: ShareArgs) -> Result<()> {
     let path = &args.path;
-    if path.is_file() {
-        // A single deck has no personal state — send the file as-is. (Its
-        // augmentations live in a shared per-store cache and stay home.)
-        println!(
-            "Sharing {} — tell the receiver the code below.",
-            path.display()
-        );
-        return alix::share::wormhole(&["send", &path.to_string_lossy()], None);
-    }
-    if !path.is_dir() {
-        bail!("`{}` is neither a deck file nor a folder", path.display());
-    }
-    if !workspace::has_decks(path) {
-        bail!("no decks in `{}` — nothing to share", path.display());
-    }
     let name = path
         .file_name()
         .and_then(|n| n.to_str())
-        .unwrap_or("shared-decks");
+        .unwrap_or("shared-decks")
+        .to_string();
+
+    // A single deck has no personal state and travels as-is (its augmentations
+    // live in a shared per-store cache and stay home). A folder is staged
+    // first, so progress and personal config never leave.
     let tmp = tempfile::tempdir().context("cannot create a staging directory")?;
-    let stage = tmp.path().join(name);
-    let staged = alix::share::stage_dir(path, &stage)?;
+    let (to_send, staged) = if path.is_file() {
+        (path.clone(), 1)
+    } else {
+        if !path.is_dir() {
+            bail!("`{}` is neither a deck file nor a folder", path.display());
+        }
+        if !workspace::has_decks(path) {
+            bail!("no decks in `{}` — nothing to share", path.display());
+        }
+        let stage = tmp.path().join(&name);
+        let staged = alix::share::stage_dir(path, &stage)?;
+        (stage, staged)
+    };
+
+    // `--zip`: the offline fallback — write an archive instead of sending.
+    if args.zip {
+        let stem = name.strip_suffix(".txt").unwrap_or(&name);
+        let out = match &args.output {
+            Some(p) if p.is_dir() => p.join(format!("{stem}.zip")),
+            Some(p) => p.clone(),
+            None => PathBuf::from(format!("{stem}.zip")),
+        };
+        let entries = alix::share::zip_to(&to_send, &out)?;
+        println!(
+            "Wrote {} ({entries} files — progress and personal config stay home).",
+            out.display()
+        );
+        return Ok(());
+    }
+
     println!(
         "Sharing {name} ({staged} files — progress and personal config stay home). \
          Tell the receiver the code below."
     );
-    alix::share::wormhole(&["send", &stage.to_string_lossy()], None)
+    alix::share::wormhole(&["send", &to_send.to_string_lossy()], None)
 }
 
 /// `alix receive`: run wormhole in a scratch dir, strip any leaked personal

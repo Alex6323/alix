@@ -99,6 +99,57 @@ fn copy_tree(from: &Path, to: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Writes `path` (a staged folder or a single deck file) as a ZIP archive at
+/// `out` — the offline fallback when wormhole isn't available. Returns the
+/// number of entries written.
+pub fn zip_to(path: &Path, out: &Path) -> Result<usize> {
+    use std::io::Write;
+    let file =
+        std::fs::File::create(out).with_context(|| format!("cannot create {}", out.display()))?;
+    let mut zip = zip::ZipWriter::new(file);
+    let options: zip::write::SimpleFileOptions = Default::default();
+    let mut entries = 0;
+    if path.is_file() {
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "deck.txt".to_string());
+        zip.start_file(name, options)?;
+        zip.write_all(&std::fs::read(path)?)?;
+        entries = 1;
+    } else {
+        let root = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "decks".to_string());
+        zip_walk(&mut zip, path, &root, options, &mut entries)?;
+    }
+    zip.finish()?;
+    Ok(entries)
+}
+
+fn zip_walk(
+    zip: &mut zip::ZipWriter<std::fs::File>,
+    dir: &Path,
+    prefix: &str,
+    options: zip::write::SimpleFileOptions,
+    entries: &mut usize,
+) -> Result<()> {
+    use std::io::Write;
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let name = format!("{prefix}/{}", entry.file_name().to_string_lossy());
+        if entry.path().is_dir() {
+            zip_walk(zip, &entry.path(), &name, options, entries)?;
+        } else {
+            zip.start_file(name, options)?;
+            zip.write_all(&std::fs::read(entry.path())?)?;
+            *entries += 1;
+        }
+    }
+    Ok(())
+}
+
 /// Runs the wormhole binary with inherited stdio — the code mnemonic and the
 /// transfer progress print straight to the terminal — and waits for it.
 pub fn wormhole(args: &[&str], cwd: Option<&Path>) -> Result<()> {
@@ -174,6 +225,29 @@ mod tests {
         assert!(!root.join("progress.json").exists());
         assert!(!root.join("nested/alix.local.toml").exists());
         assert_eq!(2, removed.len(), "{removed:?}");
+    }
+
+    #[test]
+    fn zipping_a_staged_folder_writes_every_entry_under_its_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("ws");
+        std::fs::create_dir_all(src.join("assets")).unwrap();
+        touch(&src, "a.txt");
+        touch(&src.join("assets"), "icon.svg");
+
+        let out = dir.path().join("ws.zip");
+        let n = zip_to(&src, &out).unwrap();
+
+        assert_eq!(2, n);
+        let mut archive = zip::ZipArchive::new(std::fs::File::open(&out).unwrap()).unwrap();
+        let names: Vec<String> = (0..archive.len())
+            .map(|i| archive.by_index(i).unwrap().name().to_string())
+            .collect();
+        assert!(names.contains(&"ws/a.txt".to_string()), "{names:?}");
+        assert!(
+            names.contains(&"ws/assets/icon.svg".to_string()),
+            "{names:?}"
+        );
     }
 
     #[test]
