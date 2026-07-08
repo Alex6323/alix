@@ -25,7 +25,7 @@ use alix::{
 use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand};
 
-/// Plain-text spaced repetition with an optional AI layer — built for understanding, not just remembering.
+/// A learning tool built for understanding, not just remembering.
 ///
 /// Decks are plain text files: `# question` starts a card, the indented
 /// lines below it are the answer, `! text` adds a note, `% text` is a
