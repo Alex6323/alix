@@ -89,7 +89,11 @@ pub fn check_store(path: Option<PathBuf>) -> Finding {
     match Store::open(&path) {
         Ok(store) => Finding::ok(
             "store",
-            format!("readable ({} card entries) — {}", store.len(), path.display()),
+            format!(
+                "readable ({} card entries) — {}",
+                store.len(),
+                path.display()
+            ),
         ),
         Err(e) => Finding::bad(
             "store",
@@ -133,7 +137,12 @@ pub fn check_decks(decks_dir: &Path) -> Finding {
     let broken: Vec<String> = deck_files
         .iter()
         .filter(|p| Deck::load(p).is_err())
-        .map(|p| p.file_name().unwrap_or_default().to_string_lossy().into_owned())
+        .map(|p| {
+            p.file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned()
+        })
         .collect();
     let counts = format!(
         "{} decks across {} folders/workspaces — {}",
@@ -144,7 +153,12 @@ pub fn check_decks(decks_dir: &Path) -> Finding {
     if broken.is_empty() {
         Finding::ok("decks", counts)
     } else {
-        let named = broken.iter().take(3).cloned().collect::<Vec<_>>().join(", ");
+        let named = broken
+            .iter()
+            .take(3)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ");
         Finding::bad(
             "decks",
             Status::Warn,

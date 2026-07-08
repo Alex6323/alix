@@ -1393,7 +1393,9 @@ impl Augmenting {
 /// remedy in the message.
 pub fn bind(addr: SocketAddr) -> Result<Server> {
     Server::http(addr).map_err(|e| {
-        anyhow!("cannot start the server on {addr}: {e} — is another alix using this port? try --port")
+        anyhow!(
+            "cannot start the server on {addr}: {e} — is another alix using this port? try --port"
+        )
     })
 }
 

@@ -5,22 +5,24 @@ depth, where there is one. Run any command with `--help` for its full flags.
 
 ## Reviewing
 
-- `alix` — open the web deck [picker](02-getting-started.md) (recent +
-  `~/decks`), printing its URL.
-- `alix <deck>` / `alix review <deck>` — review one deck's due cards, in the
-  browser.
-- `alix workspace <dir>` — open a [workspace](08-workspaces.md), routing each
-  member you pick to a review or a walk (a workspace is reviewed member-by-member,
-  never merged).
+- `alix` — serve the web app: the deck [picker](02-getting-started.md) over
+  your decks directory (`~/decks`), printing its URL.
+- `alix <dir>` — serve that folder as a **self-contained scoped root**: its own
+  catalog, with its own `progress.json` and `recent.json` inside the folder, so
+  several instances can run side by side. A [workspace](08-workspaces.md) dir
+  opens the picker drilled into it, with its own store.
 
-Browsing a deck read-only, and sitting the AI exam, are both reached from the
+Every review starts from the picker — there's no direct deck launch. Browsing a
+deck read-only, and sitting the AI exam, are both reached from the
 web picker rather than as their own commands (see
 [the web app](15-the-web-app.md)).
 
-Common flags: `--topology <name>` / `--region <name>`
-([scheduling](05-scheduling.md)), `--cram`, `--new N`, `--limit N`,
-`--depth <recognize|recall|reconstruct>` (default: the deck's own last-used
-depth), and `--serve` / `--port` / `--lan` ([the web app](15-the-web-app.md)).
+The launcher's flags — its only ones: `--lan` / `--port` / `--token`
+([the web app](15-the-web-app.md)), `--new N` / `--limit N` (session pacing,
+overriding the `[review]` config), and `--config <path>`. The session depth is
+picked in the picker's split Learn ▾ menu, a topology or region in its focus
+drawer ([scheduling](05-scheduling.md)), and the card order is the deck's
+`% order:` directive.
 How each card is checked comes from its `% reveal:` combined with the
 session's depth ([reveal & session depths](04-review-modes.md)), not a flag.
 
@@ -40,9 +42,6 @@ the deck file — there's no separate command for it.
 
 ## The AI features
 
-- `alix backend check [--all]` — health probe: sends a short request to the
-  configured backend (or all four with `--all`) and reports whether each is
-  installed, signed in, and responding.
 - `alix deck generate <url-or-path>` — [generate a facts deck](11-generating-decks.md).
 - `alix deck augment <deck> --target <...>` — precompute AI augmentations
   (choices, notes, questions, keypoints, format, topology).
@@ -61,8 +60,14 @@ can't prompt — it truncates an oversized source and notes it.
 - Tutor — the Ask button (or `?`) in a session, `Ctrl-N` to save a note
   ([the tutor](10-tutor.md)).
 
-## Config
+## Config & health
 
 - `alix config` — show the active key bindings; `alix config --init` writes the
   file.
+- `alix doctor [dir]` — environment health checks, a one-line remedy per
+  problem: the config parses, the progress store is readable, the decks dir
+  scans (broken decks point at `alix deck check`), and the backend CLI is on
+  your PATH. `--backends` additionally probes the configured AI backend end to
+  end (one real, tiny request); `--all-backends` probes all four. Report-only —
+  it fixes nothing itself.
 - `--config <path>` — use a different config file.

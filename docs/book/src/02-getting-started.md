@@ -40,16 +40,18 @@ answer on the indented lines beneath it:
     FSRS — it predicts when you're about to forget each card.
 ```
 
-Save it as `srs.txt`. Indentation is optional (lines are trimmed) — it's just for
+Save it as `srs.txt` in your decks directory (`~/decks` by default). Indentation
+is optional (lines are trimmed) — it's just for
 readability. A line starting with `!` is a **note**, shown after you answer.
 
 ## Review it
 
 ```sh
-alix srs.txt
+alix
 ```
 
-`alix` opens the web app (printing its URL) and shows the question there; you
+`alix` opens the web app (printing its URL) — pick `srs.txt` there and **Learn**
+it. The question shows in the browser; you
 recall the answer, press a key to reveal it, then
 grade yourself — **failed** (you missed it), **partly** (got the gist but
 stumbled), or **passed**. Your grade moves the card along its schedule, so cards
@@ -57,16 +59,17 @@ you know come back rarely and cards you miss come back soon. That self-graded re
 later chapters cover the modes that make you *type* the answer, pick from
 choices, or reveal it line by line.
 
-When nothing is due, `alix` says so and exits — come back when cards mature, or
-pass `--cram` to review everything regardless of when it's next due.
+When nothing is due, there's nothing to review — come back when cards mature.
 
 ## The deck picker
 
-Run `alix` with no arguments to open the **picker** in your browser, over your
+That page `alix` opens is the **picker**, over your
 decks directory (`~/decks` by default; change it with `decks_dir` in the
 config). It groups your decks into Workspaces, Recent, and Folders and is
 driven by Vim-style keys (`j`/`k` to move, `Enter` to open, `/` to filter by
-name). This is what the desktop launcher opens. Focus a deck there and press
+name). Every review starts here — there's no direct deck launch. This is what
+the desktop launcher opens. Focus a deck
+and press
 **Browse** to read through its cards with no grading or scheduling.
 
 ## The everyday commands

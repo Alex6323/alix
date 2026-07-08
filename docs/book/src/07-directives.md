@@ -39,13 +39,12 @@ source.
 
 Where a directive can come from several places, the more specific wins:
 
-> CLI flag > card `%` directive > deck `%` directive > workspace `[defaults]` > built-in default
+> card `%` directive > deck `%` directive > workspace `[defaults]` > built-in default
 
 So a card's `% reveal:` overrides the deck's, which overrides a workspace's
-`[defaults]`, which overrides `alix`'s default (`flip`); where a CLI flag exists
-for a directive (e.g. `--strictness` for `% strictness:`) it wins over all of them.
+`[defaults]`, which overrides `alix`'s default (`flip`).
 
 The session depth (Recognize/Recall/Reconstruct) is **not** in this chain
 either — it isn't config or a deck directive at all. It's chosen per session
-(`--depth`, or the picker's Learn ▾ menu), the same way for every deck (see
+(the picker's Learn ▾ menu), the same way for every deck (see
 [Reveal & session depths](04-review-modes.md)).

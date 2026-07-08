@@ -48,7 +48,8 @@ Either way a guess never marks it recognized or punishes it, and the first
 *graded* quiz then comes back **later in the same session** — once a short
 (~1-minute) settle passes it resurfaces, interleaved behind the other cards
 you're seeing, so seeing a deck flows straight into drilling it. Each session
-introduces up to `--new N` new cards (default 10); start another session for
+introduces up to 10 new cards (`[review] max_new` in the config changes that;
+`--new N` on the launch overrides it per instance); start another session for
 more. This is the first step of a card's life — *acquire*, then let its
 depth(s) schedule it.
 
@@ -56,7 +57,7 @@ depth(s) schedule it.
 
 FSRS decides *when* a card is due; the **session depth** decides *how deeply*
 it's asked when it comes up. A session runs at one of three independent
-depths, picked when you start it (`--depth`, or the web picker's Learn ▾
+depths, picked when you start it (the web picker's Learn ▾
 menu) — see [Reveal & session depths](04-review-modes.md) for the full check
 matrix. In short:
 
@@ -98,7 +99,7 @@ cards after being badged shows a small "new" chip.
 
 A card doesn't stay in rotation forever. Once its interval grows past
 **`retire_after`** (default one year), the card **retires**: it rests and is no
-longer scheduled, *not even under `--cram`*, until you `alix reset` it. Set
+longer scheduled, *not even under cram*, until you `alix reset` it. Set
 `retire_after = "never"` to keep drilling a deck forever — facts you never want to
 risk forgetting; a workspace can override it in its `alix.local.toml`.
 
@@ -127,11 +128,8 @@ dependencies chapter covers it in full.
 ## Cramming
 
 Need to review everything now, schedule be damned — the night before an exam?
-`--cram` ignores due times and shows every card that isn't retired:
-
-```sh
-alix --cram mydeck.txt
-```
+**Cram** ignores due times and shows every card that isn't retired. It's a
+per-launch choice in the picker (coming to the Learn ▾ menu).
 
 Cramming is a **refresh, not a reward**: a correct answer re-anchors the card by
 its current interval — it doesn't grow the schedule or count as a real review — so
@@ -156,11 +154,9 @@ alix deck augment capitals.txt --target topology --with "north to south"
 alix deck augment capitals.txt --target topology --with "by continent"
 ```
 
-Then review along it:
-
-```sh
-alix review internals.txt --topology auto    # or any cached principle's name
-```
+Then review along it: select the deck in the **web picker** and an inline
+**focus drawer** opens beneath it — choose which topology orders the session
+("Whole deck" is the default), then start.
 
 The key thing: this changes only the **order**, never the schedule. SRS still
 decides *which* cards are due and how they advance — the topology just serves
@@ -176,19 +172,12 @@ card's answer. Under each region is a **strength heatmap**: one small bar per
 card, red (weak) → green (learned), so a region visibly greens up as you master
 it — the breadcrumb doubles as a progress map.
 
-To **drill one weak region** on its own, name it:
-
-```sh
-alix review internals.txt --topology auto --region Persistence
-```
+To **drill one weak region** on its own, tap its heatmap in the focus drawer to
+scope the launch to it.
 
 SRS still chooses what's due *within* that region — you've just narrowed the
 session to it.
 
-If a deck has exactly one cached topology, `--topology` with no name uses it. In
-the **web picker** you don't type any of this: select a deck that has a topology
-and an inline **focus drawer** opens beneath it — choose which topology orders
-the session and tap a region's heatmap to scope the launch to it, then start.
 The choice is made *before* the session; the in-card breadcrumb itself stays
-read-only. This is experimental — both surfaces show the breadcrumb, the heatmap,
-and the ordering; richer map views are still to come.
+read-only. This is experimental — the breadcrumb, the heatmap,
+and the ordering are in place; richer map views are still to come.

@@ -40,9 +40,12 @@ read-only tools only, and `alix` stores no API keys. See
 ## Quick start
 
 ```sh
-alix deck generate <url-or-file>   # draft a facts deck from a web page or a source file
-alix mydeck.txt                    # review due cards, in the browser
-alix                               # no arguments: pick a deck in the web app
+# make decks and workspaces from your own material
+alix deck generate <url-or-file>        # -> a deck
+alix explore <source> --goal "how X works" --into ~/decks/topic --build   # -> a workspace
+
+# then study, always in the web app (pick a deck or workspace, then a depth)
+alix
 ```
 
 ## A deck is a text file
@@ -69,18 +72,18 @@ directive: [the deck format](docs/book/src/03-the-deck-format.md),
 
 | Command | What it does |
 |---|---|
-| `alix [deck…]` | Review due cards in the browser (bare `alix` opens the deck picker) |
+| `alix` | Open the web app to pick a deck or workspace |
 | `alix deck generate <url-or-file>` | Draft a facts deck from a page or a source |
 | `alix deck augment <deck> --target …` | Add distractors, notes, or key points |
 | `alix deck check <deck>` | Lint a deck (syntax, duplicates, locators) |
 | `alix explore <source>` | Plan or build a learning workspace from a source |
 | `alix trace <deck>` | Walk a predict-and-verify path (`--build` authors one) |
-| `alix workspace <dir>` | Open a workspace's decks |
+| `alix <dir>` | Serve a folder or workspace as its own scoped instance |
 | `alix import <file.tsv>` | Import an Anki TSV export |
 | `alix stats <deck>` · `alix list <deck>` | Progress overview · per-card schedule |
 | `alix reset <deck>` | Clear stored progress |
 | `alix config` | Show the config (`--init` writes a starter file) |
-| `alix backend check [--all]` | Probe the configured AI backend(s) |
+| `alix doctor [--backends]` | Check the setup; optionally probe the AI backend(s) |
 
 Every flag and option: [command reference](docs/book/src/17-command-reference.md).
 

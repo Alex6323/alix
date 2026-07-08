@@ -42,6 +42,7 @@ quit = ["q", "esc", "ctrl-c"]
 
 [serve]
 port = 7777
+# token = "..."   # pairing token required on /api/*; --lan auto-generates one (printed, with a QR)
 ```
 
 (Jump-to-first/last stays fixed at `g`/`G`, and the arrow keys always move.)
@@ -55,15 +56,19 @@ Reconstruct depths:
 [review]
 retention = 0.9         # FSRS target recall probability (0.70–0.99); higher = shorter intervals
 retire_after = "1y"     # a card rests once its Recall interval reaches this ("2w", "6m", "30d", or "never")
+max_new = 10            # max never-seen cards a session introduces (default 10)
+limit = 40              # cap on total cards per session (default: no cap)
 ```
 
 `retention` is the recall probability FSRS schedules for. `retire_after` is when
 a card retires (rests until `alix reset`); `"never"` keeps it in rotation forever.
-A workspace can override either key for its own decks in an `alix.local.toml` —
-see [Workspaces](08-workspaces.md).
+A workspace can override any of these keys for its own decks in an
+`alix.local.toml` — see [Workspaces](08-workspaces.md). `max_new` and `limit`
+pace a session; the precedence is `--new`/`--limit` on the launch > these
+config keys > the built-ins (10 new, no cap).
 
 How deeply you drill is never configuration: it's the **session depth** you
-pick per review (`--depth`, or the picker's Learn ▾ menu) — see
+pick per review (the picker's Learn ▾ menu) — see
 [Reveal & session depths](04-review-modes.md). The old `[review] depth` config
 key (and the per-deck `[review.deck."<file>"]` override) — a *dial* that fixed
 the drilling depth from config — is gone, not renamed; a config that still
@@ -91,9 +96,9 @@ than a tool allowlist, so it can read local source files but can't fetch URLs
 — a URL-based exam or `deck generate` will refuse and tell you to use a local
 file instead, or switch backends.
 
-Run `alix backend check` to send a quick test request to the configured
-backend and confirm it's installed, signed in, and responding. `--all` probes
-all four.
+Run `alix doctor --backends` to send a quick test request to the configured
+backend and confirm it's installed, signed in, and responding. `--all-backends`
+probes all four.
 
 The multi-turn tutor works on every backend: Claude uses its native session
 flags (`--session-id` / `--resume`) for efficient continuation; other backends
@@ -120,8 +125,9 @@ settings:
 ## Decks directory and storage
 
 By default `alix` looks for decks in `~/decks`; set `decks_dir` to change it.
-Progress is stored at `~/.local/share/alix/progress.json` (a workspace keeps its
-own inside its folder; `--store <path>` overrides).
+Progress is stored at `~/.local/share/alix/progress.json` (a workspace — or any
+folder you serve with `alix <dir>` — keeps its own inside the folder; the
+`stats`/`list`/`reset` commands take `--store <path>` to point at one).
 
 Card identity is an XxHash64 over the deck **file name** plus the card's **back
 lines** — so your progress survives editing a front or adding notes, but renaming a

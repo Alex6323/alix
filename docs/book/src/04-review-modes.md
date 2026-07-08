@@ -45,7 +45,7 @@ adding or changing it never resets progress.
 ## Session depths — Recognize, Recall, Reconstruct
 
 Every review session runs at one of three independent depths, picked when you
-start it: `--depth` on the command line, or the web picker's split **Learn**
+start it with the web picker's split **Learn**
 button, whose small ▾ opens a menu of the three (on the keyboard: `v`, then
 `1`/`2`/`3` — `Esc` cancels; rebindable in
 [`[keys.picker]`](16-configuration.md)). Plain **Learn** reuses the deck's own last-used

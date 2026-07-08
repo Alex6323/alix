@@ -243,7 +243,6 @@ enum DeckAction {
     },
 }
 
-
 #[derive(Args)]
 struct AugmentArgs {
     /// The deck file to augment.
@@ -1130,12 +1129,14 @@ fn print_qr(text: &str) {
         let mut line = String::from("  ");
         for col in -quiet..qr.size() + quiet {
             // Out-of-range modules read as light, which draws the quiet zone.
-            line.push(match (qr.get_module(col, row), qr.get_module(col, row + 1)) {
-                (true, true) => '█',
-                (true, false) => '▀',
-                (false, true) => '▄',
-                (false, false) => ' ',
-            });
+            line.push(
+                match (qr.get_module(col, row), qr.get_module(col, row + 1)) {
+                    (true, true) => '█',
+                    (true, false) => '▀',
+                    (false, true) => '▄',
+                    (false, false) => ' ',
+                },
+            );
         }
         println!("{line}");
         row += 2;

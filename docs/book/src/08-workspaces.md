@@ -23,7 +23,7 @@ reveal = "line"
 Now open the cluster and drill its members one at a time:
 
 ```sh
-alix workspace ~/decks/spanish/
+alix ~/decks/spanish/
 ```
 
 ## Shared directives
@@ -33,7 +33,7 @@ The `[defaults]` keys are exactly the deck-directive names from
 the rest. They fill in only what a deck *doesn't* set for itself, so the
 precedence is one level deeper than before:
 
-> CLI flag > card `%` > deck `%` > **workspace `[defaults]`** > built-in default
+> card `%` > deck `%` > **workspace `[defaults]`** > built-in default
 
 Set `direction = "both"` once for the whole folder, and a single irregular deck
 can still override it with its own `% direction: forward`. It's the same directive
@@ -70,8 +70,8 @@ separate from the global store that loose decks share. That makes a workspace a
 **self-contained, portable unit**: its decks, its `assets/` (frozen trace
 excerpts — covered with traces later), and its history all live in one folder you
 can move, copy, or share, with its progress isolated from everything else. Decks
-outside any workspace keep using the global store; `--store <path>` overrides
-either.
+outside any workspace keep using the global store; the terminal commands
+(`alix stats`/`list`/`reset`) take `--store <path>` to point at either.
 
 ## In the picker
 
@@ -92,13 +92,13 @@ is tinted to the active theme, a raster shows as-is. When you build a workspace
 with `alix explore --into <dir> --build`, the model draws an abstract SVG emblem from
 the topic automatically, unless you pass `--icon <file>`.
 
-`alix workspace <dir>` jumps straight into that drill-in view, routing each
+`alix <dir>` serves a workspace directly: the picker opens drilled into that
+view, scoped to the folder and its own store, routing each
 member to the right experience — a facts deck to a review, a trace to a walk — and
-returning you to the picker when you finish one. (`alix review <dir>` no longer
-works on a folder — a session is one deck file, so a whole workspace is never
-reviewed at once; open it and pick a member instead.)
+returning you to the picker when you finish one. (A session is one deck file, so
+a whole workspace is never reviewed at once; open it and pick a member.)
 
-A folder without a manifest is still reviewable with `alix review <folder>`; it
+A folder without a manifest serves the same way with `alix <folder>`; it
 just applies no shared directives.
 
 ## Titles

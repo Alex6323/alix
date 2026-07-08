@@ -7,10 +7,41 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Scoped roots: `alix <dir>` serves that folder as a self-contained
+  instance** — its own catalog plus its own `progress.json` and `recent.json`
+  kept inside the folder, so several instances run side by side without
+  sharing state (one per family member: `alix ~/decks-maria --lan --port
+  7781`). A workspace folder opens the picker drilled into it, over its own
+  store.
+- **`alix doctor` — one health command.** Checks the config parses, the
+  progress store is readable, the decks folder scans (broken decks point at
+  `alix deck check`), and the backend CLI is installed — each problem with a
+  one-line fix. `--backends` adds a real end-to-end probe of the configured
+  AI backend (`--all-backends`: all four).
+- **A scannable pairing QR in the `--lan` startup output**, alongside the
+  pairing URL — which now shows the machine's actual IP instead of a
+  placeholder. A phone or tablet pairs by pointing its camera at the
+  terminal.
+- **`[review] max_new` and `limit` config keys** for session pacing, with
+  per-instance `--new`/`--limit` overrides on bare `alix` (precedence:
+  flag > config > built-in 10 / no cap).
 
 ### Changed
+- **Breaking: the CLI collapses to `alix [dir]` plus task subcommands —
+  every review starts from the picker.** Removed outright (pre-1.0, no
+  aliases): `alix <deck>` direct-deck launch, the `review` and `workspace`
+  subcommands (`alix <dir>` covers workspaces), `alix backend check` (use
+  `alix doctor --backends`), the `--serve` flag (everything is served since
+  the terminal UI was removed), and the per-session flags
+  `--cram`/`--depth`/`--topology`/`--region`/`--order` — depth, topology,
+  and region are picked in the web picker; order is the deck's `% order:`
+  directive. Bare `alix` keeps only `--lan`, `--port`, `--token`,
+  `--config`, `--new`, `--limit`.
 
 ### Fixed
+- A taken port now errors immediately with a `try --port` hint — the server
+  binds before printing its URL, so a clash no longer shows a
+  success-looking line first.
 
 ## [0.3.0] - 2026-07-07
 

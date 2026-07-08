@@ -2,20 +2,20 @@
 
 alix is a web app: review, browse, and the exam all run here. `alix` opens a
 small local web server and shows you its URL, writing to the **same progress
-store** regardless of how you launch it — so what you grade here is exactly
-what `alix stats`/`alix list` show. It's especially handy on a tablet or
+store** that `alix stats`/`alix list` read — what you grade here is exactly
+what they show. It's especially handy on a tablet or
 phone, where touch (and images) work naturally.
 
 ```sh
-alix review rust.txt                        # open http://127.0.0.1:7777
-alix review rust.txt --serve --port 8080    # a different port
-alix review rust.txt --serve --lan          # reachable from other devices on your network
-alix                                         # no decks → pick them in the browser
+alix                                   # the deck picker, at http://127.0.0.1:7777
+alix --port 8080                       # a different port
+alix --lan                             # reachable from other devices on your network
+alix ~/decks-maria --lan --port 7781   # serve one folder as its own scoped root
 ```
 
 ## Choosing decks in the browser
 
-Run `alix` without naming decks and the page opens the **deck-selection
+Run `alix` and the page opens the **deck-selection
 screen**. **Up / down** move between
 decks; a **search box in the header** filters the list (focus it with **`/`**).
 Focus a deck and **Learn** it with **Enter** — a facts deck opens a
@@ -27,8 +27,8 @@ which topology orders the session, and pick a region to drill — click it or st
 through with **← / →** — its strength heatmap and the number of cards **due** in
 it shown as you go ("Whole deck" is the default). On a workspace row instead,
 ← / → enter and leave it. After a session, "Choose other decks" (on the summary)
-or **Esc** returns here, so you can switch decks without restarting. Naming a
-deck on the command line skips this screen.
+or **Esc** returns here, so you can switch decks without restarting. Every
+review starts from this screen — there's no direct deck launch.
 
 ## Augmenting a deck from the picker
 
@@ -98,10 +98,19 @@ server hosts, so every screen — review, browse, and trace walks — themes tog
 
 The server is deliberately local-only — no accounts, no database. By default it
 binds to `127.0.0.1` (this machine only). `--lan` binds all interfaces so another
-device on your network can reach it at `http://<your-ip>:<port>`. Serving with
-`--lan` auto-generates a **pairing token** (printed at startup) and requires it on
+device on your network can reach it: at startup it prints the pairing URL with
+the machine's real IP — plus a scannable QR code, right in the terminal. Serving
+with `--lan` auto-generates a **pairing token** and requires it on
 `/api/*`, so the network endpoint isn't wide open; pin your own with `--token` or
-`[serve] token`. Open the printed `…/?token=…` URL in a browser and the page
+`[serve] token`. Open the printed `…/?token=…` URL (or scan the QR) and the page
 attaches the token for you. AI requests still run the model CLI on the host, so
 only use `--lan` on a network you trust. The default port lives in the `[serve]`
 config section; `--port` overrides it.
+
+`alix <dir>` serves that folder as a **self-contained scoped root**: its own
+catalog, with its own `progress.json` and `recent.json` kept inside the folder.
+Several instances run happily side by side — one per family member, say:
+`alix ~/decks-maria --lan --port 7781`.
+
+If a launch misbehaves, `alix doctor` checks the setup — config, progress
+store, decks directory, backend CLI — and prints a one-line remedy per problem.
