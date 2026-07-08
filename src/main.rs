@@ -198,8 +198,9 @@ struct ShareArgs {
 
 #[derive(Args)]
 struct ReceiveArgs {
-    /// The wormhole code the sender read to you (e.g. `7-crossover-clockwork`)
-    /// — or a path to a `.zip` made by `alix share --zip`.
+    /// A wormhole code the sender read to you (e.g. `7-crossover-clockwork`),
+    /// or a path to a `.zip` made by `alix share --zip`.
+    #[arg(value_name = "CODE|ZIP")]
     code: String,
 
     /// Put a received DECK into this workspace instead of the decks directory.
