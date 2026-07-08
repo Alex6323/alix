@@ -119,13 +119,14 @@ enum Command {
     /// Create and grow workspaces.
     #[command(subcommand)]
     Workspace(WorkspaceAction),
-    /// Send a deck, folder, or workspace to someone over magic-wormhole.
+    /// Share a deck, folder, or workspace — over magic-wormhole, or as a .zip.
     ///
-    /// Stages a copy without your personal state (progress, recent list,
-    /// local pacing), then hands it to the `wormhole` binary — tell the
-    /// receiver the code it prints. Needs magic-wormhole installed.
+    /// Either way, what travels is a staged copy without your personal state
+    /// (progress, recent list, local pacing). The default sends through the
+    /// `wormhole` binary — tell the receiver the code it prints; `--zip`
+    /// writes an archive to pass along however you like instead.
     Share(ShareArgs),
-    /// Receive a shared deck or folder by its wormhole code.
+    /// Receive a shared deck or folder — by wormhole code, or from a .zip.
     ///
     /// A received deck lands in the decks directory (or `--workspace <dir>`);
     /// a received folder lands beside your other decks under its own name.
