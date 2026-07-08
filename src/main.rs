@@ -1570,17 +1570,15 @@ fn reset(args: ResetArgs) -> Result<()> {
             return Ok(());
         }
 
-        for subject in decks.keys() {
-            store.clear_deck_mastered(subject);
+        // `DeckInfo` keeps only the deck's path (not the loaded `Deck`), so
+        // `reset_decks` needs each deck reloaded — a second parse, but the
+        // cheapest way to hand it real `Deck`s without threading them through
+        // `load_decks`.
+        let mut target_decks = Vec::with_capacity(decks.len());
+        for info in decks.values() {
+            target_decks.push(Deck::load(&info.path)?);
         }
-        for id in &virtual_ids {
-            store.remove_virtual(*id); // drop sidecar content …
-            store.remove(*id); // … and the schedule now in `store.cards`
-        }
-        for (id, _) in &present {
-            store.remove(*id);
-        }
-        store.save()?;
+        let n = alix::library::reset_decks(&mut store, target_decks.iter())?;
         println!("Reset {n} card(s).");
         return Ok(());
     }
