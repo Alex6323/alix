@@ -1,0 +1,36 @@
+{
+  "auto_grade": false,
+  "current": 2,
+  "description": "how a String grows",
+  "excerpt": null,
+  "excerpt_error": null,
+  "feedback": null,
+  "givens": [
+    "a String at capacity"
+  ],
+  "grade_error": null,
+  "kind": "walk",
+  "locator": "lib.rs:40-52",
+  "note": null,
+  "path": [
+    {
+      "current": false,
+      "delta": "passed",
+      "prompt": "push begins"
+    },
+    {
+      "current": true,
+      "delta": null,
+      "prompt": "capacity doubles"
+    }
+  ],
+  "phase": "predict",
+  "points": [],
+  "prediction": null,
+  "prompt": "what does push do when full?",
+  "source": "src/lib.rs",
+  "summary": null,
+  "thinking": false,
+  "total": 2,
+  "verdict": null
+}

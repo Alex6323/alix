@@ -129,6 +129,11 @@ fn compose_page(html: &str) -> String {
         .replace("<!--%brand%-->", BRAND_HTML)
 }
 
+// ── Wire contract ────────────────────────────────────────────────────────────
+// The DTOs below are the client-agnostic JSON contract (docs/API.md), pinned
+// by `mod contract` in this file's tests. Change code, doc, and CHANGELOG
+// together; tests/contracts/*.json is the generated codegen corpus.
+
 /// One display unit of a card's note, ready for JSON. Mirrors
 /// [`render::NoteUnit`]; the web page renders `sentence` as a paragraph and
 /// `code` as a verbatim block.
@@ -4161,5 +4166,743 @@ mod tests {
 
         let after = deck_topology_dto(&augment, &store, &deck, ReviewConfig::default());
         assert_eq!(1, after.deck_due);
+    }
+
+    /// The JSON-API contract snapshot suite (docs/API.md): every wire-facing
+    /// DTO gets its entire serialized shape pinned by full-object equality, so
+    /// any field add/remove/rename/retype fails here with a pointer at the
+    /// doc. Each pin also emits its expected JSON to `tests/contracts/` — the
+    /// machine-readable corpus for thin-client codegen. The page-private
+    /// keybinding DTOs (`KeyDto`, `ReviewKeys`, `PickerKeysDto`, `BrowseKeys`)
+    /// are deliberately out of contract and unpinned.
+    mod contract {
+        use serde_json::json;
+
+        use super::*;
+
+        /// Pins a DTO's exact wire shape and emits it to the codegen corpus.
+        /// A failure means the JSON contract moved: update docs/API.md's field
+        /// table + example for this anchor AND add a CHANGELOG entry.
+        fn pin<T: serde::Serialize>(anchor: &str, dto: &T, expected: serde_json::Value) {
+            let actual = serde_json::to_value(dto).unwrap();
+            assert_eq!(
+                actual, expected,
+                "wire shape drifted from docs/API.md#{anchor} — update the doc's \
+                 field table + example AND add a CHANGELOG entry"
+            );
+            let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/contracts");
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(
+                dir.join(format!("{anchor}.json")),
+                serde_json::to_string_pretty(&expected).unwrap() + "\n",
+            )
+            .unwrap();
+        }
+
+        #[test]
+        fn statedto_select_phase_wire_shape() {
+            let dto = StateDto {
+                kind: "review",
+                phase: "select",
+                card: None,
+                choices: None,
+                keypoints: None,
+                acquire: false,
+                mode: "flip",
+                depth: "recall",
+                input: "type",
+                remaining: 0,
+                initial: 0,
+                reviews: 0,
+                passed: 0,
+                failed: 0,
+                exam_due: Vec::new(),
+                can_restart: false,
+                promotable: false,
+                label: "select decks".to_string(),
+            };
+            pin(
+                "StateDto.select",
+                &dto,
+                json!({
+                    "kind": "review",
+                    "phase": "select",
+                    "card": null,
+                    "choices": null,
+                    "keypoints": null,
+                    "acquire": false,
+                    "mode": "flip",
+                    "depth": "recall",
+                    "input": "type",
+                    "remaining": 0,
+                    "initial": 0,
+                    "reviews": 0,
+                    "passed": 0,
+                    "failed": 0,
+                    "exam_due": [],
+                    "can_restart": false,
+                    "promotable": false,
+                    "label": "select decks"
+                }),
+            );
+        }
+
+        #[test]
+        fn statedto_review_phase_wire_shape() {
+            let dto = StateDto {
+                kind: "review",
+                phase: "review",
+                card: Some(CardDto {
+                    front: "What is ownership?".to_string(),
+                    context: vec!["Chapter 4".to_string()],
+                    back: vec!["every value has one owner".to_string()],
+                    reshaped: true,
+                    note: vec![
+                        NoteUnitDto::Sentence {
+                            text: "Ownership frees memory deterministically.".to_string(),
+                        },
+                        NoteUnitDto::Code {
+                            lines: vec!["let s = String::new();".to_string()],
+                        },
+                    ],
+                    img: Some("/img/0123456789abcdef".to_string()),
+                    img_back: Some("/img/0123456789abcdef".to_string()),
+                    at: Some("string.rs:120-128".to_string()),
+                    citation: Some(ExcerptDto {
+                        path: "src/string.rs".to_string(),
+                        lines: vec![LineDto {
+                            n: 120,
+                            text: "let s = String::new();".to_string(),
+                        }],
+                        truncated: false,
+                    }),
+                    citation_error: None,
+                    crumb: Some(CrumbDto {
+                        regions: vec!["intro".to_string(), "body".to_string()],
+                        current: 1,
+                        cells: vec![vec![0.5], vec![1.0]],
+                    }),
+                }),
+                choices: Some(vec!["owner".to_string(), "borrower".to_string()]),
+                keypoints: Some(vec!["one owner per value".to_string()]),
+                acquire: false,
+                mode: "flip",
+                depth: "recall",
+                input: "type",
+                remaining: 3,
+                initial: 5,
+                reviews: 2,
+                passed: 1,
+                failed: 1,
+                exam_due: vec!["rust.txt".to_string()],
+                can_restart: true,
+                promotable: true,
+                label: "rust.txt".to_string(),
+            };
+            pin(
+                "StateDto.review",
+                &dto,
+                json!({
+                    "kind": "review",
+                    "phase": "review",
+                    "card": {
+                        "front": "What is ownership?",
+                        "context": ["Chapter 4"],
+                        "back": ["every value has one owner"],
+                        "reshaped": true,
+                        "note": [
+                            {"kind": "sentence", "text": "Ownership frees memory deterministically."},
+                            {"kind": "code", "lines": ["let s = String::new();"]}
+                        ],
+                        "img": "/img/0123456789abcdef",
+                        "img_back": "/img/0123456789abcdef",
+                        "at": "string.rs:120-128",
+                        "citation": {
+                            "path": "src/string.rs",
+                            "lines": [{"n": 120, "text": "let s = String::new();"}],
+                            "truncated": false
+                        },
+                        "citation_error": null,
+                        "crumb": {
+                            "regions": ["intro", "body"],
+                            "current": 1,
+                            "cells": [[0.5], [1.0]]
+                        }
+                    },
+                    "choices": ["owner", "borrower"],
+                    "keypoints": ["one owner per value"],
+                    "acquire": false,
+                    "mode": "flip",
+                    "depth": "recall",
+                    "input": "type",
+                    "remaining": 3,
+                    "initial": 5,
+                    "reviews": 2,
+                    "passed": 1,
+                    "failed": 1,
+                    "exam_due": ["rust.txt"],
+                    "can_restart": true,
+                    "promotable": true,
+                    "label": "rust.txt"
+                }),
+            );
+        }
+
+        #[test]
+        fn walkdto_predict_phase_wire_shape() {
+            let dto = WalkDto {
+                kind: "walk",
+                phase: "predict",
+                description: "how a String grows".to_string(),
+                source: Some("src/lib.rs".to_string()),
+                total: 2,
+                current: 2,
+                path: vec![
+                    HopDto {
+                        prompt: "push begins".to_string(),
+                        delta: Some("passed"),
+                        current: false,
+                    },
+                    HopDto {
+                        prompt: "capacity doubles".to_string(),
+                        delta: None,
+                        current: true,
+                    },
+                ],
+                prompt: Some("what does push do when full?".to_string()),
+                givens: vec!["a String at capacity".to_string()],
+                locator: Some("lib.rs:40-52".to_string()),
+                prediction: None,
+                excerpt: None,
+                excerpt_error: None,
+                points: Vec::new(),
+                note: None,
+                auto_grade: false,
+                thinking: false,
+                verdict: None,
+                feedback: None,
+                grade_error: None,
+                summary: None,
+            };
+            pin(
+                "WalkDto.predict",
+                &dto,
+                json!({
+                    "kind": "walk",
+                    "phase": "predict",
+                    "description": "how a String grows",
+                    "source": "src/lib.rs",
+                    "total": 2,
+                    "current": 2,
+                    "path": [
+                        {"prompt": "push begins", "delta": "passed", "current": false},
+                        {"prompt": "capacity doubles", "delta": null, "current": true}
+                    ],
+                    "prompt": "what does push do when full?",
+                    "givens": ["a String at capacity"],
+                    "locator": "lib.rs:40-52",
+                    "prediction": null,
+                    "excerpt": null,
+                    "excerpt_error": null,
+                    "points": [],
+                    "note": null,
+                    "auto_grade": false,
+                    "thinking": false,
+                    "verdict": null,
+                    "feedback": null,
+                    "grade_error": null,
+                    "summary": null
+                }),
+            );
+        }
+
+        #[test]
+        fn walkdto_done_phase_wire_shape() {
+            let dto = WalkDto {
+                kind: "walk",
+                phase: "done",
+                description: "how a String grows".to_string(),
+                source: None,
+                total: 3,
+                current: 3,
+                path: vec![HopDto {
+                    prompt: "capacity doubles".to_string(),
+                    delta: Some("partly"),
+                    current: false,
+                }],
+                prompt: None,
+                givens: Vec::new(),
+                locator: None,
+                prediction: Some("it reallocates".to_string()),
+                excerpt: Some(ExcerptDto {
+                    path: "src/lib.rs".to_string(),
+                    lines: vec![LineDto {
+                        n: 40,
+                        text: "self.grow();".to_string(),
+                    }],
+                    truncated: true,
+                }),
+                excerpt_error: None,
+                points: vec!["amortized doubling".to_string()],
+                note: Some("see also Vec".to_string()),
+                auto_grade: true,
+                thinking: false,
+                verdict: Some("partly"),
+                feedback: Some("half right".to_string()),
+                grade_error: None,
+                summary: Some(SummaryDto {
+                    passed: 1,
+                    partly: 1,
+                    failed: 1,
+                    weak: vec![2, 3],
+                    total: 3,
+                }),
+            };
+            pin(
+                "WalkDto.done",
+                &dto,
+                json!({
+                    "kind": "walk",
+                    "phase": "done",
+                    "description": "how a String grows",
+                    "source": null,
+                    "total": 3,
+                    "current": 3,
+                    "path": [
+                        {"prompt": "capacity doubles", "delta": "partly", "current": false}
+                    ],
+                    "prompt": null,
+                    "givens": [],
+                    "locator": null,
+                    "prediction": "it reallocates",
+                    "excerpt": {
+                        "path": "src/lib.rs",
+                        "lines": [{"n": 40, "text": "self.grow();"}],
+                        "truncated": true
+                    },
+                    "excerpt_error": null,
+                    "points": ["amortized doubling"],
+                    "note": "see also Vec",
+                    "auto_grade": true,
+                    "thinking": false,
+                    "verdict": "partly",
+                    "feedback": "half right",
+                    "grade_error": null,
+                    "summary": {"passed": 1, "partly": 1, "failed": 1, "weak": [2, 3], "total": 3}
+                }),
+            );
+        }
+
+        #[test]
+        fn examdto_results_phase_wire_shape() {
+            let dto = ExamDto {
+                phase: "results",
+                deck: "rust.txt".to_string(),
+                strictness: "balanced",
+                total: 1,
+                current: 1,
+                question: None,
+                answer: String::new(),
+                on_last: true,
+                grades: vec![ExamGradeDto {
+                    question: "Why does Rust use ownership?".to_string(),
+                    points: vec!["memory safety without a GC".to_string()],
+                    answer: "it frees memory deterministically".to_string(),
+                    verdict: "PASS",
+                    feedback: "solid".to_string(),
+                    missed: Vec::new(),
+                }],
+                passed: Some(true),
+                gaps: Vec::new(),
+                can_remediate: false,
+                remediated_count: None,
+                is_trace: false,
+                unlocks: vec!["next.txt".to_string()],
+                thinking: false,
+                error: None,
+                elapsed: None,
+                cooldown_ms: None,
+            };
+            pin(
+                "ExamDto.results",
+                &dto,
+                json!({
+                    "phase": "results",
+                    "deck": "rust.txt",
+                    "strictness": "balanced",
+                    "total": 1,
+                    "current": 1,
+                    "question": null,
+                    "answer": "",
+                    "on_last": true,
+                    "grades": [{
+                        "question": "Why does Rust use ownership?",
+                        "points": ["memory safety without a GC"],
+                        "answer": "it frees memory deterministically",
+                        "verdict": "PASS",
+                        "feedback": "solid",
+                        "missed": []
+                    }],
+                    "passed": true,
+                    "gaps": [],
+                    "can_remediate": false,
+                    "remediated_count": null,
+                    "is_trace": false,
+                    "unlocks": ["next.txt"],
+                    "thinking": false,
+                    "error": null,
+                    "elapsed": null,
+                    "cooldown_ms": null
+                }),
+            );
+        }
+
+        #[test]
+        fn examdto_cooldown_phase_wire_shape() {
+            let dto = cooldown_dto("deck.txt", 90000);
+            pin(
+                "ExamDto.cooldown",
+                &dto,
+                json!({
+                    "phase": "cooldown",
+                    "deck": "deck.txt",
+                    "strictness": "balanced",
+                    "total": 0,
+                    "current": 0,
+                    "question": null,
+                    "answer": "",
+                    "on_last": false,
+                    "grades": [],
+                    "passed": null,
+                    "gaps": [],
+                    "can_remediate": false,
+                    "remediated_count": null,
+                    "is_trace": true,
+                    "unlocks": [],
+                    "thinking": false,
+                    "error": null,
+                    "elapsed": null,
+                    "cooldown_ms": 90000
+                }),
+            );
+        }
+
+        #[test]
+        fn decklistdto_wire_shape() {
+            let dto = DeckListDto {
+                workspaces: vec![DeckItemDto {
+                    name: "rustws".to_string(),
+                    label: "Rust workspace".to_string(),
+                    meta: Some("3/10".to_string()),
+                    state: "workspace",
+                    locked: false,
+                    reviewable: true,
+                    reviewable_recognize: false,
+                    reviewable_recall: true,
+                    reviewable_reconstruct: true,
+                    mastered: false,
+                    is_trace: false,
+                    examable: false,
+                    has_exam: false,
+                    recent: true,
+                    is_workspace: true,
+                    description: Some("learn Rust ownership".to_string()),
+                    members: vec![MemberDto {
+                        name: "rustws/intro.txt".to_string(),
+                        label: "Intro".to_string(),
+                        meta: Some("3/10".to_string()),
+                        state: "started",
+                        locked: false,
+                        reviewable: true,
+                        reviewable_recognize: true,
+                        reviewable_recall: true,
+                        reviewable_reconstruct: false,
+                        mastered: false,
+                        is_trace: false,
+                        examable: true,
+                        has_exam: true,
+                        indent: 1,
+                        tree: "└─ ".to_string(),
+                        has_topology: false,
+                        badge_depth: None,
+                        badge_dotted: false,
+                        new_cards: false,
+                        last_depth: "recall",
+                    }],
+                    path: Some("~/decks".to_string()),
+                    icon: Some("/img/0123456789abcdef".to_string()),
+                    icon_svg: true,
+                    has_topology: true,
+                    badge_depth: Some("recall"),
+                    badge_dotted: true,
+                    new_cards: true,
+                    last_depth: "recall",
+                }],
+                recent: Vec::new(),
+                folders: Vec::new(),
+            };
+            pin(
+                "DeckListDto",
+                &dto,
+                json!({
+                    "workspaces": [{
+                        "name": "rustws",
+                        "label": "Rust workspace",
+                        "meta": "3/10",
+                        "state": "workspace",
+                        "locked": false,
+                        "reviewable": true,
+                        "reviewable_recognize": false,
+                        "reviewable_recall": true,
+                        "reviewable_reconstruct": true,
+                        "mastered": false,
+                        "is_trace": false,
+                        "examable": false,
+                        "has_exam": false,
+                        "recent": true,
+                        "is_workspace": true,
+                        "description": "learn Rust ownership",
+                        "members": [{
+                            "name": "rustws/intro.txt",
+                            "label": "Intro",
+                            "meta": "3/10",
+                            "state": "started",
+                            "locked": false,
+                            "reviewable": true,
+                            "reviewable_recognize": true,
+                            "reviewable_recall": true,
+                            "reviewable_reconstruct": false,
+                            "mastered": false,
+                            "is_trace": false,
+                            "examable": true,
+                            "has_exam": true,
+                            "indent": 1,
+                            "tree": "└─ ",
+                            "has_topology": false,
+                            "badge_depth": null,
+                            "badge_dotted": false,
+                            "new_cards": false,
+                            "last_depth": "recall"
+                        }],
+                        "path": "~/decks",
+                        "icon": "/img/0123456789abcdef",
+                        "icon_svg": true,
+                        "has_topology": true,
+                        "badge_depth": "recall",
+                        "badge_dotted": true,
+                        "new_cards": true,
+                        "last_depth": "recall"
+                    }],
+                    "recent": [],
+                    "folders": []
+                }),
+            );
+        }
+
+        #[test]
+        fn decktopologydto_wire_shape() {
+            let dto = DeckTopologyDto {
+                topologies: vec![TopologyInfoDto {
+                    name: "north-south".to_string(),
+                    principle: "north to south".to_string(),
+                    regions: vec![RegionInfoDto {
+                        name: "north".to_string(),
+                        cells: vec![0.5, 1.0],
+                        due: 2,
+                    }],
+                }],
+                deck_due: 3,
+            };
+            pin(
+                "DeckTopologyDto",
+                &dto,
+                json!({
+                    "topologies": [{
+                        "name": "north-south",
+                        "principle": "north to south",
+                        "regions": [{"name": "north", "cells": [0.5, 1.0], "due": 2}]
+                    }],
+                    "deck_due": 3
+                }),
+            );
+        }
+
+        #[test]
+        fn browsedto_wire_shape() {
+            let dto = BrowseDto {
+                phase: "browse",
+                label: "rust.txt".to_string(),
+                cards: vec![CardDto {
+                    front: "q".to_string(),
+                    context: Vec::new(),
+                    back: vec!["a".to_string()],
+                    reshaped: false,
+                    note: Vec::new(),
+                    img: None,
+                    img_back: None,
+                    at: None,
+                    citation: None,
+                    citation_error: None,
+                    crumb: None,
+                }],
+            };
+            pin(
+                "BrowseDto",
+                &dto,
+                json!({
+                    "phase": "browse",
+                    "label": "rust.txt",
+                    "cards": [{
+                        "front": "q",
+                        "context": [],
+                        "back": ["a"],
+                        "reshaped": false,
+                        "note": [],
+                        "img": null,
+                        "img_back": null,
+                        "at": null,
+                        "citation": null,
+                        "citation_error": null,
+                        "crumb": null
+                    }]
+                }),
+            );
+        }
+
+        #[test]
+        fn choosefeedbackdto_wire_shape() {
+            let dto = ChooseFeedbackDto {
+                chosen: 2,
+                correct: 1,
+                passed: false,
+            };
+            pin(
+                "ChooseFeedbackDto",
+                &dto,
+                json!({"chosen": 2, "correct": 1, "passed": false}),
+            );
+        }
+
+        #[test]
+        fn checkfeedbackdto_wire_shape() {
+            let dto = CheckFeedbackDto {
+                results: vec![TypedResult {
+                    input: "pars".to_string(),
+                    expected: "Paris".to_string(),
+                    passed: false,
+                }],
+                passed: false,
+            };
+            pin(
+                "CheckFeedbackDto",
+                &dto,
+                json!({
+                    "results": [{"input": "pars", "expected": "Paris", "passed": false}],
+                    "passed": false
+                }),
+            );
+        }
+
+        #[test]
+        fn askdto_populated_wire_shape() {
+            let dto = AskDto {
+                transcript: vec![ExchangeDto {
+                    q: "why one owner?".to_string(),
+                    a: "so drops are deterministic".to_string(),
+                }],
+                thinking: true,
+                status: Some("asking claude".to_string()),
+                error: None,
+            };
+            pin(
+                "AskDto.populated",
+                &dto,
+                json!({
+                    "transcript": [{"q": "why one owner?", "a": "so drops are deterministic"}],
+                    "thinking": true,
+                    "status": "asking claude",
+                    "error": null
+                }),
+            );
+        }
+
+        #[test]
+        fn askdto_empty_wire_shape() {
+            let dto = AskDto {
+                transcript: Vec::new(),
+                thinking: false,
+                status: None,
+                error: None,
+            };
+            pin(
+                "AskDto.empty",
+                &dto,
+                json!({
+                    "transcript": [],
+                    "thinking": false,
+                    "status": null,
+                    "error": null
+                }),
+            );
+        }
+
+        #[test]
+        fn askinfodto_and_versiondto_wire_shape() {
+            let info = AskInfoDto {
+                model: "default".to_string(),
+                effort: "default".to_string(),
+            };
+            pin(
+                "AskInfoDto",
+                &info,
+                json!({"model": "default", "effort": "default"}),
+            );
+            let version = VersionDto {
+                version: env!("CARGO_PKG_VERSION"),
+            };
+            pin(
+                "VersionDto",
+                &version,
+                json!({"version": env!("CARGO_PKG_VERSION")}),
+            );
+        }
+
+        #[test]
+        fn augmentdto_wire_shape() {
+            let dto = AugmentDto {
+                deck: "rust.txt".to_string(),
+                cards: 12,
+                rows: vec![AugmentRowDto {
+                    kind: "choices",
+                    label: "choice distractors",
+                    covered: 4,
+                    eligible: 12,
+                    items: vec!["north-south".to_string()],
+                    busy: true,
+                }],
+                busy: Some("choices"),
+                elapsed: Some(3),
+                error: None,
+            };
+            pin(
+                "AugmentDto",
+                &dto,
+                json!({
+                    "deck": "rust.txt",
+                    "cards": 12,
+                    "rows": [{
+                        "kind": "choices",
+                        "label": "choice distractors",
+                        "covered": 4,
+                        "eligible": 12,
+                        "items": ["north-south"],
+                        "busy": true
+                    }],
+                    "busy": "choices",
+                    "elapsed": 3,
+                    "error": null
+                }),
+            );
+        }
     }
 }

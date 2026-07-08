@@ -1,0 +1,77 @@
+{
+  "acquire": false,
+  "can_restart": true,
+  "card": {
+    "at": "string.rs:120-128",
+    "back": [
+      "every value has one owner"
+    ],
+    "citation": {
+      "lines": [
+        {
+          "n": 120,
+          "text": "let s = String::new();"
+        }
+      ],
+      "path": "src/string.rs",
+      "truncated": false
+    },
+    "citation_error": null,
+    "context": [
+      "Chapter 4"
+    ],
+    "crumb": {
+      "cells": [
+        [
+          0.5
+        ],
+        [
+          1.0
+        ]
+      ],
+      "current": 1,
+      "regions": [
+        "intro",
+        "body"
+      ]
+    },
+    "front": "What is ownership?",
+    "img": "/img/0123456789abcdef",
+    "img_back": "/img/0123456789abcdef",
+    "note": [
+      {
+        "kind": "sentence",
+        "text": "Ownership frees memory deterministically."
+      },
+      {
+        "kind": "code",
+        "lines": [
+          "let s = String::new();"
+        ]
+      }
+    ],
+    "reshaped": true
+  },
+  "choices": [
+    "owner",
+    "borrower"
+  ],
+  "depth": "recall",
+  "exam_due": [
+    "rust.txt"
+  ],
+  "failed": 1,
+  "initial": 5,
+  "input": "type",
+  "keypoints": [
+    "one owner per value"
+  ],
+  "kind": "review",
+  "label": "rust.txt",
+  "mode": "flip",
+  "passed": 1,
+  "phase": "review",
+  "promotable": true,
+  "remaining": 3,
+  "reviews": 2
+}

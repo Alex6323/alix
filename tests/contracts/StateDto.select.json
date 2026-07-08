@@ -1,0 +1,20 @@
+{
+  "acquire": false,
+  "can_restart": false,
+  "card": null,
+  "choices": null,
+  "depth": "recall",
+  "exam_due": [],
+  "failed": 0,
+  "initial": 0,
+  "input": "type",
+  "keypoints": null,
+  "kind": "review",
+  "label": "select decks",
+  "mode": "flip",
+  "passed": 0,
+  "phase": "select",
+  "promotable": false,
+  "remaining": 0,
+  "reviews": 0
+}

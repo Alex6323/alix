@@ -1,0 +1,21 @@
+{
+  "answer": "",
+  "can_remediate": false,
+  "cooldown_ms": 90000,
+  "current": 0,
+  "deck": "deck.txt",
+  "elapsed": null,
+  "error": null,
+  "gaps": [],
+  "grades": [],
+  "is_trace": true,
+  "on_last": false,
+  "passed": null,
+  "phase": "cooldown",
+  "question": null,
+  "remediated_count": null,
+  "strictness": "balanced",
+  "thinking": false,
+  "total": 0,
+  "unlocks": []
+}

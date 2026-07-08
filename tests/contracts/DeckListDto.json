@@ -1,0 +1,56 @@
+{
+  "folders": [],
+  "recent": [],
+  "workspaces": [
+    {
+      "badge_depth": "recall",
+      "badge_dotted": true,
+      "description": "learn Rust ownership",
+      "examable": false,
+      "has_exam": false,
+      "has_topology": true,
+      "icon": "/img/0123456789abcdef",
+      "icon_svg": true,
+      "is_trace": false,
+      "is_workspace": true,
+      "label": "Rust workspace",
+      "last_depth": "recall",
+      "locked": false,
+      "mastered": false,
+      "members": [
+        {
+          "badge_depth": null,
+          "badge_dotted": false,
+          "examable": true,
+          "has_exam": true,
+          "has_topology": false,
+          "indent": 1,
+          "is_trace": false,
+          "label": "Intro",
+          "last_depth": "recall",
+          "locked": false,
+          "mastered": false,
+          "meta": "3/10",
+          "name": "rustws/intro.txt",
+          "new_cards": false,
+          "reviewable": true,
+          "reviewable_recall": true,
+          "reviewable_recognize": true,
+          "reviewable_reconstruct": false,
+          "state": "started",
+          "tree": "└─ "
+        }
+      ],
+      "meta": "3/10",
+      "name": "rustws",
+      "new_cards": true,
+      "path": "~/decks",
+      "recent": true,
+      "reviewable": true,
+      "reviewable_recall": true,
+      "reviewable_recognize": false,
+      "reviewable_reconstruct": true,
+      "state": "workspace"
+    }
+  ]
+}

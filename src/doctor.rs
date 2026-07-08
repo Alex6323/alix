@@ -75,7 +75,7 @@ pub fn check_config(path: Option<&Path>) -> (Finding, Config) {
 /// Opens the progress store at `path` (`None` → the platform default) and
 /// reports whether it parses, with its entry count.
 pub fn check_store(path: Option<PathBuf>) -> Finding {
-    let path = match path.or_else(|| crate::store::default_store_path()) {
+    let path = match path.or_else(crate::store::default_store_path) {
         Some(p) => p,
         None => {
             return Finding::bad(

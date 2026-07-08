@@ -722,7 +722,6 @@ fn synthesize_virtual(vc: &VirtualCard, subject: &Arc<str>, line: usize) -> Opti
 /// `Session`, and records the decks as recent. The store is borrowed (the
 /// caller owns it), so the web server can reuse one store across repeated
 /// selections.
-#[expect(clippy::too_many_arguments)] // each is a distinct, named review input
 fn build_review(
     deck_paths: Vec<PathBuf>,
     pacing: Pacing,

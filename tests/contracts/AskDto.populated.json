@@ -1,0 +1,11 @@
+{
+  "error": null,
+  "status": "asking claude",
+  "thinking": true,
+  "transcript": [
+    {
+      "a": "so drops are deterministic",
+      "q": "why one owner?"
+    }
+  ]
+}

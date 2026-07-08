@@ -1,0 +1,49 @@
+{
+  "auto_grade": true,
+  "current": 3,
+  "description": "how a String grows",
+  "excerpt": {
+    "lines": [
+      {
+        "n": 40,
+        "text": "self.grow();"
+      }
+    ],
+    "path": "src/lib.rs",
+    "truncated": true
+  },
+  "excerpt_error": null,
+  "feedback": "half right",
+  "givens": [],
+  "grade_error": null,
+  "kind": "walk",
+  "locator": null,
+  "note": "see also Vec",
+  "path": [
+    {
+      "current": false,
+      "delta": "partly",
+      "prompt": "capacity doubles"
+    }
+  ],
+  "phase": "done",
+  "points": [
+    "amortized doubling"
+  ],
+  "prediction": "it reallocates",
+  "prompt": null,
+  "source": null,
+  "summary": {
+    "failed": 1,
+    "partly": 1,
+    "passed": 1,
+    "total": 3,
+    "weak": [
+      2,
+      3
+    ]
+  },
+  "thinking": false,
+  "total": 3,
+  "verdict": "partly"
+}

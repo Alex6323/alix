@@ -1,0 +1,19 @@
+{
+  "deck_due": 3,
+  "topologies": [
+    {
+      "name": "north-south",
+      "principle": "north to south",
+      "regions": [
+        {
+          "cells": [
+            0.5,
+            1.0
+          ],
+          "due": 2,
+          "name": "north"
+        }
+      ]
+    }
+  ]
+}

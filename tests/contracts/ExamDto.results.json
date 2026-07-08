@@ -1,0 +1,34 @@
+{
+  "answer": "",
+  "can_remediate": false,
+  "cooldown_ms": null,
+  "current": 1,
+  "deck": "rust.txt",
+  "elapsed": null,
+  "error": null,
+  "gaps": [],
+  "grades": [
+    {
+      "answer": "it frees memory deterministically",
+      "feedback": "solid",
+      "missed": [],
+      "points": [
+        "memory safety without a GC"
+      ],
+      "question": "Why does Rust use ownership?",
+      "verdict": "PASS"
+    }
+  ],
+  "is_trace": false,
+  "on_last": true,
+  "passed": true,
+  "phase": "results",
+  "question": null,
+  "remediated_count": null,
+  "strictness": "balanced",
+  "thinking": false,
+  "total": 1,
+  "unlocks": [
+    "next.txt"
+  ]
+}

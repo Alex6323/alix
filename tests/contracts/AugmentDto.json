@@ -1,0 +1,19 @@
+{
+  "busy": "choices",
+  "cards": 12,
+  "deck": "rust.txt",
+  "elapsed": 3,
+  "error": null,
+  "rows": [
+    {
+      "busy": true,
+      "covered": 4,
+      "eligible": 12,
+      "items": [
+        "north-south"
+      ],
+      "kind": "choices",
+      "label": "choice distractors"
+    }
+  ]
+}
