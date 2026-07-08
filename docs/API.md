@@ -182,6 +182,24 @@ away. Only one generation runs at a time — `POST` while one is in flight is
 still-running worker finishes into a discarded channel, the same as leaving
 Augment.
 
+### 4.8 Share
+
+`POST /api/share {deck?}` stages a row (a deck file as-is; a folder minus
+personal state: progress, recent list, local pacing overrides) and starts a
+`wormhole send` on it, following §3's polling pattern: poll `GET /api/share`
+while `phase:"staging"`/`"code"`, then read `error` or `"sent"`. `deck` is the
+same resolution-map name `/api/select` uses; absent/`null` shares the served
+root. `phase` walks `"staging"` (job started, no code yet) → `"code"`
+(`code` set, show it to the other side) → `"sent"`, or `"error"` at any
+point, including a spawn failure (`wormhole` not installed), which still comes
+back as an error-phase `ShareDto` with the install hint, not a bare error
+status. Only one share runs at a time: `POST` while one is in flight is 409; a
+**finished** job (an `error` or `sent` phase) is replaced by the next `POST`,
+mirroring Generate. `POST /api/share/close` cancels an in-flight transfer
+(kills the wormhole child) and clears the job unconditionally.
+`GET /api/share/zip[?deck]` is the offline fallback: synchronous, no polling,
+it stages the same way and streams back a `.zip` instead of a wormhole code.
+
 ## 5. Endpoint reference
 
 Statuses: all endpoints can additionally return 401 (token) — omitted below.
@@ -235,6 +253,15 @@ token holder is trusted to call it, the same trust class as `/api/grade`.
 | POST | `/api/generate` | `{url, guidance?, dest?}` | `GenerateDto` | 400 bad body / non-http(s) `url` / unknown `dest`; 409 a generation is already in flight |
 | GET | `/api/generate` | – | `GenerateDto` (poll) | 409 no generation |
 | POST | `/api/generate/close` | – | 200 | – |
+
+### Share
+
+| Method | Path | Body | Response | Errors |
+|---|---|---|---|---|
+| POST | `/api/share` | `{deck?}` | `ShareDto` | 400 unknown `deck`; 409 a share is already in flight |
+| GET | `/api/share` | – | `ShareDto` (poll) | 409 no share |
+| POST | `/api/share/close` | – | 200 | – |
+| GET | `/api/share/zip` | – (`?deck=` query, optional) | zip bytes (§8) | 400 unknown `deck` / staging or zip failure |
 
 ### Ask
 
@@ -488,6 +515,19 @@ The result of `POST`/`GET /api/generate`, polled per §3's pattern (§4.7).
 Example (from the pinned test):
 `{"phase":"done","deck":"rust-ownership.txt","cards":12,"elapsed":41,"error":null}`.
 
+### ShareDto
+
+The result of `POST`/`GET /api/share`, polled per §3's pattern (§4.8).
+
+| Key | Type | Meaning |
+|---|---|---|
+| `phase` | string | `staging` \| `code` \| `sent` \| `error` (open set). |
+| `code` | string? | The wormhole code mnemonic, once received — shown to the other side. |
+| `elapsed` | number? | Seconds since the job started (kept ticking even after it finishes). |
+| `error` | string? | Set on `error` — including a spawn failure (`wormhole` not installed), which surfaces the install hint here rather than a bare error status. |
+
+Example (from the pinned test): `{"phase":"code","code":"7-alpha-bravo","elapsed":3,"error":null}`.
+
 ### ExamDto
 
 | Key | Type | Meaning |
@@ -579,6 +619,9 @@ they may change without notice and native clients must not depend on them:
 - **Request bodies are documented here but not snapshot-tested** (responses
   are). Body field names come from the same Rust-field convention.
 - **No CORS** (see §3) — a browser client must be served same-origin by alix.
+- **`GET /api/share/zip` is the one non-JSON API response**, deliberately: it
+  streams `application/zip` bytes with a `Content-Disposition: attachment`
+  header (§4.8's offline fallback to the wormhole flow) rather than a DTO.
 
 ## 9. Planned surface (additive)
 

@@ -25,7 +25,7 @@ use std::{
     time::Instant,
 };
 
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
 use tiny_http::{Header, Method, Request, Response, Server};
 use twox_hash::XxHash64;
@@ -47,6 +47,7 @@ use crate::{
     render::{self, NoteUnit},
     scheduler::{Fsrs, Grade, keypoint_grade},
     session::{Session, now_ms},
+    share,
     store::{self, Store},
     trace::{self, Delta, Excerpt, Phase, SourceBase, Walk},
 };
@@ -1577,6 +1578,86 @@ impl Generating {
     }
 }
 
+/// A wormhole send in flight: the staged copy (kept alive for the whole
+/// transfer), the job, and what it has reported so far.
+struct Sharing {
+    job: share::ShareJob,
+    _stage: tempfile::TempDir,
+    code: Option<String>,
+    started: Instant,
+    outcome: Option<Result<(), String>>,
+}
+
+#[derive(Serialize)]
+struct ShareDto {
+    /// `staging` | `code` | `sent` | `error` (open set).
+    phase: &'static str,
+    code: Option<String>,
+    elapsed: Option<u64>,
+    error: Option<String>,
+}
+
+impl Sharing {
+    fn poll(&mut self) {
+        while let Ok(ev) = self.job.events.try_recv() {
+            match ev {
+                share::ShareEvent::Code(c) => self.code = Some(c),
+                share::ShareEvent::Done => self.outcome = Some(Ok(())),
+                share::ShareEvent::Error(e) => self.outcome = Some(Err(e)),
+            }
+        }
+    }
+
+    fn dto(&self) -> ShareDto {
+        let elapsed = Some(self.started.elapsed().as_secs());
+        match (&self.outcome, &self.code) {
+            (Some(Err(e)), _) => ShareDto {
+                phase: "error",
+                code: self.code.clone(),
+                elapsed,
+                error: Some(e.clone()),
+            },
+            (Some(Ok(())), _) => ShareDto {
+                phase: "sent",
+                code: self.code.clone(),
+                elapsed,
+                error: None,
+            },
+            (None, Some(_)) => ShareDto {
+                phase: "code",
+                code: self.code.clone(),
+                elapsed,
+                error: None,
+            },
+            (None, None) => ShareDto {
+                phase: "staging",
+                code: None,
+                elapsed,
+                error: None,
+            },
+        }
+    }
+}
+
+/// Stages a row for sharing into `tmp`: a deck file travels as-is (its
+/// augmentations live in the store-side cache and stay home); a folder is
+/// copied minus personal state. Returns what to hand to wormhole/zip.
+fn stage_for_share(path: &Path, tmp: &tempfile::TempDir) -> Result<PathBuf> {
+    if path.is_file() {
+        return Ok(path.to_path_buf());
+    }
+    if !crate::workspace::has_decks(path) {
+        bail!("no decks in `{}` — nothing to share", path.display());
+    }
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("shared-decks");
+    let stage = tmp.path().join(name);
+    share::stage_dir(path, &stage)?;
+    Ok(stage)
+}
+
 /// Serves review on the already-bound `server` until the process is stopped
 /// (binding happens at the call site, *before* the URL is announced — so a
 /// port clash errors before any success-looking output), opening on the
@@ -1648,6 +1729,10 @@ pub fn run_review(
     let mut augmenting: Option<Augmenting> = None;
     // The add-sheet's "Generate from URL" action; one deck generation at a time.
     let mut generating: Option<Generating> = None;
+    // The picker's "Share" action; one wormhole send in flight at a time. An
+    // abandoned/replaced job always drops through `Sharing`/`ShareJob` (never
+    // leaked), so its child process is cancelled even without a close call.
+    let mut sharing: Option<Sharing> = None;
     // A trace picked from the selection screen walks in-page inside review.html
     // (no navigation to a separate `/walk` page — the walk is an in-page mode).
     let mut walking: Option<Walking> = None;
@@ -2055,6 +2140,127 @@ pub fn run_review(
             (Method::Post, "/api/generate/close") => {
                 generating = None; // a running worker finishes and is discarded
                 respond_status(request, 200);
+            }
+            (Method::Post, "/api/share") => {
+                #[derive(Deserialize)]
+                struct Body {
+                    deck: Option<String>,
+                }
+                // Drain a finished-but-unpolled job first, so a completed send is
+                // replaced by the next POST even without an intervening GET —
+                // mirroring the `/api/generate` fix (only a *live* job 409s).
+                if let Some(s) = sharing.as_mut() {
+                    s.poll();
+                }
+                if sharing.as_ref().is_some_and(|s| s.outcome.is_none()) {
+                    respond_status(request, 409); // one share at a time
+                    continue;
+                }
+                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
+                let path = match body.and_then(|b| b.deck) {
+                    None => Some(decks_dir.clone()),
+                    Some(name) => {
+                        // The single resolve-map idiom (see /api/augment/open).
+                        let mut known: HashMap<String, PathBuf> = HashMap::new();
+                        for e in picker::catalog(&decks_dir, &recent) {
+                            for m in &e.members {
+                                known.insert(m.name.clone(), m.path.clone());
+                            }
+                            known.insert(e.name, e.path);
+                        }
+                        resolve_name(&name, &known)
+                    }
+                };
+                let Some(path) = path else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                let started = tempfile::tempdir()
+                    .map_err(|e| anyhow!("{e}"))
+                    .and_then(|tmp| {
+                        let to_send = stage_for_share(&path, &tmp)?;
+                        let job = share::send_spawn(&to_send)?;
+                        Ok(Sharing {
+                            job,
+                            _stage: tmp,
+                            code: None,
+                            started: Instant::now(),
+                            outcome: None,
+                        })
+                    });
+                match started {
+                    Ok(s) => {
+                        let dto = s.dto();
+                        sharing = Some(s);
+                        respond_json(request, &dto);
+                    }
+                    // Spawn failures (missing binary) surface as an error-phase
+                    // job so the sheet shows the install hint, not a bare 400.
+                    Err(e) => respond_json(
+                        request,
+                        &ShareDto {
+                            phase: "error",
+                            code: None,
+                            elapsed: Some(0),
+                            error: Some(format!("{e:#}")),
+                        },
+                    ),
+                }
+            }
+            (Method::Get, "/api/share") => {
+                let Some(s) = sharing.as_mut() else {
+                    respond_status(request, 409);
+                    continue;
+                };
+                s.poll();
+                respond_json(request, &s.dto());
+            }
+            (Method::Post, "/api/share/close") => {
+                // Dropping the (former) job cancels its wormhole child — see
+                // `ShareJob`'s `Drop`; `cancel()` here is just for clarity.
+                if let Some(s) = sharing.take() {
+                    s.job.cancel();
+                }
+                respond_status(request, 200);
+            }
+            (Method::Get, "/api/share/zip") => {
+                // `request_path` (used for dispatch) already strips the query
+                // string, so the plain literal above matches regardless of
+                // `?deck=...` — read the param back off the full URL here.
+                let name = query_param(request.url(), "deck");
+                let path = match &name {
+                    None => Some(decks_dir.clone()),
+                    Some(n) => {
+                        let mut known: HashMap<String, PathBuf> = HashMap::new();
+                        for e in picker::catalog(&decks_dir, &recent) {
+                            for m in &e.members {
+                                known.insert(m.name.clone(), m.path.clone());
+                            }
+                            known.insert(e.name, e.path);
+                        }
+                        resolve_name(n, &known)
+                    }
+                };
+                let Some(path) = path else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                let zipped = tempfile::tempdir().ok().and_then(|tmp| {
+                    let staged = stage_for_share(&path, &tmp).ok()?;
+                    let out = tmp.path().join("share.zip");
+                    share::zip_to(&staged, &out).ok()?;
+                    std::fs::read(&out).ok()
+                });
+                match zipped {
+                    Some(bytes) => {
+                        let stem = name
+                            .as_deref()
+                            .map(|n| n.rsplit('/').next().unwrap_or(n))
+                            .unwrap_or("shared-decks");
+                        respond_download(request, bytes, "application/zip", &format!("{stem}.zip"));
+                    }
+                    None => respond_status(request, 400),
+                }
             }
             (Method::Post, "/api/deselect") => {
                 reviewing = None;
@@ -3910,6 +4116,22 @@ fn respond_bytes(request: Request, bytes: Vec<u8>, content_type: &str) {
     let _ = request.respond(Response::from_data(bytes).with_header(header));
 }
 
+/// Like [`respond_bytes`], but marks the response as a file to save rather
+/// than render inline — the zip export is the one non-JSON API response, and
+/// a browser only offers "save as" with `Content-Disposition: attachment`.
+fn respond_download(request: Request, bytes: Vec<u8>, content_type: &str, filename: &str) {
+    let content_type_header =
+        Header::from_bytes(&b"Content-Type"[..], content_type.as_bytes()).unwrap();
+    let disposition = format!("attachment; filename=\"{filename}\"");
+    let disposition_header =
+        Header::from_bytes(&b"Content-Disposition"[..], disposition.as_bytes()).unwrap();
+    let _ = request.respond(
+        Response::from_data(bytes)
+            .with_header(content_type_header)
+            .with_header(disposition_header),
+    );
+}
+
 /// Serves the registered image for `key`, or 404 for an unknown key /
 /// unreadable file. Shared by the review and browse routes.
 fn serve_image(request: Request, images: &HashMap<String, PathBuf>, key: &str) {
@@ -5425,6 +5647,21 @@ mod tests {
                 &dto,
                 json!({"phase": "done", "deck": "rust-ownership.txt", "cards": 12,
                        "elapsed": 41, "error": null}),
+            );
+        }
+
+        #[test]
+        fn sharedto_code_phase_wire_shape() {
+            let dto = ShareDto {
+                phase: "code",
+                code: Some("7-alpha-bravo".to_string()),
+                elapsed: Some(3),
+                error: None,
+            };
+            pin(
+                "ShareDto",
+                &dto,
+                json!({"phase": "code", "code": "7-alpha-bravo", "elapsed": 3, "error": null}),
             );
         }
     }
