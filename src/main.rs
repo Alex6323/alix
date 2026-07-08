@@ -1126,7 +1126,7 @@ fn launch(args: LaunchArgs) -> Result<()> {
         decks: subject_paths(b.decks),
     };
     let token = resolve_serve_token(args.token.clone(), args.lan, &config)?;
-    announce(addr, args.lan, token.as_deref(), &decks_dir);
+    let pair = announce(addr, args.lan, token.as_deref(), &decks_dir);
 
     let opts = serve::ReviewOptions {
         keys: config.keys.clone(),
@@ -1138,6 +1138,7 @@ fn launch(args: LaunchArgs) -> Result<()> {
         ai: config.ai.clone(),
         auth: token,
         config_path: args.config.clone(),
+        pair,
     };
     let build = |paths: Vec<PathBuf>,
                  opts: &serve::SelectOptions,
@@ -1185,40 +1186,48 @@ fn launch(args: LaunchArgs) -> Result<()> {
 /// pairing info (host/port/token, and a scannable QR of the pairing URL) when
 /// it is exposed to the network with a token — or a warning when exposed
 /// without one. Naming the root is what tells side-by-side instances apart.
-fn announce(addr: SocketAddr, lan: bool, token: Option<&str>, root: &Path) {
+/// Returns the same pairing info for `/api/pair` — this is the only place
+/// bind + token + LAN IP come together.
+fn announce(addr: SocketAddr, lan: bool, token: Option<&str>, root: &Path) -> serve::PairInfo {
     let root = abbreviate_home(root);
+    let port = addr.port();
+    let lan_ip = if lan { local_lan_ip() } else { None };
+    let pair = match (token, lan_ip) {
+        (Some(t), Some(ip)) => serve::PairInfo {
+            url: format!("http://{ip}:{port}/?token={t}"),
+            lan: true,
+        },
+        _ => serve::PairInfo {
+            url: format!("http://127.0.0.1:{port}/"),
+            lan: false,
+        },
+    };
     match (lan, token) {
-        (true, Some(t)) => {
-            let port = addr.port();
-            match local_lan_ip() {
-                Some(ip) => {
-                    let url = format!("http://{ip}:{port}/?token={t}");
-                    println!("Serving {root} at http://{ip}:{port}");
-                    println!("On another device, open in a browser (or scan):");
-                    println!("  {url}");
-                    print_qr(&url);
-                    println!("Or pair the app with:  host {ip}  port {port}  token {t}");
-                }
-                None => {
-                    println!("Serving {root} on all interfaces, port {port}.");
-                    println!("On another device, open in a browser:");
-                    println!("  http://<this-machine's-IP>:{port}/?token={t}");
-                    println!(
-                        "Or pair the app with:  host <this-machine's-IP>  port {port}  token {t}"
-                    );
-                }
+        (true, Some(t)) => match lan_ip {
+            Some(ip) => {
+                println!("Serving {root} at http://{ip}:{port}");
+                println!("On another device, open in a browser (or scan):");
+                println!("  {}", pair.url);
+                print_qr(&pair.url);
+                println!("Or pair the app with:  host {ip}  port {port}  token {t}");
             }
-        }
+            None => {
+                println!("Serving {root} on all interfaces, port {port}.");
+                println!("On another device, open in a browser:");
+                println!("  http://<this-machine's-IP>:{port}/?token={t}");
+                println!("Or pair the app with:  host <this-machine's-IP>  port {port}  token {t}");
+            }
+        },
         (true, None) => {
-            println!("Serving {root} on all interfaces, port {}.", addr.port());
+            println!("Serving {root} on all interfaces, port {port}.");
             println!("warning: no authentication — anyone on your network can reach this.");
         }
-        (false, _) => println!(
-            "Serving {root} at http://127.0.0.1:{} — open it in your browser.",
-            addr.port()
-        ),
+        (false, _) => {
+            println!("Serving {root} at http://127.0.0.1:{port} — open it in your browser.")
+        }
     }
     println!("Press Ctrl-C to stop.");
+    pair
 }
 
 /// `path` with the home directory abbreviated to `~`, for the announce line.

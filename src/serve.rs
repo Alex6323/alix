@@ -499,6 +499,17 @@ impl From<doctor::Finding> for DoctorRowDto {
     }
 }
 
+/// The pairing sheet (`GET /api/pair`): the URL another device should open,
+/// and a server-rendered QR of it.
+#[derive(Serialize)]
+struct PairDto {
+    url: String,
+    /// A server-rendered QR of `url`; `null` when this is a localhost-only
+    /// instance (nothing another device could reach).
+    svg: Option<String>,
+    lan: bool,
+}
+
 impl AskInfoDto {
     fn from(cfg: &AskConfig) -> Self {
         let or_default = |s: &Option<String>| s.clone().unwrap_or_else(|| "default".to_string());
@@ -645,6 +656,15 @@ pub struct ReviewOptions {
     /// The `--config` path the launcher loaded config from (`None` → the
     /// platform default), passed through so `/api/doctor` checks the same file.
     pub config_path: Option<PathBuf>,
+    /// How this instance is reached, for `/api/pair`'s pairing sheet.
+    pub pair: PairInfo,
+}
+
+/// How this instance is reached, for the pairing sheet. Built by the
+/// launcher, which is the only place that knows bind + token + LAN IP.
+pub struct PairInfo {
+    pub url: String,
+    pub lan: bool,
 }
 
 /// A review session ready to serve: the session, its header label, the
@@ -1509,6 +1529,7 @@ pub fn run_review(
         review: review_cfg,
         auth,
         config_path,
+        pair,
     } = opts;
     let keys = ReviewKeys::from(&bindings);
     let picker_keys = PickerKeysDto::from(&picker_keys);
@@ -1589,6 +1610,21 @@ pub fn run_review(
                 .map(DoctorRowDto::from)
                 .collect();
                 respond_json(request, &DoctorDto { rows })
+            }
+            (Method::Get, "/api/pair") => {
+                let svg = if pair.lan {
+                    crate::qr::svg(&pair.url)
+                } else {
+                    None
+                };
+                respond_json(
+                    request,
+                    &PairDto {
+                        url: pair.url.clone(),
+                        svg,
+                        lan: pair.lan,
+                    },
+                )
             }
             (Method::Get, "/api/browse-keys") => respond_json(request, &browse_keys),
             (Method::Get, "/api/picker-keys") => respond_json(request, &picker_keys),
@@ -4230,6 +4266,22 @@ mod tests {
         assert_eq!(1, after.deck_due);
     }
 
+    #[test]
+    fn a_lan_pairing_reply_carries_a_qr_svg() {
+        // Mirrors the `/api/pair` handler's own construction: an SVG only
+        // when the pairing info is reachable off-device.
+        let pair = PairInfo {
+            url: "http://192.168.1.2:7777/?token=ab".to_string(),
+            lan: true,
+        };
+        let svg = if pair.lan {
+            crate::qr::svg(&pair.url)
+        } else {
+            None
+        };
+        assert!(svg.unwrap().starts_with("<svg "));
+    }
+
     /// The JSON-API contract snapshot suite (docs/API.md): every wire-facing
     /// DTO gets its entire serialized shape pinned by full-object equality, so
     /// any field add/remove/rename/retype fails here with a pointer at the
@@ -4959,6 +5011,20 @@ mod tests {
                          "remedy": "pipx install magic-wormhole"}
                     ]
                 }),
+            );
+        }
+
+        #[test]
+        fn pairdto_wire_shape() {
+            let dto = PairDto {
+                url: "http://127.0.0.1:7777/".to_string(),
+                svg: None,
+                lan: false,
+            };
+            pin(
+                "PairDto",
+                &dto,
+                json!({"url": "http://127.0.0.1:7777/", "svg": null, "lan": false}),
             );
         }
 

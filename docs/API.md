@@ -162,6 +162,7 @@ Statuses: all endpoints can additionally return 401 (token) — omitted below.
 |---|---|---|---|---|
 | GET | `/api/version` | – | `VersionDto` | – |
 | GET | `/api/doctor` | – | `DoctorDto` | – |
+| GET | `/api/pair` | – | `PairDto` | – |
 | GET | `/api/decks` | – | `DeckListDto` | – |
 | GET | `/api/state` | – | `StateDto` (or `BrowseDto` while browsing) | – |
 | GET | `/api/ask-info` | – | `AskInfoDto` | – |
@@ -384,6 +385,20 @@ network call.
 Example (from the pinned test, illustrating the shape, not a real report):
 `{"name":"config","status":"ok","detail":"~/.config/alix/config.toml parses","remedy":null}`
 and ``{"name":"wormhole","status":"warn","detail":"`wormhole` not found on PATH","remedy":"pipx install magic-wormhole"}``.
+
+### PairDto
+
+The pairing sheet (`GET /api/pair`): the URL another device should open to
+reach this instance, and a QR of it to scan.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `url` | string | The pairing URL (`http://<lan-ip>:<port>/?token=<t>` when reachable off-device, else `http://127.0.0.1:<port>/`). |
+| `svg` | string? | A complete, self-contained inline `<svg>` element encoding `url` as a QR code — safe to inject directly into the page. Rendered black-on-white deliberately (scannability over theme-matching). `null` on a localhost-only instance, since there's nothing another device could reach. |
+| `lan` | bool | Whether this instance is reachable off-device (mirrors `svg`'s presence). |
+
+Example (localhost-only, from the pinned test):
+`{"url":"http://127.0.0.1:7777/","svg":null,"lan":false}`.
 
 ### ExamDto
 
