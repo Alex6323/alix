@@ -74,7 +74,10 @@ fn the_review_subcommand_is_gone() {
     // `alix review x.txt` now parses as a launcher path plus an unexpected
     // extra positional — the subcommand no longer exists.
     let out = alix(&["review", "x.txt"]);
-    assert!(!out.status.success(), "the review subcommand should be gone");
+    assert!(
+        !out.status.success(),
+        "the review subcommand should be gone"
+    );
 }
 
 #[test]
