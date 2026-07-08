@@ -544,6 +544,7 @@ struct PickerKeysDto {
     recognize: Vec<KeyDto>,
     recall: Vec<KeyDto>,
     reconstruct: Vec<KeyDto>,
+    cram: Vec<KeyDto>,
 }
 
 impl PickerKeysDto {
@@ -559,6 +560,7 @@ impl PickerKeysDto {
             recognize: key_list(&k.recognize),
             recall: key_list(&k.recall),
             reconstruct: key_list(&k.reconstruct),
+            cram: key_list(&k.cram),
         }
     }
 }
@@ -1411,9 +1413,7 @@ pub fn run_review(
     opts: ReviewOptions,
     mut build: impl FnMut(
         Vec<PathBuf>,
-        Option<&str>,
-        Option<&str>,
-        Option<Depth>,
+        &SelectOptions,
         &Store,
         &mut RecentDecks,
     ) -> Result<SessionBuild>,
@@ -1537,8 +1537,7 @@ pub fn run_review(
             (Method::Post, "/api/select") => {
                 match read_selection(&mut request, &decks_dir, &recent) {
                     Some(sel) => {
-                        let (topology, region, depth) =
-                            (sel.topology.clone(), sel.region.clone(), sel.depth);
+                        let opts = sel.opts;
                         let paths = vec![sel.deck];
                         // Write to the deck's own store — a workspace's `progress.json`
                         // when they share one, else the global store — so the browser
@@ -1558,14 +1557,7 @@ pub fn run_review(
                                 examining = None;
                                 respond_json(request, &dto);
                             }
-                            Ok(None) => match build(
-                                paths,
-                                topology.as_deref(),
-                                region.as_deref(),
-                                depth,
-                                &store,
-                                &mut recent,
-                            ) {
+                            Ok(None) => match build(paths, &opts, &store, &mut recent) {
                                 Ok(b) => {
                                     // Remember the resolved depth for this deck so a
                                     // plain Learn next time reopens at it (keyed by
@@ -3179,9 +3171,20 @@ fn deck_catalog(
 /// last-used depth, defaulting to Recall).
 struct Selection {
     deck: PathBuf,
-    topology: Option<String>,
-    region: Option<String>,
-    depth: Option<Depth>,
+    opts: SelectOptions,
+}
+
+/// The per-launch choices a selection carries beyond which deck: the picker's
+/// depth pick, focus-drawer topology/region scope, the cram tick-box, and
+/// optional pacing overrides (absent → the instance's CLI/config values).
+#[derive(Default)]
+pub struct SelectOptions {
+    pub topology: Option<String>,
+    pub region: Option<String>,
+    pub depth: Option<Depth>,
+    pub cram: bool,
+    pub max_new: Option<usize>,
+    pub limit: Option<usize>,
 }
 
 fn read_selection(
@@ -3198,6 +3201,12 @@ fn read_selection(
         region: Option<String>,
         #[serde(default)]
         depth: Option<Depth>,
+        #[serde(default)]
+        cram: bool,
+        #[serde(default)]
+        max_new: Option<usize>,
+        #[serde(default)]
+        limit: Option<usize>,
     }
     let body: Body = serde_json::from_reader(request.as_reader()).ok()?;
     if body.deck.is_empty() {
@@ -3216,9 +3225,14 @@ fn read_selection(
     }
     Some(Selection {
         deck: resolve_name(&body.deck, &known)?,
-        topology: body.topology,
-        region: body.region,
-        depth: body.depth,
+        opts: SelectOptions {
+            topology: body.topology,
+            region: body.region,
+            depth: body.depth,
+            cram: body.cram,
+            max_new: body.max_new,
+            limit: body.limit,
+        },
     })
 }
 

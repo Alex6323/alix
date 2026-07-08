@@ -309,12 +309,17 @@ impl Session {
             return;
         }
 
-        // Cram refresh: a correct answer keeps the card fresh without rewarding it
-        // (re-anchor its due — no FSRS update, no recorded review). A cram miss is a
-        // genuine lapse, and every normal grade runs the real scheduler. Recall and
-        // Reconstruct each own an independent schedule (stationarity: no
-        // cross-crediting), so this only ever reads/writes `depth`'s own slot.
-        if self.options.cram && grade.passed() {
+        // Cram changes which cards are QUEUED, never how a genuinely-due card
+        // is GRADED: a card that was due grades exactly like a normal review
+        // (full apply, history, and the propagation below). Only an *early*
+        // cram pass — the card wasn't due yet — is low-information (recall
+        // probability was still high) and merely re-anchors its due date: no
+        // FSRS update, no recorded review, so massed grinding can't inflate
+        // intervals. A miss is a genuine lapse whenever it happens. Recall and
+        // Reconstruct each own an independent schedule (stationarity), so this
+        // only ever reads/writes `depth`'s own slot.
+        let was_due = self.scheduler.is_due(state, depth, now_ms);
+        if self.options.cram && grade.passed() && !was_due {
             self.scheduler.reanchor(state, depth, now_ms);
         } else {
             self.scheduler.apply(state, depth, grade, now_ms, false);
@@ -323,11 +328,13 @@ impl Session {
         // Downward propagation (Reconstruct → Recall) — the one deliberate,
         // conservative exception to "no cross-crediting" (session-depths spec §4
         // addendum): a full Reconstruct pass is recall evidence too, so it flows
-        // down, pass-only (a Partial or Fail never does), never under cram, and
-        // only onto a recall schedule that already exists — never creating one.
+        // down, pass-only (a Partial or Fail never does), and only onto a recall
+        // schedule that already exists — never creating one. In cram it flows
+        // only from a card that was DUE (a due card in cram ≡ a normal review);
+        // an early cram pass propagates nothing.
         if depth == Depth::Reconstruct
             && grade == Grade::Pass
-            && !self.options.cram
+            && (!self.options.cram || was_due)
             && state.recall.is_some()
         {
             if self.scheduler.is_due(state, Depth::Recall, now_ms) {
@@ -447,9 +454,12 @@ impl Session {
         }
         let depth = self.options.depth;
         if depth == Depth::Recognize {
-            return store
-                .get(card.id())
-                .is_none_or(|s| s.recognized_ms.is_none());
+            // Cram serves every card — a badged deck's Recognize session would
+            // otherwise be empty (the repeatable-quiz use).
+            return self.options.cram
+                || store
+                    .get(card.id())
+                    .is_none_or(|s| s.recognized_ms.is_none());
         }
         match store.get(card.id()) {
             // Cram serves everything; otherwise the scheduler decides (its `due_at`
@@ -501,9 +511,12 @@ fn build_queue(
         let mut order: Vec<usize> = (0..cards.len())
             .filter(|&i| !is_retired(&cards[i], store, options.retire_after_days))
             .filter(|&i| {
-                store
-                    .get(cards[i].id())
-                    .is_none_or(|s| s.recognized_ms.is_none())
+                // Cram serves every card (the repeatable quiz); a normal
+                // Recognize session serves only the not-yet-recognized.
+                options.cram
+                    || store
+                        .get(cards[i].id())
+                        .is_none_or(|s| s.recognized_ms.is_none())
             })
             .collect();
         if let Some(limit) = options.limit {
@@ -1566,18 +1579,41 @@ mod tests {
     }
 
     #[test]
-    fn cram_correct_refreshes_without_rewarding() {
+    fn a_due_cram_pass_grades_like_a_normal_review() {
+        // Cram only changes which cards are queued: a card that WAS due
+        // grades with the real scheduler — full credit, recorded.
         let (mut store, _dir) = empty_store();
         let all = cards(1);
-        // A mature, graduated card with a real 30-day interval.
-        store.get_or_insert(all[0].id(), 0).recall = Some(crate::store::FsrsState {
-            stability: 30.0,
-            difficulty: 5.0,
-            scheduled_days: 30,
-            state: 2,
-            due_ms: 1000,
-            ..Default::default()
-        });
+        store.get_or_insert(all[0].id(), 0).recall = Some(mature_fsrs(1000)); // long due
+        let now = 40 * 86_400_000;
+
+        let mut session = Session::new(
+            all.clone(),
+            &store,
+            sched(),
+            SessionOptions {
+                cram: true,
+                ..Default::default()
+            },
+            now,
+        );
+        session.grade(&mut store, Grade::Pass, now);
+
+        let after = store.get(all[0].id()).unwrap();
+        assert_eq!(1, after.history.len(), "a due cram pass is a real review");
+        let f = after.recall.unwrap();
+        assert!(f.stability > 30.0, "full credit, not a re-anchor");
+        assert!(f.due_ms > now);
+    }
+
+    #[test]
+    fn an_early_cram_pass_reanchors_without_rewarding() {
+        // A pass on a card that was NOT yet due is expected and
+        // low-information: the due date re-anchors, memory and history stay.
+        let (mut store, _dir) = empty_store();
+        let all = cards(1);
+        let now = 10 * 86_400_000;
+        store.get_or_insert(all[0].id(), 0).recall = Some(mature_fsrs(40 * 86_400_000));
         let before = store.get(all[0].id()).unwrap().recall.unwrap();
 
         let mut session = Session::new(
@@ -1588,15 +1624,15 @@ mod tests {
                 cram: true,
                 ..Default::default()
             },
-            10_000,
+            now,
         );
-        session.grade(&mut store, Grade::Pass, 10_000);
+        session.grade(&mut store, Grade::Pass, now);
 
         let after = store.get(all[0].id()).unwrap();
         let f = after.recall.unwrap();
         assert_eq!(before.stability, f.stability); // no reward
         assert_eq!(before.scheduled_days, f.scheduled_days); // interval kept
-        assert_eq!(10_000u64 + 30 * 86_400_000, f.due_ms); // re-anchored to now + interval
+        assert_eq!(now + 30 * 86_400_000, f.due_ms); // re-anchored to now + interval
         assert!(after.history.is_empty()); // a refresh, not a recorded review
     }
 
@@ -2316,31 +2352,100 @@ mod tests {
     }
 
     #[test]
-    fn cram_reconstruct_passes_reanchor_only() {
+    fn a_due_reconstruct_cram_pass_credits_recall_like_a_normal_review() {
+        // A due card in cram IS a normal review — including the downward
+        // propagation: the due recall schedule takes the marked full credit.
         let (mut store, _dir) = empty_store();
         let all = cards(1);
         let id = all[0].id();
-        let now = 1_000_000;
+        let now = 40 * 86_400_000;
         let state = store.get_or_insert(id, 0);
-        state.recall = Some(mature_fsrs(500)); // due — but cram never credits it
-        state.reconstruct = Some(mature_fsrs(500));
+        state.recall = Some(mature_fsrs(500)); // due
+        state.reconstruct = Some(mature_fsrs(500)); // due
+
+        let mut s = reconstruct_session(all, &store, true, now);
+        s.grade(&mut store, Grade::Pass, now);
+
+        let st = store.get(id).unwrap();
+        assert!(
+            st.reconstruct.unwrap().stability > 30.0,
+            "the due reconstruct pass took full credit"
+        );
+        assert!(
+            st.recall.unwrap().stability > 30.0,
+            "the due recall schedule took the propagated credit"
+        );
+        assert_eq!(2, st.history.len());
+        assert!(st.history[1].propagated);
+        assert_eq!(Some(now), st.recognized_ms);
+    }
+
+    #[test]
+    fn an_early_reconstruct_cram_pass_propagates_nothing() {
+        // Not yet due: the pass only re-anchors its own schedule; recall is
+        // untouched entirely and nothing is recorded.
+        let (mut store, _dir) = empty_store();
+        let all = cards(1);
+        let id = all[0].id();
+        let now = 10 * 86_400_000;
+        let future = 40 * 86_400_000;
+        let state = store.get_or_insert(id, 0);
+        state.recall = Some(mature_fsrs(future));
+        state.reconstruct = Some(mature_fsrs(future));
 
         let mut s = reconstruct_session(all, &store, true, now);
         s.grade(&mut store, Grade::Pass, now);
 
         let st = store.get(id).unwrap();
         assert_eq!(
-            mature_fsrs(500),
+            mature_fsrs(future),
             st.recall.unwrap(),
             "no recall credit, not even a re-anchor"
         );
         let reconstruct = st.reconstruct.unwrap();
-        assert_eq!(30.0, reconstruct.stability, "cram refreshes, never rewards");
+        assert_eq!(30.0, reconstruct.stability, "an early pass never rewards");
         assert_eq!(now + 30 * 86_400_000, reconstruct.due_ms, "re-anchored");
-        assert!(st.history.is_empty(), "a cram refresh is not a review");
+        assert!(st.history.is_empty(), "an early cram pass is not a review");
         // The recognized flag has no schedule to distort, so a cram pass may
         // still set it.
         assert_eq!(Some(now), st.recognized_ms);
+    }
+
+    #[test]
+    fn recognize_cram_serves_already_recognized_cards() {
+        // A normal Recognize session goes empty once everything is
+        // recognized; cram is the repeatable quiz that serves it all anyway.
+        let (mut store, _dir) = empty_store();
+        let all = cards(2);
+        let now = 1_000_000;
+        for card in &all {
+            store.get_or_insert(card.id(), 0).recognized_ms = Some(1);
+        }
+
+        let normal = Session::new(
+            all.clone(),
+            &store,
+            sched(),
+            SessionOptions {
+                depth: Depth::Recognize,
+                ..Default::default()
+            },
+            now,
+        );
+        assert!(normal.is_finished(), "nothing left to recognize");
+
+        let cram = Session::new(
+            all.clone(),
+            &store,
+            sched(),
+            SessionOptions {
+                depth: Depth::Recognize,
+                cram: true,
+                ..Default::default()
+            },
+            now,
+        );
+        assert_eq!(2, cram.initial_size, "cram serves every card");
     }
 
     #[test]

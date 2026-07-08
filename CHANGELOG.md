@@ -7,6 +7,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Cram is back — as a tick-box in the picker's Learn ▾ menu** (key `c`,
+  rebindable as `[keys.picker] cram`), combining with any depth; plain Learn
+  never crams. Its semantics got honest and due-aware: cram only changes
+  which cards are queued — a card that was genuinely due grades exactly like
+  a normal review (full credit, recorded, Reconstruct→Recall propagation
+  included), while a pass on a not-yet-due card only re-anchors its due date,
+  so grinding can't inflate intervals; misses always count. At Recognize,
+  cram serves every card — the repeatable quiz a badged deck otherwise
+  wouldn't offer. `/api/select` accordingly takes `cram` plus optional
+  `max_new`/`limit` overrides, closing the thin-client pacing gap. A failed
+  session start now also shows a brief notice instead of failing silently.
 - **Scoped roots: `alix <dir>` serves that folder as a self-contained
   instance** — its own catalog plus its own `progress.json` and `recent.json`
   kept inside the folder, so several instances run side by side without

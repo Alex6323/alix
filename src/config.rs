@@ -183,6 +183,8 @@ pub struct PickerKeys {
     pub recognize: Vec<KeyPattern>,
     pub recall: Vec<KeyPattern>,
     pub reconstruct: Vec<KeyPattern>,
+    /// Toggle the depth menu's cram tick-box (include cards that aren't due).
+    pub cram: Vec<KeyPattern>,
 }
 
 impl Default for PickerKeys {
@@ -199,6 +201,7 @@ impl Default for PickerKeys {
             recognize: keys(&["1"]),
             recall: keys(&["2"]),
             reconstruct: keys(&["3"]),
+            cram: keys(&["c"]),
         }
     }
 }
@@ -702,6 +705,7 @@ struct RawPicker {
     recognize: Option<Vec<String>>,
     recall: Option<Vec<String>>,
     reconstruct: Option<Vec<String>>,
+    cram: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Default)]
@@ -818,6 +822,7 @@ impl Config {
             raw.keys.picker.reconstruct,
             "picker.reconstruct",
         )?;
+        assign(&mut picker.cram, raw.keys.picker.cram, "picker.cram")?;
 
         let mut browse = BrowseBindings::default();
         assign(&mut browse.next, raw.keys.browse.next, "browse.next")?;
@@ -1096,6 +1101,7 @@ pub fn default_config_toml() -> &'static str {
 # recognize = ["1"]             # with the menu open, start at that depth;
 # recall = ["2"]                #   Enter always starts the highlighted
 # reconstruct = ["3"]           #   (last-used) one
+# cram = ["c"]                  # toggle the menu's cram tick-box (serve not-yet-due cards too)
 
 # Key bindings for the read-only Browse overlay (b in the picker). Jumping to the first
 # and last card is fixed to g / G / Home / End, and the arrow keys always

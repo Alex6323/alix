@@ -729,15 +729,13 @@ fn build_review(
     config: &Config,
     store: &Store,
     recent: &mut RecentDecks,
-    // Topology + region focus, resolved here rather than read from `args` so the
-    // web picker's focus drawer can override them per-launch (the CLI passes
-    // `args.topology` / `args.region`).
-    topology_sel: Option<&str>,
-    region_sel: Option<&str>,
-    // The chosen session depth, resolved per-launch like topology/region (web
-    // picker or CLI `--depth`). `None` falls back to the deck's last-used depth.
-    depth_sel: Option<Depth>,
+    // The picker's per-launch choices: depth, focus-drawer topology/region,
+    // the cram tick-box, and optional pacing overrides.
+    opts: &serve::SelectOptions,
 ) -> Result<ReviewBuild> {
+    let topology_sel = opts.topology.as_deref();
+    let region_sel = opts.region.as_deref();
+    let depth_sel = opts.depth;
     // A session is exactly one deck file's cards — no merging of several loose
     // decks, and no reviewing a whole workspace at once. Workspaces are an
     // organizing layer: review their members one at a time (the picker drills in;
@@ -870,12 +868,12 @@ fn build_review(
     let depth = depth_sel
         .or_else(|| store.last_depth(subject.as_ref()))
         .unwrap_or_default();
+    // Pacing: the launch's own overrides win over the instance's flag/config
+    // values; cram is purely a per-launch choice (the ▾ menu tick-box).
     let options = SessionOptions {
-        max_new: pacing.max_new,
-        limit: pacing.limit,
-        // Cram is not launchable yet — it arrives as a per-launch picker choice
-        // (the ▾ menu tick-box), not a CLI flag.
-        cram: false,
+        max_new: opts.max_new.unwrap_or(pacing.max_new),
+        limit: opts.limit.or(pacing.limit),
+        cram: opts.cram,
         order,
         topology: topology_order,
         retire_after_days: review.retire_after_days,
@@ -1142,15 +1140,10 @@ fn launch(args: LaunchArgs) -> Result<()> {
         auth: token,
     };
     let build = |paths: Vec<PathBuf>,
-                 topology: Option<&str>,
-                 region: Option<&str>,
-                 depth: Option<Depth>,
+                 opts: &serve::SelectOptions,
                  store: &Store,
                  recent: &mut RecentDecks| {
-        build_review(
-            paths, pacing, &config, store, recent, topology, region, depth,
-        )
-        .map(to_build)
+        build_review(paths, pacing, &config, store, recent, opts).map(to_build)
     };
     // A single trace picked from the in-browser picker walks (predict → verify)
     // rather than flattening to a card review.
@@ -3138,9 +3131,7 @@ mod tests {
             &config,
             &store,
             &mut recent,
-            None,
-            None,
-            None,
+            &serve::SelectOptions::default(),
         )
         .unwrap();
         // The deck's one (new) card, plus the injected due virtual card.
@@ -3185,9 +3176,10 @@ mod tests {
             &config,
             &store,
             &mut recent,
-            None,
-            Some("r1"),
-            None,
+            &serve::SelectOptions {
+                region: Some("r1".to_string()),
+                ..Default::default()
+            },
         )
         .unwrap();
         // Only the region's one real card — a `--region` focus is a
@@ -3265,9 +3257,7 @@ mod tests {
             &config,
             &store,
             &mut recent,
-            None,
-            None,
-            None,
+            &serve::SelectOptions::default(),
         )
         .unwrap();
 

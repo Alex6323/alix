@@ -305,6 +305,9 @@
      Members nest via their tree-branch guides (hidden on filter). */
   .deckrow { position: relative; display: flex; align-items: center; gap: 12px; padding: 12px 14px; min-height: 48px; border: 1px solid var(--line); border-radius: 11px; cursor: pointer; transition: border-color 0.12s, background 0.12s; margin-bottom: 5px; flex: none; }
   .deckrow:hover { border-color: var(--bolt); }
+  /* Transient error notice (a failed select otherwise returns a silent 400). */
+  #notice { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); padding: 8px 14px; border: 1px solid var(--line); border-radius: 9px; background: var(--void); color: var(--dim); font-size: 0.85rem; opacity: 0; pointer-events: none; transition: opacity 0.2s; z-index: 40; }
+  #notice.show { opacity: 1; }
   .deckrow:focus { outline: none; border-color: var(--bolt); box-shadow: 0 0 0 2px rgba(125,249,232,0.35); }
   .deckrow .open { flex: none; width: 22px; text-align: center; color: var(--dim); font-size: 1.1rem; line-height: 1; }
   .deckrow .icon { flex: none; width: 22px; height: 22px; }
@@ -731,11 +734,30 @@ function isWalk(s) {
   return !!s && s.kind === "walk";
 }
 
+// A transient notice for errors the page would otherwise swallow (error
+// responses carry bare status codes) — fades after a few seconds.
+function notice(msg) {
+  let n = document.getElementById("notice");
+  if (!n) {
+    n = document.createElement("div");
+    n.id = "notice";
+    document.body.appendChild(n);
+  }
+  n.textContent = msg;
+  n.classList.add("show");
+  clearTimeout(n._t);
+  n._t = setTimeout(() => n.classList.remove("show"), 4000);
+}
+
+// The depth menu's cram tick-box — a per-launch choice (plain Learn never
+// crams), reset to off every time the menu opens.
+let cramOn = false;
+
 // `depth` picks a session depth (Recognize/Recall/Reconstruct) explicitly;
 // omitted, the server resolves the deck's own remembered last depth.
-function select(name, topology, region, depth) {
+function select(name, topology, region, depth, cram) {
   rememberLaunch(name);
-  api("/api/select", post({ deck: name, topology: topology || null, region: region || null, depth: depth || null })).then(s => {
+  api("/api/select", post({ deck: name, topology: topology || null, region: region || null, depth: depth || null, cram: !!cram })).then(s => {
     if (isWalk(s)) {
       walkData = s;
       walkConfirmingLeave = false;
@@ -743,7 +765,7 @@ function select(name, topology, region, depth) {
     } else {
       apply(s);
     }
-  });
+  }).catch(() => notice("could not start the session — the server log has details"));
 }
 // Remember the deck just launched so the picker re-lands the cursor on it when it
 // re-opens (the selection shouldn't move while the user is away). Survives both an
@@ -1508,10 +1530,10 @@ async function renderSelect() {
   // drawer-scope rules as `launch`, but never routes to the exam — picking a
   // depth always means "review", gated on that depth's own due-ness.
   function launchDepth(it, wsName, gated, depth) {
-    if (!canStartAt(it, gated, depth)) return;
+    if (!cramOn && !canStartAt(it, gated, depth)) return;
     lastWorkspace = wsName || null;
     const sel = drawerSel.deck === it.name ? drawerSel : {};
-    select(it.name, sel.topology, sel.region, depth);
+    select(it.name, sel.topology, sel.region, depth, cramOn);
   }
 
   // The workspace's emblem if it has one, else the chevron. An SVG renders as a
@@ -1668,15 +1690,24 @@ async function renderSelect() {
         // after any of these buttons is clicked — a click otherwise moves focus
         // onto a button syncPrimary() is about to destroy, stranding it on <body>.
         // PK's per-depth bindings are keyed by the depth names themselves,
-        // so PK[d] is each chip's binding (1/2/3 by default).
+        // so PK[d] is each chip's binding (1/2/3 by default). With cram on,
+        // every depth is startable — cram serves cards that aren't due.
         for (const d of DEPTHS) {
           const b = el("button", "chip" + (d === it.last_depth ? " primary" : ""), d[0].toUpperCase() + d.slice(1));
           b.appendChild(el("span", "k", label(PK[d])));
-          b.disabled = !canStartAt(it, f._gated, d);
+          b.disabled = !cramOn && !canStartAt(it, f._gated, d);
           b.addEventListener("mousedown", e => e.preventDefault());
           b.addEventListener("click", () => { depthMenuOpen = false; launchDepth(it, f._wsName, f._gated, d); });
           legend.appendChild(b);
         }
+        // The cram tick-box: include cards that aren't due (a due card still
+        // grades as a normal review; an early pass only re-anchors).
+        const cram = el("button", "chip" + (cramOn ? " primary" : ""), (cramOn ? "☑" : "☐") + " cram");
+        cram.title = "include cards that aren't due — due cards still count as normal reviews";
+        cram.appendChild(el("span", "k", label(PK.cram)));
+        cram.addEventListener("mousedown", e => e.preventDefault());
+        cram.addEventListener("click", () => { cramOn = !cramOn; syncPrimary(); });
+        legend.appendChild(cram);
         const cancel = el("button", "chip", "Cancel");
         cancel.appendChild(el("span", "k", "esc"));
         cancel.addEventListener("mousedown", e => e.preventDefault());
@@ -1720,7 +1751,7 @@ async function renderSelect() {
         // Keep focus on the deck row (see the depth menu above): the click
         // rebuilds the footer, which would otherwise strand focus on <body>.
         lv.addEventListener("mousedown", e => e.preventDefault());
-        lv.addEventListener("click", () => { depthMenuOpen = true; syncPrimary(); });
+        lv.addEventListener("click", () => { depthMenuOpen = true; cramOn = false; syncPrimary(); });
         legend.appendChild(lv);
       }
       // A read-only Browse of the focused deck (key b).
@@ -1958,10 +1989,12 @@ async function renderSelect() {
       if (depthMenuOpen) {
         const f = focusedEl;
         const d = DEPTHS.find(l => hit(e, PK[l]));
-        if (d && f && f._item && canStartAt(f._item, f._gated, d)) {
+        if (d && f && f._item && (cramOn || canStartAt(f._item, f._gated, d))) {
           e.preventDefault(); e.stopPropagation();
           depthMenuOpen = false;
           launchDepth(f._item, f._wsName, f._gated, d);
+        } else if (hit(e, PK.cram)) {
+          e.preventDefault(); e.stopPropagation(); cramOn = !cramOn; syncPrimary();
         } else if (e.key === "Escape" || hit(e, PK.depth)) {
           e.preventDefault(); e.stopPropagation(); depthMenuOpen = false; syncPrimary();
         }
@@ -1986,7 +2019,7 @@ async function renderSelect() {
       else if (e.key === "ArrowLeft" || hit(e, PK.back)) { e.preventDefault(); if (drawerCycle) drawerCycle(-1); } // back-out is Esc/Backspace only; ←/h just steps the drawer
       else if (e.key === "b" && cur && cur._item) { e.preventDefault(); browseDeck(cur._item, cur._wsName); }
       else if (e.key === "a" && cur && cur._item) { e.preventDefault(); lastWorkspace = cur._wsName || null; openAugment(cur._item.name); }
-      else if (hit(e, PK.depth) && hasDepthSplit(cur) && canStart(cur._item, cur._gated)) { e.preventDefault(); depthMenuOpen = true; syncPrimary(); }
+      else if (hit(e, PK.depth) && hasDepthSplit(cur) && canStart(cur._item, cur._gated)) { e.preventDefault(); depthMenuOpen = true; cramOn = false; syncPrimary(); }
       else if (e.key === "r") { e.preventDefault(); replayLogo(); renderSelect(); } // re-scan the decks (also the ⟳ nav button)
       else if (opts.allowMastered && hit(e, PK.mastered)) { e.preventDefault(); renderMastered(); }
       else if (e.key === "x" && cur && cur._item && cur._item.examable) {
@@ -3275,7 +3308,7 @@ function openShortcuts() {
     '<kbd>/</kbd><span>filter the list</span>' +
     '<kbd>↑ ↓</kbd><span>move</span>' +
     '<kbd>enter</kbd><span>open / start</span>' +
-    '<kbd>v</kbd><span>choose a depth, then <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></span>' +
+    '<kbd>v</kbd><span>choose a depth, then <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> (<kbd>c</kbd> crams)</span>' +
     '<kbd>b</kbd><span>browse the deck</span>' +
     '<kbd>x</kbd><span>take the exam</span>' +
     '<kbd>m</kbd><span>mastered decks</span>' +
@@ -3331,6 +3364,7 @@ Promise.all([
     filter: [{ k: "/", ctrl: false }, { k: "f", ctrl: true }], mastered: [{ k: "m", ctrl: false }],
     depth: [{ k: "v", ctrl: false }], recognize: [{ k: "1", ctrl: false }],
     recall: [{ k: "2", ctrl: false }], reconstruct: [{ k: "3", ctrl: false }],
+    cram: [{ k: "c", ctrl: false }],
   }, pk || {});
   document.querySelector("#mRemove .mk").textContent = label(KEYS.remove);
   document.getElementById("mAskKey").textContent = label(KEYS.ask);

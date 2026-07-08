@@ -71,7 +71,7 @@ harder over time just by surviving reviews. Which depth you exercise, and
 when, is entirely your call each session.
 
 The exception flows **downward, and only on a full pass**: get a card fully
-right at Reconstruct (outside cram) and that also counts for its Recall
+right at Reconstruct (in cram: only when it was due) and that also counts for its Recall
 schedule — if you can produce the answer, you can certainly recall it, so
 alix won't re-ask the easier form days later. If recall was **due** at that
 moment, the pass stands in for that review: full schedule credit, recorded
@@ -129,12 +129,19 @@ dependencies chapter covers it in full.
 
 Need to review everything now, schedule be damned — the night before an exam?
 **Cram** ignores due times and shows every card that isn't retired. It's a
-per-launch choice in the picker (coming to the Learn ▾ menu).
+per-launch tick-box in the picker's Learn ▾ menu (key `c` while the menu is
+open); plain **Learn** never crams. At Recognize, cram is the repeatable quiz:
+it serves *every* card, including the already-recognized ones a normal
+Recognize session would skip.
 
-Cramming is a **refresh, not a reward**: a correct answer re-anchors the card by
-its current interval — it doesn't grow the schedule or count as a real review — so
-a heavy cram session won't distort your long-term spacing. A card you *miss* under
-cram still lapses normally. Retired cards stay out (that's what retirement is for).
+Cram changes **which cards are queued, never how a due card is graded**: a
+card that was genuinely due grades exactly like a normal review — full
+schedule credit, recorded (a due Reconstruct pass even propagates to Recall
+as usual). Only a pass on a card that *wasn't due yet* is treated as the
+low-information event it is: its due date re-anchors by the current interval,
+memory untouched, nothing recorded — so a heavy grind can't inflate your
+long-term spacing. A card you *miss* under cram always lapses normally.
+Retired cards stay out (that's what retirement is for).
 
 ## Topological order *(experimental)*
 
