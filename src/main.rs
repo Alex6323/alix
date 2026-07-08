@@ -95,10 +95,23 @@ enum Command {
     /// builds its checkpoints in place.
     Generate(GenerateArgs),
     /// Show progress statistics for a deck, a folder, or a workspace.
+    ///
+    /// The target is a path: a single deck file reports that deck; a folder
+    /// or workspace reports every deck inside it, each against the store it
+    /// actually uses. E.g. `alix stats spanish.txt` or `alix stats
+    /// ~/decks/flutter`.
     Stats(DeckArgs),
     /// List all cards with their state and due time (deck, folder, or workspace).
+    ///
+    /// The target is a path: a single deck file lists its cards; a folder or
+    /// workspace lists every member deck's, grouped per deck.
     List(DeckArgs),
     /// Clear stored progress for a deck, a folder/workspace, a card, or everything.
+    ///
+    /// The target is a path: a single deck file clears that deck; a folder
+    /// or workspace clears every deck inside it (cards, remediation cards,
+    /// and mastered flags) after one confirmation. `--card` narrows to one
+    /// card; `--all` wipes the whole store instead of a path.
     Reset(ResetArgs),
     /// Augment or import decks.
     #[command(subcommand)]
@@ -403,7 +416,9 @@ struct ImportArgs {
 
 #[derive(Args)]
 struct DeckArgs {
-    /// A deck file, a workspace, or a plain decks folder.
+    /// A path: one deck file (just that deck), or a folder/workspace
+    /// (every deck inside it) — e.g. `spanish.txt` or `~/decks/flutter`.
+    #[arg(value_name = "DECK|FOLDER|WORKSPACE")]
     target: PathBuf,
 
     /// Path of the progress store (default: resolved from the target).
@@ -467,8 +482,9 @@ fn expand_target(path: &Path) -> Result<Target> {
 
 #[derive(Args)]
 struct ResetArgs {
-    /// What to clear: a deck file, a workspace, or a plain decks folder
-    /// (clears every deck inside).
+    /// What to clear, as a path: one deck file, or a folder/workspace
+    /// (every deck inside it) — e.g. `spanish.txt` or `~/decks/flutter`.
+    #[arg(value_name = "DECK|FOLDER|WORKSPACE")]
     target: Option<PathBuf>,
 
     /// Reset one card: its numeric id, or text matching its front (searched
