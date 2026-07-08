@@ -232,7 +232,7 @@ token holder is trusted to call it, the same trust class as `/api/grade`.
 
 | Method | Path | Body | Response | Errors |
 |---|---|---|---|---|
-| POST | `/api/generate` | `{url, guidance?, dest?}` | `GenerateDto` | 400 non-http(s) `url` / unknown `dest`; 409 a generation is already in flight |
+| POST | `/api/generate` | `{url, guidance?, dest?}` | `GenerateDto` | 400 bad body / non-http(s) `url` / unknown `dest`; 409 a generation is already in flight |
 | GET | `/api/generate` | – | `GenerateDto` (poll) | 409 no generation |
 | POST | `/api/generate/close` | – | 200 | – |
 

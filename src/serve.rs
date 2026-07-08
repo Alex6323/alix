@@ -2004,6 +2004,12 @@ pub fn run_review(
                     guidance: Option<String>,
                     dest: Option<String>,
                 }
+                // A worker may have finished while nobody polled (the page
+                // went away) — drain it first, so "finished" means finished
+                // even without a GET, and only a live worker 409s.
+                if let Some(g) = generating.as_mut() {
+                    g.poll();
+                }
                 if generating.as_ref().is_some_and(|g| g.outcome.is_none()) {
                     respond_status(request, 409); // one costed job at a time
                     continue;
