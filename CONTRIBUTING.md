@@ -137,9 +137,14 @@ surrounding code; when in doubt, mirror it. The essentials:
   test.
 - **No new dependency without a one-line reason** in the PR/commit. Reach for
   std or an existing dep first.
-- **Keep the two docs in sync.** `README.md` is the **reference** (deck format,
-  every directive, all features); `docs/book/` is the **narrative manual**.
-  Update whichever a user-facing change touches.
+- **Keep the two docs in sync.** `docs/book/` is the **reference and manual**
+  (deck format, every directive and flag, all features), updated on every
+  user-facing change. `README.md` is the **landing page** for GitHub and
+  crates.io (pitch, install, quickstart, an inline deck example, a command table,
+  a capability list), self-contained but not a reference: change it only for a
+  new/renamed top-level command or a headline capability; finer detail is
+  book-only. README book-links are relative (`docs/book/src/…md`) so they work on
+  GitHub and offline; only the top banner uses hosted URLs.
 - **User-facing changes get a `CHANGELOG.md` entry** under `## [Unreleased]`
   (Added / Changed / Fixed). While we're pre-1.0, **break freely** — change
   renamed/removed flags and directives outright and record a **Breaking** note

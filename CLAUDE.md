@@ -199,13 +199,22 @@ to this codebase. When in doubt, mirror the surrounding code.
 - **Tests and clippy must be green** before a change is done (`make check`).
   Formatting is run deliberately with `make fmt`, not enforced as a gate.
 - Don't commit unless asked; never push without permission.
-- **Two docs, two jobs — keep both in sync, judge which.** `README.md` is the
-  **reference**: the deck format, every `%`/card directive, and all features
-  (start with the "Directives at a glance" table) — update it whenever you add or
-  change a directive or feature. `docs/book/` is the **narrative user manual**
-  (mdBook; `make book`) — when a change affects how a feature is explained or
-  used, update the relevant chapter too. Use judgment: significant user-facing
-  changes warrant a book edit, internal refactors don't.
+- **Two docs, two jobs; keep both in sync.** `docs/book/` (mdBook; `make book`)
+  is the **reference and manual**: the deck format, every `%`/card directive,
+  every flag, all features, chapter by chapter. It is updated on **every**
+  user-facing change. `README.md` is the **landing page** for both GitHub *and
+  crates.io* (pitch, install, quickstart, a small inline deck example, a
+  top-level command table, a capability list, links). It is deliberately
+  **self-contained** — a crates.io or offline reader must see what alix is
+  without leaving the page — but **not** a reference. Sync test: the README
+  changes only when a *slot* does — a **new or renamed top-level command** (the
+  command table) or a **headline capability** (the capability list / deck
+  example); finer detail (new directives, flags, per-feature behavior) is
+  **book-only**. README book-links are **relative** (`docs/book/src/NN-*.md`) so
+  they render on GitHub, survive offline, and version with the checkout; only the
+  top Manual/Slides/Site banner uses hosted `alix.study` URLs (relative links do
+  not resolve on crates.io, which is why the example + command table carry the
+  substance there). Internal refactors touch neither doc.
 - **User-facing changes get a `CHANGELOG.md` entry** under `## [Unreleased]`
   (Keep a Changelog format: Added / Changed / Fixed). Internal refactors and
   test-only changes don't.

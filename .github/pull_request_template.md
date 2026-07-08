@@ -33,7 +33,7 @@ tick on a feature PR is a useful signal it isn't ready yet.
 - [ ] behavior lives in the **library** (`src/`), not a frontend; both surfaces share it
 - [ ] no `unwrap` / `expect` / `panic!` in library paths (test code excepted)
 - [ ] **card identity preserved** — didn't reset users' progress via `hash_lines` / back-line hashing changes
-- [ ] docs synced: `README.md` (reference) + `docs/book/` (manual) for user-facing changes
+- [ ] docs synced: `docs/book/` (manual/reference) + `README.md` (landing page) for user-facing changes
 - [ ] `CHANGELOG.md` entry under `## [Unreleased]` for user-facing changes (Breaking note for a 0.x rename/removal)
 - [ ] new dependency? a one-line reason is included
 - [ ] touched a `grade_*` prompt? ran `make eval` and noted the calibration delta below
