@@ -1530,7 +1530,7 @@ fn reset(args: ResetArgs) -> Result<()> {
             .or_else(|| target.default_store.clone()),
     )?;
 
-    let (cards, label, decks, _) = load_decks(&deck_paths, &HashMap::new())?;
+    let (cards, label, _, _) = load_decks(&deck_paths, &HashMap::new())?;
 
     // A full-deck reset (no `--card` subset) resets authored-card progress, the
     // decks' "mastered" exam flag, and their virtual (remediation) cards
@@ -1538,22 +1538,31 @@ fn reset(args: ResetArgs) -> Result<()> {
     // must leave the store on disk untouched by any of it (not just the
     // authored-card part).
     if args.card.is_none() {
-        let present: Vec<(u64, String)> = select_reset_ids(&cards, None)
-            .into_iter()
-            .filter(|(id, _)| store.get(*id).is_some())
+        // Load the decks once, up front, and use that same load for both the
+        // confirm-prompt count and the wipe below — counting from one load and
+        // wiping from a later, separate one let a deck edited on disk while the
+        // prompt waits silently diverge (a renamed back line changes
+        // `Card::id()`, orphaning the old schedule).
+        let decks_full: Vec<Deck> = deck_paths
+            .iter()
+            .map(Deck::load)
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let present: Vec<(u64, String)> = decks_full
+            .iter()
+            .flat_map(|deck| &deck.cards)
+            .filter(|c| store.get(c.id()).is_some())
+            .map(|c| (c.id(), c.front.clone()))
             .collect();
-        let mastered = decks.keys().any(|subject| store.deck_mastered(subject));
+        let mastered = decks_full
+            .iter()
+            .any(|deck| store.deck_mastered(&deck.subject));
         // A virtual card's content is in the sidecar and its schedule in
         // `store.cards` (both keyed by the same id) — a reset drops both.
-        let virtual_ids: Vec<u64> = decks
-            .keys()
-            .flat_map(|subject| {
-                store
-                    .virtual_cards_for(subject)
-                    .iter()
-                    .map(|vc| vc.id)
-                    .collect::<Vec<_>>()
-            })
+        let virtual_ids: Vec<u64> = decks_full
+            .iter()
+            .flat_map(|deck| store.virtual_cards_for(&deck.subject))
+            .map(|vc| vc.id)
             .collect();
 
         if present.is_empty() && !mastered && virtual_ids.is_empty() {
@@ -1570,16 +1579,8 @@ fn reset(args: ResetArgs) -> Result<()> {
             return Ok(());
         }
 
-        // `DeckInfo` keeps only the deck's path (not the loaded `Deck`), so
-        // `reset_decks` needs each deck reloaded — a second parse, but the
-        // cheapest way to hand it real `Deck`s without threading them through
-        // `load_decks`.
-        let mut target_decks = Vec::with_capacity(decks.len());
-        for info in decks.values() {
-            target_decks.push(Deck::load(&info.path)?);
-        }
-        let n = alix::library::reset_decks(&mut store, target_decks.iter())?;
-        println!("Reset {n} card(s).");
+        let wiped = alix::library::reset_decks(&mut store, decks_full.iter())?;
+        println!("Reset {wiped} card(s).");
         return Ok(());
     }
 
