@@ -16,7 +16,10 @@
 //! different shape entirely — unscheduled and boolean, no due-sort, every
 //! card not yet recognized — see [`Session::grade`] and `build_queue`.
 
-use std::{collections::VecDeque, path::PathBuf};
+use std::{
+    collections::{HashMap, VecDeque},
+    path::PathBuf,
+};
 
 use rs_fsrs::Parameters;
 
@@ -127,11 +130,10 @@ pub struct Session {
     current_idx: Option<usize>,
     /// Roster cards servable at the last `advance` — the "remaining now" count.
     remaining_now: usize,
-    /// The card the session just moved off, and when the move happened —
-    /// its re-serve clock floors here, so time spent on the feedback screen
-    /// or thinking about the successor can never eat the gap and bring the
-    /// same card straight back ({#seen-interleaves-too-early}).
-    just_left: Option<(u64, u64)>, // (card id, transition ms)
+    /// Cards the session recently moved off, by id → transition time. A card
+    /// can't be re-served before `transition + ACQUIRE_COOLDOWN_MS`; entries
+    /// self-prune once expired. Session-local — never persisted.
+    floors: HashMap<u64, u64>,
     /// How many times each card (indexed as in `cards`) has become the current
     /// card this session — 0 until first served, then 1, 2, ... Feeds the
     /// multiple-choice option shuffle seed (`choice::seed_for`) so a re-served
@@ -171,7 +173,7 @@ impl Session {
             roster,
             current_idx: None,
             remaining_now: 0,
-            just_left: None,
+            floors: HashMap::new(),
             appearances,
             scheduler,
             options,
@@ -196,7 +198,7 @@ impl Session {
         self.initial_size = roster.len();
         self.roster = roster;
         self.stats = SessionStats::default();
-        self.just_left = None; // a fresh sitting; no outgoing card to floor
+        self.floors.clear(); // a fresh sitting; no outgoing card to floor
         self.advance(store, now_ms);
         true
     }
@@ -288,7 +290,7 @@ impl Session {
     /// (1 the first time, 2 the next time it cycles back in, ...); 0 if it has
     /// never been served, or if `id` isn't one of this session's cards. Lets a
     /// frontend-facing query (e.g. the multiple-choice option seed) tell "still
-    /// the same showing" from "served again" without exposing `just_left` or
+    /// the same showing" from "served again" without exposing `floors` or
     /// `current_idx` directly.
     pub fn appearance(&self, id: u64) -> u32 {
         self.cards
@@ -338,7 +340,7 @@ impl Session {
             // (reverses an earlier deliberate exclusion): a wrong pick re-queues
             // but can't resurface before `ACQUIRE_COOLDOWN_MS` has passed — see
             // `servable` ({#seen-interleaves-too-early}).
-            self.just_left = Some((id, now_ms));
+            self.floor(id, now_ms);
             self.advance(store, now_ms);
             return;
         }
@@ -401,8 +403,8 @@ impl Session {
             self.roster.retain(|&i| i != index);
         }
         // The floor anchors at this transition, not at grade time — see
-        // `just_left` ({#seen-interleaves-too-early}).
-        self.just_left = Some((id, now_ms));
+        // `floors` ({#seen-interleaves-too-early}).
+        self.floor(id, now_ms);
         self.advance(store, now_ms);
     }
 
@@ -424,8 +426,8 @@ impl Session {
         store.get_or_insert(self.cards[index].id(), now_ms);
         self.stats.acquired += 1;
         // The floor anchors at this transition, not at acquire time — see
-        // `just_left` ({#seen-interleaves-too-early}).
-        self.just_left = Some((self.cards[index].id(), now_ms));
+        // `floors` ({#seen-interleaves-too-early}).
+        self.floor(self.cards[index].id(), now_ms);
         self.advance(store, now_ms);
     }
 
@@ -486,13 +488,15 @@ impl Session {
     /// it fresh); otherwise a Recognize session serves any card not yet
     /// recognized (unscheduled and boolean); otherwise under cram, always;
     /// otherwise unseen (fresh) or due at this session's depth. On top of that
-    /// due/recognized check, the card the session just moved off (`just_left`)
-    /// additionally floors at the transition — applied uniformly whether it
-    /// left on a grade or an acquire, at every depth **including Recognize**
-    /// (reverses an earlier deliberate exclusion — a wrong pick used to requeue
-    /// instantly, which could boomerang straight back with one card left), and
-    /// even under cram (cram's "serve everything" would otherwise let a
-    /// just-graded card boomerang back with no due gate to stop it at all).
+    /// due/recognized check, a card the session recently moved off additionally
+    /// floors at its own transition time (tracked per-card in `floors`, keyed
+    /// by id, so grading a second card can never lift the first one's floor)
+    /// — applied uniformly whether it left on a grade or an acquire, at every
+    /// depth **including Recognize** (reverses an earlier deliberate
+    /// exclusion — a wrong pick used to requeue instantly, which could
+    /// boomerang straight back with one card left), and even under cram
+    /// (cram's "serve everything" would otherwise let a just-graded card
+    /// boomerang back with no due gate to stop it at all).
     /// Deck and virtual cards share the one `store.cards` rule.
     fn servable(&self, i: usize, store: &Store, now_ms: u64) -> bool {
         let card = &self.cards[i];
@@ -518,12 +522,19 @@ impl Session {
         if !due {
             return false;
         }
-        match self.just_left {
-            Some((id, transition_ms)) if id == card.id() => {
-                now_ms >= transition_ms.saturating_add(ACQUIRE_COOLDOWN_MS)
-            }
-            _ => true,
+        match self.floors.get(&card.id()) {
+            Some(&transition_ms) => now_ms >= transition_ms.saturating_add(ACQUIRE_COOLDOWN_MS),
+            None => true,
         }
+    }
+
+    /// Floors card `id`'s re-serve clock at `now_ms` (see `floors`), and
+    /// prunes any entries whose cooldown has already elapsed so the map never
+    /// grows past the cards actually cooling right now.
+    fn floor(&mut self, id: u64, now_ms: u64) {
+        self.floors
+            .retain(|_, &mut t| now_ms < t.saturating_add(ACQUIRE_COOLDOWN_MS));
+        self.floors.insert(id, now_ms);
     }
 
     /// Re-points the cursor to the first servable roster card (session order) and
@@ -2420,6 +2431,45 @@ mod tests {
             1,
             s.remaining(),
             "past the floor, the re-queued card returns"
+        );
+    }
+
+    #[test]
+    fn a_second_wrong_pick_does_not_unfloor_the_first_recognize_card() {
+        // The reviewer's reproduction of the single-slot bug: with only one
+        // `just_left`-style slot, grading B overwrote A's entry, and
+        // `servable`'s floor check then let A re-serve inside its own 60s
+        // window. Each card must floor independently.
+        let (mut store, _dir) = empty_store();
+        let all = cards(3);
+        let (a, b, c) = (all[0].id(), all[1].id(), all[2].id());
+        let mut s = Session::new(
+            all,
+            &store,
+            sched(),
+            SessionOptions {
+                depth: Depth::Recognize,
+                ..Default::default()
+            },
+            0,
+        );
+        assert_eq!(a, s.current().unwrap().id());
+
+        s.grade(&mut store, Grade::Fail, 1_000); // A wrong → floored until 61_000
+        assert_eq!(b, s.current().unwrap().id());
+
+        s.grade(&mut store, Grade::Fail, 2_000); // B wrong → floored until 62_000
+        assert_eq!(
+            c,
+            s.current().unwrap().id(),
+            "A and B are both still floored — C is the only unfloored card left"
+        );
+
+        s.poll(&store, 61_001);
+        assert_eq!(
+            a,
+            s.current().unwrap().id(),
+            "A's own floor has passed (B's hasn't) — floors are independent per card"
         );
     }
 
