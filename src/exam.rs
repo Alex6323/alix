@@ -122,17 +122,19 @@ pub fn generate_questions(
         bail!("the deck declares no `% source:` to examine against");
     }
     // The capability gate is enforced inside `generate_questions_from`, which
-    // every caller (this fn, `spawn_questions`) routes through. The
-    // `ensure_backend_can_examine` call at the CLI/web launch sites is a
-    // belt-and-braces pre-flight that fires *before* opening any UI.
+    // every caller (this fn, `spawn_questions`) routes through. The web
+    // exam-start handler's `ensure_backend_can_examine` pre-flight (fired
+    // before `Sitting::start`, so before any UI shows a generating state) is
+    // belt-and-braces on top of it.
     generate_questions_from(&deck.sources, deck.path.parent(), cfg, ask_cfg)
 }
 
 /// Checks the configured backend can reach every `% source:` this exam grades
 /// against, before any question is generated or side effect taken. A URL source
 /// needs a fetch-capable backend; a local source a file-reading one. Called by
-/// [`generate_questions`] and by the CLI/web launch sites (before opening the
-/// terminal UI) so a capability gap is a clean refusal, not a mid-exam crash.
+/// the web exam-start handler (`POST /api/exam/start`) right before starting a
+/// fact-deck sitting, so a capability gap is a clean refusal at launch, not an
+/// error surfaced mid-exam through the background job's poll.
 pub fn ensure_backend_can_examine(deck: &Deck, ask_cfg: &AskConfig) -> Result<()> {
     for source in &deck.sources {
         crate::backend::ensure_source_reachable(ask_cfg, deck::is_url(source))?;
@@ -258,11 +260,11 @@ pub fn remediation_cards(gaps: &[String], cfg: &ExamConfig, ask_cfg: &AskConfig)
     Ok(cards)
 }
 
-// ── Background runners (for the interactive frontends) ───────────────────────
+// ── Background runners (for the web frontend) ─────────────────────────────────
 //
 // The three engine calls above are synchronous. The single-threaded web server
-// and the TUI event loop run them on a background thread and poll a channel,
-// exactly like [`ask::spawn`]. Inputs are owned so the thread is `'static`.
+// runs them on a background thread and polls a channel, exactly like
+// [`ask::spawn`]. Inputs are owned so the thread is `'static`.
 
 /// Background variant of [`generate_questions`].
 pub fn spawn_questions(
@@ -456,13 +458,13 @@ pub enum SittingKind {
     Trace,
 }
 
-/// One in-progress exam sitting — a frontend-agnostic state machine shared by
-/// the web server (`serve.rs`) and the TUI (`tui.rs`); the CLI keeps its own
-/// linear flow. It owns the exam state and the in-flight background call,
-/// spawns each engine step, and on [`poll`](Sitting::poll) transitions and
-/// applies the side effects (persist "mastered" on a pass, create remediation
-/// virtual cards in the store on confirm). Frontends drive entry/navigation/submit/remediate, call
-/// `poll` each tick, and render off `phase()`.
+/// One in-progress exam sitting — a frontend-agnostic state machine driving
+/// the web server's exam handlers (`serve.rs`). It owns the exam state and the
+/// in-flight background call, spawns each engine step, and on
+/// [`poll`](Sitting::poll) transitions and applies the side effects (persist
+/// "mastered" on a pass, create remediation virtual cards in the store on
+/// confirm). The frontend drives entry/navigation/submit/remediate, calls
+/// `poll` each tick, and renders off `phase()`.
 pub struct Sitting {
     kind: SittingKind,
     subject: String,
@@ -1531,6 +1533,27 @@ mod tests {
         assert!(
             err.contains("codex") && err.contains("can't fetch a url"),
             "expected capability-refusal message, got: {err}"
+        );
+    }
+
+    /// The web launch site (`POST /api/exam/start`) calls this before
+    /// `Sitting::start`, so a capability gap is a clean refusal at launch
+    /// instead of surfacing mid-exam via the background job's error field.
+    #[test]
+    fn ensure_backend_can_examine_rejects_url_source_on_fetch_incapable_backend() {
+        use crate::config::BackendKind;
+        let deck = deck_with_sources(&["https://example.org/doc"]);
+        let ask_cfg = AskConfig {
+            backend: BackendKind::Codex,
+            command: "/dev/null".to_string(),
+            timeout_secs: 5,
+            ..AskConfig::default()
+        };
+        let err = ensure_backend_can_examine(&deck, &ask_cfg).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("codex") && msg.contains("can't fetch a url"),
+            "expected capability-refusal message, got: {msg}"
         );
     }
 

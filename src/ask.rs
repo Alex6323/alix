@@ -2,9 +2,9 @@
 //! Claude Code CLI (`claude -p`) and get explanations back, without leaving
 //! the review session.
 //!
-//! The CLI is run in a background thread; the TUI polls the returned channel
-//! so the interface stays responsive. One CLI session (see [`CliSession`])
-//! spans the whole review run: the first call creates it with
+//! The CLI is run in a background thread; the web server polls the returned
+//! channel so its request loop stays responsive. One CLI session (see
+//! [`CliSession`]) spans the whole review run: the first call creates it with
 //! `--session-id`, later calls `--resume` it, so Claude remembers earlier
 //! cards, questions, and any deck links it fetched.
 
@@ -270,8 +270,8 @@ fn question_context(
 
 /// A copy of `cfg` that lets the tutor read the source at `root`: the working
 /// directory points there, and the read-only `Read`/`Glob`/`Grep` tools are
-/// added to the allowlist. Used when `[ask] source_access` is on, so the tutor
-/// can verify against the real source. Shared by the TUI and the web tutor.
+/// added to the allowlist. Used when `[ask] source_access` is on, so the web
+/// tutor can verify against the real source.
 pub fn with_source_root(cfg: &AskConfig, root: &Path) -> AskConfig {
     let mut grounded = cfg.clone();
     grounded.cwd = Some(root.to_path_buf());

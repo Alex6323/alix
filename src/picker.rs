@@ -108,8 +108,9 @@ fn build_candidates(decks_dir: &Path, recent: &RecentDecks) -> Vec<Candidate> {
     out
 }
 
-/// The store-derived status of a deck, shared by the TUI picker and the web
-/// deck-selection screen so both surfaces show the same badge, lock, and gating.
+/// The store-derived status of a deck, computed once so the web deck-selection
+/// screen (and any thin client consuming the same API) shows the same badge,
+/// lock, and gating.
 pub struct DeckStatus {
     /// Completion state — drives the meta tint (finished → green, exam due →
     /// yellow) and the frontend's machine-readable state string.
@@ -399,10 +400,10 @@ pub struct DeckEntry {
     pub icon: Option<PathBuf>,
 }
 
-/// The catalog the pickers show, as plain data: recent entries first (recency
+/// The catalog the picker shows, as plain data: recent entries first (recency
 /// order), then every other deck and workspace in `decks_dir`.
-/// Frontend-agnostic, so the web deck-selection screen presents the same list
-/// as the TUI picker.
+/// Frontend-agnostic, so the web deck-selection screen (and any thin client
+/// over the same JSON API) can present the same list from the same data.
 pub fn catalog(decks_dir: &Path, recent: &RecentDecks) -> Vec<DeckEntry> {
     build_candidates(decks_dir, recent)
         .into_iter()

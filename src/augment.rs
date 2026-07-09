@@ -1168,11 +1168,11 @@ fn format_prompt(items: &[WarmItem], guidance: Option<&str>) -> String {
 
 // ── Background generation ──────────────────────────────────────────────────────
 //
-// The interactive frontends (the web server, the TUI later) can't block their
-// request loop on a costed Claude call, so they run generation on a thread and
-// poll the returned channel — the same shape as `ask::spawn` and
-// `trace::spawn_grade`. The worker only *generates*; the caller applies the
-// [`Outcome`] to the cache and saves, keeping cache writes single-threaded.
+// The web server can't block its request loop on a costed Claude call, so it
+// runs generation on a thread and polls the returned channel — the same shape
+// as `ask::spawn` and `trace::spawn_grade`. The worker only *generates*; the
+// caller applies the [`Outcome`] to the cache and saves, keeping cache writes
+// single-threaded.
 
 /// A generation request for one target. Per-card targets carry the gap items the
 /// caller computed (e.g. via [`AugmentCache::missing_choices`]); topology is

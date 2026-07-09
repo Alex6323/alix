@@ -2,7 +2,7 @@
 //! (`~/.config/alix/config.toml` on Linux).
 //!
 //! Currently this configures key bindings. Every action takes a list of
-//! keys; the first one is shown in the footer of the TUI. A key is written
+//! keys; the first one is shown in the web review page's footer. A key is written
 //! as a single character (`"j"`), a special key name (`"space"`, `"enter"`,
 //! `"tab"`, `"esc"`, `"backspace"`), or either with a `ctrl-` prefix
 //! (`"ctrl-s"`).

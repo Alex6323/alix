@@ -30,7 +30,7 @@ use crate::{
     trace::SourceBase,
 };
 
-/// Per-deck information the TUI needs, keyed by subject.
+/// Per-deck information the web session needs, keyed by subject.
 pub struct DeckInfo {
     /// The deck file, for saving notes from the ask view.
     pub path: PathBuf,

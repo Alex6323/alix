@@ -576,7 +576,7 @@ fn store_for(decks: &[PathBuf], cli_override: Option<PathBuf>) -> Result<Store> 
 }
 
 /// The cards of all loaded decks, a header label, the per-subject deck info
-/// for the TUI, and the per-deck `% key: value` settings.
+/// for the web session, and the per-deck `% key: value` settings.
 type LoadedDecks = (
     Vec<Card>,
     String,
@@ -585,8 +585,8 @@ type LoadedDecks = (
 );
 
 /// Loads all decks and returns their cards, a label for the header, the
-/// per-subject deck info (file path and reference links) for the TUI, and the
-/// per-deck `% key: value` settings.
+/// per-subject deck info (file path and reference links) for the web session,
+/// and the per-deck `% key: value` settings.
 fn load_decks(paths: &[PathBuf], defaults: &HashMap<String, DeckSettings>) -> Result<LoadedDecks> {
     let mut cards = Vec::new();
     let mut names = Vec::new();
@@ -928,14 +928,9 @@ fn resolve_topology<'a>(
     }
 }
 
-/// If a single trace deck was **picked** interactively, returns its loaded deck
-/// — the signal to walk it rather than flatten it into a card review.
-/// `from_picker` gates this: an explicit `alix review <trace>` (decks named on
-/// the command line) keeps reviewing, honoring the literal command.
-fn single_trace_to_walk(from_picker: bool, deck_paths: &[PathBuf]) -> Option<Deck> {
-    if !from_picker {
-        return None;
-    }
+/// If a single trace deck was picked, returns its loaded deck — the signal to
+/// walk it (predict → verify) rather than flatten it into a card review.
+fn single_trace_to_walk(deck_paths: &[PathBuf]) -> Option<Deck> {
     match deck_paths {
         [path] => Deck::load(path).ok().filter(|deck| deck.is_trace()),
         _ => None,
@@ -1155,7 +1150,7 @@ fn launch(args: LaunchArgs) -> Result<()> {
     // A single trace picked from the in-browser picker walks (predict → verify)
     // rather than flattening to a card review.
     let build_walk = |paths: &[PathBuf]| -> Result<Option<serve::WalkBuild>> {
-        match single_trace_to_walk(true, paths) {
+        match single_trace_to_walk(paths) {
             Some(deck) => {
                 let trace = Trace::from_deck(&deck)?;
                 Ok(Some(serve::WalkBuild {
@@ -2997,7 +2992,7 @@ mod tests {
     }
 
     #[test]
-    fn single_trace_to_walk_only_for_a_picked_lone_trace() {
+    fn single_trace_to_walk_only_for_a_lone_trace_deck() {
         let dir = tempfile::tempdir().unwrap();
         let trace = dir.path().join("t.txt");
         std::fs::write(
@@ -3008,14 +3003,12 @@ mod tests {
         let fact = dir.path().join("f.txt");
         std::fs::write(&fact, "# q\n\ta\n").unwrap();
 
-        // A lone trace picked interactively → walk it.
-        assert!(single_trace_to_walk(true, std::slice::from_ref(&trace)).is_some());
-        // The same trace named explicitly (not from the picker) → still review.
-        assert!(single_trace_to_walk(false, std::slice::from_ref(&trace)).is_none());
+        // A lone trace → walk it.
+        assert!(single_trace_to_walk(std::slice::from_ref(&trace)).is_some());
         // A lone facts deck → review, not walk.
-        assert!(single_trace_to_walk(true, std::slice::from_ref(&fact)).is_none());
+        assert!(single_trace_to_walk(std::slice::from_ref(&fact)).is_none());
         // A trace alongside other decks isn't a lone trace → review/merge.
-        assert!(single_trace_to_walk(true, &[trace, fact]).is_none());
+        assert!(single_trace_to_walk(&[trace, fact]).is_none());
     }
 
     #[test]

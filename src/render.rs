@@ -170,39 +170,6 @@ pub fn context_spans(line: &str) -> Vec<ContextSpan> {
     spans
 }
 
-/// Greedy word-wrap to `width` columns (counted in chars). Returns at least
-/// one row, so a blank line still renders. A word longer than `width` (e.g. a
-/// long Move type path) is hard-broken across rows.
-pub fn wrap_text(text: &str, width: usize) -> Vec<String> {
-    let width = width.max(1);
-    let mut rows = Vec::new();
-    let mut line = String::new();
-    for word in text.split_whitespace() {
-        let wlen = word.chars().count();
-        if line.is_empty() {
-            // place `word` below
-        } else if line.chars().count() + 1 + wlen <= width {
-            line.push(' ');
-            line.push_str(word);
-            continue;
-        } else {
-            rows.push(std::mem::take(&mut line));
-        }
-        if wlen <= width {
-            line.push_str(word);
-        } else {
-            for ch in word.chars() {
-                if line.chars().count() == width {
-                    rows.push(std::mem::take(&mut line));
-                }
-                line.push(ch);
-            }
-        }
-    }
-    rows.push(line);
-    rows
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -311,34 +278,6 @@ mod tests {
         assert_eq!(
             context_spans("____ here"),
             vec![Blank("____".into()), Text(" here".into())]
-        );
-    }
-
-    #[test]
-    fn short_line_is_one_row() {
-        assert_eq!(wrap_text("a short note", 40), vec!["a short note"]);
-    }
-
-    #[test]
-    fn wraps_on_word_boundaries() {
-        assert_eq!(wrap_text("a bb ccc", 4), vec!["a bb", "ccc"]);
-    }
-
-    #[test]
-    fn hard_breaks_a_word_longer_than_width() {
-        assert_eq!(wrap_text("ab supercali", 5), vec!["ab", "super", "cali"]);
-    }
-
-    #[test]
-    fn empty_line_yields_one_empty_row() {
-        assert_eq!(wrap_text("", 10), vec![""]);
-    }
-
-    #[test]
-    fn zero_width_does_not_panic() {
-        assert_eq!(
-            wrap_text("hi there", 0),
-            vec!["h", "i", "t", "h", "e", "r", "e"]
         );
     }
 }

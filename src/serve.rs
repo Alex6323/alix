@@ -2,11 +2,12 @@
 //!
 //! Bare `alix` starts a small synchronous HTTP server (one request at a
 //! time — correct for a single user) that serves an embedded web page and a
-//! JSON API. It is a third consumer of the same logic the TUI and browser use:
-//! the [`Session`]/[`Store`] drive review, and cards are sent to the browser as
-//! a DTO built from [`render::note_units`], so the note structuring lives in
-//! one place. Grades persist to the same progress store, so studying in the
-//! browser and on the command line share one history.
+//! JSON API — the sole interactive frontend. The [`Session`]/[`Store`] drive
+//! review, and cards are sent to the browser as a DTO built from
+//! [`render::note_units`], so the note structuring lives in one place. Grades
+//! persist to the same progress store the rest of the CLI (`deck`, `trace`,
+//! `generate`, …) reads and writes, so studying in the browser and running
+//! those commands share one history.
 //!
 //! It is deliberately local-only: no accounts, no database. By default it
 //! binds to `127.0.0.1`; `--lan` binds all interfaces so a phone or tablet on
@@ -294,9 +295,9 @@ struct BrowseDto {
     cards: Vec<CardDto>,
 }
 
-/// The deck-selection catalog sent to the browser picker, in the same three
-/// sections as the TUI: `workspaces` (each with its last-progress time),
-/// `recent` loose decks (recent-first), and plain `folders`. A deck inside a
+/// The deck-selection catalog sent to the browser picker, in three sections:
+/// `workspaces` (each with its last-progress time), `recent` loose decks
+/// (recent-first), and plain `folders`. A deck inside a
 /// workspace stays out of `recent` — you reach it by opening the workspace. The
 /// filter searches every loose deck.
 #[derive(Debug, Serialize)]
@@ -310,8 +311,7 @@ struct DeckListDto {
 /// completion-state badge (`new` / `m/total` / `done ✓` / `mastered 🎉`), a
 /// machine-readable `state` for styling, and the flags the picker dims/glyphs a
 /// row with — `locked` (🔒, a `% requires:` prerequisite), `reviewable` (false →
-/// 🕒, nothing due), `mastered` (🎉, tucked into the Mastered window). Mirrors
-/// the TUI picker rows.
+/// 🕒, nothing due), `mastered` (🎉, tucked into the Mastered window).
 #[derive(Debug, Serialize)]
 struct DeckItemDto {
     /// Stable selection key (file/folder name) sent back on select.
@@ -403,8 +403,8 @@ struct MemberDto {
     examable: bool,
     has_exam: bool,
     indent: usize,
-    /// The `├─`/`└─`/`│` tree-branch prefix drawn before the label, so the web
-    /// shows the dependency tree like the TUI (not just indentation).
+    /// The `├─`/`└─`/`│` tree-branch prefix drawn before the label, so a
+    /// member's dependency chain reads as a tree, not just indentation.
     tree: String,
     /// `true` when the member deck has a cached topology (a focus drawer).
     has_topology: bool,
@@ -1952,9 +1952,8 @@ pub fn run_review(
                         let opts = sel.opts;
                         let paths = vec![sel.deck];
                         // Write to the deck's own store — a workspace's `progress.json`
-                        // when they share one, else the global store — so the browser
-                        // records progress where the TUI would and where the picker's
-                        // badges are read from.
+                        // when they share one, else the global store — the same store
+                        // the picker's badges are read from.
                         if let Err(e) = store_for(&paths).map(|s| store = s) {
                             eprintln!("warning: could not open the progress store: {e}");
                             respond_status(request, 400);
@@ -2762,6 +2761,15 @@ pub fn run_review(
                                 }
                             }
                         } else {
+                            // Fact-deck pre-flight: confirm the configured
+                            // backend can reach every `% source:` before
+                            // starting the sitting, so a capability gap is a
+                            // clean refusal at launch, not an error surfaced
+                            // mid-exam through the background job's poll.
+                            if exam::ensure_backend_can_examine(&deck, &ask_cfg).is_err() {
+                                respond_status(request, 409);
+                                continue;
+                            }
                             exam::Sitting::start(
                                 &deck,
                                 strictness,
@@ -3048,12 +3056,12 @@ pub fn run_review(
 
 // ── Trace walks (in-page, from the picker) ──────────────────────────────────
 //
-// A single walk of one trace deck, mirroring the terminal `run_walk`: predict →
-// reveal a live excerpt → grade → compress. There is no deck-selection screen
-// (one deck, one walk). The frontend-agnostic `Walk` state machine carries the
-// logic; this is a thin web reader over it, exactly like the TUI consumer. Live
-// Claude grading (`--grade`) is the only async step, so it runs on a background
-// thread and the page polls `GET /api/walk` while `thinking`, like the exam.
+// A single walk of one trace deck: predict → reveal a live excerpt → grade →
+// compress. There is no deck-selection screen (one deck, one walk). The
+// frontend-agnostic `Walk` state machine carries the logic; this is a thin web
+// reader over it. Live Claude grading (`--grade`) is the only async step, so it
+// runs on a background thread and the page polls `GET /api/walk` while
+// `thinking`, like the exam.
 
 /// The server's live trace-walk state. Holds the [`Walk`], the (optional) live
 /// grading config, and the in-flight/just-finished Claude grade for the current
@@ -3679,8 +3687,8 @@ fn state_name(s: DeckState) -> &'static str {
     }
 }
 
-/// A single loose deck as a selection row, its badge/lock/gating from the shared
-/// [`picker::deck_status`] so it reads exactly like the TUI picker.
+/// A single loose deck as a selection row, its badge/lock/gating from the
+/// shared [`picker::deck_status`].
 fn deck_item_dto(
     e: &picker::DeckEntry,
     store: &Store,
@@ -3810,7 +3818,7 @@ fn workspace_members(
         })
         .collect();
     // Order siblings startable-first (blocked = locked, or — when gating —
-    // nothing to review), then by label, like the TUI drill-in.
+    // nothing to review), then by label.
     let parent = picker::member_parents(&paths, decks_dir);
     let key: Vec<(bool, String)> = e
         .members
@@ -3884,9 +3892,9 @@ fn workspace_members(
         .collect()
 }
 
-/// Builds the deck-selection catalog in the TUI's three sections — workspaces
-/// (each with its last-progress time), recent loose decks, and plain folders —
-/// each deck's badge/lock from `store`. `with_lock` is false for the browse
+/// Builds the deck-selection catalog's three sections — workspaces (each with
+/// its last-progress time), recent loose decks, and plain folders — each
+/// deck's badge/lock from `store`. `with_lock` is false for the browse
 /// screen: locking gates *review* only, so any deck is browsable.
 /// The picker icon URL for a resolved icon path, registering it in the launcher
 /// image map so `/img/<key>` can serve it. Returns the URL and whether it is an
