@@ -86,6 +86,18 @@
   /* Armed (name matches) reset button borrows the app's danger hue — the same
      one the overflow menu's own destructive items use (see `.menu button`). */
   #resetGo:not(:disabled) { border-color: var(--again); color: var(--again); }
+  .sheet-doctor { display: grid; gap: 8px; min-width: 320px; }
+  .doc-row { display: flex; gap: 8px; }
+  .doc-glyph { width: 1em; flex: none; color: var(--dim); } /* unknown status: dim default */
+  .doc-ok .doc-glyph { color: var(--good); }
+  .doc-warn .doc-glyph { color: var(--warn); }
+  .doc-fail .doc-glyph { color: var(--again); }
+  .doc-detail { color: var(--dim); }
+  .doc-remedy { display: block; color: var(--dim); font-size: 0.8rem; }
+  .sheet-pair { display: grid; gap: 10px; justify-items: center; min-width: 260px; }
+  .pair-qr svg { display: block; width: 200px; height: 200px; }
+  .pair-url { font-family: var(--mono); font-size: 0.8rem; user-select: all; word-break: break-all; }
+  .sheet-hint { color: var(--dim); font-size: 0.9rem; }
 
   /* ── stage + card ─────────────────────────────────────────────────── */
   .stage { flex: 1; display: grid; place-items: center; padding: 22px 16px; min-height: 0; }
@@ -3530,6 +3542,56 @@ function openReset() {
   });
 }
 document.getElementById("mReset").addEventListener("click", () => { menu.classList.remove("open"); openReset(); });
+
+// The Doctor sheet: one row per environment/backend check from /api/doctor
+// (config, store, decks, backend, share, wormhole — an open set), each with a
+// status glyph and, when something needs fixing, a muted remedy line.
+function doctorRow(r) {
+  const glyph = r.status === "ok" ? "✓" : r.status === "warn" ? "!" : r.status === "fail" ? "✗" : "?";
+  const row = el("div", "doc-row doc-" + r.status);
+  row.appendChild(el("span", "doc-glyph", glyph));
+  const body = el("span");
+  body.appendChild(el("b", null, r.name));
+  body.appendChild(el("span", "doc-detail", " — " + r.detail));
+  if (r.remedy) body.appendChild(el("span", "doc-remedy", r.remedy));
+  row.appendChild(body);
+  return row;
+}
+function openDoctor() {
+  openSheet('<h2>Doctor</h2><div class="sheet-doctor" id="docRows"></div>');
+  const rows = document.getElementById("docRows");
+  api("/api/doctor").then((d) => {
+    (d.rows || []).forEach((r) => rows.appendChild(doctorRow(r)));
+  }).catch(() => notice("could not run the checks"));
+}
+document.getElementById("mDoctor").addEventListener("click", () => { menu.classList.remove("open"); openDoctor(); });
+
+// The Pair sheet: a QR + URL for reaching this instance from another device.
+// Localhost-only servers get a plain hint instead (nothing to scan).
+function openPair() {
+  api("/api/pair").then((d) => {
+    if (!d.lan) {
+      openSheet('<h2>Pair a device</h2><p class="sheet-hint"></p>');
+      sheetPanel.querySelector(".sheet-hint").textContent =
+        "This server is localhost-only — start alix with --lan to pair another device.";
+      return;
+    }
+    openSheet(
+      '<h2>Pair a device</h2><div class="sheet-pair">' +
+      '<div class="pair-qr"></div><p class="pair-url"></p>' +
+      '<p class="sheet-hint">Scan, or open the link on the other device.</p></div>'
+    );
+    if (d.svg) {
+      // d.svg is a complete, self-contained <svg> rendered server-side by our
+      // own qr::svg (same-origin, trusted, documented in docs/API.md as safe
+      // to inject) — the one sanctioned innerHTML use for API data, scoped to
+      // this dedicated container and nothing else concatenated into it.
+      sheetPanel.querySelector(".pair-qr").innerHTML = d.svg;
+    }
+    sheetPanel.querySelector(".pair-url").textContent = d.url;
+  }).catch(() => notice("could not fetch the pairing info"));
+}
+document.getElementById("mPair").addEventListener("click", () => { menu.classList.remove("open"); openPair(); });
 
 function openShortcuts() {
   openSheet(
