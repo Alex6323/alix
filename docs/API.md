@@ -311,7 +311,7 @@ token holder is trusted to call it, the same trust class as `/api/grade`.
 
 | Method | Path | Body | Response | Errors |
 |---|---|---|---|---|
-| POST | `/api/exam/start` | `{deck}` | `ExamDto` (phase `cooldown` when a re-sit is cooling down) | 400 unknown deck; 409 not examable / locked |
+| POST | `/api/exam/start` | `{deck}` | `ExamDto` (phase `cooldown` when a re-sit is cooling down) | 400 unknown deck; 409 not examable / locked / backend can't reach the deck's source |
 | GET | `/api/exam` | – | `ExamDto` (poll) | 409 |
 | POST | `/api/exam/answer` | `{text, goto?}` | `ExamDto` | 409 |
 | POST | `/api/exam/grade` | `{text}` | `ExamDto` | 409 |

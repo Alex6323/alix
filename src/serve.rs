@@ -2736,18 +2736,20 @@ pub fn run_review(
                 struct Body {
                     deck: String,
                 }
-                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
+                let Some(body) = serde_json::from_reader::<_, Body>(request.as_reader()).ok()
+                else {
+                    respond_status(request, 400);
+                    continue;
+                };
                 // Include workspace members (by their qualified `<ws>/<file>`
                 // name) so an exam can be started on a deck inside a workspace,
-                // not just a top-level deck — mirroring `/api/select`.
-                let mut known: HashMap<String, PathBuf> = HashMap::new();
-                for e in picker::catalog(&decks_dir, &recent) {
-                    for m in &e.members {
-                        known.insert(m.name.clone(), m.path.clone());
-                    }
-                    known.insert(e.name, e.path);
-                }
-                let Some(path) = body.and_then(|b| known.get(&b.deck).cloned()) else {
+                // not just a top-level deck — mirroring `/api/select`. Resolved
+                // through the shared catalog lookup, so a bare name duplicated
+                // across containers is rejected here too, instead of silently
+                // writing mastery to whichever container's row won a last-wins
+                // map (this endpoint gates progression, so ambiguity must 400,
+                // not guess).
+                let Some(path) = resolved_path(resolve_row(&body.deck, &decks_dir, &recent)) else {
                     respond_status(request, 400);
                     continue;
                 };
@@ -4133,17 +4135,23 @@ enum Resolved {
 
 /// Resolves a requested name against the live catalog — the one lookup every
 /// name-taking endpoint shares. Qualified member keys (`<workspace>/<file>`)
-/// and bare top-level row keys never collide (a filename can't contain `/`),
-/// so a bare-name collision can only happen among top-level rows; a member's
-/// qualified key always resolves regardless. A bare row name seen more than
-/// once flips that key to `Ambiguous` for the rest of this call — no name
-/// ever silently picks one of several same-named rows.
+/// and bare top-level row keys never collide with *each other* (a filename
+/// can't contain `/`) — but two same-named containers (e.g. one reached via
+/// `decks_dir`, the other only via `recent`) can each hold a same-named
+/// member, so both key spaces get the same duplicate tombstoning: any name —
+/// bare row or qualified member — seen more than once flips to `Ambiguous`
+/// for the rest of this call. No name ever silently picks one of several
+/// same-named rows *or* same-named members.
 fn resolve_row(name: &str, decks_dir: &Path, recent: &RecentDecks) -> Resolved {
     let mut known: HashMap<String, Resolved> = HashMap::new();
     let mut seen: HashSet<String> = HashSet::new();
     for e in picker::catalog(decks_dir, recent) {
         for m in &e.members {
-            known.insert(m.name.clone(), Resolved::One(m.path.clone()));
+            if seen.insert(m.name.clone()) {
+                known.insert(m.name.clone(), Resolved::One(m.path.clone()));
+            } else {
+                known.insert(m.name.clone(), Resolved::Ambiguous);
+            }
         }
         let row = if e.members.is_empty() {
             Resolved::One(e.path)
@@ -4788,6 +4796,44 @@ mod tests {
         );
         assert_eq!(
             Resolved::One(ws.join("a.txt")),
+            resolve_row("english/a.txt", dir.path(), &recent)
+        );
+    }
+
+    #[test]
+    fn a_qualified_member_name_duplicated_across_two_same_named_containers_is_ambiguous() {
+        // Same setup as the test above (two "english" containers, one reached
+        // only via `recent`), but this time both containers hold a member
+        // file with the *same* name too ("a.txt"), so the qualified key
+        // "english/a.txt" itself collides — the documented always-works
+        // escape hatch must reject this, not last-wins onto whichever
+        // container the catalog visited last (dangerous behind /api/reset,
+        // which writes progress/deletes by this resolved path).
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path().join("english");
+        std::fs::create_dir(&ws).unwrap();
+        std::fs::write(ws.join("a.txt"), "# a\n\tb\n").unwrap();
+        std::fs::write(ws.join(crate::workspace::MANIFEST), "title = \"English\"\n").unwrap();
+
+        let other_ws = tempfile::tempdir().unwrap();
+        let other_english = other_ws.path().join("english");
+        std::fs::create_dir(&other_english).unwrap();
+        std::fs::write(other_english.join("a.txt"), "# z\n\ty\n").unwrap();
+        std::fs::write(
+            other_english.join(crate::workspace::MANIFEST),
+            "title = \"Other English\"\n",
+        )
+        .unwrap();
+
+        let mut recent = RecentDecks::load(dir.path().join("recent.json"));
+        recent.record(&[other_english], 1000);
+
+        assert_eq!(
+            Resolved::Ambiguous,
+            resolve_row("english", dir.path(), &recent)
+        );
+        assert_eq!(
+            Resolved::Ambiguous,
             resolve_row("english/a.txt", dir.path(), &recent)
         );
     }

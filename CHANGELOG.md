@@ -13,10 +13,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The picker's ⟳ now re-reads the config, so a changed `decks_dir` takes
   effect without a restart (scoped `alix <dir>` instances stay pinned to
   their folder).
-- A sequence card (`% reveal: line`) at Recognize is now quizzed on the whole
-  ordering — pick the correct sequence among the AI's alternate orderings —
-  instead of a meaningless pick-one-step choice built from the card's own
-  lines (falls back to the self-report chips when no distractors are cached).
+- A sequence card (`% reveal: line`) at Recognize is now quizzed as one whole
+  answer among the cached distractors, instead of a meaningless pick-one-step
+  choice built from the card's own lines (falls back to the self-report chips
+  when no distractors are cached).
 - The acquire view's badge no longer names a check — a brand-new card shows
   just `NEW` (the attempt-first reveal is ungraded).
 - The tutor's "couldn't find the source" reply, for a frozen card whose live
