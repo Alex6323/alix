@@ -609,7 +609,7 @@ fn build_prompt(description: &str, source: &str, url: bool, cfg: &TraceConfig) -
         "a short quoted span from the page — the exact sentence(s) the key points rest on"
     } else {
         "ONE contiguous range, `file:start-end` (or `file:N` for a single line) \
-         relative to the source root, e.g. `src/serve.rs:682-689` — NEVER \
+         relative to the source root, e.g. `src/session.rs:682-689` — NEVER \
          comma-separated ranges"
     };
     let mut p = format!(

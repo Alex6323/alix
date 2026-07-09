@@ -296,10 +296,6 @@ pub(super) fn workspace_members(
         .collect()
 }
 
-/// Builds the deck-selection catalog's three sections — workspaces (each with
-/// its last-progress time), recent loose decks, and plain folders — each
-/// deck's badge/lock from `store`. `with_lock` is false for the browse
-/// screen: locking gates *review* only, so any deck is browsable.
 /// The picker icon URL for a resolved icon path, registering it in the launcher
 /// image map so `/img/<key>` can serve it. Returns the URL and whether it is an
 /// SVG (a mask) or a raster (`<img>`).
@@ -340,6 +336,10 @@ pub(super) fn effective_decks_dir(
         .unwrap_or_else(|| current.to_path_buf())
 }
 
+/// Builds the deck-selection catalog's three sections — workspaces (each with
+/// its last-progress time), recent loose decks, and plain folders — each
+/// deck's badge/lock from `store`. `with_lock` is false for the browse
+/// screen: locking gates *review* only, so any deck is browsable.
 pub(super) fn deck_catalog(
     decks_dir: &Path,
     recent: &RecentDecks,
@@ -420,10 +420,6 @@ pub(super) fn deck_catalog(
     }
 }
 
-/// Parses a `{"decks":[name,…]}` selection and resolves each name to its deck
-/// path via the live catalog. Returns `None` (→ 400) for an empty or malformed
-/// body, or any name not in the catalog — so no filesystem path is ever built
-/// from request input, keeping selection safe under `--lan`.
 /// A deck chosen from the picker, optionally scoped by the focus drawer to one
 /// topology and/or region, and at a chosen session `depth` (absent = the deck's
 /// last-used depth, defaulting to Recall).
@@ -432,6 +428,10 @@ pub(super) struct Selection {
     pub(super) opts: SelectOptions,
 }
 
+/// Parses a `{"decks":[name,…]}` selection and resolves each name to its deck
+/// path via the live catalog. Returns `None` (→ 400) for an empty or malformed
+/// body, or any name not in the catalog — so no filesystem path is ever built
+/// from request input, keeping selection safe under `--lan`.
 pub(super) fn read_selection(
     request: &mut Request,
     decks_dir: &Path,
