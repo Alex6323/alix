@@ -896,6 +896,29 @@ impl Ask {
         true
     }
 
+    /// Completes a question with `answer` right away, without spawning the
+    /// backend or ever creating a [`Pending`] — used when serve already knows,
+    /// at prompt-build time, that the model would only be asked to echo
+    /// [`ask::SOURCE_NOT_FOUND`] verbatim (`{#source-not-found-reply}`: a frozen
+    /// card whose live source root can't be resolved). Applies the same
+    /// subject-alignment and transcript push as [`Ask::poll`]'s
+    /// `(Reply::Answer, Purpose::Question)` arm, so the resulting `AskDto` is
+    /// indistinguishable from a real reply — except it's already there,
+    /// `thinking: false`, on the very next read. Unlike `poll`, it leaves
+    /// `self.cli` untouched: no real turn happened, so a later real question
+    /// still starts/resumes the CLI session correctly. Returns `false` (no-op)
+    /// if a call is already pending.
+    fn answer_immediately(&mut self, card: &Card, question: String, answer: String) -> bool {
+        if self.pending.is_some() {
+            return false;
+        }
+        self.align(Some(card.id()));
+        // `self.cli` is deliberately untouched: no real turn happened, so a
+        // later question must still start/resume the CLI session correctly.
+        self.transcript.push((question, answer));
+        true
+    }
+
     /// Drains a finished reply: a question lands in the transcript; a condense's
     /// note lines are handed to `save` (the consumer writes them where the subject
     /// lives — a deck card, or a trace checkpoint). Returns a one-shot
@@ -1037,6 +1060,21 @@ impl Reviewing {
             trace::frozen_excerpt_block(at, card.at_origin.as_deref(), base)
         });
         let live_root = root.as_deref().filter(|r| r.exists());
+        // `{#source-not-found-reply}`: this is exactly the condition under which
+        // `ask::question_context`'s `(Some(excerpt), None)` arm would tell the
+        // model to reply `SOURCE_NOT_FOUND` verbatim — a round trip that spends
+        // real latency (and a chance of the model paraphrasing) to echo a
+        // constant. Answer it here instead: deterministic wording, zero cost.
+        if let Some(q) = &question
+            && frozen.is_some()
+            && live_root.is_none()
+        {
+            return self.ask.answer_immediately(
+                &card,
+                q.clone(),
+                ask::SOURCE_NOT_FOUND.to_string(),
+            );
+        }
         self.ask
             .start(cfg, &card, &links, live_root, frozen.as_deref(), question)
     }
@@ -5143,6 +5181,67 @@ mod tests {
         assert!(r.ask.pending.is_none());
         assert!(!r.ask.cli.started); // a fresh session next time
         assert!(r.ask.transcript.is_empty());
+    }
+
+    #[test]
+    fn a_frozen_card_with_no_resolvable_source_root_answers_immediately_without_spawning() {
+        // Same condition as ask.rs's `(Some(excerpt), None)` prompt arm (the
+        // card is frozen, but its live `% origin:`/deck root doesn't exist on
+        // disk) — serve should answer with `SOURCE_NOT_FOUND` synchronously
+        // instead of asking the model to echo it. Point the ask config at a
+        // nonexistent binary: if the short-circuit works, it's never touched.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("29.rs"), "fn real() {}\n").unwrap();
+        let deck_path = dir.path().join("d.txt");
+        std::fs::write(
+            &deck_path,
+            "% source: 29.rs\n# q\n\ta\n\t% at: 29.rs:1 from src/caching.rs:46-66\n",
+        )
+        .unwrap();
+        let deck = crate::deck::Deck::load(&deck_path).unwrap();
+        let card = deck.cards[0].clone();
+        assert!(card.at_origin.is_some(), "the card is frozen");
+
+        let store = Store::open(dir.path().join("p.json")).unwrap();
+        let session = Session::new(
+            vec![card.clone()],
+            &store,
+            Box::new(Fsrs::default()),
+            crate::session::SessionOptions::default(),
+            now_ms(),
+        );
+        let mut decks = HashMap::new();
+        decks.insert("d.txt".to_string(), deck_path);
+        let mut source_roots = HashMap::new();
+        // Configured (`source_access` opted in), but unresolved on disk.
+        source_roots.insert("d.txt".to_string(), dir.path().join("gone-origin"));
+        let mut source_bases = HashMap::new();
+        source_bases.insert("d.txt".to_string(), SourceBase::for_deck(&deck));
+        let mut r = Reviewing::new(SessionBuild {
+            session,
+            label: "d.txt".to_string(),
+            decks,
+            links: HashMap::new(),
+            source_roots,
+            source_bases,
+            topology_name: None,
+        });
+
+        let cfg = crate::testutil::ask_config(&dir.path().join("no-such-claude-binary"));
+        assert!(r.start_ask(&cfg, Some("why?".to_string())));
+
+        // Answered synchronously: no thread/channel, so nothing is pending, and
+        // the reply is already in the transcript on the very next read — the
+        // page's first poll (`GET /api/ask`) sees it immediately.
+        assert!(r.ask.pending.is_none(), "the backend was never spawned");
+        assert_eq!(1, r.ask.transcript.len());
+        assert_eq!("why?", r.ask.transcript[0].0);
+        assert_eq!(ask::SOURCE_NOT_FOUND, r.ask.transcript[0].1);
+        assert!(!r.ask_dto(None, None).thinking, "never stuck thinking");
+
+        let (status, error) = r.poll_ask();
+        assert_eq!((None, None), (status, error));
+        assert_eq!(1, r.ask.transcript.len(), "poll_ask doesn't double-answer");
     }
 
     // ── trace walk ──────────────────────────────────────────────────────

@@ -7,6 +7,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
+- The tutor's "couldn't find the source" reply, for a frozen card whose live
+  source root is gone, now comes back immediately instead of round-tripping
+  through the model to have it echo the same fixed sentence.
 - `alix generate <dir>` (workspace build) no longer blocks on, or touches, a
   populated destination. The build always stages into a scratch dir first,
   then merges the new files in one by one: a name already present in the

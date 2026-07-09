@@ -247,6 +247,11 @@ fn question_context(
                     root.display()
                 ));
             } else {
+                // The review tutor (`serve.rs`'s `start_ask`) already knows this
+                // condition at prompt-build time and answers `SOURCE_NOT_FOUND`
+                // synchronously without ever reaching this prompt — this arm is
+                // the lib-level fallback for other callers (e.g. the trace-walk
+                // tutor) that still round-trip through the model to get it.
                 p.push_str(&format!(
                     "\nThe live source this came from is unavailable, so reply \
                      exactly: \"{SOURCE_NOT_FOUND}\"\n"
