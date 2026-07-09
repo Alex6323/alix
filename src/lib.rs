@@ -8,6 +8,13 @@
 //! is woven in: a tutor on any card, AI deck generation, and an AI exam
 //! (`alix exam`) that gates progression on verified understanding.
 
+// Enables `#[coverage(off)]` under `cargo +nightly llvm-cov`, which sets
+// `cfg(coverage_nightly)`. Used sparingly on a handful of fns/arms that are
+// only reachable via a real external process (a bound server, a live
+// subprocess) that a deterministic CI test can't drive — see each site's
+// one-line reason.
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+
 pub mod answer;
 pub mod ask;
 pub mod augment;

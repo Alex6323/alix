@@ -65,14 +65,18 @@ ci:
 # Test coverage (needs cargo-llvm-cov: `cargo install cargo-llvm-cov`). Prints a
 # per-file summary and writes a browsable report to target/llvm-cov/html/. A
 # flashlight for untested branches — especially the AI plumbing's error paths —
-# not a gate to chase a number.
+# not a gate to chase a number. Nightly toolchain (matching coverage-lcov
+# below): a few genuinely-untestable arms are marked
+# `#[cfg_attr(coverage_nightly, coverage(off))]` (see `src/lib.rs`), which only
+# takes effect under nightly — running this on stable would silently count
+# those lines as missed instead of excluded.
 coverage:
-	cargo llvm-cov --html
+	cargo +nightly llvm-cov --workspace --html
 	@echo "HTML report -> target/llvm-cov/html/index.html"
 
 # Coverage in lcov format for the Codecov upload (see .github/workflows/ci.yml
-# and codecov.yml). Nightly toolchain, matching where this repo's coverage work
-# is headed. Writes lcov.info at the repo root (gitignored).
+# and codecov.yml). Same nightly toolchain as `coverage` above. Writes
+# lcov.info at the repo root (gitignored).
 coverage-lcov:
 	cargo +nightly llvm-cov --workspace --lcov --output-path lcov.info
 

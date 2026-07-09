@@ -609,6 +609,10 @@ pub(crate) fn launch(args: LaunchArgs) -> Result<()> {
 /// without one. Naming the root is what tells side-by-side instances apart.
 /// Returns the same pairing info for `/api/pair` — this is the only place
 /// bind + token + LAN IP come together.
+// Only reached once `launch()` has bound and is about to serve; no
+// kill-the-server harness exists to drive that deterministically in CI (see
+// `cli/launch.rs`'s test-decision doc comment on `launch`/`build_review`).
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn announce(addr: SocketAddr, lan: bool, token: Option<&str>, root: &Path) -> serve::PairInfo {
     let root = abbreviate_home(root);
     let port = addr.port();
@@ -652,6 +656,8 @@ fn announce(addr: SocketAddr, lan: bool, token: Option<&str>, root: &Path) -> se
 }
 
 /// `path` with the home directory abbreviated to `~`, for the announce line.
+// Called only from `announce` — see its exclusion reason above.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn abbreviate_home(path: &Path) -> String {
     if let Some(dirs) = directories::BaseDirs::new()
         && let Ok(rest) = path.strip_prefix(dirs.home_dir())
@@ -665,6 +671,10 @@ fn abbreviate_home(path: &Path) -> String {
 /// a routing-table lookup only; no packet is ever sent. `None` when it can't
 /// be determined (no route), in which case the announce falls back to the
 /// `<this-machine's-IP>` placeholder.
+// Called only from `announce`; additionally depends on a real OS routing
+// table via a live UDP socket, which is not deterministic across CI network
+// sandboxes even with a server harness.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn local_lan_ip() -> Option<std::net::IpAddr> {
     let socket = std::net::UdpSocket::bind(("0.0.0.0", 0)).ok()?;
     socket.connect(("8.8.8.8", 80)).ok()?;
@@ -673,6 +683,8 @@ fn local_lan_ip() -> Option<std::net::IpAddr> {
 
 /// Renders `text` as a terminal QR so a phone pairs by scanning; silently
 /// skipped when the text is too long (the printed URL above still works).
+// Called only from `announce` — see its exclusion reason above.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn print_qr(text: &str) {
     if let Some(q) = alix::qr::terminal_blocks(text) {
         print!("{q}");

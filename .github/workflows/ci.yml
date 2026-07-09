@@ -46,7 +46,10 @@ jobs:
 
   # Coverage — informational (a flashlight, not a gate): it computes line
   # coverage, prints the summary, uploads the browsable HTML as an artifact, and
-  # uploads lcov to Codecov (also informational — see codecov.yml).
+  # uploads lcov to Codecov (also informational — see codecov.yml). Nightly-only
+  # toolchain: `make coverage`/`make coverage-lcov` both run under
+  # `cargo +nightly llvm-cov` so the `#[cfg_attr(coverage_nightly, ...)]`
+  # exclusions in src/ apply consistently to both reports.
   coverage:
     name: coverage
     runs-on: ubuntu-latest
@@ -54,7 +57,7 @@ jobs:
       RUSTFLAGS: "" # coverage instruments its own flags; it isn't the warnings gate
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@nightly
         with:
           components: llvm-tools-preview
       - uses: taiki-e/install-action@cargo-llvm-cov
@@ -64,12 +67,9 @@ jobs:
         with:
           name: coverage-html
           path: target/llvm-cov/html/
-      # lcov output for Codecov: nightly toolchain (see Makefile's
-      # coverage-lcov). Informational only — codecov.yml sets both statuses to
-      # informational and fail_ci_if_error is false, so this never gates CI.
-      - uses: dtolnay/rust-toolchain@nightly
-        with:
-          components: llvm-tools-preview
+      # lcov output for Codecov (see Makefile's coverage-lcov). Informational
+      # only — codecov.yml sets both statuses to informational and
+      # fail_ci_if_error is false, so this never gates CI.
       - run: make coverage-lcov
       - uses: codecov/codecov-action@v4
         with:

@@ -16,6 +16,14 @@ exclude = ["docs/", "site/", ".github/", "examples/", "apps/"]
 name = "alix"
 path = "src/cli/main.rs"
 
+# Declares `cfg(coverage_nightly)` as a known cfg (set by `cargo +nightly
+# llvm-cov`, used by `#[cfg_attr(coverage_nightly, coverage(off))]` in a few
+# places — see `src/lib.rs`) so a plain stable build/clippy doesn't warn
+# "unexpected cfg" for it, which `-Dwarnings` (CI's `make check`) would
+# otherwise turn into a hard error.
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(coverage_nightly)"] }
+
 [dependencies]
 anyhow = "1"
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "serde"] }

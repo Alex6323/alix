@@ -229,6 +229,11 @@ fn walk_prompt(source: &str, goal: &str, url: bool, cfg: &TraceConfig) -> String
 /// checkpoints for each `[trace]`, fact cards for each `[deck]`. Returns the plan
 /// and a map from item number to its filled body. Exploring once (not per item)
 /// keeps the items coherent (each aware of the others) and amortizes the read.
+// Only reachable via `generate`'s multi-item workspace build (`build_workspace`),
+// itself untested (Task 5: two real AI calls + materialize/merge, judged too
+// contorted for the deterministic fake-backend approach); its `url == true`
+// branch is additionally dead — the one CLI call site is dir-gated.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn explore_and_fill(
     source: &str,
     goal: &str,

@@ -1,3 +1,8 @@
+// Enables `#[coverage(off)]` under `cargo +nightly llvm-cov` (this is a
+// separate bin crate from the lib, so it needs its own crate-root attr — see
+// `src/lib.rs` for the matching one and why it's used sparingly).
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+
 mod common;
 mod deck;
 mod doctor;
