@@ -9,7 +9,7 @@ use std::{
 
 use serde::Serialize;
 
-use super::{Browsing, Examining, Reviewing, Walking, img_key};
+use super::{Browsing, Examining, Reviewing, Walking, catalog::img_key};
 use crate::{
     answer::{Input, Mode, TypedResult, mode_name},
     augment::AugmentCache,

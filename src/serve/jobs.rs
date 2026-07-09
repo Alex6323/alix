@@ -18,7 +18,11 @@ use std::{
 
 use anyhow::{Result, bail};
 
-use super::{CardsBuild, DeckFiles, SessionBuild, collect_images, dto::*};
+use super::{
+    CardsBuild, SessionBuild,
+    catalog::{DeckFiles, collect_images},
+    dto::*,
+};
 use crate::{
     ask::{self, CliSession, Exchange, Reply},
     augment::{self, AugmentCache},
