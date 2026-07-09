@@ -6,7 +6,7 @@ crate is the single source of logic; this server surface is a thin consumer, and
 so is every client.
 
 > **Teeth.** Every response shape below is pinned by full-object snapshot
-> tests (`mod contract` in `src/serve.rs`); the pinned examples are emitted to
+> tests (`mod contract` in `src/serve/contract.rs`); the pinned examples are emitted to
 > `tests/contracts/*.json` — the canonical machine-readable examples, and the
 > input corpus for client-model codegen (e.g. quicktype → Dart). A shape
 > change fails CI and names the section here to update. Code, this file, and
@@ -354,7 +354,7 @@ contract — native clients need it to show card images.
 ## 6. DTO reference
 
 Types are JSON types; `?` = nullable (still always present). Anchors are the
-Rust struct names — `grep 'struct StateDto' src/serve.rs` finds the other
+Rust struct names — `grep 'struct StateDto' src/serve/dto.rs` finds the other
 side. Canonical example payloads live in `tests/contracts/<Anchor>.json`,
 emitted by the very tests that pin these shapes — always in sync by
 construction.

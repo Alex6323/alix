@@ -16,7 +16,7 @@ web endpoints — so treat the web JSON API as a **client-agnostic contract**:
 review flow and session state live in the lib behind presentation-agnostic
 endpoints, never in page JS (a native client can't reuse logic trapped in the
 page). The contract is written down in `docs/API.md`, pinned by the
-`mod contract` snapshot tests in `src/serve.rs` (which also emit the
+`mod contract` snapshot tests in `src/serve/contract.rs` (which also emit the
 `tests/contracts/*.json` codegen corpus) — change code, doc, and CHANGELOG
 together. alix itself stays a plain bind-to-interface HTTP server — reaching it
 beyond the LAN is an operator deployment choice (VPN/reverse proxy), not a
