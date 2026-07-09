@@ -3448,16 +3448,21 @@ function openAdd() {
       const url = document.getElementById("genUrl").value.trim();
       if (!url) return;
       const guidance = document.getElementById("genGuide").value.trim() || null;
+      // Captured once, here at kick time, rather than re-resolved by id when
+      // the response lands — a re-resolve could find the sheet already
+      // closed (null) or a different sheet's line. See jobPoll's comment.
+      const line = document.getElementById("jobLine");
       api("/api/generate", post({ url, guidance, dest: dest() || null }))
         .then((d) => {
           if (d && d.phase === "error") {
-            document.getElementById("jobLine").textContent = d.error || "could not start generating";
+            const msg = d.error || "could not start generating";
+            if (line && line.isConnected) { line.textContent = msg; } else { notice(msg); }
             return;
           }
           jobPoll("/api/generate", "generating", (r) => addDone("deck '" + r.deck + "' added"));
         })
         .catch(() => notice("could not start generating — the server log has details"));
-      document.getElementById("jobLine").textContent = "generating… 0s";
+      if (line && line.isConnected) { line.textContent = "generating… 0s"; }
     });
     document.getElementById("impFile").addEventListener("change", (e) => {
       const f = e.target.files[0];
@@ -3473,10 +3478,15 @@ function openAdd() {
     document.getElementById("rcvGo").addEventListener("click", () => {
       const code = document.getElementById("rcvCode").value.trim();
       if (!code) return;
+      // Captured once, here at kick time, rather than re-resolved by id when
+      // the response lands — a re-resolve could find the sheet already
+      // closed (null) or a different sheet's line. See jobPoll's comment.
+      const line = document.getElementById("jobLine");
       api("/api/receive", post({ code, dest: dest() || null }))
         .then((d) => {
           if (d && d.phase === "error") {
-            document.getElementById("jobLine").textContent = d.error || "could not start receiving";
+            const msg = d.error || "could not start receiving";
+            if (line && line.isConnected) { line.textContent = msg; } else { notice(msg); }
             return;
           }
           sheet.dataset.receiveLive = "1"; // closeSheet() must cancel the job if abandoned
@@ -3487,7 +3497,7 @@ function openAdd() {
           );
         })
         .catch(() => notice("could not start receiving — the server log has details"));
-      document.getElementById("jobLine").textContent = "receiving… 0s";
+      if (line && line.isConnected) { line.textContent = "receiving… 0s"; }
     });
     document.getElementById("rcvZip").addEventListener("change", (e) => {
       const f = e.target.files[0];
@@ -3519,21 +3529,24 @@ function openShare() {
   sheetPanel.querySelector("b").textContent = row || "the whole library";
   document.getElementById("shareZip").href = withToken(zipHref);
   document.getElementById("shareGo").addEventListener("click", () => {
+    // Captured once, here at kick time, rather than re-resolved by id when
+    // the response lands or on every tick — a re-resolve could find the
+    // sheet already closed (null) or a different sheet's line. See
+    // jobPoll's comment for why that matters.
+    const line = document.getElementById("jobLine");
     api("/api/share", post({ deck: row }))
       .then((d) => {
         if (d && d.phase === "error") {
-          document.getElementById("jobLine").textContent = d.error || "could not start sharing";
+          const msg = d.error || "could not start sharing";
+          if (line && line.isConnected) { line.textContent = msg; } else { notice(msg); }
           return;
         }
-        // Captured once, here at kick time, rather than re-resolved by id on
-        // every tick — see jobPoll's comment for why that matters.
-        const line = document.getElementById("jobLine");
-        line.textContent = "staging…";
+        if (line && line.isConnected) { line.textContent = "staging…"; }
         sheet.dataset.shareLive = "1"; // closeSheet() must cancel the job if abandoned
         liveJobTimer = setInterval(() => {
           api("/api/share").then((d2) => {
             if (d2.phase === "code") {
-              if (!line.isConnected) return; // nothing to render, and not terminal
+              if (!line || !line.isConnected) return; // nothing to render, and not terminal
               // Rendered once and left alone — rebuilding this node every
               // tick would wipe the user's in-progress selection of the code.
               if (!line.querySelector(".share-code")) {
@@ -3550,7 +3563,7 @@ function openShare() {
               notice("sent");
             } else if (d2.phase === "error") {
               clearInterval(liveJobTimer);
-              if (line.isConnected) {
+              if (line && line.isConnected) {
                 line.textContent = "";
                 line.appendChild(el("span", "sheet-err", d2.error || "share failed"));
               } else {

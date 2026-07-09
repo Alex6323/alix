@@ -2137,7 +2137,8 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                match crate::library::place_deck(&dir, &b.name, &text) {
+                let place_name = normalize_txt_extension(&b.name, &lower_name);
+                match crate::library::place_deck(&dir, &place_name, &text) {
                     Ok(p) if p.parse_error.is_none() => {
                         let deck = p
                             .path
@@ -4370,6 +4371,21 @@ fn download_filename(name: &str) -> String {
     }
 }
 
+/// Normalizes an uploaded name's `.txt` extension to lower case before it
+/// reaches [`crate::library::place_deck`], whose suffix-strip is
+/// case-sensitive (a locked contract) — without this, `FILE.TXT` would save
+/// as `FILE.TXT.txt`. `lower_name` is the already-lowercased name, used only
+/// to test the ending; slicing 4 bytes off `name` is safe because a matched
+/// `.txt` ending means the last 4 bytes are that same ASCII extension
+/// (lowercasing never changes a string's byte length).
+fn normalize_txt_extension(name: &str, lower_name: &str) -> String {
+    if lower_name.ends_with(".txt") {
+        format!("{}.txt", &name[..name.len() - 4])
+    } else {
+        name.to_string()
+    }
+}
+
 /// Like [`respond_bytes`], but marks the response as a file to save rather
 /// than render inline — the zip export is the one non-JSON API response, and
 /// a browser only offers "save as" with `Content-Disposition: attachment`.
@@ -4455,6 +4471,27 @@ mod tests {
         let name = download_filename("weird\"na\\me.zip");
         assert!(!name.contains('"'));
         assert!(!name.contains('\\'));
+    }
+
+    #[test]
+    fn an_uppercase_txt_extension_is_lowered_before_placing() {
+        let name = "FILE.TXT";
+        let lower = name.to_ascii_lowercase();
+        assert_eq!(normalize_txt_extension(name, &lower), "FILE.txt");
+    }
+
+    #[test]
+    fn a_lowercase_txt_extension_passes_through_unchanged() {
+        let name = "deck.txt";
+        let lower = name.to_ascii_lowercase();
+        assert_eq!(normalize_txt_extension(name, &lower), "deck.txt");
+    }
+
+    #[test]
+    fn a_tsv_name_is_left_untouched_by_the_txt_normalizer() {
+        let name = "EXPORT.TSV";
+        let lower = name.to_ascii_lowercase();
+        assert_eq!(normalize_txt_extension(name, &lower), "EXPORT.TSV");
     }
 
     #[test]
