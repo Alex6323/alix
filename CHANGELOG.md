@@ -7,6 +7,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
+- `docs/API.md` documented `/api/walk/grade`'s `delta` keys as `"g"|"p"|"m"`;
+  the server and web client have always used `"n"|"p"|"f"`. The doc now
+  matches the wire (caught by the new HTTP round-trip suite).
 - A wrong Recognize pick now shows which option was right before moving on
   (Continue grades it failed) — the silent instant-demote skipped the
   corrective moment.

@@ -123,7 +123,8 @@ so is every client.
 `WalkDto` drives a predict-and-verify loop: `phase` cycles
 `"predict"` → `"reveal"` → … → `"done"` *(closed)*. Submit a prediction with
 `POST /api/walk/predict {text}`; grade with `POST /api/walk/grade {delta}`
-where `delta` is a single key `"g"|"p"|"m"` (got it / partly / missed). With
+where `delta` is a single key `"n"|"p"|"f"` (got it / partly / missed it —
+the same letters as the review grade keys). With
 auto-grade on, poll `GET /api/walk` while `thinking`. `POST /api/walk/restart`
 rewalks; `POST /api/walk/leave` exits and, like every closer, returns the
 picker `StateDto`.
@@ -334,7 +335,7 @@ token holder is trusted to call it, the same trust class as `/api/grade`.
 |---|---|---|---|---|
 | GET | `/api/walk` | – | `WalkDto` (poll) | 409 not walking |
 | POST | `/api/walk/predict` | `{text}` | `WalkDto` | 409 |
-| POST | `/api/walk/grade` | `{delta: "g"\|"p"\|"m"}` | `WalkDto` | 400 no delta; 409 |
+| POST | `/api/walk/grade` | `{delta: "n"\|"p"\|"f"}` | `WalkDto` | 400 no delta; 409 |
 | POST | `/api/walk/restart` | – | `WalkDto` | 409 |
 | POST | `/api/walk/ask` | `{question}` | `AskDto` | 409 |
 | GET | `/api/walk/ask` | – | `AskDto` | 409 |
