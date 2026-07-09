@@ -24,7 +24,7 @@ use crate::{
     augment::TopologyOrder,
     card::Card,
     depth::Depth,
-    scheduler::{Grade, Scheduler},
+    scheduler::{ACQUIRE_COOLDOWN_MS, Grade, Scheduler},
     store::{Store, VirtualCard},
     time,
     trace::SourceBase,
@@ -127,6 +127,11 @@ pub struct Session {
     current_idx: Option<usize>,
     /// Roster cards servable at the last `advance` — the "remaining now" count.
     remaining_now: usize,
+    /// The card the session just moved off, and when the move happened —
+    /// its re-serve clock floors here, so time spent on the feedback screen
+    /// or thinking about the successor can never eat the gap and bring the
+    /// same card straight back ({#seen-interleaves-too-early}).
+    just_left: Option<(u64, u64)>, // (card id, transition ms)
     scheduler: Box<dyn Scheduler>,
     options: SessionOptions,
     /// Total distinct cards that entered the roster initially.
@@ -159,6 +164,7 @@ impl Session {
             roster,
             current_idx: None,
             remaining_now: 0,
+            just_left: None,
             scheduler,
             options,
             initial_size,
@@ -182,6 +188,7 @@ impl Session {
         self.initial_size = roster.len();
         self.roster = roster;
         self.stats = SessionStats::default();
+        self.just_left = None; // a fresh sitting; no outgoing card to floor
         self.advance(store, now_ms);
         true
     }
@@ -305,6 +312,8 @@ impl Session {
             if grade == Grade::Pass {
                 self.roster.retain(|&i| self.cards[i].id() != id);
             }
+            // Recognize is unscheduled and boolean — no floor: a wrong pick
+            // requeues immediately, same as always (see `servable`).
             self.advance(store, now_ms);
             return;
         }
@@ -366,6 +375,9 @@ impl Session {
         if passed || self.options.cram {
             self.roster.retain(|&i| i != index);
         }
+        // The floor anchors at this transition, not at grade time — see
+        // `just_left` ({#seen-interleaves-too-early}).
+        self.just_left = Some((id, now_ms));
         self.advance(store, now_ms);
     }
 
@@ -386,6 +398,9 @@ impl Session {
         // is never true for one and this is only ever reached by a deck card.
         store.get_or_insert(self.cards[index].id(), now_ms);
         self.stats.acquired += 1;
+        // The floor anchors at this transition, not at acquire time — see
+        // `just_left` ({#seen-interleaves-too-early}).
+        self.just_left = Some((self.cards[index].id(), now_ms));
         self.advance(store, now_ms);
     }
 
@@ -444,8 +459,14 @@ impl Session {
     /// a retired card is only un-retired by raising `retire_after` past its
     /// interval, or — for a virtual card — by re-failing its gap, which recreates
     /// it fresh); otherwise a Recognize session serves any card not yet
-    /// recognized; otherwise under cram, always; otherwise unseen (fresh) or
-    /// due at this session's depth. Deck and virtual cards share the one
+    /// recognized (unscheduled and boolean — a wrong pick requeues immediately,
+    /// so `just_left`'s floor, below, does not apply here); otherwise under
+    /// cram, always; otherwise unseen (fresh) or due at this session's depth. On
+    /// top of that due check, the card the session just moved off (`just_left`)
+    /// additionally floors at the transition — applied uniformly whether it
+    /// left on a grade or an acquire, and even under cram (cram's "serve
+    /// everything" would otherwise let a just-graded card boomerang back with
+    /// no due gate to stop it at all). Deck and virtual cards share the one
     /// `store.cards` rule.
     fn servable(&self, i: usize, store: &Store, now_ms: u64) -> bool {
         let card = &self.cards[i];
@@ -461,11 +482,20 @@ impl Session {
                     .get(card.id())
                     .is_none_or(|s| s.recognized_ms.is_none());
         }
-        match store.get(card.id()) {
+        let due = match store.get(card.id()) {
             // Cram serves everything; otherwise the scheduler decides (its `due_at`
             // owns the cross-depth immediacy rule — see `Fsrs::due_at`).
             Some(state) => self.options.cram || self.scheduler.is_due(state, depth, now_ms),
             None => true,
+        };
+        if !due {
+            return false;
+        }
+        match self.just_left {
+            Some((id, transition_ms)) if id == card.id() => {
+                now_ms >= transition_ms.saturating_add(ACQUIRE_COOLDOWN_MS)
+            }
+            _ => true,
         }
     }
 
@@ -1083,6 +1113,86 @@ mod tests {
         // Well past the ~1 min learning step: the missed card is due again.
         session.poll(&store, now + 5 * 60_000);
         assert_eq!(first_id, session.current().unwrap().id());
+    }
+
+    #[test]
+    fn a_graded_card_never_immediately_follows_itself_while_another_is_servable() {
+        // Two due cards A, B. Grade A failed at `now`, then simulate a long
+        // feedback-screen pause: A's own schedule is forced due well before the
+        // transition floor passes (a short retry interval that expired during
+        // the pause). B must stay current — the floor anchors at the move to
+        // B, not at grade time, so A can't ride its expired retry straight back
+        // ({#seen-interleaves-too-early}).
+        let (mut store, _dir) = empty_store();
+        let all = cards(2);
+        let a_id = all[0].id();
+        let b_id = all[1].id();
+        for c in &all {
+            store.get_or_insert(c.id(), 0);
+        }
+        let now = 5 * 60 * 1000; // past the acquire cooldown: both due
+        let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
+        assert_eq!(a_id, session.current().unwrap().id());
+
+        session.grade(&mut store, Grade::Fail, now);
+        assert_eq!(
+            b_id,
+            session.current().unwrap().id(),
+            "the other due card takes over right after the miss"
+        );
+
+        // Force A's own schedule to already look due, isolating the transition
+        // floor (not A's FSRS interval) as what's still supposed to gate it.
+        store
+            .get_or_insert(a_id, now)
+            .recall
+            .as_mut()
+            .unwrap()
+            .due_ms = now + 10_000;
+
+        // A pause shorter than the floor: A's own schedule says due, but the
+        // floor (anchored at the move to B) has not passed yet.
+        session.poll(&store, now + 30_000);
+        assert_eq!(
+            b_id,
+            session.current().unwrap().id(),
+            "the floor keeps A from immediately following itself"
+        );
+
+        // Past the floor: A may finally return (still nothing else due).
+        session.poll(&store, now + ACQUIRE_COOLDOWN_MS);
+        assert_eq!(a_id, session.current().unwrap().id());
+    }
+
+    #[test]
+    fn the_only_servable_card_may_repeat_once_the_floor_passes() {
+        // One-card session: after grading it, it becomes servable again once
+        // transition + ACQUIRE_COOLDOWN_MS elapses — the floor delays, never
+        // starves.
+        let (mut store, _dir) = empty_store();
+        let all = cards(1);
+        let id = all[0].id();
+        store.get_or_insert(id, 0);
+        let now = 5 * 60 * 1000;
+        let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
+
+        session.grade(&mut store, Grade::Fail, now);
+        assert!(
+            session.is_finished(),
+            "cooling on its own retry, nothing else to serve"
+        );
+
+        // Force its own schedule to look due almost immediately, isolating the
+        // floor (not the FSRS interval) as what's still gating it.
+        store.get_or_insert(id, now).recall.as_mut().unwrap().due_ms = now + 1_000;
+
+        // Its own schedule says due, but the transition floor hasn't passed.
+        session.poll(&store, now + ACQUIRE_COOLDOWN_MS - 1);
+        assert!(session.is_finished(), "the floor delays the repeat");
+
+        // The floor has passed: the only card may repeat — delayed, not starved.
+        session.poll(&store, now + ACQUIRE_COOLDOWN_MS);
+        assert_eq!(Some(id), session.current().map(|c| c.id()));
     }
 
     #[test]

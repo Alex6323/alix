@@ -90,6 +90,11 @@ pub trait Scheduler {
 /// Fixed settle gap between acquiring a card (its answer is shown, acknowledged)
 /// and its first real quiz — ~1 min, gating only the next session/restart. An
 /// in-session retry is position-based and unaffected. Was the stage-1 cooldown.
+///
+/// Doubles as `Session`'s same-card floor (`just_left`,
+/// {#seen-interleaves-too-early}): a card just moved off can't immediately
+/// re-serve until this long past the transition, so lingering on the feedback
+/// screen can't hand it straight back.
 pub const ACQUIRE_COOLDOWN_MS: u64 = 60 * 1000;
 
 /// One day in milliseconds — converts between FSRS's `scheduled_days` and alix's ms timestamps
