@@ -556,6 +556,7 @@ pub(crate) fn launch(args: LaunchArgs) -> Result<()> {
         exam: config.exam.clone(),
         ai: config.ai.clone(),
         generate: config.generate.clone(),
+        audience: config.serve.audience,
         auth: token,
         config_path: args.config.clone(),
         pair,

@@ -40,8 +40,8 @@ use crate::{
     augment::{self, AugmentCache},
     card::Card,
     config::{
-        AiConfig, AskConfig, Bindings, BrowseBindings, ExamConfig, GenerateDeckConfig, PickerKeys,
-        ReviewConfig,
+        AiConfig, AskConfig, Audience, Bindings, BrowseBindings, ExamConfig, GenerateDeckConfig,
+        PickerKeys, ReviewConfig,
     },
     deck::{self, Deck},
     depth::Depth,
@@ -54,6 +54,7 @@ use crate::{
 };
 
 const REVIEW_HTML: &str = include_str!("../../assets/web/review.html");
+const KIDS_HTML: &str = include_str!("../../assets/web/kids/kids.html");
 const THEME_CSS: &str = include_str!("../../assets/web/theme.css");
 const THEME_JS: &str = include_str!("../../assets/web/theme.js");
 const ALIX_LOGO_JS: &str = include_str!("../../assets/web/alix-logo.js");
@@ -95,10 +96,25 @@ fn font_bytes(name: &str) -> Option<&'static [u8]> {
 static REVIEW_PAGE: std::sync::LazyLock<String> =
     std::sync::LazyLock::new(|| compose_page(REVIEW_HTML));
 
+/// The kid-facing frontend, composed the same way as [`REVIEW_PAGE`]. A
+/// placeholder for now — fleshed out in later tasks.
+static KIDS_PAGE: std::sync::LazyLock<String> =
+    std::sync::LazyLock::new(|| compose_page(KIDS_HTML));
+
 /// Fill the shared-chrome placeholders in a served page.
 fn compose_page(html: &str) -> String {
     html.replace("<!--%head%-->", HEAD_HTML)
         .replace("<!--%brand%-->", BRAND_HTML)
+}
+
+/// Which single-page app `/` returns, keyed by `[serve] audience`. Small
+/// lookup-by-key helper (mirrors [`font_bytes`]) so route dispatch and its
+/// test can share one function.
+fn app_page(audience: Audience) -> &'static str {
+    match audience {
+        Audience::Adult => &REVIEW_PAGE,
+        Audience::Kids => &KIDS_PAGE,
+    }
 }
 
 /// Global options for a served review, independent of which decks are chosen
@@ -124,6 +140,9 @@ pub struct ReviewOptions {
     /// Personal review pacing (FSRS retention + retirement interval), for the
     /// selection screen's badges and due counts.
     pub review: ReviewConfig,
+    /// Which frontend `/` serves (`[serve] audience`); also reaches the
+    /// ask-tutor prompt once later tasks thread it there.
+    pub audience: Audience,
     /// Pairing token required on `/api/*` when set (auto-generated for `--lan`);
     /// `None` leaves the server open (the localhost default).
     pub auth: Option<String>,
@@ -244,6 +263,7 @@ pub fn run_review(
         ai: ai_cfg,
         generate: generate_cfg,
         review: review_cfg,
+        audience,
         auth,
         config_path,
         pair,
@@ -293,7 +313,7 @@ pub fn run_review(
             continue;
         }
         match (&method, path.as_str()) {
-            (Method::Get, "/") => respond_html(request, &REVIEW_PAGE),
+            (Method::Get, "/") => respond_html(request, app_page(audience)),
             (Method::Get, "/theme.css") => {
                 respond_asset(request, THEME_CSS, "text/css; charset=utf-8")
             }

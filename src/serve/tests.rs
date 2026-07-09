@@ -192,6 +192,16 @@ fn fonts_route_serves_woff2() {
 }
 
 #[test]
+fn app_page_dispatches_the_kids_page_for_kids_and_review_for_adult() {
+    // `app_page` is what the `GET /` route arm dispatches on. Like
+    // `fonts_route_serves_woff2`, there is no live-HTTP harness here, so the
+    // route's lookup logic is exercised directly.
+    assert_ne!(app_page(Audience::Adult), app_page(Audience::Kids));
+    assert!(app_page(Audience::Adult).contains("<title>alix</title>"));
+    assert!(app_page(Audience::Kids).contains("alix kids"));
+}
+
+#[test]
 fn resolve_row_resolves_a_unique_bare_deck_name() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("solo.txt"), "# f\n\tb\n").unwrap();

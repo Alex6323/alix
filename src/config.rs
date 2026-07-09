@@ -487,6 +487,17 @@ impl Default for AiConfig {
     }
 }
 
+/// Which served frontend `/` returns: the adult app (`review.html`) or the
+/// kid-facing one. Also reaches the ask-tutor prompt (kid-safe wording) once
+/// later tasks thread it there.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Audience {
+    #[default]
+    Adult,
+    Kids,
+}
+
 /// Settings for the web server bare `alix` starts (the `[serve]` section).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ServeConfig {
@@ -495,6 +506,8 @@ pub struct ServeConfig {
     /// Optional pairing token. When set (or auto-generated for `--lan`), the web
     /// server requires it on `/api/*` — see `alix --lan`.
     pub token: Option<String>,
+    /// Which frontend `/` serves.
+    pub audience: Audience,
 }
 
 impl Default for ServeConfig {
@@ -502,6 +515,7 @@ impl Default for ServeConfig {
         Self {
             port: 7777,
             token: None,
+            audience: Audience::default(),
         }
     }
 }
@@ -657,6 +671,7 @@ struct RawAi {
 struct RawServe {
     port: Option<u16>,
     token: Option<String>,
+    audience: Option<Audience>,
 }
 
 #[derive(Deserialize, Default)]
@@ -945,6 +960,9 @@ impl Config {
             serve.port = port;
         }
         serve.token = raw.serve.token;
+        if let Some(audience) = raw.serve.audience {
+            serve.audience = audience;
+        }
 
         let mut review = ReviewConfig::default();
         if let Some(retention) = raw.review.retention {
@@ -1549,6 +1567,14 @@ mod tests {
     #[test]
     fn unknown_ai_setting_is_rejected() {
         assert!(Config::from_toml("[ai]\nbogus = 1\n").is_err());
+    }
+
+    #[test]
+    fn serve_audience_defaults_to_adult_and_parses_kids() {
+        let def = Config::default();
+        assert_eq!(def.serve.audience, Audience::Adult);
+        let c = Config::from_toml("[serve]\naudience = \"kids\"\n").unwrap();
+        assert_eq!(c.serve.audience, Audience::Kids);
     }
 
     #[test]
