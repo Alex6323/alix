@@ -324,6 +324,13 @@ body {
 .mascot.mascot-sm .eye.r { right: 14px; }
 .mascot.mascot-sm .smile { top: 28px; width: 15px; height: 7px; border-bottom-width: 2.5px; }
 
+/* A bigger Alix face for the Done screen. */
+.mascot.mascot-lg { width: 96px; height: 96px; box-shadow: 0 16px 34px rgba(255, 138, 61, 0.34); }
+.mascot.mascot-lg .eye { top: 40px; width: 13px; height: 13px; }
+.mascot.mascot-lg .eye.l { left: 28px; }
+.mascot.mascot-lg .eye.r { right: 28px; }
+.mascot.mascot-lg .smile { top: 58px; width: 26px; height: 13px; border-bottom-width: 3.5px; }
+
 /* Review action bar: Home (left) · reveal/rate (center) · Ask Alix (right). The
    centre keeps a fixed min-height so swapping Show-me ↔ rate bar (or a choice's
    empty centre ↔ its rate bar) never resizes the footer. */
@@ -354,14 +361,73 @@ body {
   box-shadow: 0 4px 12px rgba(180, 110, 60, 0.16); cursor: pointer;
 }
 
-/* A trace deck a kid can't walk yet → a gentle bow-out; and a minimal Done
-   placeholder (Task 7 builds the real Done screen). */
+/* ── Ask-Alix overlay (card-scoped chat) — a static modal shell like the
+ * pairing gate below: backdrop + centered card, toggled via [hidden], with
+ * only the bubble log rebuilt in JS. Bubbles stack child-right / Alix-left. */
+.ask-overlay {
+  position: absolute; inset: 0; z-index: 20;
+  background: rgba(58, 42, 30, 0.28);
+  display: flex; align-items: center; justify-content: center; padding: 32px;
+}
+.ask-overlay[hidden] { display: none; }
+.ask-panel {
+  width: 100%; max-width: 480px; height: 560px; max-height: calc(100% - 8px);
+  background: #fff8f1; border-radius: 28px; box-shadow: 0 30px 70px rgba(120, 70, 30, 0.35);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.ask-head { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; padding: 18px 22px; border-bottom: 2px solid #ffe7d4; }
+.ask-title { flex: 1; font-weight: 800; font-size: 20px; color: var(--accent); }
+.ask-close-btn {
+  width: 32px; height: 32px; border: none; border-radius: 50%; background: #ffe7d4;
+  color: #b6795a; font-family: inherit; font-weight: 700; font-size: 16px; cursor: pointer;
+}
+.ask-log {
+  flex: 1; overflow-y: auto; padding: 20px 22px; display: flex; flex-direction: column; gap: 14px;
+  scrollbar-width: none; -ms-overflow-style: none;
+}
+.ask-log::-webkit-scrollbar { width: 0; height: 0; display: none; }
+.ask-bubble { max-width: 82%; border-radius: 16px; padding: 12px 16px; font-family: inherit; font-weight: 500; font-size: 17px; line-height: 1.5; }
+.ask-bubble-q { align-self: flex-end; background: #ffd9b8; border-radius: 16px 16px 4px 16px; font-weight: 600; color: #6a4a2e; }
+.ask-bubble-a {
+  align-self: flex-start; background: #fff; border-radius: 16px 16px 16px 4px; color: #5a4a3a;
+  box-shadow: 0 4px 12px rgba(180, 110, 60, 0.12);
+}
+.ask-bubble-think { font-weight: 700; font-size: 18px; color: #ffab6b; }
+.ask-footer { flex: 0 0 auto; padding: 16px 22px 20px; border-top: 2px solid #ffe7d4; }
+.ask-input-row { display: flex; gap: 10px; align-items: center; }
+.ask-input-field {
+  flex: 1; min-height: 52px; background: #fff; border: 2px solid #ffcf9a; border-radius: 16px;
+  padding: 12px 16px; font-family: inherit; font-weight: 500; font-size: 16px; color: #6a4a2e; outline: none;
+}
+.ask-input-field:disabled { opacity: 0.6; }
+.ask-send-btn {
+  min-height: 52px; padding: 12px 24px; border: none; border-radius: 16px;
+  font-family: inherit; font-weight: 700; font-size: 17px; color: #fff;
+  background: var(--accent); box-shadow: 0 5px 0 var(--accent-sh); cursor: pointer;
+}
+.ask-send-btn:disabled { opacity: 0.6; cursor: default; }
+
+/* A trace deck a kid can't walk yet → a gentle bow-out; and the retrospective
+   Done screen (no score/streak/XP — just the honest count + two exits). */
 .notready, .done {
   min-height: 100%; display: flex; flex-direction: column; align-items: center;
   justify-content: center; gap: 10px; padding: 40px; text-align: center;
 }
 .notready-title, .done-title { font-weight: 800; font-size: 28px; color: var(--ink); }
-.done-title { font-size: 40px; margin-top: 18px; }
+.done-title { font-size: 44px; margin-top: 22px; }
+.done-count { font-weight: 600; font-size: 20px; color: #907c68; }
+.done-sub { font-weight: 500; font-size: 18px; color: #b09a88; margin-top: 2px; }
+.done-actions { display: flex; gap: 14px; margin: 10px auto 0; }
+.done-go-btn {
+  min-height: 52px; padding: 15px 34px; border: none; border-radius: 20px;
+  font-family: inherit; font-weight: 700; font-size: 21px; color: #fff;
+  background: var(--accent); box-shadow: 0 6px 0 var(--accent-sh); cursor: pointer;
+}
+.done-home-btn {
+  min-height: 52px; padding: 15px 28px; border: none; border-radius: 20px;
+  font-family: inherit; font-weight: 700; font-size: 19px; color: var(--accent);
+  background: #fff; box-shadow: 0 4px 12px rgba(180, 110, 60, 0.16); cursor: pointer;
+}
 
 /* ── Motion & focus ─────────────────────────────────────────────────────── */
 @keyframes kidsBob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
@@ -412,6 +478,23 @@ button:focus-visible, input:focus-visible, .box:focus-visible {
       <button id="gateBtn" class="cta-btn" type="button">Let's go</button>
     </div>
   </div>
+
+  <div id="askOverlay" class="ask-overlay" hidden role="dialog" aria-modal="true" aria-label="Ask Alix">
+    <div class="ask-panel">
+      <div class="ask-head">
+        <div id="askMascotSlot"></div>
+        <div class="ask-title">Ask Alix</div>
+        <button id="askCloseBtn" class="ask-close-btn" type="button" aria-label="Close">✕</button>
+      </div>
+      <div id="askLog" class="ask-log" aria-live="polite"></div>
+      <div class="ask-footer">
+        <div class="ask-input-row">
+          <input id="askInput" class="ask-input-field" placeholder="Ask Alix anything…" autocomplete="off" spellcheck="false">
+          <button id="askSendBtn" class="ask-send-btn" type="button">Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -459,6 +542,9 @@ let state = null;        // last /api/select|/api/state payload (StateDto, or a
 let revealed = 0;        // back lines shown for the current card (line mode steps up
                           // one at a time; other modes jump straight to the full answer)
 let chosen = null;       // the ChooseFeedbackDto once an option is tapped (choice mode)
+let askOpen = false;     // Ask-Alix overlay view state
+let askData = { transcript: [], thinking: false, status: null, error: null };
+let askPoll = null;      // GET /api/ask poll interval id while askData.thinking
 
 // ── Themes (accent-only; brand orange is never themed) ────────────────────
 const THEMES = {
@@ -499,6 +585,11 @@ const fadeBot = document.getElementById("fadeBot");
 const menuBtn = document.getElementById("menuBtn");
 const menuPop = document.getElementById("menuPop");
 const menuBackdrop = document.getElementById("menuBackdrop");
+const askOverlay = document.getElementById("askOverlay");
+const askLog = document.getElementById("askLog");
+const askInput = document.getElementById("askInput");
+const askSendBtn = document.getElementById("askSendBtn");
+const askCloseBtn = document.getElementById("askCloseBtn");
 
 // Tiny element helper (mirrors review.html's `el`).
 function el(tag, cls, text) {
@@ -915,9 +1006,69 @@ function homeFromReview() {
   render();
   api("/api/deselect", post({})).catch(() => {}).then(refresh);
 }
-// Task 7 fills this in (the Ask Alix tutor overlay); the button is wired now so
-// Task 7 only has to build the overlay.
-function openTutor() {}
+// ── Ask-Alix tutor overlay ─────────────────────────────────────────────────
+// A card-scoped chat, mirroring review.html's ask wiring (openAsk / sendAsk /
+// startAskPoll / syncAsk) but as a static modal shell — like the settings menu
+// or the pairing gate — instead of a stage takeover, since kids.html never
+// tears down the review screen behind it. The client sends only {question};
+// the server derives the current card as context and applies the kid-safe
+// system prompt (Task 2). No note-saving / model display in kids v1.
+document.getElementById("askMascotSlot").appendChild(mascotEl("mascot-sm"));
+
+function openTutor() {
+  askOpen = true;
+  askOverlay.hidden = false;
+  syncAsk();
+  api("/api/ask").then((d) => { askData = d; if (askOpen) syncAsk(); }); // prior transcript
+}
+function closeTutor() {
+  askOpen = false;
+  stopAskPoll();
+  askOverlay.hidden = true;
+}
+function sendAskMsg() {
+  const q = askInput.value.trim();
+  if (!q || askData.thinking) return;
+  askInput.value = "";
+  api("/api/ask", post({ question: q })).then((d) => { askData = d; if (askOpen) syncAsk(); startAskPoll(); });
+}
+function startAskPoll() {
+  stopAskPoll();
+  askPoll = setInterval(() => {
+    api("/api/ask").then((d) => { askData = d; if (!d.thinking) stopAskPoll(); if (askOpen) syncAsk(); });
+  }, 400);
+}
+function stopAskPoll() { if (askPoll) { clearInterval(askPoll); askPoll = null; } }
+
+// (Re)fill the bubble log + input/send disabled state from askData. A
+// greeting bubble stands in until the first exchange; a raw askData.error
+// never reaches the child — just a warm, generic fallback line.
+function syncAsk() {
+  askLog.innerHTML = "";
+  if (!askData.transcript.length && !askData.thinking && !askData.error) {
+    askLog.appendChild(el("div", "ask-bubble ask-bubble-a", "Hi! I'm Alix 🦊 Ask me anything about this card and I'll explain it in a fun way."));
+  }
+  for (const ex of askData.transcript) {
+    askLog.appendChild(el("div", "ask-bubble ask-bubble-q", ex.q));
+    askLog.appendChild(el("div", "ask-bubble ask-bubble-a", ex.a));
+  }
+  if (askData.thinking) askLog.appendChild(el("div", "ask-bubble ask-bubble-a ask-bubble-think", "Alix is thinking… 🤔"));
+  if (askData.error) askLog.appendChild(el("div", "ask-bubble ask-bubble-a", "Oops — I couldn't think just now. Try asking again! 🦊"));
+  askLog.scrollTop = askLog.scrollHeight;
+
+  askInput.disabled = askData.thinking;
+  askSendBtn.disabled = askData.thinking;
+  if (!askData.thinking && askOpen) askInput.focus();
+}
+
+askSendBtn.addEventListener("click", sendAskMsg);
+askInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); sendAskMsg(); } });
+askCloseBtn.addEventListener("click", closeTutor);
+askOverlay.addEventListener("click", (e) => { if (e.target === askOverlay) closeTutor(); }); // tap-out
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && askOpen) { closeTutor(); return; }
+  if (e.key === "?" && !askOpen && screen === "review" && state && state.kind === "review" && state.card) openTutor();
+});
 
 // A trace deck (a WalkDto) can't be walked in kids v1 — bow out gently instead
 // of mis-rendering it. Doubles as the empty/lost-session fallback.
@@ -933,18 +1084,36 @@ function renderNotReady() {
   actionbar.appendChild(back);
 }
 
-// Minimal Done placeholder so routing to `phase:"done"` doesn't strand a kid.
-// Task 7 builds the real, retrospective Done screen (still no score/counter).
+// The retrospective Done screen: a bobbing Alix (bob gated by reduced-motion
+// via the shared .mascot/kidsBreathe pattern), the honest review count, and
+// two exits. No score/streak/XP — orientation lives only here, once the
+// session is over (the no-counter rule is about DURING review).
 function renderDone() {
   const wrap = el("div", "done");
-  wrap.appendChild(mascotEl());
+  wrap.appendChild(mascotEl("mascot-lg"));
   wrap.appendChild(el("div", "done-title", "Nice work! 🎉"));
-  wrap.appendChild(el("div", "soft", "Come back tomorrow to keep them fresh 🌱"));
+  const n = (state && typeof state.reviews === "number") ? state.reviews : 0;
+  wrap.appendChild(el("div", "done-count", "You reviewed " + n + " cards."));
+  wrap.appendChild(el("div", "done-sub", "Come back tomorrow to keep them fresh 🌱"));
   stage.appendChild(wrap);
-  const back = el("button", "cta-btn", "🏠 Home");
-  back.type = "button";
-  back.addEventListener("click", homeFromReview);
-  actionbar.appendChild(back);
+
+  const actions = el("div", "done-actions");
+  if (state && state.can_restart) {
+    const go = el("button", "done-go-btn", "Go again");
+    go.type = "button";
+    go.addEventListener("click", restartBox);
+    actions.appendChild(go);
+  }
+  const home = el("button", "done-home-btn", "Home");
+  home.type = "button";
+  home.addEventListener("click", homeFromReview);
+  actions.appendChild(home);
+  actionbar.appendChild(actions);
+}
+// Restart the just-finished box: /api/restart returns the next StateDto,
+// routed through the same applyState choke point as every other review action.
+function restartBox() {
+  api("/api/restart", post({})).then(applyState);
 }
 
 // ── Stage fade hints (hidden scrollbar → soft "▾ more") ───────────────────
