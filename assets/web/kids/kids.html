@@ -2,7 +2,13 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>alix kids</title>
+<!-- The kids page is a self-contained thin client with its own design system
+     (Baloo 2 + warm accent themes), so it deliberately does NOT pull in the
+     adult shared head (`theme.css` / IBM Plex). Only the brand mark component
+     is reused, for the loading splash. -->
+<script defer src="/alix-logo.js"></script>
 <style>
 @font-face {
   font-family: 'Baloo 2';
@@ -35,14 +41,523 @@
   src: url(/fonts/baloo2-800.woff2) format('woff2');
 }
 
+/* ── Tokens ──────────────────────────────────────────────────────────────
+ * Brand orange (--brand) is NEVER themed — the wordmark and the Alix mascot
+ * are always warm orange. The accent trio (--accent / --accent-sh / --bg*)
+ * IS themed, driven by JS from the THEMES map. :root carries the Sunrise
+ * defaults so there is no flash before JS applies the saved theme. */
+:root {
+  --ink: #241d2b;
+  --muted: #a1907f;
+  --muted-2: #b6a08e;
+  --card: #fff;
+  --brand: #ff8a3d;
+  --accent: #ff8a3d;
+  --accent-sh: #e0702a;
+  --bg-top: #fff5ec;
+  --bg-bot: #ffe7d4;
+  --bg: linear-gradient(168deg, #fff5ec 0%, #ffe7d4 100%);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; height: 100%; }
 body {
   font-family: 'Baloo 2', system-ui, sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The fixed shell: header · stage · action bar, never scrolling as a whole. */
+#app {
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  background: var(--bg);
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+.appbar { flex: 0 0 auto; display: flex; align-items: center; padding: 22px 34px 6px; }
+.brand { flex: 1; display: flex; align-items: center; gap: 11px; min-width: 0; }
+.brand-dot {
+  width: 30px; height: 30px; border-radius: 50%; flex: 0 0 auto;
+  background: radial-gradient(circle at 38% 34%, #ffd9b0, #ff8a3d);
+}
+.wordmark { font-weight: 800; font-size: 26px; color: var(--brand); line-height: 1; }
+.menu-btn {
+  flex: 0 0 auto;
+  width: 44px; height: 44px; border: none; border-radius: 50%;
+  background: #fff; box-shadow: 0 4px 12px rgba(180, 110, 60, 0.14);
+  display: flex; align-items: center; justify-content: center;
+  font-family: inherit; font-weight: 700; font-size: 18px; color: #ffab6b;
+  cursor: pointer;
+}
+
+/* ── Stage (scrolls inside; hidden scrollbar + soft fade hints) ─────────── */
+.stage-wrap { flex: 1; position: relative; min-height: 0; }
+.stage {
+  position: absolute; inset: 0; overflow-y: auto;
+  scrollbar-width: none; -ms-overflow-style: none;
+}
+.stage::-webkit-scrollbar { width: 0; height: 0; display: none; }
+
+.fade { position: absolute; left: 0; right: 0; pointer-events: none; opacity: 0; transition: opacity .18s ease; }
+.fade.show { opacity: 1; }
+.fade-top { top: 0; height: 40px; background: linear-gradient(180deg, var(--bg-top), transparent); }
+.fade-bot {
+  bottom: 0; height: 48px;
+  display: flex; align-items: flex-end; justify-content: center; padding-bottom: 8px;
+  background: linear-gradient(0deg, var(--bg-bot), transparent);
+  color: #c69a76; font-weight: 700; font-size: 12px; letter-spacing: 0.08em;
+}
+
+/* ── Action bar (collapses to nothing when a screen has no actions) ─────── */
+.actionbar { flex: 0 0 auto; display: flex; align-items: center; gap: 14px; }
+.actionbar:not(:empty) { padding: 14px 28px; }
+
+/* ── Home: greeting + box grid ──────────────────────────────────────────── */
+.home { max-width: 860px; margin: 0 auto; padding: 18px 34px 44px; }
+.greet { display: flex; align-items: center; gap: 16px; margin: 12px 0 30px; }
+.greet-title { font-weight: 800; font-size: 30px; color: var(--ink); }
+.greet-sub { font-weight: 500; font-size: 17px; color: var(--muted); }
+
+.box-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; }
+.box {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
+  text-align: left; padding: 22px 22px 20px; min-height: 132px;
+  border: none; border-radius: 24px; background: var(--card);
+  box-shadow: 0 12px 30px rgba(180, 110, 60, 0.15);
+  font-family: inherit; cursor: pointer;
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.box:hover { transform: translateY(-3px); box-shadow: 0 18px 36px rgba(180, 110, 60, 0.2); }
+.box:active { transform: translateY(-1px); }
+.box-emoji { font-size: 46px; line-height: 1; }
+.box-icon { width: 46px; height: 46px; object-fit: contain; border-radius: 10px; }
+.box-name { font-weight: 800; font-size: 22px; color: var(--ink); margin-top: 8px; }
+.box-ready { font-weight: 600; font-size: 15px; color: var(--muted-2); }
+
+.empty { font-weight: 600; font-size: 18px; color: var(--muted); padding: 24px 4px; line-height: 1.5; }
+
+/* ── Loading splash (reuses the brand <alix-logo> mark) ─────────────────── */
+.splash { min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; }
+.splash-label { font-weight: 600; font-size: 16px; color: var(--muted); }
+
+/* ── Box screen placeholder (Task 5 builds the real detail) ─────────────── */
+.box-detail { max-width: 680px; margin: 0 auto; padding: 20px 34px 40px; }
+.box-hero { display: flex; align-items: center; gap: 18px; margin: 14px 0 20px; }
+.hero-emoji { font-size: 64px; line-height: 1; }
+.hero-icon { width: 64px; height: 64px; object-fit: contain; border-radius: 14px; }
+.hero-title { font-weight: 800; font-size: 34px; color: var(--ink); }
+.soft { font-weight: 500; font-size: 17px; color: var(--muted); }
+.ghost-btn {
+  padding: 10px 16px; border: none; border-radius: 14px; background: transparent;
+  color: var(--muted-2); font-family: inherit; font-weight: 700; font-size: 16px; cursor: pointer;
+}
+
+/* ── The Alix mascot cell (CSS-drawn; reused throughout) ────────────────── */
+.mascot {
+  position: relative; flex: 0 0 auto;
+  width: 64px; height: 64px;
+  border-radius: 48% 52% 50% 50% / 54% 54% 46% 46%;
+  background: radial-gradient(circle at 37% 32%, #ffdcb4, #ff8a3d);
+  box-shadow: 0 10px 22px rgba(255, 138, 61, 0.3);
+  animation: kidsBob 3s ease-in-out infinite;
+}
+.mascot .eye { position: absolute; top: 26px; width: 10px; height: 10px; border-radius: 50%; background: #3a2a1e; }
+.mascot .eye.l { left: 18px; }
+.mascot .eye.r { right: 18px; }
+.mascot .smile {
+  position: absolute; left: 50%; top: 39px; transform: translateX(-50%);
+  width: 18px; height: 9px; border-bottom: 3px solid #3a2a1e; border-radius: 0 0 18px 18px;
+}
+
+/* ── Settings menu (theme switcher lives behind the ☰) ──────────────────── */
+.menu-backdrop { position: absolute; inset: 0; z-index: 15; }
+.menu-backdrop[hidden] { display: none; }
+.menu-pop {
+  position: absolute; top: 62px; right: 34px; z-index: 16; min-width: 150px;
+  background: #fff; border-radius: 20px; box-shadow: 0 16px 40px rgba(180, 110, 60, 0.22);
+  padding: 14px 16px; display: grid; gap: 10px;
+}
+.menu-pop[hidden] { display: none; }
+.menu-title { font-weight: 700; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.themes { display: flex; gap: 10px; }
+.swatch {
+  width: 46px; height: 46px; padding: 0; border: 3px solid transparent; border-radius: 14px;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.swatch[aria-pressed="true"] { border-color: var(--ink); }
+.swatch-dot { width: 18px; height: 18px; border-radius: 50%; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15); }
+
+/* ── Pairing-token gate (shown on a 401 under `alix --lan`) ─────────────── */
+.gate {
+  position: absolute; inset: 0; z-index: 40;
+  background: rgba(58, 42, 30, 0.28);
+  display: flex; align-items: center; justify-content: center; padding: 32px;
+}
+.gate[hidden] { display: none; }
+.gate-card {
+  width: 100%; max-width: 420px; background: #fff8f1;
+  border-radius: 28px; box-shadow: 0 30px 70px rgba(120, 70, 30, 0.35);
+  padding: 28px; display: grid; gap: 14px;
+}
+.gate-title { font-weight: 800; font-size: 24px; color: var(--ink); }
+.gate p { margin: 0; font-weight: 500; font-size: 16px; color: #6a5a4a; line-height: 1.5; }
+.gate-input {
+  border: 2px solid #ffcf9a; border-radius: 16px; padding: 12px 16px;
+  font-family: inherit; font-weight: 500; font-size: 16px; color: #6a4a2e; outline: none;
+}
+.cta-btn {
+  padding: 14px 22px; min-height: 52px; border: none; border-radius: 18px;
+  font-family: inherit; font-weight: 700; font-size: 18px; color: #fff;
+  background: var(--accent); box-shadow: 0 6px 0 var(--accent-sh); cursor: pointer;
+}
+
+/* ── Motion & focus ─────────────────────────────────────────────────────── */
+@keyframes kidsBob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+@keyframes kidsBreathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.82; } }
+
+button:focus-visible, input:focus-visible, .box:focus-visible {
+  outline: 3px solid var(--accent); outline-offset: 3px;
+}
+
+/* Reduce-not-remove: keep the opacity fade hints, but swap the mascot's bob
+   (vertical MOVEMENT) for a gentle opacity breathe, and drop the hover lift. */
+@media (prefers-reduced-motion: reduce) {
+  .mascot { animation-name: kidsBreathe; }
+  .box { transition: none; }
+  .box:hover, .box:active { transform: none; }
 }
 </style>
-<!--%head%-->
 </head>
 <body>
-<!--%brand%-->
-<h1>alix kids</h1>
+<div id="app">
+  <header class="appbar">
+    <div class="brand">
+      <span class="brand-dot" aria-hidden="true"></span>
+      <span class="wordmark">alix</span>
+    </div>
+    <button id="menuBtn" class="menu-btn" type="button" aria-label="Settings" aria-haspopup="true" aria-expanded="false">☰</button>
+  </header>
+
+  <div class="stage-wrap">
+    <main id="stage" class="stage" role="main"></main>
+    <div id="fadeTop" class="fade fade-top" aria-hidden="true"></div>
+    <div id="fadeBot" class="fade fade-bot" aria-hidden="true">▾ more</div>
+  </div>
+
+  <footer id="actionbar" class="actionbar"></footer>
+
+  <div id="menuBackdrop" class="menu-backdrop" hidden></div>
+  <div id="menuPop" class="menu-pop" hidden role="menu" aria-label="Colours">
+    <div class="menu-title">Colours</div>
+    <div class="themes" id="themes"></div>
+  </div>
+
+  <div id="tokengate" class="gate" hidden>
+    <div class="gate-card">
+      <div class="gate-title">Almost there!</div>
+      <p>Ask a grown-up for the code alix showed, then pop it in here.</p>
+      <input id="gateInput" class="gate-input" placeholder="paste the code" autocomplete="off" spellcheck="false">
+      <button id="gateBtn" class="cta-btn" type="button">Let's go</button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+// ── Pairing token (mirrors review.html) ───────────────────────────────────
+// Capture a ?token= once, keep it in sessionStorage, and attach it to every
+// /api request. A 401 clears it and opens the friendly gate.
+(function () {
+  const q = new URLSearchParams(location.search).get("token");
+  if (q) {
+    try { sessionStorage.setItem("alix.token", q); } catch (e) { /* ignore */ }
+    const u = new URL(location.href);
+    u.searchParams.delete("token");
+    history.replaceState(null, "", u); // don't leave the token in the URL bar
+  }
+  const orig = window.fetch;
+  window.fetch = async (url, opts = {}) => {
+    let tok = null;
+    try { tok = sessionStorage.getItem("alix.token"); } catch (e) { /* ignore */ }
+    if (tok && String(url).startsWith("/api")) {
+      opts = { ...opts, headers: { ...(opts.headers || {}), Authorization: "Bearer " + tok } };
+    }
+    const res = await orig(url, opts);
+    if (res.status === 401 && String(url).startsWith("/api")) {
+      try { sessionStorage.removeItem("alix.token"); } catch (e) { /* ignore */ }
+      showGate();
+    }
+    return res;
+  };
+})();
+
+// An error response has an empty (non-JSON) body, so `.json()` throws and the
+// rejection reaches the caller's `.catch` — same contract as review.html.
+async function api(path, opts) { return (await fetch(path, opts)).json(); }
+function post(body) { return { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }; }
+
+// ── View state only (the engine behind /api/* owns everything else) ───────
+let screen = "home";     // "home" | "box" | "review" | "done"
+let currentBox = null;   // the selected workspace DeckItemDto (for Task 5)
+let deckList = null;     // last DeckListDto (null until the first load resolves)
+let loadError = false;   // the /api/decks fetch failed
+
+// ── Themes (accent-only; brand orange is never themed) ────────────────────
+const THEMES = {
+  Sunrise: { bgTop: "#fff5ec", bgBot: "#ffe7d4", accent: "#ff8a3d", sh: "#e0702a" },
+  Ocean:   { bgTop: "#eafaf7", bgBot: "#cdeeff", accent: "#0fa8b4", sh: "#0b7d86" },
+  Berry:   { bgTop: "#fdeefb", bgBot: "#f1dbff", accent: "#c04bd0", sh: "#9c34ab" },
+};
+let theme = loadTheme();
+
+function loadTheme() {
+  try {
+    const t = localStorage.getItem("alix-kids-theme");
+    return THEMES[t] ? t : "Sunrise";
+  } catch (e) { return "Sunrise"; }
+}
+function applyTheme() {
+  const t = THEMES[theme] || THEMES.Sunrise;
+  const r = document.documentElement.style;
+  r.setProperty("--bg-top", t.bgTop);
+  r.setProperty("--bg-bot", t.bgBot);
+  r.setProperty("--bg", "linear-gradient(168deg, " + t.bgTop + " 0%, " + t.bgBot + " 100%)");
+  r.setProperty("--accent", t.accent);
+  r.setProperty("--accent-sh", t.sh);
+}
+function setTheme(name) {
+  if (!THEMES[name]) return;
+  theme = name;
+  try { localStorage.setItem("alix-kids-theme", name); } catch (e) { /* ignore */ }
+  applyTheme();
+  updateSwatchState();
+}
+
+// ── DOM handles ───────────────────────────────────────────────────────────
+const stage = document.getElementById("stage");
+const actionbar = document.getElementById("actionbar");
+const fadeTop = document.getElementById("fadeTop");
+const fadeBot = document.getElementById("fadeBot");
+const menuBtn = document.getElementById("menuBtn");
+const menuPop = document.getElementById("menuPop");
+const menuBackdrop = document.getElementById("menuBackdrop");
+
+// Tiny element helper (mirrors review.html's `el`).
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text;
+  return n;
+}
+
+// The CSS-drawn Alix face, at the standard greeting size.
+function mascotEl() {
+  const m = el("div", "mascot");
+  m.setAttribute("aria-hidden", "true");
+  m.appendChild(el("span", "eye l"));
+  m.appendChild(el("span", "eye r"));
+  m.appendChild(el("span", "smile"));
+  return m;
+}
+
+// ── render() dispatches on `screen`; Tasks 5-7 flesh out their branches ───
+function render() {
+  applyTheme();
+  stage.innerHTML = "";
+  actionbar.innerHTML = "";
+  if (screen === "home") renderHome();
+  else if (screen === "box") renderBox();
+  else if (screen === "review") renderReview();
+  else if (screen === "done") renderDone();
+  pokeFades();
+}
+
+function renderHome() {
+  // Before the first /api/decks resolves, show the brand-mark splash.
+  if (deckList == null && !loadError) {
+    const splash = el("div", "splash");
+    const logo = document.createElement("alix-logo");
+    logo.setAttribute("loop", "");
+    logo.setAttribute("height", "64");
+    logo.setAttribute("color", "#ff8a3d");
+    splash.appendChild(logo);
+    splash.appendChild(el("div", "splash-label", "Getting your boxes ready…"));
+    stage.appendChild(splash);
+    return;
+  }
+
+  const home = el("div", "home");
+
+  const greet = el("div", "greet");
+  greet.appendChild(mascotEl());
+  const gt = el("div");
+  gt.appendChild(el("div", "greet-title", "Hi! What do you want to practise?"));
+  gt.appendChild(el("div", "greet-sub", "Pick a box and let's go 🌟"));
+  greet.appendChild(gt);
+  home.appendChild(greet);
+
+  if (loadError) {
+    home.appendChild(el("div", "empty", "Hmm, I couldn't find your boxes just now. Try again in a moment 🌱"));
+    stage.appendChild(home);
+    return;
+  }
+
+  const boxes = (deckList && deckList.workspaces) || [];
+  if (!boxes.length) {
+    home.appendChild(el("div", "empty", "No boxes yet — ask a grown-up to add some 🌱"));
+    stage.appendChild(home);
+    return;
+  }
+
+  const grid = el("div", "box-grid");
+  for (const b of boxes) grid.appendChild(boxCard(b));
+  home.appendChild(grid);
+  stage.appendChild(home);
+}
+
+// One workspace = one box. Fields used: `icon` (a /img/<key> URL, else a
+// friendly default emoji), `label` (title), and `reviewable` (a soft, honest
+// readiness line — never a fabricated "N ready" count).
+function boxCard(b) {
+  const card = el("button", "box");
+  card.type = "button";
+  card.appendChild(iconEl(b, "box-icon", "box-emoji"));
+  card.appendChild(el("div", "box-name", b.label || b.name || "Box"));
+  card.appendChild(el("div", "box-ready", b.reviewable ? "ready to practise" : "all caught up 🌱"));
+  card.addEventListener("click", () => openBox(b));
+  return card;
+}
+
+// A workspace's emblem when it has one, else a friendly default emoji. `/img`
+// URLs are unauthenticated by design, so a plain <img src> is enough.
+function iconEl(item, imgCls, emojiCls) {
+  if (item && item.icon) {
+    const img = document.createElement("img");
+    img.className = imgCls;
+    img.src = item.icon;
+    img.alt = "";
+    return img;
+  }
+  return el("div", emojiCls, "📚");
+}
+
+function openBox(b) { currentBox = b; screen = "box"; render(); }
+function goHome() { screen = "home"; currentBox = null; render(); refresh(); }
+
+// Placeholder box screen (Task 5 builds the real subject detail). Kept
+// navigable so the tap-a-box wiring can be exercised end to end.
+function renderBox() {
+  const b = currentBox || {};
+  const back = el("button", "ghost-btn", "← Home");
+  back.type = "button";
+  back.addEventListener("click", goHome);
+  actionbar.appendChild(back);
+
+  const wrap = el("div", "box-detail");
+  const hero = el("div", "box-hero");
+  hero.appendChild(iconEl(b, "hero-icon", "hero-emoji"));
+  hero.appendChild(el("div", "hero-title", b.label || b.name || "Box"));
+  wrap.appendChild(hero);
+  wrap.appendChild(el("div", "soft", "Let's practise this soon 🌱"));
+  stage.appendChild(wrap);
+}
+
+// Filled in by Tasks 6 and 7.
+function renderReview() {}
+function renderDone() {}
+
+// ── Stage fade hints (hidden scrollbar → soft "▾ more") ───────────────────
+function updateFades() {
+  const s = stage;
+  const up = s.scrollTop > 4;
+  const down = (s.scrollHeight - s.clientHeight - s.scrollTop) > 4;
+  fadeTop.classList.toggle("show", up);
+  fadeBot.classList.toggle("show", down);
+}
+// Re-check after layout settles (fonts, images, screen swaps).
+function pokeFades() {
+  requestAnimationFrame(updateFades);
+  [40, 160, 360].forEach((ms) => setTimeout(updateFades, ms));
+}
+stage.addEventListener("scroll", updateFades, { passive: true });
+if (window.ResizeObserver) { new ResizeObserver(updateFades).observe(stage); }
+window.addEventListener("resize", updateFades);
+
+// ── Settings menu + theme swatches ────────────────────────────────────────
+function buildThemeSwatches() {
+  const host = document.getElementById("themes");
+  host.innerHTML = "";
+  for (const name of Object.keys(THEMES)) {
+    const t = THEMES[name];
+    const b = el("button", "swatch");
+    b.type = "button";
+    b.dataset.theme = name;
+    b.title = name;
+    b.setAttribute("aria-label", name);
+    b.style.background = "linear-gradient(168deg, " + t.bgTop + ", " + t.bgBot + ")";
+    const dot = el("span", "swatch-dot");
+    dot.style.background = t.accent;
+    b.appendChild(dot);
+    b.addEventListener("click", () => { setTheme(name); closeMenu(); });
+    host.appendChild(b);
+  }
+  updateSwatchState();
+}
+function updateSwatchState() {
+  const list = document.querySelectorAll(".swatch");
+  for (const s of list) s.setAttribute("aria-pressed", String(s.dataset.theme === theme));
+}
+function openMenu() {
+  menuPop.hidden = false;
+  menuBackdrop.hidden = false;
+  menuBtn.setAttribute("aria-expanded", "true");
+  updateSwatchState();
+}
+function closeMenu() {
+  menuPop.hidden = true;
+  menuBackdrop.hidden = true;
+  menuBtn.setAttribute("aria-expanded", "false");
+}
+menuBtn.addEventListener("click", () => { menuPop.hidden ? openMenu() : closeMenu(); });
+menuBackdrop.addEventListener("click", closeMenu);
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenu(); });
+
+// ── Token gate (a 401 under `alix --lan`) ─────────────────────────────────
+function showGate() {
+  const g = document.getElementById("tokengate");
+  if (!g || !g.hidden) return;
+  g.hidden = false;
+  document.getElementById("gateInput").focus();
+}
+function gateConnect() {
+  const t = document.getElementById("gateInput").value.trim();
+  if (!t) return;
+  try { sessionStorage.setItem("alix.token", t); } catch (e) { /* ignore */ }
+  location.reload();
+}
+document.getElementById("gateBtn").addEventListener("click", gateConnect);
+document.getElementById("gateInput").addEventListener("keydown", (e) => { if (e.key === "Enter") gateConnect(); });
+
+// ── Load ──────────────────────────────────────────────────────────────────
+// Home reads the box catalog once (no live counter — a receding queue is a
+// false finish line). refresh() re-reads it, e.g. on returning from a session.
+function loadDecks() {
+  return api("/api/decks")
+    .then((d) => { deckList = d; loadError = false; })
+    .catch(() => { loadError = true; })
+    .finally(() => { if (screen === "home") render(); });
+}
+function refresh() { return loadDecks(); }
+
+buildThemeSwatches();
+render();     // paints the splash immediately
+loadDecks();  // then fills the boxes
+</script>
 </body>
 </html>

@@ -20,10 +20,13 @@ let errors = 0;
 
 const files = readdirSync(dir)
   .filter((f) => f.endsWith(".html"))
-  .sort();
+  .sort()
+  .map((f) => join(dir, f));
+// The kids page lives in a subdirectory the flat scan above misses; lint it too.
+files.push(join(dir, "kids", "kids.html"));
 
 for (const file of files) {
-  const html = readFileSync(join(dir, file), "utf8");
+  const html = readFileSync(file, "utf8");
   // Every <script …>…</script>; the attribute group lets us skip external
   // scripts (src=…), which have nothing inline to check.
   const re = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
