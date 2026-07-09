@@ -874,8 +874,12 @@ function effectiveDraw() {
 // interaction, not the scheduled one: whenever choices are on screen — a recognition
 // MC on a first encounter, or choice mode — it's a pick-one, so show "choice", never
 // the "flip" the card's schedule will use once acquired.
+// Acquire is the exception: it's an ungraded attempt-first reveal, never a graded
+// check (a recognition pick just leads to "Seen") — `state.mode` is the depth's
+// check regardless, so naming it here would claim a check that isn't happening.
 function modeLabel() {
-  const kind = state.promotable ? "remediation" : isAcquire() ? "new" : "";
+  if (isAcquire()) return "new";
+  const kind = state.promotable ? "remediation" : "";
   const check = state.choices ? "choice" : state.mode === "typeline" ? "typing · line" : state.mode;
   return kind ? kind + " · " + check : check;
 }

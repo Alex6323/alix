@@ -10,7 +10,7 @@
 //! Sub-cards of the same cloze card are never used as distractors — their
 //! answers must stay hidden until their own card is reviewed.
 
-use std::{collections::HashSet, sync::Arc};
+use std::collections::HashSet;
 
 use crate::card::Card;
 
@@ -152,39 +152,6 @@ pub fn recognition_question(
     // for a first encounter.
     let ai = ai_distractors.filter(|d| d.len() >= NUM_OPTIONS - 1)?;
     build(card, pool, seed, Some(ai))
-}
-
-/// Builds a Recognize-depth question for a line-reveal card: pick the next
-/// line. Distractors prefer the card's OWN other lines first — confusable by
-/// construction, since they belong to the same ordered answer — then `ai`,
-/// via [`build`]. There is no cross-card pool tier: a line card's own lines are
-/// already the natural distractors. Returns `None` when `next` is out of range
-/// or fewer than `NUM_OPTIONS` distinct options are available.
-pub fn line_question(
-    card: &Card,
-    next: usize,
-    seed: u64,
-    ai: Option<&[String]>,
-) -> Option<ChoiceQuestion> {
-    let correct = card.back.get(next)?.clone();
-    let target = Card::plain(
-        Arc::clone(&card.subject),
-        card.front.clone(),
-        vec![correct],
-        None,
-        card.line,
-    );
-
-    let mut preferred: Vec<String> = card
-        .back
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| *i != next)
-        .map(|(_, line)| line.clone())
-        .collect();
-    preferred.extend(ai.unwrap_or(&[]).iter().cloned());
-
-    build(&target, &[], seed, Some(&preferred))
 }
 
 /// Distractor candidates sampled from `pool`: every other card's answer, minus
@@ -433,31 +400,5 @@ mod tests {
         let cards = pool(&["line a\nline b", "x", "y", "z", "w"]);
         let ai = ["w1".to_string(), "w2".to_string(), "w3".to_string()];
         assert!(recognition_question(&cards[0], &cards, 1, Some(&ai)).is_none());
-    }
-
-    #[test]
-    fn line_question_prefers_same_card_lines_as_distractors() {
-        let target = card(1, "line a\nline b\nline c\nline d");
-        // `line_question` takes no pool — the card's OWN other lines are the
-        // only distractor source, and win by construction.
-        let q = line_question(&target, 0, 1, None).unwrap();
-        assert_eq!(NUM_OPTIONS, q.options.len());
-        assert_eq!("line a", q.options[q.correct]);
-        for opt in &q.options {
-            if opt != "line a" {
-                assert!(
-                    ["line b", "line c", "line d"].contains(&opt.as_str()),
-                    "distractor {opt:?} did not come from the card's own lines"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn line_question_falls_back_to_none_below_four_options() {
-        // A single-line card has no sibling lines and no cross-card pool tier, so
-        // it can't reach four options — the caller falls back to attempt→reveal.
-        let line_card = card(1, "only one line");
-        assert!(line_question(&line_card, 0, 1, None).is_none());
     }
 }

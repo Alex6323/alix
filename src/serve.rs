@@ -43,7 +43,7 @@ use crate::{
         KeyPattern, PickerKeys, ReviewConfig, Strictness,
     },
     deck::{self, Deck, DeckState},
-    depth::{self, Depth, Reveal, depth_name},
+    depth::{self, Depth, depth_name},
     doctor, exam, generate, import, picker,
     recent::RecentDecks,
     render::{self, NoteUnit},
@@ -3543,9 +3543,10 @@ fn query_param(url: &str, key: &str) -> Option<String> {
 /// - **Acquire** (first encounter): a recognition MC only under the strict bar (atomic answer + a
 ///   full set of cached AI distractors), and — spec §4.6 — never for a card already recognized
 ///   (such a card keeps its store entry, so it isn't acquired cold anyway).
-/// - **Recognize session** (non-acquire): the shape follows the card's `% reveal:` — `Line` picks
-///   the next line among the card's own lines; `Flip` and `Cloze` pick the back among sibling backs
-///   via plain `build` (an expanded cloze sub-card's back IS its gap text — T6 review).
+/// - **Recognize session** (non-acquire): the whole answer is picked among sibling backs via plain
+///   `build`, regardless of `% reveal:` — a `Line` card's options are complete orderings (the real
+///   sequence vs the AI's alternate wrong ones), not a pick-one-step built from the card's own
+///   lines (an expanded cloze sub-card's back IS its gap text — T6 review).
 /// - Any other depth renders no pick.
 fn current_question(r: &Reviewing, store: &Store, card: &Card) -> Option<ChoiceQuestion> {
     let ai = r.augment.distractors(card.id());
@@ -3557,12 +3558,7 @@ fn current_question(r: &Reviewing, store: &Store, card: &Card) -> Option<ChoiceQ
     if r.session.depth() != Depth::Recognize {
         return None;
     }
-    match card.reveal.unwrap_or_default() {
-        // Progressive next-line tracking is the client's (Task 9); the state offers
-        // the first line, and `/api/choose` rebuilds the same question.
-        Reveal::Line => choice::line_question(card, 0, card.id(), ai),
-        Reveal::Flip | Reveal::Cloze => choice::build(card, r.session.cards(), card.id(), ai),
-    }
+    choice::build(card, r.session.cards(), card.id(), ai)
 }
 
 /// Builds the state payload. In the select phase (`reviewing` is `None`) it
@@ -5019,6 +5015,68 @@ mod tests {
         assert!(
             opts.contains(&"cat".to_string()),
             "the gap text is an option"
+        );
+    }
+
+    #[test]
+    fn recognize_state_quizzes_a_line_card_on_the_whole_sequence_not_a_single_step() {
+        // A `% reveal: line` card (ordered multi-line back) at Recognize must offer
+        // whole-sequence options — the real ordering vs the AI's alternate wrong
+        // orderings — never a pick-one-step built from the card's own lines.
+        let dir = tempfile::tempdir().unwrap();
+        let deck = dir.path().join("d.txt");
+        let text = "# steps\n% reveal: line\n\tfirst\n\tsecond\n\tthird\n";
+        std::fs::write(&deck, text).unwrap();
+        let cards = crate::parser::parse_str("d.txt", text).unwrap();
+        let id = cards[0].id();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        store.get_or_insert(id, 0); // seen → the Recognize MC, not the acquire on-ramp
+        let mut r = reviewing_at(deck, cards, &store, Depth::Recognize);
+        r.augment.set_distractors(
+            id,
+            vec![
+                "second\nfirst\nthird".to_string(),
+                "third\nsecond\nfirst".to_string(),
+                "first\nthird\nsecond".to_string(),
+            ],
+        );
+
+        let dto = review_state(Some(&r), &store);
+        let opts = dto
+            .choices
+            .expect("cached whole-sequence distractors offer options");
+        assert_eq!(choice::NUM_OPTIONS, opts.len());
+        assert!(
+            opts.contains(&"first\nsecond\nthird".to_string()),
+            "the correct option is the whole back joined, matching `choice::build`'s answer_text"
+        );
+        for opt in &opts {
+            assert!(
+                opt.contains('\n'),
+                "option {opt:?} is a single step, not a whole sequence"
+            );
+        }
+    }
+
+    #[test]
+    fn recognize_state_offers_no_choices_for_a_line_card_with_no_cached_distractors() {
+        // Same card, but the augment cache holds nothing: `build` can't reach four
+        // distinct options (this is the only card in the deck, so the offline pool
+        // is empty too), so it falls back to `None` — the client's self-report
+        // chips, not a synthesized pick-one-step question.
+        let dir = tempfile::tempdir().unwrap();
+        let deck = dir.path().join("d.txt");
+        let text = "# steps\n% reveal: line\n\tfirst\n\tsecond\n\tthird\n";
+        std::fs::write(&deck, text).unwrap();
+        let cards = crate::parser::parse_str("d.txt", text).unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        store.get_or_insert(cards[0].id(), 0); // seen → the Recognize MC, not the acquire on-ramp
+        let r = reviewing_at(deck, cards, &store, Depth::Recognize);
+
+        let dto = review_state(Some(&r), &store);
+        assert!(
+            dto.choices.is_none(),
+            "no cached distractors and no offline pool → the fallback signal"
         );
     }
 
