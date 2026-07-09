@@ -91,7 +91,7 @@ pub trait Scheduler {
 /// and its first real quiz — ~1 min, gating only the next session/restart. An
 /// in-session retry is position-based and unaffected. Was the stage-1 cooldown.
 ///
-/// Doubles as `Session`'s same-card floor (`just_left`,
+/// Doubles as `Session`'s same-card floor (`floors`,
 /// {#seen-interleaves-too-early}): a card just moved off can't immediately
 /// re-serve until this long past the transition, so lingering on the feedback
 /// screen can't hand it straight back.
