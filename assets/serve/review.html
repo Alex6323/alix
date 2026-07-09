@@ -3467,11 +3467,16 @@ function openAdd() {
     document.getElementById("impFile").addEventListener("change", (e) => {
       const f = e.target.files[0];
       if (!f) return;
+      const line = document.getElementById("jobLine");
       const r = new FileReader();
       r.onload = () => {
         api("/api/import", post({ name: f.name, text: r.result, dest: dest() || null }))
           .then((d2) => addDone("imported " + d2.cards + " cards into '" + d2.deck + "'"))
-          .catch(() => { document.getElementById("jobLine").textContent = "import failed — not a valid deck, or the name is taken"; });
+          .catch(() => {
+            const msg = "import failed — not a valid deck, or the name is taken";
+            if (line && line.isConnected) line.textContent = msg;
+            else notice(msg);
+          });
       };
       r.readAsText(f);
     });
