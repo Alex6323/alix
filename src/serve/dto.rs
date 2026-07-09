@@ -955,7 +955,11 @@ pub(super) fn browse_payload(browsing: Option<&Browsing>) -> BrowseDto {
 /// render as a pick (or has too few distractors — the client then falls back to
 /// attempt→reveal). The one place the question is built, so `review_state`'s
 /// served options and `/api/choose`'s graded correct index stay in lockstep; the
-/// `card.id()` seed keeps it stable across both requests without server caching.
+/// seed combines the card id with its appearance count this session
+/// (`choice::seed_for` / `Session::appearance`) so it stays stable across both
+/// requests for as long as the card is up (the client polls `/api/state` every
+/// ~3s), but differs the next time the same card is served
+/// ({#reorder-mc-on-each-appearance}).
 ///
 /// - **Acquire** (first encounter): a recognition MC only under the strict bar (atomic answer + a
 ///   full set of cached AI distractors), and — spec §4.6 — never for a card already recognized
@@ -971,22 +975,24 @@ pub(super) fn current_question(
     card: &Card,
 ) -> Option<ChoiceQuestion> {
     let ai = r.augment.distractors(card.id());
+    let seed = choice::seed_for(card.id(), r.session.appearance(card.id()));
     if store.get(card.id()).is_none() {
         // Acquire on-ramp. A recognized card has a store entry, so it never lands
         // here — this branch already established `store.get(card.id())` is `None`.
-        return choice::recognition_question(card, r.session.cards(), card.id(), ai);
+        return choice::recognition_question(card, r.session.cards(), seed, ai);
     }
     if r.session.depth() != Depth::Recognize {
         return None;
     }
-    choice::build(card, r.session.cards(), card.id(), ai)
+    choice::build(card, r.session.cards(), seed, ai)
 }
 
 /// Builds the state payload. In the select phase (`reviewing` is `None`) it
 /// reports `phase: "select"` with no card; otherwise it serializes the live
 /// session and store. For a choice card it also builds the options via
-/// [`current_question`], seeded by the card id so they are stable across the
-/// `/api/state` and `/api/choose` requests without any server-side caching.
+/// [`current_question`], seeded by the card id plus its appearance count so
+/// they are stable across the `/api/state` and `/api/choose` requests without
+/// any server-side caching, yet reshuffle the next time the card is served.
 pub(super) fn review_state(reviewing: Option<&Reviewing>, store: &Store) -> StateDto {
     let Some(r) = reviewing else {
         return StateDto {

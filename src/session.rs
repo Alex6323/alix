@@ -132,6 +132,12 @@ pub struct Session {
     /// or thinking about the successor can never eat the gap and bring the
     /// same card straight back ({#seen-interleaves-too-early}).
     just_left: Option<(u64, u64)>, // (card id, transition ms)
+    /// How many times each card (indexed as in `cards`) has become the current
+    /// card this session — 0 until first served, then 1, 2, ... Feeds the
+    /// multiple-choice option shuffle seed (`choice::seed_for`) so a re-served
+    /// card's options differ from its previous showing while staying fixed for
+    /// as long as it's on screen — see `advance` and [`Session::appearance`].
+    appearances: Vec<u32>,
     scheduler: Box<dyn Scheduler>,
     options: SessionOptions,
     /// Total distinct cards that entered the roster initially.
@@ -158,6 +164,7 @@ impl Session {
     ) -> Self {
         let roster: Vec<usize> = build_queue(&cards, store, &*scheduler, &options, now_ms).into();
         let initial_size = roster.len();
+        let appearances = vec![0; cards.len()];
 
         let mut session = Self {
             cards,
@@ -165,6 +172,7 @@ impl Session {
             current_idx: None,
             remaining_now: 0,
             just_left: None,
+            appearances,
             scheduler,
             options,
             initial_size,
@@ -276,6 +284,20 @@ impl Session {
         self.current_idx.is_none()
     }
 
+    /// How many times card `id` has become the current card this session so far
+    /// (1 the first time, 2 the next time it cycles back in, ...); 0 if it has
+    /// never been served, or if `id` isn't one of this session's cards. Lets a
+    /// frontend-facing query (e.g. the multiple-choice option seed) tell "still
+    /// the same showing" from "served again" without exposing `just_left` or
+    /// `current_idx` directly.
+    pub fn appearance(&self, id: u64) -> u32 {
+        self.cards
+            .iter()
+            .position(|c| c.id() == id)
+            .map(|i| self.appearances[i])
+            .unwrap_or(0)
+    }
+
     /// Grades the current card, updates the store, and advances the cursor.
     /// A pass (or acquire, or any cram grade) leaves the session; a normal miss
     /// keeps the card in the roster, and it re-appears only once its short FSRS
@@ -312,8 +334,11 @@ impl Session {
             if grade == Grade::Pass {
                 self.roster.retain(|&i| self.cards[i].id() != id);
             }
-            // Recognize is unscheduled and boolean — no floor: a wrong pick
-            // requeues immediately, same as always (see `servable`).
+            // Recognize now participates in the same-card transition floor too
+            // (reverses an earlier deliberate exclusion): a wrong pick re-queues
+            // but can't resurface before `ACQUIRE_COOLDOWN_MS` has passed — see
+            // `servable` ({#seen-interleaves-too-early}).
+            self.just_left = Some((id, now_ms));
             self.advance(store, now_ms);
             return;
         }
@@ -459,34 +484,36 @@ impl Session {
     /// a retired card is only un-retired by raising `retire_after` past its
     /// interval, or — for a virtual card — by re-failing its gap, which recreates
     /// it fresh); otherwise a Recognize session serves any card not yet
-    /// recognized (unscheduled and boolean — a wrong pick requeues immediately,
-    /// so `just_left`'s floor, below, does not apply here); otherwise under
-    /// cram, always; otherwise unseen (fresh) or due at this session's depth. On
-    /// top of that due check, the card the session just moved off (`just_left`)
+    /// recognized (unscheduled and boolean); otherwise under cram, always;
+    /// otherwise unseen (fresh) or due at this session's depth. On top of that
+    /// due/recognized check, the card the session just moved off (`just_left`)
     /// additionally floors at the transition — applied uniformly whether it
-    /// left on a grade or an acquire, and even under cram (cram's "serve
-    /// everything" would otherwise let a just-graded card boomerang back with
-    /// no due gate to stop it at all). Deck and virtual cards share the one
-    /// `store.cards` rule.
+    /// left on a grade or an acquire, at every depth **including Recognize**
+    /// (reverses an earlier deliberate exclusion — a wrong pick used to requeue
+    /// instantly, which could boomerang straight back with one card left), and
+    /// even under cram (cram's "serve everything" would otherwise let a
+    /// just-graded card boomerang back with no due gate to stop it at all).
+    /// Deck and virtual cards share the one `store.cards` rule.
     fn servable(&self, i: usize, store: &Store, now_ms: u64) -> bool {
         let card = &self.cards[i];
         if is_retired(card, store, self.options.retire_after_days) {
             return false;
         }
         let depth = self.options.depth;
-        if depth == Depth::Recognize {
+        let due = if depth == Depth::Recognize {
             // Cram serves every card — a badged deck's Recognize session would
             // otherwise be empty (the repeatable-quiz use).
-            return self.options.cram
+            self.options.cram
                 || store
                     .get(card.id())
-                    .is_none_or(|s| s.recognized_ms.is_none());
-        }
-        let due = match store.get(card.id()) {
-            // Cram serves everything; otherwise the scheduler decides (its `due_at`
-            // owns the cross-depth immediacy rule — see `Fsrs::due_at`).
-            Some(state) => self.options.cram || self.scheduler.is_due(state, depth, now_ms),
-            None => true,
+                    .is_none_or(|s| s.recognized_ms.is_none())
+        } else {
+            match store.get(card.id()) {
+                // Cram serves everything; otherwise the scheduler decides (its
+                // `due_at` owns the cross-depth immediacy rule — see `Fsrs::due_at`).
+                Some(state) => self.options.cram || self.scheduler.is_due(state, depth, now_ms),
+                None => true,
+            }
         };
         if !due {
             return false;
@@ -500,13 +527,23 @@ impl Session {
     }
 
     /// Re-points the cursor to the first servable roster card (session order) and
-    /// refreshes the servable-now count. Called after every transition.
+    /// refreshes the servable-now count. Called after every transition. Bumps
+    /// `appearances` for the newly-current card, but only on a genuine
+    /// transition — repeated idle polling of the same card (the client's ~3s
+    /// `/api/state` heartbeat) leaves `current_idx` unchanged and must not bump
+    /// it, or the choice seed it feeds would reshuffle mid-answer.
     fn advance(&mut self, store: &Store, now_ms: u64) {
-        self.current_idx = self
+        let next = self
             .roster
             .iter()
             .copied()
             .find(|&i| self.servable(i, store, now_ms));
+        if let Some(i) = next
+            && next != self.current_idx
+        {
+            self.appearances[i] = self.appearances[i].saturating_add(1);
+        }
+        self.current_idx = next;
         self.remaining_now = self
             .roster
             .iter()
@@ -1193,6 +1230,59 @@ mod tests {
         // The floor has passed: the only card may repeat — delayed, not starved.
         session.poll(&store, now + ACQUIRE_COOLDOWN_MS);
         assert_eq!(Some(id), session.current().map(|c| c.id()));
+    }
+
+    #[test]
+    fn a_cards_appearance_count_survives_polls_of_the_same_showing_and_bumps_when_it_returns() {
+        // Feeds the per-appearance MC option shuffle seed
+        // ({#reorder-mc-on-each-appearance}): idle polling of the same showing
+        // (the client's ~3s `/api/state` heartbeat) must not bump the count, or
+        // the served options would reshuffle mid-answer; only being re-served
+        // after cycling out counts as a new appearance.
+        let (mut store, _dir) = empty_store();
+        let all = cards(2);
+        let a_id = all[0].id();
+        let b_id = all[1].id();
+        for c in &all {
+            store.get_or_insert(c.id(), 0);
+        }
+        let now = 5 * 60 * 1000;
+        let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
+        assert_eq!(a_id, session.current().unwrap().id());
+        assert_eq!(
+            1,
+            session.appearance(a_id),
+            "first showing counts as appearance 1"
+        );
+
+        session.poll(&store, now + 1_000);
+        session.poll(&store, now + 2_000);
+        assert_eq!(1, session.appearance(a_id), "still the same appearance");
+
+        session.grade(&mut store, Grade::Fail, now); // A cools, B takes over
+        assert_eq!(b_id, session.current().unwrap().id());
+        assert_eq!(
+            1,
+            session.appearance(a_id),
+            "moving off doesn't bump — only being re-served does"
+        );
+
+        // Force A due again, past the transition floor, with B cleared out so A
+        // is the only thing left to serve.
+        store
+            .get_or_insert(a_id, now)
+            .recall
+            .as_mut()
+            .unwrap()
+            .due_ms = now + ACQUIRE_COOLDOWN_MS;
+        session.grade(&mut store, Grade::Pass, now + 1_000); // B passes, leaves
+        session.poll(&store, now + ACQUIRE_COOLDOWN_MS + 1_000);
+        assert_eq!(a_id, session.current().unwrap().id(), "A is due again");
+        assert_eq!(
+            2,
+            session.appearance(a_id),
+            "a new appearance bumps the count"
+        );
     }
 
     #[test]
@@ -2294,7 +2384,11 @@ mod tests {
     }
 
     #[test]
-    fn recognize_marks_a_correct_pick_and_requeues_a_wrong_one() {
+    fn recognize_marks_a_correct_pick_and_requeues_a_floored_wrong_one() {
+        // Reverses an earlier deliberate exclusion: Recognize now participates in
+        // the same-card transition floor, so a wrong pick re-queues but cannot
+        // resurface before `ACQUIRE_COOLDOWN_MS` has passed — the user-reported
+        // instant boomerang at "one card left" is what this closes.
         let (mut store, _dir) = empty_store();
         let all = cards(2);
         let (a, b) = (all[0].id(), all[1].id());
@@ -2309,14 +2403,60 @@ mod tests {
             0,
         );
         s.grade(&mut store, Grade::Pass, 1_000); // correct pick → recognized, leaves
-        s.grade(&mut store, Grade::Fail, 2_000); // wrong pick (or "I guessed") → stays
+        s.grade(&mut store, Grade::Fail, 2_000); // wrong pick (or "I guessed") → stays, floored
         assert!(store.get(a).unwrap().recognized_ms.is_some());
         assert!(store.get(b).is_none_or(|st| st.recognized_ms.is_none()));
         assert!(
             store.get(a).unwrap().recall.is_none(),
             "recognize never schedules"
         );
-        assert_eq!(1, s.remaining(), "the wrong pick re-queues");
+        assert_eq!(
+            0,
+            s.remaining(),
+            "the wrong pick re-queues, but the floor holds it back"
+        );
+        s.poll(&store, 2_000 + ACQUIRE_COOLDOWN_MS);
+        assert_eq!(
+            1,
+            s.remaining(),
+            "past the floor, the re-queued card returns"
+        );
+    }
+
+    #[test]
+    fn a_recognize_wrong_pick_may_repeat_once_the_floor_passes() {
+        // Recognize twin of `the_only_servable_card_may_repeat_once_the_floor_passes`:
+        // with a single card in the roster, a wrong pick floors it instead of
+        // resurfacing it instantly — delayed, never starved.
+        let (mut store, _dir) = empty_store();
+        let all = cards(1);
+        let id = all[0].id();
+        let mut s = Session::new(
+            all,
+            &store,
+            sched(),
+            SessionOptions {
+                depth: Depth::Recognize,
+                ..Default::default()
+            },
+            0,
+        );
+
+        s.grade(&mut store, Grade::Fail, 1_000);
+        assert!(
+            s.is_finished(),
+            "the only card floors instead of resurfacing instantly"
+        );
+
+        s.poll(&store, 1_000 + ACQUIRE_COOLDOWN_MS - 1);
+        assert!(s.is_finished(), "the floor hasn't passed yet");
+
+        s.poll(&store, 1_000 + ACQUIRE_COOLDOWN_MS);
+        assert_eq!(
+            Some(id),
+            s.current().map(|c| c.id()),
+            "the floor passed: delayed, not starved"
+        );
     }
 
     #[test]

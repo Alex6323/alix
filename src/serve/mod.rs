@@ -985,9 +985,10 @@ pub fn run_review(
                     respond_status(request, 409);
                     continue;
                 };
-                // Just reports which option is correct (the question is rebuilt from
-                // the card id via `current_question`, so it matches the one served
-                // by `review_state` for every question shape). The grade is applied
+                // Just reports which option is correct (the question is rebuilt via
+                // `current_question`, seeded from the card id and its appearance
+                // count, so it matches the one served by `review_state` for every
+                // question shape and appearance). The grade is applied
                 // later via /api/grade on Continue, so the session stays on this card
                 // during the result — Remove still works on it.
                 let picked = read_index(&mut request).and_then(|chosen| {

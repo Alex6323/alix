@@ -607,6 +607,77 @@ fn recognize_state_offers_no_choices_for_a_line_card_with_no_cached_distractors(
 }
 
 #[test]
+fn recognize_state_reshuffles_choice_options_on_the_next_appearance_but_not_mid_poll() {
+    // End-to-end through `review_state`/`current_question`: the client polls
+    // `GET /api/state` every ~3s while a card is on screen, and a poll that
+    // doesn't move the session off the card must rebuild identical options
+    // (`Session::appearance` only bumps on a genuine re-serve); a wrong pick now
+    // floors instead of resurfacing instantly (the same-card transition floor
+    // now covers Recognize too), and once the floor passes and the card is
+    // served again, the options reshuffle ({#reorder-mc-on-each-appearance}).
+    let dir = tempfile::tempdir().unwrap();
+    let deck = dir.path().join("d.txt");
+    let text = "# q\n\tanswer\n";
+    std::fs::write(&deck, text).unwrap();
+    let cards = crate::parser::parse_str("d.txt", text).unwrap();
+    let id = cards[0].id();
+    let mut store = Store::open(dir.path().join("p.json")).unwrap();
+    store.get_or_insert(id, 0); // seen → the Recognize MC, not the acquire on-ramp
+    let mut r = reviewing_at(deck, cards, &store, Depth::Recognize);
+    // A full set of cached AI distractors so the lone card can build a valid MC
+    // (there's no other card in the deck to sample offline distractors from).
+    r.augment.set_distractors(
+        id,
+        vec![
+            "wrong one".to_string(),
+            "wrong two".to_string(),
+            "wrong three".to_string(),
+        ],
+    );
+
+    let first = review_state(Some(&r), &store)
+        .choices
+        .expect("a valid MC from the 3 cached AI distractors");
+    // A second poll of the same appearance (no session mutation in between)
+    // must rebuild the identical options.
+    let second = review_state(Some(&r), &store)
+        .choices
+        .expect("still the same appearance");
+    assert_eq!(first, second, "an idle poll must not reshuffle mid-answer");
+
+    // A wrong pick floors the card (Part 1) instead of resurfacing it instantly.
+    // Cycle it a handful of times — tolerating the rare same-permutation
+    // collision across any single pair of appearances — and require at least
+    // one later appearance to land on a different order.
+    let mut now = now_ms();
+    let mut saw_a_different_order = false;
+    for _ in 0..5 {
+        r.session.grade(&mut store, Grade::Fail, now);
+        assert!(
+            r.session.is_finished(),
+            "the only card floors instead of resurfacing instantly"
+        );
+        now += crate::scheduler::ACQUIRE_COOLDOWN_MS;
+        r.session.poll(&store, now);
+        assert_eq!(
+            Some(id),
+            r.session.current().map(|c| c.id()),
+            "past the floor, the card returns"
+        );
+        let later = review_state(Some(&r), &store)
+            .choices
+            .expect("the next appearance still offers the MC");
+        if later != first {
+            saw_a_different_order = true;
+        }
+    }
+    assert!(
+        saw_a_different_order,
+        "no later appearance ever varied the option order"
+    );
+}
+
+#[test]
 fn an_already_recognized_card_skips_the_acquire_mc() {
     // A card recognized in a prior Recognize session carries `recognized_ms`
     // and a store entry, so a later Recall session quizzes it directly — never

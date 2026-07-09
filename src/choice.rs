@@ -10,7 +10,10 @@
 //! Sub-cards of the same cloze card are never used as distractors — their
 //! answers must stay hidden until their own card is reviewed.
 
-use std::collections::HashSet;
+use std::{
+    collections::HashSet,
+    hash::{Hash, Hasher},
+};
 
 use crate::card::Card;
 
@@ -69,6 +72,24 @@ fn dissimilarity(a: &str, b: &str) -> usize {
         0
     };
     penalty + strsim::levenshtein(a, b)
+}
+
+/// Combines a card id with how many times it has appeared this session
+/// ([`crate::session::Session::appearance`]) into the shuffle seed for
+/// [`build`]/[`recognition_question`]. The client polls `GET /api/state` every
+/// ~3s while a card is on screen, and both that endpoint and `/api/choose`
+/// rebuild the question from scratch (no server-side caching) — so the seed
+/// must depend only on things that don't change while the card sits on
+/// screen: the card id and the appearance count are exactly that, and the
+/// appearance count only advances on a genuine re-serve (see
+/// `Session::advance`), never on an idle poll. That makes it stable *within*
+/// one appearance and different (barring rare permutation collisions) on the
+/// *next* one — deliberately not wall-clock, which would drift mid-poll.
+pub fn seed_for(card_id: u64, appearance: u32) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    card_id.hash(&mut hasher);
+    appearance.hash(&mut hasher);
+    hasher.finish()
 }
 
 /// Builds a multiple-choice question for `card`. Distractors come first from
@@ -392,6 +413,36 @@ mod tests {
         let ai = ["w1".to_string(), "w2".to_string()];
         assert!(recognition_question(&cards[0], &cards, 1, Some(&ai)).is_none());
         assert!(recognition_question(&cards[0], &cards, 1, None).is_none());
+    }
+
+    #[test]
+    fn same_appearance_seed_is_stable_but_later_appearances_vary_the_order() {
+        // The client polls `GET /api/state` every ~3s while a card is on screen;
+        // `seed_for` must rebuild the identical question for repeated polls of
+        // the SAME appearance, but a card served again after cycling out (a
+        // later appearance) must eventually land on a different order — no more
+        // solving a retry by position memory ({#reorder-mc-on-each-appearance}).
+        let cards = pool(&[
+            "alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta",
+        ]);
+        let id = 42;
+
+        let first = build(&cards[0], &cards, seed_for(id, 1), None).unwrap();
+        let first_again = build(&cards[0], &cards, seed_for(id, 1), None).unwrap();
+        assert_eq!(
+            first.options, first_again.options,
+            "the same appearance must not reshuffle mid-poll"
+        );
+
+        // Allow for the rare same-permutation collision across a couple of
+        // seeds by checking a handful of later appearances.
+        let later_orders_differ = (2..12)
+            .map(|appearance| build(&cards[0], &cards, seed_for(id, appearance), None).unwrap())
+            .any(|q| q.options != first.options);
+        assert!(
+            later_orders_differ,
+            "no later appearance ever varied the order"
+        );
     }
 
     #[test]

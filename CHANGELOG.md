@@ -10,6 +10,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A just-finished card can no longer come straight back: its re-serve clock
   now floors at the card transition, so time spent on the feedback screen or
   the next card never eats the gap.
+- The same-card floor now covers Recognize too: a failed pick used to
+  resurface instantly (a deliberate exclusion at the time); with one card
+  left, that meant an instant boomerang. It now re-queues but stays floored
+  like every other depth.
+- Multiple-choice options now reshuffle on each appearance of a card, instead
+  of sitting in the same positions every time — a retry could otherwise be
+  solved by position memory rather than actually recalling the answer.
 - The picker's ⟳ now re-reads the config, so a changed `decks_dir` takes
   effect without a restart (scoped `alix <dir>` instances stay pinned to
   their folder).
