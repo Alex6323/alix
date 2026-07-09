@@ -82,6 +82,10 @@
   .add-sec { display: grid; gap: 6px; }
   .add-sec h3 { margin: 0; font-size: 0.8rem; color: var(--dim); }
   .sheet-err { color: var(--bad, #c33); }
+  .share-code { font-family: var(--mono); font-size: 1.4rem; user-select: all; }
+  /* Armed (name matches) reset button borrows the app's danger hue — the same
+     one the overflow menu's own destructive items use (see `.menu button`). */
+  #resetGo:not(:disabled) { border-color: var(--again); color: var(--again); }
 
   /* ── stage + card ─────────────────────────────────────────────────── */
   .stage { flex: 1; display: grid; place-items: center; padding: 22px 16px; min-height: 0; }
@@ -647,6 +651,15 @@
   };
 })();
 
+// A plain <a href> download (the share zip link) never goes through the
+// fetch monkey-patch above — browser navigation sends no Authorization
+// header — so it carries the pairing token as the `?token=` query fallback
+// `is_authorized` accepts server-side. A no-token server gets the href as-is.
+function withToken(href) {
+  const tok = sessionStorage.getItem("alix.token");
+  return tok ? href + (href.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(tok) : href;
+}
+
 // Shown on a 401 (no/invalid pairing token): a full-screen prompt to paste the
 // token the server printed at startup, then reload with it applied.
 function showTokenGate() {
@@ -764,6 +777,11 @@ function notice(msg) {
 // The depth menu's cram tick-box — a per-launch choice (plain Learn never
 // crams), reset to off every time the menu opens.
 let cramOn = false;
+
+// The picker's focused row (hoisted out of `renderList`'s own closure, which
+// resets it to null on every render — see there — so the kebab menu's
+// Share/Reset actions, wired outside that closure, can still read it).
+let focusedEl = null;
 
 // `depth` picks a session depth (Recognize/Recall/Reconstruct) explicitly;
 // omitted, the server resolves the deck's own remembered last depth.
@@ -1641,7 +1659,7 @@ async function renderSelect() {
     selectEsc = opts.back || null;
     updateNavBack();
     stage.innerHTML = ""; legend.innerHTML = "";
-    let focusedEl = null;
+    focusedEl = null; // module-level (see declaration) — reset fresh each render
     let drawerEl = null; // the focus drawer under the focused deck, if it has a topology
     let closingEl = null; // a drawer mid-close (animating out before removal)
     let drawerCycle = null; // (dir)=>{} to step the drawer's region selection, when open
@@ -3315,7 +3333,13 @@ document.addEventListener("click", () => menu.classList.remove("open"));
 const sheet = document.getElementById("sheet");
 const sheetPanel = document.getElementById("sheetPanel");
 function openSheet(html) { sheetPanel.innerHTML = html; sheet.hidden = false; }
-function closeSheet() { sheet.hidden = true; sheetPanel.innerHTML = ""; }
+function closeSheet() {
+  // A share sheet closed mid-wait must not leave the wormhole child running
+  // invisibly — the job only cancels when replaced/cleared server-side (see
+  // `ShareJob`'s `Drop`), so an abandoned sheet has to ask for that itself.
+  if (sheet.dataset.shareLive) { delete sheet.dataset.shareLive; api("/api/share/close", post({})).catch(() => {}); }
+  sheet.hidden = true; sheetPanel.innerHTML = "";
+}
 sheet.addEventListener("click", (e) => { if (e.target === sheet) closeSheet(); });
 document.addEventListener("keydown", (e) => { if (!sheet.hidden && e.key === "Escape") { e.stopPropagation(); e.preventDefault(); closeSheet(); } }, true);
 
@@ -3357,6 +3381,15 @@ function fillDestOptions(sel, d) {
 }
 
 function addDone(msg) { closeSheet(); notice(msg); renderSelect(); }
+
+// The focused picker row's canonical name (deck, workspace, or folder) — the
+// same `focusedEl` the depth-menu split button reads (see `renderList`),
+// reused here for the kebab-menu actions that aren't rows themselves. Null
+// with nothing focused (e.g. an empty catalog).
+function focusedRowName() {
+  const row = focusedEl;
+  return (row && ((row._item && row._item.name) || (row._open && row._open.name))) || null;
+}
 
 // The Add-deck sheet: generate from a URL, import a file, or receive a
 // wormhole share/zip, all landing in a chosen destination (library root or a
@@ -3421,6 +3454,82 @@ function openAdd() {
     });
   });
 }
+
+// The Share sheet: send the focused row (or, unfocused, the whole library)
+// device-to-device via a wormhole code, or fall back to a plain zip download.
+// `deck: null` in the POST body shares the served root, matching the zip
+// link's bare (no `?deck=`) href — both resolve server-side the same way.
+function openShare() {
+  const row = focusedRowName();
+  const zipHref = "/api/share/zip" + (row ? "?deck=" + encodeURIComponent(row) : "");
+  openSheet(
+    '<h2>Share</h2><div class="sheet-add">' +
+    '<p>Share <b></b> device-to-device. Progress and personal config stay home.</p>' +
+    '<button id="shareGo" class="bar-chip">Get code</button>' +
+    '<p><a id="shareZip" download>or download as .zip</a></p>' +
+    '<p id="jobLine"></p></div>'
+  );
+  sheetPanel.querySelector("b").textContent = row || "the whole library";
+  document.getElementById("shareZip").href = withToken(zipHref);
+  document.getElementById("shareGo").addEventListener("click", () => {
+    api("/api/share", post({ deck: row }))
+      .then(() => {
+        document.getElementById("jobLine").textContent = "staging…";
+        sheet.dataset.shareLive = "1"; // closeSheet() must cancel the job if abandoned
+        const t = setInterval(() => {
+          api("/api/share").then((d) => {
+            const line = document.getElementById("jobLine");
+            if (d.phase === "code" && line) {
+              line.textContent = "";
+              line.appendChild(el("span", "share-code", d.code));
+              line.appendChild(document.createElement("br"));
+              line.appendChild(document.createTextNode("waiting for the receiver…"));
+            } else if (d.phase === "sent") {
+              clearInterval(t);
+              delete sheet.dataset.shareLive; // already closing it below — don't double-close
+              api("/api/share/close", post({})).catch(() => {});
+              closeSheet();
+              notice("sent");
+            } else if (d.phase === "error") {
+              clearInterval(t);
+              if (line) {
+                line.textContent = "";
+                line.appendChild(el("span", "sheet-err", d.error || "share failed"));
+              } else {
+                notice(d.error || "share failed");
+              }
+            }
+          }).catch(() => clearInterval(t));
+        }, 700);
+      })
+      .catch(() => notice("could not start sharing — the server log has details"));
+  });
+}
+document.getElementById("mShare").addEventListener("click", () => { menu.classList.remove("open"); openShare(); });
+
+// The Reset sheet: wipe a row's review progress, gated on typing its exact
+// name back (a plain confirm dialog is too easy to reflex-click through for
+// something this destructive). No focused row → nothing to reset.
+function openReset() {
+  const row = focusedRowName();
+  if (!row) { notice("focus a deck first"); return; }
+  openSheet(
+    '<h2>Reset progress</h2><div class="sheet-add">' +
+    '<p>Wipes all review progress for <b></b> — schedules, history, exam state. This cannot be undone.</p>' +
+    '<input id="resetConfirm" class="bar-filter" placeholder="type the name to confirm" autocomplete="off" spellcheck="false">' +
+    '<button id="resetGo" class="bar-chip" disabled>Reset</button><p id="jobLine"></p></div>'
+  );
+  sheetPanel.querySelector("b").textContent = row;
+  const input = document.getElementById("resetConfirm");
+  const go = document.getElementById("resetGo");
+  input.addEventListener("input", () => { go.disabled = input.value !== row; });
+  go.addEventListener("click", () => {
+    api("/api/reset", post({ deck: row }))
+      .then((d) => { closeSheet(); notice("reset " + d.cards_cleared + " card(s)"); renderSelect(); })
+      .catch(() => { document.getElementById("jobLine").textContent = "reset failed — the server log has details"; });
+  });
+}
+document.getElementById("mReset").addEventListener("click", () => { menu.classList.remove("open"); openReset(); });
 
 function openShortcuts() {
   openSheet(
