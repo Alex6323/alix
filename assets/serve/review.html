@@ -3558,9 +3558,9 @@ function doctorRow(r) {
   return row;
 }
 function openDoctor() {
-  openSheet('<h2>Doctor</h2><div class="sheet-doctor" id="docRows"></div>');
-  const rows = document.getElementById("docRows");
   api("/api/doctor").then((d) => {
+    openSheet('<h2>Doctor</h2><div class="sheet-doctor" id="docRows"></div>');
+    const rows = document.getElementById("docRows");
     (d.rows || []).forEach((r) => rows.appendChild(doctorRow(r)));
   }).catch(() => notice("could not run the checks"));
 }
