@@ -26,9 +26,12 @@ and missing it resets that progress, so a slip doesn't shortcut it.
 
 A session shows each due card once. Miss one and it returns **spaced** — after its
 short step, interleaved behind other cards — not drilled again the instant you saw
-the answer (which would test your working memory, not your recall). When nothing is
-due right now the session ends; a card still cooling is picked up the next session,
-or slots back in on its own if you leave the window open.
+the answer (which would test your working memory, not your recall). That gap is
+floored at the moment you actually move off the card, not when you first saw the
+answer, so time spent on the feedback screen or working the next card still counts
+against a short retry interval. When nothing is due right now the session ends; a
+card still cooling is picked up the next session, or slots back in on its own if
+you leave the window open.
 
 One knob shapes the whole schedule: **`retention`** — the recall probability FSRS
 aims for (0.70–0.99, default 0.9). Raise it to see cards more often, lower it to

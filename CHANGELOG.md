@@ -7,6 +7,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
+- A just-finished card can no longer come straight back: its re-serve clock
+  now floors at the card transition, so time spent on the feedback screen or
+  the next card never eats the gap.
+- The picker's ⟳ now re-reads the config, so a changed `decks_dir` takes
+  effect without a restart (scoped `alix <dir>` instances stay pinned to
+  their folder).
 - A sequence card (`% reveal: line`) at Recognize is now quizzed on the whole
   ordering — pick the correct sequence among the AI's alternate orderings —
   instead of a meaningless pick-one-step choice built from the card's own
@@ -25,6 +31,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   dir from a previous conflicted build now asks for confirmation before it's
   wiped and rebuilt, and dot-prefixed folders are hidden from the picker's
   scan so a kept-around staging dir never shows up as a bogus workspace.
+- A taken port now errors immediately with a `try --port` hint — the server
+  binds before printing its URL, so a clash no longer shows a
+  success-looking line first.
 
 ### Added
 - **Web picker self-sufficiency: the ☰ menu gains Add deck… (generate from a
@@ -90,8 +99,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   A folder or workspace expands to its member decks against the store that
   serving uses; `reset` on a workspace clears card progress, virtual cards,
   and mastered flags together, under one blast-radius confirmation.
+- **The web exam launch pre-flights the backend's ability to reach the
+  deck's source**, failing at start instead of mid-exam.
 
 ### Changed
+- **Breaking: an ambiguous bare deck name is rejected instead of silently
+  resolving.** The same file name occurring in two containers now fails
+  with 400 from every name-taking endpoint instead of silently resolving to
+  one of them; use the qualified `<workspace>/<file>` name.
 - **Breaking (API): three contract shapes normalized before the freeze.**
   `WalkDto.verdict` sends `passed`/`partly`/`failed` machine tokens instead
   of English display labels; `POST /api/walk/leave` returns the picker
@@ -121,11 +136,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and region are picked in the web picker; order is the deck's `% order:`
   directive. Bare `alix` keeps only `--lan`, `--port`, `--token`,
   `--config`, `--new`, `--limit`.
-
-### Fixed
-- A taken port now errors immediately with a `try --port` hint — the server
-  binds before printing its URL, so a clash no longer shows a
-  success-looking line first.
 
 ## [0.3.0] - 2026-07-07
 
