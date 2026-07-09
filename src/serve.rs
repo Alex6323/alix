@@ -2071,7 +2071,7 @@ pub fn run_review(
                 // its members, a deck row to itself.
                 let paths = match resolve_row(&body.deck, &decks_dir, &recent) {
                     Resolved::One(p) => vec![p],
-                    Resolved::Many(members) => members,
+                    Resolved::Many { files, .. } => files,
                     Resolved::Ambiguous | Resolved::Unknown => {
                         respond_status(request, 400);
                         continue;
@@ -4087,8 +4087,12 @@ fn read_selection(
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Resolved {
     One(PathBuf),
-    /// Row's member deck files (a workspace/folder row), for `/api/reset`.
-    Many(Vec<PathBuf>),
+    /// A container row (workspace/folder): its own directory and its member
+    /// deck files — so no caller ever has to reconstruct one from the other.
+    Many {
+        dir: PathBuf,
+        files: Vec<PathBuf>,
+    },
     Ambiguous,
     Unknown,
 }
@@ -4110,7 +4114,10 @@ fn resolve_row(name: &str, decks_dir: &Path, recent: &RecentDecks) -> Resolved {
         let row = if e.members.is_empty() {
             Resolved::One(e.path)
         } else {
-            Resolved::Many(e.members.iter().map(|m| m.path.clone()).collect())
+            Resolved::Many {
+                dir: e.path.clone(),
+                files: e.members.iter().map(|m| m.path.clone()).collect(),
+            }
         };
         if seen.insert(e.name.clone()) {
             known.insert(e.name, row);
@@ -4126,13 +4133,11 @@ fn resolve_row(name: &str, decks_dir: &Path, recent: &RecentDecks) -> Resolved {
 /// its directory, matching what these call sites did before `resolve_row`
 /// existed (they used the row's own path rather than expanding to members;
 /// `/api/reset` is the one caller that wants the member list, so it matches on
-/// `Resolved` directly instead of going through this). Members are always one
-/// level inside their row's directory (`workspace::members`), so any member's
-/// parent recovers that directory.
+/// `Resolved` directly instead of going through this).
 fn resolved_path(resolved: Resolved) -> Option<PathBuf> {
     match resolved {
         Resolved::One(p) => Some(p),
-        Resolved::Many(members) => members.first().and_then(|m| m.parent()).map(PathBuf::from),
+        Resolved::Many { dir, .. } => Some(dir),
         Resolved::Ambiguous | Resolved::Unknown => None,
     }
 }
@@ -4657,8 +4662,31 @@ mod tests {
         let recent = RecentDecks::load(dir.path().join("recent.json"));
 
         assert_eq!(
-            Resolved::Many(vec![ws.join("a.txt"), ws.join("b.txt")]),
+            Resolved::Many {
+                dir: ws.clone(),
+                files: vec![ws.join("a.txt"), ws.join("b.txt")],
+            },
             resolve_row("english", dir.path(), &recent)
+        );
+    }
+
+    #[test]
+    fn resolve_row_resolves_a_manifest_only_dir_with_no_members_to_unknown() {
+        // A folder with an `alix.toml` manifest but zero `*.txt` decks:
+        // `workspace::has_decks` requires at least one member, so
+        // `picker::catalog` never surfaces this row at all — it can't reach
+        // the old `vec![e.path]`/`One` fallback because it never becomes a
+        // catalog entry in the first place.
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path().join("empty-ws");
+        std::fs::create_dir(&ws).unwrap();
+        std::fs::write(ws.join(crate::workspace::MANIFEST), "title = \"Empty\"\n").unwrap();
+        let recent = RecentDecks::load(dir.path().join("recent.json"));
+
+        assert!(picker::catalog(dir.path(), &recent).is_empty());
+        assert_eq!(
+            Resolved::Unknown,
+            resolve_row("empty-ws", dir.path(), &recent)
         );
     }
 
