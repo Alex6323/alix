@@ -130,6 +130,9 @@ Licensed under either of
 
 at your option.
 
+Bundled third-party assets (fonts) are separately licensed — see
+[NOTICE](NOTICE).
+
 ### Contribution
 
 Unless you explicitly state otherwise, any contribution intentionally submitted

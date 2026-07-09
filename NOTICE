@@ -1,0 +1,15 @@
+Third-party notices
+====================
+
+alix's own source is dual-licensed MIT/Apache-2.0 (see LICENSE-MIT and
+LICENSE-APACHE). This file lists third-party assets bundled in the repository
+under their own licenses.
+
+Fonts
+-----
+
+IBM Plex Sans and IBM Plex Mono
+Copyright (c) 2017 IBM Corp. with Reserved Font Name "Plex"
+Licensed under the SIL Open Font License, Version 1.1.
+Full license text: assets/web/fonts/OFL.txt
+Source: https://github.com/IBM/plex

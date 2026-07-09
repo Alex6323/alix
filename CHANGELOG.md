@@ -146,6 +146,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and region are picked in the web picker; order is the deck's `% order:`
   directive. Bare `alix` keeps only `--lan`, `--port`, `--token`,
   `--config`, `--new`, `--limit`.
+- Redesigned the web UI (IBM Plex typography, borderless/hairline dark theme).
 
 ## [0.3.0] - 2026-07-07
 
