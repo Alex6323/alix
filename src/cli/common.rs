@@ -268,6 +268,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn one_line_collapses_whitespace_runs_including_newlines() {
+        assert_eq!("a b c", one_line("a\n  b\tc"));
+    }
+
+    #[test]
+    fn truncate_only_appends_an_ellipsis_when_the_text_is_cut() {
+        assert_eq!("hello", truncate("hello", 10));
+        assert_eq!("hel…", truncate("hello world", 4));
+    }
+
+    #[test]
     fn store_path_for_picks_workspace_else_global_else_override() {
         let dir = tempfile::tempdir().unwrap();
         let mk_ws = |name: &str| {

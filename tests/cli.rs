@@ -28,6 +28,24 @@ fn alix(args: &[&str]) -> Output {
         .expect("failed to run the alix binary")
 }
 
+/// Like [`alix`], but with a caller-supplied (long-lived) home directory
+/// instead of an ephemeral one — for a test that needs to inspect what landed
+/// in the default decks/config dir, or re-invoke against the same state — plus
+/// arbitrary extra env vars overlaid last. Used to make an external-binary
+/// dependency (e.g. `wormhole`) deterministically absent via a stripped `PATH`,
+/// without touching this test process's own environment.
+fn alix_env(args: &[&str], home: &Path, extra_env: &[(&str, &str)]) -> Output {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_alix"));
+    cmd.args(args)
+        .env("HOME", home)
+        .env("XDG_CONFIG_HOME", home)
+        .env("XDG_DATA_HOME", home);
+    for (k, v) in extra_env {
+        cmd.env(k, v);
+    }
+    cmd.output().expect("failed to run the alix binary")
+}
+
 /// Writes `contents` to `dir/name` and returns its path as a string.
 fn write(dir: &Path, name: &str, contents: &str) -> String {
     let path = dir.join(name);
@@ -899,5 +917,1048 @@ fn stats_shows_per_depth_due_counts() {
     assert!(
         result.contains("due now (reconstruct): 1"),
         "the past-due reconstruct schedule must be counted: {result}"
+    );
+}
+
+// ── common.rs: target/workspace resolution errors ───────────────────────────
+
+#[test]
+fn a_nonexistent_target_errors_neither_deck_nor_folder() {
+    let dir = TempDir::new().unwrap();
+    let ghost = dir.path().join("ghost");
+    let out = alix(&["stats", ghost.to_str().unwrap()]);
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("neither a deck file nor a folder"),
+        "stderr: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn an_empty_folder_target_errors_no_decks() {
+    let dir = TempDir::new().unwrap();
+    let empty = dir.path().join("empty");
+    std::fs::create_dir(&empty).unwrap();
+    let out = alix(&["stats", empty.to_str().unwrap()]);
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("no decks in"),
+        "stderr: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn importing_into_a_nonexistent_workspace_errors() {
+    let dir = TempDir::new().unwrap();
+    let tsv = write(dir.path(), "cards.tsv", "Q1\tA1\n");
+    let ghost_ws = dir.path().join("ghost-ws");
+    let out = alix(&[
+        "deck",
+        "import",
+        &tsv,
+        "--workspace",
+        ghost_ws.to_str().unwrap(),
+    ]);
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("no folder at"),
+        "stderr: {}",
+        stderr(&out)
+    );
+}
+
+// ── the bare `alix [dir]` launcher: pre-flight error paths ──────────────────
+
+#[test]
+fn a_nonexistent_launch_dir_errors_not_a_folder() {
+    let dir = TempDir::new().unwrap();
+    let ghost = dir.path().join("ghost");
+    let out = alix(&[ghost.to_str().unwrap()]);
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("is not a folder"),
+        "stderr: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn the_launcher_reports_an_unreadable_config_path() {
+    let dir = TempDir::new().unwrap();
+    let bad_config = dir.path().join("nope.toml"); // deliberately never written
+    let out = alix(&[
+        dir.path().to_str().unwrap(),
+        "--config",
+        bad_config.to_str().unwrap(),
+    ]);
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("cannot read config file"),
+        "stderr: {}",
+        stderr(&out)
+    );
+}
+
+// ── `alix config` ────────────────────────────────────────────────────────────
+
+#[test]
+fn config_bare_shows_key_bindings_and_ask_settings() {
+    let out = alix(&["config"]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let text = stdout(&out);
+    assert!(text.contains("key bindings:"), "{text}");
+    assert!(text.contains("ask:"), "{text}");
+    assert!(text.contains("generate:"), "{text}");
+}
+
+#[test]
+fn config_init_writes_a_file_then_refuses_to_clobber_it() {
+    let home = TempDir::new().unwrap();
+    let out = alix_env(&["config", "--init"], home.path(), &[]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(stdout(&out).contains("wrote "), "{}", stdout(&out));
+
+    let out2 = alix_env(&["config", "--init"], home.path(), &[]);
+    assert!(
+        !out2.status.success(),
+        "a second --init must refuse to clobber"
+    );
+    assert!(
+        stderr(&out2).contains("already exists"),
+        "stderr: {}",
+        stderr(&out2)
+    );
+}
+
+// ── `alix doctor` ────────────────────────────────────────────────────────────
+
+#[test]
+fn doctor_bare_reports_config_store_and_decks_sections() {
+    let out = alix(&["doctor"]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let text = format!("{}{}", stdout(&out), stderr(&out));
+    assert!(text.contains("config"), "{text}");
+    assert!(text.contains("store"), "{text}");
+    assert!(text.contains("decks"), "{text}");
+}
+
+#[test]
+fn doctor_on_a_folder_target_scopes_to_its_own_store() {
+    let dir = TempDir::new().unwrap();
+    write(dir.path(), "a.txt", VALID_DECK);
+    let out = alix(&["doctor", dir.path().to_str().unwrap()]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(stdout(&out).contains("1 decks"), "{}", stdout(&out));
+}
+
+#[test]
+fn doctor_reports_a_broken_config_as_a_failing_finding() {
+    let dir = TempDir::new().unwrap();
+    let config = write(dir.path(), "config.toml", "[review]\nfrobnicate = 1\n");
+    let out = alix(&["doctor", "--config", &config]);
+    assert!(!out.status.success(), "a broken config should fail doctor");
+    let text = format!("{}{}", stdout(&out), stderr(&out));
+    assert!(text.contains("config"), "{text}");
+}
+
+// ── `alix share` / `alix receive` ────────────────────────────────────────────
+
+#[test]
+fn share_on_a_nonexistent_path_errors() {
+    let dir = TempDir::new().unwrap();
+    let ghost = dir.path().join("ghost.txt");
+    let out = alix(&["share", ghost.to_str().unwrap()]);
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("neither a deck file nor a folder"),
+        "stderr: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn share_on_a_folder_with_no_decks_errors() {
+    let dir = TempDir::new().unwrap();
+    let empty = dir.path().join("empty");
+    std::fs::create_dir(&empty).unwrap();
+    let out = alix(&["share", empty.to_str().unwrap()]);
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("nothing to share"),
+        "stderr: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn share_zip_writes_an_archive_of_a_single_deck() {
+    let dir = TempDir::new().unwrap();
+    let deck = write(dir.path(), "math.txt", VALID_DECK);
+    let out_dir = dir.path().join("out");
+    std::fs::create_dir(&out_dir).unwrap();
+    let out = alix(&[
+        "share",
+        &deck,
+        "--zip",
+        "--output",
+        out_dir.to_str().unwrap(),
+    ]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(out_dir.join("math.zip").is_file());
+    assert!(stdout(&out).contains("Wrote"), "{}", stdout(&out));
+}
+
+#[test]
+fn share_zip_of_a_workspace_folder_strips_personal_state() {
+    let dir = TempDir::new().unwrap();
+    let ws = dir.path().join("eng");
+    std::fs::create_dir(&ws).unwrap();
+    std::fs::write(ws.join("alix.toml"), "title = \"Eng\"\n").unwrap();
+    write(&ws, "a.txt", "# q\n\ta\n");
+    write(&ws, "progress.json", "{}"); // must never travel
+    let out_dir = dir.path().join("out");
+    std::fs::create_dir(&out_dir).unwrap();
+    let out = alix(&[
+        "share",
+        ws.to_str().unwrap(),
+        "--zip",
+        "--output",
+        out_dir.to_str().unwrap(),
+    ]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let zip_path = out_dir.join("eng.zip");
+    assert!(zip_path.is_file());
+
+    let landed = dir.path().join("landed");
+    alix::share::unzip_to(&zip_path, &landed).unwrap();
+    assert!(landed.join("eng/a.txt").is_file());
+    assert!(!landed.join("eng/progress.json").exists());
+}
+
+#[test]
+fn share_without_wormhole_installed_reports_the_install_hint() {
+    let dir = TempDir::new().unwrap();
+    let deck = write(dir.path(), "math.txt", VALID_DECK);
+    let out = alix_env(
+        &["share", &deck],
+        dir.path(),
+        &[("PATH", "/nonexistent-empty-bin")],
+    );
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("is magic-wormhole installed?"),
+        "stderr: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn receive_without_wormhole_installed_reports_the_install_hint() {
+    let dir = TempDir::new().unwrap();
+    let out = alix_env(
+        &["receive", "7-fake-code-xyz"],
+        dir.path(),
+        &[("PATH", "/nonexistent-empty-bin")],
+    );
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("is magic-wormhole installed?"),
+        "stderr: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn receive_a_zip_deck_lands_in_the_decks_dir() {
+    let home = TempDir::new().unwrap();
+    let src = TempDir::new().unwrap();
+    let deck = write(src.path(), "math.txt", VALID_DECK);
+    let zip_path = src.path().join("math.zip");
+    alix::share::zip_to(Path::new(&deck), &zip_path).unwrap();
+
+    let out = alix_env(&["receive", zip_path.to_str().unwrap()], home.path(), &[]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(home.path().join("decks/math.txt").is_file());
+    assert!(
+        stdout(&out).contains("shows up in the picker"),
+        "{}",
+        stdout(&out)
+    );
+}
+
+#[test]
+fn receive_an_existing_deck_without_force_errors_then_force_overwrites() {
+    let home = TempDir::new().unwrap();
+    let src = TempDir::new().unwrap();
+    let deck = write(src.path(), "math.txt", VALID_DECK);
+    let zip_path = src.path().join("math.zip");
+    alix::share::zip_to(Path::new(&deck), &zip_path).unwrap();
+
+    let first = alix_env(&["receive", zip_path.to_str().unwrap()], home.path(), &[]);
+    assert!(first.status.success(), "stderr: {}", stderr(&first));
+
+    // The same code, received again: the deck is already there.
+    let second = alix_env(&["receive", zip_path.to_str().unwrap()], home.path(), &[]);
+    assert!(
+        !second.status.success(),
+        "should refuse to clobber without --force"
+    );
+    assert!(
+        stderr(&second).contains("pass --force to overwrite"),
+        "stderr: {}",
+        stderr(&second)
+    );
+
+    let third = alix_env(
+        &["receive", zip_path.to_str().unwrap(), "--force"],
+        home.path(),
+        &[],
+    );
+    assert!(third.status.success(), "stderr: {}", stderr(&third));
+}
+
+#[test]
+fn receive_a_zip_folder_strips_leaked_personal_files() {
+    let home = TempDir::new().unwrap();
+    let src = TempDir::new().unwrap();
+    let ws = src.path().join("eng");
+    std::fs::create_dir(&ws).unwrap();
+    write(&ws, "a.txt", "# q\n\ta\n");
+    write(&ws, "progress.json", "{}"); // simulates a leak — real `share` never zips this
+    let zip_path = src.path().join("eng.zip");
+    alix::share::zip_to(&ws, &zip_path).unwrap();
+
+    let out = alix_env(&["receive", zip_path.to_str().unwrap()], home.path(), &[]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("stripped a leaked personal file: progress.json"),
+        "{}",
+        stdout(&out)
+    );
+    assert!(home.path().join("decks/eng/a.txt").is_file());
+    assert!(!home.path().join("decks/eng/progress.json").exists());
+}
+
+#[test]
+fn receive_a_zip_folder_rejects_the_workspace_flag() {
+    let home = TempDir::new().unwrap();
+    let src = TempDir::new().unwrap();
+    let ws = src.path().join("eng");
+    std::fs::create_dir(&ws).unwrap();
+    write(&ws, "a.txt", "# q\n\ta\n");
+    let zip_path = src.path().join("eng.zip");
+    alix::share::zip_to(&ws, &zip_path).unwrap();
+
+    let out = alix_env(
+        &[
+            "receive",
+            zip_path.to_str().unwrap(),
+            "--workspace",
+            "/tmp/nonexistent-ws-for-alix-tests",
+        ],
+        home.path(),
+        &[],
+    );
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("--workspace places a received deck"),
+        "stderr: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn receive_a_zip_folder_refuses_to_clobber_an_existing_dest() {
+    let home = TempDir::new().unwrap();
+    let src = TempDir::new().unwrap();
+    let ws = src.path().join("eng");
+    std::fs::create_dir(&ws).unwrap();
+    write(&ws, "a.txt", "# q\n\ta\n");
+    let zip_path = src.path().join("eng.zip");
+    alix::share::zip_to(&ws, &zip_path).unwrap();
+
+    let first = alix_env(&["receive", zip_path.to_str().unwrap()], home.path(), &[]);
+    assert!(first.status.success(), "stderr: {}", stderr(&first));
+
+    let second = alix_env(&["receive", zip_path.to_str().unwrap()], home.path(), &[]);
+    assert!(!second.status.success());
+    assert!(
+        stderr(&second).contains("already exists — move it aside first"),
+        "stderr: {}",
+        stderr(&second)
+    );
+}
+
+// ── `alix generate`: trace stub / suggest / walk with a fake backend ────────
+
+#[test]
+fn generate_builds_checkpoints_into_an_existing_trace_stub() {
+    let dir = TempDir::new().unwrap();
+    let stub = write(dir.path(), "t.txt", "% trace: how it works\n% source: .\n");
+    let cli = fake_claude(dir.path(), "# checkpoint one\n\tsome point\n\t% at: 1\n");
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+    let out = alix(&["generate", &stub, "--config", &config, "--yes"]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("Wrote 1 checkpoints"),
+        "{}",
+        stdout(&out)
+    );
+    let rewritten = std::fs::read_to_string(&stub).unwrap();
+    assert!(rewritten.contains("% trace: how it works"), "{rewritten}");
+    assert!(rewritten.contains("checkpoint one"), "{rewritten}");
+}
+
+#[test]
+fn generate_trace_plan_prints_the_suggestion_menu() {
+    let dir = TempDir::new().unwrap();
+    write(dir.path(), "notes.md", "some source material\n");
+    let cli = fake_claude(dir.path(), "1. [trace] how X becomes Y\n   % source: .\n");
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+    let out = alix(&[
+        "generate",
+        dir.path().to_str().unwrap(),
+        "--trace",
+        "--plan",
+        "--config",
+        &config,
+    ]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(stdout(&out).contains("how X becomes Y"), "{}", stdout(&out));
+    assert!(
+        stdout(&out).contains("Paste a suggestion into a new deck"),
+        "{}",
+        stdout(&out)
+    );
+}
+
+#[test]
+fn generate_trace_walk_writes_an_explore_deck() {
+    let dir = TempDir::new().unwrap();
+    write(dir.path(), "notes.md", "some source material\n");
+    let cli = fake_claude(dir.path(), "# what it is\n\tsome point\n\t% at: 1\n");
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+    let out_path = dir.path().join("walk.txt");
+    let out = alix(&[
+        "generate",
+        dir.path().to_str().unwrap(),
+        "--trace",
+        "--config",
+        &config,
+        "--output",
+        out_path.to_str().unwrap(),
+    ]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let text = std::fs::read_to_string(&out_path).unwrap();
+    assert!(text.contains("% trace: exploring"), "{text}");
+    assert!(text.contains("% source:"), "{text}");
+    assert!(text.contains("what it is"), "{text}");
+}
+
+#[test]
+fn generate_trace_walk_refuses_to_clobber_an_existing_output() {
+    let dir = TempDir::new().unwrap();
+    write(dir.path(), "notes.md", "some source material\n");
+    let cli = fake_claude(dir.path(), "# what it is\n\tsome point\n\t% at: 1\n");
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+    let out_path = dir.path().join("walk.txt");
+    write(dir.path(), "walk.txt", "already here\n");
+    let out = alix(&[
+        "generate",
+        dir.path().to_str().unwrap(),
+        "--trace",
+        "--config",
+        &config,
+        "--output",
+        out_path.to_str().unwrap(),
+    ]);
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("already exists; pass --force to overwrite"),
+        "stderr: {}",
+        stderr(&out)
+    );
+}
+
+// ── `alix generate`: a single deck from a URL/file source, fake backend ─────
+
+#[test]
+fn generate_single_deck_writes_a_deck_file() {
+    let dir = TempDir::new().unwrap();
+    let cli = fake_claude(dir.path(), "# Generated Q\n\tGenerated A\n");
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+    let ws = dir.path().join("ws");
+    std::fs::create_dir(&ws).unwrap();
+    let out = alix(&[
+        "generate",
+        "https://example.org/page",
+        "--config",
+        &config,
+        "--workspace",
+        ws.to_str().unwrap(),
+        "--output",
+        "gen",
+    ]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("Wrote 1 cards to"),
+        "{}",
+        stdout(&out)
+    );
+    assert!(ws.join("gen.txt").is_file());
+}
+
+#[test]
+fn generate_single_deck_print_flag_prints_without_writing() {
+    let dir = TempDir::new().unwrap();
+    let cli = fake_claude(dir.path(), "# Generated Q\n\tGenerated A\n");
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+    let out = alix(&[
+        "generate",
+        "https://example.org/page",
+        "--config",
+        &config,
+        "--print",
+    ]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(stdout(&out).contains("Generated Q"), "{}", stdout(&out));
+    assert!(
+        stderr(&out).contains("cards — not written; --print"),
+        "stderr: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn generate_single_deck_refuses_to_clobber_without_force_then_force_overwrites() {
+    let dir = TempDir::new().unwrap();
+    let cli = fake_claude(dir.path(), "# Generated Q\n\tGenerated A\n");
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+    let ws = dir.path().join("ws");
+    std::fs::create_dir(&ws).unwrap();
+    let args = [
+        "generate",
+        "https://example.org/page",
+        "--config",
+        &config,
+        "--workspace",
+        ws.to_str().unwrap(),
+        "--output",
+        "gen",
+    ];
+    let first = alix(&args);
+    assert!(first.status.success(), "stderr: {}", stderr(&first));
+
+    let second = alix(&args);
+    assert!(!second.status.success());
+    assert!(
+        stderr(&second).contains("already exists; pass --force to overwrite"),
+        "stderr: {}",
+        stderr(&second)
+    );
+
+    let mut forced = args.to_vec();
+    forced.push("--force");
+    let third = alix(&forced);
+    assert!(third.status.success(), "stderr: {}", stderr(&third));
+}
+
+#[test]
+fn generate_on_a_directory_source_explores_then_falls_back_to_a_single_deck() {
+    // A one-item (unparseable-as-a-plan) exploration result routes to a single
+    // deck rather than a multi-item workspace build.
+    let dir = TempDir::new().unwrap();
+    let src = dir.path().join("src");
+    std::fs::create_dir(&src).unwrap();
+    write(&src, "notes.md", "some source material\n");
+    let cli = fake_claude(dir.path(), "# Generated Q\n\tGenerated A\n");
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+    let ws = dir.path().join("ws");
+    std::fs::create_dir(&ws).unwrap();
+    let out = alix(&[
+        "generate",
+        src.to_str().unwrap(),
+        "--config",
+        &config,
+        "--workspace",
+        ws.to_str().unwrap(),
+        "--output",
+        "gen",
+    ]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        stderr(&out).contains("Exploring"),
+        "stderr: {}",
+        stderr(&out)
+    );
+    assert!(ws.join("gen.txt").is_file());
+}
+
+// ── `alix deck augment`: each target, fake backend ──────────────────────────
+
+#[test]
+fn augment_choices_caches_distractors_for_two_cards() {
+    let dir = TempDir::new().unwrap();
+    let deck = write(dir.path(), "quiz.txt", "# Q1\n\tA1\n\n# Q2\n\tA2\n");
+    let cli = fake_claude(dir.path(), r#"{"0": ["W1", "W2"], "1": ["W3", "W4"]}"#);
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+    let store = dir.path().join("p.json");
+    let out = alix(&[
+        "deck",
+        "augment",
+        &deck,
+        "--target",
+        "choices",
+        "--store",
+        store.to_str().unwrap(),
+        "--config",
+        &config,
+    ]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("augmented 2 of 2 cards"),
+        "{}",
+        stdout(&out)
+    );
+    let cached = std::fs::read_to_string(dir.path().join("augment.json")).unwrap();
+    assert!(cached.contains("W1"), "{cached}");
+    assert!(cached.contains("W3"), "{cached}");
+}
+
+#[test]
+fn augment_notes_caches_a_trivia_note() {
+    let dir = TempDir::new().unwrap();
+    let deck = write(dir.path(), "quiz.txt", "# Q1\n\tA1\n");
+    let cli = fake_claude(dir.path(), r#"{"0": "a fun fact"}"#);
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+    let store = dir.path().join("p.json");
+    let out = alix(&[
+        "deck",
+        "augment",
+        &deck,
+        "--target",
+        "notes",
+        "--store",
+        store.to_str().unwrap(),
+        "--config",
+        &config,
+    ]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let cached = std::fs::read_to_string(dir.path().join("augment.json")).unwrap();
+    assert!(cached.contains("a fun fact"), "{cached}");
+}
+
+#[test]
+fn augment_questions_caches_a_reworded_variant() {
+    let dir = TempDir::new().unwrap();
+    let deck = write(dir.path(), "quiz.txt", "# Q1\n\tA1\n");
+    let cli = fake_claude(dir.path(), r#"{"0": ["Rephrased Q1?"]}"#);
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+    let store = dir.path().join("p.json");
+    let out = alix(&[
+        "deck",
+        "augment",
+        &deck,
+        "--target",
+        "questions",
+        "--store",
+        store.to_str().unwrap(),
+        "--config",
+        &config,
+    ]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let cached = std::fs::read_to_string(dir.path().join("augment.json")).unwrap();
+    assert!(cached.contains("Rephrased Q1?"), "{cached}");
+}
+
+#[test]
+fn augment_questions_on_a_cloze_only_deck_errors() {
+    let dir = TempDir::new().unwrap();
+    let deck = write(
+        dir.path(),
+        "c.txt",
+        "# Complete\n% reveal: cloze\n\tThe capital of France is {{Paris}}.\n",
+    );
+    let config = write(
+        dir.path(),
+        "config.toml",
+        "[ask]\ncommand = \"/nonexistent/x\"\n",
+    );
+    let store = dir.path().join("p.json");
+    let out = alix(&[
+        "deck",
+        "augment",
+        &deck,
+        "--target",
+        "questions",
+        "--store",
+        store.to_str().unwrap(),
+        "--config",
+        &config,
+    ]);
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("no plain (non-cloze) cards to add question variants to"),
+        "stderr: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn augment_keypoints_caches_decomposed_claims() {
+    let dir = TempDir::new().unwrap();
+    let deck = write(dir.path(), "quiz.txt", "# Q1\n\tA1\n");
+    let cli = fake_claude(dir.path(), r#"{"0": ["point one", "point two"]}"#);
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+    let store = dir.path().join("p.json");
+    let out = alix(&[
+        "deck",
+        "augment",
+        &deck,
+        "--target",
+        "keypoints",
+        "--store",
+        store.to_str().unwrap(),
+        "--config",
+        &config,
+    ]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let cached = std::fs::read_to_string(dir.path().join("augment.json")).unwrap();
+    assert!(cached.contains("point one"), "{cached}");
+    assert!(cached.contains("point two"), "{cached}");
+}
+
+#[test]
+fn augment_topology_prints_and_caches_the_walk() {
+    let dir = TempDir::new().unwrap();
+    let deck = write(dir.path(), "quiz.txt", "# Q1\n\tA1\n\n# Q2\n\tA2\n");
+    let cli = fake_claude(
+        dir.path(),
+        r#"{"principle": "by difficulty", "edges": [{"from": 0, "to": 1, "label": "builds on"}], "walk": [0, 1], "regions": []}"#,
+    );
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+    let store = dir.path().join("p.json");
+    let out = alix(&[
+        "deck",
+        "augment",
+        &deck,
+        "--target",
+        "topology",
+        "--store",
+        store.to_str().unwrap(),
+        "--config",
+        &config,
+    ]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let text = stdout(&out);
+    assert!(text.contains("topology 'auto'"), "{text}");
+    assert!(text.contains("by difficulty"), "{text}");
+    assert!(text.contains("(1 topology stored for this deck)"), "{text}");
+}
+
+#[test]
+fn augment_on_an_empty_deck_errors_without_calling_the_backend() {
+    let dir = TempDir::new().unwrap();
+    let deck = write(dir.path(), "empty.txt", "% title: Nothing\n");
+    let config = write(
+        dir.path(),
+        "config.toml",
+        "[ask]\ncommand = \"/nonexistent/x\"\n",
+    );
+    let store = dir.path().join("p.json");
+    let out = alix(&[
+        "deck",
+        "augment",
+        &deck,
+        "--target",
+        "choices",
+        "--store",
+        store.to_str().unwrap(),
+        "--config",
+        &config,
+    ]);
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("the deck has no cards to augment"),
+        "stderr: {}",
+        stderr(&out)
+    );
+}
+
+// ── `alix deck import` ───────────────────────────────────────────────────────
+
+#[test]
+fn deck_import_writes_a_deck_from_tsv() {
+    let dir = TempDir::new().unwrap();
+    let tsv = write(
+        dir.path(),
+        "cards.tsv",
+        "Capital of Japan?\tTokyo\nCapital of Italy?\tRome\n",
+    );
+    let out = alix(&["deck", "import", &tsv, "--output", "geo"]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("Imported 2 cards into"),
+        "{}",
+        stdout(&out)
+    );
+}
+
+#[test]
+fn deck_import_print_flag_prints_without_writing() {
+    let dir = TempDir::new().unwrap();
+    let tsv = write(dir.path(), "cards.tsv", "Q1\tA1\n");
+    let out = alix(&["deck", "import", &tsv, "--print"]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(stdout(&out).contains("# Q1"), "{}", stdout(&out));
+    assert!(
+        stderr(&out).contains("cards — not written; --print"),
+        "stderr: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn deck_import_into_a_workspace_lands_there() {
+    let dir = TempDir::new().unwrap();
+    let tsv = write(dir.path(), "cards.tsv", "Q1\tA1\n");
+    let ws = dir.path().join("ws");
+    std::fs::create_dir(&ws).unwrap();
+    let out = alix(&[
+        "deck",
+        "import",
+        &tsv,
+        "--workspace",
+        ws.to_str().unwrap(),
+        "--output",
+        "geo",
+    ]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(ws.join("geo.txt").is_file());
+}
+
+#[test]
+fn deck_import_refuses_to_clobber_without_force_then_force_overwrites() {
+    let dir = TempDir::new().unwrap();
+    let tsv = write(dir.path(), "cards.tsv", "Q1\tA1\n");
+    let ws = dir.path().join("ws");
+    std::fs::create_dir(&ws).unwrap();
+    let args = [
+        "deck",
+        "import",
+        &tsv,
+        "--workspace",
+        ws.to_str().unwrap(),
+        "--output",
+        "geo",
+    ];
+    let first = alix(&args);
+    assert!(first.status.success(), "stderr: {}", stderr(&first));
+
+    let second = alix(&args);
+    assert!(!second.status.success());
+    assert!(
+        stderr(&second).contains("already exists; pass --force to overwrite"),
+        "stderr: {}",
+        stderr(&second)
+    );
+
+    let mut forced = args.to_vec();
+    forced.push("--force");
+    let third = alix(&forced);
+    assert!(third.status.success(), "stderr: {}", stderr(&third));
+}
+
+// ── `alix workspace init` ────────────────────────────────────────────────────
+
+#[test]
+fn workspace_init_on_an_existing_workspace_errors() {
+    let dir = TempDir::new().unwrap();
+    let ws = dir.path().join("fresh");
+    let first = alix(&["workspace", "init", ws.to_str().unwrap()]);
+    assert!(first.status.success(), "stderr: {}", stderr(&first));
+    // `is_workspace` requires a manifest AND at least one deck — a bare `init`
+    // alone isn't "already a workspace" yet.
+    write(&ws, "a.txt", "# q\n\ta\n");
+    let second = alix(&["workspace", "init", ws.to_str().unwrap()]);
+    assert!(!second.status.success());
+    assert!(
+        stderr(&second).contains("is already a workspace"),
+        "stderr: {}",
+        stderr(&second)
+    );
+}
+
+// ── `alix reset`: remaining branches ─────────────────────────────────────────
+
+#[test]
+fn reset_without_target_or_flags_errors() {
+    let out = alix(&["reset"]);
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("name a deck, folder, or workspace to reset"),
+        "stderr: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn reset_all_on_an_empty_store_reports_nothing_to_reset() {
+    let dir = TempDir::new().unwrap();
+    let store = dir.path().join("progress.json"); // never created
+    let out = alix(&[
+        "reset",
+        "--all",
+        "--yes",
+        "--store",
+        store.to_str().unwrap(),
+    ]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("No stored progress to reset."),
+        "{}",
+        stdout(&out)
+    );
+}
+
+#[test]
+fn reset_by_numeric_card_id_without_a_target() {
+    let dir = TempDir::new().unwrap();
+    let deck = write(dir.path(), "math.txt", VALID_DECK);
+    let store_path = dir.path().join("progress.json");
+    let card_id = alix::deck::Deck::load(&deck).unwrap().cards[0].id();
+    let mut store = alix::store::Store::open(&store_path).unwrap();
+    store.get_or_insert(card_id, 0);
+    store.save().unwrap();
+
+    let out = alix(&[
+        "reset",
+        "--card",
+        &card_id.to_string(),
+        "--yes",
+        "--store",
+        store_path.to_str().unwrap(),
+    ]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("Reset 1 card(s)."),
+        "{}",
+        stdout(&out)
+    );
+}
+
+#[test]
+fn reset_by_text_query_within_a_target_resets_only_matching_cards() {
+    let dir = TempDir::new().unwrap();
+    let deck_text = "# Capital of Japan?\n\tTokyo\n\n# Largest planet?\n\tJupiter\n";
+    let deck = write(dir.path(), "geo.txt", deck_text);
+    let cards = alix::parser::parse_str("geo.txt", deck_text).unwrap();
+    let store_path = dir.path().join("progress.json");
+    let mut store = alix::store::Store::open(&store_path).unwrap();
+    for c in &cards {
+        store.get_or_insert(c.id(), 0);
+    }
+    store.save().unwrap();
+
+    let out = alix(&[
+        "reset",
+        &deck,
+        "--card",
+        "japan",
+        "--yes",
+        "--store",
+        store_path.to_str().unwrap(),
+    ]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("Reset 1 card(s)."),
+        "{}",
+        stdout(&out)
+    );
+
+    let reloaded = alix::store::Store::open(&store_path).unwrap();
+    assert!(
+        reloaded.get(cards[0].id()).is_none(),
+        "the matched card should be cleared"
+    );
+    assert!(
+        reloaded.get(cards[1].id()).is_some(),
+        "the other card should survive"
+    );
+}
+
+#[test]
+fn reset_by_text_query_with_no_match_reports_nothing() {
+    let dir = TempDir::new().unwrap();
+    let deck = write(dir.path(), "geo.txt", "# Capital of Japan?\n\tTokyo\n");
+    let store_path = dir.path().join("progress.json");
+    let out = alix(&[
+        "reset",
+        &deck,
+        "--card",
+        "nonexistent-query",
+        "--yes",
+        "--store",
+        store_path.to_str().unwrap(),
+    ]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("No stored progress matching"),
+        "{}",
+        stdout(&out)
     );
 }

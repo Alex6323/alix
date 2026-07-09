@@ -1485,6 +1485,15 @@ mod tests {
     };
 
     #[test]
+    fn reveal_from_suggested_maps_only_flip_and_line() {
+        assert_eq!(Some(Reveal::Flip), reveal_from_suggested(Mode::Flip));
+        assert_eq!(Some(Reveal::Line), reveal_from_suggested(Mode::LineByLine));
+        // Depth modes (and anything else) have no reveal-axis equivalent.
+        assert_eq!(None, reveal_from_suggested(Mode::Explain));
+        assert_eq!(None, reveal_from_suggested(Mode::Typing));
+    }
+
+    #[test]
     fn open_missing_file_is_empty() {
         let dir = tempfile::tempdir().unwrap();
         let cache = AugmentCache::open(dir.path().join("augment.json"));

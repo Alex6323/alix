@@ -1580,6 +1580,13 @@ mod tests {
     }
 
     #[test]
+    fn delta_label_names_each_grade_for_the_learner() {
+        assert_eq!("Got it", Delta::Passed.label());
+        assert_eq!("Partly", Delta::Partial.label());
+        assert_eq!("Missed it", Delta::Failed.label());
+    }
+
+    #[test]
     fn excerpt_at_resolves_a_file_and_line_locator() {
         let dir = tempfile::tempdir().unwrap();
         write(dir.path(), "notes.md", "alpha\nbeta\ngamma\ndelta\n");

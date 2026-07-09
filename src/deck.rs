@@ -1184,6 +1184,35 @@ mod tests {
     }
 
     #[test]
+    fn a_prerequisite_cycle_resolves_locked_instead_of_hanging() {
+        // a requires b, b requires a: the cycle guard (already-visited paths are
+        // skipped) must stop the recursion rather than looping forever, and since
+        // neither's exam has passed, the deck stays locked.
+        let dir = tempfile::tempdir().unwrap();
+        write_deck(
+            dir.path(),
+            "a.txt",
+            "% source: https://x\n% requires: b\n# a\n\t1\n",
+        );
+        write_deck(
+            dir.path(),
+            "b.txt",
+            "% source: https://y\n% requires: a\n# b\n\t2\n",
+        );
+        let a = Deck::load(dir.path().join("a.txt")).unwrap();
+        let (store, _s) = empty_store();
+        assert!(is_locked(&a, Some(dir.path()), &store));
+    }
+
+    #[test]
+    fn resolve_dep_keeps_an_existing_extension_instead_of_forcing_txt() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("notes.md"), "x").unwrap();
+        let found = resolve_dep("notes.md", Some(dir.path()), None).unwrap();
+        assert_eq!(dir.path().join("notes.md"), found);
+    }
+
+    #[test]
     fn load_deck_subject_is_file_name() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("mydeck.txt");
