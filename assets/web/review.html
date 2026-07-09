@@ -36,7 +36,11 @@
   .bar-chip { display: inline-flex; align-items: center; gap: 6px; background: none; color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 4px 11px; font-family: var(--sans); font-size: 0.8rem; white-space: nowrap; cursor: pointer; transition: border-color 0.12s, color 0.12s; }
   .bar-chip:hover { border-color: var(--bolt); color: var(--bolt-hi); }
   .bar .brand { display: inline-flex; align-items: center; gap: 7px; color: var(--bolt); font-weight: 600; }
-  .bar .brand svg { width: 13px; height: 16px; filter: drop-shadow(0 0 5px rgba(34,211,238,0.6)); }
+  /* No glow: the Alix Adult mock's wordmark is flat (plain brand-colored text,
+     no drop-shadow) — an always-on halo is exactly the "chrome that's always on
+     but rarely useful" the UI-noise gate warns against, so it's dropped rather
+     than recolored. */
+  .bar .brand svg { width: 13px; height: 16px; }
   /* A long (hand-crafted) title must shorten with an ellipsis — never wrap to a
      second line and grow the header's height. */
   .bar .deck { color: var(--dim); font-weight: 500; font-size: 0.875rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; max-width: min(52vw, 420px); }
@@ -61,7 +65,11 @@
   .navbtn:disabled { opacity: 0.3; cursor: default; }
   .sheet { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: grid; place-items: center; z-index: 60; }
   .sheet[hidden] { display: none; }
-  .sheet-panel { background: var(--void); border: 1px solid var(--line); border-radius: 14px; padding: 20px 24px; max-width: min(440px, 90vw); color: var(--ink); box-shadow: 0 12px 44px rgba(0,0,0,0.45); animation: deal 0.2s both; }
+  /* Sheets float over the scrim, so — unlike the borderless content cards —
+     they legitimately keep a subtle panel border + shadow; background is
+     --menu-bg (the same floating-surface tone as .menu/.theme-panel), not
+     --void, so the sheet reads as a raised layer above the page behind it. */
+  .sheet-panel { background: var(--menu-bg); border: 1px solid var(--line); border-radius: 14px; padding: 20px 24px; max-width: min(440px, 90vw); color: var(--ink); box-shadow: 0 12px 44px rgba(0,0,0,0.45); animation: deal 0.2s both; }
   .sheet-panel h2 { margin: 0 0 14px; font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--bolt); }
   .sheet-keys { display: grid; grid-template-columns: auto 1fr; gap: 9px 16px; align-items: center; font-size: 0.9rem; }
   .sheet-keys kbd { justify-self: start; font-family: var(--mono); font-size: 0.72rem; color: var(--dim); border: 1px solid var(--line); border-radius: 5px; padding: 2px 7px; }
@@ -73,19 +81,23 @@
   .kebab:hover { color: var(--ink); background: rgba(255,255,255,0.06); }
   .menu { position: absolute; right: 0; top: calc(100% + 8px); z-index: 20; display: none; min-width: 172px; padding: 6px; background: var(--menu-bg); border: 1px solid var(--line); border-radius: 11px; box-shadow: 0 14px 34px -12px rgba(0,0,0,0.8); }
   .menu.open { display: block; }
-  .menu button { display: block; width: 100%; text-align: left; background: none; color: var(--again); border: 0; border-radius: 7px; padding: 11px 12px; font-size: 0.92rem; font-weight: 500; cursor: pointer; }
+  /* Default is neutral text — most items here aren't destructive (Ask Tutor,
+     Theme…, About, Add deck…, …). Only the two that actually destroy
+     something (Remove card, Reset…) opt into the danger hue via .danger. */
+  .menu button { display: block; width: 100%; text-align: left; background: none; color: var(--text); border: 0; border-radius: 7px; padding: 11px 12px; font-size: 0.92rem; font-weight: 500; cursor: pointer; }
   .menu button:hover:not(:disabled) { background: rgba(255,255,255,0.07); }
   .menu button:disabled { opacity: 0.5; cursor: default; }
-  .menu .mk { font-family: var(--mono); font-size: 0.72rem; color: var(--dim); float: right; }
+  .menu button.danger { color: var(--again); }
+  .menu .mk { font-family: var(--mono); font-size: 0.66rem; color: var(--dim); float: right; border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; }
   .menu hr { border: none; border-top: 1px solid var(--line); margin: 4px 0; }
   .sheet-add { display: grid; gap: 12px; min-width: 300px; }
   .sheet-add label { display: grid; gap: 6px; font-size: 0.85rem; color: var(--dim); }
   .add-sec { display: grid; gap: 6px; }
-  .add-sec h3 { margin: 0; font-size: 0.8rem; color: var(--dim); }
-  .sheet-err { color: var(--bad, #c33); }
+  .add-sec h3 { margin: 0; font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); }
+  .sheet-err { color: var(--again); }
   .share-code { font-family: var(--mono); font-size: 1.4rem; user-select: all; }
   /* Armed (name matches) reset button borrows the app's danger hue — the same
-     one the overflow menu's own destructive items use (see `.menu button`). */
+     one the overflow menu's own destructive items use (see `.menu button.danger`). */
   #resetGo:not(:disabled) { border-color: var(--again); color: var(--again); }
   .sheet-doctor { display: grid; gap: 8px; min-width: 320px; }
   .doc-row { display: flex; gap: 8px; }
@@ -295,7 +307,7 @@
   }
   .option .num { font-family: var(--mono); font-size: 0.85rem; color: var(--faint); }
   .option .opt { white-space: pre-wrap; }
-  button.option:hover { border-color: var(--bolt); background: rgba(34,211,238,0.06); }
+  button.option:hover { border-color: var(--bolt); background: color-mix(in srgb, var(--bolt) 6%, transparent); }
   button.option:focus-visible { outline: 2px solid var(--bolt-hi); outline-offset: 2px; }
   .option.correct { border-color: var(--good); background: rgba(62,224,160,0.12); color: var(--good); }
   .option.correct .num { color: var(--good); }
@@ -437,12 +449,21 @@
 
   /* ── ask Claude ── */
   .ask { width: var(--card-w); max-width: 92vw; display: flex; flex-direction: column; gap: 12px; animation: deal 0.3s both; }
+  /* mono eyebrow header ("ASK TUTOR · card-scoped"), same idiom as the exam's
+     "QUESTION n/N" and the walk's "checkpoint n/N" — model/effort readout
+     shares the row, right-aligned, since it's secondary to the scope label. */
+  .ask-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .ask-eyebrow { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--bolt); }
+  .ask-scope { font-family: var(--mono); font-size: 0.72rem; color: var(--faint); margin-left: 3px; }
   .ask-model { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.06em; color: var(--dim); }
   /* card + conversation share one scroll region so the card can stick to its top */
   .ask-scroll { display: flex; flex-direction: column; gap: 12px; max-height: 64vh; overflow-y: auto; padding-right: 4px; }
   .ask-log { display: flex; flex-direction: column; gap: 10px; }
-  .ask-q { align-self: flex-end; max-width: 85%; background: rgba(125,249,232,0.10); border: 1px solid var(--line); border-radius: 12px 12px 4px 12px; padding: 9px 13px; }
+  .ask-q { align-self: flex-end; max-width: 85%; background: color-mix(in srgb, var(--bolt) 10%, transparent); border: 1px solid var(--line); border-radius: 12px 12px 4px 12px; padding: 9px 13px; }
   .ask-a { align-self: flex-start; max-width: 92%; white-space: pre-wrap; line-height: 1.5; border-left: 3px solid var(--bolt); padding: 4px 0 4px 12px; }
+  /* matches the exam's .exam-wait busy idiom (italic, --dim) rather than the
+     tutor mock's own style, so every "waiting on Claude" indicator in the app
+     reads the same. */
   .ask-thinking { align-self: flex-start; color: var(--dim); font-style: italic; }
   .ask-status { align-self: flex-start; color: var(--good); font-size: 0.85rem; }
   .ask-error { align-self: flex-start; color: var(--again); font-size: 0.85rem; }
@@ -631,16 +652,16 @@
           <button class="kebab" id="kebab" aria-label="Menu" aria-haspopup="true">☰</button>
           <div class="menu" id="menu" role="menu">
             <button id="mAsk" class="m-review" role="menuitem">Ask Tutor <span class="mk" id="mAskKey">?</span></button>
-            <button id="mRemove" class="m-review" role="menuitem">Remove card <span class="mk">x</span></button>
+            <button id="mRemove" class="m-review danger" role="menuitem">Remove card <span class="mk">x</span></button>
             <button id="mPromote" class="m-review" role="menuitem">Promote to deck</button>
             <button id="mShortcuts" class="m-picker" role="menuitem">Keyboard shortcuts</button>
-            <button id="theme-open" role="menuitem" style="color: var(--ink)">Theme…</button>
-            <button id="mDraw" role="menuitem" style="color: var(--ink)">Draw answers <span class="mk" id="mDrawState">off</span></button>
+            <button id="theme-open" role="menuitem">Theme…</button>
+            <button id="mDraw" role="menuitem">Draw answers <span class="mk" id="mDrawState">off</span></button>
             <button id="mAbout" class="m-picker" role="menuitem">About</button>
             <hr class="m-picker">
             <button id="mAdd" class="m-picker" role="menuitem">Add deck…</button>
             <button id="mShare" class="m-picker" role="menuitem">Share…</button>
-            <button id="mReset" class="m-picker" role="menuitem">Reset…</button>
+            <button id="mReset" class="m-picker danger" role="menuitem">Reset…</button>
             <button id="mDoctor" class="m-picker" role="menuitem">Doctor</button>
             <button id="mPair" class="m-picker" role="menuitem">Pair a device</button>
           </div>
@@ -1117,9 +1138,17 @@ function syncAsk() {
 // {q, items} = walk checkpoint header (prompt as q, key points as items).
 function renderAsk(subject) {
   const wrap = el("div", "ask");
-  // Which model is answering (and its effort). The tutor uses the CLI default
-  // unless `[ask]` pins one — not the stronger model that built the deck.
-  wrap.appendChild(el("div", "ask-model", `claude · model: ${askInfo.model} · effort: ${askInfo.effort}`));
+  // Mono eyebrow header ("ASK TUTOR · card-scoped" / "· step-scoped"), with
+  // which model is answering (and its effort) alongside it — the tutor uses
+  // the CLI default unless `[ask]` pins one, not the stronger model that
+  // built the deck.
+  const head = el("div", "ask-head");
+  const title = el("span");
+  title.appendChild(el("span", "ask-eyebrow", "ASK TUTOR"));
+  title.appendChild(el("span", "ask-scope", subject ? "· step-scoped" : "· card-scoped"));
+  head.appendChild(title);
+  head.appendChild(el("span", "ask-model", `claude · model: ${askInfo.model} · effort: ${askInfo.effort}`));
+  wrap.appendChild(head);
 
   // The card/checkpoint and the conversation share one scroll region: the subject
   // sticks to the top as a reference while Claude's conversation scrolls under it.
