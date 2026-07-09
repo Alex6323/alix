@@ -16,6 +16,7 @@
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
     hash::Hasher,
+    io::Read,
     net::SocketAddr,
     path::{Path, PathBuf},
     sync::{
@@ -2439,21 +2440,12 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                let mut bytes = Vec::new();
-                use std::io::Read;
-                // `body_length` can lie or be absent, so also cap the actual
-                // read: `take(MAX_ZIP + 1)` lets an oversized body read one
-                // byte past the cap, which the length check below catches.
-                if request
-                    .as_reader()
-                    .take(MAX_ZIP as u64 + 1)
-                    .read_to_end(&mut bytes)
-                    .is_err()
-                    || bytes.len() > MAX_ZIP
-                {
+                // `body_length` can lie or be absent, so `read_capped` also
+                // bounds the actual read, not just the declared length.
+                let Some(bytes) = read_capped(request.as_reader(), MAX_ZIP) else {
                     respond_status(request, 400);
                     continue;
-                }
+                };
                 // `land_received`'s collision check is check-then-act; safe
                 // only because this server loop is single-threaded — do not
                 // introduce threads here (see `Receiving::poll`'s note).
@@ -4350,6 +4342,20 @@ fn read_index(request: &mut Request) -> Option<usize> {
     Some(body.index)
 }
 
+/// Reads `reader` to end, capped at `cap` bytes: `None` if the read errors or
+/// the body exceeds the cap. `take(cap + 1)` lets an oversized body read one
+/// byte past the cap, which the length check below catches — so a reader
+/// whose declared length lies (or has none) is still bounded by the actual
+/// bytes read, not by what it claims.
+fn read_capped(reader: impl Read, cap: usize) -> Option<Vec<u8>> {
+    let mut bytes = Vec::new();
+    if reader.take(cap as u64 + 1).read_to_end(&mut bytes).is_err() || bytes.len() > cap {
+        None
+    } else {
+        Some(bytes)
+    }
+}
+
 /// The app shell and its assets must never be served stale: alix ships no
 /// version in its URLs, so after an upgrade a heuristically-cached page keeps
 /// showing the OLD web app (seen in the wild: a week-old review.html surviving
@@ -4742,6 +4748,57 @@ mod tests {
             Resolved::One(ws.join("a.txt")),
             resolve_row("english/a.txt", dir.path(), &recent)
         );
+    }
+
+    // Note: the workspace-row-to-`Many{dir,files}` case the roadmap's
+    // reset-specific test asked for (every member file, `dir` == row path) is
+    // already asserted in full by
+    // `resolve_row_resolves_a_workspace_row_to_many_with_every_member_file`
+    // above (extended to cover `dir` in the 0b1b859 review follow-up) —
+    // no new assertion here would add coverage, so none is added.
+
+    #[test]
+    fn a_finished_but_unpolled_job_reads_as_finished_after_one_poll() {
+        // Pins the drain-before-guard convention `poll()` uses (and that all
+        // three job POSTs rely on): once `outcome` is `Some`, a repeat call is
+        // a no-op — it must never re-place the deck (place_deck errors on an
+        // existing path, which would flip a `done` outcome to an `error`).
+        let dest = tempfile::tempdir().unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        tx.send(Ok("# f\n\tb\n".to_string())).unwrap();
+        let mut g = Generating {
+            rx,
+            url: "https://example.com/some-article".to_string(),
+            dest: dest.path().to_path_buf(),
+            started: Instant::now(),
+            outcome: None,
+        };
+
+        g.poll();
+        assert!(g.outcome.is_some());
+        let placed_once: Vec<_> = std::fs::read_dir(dest.path()).unwrap().collect();
+        assert_eq!(1, placed_once.len());
+
+        let first_outcome = g.outcome.clone();
+        g.poll();
+        assert_eq!(first_outcome, g.outcome);
+        let placed_twice: Vec<_> = std::fs::read_dir(dest.path()).unwrap().collect();
+        assert_eq!(1, placed_twice.len());
+    }
+
+    #[test]
+    fn the_zip_upload_cap_accepts_the_boundary_and_rejects_one_past_it() {
+        const CAP: usize = 8;
+        let at_cap = read_capped(&[7u8; CAP][..], CAP);
+        assert_eq!(Some(CAP), at_cap.map(|b| b.len()));
+
+        assert!(read_capped(&[7u8; CAP + 1][..], CAP).is_none());
+
+        // No fixed length at all (a body whose declared length lies, or is
+        // absent) is still bounded by the `take()` ceiling: `read_capped`
+        // never reads more than `cap + 1` bytes before rejecting, so an
+        // endless reader is caught rather than read to exhaustion.
+        assert!(read_capped(std::io::repeat(7), CAP).is_none());
     }
 
     #[test]
