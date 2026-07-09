@@ -609,10 +609,6 @@ pub(crate) fn launch(args: LaunchArgs) -> Result<()> {
 /// without one. Naming the root is what tells side-by-side instances apart.
 /// Returns the same pairing info for `/api/pair` — this is the only place
 /// bind + token + LAN IP come together.
-// Only reached once `launch()` has bound and is about to serve; no
-// kill-the-server harness exists to drive that deterministically in CI (see
-// `cli/launch.rs`'s test-decision doc comment on `launch`/`build_review`).
-#[cfg_attr(coverage_nightly, coverage(off))]
 fn announce(addr: SocketAddr, lan: bool, token: Option<&str>, root: &Path) -> serve::PairInfo {
     let root = abbreviate_home(root);
     let port = addr.port();
@@ -656,8 +652,6 @@ fn announce(addr: SocketAddr, lan: bool, token: Option<&str>, root: &Path) -> se
 }
 
 /// `path` with the home directory abbreviated to `~`, for the announce line.
-// Called only from `announce` — see its exclusion reason above.
-#[cfg_attr(coverage_nightly, coverage(off))]
 fn abbreviate_home(path: &Path) -> String {
     if let Some(dirs) = directories::BaseDirs::new()
         && let Ok(rest) = path.strip_prefix(dirs.home_dir())
@@ -683,7 +677,8 @@ fn local_lan_ip() -> Option<std::net::IpAddr> {
 
 /// Renders `text` as a terminal QR so a phone pairs by scanning; silently
 /// skipped when the text is too long (the printed URL above still works).
-// Called only from `announce` — see its exclusion reason above.
+// Print-only, two-line delegation to `qr::terminal_blocks` — nothing to
+// assert without a stdout-capture idiom, which this codebase doesn't have.
 #[cfg_attr(coverage_nightly, coverage(off))]
 fn print_qr(text: &str) {
     if let Some(q) = alix::qr::terminal_blocks(text) {
@@ -716,6 +711,46 @@ mod tests {
                 .unwrap()
                 .is_some_and(|t| !t.is_empty())
         );
+    }
+
+    #[test]
+    fn announce_local_only_returns_a_loopback_pair_regardless_of_token() {
+        // `lan=false` never touches `local_lan_ip`/`print_qr` — it always
+        // resolves the loopback pair, whether or not a token is configured.
+        let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, 4321));
+        let root = Path::new("/tmp/does-not-need-to-exist");
+
+        let no_token = announce(addr, false, None, root);
+        assert_eq!(no_token.url, "http://127.0.0.1:4321/");
+        assert!(!no_token.lan);
+
+        let with_token = announce(addr, false, Some("abc"), root);
+        assert_eq!(with_token.url, "http://127.0.0.1:4321/");
+        assert!(!with_token.lan);
+    }
+
+    #[test]
+    fn abbreviate_home_prefixes_a_path_under_home_with_tilde() {
+        let Some(dirs) = directories::BaseDirs::new() else {
+            // No resolvable home dir in this environment — nothing to verify.
+            return;
+        };
+        let path = dirs.home_dir().join("decks").join("rust.txt");
+        let expected = format!("~/{}", Path::new("decks").join("rust.txt").display());
+        assert_eq!(abbreviate_home(&path), expected);
+    }
+
+    #[test]
+    fn abbreviate_home_leaves_a_path_outside_home_unchanged() {
+        let outside = PathBuf::from("/definitely-not-the-home-dir-xyz/decks/rust.txt");
+        if let Some(dirs) = directories::BaseDirs::new()
+            && outside.starts_with(dirs.home_dir())
+        {
+            // Pathological environment (home dir at/above this path) — skip
+            // rather than assert something that isn't actually true here.
+            return;
+        }
+        assert_eq!(abbreviate_home(&outside), outside.display().to_string());
     }
 
     #[test]
