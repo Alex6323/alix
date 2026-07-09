@@ -59,6 +59,36 @@ const ALIX_LOGO_JS: &str = include_str!("../../assets/web/alix-logo.js");
 const HEAD_HTML: &str = include_str!("../../assets/web/_head.html");
 const BRAND_HTML: &str = include_str!("../../assets/web/_brand.html");
 
+// Self-hosted IBM Plex webfonts (Latin + Latin-Ext subset; see
+// `assets/web/fonts/OFL.txt`), embedded so the app works fully offline —
+// served by name at `GET /fonts/<name>.woff2` (see `font_bytes`).
+const PLEX_SANS_400: &[u8] = include_bytes!("../../assets/web/fonts/ibm-plex-sans-400.woff2");
+const PLEX_SANS_500: &[u8] = include_bytes!("../../assets/web/fonts/ibm-plex-sans-500.woff2");
+const PLEX_SANS_600: &[u8] = include_bytes!("../../assets/web/fonts/ibm-plex-sans-600.woff2");
+const PLEX_SANS_700: &[u8] = include_bytes!("../../assets/web/fonts/ibm-plex-sans-700.woff2");
+const PLEX_MONO_400: &[u8] = include_bytes!("../../assets/web/fonts/ibm-plex-mono-400.woff2");
+const PLEX_MONO_500: &[u8] = include_bytes!("../../assets/web/fonts/ibm-plex-mono-500.woff2");
+const PLEX_MONO_600: &[u8] = include_bytes!("../../assets/web/fonts/ibm-plex-mono-600.woff2");
+const PLEX_MONO_700: &[u8] = include_bytes!("../../assets/web/fonts/ibm-plex-mono-700.woff2");
+
+/// Maps a requested `/fonts/<name>` file name to its embedded bytes, or
+/// `None` for anything not vendored (→ 404). The name map is the one place
+/// that has to stay in sync with the `PLEX_*` consts and the files in
+/// `assets/web/fonts/`.
+fn font_bytes(name: &str) -> Option<&'static [u8]> {
+    match name {
+        "ibm-plex-sans-400.woff2" => Some(PLEX_SANS_400),
+        "ibm-plex-sans-500.woff2" => Some(PLEX_SANS_500),
+        "ibm-plex-sans-600.woff2" => Some(PLEX_SANS_600),
+        "ibm-plex-sans-700.woff2" => Some(PLEX_SANS_700),
+        "ibm-plex-mono-400.woff2" => Some(PLEX_MONO_400),
+        "ibm-plex-mono-500.woff2" => Some(PLEX_MONO_500),
+        "ibm-plex-mono-600.woff2" => Some(PLEX_MONO_600),
+        "ibm-plex-mono-700.woff2" => Some(PLEX_MONO_700),
+        _ => None,
+    }
+}
+
 /// The review page with its shared-chrome placeholders filled once, so the head
 /// boilerplate (`<!--%head%-->`) and brand mark (`<!--%brand%-->`) live in one place.
 static REVIEW_PAGE: std::sync::LazyLock<String> =
@@ -259,6 +289,13 @@ pub fn run_review(
             }
             (Method::Get, "/theme.js") => {
                 respond_asset(request, THEME_JS, "application/javascript; charset=utf-8")
+            }
+            (Method::Get, key) if key.starts_with("/fonts/") => {
+                let name = &key["/fonts/".len()..];
+                match font_bytes(name) {
+                    Some(bytes) => respond_font(request, bytes),
+                    None => respond_status(request, 404),
+                }
             }
             (Method::Get, "/alix-logo.js") => respond_asset(
                 request,

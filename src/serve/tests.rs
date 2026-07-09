@@ -165,6 +165,33 @@ fn content_type_by_extension() {
 }
 
 #[test]
+fn fonts_route_serves_woff2() {
+    // `font_bytes` is what the `GET /fonts/<name>` route arm dispatches on
+    // (a known name → 200 + the embedded bytes via `respond_font`; an unknown
+    // name → 404 via `respond_status`). Like `content_type_by_extension`
+    // above, this file has no harness for asserting on a real dispatched HTTP
+    // response (tiny_http's `TestRequest` writes to `io::sink()`), so the
+    // route's lookup logic is exercised directly.
+    for name in [
+        "ibm-plex-sans-400.woff2",
+        "ibm-plex-sans-500.woff2",
+        "ibm-plex-sans-600.woff2",
+        "ibm-plex-sans-700.woff2",
+        "ibm-plex-mono-400.woff2",
+        "ibm-plex-mono-500.woff2",
+        "ibm-plex-mono-600.woff2",
+        "ibm-plex-mono-700.woff2",
+    ] {
+        let bytes = font_bytes(name).unwrap_or_else(|| panic!("{name} should resolve"));
+        assert!(!bytes.is_empty());
+        // the woff2 magic number ("wOF2"), so a swapped/empty const fails loudly
+        assert_eq!(&bytes[0..4], b"wOF2", "{name} is not a woff2 file");
+    }
+    assert!(font_bytes("nope.woff2").is_none());
+    assert!(font_bytes("ibm-plex-sans-400.woff").is_none()); // wrong extension
+}
+
+#[test]
 fn resolve_row_resolves_a_unique_bare_deck_name() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("solo.txt"), "# f\n\tb\n").unwrap();

@@ -188,6 +188,19 @@ pub(super) fn respond_asset(request: Request, body: &str, content_type: &str) {
     );
 }
 
+/// Serves a self-hosted webfont file. Unlike `respond_bytes`, the file is
+/// vendored (not user content) and never changes shape at a given URL, so it
+/// gets a far-future, immutable cache policy — the point of self-hosting is
+/// to fetch each font once, ever.
+pub(super) fn respond_font(request: Request, bytes: &'static [u8]) {
+    let header = Header::from_bytes(&b"Content-Type"[..], &b"font/woff2"[..]).unwrap();
+    let _ = request.respond(
+        Response::from_data(bytes)
+            .with_header(header)
+            .with_header(cache_header(b"public, max-age=31536000, immutable")),
+    );
+}
+
 pub(super) fn respond_status(request: Request, code: u16) {
     let _ = request.respond(Response::from_string(String::new()).with_status_code(code));
 }
