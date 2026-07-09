@@ -884,13 +884,13 @@ function modeLabel() {
   return kind ? kind + " · " + check : check;
 }
 // A pick's result is pure evidence (the grade is separate, via /api/grade).
-// The acquire on-ramp always shows its feedback (ungraded — any pick just
-// leads to "Seen"). A genuine Recognize pick is quieter: a wrong one demotes
-// itself at once (no feedback screen, no manual Continue) and a correct one
-// pauses on "Next" / the quiet "I guessed" override.
+// Every pick shows its feedback screen (chosen + correct options highlighted).
+// The acquire on-ramp's is ungraded — any pick just leads to "Seen". A genuine
+// Recognize pick pauses on Continue: "Next" plus the quiet "I guessed"
+// override when correct, a plain "Continue" (grades failed) when wrong — so a
+// miss shows the right answer before the card moves on, same as any other check.
 function choose(i) {
   api("/api/choose", post({ index: i })).then(f => {
-    if (!isAcquire() && isChoice() && !f.passed) { grade("failed"); return; }
     feedback = f;
     render();
   });
@@ -2790,11 +2790,18 @@ function renderLegend() {
     if (isAcquire()) {
       chip("Seen", "primary", acquire, label(KEYS.reveal)); // a pick acknowledges, never grades
     } else if (isRecognizeMc()) {
-      // A correct Recognize pick: Next commits it; the quiet override lets an
-      // honest guess demote itself instead (both map to /api/grade — never an
-      // auto-continue, so the learner always has the last word).
-      chip("Next", "primary", () => grade("passed"), label(KEYS.reveal));
-      chip("I guessed", "quiet", () => grade("failed"), "");
+      if (feedback.passed) {
+        // A correct Recognize pick: Next commits it; the quiet override lets
+        // an honest guess demote itself instead (both map to /api/grade —
+        // never an auto-continue, so the learner always has the last word).
+        chip("Next", "primary", () => grade("passed"), label(KEYS.reveal));
+        chip("I guessed", "quiet", () => grade("failed"), "");
+      } else {
+        // A wrong pick: the correct option is already highlighted on screen
+        // (renderChoiceFeedback) — Continue is the only action, and it grades
+        // the miss (there's no guess left to walk back).
+        chip("Continue", "primary", () => grade("failed"), label(KEYS.reveal));
+      }
     } else {
       // A typed check's (or TypeLine's closing) result: pure evidence — the
       // learner grades it themselves, same three-way as any other reveal.
@@ -3248,9 +3255,11 @@ document.addEventListener("keydown", (e) => {
     if (hit(e, KEYS.ask)) { e.preventDefault(); openAsk(); return; }
     if (hit(e, KEYS.remove)) { e.preventDefault(); remove(); return; }
     if (isRecognizeMc()) {
-      // A correct pick: reveal/Enter takes the primary "Next" (passed); the
-      // quiet "I guessed" override is mouse/tap-only, by design.
-      if (hit(e, KEYS.reveal) || e.key === "Enter") { e.preventDefault(); grade("passed"); }
+      // Correct pick: reveal/Enter takes the primary "Next" (passed); the
+      // quiet "I guessed" override is mouse/tap-only, by design. Wrong pick:
+      // reveal/Enter is "Continue", which just grades the miss — there's no
+      // guess to walk back on a pick that was already wrong.
+      if (hit(e, KEYS.reveal) || e.key === "Enter") { e.preventDefault(); grade(feedback.passed ? "passed" : "failed"); }
       return;
     }
     // A typed check's (or TypeLine's closing) result: the learner grades it,

@@ -61,7 +61,7 @@ it: Recall).
   same attempt-then-reveal a brand-new card gets (below), graded **Knew it** /
   **Not yet**. A correct pick marks the card recognized; a quiet **"I
   guessed"** link right after lets you undo that, re-queuing it. A wrong pick
-  re-queues it too.
+  shows which option was right, then **Continue** re-queues it too.
 - **Recall** *(the default)* — the classic flashcard: bring the answer to
   mind, reveal it, and self-grade. Its own FSRS schedule.
 - **Reconstruct** — produce the answer in full, on its **own independent FSRS

@@ -7,6 +7,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
+- A wrong Recognize pick now shows which option was right before moving on
+  (Continue grades it failed) — the silent instant-demote skipped the
+  corrective moment.
 - A just-finished card can no longer come straight back: its re-serve clock
   now floors at the card transition, so time spent on the feedback screen or
   the next card never eats the gap.
