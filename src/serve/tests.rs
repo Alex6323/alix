@@ -181,6 +181,11 @@ fn fonts_route_serves_woff2() {
         "ibm-plex-mono-500.woff2",
         "ibm-plex-mono-600.woff2",
         "ibm-plex-mono-700.woff2",
+        "baloo2-400.woff2",
+        "baloo2-500.woff2",
+        "baloo2-600.woff2",
+        "baloo2-700.woff2",
+        "baloo2-800.woff2",
     ] {
         let bytes = font_bytes(name).unwrap_or_else(|| panic!("{name} should resolve"));
         assert!(!bytes.is_empty());

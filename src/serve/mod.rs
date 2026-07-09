@@ -73,10 +73,18 @@ const PLEX_MONO_500: &[u8] = include_bytes!("../../assets/web/fonts/ibm-plex-mon
 const PLEX_MONO_600: &[u8] = include_bytes!("../../assets/web/fonts/ibm-plex-mono-600.woff2");
 const PLEX_MONO_700: &[u8] = include_bytes!("../../assets/web/fonts/ibm-plex-mono-700.woff2");
 
+// Self-hosted Baloo 2 webfonts (Latin subset; see `assets/web/kids/fonts/OFL.txt`),
+// embedded so the app works fully offline — served by name at `GET /fonts/<name>.woff2`.
+const BALOO2_400: &[u8] = include_bytes!("../../assets/web/kids/fonts/baloo2-400.woff2");
+const BALOO2_500: &[u8] = include_bytes!("../../assets/web/kids/fonts/baloo2-500.woff2");
+const BALOO2_600: &[u8] = include_bytes!("../../assets/web/kids/fonts/baloo2-600.woff2");
+const BALOO2_700: &[u8] = include_bytes!("../../assets/web/kids/fonts/baloo2-700.woff2");
+const BALOO2_800: &[u8] = include_bytes!("../../assets/web/kids/fonts/baloo2-800.woff2");
+
 /// Maps a requested `/fonts/<name>` file name to its embedded bytes, or
 /// `None` for anything not vendored (→ 404). The name map is the one place
-/// that has to stay in sync with the `PLEX_*` consts and the files in
-/// `assets/web/fonts/`.
+/// that has to stay in sync with the font consts and the files in
+/// `assets/web/fonts/` and `assets/web/kids/fonts/`.
 fn font_bytes(name: &str) -> Option<&'static [u8]> {
     match name {
         "ibm-plex-sans-400.woff2" => Some(PLEX_SANS_400),
@@ -87,6 +95,11 @@ fn font_bytes(name: &str) -> Option<&'static [u8]> {
         "ibm-plex-mono-500.woff2" => Some(PLEX_MONO_500),
         "ibm-plex-mono-600.woff2" => Some(PLEX_MONO_600),
         "ibm-plex-mono-700.woff2" => Some(PLEX_MONO_700),
+        "baloo2-400.woff2" => Some(BALOO2_400),
+        "baloo2-500.woff2" => Some(BALOO2_500),
+        "baloo2-600.woff2" => Some(BALOO2_600),
+        "baloo2-700.woff2" => Some(BALOO2_700),
+        "baloo2-800.woff2" => Some(BALOO2_800),
         _ => None,
     }
 }
