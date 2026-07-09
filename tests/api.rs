@@ -15,11 +15,12 @@
 
 use std::{
     collections::HashMap,
+    ffi::OsString,
     io::{Read, Write},
     net::{SocketAddr, TcpStream},
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard},
     thread,
     time::Duration,
 };
@@ -525,27 +526,63 @@ fn poll_until(
 /// `wormhole` is installed on some dev machines but not in CI, so
 /// `POST /api/share`/`/api/receive` must see a deliberately empty `PATH` for
 /// the call to deterministically hit the "not installed" spawn-failure arm
-/// either way. `PATH` is process-wide, so concurrent mutation would race;
-/// this mutex (plus restoring the original value before returning) is this
-/// task's resolution for that.
+/// either way. This only serializes the two `with_empty_path` tests against
+/// *each other* — it does not make the underlying `env::set_var`/`remove_var`
+/// calls sound; see [`PathGuard`] for the honest picture of what risk that
+/// leaves.
 static PATH_LOCK: Mutex<()> = Mutex::new(());
+
+/// RAII guard that restores the process `PATH` (present-or-absent) on drop —
+/// including when a panic unwinds through the holding scope. Without this,
+/// an assertion failing inside [`with_empty_path`]'s closure would skip a
+/// plain post-call restore and leave `PATH` pinned to the empty tempdir for
+/// the rest of this test binary's process: tests share one process, and the
+/// harness catches the panic in a higher frame, so nothing else would put
+/// `PATH` back before every later subprocess-spawning test ran.
+struct PathGuard {
+    original: Option<OsString>,
+    _lock: MutexGuard<'static, ()>,
+}
+
+impl Drop for PathGuard {
+    fn drop(&mut self) {
+        // SAFETY: not actually sound in general — `std::env::set_var`/
+        // `remove_var` are unsafe because Unix-likes have no thread-safe way
+        // to *read* the environment, so any concurrent reader anywhere in
+        // the process (not just another writer) can race a write. `cargo
+        // test` runs this suite's tests concurrently, and other tests do
+        // read the environment while this guard is alive elsewhere in the
+        // binary (e.g. every `TempDir::new()` reads `TMPDIR` via
+        // `env::var_os`). `PATH_LOCK` only keeps the two `with_empty_path`
+        // tests from mutating `PATH` at the same time as each other; it does
+        // nothing for those readers. The risk is accepted here rather than
+        // eliminated: the mutated window is a handful of instructions, this
+        // is test-only code, the race is benign in practice on Linux/glibc
+        // (a reader observes either the old or the new value, not a torn
+        // one), and avoiding it for real would need subprocess isolation
+        // this crate has no dependency budget for.
+        match self.original.take() {
+            Some(p) => unsafe { std::env::set_var("PATH", p) },
+            None => unsafe { std::env::remove_var("PATH") },
+        }
+    }
+}
 
 /// Runs `f` with `PATH` set to `dir` (a directory that deliberately has no
 /// `wormhole` executable) for the call's duration, restoring the original
-/// `PATH` before returning — see [`PATH_LOCK`].
+/// `PATH` — even if `f` panics — via [`PathGuard`]'s drop.
 fn with_empty_path<R>(dir: &Path, f: impl FnOnce() -> R) -> R {
-    let _lock = PATH_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let lock = PATH_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let original = std::env::var_os("PATH");
-    // SAFETY: serialized by `PATH_LOCK` — no other thread reads/writes `PATH`
-    // while this guard is held.
+    let _guard = PathGuard {
+        original,
+        _lock: lock,
+    };
+    // SAFETY: see `PathGuard::drop` — same accepted, documented risk (races
+    // concurrent environment *readers* elsewhere in this process; not fully
+    // eliminated by `PATH_LOCK`).
     unsafe { std::env::set_var("PATH", dir) };
-    let result = f();
-    match original {
-        // SAFETY: same as above.
-        Some(p) => unsafe { std::env::set_var("PATH", p) },
-        None => unsafe { std::env::remove_var("PATH") },
-    }
-    result
+    f()
 }
 
 #[test]
