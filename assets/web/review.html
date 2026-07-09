@@ -219,14 +219,14 @@
                    padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px;
                    background: transparent; cursor: pointer; transition: border-color 0.12s; }
   .drawer-region:hover { border-color: var(--dim); }
-  .drawer-region.sel { border-color: var(--bolt); background: rgba(34,211,238,0.07); }
+  .drawer-region.sel { border-color: var(--bolt); background: color-mix(in srgb, var(--bolt) 8%, transparent); }
   .drawer-region .crumb-name { font-size: 0.68rem; opacity: 0.8; }
   .drawer-region.sel .crumb-name { opacity: 1; font-weight: 600; }
   .drawer-region.all { justify-content: center; min-width: 0; }
   .drawer-due { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end;
                 line-height: 1.02; }
   .drawer-due .n { font-size: 1.35rem; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink); }
-  .drawer-due .l { font-size: 0.64rem; letter-spacing: 0.07em; text-transform: uppercase; color: var(--dim); }
+  .drawer-due .l { font-size: 0.64rem; letter-spacing: 0.07em; text-transform: uppercase; color: var(--faint); }
   .drawer-due.zero .n { color: var(--dim); }
   .context { color: var(--bolt); font-family: var(--mono); font-size: 0.95rem; white-space: pre-wrap; }
   .context .hole { color: var(--bolt-hi); font-weight: 700; }      /* the active cloze blank */
@@ -323,7 +323,7 @@
   /* a single scroll container holds both the deck and workspace sections */
   .lists { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none; }
   .lists::-webkit-scrollbar { width: 0; }
-  .select .section { font-family: var(--mono); font-size: 0.64rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim); margin: 18px 2px 9px; flex: none; }
+  .select .section { font-family: var(--mono); font-size: 0.64rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--faint); margin: 18px 2px 9px; flex: none; }
   .lists > .section:first-child { margin-top: 2px; }
   .select .empty-hint { color: var(--dim); font-size: 0.85rem; padding: 4px 2px 0; }
   /* single-launch rows: click a deck to start it, a workspace/folder to open.
@@ -334,7 +334,7 @@
   /* Transient error notice (a failed select otherwise returns a silent 400). */
   #notice { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); padding: 8px 14px; border: 1px solid var(--line); border-radius: 9px; background: var(--void); color: var(--dim); font-size: 0.85rem; opacity: 0; pointer-events: none; transition: opacity 0.2s; z-index: 40; }
   #notice.show { opacity: 1; }
-  .deckrow:focus { outline: none; border-color: var(--bolt); box-shadow: 0 0 0 2px rgba(125,249,232,0.35); }
+  .deckrow:focus { outline: none; border-color: var(--bolt); box-shadow: 0 0 0 2px color-mix(in srgb, var(--bolt) 32%, transparent); }
   .deckrow .open { flex: none; width: 22px; text-align: center; color: var(--dim); font-size: 1.1rem; line-height: 1; }
   .deckrow .icon { flex: none; width: 22px; height: 22px; }
   .deckrow .icon.mask { background: var(--ink); -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; -webkit-mask-position: center; mask-position: center; -webkit-mask-size: contain; mask-size: contain; }
@@ -359,10 +359,10 @@
   /* Elbow: a horizontal from the vertical out to the label, at the row's middle. */
   .deckrow .tree .guide.tee::after, .deckrow .tree .guide.ell::after { content: ""; position: absolute; left: 50%; right: -6px; top: 50%; border-top: 1px dotted var(--line); }
   .lists.filtering .deckrow .tree { display: none; }
-  .deckrow .name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .deckrow .name { flex: 0 1 auto; min-width: 0; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* a workspace row stacks its title over a dim description line */
   .deckrow .rowtext { flex: 0 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-  .deckrow .rowtext .name { flex: none; }
+  .deckrow .rowtext .name { flex: none; font-weight: 600; }
   .deckrow .desc { font-size: 0.74rem; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .deckrow .kind { flex: none; font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--bolt); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; }
   .deckrow .loc { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 0.72rem; color: var(--dim); }
@@ -373,7 +373,7 @@
      earned once but lapsed (subsumption — only the highest ever shows). */
   .deckrow .badge-depth { flex: none; font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .deckrow .badge-depth.dotted { border-style: dashed; }
-  .deckrow .badge-new { flex: none; font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--bolt); border: 1px solid var(--bolt); border-radius: 5px; padding: 1px 5px; }
+  .deckrow .badge-new { flex: none; font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; }
   /* dimmed + not startable: nothing due (🕒). A 🔒 exam-locked deck that's still
      drillable stays bright. */
   .deckrow.dim { opacity: 0.5; cursor: default; }
