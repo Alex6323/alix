@@ -17,19 +17,23 @@ use std::{
     collections::HashMap,
     io::{Read, Write},
     net::{SocketAddr, TcpStream},
-    path::PathBuf,
-    sync::Arc,
+    os::unix::fs::PermissionsExt,
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex},
     thread,
+    time::Duration,
 };
 
 use alix::{
     config::Config,
     deck::Deck,
+    parser,
     recent::RecentDecks,
     scheduler::Fsrs,
     serve::{self, CardsBuild, PairInfo, ReviewOptions, SelectOptions, SessionBuild, WalkBuild},
     session::{Session, SessionOptions, now_ms},
     store::Store,
+    trace::{Trace, Walk},
 };
 use anyhow::{Result, anyhow};
 use tempfile::TempDir;
@@ -133,6 +137,23 @@ impl Drop for Guard {
     }
 }
 
+/// Turns a `/api/select` request's per-launch choices into the `Session`'s
+/// `SessionOptions` — depth/cram/max_new/limit passed through as requested,
+/// the rest at their library defaults, mirroring what `src/cli/launch.rs`
+/// wires up for the real CLI. Task 3's harness ignored `opts` entirely
+/// (always `SessionOptions::default()`); several of this task's tests
+/// (`depth`-scoped choice questions, a `cram`-driven restart) need the real
+/// per-launch choices to reach the session, so this closes that gap.
+fn session_options(sel: &SelectOptions) -> SessionOptions {
+    SessionOptions {
+        depth: sel.depth.unwrap_or_default(),
+        cram: sel.cram,
+        max_new: sel.max_new.unwrap_or(10),
+        limit: sel.limit,
+        ..Default::default()
+    }
+}
+
 /// A minimal two-card fixture deck — enough for a grade→next-state sequence
 /// (grading the first card away still leaves the session in `"review"` phase
 /// on the second, rather than jumping straight to `"done"`) — and enough to
@@ -203,7 +224,7 @@ fn spawn_test_server_with(token: Option<&str>) -> (String, Guard) {
     // (§`src/cli/launch.rs`) — just without the workspace/topology/virtual-card
     // machinery those add, which no fixture deck here needs yet.
     let build = move |paths: Vec<PathBuf>,
-                      _opts: &SelectOptions,
+                      sel: &SelectOptions,
                       store: &Store,
                       recent: &mut RecentDecks|
           -> Result<SessionBuild> {
@@ -217,7 +238,7 @@ fn spawn_test_server_with(token: Option<&str>) -> (String, Guard) {
             deck.cards,
             store,
             Box::new(Fsrs::new(retention)),
-            SessionOptions::default(),
+            session_options(sel),
             now_ms(),
         );
         recent.record(std::slice::from_ref(&path), now_ms());
@@ -272,6 +293,259 @@ fn spawn_test_server_with(token: Option<&str>) -> (String, Guard) {
             _dir: dir,
         },
     )
+}
+
+/// Five single-line, all-distinct-answer cards — enough sibling pool for a
+/// real offline multiple-choice question (`src/choice.rs::build` needs
+/// `NUM_OPTIONS - 1 == 3` distinct distractors) without any AI augmentation.
+const CHOICE_DECK: &str =
+    "# 1 + 1\n\t2\n\n# 2 + 2\n\t4\n\n# 3 + 3\n\t6\n\n# 4 + 4\n\t8\n\n# 5 + 5\n\t10\n";
+
+/// [`CHOICE_DECK`]'s authored front → back, so a test can find which option is
+/// correct without hard-coding a queue order `choice::build`'s sibling-pool
+/// sampling doesn't actually guarantee.
+fn choice_answer(front: &str) -> &'static str {
+    match front {
+        "1 + 1" => "2",
+        "2 + 2" => "4",
+        "3 + 3" => "6",
+        "4 + 4" => "8",
+        "5 + 5" => "10",
+        other => panic!("not a CHOICE_DECK front: {other}"),
+    }
+}
+
+/// A two-hop predict-and-verify trace over [`TRACE_SOURCE`], for the walk and
+/// (trace) exam endpoint families — mirrors `src/serve/tests.rs`'s
+/// `walk_deck` fixture in miniature (kept to two hops per this task's brief).
+const TRACE_DECK: &str = "% trace: how it works\n\
+% source: source.txt\n\
+# Predict the first hop\n\
+\t% given: line — the input line\n\
+\tit reads the first line\n\
+\t% at: 1\n\
+# Predict the second hop\n\
+\tit reads line two\n\
+\t% at: 2\n";
+const TRACE_SOURCE: &str = "first\nsecond\nthird\n";
+
+/// Richer than [`spawn_test_server`]: the same open (no-token) server, but its
+/// decks dir also carries [`CHOICE_DECK`] (pre-seeded "seen" in the store, so
+/// a Recognize-depth session quizzes it via the sibling-pool multiple-choice
+/// builder instead of the AI-only acquire on-ramp — see `current_question`,
+/// `src/serve/dto.rs`) and [`TRACE_DECK`] (routed to a real `Walk` by
+/// `build_walk` below, for the walk and trace-exam families).
+///
+/// `ask_command`, when `Some`, points `[ask] command` at a fake CLI — see this
+/// module's `fake_reply` — so a walk picked here auto-grades
+/// (`WalkBuild::grade`) instead of self-grading; `None` keeps every AI path
+/// off (self-graded walk, no augmentation), which is what every non-AI test
+/// in this family wants.
+fn spawn_full_server(ask_command: Option<&Path>) -> (String, Guard) {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join("sample.txt"), FIXTURE_DECK).unwrap();
+    std::fs::write(dir.path().join("choice.txt"), CHOICE_DECK).unwrap();
+    std::fs::write(dir.path().join("trace.txt"), TRACE_DECK).unwrap();
+    std::fs::write(dir.path().join("source.txt"), TRACE_SOURCE).unwrap();
+    let store_path = dir.path().join("store.json");
+
+    // Pre-seed the choice deck's cards as "seen" (a store entry, no
+    // `recognized_ms`) so a Recognize session quizzes them via
+    // `choice::build`'s offline sibling-pool sampler rather than the
+    // AI-distractor-only acquire on-ramp (`choice::recognition_question`).
+    {
+        let mut seed = Store::open(&store_path).unwrap();
+        for card in parser::parse_str("choice.txt", CHOICE_DECK).unwrap() {
+            seed.get_or_insert(card.id(), 0);
+        }
+        seed.save().unwrap();
+    }
+
+    let store = Store::open(&store_path).unwrap();
+    let recent = RecentDecks::load(dir.path().join("recent.json"));
+    let decks_dir = dir.path().to_path_buf();
+
+    let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+    let server = Arc::new(serve::bind(addr).unwrap());
+    let port = server
+        .server_addr()
+        .to_ip()
+        .expect("bound to a loopback IP")
+        .port();
+    let base = format!("http://127.0.0.1:{port}");
+    let mut opts = review_options(&base, None);
+    if let Some(cmd) = ask_command {
+        opts.ask.command = cmd.to_str().unwrap().to_string();
+    }
+    let retention = opts.review.retention;
+    let ask_cfg = opts.ask.clone();
+    let auto_grade = ask_command.is_some();
+
+    let build = move |paths: Vec<PathBuf>,
+                      sel: &SelectOptions,
+                      store: &Store,
+                      recent: &mut RecentDecks|
+          -> Result<SessionBuild> {
+        let path = paths
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow!("no deck selected"))?;
+        let deck = Deck::load(&path)?;
+        let subject = deck.subject.clone();
+        let session = Session::new(
+            deck.cards,
+            store,
+            Box::new(Fsrs::new(retention)),
+            session_options(sel),
+            now_ms(),
+        );
+        recent.record(std::slice::from_ref(&path), now_ms());
+        let _ = recent.save();
+        Ok(SessionBuild {
+            session,
+            label: subject.clone(),
+            decks: HashMap::from([(subject, path)]),
+            links: HashMap::new(),
+            source_roots: HashMap::new(),
+            source_bases: HashMap::new(),
+            topology_name: None,
+        })
+    };
+    // Routes a picked trace deck to a real `Walk` instead of falling through
+    // to `build` (the review path) — Task 3's harness always returned `None`
+    // here, so no walk endpoint was reachable at all.
+    let build_walk = move |paths: &[PathBuf]| -> Result<Option<WalkBuild>> {
+        let Some(path) = paths.first() else {
+            return Ok(None);
+        };
+        let deck = Deck::load(path)?;
+        if !deck.is_trace() {
+            return Ok(None);
+        }
+        let trace = Trace::from_deck(&deck)?;
+        let grade = auto_grade.then(|| ask_cfg.clone());
+        Ok(Some(WalkBuild {
+            walk: Walk::new(trace),
+            grade,
+        }))
+    };
+    let build_browse = move |paths: Vec<PathBuf>, recent: &mut RecentDecks| -> Result<CardsBuild> {
+        let path = paths
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow!("no deck selected"))?;
+        let deck = Deck::load(&path)?;
+        recent.record(std::slice::from_ref(&path), now_ms());
+        let _ = recent.save();
+        Ok(CardsBuild {
+            cards: deck.cards,
+            label: deck.subject.clone(),
+            decks: HashMap::from([(deck.subject, path)]),
+        })
+    };
+    let store_for = move |_paths: &[PathBuf]| -> Result<Store> { Ok(Store::open(&store_path)?) };
+
+    let stop_handle = Arc::clone(&server);
+    let handle = thread::spawn(move || {
+        let _ = serve::run_review(
+            store,
+            recent,
+            decks_dir,
+            server,
+            opts,
+            build,
+            build_walk,
+            build_browse,
+            store_for,
+        );
+    });
+
+    (
+        base,
+        Guard {
+            server: stop_handle,
+            handle: Some(handle),
+            _dir: dir,
+        },
+    )
+}
+
+/// Serializes tests that write + exec a fake CLI: a concurrent fork would
+/// inherit the briefly write-open script fd and fail `exec` with `ETXTBSY` —
+/// the same hazard `src/testutil.rs::exec_lock` guards against for the lib's
+/// own AI tests. That helper is `pub(crate)` (crate-private) and therefore
+/// unreachable from this integration test, so it's replicated here in
+/// miniature (this task's fake-CLI resolution).
+static EXEC_LOCK: Mutex<()> = Mutex::new(());
+
+fn exec_lock() -> std::sync::MutexGuard<'static, ()> {
+    EXEC_LOCK.lock().unwrap_or_else(|p| p.into_inner())
+}
+
+/// Writes a fake `claude` CLI at `<dir>/fake-claude` that drains stdin (the
+/// prompt always arrives that way for the Claude backend — draining first
+/// avoids a broken-pipe race) then prints `reply` verbatim, and returns its
+/// path. Mirrors `src/testutil.rs::fake_reply` in miniature (see
+/// `EXEC_LOCK`'s doc for why that one isn't reachable from here).
+fn fake_reply(dir: &Path, reply: &str) -> PathBuf {
+    let out = dir.join("fake-reply");
+    std::fs::write(&out, reply).unwrap();
+    let path = dir.join("fake-claude");
+    std::fs::write(
+        &path,
+        format!("#!/bin/sh\ncat >/dev/null\ncat {}\n", out.display()),
+    )
+    .unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    path
+}
+
+/// Polls `GET path` (bounded: up to 5s, 20ms apart) until `done` accepts the
+/// parsed body, returning it — for the handful of endpoints that kick a
+/// background job (`thinking`/a phase change) rather than answering inline.
+/// Panics (failing the test) rather than looping forever if a job never
+/// settles.
+fn poll_until(
+    base: &str,
+    path: &str,
+    done: impl Fn(&serde_json::Value) -> bool,
+) -> serde_json::Value {
+    for _ in 0..250 {
+        let resp = http(base, "GET", path, &[], &[]);
+        let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+        if done(&body) {
+            return body;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    panic!("{path} did not settle within the poll budget");
+}
+
+/// Serializes tests that pin `PATH` (magic-wormhole's install-hint tests):
+/// `wormhole` is installed on some dev machines but not in CI, so
+/// `POST /api/share`/`/api/receive` must see a deliberately empty `PATH` for
+/// the call to deterministically hit the "not installed" spawn-failure arm
+/// either way. `PATH` is process-wide, so concurrent mutation would race;
+/// this mutex (plus restoring the original value before returning) is this
+/// task's resolution for that.
+static PATH_LOCK: Mutex<()> = Mutex::new(());
+
+/// Runs `f` with `PATH` set to `dir` (a directory that deliberately has no
+/// `wormhole` executable) for the call's duration, restoring the original
+/// `PATH` before returning — see [`PATH_LOCK`].
+fn with_empty_path<R>(dir: &Path, f: impl FnOnce() -> R) -> R {
+    let _lock = PATH_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let original = std::env::var_os("PATH");
+    // SAFETY: serialized by `PATH_LOCK` — no other thread reads/writes `PATH`
+    // while this guard is held.
+    unsafe { std::env::set_var("PATH", dir) };
+    let result = f();
+    match original {
+        // SAFETY: same as above.
+        Some(p) => unsafe { std::env::set_var("PATH", p) },
+        None => unsafe { std::env::remove_var("PATH") },
+    }
+    result
 }
 
 #[test]
@@ -515,4 +789,744 @@ fn get_img_with_an_unknown_key_yields_404() {
 
     assert_eq!(404, resp.status);
     assert!(resp.body.is_empty(), "body: {:?}", resp.body);
+}
+
+// ── Browse ──────────────────────────────────────────────────────────────
+
+#[test]
+fn post_api_browse_returns_a_browse_dto_with_the_fixture_cards() {
+    let (base, _guard) = spawn_test_server();
+
+    let resp = post_json(&base, "/api/browse", r#"{"deck":"sample.txt"}"#);
+
+    assert_eq!(200, resp.status);
+    assert_eq!(
+        Some("application/json; charset=utf-8"),
+        resp.header("Content-Type")
+    );
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("browse", body["phase"], "body: {body}");
+    let cards = body["cards"].as_array().expect("cards is an array");
+    assert_eq!(2, cards.len(), "body: {body}");
+    assert_eq!("2 + 2", cards[0]["front"], "body: {body}");
+}
+
+#[test]
+fn post_api_browse_with_an_unknown_deck_yields_400() {
+    let (base, _guard) = spawn_test_server();
+
+    let resp = post_json(&base, "/api/browse", r#"{"deck":"nope.txt"}"#);
+
+    assert_eq!(400, resp.status);
+    assert!(resp.body.is_empty(), "body: {:?}", resp.body);
+}
+
+// ── Deck topology ───────────────────────────────────────────────────────
+
+#[test]
+fn post_api_deck_topology_reports_the_fixture_decks_due_count() {
+    let (base, _guard) = spawn_test_server();
+
+    let resp = post_json(&base, "/api/deck-topology", r#"{"deck":"sample.txt"}"#);
+
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert!(
+        body["topologies"].as_array().unwrap().is_empty(),
+        "no augmentation was ever generated: body: {body}"
+    );
+    // Both fixture cards are new (a fresh store), and a new card counts as
+    // reviewable (`session::is_reviewable`'s `None => true` arm).
+    assert_eq!(2, body["deck_due"], "body: {body}");
+}
+
+#[test]
+fn post_api_deck_topology_with_an_unknown_deck_still_returns_the_empty_default_dto() {
+    // `/api/deck-topology` never errors (docs/API.md §5) — an unresolvable
+    // name still gets 200 with the empty default, not a 400.
+    let (base, _guard) = spawn_test_server();
+
+    let resp = post_json(&base, "/api/deck-topology", r#"{"deck":"nope.txt"}"#);
+
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert!(
+        body["topologies"].as_array().unwrap().is_empty(),
+        "body: {body}"
+    );
+    assert_eq!(0, body["deck_due"], "body: {body}");
+}
+
+// ── Reset ───────────────────────────────────────────────────────────────
+
+#[test]
+fn post_api_reset_clears_the_fixture_decks_progress() {
+    let (base, _guard) = spawn_test_server();
+    select_fixture(&base);
+    // Grade the first card so it has stored progress to clear.
+    post_json(&base, "/api/grade", r#"{"grade":"passed"}"#);
+
+    let resp = post_json(&base, "/api/reset", r#"{"deck":"sample.txt"}"#);
+
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("sample.txt", body["deck"], "body: {body}");
+    assert_eq!(1, body["cards_cleared"], "body: {body}");
+}
+
+#[test]
+fn post_api_reset_with_an_unknown_deck_yields_400() {
+    let (base, _guard) = spawn_test_server();
+
+    let resp = post_json(&base, "/api/reset", r#"{"deck":"nope.txt"}"#);
+
+    assert_eq!(400, resp.status);
+    assert!(resp.body.is_empty(), "body: {:?}", resp.body);
+}
+
+// ── Import ──────────────────────────────────────────────────────────────
+
+#[test]
+fn post_api_import_lands_a_txt_deck_and_reports_its_card_count() {
+    let (base, _guard) = spawn_test_server();
+
+    let resp = post_json(
+        &base,
+        "/api/import",
+        r##"{"name":"extra.txt","text":"# f\n\tb\n"}"##,
+    );
+
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("extra.txt", body["deck"], "body: {body}");
+    assert_eq!(1, body["cards"], "body: {body}");
+}
+
+#[test]
+fn post_api_import_converts_a_tsv_upload_to_a_deck() {
+    let (base, _guard) = spawn_test_server();
+
+    let resp = post_json(
+        &base,
+        "/api/import",
+        r#"{"name":"cards.tsv","text":"Front1\tBack1\nFront2\tBack2\n"}"#,
+    );
+
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!(2, body["cards"], "body: {body}");
+    assert!(
+        body["deck"].as_str().unwrap().ends_with(".txt"),
+        "body: {body}"
+    );
+}
+
+#[test]
+fn post_api_import_with_an_unrecognized_extension_yields_400() {
+    let (base, _guard) = spawn_test_server();
+
+    let resp = post_json(
+        &base,
+        "/api/import",
+        r#"{"name":"cards.csv","text":"whatever"}"#,
+    );
+
+    assert_eq!(400, resp.status);
+}
+
+#[test]
+fn post_api_import_with_unparseable_tsv_yields_400() {
+    let (base, _guard) = spawn_test_server();
+
+    let resp = post_json(
+        &base,
+        "/api/import",
+        r#"{"name":"bad.tsv","text":"no tabs at all here\n"}"#,
+    );
+
+    assert_eq!(400, resp.status);
+}
+
+#[test]
+fn post_api_import_with_a_malformed_body_yields_400() {
+    let (base, _guard) = spawn_test_server();
+
+    let resp = post_json(&base, "/api/import", r#"{"oops":true}"#);
+
+    assert_eq!(400, resp.status);
+}
+
+// ── Check (typed evidence, no grade recorded) ────────────────────────────
+
+#[test]
+fn post_api_check_reports_a_correct_typed_answer_without_recording_a_grade() {
+    let (base, _guard) = spawn_test_server();
+    select_fixture(&base);
+
+    let resp = post_json(&base, "/api/check", r#"{"lines":["4"]}"#);
+
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!(true, body["passed"], "body: {body}");
+    let results = body["results"].as_array().unwrap();
+    assert_eq!(1, results.len(), "body: {body}");
+    assert_eq!("4", results[0]["input"], "body: {body}");
+    assert_eq!("4", results[0]["expected"], "body: {body}");
+    assert_eq!(true, results[0]["passed"], "body: {body}");
+
+    // Evidence only: the session is still on the same card, ungraded.
+    let state = http(&base, "GET", "/api/state", &[], &[]);
+    let state_body: serde_json::Value = serde_json::from_slice(&state.body).unwrap();
+    assert_eq!("2 + 2", state_body["card"]["front"], "body: {state_body}");
+    assert_eq!(0, state_body["passed"], "body: {state_body}");
+}
+
+#[test]
+fn post_api_check_with_a_wrong_answer_reports_failure() {
+    let (base, _guard) = spawn_test_server();
+    select_fixture(&base);
+
+    let resp = post_json(&base, "/api/check", r#"{"lines":["5"]}"#);
+
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!(false, body["passed"], "body: {body}");
+    assert_eq!(false, body["results"][0]["passed"], "body: {body}");
+}
+
+#[test]
+fn post_api_check_with_a_malformed_body_yields_400() {
+    let (base, _guard) = spawn_test_server();
+    select_fixture(&base);
+
+    let resp = post_json(&base, "/api/check", r#"{"nonsense":true}"#);
+
+    assert_eq!(400, resp.status);
+}
+
+#[test]
+fn post_api_check_with_no_active_session_yields_409() {
+    let (base, _guard) = spawn_test_server();
+
+    let resp = post_json(&base, "/api/check", r#"{"lines":["4"]}"#);
+
+    assert_eq!(409, resp.status);
+}
+
+// ── Choose (multiple choice, Recognize depth) ────────────────────────────
+
+#[test]
+fn post_api_choose_reports_the_correct_index_for_a_recognize_session() {
+    let (base, _guard) = spawn_full_server(None);
+
+    let resp = post_json(
+        &base,
+        "/api/select",
+        r#"{"deck":"choice.txt","depth":"recognize"}"#,
+    );
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("recognize", body["depth"], "body: {body}");
+    assert_eq!("choice", body["mode"], "body: {body}");
+    let choices = body["choices"]
+        .as_array()
+        .expect("a recognize session offers choices");
+    assert_eq!(4, choices.len(), "body: {body}");
+    let front = body["card"]["front"].as_str().unwrap();
+    let expected = choice_answer(front);
+    let correct_index = choices
+        .iter()
+        .position(|c| c.as_str() == Some(expected))
+        .unwrap_or_else(|| panic!("the correct answer {expected:?} is among {choices:?}"));
+
+    let resp = post_json(
+        &base,
+        "/api/choose",
+        &format!(r#"{{"index":{correct_index}}}"#),
+    );
+
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!(correct_index, body["chosen"], "body: {body}");
+    assert_eq!(correct_index, body["correct"], "body: {body}");
+    assert_eq!(true, body["passed"], "body: {body}");
+}
+
+#[test]
+fn post_api_choose_with_a_malformed_body_yields_400() {
+    let (base, _guard) = spawn_test_server();
+    select_fixture(&base);
+
+    let resp = post_json(&base, "/api/choose", r#"{"nonsense":true}"#);
+
+    assert_eq!(400, resp.status);
+}
+
+#[test]
+fn post_api_choose_with_no_active_session_yields_409() {
+    let (base, _guard) = spawn_test_server();
+
+    let resp = post_json(&base, "/api/choose", r#"{"index":0}"#);
+
+    assert_eq!(409, resp.status);
+}
+
+// ── Skip / acquire / promote / restart / deselect ────────────────────────
+
+#[test]
+fn post_api_skip_defers_the_current_card_without_grading_it() {
+    let (base, _guard) = spawn_test_server();
+    select_fixture(&base);
+
+    let resp = post_json(&base, "/api/skip", "{}");
+
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("3 + 3", body["card"]["front"], "body: {body}");
+    assert_eq!(0, body["passed"], "body: {body}");
+    assert_eq!(0, body["failed"], "body: {body}");
+    assert_eq!(2, body["remaining"], "body: {body}");
+}
+
+#[test]
+fn post_api_skip_with_no_active_session_yields_409() {
+    let (base, _guard) = spawn_test_server();
+
+    let resp = post_json(&base, "/api/skip", "{}");
+
+    assert_eq!(409, resp.status);
+}
+
+#[test]
+fn post_api_acquire_acknowledges_a_never_seen_card_without_grading_it() {
+    let (base, _guard) = spawn_test_server();
+    let select_resp = select_fixture(&base);
+    let select_body: serde_json::Value = serde_json::from_slice(&select_resp.body).unwrap();
+    assert_eq!(
+        true, select_body["acquire"],
+        "a brand-new store has never seen this card: {select_body}"
+    );
+
+    let resp = post_json(&base, "/api/acquire", "{}");
+
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("review", body["phase"], "body: {body}");
+    // Acquiring records it (cooling ~1 min, floored out of `remaining`) and
+    // moves to the other card, rather than grading it.
+    assert_eq!("3 + 3", body["card"]["front"], "body: {body}");
+    assert_eq!(0, body["passed"], "body: {body}");
+    assert_eq!(0, body["failed"], "body: {body}");
+    assert_eq!(1, body["remaining"], "body: {body}");
+}
+
+#[test]
+fn post_api_acquire_with_no_active_session_yields_409() {
+    let (base, _guard) = spawn_test_server();
+
+    let resp = post_json(&base, "/api/acquire", "{}");
+
+    assert_eq!(409, resp.status);
+}
+
+#[test]
+fn post_api_promote_the_current_card_when_it_is_not_virtual_yields_400() {
+    let (base, _guard) = spawn_test_server();
+    select_fixture(&base);
+
+    let resp = post_json(&base, "/api/promote", "{}");
+
+    assert_eq!(400, resp.status);
+}
+
+#[test]
+fn post_api_promote_with_no_active_session_yields_409() {
+    let (base, _guard) = spawn_test_server();
+
+    let resp = post_json(&base, "/api/promote", "{}");
+
+    assert_eq!(409, resp.status);
+}
+
+#[test]
+fn post_api_restart_rebuilds_the_queue_and_resets_session_stats() {
+    let (base, _guard) = spawn_test_server();
+    // `cram` makes `restart`'s queue rebuild deterministic regardless of the
+    // FSRS interval a "passed" grade schedules — cram serves every non-retired
+    // card, due or not (`session::build_queue`).
+    post_json(&base, "/api/select", r#"{"deck":"sample.txt","cram":true}"#);
+    let grade_resp = post_json(&base, "/api/grade", r#"{"grade":"passed"}"#);
+    let grade_body: serde_json::Value = serde_json::from_slice(&grade_resp.body).unwrap();
+    assert_eq!(1, grade_body["passed"], "body: {grade_body}");
+    assert_eq!("3 + 3", grade_body["card"]["front"], "body: {grade_body}");
+
+    let resp = post_json(&base, "/api/restart", "{}");
+
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!(2, body["remaining"], "body: {body}");
+    assert_eq!(0, body["passed"], "body: {body}");
+    assert_eq!("2 + 2", body["card"]["front"], "body: {body}");
+}
+
+#[test]
+fn post_api_restart_with_no_active_session_yields_409() {
+    let (base, _guard) = spawn_test_server();
+
+    let resp = post_json(&base, "/api/restart", "{}");
+
+    assert_eq!(409, resp.status);
+}
+
+#[test]
+fn post_api_deselect_returns_to_the_picker_state_dto() {
+    let (base, _guard) = spawn_test_server();
+    select_fixture(&base);
+
+    let resp = post_json(&base, "/api/deselect", "{}");
+
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("review", body["kind"], "body: {body}");
+    assert_eq!("select", body["phase"], "body: {body}");
+    assert!(body["card"].is_null(), "body: {body}");
+}
+
+// ── Augment (open / remove / close — no AI on this path) ─────────────────
+
+#[test]
+fn post_api_augment_open_reports_coverage_for_the_fixture_deck() {
+    let (base, _guard) = spawn_test_server();
+
+    let resp = post_json(&base, "/api/augment/open", r#"{"deck":"sample.txt"}"#);
+
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("sample.txt", body["deck"], "body: {body}");
+    assert_eq!(2, body["cards"], "body: {body}");
+    assert!(body["busy"].is_null(), "body: {body}");
+    let rows = body["rows"].as_array().unwrap();
+    let choices = rows
+        .iter()
+        .find(|r| r["kind"] == "choices")
+        .expect("a choices row");
+    assert_eq!(0, choices["covered"], "body: {body}");
+    assert_eq!(2, choices["eligible"], "body: {body}");
+}
+
+#[test]
+fn post_api_augment_open_with_an_unknown_deck_yields_400() {
+    let (base, _guard) = spawn_test_server();
+
+    let resp = post_json(&base, "/api/augment/open", r#"{"deck":"nope.txt"}"#);
+
+    assert_eq!(400, resp.status);
+}
+
+#[test]
+fn post_api_augment_remove_on_an_empty_cache_still_succeeds_as_a_noop() {
+    let (base, _guard) = spawn_test_server();
+    post_json(&base, "/api/augment/open", r#"{"deck":"sample.txt"}"#);
+
+    let resp = post_json(&base, "/api/augment/remove", r#"{"target":"choices"}"#);
+
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    let choices = body["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["kind"] == "choices")
+        .unwrap();
+    assert_eq!(0, choices["covered"], "body: {body}");
+}
+
+#[test]
+fn post_api_augment_close_returns_the_picker_state_dto() {
+    let (base, _guard) = spawn_test_server();
+    post_json(&base, "/api/augment/open", r#"{"deck":"sample.txt"}"#);
+
+    let resp = post_json(&base, "/api/augment/close", "{}");
+
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("review", body["kind"], "body: {body}");
+    assert_eq!("select", body["phase"], "body: {body}");
+}
+
+#[test]
+fn get_api_augment_with_no_open_screen_yields_409() {
+    let (base, _guard) = spawn_test_server();
+
+    let resp = http(&base, "GET", "/api/augment", &[], &[]);
+
+    assert_eq!(409, resp.status);
+}
+
+// ── Exam (start / close on a trace deck — no AI needed for that path;
+// grading is additionally covered end-to-end via the fake backend) ───────
+
+#[test]
+fn post_api_exam_start_on_a_trace_deck_opens_directly_in_the_answering_phase() {
+    // A trace's "exam" is the graded compression, one fixed question — it
+    // opens straight into `answering` with nothing in flight
+    // (`exam::Sitting::start_trace`), unlike a fact deck's exam, which would
+    // need the AI backend to generate questions.
+    let (base, _guard) = spawn_full_server(None);
+
+    let resp = post_json(&base, "/api/exam/start", r#"{"deck":"trace.txt"}"#);
+
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("answering", body["phase"], "body: {body}");
+    assert_eq!(true, body["is_trace"], "body: {body}");
+    assert_eq!("trace.txt", body["deck"], "body: {body}");
+    assert_eq!(1, body["total"], "body: {body}");
+    assert_eq!(0, body["current"], "body: {body}");
+    assert!(body["question"].as_str().is_some(), "body: {body}");
+}
+
+#[test]
+fn post_api_exam_close_returns_the_picker_state_dto() {
+    let (base, _guard) = spawn_full_server(None);
+    post_json(&base, "/api/exam/start", r#"{"deck":"trace.txt"}"#);
+
+    let resp = post_json(&base, "/api/exam/close", "{}");
+
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("review", body["kind"], "body: {body}");
+    assert_eq!("select", body["phase"], "body: {body}");
+}
+
+#[test]
+fn post_api_exam_start_with_an_unknown_deck_yields_400() {
+    let (base, _guard) = spawn_full_server(None);
+
+    let resp = post_json(&base, "/api/exam/start", r#"{"deck":"nope.txt"}"#);
+
+    assert_eq!(400, resp.status);
+}
+
+#[test]
+fn post_api_exam_start_on_a_deck_with_no_exam_yields_409() {
+    // `sample.txt` declares no `% source:` and isn't a trace — `has_exam()`
+    // is false, so it can never be sat.
+    let (base, _guard) = spawn_full_server(None);
+
+    let resp = post_json(&base, "/api/exam/start", r#"{"deck":"sample.txt"}"#);
+
+    assert_eq!(409, resp.status);
+}
+
+#[test]
+fn get_api_exam_with_no_active_sitting_yields_409() {
+    let (base, _guard) = spawn_full_server(None);
+
+    let resp = http(&base, "GET", "/api/exam", &[], &[]);
+
+    assert_eq!(409, resp.status);
+}
+
+#[test]
+fn exam_grade_on_a_trace_deck_walks_from_answering_to_a_passing_result_via_the_fake_backend() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let fake = fake_reply(
+        scripts.path(),
+        r#"{"verdict":"pass","feedback":"nice work retracing it","missed":[]}"#,
+    );
+    let (base, _guard) = spawn_full_server(Some(&fake));
+    post_json(&base, "/api/exam/start", r#"{"deck":"trace.txt"}"#);
+
+    let resp = post_json(
+        &base,
+        "/api/exam/grade",
+        r#"{"text":"it forwards the value hop by hop, first then second"}"#,
+    );
+
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("grading", body["phase"], "body: {body}");
+
+    let body = poll_until(&base, "/api/exam", |b| b["phase"] != "grading");
+
+    assert_eq!("results", body["phase"], "body: {body}");
+    assert_eq!(true, body["passed"], "body: {body}");
+    let grades = body["grades"].as_array().unwrap();
+    assert_eq!(1, grades.len(), "body: {body}");
+    assert_eq!("PASS", grades[0]["verdict"], "body: {body}");
+}
+
+// ── Walk (a two-hop trace deck) ───────────────────────────────────────────
+
+#[test]
+fn selecting_a_trace_deck_returns_a_walk_dto_not_a_review_state() {
+    let (base, _guard) = spawn_full_server(None);
+
+    let resp = post_json(&base, "/api/select", r#"{"deck":"trace.txt"}"#);
+
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("walk", body["kind"], "body: {body}");
+    assert_eq!("predict", body["phase"], "body: {body}");
+    assert_eq!(false, body["auto_grade"], "body: {body}");
+    assert_eq!(1, body["current"], "body: {body}");
+    assert_eq!(2, body["total"], "body: {body}");
+    assert_eq!("Predict the first hop", body["prompt"], "body: {body}");
+}
+
+#[test]
+fn walk_predict_then_self_grade_reveals_the_excerpt_and_advances_the_hop() {
+    let (base, _guard) = spawn_full_server(None);
+    post_json(&base, "/api/select", r#"{"deck":"trace.txt"}"#);
+
+    let resp = post_json(&base, "/api/walk/predict", r#"{"text":"my guess"}"#);
+
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("reveal", body["phase"], "body: {body}");
+    assert_eq!("my guess", body["prediction"], "body: {body}");
+    assert_eq!("first", body["excerpt"]["lines"][0]["text"], "body: {body}");
+
+    let resp = post_json(&base, "/api/walk/grade", r#"{"delta":"n"}"#);
+
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("predict", body["phase"], "body: {body}");
+    assert_eq!(2, body["current"], "body: {body}");
+    assert_eq!("passed", body["path"][0]["delta"], "body: {body}");
+}
+
+#[test]
+fn walk_restart_resets_to_the_first_hop() {
+    let (base, _guard) = spawn_full_server(None);
+    post_json(&base, "/api/select", r#"{"deck":"trace.txt"}"#);
+    post_json(&base, "/api/walk/predict", r#"{"text":"my guess"}"#);
+    post_json(&base, "/api/walk/grade", r#"{"delta":"n"}"#); // now on hop 2
+
+    let resp = post_json(&base, "/api/walk/restart", "{}");
+
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("predict", body["phase"], "body: {body}");
+    assert_eq!(1, body["current"], "body: {body}");
+}
+
+#[test]
+fn walk_leave_returns_to_the_picker_state_dto() {
+    let (base, _guard) = spawn_full_server(None);
+    post_json(&base, "/api/select", r#"{"deck":"trace.txt"}"#);
+
+    let resp = post_json(&base, "/api/walk/leave", "{}");
+
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("review", body["kind"], "body: {body}");
+    assert_eq!("select", body["phase"], "body: {body}");
+}
+
+#[test]
+fn get_api_walk_with_no_active_walk_yields_409() {
+    let (base, _guard) = spawn_full_server(None);
+
+    let resp = http(&base, "GET", "/api/walk", &[], &[]);
+
+    assert_eq!(409, resp.status);
+}
+
+#[test]
+fn walk_predict_with_auto_grade_resolves_a_verdict_via_the_fake_backend() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let fake = fake_reply(scripts.path(), "PASSED — you got hop one right.\n");
+    let (base, _guard) = spawn_full_server(Some(&fake));
+    let select_resp = post_json(&base, "/api/select", r#"{"deck":"trace.txt"}"#);
+    let select_body: serde_json::Value = serde_json::from_slice(&select_resp.body).unwrap();
+    assert_eq!(true, select_body["auto_grade"], "body: {select_body}");
+
+    post_json(
+        &base,
+        "/api/walk/predict",
+        r#"{"text":"it forwards the line along"}"#,
+    );
+
+    let body = poll_until(&base, "/api/walk", |b| !b["thinking"].as_bool().unwrap());
+    assert_eq!(Some("passed"), body["verdict"].as_str(), "body: {body}");
+    assert!(
+        body["feedback"].as_str().unwrap().contains("hop one right"),
+        "body: {body}"
+    );
+
+    // No client delta needed: the resolved AI verdict is used.
+    let resp = post_json(&base, "/api/walk/grade", "{}");
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("predict", body["phase"], "body: {body}");
+    assert_eq!(2, body["current"], "body: {body}");
+}
+
+// ── Share / Receive (the "wormhole not installed" error phase) ───────────
+//
+// Resolution 2: `wormhole` is installed on this dev machine but absent in
+// CI, so a test relying on either presence or absence via the real `PATH`
+// would be nondeterministic across environments. `with_empty_path` pins
+// `PATH` to a directory that deliberately has no `wormhole`, so the spawn
+// fails deterministically everywhere, hitting the same error-phase arm the
+// real "not installed" case would.
+
+#[test]
+fn post_api_share_surfaces_an_install_hint_when_wormhole_is_not_on_path() {
+    let empty = TempDir::new().unwrap();
+    with_empty_path(empty.path(), || {
+        let (base, _guard) = spawn_test_server();
+
+        let resp = post_json(&base, "/api/share", "{}");
+
+        assert_eq!(200, resp.status);
+        let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+        assert_eq!("error", body["phase"], "body: {body}");
+        let err = body["error"].as_str().expect("an error message");
+        assert!(
+            err.contains("magic-wormhole installed"),
+            "expected the install hint, got: {err}"
+        );
+    });
+}
+
+#[test]
+fn post_api_receive_surfaces_an_install_hint_when_wormhole_is_not_on_path() {
+    let empty = TempDir::new().unwrap();
+    with_empty_path(empty.path(), || {
+        let (base, _guard) = spawn_test_server();
+
+        let resp = post_json(&base, "/api/receive", r#"{"code":"7-alpha-bravo"}"#);
+
+        assert_eq!(200, resp.status);
+        let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+        assert_eq!("error", body["phase"], "body: {body}");
+        let err = body["error"].as_str().expect("an error message");
+        assert!(
+            err.contains("magic-wormhole installed"),
+            "expected the install hint, got: {err}"
+        );
+    });
+}
+
+#[test]
+fn get_api_share_with_no_share_in_flight_yields_409() {
+    let (base, _guard) = spawn_test_server();
+
+    let resp = http(&base, "GET", "/api/share", &[], &[]);
+
+    assert_eq!(409, resp.status);
+}
+
+#[test]
+fn get_api_receive_with_no_receive_in_flight_yields_409() {
+    let (base, _guard) = spawn_test_server();
+
+    let resp = http(&base, "GET", "/api/receive", &[], &[]);
+
+    assert_eq!(409, resp.status);
 }
