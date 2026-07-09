@@ -1,6 +1,6 @@
 // Syntax-checks the JavaScript embedded in the served HTML assets.
 //
-// The pages in assets/serve/*.html are shipped to the browser as static strings
+// The pages in assets/web/*.html are shipped to the browser as static strings
 // baked into the binary, so the Rust build and `cargo test` never parse the JS
 // inside them — a stray syntax error there passes every cargo gate and only
 // surfaces in a browser. This extracts each inline <script> block and compiles
@@ -14,7 +14,7 @@ const { readFileSync, readdirSync } = require("fs");
 const { Script } = require("vm");
 const { join } = require("path");
 
-const dir = "assets/serve";
+const dir = "assets/web";
 let blocks = 0;
 let errors = 0;
 

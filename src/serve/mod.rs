@@ -52,12 +52,12 @@ use crate::{
     trace::{self, SourceBase, Walk},
 };
 
-const REVIEW_HTML: &str = include_str!("../../assets/serve/review.html");
-const THEME_CSS: &str = include_str!("../../assets/serve/theme.css");
-const THEME_JS: &str = include_str!("../../assets/serve/theme.js");
-const ALIX_LOGO_JS: &str = include_str!("../../assets/serve/alix-logo.js");
-const HEAD_HTML: &str = include_str!("../../assets/serve/_head.html");
-const BRAND_HTML: &str = include_str!("../../assets/serve/_brand.html");
+const REVIEW_HTML: &str = include_str!("../../assets/web/review.html");
+const THEME_CSS: &str = include_str!("../../assets/web/theme.css");
+const THEME_JS: &str = include_str!("../../assets/web/theme.js");
+const ALIX_LOGO_JS: &str = include_str!("../../assets/web/alix-logo.js");
+const HEAD_HTML: &str = include_str!("../../assets/web/_head.html");
+const BRAND_HTML: &str = include_str!("../../assets/web/_brand.html");
 
 /// The review page with its shared-chrome placeholders filled once, so the head
 /// boilerplate (`<!--%head%-->`) and brand mark (`<!--%brand%-->`) live in one place.

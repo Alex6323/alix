@@ -20,7 +20,7 @@ test:
 lint:
 	cargo clippy --all-targets
 
-# Syntax-check the JS embedded in the served HTML assets (assets/serve/*.html).
+# Syntax-check the JS embedded in the served HTML assets (assets/web/*.html).
 # That JS is shipped as static strings, so cargo never parses it — this catches a
 # syntax error the Rust gates can't see. Needs node; a no-op (not a failure) when
 # node isn't installed, so it never blocks a cargo-only contributor or CI. Not
