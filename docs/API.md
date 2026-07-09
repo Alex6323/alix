@@ -677,9 +677,6 @@ they may change without notice and native clients must not depend on them:
 
 ## 9. Planned surface (additive)
 
-The picker-self-sufficiency wave adds endpoints for: deck **generation from a
-URL**, TSV **import upload**, **share** (wormhole code shown in the UI) and
-**receive** (paste a code), **reset** from the UI, a **doctor report**
-(`GET /api/doctor`-style, free checks only), and a **pairing QR sheet**
-(`GET /api/pair` returning the pairing URL + a server-rendered SVG). All
-additive under §0's rules — clients that ignore unknown surface are unaffected.
+Remaining Maybes, not committed: a **workspace-init button** (`alix workspace
+init` stays CLI-only for now) and a **stats panel** (`alix stats`'s per-depth
+breakdown, not yet on the wire). Neither is scoped or scheduled.

@@ -25,8 +25,9 @@ it) scaffolds an empty workspace — an `alix.toml`, an `alix.local.toml`, and a
 `assets/` folder, no decks yet. Both TOML files come fully commented, each key
 explained inline, so they document themselves. Grow the workspace with
 [`alix generate … --workspace <dir>`](11-generating-decks.md) or
-`alix deck import … --workspace <dir>`. Dependencies (`% requires:`) are still
-edited by hand in the deck files.
+`alix deck import … --workspace <dir>` — also available from the web UI's ☰
+menu's **Add deck…** sheet. Dependencies (`% requires:`) are still edited by
+hand in the deck files.
 
 Now open the cluster and drill its members one at a time:
 
@@ -119,7 +120,9 @@ A workspace is a self-contained folder, so sharing one is sending the folder.
 (progress, recent list, `alix.local.toml`) left home; the other side runs
 `alix receive <code>` and gets it beside their own decks, ready to serve with
 `alix <dir>`. Precomputed augmentations (`augment.json`) travel — the AI
-content comes along, the progress doesn't.
+content comes along, the progress doesn't. Also available from the web UI's ☰
+menu (**Share…** / **Add deck…** → Receive), with a `.zip` download/upload
+fallback when neither side has `wormhole` installed.
 
 ## Titles
 

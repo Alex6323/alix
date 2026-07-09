@@ -12,9 +12,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   then merges the new files in one by one: a name already present in the
   destination keeps your original untouched and reports the new version's
   location (in the kept-around staging dir) instead of failing the whole run
-  or overwriting anything. `--force` overwrites collisions.
+  or overwriting anything. `--force` overwrites collisions. A leftover staging
+  dir from a previous conflicted build now asks for confirmation before it's
+  wiped and rebuilt, and dot-prefixed folders are hidden from the picker's
+  scan so a kept-around staging dir never shows up as a bogus workspace.
 
 ### Added
+- **Web picker self-sufficiency: the ☰ menu gains Add deck… (generate from a
+  URL, import .tsv/.txt, receive a wormhole code or .zip), Share… (wormhole
+  code or .zip download), Reset… (typed-name confirm), Doctor, and Pair a
+  device (QR)** — all additive `/api/*` endpoints, pinned in the contract
+  suite and documented in `docs/API.md`.
 - **`docs/API.md` — the web JSON API is now a written, tested contract.**
   Endpoints, DTO field tables with nullability, the flows (select→state→grade,
   walk, exam, augment, ask), auth, and the stability rules clients may rely on

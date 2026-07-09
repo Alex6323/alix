@@ -14,6 +14,9 @@ verb: the same command with `--trace` builds *traces* from the same kinds of
 source, and a **directory** source is explored for a whole learning plan first
 (both later chapters) — pass `--deck` to force a single deck from a directory.
 
+Also available from the web UI's ☰ menu (**Add deck…**), URL sources only —
+see [the web app](15-the-web-app.md).
+
 ## What you get
 
 The model reads the source and returns a deck spread across **four layers of

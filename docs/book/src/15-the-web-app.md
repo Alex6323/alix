@@ -30,6 +30,32 @@ it shown as you go ("Whole deck" is the default). On a workspace row instead,
 or **Esc** returns here, so you can switch decks without restarting. Every
 review starts from this screen — there's no direct deck launch.
 
+## Library actions
+
+The picker's **☰ menu** carries five actions that used to be terminal-only —
+everything below is an `/api/*` endpoint, so it's also on the wire for other
+clients (see `docs/API.md`):
+
+- **Add deck…** — one sheet, three ways in, all landing in a chosen
+  destination (the library root or a workspace): **generate** a deck from a
+  URL (with optional guidance) the same way `alix generate` does, but URL
+  sources only — a local-file source stays CLI-only, since a LAN token holder
+  must not be able to point the server's AI at the server's own filesystem;
+  **import** an Anki `.tsv` or an alix `.txt` file; or **receive** — paste a
+  wormhole code, or upload a `.zip`.
+- **Share…** — sends the focused row (deck, folder, or workspace; the served
+  root if nothing's focused) device-to-device over a wormhole code, or
+  **download as .zip** as the offline fallback. Personal state (progress,
+  recent list, local pacing) stays home either way.
+- **Reset…** — wipes a row's progress. Gated on typing the row's name back
+  exactly, since this can't be undone; needs a focused row.
+- **Doctor** — the free environment checks (config, store, decks, backend,
+  wormhole) as ✓/!/✗ rows, screenshot-able for handing to whoever set up the
+  instance. The costed `--backends` probe stays CLI-only.
+- **Pair a device** — a QR of the pairing URL plus the URL itself, to scan
+  from a phone or tablet. Needs `--lan`; a localhost-only instance shows a
+  hint instead (nothing reachable to scan).
+
 ## Augmenting a deck from the picker
 
 Focus a deck and press **`a`** (or its **Augment** button) to open the **Augment
@@ -63,8 +89,9 @@ Recognize-session question (tap an option; a correct pick offers the quiet "I
 guessed" undo). Controls are big tap targets and
 follow *your* configured key bindings (the page reads them from the server). The
 **☰ menu** is context-aware: during review it holds **Ask Tutor**; on the
-deck picker, **keyboard shortcuts**, **refresh decks**, and **about** — with
-**Theme…** and **Draw answers** (a per-device toggle, see below) in both.
+deck picker, the library actions above plus **keyboard shortcuts**, **refresh
+decks**, and **about** — with **Theme…** and **Draw answers** (a per-device
+toggle, see below) in both.
 
 The AI features come along too: the [tutor](10-tutor.md), the
 [AI exam](12-the-ai-exam.md), and [trace walks](13-trace-decks.md) all have a web
