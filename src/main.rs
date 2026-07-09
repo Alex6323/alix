@@ -1043,6 +1043,10 @@ fn subject_paths(decks: HashMap<String, DeckInfo>) -> HashMap<String, PathBuf> {
 /// run side by side without sharing any state.
 fn launch(args: LaunchArgs) -> Result<()> {
     let config = Config::load(args.config.as_deref())?;
+    // A scoped instance (`alix <dir>`) is pinned to its folder forever; the
+    // config-derived instance (bare `alix`) re-resolves `decks_dir` on every
+    // `/api/decks` fetch, so an edited config takes effect without a restart.
+    let scoped = args.dir.is_some();
     // The served root and this instance's state files. No dir → the configured
     // decks directory with the global store/recent (the classic single-user
     // setup). A dir → that folder, state kept inside it: a plain folder gets
@@ -1140,6 +1144,7 @@ fn launch(args: LaunchArgs) -> Result<()> {
         auth: token,
         config_path: args.config.clone(),
         pair,
+        scoped,
     };
     let build = |paths: Vec<PathBuf>,
                  opts: &serve::SelectOptions,

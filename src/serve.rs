@@ -37,8 +37,8 @@ use crate::{
     card::Card,
     choice::{self, ChoiceQuestion},
     config::{
-        AiConfig, AskConfig, Bindings, BrowseBindings, ExamConfig, GenerateDeckConfig, Key,
-        KeyPattern, PickerKeys, ReviewConfig, Strictness,
+        AiConfig, AskConfig, Bindings, BrowseBindings, Config, ExamConfig, GenerateDeckConfig,
+        Key, KeyPattern, PickerKeys, ReviewConfig, Strictness,
     },
     deck::{self, Deck, DeckState},
     depth::{self, Depth, Reveal, depth_name},
@@ -679,6 +679,11 @@ pub struct ReviewOptions {
     pub config_path: Option<PathBuf>,
     /// How this instance is reached, for `/api/pair`'s pairing sheet.
     pub pair: PairInfo,
+    /// `true` for a scoped `alix <dir>` launch — its decks dir is pinned to
+    /// that folder forever. `false` for the config-derived launch (bare
+    /// `alix`), whose `/api/decks` re-resolves the configured dir on every
+    /// fetch so a `decks_dir` edit takes effect without a restart.
+    pub scoped: bool,
 }
 
 /// How this instance is reached, for the pairing sheet. Built by the
@@ -1751,7 +1756,7 @@ pub fn bind(addr: SocketAddr) -> Result<Server> {
 pub fn run_review(
     mut store: Store,
     mut recent: RecentDecks,
-    decks_dir: PathBuf,
+    mut decks_dir: PathBuf,
     server: Server,
     opts: ReviewOptions,
     mut build: impl FnMut(
@@ -1784,6 +1789,7 @@ pub fn run_review(
         auth,
         config_path,
         pair,
+        scoped,
     } = opts;
     let keys = ReviewKeys::from(&bindings);
     let picker_keys = PickerKeysDto::from(&picker_keys);
@@ -1894,6 +1900,13 @@ pub fn run_review(
             (Method::Get, "/api/picker-keys") => respond_json(request, &picker_keys),
             (Method::Get, "/api/ask-info") => respond_json(request, &ask_info),
             (Method::Get, "/api/decks") => {
+                // Unscoped instances re-resolve the configured decks dir on
+                // every fetch, so an edited `decks_dir` takes effect on the
+                // next reload/focus without a restart (`{#page-reload-refetches-decks}`).
+                let dir = effective_decks_dir(scoped, config_path.as_deref(), &decks_dir);
+                if dir != decks_dir {
+                    decks_dir = dir;
+                }
                 // Review enforces locking; the picker won't start a locked deck.
                 let catalog = deck_catalog(
                     &decks_dir,
@@ -3932,6 +3945,22 @@ fn icon_field(icon: Option<&Path>, icons: &mut HashMap<String, PathBuf>) -> (Opt
     }
 }
 
+/// The decks dir this catalog fetch should serve. A scoped instance
+/// (`alix <dir>`) is pinned to its root forever; a config-derived instance
+/// follows a live `decks_dir` edit on the next reload (the ⟳ button and the
+/// focus-refresh both re-fetch /api/decks). A config that no longer parses
+/// keeps the current dir — the picker must never go down over a typo; the
+/// doctor sheet is where the parse error surfaces.
+fn effective_decks_dir(scoped: bool, config_path: Option<&Path>, current: &Path) -> PathBuf {
+    if scoped {
+        return current.to_path_buf();
+    }
+    Config::load(config_path)
+        .ok()
+        .and_then(|c| c.decks_dir())
+        .unwrap_or_else(|| current.to_path_buf())
+}
+
 fn deck_catalog(
     decks_dir: &Path,
     recent: &RecentDecks,
@@ -5133,6 +5162,43 @@ mod tests {
             None
         };
         assert!(svg.unwrap().starts_with("<svg "));
+    }
+
+    #[test]
+    fn a_scoped_instance_always_keeps_its_current_dir() {
+        let current = tempfile::tempdir().unwrap();
+        let other = tempfile::tempdir().unwrap();
+        let cfg = current.path().join("config.toml");
+        std::fs::write(
+            &cfg,
+            format!("decks_dir = \"{}\"\n", other.path().display()),
+        )
+        .unwrap();
+        let dir = effective_decks_dir(true, Some(&cfg), current.path());
+        assert_eq!(current.path(), dir);
+    }
+
+    #[test]
+    fn an_unscoped_instance_follows_a_config_naming_a_different_dir() {
+        let current = tempfile::tempdir().unwrap();
+        let other = tempfile::tempdir().unwrap();
+        let cfg = current.path().join("config.toml");
+        std::fs::write(
+            &cfg,
+            format!("decks_dir = \"{}\"\n", other.path().display()),
+        )
+        .unwrap();
+        let dir = effective_decks_dir(false, Some(&cfg), current.path());
+        assert_eq!(other.path(), dir);
+    }
+
+    #[test]
+    fn an_unparseable_config_keeps_the_current_dir() {
+        let current = tempfile::tempdir().unwrap();
+        let cfg = current.path().join("config.toml");
+        std::fs::write(&cfg, "not valid toml [[[\n").unwrap();
+        let dir = effective_decks_dir(false, Some(&cfg), current.path());
+        assert_eq!(current.path(), dir);
     }
 
     /// The JSON-API contract snapshot suite (docs/API.md): every wire-facing
