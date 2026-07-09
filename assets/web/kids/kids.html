@@ -1019,7 +1019,7 @@ function openTutor() {
   askOpen = true;
   askOverlay.hidden = false;
   syncAsk();
-  api("/api/ask").then((d) => { askData = d; if (askOpen) syncAsk(); }); // prior transcript
+  api("/api/ask").then((d) => { askData = d; if (askOpen) syncAsk(); if (d.thinking) startAskPoll(); }); // prior transcript
 }
 function closeTutor() {
   askOpen = false;
@@ -1093,7 +1093,7 @@ function renderDone() {
   wrap.appendChild(mascotEl("mascot-lg"));
   wrap.appendChild(el("div", "done-title", "Nice work! 🎉"));
   const n = (state && typeof state.reviews === "number") ? state.reviews : 0;
-  wrap.appendChild(el("div", "done-count", "You reviewed " + n + " cards."));
+  wrap.appendChild(el("div", "done-count", "You reviewed " + n + (n === 1 ? " card." : " cards.")));
   wrap.appendChild(el("div", "done-sub", "Come back tomorrow to keep them fresh 🌱"));
   stage.appendChild(wrap);
 
