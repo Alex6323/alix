@@ -4758,13 +4758,18 @@ mod tests {
     // no new assertion here would add coverage, so none is added.
 
     #[test]
-    fn a_finished_but_unpolled_job_reads_as_finished_after_one_poll() {
-        // Pins the drain-before-guard convention `poll()` uses (and that all
-        // three job POSTs rely on): once `outcome` is `Some`, a repeat call is
-        // a no-op — it must never re-place the deck (place_deck errors on an
-        // existing path, which would flip a `done` outcome to an `error`).
+    fn a_drained_job_ignores_further_messages_without_replacing() {
+        // Tests the guard at the top of `poll()`: if `self.outcome.is_some()`,
+        // return immediately without draining — the drain-once law. All three
+        // job POSTs rely on this: a repeat poll must never re-place the deck or
+        // re-run the outcome, else a second message would clobber the first.
+        // Mutation test: without the guard, poll #2 would drain the second
+        // message, call place_deck again (placing a second file), and asserts 2
+        // and 3 would fail.
         let dest = tempfile::tempdir().unwrap();
         let (tx, rx) = std::sync::mpsc::channel();
+
+        // First message: place a deck.
         tx.send(Ok("# f\n\tb\n".to_string())).unwrap();
         let mut g = Generating {
             rx,
@@ -4774,16 +4779,28 @@ mod tests {
             outcome: None,
         };
 
+        // Poll #1: outcome set, one deck placed.
         g.poll();
         assert!(g.outcome.is_some());
-        let placed_once: Vec<_> = std::fs::read_dir(dest.path()).unwrap().collect();
-        assert_eq!(1, placed_once.len());
+        let files_after_poll_1: Vec<_> = std::fs::read_dir(dest.path()).unwrap().collect();
+        assert_eq!(1, files_after_poll_1.len());
 
+        // Send a second, distinguishable message (would place a different deck
+        // if poll #2 tried to drain it).
+        tx.send(Ok("# other\n\tanswer\n".to_string())).unwrap();
+
+        // Poll #2: guard should short-circuit, leaving the second message queued.
         let first_outcome = g.outcome.clone();
         g.poll();
-        assert_eq!(first_outcome, g.outcome);
-        let placed_twice: Vec<_> = std::fs::read_dir(dest.path()).unwrap().collect();
-        assert_eq!(1, placed_twice.len());
+        assert_eq!(first_outcome, g.outcome, "outcome must stay unchanged");
+        let files_after_poll_2: Vec<_> = std::fs::read_dir(dest.path()).unwrap().collect();
+        assert_eq!(1, files_after_poll_2.len(), "still only one placed file");
+
+        // The second message is still queued (guard never called try_recv).
+        assert!(
+            g.rx.try_recv().is_ok(),
+            "guard short-circuited before draining the second message"
+        );
     }
 
     #[test]
