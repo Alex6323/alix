@@ -2119,8 +2119,11 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                // `.tsv` converts (Anki export); `.txt` is a deck as-is.
-                let text = if b.name.ends_with(".tsv") {
+                // `.tsv` converts (Anki export); `.txt` is a deck as-is. Case
+                // folded so `FILE.TSV` matches — the browser's file picker
+                // accept filter offers upper-case extensions too.
+                let lower_name = b.name.to_ascii_lowercase();
+                let text = if lower_name.ends_with(".tsv") {
                     match import::tsv_to_deck(&b.text) {
                         Ok(t) => t,
                         Err(_) => {
@@ -2128,7 +2131,7 @@ pub fn run_review(
                             continue;
                         }
                     }
-                } else if b.name.ends_with(".txt") {
+                } else if lower_name.ends_with(".txt") {
                     b.text
                 } else {
                     respond_status(request, 400);
@@ -2185,6 +2188,29 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
+                // A collision discovered only after the (costed) model call
+                // would throw away paid work for nothing — check before
+                // spawning, mirroring `library::place_deck`'s stem/extension
+                // logic (stage-then-merge: fail fast on what's already
+                // knowable, same principle as the CLI's destination guard).
+                let name = generate::deck_name(&b.url);
+                let stem = name.strip_suffix(".txt").unwrap_or(&name);
+                let file = format!("{stem}.txt");
+                if dest.join(&file).exists() {
+                    respond_json(
+                        request,
+                        &GenerateDto {
+                            phase: "error",
+                            deck: None,
+                            cards: None,
+                            elapsed: Some(0),
+                            error: Some(format!(
+                                "{file} already exists — rename it or generate into another destination"
+                            )),
+                        },
+                    );
+                    continue;
+                }
                 let mut cfg = generate_cfg.clone();
                 if let Some(g) = b
                     .guidance

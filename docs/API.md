@@ -176,7 +176,10 @@ replaces the configured `[generate] extra` steer for this job only. `dest`
 resolves exactly like `import`'s (§4.6). Unlike `import`, placement is
 **lenient**: a generated deck that fails to parse is still saved, with the
 problem reported in `error` — nothing costed by the model call is thrown
-away. Only one generation runs at a time — `POST` while one is in flight is
+away. A destination name collision is checked before the model call, not
+just at save time: if `dest` already has a same-named deck, `POST` responds
+immediately with an error-phase `GenerateDto` and no job, so the collision
+costs nothing. Only one generation runs at a time — `POST` while one is in flight is
 409; a **finished** job (an `error` or `done` phase) is replaced by the next
 `POST`. `POST /api/generate/close` clears the job unconditionally; a
 still-running worker finishes into a discarded channel, the same as leaving

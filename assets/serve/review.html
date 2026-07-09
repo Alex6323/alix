@@ -753,6 +753,9 @@ navBack.addEventListener("click", () => { if (selectEsc) selectEsc(); });
 navRefresh.addEventListener("click", () => { replayLogo(); renderSelect(); });
 const menu = document.getElementById("menu");
 
+// Rejects on error statuses only incidentally: an error response's body is
+// empty (not JSON), so `.json()` throws and the rejection propagates to
+// every `.catch` below. If an error DTO ever grows a body, that stops firing.
 async function api(path, opts) { return (await fetch(path, opts)).json(); }
 function post(body) { return { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }; }
 // On load the page may be seeded in browse mode (a `alix browse --serve` launch):
@@ -3344,38 +3347,53 @@ document.addEventListener("click", () => menu.classList.remove("open"));
 // A small modal sheet (keyboard shortcuts, about). Esc or a backdrop click closes.
 const sheet = document.getElementById("sheet");
 const sheetPanel = document.getElementById("sheetPanel");
+// The interval id of whichever share/receive live-job poll is currently
+// running (never generate/import's jobPoll — those keep polling in the
+// background after close so a finished job still lands a toast). Set at
+// kick time, cleared here rather than left to self-clear off a stray 409.
+let liveJobTimer = null;
 function openSheet(html) { sheetPanel.innerHTML = html; sheet.hidden = false; }
 function closeSheet() {
-  // A share sheet closed mid-wait must not leave the wormhole child running
-  // invisibly — the job only cancels when replaced/cleared server-side (see
-  // `ShareJob`'s `Drop`), so an abandoned sheet has to ask for that itself.
+  // A share/receive sheet closed mid-wait must not leave the wormhole child
+  // running invisibly — the job only cancels when replaced/cleared
+  // server-side (see `ShareJob`'s `Drop`), so an abandoned sheet has to ask
+  // for that itself.
   if (sheet.dataset.shareLive) { delete sheet.dataset.shareLive; api("/api/share/close", post({})).catch(() => {}); }
+  if (sheet.dataset.receiveLive) { delete sheet.dataset.receiveLive; api("/api/receive/close", post({})).catch(() => {}); }
+  if (liveJobTimer) { clearInterval(liveJobTimer); liveJobTimer = null; }
   sheet.hidden = true; sheetPanel.innerHTML = "";
 }
 sheet.addEventListener("click", (e) => { if (e.target === sheet) closeSheet(); });
 document.addEventListener("keydown", (e) => { if (!sheet.hidden && e.key === "Escape") { e.stopPropagation(); e.preventDefault(); closeSheet(); } }, true);
 
 // Polls a job endpoint (~700ms) into #jobLine inside the open Add sheet.
-// done/"sent" (share reuses this too) and error land IN the sheet while it's
-// open; closed, error falls back to a toast. Script-level (not a closure
-// inside openAdd) so Task 13's share/receive wiring can reuse it.
-function jobPoll(path, verb, onDone) {
+// done and error land IN the sheet while it's open; closed, error falls
+// back to a toast. Script-level (not a closure inside openAdd) so Task 13's
+// share/receive wiring can reuse it. The job-line element is captured once,
+// here at kick time, rather than re-resolved by id on every tick — a
+// re-resolve would find whatever sheet happens to be open by the time a
+// background job's tick lands, and write this job's progress into it.
+// `onError`, if given, runs (in addition to the rendering below) when the
+// job reaches the error phase — receive uses it to clear its cancel-on-close
+// flag; generate/import have none and simply omit it.
+function jobPoll(path, verb, onDone, onError) {
+  const line = document.getElementById("jobLine");
   const t = setInterval(() => {
     api(path).then((d) => {
-      const line = document.getElementById("jobLine");
-      if (d.phase === "done" || d.phase === "sent") {
+      if (d.phase === "done") {
         clearInterval(t);
         api(path + "/close", post({})).catch(() => {});
         onDone(d);
       } else if (d.phase === "error") {
         clearInterval(t);
-        if (line) {
+        if (onError) onError(d);
+        if (line && line.isConnected) {
           line.textContent = "";
           line.appendChild(el("span", "sheet-err", d.error || (verb + " failed")));
         } else {
           notice(d.error || (verb + " failed"));
         }
-      } else if (line) {
+      } else if (line && line.isConnected) {
         line.textContent = verb + "… " + (d.elapsed || 0) + "s";
       }
     }).catch(() => { clearInterval(t); notice(verb + " failed — the server log has details"); });
@@ -3431,7 +3449,13 @@ function openAdd() {
       if (!url) return;
       const guidance = document.getElementById("genGuide").value.trim() || null;
       api("/api/generate", post({ url, guidance, dest: dest() || null }))
-        .then(() => { jobPoll("/api/generate", "generating", (r) => addDone("deck '" + r.deck + "' added")); })
+        .then((d) => {
+          if (d && d.phase === "error") {
+            document.getElementById("jobLine").textContent = d.error || "could not start generating";
+            return;
+          }
+          jobPoll("/api/generate", "generating", (r) => addDone("deck '" + r.deck + "' added"));
+        })
         .catch(() => notice("could not start generating — the server log has details"));
       document.getElementById("jobLine").textContent = "generating… 0s";
     });
@@ -3450,7 +3474,18 @@ function openAdd() {
       const code = document.getElementById("rcvCode").value.trim();
       if (!code) return;
       api("/api/receive", post({ code, dest: dest() || null }))
-        .then(() => { jobPoll("/api/receive", "receiving", (r) => addDone("received '" + r.landed + "'")); })
+        .then((d) => {
+          if (d && d.phase === "error") {
+            document.getElementById("jobLine").textContent = d.error || "could not start receiving";
+            return;
+          }
+          sheet.dataset.receiveLive = "1"; // closeSheet() must cancel the job if abandoned
+          liveJobTimer = jobPoll(
+            "/api/receive", "receiving",
+            (r) => { delete sheet.dataset.receiveLive; addDone("received '" + r.landed + "'"); },
+            () => { delete sheet.dataset.receiveLive; }
+          );
+        })
         .catch(() => notice("could not start receiving — the server log has details"));
       document.getElementById("jobLine").textContent = "receiving… 0s";
     });
@@ -3485,33 +3520,44 @@ function openShare() {
   document.getElementById("shareZip").href = withToken(zipHref);
   document.getElementById("shareGo").addEventListener("click", () => {
     api("/api/share", post({ deck: row }))
-      .then(() => {
-        document.getElementById("jobLine").textContent = "staging…";
+      .then((d) => {
+        if (d && d.phase === "error") {
+          document.getElementById("jobLine").textContent = d.error || "could not start sharing";
+          return;
+        }
+        // Captured once, here at kick time, rather than re-resolved by id on
+        // every tick — see jobPoll's comment for why that matters.
+        const line = document.getElementById("jobLine");
+        line.textContent = "staging…";
         sheet.dataset.shareLive = "1"; // closeSheet() must cancel the job if abandoned
-        const t = setInterval(() => {
-          api("/api/share").then((d) => {
-            const line = document.getElementById("jobLine");
-            if (d.phase === "code" && line) {
-              line.textContent = "";
-              line.appendChild(el("span", "share-code", d.code));
-              line.appendChild(document.createElement("br"));
-              line.appendChild(document.createTextNode("waiting for the receiver…"));
-            } else if (d.phase === "sent") {
-              clearInterval(t);
+        liveJobTimer = setInterval(() => {
+          api("/api/share").then((d2) => {
+            if (d2.phase === "code") {
+              if (!line.isConnected) return; // nothing to render, and not terminal
+              // Rendered once and left alone — rebuilding this node every
+              // tick would wipe the user's in-progress selection of the code.
+              if (!line.querySelector(".share-code")) {
+                line.textContent = "";
+                line.appendChild(el("span", "share-code", d2.code));
+                line.appendChild(document.createElement("br"));
+                line.appendChild(document.createTextNode("waiting for the receiver…"));
+              }
+            } else if (d2.phase === "sent") {
+              clearInterval(liveJobTimer);
               delete sheet.dataset.shareLive; // already closing it below — don't double-close
               api("/api/share/close", post({})).catch(() => {});
               closeSheet();
               notice("sent");
-            } else if (d.phase === "error") {
-              clearInterval(t);
-              if (line) {
+            } else if (d2.phase === "error") {
+              clearInterval(liveJobTimer);
+              if (line.isConnected) {
                 line.textContent = "";
-                line.appendChild(el("span", "sheet-err", d.error || "share failed"));
+                line.appendChild(el("span", "sheet-err", d2.error || "share failed"));
               } else {
-                notice(d.error || "share failed");
+                notice(d2.error || "share failed");
               }
             }
-          }).catch(() => clearInterval(t));
+          }).catch(() => clearInterval(liveJobTimer));
         }, 700);
       })
       .catch(() => notice("could not start sharing — the server log has details"));
