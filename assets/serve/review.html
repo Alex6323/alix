@@ -76,6 +76,12 @@
   .menu button:hover:not(:disabled) { background: rgba(255,255,255,0.07); }
   .menu button:disabled { opacity: 0.5; cursor: default; }
   .menu .mk { font-family: var(--mono); font-size: 0.72rem; color: var(--dim); float: right; }
+  .menu hr { border: none; border-top: 1px solid var(--line); margin: 4px 0; }
+  .sheet-add { display: grid; gap: 12px; min-width: 300px; }
+  .sheet-add label { display: grid; gap: 6px; font-size: 0.85rem; color: var(--dim); }
+  .add-sec { display: grid; gap: 6px; }
+  .add-sec h3 { margin: 0; font-size: 0.8rem; color: var(--dim); }
+  .sheet-err { color: var(--bad, #c33); }
 
   /* ── stage + card ─────────────────────────────────────────────────── */
   .stage { flex: 1; display: grid; place-items: center; padding: 22px 16px; min-height: 0; }
@@ -594,6 +600,12 @@
             <button id="theme-open" role="menuitem" style="color: var(--ink)">Theme…</button>
             <button id="mDraw" role="menuitem" style="color: var(--ink)">Draw answers <span class="mk" id="mDrawState">off</span></button>
             <button id="mAbout" class="m-picker" role="menuitem">About</button>
+            <hr class="m-picker">
+            <button id="mAdd" class="m-picker" role="menuitem">Add deck…</button>
+            <button id="mShare" class="m-picker" role="menuitem">Share…</button>
+            <button id="mReset" class="m-picker" role="menuitem">Reset…</button>
+            <button id="mDoctor" class="m-picker" role="menuitem">Doctor</button>
+            <button id="mPair" class="m-picker" role="menuitem">Pair a device</button>
           </div>
         </span>
       </span>
@@ -3307,6 +3319,109 @@ function closeSheet() { sheet.hidden = true; sheetPanel.innerHTML = ""; }
 sheet.addEventListener("click", (e) => { if (e.target === sheet) closeSheet(); });
 document.addEventListener("keydown", (e) => { if (!sheet.hidden && e.key === "Escape") { e.stopPropagation(); e.preventDefault(); closeSheet(); } }, true);
 
+// Polls a job endpoint (~700ms) into #jobLine inside the open Add sheet.
+// done/"sent" (share reuses this too) and error land IN the sheet while it's
+// open; closed, error falls back to a toast. Script-level (not a closure
+// inside openAdd) so Task 13's share/receive wiring can reuse it.
+function jobPoll(path, verb, onDone) {
+  const t = setInterval(() => {
+    api(path).then((d) => {
+      const line = document.getElementById("jobLine");
+      if (d.phase === "done" || d.phase === "sent") {
+        clearInterval(t);
+        api(path + "/close", post({})).catch(() => {});
+        onDone(d);
+      } else if (d.phase === "error") {
+        clearInterval(t);
+        if (line) {
+          line.textContent = "";
+          line.appendChild(el("span", "sheet-err", d.error || (verb + " failed")));
+        } else {
+          notice(d.error || (verb + " failed"));
+        }
+      } else if (line) {
+        line.textContent = verb + "… " + (d.elapsed || 0) + "s";
+      }
+    }).catch(() => { clearInterval(t); notice(verb + " failed — the server log has details"); });
+  }, 700);
+  return t;
+}
+
+// Fills the Add sheet's destination <select> with Library root + every
+// workspace name, from GET /api/decks. Built with DOM Option nodes (never
+// innerHTML) since a workspace name is a user-chosen folder name.
+function fillDestOptions(sel, d) {
+  sel.innerHTML = "";
+  sel.appendChild(new Option("Library root", ""));
+  (d.workspaces || []).forEach((w) => sel.appendChild(new Option(w.name, w.name)));
+}
+
+function addDone(msg) { closeSheet(); notice(msg); renderSelect(); }
+
+// The Add-deck sheet: generate from a URL, import a file, or receive a
+// wormhole share/zip, all landing in a chosen destination (library root or a
+// workspace). Fetches the destination list before opening so the <select>
+// never flashes empty.
+function openAdd() {
+  api("/api/decks").catch(() => ({})).then((d) => {
+    openSheet(
+      '<h2>Add deck</h2><div class="sheet-add">' +
+      '<label>Into <select id="addDest" class="bar-filter"></select></label>' +
+      '<div class="add-sec"><h3>Generate from a URL</h3>' +
+      '<input id="genUrl" class="bar-filter" placeholder="https://…" autocomplete="off" spellcheck="false">' +
+      '<input id="genGuide" class="bar-filter" placeholder="guidance (optional)" autocomplete="off">' +
+      '<button id="genGo" class="bar-chip">Generate</button></div>' +
+      '<div class="add-sec"><h3>Import a file</h3>' +
+      '<input id="impFile" type="file" accept=".tsv,.txt"></div>' +
+      '<div class="add-sec"><h3>Receive</h3>' +
+      '<input id="rcvCode" class="bar-filter" placeholder="wormhole code" autocomplete="off" spellcheck="false">' +
+      '<button id="rcvGo" class="bar-chip">Receive</button>' +
+      '<input id="rcvZip" type="file" accept=".zip"></div>' +
+      '<p id="jobLine"></p></div>'
+    );
+    fillDestOptions(document.getElementById("addDest"), d);
+    const dest = () => document.getElementById("addDest").value;
+    document.getElementById("genGo").addEventListener("click", () => {
+      const url = document.getElementById("genUrl").value.trim();
+      if (!url) return;
+      const guidance = document.getElementById("genGuide").value.trim() || null;
+      api("/api/generate", post({ url, guidance, dest: dest() || null }))
+        .then(() => { jobPoll("/api/generate", "generating", (r) => addDone("deck '" + r.deck + "' added")); })
+        .catch(() => notice("could not start generating — the server log has details"));
+      document.getElementById("jobLine").textContent = "generating… 0s";
+    });
+    document.getElementById("impFile").addEventListener("change", (e) => {
+      const f = e.target.files[0];
+      if (!f) return;
+      const r = new FileReader();
+      r.onload = () => {
+        api("/api/import", post({ name: f.name, text: r.result, dest: dest() || null }))
+          .then((d2) => addDone("imported " + d2.cards + " cards into '" + d2.deck + "'"))
+          .catch(() => { document.getElementById("jobLine").textContent = "import failed — not a valid deck, or the name is taken"; });
+      };
+      r.readAsText(f);
+    });
+    document.getElementById("rcvGo").addEventListener("click", () => {
+      const code = document.getElementById("rcvCode").value.trim();
+      if (!code) return;
+      api("/api/receive", post({ code, dest: dest() || null }))
+        .then(() => { jobPoll("/api/receive", "receiving", (r) => addDone("received '" + r.landed + "'")); })
+        .catch(() => notice("could not start receiving — the server log has details"));
+      document.getElementById("jobLine").textContent = "receiving… 0s";
+    });
+    document.getElementById("rcvZip").addEventListener("change", (e) => {
+      const f = e.target.files[0];
+      if (!f) return;
+      f.arrayBuffer().then((buf) =>
+        fetch("/api/receive/zip?dest=" + encodeURIComponent(dest()), { method: "POST", body: buf })
+          .then((resp) => { if (!resp.ok) throw 0; return resp.json(); })
+          .then((r) => addDone("received '" + r.landed + "'"))
+          .catch(() => { document.getElementById("jobLine").textContent = "could not unpack that zip"; })
+      );
+    });
+  });
+}
+
 function openShortcuts() {
   openSheet(
     '<h2>Picker shortcuts</h2><div class="sheet-keys">' +
@@ -3338,6 +3453,7 @@ function setMenuContext(ctx) {
 }
 
 document.getElementById("mShortcuts").addEventListener("click", () => { menu.classList.remove("open"); openShortcuts(); });
+document.getElementById("mAdd").addEventListener("click", () => { menu.classList.remove("open"); openAdd(); });
 document.getElementById("mAbout").addEventListener("click", () => {
   menu.classList.remove("open");
   api("/api/version").catch(() => ({})).then((d) => {
