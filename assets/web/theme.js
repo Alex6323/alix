@@ -16,8 +16,8 @@
 
   // id · display name · mode (light|dark) · preview colours [background, accent, green]
   var THEMES = [
-    { id: "dark",             name: "alix",             mode: "dark",  c: ["#06121a", "#22d3ee", "#3ee0a0"] },
-    { id: "light",            name: "alix Light",       mode: "light", c: ["#f5f7f6", "#0c8b97", "#138a5b"] },
+    { id: "dark",             name: "alix",             mode: "dark",  c: ["#0f1016", "#5fd7e0", "#86c986"] },
+    { id: "light",            name: "alix Light",       mode: "light", c: ["#f4f4fa", "#0e7c86", "#138a5b"] },
     { id: "kid",              name: "Fun",              mode: "kids",  c: ["#fff2db", "#7a2ff5", "#00b86b"] },
     { id: "github-dark",      name: "GitHub",           mode: "dark",  c: ["#0d1117", "#2f81f7", "#3fb950"] },
     { id: "github-light",     name: "GitHub Light",     mode: "light", c: ["#ffffff", "#0969da", "#1a7f37"] },
@@ -29,7 +29,7 @@
     { id: "tokyo-night",      name: "Tokyo Night",      mode: "dark",  c: ["#1a1b26", "#7aa2f7", "#9ece6a"] },
     { id: "solarized-dark",   name: "Solarized",        mode: "dark",  c: ["#002b36", "#268bd2", "#859900"] },
     { id: "solarized-light",  name: "Solarized Light",  mode: "light", c: ["#fdf6e3", "#268bd2", "#859900"] },
-    { id: "gruvbox-dark",     name: "Gruvbox",          mode: "dark",  c: ["#282828", "#83a598", "#b8bb26"] },
+    { id: "gruvbox-dark",     name: "Gruvbox",          mode: "dark",  c: ["#282828", "#fabd2f", "#b8bb26"] },
     { id: "gruvbox-light",    name: "Gruvbox Light",    mode: "light", c: ["#fbf1c7", "#458588", "#98971a"] },
     { id: "nord",             name: "Nord",             mode: "dark",  c: ["#2e3440", "#88c0d0", "#a3be8c"] },
     { id: "ayu-dark",         name: "Ayu",              mode: "dark",  c: ["#0d1017", "#e6b450", "#aad94c"] },

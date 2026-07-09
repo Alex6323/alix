@@ -80,52 +80,108 @@
   unicode-range: U+0000-00FF, U+0100-024F, U+0259, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+1E00-1EFF, U+2000-206F, U+2020, U+2074, U+20A0-20AB, U+20AC, U+20AD-20CF, U+2113, U+2122, U+2191, U+2193, U+2212, U+2215, U+2C60-2C7F, U+A720-A7FF, U+FEFF, U+FFFD;
 }
 
-/* ── Dark — the default ─────────────────────────────────────────────── */
+/* ── Base tokens: shape, motion, and the Alix Adult token vocabulary ───
+ * Radii/motion are shared across every theme. The brand mark + its
+ * primary-action fill are fixed across every theme too (brand identity
+ * doesn't reskin with the palette). --bg/--chrome/--border/--accent
+ * forward to the legacy --void/--panel-top/--line/--bolt names below, so
+ * every theme — aligned to the Alix Adult palette or not — resolves them
+ * without repeating the value; --text/--faint/--accent-ink/--brand-text
+ * have no legacy analog, so they fall back to their closest existing
+ * counterpart here and get real per-theme values only where a theme block
+ * below sets them explicitly. */
+:root {
+  --radius-btn: 10px;
+  --radius-chip-sm: 6px;
+  --radius-chip-lg: 12px;
+  --radius-row: 12px;
+
+  --transition-fast: 0.12s ease;
+  --transition-med: 0.17s ease;
+
+  --brand: #f0883c;
+  --brand-ink: #1a1206;
+
+  --bg: var(--void);
+  --chrome: var(--panel-top);
+  --border: var(--line);
+  --accent: var(--bolt);
+  --text: var(--ink);
+  --faint: var(--dim);
+  --accent-ink: var(--void);
+  --brand-text: var(--bolt);
+}
+@media (prefers-reduced-motion: reduce) {
+  :root { --transition-fast: 0s; --transition-med: 0s; }
+}
+
+/* tiny bordered-mono key-hint chip (space / esc / j / k / l / ?) */
+.key-hint {
+  display: inline-block;
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: 0.68rem;
+  letter-spacing: 0.03em;
+  color: var(--dim);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-chip-sm);
+  padding: 2px 7px;
+}
+
+/* ── alix — the default (Alix Adult palette) ────────────────────────── */
 :root,
 [data-theme="dark"] {
-  --void: #06121a;
-  --panel-top: #103241;
-  --panel-bot: #0a212b;
-  --ink: #e8f4f5;
-  --dim: #6f939d;
-  --line: #173640;
-  --bolt: #22d3ee;
-  --bolt-hi: #7df9e8;
-  --good: #3ee0a0;
-  --warn: #f5c451;
-  --again: #ff6b6b;
-  --halo: #0c2734;
-  --menu-bg: #0b2531;
-  --note-border: #e7c66b;
-  --note-ink: #ecdca6;
-  --note-code: #cfe0e3;
+  --void: #0f1016;
+  --panel-top: #171a24;
+  --panel-bot: #0f1016;
+  --ink: #eef0f5;
+  --dim: #9096a8;
+  --line: rgba(255, 255, 255, .09);
+  --bolt: #5fd7e0;
+  --bolt-hi: #8ce9ef;
+  --good: #86c986;
+  --warn: #e6b45c;
+  --again: #e88f8f;
+  --halo: #0f1016;
+  --menu-bg: #171a24;
+  --note-border: #e6b45c;
+  --note-ink: #f0dcae;
+  --note-code: #c9cdd8;
   /* note wash + border — derived from --note-border so every theme adapts */
   --note-bg: color-mix(in srgb, var(--note-border) 12%, transparent);
   --note-line: color-mix(in srgb, var(--note-border) 24%, transparent);
-  --excerpt-bg: #071a23;
+  --excerpt-bg: #171a24;
   --mono: 'IBM Plex Mono', ui-monospace, monospace;
   --sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --text: #c9cdd8;
+  --faint: #6b7085;
+  --accent-ink: #08131a;
+  --brand-text: #f5a35f;
 }
 
-/* ── Light — paper & ink, the teal accent kept for identity ─────────── */
+/* ── alix Light — paper & ink, Alix Adult palette ────────────────────── */
 [data-theme="light"] {
-  --void: #f5f7f6;
+  --void: #f4f4fa;
   --panel-top: #ffffff;
-  --panel-bot: #eef2f2;
-  --ink: #16262c;
-  --dim: #5e7178;
-  --line: #d6dfe0;
-  --bolt: #0c8b97;
-  --bolt-hi: #0aa6b3;
+  --panel-bot: #f4f4fa;
+  --ink: #17171f;
+  --dim: #6b6b7a;
+  --line: rgba(20, 18, 40, .13);
+  --bolt: #0e7c86;
+  --bolt-hi: #129aa6;
   --good: #138a5b;
   --warn: #b9790c;
   --again: #d23b34;
-  --halo: #e6eff0;
+  --halo: #f4f4fa;
   --menu-bg: #ffffff;
   --note-border: #c98a12;
   --note-ink: #6a5117;
   --note-code: #2b3a40;
-  --excerpt-bg: #eef3f3;
+  --excerpt-bg: #ffffff;
+  --text: #3b3b48;
+  --faint: #9696a5;
+  --accent-ink: #ffffff;
+  --brand-text: #c2410c;
 }
 
 /* ── Kid — warm, rounded, candy accents (the bold one) ──────────────── */
@@ -167,37 +223,40 @@
   --excerpt-bg: #161b22;
 }
 
-/* ── GitHub Light ── */
+/* ── GitHub Light — aligned to the Alix Adult palette ── */
 [data-theme="github-light"] {
-  --void: #ffffff; --panel-top: #f6f8fa; --panel-bot: #f6f8fa;
-  --ink: #1f2328; --dim: #656d76; --line: #d0d7de;
+  --void: #ffffff; --panel-top: #f6f8fa; --panel-bot: #ffffff;
+  --ink: #1f2328; --dim: #656d76; --line: rgba(20, 20, 30, .12);
   --bolt: #0969da; --bolt-hi: #0969da;
   --good: #1a7f37; --warn: #9a6700; --again: #d1242f;
-  --halo: #f6f8fa; --menu-bg: #f6f8fa;
+  --halo: #ffffff; --menu-bg: #f6f8fa;
   --note-border: #9a6700; --note-ink: #1f2328; --note-code: #1f2328;
   --excerpt-bg: #f6f8fa;
+  --text: #3d444d; --faint: #8c959f; --accent-ink: #ffffff; --brand-text: #c2410c;
 }
 
-/* ── One Dark ── */
+/* ── One Dark — aligned to the Alix Adult palette ── */
 [data-theme="one-dark"] {
-  --void: #282c34; --panel-top: #3e4451; --panel-bot: #3e4451;
-  --ink: #abb2bf; --dim: #5c6370; --line: #181a1f;
+  --void: #282c34; --panel-top: #31363f; --panel-bot: #282c34;
+  --ink: #dcdfe4; --dim: #9aa0ab; --line: rgba(255, 255, 255, .10);
   --bolt: #61afef; --bolt-hi: #61afef;
   --good: #98c379; --warn: #e5c07b; --again: #e06c75;
-  --halo: #3e4451; --menu-bg: #3e4451;
-  --note-border: #e5c07b; --note-ink: #abb2bf; --note-code: #abb2bf;
-  --excerpt-bg: #3e4451;
+  --halo: #282c34; --menu-bg: #31363f;
+  --note-border: #e5c07b; --note-ink: #dcdfe4; --note-code: #dcdfe4;
+  --excerpt-bg: #31363f;
+  --text: #c8ccd4; --faint: #6b727d; --accent-ink: #081a2a; --brand-text: #f5a35f;
 }
 
-/* ── Dracula ── */
+/* ── Dracula — aligned to the Alix Adult palette ── */
 [data-theme="dracula"] {
-  --void: #282a36; --panel-top: #44475a; --panel-bot: #44475a;
-  --ink: #f8f8f2; --dim: #6272a4; --line: #6272a4;
+  --void: #282a36; --panel-top: #343746; --panel-bot: #282a36;
+  --ink: #f8f8f2; --dim: #9a9ab5; --line: rgba(255, 255, 255, .10);
   --bolt: #bd93f9; --bolt-hi: #bd93f9;
   --good: #50fa7b; --warn: #f1fa8c; --again: #ff5555;
-  --halo: #44475a; --menu-bg: #44475a;
+  --halo: #282a36; --menu-bg: #343746;
   --note-border: #f1fa8c; --note-ink: #f8f8f2; --note-code: #f8f8f2;
-  --excerpt-bg: #44475a;
+  --excerpt-bg: #343746;
+  --text: #d4d4e0; --faint: #6d6d8a; --accent-ink: #1c142b; --brand-text: #f5a35f;
 }
 
 /* ── Monokai ── */
@@ -255,26 +314,28 @@
   --excerpt-bg: #073642;
 }
 
-/* ── Solarized Light ── */
+/* ── Solarized Light — aligned to the Alix Adult palette ── */
 [data-theme="solarized-light"] {
-  --void: #fdf6e3; --panel-top: #eee8d5; --panel-bot: #eee8d5;
-  --ink: #657b83; --dim: #93a1a1; --line: #eee8d5;
+  --void: #fdf6e3; --panel-top: #eee8d5; --panel-bot: #fdf6e3;
+  --ink: #073642; --dim: #839496; --line: rgba(80, 70, 40, .20);
   --bolt: #268bd2; --bolt-hi: #268bd2;
   --good: #859900; --warn: #b58900; --again: #dc322f;
-  --halo: #eee8d5; --menu-bg: #eee8d5;
-  --note-border: #b58900; --note-ink: #657b83; --note-code: #657b83;
+  --halo: #fdf6e3; --menu-bg: #eee8d5;
+  --note-border: #b58900; --note-ink: #073642; --note-code: #073642;
   --excerpt-bg: #eee8d5;
+  --text: #586e75; --faint: #93a1a1; --accent-ink: #ffffff; --brand-text: #c2410c;
 }
 
-/* ── Gruvbox Dark ── */
+/* ── Gruvbox Dark — aligned to the Alix Adult palette ── */
 [data-theme="gruvbox-dark"] {
-  --void: #282828; --panel-top: #3c3836; --panel-bot: #3c3836;
-  --ink: #ebdbb2; --dim: #a89984; --line: #504945;
-  --bolt: #83a598; --bolt-hi: #83a598;
+  --void: #282828; --panel-top: #3c3836; --panel-bot: #282828;
+  --ink: #fbf1c7; --dim: #a89984; --line: rgba(255, 255, 255, .10);
+  --bolt: #fabd2f; --bolt-hi: #fabd2f;
   --good: #b8bb26; --warn: #fabd2f; --again: #fb4934;
-  --halo: #3c3836; --menu-bg: #3c3836;
-  --note-border: #fabd2f; --note-ink: #ebdbb2; --note-code: #ebdbb2;
+  --halo: #282828; --menu-bg: #3c3836;
+  --note-border: #fabd2f; --note-ink: #fbf1c7; --note-code: #fbf1c7;
   --excerpt-bg: #3c3836;
+  --text: #ebdbb2; --faint: #7c6f64; --accent-ink: #2a2000; --brand-text: #fe8019;
 }
 
 /* ── Gruvbox Light ── */
@@ -288,15 +349,16 @@
   --excerpt-bg: #ebdbb2;
 }
 
-/* ── Nord ── */
+/* ── Nord — aligned to the Alix Adult palette ── */
 [data-theme="nord"] {
-  --void: #2e3440; --panel-top: #3b4252; --panel-bot: #3b4252;
-  --ink: #d8dee9; --dim: #4c566a; --line: #4c566a;
+  --void: #2e3440; --panel-top: #3b4252; --panel-bot: #2e3440;
+  --ink: #eceff4; --dim: #a3adba; --line: rgba(255, 255, 255, .10);
   --bolt: #88c0d0; --bolt-hi: #88c0d0;
   --good: #a3be8c; --warn: #ebcb8b; --again: #bf616a;
-  --halo: #3b4252; --menu-bg: #3b4252;
-  --note-border: #ebcb8b; --note-ink: #d8dee9; --note-code: #d8dee9;
+  --halo: #2e3440; --menu-bg: #3b4252;
+  --note-border: #ebcb8b; --note-ink: #eceff4; --note-code: #eceff4;
   --excerpt-bg: #3b4252;
+  --text: #d8dee9; --faint: #7b869c; --accent-ink: #10202a; --brand-text: #f5a35f;
 }
 
 /* ── Ayu Dark ── */
@@ -353,6 +415,9 @@
   opacity: 0; pointer-events: none; transition: opacity 0.15s, transform 0.15s;
 }
 .theme-panel.show { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
+@media (prefers-reduced-motion: reduce) {
+  .theme-backdrop, .theme-panel { transition: none; }
+}
 .theme-panel::-webkit-scrollbar { width: 8px; }
 .theme-panel::-webkit-scrollbar-thumb { background: var(--line); border-radius: 8px; }
 .theme-panel::-webkit-scrollbar-thumb:hover { background: var(--dim); }
