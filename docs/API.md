@@ -78,6 +78,9 @@ so is every client.
   kind this endpoint needs". `401` = bad/missing token. `404` = unknown route
   or image. Clients should not assume bodies stay empty forever — a JSON
   `{"error": ...}` body may be added pre-1.0.
+- **A bare deck name that occurs in more than one container is a 400**
+  (ambiguous) — use the qualified `<workspace>/<file>` key instead, which
+  always resolves.
 - **The polling pattern** (ask, exam, augment, walk auto-grade): a POST kicks a
   background thread and returns immediately with `thinking`/`busy` true; poll
   the matching GET until it clears, then read `error` or the results. alix's

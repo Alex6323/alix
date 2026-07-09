@@ -2062,31 +2062,22 @@ pub fn run_review(
                 struct Body {
                     deck: String,
                 }
-                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
-                // Rows resolve to their deck files: a workspace/folder row to
-                // its members, a deck row to itself.
-                let mut groups: HashMap<String, Vec<PathBuf>> = HashMap::new();
-                for e in picker::catalog(&decks_dir, &recent) {
-                    let member_paths: Vec<PathBuf> =
-                        e.members.iter().map(|m| m.path.clone()).collect();
-                    for m in &e.members {
-                        groups.insert(m.name.clone(), vec![m.path.clone()]);
-                    }
-                    groups.insert(
-                        e.name,
-                        if member_paths.is_empty() {
-                            vec![e.path]
-                        } else {
-                            member_paths
-                        },
-                    );
-                }
-                let Some((name, paths)) =
-                    body.and_then(|b| groups.get(&b.deck).cloned().map(|p| (b.deck, p)))
+                let Some(body) = serde_json::from_reader::<_, Body>(request.as_reader()).ok()
                 else {
                     respond_status(request, 400);
                     continue;
                 };
+                // Rows resolve to their deck files: a workspace/folder row to
+                // its members, a deck row to itself.
+                let paths = match resolve_row(&body.deck, &decks_dir, &recent) {
+                    Resolved::One(p) => vec![p],
+                    Resolved::Many(members) => members,
+                    Resolved::Ambiguous | Resolved::Unknown => {
+                        respond_status(request, 400);
+                        continue;
+                    }
+                };
+                let name = body.deck;
                 let decks: Vec<Deck> = match paths.iter().map(Deck::load).collect() {
                     Ok(d) => d,
                     Err(_) => {
@@ -2274,17 +2265,7 @@ pub fn run_review(
                 let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
                 let path = match body.and_then(|b| b.deck) {
                     None => Some(decks_dir.clone()),
-                    Some(name) => {
-                        // The single resolve-map idiom (see /api/augment/open).
-                        let mut known: HashMap<String, PathBuf> = HashMap::new();
-                        for e in picker::catalog(&decks_dir, &recent) {
-                            for m in &e.members {
-                                known.insert(m.name.clone(), m.path.clone());
-                            }
-                            known.insert(e.name, e.path);
-                        }
-                        resolve_name(&name, &known)
-                    }
+                    Some(name) => resolved_path(resolve_row(&name, &decks_dir, &recent)),
                 };
                 let Some(path) = path else {
                     respond_status(request, 400);
@@ -2345,16 +2326,7 @@ pub fn run_review(
                 let name = query_param(request.url(), "deck");
                 let path = match &name {
                     None => Some(decks_dir.clone()),
-                    Some(n) => {
-                        let mut known: HashMap<String, PathBuf> = HashMap::new();
-                        for e in picker::catalog(&decks_dir, &recent) {
-                            for m in &e.members {
-                                known.insert(m.name.clone(), m.path.clone());
-                            }
-                            known.insert(e.name, e.path);
-                        }
-                        resolve_name(n, &known)
-                    }
+                    Some(n) => resolved_path(resolve_row(n, &decks_dir, &recent)),
                 };
                 let Some(path) = path else {
                     respond_status(request, 400);
@@ -2891,20 +2863,16 @@ pub fn run_review(
                 struct Body {
                     deck: String,
                 }
-                let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
-                let mut known: HashMap<String, PathBuf> = HashMap::new();
-                for e in picker::catalog(&decks_dir, &recent) {
-                    for m in &e.members {
-                        known.insert(m.name.clone(), m.path.clone());
-                    }
-                    known.insert(e.name, e.path);
-                }
-                let Some((name, path)) =
-                    body.and_then(|b| known.get(&b.deck).cloned().map(|p| (b.deck, p)))
+                let Some(body) = serde_json::from_reader::<_, Body>(request.as_reader()).ok()
                 else {
                     respond_status(request, 400);
                     continue;
                 };
+                let Some(path) = resolved_path(resolve_row(&body.deck, &decks_dir, &recent)) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                let name = body.deck;
                 // The cache lives beside the deck's own store (a workspace's, or the
                 // global one), mirroring how review reads it.
                 if let Ok(s) = store_for(std::slice::from_ref(&path)) {
@@ -4091,19 +4059,15 @@ fn read_selection(
     if body.deck.is_empty() {
         return None;
     }
-    // The resolution map includes top-level decks/workspaces and every
-    // workspace's members (by their qualified `<workspace>/<file>` key), so a
-    // member selection from inside a workspace resolves safely too. An unknown or
-    // crafted name maps to nothing, so it's rejected rather than hitting the disk.
-    let mut known: HashMap<String, PathBuf> = HashMap::new();
-    for e in picker::catalog(decks_dir, recent) {
-        for m in &e.members {
-            known.insert(m.name.clone(), m.path.clone());
-        }
-        known.insert(e.name, e.path);
-    }
+    // Covers top-level decks/workspaces and every workspace's members (by
+    // their qualified `<workspace>/<file>` key), so a member selection from
+    // inside a workspace resolves safely too. Unknown, crafted, and ambiguous
+    // (duplicated bare) names all resolve to nothing here — `/api/select`
+    // and `/api/browse` already answer 400 on `None`; `/api/deck-topology`
+    // falls back to an empty DTO.
+    let deck = resolved_path(resolve_row(&body.deck, decks_dir, recent))?;
     Some(Selection {
-        deck: resolve_name(&body.deck, &known)?,
+        deck,
         opts: SelectOptions {
             topology: body.topology,
             region: body.region,
@@ -4115,26 +4079,83 @@ fn read_selection(
     })
 }
 
-/// Maps a requested deck name to its catalog path, or `None` if it isn't known —
-/// so an unknown or crafted name (e.g. a traversal attempt) is rejected rather
-/// than reaching the filesystem.
-fn resolve_name(name: &str, known: &HashMap<String, PathBuf>) -> Option<PathBuf> {
-    known.get(name).cloned()
+/// One resolution map for every name-taking endpoint. Bare names that occur
+/// more than once (two containers holding decks with the same file name)
+/// resolve to `Ambiguous` — callers answer 400 and the client uses the
+/// qualified `<workspace>/<file>` key instead; silently picking one of two
+/// same-named decks was wrong everywhere and dangerous behind `/api/reset`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Resolved {
+    One(PathBuf),
+    /// Row's member deck files (a workspace/folder row), for `/api/reset`.
+    Many(Vec<PathBuf>),
+    Ambiguous,
+    Unknown,
+}
+
+/// Resolves a requested name against the live catalog — the one lookup every
+/// name-taking endpoint shares. Qualified member keys (`<workspace>/<file>`)
+/// and bare top-level row keys never collide (a filename can't contain `/`),
+/// so a bare-name collision can only happen among top-level rows; a member's
+/// qualified key always resolves regardless. A bare row name seen more than
+/// once flips that key to `Ambiguous` for the rest of this call — no name
+/// ever silently picks one of several same-named rows.
+fn resolve_row(name: &str, decks_dir: &Path, recent: &RecentDecks) -> Resolved {
+    let mut known: HashMap<String, Resolved> = HashMap::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    for e in picker::catalog(decks_dir, recent) {
+        for m in &e.members {
+            known.insert(m.name.clone(), Resolved::One(m.path.clone()));
+        }
+        let row = if e.members.is_empty() {
+            Resolved::One(e.path)
+        } else {
+            Resolved::Many(e.members.iter().map(|m| m.path.clone()).collect())
+        };
+        if seen.insert(e.name.clone()) {
+            known.insert(e.name, row);
+        } else {
+            known.insert(e.name, Resolved::Ambiguous);
+        }
+    }
+    known.get(name).cloned().unwrap_or(Resolved::Unknown)
+}
+
+/// Collapses a [`Resolved`] to the single path `read_selection`/augment/share/
+/// share-zip need: a plain deck's own file, or — for a workspace/folder row —
+/// its directory, matching what these call sites did before `resolve_row`
+/// existed (they used the row's own path rather than expanding to members;
+/// `/api/reset` is the one caller that wants the member list, so it matches on
+/// `Resolved` directly instead of going through this). Members are always one
+/// level inside their row's directory (`workspace::members`), so any member's
+/// parent recovers that directory.
+fn resolved_path(resolved: Resolved) -> Option<PathBuf> {
+    match resolved {
+        Resolved::One(p) => Some(p),
+        Resolved::Many(members) => members.first().and_then(|m| m.parent()).map(PathBuf::from),
+        Resolved::Ambiguous | Resolved::Unknown => None,
+    }
 }
 
 /// Resolves an add-sheet destination: absent/empty → the served root; a name
 /// → a workspace/folder row's directory, looked up through the same catalog
-/// map `/api/select` uses (never a client-crafted path). `None` = unknown
-/// name — the caller rejects with 400. Tasks 9 and 11 (`generate`, `receive`)
-/// reuse this.
+/// `/api/select` uses (never a client-crafted path). `None` = unknown name, or
+/// a name duplicated across containers (same rejection `resolve_row` applies
+/// to bare names — dest names are top-level-only, so `catalog` can surface the
+/// same duplication) — the caller rejects with 400. Tasks 9 and 11 (`generate`,
+/// `receive`) reuse this.
 fn resolve_dest(dest: Option<&str>, decks_dir: &Path, recent: &RecentDecks) -> Option<PathBuf> {
     let Some(name) = dest.filter(|d| !d.is_empty()) else {
         return Some(decks_dir.to_path_buf());
     };
-    picker::catalog(decks_dir, recent)
+    let mut matches = picker::catalog(decks_dir, recent)
         .into_iter()
-        .find(|e| e.name == name && e.path.is_dir())
-        .map(|e| e.path)
+        .filter(|e| e.name == name && e.path.is_dir());
+    let first = matches.next()?;
+    if matches.next().is_some() {
+        return None; // ambiguous: more than one dir row shares this name
+    }
+    Some(first.path)
 }
 
 /// Builds the focus-drawer payload for a `deck`: its own stored topologies (the
@@ -4603,16 +4624,96 @@ mod tests {
     }
 
     #[test]
-    fn resolve_name_rejects_unknown_deck() {
-        let mut known = HashMap::new();
-        known.insert("a.txt".to_string(), PathBuf::from("/decks/a.txt"));
-        // A known name resolves to its catalog path.
+    fn resolve_row_resolves_a_unique_bare_deck_name() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("solo.txt"), "# f\n\tb\n").unwrap();
+        let recent = RecentDecks::load(dir.path().join("recent.json"));
+
         assert_eq!(
-            resolve_name("a.txt", &known),
-            Some(PathBuf::from("/decks/a.txt"))
+            Resolved::One(dir.path().join("solo.txt")),
+            resolve_row("solo.txt", dir.path(), &recent)
         );
-        // An unknown name (e.g. a traversal attempt) resolves to nothing.
-        assert_eq!(resolve_name("../etc/passwd", &known), None);
+    }
+
+    #[test]
+    fn resolve_row_resolves_an_unknown_name_to_unknown() {
+        let dir = tempfile::tempdir().unwrap();
+        let recent = RecentDecks::load(dir.path().join("recent.json"));
+
+        assert_eq!(
+            Resolved::Unknown,
+            resolve_row("../etc/passwd", dir.path(), &recent)
+        );
+    }
+
+    #[test]
+    fn resolve_row_resolves_a_workspace_row_to_many_with_every_member_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path().join("english");
+        std::fs::create_dir(&ws).unwrap();
+        std::fs::write(ws.join("a.txt"), "# a\n\tb\n").unwrap();
+        std::fs::write(ws.join("b.txt"), "# c\n\td\n").unwrap();
+        std::fs::write(ws.join(crate::workspace::MANIFEST), "title = \"English\"\n").unwrap();
+        let recent = RecentDecks::load(dir.path().join("recent.json"));
+
+        assert_eq!(
+            Resolved::Many(vec![ws.join("a.txt"), ws.join("b.txt")]),
+            resolve_row("english", dir.path(), &recent)
+        );
+    }
+
+    #[test]
+    fn resolve_row_rejects_a_bare_name_duplicated_across_two_containers() {
+        // Two real `a.txt` decks that share a bare name but live in different
+        // containers: one under `decks_dir`, the other reached only via
+        // `recent` (so the catalog surfaces both under the same key "a.txt").
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "# f\n\tb\n").unwrap();
+        let elsewhere = tempfile::tempdir().unwrap();
+        std::fs::write(elsewhere.path().join("a.txt"), "# g\n\th\n").unwrap();
+        let mut recent = RecentDecks::load(dir.path().join("recent.json"));
+        recent.record(&[elsewhere.path().join("a.txt")], 1000);
+
+        assert_eq!(
+            Resolved::Ambiguous,
+            resolve_row("a.txt", dir.path(), &recent)
+        );
+    }
+
+    #[test]
+    fn resolve_row_resolves_a_qualified_member_name_even_when_its_bare_workspace_name_is_duplicated()
+     {
+        // "english" collides across two containers (ambiguous bare name), but
+        // the qualified member key "english/a.txt" is unaffected — qualified
+        // and bare names are disjoint namespaces (a filename can't contain
+        // `/`), so the collision on one never bleeds into the other.
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path().join("english");
+        std::fs::create_dir(&ws).unwrap();
+        std::fs::write(ws.join("a.txt"), "# a\n\tb\n").unwrap();
+        std::fs::write(ws.join(crate::workspace::MANIFEST), "title = \"English\"\n").unwrap();
+
+        let other_ws = tempfile::tempdir().unwrap();
+        let other_english = other_ws.path().join("english");
+        std::fs::create_dir(&other_english).unwrap();
+        std::fs::write(other_english.join("z.txt"), "# z\n\ty\n").unwrap();
+        std::fs::write(
+            other_english.join(crate::workspace::MANIFEST),
+            "title = \"Other English\"\n",
+        )
+        .unwrap();
+
+        let mut recent = RecentDecks::load(dir.path().join("recent.json"));
+        recent.record(&[other_english], 1000);
+
+        assert_eq!(
+            Resolved::Ambiguous,
+            resolve_row("english", dir.path(), &recent)
+        );
+        assert_eq!(
+            Resolved::One(ws.join("a.txt")),
+            resolve_row("english/a.txt", dir.path(), &recent)
+        );
     }
 
     #[test]
@@ -4643,6 +4744,27 @@ mod tests {
             None
         );
         assert_eq!(resolve_dest(Some("../etc"), dir.path(), &recent), None);
+    }
+
+    #[test]
+    fn resolve_dest_rejects_a_dir_name_duplicated_across_two_containers() {
+        // Same class of collision `resolve_row` rejects for bare deck names:
+        // `resolve_dest` also scans top-level catalog rows, so a workspace
+        // reached via `recent` can share a name with one physically inside
+        // `decks_dir` — silently picking either would be the same class of
+        // bug this task closes for names.
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path().join("english");
+        std::fs::create_dir(&ws).unwrap();
+        std::fs::write(ws.join("a.txt"), "# a\n\tb\n").unwrap();
+        let elsewhere = tempfile::tempdir().unwrap();
+        let other_english = elsewhere.path().join("english");
+        std::fs::create_dir(&other_english).unwrap();
+        std::fs::write(other_english.join("z.txt"), "# z\n\ty\n").unwrap();
+        let mut recent = RecentDecks::load(dir.path().join("recent.json"));
+        recent.record(&[other_english], 1000);
+
+        assert_eq!(resolve_dest(Some("english"), dir.path(), &recent), None);
     }
 
     #[test]
