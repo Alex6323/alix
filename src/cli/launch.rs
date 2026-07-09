@@ -494,7 +494,9 @@ pub(crate) fn launch(args: LaunchArgs) -> Result<()> {
     let addr = serve_addr(args.port, args.lan, &config);
     // Bind before announcing, so a taken port errors instead of printing a
     // success-looking URL first (likely with several instances running).
-    let server = serve::bind(addr)?;
+    // Shared so `run_review` can be stopped from outside its own thread (see
+    // its doc); the CLI never stops it — the process exits on Ctrl-C instead.
+    let server = Arc::new(serve::bind(addr)?);
     // The instance-wide session pacing: flag > `[review]` config > default.
     let pacing = Pacing {
         max_new: args.new.or(config.review.max_new).unwrap_or(10),

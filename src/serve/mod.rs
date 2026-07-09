@@ -23,6 +23,7 @@ use std::{
     collections::HashMap,
     net::SocketAddr,
     path::{Path, PathBuf},
+    sync::Arc,
     time::Instant,
 };
 
@@ -182,13 +183,6 @@ pub struct CardsBuild {
     pub decks: HashMap<String, PathBuf>,
 }
 
-/// Serves review on the already-bound `server` until the process is stopped
-/// (binding happens at the call site, *before* the URL is announced — so a
-/// port clash errors before any success-looking output), opening on the
-/// in-browser deck-selection screen; picking decks (`POST /api/select`)
-/// calls `build` to construct a session in place.
-/// `build` borrows the shared `store` and `recent`, so all sessions write one
-/// history and update the recent-decks list, exactly like the CLI.
 /// Binds the server socket — separated from [`run_review`] so a port clash
 /// errors before the caller announces a URL, and with the multi-instance
 /// remedy in the message.
@@ -200,12 +194,28 @@ pub fn bind(addr: SocketAddr) -> Result<Server> {
     })
 }
 
+/// Serves review on the already-bound `server` until the process is stopped
+/// (binding happens at the call site, *before* the URL is announced — so a
+/// port clash errors before any success-looking output), opening on the
+/// in-browser deck-selection screen; picking decks (`POST /api/select`)
+/// calls `build` to construct a session in place.
+/// `build` borrows the shared `store` and `recent`, so all sessions write one
+/// history and update the recent-decks list, exactly like the CLI.
+///
+/// `server` is shared (`Arc`) so a caller can stop the loop from outside it:
+/// call `.unblock()` on a clone of the same `Arc<Server>` to end
+/// `incoming_requests()` — tiny_http queues that as a one-shot stop signal
+/// rather than polling a flag, so it is race-free even if the loop is mid-request
+/// when called. Production (`launch.rs`) never calls it — the process just
+/// exits on Ctrl-C — but `tests/api.rs`'s round-trip harness uses it to run this
+/// real loop against a temp store + fixture deck and tear it down deterministically
+/// after each test.
 #[expect(clippy::too_many_arguments)] // each is a distinct, named server input
 pub fn run_review(
     mut store: Store,
     mut recent: RecentDecks,
     mut decks_dir: PathBuf,
-    server: Server,
+    server: Arc<Server>,
     opts: ReviewOptions,
     mut build: impl FnMut(
         Vec<PathBuf>,
