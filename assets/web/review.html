@@ -120,7 +120,7 @@
   .stack {
     position: relative; width: min(94vw, 720px);
     max-height: 100%; min-height: 0; display: flex; flex-direction: column;
-    animation: cardIn 0.17s ease both;
+    animation: cardIn 0.22s cubic-bezier(.2, .7, .3, 1) both;
   }
   @keyframes deal { from { opacity: 0; transform: translateY(12px) scale(0.985); } to { opacity: 1; transform: none; } }
   @keyframes cardIn { from { opacity: 0; } to { opacity: 1; } }   /* card-switch crossfade */
@@ -199,13 +199,16 @@
      you are; bar color (red→green) = how solid each card in the area is. Clips
      rather than wraps to stay a thin strip. */
   .crumb { display: flex; align-items: flex-start; gap: 14px; flex-wrap: nowrap;
-           overflow: hidden; margin-bottom: 0.55rem; }
+           overflow: hidden; max-width: 100%; }
   .crumb-region { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
   .crumb-name { font-size: 0.74rem; letter-spacing: 0.02em; color: var(--ink);
                 white-space: nowrap; opacity: 0.5; }
   .crumb-region.cur .crumb-name { opacity: 1; font-weight: 600; }
   .crumb-bar { display: flex; gap: 1px; height: 3px; border-radius: 2px; overflow: hidden; }
   .crumb-cell { flex: 1 1 0; min-width: 3px; }
+  /* The orientation breadcrumb is pinned just below the header hairline, centered. */
+  .crumb-strip { display: flex; justify-content: center; flex: none; padding: 14px 24px 2px; }
+  .crumb-strip:empty { display: none; }
   /* The picker's focus drawer: opens under a selected deck that has a topology.
      Pick the ordering (a topology) and, optionally, one region to drill — the
      heatmap shows where each region is weak (red) or learned (green), and the
@@ -399,9 +402,12 @@
 
   /* ── legend: compact, tappable, doubles as the keymap ─────────────── */
   .legend { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; min-height: 74px; padding: 13px 22px calc(13px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
-  /* chips centered on the viewport (= card) centerline; score pinned right */
+  /* three zones: Leave pinned left, action/grade chips centered, Ask tutor (or a readout) right */
   .legend .keys { grid-column: 2; display: flex; gap: 8px; justify-content: center; align-items: center; flex-wrap: wrap; }
-  .legend .score { grid-column: 3; justify-self: end; font-family: var(--mono); font-size: 0.82rem; color: var(--dim); font-variant-numeric: tabular-nums; }
+  .legend-side { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  #legendLeft { grid-column: 1; justify-self: start; }
+  #legendRight { grid-column: 3; justify-self: end; }
+  .legend .score { font-family: var(--mono); font-size: 0.82rem; color: var(--dim); font-variant-numeric: tabular-nums; }
   .legend .score b { color: var(--good); font-weight: 600; }
   .legend .score s { color: var(--again); text-decoration: none; font-weight: 600; }
   .legend .score .left { color: var(--ink); margin-left: 8px; }
@@ -512,6 +518,7 @@
   .exam-elapsed { color: var(--dim); font-size: 0.8rem; }
   .exam-elapsed .dot { display: inline-block; width: 7px; height: 7px; margin-right: 7px; border-radius: 50%; background: var(--bolt); animation: pulse 1.1s ease-in-out infinite; }
   @keyframes pulse { 0%, 100% { opacity: 0.3; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1.1); } }
+  @keyframes dotFade { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }  /* reduced-motion: opacity pulse, no scale */
   .exam-error { border: 1px solid var(--again); border-left-width: 3px; border-radius: 10px; padding: 9px 12px; color: var(--again); font-size: 0.88rem; background: color-mix(in srgb, var(--again) 8%, transparent); }
   /* the "QUESTION n / N" progress line reads as a cyan mono eyebrow (matches the walk's checkpoint eyebrow). */
   .exam-progress { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--bolt); }
@@ -566,7 +573,11 @@
   .aug-cost { color: var(--dim); font-size: 0.74rem; }
 
   @media (prefers-reduced-motion: reduce) {
-    .stack, .summary, .reveal, .exam-elapsed .dot { animation: none; }
+    /* Reduce, not remove: keep the soft opacity fade for everyone; drop only the
+       movement (rise/scale). The transition still "kicks in", just without motion.
+       .stack is already opacity-only (cardIn), so it needs no override here. */
+    .reveal, .summary, .select, .ask, .exam, .aug, .sheet-panel { animation-name: cardIn; }
+    .exam-elapsed .dot { animation-name: dotFade; }
   }
 
   /* ── trace-walk (in-page mode) ──────────────────────────────────────
@@ -669,13 +680,15 @@
       </span>
     </div>
   </div>
+  <div id="crumbStrip" class="crumb-strip"></div>
   <main class="stage" id="stage"></main>
   <div class="sheet" id="sheet" hidden>
     <div class="sheet-panel" id="sheetPanel" role="dialog" aria-modal="true"></div>
   </div>
   <div class="legend">
+    <div class="legend-side" id="legendLeft"></div>
     <div class="keys" id="legend"></div>
-    <span class="score" id="score"></span>
+    <div class="legend-side end" id="legendRight"><span class="score" id="score"></span></div>
   </div>
 
 <script>
@@ -772,10 +785,13 @@ let PK = {};          // configured deck-picker nav keys, from /api/picker-keys
 let BK = { next: [{ k: "l", ctrl: false }], prev: [{ k: "h", ctrl: false }] }; // browse pager keys, from /api/browse-keys
 
 const stage = document.getElementById("stage");
+const crumbStrip = document.getElementById("crumbStrip");
 const legend = document.getElementById("legend");
 const deckEl = document.getElementById("deck");
 const histEl = document.getElementById("hist");
 const scoreEl = document.getElementById("score");
+const legendLeft = document.getElementById("legendLeft");
+const legendRight = document.getElementById("legendRight");
 const menuWrap = document.getElementById("menuWrap");
 const barFilter = document.getElementById("barFilter");
 const masteredBtn = document.getElementById("masteredBtn");
@@ -1003,7 +1019,9 @@ function startDuePoll() {
 function render() {
   stopDuePoll();
   stage.innerHTML = "";
+  crumbStrip.innerHTML = "";
   legend.innerHTML = "";
+  clearLegendSides();
   menu.classList.remove("open");
 
   if (examData) { renderExam(); return; }
@@ -1015,7 +1033,7 @@ function render() {
   headerBreadcrumb();
   deckEl.textContent = state.label;
   histEl.textContent = ""; // no per-review readout in the header — it's noise
-  scoreEl.innerHTML = `<b>${state.passed}✓</b> <s>${state.failed}✗</s><span class="left">${state.remaining}↓</span>`;
+  scoreEl.innerHTML = ""; // the per-review score readout is intentionally omitted (noise)
   menuWrap.style.display = state.phase === "done" ? "none" : "";
   setMenuContext("review");
 
@@ -2236,7 +2254,8 @@ function renderCard() {
   card.insertBefore(el("span", "mode-tag", modeLabel()), card.firstChild);
 
   // question region
-  // Orientation breadcrumb: each region is its name (bold = where you are) over a
+  // Orientation breadcrumb — rendered into the #crumbStrip pinned just below the
+  // header hairline, centered: each region is its name (bold = where you are) over a
   // thin per-card heatmap bar — every card a cell, red (weak) → green (strong),
   // so the line doubles as a progress map that greens up as a region is learned.
   if (c.crumb && c.crumb.regions.length) {
@@ -2255,7 +2274,7 @@ function renderCard() {
       reg.appendChild(bar);
       bc.appendChild(reg);
     }
-    q.appendChild(bc);
+    crumbStrip.appendChild(bc);
   }
   q.appendChild(el("div", "front-text", c.front));
   for (const ctx of c.context) q.appendChild(contextLine(ctx));
@@ -2842,16 +2861,18 @@ function renderNote(parent, units) {
 
 function renderLegend() {
   legend.innerHTML = "";
+  clearLegendSides();
   if (feedback) {
     if (isAcquire()) {
       chip("Seen", "primary", acquire, label(KEYS.reveal)); // a pick acknowledges, never grades
     } else if (isRecognizeMc()) {
       if (feedback.passed) {
-        // A correct Recognize pick: Next commits it; the quiet override lets
-        // an honest guess demote itself instead (both map to /api/grade —
-        // never an auto-continue, so the learner always has the last word).
+        // A correct Recognize pick: Next commits it; the quiet "I guessed"
+        // override (also bound to the failed key) lets an honest guess demote
+        // itself instead — both map to /api/grade, never an auto-continue, so
+        // the learner always has the last word.
         chip("Next", "primary", () => grade("passed"), label(KEYS.reveal));
-        chip("I guessed", "quiet", () => grade("failed"), "");
+        chip("I guessed", "quiet", () => grade("failed"), label(KEYS.failed));
       } else {
         // A wrong pick: the correct option is already highlighted on screen
         // (renderChoiceFeedback) — Continue is the only action, and it grades
@@ -2864,7 +2885,7 @@ function renderLegend() {
       chip("Missed it", "failed", () => grade("failed"), label(KEYS.failed));
       chip("Partly", "partly", () => grade("partly"), label(KEYS.partly));
       chip("Got it", "passed", () => grade("passed"), label(KEYS.passed));
-      chip("Ask", "ask", openAsk, label(KEYS.ask));
+      chip("Ask tutor", "ask", openAsk, label(KEYS.ask), legendRight);
     }
   } else if (isAcquire()) {
     if (effectiveDraw()) {
@@ -2911,19 +2932,19 @@ function renderLegend() {
       const answered = marks.filter(m => m !== undefined).length;
       chip(`Done ${answered}/${state.keypoints.length}`, "primary", submitKeypoints, "enter").disabled = true;
     }
-    chip("Ask", "ask", openAsk, label(KEYS.ask));
+    chip("Ask tutor", "ask", openAsk, label(KEYS.ask), legendRight);
   } else if (isRecognizeFallback()) {
     // No MC could be built (too few distractors): attempt→reveal, boolean call.
     chip("Knew it", "passed", () => grade("passed"), label(KEYS.passed));
     chip("Not yet", "failed", () => grade("failed"), label(KEYS.failed));
-    chip("Ask", "ask", openAsk, label(KEYS.ask));
+    chip("Ask tutor", "ask", openAsk, label(KEYS.ask), legendRight);
   } else {
     chip("Missed it", "failed", () => grade("failed"), label(KEYS.failed));
     chip("Partly", "partly", () => grade("partly"), label(KEYS.partly));
     chip("Got it", "passed", () => grade("passed"), label(KEYS.passed));
-    chip("Ask", "ask", openAsk, label(KEYS.ask));
+    chip("Ask tutor", "ask", openAsk, label(KEYS.ask), legendRight);
   }
-  chip("Leave", "", leaveSession, "esc"); // return to the deck picker
+  chip("Leave", "", leaveSession, "esc", legendLeft); // pinned bottom-left; return to the deck picker
 }
 
 function renderSummary() {
@@ -3168,12 +3189,19 @@ function renderWalkDone() {
   chip("Walk again", "", walkRestart, "");
 }
 
-function chip(text, cls, onClick, key) {
+function chip(text, cls, onClick, key, into) {
   const b = el("button", "chip" + (cls ? " " + cls : ""), text);
   if (key) b.appendChild(el("span", "k", key));
   b.addEventListener("click", onClick);
-  legend.appendChild(b);
+  (into || legend).appendChild(b);
   return b;
+}
+
+// The footer's left (Leave) and right (Ask tutor) zones. Cleared each render;
+// the right zone keeps its #score span, which screens set directly.
+function clearLegendSides() {
+  legendLeft.innerHTML = "";
+  legendRight.querySelectorAll(".chip").forEach(c => c.remove());
 }
 
 document.addEventListener("keydown", (e) => {
@@ -3311,10 +3339,11 @@ document.addEventListener("keydown", (e) => {
     if (hit(e, KEYS.ask)) { e.preventDefault(); openAsk(); return; }
     if (hit(e, KEYS.remove)) { e.preventDefault(); remove(); return; }
     if (isRecognizeMc()) {
-      // Correct pick: reveal/Enter takes the primary "Next" (passed); the
-      // quiet "I guessed" override is mouse/tap-only, by design. Wrong pick:
-      // reveal/Enter is "Continue", which just grades the miss — there's no
-      // guess to walk back on a pick that was already wrong.
+      // Correct pick: reveal/Enter takes the primary "Next" (passed), and the
+      // failed key is the quiet "I guessed" override (demote to failed). Wrong
+      // pick: reveal/Enter is "Continue", which just grades the miss — there's
+      // no guess to walk back on a pick that was already wrong.
+      if (feedback.passed && hit(e, KEYS.failed)) { e.preventDefault(); grade("failed"); return; }
       if (hit(e, KEYS.reveal) || e.key === "Enter") { e.preventDefault(); grade(feedback.passed ? "passed" : "failed"); }
       return;
     }
