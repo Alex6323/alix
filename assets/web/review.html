@@ -26,8 +26,9 @@
 
   /* ── status bar: the terminal lineage, in monospace ───────────────── */
   .bar {
-    padding: 10px 16px; font-family: var(--mono); font-size: 0.78rem;
-    color: var(--dim); border-bottom: 1px solid var(--line); background: rgba(6,18,26,0.6);
+    height: 58px; display: flex; align-items: center;
+    padding: 0 24px; font-family: var(--mono); font-size: 0.78rem;
+    color: var(--dim); border-bottom: 1px solid var(--line);
   }
   .bar-inner { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 14px; width: 100%; }
   .bar-center { justify-self: center; min-width: 0; display: flex; align-items: center; }
@@ -38,7 +39,7 @@
   .bar .brand svg { width: 13px; height: 16px; filter: drop-shadow(0 0 5px rgba(34,211,238,0.6)); }
   /* A long (hand-crafted) title must shorten with an ellipsis — never wrap to a
      second line and grow the header's height. */
-  .bar .deck { color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; max-width: min(52vw, 420px); }
+  .bar .deck { color: var(--dim); font-weight: 500; font-size: 0.875rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; max-width: min(52vw, 420px); }
   .bar .sep { color: var(--line); }
   .bar .spacer { flex: 1; }
   /* Reused readout: exam strictness while examining, the deck's card count
@@ -100,28 +101,29 @@
   .sheet-hint { color: var(--dim); font-size: 0.9rem; }
 
   /* ── stage + card ─────────────────────────────────────────────────── */
-  .stage { flex: 1; display: grid; place-items: center; padding: 22px 16px; min-height: 0; }
+  .stage { flex: 1; display: grid; place-items: center; padding: 28px 24px; min-height: 0; }
+  /* the review card is a borderless, centered column (~720px) — no card box,
+     no stacked-pile peek behind it; content flows and the answer region scrolls
+     inside (see .region.a). */
   .stack {
-    position: relative; width: var(--card-w);
-    animation: deal 0.3s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+    position: relative; width: min(94vw, 720px);
+    max-height: 100%; min-height: 0; display: flex; flex-direction: column;
+    animation: cardIn 0.17s ease both;
   }
   @keyframes deal { from { opacity: 0; transform: translateY(12px) scale(0.985); } to { opacity: 1; transform: none; } }
-  .peek { position: absolute; inset: 0; border-radius: 20px; background: var(--panel-bot); border: 1px solid var(--line); }
-  .peek.p1 { transform: translate(7px, -7px); opacity: 0.7; }
-  .peek.p2 { transform: translate(14px, -14px); opacity: 0.4; }
-  .stack[data-pile="1"] .peek { display: none; }
-  .stack[data-pile="2"] .peek.p2 { display: none; }
+  @keyframes cardIn { from { opacity: 0; } to { opacity: 1; } }   /* card-switch crossfade */
+  .peek { display: none; }   /* the borderless card carries no pile behind it */
 
-  /* fixed-size card, split into a question half and an answer half by the
-     separator; each half centers its own content */
+  /* borderless card, split into a question half and an answer half by the
+     separator (each half centers its own content). No frame, gradient, or
+     shadow — but a definite height keeps the region caps (%) resolving, so a
+     long answer scrolls inside its own region (.region.a) rather than the page. */
   .card {
-    position: relative; height: var(--card-h); border-radius: 20px;
-    background: linear-gradient(160deg, var(--panel-top), var(--panel-bot));
-    border: 1px solid var(--line); box-shadow: 0 18px 50px -20px rgba(0,0,0,0.8);
-    padding: 18px 30px; overflow: hidden;
+    position: relative; height: var(--card-h);
+    background: transparent; border: none; box-shadow: none;
+    padding: 2px 4px; overflow: hidden;
     display: flex; flex-direction: column;
   }
-  .card::after { content: ""; position: absolute; inset: 12px; border-radius: 12px; border: 1px solid rgba(125,249,232,0.10); pointer-events: none; }
   /* the card stacks content-sized regions from the top: the answer sits right
      under the question and grows downward, so revealing (incl. line-by-line)
      and showing the note never shift anything. Each region is capped and
@@ -156,9 +158,6 @@
      clustering under the question; when it overflows it top-aligns and scrolls, so
      long answers still use the whole card. The class is set by updateFade. */
   .region.a { flex: 1 1 auto; max-height: 82%; position: relative; }
-  /* The mode badge is pinned just below the divider, out of the centred flow (see
-     .mode-tag), so a short "balanced" answer no longer drags it down; reserve its row. */
-  .region.a:has(.mode-tag) { padding-top: 34px; }
   .region.a.withnote { max-height: 52%; }
   .region.a.balanced { justify-content: center; }
   .region.a.filled { justify-content: flex-start; }
@@ -182,7 +181,7 @@
   .exline .lno { color: var(--dim); text-align: right; min-width: 3ch; user-select: none; }
   .exline .ltx { color: var(--ink); }
   .excerpt-more { color: var(--dim); font-size: 0.72rem; padding-left: 6px; margin-top: 4px; }
-  .front-text { font-size: clamp(1.4rem, 4.4vw, 2.05rem); font-weight: 600; line-height: 1.28; letter-spacing: -0.01em; }
+  .front-text { font-size: clamp(1.35rem, 3.6vw, 1.7rem); font-weight: 600; line-height: 1.4; letter-spacing: -0.01em; color: var(--ink); }
   /* The topological orientation breadcrumb: each region is its name over a thin
      per-card heatmap bar. Two channels, kept apart: name weight/opacity = where
      you are; bar color (red→green) = how solid each card in the area is. Clips
@@ -239,35 +238,39 @@
 
   .divider { flex: none; height: 1px; width: 70%; margin: 0 auto; background: linear-gradient(90deg, transparent, var(--line) 18%, var(--line) 82%, transparent); }
 
-  .reveal { animation: revealIn 0.26s ease both; }
+  .reveal { animation: revealIn 0.24s cubic-bezier(.2,.7,.3,1) both; }
   /* A reshaped list — or any multi-line answer — reveals as a left-aligned block, centered as a whole. */
   .reveal.list { text-align: left; width: max-content; max-width: 100%; margin-inline: auto; }
   /* A fenced code snippet in a reshaped answer: monospace, indentation kept. */
   .code-block { text-align: left; font: 0.86rem/1.5 var(--mono); color: var(--ink); background: rgba(0,0,0,0.28); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; margin: 5px 0; overflow-x: auto; white-space: pre; }
   @keyframes revealIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-  .answer { color: var(--good); font-size: clamp(1.15rem, 3.6vw, 1.5rem); line-height: 1.4; margin: 0 0 4px; white-space: pre-wrap; }
+  /* revealed answer: neutral ink in Plex Mono (green is reserved for a genuinely
+     correct check — a passed typed line, a correct option, a ✓ key point). */
+  .answer { color: var(--ink); font-family: var(--mono); font-weight: 500; font-size: clamp(1.02rem, 2.9vw, 1.22rem); line-height: 1.5; margin: 0 0 4px; white-space: pre-wrap; }
+  .answer.pass { color: var(--good); }
   .answer.pending { color: var(--dim); }
   .acquire-hint { color: var(--dim); font-size: 0.85rem; margin-top: 12px; font-style: italic; }
   /* a wrong typed line recedes (dim + small) so the correct answer leads */
   .answer.miss { color: var(--again); opacity: 0.5; font-size: clamp(0.92rem, 2.6vw, 1.08rem); }
   .answer .mark { margin-left: 10px; font-weight: 700; }   /* ✓ / ✗ after the line */
-  .expected { color: var(--good); font-size: clamp(1.15rem, 3.6vw, 1.5rem); line-height: 1.4; margin: 2px 0 8px; }
+  .expected { color: var(--good); font-family: var(--mono); font-size: clamp(1.02rem, 2.9vw, 1.22rem); line-height: 1.5; margin: 2px 0 8px; }
 
   /* typing / typeline input fields */
   .inputs { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 520px; margin: 0 auto; }
   .field {
     width: 100%; background: rgba(255,255,255,0.04); border: 1px solid var(--line);
     border-radius: 12px; padding: 13px 16px; min-height: 52px; color: var(--ink);
-    font-family: var(--sans); font-size: 1.1rem; text-align: center; outline: none;
+    font-family: var(--mono); font-size: 1.1rem; text-align: center; outline: none;
   }
   .field:focus { border-color: var(--bolt); }
-  /* mode badge on every card — typing and typeline look identical otherwise */
+  /* type badge — the small bordered-mono pill at the top-left of the card,
+     naming the check you're doing (flip / choice / typing…); see renderCard. */
   .mode-tag {
-    position: absolute; top: 8px; left: 0; right: 0;   /* pinned under the divider */
-    width: fit-content; margin: 0 auto;
-    font-family: var(--mono); font-size: 0.6rem;
-    letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim);
-    border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px;
+    align-self: center; flex: none; max-width: 100%;
+    margin: 2px 0 6px;
+    font-family: var(--mono); font-size: 0.66rem;
+    letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint);
+    border: 1px solid var(--line); border-radius: 6px; padding: 3px 9px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   /* notes: a warm, clearly-separated block (yellow, like the TUI), as wide as
@@ -284,12 +287,13 @@
   /* multiple-choice options */
   .options { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 560px; margin: 0 auto; }
   .option {
-    display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
-    background: rgba(255,255,255,0.03); border: 1px solid var(--line); color: var(--ink);
-    border-radius: 12px; padding: 13px 16px; min-height: 52px; font-size: 1.02rem; cursor: pointer;
+    display: flex; align-items: center; gap: 14px; width: 100%; text-align: left;
+    background: rgba(255,255,255,0.03); border: 1px solid var(--line); color: var(--text);
+    border-radius: 12px; padding: 13px 16px; min-height: 52px;
+    font-family: var(--mono); font-size: 1.05rem; cursor: pointer;
     transition: border-color 0.12s, background 0.12s;
   }
-  .option .num { font-family: var(--mono); font-size: 0.78rem; color: var(--dim); }
+  .option .num { font-family: var(--mono); font-size: 0.85rem; color: var(--faint); }
   .option .opt { white-space: pre-wrap; }
   button.option:hover { border-color: var(--bolt); background: rgba(34,211,238,0.06); }
   button.option:focus-visible { outline: 2px solid var(--bolt-hi); outline-offset: 2px; }
@@ -378,7 +382,7 @@
   .leave-msg { align-self: center; color: var(--again); font-size: 0.85rem; }
 
   /* ── legend: compact, tappable, doubles as the keymap ─────────────── */
-  .legend { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
+  .legend { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; min-height: 74px; padding: 13px 22px calc(13px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
   /* chips centered on the viewport (= card) centerline; score pinned right */
   .legend .keys { grid-column: 2; display: flex; gap: 8px; justify-content: center; align-items: center; flex-wrap: wrap; }
   .legend .score { grid-column: 3; justify-self: end; font-family: var(--mono); font-size: 0.82rem; color: var(--dim); font-variant-numeric: tabular-nums; }
@@ -387,21 +391,29 @@
   .legend .score .left { color: var(--ink); margin-left: 8px; }
   .chip {
     display: inline-flex; align-items: center; gap: 8px;
-    background: none; color: var(--ink); border: 1px solid var(--line);
-    border-radius: 11px; padding: 8px 13px; min-height: 42px;
-    font-family: var(--sans); font-size: 0.9rem; font-weight: 500; cursor: pointer;
-    transition: border-color 0.12s, color 0.12s;
+    background: none; color: var(--text); border: 1px solid var(--line);
+    border-radius: 10px; padding: 9px 15px; min-height: 42px;
+    font-family: var(--sans); font-size: 0.875rem; font-weight: 600; cursor: pointer;
+    transition: border-color 0.12s, color 0.12s, background 0.12s, filter 0.12s;
   }
-  .chip .k { font-family: var(--mono); font-size: 0.68rem; color: var(--dim); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; }
+  .chip .k { font-family: var(--mono); font-size: 0.68rem; color: var(--dim); border: 1px solid var(--line); border-radius: 6px; padding: 2px 7px; }
   .chip:hover { border-color: var(--bolt); color: var(--bolt-hi); }
   .chip:focus-visible { outline: 2px solid var(--bolt-hi); outline-offset: 2px; }
-  .chip.primary { background: var(--bolt); color: var(--void); border-color: var(--bolt); }
-  .chip.primary .k { color: rgba(6,18,26,0.55); border-color: rgba(6,18,26,0.3); }
-  .chip.primary:hover { filter: brightness(1.08); color: var(--void); }
+  /* primary action = brand orange (Reveal / Continue / Submit) */
+  .chip.primary { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
+  .chip.primary .k { color: var(--brand-ink); background: rgba(0,0,0,0.2); border-color: transparent; }
+  .chip.primary:hover { filter: brightness(1.06); color: var(--brand-ink); }
+  /* self-rate grades: always-tinted red / amber / green (Missed it / Partly / Got it) */
+  .chip.failed { border-color: color-mix(in srgb, var(--again) 42%, transparent); background: color-mix(in srgb, var(--again) 12%, transparent); color: var(--again); }
+  .chip.partly { border-color: color-mix(in srgb, var(--warn) 42%, transparent); background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); }
+  .chip.passed { border-color: color-mix(in srgb, var(--good) 42%, transparent); background: color-mix(in srgb, var(--good) 13%, transparent); color: var(--good); }
+  .chip.failed:hover { border-color: var(--again); color: var(--again); filter: brightness(1.08); }
+  .chip.partly:hover { border-color: var(--warn); color: var(--warn); filter: brightness(1.08); }
+  .chip.passed:hover { border-color: var(--good); color: var(--good); filter: brightness(1.08); }
+  /* Ask tutor: brand-tinted ghost */
+  .chip.ask { border-color: color-mix(in srgb, var(--brand) 45%, transparent); background: color-mix(in srgb, var(--brand) 12%, transparent); color: var(--brand-text); }
+  .chip.ask:hover { border-color: var(--brand); color: var(--brand-text); filter: brightness(1.06); }
   .chip.again:hover { border-color: var(--again); color: var(--again); }
-  .chip.failed:hover { border-color: var(--again); color: var(--again); }
-  .chip.partly:hover { border-color: var(--warn); color: var(--warn); }
-  .chip.passed:hover { border-color: var(--good); color: var(--good); }
   /* the explain checklist's submit button, once every point is answered: a
      filled chip tinted by the derived verdict (red / amber / green). */
   .chip.v-failed, .chip.v-partly, .chip.v-passed { color: var(--void); }
@@ -2171,12 +2183,16 @@ function buildCardShell({ pile, cardId = null, ansId = null, withNote = false, m
 function renderCard() {
   const c = state.card;
   const hasNote = c.note && c.note.length > 0;
-  const { q } = buildCardShell({
+  const { card, q } = buildCardShell({
     pile: state.remaining,
     cardId: "card",
     ansId: "ansRegion",
     withNote: hasNote,
   });
+  // The type badge heads the card (top-left), above the question — it names the
+  // present check (modeLabel), doesn't change within a card, and survives the
+  // answer region's re-renders because it lives on the card, not inside it.
+  card.insertBefore(el("span", "mode-tag", modeLabel()), card.firstChild);
 
   // question region
   // Orientation breadcrumb: each region is its name (bold = where you are) over a
@@ -2262,7 +2278,6 @@ function fillBottom() {
   const a = document.getElementById("ansRegion");
   if (!a) return;
   a.innerHTML = "";
-  a.appendChild(el("span", "mode-tag", modeLabel())); // badge heads the answer section
   const citable = state.card.at && isAnswered();
   if (citable && citationView) {
     // Source view: the cited excerpt takes the answer's place (swap, not stack).
@@ -2440,7 +2455,7 @@ function renderInput(a) {
 // learner decides which — isn't memorised silently). Shared by the plain typed
 // check's full-card feedback and TypeLine's line-by-line history.
 function checkedLine(wrap, r) {
-  const line = el("div", "answer" + (r.passed ? "" : " miss"));
+  const line = el("div", "answer" + (r.passed ? " pass" : " miss"));
   line.appendChild(el("span", "txt", r.input || "—"));
   line.appendChild(el("span", "mark", r.passed ? "✓" : "✗"));
   wrap.appendChild(line);
@@ -2808,7 +2823,7 @@ function renderLegend() {
       chip("Missed it", "failed", () => grade("failed"), label(KEYS.failed));
       chip("Partly", "partly", () => grade("partly"), label(KEYS.partly));
       chip("Got it", "passed", () => grade("passed"), label(KEYS.passed));
-      chip("Ask", "", openAsk, label(KEYS.ask));
+      chip("Ask", "ask", openAsk, label(KEYS.ask));
     }
   } else if (isAcquire()) {
     if (effectiveDraw()) {
@@ -2855,17 +2870,17 @@ function renderLegend() {
       const answered = marks.filter(m => m !== undefined).length;
       chip(`Done ${answered}/${state.keypoints.length}`, "primary", submitKeypoints, "enter").disabled = true;
     }
-    chip("Ask", "", openAsk, label(KEYS.ask));
+    chip("Ask", "ask", openAsk, label(KEYS.ask));
   } else if (isRecognizeFallback()) {
     // No MC could be built (too few distractors): attempt→reveal, boolean call.
     chip("Knew it", "passed", () => grade("passed"), label(KEYS.passed));
     chip("Not yet", "failed", () => grade("failed"), label(KEYS.failed));
-    chip("Ask", "", openAsk, label(KEYS.ask));
+    chip("Ask", "ask", openAsk, label(KEYS.ask));
   } else {
     chip("Missed it", "failed", () => grade("failed"), label(KEYS.failed));
     chip("Partly", "partly", () => grade("partly"), label(KEYS.partly));
     chip("Got it", "passed", () => grade("passed"), label(KEYS.passed));
-    chip("Ask", "", openAsk, label(KEYS.ask));
+    chip("Ask", "ask", openAsk, label(KEYS.ask));
   }
   chip("Leave", "", leaveSession, "esc"); // return to the deck picker
 }
@@ -3087,7 +3102,7 @@ function renderWalkReveal() {
 function renderWalkRevealActions() {
   // Self-grade only — no live-grade path (Walking::new is always called with None).
   WALK_DELTAS.forEach(d => chip(d.label, d.cls, () => walkGrade(d.delta), label(d.keys())));
-  chip("Ask", "", openAsk, label(KEYS.ask) || "?");
+  chip("Ask", "ask", openAsk, label(KEYS.ask) || "?");
 }
 
 function renderWalkDone() {
