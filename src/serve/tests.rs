@@ -920,7 +920,7 @@ fn a_frozen_card_with_no_resolvable_source_root_answers_immediately_without_spaw
     });
 
     let cfg = crate::testutil::ask_config(&dir.path().join("no-such-claude-binary"));
-    assert!(r.start_ask(&cfg, Some("why?".to_string())));
+    assert!(r.start_ask(&cfg, Audience::Adult, Some("why?".to_string())));
 
     // Answered synchronously: no thread/channel, so nothing is pending, and
     // the reply is already in the transcript on the very next read — the

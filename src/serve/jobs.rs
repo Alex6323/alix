@@ -27,7 +27,7 @@ use crate::{
     ask::{self, CliSession, Exchange, Reply},
     augment::{self, AugmentCache},
     card::Card,
-    config::{AiConfig, AskConfig},
+    config::{AiConfig, AskConfig, Audience},
     exam, generate,
     session::{Session, now_ms},
     share,
@@ -137,9 +137,11 @@ impl Ask {
     /// conversation into note lines). `links`/`root` ground the tutor exactly as a
     /// review does. Returns `false` (no-op) if a call is already pending or a
     /// condense has nothing to summarize.
+    #[expect(clippy::too_many_arguments)] // each is a distinct, named tutor input
     fn start(
         &mut self,
         cfg: &AskConfig,
+        audience: Audience,
         card: &Card,
         links: &[String],
         root: Option<&Path>,
@@ -172,10 +174,11 @@ impl Ask {
         let (prompt, purpose) = match question {
             Some(q) => {
                 let prompt = if keeps_session {
-                    ask::question_prompt(card, links, &q, !self.cli.started, root, frozen)
+                    ask::question_prompt(card, audience, links, &q, !self.cli.started, root, frozen)
                 } else {
                     ask::question_prompt_with_history(
                         card,
+                        audience,
                         links,
                         &self.transcript,
                         &q,
@@ -341,7 +344,12 @@ impl Reviewing {
     /// `false` (no-op) if a call is already pending, nothing is reviewable, or
     /// there is nothing to condense. Grounds the tutor in the card's deck source
     /// when that deck opted into `[ask] source_access` (`source_roots`).
-    pub(super) fn start_ask(&mut self, cfg: &AskConfig, question: Option<String>) -> bool {
+    pub(super) fn start_ask(
+        &mut self,
+        cfg: &AskConfig,
+        audience: Audience,
+        question: Option<String>,
+    ) -> bool {
         let Some(card) = self.session.current().cloned() else {
             return false;
         };
@@ -378,8 +386,15 @@ impl Reviewing {
                 ask::SOURCE_NOT_FOUND.to_string(),
             );
         }
-        self.ask
-            .start(cfg, &card, &links, live_root, frozen.as_deref(), question)
+        self.ask.start(
+            cfg,
+            audience,
+            &card,
+            &links,
+            live_root,
+            frozen.as_deref(),
+            question,
+        )
     }
 
     /// Drains a finished CLI reply into the transcript (a question) or the deck
@@ -947,7 +962,12 @@ impl Walking {
 
     /// Starts an ask-Claude call about the current checkpoint (or condenses into a
     /// note with `question: None`). No-op off a checkpoint (the done screen).
-    pub(super) fn start_ask(&mut self, cfg: &AskConfig, question: Option<String>) -> bool {
+    pub(super) fn start_ask(
+        &mut self,
+        cfg: &AskConfig,
+        audience: Audience,
+        question: Option<String>,
+    ) -> bool {
         let Some(card) = self.checkpoint_card() else {
             return false;
         };
@@ -962,8 +982,15 @@ impl Walking {
             self.walk.trace().frozen_block(c)
         });
         let live_root = root.as_deref().filter(|r| r.exists());
-        self.ask
-            .start(cfg, &card, &[], live_root, frozen.as_deref(), question)
+        self.ask.start(
+            cfg,
+            audience,
+            &card,
+            &[],
+            live_root,
+            frozen.as_deref(),
+            question,
+        )
     }
 
     /// Drains a finished ask reply; a "save note" condense appends a `!` line to

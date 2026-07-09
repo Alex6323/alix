@@ -140,8 +140,8 @@ pub struct ReviewOptions {
     /// Personal review pacing (FSRS retention + retirement interval), for the
     /// selection screen's badges and due counts.
     pub review: ReviewConfig,
-    /// Which frontend `/` serves (`[serve] audience`); also reaches the
-    /// ask-tutor prompt once later tasks thread it there.
+    /// Which frontend `/` serves (`[serve] audience`); also selects the
+    /// ask-tutor's kid-safe vs. adult preamble (`start_ask`).
     pub audience: Audience,
     /// Pairing token required on `/api/*` when set (auto-generated for `--lan`);
     /// `None` leaves the server open (the localhost default).
@@ -1151,7 +1151,7 @@ pub fn run_review(
                     continue;
                 };
                 if let Some(q) = question {
-                    r.start_ask(&ask_cfg, Some(q));
+                    r.start_ask(&ask_cfg, audience, Some(q));
                 }
                 respond_json(request, &r.ask_dto(None, None));
             }
@@ -1161,7 +1161,7 @@ pub fn run_review(
                     respond_status(request, 409);
                     continue;
                 };
-                r.start_ask(&ask_cfg, None);
+                r.start_ask(&ask_cfg, audience, None);
                 respond_json(request, &r.ask_dto(None, None));
             }
             // Poll for a pending reply; the page calls this every ~400ms while
@@ -1505,7 +1505,7 @@ pub fn run_review(
                     continue;
                 };
                 if let Some(q) = question {
-                    w.start_ask(&ask_cfg, Some(q));
+                    w.start_ask(&ask_cfg, audience, Some(q));
                 }
                 respond_json(request, &w.ask_dto(None, None));
             }
@@ -1515,7 +1515,7 @@ pub fn run_review(
                     respond_status(request, 409);
                     continue;
                 };
-                w.start_ask(&ask_cfg, None);
+                w.start_ask(&ask_cfg, audience, None);
                 respond_json(request, &w.ask_dto(None, None));
             }
             (Method::Get, "/api/walk/ask") => {

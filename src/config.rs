@@ -488,8 +488,9 @@ impl Default for AiConfig {
 }
 
 /// Which served frontend `/` returns: the adult app (`review.html`) or the
-/// kid-facing one. Also reaches the ask-tutor prompt (kid-safe wording) once
-/// later tasks thread it there.
+/// kid-facing one. Also selects the ask-tutor's system preamble — kid-safe
+/// wording for `Kids`, the existing dev-facing wording for `Adult`
+/// (`ask::question_prompt`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Audience {

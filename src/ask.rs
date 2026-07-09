@@ -21,7 +21,7 @@ use anyhow::{Context, Result, bail};
 use crate::{
     backend::{Access, PromptDelivery, RunOpts, backend_for},
     card::Card,
-    config::AskConfig,
+    config::{AskConfig, Audience},
 };
 
 /// One question/answer exchange.
@@ -149,13 +149,14 @@ pub const SOURCE_NOT_FOUND: &str =
 
 pub fn question_prompt(
     card: &Card,
+    audience: Audience,
     links: &[String],
     question: &str,
     first: bool,
     source_root: Option<&Path>,
     frozen: Option<&str>,
 ) -> String {
-    let mut p = question_context(card, links, first, source_root, frozen);
+    let mut p = question_context(card, audience, links, first, source_root, frozen);
     p.push_str("\nThe user's question: ");
     p.push_str(question);
     p
@@ -171,6 +172,7 @@ pub fn question_prompt(
 /// first-turn [`question_prompt`], so a first turn is identical on every backend.
 pub fn question_prompt_with_history(
     card: &Card,
+    audience: Audience,
     links: &[String],
     prior: &[Exchange],
     question: &str,
@@ -179,7 +181,7 @@ pub fn question_prompt_with_history(
 ) -> String {
     // Every re-inlined turn is a "first" message: the process has no memory, so
     // it needs the full instructions, links, and card context each time.
-    let mut p = question_context(card, links, true, source_root, frozen);
+    let mut p = question_context(card, audience, links, true, source_root, frozen);
     for (q, a) in prior {
         p.push_str("\nThe user's question: ");
         p.push_str(q);
@@ -192,12 +194,43 @@ pub fn question_prompt_with_history(
     p
 }
 
+/// The first-turn tutoring instructions for the adult (default) app: a
+/// developer-facing voice, terse and unadorned. Kept verbatim — the `Adult`
+/// prompt must stay byte-for-byte what it always was.
+const ADULT_PREAMBLE: &str = "You are a concise tutor inside a terminal flashcard application. \
+     The user reviews flashcards and asks you questions about them; \
+     this conversation continues across several cards. Always answer \
+     in plain text without any markdown formatting, in at most six \
+     short sentences, specific to the card at hand.\n";
+
+/// The first-turn tutoring instructions for the kids app: a warm, simple voice
+/// for a learner around 10 years old, scoped tightly to the current card and
+/// steering (without lecturing) away from anything off-topic or unsafe.
+const KIDS_PREAMBLE: &str = "You are a kind helper for a kid around 10 years old who is using a flashcard \
+     app to learn. Use simple words and short sentences, and sound warm and \
+     encouraging. Only talk about the flashcard they're looking at right now — \
+     help them understand this one card, and don't wander into other topics. \
+     Answer in plain text without any markdown formatting, in at most four short \
+     sentences. If they ask something that isn't about the card, gently steer \
+     them back to it. If they ask about anything grown-up, unsafe, or otherwise \
+     inappropriate, kindly say you can't help with that and bring them back to \
+     the flashcard, without lecturing or going into detail about why.\n";
+
+/// Picks the first-turn tutoring instructions for `audience`.
+fn preamble(audience: Audience) -> &'static str {
+    match audience {
+        Audience::Adult => ADULT_PREAMBLE,
+        Audience::Kids => KIDS_PREAMBLE,
+    }
+}
+
 /// The shared card context up to (but not including) the trailing question: the
 /// first-turn instructions and deck links (when `first`), the card itself, and
 /// any `source_root`/`frozen` grounding. Both [`question_prompt`] and
 /// [`question_prompt_with_history`] append their question(s) after this.
 fn question_context(
     card: &Card,
+    audience: Audience,
     links: &[String],
     first: bool,
     source_root: Option<&Path>,
@@ -205,13 +238,7 @@ fn question_context(
 ) -> String {
     let mut p = String::new();
     if first {
-        p.push_str(
-            "You are a concise tutor inside a terminal flashcard application. \
-             The user reviews flashcards and asks you questions about them; \
-             this conversation continues across several cards. Always answer \
-             in plain text without any markdown formatting, in at most six \
-             short sentences, specific to the card at hand.\n",
-        );
+        p.push_str(preamble(audience));
         if !links.is_empty() {
             p.push_str(
                 "\nReference links for this deck — fetch them (WebFetch) when \
@@ -539,7 +566,15 @@ mod tests {
     #[test]
     fn first_question_prompt_has_instructions_and_links() {
         let links = vec!["https://docs.rs/tokio".to_string()];
-        let p = question_prompt(&card(), &links, "and why that?", true, None, None);
+        let p = question_prompt(
+            &card(),
+            Audience::Adult,
+            &links,
+            "and why that?",
+            true,
+            None,
+            None,
+        );
         assert!(p.contains("concise tutor"));
         assert!(!p.contains("working directory")); // no source access by default
         assert!(p.contains("https://docs.rs/tokio"));
@@ -553,7 +588,15 @@ mod tests {
     #[test]
     fn followup_prompt_is_short_but_carries_the_card() {
         let links = vec!["https://docs.rs/tokio".to_string()];
-        let p = question_prompt(&card(), &links, "next q", false, None, None);
+        let p = question_prompt(
+            &card(),
+            Audience::Adult,
+            &links,
+            "next q",
+            false,
+            None,
+            None,
+        );
         // The session already knows the instructions and the links.
         assert!(!p.contains("concise tutor"));
         assert!(!p.contains("docs.rs"));
@@ -571,7 +614,15 @@ mod tests {
             ),
             ("and borrowing?".to_string(), "temporary access".to_string()),
         ];
-        let p = question_prompt_with_history(&card(), &[], &prior, "and lifetimes?", None, None);
+        let p = question_prompt_with_history(
+            &card(),
+            Audience::Adult,
+            &[],
+            &prior,
+            "and lifetimes?",
+            None,
+            None,
+        );
         // The card context is present, exactly as the first-turn prompt.
         assert!(p.contains("concise tutor"), "{p}");
         assert!(p.contains("Front: Why?"), "{p}");
@@ -590,9 +641,24 @@ mod tests {
 
         // An empty history reduces to the same content as the first-turn prompt.
         let links = vec!["https://docs.rs/tokio".to_string()];
-        let first = question_prompt(&card(), &links, "and lifetimes?", true, None, None);
-        let empty =
-            question_prompt_with_history(&card(), &links, &[], "and lifetimes?", None, None);
+        let first = question_prompt(
+            &card(),
+            Audience::Adult,
+            &links,
+            "and lifetimes?",
+            true,
+            None,
+            None,
+        );
+        let empty = question_prompt_with_history(
+            &card(),
+            Audience::Adult,
+            &links,
+            &[],
+            "and lifetimes?",
+            None,
+            None,
+        );
         assert_eq!(
             first, empty,
             "empty history must match the first-turn prompt"
@@ -604,6 +670,7 @@ mod tests {
         // Even a follow-up reminds Claude it can read the source and must verify.
         let p = question_prompt(
             &card(),
+            Audience::Adult,
             &[],
             "is that right?",
             false,
@@ -622,6 +689,7 @@ mod tests {
         let block = "src/caching.rs:46-66\n46\tfn get_object() {}\n";
         let p = question_prompt(
             &card(),
+            Audience::Adult,
             &[],
             "explain",
             true,
@@ -633,14 +701,37 @@ mod tests {
         assert!(p.contains("/crate"), "{p}");
         assert!(p.contains("surrounding source"), "{p}");
         // No live source → the canned "couldn't find" instruction instead.
-        let gone = question_prompt(&card(), &[], "explain", true, None, Some(block));
+        let gone = question_prompt(
+            &card(),
+            Audience::Adult,
+            &[],
+            "explain",
+            true,
+            None,
+            Some(block),
+        );
         assert!(gone.contains(SOURCE_NOT_FOUND), "{gone}");
     }
 
     #[test]
     fn first_prompt_without_links_offers_none() {
-        let p = question_prompt(&card(), &[], "q", true, None, None);
+        let p = question_prompt(&card(), Audience::Adult, &[], "q", true, None, None);
         assert!(!p.contains("Reference links"));
+    }
+
+    #[test]
+    fn kids_audience_uses_the_kid_safe_preamble() {
+        let adult = question_prompt(&card(), Audience::Adult, &[], "why?", true, None, None);
+        let kids = question_prompt(&card(), Audience::Kids, &[], "why?", true, None, None);
+        // The adult (default) prompt is unchanged — still the dev-facing marker.
+        assert!(adult.contains("concise tutor"), "{adult}");
+        // The kids prompt never uses the dev-facing wording…
+        assert!(!kids.contains("concise tutor"), "{kids}");
+        // …and reads as a kid-safe preamble instead.
+        assert!(kids.to_lowercase().contains("kid"), "{kids}");
+        // Both still carry the actual card content.
+        assert!(kids.contains("Front: Why?"), "{kids}");
+        assert!(kids.ends_with("The user's question: why?"), "{kids}");
     }
 
     #[test]
@@ -716,7 +807,7 @@ mod tests {
         assert!(extract_note_lines("  \n\n").is_empty());
     }
 
-    use crate::testutil::{exec_lock, fake_arg_reply, fake_cli};
+    use crate::testutil::{exec_lock, fake_arg_reply, fake_cli, fake_reply};
 
     fn config(command: &std::path::Path, timeout_secs: u64) -> AskConfig {
         AskConfig {
@@ -932,6 +1023,31 @@ mod tests {
         let rx = spawn(config(&cli, 10), "ping".to_string(), Vec::new());
         match rx.recv_timeout(Duration::from_secs(10)).unwrap() {
             Reply::Answer(a) => assert_eq!("ping", a),
+            Reply::Error(e) => panic!("unexpected error: {e}"),
+        }
+    }
+
+    #[test]
+    fn kids_audience_ask_runs_through_spawn_and_returns_the_reply() {
+        // Builds the prompt exactly as the serve call site does for a kids
+        // session, then drives it through the real spawn/background-thread/
+        // channel plumbing (not just `question_prompt` in isolation) — proving
+        // the audience-threaded path actually runs end-to-end.
+        let _lock = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = fake_reply(dir.path(), "sure, let's look at this card together!");
+        let prompt = question_prompt(
+            &card(),
+            Audience::Kids,
+            &[],
+            "why is it Because?",
+            true,
+            None,
+            None,
+        );
+        let rx = spawn(config(&cli, 10), prompt, Vec::new());
+        match rx.recv_timeout(Duration::from_secs(10)).unwrap() {
+            Reply::Answer(a) => assert_eq!("sure, let's look at this card together!", a),
             Reply::Error(e) => panic!("unexpected error: {e}"),
         }
     }
