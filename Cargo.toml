@@ -12,6 +12,10 @@ readme = "README.md"
 categories = ["command-line-utilities"]
 exclude = ["docs/", "site/", ".github/", "examples/", "apps/"]
 
+[[bin]]
+name = "alix"
+path = "src/cli/main.rs"
+
 [dependencies]
 anyhow = "1"
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "serde"] }
@@ -35,10 +39,6 @@ zip = { version = "8.6.0", default-features = false, features = ["deflate"] } # 
 [lib]
 name = "alix"
 path = "src/lib.rs"
-
-[[bin]]
-name = "alix"
-path = "src/main.rs"
 
 # examples/ is excluded from the published package (see `exclude` above), but
 # `test = true` still makes plain `cargo test` build and run this example's
