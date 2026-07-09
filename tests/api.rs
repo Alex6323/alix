@@ -133,7 +133,17 @@ impl Drop for Guard {
     fn drop(&mut self) {
         self.server.unblock();
         if let Some(handle) = self.handle.take() {
-            let _ = handle.join();
+            // Propagate a server-thread panic instead of swallowing it —
+            // otherwise a bug in `run_review` would fail silently, with the
+            // test that triggered it reporting green. `thread::panicking()`
+            // skips the resume when the current thread (the test itself) is
+            // already unwinding, so this doesn't turn one panic into a
+            // double-panic abort.
+            if let Err(e) = handle.join()
+                && !thread::panicking()
+            {
+                std::panic::resume_unwind(e);
+            }
         }
     }
 }
@@ -141,10 +151,10 @@ impl Drop for Guard {
 /// Turns a `/api/select` request's per-launch choices into the `Session`'s
 /// `SessionOptions` — depth/cram/max_new/limit passed through as requested,
 /// the rest at their library defaults, mirroring what `src/cli/launch.rs`
-/// wires up for the real CLI. Task 3's harness ignored `opts` entirely
-/// (always `SessionOptions::default()`); several of this task's tests
-/// (`depth`-scoped choice questions, a `cram`-driven restart) need the real
-/// per-launch choices to reach the session, so this closes that gap.
+/// wires up for the real CLI. Earlier harness revisions ignored `opts`
+/// entirely (always `SessionOptions::default()`); the `depth`-scoped choice
+/// questions and the `cram`-driven restart below need the real per-launch
+/// choices to reach the session, so this closes that gap.
 fn session_options(sel: &SelectOptions) -> SessionOptions {
     SessionOptions {
         depth: sel.depth.unwrap_or_default(),
@@ -165,7 +175,7 @@ const FIXTURE_DECK: &str = "# 2 + 2\n\t4\n\n# 3 + 3\n\t6\n";
 /// Builds the `run_review` closures over one fixture deck living in `dir`,
 /// mirroring (in miniature) what `src/cli/launch.rs` wires up for the real
 /// CLI — enough for a test to drive `/api/select`, `/api/browse`, etc. in
-/// later tests, not just the deck-agnostic endpoints this task exercises.
+/// later tests, not just the deck-agnostic endpoints exercised here.
 /// `auth` mirrors `ReviewOptions::auth`: `None` leaves `/api/*` open, `Some`
 /// requires that token.
 fn review_options(base: &str, auth: Option<String>) -> ReviewOptions {
@@ -318,7 +328,8 @@ fn choice_answer(front: &str) -> &'static str {
 
 /// A two-hop predict-and-verify trace over [`TRACE_SOURCE`], for the walk and
 /// (trace) exam endpoint families — mirrors `src/serve/tests.rs`'s
-/// `walk_deck` fixture in miniature (kept to two hops per this task's brief).
+/// `walk_deck` fixture in miniature (kept to two hops; that's enough to
+/// exercise a hop transition without a bigger fixture to maintain).
 const TRACE_DECK: &str = "% trace: how it works\n\
 % source: source.txt\n\
 # Predict the first hop\n\
@@ -413,8 +424,8 @@ fn spawn_full_server(ask_command: Option<&Path>) -> (String, Guard) {
         })
     };
     // Routes a picked trace deck to a real `Walk` instead of falling through
-    // to `build` (the review path) — Task 3's harness always returned `None`
-    // here, so no walk endpoint was reachable at all.
+    // to `build` (the review path) — earlier harness revisions always
+    // returned `None` here, so no walk endpoint was reachable at all.
     let build_walk = move |paths: &[PathBuf]| -> Result<Option<WalkBuild>> {
         let Some(path) = paths.first() else {
             return Ok(None);
@@ -476,7 +487,7 @@ fn spawn_full_server(ask_command: Option<&Path>) -> (String, Guard) {
 /// the same hazard `src/testutil.rs::exec_lock` guards against for the lib's
 /// own AI tests. That helper is `pub(crate)` (crate-private) and therefore
 /// unreachable from this integration test, so it's replicated here in
-/// miniature (this task's fake-CLI resolution).
+/// miniature (this file's own fake-CLI setup).
 static EXEC_LOCK: Mutex<()> = Mutex::new(());
 
 fn exec_lock() -> std::sync::MutexGuard<'static, ()> {
@@ -494,7 +505,17 @@ fn fake_reply(dir: &Path, reply: &str) -> PathBuf {
     let path = dir.join("fake-claude");
     std::fs::write(
         &path,
-        format!("#!/bin/sh\ncat >/dev/null\ncat {}\n", out.display()),
+        // The script pins its own `PATH` before doing anything else: this
+        // test's `EXEC_LOCK` is a *different* lock than `PATH_LOCK` (see
+        // below), so a test here can spawn this script concurrently with a
+        // `with_empty_path` test that has pinned the process `PATH` to an
+        // empty dir. Without a hardcoded `PATH`, `cat` would fail to resolve
+        // in that window, skipping the `cat >/dev/null` stdin drain and
+        // reopening the EPIPE race this script exists to avoid.
+        format!(
+            "#!/bin/sh\nPATH=/usr/bin:/bin\ncat >/dev/null\ncat {}\n",
+            out.display()
+        ),
     )
     .unwrap();
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -552,15 +573,23 @@ impl Drop for PathGuard {
         // the process (not just another writer) can race a write. `cargo
         // test` runs this suite's tests concurrently, and other tests do
         // read the environment while this guard is alive elsewhere in the
-        // binary (e.g. every `TempDir::new()` reads `TMPDIR` via
-        // `env::var_os`). `PATH_LOCK` only keeps the two `with_empty_path`
-        // tests from mutating `PATH` at the same time as each other; it does
-        // nothing for those readers. The risk is accepted here rather than
-        // eliminated: the mutated window is a handful of instructions, this
-        // is test-only code, the race is benign in practice on Linux/glibc
-        // (a reader observes either the old or the new value, not a torn
-        // one), and avoiding it for real would need subprocess isolation
-        // this crate has no dependency budget for.
+        // binary. Two reader classes matter here: in-process readers (e.g.
+        // every `TempDir::new()` reads `TMPDIR` via `env::var_os`), and child
+        // processes spawned while `PATH` is pinned — a spawn resolves its
+        // interpreter/binary through the `PATH` it inherits at spawn time
+        // (see `src/ask.rs`'s `Command::new`, which inherits the parent
+        // environment), so a fake-CLI test spawning concurrently (under its
+        // own, different lock — see `EXEC_LOCK`) could land inside this
+        // window and fail to resolve its own interpreter. `PATH_LOCK` only
+        // keeps the two `with_empty_path` tests from mutating `PATH` at the
+        // same time as each other; it does nothing for either reader class.
+        // The risk is accepted here rather than eliminated: the mutated
+        // window is a handful of instructions, this is test-only code, the
+        // race is benign in practice on Linux/glibc (a reader observes
+        // either the old or the new value, not a torn one), and avoiding it
+        // for real would need subprocess isolation this crate has no
+        // dependency budget for. (The fake-CLI script itself is additionally
+        // hardened against this — see `fake_reply`'s hardcoded `PATH`.)
         match self.original.take() {
             Some(p) => unsafe { std::env::set_var("PATH", p) },
             None => unsafe { std::env::remove_var("PATH") },
@@ -1505,12 +1534,12 @@ fn walk_predict_with_auto_grade_resolves_a_verdict_via_the_fake_backend() {
 
 // ── Share / Receive (the "wormhole not installed" error phase) ───────────
 //
-// Resolution 2: `wormhole` is installed on this dev machine but absent in
-// CI, so a test relying on either presence or absence via the real `PATH`
-// would be nondeterministic across environments. `with_empty_path` pins
-// `PATH` to a directory that deliberately has no `wormhole`, so the spawn
-// fails deterministically everywhere, hitting the same error-phase arm the
-// real "not installed" case would.
+// `wormhole` is installed on this dev machine but absent in CI, so a test
+// relying on either presence or absence via the real `PATH` would be
+// nondeterministic across environments. `with_empty_path` pins `PATH` to a
+// directory that deliberately has no `wormhole`, so the spawn fails
+// deterministically everywhere, hitting the same error-phase arm the real
+// "not installed" case would.
 
 #[test]
 fn post_api_share_surfaces_an_install_hint_when_wormhole_is_not_on_path() {

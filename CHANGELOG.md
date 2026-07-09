@@ -52,10 +52,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **A live Codecov badge on the README**, backed by a real-server HTTP
   round-trip test suite (`tests/api.rs`) that drives `/api/*` over the wire
   rather than calling handlers in-process — the deterministic half of
-  contract hardening. Line coverage crossed 90%; a handful of arms only
-  reachable by a real bound server or a real OS network lookup are marked
-  `#[cfg_attr(coverage_nightly, coverage(off))]`, one function at a time with
-  a stated reason, so the number stays honest.
+  contract hardening. Line coverage crossed 90%; a handful of functions a
+  deterministic test can't meaningfully drive (a live OS route lookup,
+  print-only QR output, a two-call AI workspace build) are marked
+  `#[cfg_attr(coverage_nightly, coverage(off))]`, each excluded one function
+  at a time with a stated reason, so the number stays honest.
 - **Web picker self-sufficiency: the ☰ menu gains Add deck… (generate from a
   URL, import .tsv/.txt, receive a wormhole code or .zip), Share… (wormhole
   code or .zip download), Reset… (typed-name confirm), Doctor, and Pair a

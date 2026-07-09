@@ -9,9 +9,9 @@
 //! (`alix exam`) that gates progression on verified understanding.
 
 // Enables `#[coverage(off)]` under `cargo +nightly llvm-cov`, which sets
-// `cfg(coverage_nightly)`. Used sparingly on a handful of fns/arms that are
-// only reachable via a real external process (a bound server, a live
-// subprocess) that a deterministic CI test can't drive — see each site's
+// `cfg(coverage_nightly)`. Used sparingly on a handful of functions a
+// deterministic test can't meaningfully drive (a live OS route lookup,
+// print-only QR output, a two-call AI workspace build) — see each site's
 // one-line reason.
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 
