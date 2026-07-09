@@ -133,15 +133,20 @@ impl Drop for Guard {
     }
 }
 
-/// A minimal single-card fixture deck, just enough to make `run_review`'s
-/// closures do real work if a test picks it via `/api/select`.
-const FIXTURE_DECK: &str = "# 2 + 2\n\t4\n";
+/// A minimal two-card fixture deck — enough for a grade→next-state sequence
+/// (grading the first card away still leaves the session in `"review"` phase
+/// on the second, rather than jumping straight to `"done"`) — and enough to
+/// make `run_review`'s closures do real work if a test picks it via
+/// `/api/select`.
+const FIXTURE_DECK: &str = "# 2 + 2\n\t4\n\n# 3 + 3\n\t6\n";
 
 /// Builds the `run_review` closures over one fixture deck living in `dir`,
 /// mirroring (in miniature) what `src/cli/launch.rs` wires up for the real
 /// CLI — enough for a test to drive `/api/select`, `/api/browse`, etc. in
 /// later tests, not just the deck-agnostic endpoints this task exercises.
-fn review_options(base: &str) -> ReviewOptions {
+/// `auth` mirrors `ReviewOptions::auth`: `None` leaves `/api/*` open, `Some`
+/// requires that token.
+fn review_options(base: &str, auth: Option<String>) -> ReviewOptions {
     let config = Config::default();
     ReviewOptions {
         keys: config.keys,
@@ -152,7 +157,7 @@ fn review_options(base: &str) -> ReviewOptions {
         ai: config.ai,
         generate: config.generate,
         review: config.review,
-        auth: None,
+        auth,
         config_path: None,
         pair: PairInfo {
             url: base.to_string(),
@@ -164,8 +169,16 @@ fn review_options(base: &str) -> ReviewOptions {
 
 /// Spins up a real `run_review` server on an OS-assigned loopback port,
 /// backed by a temp store and [`FIXTURE_DECK`], and returns its base URL
-/// (`http://127.0.0.1:<port>`) plus a [`Guard`] that stops it on drop.
+/// (`http://127.0.0.1:<port>`) plus a [`Guard`] that stops it on drop. `/api/*`
+/// is open (no token) — see [`spawn_test_server_with`] for a guarded instance.
 fn spawn_test_server() -> (String, Guard) {
+    spawn_test_server_with(None)
+}
+
+/// Like [`spawn_test_server`], but requires `token` (when `Some`) on `/api/*`,
+/// exactly like a real `--lan`/`--token` launch — for exercising the 401 path
+/// over real HTTP.
+fn spawn_test_server_with(token: Option<&str>) -> (String, Guard) {
     let dir = TempDir::new().unwrap();
     let deck_path = dir.path().join("sample.txt");
     std::fs::write(&deck_path, FIXTURE_DECK).unwrap();
@@ -183,7 +196,7 @@ fn spawn_test_server() -> (String, Guard) {
         .expect("bound to a loopback IP")
         .port();
     let base = format!("http://127.0.0.1:{port}");
-    let opts = review_options(&base);
+    let opts = review_options(&base, token.map(str::to_string));
     let retention = opts.review.retention;
 
     // One deck at a time, exactly like the CLI's own `build_review`/`build_browse`
@@ -274,4 +287,232 @@ fn get_api_version_returns_200_json_with_a_version_field() {
     );
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     assert!(body.get("version").is_some(), "body: {body}");
+}
+
+/// `POST`s a JSON body — the shape every mutating `/api/*` endpoint expects
+/// (`Content-Type` doesn't gate anything server-side, but sending it is
+/// honest about what's on the wire).
+fn post_json(base: &str, path: &str, json: &str) -> HttpResp {
+    http(
+        base,
+        "POST",
+        path,
+        &[("Content-Type", "application/json")],
+        json.as_bytes(),
+    )
+}
+
+/// Selects [`FIXTURE_DECK`] (by its fixed file name, `sample.txt`) and returns
+/// the resulting `StateDto` response — the common first step of every
+/// review-loop test below.
+fn select_fixture(base: &str) -> HttpResp {
+    post_json(base, "/api/select", r#"{"deck":"sample.txt"}"#)
+}
+
+#[test]
+fn get_api_decks_returns_200_with_the_fixture_deck_in_the_catalog() {
+    let (base, _guard) = spawn_test_server();
+
+    let resp = http(&base, "GET", "/api/decks", &[], &[]);
+
+    assert_eq!(200, resp.status);
+    assert_eq!(
+        Some("application/json; charset=utf-8"),
+        resp.header("Content-Type")
+    );
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    // A loose deck (not in a workspace/folder) always lands in `recent` —
+    // see `deck_catalog` in `src/serve/catalog.rs`.
+    let recent = body["recent"].as_array().expect("recent is an array");
+    assert!(
+        recent.iter().any(|d| d["name"] == "sample.txt"),
+        "body: {body}"
+    );
+}
+
+#[test]
+fn post_api_select_returns_a_review_state_for_the_fixture_deck() {
+    let (base, _guard) = spawn_test_server();
+
+    let resp = select_fixture(&base);
+
+    assert_eq!(200, resp.status);
+    assert_eq!(
+        Some("application/json; charset=utf-8"),
+        resp.header("Content-Type")
+    );
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("review", body["kind"], "body: {body}");
+    assert_eq!("review", body["phase"], "body: {body}");
+    assert_eq!("2 + 2", body["card"]["front"], "body: {body}");
+    assert_eq!("flip", body["mode"], "body: {body}");
+    assert_eq!("recall", body["depth"], "body: {body}");
+    assert_eq!(2, body["remaining"], "body: {body}");
+    assert_eq!(2, body["initial"], "body: {body}");
+}
+
+#[test]
+fn get_api_state_reflects_the_active_session_after_select() {
+    let (base, _guard) = spawn_test_server();
+    select_fixture(&base);
+
+    let resp = http(&base, "GET", "/api/state", &[], &[]);
+
+    assert_eq!(200, resp.status);
+    assert_eq!(
+        Some("application/json; charset=utf-8"),
+        resp.header("Content-Type")
+    );
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("review", body["phase"], "body: {body}");
+    assert_eq!("2 + 2", body["card"]["front"], "body: {body}");
+}
+
+#[test]
+fn post_api_grade_passed_returns_the_next_state_dto() {
+    let (base, _guard) = spawn_test_server();
+    select_fixture(&base);
+
+    let resp = post_json(&base, "/api/grade", r#"{"grade":"passed"}"#);
+
+    assert_eq!(200, resp.status);
+    assert_eq!(
+        Some("application/json; charset=utf-8"),
+        resp.header("Content-Type")
+    );
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    // The fixture's second card, not "done" — the two-card deck exists
+    // precisely so a grade advances within the session instead of ending it.
+    assert_eq!("review", body["phase"], "body: {body}");
+    assert_eq!("3 + 3", body["card"]["front"], "body: {body}");
+    assert_eq!(1, body["passed"], "body: {body}");
+    assert_eq!(1, body["remaining"], "body: {body}");
+}
+
+#[test]
+fn get_api_doctor_returns_200_with_doctor_rows() {
+    let (base, _guard) = spawn_test_server();
+
+    let resp = http(&base, "GET", "/api/doctor", &[], &[]);
+
+    assert_eq!(200, resp.status);
+    assert_eq!(
+        Some("application/json; charset=utf-8"),
+        resp.header("Content-Type")
+    );
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    let rows = body["rows"].as_array().expect("rows is an array");
+    assert!(!rows.is_empty(), "body: {body}");
+    assert!(rows.iter().any(|r| r["name"] == "config"), "body: {body}");
+}
+
+#[test]
+fn get_api_pair_returns_200_with_the_pairing_url() {
+    let (base, _guard) = spawn_test_server();
+
+    let resp = http(&base, "GET", "/api/pair", &[], &[]);
+
+    assert_eq!(200, resp.status);
+    assert_eq!(
+        Some("application/json; charset=utf-8"),
+        resp.header("Content-Type")
+    );
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    // The test harness's `review_options` builds a localhost, non-`--lan`
+    // `PairInfo` — no other device could reach it, so no QR is rendered.
+    assert_eq!(base, body["url"], "body: {body}");
+    assert_eq!(false, body["lan"], "body: {body}");
+    assert!(body["svg"].is_null(), "body: {body}");
+}
+
+#[test]
+fn a_missing_bearer_token_yields_401_with_an_empty_body() {
+    let (base, _guard) = spawn_test_server_with(Some("secret"));
+
+    let resp = http(&base, "GET", "/api/state", &[], &[]);
+
+    assert_eq!(401, resp.status);
+    assert!(resp.body.is_empty(), "body: {:?}", resp.body);
+}
+
+#[test]
+fn the_correct_bearer_token_is_accepted() {
+    let (base, _guard) = spawn_test_server_with(Some("secret"));
+
+    let resp = http(
+        &base,
+        "GET",
+        "/api/state",
+        &[("Authorization", "Bearer secret")],
+        &[],
+    );
+
+    assert_eq!(200, resp.status);
+}
+
+#[test]
+fn a_query_token_is_accepted_as_a_fallback_when_no_bearer_is_sent() {
+    let (base, _guard) = spawn_test_server_with(Some("secret"));
+
+    let resp = http(&base, "GET", "/api/state?token=secret", &[], &[]);
+
+    assert_eq!(200, resp.status);
+}
+
+#[test]
+fn a_wrong_bearer_token_yields_401() {
+    let (base, _guard) = spawn_test_server_with(Some("secret"));
+
+    let resp = http(
+        &base,
+        "GET",
+        "/api/state",
+        &[("Authorization", "Bearer wrong")],
+        &[],
+    );
+
+    assert_eq!(401, resp.status);
+}
+
+#[test]
+fn post_api_grade_with_a_malformed_body_yields_400() {
+    let (base, _guard) = spawn_test_server();
+    select_fixture(&base);
+
+    // Neither the `{grade}` nor the `{covered, total}` shape `/api/grade`
+    // documents (`docs/API.md` §5) — valid JSON, but not a body it accepts.
+    let resp = post_json(&base, "/api/grade", r#"{"nonsense":true}"#);
+
+    assert_eq!(400, resp.status);
+    assert!(resp.body.is_empty(), "body: {:?}", resp.body);
+}
+
+#[test]
+fn post_api_grade_with_no_active_session_yields_409() {
+    let (base, _guard) = spawn_test_server();
+
+    let resp = post_json(&base, "/api/grade", r#"{"grade":"passed"}"#);
+
+    assert_eq!(409, resp.status);
+    assert!(resp.body.is_empty(), "body: {:?}", resp.body);
+}
+
+#[test]
+fn get_api_nope_yields_404() {
+    let (base, _guard) = spawn_test_server();
+
+    let resp = http(&base, "GET", "/api/nope", &[], &[]);
+
+    assert_eq!(404, resp.status);
+    assert!(resp.body.is_empty(), "body: {:?}", resp.body);
+}
+
+#[test]
+fn get_img_with_an_unknown_key_yields_404() {
+    let (base, _guard) = spawn_test_server();
+
+    let resp = http(&base, "GET", "/img/badkey", &[], &[]);
+
+    assert_eq!(404, resp.status);
+    assert!(resp.body.is_empty(), "body: {:?}", resp.body);
 }
