@@ -8,7 +8,7 @@
     },
     {
       "detail": "`wormhole` not found on PATH",
-      "name": "wormhole",
+      "name": "share",
       "remedy": "pipx install magic-wormhole",
       "status": "warn"
     }

@@ -5782,7 +5782,7 @@ mod tests {
                         remedy: None,
                     },
                     DoctorRowDto {
-                        name: "wormhole",
+                        name: "share",
                         status: "warn",
                         detail: "`wormhole` not found on PATH".to_string(),
                         remedy: Some("pipx install magic-wormhole".to_string()),
@@ -5796,7 +5796,7 @@ mod tests {
                     "rows": [
                         {"name": "config", "status": "ok",
                          "detail": "~/.config/alix/config.toml parses", "remedy": null},
-                        {"name": "wormhole", "status": "warn",
+                        {"name": "share", "status": "warn",
                          "detail": "`wormhole` not found on PATH",
                          "remedy": "pipx install magic-wormhole"}
                     ]

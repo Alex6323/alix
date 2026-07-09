@@ -490,7 +490,7 @@ network call.
 
 Example (from the pinned test, illustrating the shape, not a real report):
 `{"name":"config","status":"ok","detail":"~/.config/alix/config.toml parses","remedy":null}`
-and ``{"name":"wormhole","status":"warn","detail":"`wormhole` not found on PATH","remedy":"pipx install magic-wormhole"}``.
+and ``{"name":"share","status":"warn","detail":"`wormhole` not found on PATH","remedy":"pipx install magic-wormhole"}``.
 
 ### PairDto
 

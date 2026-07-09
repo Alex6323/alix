@@ -50,7 +50,7 @@ clients (see `docs/API.md`):
 - **Reset…** — wipes a row's progress. Gated on typing the row's name back
   exactly, since this can't be undone; needs a focused row.
 - **Doctor** — the free environment checks (config, store, decks, backend,
-  wormhole) as ✓/!/✗ rows, screenshot-able for handing to whoever set up the
+  share) as ✓/!/✗ rows, screenshot-able for handing to whoever set up the
   instance. The costed `--backends` probe stays CLI-only.
 - **Pair a device** — a QR of the pairing URL plus the URL itself, to scan
   from a phone or tablet. Needs `--lan`; a localhost-only instance shows a
