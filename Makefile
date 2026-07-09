@@ -6,7 +6,7 @@
 # toolchain — `+nightly` is handled by rustup before cargo sees it — which is
 # why these live in a Makefile rather than .cargo/config.toml.)
 
-.PHONY: build test lint lint-js fmt fmt-check fmt-roadmap check ci coverage eval run serve book site slides install clean sdd-clean heartbeat check-backends
+.PHONY: build test lint lint-js fmt fmt-check fmt-roadmap check ci coverage coverage-lcov eval run serve book site slides install clean sdd-clean heartbeat check-backends
 
 # Compile the workspace.
 build:
@@ -69,6 +69,12 @@ ci:
 coverage:
 	cargo llvm-cov --html
 	@echo "HTML report -> target/llvm-cov/html/index.html"
+
+# Coverage in lcov format for the Codecov upload (see .github/workflows/ci.yml
+# and codecov.yml). Nightly toolchain, matching where this repo's coverage work
+# is headed. Writes lcov.info at the repo root (gitignored).
+coverage-lcov:
+	cargo +nightly llvm-cov --workspace --lcov --output-path lcov.info
 
 # Grader-calibration evals (tests/eval.rs): the REAL grade prompt vs labeled
 # adversarial answers, to catch a lenient grader. Needs the claude CLI logged in;

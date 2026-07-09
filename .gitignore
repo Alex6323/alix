@@ -1,4 +1,6 @@
 /target
+# Codecov lcov output (`make coverage-lcov`)
+/lcov.info
 ROADMAP.md
 QUALITY.md
 PLAN.md
