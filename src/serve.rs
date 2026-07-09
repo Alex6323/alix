@@ -37,8 +37,8 @@ use crate::{
     card::Card,
     choice::{self, ChoiceQuestion},
     config::{
-        AiConfig, AskConfig, Bindings, BrowseBindings, Config, ExamConfig, GenerateDeckConfig,
-        Key, KeyPattern, PickerKeys, ReviewConfig, Strictness,
+        AiConfig, AskConfig, Bindings, BrowseBindings, Config, ExamConfig, GenerateDeckConfig, Key,
+        KeyPattern, PickerKeys, ReviewConfig, Strictness,
     },
     deck::{self, Deck, DeckState},
     depth::{self, Depth, Reveal, depth_name},
