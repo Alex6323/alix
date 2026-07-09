@@ -54,7 +54,7 @@
   .bar-filter:focus { outline: none; border-color: var(--bolt); }
   .muted { color: var(--dim); }
 
-  /* overflow menu: only the destructive action lives here */
+  /* overflow menu: most items neutral; destructive ones (Remove card, Reset) carry .danger */
   .menu-wrap { position: relative; flex: none; }
   .kebab { background: none; border: 0; color: var(--ink); cursor: pointer; font-size: 1.15rem; line-height: 1; padding: 4px 8px; border-radius: 8px; }
   /* Browser-style picker nav (back + refresh), for mouse/touch over keys. */
@@ -309,9 +309,9 @@
   .option .opt { white-space: pre-wrap; }
   button.option:hover { border-color: var(--bolt); background: color-mix(in srgb, var(--bolt) 6%, transparent); }
   button.option:focus-visible { outline: 2px solid var(--bolt-hi); outline-offset: 2px; }
-  .option.correct { border-color: var(--good); background: rgba(62,224,160,0.12); color: var(--good); }
+  .option.correct { border-color: var(--good); background: color-mix(in srgb, var(--good) 12%, transparent); color: var(--good); }
   .option.correct .num { color: var(--good); }
-  .option.wrong { border-color: var(--again); background: rgba(255,107,107,0.13); color: var(--again); }
+  .option.wrong { border-color: var(--again); background: color-mix(in srgb, var(--again) 13%, transparent); color: var(--again); }
   .option.wrong .num { color: var(--again); }
   .option.dim { opacity: 0.45; }
 
@@ -2230,7 +2230,7 @@ function renderCard() {
     ansId: "ansRegion",
     withNote: hasNote,
   });
-  // The type badge heads the card (top-left), above the question — it names the
+  // The type badge heads the card (top, centered), above the question — it names the
   // present check (modeLabel), doesn't change within a card, and survives the
   // answer region's re-renders because it lives on the card, not inside it.
   card.insertBefore(el("span", "mode-tag", modeLabel()), card.firstChild);
