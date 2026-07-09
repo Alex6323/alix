@@ -123,6 +123,33 @@ remembering your choice in the browser (kept in `localStorage`, not the config).
 The palette lives in a shared `theme.css` the
 server hosts, so every screen — review, browse, and trace walks — themes together.
 
+## Kids mode
+
+alix can also serve a second, touch-first frontend aimed at kids (roughly
+age 10). Set `audience = "kids"` in `[serve]` (see
+[Configuration](16-configuration.md)) and point it at a folder an adult has
+already set up:
+
+```sh
+alix --config kids.toml ~/decks-family --lan --port 7781
+```
+
+A **box** is a workspace: the home screen shows the boxes as a grid, tap one
+to see its decks and a ⭐ mastery indicator per deck (display-only — the row
+itself isn't tappable), then pick a depth for the whole box — **👆 Tap the
+answer** (Recognize) or **🗣️ Say it yourself** (Recall); a caught-up choice
+disables itself instead of starting an empty session. Review works the same
+way underneath as the regular app — reveal, then the mascot says a short
+"why" instead of a bare note, then self-rate — with a **💬 Ask Alix** button
+that opens a kid-safe tutor overlay scoped to the current card.
+
+v1 is consumption only: it covers reviewing pre-made boxes at Recognize and
+Recall depth, plus the tutor. Augmenting a deck, the AI exam, and traces stay
+adult-only for now — an adult prepares a box in the regular web app, then
+hands the kid a `kids.toml` and the box to open. It's the same engine and the
+same `/api/*` contract underneath, just a different page: self-hosted Baloo 2
+type, warmer colours, and no keyboard required.
+
 ## Building a client?
 
 The JSON API the web app itself speaks is a documented, client-agnostic

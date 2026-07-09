@@ -57,6 +57,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   print-only QR output, a two-call AI workspace build) are marked
   `#[cfg_attr(coverage_nightly, coverage(off))]`, each excluded one function
   at a time with a stated reason, so the number stays honest.
+- **A kids web client** (touch-first, aimed at roughly age 10): a calm,
+  consumption-focused frontend over the same engine, served at `/` when
+  `[serve] audience = "kids"`. An adult builds and augments a box (workspace)
+  of decks in the regular web app, then a kid opens it here: pick a box, pick
+  a deck, pick a depth — **Tap the answer** (Recognize) or **Say it yourself**
+  (Recall) — and review, with a mascot's short "why" on reveal and a kid-safe
+  Ask Alix tutor. v1 is consumption only: augmenting a deck, the AI exam, and
+  traces stay adult-only for now. Self-hosts the Baloo 2 font (SIL OFL, see
+  `NOTICE`). No API or contract change — it's a second frontend over the same
+  `/api/*` endpoints documented in `docs/API.md`.
+- **`[serve] audience` config key** (`"adult"` default, or `"kids"`) — which
+  frontend `/` serves, and which voice the tutor uses.
 - **Web picker self-sufficiency: the ☰ menu gains Add deck… (generate from a
   URL, import .tsv/.txt, receive a wormhole code or .zip), Share… (wormhole
   code or .zip download), Reset… (typed-name confirm), Doctor, and Pair a

@@ -43,6 +43,7 @@ quit = ["q", "esc", "ctrl-c"]
 [serve]
 port = 7777
 # token = "..."   # pairing token required on /api/*; --lan auto-generates one (printed, with a QR)
+audience = "adult"   # or "kids" — which frontend `/` serves, and the tutor's voice (see 15 · The web app)
 ```
 
 (Jump-to-first/last stays fixed at `g`/`G`, and the arrow keys always move.)

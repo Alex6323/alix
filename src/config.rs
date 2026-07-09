@@ -1204,6 +1204,7 @@ pub fn default_config_toml() -> &'static str {
 # exposes it to the network and `--port` overrides the port set here.
 [serve]
 # port = 7777                   # default port (--port overrides per instance)
+# audience = "adult"            # or "kids" — which frontend `/` serves, and the tutor's voice
 
 # Review pacing (how the FSRS scheduler paces you). Personal — a workspace can
 # override these in its own alix.local.toml (which is never shared).
