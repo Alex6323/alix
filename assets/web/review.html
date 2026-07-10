@@ -198,6 +198,9 @@
   .exline .ltx { color: var(--ink); }
   .excerpt-more { color: var(--dim); font-size: 0.72rem; padding-left: 6px; margin-top: 4px; }
   .front-text { font-size: clamp(1.35rem, 3.6vw, 1.7rem); font-weight: 600; line-height: 1.4; letter-spacing: -0.01em; color: var(--ink); }
+  /* A multi-line front (a reversed card's alternatives) reads as centred lines
+     rather than one run-on where the browser collapsed the newlines. */
+  .front-text.multi { display: flex; flex-direction: column; gap: 0.4em; }
   /* The topological orientation breadcrumb: each region is its name over a thin
      per-card heatmap bar. Two channels, kept apart: name weight/opacity = where
      you are; bar color (red→green) = how solid each card in the area is. Clips
@@ -993,6 +996,17 @@ function el(tag, cls, text) {
   if (cls) n.className = cls;
   if (text !== undefined) n.textContent = text;
   return n;
+}
+// The front can carry newlines: a reversed dual-direction card's front is the
+// original answer's lines joined with "\n" (Card::reversed, src/card.rs). Split
+// on them so a multi-line front reads as centred lines instead of a run-on where
+// the browser collapsed the breaks. A plain single-line front is unchanged.
+function frontEl(text) {
+  const s = text == null ? "" : String(text);
+  if (!s.includes("\n")) return el("div", "front-text", s);
+  const wrap = el("div", "front-text multi");
+  for (const line of s.split("\n")) wrap.appendChild(el("div", "front-line", line));
+  return wrap;
 }
 // The drawer's open/close height animation: quick.
 const DRAWER_MS = 170;
@@ -2287,7 +2301,7 @@ function renderCard() {
     }
     crumbStrip.appendChild(bc);
   }
-  q.appendChild(el("div", "front-text", c.front));
+  q.appendChild(frontEl(c.front));
   for (const ctx of c.context) q.appendChild(contextLine(ctx));
   if (c.img) q.appendChild(cardImage(c.img));
 
@@ -2317,7 +2331,7 @@ function renderBrowse() {
     moreHint: false, // browse has no overflow marker
   });
 
-  q.appendChild(el("div", "front-text", c.front));
+  q.appendChild(frontEl(c.front));
   for (const ctx of c.context) q.appendChild(contextLine(ctx));
   if (c.img) q.appendChild(cardImage(c.img));
 
