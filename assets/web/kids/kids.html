@@ -350,6 +350,12 @@ body {
 .rate-almost { background: #ffb020; box-shadow: 0 6px 0 #db9310; }
 .rate-got { background: #2fb968; box-shadow: 0 6px 0 #1f9b53; padding: 13px 34px; font-size: 21px; }
 .show-btn:active, .rate-btn:active { transform: translateY(2px); }
+/* Quiet demote (the "I guessed" override on a correct tap-the-answer pick) —
+   subdued like .ghost-home, never competing with the primary rate-btn. */
+.rate-quiet {
+  padding: 12px 20px; border: none; border-radius: 16px; background: transparent;
+  color: var(--muted-2); font-family: inherit; font-weight: 700; font-size: 17px; cursor: pointer;
+}
 .ghost-home {
   padding: 10px 16px; border: none; border-radius: 14px; background: transparent;
   color: var(--muted-2); font-family: inherit; font-weight: 700; font-size: 16px; cursor: pointer;
@@ -949,6 +955,18 @@ function renderReviewBar(done, acquire, lineMode, choiceMode) {
   const mid = el("div", "bar-mid");
   if (acquire) {
     mid.appendChild(barBtn("Got it! Next", "show-btn", acquireNext));
+  } else if (done && choiceMode) {
+    // Tap-the-answer: chosen.passed is the engine's truth (ChooseFeedbackDto),
+    // never something the UI computes. A correct pick may self-demote via the
+    // quiet "I guessed" override, mirroring review.html's isRecognizeMc() — but
+    // a wrong pick has no path to "passed": the correct option is already
+    // highlighted on the card, so the single action here honestly records the miss.
+    if (chosen.passed) {
+      mid.appendChild(barBtn("✅ Got it!", "rate-btn rate-got", () => grade("passed")));
+      mid.appendChild(barBtn("🙈 I guessed", "rate-quiet", () => grade("failed")));
+    } else {
+      mid.appendChild(barBtn("Keep going 🔁", "rate-btn rate-again", () => grade("failed")));
+    }
   } else if (done) {
     mid.appendChild(barBtn("🔁 Try again", "rate-btn rate-again", () => grade("failed")));
     mid.appendChild(barBtn("💪 Almost", "rate-btn rate-almost", () => grade("partly")));
