@@ -292,6 +292,19 @@ to this codebase. When in doubt, mirror the surrounding code.
   experiment costs seconds, being wrong costs the build. (Worked example: `docs/API.md`
   promised `DeckItemDto.name` was always selectable; two agents "verified" it by reading,
   and the kids client shipped a dead button. One `curl` returned 400.)
+- **When blocked, stop — never build around the obstacle.** A wall the plan didn't anticipate
+  (a cooldown, an unreachable fixture, an id you can't compute) means *report*, not improvise;
+  a rule here won't survive one. Briefs must name the wall and the sanctioned route, or say
+  "stop and ask".
+- **A test must be able to fail, and must not sleep.** Mutation-test a new test: reintroduce
+  the bug, watch it fail, restore. Never wait on wall-clock — wait on a condition, or record
+  the gap as a skipped test carrying its reason. **Fixtures are content; state is generated:**
+  never commit a progress store (a frozen timestamp is a time bomb), and never compute a
+  `Card::id` outside the lib — a wrong id fails *silently*.
+- **A subagent inherits nothing.** Restate every binding constraint per brief; never assert
+  what a file contains (tell it to read). Scope a dispatch to minutes, ask for a plan before
+  it builds, keep expensive verification with the controller, and poll it —
+  don't dispatch and block.
 - **A rule that changes an `/api/*` response lives in the lib.** If the CLI hands it to
   the server as a closure, the server can't enforce it, the DTO can't express it, and
   `tests/api.rs` — which injects its own — can't test it. The tell: a test harness that
