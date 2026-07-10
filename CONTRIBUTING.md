@@ -95,7 +95,8 @@ open a proposal to change the list itself.
 | `make e2e` | Playwright smoke suite for the alix web clients (Node; needs a browser download the first time). |
 
 CI runs the same gates on every PR: `fmt` (nightly rustfmt), `check` (clippy +
-tests, with `-Dwarnings`), and an informational `coverage` job.
+tests, with `-Dwarnings`), `e2e` (Playwright, browser-driven — blocking), and an
+informational `coverage` job.
 
 ### Formatting is nightly-only
 
