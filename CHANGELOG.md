@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- An end-to-end smoke suite for the kids web client (`make e2e`, Playwright):
+  a click must produce the expected request, response, and screen, with no
+  uncaught page errors.
+
 ### Fixed
 - `docs/API.md` described `DeckItemDto.name` as a key you can always send to
   `/api/select`. Only deck rows are selectable: a workspace or folder row is

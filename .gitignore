@@ -16,3 +16,13 @@ PLAN.md
 # mdBook build output (`make book` / `mdbook build`)
 /docs/book/book/
 
+# Playwright e2e (`make e2e`) — Node tooling and its scratch decks copy;
+# fixtures/ itself IS committed (see e2e/fixtures/README.md).
+/e2e/node_modules/
+/e2e/.tmp/
+/e2e/test-results/
+/e2e/playwright-report/
+# A progress store is per-run state, never a fixture — the suite must start
+# from a fresh (no store) deck to exercise the never-seen/acquire path.
+/e2e/fixtures/decks/**/progress.json
+/e2e/fixtures/decks/**/recent.json

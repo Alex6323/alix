@@ -6,7 +6,7 @@
 # toolchain — `+nightly` is handled by rustup before cargo sees it — which is
 # why these live in a Makefile rather than .cargo/config.toml.)
 
-.PHONY: build test lint lint-js fmt fmt-check fmt-roadmap check ci coverage coverage-lcov eval run serve book site slides install clean sdd-clean heartbeat check-backends
+.PHONY: build test lint lint-js fmt fmt-check fmt-roadmap check ci coverage coverage-lcov eval run serve book site slides install clean sdd-clean heartbeat check-backends e2e
 
 # Compile the workspace.
 build:
@@ -142,6 +142,17 @@ heartbeat:
 # CLI). Needs each CLI installed and the maintainer's own logins configured.
 check-backends:
 	cargo run --quiet -- doctor --all-backends
+
+# Playwright end-to-end smoke suite for the alix web clients (e2e/): drives a
+# real `alix` server (Chromium only) and asserts a click reaches the server —
+# request, response, and screen, with zero uncaught page errors. Deliberately
+# NOT part of `check` (needs Node + a browser download, and is slower) — run
+# it deliberately, like `eval`. See e2e/fixtures/README.md for the frozen
+# distractor cache it depends on.
+e2e:
+	npm --prefix e2e ci || npm --prefix e2e install
+	npx --prefix e2e playwright install --with-deps chromium || npx --prefix e2e playwright install chromium
+	npx --prefix e2e playwright test --config=e2e/playwright.config.ts
 
 # Local, gitignored maintainer-only targets (e.g. wish-triage). The leading `-`
 # makes this a silent no-op for anyone whose tree doesn't have the file.

@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "cards": {
+    "12247854916916268421": {
+      "distractors": [
+        "African elephant",
+        "Ostrich",
+        "Moose"
+      ]
+    },
+    "16267368169905347173": {
+      "distractors": [
+        "Pronghorn antelope",
+        "Lion",
+        "Greyhound"
+      ]
+    }
+  }
+}

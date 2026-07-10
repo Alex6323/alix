@@ -92,6 +92,7 @@ open a proposal to change the list itself.
 | `make run ARGS="exam mydeck.txt"` | Run the binary. |
 | `make serve ARGS="review mydeck.txt"` | Web frontend. |
 | `make book` | Serve the mdBook manual live. |
+| `make e2e` | Playwright smoke suite for the alix web clients (Node; needs a browser download the first time). |
 
 CI runs the same gates on every PR: `fmt` (nightly rustfmt), `check` (clippy +
 tests, with `-Dwarnings`), and an informational `coverage` job.

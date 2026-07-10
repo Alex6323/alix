@@ -1,0 +1,12 @@
+{
+  "name": "alix-e2e",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Playwright smoke suite for the alix web clients.",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1"
+  }
+}
