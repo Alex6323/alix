@@ -7,59 +7,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- An end-to-end smoke suite for the kids web client (`make e2e`, Playwright):
-  a click must produce the expected request, response, and screen, with no
-  uncaught page errors.
-
-### Fixed
-- `docs/API.md` described `DeckItemDto.name` as a key you can always send to
-  `/api/select`. Only deck rows are selectable: a workspace or folder row is
-  a container and `/api/select` rejects it (400) — drill into its `members`.
-  A group row's `reviewable_*` flags aggregate its members rather than
-  inviting a select. (Found when the kids client believed the doc and shipped
-  a button that did nothing.)
-- `docs/API.md` documented `/api/walk/grade`'s `delta` keys as `"g"|"p"|"m"`;
-  the server and web client have always used `"n"|"p"|"f"`. The doc now
-  matches the wire (caught by the new HTTP round-trip suite).
-- A wrong Recognize pick now shows which option was right before moving on
-  (Continue grades it failed) — the silent instant-demote skipped the
-  corrective moment.
-- A just-finished card can no longer come straight back: its re-serve clock
-  now floors at the card transition, so time spent on the feedback screen or
-  the next card never eats the gap.
-- The same-card floor now covers Recognize too: a failed pick used to
-  resurface instantly (a deliberate exclusion at the time); with one card
-  left, that meant an instant boomerang. It now re-queues but stays floored
-  like every other depth.
-- Multiple-choice options now reshuffle on each appearance of a card, instead
-  of sitting in the same positions every time — a retry could otherwise be
-  solved by position memory rather than actually recalling the answer.
-- The picker's ⟳ now re-reads the config, so a changed `decks_dir` takes
-  effect without a restart (scoped `alix <dir>` instances stay pinned to
-  their folder).
-- A sequence card (`% reveal: line`) at Recognize is now quizzed as one whole
-  answer among the cached distractors, instead of a meaningless pick-one-step
-  choice built from the card's own lines (falls back to the self-report chips
-  when no distractors are cached).
-- The acquire view's badge no longer names a check — a brand-new card shows
-  just `NEW` (the attempt-first reveal is ungraded).
-- The tutor's "couldn't find the source" reply, for a frozen card whose live
-  source root is gone, now comes back immediately instead of round-tripping
-  through the model to have it echo the same fixed sentence.
-- `alix generate <dir>` (workspace build) no longer blocks on, or touches, a
-  populated destination. The build always stages into a scratch dir first,
-  then merges the new files in one by one: a name already present in the
-  destination keeps your original untouched and reports the new version's
-  location (in the kept-around staging dir) instead of failing the whole run
-  or overwriting anything. `--force` overwrites collisions. A leftover staging
-  dir from a previous conflicted build now asks for confirmation before it's
-  wiped and rebuilt, and dot-prefixed folders are hidden from the picker's
-  scan so a kept-around staging dir never shows up as a bogus workspace.
-- A taken port now errors immediately with a `try --port` hint — the server
-  binds before printing its URL, so a clash no longer shows a
-  success-looking line first.
-
-### Added
+- An end-to-end smoke suite for the alix web clients — both adult and kids
+  (`make e2e`, Playwright): a click must produce the expected request,
+  response, and screen, with no uncaught page errors, covering session
+  select/grade, the picker, and a multi-line answer rendering as separate
+  lines rather than one joined string.
 - **A live Codecov badge on the README**, backed by a real-server HTTP
   round-trip test suite (`tests/api.rs`) that drives `/api/*` over the wire
   rather than calling handlers in-process — the deterministic half of
@@ -145,6 +97,54 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and mastered flags together, under one blast-radius confirmation.
 - **The web exam launch pre-flights the backend's ability to reach the
   deck's source**, failing at start instead of mid-exam.
+
+### Fixed
+- `docs/API.md` described `DeckItemDto.name` as a key you can always send to
+  `/api/select`. Only deck rows are selectable: a workspace or folder row is
+  a container and `/api/select` rejects it (400) — drill into its `members`.
+  A group row's `reviewable_*` flags aggregate its members rather than
+  inviting a select. (Found when the kids client believed the doc and shipped
+  a button that did nothing.)
+- `docs/API.md` documented `/api/walk/grade`'s `delta` keys as `"g"|"p"|"m"`;
+  the server and web client have always used `"n"|"p"|"f"`. The doc now
+  matches the wire (caught by the new HTTP round-trip suite).
+- A wrong Recognize pick now shows which option was right before moving on
+  (Continue grades it failed) — the silent instant-demote skipped the
+  corrective moment.
+- A just-finished card can no longer come straight back: its re-serve clock
+  now floors at the card transition, so time spent on the feedback screen or
+  the next card never eats the gap.
+- The same-card floor now covers Recognize too: a failed pick used to
+  resurface instantly (a deliberate exclusion at the time); with one card
+  left, that meant an instant boomerang. It now re-queues but stays floored
+  like every other depth.
+- Multiple-choice options now reshuffle on each appearance of a card, instead
+  of sitting in the same positions every time — a retry could otherwise be
+  solved by position memory rather than actually recalling the answer.
+- The picker's ⟳ now re-reads the config, so a changed `decks_dir` takes
+  effect without a restart (scoped `alix <dir>` instances stay pinned to
+  their folder).
+- A sequence card (`% reveal: line`) at Recognize is now quizzed as one whole
+  answer among the cached distractors, instead of a meaningless pick-one-step
+  choice built from the card's own lines (falls back to the self-report chips
+  when no distractors are cached).
+- The acquire view's badge no longer names a check — a brand-new card shows
+  just `NEW` (the attempt-first reveal is ungraded).
+- The tutor's "couldn't find the source" reply, for a frozen card whose live
+  source root is gone, now comes back immediately instead of round-tripping
+  through the model to have it echo the same fixed sentence.
+- `alix generate <dir>` (workspace build) no longer blocks on, or touches, a
+  populated destination. The build always stages into a scratch dir first,
+  then merges the new files in one by one: a name already present in the
+  destination keeps your original untouched and reports the new version's
+  location (in the kept-around staging dir) instead of failing the whole run
+  or overwriting anything. `--force` overwrites collisions. A leftover staging
+  dir from a previous conflicted build now asks for confirmation before it's
+  wiped and rebuilt, and dot-prefixed folders are hidden from the picker's
+  scan so a kept-around staging dir never shows up as a bogus workspace.
+- A taken port now errors immediately with a `try --port` hint — the server
+  binds before printing its URL, so a clash no longer shows a
+  success-looking line first.
 
 ### Changed
 - **Breaking: an ambiguous bare deck name is rejected instead of silently

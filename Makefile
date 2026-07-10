@@ -143,14 +143,13 @@ heartbeat:
 check-backends:
 	cargo run --quiet -- doctor --all-backends
 
-# Playwright end-to-end smoke suite for the alix web clients (e2e/): drives a
-# real `alix` server (Chromium only) and asserts a click reaches the server —
+# Playwright end-to-end smoke suite for the alix web clients (e2e/): drives
+# real `alix` servers (Chromium only) and asserts a click reaches the server —
 # request, response, and screen, with zero uncaught page errors. Deliberately
 # NOT part of `check` (needs Node + a browser download, and is slower) — run
-# it deliberately, like `eval`. See e2e/fixtures/README.md for the frozen
-# distractor cache it depends on.
+# it deliberately, like `eval`. See e2e/README.md.
 e2e:
-	npm --prefix e2e ci || npm --prefix e2e install
+	npm --prefix e2e ci
 	npx --prefix e2e playwright install --with-deps chromium || npx --prefix e2e playwright install chromium
 	npx --prefix e2e playwright test --config=e2e/playwright.config.ts
 

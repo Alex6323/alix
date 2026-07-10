@@ -1,7 +1,8 @@
-// Prepares the scratch decks dir the server will run against. See
-// prepare-fixtures.cjs for why this same step also runs from webServer.command.
+// Prepares the scratch decks dirs both servers run against. See
+// prepare-fixtures.cjs for why this same step also runs from each webServer.
 export default async function globalSetup(): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { prepareFixtures } = require("./prepare-fixtures.cjs");
-  prepareFixtures();
+  prepareFixtures("kids");
+  prepareFixtures("adult");
 }

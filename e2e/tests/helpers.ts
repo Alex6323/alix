@@ -5,11 +5,25 @@
 // except a browser console error. `pageErrors` is an auto-fixture — every
 // test gets it before its body runs, and its teardown asserts nothing was
 // logged. A test doesn't have to remember to opt in.
-import { test as base, expect } from "@playwright/test";
+import { test as base, expect, type Locator, type Page } from "@playwright/test";
 
 type Fixtures = {
   pageErrors: string[];
 };
+
+// A kids `.deck-row` also carries a mastery pill and a `›` chevron, so
+// matching the row's whole text loosely (`hasText: "wild"`) stays unique only
+// by accident — a second deck whose name happens to contain the same
+// substring would silently match too. Target the exact label instead.
+export function kidsDeckRow(page: Page, name: string): Locator {
+  return page.locator(".deck-row").filter({ has: page.locator(".deck-label", { hasText: name, exact: true }) });
+}
+
+// Same idea for the adult picker's `.deckrow` (name in a `.name` span,
+// plus optional badges/meta after it).
+export function adultDeckRow(page: Page, name: string): Locator {
+  return page.locator(".deckrow").filter({ has: page.locator(".name", { hasText: name, exact: true }) });
+}
 
 export const test = base.extend<Fixtures>({
   // eslint-disable-next-line no-empty-pattern

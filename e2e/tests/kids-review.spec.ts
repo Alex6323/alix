@@ -20,16 +20,11 @@
 // screen. `pageErrors` (see helpers.ts) is an auto-fixture that fails any
 // test which logged an uncaught page error or console.error.
 //
-// Not covered here: the "a wrong Recognize pick can only record failed" rule
-// (fix c46dad5) needs a card that has already been seen once (acquired) AND
-// is due again — the real acquire cooldown is a fixed 60s server-side
-// constant, so reaching that state deterministically would mean either a
-// real ~60s wait or committing pre-warmed progress state, and the latter is
-// exactly what this fixture must not do (see fixtures/README.md). That
-// specific bar-hiding rule is client-side JS with no other automated
-// coverage right now — only the server's ChooseFeedbackDto.passed (the
-// signal that rule reads) is covered, by the contract suite.
+// The "a wrong Recognize pick can only record failed" rule (fix c46dad5) has
+// no automated coverage — see the `test.fixme` at the bottom of this file for
+// why, and what it would take.
 import { test, expect } from "./helpers";
+import { kidsDeckRow } from "./helpers";
 
 // Tests share one running server and one review session on it (see
 // `fullyParallel: false` / `workers: 1` in playwright.config.ts), so they run
@@ -46,7 +41,7 @@ test("a box drills into its decks, and a deck offers the two depth choices", asy
   await page.goto("/");
   await page.locator(".box", { hasText: "Animals" }).click();
 
-  const deckRow = page.locator(".deck-row", { hasText: "wild" });
+  const deckRow = kidsDeckRow(page, "wild");
   await expect(deckRow).toBeVisible();
   await expect(deckRow.evaluate((el) => el.tagName)).resolves.toBe("BUTTON");
 
@@ -61,7 +56,7 @@ test('clicking "Tap the answer" selects the deck at recognize depth and shows a 
 }) => {
   await page.goto("/");
   await page.locator(".box", { hasText: "Animals" }).click();
-  await page.locator(".deck-row", { hasText: "wild" }).click();
+  await kidsDeckRow(page, "wild").click();
 
   const [request, response] = await Promise.all([
     page.waitForRequest((req) => req.url().includes("/api/select") && req.method() === "POST"),
@@ -87,7 +82,7 @@ test('clicking "Tap the answer" selects the deck at recognize depth and shows a 
 test('clicking "Say it yourself" shows a reveal control, not options', async ({ page }) => {
   await page.goto("/");
   await page.locator(".box", { hasText: "Animals" }).click();
-  await page.locator(".deck-row", { hasText: "wild" }).click();
+  await kidsDeckRow(page, "wild").click();
 
   const [response] = await Promise.all([
     page.waitForResponse((res) => res.url().includes("/api/select")),
@@ -106,7 +101,7 @@ test("tapping an option on a never-seen card records the pick and offers only th
 }) => {
   await page.goto("/");
   await page.locator(".box", { hasText: "Animals" }).click();
-  await page.locator(".deck-row", { hasText: "wild" }).click();
+  await kidsDeckRow(page, "wild").click();
 
   await Promise.all([
     page.waitForResponse((res) => res.url().includes("/api/select")),
@@ -147,4 +142,40 @@ test("tapping an option on a never-seen card records the pick and offers only th
   // silently sitting on the same unanswered question.
   await expect(page.locator(".rev-prompt")).toBeVisible();
   await expect(page.locator(".rev-prompt")).not.toHaveText(firstFront ?? "");
+});
+
+test("a wrong Recognize pick can only record failed, never passed", async ({ page }) => {
+  test.fixme(
+    true,
+    "Needs a card that is PAST acquire (already acknowledged once) AND due " +
+      "again for a real Recognize quiz. The real acquire cooldown is a fixed " +
+      "~1 min server-side constant (ACQUIRE_COOLDOWN_MS, src/scheduler.rs), so " +
+      "reaching that state deterministically means either a real ~60s wait " +
+      "(this suite avoids real-time waits) or committing pre-warmed progress " +
+      "state (forbidden by the fixture contract — see ../README.md). Left " +
+      "here as a real, runnable body — not deleted — so every `make e2e` " +
+      "keeps reporting the gap instead of it rotting in a comment.",
+  );
+
+  // The intended flow, once reachable: acquire "wild"'s Giraffe card, wait
+  // out the cooldown, come back to a genuine Recognize quiz on it, tap a
+  // WRONG option, and assert the fix (c46dad5) still holds — only "Keep
+  // going" (.rate-again, grades failed) is offered, never "✅ Got it!"
+  // (.rate-got, grades passed): a wrong tap can't self-rate as passed.
+  await page.goto("/");
+  await page.locator(".box", { hasText: "Animals" }).click();
+  await kidsDeckRow(page, "wild").click();
+  await Promise.all([
+    page.waitForResponse((res) => res.url().includes("/api/select")),
+    page.getByRole("button", { name: "Tap the answer" }).click(),
+  ]);
+
+  const wrongOption = page.locator(".opt-btn:not(.opt-correct)").first();
+  await Promise.all([
+    page.waitForResponse((res) => res.url().includes("/api/choose")),
+    wrongOption.click(),
+  ]);
+
+  await expect(page.locator(".rate-got")).toHaveCount(0);
+  await expect(page.locator(".rate-again")).toBeVisible();
 });
