@@ -301,6 +301,9 @@ to this codebase. When in doubt, mirror the surrounding code.
   the gap as a skipped test carrying its reason. **Fixtures are content; state is generated:**
   never commit a progress store (a frozen timestamp is a time bomb), and never compute a
   `Card::id` outside the lib — a wrong id fails *silently*.
+- **A fix must be shown to fix.** Reproduce the failure first, then confirm it disappears
+  *because of* the change, not alongside it. A red build plus a plausible story is the most
+  expensive thing you can believe.
 - **A subagent inherits nothing.** Restate every binding constraint per brief; never assert
   what a file contains (tell it to read). Scope a dispatch to minutes, ask for a plan before
   it builds, keep expensive verification with the controller, and poll it —
