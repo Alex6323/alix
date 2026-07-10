@@ -23,14 +23,15 @@ type Fixtures = {
 // the trace showed seven of those eight answered and one font with no response
 // recorded at the moment Playwright gave up.
 //
-// The cause is NOT established — see {#server-subresource-stall}. The serial
-// request loop in src/serve/mod.rs is a suspect, but the obvious hypothesis did
-// not reproduce, and a trace captured at timeout cannot distinguish "never
-// answered" from "still in flight".
+// There is no evidence of a server bug. That was the FIRST ever CI run, with cold
+// caches (a 114MB browser download and a full cargo compile); the very next run —
+// one second later, warm, and still using `waitUntil: "load"` — passed. So the
+// failure did not depend on the code, and this change did not fix it. See
+// {#server-subresource-stall}.
 //
-// Either way it is not what these tests are about: they assert DOM and network
-// behaviour, and every assertion auto-waits. So wait for the DOM, not for
-// webfonts. This de-couples the suite; it does not fix the server.
+// The change stands on its own: these tests assert DOM and network behaviour and
+// every assertion auto-waits, so they must not gate on webfont delivery. That
+// removes a cold-start flake source. It is not a fix for anything.
 export async function openApp(page: Page): Promise<void> {
   await page.goto("/", { waitUntil: "domcontentloaded" });
 }
