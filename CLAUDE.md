@@ -282,6 +282,20 @@ to this codebase. When in doubt, mirror the surrounding code.
   on the project's own gates (fit gate, north star, the NOT-list, soundness); then prosecute
   the rebuttals back (steelman the alternative). A spec isn't "locked" until it has survived
   one. Cheap, and it catches mis-founded designs before a build pays for them.
+- **An assumption is verified only when a command failed to refute it.** In specs/plans
+  write `Assumption — falsification command · expected output · fallback`; never a bare
+  "verify X". A step satisfiable by *reading* is not verification. Docs (including
+  `docs/API.md`) are hypotheses about the code, not evidence of its behavior — only an
+  execution closes an assumption. When a trace agrees with you, keep going: stop on
+  contradiction, not on agreement. A second reader is a correlated sensor — independence
+  means a different *method* (run it), not another pair of eyes. Weigh the asymmetry: the
+  experiment costs seconds, being wrong costs the build. (Worked example: `docs/API.md`
+  promised `DeckItemDto.name` was always selectable; two agents "verified" it by reading,
+  and the kids client shipped a dead button. One `curl` returned 400.)
+- **A rule that changes an `/api/*` response lives in the lib.** If the CLI hands it to
+  the server as a closure, the server can't enforce it, the DTO can't express it, and
+  `tests/api.rs` — which injects its own — can't test it. The tell: a test harness that
+  must reimplement production behavior to boot a server.
 - **Subagent-driven development cleans up after itself.** When an SDD run
   finishes — its branch merged or abandoned — clear its scratch with
   **`make sdd-clean`** (removes the `.superpowers/sdd/` ledger + task-brief /
