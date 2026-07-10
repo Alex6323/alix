@@ -189,6 +189,10 @@ fn review_options(base: &str, auth: Option<String>) -> ReviewOptions {
         ai: config.ai,
         generate: config.generate,
         review: config.review,
+        // The adult default — the same wiring `src/cli/launch.rs` uses. A kids
+        // server differs only in which page `/` serves and the tutor's voice;
+        // every `/api/*` route below is audience-agnostic.
+        audience: config.serve.audience,
         auth,
         config_path: None,
         pair: PairInfo {
@@ -211,9 +215,21 @@ fn spawn_test_server() -> (String, Guard) {
 /// exactly like a real `--lan`/`--token` launch — for exercising the 401 path
 /// over real HTTP.
 fn spawn_test_server_with(token: Option<&str>) -> (String, Guard) {
+    spawn_test_server_fixture(token, |_dir| {})
+}
+
+/// Like [`spawn_test_server_with`], but runs `extra` against the decks dir
+/// right after [`FIXTURE_DECK`] is written and before the server starts —
+/// lets a test add its own fixture files (e.g. a workspace folder) alongside
+/// `sample.txt`.
+fn spawn_test_server_fixture(
+    token: Option<&str>,
+    extra: impl FnOnce(&Path),
+) -> (String, Guard) {
     let dir = TempDir::new().unwrap();
     let deck_path = dir.path().join("sample.txt");
     std::fs::write(&deck_path, FIXTURE_DECK).unwrap();
+    extra(dir.path());
     let store_path = dir.path().join("store.json");
 
     let store = Store::open(&store_path).unwrap();
@@ -668,6 +684,111 @@ fn get_api_decks_returns_200_with_the_fixture_deck_in_the_catalog() {
         recent.iter().any(|d| d["name"] == "sample.txt"),
         "body: {body}"
     );
+}
+
+// ── Decks catalog: workspace rows vs. deck rows ──────────────────────────
+//
+// `spawn_test_server`'s fixture is a single loose deck — no workspace
+// anywhere — so none of these tests can use it. `write_animals_workspace`
+// adds a real workspace (an `alix.toml` manifest + two member decks)
+// alongside `sample.txt` via `spawn_test_server_fixture`, so `/api/decks`
+// actually has a group row to exercise.
+
+/// Writes a workspace `animals/` (with `alix.toml`, so it registers as
+/// `is_workspace` — see `workspace::is_workspace`) holding two tiny member
+/// decks, into the fixture's decks dir.
+fn write_animals_workspace(dir: &Path) {
+    let ws = dir.join("animals");
+    std::fs::create_dir(&ws).unwrap();
+    std::fs::write(ws.join("alix.toml"), "title = \"Animals\"\n").unwrap();
+    std::fs::write(ws.join("one.txt"), "# q1\n\ta1\n").unwrap();
+    std::fs::write(ws.join("two.txt"), "# q2\n\ta2\n").unwrap();
+}
+
+#[test]
+fn get_api_decks_lists_a_workspace_with_its_member_decks() {
+    let (base, _guard) = spawn_test_server_fixture(None, write_animals_workspace);
+
+    let resp = http(&base, "GET", "/api/decks", &[], &[]);
+
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    let workspaces = body["workspaces"]
+        .as_array()
+        .expect("workspaces is an array");
+    let animals = workspaces
+        .iter()
+        .find(|w| w["name"] == "animals")
+        .unwrap_or_else(|| panic!("no `animals` workspace row: body: {body}"));
+    assert_eq!(true, animals["is_workspace"], "row: {animals}");
+    let members = animals["members"].as_array().expect("members is an array");
+    assert!(!members.is_empty(), "row: {animals}");
+    for m in members {
+        assert!(
+            m["name"].as_str().is_some_and(|n| !n.is_empty()),
+            "a member has an empty name: {m}"
+        );
+    }
+}
+
+/// The invariant real clients depend on: every member `name` `/api/decks`
+/// reports must actually select (200, a review `StateDto`). This exercises
+/// the server's real name resolution (`resolve_row`, `src/serve/catalog.rs`)
+/// over qualified `<workspace>/<file>` keys — NOT `build_review`'s
+/// folder-bail (that's `build_review_rejects_a_folder_of_decks` in
+/// `src/cli/launch.rs`): this harness's `build` closure is its own
+/// miniature (see `spawn_test_server_with`'s doc — "without the
+/// workspace/topology/virtual-card machinery"), so only `resolve_row` +
+/// `Deck::load` are under test here.
+#[test]
+fn every_member_deck_name_from_api_decks_is_selectable() {
+    let (base, _guard) = spawn_test_server_fixture(None, write_animals_workspace);
+
+    let decks_resp = http(&base, "GET", "/api/decks", &[], &[]);
+    let body: serde_json::Value = serde_json::from_slice(&decks_resp.body).unwrap();
+    let animals = body["workspaces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|w| w["name"] == "animals")
+        .unwrap_or_else(|| panic!("no `animals` workspace row: body: {body}"));
+    let members = animals["members"].as_array().unwrap();
+    assert!(!members.is_empty(), "row: {animals}");
+
+    for m in members {
+        let name = m["name"].as_str().expect("member name is a string");
+        let req = serde_json::json!({ "deck": name }).to_string();
+        let resp = post_json(&base, "/api/select", &req);
+        assert_eq!(
+            200,
+            resp.status,
+            "selecting member {name:?} failed: {}",
+            String::from_utf8_lossy(&resp.body)
+        );
+        let sel: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+        assert_eq!(
+            "review", sel["kind"],
+            "member {name:?} did not select into a review session: {sel}"
+        );
+    }
+}
+
+/// A workspace row's `name` (`"animals"`) is a *resolution* key — valid for
+/// `/api/reset` — but a review session is exactly one deck file, so
+/// `/api/select` rejects a group row. The authoritative rule and its error
+/// message live in `build_review` (`src/cli/launch.rs`) and are unit-tested
+/// there (`build_review_rejects_a_folder_of_decks`); this test only pins the
+/// client-visible status code, because this harness injects its own `build`
+/// (`spawn_test_server_with`'s doc) — the 400 here comes from the stub's
+/// `Deck::load(<workspace dir>)` failing to load a directory as a deck file,
+/// not from `build_review`'s bail.
+#[test]
+fn a_workspace_row_name_is_not_selectable() {
+    let (base, _guard) = spawn_test_server_fixture(None, write_animals_workspace);
+
+    let resp = post_json(&base, "/api/select", r#"{"deck":"animals"}"#);
+
+    assert_eq!(400, resp.status);
 }
 
 #[test]

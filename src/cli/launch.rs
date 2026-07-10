@@ -899,6 +899,37 @@ mod tests {
     }
 
     #[test]
+    fn build_review_rejects_a_folder_of_decks() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path().join("animals");
+        std::fs::create_dir(&ws).unwrap();
+        let member = ws.join("m.txt");
+        std::fs::write(&member, "# q\n\ta\n").unwrap();
+        // Pin the store explicitly — a bare `None` would fall through to the
+        // real global data dir.
+        let store = store_for(
+            std::slice::from_ref(&member),
+            Some(dir.path().join("store.json")),
+        )
+        .unwrap();
+        let config = Config::default();
+        let mut recent = RecentDecks::load(dir.path().join("recent.json"));
+
+        let err = build_review(
+            vec![ws],
+            test_pacing(),
+            &config,
+            &store,
+            &mut recent,
+            &serve::SelectOptions::default(),
+        )
+        .err()
+        .expect("a folder of decks is not a reviewable deck");
+
+        assert!(format!("{err}").contains("is a folder"), "{err}");
+    }
+
+    #[test]
     fn build_review_injects_a_decks_virtual_cards() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("rust.txt");

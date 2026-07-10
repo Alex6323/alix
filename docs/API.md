@@ -91,9 +91,11 @@ so is every client.
 
 ### 4.1 The review loop
 
-1. `GET /api/decks` → the picker catalog (`DeckListDto`). Deck `name` values
-   are the only keys `/api/select` accepts — names never contain filesystem
-   paths, and requests cannot construct paths.
+1. `GET /api/decks` → the picker catalog (`DeckListDto`). Names never contain
+   filesystem paths, and requests cannot construct paths — but only a
+   **deck** row's `name` is a key `/api/select` accepts; a group row's name
+   (`is_workspace`, or a folder) is a container, not a session (see
+   `DeckItemDto.name`).
 2. `POST /api/select {deck, topology?, region?, depth?, cram?, max_new?,
    limit?}` builds a session. **The response is either a `StateDto` or a
    `WalkDto` — branch on `kind` (`"review"` | `"walk"`) before anything
@@ -425,13 +427,13 @@ per region per card) *(presentational)*.
 
 | Key | Type | Meaning |
 |---|---|---|
-| `name` | string | The stable selection key — send back to `/api/select`. |
+| `name` | string | The stable resolution key for this row (also used by `/api/reset`, `/api/browse`, and import's/generate's `dest`). **Only deck rows are selectable:** a group row (`is_workspace`, or a folder) is a container — `/api/select` rejects it with 400. Drill into `members` and select one of those. |
 | `label` | string | Display title. |
 | `meta` | string? | Badge text like `3/20`, `done ✓` *(presentational — parse nothing from it)*. |
 | `state` | string | `new` \| `started` \| `finished` \| `examdue` for decks; `workspace` \| `folder` for groups (open set). |
 | `locked` | bool | A `% requires:` prerequisite isn't passed (exam-gating only — drilling stays allowed). |
-| `reviewable` | bool | Anything to do at any depth (or trace/exam special cases). |
-| `reviewable_recognize` / `reviewable_recall` / `reviewable_reconstruct` | bool | Per-depth honest due-ness — gate depth choices on these. |
+| `reviewable` | bool | Anything to do at any depth (or trace/exam special cases). On a **group** row this aggregates its members — it describes what's due inside, not that the group itself can be selected. |
+| `reviewable_recognize` / `reviewable_recall` / `reviewable_reconstruct` | bool | Per-depth honest due-ness — gate depth choices on these. Same group-aggregates-members caveat as `reviewable`. |
 | `mastered` | bool | Exam passed. |
 | `is_trace` | bool | Selecting it walks instead of reviewing. |
 | `examable` | bool | Its exam can be sat right now. |

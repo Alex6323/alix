@@ -7,6 +7,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
+- `docs/API.md` described `DeckItemDto.name` as a key you can always send to
+  `/api/select`. Only deck rows are selectable: a workspace or folder row is
+  a container and `/api/select` rejects it (400) — drill into its `members`.
+  A group row's `reviewable_*` flags aggregate its members rather than
+  inviting a select. (Found when the kids client believed the doc and shipped
+  a button that did nothing.)
 - `docs/API.md` documented `/api/walk/grade`'s `delta` keys as `"g"|"p"|"m"`;
   the server and web client have always used `"n"|"p"|"f"`. The doc now
   matches the wire (caught by the new HTTP round-trip suite).
