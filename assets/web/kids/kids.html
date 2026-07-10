@@ -182,6 +182,18 @@ body {
 .deck-sub { margin-top: 8px; }
 .select-error { margin-top: 18px; font-weight: 700; color: var(--muted-2); }
 
+/* The loud-failure toast: only ever on screen when something actually broke. */
+.oops {
+  position: absolute; left: 50%; bottom: 92px; transform: translateX(-50%);
+  z-index: 40; max-width: min(520px, calc(100% - 48px));
+  padding: 14px 22px; min-height: 50px; border: none; border-radius: 18px;
+  background: #fff; color: var(--ink); font-family: inherit; font-weight: 700; font-size: 16px;
+  box-shadow: 0 10px 28px rgba(180, 110, 60, 0.24); cursor: pointer;
+  animation: oopsIn 0.18s ease both;
+}
+.oops[hidden] { display: none; }
+@keyframes oopsIn { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
 /* The two depth-start choices, pinned in the action bar (mirrors the design's
    fixed footer CTA) — always both visible, "caught-up" just disables one. */
 .depth-choices { display: flex; gap: 12px; flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
@@ -453,7 +465,10 @@ button:focus-visible, input:focus-visible, .box:focus-visible {
   .mascot { animation-name: kidsBreathe; }
   .box, .deck-row { transition: none; }
   .box:hover, .box:active, .deck-row:hover, .deck-row:active { transform: none; }
+  /* Reduce, don't remove: the toast still fades in, it just doesn't travel. */
+  .oops { animation-name: oopsFade; }
 }
+@keyframes oopsFade { from { opacity: 0; } to { opacity: 1; } }
 </style>
 </head>
 <body>
@@ -473,6 +488,10 @@ button:focus-visible, input:focus-visible, .box:focus-visible {
   </div>
 
   <footer id="actionbar" class="actionbar"></footer>
+
+  <!-- Loud failure. A request that dies (or a promise nobody caught) says so,
+       instead of leaving a button that silently does nothing. Tap to dismiss. -->
+  <button id="oops" class="oops" type="button" hidden aria-live="polite"></button>
 
   <div id="menuBackdrop" class="menu-backdrop" hidden></div>
   <div id="menuPop" class="menu-pop" hidden role="menu" aria-label="Colours">
@@ -537,10 +556,40 @@ button:focus-visible, input:focus-visible, .box:focus-visible {
   };
 })();
 
-// An error response has an empty (non-JSON) body, so `.json()` throws and the
-// rejection reaches the caller's `.catch` — same contract as review.html.
-async function api(path, opts) { return (await fetch(path, opts)).json(); }
+// An error response carries no JSON body. Rejecting with the status (rather
+// than letting `.json()` throw a bare SyntaxError) means the failure names the
+// request that actually died — in a caller's `.catch`, in `showOops`, and in
+// the console. A silent 400 behind a tapped button is how a dead control hides.
+async function api(path, opts) {
+  const res = await fetch(path, opts);
+  if (!res.ok) {
+    const err = new Error(`${(opts && opts.method) || "GET"} ${path} → ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
+  return res.json();
+}
 function post(body) { return { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }; }
+
+// ── Make silent failure loud ──────────────────────────────────────────────
+// A rejected promise nobody caught is exactly the shape of a button that does
+// nothing. Say so — kindly to the child, precisely to the console.
+let oopsTimer = null;
+function showOops(detail) {
+  if (detail) console.error("alix kids:", detail);
+  const box = document.getElementById("oops");
+  if (!box) return;
+  box.textContent = "Oops — that didn't work. Try again? 🌱";
+  box.hidden = false;
+  clearTimeout(oopsTimer);
+  oopsTimer = setTimeout(() => { box.hidden = true; }, 6000);
+}
+window.addEventListener("unhandledrejection", (e) => {
+  // A 401 already opens the pairing gate, which explains itself.
+  if (e.reason && e.reason.status === 401) return;
+  showOops(e.reason);
+});
+window.addEventListener("error", (e) => showOops(e.error || e.message));
 
 // ── View state only (the engine behind /api/* owns everything else) ───────
 let screen = "home";     // "home" | "box" | "review" | "done"
@@ -1262,6 +1311,7 @@ function gateConnect() {
   location.reload();
 }
 document.getElementById("gateBtn").addEventListener("click", gateConnect);
+document.getElementById("oops").addEventListener("click", (e) => { e.currentTarget.hidden = true; });
 document.getElementById("gateInput").addEventListener("keydown", (e) => { if (e.key === "Enter") gateConnect(); });
 
 // ── Load ──────────────────────────────────────────────────────────────────
