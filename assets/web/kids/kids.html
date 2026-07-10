@@ -286,6 +286,7 @@ body {
   background: rgba(47, 185, 104, 0.12); padding: 4px 18px; border-radius: 14px;
 }
 /* Line mode: back lines revealed one at a time. */
+.rev-answer-stack { display: flex; flex-direction: column; gap: 8px; align-items: center; }
 .rev-lines { display: flex; flex-direction: column; gap: 10px; margin: 18px 0 4px; }
 .rev-line { font-weight: 700; font-size: 24px; color: var(--ink); }
 
@@ -853,7 +854,7 @@ function revealDone() {
   return revealed > 0;
 }
 
-// The heart of the app. Branches on kind (trace → not-ready), then acquire, then
+// The heart of the app. Branches on kind (trace → not-ready), then on
 // state.mode: choice → tap-the-answer, line → reveal-next, everything else →
 // fill-in-the-blank. The persistent Home / Ask Alix bar renders for every card.
 function renderReview() {
@@ -864,7 +865,13 @@ function renderReview() {
   const acquire = !!state.acquire;
   const choiceMode = isChoiceMode();
   const lineMode = state.mode === "line";
-  const done = acquire || revealDone();
+  // A never-seen card is ATTEMPTED like any other — attempt-first, as the
+  // engine intends (it ships `choices` on acquire cards too, and /api/choose
+  // answers them). Only the bar differs: one ungraded "Got it! Next" instead of
+  // a rate. Forcing `done` here would skip the attempt entirely and make the
+  // depth the kid just chose ("Tap the answer" / "Say it yourself") meaningless
+  // for the whole first pass through a new deck.
+  const done = revealDone();
 
   const inner = el("div", "rev-stage-inner");
   const cardEl = el("div", "rev-card");
@@ -874,19 +881,15 @@ function renderReview() {
   cardEl.appendChild(el("div", "rev-prompt", card.front));
   for (const ctx of (card.context || [])) cardEl.appendChild(el("div", "rev-context", ctx));
 
-  if (acquire) {
-    // Never-seen: show the answer gently, no grading (acknowledged with one tap).
-    cardEl.appendChild(answerFill(card));
-    if (card.img_back) cardEl.appendChild(cardImg(card.img_back));
-  } else if (choiceMode) {
+  if (choiceMode) {
     cardEl.appendChild(renderOptions());
   } else if (lineMode) {
     cardEl.appendChild(renderLines(card));
   } else {
     // Fill-in-the-blank: a blank before reveal, the green answer after.
     cardEl.appendChild(done ? answerFill(card) : blankEl());
-    if (done && card.img_back) cardEl.appendChild(cardImg(card.img_back));
   }
+  if (done && card.img_back) cardEl.appendChild(cardImg(card.img_back));
 
   // Reserve the why-slot whenever the card has a note, so filling it on reveal
   // doesn't resize the card (the shell must not jump).
@@ -917,10 +920,19 @@ function cardImg(src) {
   return img;
 }
 
-// The green-filled answer (blank reveal / acquire): the back lines joined.
+// The green-filled answer. A multi-line answer keeps its lines — joining them
+// into one run-on string would turn an ordered sequence ("Egg / Caterpillar /
+// Chrysalis / Butterfly") into nonsense.
 function answerFill(card) {
   const a = el("div", "rev-answer");
-  a.appendChild(el("span", "rev-answer-fill", (card.back || []).join(" ")));
+  const lines = card.back || [];
+  if (lines.length > 1) {
+    const stack = el("div", "rev-answer-stack");
+    for (const line of lines) stack.appendChild(el("span", "rev-answer-fill", line));
+    a.appendChild(stack);
+  } else {
+    a.appendChild(el("span", "rev-answer-fill", lines[0] || ""));
+  }
   return a;
 }
 // The underlined blank shown before a fill-in-the-blank card is revealed.
@@ -990,9 +1002,18 @@ function renderReviewBar(done, acquire, lineMode, choiceMode) {
   left.appendChild(home);
 
   const mid = el("div", "bar-mid");
-  if (acquire) {
+  if (!done) {
+    // Still attempting. In choice mode the answer is tapped in the card itself,
+    // so the centre stays empty; the other modes get their reveal control.
+    if (!choiceMode) {
+      const lbl = lineMode ? (revealed === 0 ? "Show me 👀" : "Show me next 👀") : "Show me 👀";
+      mid.appendChild(barBtn(lbl, "show-btn", reveal));
+    }
+  } else if (acquire) {
+    // Attempted, but never seen before: the engine grades nothing on a first
+    // meeting — acknowledge it and move on (POST /api/acquire).
     mid.appendChild(barBtn("Got it! Next", "show-btn", acquireNext));
-  } else if (done && choiceMode) {
+  } else if (choiceMode) {
     // Tap-the-answer: chosen.passed is the engine's truth (ChooseFeedbackDto),
     // never something the UI computes. A correct pick may self-demote via the
     // quiet "I guessed" override, mirroring review.html's isRecognizeMc() — but
@@ -1004,14 +1025,12 @@ function renderReviewBar(done, acquire, lineMode, choiceMode) {
     } else {
       mid.appendChild(barBtn("Keep going 🔁", "rate-btn rate-again", () => grade("failed")));
     }
-  } else if (done) {
+  } else {
+    // Revealed a self-assessed card (fill-in-the-blank / line): the kid grades
+    // their own retrieval — "partly" is real at Recall, unlike boolean Recognize.
     mid.appendChild(barBtn("🔁 Try again", "rate-btn rate-again", () => grade("failed")));
     mid.appendChild(barBtn("💪 Almost", "rate-btn rate-almost", () => grade("partly")));
     mid.appendChild(barBtn("✅ Got it!", "rate-btn rate-got", () => grade("passed")));
-  } else if (!choiceMode) {
-    // choice: the answer is tapped in the card, so the centre stays empty here.
-    const lbl = lineMode ? (revealed === 0 ? "Show me 👀" : "Show me next 👀") : "Show me 👀";
-    mid.appendChild(barBtn(lbl, "show-btn", reveal));
   }
 
   const right = el("div", "bar-right");
