@@ -159,25 +159,28 @@ body {
 
 .section-label { font-weight: 700; font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-2); margin: 22px 0 12px; }
 .deck-list { display: flex; flex-direction: column; gap: 12px; }
+
+/* A deck row IS the launch control: a review session is exactly one deck file,
+   so a kid taps a deck and then picks how to practise it. */
 .deck-row {
   display: flex; align-items: center; justify-content: space-between; gap: 14px;
-  padding: 18px 22px; background: var(--card); border-radius: 20px;
-  box-shadow: 0 8px 22px rgba(180, 110, 60, 0.12);
+  width: 100%; min-height: 56px; padding: 18px 22px; background: var(--card);
+  border: none; border-radius: 20px; font-family: inherit; text-align: left;
+  box-shadow: 0 8px 22px rgba(180, 110, 60, 0.12); cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
+.deck-row:hover { transform: translateY(-2px); box-shadow: 0 14px 30px rgba(180, 110, 60, 0.18); }
+.deck-row:active { transform: translateY(0); }
+.deck-right { display: flex; align-items: center; gap: 12px; flex: none; }
+.deck-go { font-weight: 800; font-size: 24px; line-height: 1; color: var(--muted-2); }
 .deck-label { font-weight: 700; font-size: 20px; color: var(--ink); }
 .deck-mastery { font-weight: 700; font-size: 16px; color: #ffb020; white-space: nowrap; flex: none; }
 .pill-new {
   flex: none; font-weight: 700; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase;
   color: var(--muted-2); background: #fff3e6; border-radius: 10px; padding: 5px 12px;
 }
-
-/* The defensive per-deck fallback (box has no selectable name — shouldn't
-   happen for a real workspace row). Same row shell, its own choice pair. */
-.fallback-deck {
-  display: flex; flex-direction: column; gap: 12px;
-  padding: 18px 22px; background: var(--card); border-radius: 20px;
-  box-shadow: 0 8px 22px rgba(180, 110, 60, 0.12);
-}
+.deck-sub { margin-top: 8px; }
+.select-error { margin-top: 18px; font-weight: 700; color: var(--muted-2); }
 
 /* The two depth-start choices, pinned in the action bar (mirrors the design's
    fixed footer CTA) — always both visible, "caught-up" just disables one. */
@@ -447,8 +450,8 @@ button:focus-visible, input:focus-visible, .box:focus-visible {
    (vertical MOVEMENT) for a gentle opacity breathe, and drop the hover lift. */
 @media (prefers-reduced-motion: reduce) {
   .mascot { animation-name: kidsBreathe; }
-  .box { transition: none; }
-  .box:hover, .box:active { transform: none; }
+  .box, .deck-row { transition: none; }
+  .box:hover, .box:active, .deck-row:hover, .deck-row:active { transform: none; }
 }
 </style>
 </head>
@@ -540,7 +543,9 @@ function post(body) { return { method: "POST", headers: { "Content-Type": "appli
 
 // ── View state only (the engine behind /api/* owns everything else) ───────
 let screen = "home";     // "home" | "box" | "review" | "done"
-let currentBox = null;   // the selected workspace DeckItemDto (for Task 5)
+let currentBox = null;   // the opened workspace DeckItemDto (the box)
+let currentDeck = null;  // the deck (MemberDto) picked inside that box, if any
+let selectError = false; // a /api/select call failed — show a gentle notice
 let deckList = null;     // last DeckListDto (null until the first load resolves)
 let loadError = false;   // the /api/decks fetch failed
 let state = null;        // last /api/select|/api/state payload (StateDto, or a
@@ -697,16 +702,20 @@ function iconEl(item, imgCls, emojiCls) {
   return el("div", emojiCls, "📚");
 }
 
-function openBox(b) { currentBox = b; screen = "box"; render(); }
-function goHome() { screen = "home"; currentBox = null; render(); refresh(); }
+function openBox(b) { currentBox = b; currentDeck = null; selectError = false; screen = "box"; render(); }
+function goHome() { screen = "home"; currentBox = null; currentDeck = null; selectError = false; render(); refresh(); }
+function openDeck(m) { currentDeck = m; selectError = false; render(); }
+function backToBox() { currentDeck = null; selectError = false; render(); }
 
-// The box detail screen: hero, its decks with ⭐ mastery (display-only — not
-// individually tappable, kids just get the orientation), and the two
-// depth-start choices. Box-level select is the primary, verified path (a
-// workspace's `name` reviews every member deck at the chosen depth); the
-// per-deck pair below is a defensive fallback for a box that unexpectedly
-// has no selectable `name` of its own — normal workspace rows never hit it.
+// The box screen, in two steps: pick a deck, then pick how to practise it.
+//
+// A review session is exactly ONE deck file — the engine rejects a whole
+// workspace ("`…/animals` is a folder — pick a deck inside it", `build_review`
+// in src/cli/launch.rs). So the box is an organizing layer, and the *decks*
+// are the launch controls; the depth choices belong to the deck a kid picked.
 function renderBox() {
+  if (currentDeck) { renderDeckLaunch(); return; }
+
   const b = currentBox || {};
   const back = el("button", "ghost-btn", "← Home");
   back.type = "button";
@@ -725,37 +734,60 @@ function renderBox() {
 
   const members = Array.isArray(b.members) ? b.members : [];
   if (members.length) {
-    wrap.appendChild(el("div", "section-label", "Your decks"));
+    wrap.appendChild(el("div", "section-label", "Pick a deck"));
     const list = el("div", "deck-list");
     for (const m of members) list.appendChild(deckRow(m));
     wrap.appendChild(list);
+  } else {
+    wrap.appendChild(el("div", "soft", "This box has no decks yet."));
   }
   stage.appendChild(wrap);
-
-  if (b.name) {
-    const choices = el("div", "depth-choices");
-    choices.appendChild(depthBtn("👆 Tap the answer", "recognize", b.reviewable_recognize, b.name));
-    choices.appendChild(depthBtn("🗣️ Say it yourself", "recall", b.reviewable_recall, b.name));
-    actionbar.appendChild(choices);
-  } else if (members.length) {
-    for (const m of members) {
-      const row = el("div", "fallback-deck");
-      row.appendChild(el("div", "deck-label", m.label || m.name || "Deck"));
-      const pair = el("div", "depth-choices");
-      pair.appendChild(depthBtn("👆 Tap the answer", "recognize", m.reviewable_recognize, m.name));
-      pair.appendChild(depthBtn("🗣️ Say it yourself", "recall", m.reviewable_recall, m.name));
-      row.appendChild(pair);
-      wrap.appendChild(row);
-    }
-  }
 }
 
-// One deck's progress line: its label + a ⭐ mastery indicator. Display-only
-// orientation — the row itself doesn't start anything.
+// A deck is picked: show its two depth choices ("how do you want to practise?"),
+// each gated on that deck's own honest per-depth due-ness.
+function renderDeckLaunch() {
+  const m = currentDeck || {};
+  const b = currentBox || {};
+
+  const back = el("button", "ghost-btn", "← " + (b.label || b.name || "Box"));
+  back.type = "button";
+  back.addEventListener("click", backToBox);
+  actionbar.appendChild(back);
+
+  const wrap = el("div", "box-detail");
+
+  const hero = el("div", "box-hero");
+  hero.appendChild(iconEl(b, "hero-icon", "hero-emoji"));
+  const heroText = el("div");
+  heroText.appendChild(el("div", "hero-title", m.label || m.name || "Deck"));
+  const sub = el("div", "deck-sub");
+  sub.appendChild(masteryEl(m));
+  heroText.appendChild(sub);
+  heroText.appendChild(el("div", "soft", "How do you want to practise?"));
+  hero.appendChild(heroText);
+  wrap.appendChild(hero);
+
+  if (selectError) wrap.appendChild(el("div", "select-error", "Hmm, that didn't start. Want to try again? 🌱"));
+  stage.appendChild(wrap);
+
+  const choices = el("div", "depth-choices");
+  choices.appendChild(depthBtn("👆 Tap the answer", "recognize", m.reviewable_recognize, m.name));
+  choices.appendChild(depthBtn("🗣️ Say it yourself", "recall", m.reviewable_recall, m.name));
+  actionbar.appendChild(choices);
+}
+
+// One deck: tap it to choose how to practise. Shows its ⭐ mastery (or "New")
+// plus a chevron, so it reads as the tappable thing it is.
 function deckRow(m) {
-  const row = el("div", "deck-row");
+  const row = el("button", "deck-row");
+  row.type = "button";
   row.appendChild(el("div", "deck-label", m.label || m.name || "Deck"));
-  row.appendChild(masteryEl(m));
+  const right = el("div", "deck-right");
+  right.appendChild(masteryEl(m));
+  right.appendChild(el("span", "deck-go", "›"));
+  row.appendChild(right);
+  row.addEventListener("click", () => openDeck(m));
   return row;
 }
 
@@ -770,9 +802,9 @@ function masteryEl(m) {
   return el("span", "deck-mastery", stars);
 }
 
-// A depth-start choice, gated on the box's (or, in the fallback, the deck's)
-// honest per-depth due-ness. Both choices always render — a caught-up one
-// just can't be tapped, so a kid never lands in an empty session.
+// A depth-start choice for the picked deck, gated on that deck's honest
+// per-depth due-ness. Both choices always render — a caught-up one just can't
+// be tapped, so a kid never lands in an empty session.
 function depthBtn(label, depth, ready, targetName) {
   const btn = el("button", "depth-btn" + (ready ? "" : " caught-up"));
   btn.type = "button";
@@ -786,11 +818,16 @@ function depthBtn(label, depth, ready, targetName) {
   return btn;
 }
 
-// POST /api/select for the box (or fallback deck) at the chosen depth and land
-// on the review screen. Mirrors how review.html's `select()` holds the session
-// in a module-level `state`; every review action funnels back through applyState.
+// POST /api/select for ONE deck at the chosen depth and land on the review
+// screen. Mirrors how review.html's `select()` holds the session in a
+// module-level `state`; every review action funnels back through applyState.
+// A rejected select (a 400 carries no JSON body, so `api` throws) surfaces a
+// gentle notice instead of leaving a kid tapping a button that does nothing.
 function startSelect(name, depth) {
-  api("/api/select", post({ deck: name, depth })).then(applyState);
+  selectError = false;
+  api("/api/select", post({ deck: name, depth }))
+    .then(applyState)
+    .catch(() => { selectError = true; render(); });
 }
 
 // ── The review loop ───────────────────────────────────────────────────────
@@ -1020,6 +1057,8 @@ function acquireNext() {
 function homeFromReview() {
   screen = "home";
   currentBox = null;
+  currentDeck = null;
+  selectError = false;
   state = null;
   render();
   api("/api/deselect", post({})).catch(() => {}).then(refresh);
