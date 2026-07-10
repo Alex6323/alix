@@ -17,14 +17,20 @@ type Fixtures = {
 // substring would silently match too. Target the exact label instead.
 // Open the app under test.
 //
-// `page.goto` defaults to `waitUntil: "load"`, which waits for EVERY subresource
-// — including the kids page's five Baloo woff2 files. `alix` serves requests on
-// one thread (`for request in server.incoming_requests()`, src/serve/mod.rs), so
-// under a real browser's keep-alive connections on a loaded runner one of those
-// parallel font requests can go unanswered, and `load` never fires. That is a
-// real server property (tracked as {#server-subresource-stall}); it is not what
-// these tests are about. They assert DOM and network behaviour, and every
-// assertion below auto-waits — so wait for the DOM, not for webfonts.
+// `page.goto` defaults to `waitUntil: "load"`, which waits for EVERY subresource.
+// The kids page requests eight in parallel (`/`, `/api/decks`, `/alix-logo.js`,
+// five Baloo woff2). On the first CI run, four navigations hit the 60s timeout;
+// the trace showed seven of those eight answered and one font with no response
+// recorded at the moment Playwright gave up.
+//
+// The cause is NOT established — see {#server-subresource-stall}. The serial
+// request loop in src/serve/mod.rs is a suspect, but the obvious hypothesis did
+// not reproduce, and a trace captured at timeout cannot distinguish "never
+// answered" from "still in flight".
+//
+// Either way it is not what these tests are about: they assert DOM and network
+// behaviour, and every assertion auto-waits. So wait for the DOM, not for
+// webfonts. This de-couples the suite; it does not fix the server.
 export async function openApp(page: Page): Promise<void> {
   await page.goto("/", { waitUntil: "domcontentloaded" });
 }
