@@ -11,11 +11,11 @@
 // renders wherever it left off), so a previous test's unfinished review
 // would otherwise leak into the next one. `beforeEach` forces a clean slate.
 import { test, expect } from "./helpers";
-import { adultDeckRow } from "./helpers";
+import { adultDeckRow, openApp } from "./helpers";
 
 test.beforeEach(async ({ page, request }) => {
   await request.post("/api/deselect", { data: {} });
-  await page.goto("/");
+  await openApp(page);
 });
 
 test("the picker lists the fixture workspace and its decks", async ({ page }) => {
@@ -50,22 +50,14 @@ test("the ☰ menu opens without error", async ({ page }) => {
   await page.locator("#kebab").click(); // close it again
 });
 
-// wild.txt's two cards are always genuinely never-seen at the start of a run
-// (see ../README.md) — attempt-first and ungraded (the acquire flow) for a
-// fixed ~1 min cooldown before their first real quiz (ACQUIRE_COOLDOWN_MS,
-// src/scheduler.rs); there's no way around that in the app itself. Rather
-// than fabricate past-cooldown store state (which would test the app against
-// a screen it never honestly reached), this test acknowledges both cards for
-// real, then really waits out the cooldown, so the grade at the end is
-// genuine. That real wait is why this one test is slow — everything else in
-// this suite runs in well under a second.
 // KNOWN GAP — reported as skipped on every run, deliberately.
 //
 // The fixture ships no progress store, so every card is never-seen (`acquire`)
 // and the adult app posts /api/acquire, never /api/grade. Reaching a genuinely
-// graded card needs one past the server's acquire cooldown (~60s). The two ways
-// to force it are both unacceptable: a 61-second sleep inside the suite, or a
-// committed pre-warmed store (banned — see ../README.md, "fixture contract").
+// graded card needs one past the server's acquire cooldown (ACQUIRE_COOLDOWN_MS,
+// src/scheduler.rs — about a minute). The two ways to force it are both
+// unacceptable: a 61-second sleep inside the suite, or a committed pre-warmed
+// store (banned — see ../README.md, "fixture contract").
 //
 // Lead worth verifying: `POST /api/select {cram: true}` is documented to queue
 // cards that are not due, and the adult picker exposes a cram tick-box. If that

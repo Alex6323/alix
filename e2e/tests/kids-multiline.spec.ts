@@ -8,10 +8,10 @@
 // never touches wild.txt's card ids (which key the committed augment.json —
 // see ../README.md).
 import { test, expect } from "./helpers";
-import { kidsDeckRow } from "./helpers";
+import { kidsDeckRow, openApp } from "./helpers";
 
 test("a multi-line answer renders as separate lines, not one joined string", async ({ page }) => {
-  await page.goto("/");
+  await openApp(page);
   await page.locator(".box", { hasText: "Animals" }).click();
   await kidsDeckRow(page, "cats").click();
 

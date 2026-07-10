@@ -15,6 +15,20 @@ type Fixtures = {
 // matching the row's whole text loosely (`hasText: "wild"`) stays unique only
 // by accident — a second deck whose name happens to contain the same
 // substring would silently match too. Target the exact label instead.
+// Open the app under test.
+//
+// `page.goto` defaults to `waitUntil: "load"`, which waits for EVERY subresource
+// — including the kids page's five Baloo woff2 files. `alix` serves requests on
+// one thread (`for request in server.incoming_requests()`, src/serve/mod.rs), so
+// under a real browser's keep-alive connections on a loaded runner one of those
+// parallel font requests can go unanswered, and `load` never fires. That is a
+// real server property (tracked as {#server-subresource-stall}); it is not what
+// these tests are about. They assert DOM and network behaviour, and every
+// assertion below auto-waits — so wait for the DOM, not for webfonts.
+export async function openApp(page: Page): Promise<void> {
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+}
+
 export function kidsDeckRow(page: Page, name: string): Locator {
   return page.locator(".deck-row").filter({ has: page.locator(".deck-label", { hasText: name, exact: true }) });
 }

@@ -24,7 +24,7 @@
 // no automated coverage — see the `test.fixme` at the bottom of this file for
 // why, and what it would take.
 import { test, expect } from "./helpers";
-import { kidsDeckRow } from "./helpers";
+import { kidsDeckRow, openApp } from "./helpers";
 
 // Tests share one running server and one review session on it (see
 // `fullyParallel: false` / `workers: 1` in playwright.config.ts), so they run
@@ -33,12 +33,12 @@ import { kidsDeckRow } from "./helpers";
 // previous test's on-page state.
 
 test("home lists the Animals box", async ({ page }) => {
-  await page.goto("/");
+  await openApp(page);
   await expect(page.locator(".box", { hasText: "Animals" })).toBeVisible();
 });
 
 test("a box drills into its decks, and a deck offers the two depth choices", async ({ page }) => {
-  await page.goto("/");
+  await openApp(page);
   await page.locator(".box", { hasText: "Animals" }).click();
 
   const deckRow = kidsDeckRow(page, "wild");
@@ -54,7 +54,7 @@ test("a box drills into its decks, and a deck offers the two depth choices", asy
 test('clicking "Tap the answer" selects the deck at recognize depth and shows a tappable question', async ({
   page,
 }) => {
-  await page.goto("/");
+  await openApp(page);
   await page.locator(".box", { hasText: "Animals" }).click();
   await kidsDeckRow(page, "wild").click();
 
@@ -80,7 +80,7 @@ test('clicking "Tap the answer" selects the deck at recognize depth and shows a 
 });
 
 test('clicking "Say it yourself" shows a reveal control, not options', async ({ page }) => {
-  await page.goto("/");
+  await openApp(page);
   await page.locator(".box", { hasText: "Animals" }).click();
   await kidsDeckRow(page, "wild").click();
 
@@ -99,7 +99,7 @@ test('clicking "Say it yourself" shows a reveal control, not options', async ({ 
 test("tapping an option on a never-seen card records the pick and offers only the ungraded next step", async ({
   page,
 }) => {
-  await page.goto("/");
+  await openApp(page);
   await page.locator(".box", { hasText: "Animals" }).click();
   await kidsDeckRow(page, "wild").click();
 
@@ -162,7 +162,7 @@ test("a wrong Recognize pick can only record failed, never passed", async ({ pag
   // WRONG option, and assert the fix (c46dad5) still holds — only "Keep
   // going" (.rate-again, grades failed) is offered, never "✅ Got it!"
   // (.rate-got, grades passed): a wrong tap can't self-rate as passed.
-  await page.goto("/");
+  await openApp(page);
   await page.locator(".box", { hasText: "Animals" }).click();
   await kidsDeckRow(page, "wild").click();
   await Promise.all([
