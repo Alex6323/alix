@@ -182,14 +182,18 @@
   #noteDivider { margin-top: auto; }
   /* a cited card's answer region is tappable to swap answer <-> source; a corner
      icon marks it ( </> = view the source, ¶ = back to the answer ) */
-  .region.a.citable { position: relative; cursor: pointer; }
+  .region.a.citable, .region.a.hidable { position: relative; cursor: pointer; }
   .cite-toggle { position: absolute; top: 6px; right: 10px; display: inline-flex; align-items: center; gap: 6px;
                  color: var(--dim); user-select: none; transition: color 0.12s; }
   .cite-toggle .ci { font-family: var(--mono); font-size: 0.9rem; line-height: 1; }
   .cite-toggle .k { font-family: var(--mono); font-size: 0.66rem; border: 1px solid var(--line);
                     border-radius: 5px; padding: 1px 5px; }
-  .region.a.citable:hover .cite-toggle { color: var(--bolt); }
-  .region.a.citable:hover .cite-toggle .k { border-color: var(--bolt); }
+  .region.a.citable:hover .cite-toggle, .region.a.hidable:hover .cite-toggle { color: var(--bolt); }
+  .region.a.citable:hover .cite-toggle .k, .region.a.hidable:hover .cite-toggle .k { border-color: var(--bolt); }
+  /* Hide (acquire self-test): conceal ONLY the answer's content, visibility-only so
+     its box keeps its exact size and position — the note, the footer, and the layout
+     never move. The corner cue is excluded so you can still un-hide. */
+  .region.a.concealed > *:not(.cite-toggle) { visibility: hidden; }
   .cite-err { color: var(--dim); font-style: italic; font-size: 0.8rem; padding-left: 6px; }
   .excerpt { padding: 6px 8px; background: rgba(0,0,0,0.25); border-radius: 8px; overflow-x: auto;
              font-family: var(--mono); font-size: 0.78rem; line-height: 1.45; }
@@ -761,6 +765,7 @@ function showTokenGate() {
 let state = null;     // last StateDto
 let revealed = 0;     // back lines shown for the current card
 let citationView = false; // showing the source excerpt in place of the answer
+let answerConcealed = false; // acquire recall: the revealed answer is concealed in place for a self-test (view-only; nothing reflows)
 let feedback = null;  // choice result being shown ({chosen, correct, passed})
 let typelineChecked = []; // TypeLine: TypedResult per line confirmed so far this card
 let confirmingLeave = false; // showing the "session not finished" leave prompt
@@ -915,7 +920,7 @@ function renderLeaveConfirm() {
   chip("Stay", "primary", cancelLeave, "esc");
 }
 
-function apply(s) { state = s; revealed = 0; citationView = false; feedback = null; explainInput = ""; marks = []; kpCur = 0; drawStrokes = []; drawSnapshot = null; drawTool = "pen"; drawCanvasEl = null; typelineChecked = []; render(); }
+function apply(s) { state = s; revealed = 0; citationView = false; answerConcealed = false; feedback = null; explainInput = ""; marks = []; kpCur = 0; drawStrokes = []; drawSnapshot = null; drawTool = "pen"; drawCanvasEl = null; typelineChecked = []; render(); }
 function hasKeypoints() { return isExplain() && state.keypoints && state.keypoints.length > 0; }
 // A never-seen card: an attempt then reveal, acknowledged with one key (not graded).
 function isAcquire() { return !!(state && state.acquire); }
@@ -2412,6 +2417,21 @@ function fillBottom() {
     grp.appendChild(el("span", "k", "s"));
     a.appendChild(grp);
   }
+  // Acquire recall: the same corner-cue mechanism as the source swap, here hiding /
+  // un-hiding the revealed answer in place so you can self-test the encoding. `h` (or
+  // a tap on the region) flips it both ways. Shown only once the answer is revealed
+  // (nothing to hide before then), and never on a cited card — citation owns the corner.
+  const hidable = isAcquire() && !effectiveDraw() && !isAcquireChoice() && !state.card.at && revealed > 0;
+  a.classList.toggle("hidable", hidable);
+  a.classList.toggle("concealed", hidable && answerConcealed);
+  if (hidable) {
+    a.onclick = onAcqToggleClick;
+    const grp = el("span", "cite-toggle");
+    grp.title = answerConcealed ? "show answer" : "hide the answer to self-test";
+    grp.appendChild(el("span", "ci", answerConcealed ? "⊙" : "⊘"));
+    grp.appendChild(el("span", "k", "h"));
+    a.appendChild(grp);
+  }
   // keep the newest line in view as a verse is revealed line by line
   if (state.mode === "line" && revealed > 0) a.scrollTop = a.scrollHeight;
   // Content-aware placement (applied by updateFade): a short answer centers below
@@ -2934,7 +2954,7 @@ function renderLegend() {
     } else if (isAcquireChoice()) {
       chip("Skip", "", skip, label(KEYS.skip));            // options are tappable
     } else if (revealed > 0) {
-      chip("Seen", "primary", acquire, label(KEYS.reveal));
+      chip("Seen", "primary", acquire, label(KEYS.reveal)); // hide⟷show is the corner `h` toggle, not a footer button
     } else {
       chip("Reveal", "primary", reveal, label(KEYS.reveal));
       chip("Skip", "", skip, label(KEYS.skip));
@@ -3018,6 +3038,35 @@ function reveal() {
   revealed = state.mode === "line" ? Math.min(revealed + 1, backCount()) : backCount();
   fillBottom();
   renderLegend();
+}
+// Acquire only: hide / un-hide the revealed answer so you can self-test the fresh
+// encoding (conceal it, try to recall, show it to check) before acknowledging with
+// "Seen". Deliberately does ONE thing — flips the answer text's visibility in place.
+// It does NOT re-render: the card stays fully revealed, so the note, the footer, the
+// answer's own box, everything holds its exact position. Nothing reflows or jumps.
+// A first-encounter aid: there's no spaced schedule to lean on yet, so an ordinary
+// review has no such toggle — it drills a card by failing it, which brings it back spaced.
+function acquireToggle() {
+  if (revealed === 0) { reveal(); return; } // first look: reveal (same as the Reveal key)
+  answerConcealed = !answerConcealed;
+  const a = document.getElementById("ansRegion");
+  if (!a) return;
+  a.classList.toggle("concealed", answerConcealed); // visibility only — no reflow, no movement
+  paintAcqCue(a);
+}
+// Point the corner cue's glyph/title at what the next press does. A textContent swap
+// only — no layout change.
+function paintAcqCue(a) {
+  const cue = a.querySelector(".cite-toggle");
+  if (!cue) return;
+  cue.title = answerConcealed ? "show answer" : "hide the answer to self-test";
+  const ci = cue.querySelector(".ci");
+  if (ci) ci.textContent = answerConcealed ? "⊙" : "⊘";
+}
+// A tap on the answer region toggles too, but don't hijack a text-selection drag.
+function onAcqToggleClick() {
+  if (window.getSelection && String(window.getSelection())) return;
+  acquireToggle();
 }
 
 // ── Trace walk (in-page mode) ─────────────────────────────────────────────
@@ -3363,6 +3412,9 @@ document.addEventListener("keydown", (e) => {
       }
       return;
     }
+    // `h` toggles the answer hidden ⟷ shown, both directions on one key (the
+    // source⟷answer swap's principle); space reveals, then acknowledges ("Seen").
+    if (e.key.toLowerCase() === "h" && !e.ctrlKey) { e.preventDefault(); acquireToggle(); return; }
     if (revealed === 0) {
       if (hit(e, KEYS.skip)) { e.preventDefault(); skip(); return; }
       if (hit(e, KEYS.reveal)) { e.preventDefault(); reveal(); return; }

@@ -10,6 +10,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `/api/decks` rows now carry `selectable` — whether the row's `name` can be sent to
   `/api/select` (decks: yes; workspace/folder rows: no). Clients no longer have to infer
   it from `is_workspace`.
+- On a first-seen (acquire) card, `h` (or a tap on the answer) hides / un-hides
+  the revealed answer in place, so you can self-test the fresh encoding (conceal
+  it, try to recall, show it to check) before "Seen" moves on. It only flips the
+  answer's visibility: the note, the footer, and the layout stay put, nothing
+  reflows. Shown as a small corner cue like the source⟷answer swap on a cited
+  card, not a separate button. A first-encounter aid only: an ordinary review
+  drills a card by failing it, which brings it back spaced.
+- A multi-line front now renders as centred lines instead of one run-on line, so
+  a dual-direction card's reverse side (its several alternatives, shown on the
+  question side) reads clearly.
 - An end-to-end smoke suite for the alix web clients — both adult and kids
   (`make e2e`, Playwright): a click must produce the expected request,
   response, and screen, with no uncaught page errors, covering session
