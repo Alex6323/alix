@@ -222,10 +222,7 @@ fn spawn_test_server_with(token: Option<&str>) -> (String, Guard) {
 /// right after [`FIXTURE_DECK`] is written and before the server starts —
 /// lets a test add its own fixture files (e.g. a workspace folder) alongside
 /// `sample.txt`.
-fn spawn_test_server_fixture(
-    token: Option<&str>,
-    extra: impl FnOnce(&Path),
-) -> (String, Guard) {
+fn spawn_test_server_fixture(token: Option<&str>, extra: impl FnOnce(&Path)) -> (String, Guard) {
     let dir = TempDir::new().unwrap();
     let deck_path = dir.path().join("sample.txt");
     std::fs::write(&deck_path, FIXTURE_DECK).unwrap();
