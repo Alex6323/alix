@@ -206,6 +206,19 @@ body {
 .depth-btn.caught-up { background: #fff; color: var(--muted-2); box-shadow: 0 6px 0 #ecdfd2; cursor: default; }
 .depth-btn-note { font-weight: 600; font-size: 12px; }
 
+/* The deck-launch screen is ONE decision, so the deck, the question and its two
+   answers centre together in the stage. Only the review screen parks its verbs
+   in the fixed action bar — there the card is the subject, not the buttons. */
+.launch {
+  min-height: 100%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 12px; padding: 24px 24px 40px; text-align: center;
+}
+.launch-emoji { font-size: 64px; line-height: 1; }
+.launch-icon { width: 72px; height: 72px; object-fit: contain; border-radius: 16px; }
+.launch-title { font-weight: 800; font-size: 34px; color: var(--ink); }
+.launch-choices { justify-content: center; margin-left: 0; margin-top: 14px; }
+
 /* ── The Alix mascot cell (CSS-drawn; reused throughout) ────────────────── */
 .mascot {
   position: relative; flex: 0 0 auto;
@@ -805,26 +818,23 @@ function renderDeckLaunch() {
   back.addEventListener("click", backToBox);
   actionbar.appendChild(back);
 
-  const wrap = el("div", "box-detail");
-
-  const hero = el("div", "box-hero");
-  hero.appendChild(iconEl(b, "hero-icon", "hero-emoji"));
-  const heroText = el("div");
-  heroText.appendChild(el("div", "hero-title", m.label || m.name || "Deck"));
+  // Deck, question and the two answers are one decision — centre them together
+  // in the stage rather than stranding the buttons in the corner of the bar.
+  const wrap = el("div", "launch");
+  wrap.appendChild(iconEl(b, "launch-icon", "launch-emoji"));
+  wrap.appendChild(el("div", "launch-title", m.label || m.name || "Deck"));
   const sub = el("div", "deck-sub");
   sub.appendChild(masteryEl(m));
-  heroText.appendChild(sub);
-  heroText.appendChild(el("div", "soft", "How do you want to practise?"));
-  hero.appendChild(heroText);
-  wrap.appendChild(hero);
+  wrap.appendChild(sub);
+  wrap.appendChild(el("div", "soft", "How do you want to practise?"));
+
+  const choices = el("div", "depth-choices launch-choices");
+  choices.appendChild(depthBtn("👆 Tap the answer", "recognize", m.reviewable_recognize, m.name));
+  choices.appendChild(depthBtn("🗣️ Say it yourself", "recall", m.reviewable_recall, m.name));
+  wrap.appendChild(choices);
 
   if (selectError) wrap.appendChild(el("div", "select-error", "Hmm, that didn't start. Want to try again? 🌱"));
   stage.appendChild(wrap);
-
-  const choices = el("div", "depth-choices");
-  choices.appendChild(depthBtn("👆 Tap the answer", "recognize", m.reviewable_recognize, m.name));
-  choices.appendChild(depthBtn("🗣️ Say it yourself", "recall", m.reviewable_recall, m.name));
-  actionbar.appendChild(choices);
 }
 
 // One deck: tap it to choose how to practise. Shows its ⭐ mastery (or "New")
