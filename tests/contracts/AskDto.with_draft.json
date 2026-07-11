@@ -1,0 +1,17 @@
+{
+  "draft": {
+    "back": [
+      "so drops are deterministic"
+    ],
+    "front": "Why does Rust use one owner per value?"
+  },
+  "error": null,
+  "status": null,
+  "thinking": false,
+  "transcript": [
+    {
+      "a": "so drops are deterministic",
+      "q": "why one owner?"
+    }
+  ]
+}

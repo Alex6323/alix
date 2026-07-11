@@ -75,8 +75,9 @@ so is every client.
 - **Errors are bare status codes with empty bodies.** There is no error DTO.
   `400` is overloaded (malformed body, unknown deck name, store failure —
   per-endpoint meaning in §5). `409` = "no active session/exam/walk of the
-  kind this endpoint needs". `401` = bad/missing token. `404` = unknown route
-  or image. Clients should not assume bodies stay empty forever — a JSON
+  kind this endpoint needs". `401` = bad/missing token. `403` = an adult-only
+  endpoint (§4.5) called while `[serve] audience = "kids"`. `404` = unknown
+  route or image. Clients should not assume bodies stay empty forever — a JSON
   `{"error": ...}` body may be added pre-1.0.
 - **A bare deck name that occurs in more than one container is a 400**
   (ambiguous) — use the qualified `<workspace>/<file>` key instead, which
@@ -158,6 +159,23 @@ Target names are an open set (currently include `choices`, `notes`,
 `thinking`; the growing `transcript` carries the whole exchange.
 `POST /api/ask/note` condenses the exchange into a deck note. The walk has its
 own mirror: `/api/walk/ask`, `/api/walk/ask/note`, `GET /api/walk/ask`.
+
+`POST /api/ask/card/draft` asks the tutor to distill the conversation into one
+draft card, following the same polling pattern: it starts a background call
+and returns immediately, `thinking` while it's in flight; poll the shared
+`GET /api/ask` and read the result off the response's `draft` field
+(`DraftCardDto`), which persists there until the subject changes. `POST
+/api/ask/card/create {front, back}` (`CreateCardReq`) mints the learner's
+edited version of that draft as a free-standing virtual card on the current
+deck; synchronous, no polling. Both endpoints are adult-only (`403` when
+`[serve] audience = "kids"`) and both require an active review (`409`);
+`/api/ask/card/create` further `409`s when the review has no current card,
+and rejects an unparseable body with `400`. Success is `200` with `{"id":
+"<decimal string>"}` (`CreateCardResp`), not `201`: alix's JSON responder
+always answers `200` on success, so "created" is expressed by the DTO shape,
+not the status line. A duplicate (the card's id already exists in the deck,
+authored or virtual) or malformed front/back (empty after trimming, or not
+exactly one well-formed card) is `422`.
 
 ### 4.6 Import
 
@@ -310,6 +328,8 @@ token holder is trusted to call it, the same trust class as `/api/grade`.
 | POST | `/api/ask` | `{question}` | `AskDto` (empty question: 200, no call started) | 409 |
 | GET | `/api/ask` | – | `AskDto` (poll) | 409 |
 | POST | `/api/ask/note` | – | `AskDto` | 409 |
+| POST | `/api/ask/card/draft` | – | `AskDto` (draft lands on `draft` once polled) | 403 kids; 409 no active review |
+| POST | `/api/ask/card/create` | `{front, back}` (`CreateCardReq`) | `CreateCardResp` | 400 bad body; 403 kids; 409 no active review / no current card; 422 duplicate or malformed |
 
 ### Exam
 
@@ -475,11 +495,23 @@ separately.
 `chosen: number`, `correct: number`, `passed: bool`. This is where the correct
 choice index is disclosed.
 
-### AskDto / ExchangeDto / AskInfoDto
+### AskDto / ExchangeDto / AskInfoDto / DraftCardDto
 
 `AskDto`: `transcript: [{q, a}]`, `thinking: bool`, `status: string?`,
-`error: string?`. `AskInfoDto`: `model: string`, `effort: string` (literal
+`error: string?`, `draft: DraftCardDto?`. `draft` is the last card the tutor
+drafted from the conversation (`POST /api/ask/card/draft`, §4.5); it persists
+until the subject changes. `DraftCardDto`: `front: string`, `back:
+[string]`. `AskInfoDto`: `model: string`, `effort: string` (literal
 `"default"` when unset).
+
+### CreateCardReq / CreateCardResp
+
+`CreateCardReq` is the request body for `POST /api/ask/card/create` (§4.5):
+`front: string`, `back: [string]`, the learner's edited draft. It derives
+`Deserialize` only, so it is documented here but not snapshot-pinned (§8's
+"request bodies aren't snapshot-tested" note). `CreateCardResp`: `id: string`
+(decimal, the newly minted virtual card's id, matching how the store keys
+ids).
 
 ### VersionDto
 

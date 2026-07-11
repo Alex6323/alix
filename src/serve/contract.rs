@@ -685,6 +685,45 @@ fn askdto_empty_wire_shape() {
 }
 
 #[test]
+fn askdto_with_draft_wire_shape() {
+    let dto = AskDto {
+        transcript: vec![ExchangeDto {
+            q: "why one owner?".to_string(),
+            a: "so drops are deterministic".to_string(),
+        }],
+        thinking: false,
+        status: None,
+        error: None,
+        draft: Some(DraftCardDto {
+            front: "Why does Rust use one owner per value?".to_string(),
+            back: vec!["so drops are deterministic".to_string()],
+        }),
+    };
+    pin(
+        "AskDto.with_draft",
+        &dto,
+        json!({
+            "transcript": [{"q": "why one owner?", "a": "so drops are deterministic"}],
+            "thinking": false,
+            "status": null,
+            "error": null,
+            "draft": {
+                "front": "Why does Rust use one owner per value?",
+                "back": ["so drops are deterministic"]
+            }
+        }),
+    );
+}
+
+#[test]
+fn createcardresp_wire_shape() {
+    let dto = CreateCardResp {
+        id: "12345".to_string(),
+    };
+    pin("CreateCardResp", &dto, json!({"id": "12345"}));
+}
+
+#[test]
 fn askinfodto_and_versiondto_wire_shape() {
     let info = AskInfoDto {
         model: "default".to_string(),
