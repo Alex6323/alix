@@ -7,6 +7,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+## [0.4.0] - 2026-07-11
+
+### Added
 - **A kids web client** (touch-first, aimed at roughly age 10): a calm,
   consumption-focused frontend over the same engine, served at `/` when
   `[serve] audience = "kids"`. An adult builds and augments a box (workspace)
