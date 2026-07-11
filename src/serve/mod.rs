@@ -1145,6 +1145,51 @@ pub fn run_review(
                 r.start_ask(&ask_cfg, audience, AskAction::DraftCard);
                 respond_json(request, &r.ask_dto(None, None));
             }
+            // Land an edited draft as a free-standing Tutor virtual card on the
+            // current deck. Minting logic lives in `store::mint_tutor_card`; this
+            // handler only reads the body, gathers session context (the current
+            // card's deck subject and its authored ids, for dedup), and maps the
+            // result to a status code.
+            (Method::Post, "/api/ask/card/create") => {
+                if audience == Audience::Kids {
+                    respond_status(request, 403);
+                    continue;
+                }
+                let Some(r) = reviewing.as_mut() else {
+                    respond_status(request, 409);
+                    continue;
+                };
+                let Some(req) =
+                    serde_json::from_reader::<_, CreateCardReq>(request.as_reader()).ok()
+                else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                let Some(card) = r.session.current() else {
+                    respond_status(request, 409);
+                    continue;
+                };
+                let subject = card.subject.to_string();
+                let deck_ids: std::collections::HashSet<u64> =
+                    r.session.cards().iter().map(|c| c.id()).collect();
+                let now = now_ms();
+                match store::mint_tutor_card(&mut store, &subject, &req.front, &req.back, now, &deck_ids)
+                {
+                    Ok(id) => {
+                        if let Err(e) = store.save() {
+                            eprintln!("warning: could not save progress: {e}");
+                        }
+                        // No status-carrying JSON responder exists yet (only
+                        // `respond_json`, always 200, and `respond_status`, no
+                        // body) — 200 here, not the 201 a "created" response
+                        // would ideally carry. Documented as such in API.md.
+                        respond_json(request, &CreateCardResp { id: id.to_string() });
+                    }
+                    Err(store::MintError::Duplicate | store::MintError::Malformed(_)) => {
+                        respond_status(request, 422);
+                    }
+                }
+            }
             // Poll for a pending reply; the page calls this every ~400ms while
             // `thinking`.
             (Method::Get, "/api/ask") => {

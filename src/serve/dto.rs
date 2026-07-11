@@ -7,7 +7,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::{Browsing, Examining, Reviewing, Walking, catalog::img_key};
 use crate::{
@@ -362,6 +362,20 @@ pub(super) struct AskDto {
 pub(super) struct DraftCardDto {
     pub(super) front: String,
     pub(super) back: Vec<String>,
+}
+
+/// The learner's edited draft, posted to mint it as a free-standing card.
+#[derive(Debug, Deserialize)]
+pub(super) struct CreateCardReq {
+    pub(super) front: String,
+    pub(super) back: Vec<String>,
+}
+
+/// The newly minted virtual card's id.
+#[derive(Debug, Serialize)]
+pub(super) struct CreateCardResp {
+    /// Decimal string (ids are `u64`), matching how the store keys ids.
+    pub(super) id: String,
 }
 
 /// The ask-tutor's model and effort, shown in the panel so it's clear which
