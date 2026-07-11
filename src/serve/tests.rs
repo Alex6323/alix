@@ -6,6 +6,7 @@ use crate::{
     ask::{self, Reply},
     card::Card,
     choice,
+    config::{AskConfig, ReviewConfig},
     depth::Depth,
     picker,
     scheduler::{Fsrs, Grade},

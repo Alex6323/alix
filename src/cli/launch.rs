@@ -117,8 +117,6 @@ pub(crate) fn launch(args: LaunchArgs) -> Result<()> {
         keys: config.keys.clone(),
         picker: config.picker.clone(),
         browse: config.browse.clone(),
-        review: config.review,
-        ask: config.ask.clone(),
         exam: config.exam.clone(),
         ai: config.ai.clone(),
         generate: config.generate.clone(),

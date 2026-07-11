@@ -174,11 +174,9 @@ fn review_options(base: &str, auth: Option<String>) -> ReviewOptions {
         keys: config.keys,
         picker: config.picker,
         browse: config.browse,
-        ask: config.ask.clone(),
         exam: config.exam,
         ai: config.ai,
         generate: config.generate,
-        review: config.review,
         // The adult default — the same wiring `src/cli/launch.rs` uses. A kids
         // server differs only in which page `/` serves and the tutor's voice;
         // every `/api/*` route below is audience-agnostic.
@@ -251,14 +249,13 @@ fn spawn_test_server_fixture(token: Option<&str>, extra: impl FnOnce(&Path)) -> 
     // to this fixture's own file.
     let opts = ReviewOptions {
         cfg: AssembleConfig {
-            review: opts.review,
-            ask: opts.ask.clone(),
             trace_auto_grade: false,
             pacing: Pacing {
                 max_new: 10,
                 limit: None,
             },
             instance_store: Some(store_path),
+            ..opts.cfg
         },
         ..opts
     };
@@ -359,7 +356,7 @@ fn spawn_full_server(ask_command: Option<&Path>) -> (String, Guard) {
     let base = format!("http://127.0.0.1:{port}");
     let mut opts = review_options(&base, None);
     if let Some(cmd) = ask_command {
-        opts.ask.command = cmd.to_str().unwrap().to_string();
+        opts.cfg.ask.command = cmd.to_str().unwrap().to_string();
     }
     // A picked trace deck now walks (predict → verify) via the real
     // classifier/assembler (`assemble::select`) instead of a hand-rolled
@@ -368,14 +365,13 @@ fn spawn_full_server(ask_command: Option<&Path>) -> (String, Guard) {
     let auto_grade = ask_command.is_some();
     let opts = ReviewOptions {
         cfg: AssembleConfig {
-            review: opts.review,
-            ask: opts.ask.clone(),
             trace_auto_grade: auto_grade,
             pacing: Pacing {
                 max_new: 10,
                 limit: None,
             },
             instance_store: Some(store_path),
+            ..opts.cfg
         },
         ..opts
     };

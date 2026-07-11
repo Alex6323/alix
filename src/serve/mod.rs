@@ -43,8 +43,7 @@ use crate::{
     assemble::{self, CardsBuild, SessionBuild},
     augment::{self, AugmentCache},
     config::{
-        AiConfig, AskConfig, Audience, Bindings, BrowseBindings, ExamConfig, GenerateDeckConfig,
-        PickerKeys, ReviewConfig,
+        AiConfig, Audience, Bindings, BrowseBindings, ExamConfig, GenerateDeckConfig, PickerKeys,
     },
     deck::{self, Deck},
     doctor, exam, generate, import,
@@ -142,8 +141,6 @@ pub struct ReviewOptions {
     /// Browse-mode keys (the `[browse]` section), bound on the `/browse` page
     /// this server also hosts.
     pub browse: BrowseBindings,
-    /// Ask-Claude settings (command, allowlist, timeout, …).
-    pub ask: AskConfig,
     /// AI-exam settings (model, question count, default strictness, …).
     pub exam: ExamConfig,
     /// AI augmentation settings (model, per-target counts), for generating
@@ -152,9 +149,6 @@ pub struct ReviewOptions {
     /// AI deck-generation settings (model, timeout, max cards, guidance, …),
     /// for `POST /api/generate`.
     pub generate: GenerateDeckConfig,
-    /// Personal review pacing (FSRS retention + retirement interval), for the
-    /// selection screen's badges and due counts.
-    pub review: ReviewConfig,
     /// Which frontend `/` serves (`[serve] audience`); also selects the
     /// ask-tutor's kid-safe vs. adult preamble (`start_ask`).
     pub audience: Audience,
@@ -221,11 +215,9 @@ pub fn run_review(
         keys: bindings,
         picker: picker_keys,
         browse: browse_bindings,
-        ask: ask_cfg,
         exam: exam_cfg,
         ai: ai_cfg,
         generate: generate_cfg,
-        review: review_cfg,
         audience,
         auth,
         config_path,
@@ -233,6 +225,11 @@ pub fn run_review(
         scoped,
         cfg,
     } = opts;
+    // `review`/`ask` used to also live at the top level of `ReviewOptions`,
+    // kept in sync with `cfg` by hand at every construction site — `cfg` is
+    // now their one source.
+    let ask_cfg = cfg.ask.clone();
+    let review_cfg = cfg.review;
     let keys = ReviewKeys::from(&bindings);
     let picker_keys = PickerKeysDto::from(&picker_keys);
     // The `/browse` page this server also hosts needs its own next/prev/remove
