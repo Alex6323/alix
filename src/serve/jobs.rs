@@ -91,12 +91,6 @@ pub(super) enum AskAction {
     /// Condense the conversation into note lines appended to the deck.
     Condense,
     /// Distill the conversation into one draft card, surfaced on the ask DTO.
-    // Nothing constructs this variant yet in either build (the drain test
-    // exercises `Purpose::DraftCard` directly, not this one); the HTTP
-    // endpoint lands in Task 5. A `cfg_attr(not(test), expect(dead_code))`
-    // still warns unsuppressed in the test-target build (clippy --all-targets),
-    // so this stays a plain `#[allow]` until Task 5 wires a real constructor.
-    #[allow(dead_code)]
     DraftCard,
 }
 

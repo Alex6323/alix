@@ -1132,6 +1132,19 @@ pub fn run_review(
                 r.start_ask(&ask_cfg, audience, AskAction::Condense);
                 respond_json(request, &r.ask_dto(None, None));
             }
+            // Distill the conversation into one draft card, surfaced on the ask DTO.
+            (Method::Post, "/api/ask/card/draft") => {
+                if audience == Audience::Kids {
+                    respond_status(request, 403);
+                    continue;
+                }
+                let Some(r) = reviewing.as_mut() else {
+                    respond_status(request, 409);
+                    continue;
+                };
+                r.start_ask(&ask_cfg, audience, AskAction::DraftCard);
+                respond_json(request, &r.ask_dto(None, None));
+            }
             // Poll for a pending reply; the page calls this every ~400ms while
             // `thinking`.
             (Method::Get, "/api/ask") => {
