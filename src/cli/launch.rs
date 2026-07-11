@@ -187,7 +187,7 @@ pub(crate) fn launch(args: LaunchArgs) -> Result<()> {
         config_path: args.config.clone(),
         pair,
         scoped,
-        cfg: assemble::Cfg {
+        cfg: assemble::AssembleConfig {
             review: config.review,
             ask: config.ask.clone(),
             trace_auto_grade: config.trace.auto_grade,

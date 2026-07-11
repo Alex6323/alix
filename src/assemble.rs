@@ -79,7 +79,7 @@ pub struct Pacing {
 /// whether a trace walk auto-grades, its session pacing, and its instance
 /// store path (the served folder's own file, when this deck selection turns
 /// out to belong to no workspace).
-pub struct Cfg {
+pub struct AssembleConfig {
     pub review: ReviewConfig,
     pub ask: AskConfig,
     pub trace_auto_grade: bool,
@@ -312,7 +312,7 @@ pub fn subject_paths(decks: HashMap<String, DeckInfo>) -> HashMap<String, PathBu
 pub fn select(
     paths: Vec<PathBuf>,
     store: &mut Store,
-    cfg: &Cfg,
+    cfg: &AssembleConfig,
     opts: &SelectOptions,
 ) -> Result<Selected> {
     // A single trace picked from the picker walks (predict → verify) rather
@@ -615,8 +615,8 @@ mod tests {
 
     /// The default per-session pacing/config for a `select` test: built-in
     /// `max_new`, no session cap, default review/ask config.
-    fn test_cfg() -> Cfg {
-        Cfg {
+    fn test_config() -> AssembleConfig {
+        AssembleConfig {
             review: ReviewConfig::default(),
             ask: AskConfig::default(),
             trace_auto_grade: false,
@@ -637,9 +637,9 @@ mod tests {
         let fact = dir.path().join("f.txt");
         std::fs::write(&fact, "# q\n  a\n").unwrap();
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
-        let cfg = Cfg {
+        let cfg = AssembleConfig {
             trace_auto_grade: false,
-            ..test_cfg()
+            ..test_config()
         };
         match select(vec![trace], &mut store, &cfg, &SelectOptions::default()).unwrap() {
             Selected::Walk(_) => {}
@@ -720,9 +720,14 @@ mod tests {
         )
         .unwrap();
 
-        let err = select(vec![ws], &mut store, &test_cfg(), &SelectOptions::default())
-            .err()
-            .expect("a folder of decks is not a reviewable deck");
+        let err = select(
+            vec![ws],
+            &mut store,
+            &test_config(),
+            &SelectOptions::default(),
+        )
+        .err()
+        .expect("a folder of decks is not a reviewable deck");
 
         assert!(format!("{err}").contains("is a folder"), "{err}");
     }
@@ -744,7 +749,7 @@ mod tests {
         let Selected::Review(build) = select(
             vec![path],
             &mut store,
-            &test_cfg(),
+            &test_config(),
             &SelectOptions::default(),
         )
         .unwrap() else {
@@ -790,7 +795,7 @@ mod tests {
         let Selected::Review(build) = select(
             vec![path],
             &mut store,
-            &test_cfg(),
+            &test_config(),
             &SelectOptions {
                 region: Some("r1".to_string()),
                 ..Default::default()
@@ -873,7 +878,7 @@ mod tests {
         let Selected::Review(build) = select(
             vec![path],
             &mut store,
-            &test_cfg(),
+            &test_config(),
             &SelectOptions::default(),
         )
         .unwrap() else {

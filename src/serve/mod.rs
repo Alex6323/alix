@@ -173,7 +173,7 @@ pub struct ReviewOptions {
     /// Everything [`assemble::select`] needs to turn a deck-selection into a
     /// review session or a trace walk (review/ask config, trace auto-grade,
     /// pacing, this instance's store).
-    pub cfg: assemble::Cfg,
+    pub cfg: assemble::AssembleConfig,
 }
 
 /// How this instance is reached, for the pairing sheet. Built by the

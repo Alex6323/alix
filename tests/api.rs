@@ -26,7 +26,7 @@ use std::{
 };
 
 use alix::{
-    assemble::{Cfg, Pacing},
+    assemble::{AssembleConfig, Pacing},
     config::Config,
     deck::Deck,
     parser,
@@ -185,7 +185,7 @@ fn review_options(base: &str, auth: Option<String>) -> ReviewOptions {
         // Callers always overwrite this via a `..` struct-update once they
         // know the fixture's own store path — see `spawn_test_server_fixture`
         // / `spawn_full_server`.
-        cfg: Cfg {
+        cfg: AssembleConfig {
             review: config.review,
             ask: config.ask,
             trace_auto_grade: false,
@@ -242,7 +242,7 @@ fn spawn_test_server_fixture(token: Option<&str>, extra: impl FnOnce(&Path)) -> 
     // stub's `session_options` used (`max_new: 10`), and pin the instance store
     // to this fixture's own file.
     let opts = ReviewOptions {
-        cfg: Cfg {
+        cfg: AssembleConfig {
             review: opts.review,
             ask: opts.ask.clone(),
             trace_auto_grade: false,
@@ -341,7 +341,7 @@ const TRACE_SOURCE: &str = "first\nsecond\nthird\n";
 ///
 /// `ask_command`, when `Some`, points `[ask] command` at a fake CLI — see this
 /// module's `fake_reply` — so a walk picked here auto-grades
-/// (`Cfg::trace_auto_grade`) instead of self-grading; `None` keeps every AI
+/// (`AssembleConfig::trace_auto_grade`) instead of self-grading; `None` keeps every AI
 /// path off (self-graded walk, no augmentation), which is what every non-AI
 /// test in this family wants.
 fn spawn_full_server(ask_command: Option<&Path>) -> (String, Guard) {
@@ -386,7 +386,7 @@ fn spawn_full_server(ask_command: Option<&Path>) -> (String, Guard) {
     // old stub computed itself (`ask_command.is_some()`).
     let auto_grade = ask_command.is_some();
     let opts = ReviewOptions {
-        cfg: Cfg {
+        cfg: AssembleConfig {
             review: opts.review,
             ask: opts.ask.clone(),
             trace_auto_grade: auto_grade,
