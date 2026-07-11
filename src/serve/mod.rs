@@ -462,7 +462,7 @@ pub fn run_review(
                         // `browse` takes `paths` by value, so keep a copy for the
                         // recent-decks record below.
                         let recorded_paths = paths.clone();
-                        match assemble::browse(paths, &cfg) {
+                        match assemble::browse(paths) {
                             Ok(b) => {
                                 // Browse always remembers its deck for next time's
                                 // picker (unlike a review, which only records when

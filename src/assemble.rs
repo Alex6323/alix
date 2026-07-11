@@ -528,14 +528,12 @@ pub fn select(
     }))
 }
 
-/// Builds the browse card list from explicit `deck_paths` (no picker). Mirrors
+/// Builds the browse card list from explicit `paths` (no picker). Mirrors
 /// [`select`]'s review path for the read-only browse view: loads decks, but
-/// builds no scheduler session. `cfg` isn't consulted yet — kept for signature
-/// parity with [`select`], per Assumption A (browse's own store open never
-/// reads schedule/grade state, only the augment-cache path).
-pub fn browse(deck_paths: Vec<PathBuf>, _cfg: &AssembleConfig) -> Result<CardsBuild> {
+/// builds no scheduler session.
+pub fn browse(paths: Vec<PathBuf>) -> Result<CardsBuild> {
     // One deck file per browse — no merging loose decks or whole workspaces.
-    let [deck] = deck_paths.as_slice() else {
+    let [deck] = paths.as_slice() else {
         bail!("browse one deck at a time (merging decks was removed)");
     };
     if workspace::has_decks(deck) {
@@ -544,7 +542,7 @@ pub fn browse(deck_paths: Vec<PathBuf>, _cfg: &AssembleConfig) -> Result<CardsBu
             deck.display()
         );
     }
-    let expanded = expand_workspaces(&deck_paths)?;
+    let expanded = expand_workspaces(&paths)?;
     let (mut cards, deck_label, decks, _) = load_decks(&expanded.decks, &expanded.defaults)?;
     let label = deck_label;
 
@@ -948,7 +946,7 @@ mod tests {
     fn browse_of_a_folder_bails_with_the_workspace_hint() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("a.txt"), "# q\n  a\n").unwrap();
-        let err = browse(vec![dir.path().to_path_buf()], &test_config()).unwrap_err();
+        let err = browse(vec![dir.path().to_path_buf()]).unwrap_err();
         assert!(
             err.to_string().contains("browse a deck inside it"),
             "got: {err}"
@@ -966,7 +964,7 @@ mod tests {
         )
         .unwrap();
 
-        let build = browse(vec![path], &test_config()).unwrap();
+        let build = browse(vec![path]).unwrap();
         assert_eq!(2, build.cards.len());
     }
 
@@ -982,7 +980,7 @@ mod tests {
         std::fs::write(&path, "# List the parts\n\tA, B, C\n").unwrap();
 
         // Without a cached format, browse shows the raw deck answer.
-        let raw = browse(vec![path.clone()], &test_config()).unwrap();
+        let raw = browse(vec![path.clone()]).unwrap();
         let id = raw.cards[0].id();
         assert_eq!(raw.cards[0].back_for_display(), ["A, B, C"]);
 
@@ -1003,7 +1001,7 @@ mod tests {
         cache.save().unwrap();
 
         // Browsing now shows the reshaped front/answer and the trivia note.
-        let merged = browse(vec![path], &test_config()).unwrap();
+        let merged = browse(vec![path]).unwrap();
         assert_eq!(merged.cards[0].front, "Name the parts");
         assert_eq!(merged.cards[0].back_for_display(), ["A", "B", "C"]);
         let note = merged.cards[0].note.clone().unwrap_or_default();
@@ -1017,7 +1015,7 @@ mod tests {
         let b = dir.path().join("b.txt");
         std::fs::write(&a, "# q\n\ta\n").unwrap();
         std::fs::write(&b, "# q\n\tb\n").unwrap();
-        let err = browse(vec![a, b], &test_config()).err().unwrap();
+        let err = browse(vec![a, b]).err().unwrap();
         assert!(format!("{err}").contains("one deck"), "{err}");
     }
 }
