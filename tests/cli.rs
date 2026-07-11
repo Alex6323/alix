@@ -503,7 +503,7 @@ fn augment_target_format_skips_an_orphaned_virtual_card_colliding_with_a_real_de
     // A partial cloze promote can leave an orphaned sidecar `virtual_cards`
     // entry whose id collides with a real deck card (see `promote_virtual`).
     // `deck augment --target format` must filter those out exactly like
-    // `build_review`'s injection does, or the same card gets warmed twice.
+    // `assemble::select`'s injection does, or the same card gets warmed twice.
     let dir = TempDir::new().unwrap();
     let deck_text = "# List the parts\n    A, B, C\n";
     let deck = write(dir.path(), "parts.txt", deck_text);

@@ -144,7 +144,7 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
             // by the synth card's real `Card::id`, so the cached entry is exactly
             // what `apply_format` finds at review time (§8.2).
             //
-            // Mirror `build_review`'s injection filters: a partial cloze promote
+            // Mirror `assemble::select`'s injection filters: a partial cloze promote
             // (see `store::promote_virtual`) can leave an orphaned sidecar entry
             // whose id collides with a real deck card, and a retired card is
             // resting — neither should be warmed a second time or at all.

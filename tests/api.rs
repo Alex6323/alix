@@ -629,14 +629,12 @@ fn get_api_decks_lists_a_workspace_with_its_member_decks() {
 }
 
 /// The invariant real clients depend on: every member `name` `/api/decks`
-/// reports must actually select (200, a review `StateDto`). This exercises
-/// the server's real name resolution (`resolve_row`, `src/serve/catalog.rs`)
-/// over qualified `<workspace>/<file>` keys — NOT `build_review`'s
-/// folder-bail (that's `build_review_rejects_a_folder_of_decks` in
-/// `src/cli/launch.rs`): this harness's `build` closure is its own
-/// miniature (see `spawn_test_server_with`'s doc — "without the
-/// workspace/topology/virtual-card machinery"), so only `resolve_row` +
-/// `Deck::load` are under test here.
+/// reports must actually select (200, a review `StateDto`). This drives the
+/// real server end to end — the real name resolution (`resolve_row`,
+/// `src/serve/catalog.rs`) over qualified `<workspace>/<file>` keys, then the
+/// real `assemble::select` for each member's `/api/select` — not a stub; the
+/// companion unit test for the folder-bail itself is
+/// `select_rejects_a_folder_of_decks` in `src/assemble.rs`.
 #[test]
 fn every_member_deck_name_from_api_decks_is_selectable() {
     let (base, _guard) = spawn_test_server_fixture(None, write_animals_workspace);

@@ -3,7 +3,10 @@
 //! The one place that knows how a selection becomes a session, a walk, or a
 //! browse — workspace expansion, augment overlays, topology and region focus,
 //! virtual cards, pacing, depth. The server and the CLI both consume it; no
-//! policy that changes an `/api/*` response may live outside this module.
+//! policy that changes an `/api/*` response may live outside this module,
+//! except the two spec-sanctioned exceptions: recent-recording (the serve
+//! arms, conditioned on lib state) and group-row `reviewable*` aggregation
+//! (the catalog, folded from member values).
 
 use std::{
     collections::HashMap,
@@ -302,7 +305,7 @@ fn single_trace_to_walk(deck_paths: &[PathBuf]) -> Option<Deck> {
 }
 
 /// Subject → deck file path, for the web frontend's card removal.
-pub fn subject_paths(decks: HashMap<String, DeckInfo>) -> HashMap<String, PathBuf> {
+fn subject_paths(decks: HashMap<String, DeckInfo>) -> HashMap<String, PathBuf> {
     decks
         .into_iter()
         .map(|(subject, info)| (subject, info.path))
@@ -550,7 +553,7 @@ pub fn browse(paths: Vec<PathBuf>) -> Result<CardsBuild> {
     let [deck] = paths.as_slice() else {
         bail!("browse one deck at a time (merging decks was removed)");
     };
-    if workspace::has_decks(deck) {
+    if !selectable(deck) {
         bail!(
             "`{}` is a workspace — browse a deck inside it, or open it with `alix workspace`",
             deck.display()

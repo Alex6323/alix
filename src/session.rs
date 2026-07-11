@@ -156,7 +156,8 @@ impl Session {
     /// card are kept apart whenever other cards are available. A virtual
     /// (remediation) card is just one more card in `cards` — its schedule is an
     /// ordinary `store.cards` entry keyed by its `Card::id`, so it needs no
-    /// special routing; `build_review` synthesizes and injects it before this.
+    /// special routing; `assemble::select` synthesizes and injects it before
+    /// this.
     pub fn new(
         cards: Vec<Card>,
         store: &Store,
