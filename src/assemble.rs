@@ -70,9 +70,12 @@ mod tests {
         std::fs::write(&loose, "# q\n  a\n").unwrap();
         let instance = dir.path().join("instance-progress.json");
 
-        // workspace member -> the workspace's store, even with an instance fallback present
+        // workspace member -> the workspace's store
         let p = store_path_for(std::slice::from_ref(&member), None).expect("workspace store");
         assert_eq!(p, ws.join("progress.json"));
+        // workspace member through store_for: the workspace store wins over the instance fallback
+        let s = store_for(std::slice::from_ref(&member), Some(&instance)).unwrap();
+        assert_eq!(s.path(), ws.join("progress.json").as_path());
         // loose deck + instance fallback -> the instance store (via store_for)
         let s = store_for(std::slice::from_ref(&loose), Some(&instance)).unwrap();
         assert_eq!(s.path(), instance.as_path());
