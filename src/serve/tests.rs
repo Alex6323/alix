@@ -4,6 +4,7 @@ use super::*;
 use crate::{
     answer::{Input, Mode, mode_name},
     ask::{self, Reply},
+    card::Card,
     choice, picker,
     scheduler::{Fsrs, Grade},
     session::Session,

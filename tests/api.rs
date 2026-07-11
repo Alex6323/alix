@@ -28,14 +28,12 @@ use std::{
 use alix::{
     assemble::{AssembleConfig, Pacing},
     config::Config,
-    deck::Deck,
     parser,
     recent::RecentDecks,
-    serve::{self, CardsBuild, PairInfo, ReviewOptions},
-    session::now_ms,
+    serve::{self, PairInfo, ReviewOptions},
     store::Store,
 };
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use tempfile::TempDir;
 use tiny_http::Server;
 
@@ -255,36 +253,11 @@ fn spawn_test_server_fixture(token: Option<&str>, extra: impl FnOnce(&Path)) -> 
         ..opts
     };
 
-    // One deck at a time, exactly like the CLI's own `build_browse`
-    // (§`src/cli/launch.rs`) — just without the workspace/augment machinery
-    // that adds, which no fixture deck here needs yet.
-    let build_browse = |paths: Vec<PathBuf>, recent: &mut RecentDecks| -> Result<CardsBuild> {
-        let path = paths
-            .into_iter()
-            .next()
-            .ok_or_else(|| anyhow!("no deck selected"))?;
-        let deck = Deck::load(&path)?;
-        recent.record(std::slice::from_ref(&path), now_ms());
-        let _ = recent.save();
-        Ok(CardsBuild {
-            cards: deck.cards,
-            label: deck.subject.clone(),
-            decks: HashMap::from([(deck.subject, path)]),
-        })
-    };
     let store_for = move |_paths: &[PathBuf]| -> Result<Store> { Ok(Store::open(&store_path)?) };
 
     let stop_handle = Arc::clone(&server);
     let handle = thread::spawn(move || {
-        let _ = serve::run_review(
-            store,
-            recent,
-            decks_dir,
-            server,
-            opts,
-            build_browse,
-            store_for,
-        );
+        let _ = serve::run_review(store, recent, decks_dir, server, opts, store_for);
     });
 
     (
@@ -399,33 +372,11 @@ fn spawn_full_server(ask_command: Option<&Path>) -> (String, Guard) {
         ..opts
     };
 
-    let build_browse = move |paths: Vec<PathBuf>, recent: &mut RecentDecks| -> Result<CardsBuild> {
-        let path = paths
-            .into_iter()
-            .next()
-            .ok_or_else(|| anyhow!("no deck selected"))?;
-        let deck = Deck::load(&path)?;
-        recent.record(std::slice::from_ref(&path), now_ms());
-        let _ = recent.save();
-        Ok(CardsBuild {
-            cards: deck.cards,
-            label: deck.subject.clone(),
-            decks: HashMap::from([(deck.subject, path)]),
-        })
-    };
     let store_for = move |_paths: &[PathBuf]| -> Result<Store> { Ok(Store::open(&store_path)?) };
 
     let stop_handle = Arc::clone(&server);
     let handle = thread::spawn(move || {
-        let _ = serve::run_review(
-            store,
-            recent,
-            decks_dir,
-            server,
-            opts,
-            build_browse,
-            store_for,
-        );
+        let _ = serve::run_review(store, recent, decks_dir, server, opts, store_for);
     });
 
     (

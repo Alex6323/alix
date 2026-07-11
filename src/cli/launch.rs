@@ -3,74 +3,20 @@
 //! sessions the server calls back into for each pick from the picker.
 
 use std::{
-    collections::HashMap,
     net::{Ipv4Addr, SocketAddr},
     path::{Path, PathBuf},
     sync::Arc,
 };
 
 use alix::{
-    assemble::{self, expand_workspaces, load_decks, open_store, store_path_for, subject_paths},
-    augment::{self, AugmentCache},
-    card::Card,
+    assemble::{self, open_store, store_path_for},
     config::Config,
     recent::{self, RecentDecks},
-    serve,
-    session::DeckInfo,
-    time::now_ms,
-    workspace,
+    serve, workspace,
 };
 use anyhow::{Context, Result, bail};
 
-use crate::{LaunchArgs, common::store_for};
-
-/// Builds the browse card list from explicit `deck_paths` (no picker). Mirrors
-/// [`assemble::select`]'s review path for the read-only browse view: loads
-/// decks, but builds no scheduler session.
-fn build_browse(deck_paths: Vec<PathBuf>, recent: &mut RecentDecks) -> Result<BrowseBuild> {
-    // One deck file per browse — no merging loose decks or whole workspaces.
-    let [deck] = deck_paths.as_slice() else {
-        bail!("browse one deck at a time (merging decks was removed)");
-    };
-    if workspace::has_decks(deck) {
-        bail!(
-            "`{}` is a workspace — browse a deck inside it, or open it with `alix workspace`",
-            deck.display()
-        );
-    }
-    let expanded = expand_workspaces(&deck_paths)?;
-    let (mut cards, deck_label, decks, _) = load_decks(&expanded.decks, &expanded.defaults)?;
-    let label = deck_label;
-
-    // Merge in the display augmentations review shows, from the decks' own store
-    // (a workspace's when they share one) — so browse renders the same view, not
-    // the raw deck. The raw card stays in the deck file; this is display-only.
-    let store = store_for(&expanded.decks, None)?;
-    let augment = AugmentCache::open(augment::augment_path_for(store.path()));
-    for card in &mut cards {
-        // Reshape first (re-renders the deck note, front, answer, mode) …
-        augment.apply_format(card);
-        // … then stack the notes-target trivia on top of the reshaped note.
-        if let Some(note) = augment.note(card.id()) {
-            card.append_note(&[note.to_string()]);
-        }
-    }
-
-    recent.record(&deck_paths, now_ms());
-    let _ = recent.save();
-    Ok(BrowseBuild {
-        cards,
-        label,
-        decks,
-    })
-}
-
-/// Browse cards built from an explicit set of deck paths.
-struct BrowseBuild {
-    cards: Vec<Card>,
-    label: String,
-    decks: HashMap<String, DeckInfo>,
-}
+use crate::LaunchArgs;
 
 /// The IP/port to serve on: localhost unless `--lan`, and the `--port` flag or
 /// the configured `[serve]` port.
@@ -164,12 +110,6 @@ pub(crate) fn launch(args: LaunchArgs) -> Result<()> {
         limit: args.limit.or(config.review.limit),
     };
 
-    // The read-only browse card builder for the picker's "Browse" action.
-    let to_cards = |b: BrowseBuild| serve::CardsBuild {
-        cards: b.cards,
-        label: b.label,
-        decks: subject_paths(b.decks),
-    };
     let token = resolve_serve_token(args.token.clone(), args.lan, &config)?;
     let pair = announce(addr, args.lan, token.as_deref(), &decks_dir);
 
@@ -201,17 +141,7 @@ pub(crate) fn launch(args: LaunchArgs) -> Result<()> {
     let store_for_sel = |paths: &[PathBuf]| {
         open_store(store_path_for(paths, None).or_else(|| instance_store.clone()))
     };
-    let build_browse_sel =
-        |paths: Vec<PathBuf>, recent: &mut RecentDecks| build_browse(paths, recent).map(to_cards);
-    serve::run_review(
-        store,
-        recent,
-        decks_dir,
-        server,
-        opts,
-        build_browse_sel,
-        store_for_sel,
-    )
+    serve::run_review(store, recent, decks_dir, server, opts, store_for_sel)
 }
 
 /// Prints what is served (the decks root) and where it is reachable, plus
@@ -358,85 +288,5 @@ mod tests {
             return;
         }
         assert_eq!(abbreviate_home(&outside), outside.display().to_string());
-    }
-
-    #[test]
-    fn build_browse_loads_from_explicit_paths_including_image_cards() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("d.txt");
-        // A normal card and an image card — both render in the web frontend.
-        std::fs::write(
-            &path,
-            "% img-dir: /imgs\n# plain\n\tanswer\n# pic\n% img: a.png\n\tphoto\n",
-        )
-        .unwrap();
-        let mut recent = RecentDecks::load(dir.path().join("recent.json"));
-
-        let build = build_browse(vec![path], &mut recent).unwrap();
-        assert_eq!(2, build.cards.len());
-    }
-
-    #[test]
-    fn build_browse_applies_a_cached_format_reshape() {
-        // A deck in a workspace, so `build_browse` resolves the workspace's own
-        // store (a deterministic temp path) rather than the global store.
-        let dir = tempfile::tempdir().unwrap();
-        let ws = dir.path().join("eng");
-        std::fs::create_dir(&ws).unwrap();
-        std::fs::write(ws.join("alix.toml"), "title = \"Eng\"\n").unwrap();
-        let path = ws.join("d.txt");
-        std::fs::write(&path, "# List the parts\n\tA, B, C\n").unwrap();
-        let mut recent = RecentDecks::load(dir.path().join("recent.json"));
-
-        // Without a cached format, browse shows the raw deck answer.
-        let raw = build_browse(vec![path.clone()], &mut recent).unwrap();
-        let id = raw.cards[0].id();
-        assert_eq!(raw.cards[0].back_for_display(), ["A, B, C"]);
-
-        // Cache a format reshape (and a notes-target trivia) for that card in the
-        // workspace's augment sidecar.
-        let store = store_for(std::slice::from_ref(&path), None).unwrap();
-        let mut cache = AugmentCache::open(augment::augment_path_for(store.path()));
-        cache.set_format(
-            id,
-            augment::Format {
-                front: Some("Name the parts".to_string()),
-                back: vec!["A".to_string(), "B".to_string(), "C".to_string()],
-                note: None,
-                mode: None,
-            },
-        );
-        cache.set_note(id, "the parts are well known".to_string());
-        cache.save().unwrap();
-
-        // Browsing now shows the reshaped front/answer and the trivia note.
-        let merged = build_browse(vec![path], &mut recent).unwrap();
-        assert_eq!(merged.cards[0].front, "Name the parts");
-        assert_eq!(merged.cards[0].back_for_display(), ["A", "B", "C"]);
-        let note = merged.cards[0].note.clone().unwrap_or_default();
-        assert!(note.contains("the parts are well known"), "{note}");
-    }
-
-    #[test]
-    fn build_browse_rejects_multiple_decks() {
-        let dir = tempfile::tempdir().unwrap();
-        let a = dir.path().join("a.txt");
-        let b = dir.path().join("b.txt");
-        std::fs::write(&a, "# q\n\ta\n").unwrap();
-        std::fs::write(&b, "# q\n\tb\n").unwrap();
-        let mut recent = RecentDecks::load(dir.path().join("recent.json"));
-        let err = build_browse(vec![a, b], &mut recent).err().unwrap();
-        assert!(format!("{err}").contains("one deck"), "{err}");
-    }
-
-    #[test]
-    fn build_browse_rejects_a_workspace_directory() {
-        let dir = tempfile::tempdir().unwrap();
-        let ws = dir.path().join("eng");
-        std::fs::create_dir(&ws).unwrap();
-        std::fs::write(ws.join("m.txt"), "# q\n\ta\n").unwrap();
-        let mut recent = RecentDecks::load(dir.path().join("recent.json"));
-        let err = build_browse(vec![ws], &mut recent).err().unwrap();
-        assert!(format!("{err}").contains("workspace"), "{err}");
     }
 }

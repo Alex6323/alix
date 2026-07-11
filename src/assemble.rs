@@ -124,6 +124,14 @@ pub enum Selected {
     Walk(WalkBuild),
 }
 
+/// A browse card list ready to serve, with its label and deck paths.
+#[derive(Debug)]
+pub struct CardsBuild {
+    pub cards: Vec<Card>,
+    pub label: String,
+    pub decks: HashMap<String, PathBuf>,
+}
+
 /// The result of [`expand_workspaces`]: the deck file(s) to load and the per-deck
 /// workspace directive defaults (keyed by file name).
 pub struct Expanded {
@@ -303,8 +311,8 @@ pub fn subject_paths(decks: HashMap<String, DeckInfo>) -> HashMap<String, PathBu
 
 /// Turns a deck selection into something reviewable: most selections resolve
 /// to a review session; a lone trace deck resolves to a walk (predict →
-/// verify) instead. Resolves `% requires:` prerequisites are NOT pulled in —
-/// the dependency graph gates exams, not what a review session contains.
+/// verify) instead. `% requires:` prerequisites are NOT pulled in — the
+/// dependency graph gates exams, not what a review session contains.
 ///
 /// On a review, this also persists the resolved depth (`store.set_last_depth`)
 /// so a plain Learn next time reopens at it — even when the built session
@@ -518,6 +526,47 @@ pub fn select(
         source_bases,
         topology_name,
     }))
+}
+
+/// Builds the browse card list from explicit `deck_paths` (no picker). Mirrors
+/// [`select`]'s review path for the read-only browse view: loads decks, but
+/// builds no scheduler session. `cfg` isn't consulted yet — kept for signature
+/// parity with [`select`], per Assumption A (browse's own store open never
+/// reads schedule/grade state, only the augment-cache path).
+pub fn browse(deck_paths: Vec<PathBuf>, _cfg: &AssembleConfig) -> Result<CardsBuild> {
+    // One deck file per browse — no merging loose decks or whole workspaces.
+    let [deck] = deck_paths.as_slice() else {
+        bail!("browse one deck at a time (merging decks was removed)");
+    };
+    if workspace::has_decks(deck) {
+        bail!(
+            "`{}` is a workspace — browse a deck inside it, or open it with `alix workspace`",
+            deck.display()
+        );
+    }
+    let expanded = expand_workspaces(&deck_paths)?;
+    let (mut cards, deck_label, decks, _) = load_decks(&expanded.decks, &expanded.defaults)?;
+    let label = deck_label;
+
+    // Merge in the display augmentations review shows, from the decks' own store
+    // (a workspace's when they share one) — so browse renders the same view, not
+    // the raw deck. The raw card stays in the deck file; this is display-only.
+    let store = store_for(&expanded.decks, None)?;
+    let augment = AugmentCache::open(augment::augment_path_for(store.path()));
+    for card in &mut cards {
+        // Reshape first (re-renders the deck note, front, answer, mode) …
+        augment.apply_format(card);
+        // … then stack the notes-target trivia on top of the reshaped note.
+        if let Some(note) = augment.note(card.id()) {
+            card.append_note(&[note.to_string()]);
+        }
+    }
+
+    Ok(CardsBuild {
+        cards,
+        label,
+        decks: subject_paths(decks),
+    })
 }
 
 #[cfg(test)]
@@ -893,5 +942,82 @@ mod tests {
             .expect("the injected virtual card should be in the session");
         assert_eq!("Reshaped virtual front", synth.front);
         assert_eq!(["Reshaped virtual back"], *synth.back_for_display());
+    }
+
+    #[test]
+    fn browse_of_a_folder_bails_with_the_workspace_hint() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "# q\n  a\n").unwrap();
+        let err = browse(vec![dir.path().to_path_buf()], &test_config()).unwrap_err();
+        assert!(
+            err.to_string().contains("browse a deck inside it"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn browse_loads_from_explicit_paths_including_image_cards() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.txt");
+        // A normal card and an image card — both render in the web frontend.
+        std::fs::write(
+            &path,
+            "% img-dir: /imgs\n# plain\n\tanswer\n# pic\n% img: a.png\n\tphoto\n",
+        )
+        .unwrap();
+
+        let build = browse(vec![path], &test_config()).unwrap();
+        assert_eq!(2, build.cards.len());
+    }
+
+    #[test]
+    fn browse_applies_a_cached_format_reshape() {
+        // A deck in a workspace, so `browse` resolves the workspace's own
+        // store (a deterministic temp path) rather than the global store.
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path().join("eng");
+        std::fs::create_dir(&ws).unwrap();
+        std::fs::write(ws.join("alix.toml"), "title = \"Eng\"\n").unwrap();
+        let path = ws.join("d.txt");
+        std::fs::write(&path, "# List the parts\n\tA, B, C\n").unwrap();
+
+        // Without a cached format, browse shows the raw deck answer.
+        let raw = browse(vec![path.clone()], &test_config()).unwrap();
+        let id = raw.cards[0].id();
+        assert_eq!(raw.cards[0].back_for_display(), ["A, B, C"]);
+
+        // Cache a format reshape (and a notes-target trivia) for that card in the
+        // workspace's augment sidecar.
+        let store = store_for(std::slice::from_ref(&path), None).unwrap();
+        let mut cache = AugmentCache::open(augment::augment_path_for(store.path()));
+        cache.set_format(
+            id,
+            augment::Format {
+                front: Some("Name the parts".to_string()),
+                back: vec!["A".to_string(), "B".to_string(), "C".to_string()],
+                note: None,
+                mode: None,
+            },
+        );
+        cache.set_note(id, "the parts are well known".to_string());
+        cache.save().unwrap();
+
+        // Browsing now shows the reshaped front/answer and the trivia note.
+        let merged = browse(vec![path], &test_config()).unwrap();
+        assert_eq!(merged.cards[0].front, "Name the parts");
+        assert_eq!(merged.cards[0].back_for_display(), ["A", "B", "C"]);
+        let note = merged.cards[0].note.clone().unwrap_or_default();
+        assert!(note.contains("the parts are well known"), "{note}");
+    }
+
+    #[test]
+    fn browse_rejects_multiple_decks() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.txt");
+        let b = dir.path().join("b.txt");
+        std::fs::write(&a, "# q\n\ta\n").unwrap();
+        std::fs::write(&b, "# q\n\tb\n").unwrap();
+        let err = browse(vec![a, b], &test_config()).err().unwrap();
+        assert!(format!("{err}").contains("one deck"), "{err}");
     }
 }

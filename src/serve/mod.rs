@@ -37,9 +37,8 @@ use tiny_http::{Method, Server};
 
 use crate::{
     answer::{TypedResult, grade_lines_ordered, grade_lines_unordered},
-    assemble::{self, SessionBuild},
+    assemble::{self, CardsBuild, SessionBuild},
     augment::{self, AugmentCache},
-    card::Card,
     config::{
         AiConfig, AskConfig, Audience, Bindings, BrowseBindings, ExamConfig, GenerateDeckConfig,
         PickerKeys, ReviewConfig,
@@ -183,13 +182,6 @@ pub struct PairInfo {
     pub lan: bool,
 }
 
-/// A browse card list ready to serve, with its label and deck paths.
-pub struct CardsBuild {
-    pub cards: Vec<Card>,
-    pub label: String,
-    pub decks: HashMap<String, PathBuf>,
-}
-
 /// Binds the server socket — separated from [`run_review`] so a port clash
 /// errors before the caller announces a URL, and with the multi-instance
 /// remedy in the message.
@@ -222,9 +214,6 @@ pub fn run_review(
     mut decks_dir: PathBuf,
     server: Arc<Server>,
     opts: ReviewOptions,
-    // Builds a read-only browse card list from the picked decks (the picker's
-    // "Browse" action; the page navigates to `/browse`, which this server hosts).
-    mut build_browse: impl FnMut(Vec<PathBuf>, &mut RecentDecks) -> Result<CardsBuild>,
     // The progress store the given decks write to — a workspace's own
     // `progress.json` when they share one, else the global store (`&[]` → global),
     // mirroring the terminal `store_for`. The active store is swapped to this when
@@ -470,8 +459,16 @@ pub fn run_review(
                             respond_status(request, 400);
                             continue;
                         }
-                        match build_browse(paths, &mut recent) {
+                        // `browse` takes `paths` by value, so keep a copy for the
+                        // recent-decks record below.
+                        let recorded_paths = paths.clone();
+                        match assemble::browse(paths, &cfg) {
                             Ok(b) => {
+                                // Browse always remembers its deck for next time's
+                                // picker (unlike a review, which only records when
+                                // there is something to review).
+                                recent.record(&recorded_paths, now_ms());
+                                let _ = recent.save();
                                 browsing = Some(Browsing::new(b));
                                 reviewing = None;
                                 walking = None;
