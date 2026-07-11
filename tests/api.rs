@@ -27,7 +27,7 @@ use std::{
 
 use alix::{
     assemble::{AssembleConfig, Pacing},
-    config::Config,
+    config::{Audience, Config},
     parser,
     recent::RecentDecks,
     serve::{self, PairInfo, ReviewOptions},
@@ -1678,4 +1678,178 @@ fn get_api_receive_with_no_receive_in_flight_yields_409() {
     let resp = http(&base, "GET", "/api/receive", &[], &[]);
 
     assert_eq!(409, resp.status);
+}
+
+// ── Ask: tutor "make this a card" (draft → create round-trip) ────────────
+
+/// Like [`spawn_test_server`], but serves `[serve] audience = "kids"`, for the
+/// `/api/ask/card/draft` and `/api/ask/card/create` refusal tests. The
+/// audience gate in both handlers (`src/serve/mod.rs`) runs before the
+/// "no active review" check, so no deck needs to be selected for these to 403.
+fn spawn_kids_server() -> (String, Guard) {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join("sample.txt"), FIXTURE_DECK).unwrap();
+    let store_path = dir.path().join("store.json");
+
+    let store = Store::open(&store_path).unwrap();
+    let recent = RecentDecks::load(dir.path().join("recent.json"));
+    let decks_dir = dir.path().to_path_buf();
+
+    let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+    let server = Arc::new(serve::bind(addr).unwrap());
+    let port = server
+        .server_addr()
+        .to_ip()
+        .expect("bound to a loopback IP")
+        .port();
+    let base = format!("http://127.0.0.1:{port}");
+    let opts = review_options(&base, None);
+    let opts = ReviewOptions {
+        audience: Audience::Kids,
+        cfg: AssembleConfig {
+            trace_auto_grade: false,
+            pacing: Pacing {
+                max_new: 10,
+                limit: None,
+            },
+            instance_store: Some(store_path),
+            ..opts.cfg
+        },
+        ..opts
+    };
+
+    let stop_handle = Arc::clone(&server);
+    let handle = thread::spawn(move || {
+        let _ = serve::run_review(store, recent, decks_dir, server, opts);
+    });
+
+    (
+        base,
+        Guard {
+            server: stop_handle,
+            handle: Some(handle),
+            dir,
+        },
+    )
+}
+
+/// The full tutor "make this a card" round trip against a real server: seed a
+/// tutor exchange, draft a card from it, edit the draft, mint it, then prove
+/// it is actually drillable (not just stored) by re-selecting the deck and
+/// finding it in the queue. One `fake_reply` answers every CLI invocation
+/// (the script ignores its own argv, see `fake_reply`'s doc), so the same
+/// deck-format block serves both as the seeded question's answer (any
+/// non-empty text does, for that step) and, reused for the draft call, as the
+/// text `ask::parse_drafted_card` turns into a `DraftCardDto`.
+#[test]
+fn ask_card_draft_then_create_round_trips_a_learner_edited_card_into_the_queue() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let fake = fake_reply(scripts.path(), "# term?\n\tdefinition\n");
+    let (base, _guard) = spawn_full_server(Some(&fake));
+    select_fixture(&base);
+
+    // Seed a tutor exchange so the transcript is non-empty before drafting.
+    let resp = post_json(
+        &base,
+        "/api/ask",
+        r#"{"question":"why does this matter?"}"#,
+    );
+    assert_eq!(200, resp.status);
+    // The wait idiom this test reuses verbatim: `poll_until` (this file,
+    // defined above at the `fn poll_until` declaration), a bounded (up to
+    // 5s, 250 * 20ms) loop on the `thinking` condition, the same idiom
+    // `exam_grade_on_a_trace_deck_walks_from_answering_to_a_passing_result_via_the_fake_backend`
+    // and `walk_predict_with_auto_grade_resolves_a_verdict_via_the_fake_backend`
+    // already use to wait on this exact kind of background ask/exam job.
+    let body = poll_until(&base, "/api/ask", |b| !b["thinking"].as_bool().unwrap());
+    assert_eq!(1, body["transcript"].as_array().unwrap().len(), "body: {body}");
+
+    // Draft a card from the conversation.
+    let resp = post_json(&base, "/api/ask/card/draft", "{}");
+    assert_eq!(200, resp.status);
+    let body = poll_until(&base, "/api/ask", |b| !b["thinking"].as_bool().unwrap());
+    assert_eq!("term?", body["draft"]["front"], "body: {body}");
+    assert_eq!(
+        serde_json::json!(["definition"]),
+        body["draft"]["back"],
+        "body: {body}"
+    );
+
+    // Create the learner's edited version, deliberately different front/back
+    // than the draft, to prove `/api/ask/card/create` mints what was posted,
+    // not the draft still sitting on the ask DTO.
+    let resp = post_json(
+        &base,
+        "/api/ask/card/create",
+        r#"{"front":"edited term?","back":["edited definition"]}"#,
+    );
+    // 200, not 201: alix's JSON responder always answers 200 on success (see
+    // the handler's own comment, `src/serve/mod.rs`); "created" is expressed
+    // by `CreateCardResp`'s shape, not the status line (documented in
+    // docs/API.md §4.5).
+    assert_eq!(
+        200,
+        resp.status,
+        "body: {}",
+        String::from_utf8_lossy(&resp.body)
+    );
+    let create_body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert!(
+        create_body["id"].as_str().is_some(),
+        "body: {create_body}"
+    );
+
+    // Drillable, not just stored: cram-reselect (the same determinism idiom
+    // `post_api_restart_rebuilds_the_queue_and_resets_session_stats` uses)
+    // pulls every non-retired card into the queue regardless of due date. The
+    // newly minted virtual card already has a store entry (`mint_tutor_card`
+    // seeds one), so `build_queue` sorts it into the "due" group, ahead of
+    // the two never-graded fixture cards in "fresh": it's the first card the
+    // reselected session serves.
+    let resp = post_json(&base, "/api/select", r#"{"deck":"sample.txt","cram":true}"#);
+    assert_eq!(200, resp.status);
+    let select_body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!(3, select_body["remaining"], "body: {select_body}");
+    assert_eq!("edited term?", select_body["card"]["front"], "body: {select_body}");
+
+    // And it's what `/api/state` reports too, not just the `/api/select`
+    // response (the same double-check `get_api_state_reflects_the_active_session_after_select`
+    // makes for the fixture's own first card).
+    let state = http(&base, "GET", "/api/state", &[], &[]);
+    let state_body: serde_json::Value = serde_json::from_slice(&state.body).unwrap();
+    assert_eq!("edited term?", state_body["card"]["front"], "body: {state_body}");
+}
+
+#[test]
+fn ask_card_draft_and_create_are_refused_for_a_kids_audience() {
+    let (base, _guard) = spawn_kids_server();
+
+    let draft_resp = post_json(&base, "/api/ask/card/draft", "{}");
+    assert_eq!(403, draft_resp.status);
+
+    let create_resp = post_json(
+        &base,
+        "/api/ask/card/create",
+        r#"{"front":"f","back":["b"]}"#,
+    );
+    assert_eq!(403, create_resp.status);
+}
+
+#[test]
+fn ask_card_create_with_a_back_matching_an_authored_card_yields_422() {
+    let (base, _guard) = spawn_test_server();
+    select_fixture(&base);
+
+    // A different front, but the same back line as the fixture's "2 + 2"
+    // card: `Card::id` hashes the subject plus the normalized back only
+    // (front and note are ignored, `src/card.rs::Card::id`), so this
+    // collides with the deck's own authored card and must be refused.
+    let resp = post_json(
+        &base,
+        "/api/ask/card/create",
+        r#"{"front":"what does 2 plus 2 equal?","back":["4"]}"#,
+    );
+
+    assert_eq!(422, resp.status);
 }
