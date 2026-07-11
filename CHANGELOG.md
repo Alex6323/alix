@@ -13,6 +13,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   denser text), so a kid transitioning to the grown-up app can keep the look
   they learned to love.
 
+### Removed
+- The placeholder **"Fun" kids theme** — superseded by the three real kids
+  themes above.
+
 ### Changed
 
 ### Fixed

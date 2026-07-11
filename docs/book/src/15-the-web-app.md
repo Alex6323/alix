@@ -114,9 +114,9 @@ reading it back — grading is on you, same as any other self-graded card.
 ## Themes
 
 The web UI ships a **gallery** of colour themes — the alix **Dark**/**Light**
-originals and a **Kids** group (the playful **Fun** theme, plus **Sunrise**,
-**Ocean**, and **Berry** — the same three themes the [kids app](#kids-mode)
-offers, so a kid moving up to the grown-up app can keep the look they grew
+originals and a **Kids** group (**Sunrise**, **Ocean**, and **Berry** — the
+same three themes the [kids app](#kids-mode) offers, so a kid moving up to
+the grown-up app can keep the look they grew
 attached to), plus crowd-favourite editor/slide palettes
 (GitHub, Dracula, Nord, Solarized, Gruvbox, Catppuccin, Tokyo Night, Monokai, One
 Dark, Ayu, Rosé Pine, Everforest). Open the **Theme…** popover from the ☰ menu (a

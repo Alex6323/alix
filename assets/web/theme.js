@@ -18,7 +18,6 @@
   var THEMES = [
     { id: "dark",             name: "alix",             mode: "dark",  c: ["#0f1016", "#5fd7e0", "#86c986"] },
     { id: "light",            name: "alix Light",       mode: "light", c: ["#f4f4fa", "#0e7c86", "#138a5b"] },
-    { id: "kid",              name: "Fun",              mode: "kids",  c: ["#fff2db", "#7a2ff5", "#00b86b"] },
     { id: "sunrise",          name: "Sunrise",          mode: "kids",  c: ["#fff5ec", "#a84400", "#177b47"] },
     { id: "ocean",            name: "Ocean",            mode: "kids",  c: ["#eafaf7", "#0a6f77", "#0f7a55"] },
     { id: "berry",            name: "Berry",            mode: "kids",  c: ["#fdeefb", "#a02fae", "#167846"] },

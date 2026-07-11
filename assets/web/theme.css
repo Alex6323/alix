@@ -184,28 +184,6 @@
   --brand-text: #c2410c;
 }
 
-/* ── Kid — warm, rounded, candy accents (the bold one) ──────────────── */
-[data-theme="kid"] {
-  --void: #fff2db;
-  --panel-top: #ffffff;
-  --panel-bot: #fff6ea;
-  --ink: #2a1840;
-  --dim: #6e4d8a;
-  --line: #ffd49e;
-  --bolt: #7a2ff5;
-  --bolt-hi: #9c5cff;
-  --good: #00b86b;
-  --warn: #ff9500;
-  --again: #ff3d85;
-  --halo: #ffe1b8;
-  --menu-bg: #ffffff;
-  --note-border: #ff9500;
-  --note-ink: #7a3c00;
-  --note-code: #34204e;
-  --excerpt-bg: #fff6ea;
-  --sans: ui-rounded, "SF Pro Rounded", "Nunito", "Quicksand", system-ui, sans-serif;
-}
-
 /* ── Sunrise / Ocean / Berry — the kids app's own three themes, carried into
  * the adult gallery so a kid moving up keeps the look they grew attached to.
  * Grounded in the kids app's `THEMES` tuple (assets/web/kids/kids.html) —
