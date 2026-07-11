@@ -446,7 +446,7 @@ impl Store {
         self.virtual_cards.get(&id)
     }
 
-    /// Whether a card with this id is a virtual (remediation) card — i.e. it
+    /// Whether this id is a virtual card (remediation or tutor-minted), i.e. it
     /// lives in the content sidecar rather than any deck file. This membership
     /// is the sole definition of "virtual"; its schedule is an ordinary
     /// `store.cards` entry.
@@ -634,6 +634,11 @@ pub fn mint_tutor_card(
     if front.is_empty() || back.is_empty() {
         return Err(MintError::Malformed(
             "front and back must both be non-empty".to_string(),
+        ));
+    }
+    if front.contains('\n') || back.iter().any(|l| l.contains('\n')) {
+        return Err(MintError::Malformed(
+            "front and back must be single lines".to_string(),
         ));
     }
     let mut text = format!("# {front}\n");
@@ -1664,6 +1669,24 @@ mod tests {
             "geo.txt",
             "  ",
             &["Paris".to_string()],
+            100,
+            &HashSet::new(),
+        )
+        .unwrap_err();
+        assert!(matches!(err, MintError::Malformed(_)));
+    }
+
+    #[test]
+    fn mint_tutor_card_rejects_an_embedded_newline() {
+        use std::collections::HashSet;
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        // A newline inside a back element could smuggle an extra line or a `%` directive.
+        let err = mint_tutor_card(
+            &mut store,
+            "geo.txt",
+            "capital?",
+            &["Paris\n% direction: reverse".to_string()],
             100,
             &HashSet::new(),
         )
