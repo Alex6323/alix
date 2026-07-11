@@ -1129,7 +1129,9 @@ function saveAskNote() {
 // once the poll picks up the tutor's reply. Adult-only (no walk equivalent).
 function draftCard() {
   if (askData.thinking) return;
-  api("/api/ask/card/draft", post({})).then(d => { askData = d; if (asking) syncAsk(); startAskPoll(); });
+  api("/api/ask/card/draft", post({}))
+    .then(d => { askData = d; if (asking) syncAsk(); startAskPoll(); })
+    .catch(() => { askData = { ...askData, status: "couldn't draft a card" }; if (asking) syncAsk(); });
 }
 // Mint the edited draft as a free-standing card. A 422 (duplicate/malformed) or
 // any other non-2xx rejects `api()`, so the failure path always shows a status
@@ -1296,7 +1298,9 @@ function renderAsk(subject) {
   const send = chip("Send", "primary", () => sendAsk(input.value), "shift+enter");
   send.disabled = askData.thinking;
   chip("Save note", "", saveAskNote, label(KEYS.save_note));
-  chip("Make this a card", "", draftCard, "");
+  // Adult-only, review-scoped: drafting posts to the review-only draft endpoint,
+  // which the walk's tutor session (reviewing = None server-side) can't serve.
+  if (!walkData) chip("Make this a card", "", draftCard, "");
   chip("Close", "", closeAsk, "esc");
   if (!askData.thinking) input.focus();
 }
