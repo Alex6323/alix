@@ -17,6 +17,7 @@
 
 pub mod answer;
 pub mod ask;
+pub mod assemble;
 pub mod augment;
 pub mod backend;
 pub mod card;

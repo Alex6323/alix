@@ -10,6 +10,7 @@ use std::{
 };
 
 use alix::{
+    assemble::{open_store, store_path_for},
     augment::{self, AugmentCache, Topology, TopologyOrder},
     card::Card,
     config::Config,
@@ -28,7 +29,7 @@ use anyhow::{Context, Result, bail};
 
 use crate::{
     LaunchArgs,
-    common::{load_decks, open_store, store_for, store_path_for},
+    common::{load_decks, store_for},
 };
 
 /// The per-session pacing an instance applies to every session it builds:

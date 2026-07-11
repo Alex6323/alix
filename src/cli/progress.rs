@@ -5,6 +5,7 @@
 use std::{collections::HashMap, path::Path};
 
 use alix::{
+    assemble::{open_store, store_path_for},
     card::Card,
     config::Config,
     deck::{Deck, DeckState},
@@ -17,7 +18,7 @@ use anyhow::{Result, bail};
 
 use crate::{
     DeckArgs, ResetArgs,
-    common::{confirm, expand_target, load_decks, open_store, store_path_for},
+    common::{confirm, expand_target, load_decks},
 };
 
 /// The `list` label for one depth's schedule: the FSRS state name when the

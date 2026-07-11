@@ -10,12 +10,13 @@ use std::{
 };
 
 use alix::{
+    assemble::{open_store, store_path_for},
     card::Card,
     config::Config,
     deck::{Deck, DeckSettings},
     preflight,
     session::DeckInfo,
-    store::{Store, default_store_path},
+    store::Store,
     trace::SourceBase,
     workspace,
 };
@@ -75,38 +76,8 @@ pub(crate) fn expand_target(path: &Path) -> Result<Target> {
     })
 }
 
-/// Opens the progress store (creating an empty one on first use).
-pub(crate) fn open_store(path: Option<PathBuf>) -> Result<Store> {
-    let path = match path {
-        Some(path) => path,
-        None => default_store_path().context("cannot determine the data directory")?,
-    };
-    Store::open(&path).context("cannot open the progress store")
-}
-
-/// Which progress store a set of decks should use: the `--store` override, else
-/// the single workspace they all share (a deck is "in" a workspace when its
-/// parent folder has an `alix.toml`), else the global default (`None`). Loose
-/// decks, a plain folder, or decks spanning different workspaces all fall back
-/// to the global store — so a workspace's progress lives with the workspace,
-/// while everything else shares the one global store.
-pub(crate) fn store_path_for(decks: &[PathBuf], cli_override: Option<&Path>) -> Option<PathBuf> {
-    if let Some(path) = cli_override {
-        return Some(path.to_path_buf());
-    }
-    let mut stores = decks.iter().map(|deck| {
-        deck.parent()
-            .filter(|p| workspace::is_workspace(p))
-            .map(workspace::store_path)
-    });
-    match stores.next() {
-        Some(Some(first)) if stores.all(|s| s.as_ref() == Some(&first)) => Some(first),
-        _ => None,
-    }
-}
-
 /// Opens the progress store for `decks`, honoring `--store`. See
-/// [`store_path_for`].
+/// [`alix::assemble::store_path_for`].
 pub(crate) fn store_for(decks: &[PathBuf], cli_override: Option<PathBuf>) -> Result<Store> {
     open_store(store_path_for(decks, cli_override.as_deref()))
 }
@@ -276,50 +247,5 @@ mod tests {
     fn truncate_only_appends_an_ellipsis_when_the_text_is_cut() {
         assert_eq!("hello", truncate("hello", 10));
         assert_eq!("hel…", truncate("hello world", 4));
-    }
-
-    #[test]
-    fn store_path_for_picks_workspace_else_global_else_override() {
-        let dir = tempfile::tempdir().unwrap();
-        let mk_ws = |name: &str| {
-            let ws = dir.path().join(name);
-            std::fs::create_dir(&ws).unwrap();
-            std::fs::write(ws.join("alix.toml"), "title = \"W\"\n").unwrap();
-            std::fs::write(ws.join("a.txt"), "# a\n\t1\n").unwrap();
-            std::fs::write(ws.join("b.txt"), "# b\n\t1\n").unwrap();
-            ws
-        };
-        let ws = mk_ws("ws");
-        let ws2 = mk_ws("ws2");
-        let ws_store = ws.join("progress.json");
-        let loose = dir.path().join("loose.txt");
-        std::fs::write(&loose, "# c\n\t1\n").unwrap();
-
-        // a deck (or several) in one workspace → that workspace's store
-        assert_eq!(
-            Some(ws_store.clone()),
-            store_path_for(&[ws.join("a.txt")], None)
-        );
-        assert_eq!(
-            Some(ws_store.clone()),
-            store_path_for(&[ws.join("a.txt"), ws.join("b.txt")], None)
-        );
-        // loose, mixed loose+workspace, and cross-workspace all → global (None)
-        assert_eq!(None, store_path_for(std::slice::from_ref(&loose), None));
-        assert_eq!(
-            None,
-            store_path_for(&[ws.join("a.txt"), loose.clone()], None)
-        );
-        assert_eq!(
-            None,
-            store_path_for(&[ws.join("a.txt"), ws2.join("a.txt")], None)
-        );
-        assert_eq!(None, store_path_for(&[], None));
-        // --store wins over everything
-        let over = dir.path().join("x.json");
-        assert_eq!(
-            Some(over.clone()),
-            store_path_for(&[ws.join("a.txt")], Some(&over))
-        );
     }
 }
