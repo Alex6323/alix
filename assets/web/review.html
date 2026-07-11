@@ -2929,11 +2929,14 @@ function renderLegend() {
         // the learner always has the last word.
         chip("Next", "primary", () => grade("passed"), label(KEYS.reveal));
         chip("I guessed", "quiet", () => grade("failed"), label(KEYS.failed));
+        chip("Ask tutor", "ask", openAsk, label(KEYS.ask), legendRight);
       } else {
         // A wrong pick: the correct option is already highlighted on screen
         // (renderChoiceFeedback) — Continue is the only action, and it grades
-        // the miss (there's no guess left to walk back).
+        // the miss (there's no guess left to walk back). Ask tutor is offered
+        // here too: "why is the highlighted option right, not the one I picked?"
         chip("Continue", "primary", () => grade("failed"), label(KEYS.reveal));
+        chip("Ask tutor", "ask", openAsk, label(KEYS.ask), legendRight);
       }
     } else {
       // A typed check's (or TypeLine's closing) result: pure evidence — the

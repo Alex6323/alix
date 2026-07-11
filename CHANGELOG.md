@@ -7,6 +7,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Ask tutor on Recognize.** The tutor button now appears on a Recognize
+  (multiple-choice) card's feedback, the same as Recall and Reconstruct. It's
+  most useful after a wrong pick ("why is the highlighted option right, not the
+  one I picked?"). The key already worked there; this makes it visible and
+  tappable.
 - `/api/decks` rows now carry `selectable` — whether the row's `name` can be sent to
   `/api/select` (decks: yes; workspace/folder rows: no). Clients no longer have to infer
   it from `is_workspace`.
