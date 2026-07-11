@@ -415,6 +415,7 @@ pub fn parse_drafted_card(reply: &str) -> Result<DraftCard> {
     let [card] = cards.as_slice() else {
         bail!("the tutor did not return exactly one card");
     };
+    // Defense-in-depth check; parse_str already rejects empty fronts and frontless blocks.
     if card.front.trim().is_empty() || card.back.iter().all(|l| l.trim().is_empty()) {
         bail!("the drafted card has an empty side");
     }
@@ -1131,5 +1132,17 @@ mod tests {
     #[test]
     fn parse_drafted_card_errors_on_a_frontless_block() {
         assert!(parse_drafted_card("\tjust an answer, no question\n").is_err());
+    }
+
+    #[test]
+    fn parse_drafted_card_errors_on_an_empty_reply() {
+        let reply = "```\n```";
+        assert!(parse_drafted_card(reply).is_err());
+    }
+
+    #[test]
+    fn parse_drafted_card_errors_on_two_cards() {
+        let reply = "# q1?\n\ta1\n# q2?\n\ta2\n";
+        assert!(parse_drafted_card(reply).is_err());
     }
 }
