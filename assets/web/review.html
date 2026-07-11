@@ -501,6 +501,18 @@
   .ask-input { width: 100%; box-sizing: border-box; resize: vertical; min-height: 52px; padding: 11px 13px; border-radius: 12px; border: 1px solid var(--line); background: rgba(0,0,0,0.25); color: var(--ink); font: inherit; }
   .ask-input:focus { outline: none; border-color: var(--bolt); }
   .ask-input:disabled { opacity: 0.6; }
+  /* the tutor's "make this a card" draft: an editable front/back pair above the
+     question box. A secondary, occasional action, so it stays quiet (no border
+     glow, no persistent chrome) until a draft actually lands. */
+  .draft-box { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--line); border-radius: 12px; padding: 11px 13px; background: var(--panel-bot); }
+  .draft-label { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }
+  .draft-front, .draft-back { width: 100%; box-sizing: border-box; padding: 9px 11px; border-radius: 10px; border: 1px solid var(--line); background: rgba(0,0,0,0.25); color: var(--ink); font: inherit; }
+  /* a long front never wraps or grows the box: it truncates, like every other
+     hand-crafted label in the app. */
+  .draft-front { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .draft-back { resize: vertical; line-height: 1.4; }
+  .draft-front:focus, .draft-back:focus { outline: none; border-color: var(--bolt); }
+  .draft-actions { display: flex; gap: 8px; }
 
   /* ── explain (understanding) cards ── */
   .explain-input { width: 100%; box-sizing: border-box; resize: vertical; min-height: 64px; padding: 11px 13px; border-radius: 12px; border: 1px solid var(--line); background: rgba(0,0,0,0.25); color: var(--ink); font: inherit; }
@@ -1113,6 +1125,21 @@ function saveAskNote() {
   const ep = walkData ? "/api/walk/ask/note" : "/api/ask/note";
   api(ep, post({})).then(d => { askData = d; if (asking) syncAsk(); startAskPoll(); });
 }
+// Distill the conversation so far into one draft card, surfaced on askData.draft
+// once the poll picks up the tutor's reply. Adult-only (no walk equivalent).
+function draftCard() {
+  if (askData.thinking) return;
+  api("/api/ask/card/draft", post({})).then(d => { askData = d; if (asking) syncAsk(); startAskPoll(); });
+}
+// Mint the edited draft as a free-standing card. A 422 (duplicate/malformed) or
+// any other non-2xx rejects `api()`, so the failure path always shows a status
+// instead of silently doing nothing.
+function createCard(front, back) {
+  api("/api/ask/card/create", post({ front, back }))
+    .then(() => { askData = { ...askData, draft: null, status: "card added" }; if (asking) syncAsk(); })
+    .catch(() => { askData = { ...askData, status: "couldn't add that card" }; if (asking) syncAsk(); });
+}
+function cancelDraft() { askData = { ...askData, draft: null }; if (asking) syncAsk(); }
 // Loop the header logo while any Claude/server call is in flight — a calm loader
 // that complements the inline spinners; rest it otherwise.
 function updateBusy() {
@@ -1165,12 +1192,40 @@ function fillAskLog(log) {
   sc.scrollTop = sc.scrollHeight;
 }
 
+// The editable front/back form shown once the tutor distills a draft
+// (askData.draft). Rebuilt fresh on every call (same idiom as fillAskLog's
+// log rebuild), so renderAsk and syncAsk share one source of truth for it.
+function buildDraftBox() {
+  if (!askData.draft) return null;
+  const box = el("div", "draft-box");
+  box.appendChild(el("div", "draft-label", "New card (edit, then Add):"));
+  const frontField = el("input", "draft-front");
+  frontField.value = askData.draft.front;
+  box.appendChild(frontField);
+  const backField = el("textarea", "draft-back");
+  backField.value = askData.draft.back.join("\n");
+  backField.rows = Math.max(2, askData.draft.back.length);
+  box.appendChild(backField);
+  const actions = el("div", "draft-actions");
+  chip("Add", "primary", () => {
+    const back = backField.value.split("\n").map(s => s.trim()).filter(Boolean);
+    createCard(frontField.value.trim(), back);
+  }, "", actions);
+  chip("Cancel", "", cancelDraft, "", actions);
+  box.appendChild(actions);
+  return box;
+}
+
 // Update the open panel in place — no rebuild, so the entrance animation
 // doesn't re-run while we poll and the textarea keeps its focus/value.
 function syncAsk() {
   const wrap = document.querySelector(".ask-panel");
   if (!wrap) { render(); return; }
   fillAskLog(wrap.querySelector(".ask-log"));
+  const oldDraftBox = wrap.querySelector(".draft-box");
+  if (oldDraftBox) oldDraftBox.remove();
+  const draftBox = buildDraftBox();
+  if (draftBox) wrap.insertBefore(draftBox, wrap.querySelector(".ask-input"));
   const input = wrap.querySelector(".ask-input");
   if (input) {
     input.disabled = askData.thinking;
@@ -1223,6 +1278,9 @@ function renderAsk(subject) {
   scroll.appendChild(log);
   wrap.appendChild(scroll);
 
+  const draftBox = buildDraftBox();
+  if (draftBox) wrap.appendChild(draftBox);
+
   const input = el("textarea", "ask-input");
   input.placeholder = subject ? "Ask about this step… (Shift+Enter to send)" : "Ask about this card… (Shift+Enter to send)";
   input.rows = 2;
@@ -1238,6 +1296,7 @@ function renderAsk(subject) {
   const send = chip("Send", "primary", () => sendAsk(input.value), "shift+enter");
   send.disabled = askData.thinking;
   chip("Save note", "", saveAskNote, label(KEYS.save_note));
+  chip("Make this a card", "", draftCard, "");
   chip("Close", "", closeAsk, "esc");
   if (!askData.thinking) input.focus();
 }
