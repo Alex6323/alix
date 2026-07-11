@@ -231,6 +231,8 @@ pub const MATURE_STABILITY_DAYS: f64 = 21.0;
 pub enum VirtualKind {
     /// Generated from a failed exam's gap, to drill the specific miss.
     Remediation,
+    /// Distilled by the tutor from a review exchange (a "make this a card" action).
+    Tutor,
 }
 
 /// A personally-scheduled card that lives in no deck file. Content is its
@@ -1302,6 +1304,27 @@ mod tests {
         assert_eq!(id, promoted.id());
         let carried = store.get(promoted.id()).expect("schedule carried over");
         assert_eq!(&state, carried);
+    }
+
+    #[test]
+    fn a_tutor_virtual_card_round_trips_through_the_store() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("progress.json");
+        let mut store = Store::open(&path).unwrap();
+        let text = "# capital of france\n\tParis\n".to_string();
+        let id = crate::parser::parse_str("geo.txt", &text).unwrap()[0].id();
+        store.insert_virtual(VirtualCard {
+            id,
+            kind: VirtualKind::Tutor,
+            parent: "geo.txt".to_string(),
+            text,
+            created_ms: 5,
+        });
+        store.save().unwrap();
+
+        let reopened = Store::open(&path).unwrap();
+        let vc = reopened.get_virtual(id).expect("tutor card should load");
+        assert_eq!(vc.kind, VirtualKind::Tutor);
     }
 
     #[test]
