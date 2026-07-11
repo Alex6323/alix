@@ -61,11 +61,20 @@
   .shot{margin:6px auto 0; max-width:920px}
   .carousel{position:relative; cursor:default; user-select:none}
   .viewport{overflow:hidden; aspect-ratio:1.3; border:1px solid var(--line); border-radius:var(--radius);
-    box-shadow:0 24px 60px rgba(0,0,0,.45)}
+    box-shadow:0 24px 60px rgba(0,0,0,.45); background:var(--surface)}
   .track{display:flex; height:100%; transition:transform .5s ease}
-  .slide{min-width:100%; height:100%}
-  .slide img{width:100%; height:100%; object-fit:cover; display:block}
+  .slide{min-width:100%; height:100%; display:flex; align-items:center; justify-content:center}
+  /* contain, not cover: these are app screenshots, not photos — letterbox on
+     the panel background rather than cropping the UI. */
+  .slide img{width:100%; height:100%; object-fit:contain; display:block}
   .shot .cap{text-align:center; color:var(--muted); font-size:13px; margin-top:14px; min-height:1.2em}
+  .arrow{position:absolute; top:50%; transform:translateY(-50%); width:36px; height:36px; padding:0;
+    border-radius:50%; border:1px solid var(--line); background:rgba(13,17,23,.72); color:var(--text);
+    cursor:pointer; display:flex; align-items:center; justify-content:center; transition:border-color .2s,color .2s}
+  .arrow:hover{border-color:var(--accent); color:var(--accent)}
+  .arrow svg{width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round}
+  .arrow.prev{left:12px}
+  .arrow.next{right:12px}
   .dots{display:flex; gap:9px; justify-content:center; margin-top:12px}
   .dot{width:9px; height:9px; padding:0; border-radius:50%; border:none;
     background:var(--line); cursor:pointer; transition:background .2s}
@@ -137,20 +146,36 @@
     <div class="carousel">
       <div class="viewport">
         <div class="track" id="track">
-          <div class="slide"><img src="img/shot-1-picker.png" alt="alix deck picker — workspaces, folders, and what's due" loading="lazy"></div>
-          <div class="slide"><img src="img/shot-2-unlocks.png" alt="A workspace whose topics unlock as prerequisites are mastered" loading="lazy"></div>
-          <div class="slide"><img src="img/shot-3-review.png" alt="Reviewing a card, revealed, with a saved note" loading="lazy"></div>
-          <div class="slide"><img src="img/shot-4-ask.png" alt="Asking the built-in AI tutor about a card" loading="lazy"></div>
-          <div class="slide"><img src="img/shot-5-note.png" alt="The tutor's explanation saved back onto the card" loading="lazy"></div>
+          <div class="slide"><img src="img/shot-1-verify.png" alt="An explain-mode card revealed, key points checked to derive the grade" loading="lazy"></div>
+          <div class="slide"><img src="img/shot-2-tutor.png" alt="The ask-Claude tutor explaining a card, grounded in the source excerpt" loading="lazy"></div>
+          <div class="slide"><img src="img/shot-3-modes.png" alt="A multiple-choice review card with AI-written distractors" loading="lazy"></div>
+          <div class="slide"><img src="img/shot-4-exam.png" alt="The AI exam grading a typed answer against the deck's source" loading="lazy"></div>
+          <div class="slide"><img src="img/shot-5-augment.png" alt="The Augment screen: per-target enrichment (distractors, notes, key points, topology) with coverage bars" loading="lazy"></div>
+          <div class="slide"><img src="img/shot-6-trace.png" alt="A trace-walk checkpoint showing the predicted step beside the real code" loading="lazy"></div>
+          <div class="slide"><img src="img/shot-7-picker.png" alt="The deck picker: a workspace's dependency tree, icon, and mastered badges" loading="lazy"></div>
+          <div class="slide"><img src="img/shot-8-topology.png" alt="A review with the topology region breadcrumb and per-region strength heatmap" loading="lazy"></div>
+          <div class="slide"><img src="img/shot-9-themes.png" alt="The theme gallery previewing colour themes on a sample card" loading="lazy"></div>
+          <div class="slide"><img src="img/shot-10-kids.png" alt="The kids client: tap-the-answer review with the mascot" loading="lazy"></div>
         </div>
       </div>
-      <p class="cap" id="shotcap">Your decks, workspaces, and what's due — at a glance.</p>
+      <button class="arrow prev" type="button" aria-label="Previous screenshot">
+        <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>
+      </button>
+      <button class="arrow next" type="button" aria-label="Next screenshot">
+        <svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+      </button>
+      <p class="cap" id="shotcap">Tick the claims you covered — your grade comes from the source, not a guess.</p>
       <div class="dots" id="dots">
         <button class="dot is-active" type="button" aria-label="Screenshot 1"></button>
         <button class="dot" type="button" aria-label="Screenshot 2"></button>
         <button class="dot" type="button" aria-label="Screenshot 3"></button>
         <button class="dot" type="button" aria-label="Screenshot 4"></button>
         <button class="dot" type="button" aria-label="Screenshot 5"></button>
+        <button class="dot" type="button" aria-label="Screenshot 6"></button>
+        <button class="dot" type="button" aria-label="Screenshot 7"></button>
+        <button class="dot" type="button" aria-label="Screenshot 8"></button>
+        <button class="dot" type="button" aria-label="Screenshot 9"></button>
+        <button class="dot" type="button" aria-label="Screenshot 10"></button>
       </div>
     </div>
   </section>
@@ -204,16 +229,24 @@
 
 <script>
 (function () {
+  // All 10 shots (docs/product/2026-07-01-web-screenshots.md), in slide order.
   var caps = [
-    "Your decks, workspaces, and what's due — at a glance.",
-    "Topics unlock as you master their prerequisites.",
-    "Spaced-repetition review, with notes that stick.",
-    "A built-in tutor on every card.",
-    "Save the tutor's explanation straight back onto the card."
+    "Tick the claims you covered — your grade comes from the source, not a guess.",
+    "A tutor on every card, grounded in your deck's own source.",
+    "Cloze, multiple-choice, typing, images — the mode that fits the material.",
+    "The exam grades your understanding against the source — and unlocks what's next.",
+    "Let Claude enrich a deck — distractors, mnemonics, key points, a topology — generated once, cached, studied offline.",
+    "Traces: predict each step, then check it against the real code.",
+    "Organize decks into a curriculum — master one topic to unlock the next.",
+    "Watch a topic turn from weak to learned, region by region.",
+    "Study your way — a couple dozen themes, previewed live.",
+    "A kids mode too: an adult builds the box, a kid taps through it — same engine, gentler face."
   ];
   var track = document.getElementById('track');
   var cap = document.getElementById('shotcap');
   var dots = Array.prototype.slice.call(document.querySelectorAll('#dots .dot'));
+  var prevBtn = document.querySelector('.arrow.prev');
+  var nextBtn = document.querySelector('.arrow.next');
   if (!track || !dots.length) return;
   var N = caps.length, i = 0, pos = 0, timer = null;
   var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -249,9 +282,11 @@
       track.addEventListener('transitionend', done);
     }
   }
-  function start() { if (!timer) timer = setInterval(next, 7000); }
+  function start() { if (!timer) timer = setInterval(next, 5000); }
   function stop() { if (timer) { clearInterval(timer); timer = null; } }
   dots.forEach(function (d, j) { d.addEventListener('click', function () { go(j); stop(); start(); }); });
+  if (prevBtn) prevBtn.addEventListener('click', function () { go(i - 1); stop(); start(); });
+  if (nextBtn) nextBtn.addEventListener('click', function () { go(i + 1); stop(); start(); });
   var car = document.querySelector('.carousel');
   if (car) { car.addEventListener('mouseenter', stop); car.addEventListener('mouseleave', start); }
   go(0); start();
