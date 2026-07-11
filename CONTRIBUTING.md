@@ -12,8 +12,8 @@ collaborator on this repo is instructed). The testing expectations are in the
 It's an AI-augmented spaced-repetition tool: a flashcard core — plain-text deck
 files, with image cards too — plus Claude woven in (an ask-Claude tutor, AI deck
 generation, and an AI exam that tries to gate progress on understanding, not just
-recall). The **library crate (`src/`) is the single source of logic**; the TUI,
-the web server (`--serve`), and the CLI are thin consumers.
+recall). The **library crate (`src/`) is the single source of logic**; the web
+server and the CLI are thin consumers.
 
 It's early and changing fast — expect rough edges and breaking changes (the
 README says it outright: don't trust it with serious learning yet). What it's
@@ -47,7 +47,7 @@ it.
   lands somewhere it'll actually get merged.
 - **Reach is welcome; scope must clear the gate.**
   - *Reach* = work that widens access to the **same one job**: install and
-    onboarding, the web and TUI surfaces, backends, performance, reliability,
+    onboarding, the web surface, backends, performance, reliability,
     docs. Admissible even though it deepens no step of the loop.
   - *Scope* = a **new job** — a new card type, a new subsystem, a feature that
     sits *beside* the core loop rather than deepening a step of it
@@ -89,8 +89,8 @@ open a proposal to change the list itself.
 | `make check` | `lint` + `test` — run before you call work done. |
 | `make coverage` | Coverage report (`cargo-llvm-cov`, HTML). |
 | `make eval` | Real-Claude grader-calibration evals (costed) — before touching `grade_*`. |
-| `make run ARGS="exam mydeck.txt"` | Run the binary. |
-| `make serve ARGS="review mydeck.txt"` | Web frontend. |
+| `make run ARGS="stats mydeck.txt"` | Run the binary. |
+| `make serve ARGS="~/decks-test --lan"` | Web frontend (a scoped root). |
 | `make book` | Serve the mdBook manual live. |
 | `make e2e` | Playwright smoke suite for the alix web clients (Node; needs a browser download the first time). |
 
@@ -110,7 +110,7 @@ drift, so don't reformat unrelated files; keep your diff to what you touched.
 The fit gate decides *whether*; the craft gate decides *how well*. Match the
 surrounding code; when in doubt, mirror it. The essentials:
 
-- **Behavior goes in the library**, not a frontend, so the TUI and web surfaces
+- **Behavior goes in the library**, not a frontend, so the web and CLI surfaces
   share it. Frontends only consume.
 - **Test-first for library logic** — write the test before (or alongside) new
   `src/` behavior, above all the AI plumbing's error paths. New behavior ships

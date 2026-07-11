@@ -29,8 +29,8 @@ cargo install alix
 curl -sSf https://alix.study/install.sh | sh
 ```
 
-The core needs nothing else. The AI features (`generate` / `deck augment`,
-the exam, the tutor, `trace --build`, `explore`) shell out to a model CLI you
+The core needs nothing else. The AI features (`generate`, `deck augment`, the
+exam, and the tutor) shell out to a model CLI you
 install and log in to yourself: [Claude Code](https://www.anthropic.com/claude-code)
 by default, or Gemini, Codex, or Copilot via `[ask] backend`. Each backend gets
 read-only tools only, and `alix` stores no API keys. See
@@ -130,7 +130,7 @@ Licensed under either of
 
 at your option.
 
-Bundled third-party assets (fonts) are separately licensed — see
+Bundled third-party assets (fonts) are separately licensed; see
 [NOTICE](NOTICE).
 
 ### Contribution

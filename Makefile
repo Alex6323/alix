@@ -87,7 +87,7 @@ coverage-lcov:
 eval:
 	cargo test --test eval -- --ignored --nocapture --test-threads=1
 
-# Run the binary, e.g. `make run ARGS="exam mydeck.txt"`.
+# Run the binary, e.g. `make run ARGS="stats mydeck.txt"`.
 run:
 	cargo run -- $(ARGS)
 
