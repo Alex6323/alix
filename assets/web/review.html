@@ -472,7 +472,7 @@
   .chip.quiet:hover { border-color: transparent; color: var(--bolt-hi); }
 
   /* ── ask Claude ── */
-  .ask { width: var(--card-w); max-width: 92vw; display: flex; flex-direction: column; gap: 12px; animation: deal 0.3s both; }
+  .ask-panel { width: var(--card-w); max-width: 92vw; display: flex; flex-direction: column; gap: 12px; animation: deal 0.3s both; }
   /* mono eyebrow header ("ASK TUTOR · card-scoped"), same idiom as the exam's
      "QUESTION n/N" and the walk's "checkpoint n/N" — model/effort readout
      shares the row, right-aligned, since it's secondary to the scope label. */
@@ -594,7 +594,7 @@
     /* Reduce, not remove: keep the soft opacity fade for everyone; drop only the
        movement (rise/scale). The transition still "kicks in", just without motion.
        .stack is already opacity-only (cardIn), so it needs no override here. */
-    .reveal, .summary, .select, .ask, .exam, .aug, .sheet-panel { animation-name: cardIn; }
+    .reveal, .summary, .select, .ask-panel, .exam, .aug, .sheet-panel { animation-name: cardIn; }
     .exam-elapsed .dot { animation-name: dotFade; }
   }
 
@@ -1168,7 +1168,7 @@ function fillAskLog(log) {
 // Update the open panel in place — no rebuild, so the entrance animation
 // doesn't re-run while we poll and the textarea keeps its focus/value.
 function syncAsk() {
-  const wrap = document.querySelector(".ask");
+  const wrap = document.querySelector(".ask-panel");
   if (!wrap) { render(); return; }
   fillAskLog(wrap.querySelector(".ask-log"));
   const input = wrap.querySelector(".ask-input");
@@ -1185,7 +1185,7 @@ function syncAsk() {
 // `subject` is optional: null = use the current review card; an object with
 // {q, items} = walk checkpoint header (prompt as q, key points as items).
 function renderAsk(subject) {
-  const wrap = el("div", "ask");
+  const wrap = el("div", "ask-panel");
   // Mono eyebrow header ("ASK TUTOR · card-scoped" / "· step-scoped"), with
   // which model is answering (and its effort) alongside it — the tutor uses
   // the CLI default unless `[ask]` pins one, not the stronger model that
