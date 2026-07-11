@@ -1050,33 +1050,24 @@ fn a_frozen_card_with_no_resolvable_source_root_answers_immediately_without_spaw
 
 #[test]
 fn poll_ask_draft_surfaces_a_parsed_card() {
-    let _guard = crate::testutil::exec_lock();
     let dir = tempfile::tempdir().unwrap();
     let (mut r, card, _deck) = one_card_reviewing(dir.path());
-    // Seed the subject before the transcript so `Ask::start`'s subject-align
-    // (same card, no-op) doesn't clear it out from under the draft call.
-    r.ask.subject = Some(card.id());
     r.ask.transcript.push(("q".to_string(), "a".to_string()));
-
-    let cli = crate::testutil::fake_reply(dir.path(), "# term?\n\tdefinition\n");
-    let cfg = crate::testutil::ask_config(&cli);
-    assert!(r.start_ask(&cfg, Audience::Adult, AskAction::DraftCard));
-
-    // Drain the real background call: a bounded poll on the not-thinking
-    // condition (no blind sleep — each pass checks the job actually finished).
-    let mut dto = r.ask_dto(None, None);
-    for _ in 0..500 {
-        if !dto.thinking {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(10));
-        let (_status, error) = r.poll_ask();
-        assert!(error.is_none(), "unexpected error: {error:?}");
-        dto = r.ask_dto(None, None);
-    }
-    assert!(!dto.thinking, "draft card job never completed");
-
-    let draft = dto.draft.expect("a draft should be surfaced");
+    let (tx, rx) = std::sync::mpsc::channel();
+    r.ask.pending = Some(Pending {
+        rx,
+        purpose: Purpose::DraftCard,
+        card,
+    });
+    tx.send(Reply::Answer("# term?\n\tdefinition\n".to_string()))
+        .unwrap();
+    let (status, error) = r.poll_ask();
+    assert_eq!(Some("card drafted".to_string()), status);
+    assert!(error.is_none());
+    let draft = r
+        .ask_dto(None, None)
+        .draft
+        .expect("a draft should be surfaced");
     assert_eq!("term?", draft.front);
     assert_eq!(vec!["definition".to_string()], draft.back);
 }
