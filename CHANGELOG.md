@@ -7,6 +7,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **The adult theme gallery's Kids group now offers Sunrise, Ocean, and
+  Berry** — the same three themes the kids app ships, re-derived as full adult
+  palettes (every token the picker needs, contrast-checked for the adult UI's
+  denser text), so a kid transitioning to the grown-up app can keep the look
+  they learned to love.
 
 ### Changed
 

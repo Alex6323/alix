@@ -206,6 +206,91 @@
   --sans: ui-rounded, "SF Pro Rounded", "Nunito", "Quicksand", system-ui, sans-serif;
 }
 
+/* ── Sunrise / Ocean / Berry — the kids app's own three themes, carried into
+ * the adult gallery so a kid moving up keeps the look they grew attached to.
+ * Grounded in the kids app's `THEMES` tuple (assets/web/kids/kids.html) —
+ * bgTop/bgBot become --void/--panel-bot, the kid accent/shade become
+ * --bolt-hi/--bolt — but re-derived, not transcribed: the kids app only ever
+ * puts its accent on big buttons or large headings, while the adult UI uses
+ * --bolt as small-caps label text ~30 places over, so the raw kid accents
+ * (contrast ~2.2–2.9 on white) are darkened here to clear AA text contrast;
+ * --bolt-hi keeps closer to the original brighter hue for hover/decorative
+ * use only. --good/--warn/--again are an independent green/amber/red set
+ * (kept apart from each theme's own accent hue) tuned to ~4.3–5.5 against
+ * both the flat ground and the panel-bot gradient stop. No --sans override —
+ * these keep the adult app's own IBM Plex, unlike Kid's rounded font. */
+[data-theme="sunrise"] {
+  --void: #fff5ec;
+  --panel-top: #ffffff;
+  --panel-bot: #ffe7d4;
+  --ink: #3f2612;
+  --dim: #8a5527;
+  --line: #ffd9b8;
+  --bolt: #a84400;
+  --bolt-hi: #f05f00;
+  --good: #177b47;
+  --warn: #90630d;
+  --again: #ce2a1f;
+  --halo: #fff5ec;
+  --menu-bg: #ffffff;
+  --note-border: #90630d;
+  --note-ink: #613b1b;
+  --note-code: #3f2612;
+  --excerpt-bg: #ffe7d4;
+  --text: #613b1b;
+  --faint: #a1632d;
+  --accent-ink: #ffffff;
+  --brand-text: #c2410c;
+}
+
+[data-theme="ocean"] {
+  --void: #eafaf7;
+  --panel-top: #ffffff;
+  --panel-bot: #cdeeff;
+  --ink: #11312d;
+  --dim: #256c65;
+  --line: #b7e6ef;
+  --bolt: #0a6f77;
+  --bolt-hi: #0e9ca8;
+  --good: #0f7a55;
+  --warn: #90630d;
+  --again: #c83427;
+  --halo: #eafaf7;
+  --menu-bg: #ffffff;
+  --note-border: #90630d;
+  --note-ink: #1a4c46;
+  --note-code: #11312d;
+  --excerpt-bg: #cdeeff;
+  --text: #1a4c46;
+  --faint: #2b7d74;
+  --accent-ink: #ffffff;
+  --brand-text: #c2410c;
+}
+
+[data-theme="berry"] {
+  --void: #fdeefb;
+  --panel-top: #ffffff;
+  --panel-bot: #f1dbff;
+  --ink: #3a1f3e;
+  --dim: #85478f;
+  --line: #e9c8f5;
+  --bolt: #a02fae;
+  --bolt-hi: #c04bd0;
+  --good: #167846;
+  --warn: #945d0c;
+  --again: #c52956;
+  --halo: #fdeefb;
+  --menu-bg: #ffffff;
+  --note-border: #945d0c;
+  --note-ink: #5c3163;
+  --note-code: #3a1f3e;
+  --excerpt-bg: #f1dbff;
+  --text: #5c3163;
+  --faint: #94579e;
+  --accent-ink: #ffffff;
+  --brand-text: #c2410c;
+}
+
 /* ─────────────────────────────────────────────────────────────────────
  * Library: beloved editor/terminal palettes, replicated by name (MIT-
  * equivalent, credited). Each maps its background / surface / foreground /
