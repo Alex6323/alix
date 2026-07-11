@@ -1750,11 +1750,7 @@ fn ask_card_draft_then_create_round_trips_a_learner_edited_card_into_the_queue()
     select_fixture(&base);
 
     // Seed a tutor exchange so the transcript is non-empty before drafting.
-    let resp = post_json(
-        &base,
-        "/api/ask",
-        r#"{"question":"why does this matter?"}"#,
-    );
+    let resp = post_json(&base, "/api/ask", r#"{"question":"why does this matter?"}"#);
     assert_eq!(200, resp.status);
     // The wait idiom this test reuses verbatim: `poll_until` (this file,
     // defined above at the `fn poll_until` declaration), a bounded (up to
@@ -1763,7 +1759,11 @@ fn ask_card_draft_then_create_round_trips_a_learner_edited_card_into_the_queue()
     // and `walk_predict_with_auto_grade_resolves_a_verdict_via_the_fake_backend`
     // already use to wait on this exact kind of background ask/exam job.
     let body = poll_until(&base, "/api/ask", |b| !b["thinking"].as_bool().unwrap());
-    assert_eq!(1, body["transcript"].as_array().unwrap().len(), "body: {body}");
+    assert_eq!(
+        1,
+        body["transcript"].as_array().unwrap().len(),
+        "body: {body}"
+    );
 
     // Draft a card from the conversation.
     let resp = post_json(&base, "/api/ask/card/draft", "{}");
@@ -1795,10 +1795,7 @@ fn ask_card_draft_then_create_round_trips_a_learner_edited_card_into_the_queue()
         String::from_utf8_lossy(&resp.body)
     );
     let create_body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
-    assert!(
-        create_body["id"].as_str().is_some(),
-        "body: {create_body}"
-    );
+    assert!(create_body["id"].as_str().is_some(), "body: {create_body}");
 
     // Drillable, not just stored: cram-reselect (the same determinism idiom
     // `post_api_restart_rebuilds_the_queue_and_resets_session_stats` uses)
@@ -1811,14 +1808,20 @@ fn ask_card_draft_then_create_round_trips_a_learner_edited_card_into_the_queue()
     assert_eq!(200, resp.status);
     let select_body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     assert_eq!(3, select_body["remaining"], "body: {select_body}");
-    assert_eq!("edited term?", select_body["card"]["front"], "body: {select_body}");
+    assert_eq!(
+        "edited term?", select_body["card"]["front"],
+        "body: {select_body}"
+    );
 
     // And it's what `/api/state` reports too, not just the `/api/select`
     // response (the same double-check `get_api_state_reflects_the_active_session_after_select`
     // makes for the fixture's own first card).
     let state = http(&base, "GET", "/api/state", &[], &[]);
     let state_body: serde_json::Value = serde_json::from_slice(&state.body).unwrap();
-    assert_eq!("edited term?", state_body["card"]["front"], "body: {state_body}");
+    assert_eq!(
+        "edited term?", state_body["card"]["front"],
+        "body: {state_body}"
+    );
 }
 
 #[test]

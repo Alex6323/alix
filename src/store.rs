@@ -626,9 +626,15 @@ pub fn mint_tutor_card(
     deck_ids: &std::collections::HashSet<u64>,
 ) -> Result<u64, MintError> {
     let front = front.trim();
-    let back: Vec<String> = back.iter().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect();
+    let back: Vec<String> = back
+        .iter()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect();
     if front.is_empty() || back.is_empty() {
-        return Err(MintError::Malformed("front and back must both be non-empty".to_string()));
+        return Err(MintError::Malformed(
+            "front and back must both be non-empty".to_string(),
+        ));
     }
     let mut text = format!("# {front}\n");
     for line in &back {
@@ -639,7 +645,9 @@ pub fn mint_tutor_card(
     let cards = crate::parser::parse_str(subject, &text)
         .map_err(|e| MintError::Malformed(e.to_string()))?;
     let [card] = cards.as_slice() else {
-        return Err(MintError::Malformed("expected exactly one card".to_string()));
+        return Err(MintError::Malformed(
+            "expected exactly one card".to_string(),
+        ));
     };
     let id = card.id();
     if deck_ids.contains(&id) || store.is_virtual(id) {
@@ -1611,8 +1619,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let id = mint_tutor_card(
-            &mut store, "geo.txt", "capital of france", &["Paris".to_string()], 100, &HashSet::new(),
-        ).unwrap();
+            &mut store,
+            "geo.txt",
+            "capital of france",
+            &["Paris".to_string()],
+            100,
+            &HashSet::new(),
+        )
+        .unwrap();
         assert!(store.is_virtual(id));
         assert!(store.get_virtual(id).is_some());
         // The seeded schedule (so it enters the queue as a new card) is exercised
@@ -1629,8 +1643,14 @@ mod tests {
         let existing = crate::parser::parse_str("geo.txt", &text).unwrap()[0].id();
         let deck_ids: HashSet<u64> = [existing].into_iter().collect();
         let err = mint_tutor_card(
-            &mut store, "geo.txt", "capital of france", &["Paris".to_string()], 100, &deck_ids,
-        ).unwrap_err();
+            &mut store,
+            "geo.txt",
+            "capital of france",
+            &["Paris".to_string()],
+            100,
+            &deck_ids,
+        )
+        .unwrap_err();
         assert!(matches!(err, MintError::Duplicate));
     }
 
@@ -1640,8 +1660,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let err = mint_tutor_card(
-            &mut store, "geo.txt", "  ", &["Paris".to_string()], 100, &HashSet::new(),
-        ).unwrap_err();
+            &mut store,
+            "geo.txt",
+            "  ",
+            &["Paris".to_string()],
+            100,
+            &HashSet::new(),
+        )
+        .unwrap_err();
         assert!(matches!(err, MintError::Malformed(_)));
     }
 }

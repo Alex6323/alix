@@ -421,7 +421,12 @@ pub fn parse_drafted_card(reply: &str) -> Result<DraftCard> {
     }
     Ok(DraftCard {
         front: card.front.trim().to_string(),
-        back: card.back.iter().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect(),
+        back: card
+            .back
+            .iter()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect(),
     })
 }
 
@@ -1114,7 +1119,10 @@ mod tests {
         let reply = "# what frees Dart memory?\n\tA generational garbage collector.\n";
         let card = parse_drafted_card(reply).unwrap();
         assert_eq!(card.front, "what frees Dart memory?");
-        assert_eq!(card.back, vec!["A generational garbage collector.".to_string()]);
+        assert_eq!(
+            card.back,
+            vec!["A generational garbage collector.".to_string()]
+        );
     }
 
     #[test]

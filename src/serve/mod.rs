@@ -1173,8 +1173,9 @@ pub fn run_review(
                 let deck_ids: std::collections::HashSet<u64> =
                     r.session.cards().iter().map(|c| c.id()).collect();
                 let now = now_ms();
-                match store::mint_tutor_card(&mut store, &subject, &req.front, &req.back, now, &deck_ids)
-                {
+                match store::mint_tutor_card(
+                    &mut store, &subject, &req.front, &req.back, now, &deck_ids,
+                ) {
                     Ok(id) => {
                         if let Err(e) = store.save() {
                             eprintln!("warning: could not save progress: {e}");
