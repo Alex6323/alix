@@ -21,9 +21,9 @@ use crate::{
     card::Card,
     config::{AskConfig, ReviewConfig},
     deck::{Deck, DeckSettings},
+    depth::Depth,
     parser,
     scheduler::Fsrs,
-    serve::SelectOptions,
     session::{self, DeckInfo, Order, Session, SessionOptions},
     store::{Store, VirtualCard, default_store_path},
     time::now_ms,
@@ -88,6 +88,19 @@ pub struct AssembleConfig {
     pub trace_auto_grade: bool,
     pub pacing: Pacing,
     pub instance_store: Option<PathBuf>,
+}
+
+/// The per-launch choices a selection carries beyond which deck: the picker's
+/// depth pick, focus-drawer topology/region scope, the cram tick-box, and
+/// optional pacing overrides (absent → the instance's CLI/config values).
+#[derive(Default)]
+pub struct SelectOptions {
+    pub topology: Option<String>,
+    pub region: Option<String>,
+    pub depth: Option<Depth>,
+    pub cram: bool,
+    pub max_new: Option<usize>,
+    pub limit: Option<usize>,
 }
 
 /// A review session ready to serve: the session, its header label, the

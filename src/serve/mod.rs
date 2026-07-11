@@ -35,6 +35,9 @@ use respond::*;
 use serde::Deserialize;
 use tiny_http::{Method, Server};
 
+/// `SelectOptions` lives in `assemble` (the lib owns its own input type);
+/// re-exported here so `serve::SelectOptions` keeps working for callers.
+pub use crate::assemble::SelectOptions;
 use crate::{
     answer::{TypedResult, grade_lines_ordered, grade_lines_unordered},
     assemble::{self, CardsBuild, SessionBuild},
@@ -44,7 +47,6 @@ use crate::{
         PickerKeys, ReviewConfig,
     },
     deck::{self, Deck},
-    depth::Depth,
     doctor, exam, generate, import,
     recent::RecentDecks,
     session::now_ms,
@@ -1512,19 +1514,6 @@ pub fn run_review(
         }
     }
     Ok(())
-}
-
-/// The per-launch choices a selection carries beyond which deck: the picker's
-/// depth pick, focus-drawer topology/region scope, the cram tick-box, and
-/// optional pacing overrides (absent → the instance's CLI/config values).
-#[derive(Default)]
-pub struct SelectOptions {
-    pub topology: Option<String>,
-    pub region: Option<String>,
-    pub depth: Option<Depth>,
-    pub cram: bool,
-    pub max_new: Option<usize>,
-    pub limit: Option<usize>,
 }
 
 #[cfg(test)]
