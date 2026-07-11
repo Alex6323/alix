@@ -51,7 +51,9 @@ Like `% reveal:`, it works per card or deck-wide (a `% direction: both` header w
 per-card overrides). The two directions get **distinct progress**, are kept apart
 in the queue (you won't be shown one right after the other), and are removed
 together; the reversed card keeps the note. It's best for single-line cards, and
-it doesn't apply to cloze cards.
+it doesn't apply to cloze cards. When a reversed card's question side does come
+from several answer lines, they render as separate centred lines rather than run
+together into one.
 
 ## Image cards — `% img:`, `% img-back:`
 

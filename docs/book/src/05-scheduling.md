@@ -44,7 +44,10 @@ A card you've never seen isn't quizzed cold — you can't reconstruct what you'v
 never read — but it isn't simply handed to you either, whichever depth you're
 reviewing at. The first encounter is a **low-stakes attempt**, then the answer,
 then one key (**Seen**) records it *without a grade*. Usually: the front shows
-first, you try, then reveal. If the deck has AI distractors (`alix deck augment
+first, you try, then reveal. On the web you can then **hide and show the answer
+again** (`h`, or a tap on it) to self-test the fresh encoding before you press
+Seen; it flips only the answer's visibility, so the note, the buttons, and the
+layout stay put. If the deck has AI distractors (`alix deck augment
 --target choices`) and the card is **atomic** (single-line answer), it instead
 greets you as a **multiple-choice** question — pick one, see which was right.
 Either way a guess never marks it recognized or punishes it, and the first
