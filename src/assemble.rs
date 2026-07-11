@@ -432,6 +432,8 @@ pub fn select(
         .next()
         .map(|s| Arc::from(s.as_str()))
         .unwrap_or_else(|| Arc::from(label.as_str()));
+    // Quirk: a `--region` focus always excludes virtual cards — they belong to
+    // no topology, so a region drill never injects them.
     if region_sel.is_none() {
         for (k, vc) in store
             .virtual_cards_for(subject.as_ref())
@@ -491,9 +493,9 @@ pub fn select(
     );
 
     // Remember the resolved depth for this deck so a plain Learn next time
-    // reopens at it (keyed by deck subject, like the rest of the deck store) —
-    // even when the session built above turns out to have nothing due, so a
-    // restart still reopens at the last-chosen depth.
+    // reopens at it (keyed by deck subject, like the rest of the deck store).
+    // Quirk: this write always fires, even when the session just built above
+    // has nothing due — a restart still reopens at the last-chosen depth.
     let resolved_depth = session.depth();
     store.set_last_depth(subject.as_ref(), resolved_depth);
     if let Err(e) = store.save() {
@@ -549,6 +551,9 @@ pub fn browse(paths: Vec<PathBuf>) -> Result<CardsBuild> {
     // Merge in the display augmentations review shows, from the decks' own store
     // (a workspace's when they share one) — so browse renders the same view, not
     // the raw deck. The raw card stays in the deck file; this is display-only.
+    // Quirk: no instance-store fallback (`None`) — browse only ever resolves a
+    // workspace's own store, else the global default; the store here locates
+    // the augment sidecar (`.path()`) only, nothing is read from or written to it.
     let store = store_for(&expanded.decks, None)?;
     let augment = AugmentCache::open(augment::augment_path_for(store.path()));
     for card in &mut cards {
@@ -940,6 +945,35 @@ mod tests {
             .expect("the injected virtual card should be in the session");
         assert_eq!("Reshaped virtual front", synth.front);
         assert_eq!(["Reshaped virtual back"], *synth.back_for_display());
+    }
+
+    #[test]
+    fn select_falls_back_to_the_stored_last_depth_before_the_default() {
+        use crate::depth::Depth;
+
+        let dir = tempfile::tempdir().unwrap();
+        let deck = dir.path().join("d.txt");
+        std::fs::write(&deck, "# q\n\ta\n").unwrap();
+        let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
+        let cfg = test_config();
+
+        // An explicit depth resolves the first session AND persists — assert the
+        // persisted value directly (not just the session it produced).
+        let explicit = SelectOptions {
+            depth: Some(Depth::Recognize),
+            ..Default::default()
+        };
+        select(vec![deck.clone()], &mut store, &cfg, &explicit).unwrap();
+        assert_eq!(Some(Depth::Recognize), store.last_depth("d.txt"));
+
+        // No explicit depth this time — falls back to the stored last depth
+        // (not the built-in default, Recall).
+        let Selected::Review(build) =
+            select(vec![deck], &mut store, &cfg, &SelectOptions::default()).unwrap()
+        else {
+            panic!("a fact deck must review");
+        };
+        assert_eq!(Depth::Recognize, build.session.depth());
     }
 
     #[test]
