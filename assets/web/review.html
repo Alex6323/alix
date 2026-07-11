@@ -2653,7 +2653,11 @@ function renderExplain(a) {
       else if (marks[i] === false) cls += " no";
       if (i === kpCur) cls += " cur";
       const li = el("li", cls, p);
-      li.addEventListener("click", () => clickKeypoint(i));
+      // A cited card's whole answer region also toggles answer<->source on
+      // click (see onCiteClick, `fillBottom`) — without stopping it here, a
+      // keypoint click bubbles up and swaps the view out from under the
+      // checklist mid-check. This is the keypoint's own click; it stays put.
+      li.addEventListener("click", (e) => { e.stopPropagation(); clickKeypoint(i); });
       ul.appendChild(li);
     });
     a.appendChild(ul);

@@ -19,6 +19,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the ☰ menu (Ask Tutor only — Remove/Promote don't apply to a checkpoint),
   a zoned footer (Leave left, grade actions center, Ask tutor right, matching
   review), and the counter is gone.
+- A keypoint click on an Explain-mode card that also carries a `% at:`
+  citation could silently swap the whole answer region to the cited source
+  excerpt instead of marking the point — the click bubbled into the answer
+  region's own answer/source toggle. The keypoint `<li>` now stops that
+  propagation.
 
 ## [0.4.0] - 2026-07-11
 
