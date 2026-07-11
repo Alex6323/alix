@@ -368,6 +368,62 @@ pub fn extract_note_lines(text: &str) -> Vec<String> {
         .collect()
 }
 
+/// A card the tutor drafted from an exchange, before the learner edits it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DraftCard {
+    pub front: String,
+    pub back: Vec<String>,
+}
+
+/// Asks the model to distill the whole exchange into ONE focused card, returned
+/// as a bare deck-format block and nothing else, so `parse_drafted_card` can read
+/// it. Mirrors `condense_prompt`'s grounding (the card under review + the running
+/// transcript), but targets a drilled Q/A rather than a note.
+pub fn draft_card_prompt(card: &Card, transcript: &[Exchange]) -> String {
+    let mut p = String::new();
+    p.push_str(
+        "From the conversation below, write ONE focused flashcard that captures the \
+         single most useful thing to remember. Output ONLY a card in this exact format, \
+         with no fences, preamble, or commentary:\n\n\
+         # <the question>\n\t<the answer>\n\n\
+         Keep the question short and the answer to one or a few lines. Base it strictly \
+         on the conversation; do not invent facts.\n\n",
+    );
+    p.push_str(&format!("The card under review:\n# {}\n", card.front));
+    for b in &card.back {
+        p.push_str(&format!("\t{b}\n"));
+    }
+    p.push_str("\nThe conversation:\n");
+    for (q, a) in transcript {
+        p.push_str(&format!("Q: {q}\nA: {a}\n"));
+    }
+    p
+}
+
+/// Reads the model's reply into a `DraftCard`. Strips a surrounding markdown
+/// fence, parses the block with the deck parser, and requires exactly one card
+/// with a non-empty front and back. Errors (never fabricates) on anything else.
+pub fn parse_drafted_card(reply: &str) -> Result<DraftCard> {
+    let body = reply
+        .trim()
+        .trim_start_matches("```markdown")
+        .trim_start_matches("```")
+        .trim_end_matches("```")
+        .trim();
+    let cards = crate::parser::parse_str("draft", body)
+        .map_err(|e| anyhow::anyhow!("the tutor's reply was not a valid card: {e}"))?;
+    let [card] = cards.as_slice() else {
+        bail!("the tutor did not return exactly one card");
+    };
+    if card.front.trim().is_empty() || card.back.iter().all(|l| l.trim().is_empty()) {
+        bail!("the drafted card has an empty side");
+    }
+    Ok(DraftCard {
+        front: card.front.trim().to_string(),
+        back: card.back.iter().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect(),
+    })
+}
+
 /// Runs the CLI in a background thread; the reply arrives on the returned
 /// channel. The caller polls it with `try_recv`. `extra_args` carries the
 /// session arguments (`--session-id`/`--resume`).
@@ -1050,5 +1106,30 @@ mod tests {
             Reply::Answer(a) => assert_eq!("sure, let's look at this card together!", a),
             Reply::Error(e) => panic!("unexpected error: {e}"),
         }
+    }
+
+    #[test]
+    fn parse_drafted_card_reads_a_deck_format_block() {
+        let reply = "# what frees Dart memory?\n\tA generational garbage collector.\n";
+        let card = parse_drafted_card(reply).unwrap();
+        assert_eq!(card.front, "what frees Dart memory?");
+        assert_eq!(card.back, vec!["A generational garbage collector.".to_string()]);
+    }
+
+    #[test]
+    fn parse_drafted_card_strips_markdown_fences() {
+        let reply = "```\n# term?\n\tdefinition\n```";
+        let card = parse_drafted_card(reply).unwrap();
+        assert_eq!(card.front, "term?");
+    }
+
+    #[test]
+    fn parse_drafted_card_errors_on_junk() {
+        assert!(parse_drafted_card("I could not think of a good card, sorry!").is_err());
+    }
+
+    #[test]
+    fn parse_drafted_card_errors_on_a_frontless_block() {
+        assert!(parse_drafted_card("\tjust an answer, no question\n").is_err());
     }
 }
