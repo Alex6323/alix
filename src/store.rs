@@ -225,8 +225,8 @@ pub struct DeckProgress {
 pub const MATURE_STABILITY_DAYS: f64 = 21.0;
 
 /// Which trigger produced a virtual card (see the virtual-cards spec, §2).
-/// Only `Remediation` exists today; a future consumer (contrast, spin-off)
-/// adds a variant here rather than growing a separate mechanism.
+/// Each variant represents a different source: generated from exam failures,
+/// distilled from tutor exchanges, etc.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VirtualKind {
     /// Generated from a failed exam's gap, to drill the specific miss.
@@ -599,6 +599,61 @@ impl Store {
     pub fn path(&self) -> &Path {
         &self.path
     }
+}
+
+/// Why a tutor-minted card could not be added.
+#[derive(Debug, thiserror::Error)]
+pub enum MintError {
+    /// The front/back did not form exactly one well-formed card.
+    #[error("the drafted card is malformed: {0}")]
+    Malformed(String),
+    /// A card with this content already exists in the deck.
+    #[error("a card with this content already exists in the deck")]
+    Duplicate,
+}
+
+/// Mints a free-standing `Tutor` virtual card on `subject` from an edited
+/// front/back: builds the deck-format block, parses it under `subject` for its
+/// id, rejects a malformed block or a duplicate id (already authored in the deck
+/// via `deck_ids`, or already virtual), then inserts it and seeds a fresh
+/// schedule so it enters the queue as a new (acquire) card. Returns the new id.
+pub fn mint_tutor_card(
+    store: &mut Store,
+    subject: &str,
+    front: &str,
+    back: &[String],
+    now_ms: u64,
+    deck_ids: &std::collections::HashSet<u64>,
+) -> Result<u64, MintError> {
+    let front = front.trim();
+    let back: Vec<String> = back.iter().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect();
+    if front.is_empty() || back.is_empty() {
+        return Err(MintError::Malformed("front and back must both be non-empty".to_string()));
+    }
+    let mut text = format!("# {front}\n");
+    for line in &back {
+        text.push('\t');
+        text.push_str(line);
+        text.push('\n');
+    }
+    let cards = crate::parser::parse_str(subject, &text)
+        .map_err(|e| MintError::Malformed(e.to_string()))?;
+    let [card] = cards.as_slice() else {
+        return Err(MintError::Malformed("expected exactly one card".to_string()));
+    };
+    let id = card.id();
+    if deck_ids.contains(&id) || store.is_virtual(id) {
+        return Err(MintError::Duplicate);
+    }
+    store.insert_virtual(VirtualCard {
+        id,
+        kind: VirtualKind::Tutor,
+        parent: subject.to_string(),
+        text,
+        created_ms: now_ms,
+    });
+    store.get_or_insert(id, now_ms);
+    Ok(id)
 }
 
 /// Live badge check: whether every card in `cards` is currently solid at
@@ -1548,5 +1603,45 @@ mod tests {
 
         let reloaded = Store::open(&path).unwrap();
         assert_eq!(Some(Depth::Reconstruct), reloaded.last_depth("t.txt"));
+    }
+
+    #[test]
+    fn mint_tutor_card_inserts_a_tutor_virtual_card() {
+        use std::collections::HashSet;
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let id = mint_tutor_card(
+            &mut store, "geo.txt", "capital of france", &["Paris".to_string()], 100, &HashSet::new(),
+        ).unwrap();
+        assert!(store.is_virtual(id));
+        assert!(store.get_virtual(id).is_some());
+        // The seeded schedule (so it enters the queue as a new card) is exercised
+        // end-to-end by the tests/api.rs round-trip in Task 9, where drillability
+        // is asserted against the running server.
+    }
+
+    #[test]
+    fn mint_tutor_card_rejects_a_duplicate_id() {
+        use std::collections::HashSet;
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let text = "# capital of france\n\tParis\n".to_string();
+        let existing = crate::parser::parse_str("geo.txt", &text).unwrap()[0].id();
+        let deck_ids: HashSet<u64> = [existing].into_iter().collect();
+        let err = mint_tutor_card(
+            &mut store, "geo.txt", "capital of france", &["Paris".to_string()], 100, &deck_ids,
+        ).unwrap_err();
+        assert!(matches!(err, MintError::Duplicate));
+    }
+
+    #[test]
+    fn mint_tutor_card_rejects_an_empty_side() {
+        use std::collections::HashSet;
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let err = mint_tutor_card(
+            &mut store, "geo.txt", "  ", &["Paris".to_string()], 100, &HashSet::new(),
+        ).unwrap_err();
+        assert!(matches!(err, MintError::Malformed(_)));
     }
 }
