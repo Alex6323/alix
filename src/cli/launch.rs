@@ -4,12 +4,12 @@
 
 use std::{
     net::{Ipv4Addr, SocketAddr},
-    path::{Path, PathBuf},
+    path::Path,
     sync::Arc,
 };
 
 use alix::{
-    assemble::{self, open_store, store_path_for},
+    assemble::{self, open_store},
     config::Config,
     recent::{self, RecentDecks},
     serve, workspace,
@@ -135,13 +135,7 @@ pub(crate) fn launch(args: LaunchArgs) -> Result<()> {
             instance_store: instance_store.clone(),
         },
     };
-    // Picks the right store for whatever decks a selection resolves to: a
-    // workspace member's own store, else this instance's store (`&[]` → the
-    // instance store too).
-    let store_for_sel = |paths: &[PathBuf]| {
-        open_store(store_path_for(paths, None).or_else(|| instance_store.clone()))
-    };
-    serve::run_review(store, recent, decks_dir, server, opts, store_for_sel)
+    serve::run_review(store, recent, decks_dir, server, opts)
 }
 
 /// Prints what is served (the decks root) and where it is reachable, plus
@@ -229,6 +223,8 @@ fn print_qr(text: &str) {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
 
     #[test]

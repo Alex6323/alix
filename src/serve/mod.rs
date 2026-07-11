@@ -214,11 +214,6 @@ pub fn run_review(
     mut decks_dir: PathBuf,
     server: Arc<Server>,
     opts: ReviewOptions,
-    // The progress store the given decks write to — a workspace's own
-    // `progress.json` when they share one, else the global store (`&[]` → global),
-    // mirroring the terminal `store_for`. The active store is swapped to this when
-    // a session launches and reset to the global one back at the picker.
-    mut store_for: impl FnMut(&[PathBuf]) -> Result<Store>,
 ) -> Result<()> {
     let ReviewOptions {
         keys: bindings,
@@ -405,7 +400,9 @@ pub fn run_review(
                         // Write to the deck's own store — a workspace's `progress.json`
                         // when they share one, else the global store — the same store
                         // the picker's badges are read from.
-                        if let Err(e) = store_for(&paths).map(|s| store = s) {
+                        if let Err(e) = assemble::store_for(&paths, cfg.instance_store.as_deref())
+                            .map(|s| store = s)
+                        {
                             eprintln!("warning: could not open the progress store: {e}");
                             respond_status(request, 400);
                             continue;
@@ -454,7 +451,9 @@ pub fn run_review(
                 match read_selection(&mut request, &decks_dir, &recent) {
                     Some(sel) => {
                         let paths = vec![sel.deck];
-                        if let Err(e) = store_for(&paths).map(|s| store = s) {
+                        if let Err(e) = assemble::store_for(&paths, cfg.instance_store.as_deref())
+                            .map(|s| store = s)
+                        {
                             eprintln!("warning: could not open the progress store: {e}");
                             respond_status(request, 400);
                             continue;
@@ -492,7 +491,10 @@ pub fn run_review(
                     Some(sel) => {
                         match (
                             Deck::load(&sel.deck),
-                            store_for(std::slice::from_ref(&sel.deck)),
+                            assemble::store_for(
+                                std::slice::from_ref(&sel.deck),
+                                cfg.instance_store.as_deref(),
+                            ),
                         ) {
                             (Ok(deck), Ok(s)) => {
                                 let augment =
@@ -536,12 +538,12 @@ pub fn run_review(
                         continue;
                     }
                 };
-                let cleared = store_for(&paths)
+                let cleared = assemble::store_for(&paths, cfg.instance_store.as_deref())
                     .and_then(|mut s| crate::library::reset_decks(&mut s, decks.iter()));
                 match cleared {
                     Ok(n) => {
                         // The in-memory global store may now be stale — reload.
-                        if let Ok(s) = store_for(&[]) {
+                        if let Ok(s) = assemble::store_for(&[], cfg.instance_store.as_deref()) {
                             store = s;
                         }
                         respond_json(
@@ -927,7 +929,7 @@ pub fn run_review(
                 browsing = None;
                 // Back at the picker: read the global store again (loose-deck
                 // badges live there, not in any workspace's store).
-                if let Ok(s) = store_for(&[]) {
+                if let Ok(s) = assemble::store_for(&[], cfg.instance_store.as_deref()) {
                     store = s;
                 }
                 respond_json(request, &review_state(reviewing.as_ref(), &store));
@@ -1169,7 +1171,9 @@ pub fn run_review(
                 };
                 // The exam reads drill state and writes mastery/unlocks to the
                 // deck's own store (a workspace's, or the global one).
-                if let Ok(s) = store_for(std::slice::from_ref(&path)) {
+                if let Ok(s) =
+                    assemble::store_for(std::slice::from_ref(&path), cfg.instance_store.as_deref())
+                {
                     store = s;
                 }
                 match Deck::load(&path) {
@@ -1304,7 +1308,7 @@ pub fn run_review(
             // Leave the exam, back to the deck list / summary.
             (Method::Post, "/api/exam/close") => {
                 examining = None;
-                if let Ok(s) = store_for(&[]) {
+                if let Ok(s) = assemble::store_for(&[], cfg.instance_store.as_deref()) {
                     store = s;
                 }
                 respond_json(request, &review_state(reviewing.as_ref(), &store));
@@ -1329,7 +1333,9 @@ pub fn run_review(
                 let name = body.deck;
                 // The cache lives beside the deck's own store (a workspace's, or the
                 // global one), mirroring how review reads it.
-                if let Ok(s) = store_for(std::slice::from_ref(&path)) {
+                if let Ok(s) =
+                    assemble::store_for(std::slice::from_ref(&path), cfg.instance_store.as_deref())
+                {
                     store = s;
                 }
                 match Deck::load(&path) {
@@ -1397,7 +1403,7 @@ pub fn run_review(
             // Leave the Augment screen, back to the picker (reset to the global store).
             (Method::Post, "/api/augment/close") => {
                 augmenting = None;
-                if let Ok(s) = store_for(&[]) {
+                if let Ok(s) = assemble::store_for(&[], cfg.instance_store.as_deref()) {
                     store = s;
                 }
                 respond_json(request, &review_state(reviewing.as_ref(), &store));
@@ -1496,7 +1502,7 @@ pub fn run_review(
             // Back to decks: abandon the walk and return to the picker (global store).
             (Method::Post, "/api/walk/leave") => {
                 walking = None;
-                if let Ok(s) = store_for(&[]) {
+                if let Ok(s) = assemble::store_for(&[], cfg.instance_store.as_deref()) {
                     store = s;
                 }
                 // Every closer returns the picker StateDto — one teardown rule.

@@ -33,7 +33,6 @@ use alix::{
     serve::{self, PairInfo, ReviewOptions},
     store::Store,
 };
-use anyhow::Result;
 use tempfile::TempDir;
 use tiny_http::Server;
 
@@ -122,8 +121,19 @@ fn parse_response(raw: &[u8]) -> HttpResp {
 struct Guard {
     server: Arc<Server>,
     handle: Option<thread::JoinHandle<()>>,
-    // Keeps the fixture tempdir alive for the server thread's whole lifetime.
-    _dir: TempDir,
+    // Keeps the fixture tempdir alive for the server thread's whole lifetime;
+    // also lets a test reach into the fixture's files (e.g. a workspace's own
+    // `progress.json`) via `dir()`.
+    dir: TempDir,
+}
+
+impl Guard {
+    /// The fixture's decks dir — the same path passed to the server as
+    /// `decks_dir`, so a test can locate files it wrote there (or that a
+    /// session wrote, like a workspace's own store).
+    fn dir(&self) -> &Path {
+        self.dir.path()
+    }
 }
 
 impl Drop for Guard {
@@ -148,11 +158,11 @@ impl Drop for Guard {
 /// A minimal two-card fixture deck — enough for a grade→next-state sequence
 /// (grading the first card away still leaves the session in `"review"` phase
 /// on the second, rather than jumping straight to `"done"`) — and enough to
-/// make `run_review`'s closures do real work if a test picks it via
-/// `/api/select`.
+/// make `run_review`'s store resolution (`assemble::store_for`, via
+/// `cfg.instance_store`) do real work if a test picks it via `/api/select`.
 const FIXTURE_DECK: &str = "# 2 + 2\n\t4\n\n# 3 + 3\n\t6\n";
 
-/// Builds the `run_review` closures over one fixture deck living in `dir`,
+/// Builds the `run_review` options over one fixture deck living in `dir`,
 /// mirroring (in miniature) what `src/cli/launch.rs` wires up for the real
 /// CLI — enough for a test to drive `/api/select`, `/api/browse`, etc. in
 /// later tests, not just the deck-agnostic endpoints exercised here.
@@ -248,16 +258,14 @@ fn spawn_test_server_fixture(token: Option<&str>, extra: impl FnOnce(&Path)) -> 
                 max_new: 10,
                 limit: None,
             },
-            instance_store: Some(store_path.clone()),
+            instance_store: Some(store_path),
         },
         ..opts
     };
 
-    let store_for = move |_paths: &[PathBuf]| -> Result<Store> { Ok(Store::open(&store_path)?) };
-
     let stop_handle = Arc::clone(&server);
     let handle = thread::spawn(move || {
-        let _ = serve::run_review(store, recent, decks_dir, server, opts, store_for);
+        let _ = serve::run_review(store, recent, decks_dir, server, opts);
     });
 
     (
@@ -265,7 +273,7 @@ fn spawn_test_server_fixture(token: Option<&str>, extra: impl FnOnce(&Path)) -> 
         Guard {
             server: stop_handle,
             handle: Some(handle),
-            _dir: dir,
+            dir,
         },
     )
 }
@@ -367,16 +375,14 @@ fn spawn_full_server(ask_command: Option<&Path>) -> (String, Guard) {
                 max_new: 10,
                 limit: None,
             },
-            instance_store: Some(store_path.clone()),
+            instance_store: Some(store_path),
         },
         ..opts
     };
 
-    let store_for = move |_paths: &[PathBuf]| -> Result<Store> { Ok(Store::open(&store_path)?) };
-
     let stop_handle = Arc::clone(&server);
     let handle = thread::spawn(move || {
-        let _ = serve::run_review(store, recent, decks_dir, server, opts, store_for);
+        let _ = serve::run_review(store, recent, decks_dir, server, opts);
     });
 
     (
@@ -384,7 +390,7 @@ fn spawn_full_server(ask_command: Option<&Path>) -> (String, Guard) {
         Guard {
             server: stop_handle,
             handle: Some(handle),
-            _dir: dir,
+            dir,
         },
     )
 }
@@ -678,6 +684,44 @@ fn a_workspace_row_name_is_not_selectable() {
     let resp = post_json(&base, "/api/select", r#"{"deck":"animals"}"#);
 
     assert_eq!(400, resp.status);
+}
+
+/// The store-scoping policy `assemble::store_for` implements, end to end: a
+/// workspace member's grade lands in the workspace's own `progress.json`
+/// (`workspace::store_path`'s default), not the served instance's global
+/// store. The old `store_for` closure this harness stubbed out ignored its
+/// `paths` argument and always opened the instance store, so this is the
+/// first test able to exercise the real precedence (now wired via
+/// `run_review` → `cfg.instance_store` → `assemble::store_for`).
+#[test]
+fn grading_a_workspace_member_writes_the_workspace_store_not_the_instance_store() {
+    let (base, guard) = spawn_test_server_fixture(None, write_animals_workspace);
+    let ws_store = guard.dir().join("animals").join("progress.json");
+    assert!(!ws_store.exists(), "no review has happened yet");
+
+    let decks_resp = http(&base, "GET", "/api/decks", &[], &[]);
+    let body: serde_json::Value = serde_json::from_slice(&decks_resp.body).unwrap();
+    let animals = body["workspaces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|w| w["name"] == "animals")
+        .unwrap_or_else(|| panic!("no `animals` workspace row: body: {body}"));
+    let member = animals["members"][0]["name"]
+        .as_str()
+        .expect("member name is a string");
+
+    let select_req = serde_json::json!({ "deck": member }).to_string();
+    let resp = post_json(&base, "/api/select", &select_req);
+    assert_eq!(200, resp.status, "select {member:?} failed");
+
+    let resp = post_json(&base, "/api/grade", r#"{"grade":"passed"}"#);
+    assert_eq!(200, resp.status);
+
+    assert!(
+        ws_store.exists(),
+        "the workspace's own progress.json must receive the grade write"
+    );
 }
 
 #[test]
