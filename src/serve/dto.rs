@@ -207,6 +207,11 @@ pub(super) struct DeckListDto {
 pub(super) struct DeckItemDto {
     /// Stable selection key (file/folder name) sent back on select.
     pub(super) name: String,
+    /// STRUCTURAL: whether `name` is the kind of row `/api/select` accepts (a
+    /// deck, including one that fails to parse) — `false` for a
+    /// workspace/folder group row. Unlike `reviewable*` (state), this never
+    /// changes with progress.
+    pub(super) selectable: bool,
     /// Display title (`% title:`, else the name without `.txt`, else folder).
     pub(super) label: String,
     pub(super) meta: Option<String>,
@@ -279,6 +284,9 @@ pub(super) struct DeckItemDto {
 #[derive(Debug, Serialize)]
 pub(super) struct MemberDto {
     pub(super) name: String,
+    /// STRUCTURAL — see [`DeckItemDto::selectable`]; always `true` here (a
+    /// member row is always a deck file, never a group).
+    pub(super) selectable: bool,
     pub(super) label: String,
     pub(super) meta: Option<String>,
     pub(super) state: &'static str,

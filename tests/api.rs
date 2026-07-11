@@ -654,6 +654,10 @@ fn every_member_deck_name_from_api_decks_is_selectable() {
 
     for m in members {
         let name = m["name"].as_str().expect("member name is a string");
+        assert_eq!(
+            true, m["selectable"],
+            "member {name:?} should report selectable: true — row: {m}"
+        );
         let req = serde_json::json!({ "deck": name }).to_string();
         let resp = post_json(&base, "/api/select", &req);
         assert_eq!(
@@ -680,6 +684,19 @@ fn every_member_deck_name_from_api_decks_is_selectable() {
 #[test]
 fn a_workspace_row_name_is_not_selectable() {
     let (base, _guard) = spawn_test_server_fixture(None, write_animals_workspace);
+
+    let decks_resp = http(&base, "GET", "/api/decks", &[], &[]);
+    let body: serde_json::Value = serde_json::from_slice(&decks_resp.body).unwrap();
+    let animals = body["workspaces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|w| w["name"] == "animals")
+        .unwrap_or_else(|| panic!("no `animals` workspace row: body: {body}"));
+    assert_eq!(
+        false, animals["selectable"],
+        "a workspace row must report selectable: false — row: {animals}"
+    );
 
     let resp = post_json(&base, "/api/select", r#"{"deck":"animals"}"#);
 

@@ -95,7 +95,8 @@ so is every client.
    filesystem paths, and requests cannot construct paths — but only a
    **deck** row's `name` is a key `/api/select` accepts; a group row's name
    (`is_workspace`, or a folder) is a container, not a session (see
-   `DeckItemDto.name`).
+   `DeckItemDto.name`). `DeckItemDto.selectable` says this on the wire
+   directly, so a client no longer has to infer it from `is_workspace`.
 2. `POST /api/select {deck, topology?, region?, depth?, cram?, max_new?,
    limit?}` builds a session. **The response is either a `StateDto` or a
    `WalkDto` — branch on `kind` (`"review"` | `"walk"`) before anything
@@ -428,6 +429,7 @@ per region per card) *(presentational)*.
 | Key | Type | Meaning |
 |---|---|---|
 | `name` | string | The stable resolution key for this row (also used by `/api/reset`, `/api/browse`, and import's/generate's `dest`). **Only deck rows are selectable:** a group row (`is_workspace`, or a folder) is a container — `/api/select` rejects it with 400. Drill into `members` and select one of those. |
+| `selectable` | bool | **structural**: this row's `name` is the kind of thing `/api/select` accepts (a deck; false for workspace/folder rows). `reviewable*` is state, not structure. |
 | `label` | string | Display title. |
 | `meta` | string? | Badge text like `3/20`, `done ✓` *(presentational — parse nothing from it)*. |
 | `state` | string | `new` \| `started` \| `finished` \| `examdue` for decks; `workspace` \| `folder` for groups (open set). |
@@ -455,6 +457,8 @@ per region per card) *(presentational)*.
 
 `DeckItemDto`'s fields minus the group-only ones, plus `indent: number` and
 `tree: string` (the `├─`/`└─` branch prefix) — both *(presentational)*.
+`selectable` is always `true` here — a member row is always a deck file,
+never a group.
 
 ### DeckTopologyDto
 

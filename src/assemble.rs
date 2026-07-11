@@ -309,6 +309,18 @@ pub fn subject_paths(decks: HashMap<String, DeckInfo>) -> HashMap<String, PathBu
         .collect()
 }
 
+/// Whether `path` is structurally selectable — the same rule [`select`] bails
+/// on for a folder, extracted so the picker catalog can source its
+/// `selectable` field from the identical check: `true` for a deck file
+/// (including one that fails to parse — that's a load *failure*, not a
+/// structural rejection), `false` for a folder that contains decks (a
+/// workspace or a plain folder). This is a STRUCTURAL predicate ("is `path`
+/// the kind of thing `/api/select` accepts"), not a state one — `reviewable`
+/// answers "is there anything due right now", which this never does.
+pub fn selectable(path: &Path) -> bool {
+    !workspace::has_decks(path)
+}
+
 /// Turns a deck selection into something reviewable: most selections resolve
 /// to a review session; a lone trace deck resolves to a walk (predict →
 /// verify) instead. `% requires:` prerequisites are NOT pulled in — the
@@ -346,7 +358,7 @@ pub fn select(
     let [deck] = deck_paths.as_slice() else {
         bail!("review one deck at a time (merging decks was removed)");
     };
-    if workspace::has_decks(deck) {
+    if !selectable(deck) {
         bail!(
             "`{}` is a folder — serve it (`alix {}`) and pick a deck inside it",
             deck.display(),
@@ -576,6 +588,22 @@ pub fn browse(paths: Vec<PathBuf>) -> Result<CardsBuild> {
 mod tests {
     use super::*;
     use crate::{answer::Mode, store::VirtualKind};
+
+    #[test]
+    fn selectable_is_false_only_for_a_folder_that_contains_decks() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("d.txt");
+        std::fs::write(&file, "# q\n\ta\n").unwrap();
+        let ws = dir.path().join("box");
+        std::fs::create_dir(&ws).unwrap();
+        std::fs::write(ws.join("m.txt"), "# q\n\ta\n").unwrap();
+        let empty = dir.path().join("empty");
+        std::fs::create_dir(&empty).unwrap();
+
+        assert!(selectable(&file), "a deck file is selectable");
+        assert!(!selectable(&ws), "a folder of decks is not selectable");
+        assert!(selectable(&empty), "an empty folder has no decks to reject");
+    }
 
     #[test]
     fn store_for_prefers_workspace_then_instance_then_global() {

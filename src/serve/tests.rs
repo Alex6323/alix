@@ -481,6 +481,104 @@ fn resolve_dest_rejects_a_dir_name_duplicated_across_two_containers() {
 }
 
 #[test]
+fn a_group_row_aggregates_member_reviewability_instead_of_hardcoding_true() {
+    // A workspace whose two member decks are both fully settled — recognized,
+    // and scheduled well out at Recall and Reconstruct — so nothing is due at
+    // any depth on either member. The group row must reflect that (not the
+    // old hardcoded `true`), while staying unselectable itself.
+    let dir = tempfile::tempdir().unwrap();
+    let ws = dir.path().join("animals");
+    std::fs::create_dir(&ws).unwrap();
+    std::fs::write(ws.join("alix.toml"), "title = \"Animals\"\n").unwrap();
+    std::fs::write(ws.join("one.txt"), "# q1\n\ta1\n").unwrap();
+    std::fs::write(ws.join("two.txt"), "# q2\n\ta2\n").unwrap();
+
+    let mut ws_store = Store::open(crate::workspace::store_path(&ws)).unwrap();
+    let now = now_ms();
+    for name in ["one.txt", "two.txt"] {
+        let deck = Deck::load(ws.join(name)).unwrap();
+        let id = deck.cards[0].id();
+        let future = crate::store::FsrsState {
+            state: 2,
+            scheduled_days: 30,
+            due_ms: now + 30 * 86_400_000,
+            ..Default::default()
+        };
+        let entry = ws_store.get_or_insert(id, now);
+        entry.recognized_ms = Some(now);
+        entry.recall = Some(future);
+        entry.reconstruct = Some(future);
+    }
+    ws_store.save().unwrap();
+
+    let recent = RecentDecks::load(dir.path().join("recent.json"));
+    // Irrelevant to a workspace group row — `workspace_members` always reads
+    // the workspace's own store from disk, never this one.
+    let global_store = Store::open(dir.path().join("global.json")).unwrap();
+    let mut icons = HashMap::new();
+    let dto = deck_catalog(
+        dir.path(),
+        &recent,
+        &global_store,
+        true,
+        &mut icons,
+        ReviewConfig::default(),
+    );
+
+    let animals = dto
+        .workspaces
+        .iter()
+        .find(|w| w.name == "animals")
+        .expect("animals workspace row");
+    assert!(!animals.selectable, "row: {animals:?}");
+    assert!(!animals.reviewable, "row: {animals:?}");
+    assert!(!animals.reviewable_recognize, "row: {animals:?}");
+    assert!(!animals.reviewable_recall, "row: {animals:?}");
+    assert!(!animals.reviewable_reconstruct, "row: {animals:?}");
+    assert_eq!(2, animals.members.len(), "row: {animals:?}");
+    for m in &animals.members {
+        assert!(m.selectable, "member {} should stay selectable", m.name);
+    }
+}
+
+#[test]
+fn a_deck_that_fails_to_load_reports_nothing_reviewable_but_stays_selectable() {
+    let dir = tempfile::tempdir().unwrap();
+    // A cloze card with no `{{...}}` holes fails to parse — `Deck::load` errors.
+    std::fs::write(
+        dir.path().join("broken.txt"),
+        "# front\n% reveal: cloze\n\tno holes\n",
+    )
+    .unwrap();
+    let recent = RecentDecks::load(dir.path().join("recent.json"));
+    let entry = picker::catalog(dir.path(), &recent)
+        .into_iter()
+        .find(|e| e.name == "broken.txt")
+        .expect("catalog lists the broken deck file even though it won't parse");
+    assert!(
+        Deck::load(&entry.path).is_err(),
+        "fixture must actually fail to load"
+    );
+
+    let store = Store::open(dir.path().join("progress.json")).unwrap();
+    let augment = AugmentCache::open(augment::augment_path_for(store.path()));
+    let dto = deck_item_dto(
+        &entry,
+        &store,
+        dir.path(),
+        true,
+        &augment,
+        ReviewConfig::default(),
+    );
+
+    assert!(dto.selectable, "row: {dto:?}");
+    assert!(!dto.reviewable, "row: {dto:?}");
+    assert!(!dto.reviewable_recognize, "row: {dto:?}");
+    assert!(!dto.reviewable_recall, "row: {dto:?}");
+    assert!(!dto.reviewable_reconstruct, "row: {dto:?}");
+}
+
+#[test]
 fn browse_payload_select_phase_has_no_cards() {
     let dto = browse_payload(None);
     assert_eq!(dto.phase, "select");

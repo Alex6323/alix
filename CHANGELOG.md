@@ -7,6 +7,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- `/api/decks` rows now carry `selectable` — whether the row's `name` can be sent to
+  `/api/select` (decks: yes; workspace/folder rows: no). Clients no longer have to infer
+  it from `is_workspace`.
 - An end-to-end smoke suite for the alix web clients — both adult and kids
   (`make e2e`, Playwright): a click must produce the expected request,
   response, and screen, with no uncaught page errors, covering session
@@ -99,6 +102,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   deck's source**, failing at start instead of mid-exam.
 
 ### Fixed
+- Group rows in `/api/decks` no longer report `reviewable` unconditionally: a workspace/folder
+  row now aggregates its members, and a deck that fails to parse reports nothing reviewable.
+  (The kids app's box line and the adult picker's dim states are honest now.)
 - `docs/API.md` described `DeckItemDto.name` as a key you can always send to
   `/api/select`. Only deck rows are selectable: a workspace or folder row is
   a container and `/api/select` rejects it (400) — drill into its `members`.

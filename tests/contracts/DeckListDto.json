@@ -37,6 +37,7 @@
           "reviewable_recall": true,
           "reviewable_recognize": true,
           "reviewable_reconstruct": false,
+          "selectable": true,
           "state": "started",
           "tree": "└─ "
         }
@@ -50,6 +51,7 @@
       "reviewable_recall": true,
       "reviewable_recognize": false,
       "reviewable_reconstruct": true,
+      "selectable": false,
       "state": "workspace"
     }
   ]

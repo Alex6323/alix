@@ -16,6 +16,7 @@ use twox_hash::XxHash64;
 
 use super::{SelectOptions, dto::*};
 use crate::{
+    assemble,
     augment::{self, AugmentCache},
     card::Card,
     config::{Config, ReviewConfig},
@@ -109,6 +110,7 @@ pub(super) fn deck_item_dto(
             let last_depth = depth_name(store.last_depth(&deck.subject).unwrap_or_default());
             DeckItemDto {
                 name: e.name.clone(),
+                selectable: assemble::selectable(&e.path),
                 label: e.label.clone(),
                 meta: Some(s.badge),
                 state: state_name(s.state),
@@ -135,17 +137,20 @@ pub(super) fn deck_item_dto(
                 last_depth,
             }
         }
-        // A deck that fails to load stays launchable so the error surfaces.
+        // A deck that fails to load stays launchable so the error surfaces —
+        // structurally it's still a deck file (`selectable`), but there's
+        // nothing honest to report as due (`reviewable*` all false).
         Err(_) => DeckItemDto {
             name: e.name.clone(),
+            selectable: true,
             label: e.label.clone(),
             meta: None,
             state: "new",
             locked: false,
-            reviewable: true,
-            reviewable_recognize: true,
-            reviewable_recall: true,
-            reviewable_reconstruct: true,
+            reviewable: false,
+            reviewable_recognize: false,
+            reviewable_recall: false,
+            reviewable_reconstruct: false,
             mastered: false,
             is_trace: false,
             examable: false,
@@ -247,6 +252,7 @@ pub(super) fn workspace_members(
             match &loaded[i].0 {
                 Some(s) => MemberDto {
                     name: m.name.clone(),
+                    selectable: assemble::selectable(&m.path),
                     label: m.label.clone(),
                     meta: Some(s.badge.clone()),
                     state: state_name(s.state),
@@ -268,17 +274,19 @@ pub(super) fn workspace_members(
                     last_depth,
                 },
                 // A member that failed to load: the same neutral defaults as
-                // `deck_item_dto`'s failed-load fallback.
+                // `deck_item_dto`'s failed-load fallback (structurally still
+                // selectable; nothing honest to report as reviewable).
                 None => MemberDto {
                     name: m.name.clone(),
+                    selectable: true,
                     label: m.label.clone(),
                     meta: None,
                     state: "new",
                     locked: false,
-                    reviewable: true,
-                    reviewable_recognize: true,
-                    reviewable_recall: true,
-                    reviewable_reconstruct: true,
+                    reviewable: false,
+                    reviewable_recognize: false,
+                    reviewable_recall: false,
+                    reviewable_reconstruct: false,
                     mastered: false,
                     is_trace: false,
                     examable: false,
@@ -370,14 +378,22 @@ pub(super) fn deck_catalog(
                 format!("{} decks", members.len())
             };
             let (icon, icon_svg) = icon_field(e.icon.as_deref(), icons);
+            // A group row has no due-ness of its own — it's the aggregate of
+            // what its members report, not an invitation to select the group
+            // itself (`selectable: false` below owns that).
+            let reviewable = members.iter().any(|m| m.reviewable);
+            let reviewable_recognize = members.iter().any(|m| m.reviewable_recognize);
+            let reviewable_recall = members.iter().any(|m| m.reviewable_recall);
+            let reviewable_reconstruct = members.iter().any(|m| m.reviewable_reconstruct);
             let dto = DeckItemDto {
                 meta: Some(meta),
                 state: if is_ws { "workspace" } else { "folder" },
                 locked: false,
-                reviewable: true,
-                reviewable_recognize: true,
-                reviewable_recall: true,
-                reviewable_reconstruct: true,
+                selectable: false,
+                reviewable,
+                reviewable_recognize,
+                reviewable_recall,
+                reviewable_reconstruct,
                 mastered: false,
                 is_trace: false,
                 examable: false,

@@ -422,6 +422,7 @@ fn decklistdto_wire_shape() {
     let dto = DeckListDto {
         workspaces: vec![DeckItemDto {
             name: "rustws".to_string(),
+            selectable: false,
             label: "Rust workspace".to_string(),
             meta: Some("3/10".to_string()),
             state: "workspace",
@@ -439,6 +440,7 @@ fn decklistdto_wire_shape() {
             description: Some("learn Rust ownership".to_string()),
             members: vec![MemberDto {
                 name: "rustws/intro.txt".to_string(),
+                selectable: true,
                 label: "Intro".to_string(),
                 meta: Some("3/10".to_string()),
                 state: "started",
@@ -477,6 +479,7 @@ fn decklistdto_wire_shape() {
         json!({
             "workspaces": [{
                 "name": "rustws",
+                "selectable": false,
                 "label": "Rust workspace",
                 "meta": "3/10",
                 "state": "workspace",
@@ -494,6 +497,7 @@ fn decklistdto_wire_shape() {
                 "description": "learn Rust ownership",
                 "members": [{
                     "name": "rustws/intro.txt",
+                    "selectable": true,
                     "label": "Intro",
                     "meta": "3/10",
                     "state": "started",

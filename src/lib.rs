@@ -14,6 +14,10 @@
 // print-only QR output, a two-call AI workspace build) — see each site's
 // one-line reason.
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+// The contract suite's widest `json!` snapshot (`decklistdto_wire_shape`,
+// nesting a many-keyed `DeckItemDto` inside a `DeckListDto`) exceeds the
+// default macro recursion limit once a row carries this many fields.
+#![recursion_limit = "256"]
 
 pub mod answer;
 pub mod ask;
