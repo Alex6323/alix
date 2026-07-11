@@ -6,6 +6,7 @@
 use std::{path::Path, sync::Arc};
 
 use alix::{
+    assemble::{VIRTUAL_LINE_BASE, synthesize_virtual},
     augment::{self, AugmentCache},
     card::Card,
     config::{self, Config},
@@ -17,7 +18,6 @@ use anyhow::{Context, Result, bail};
 use crate::{
     AugmentArgs, AugmentTarget, ImportArgs, WorkspaceInitArgs,
     common::{deck_out_dir, one_line, store_for, truncate},
-    launch::{VIRTUAL_LINE_BASE, synthesize_virtual},
 };
 
 /// `alix deck augment`: deliberately generate AI augmentations for a deck into

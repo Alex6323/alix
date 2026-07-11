@@ -4,20 +4,15 @@
 //! addition must argue its way in.
 
 use std::{
-    collections::HashMap,
     io::{IsTerminal, Write},
     path::{Path, PathBuf},
 };
 
 use alix::{
     assemble::{open_store, store_path_for},
-    card::Card,
     config::Config,
-    deck::{Deck, DeckSettings},
     preflight,
-    session::DeckInfo,
     store::Store,
-    trace::SourceBase,
     workspace,
 };
 use anyhow::{Context, Result, bail};
@@ -80,59 +75,6 @@ pub(crate) fn expand_target(path: &Path) -> Result<Target> {
 /// [`alix::assemble::store_path_for`].
 pub(crate) fn store_for(decks: &[PathBuf], cli_override: Option<PathBuf>) -> Result<Store> {
     open_store(store_path_for(decks, cli_override.as_deref()))
-}
-
-/// The cards of all loaded decks, a header label, the per-subject deck info
-/// for the web session, and the per-deck `% key: value` settings.
-pub(crate) type LoadedDecks = (
-    Vec<Card>,
-    String,
-    std::collections::HashMap<String, DeckInfo>,
-    Vec<DeckSettings>,
-);
-
-/// Loads all decks and returns their cards, a label for the header, the
-/// per-subject deck info (file path and reference links) for the web session,
-/// and the per-deck `% key: value` settings.
-pub(crate) fn load_decks(
-    paths: &[PathBuf],
-    defaults: &HashMap<String, DeckSettings>,
-) -> Result<LoadedDecks> {
-    let mut cards = Vec::new();
-    let mut names = Vec::new();
-    let mut decks = std::collections::HashMap::new();
-    let mut settings = Vec::new();
-    for path in paths {
-        // A deck that belongs to a workspace inherits the workspace's shared
-        // directives (keyed by file name); others load with no defaults.
-        let deck = match path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .and_then(|n| defaults.get(n))
-        {
-            Some(ws) => Deck::load_with_defaults(path, ws)?,
-            None => Deck::load(path)?,
-        };
-        names.push(deck.display_name());
-        decks.insert(
-            deck.subject.clone(),
-            DeckInfo {
-                path: deck.path.clone(),
-                // Ask-Claude references include the deck's `% link:`s and any
-                // URL `% source:` (a source doubles as a reference).
-                links: deck.reference_links(),
-                // Where the grounded tutor reads this deck's source (opt-in).
-                source_root: deck.source_root(),
-                // Resolved against the global config in `build_review`.
-                source_access: false,
-                // For resolving a card's `% at:` citation excerpt on reveal.
-                source_base: SourceBase::for_deck(&deck),
-            },
-        );
-        settings.push(deck.settings);
-        cards.extend(deck.cards);
-    }
-    Ok((cards, names.join(", "), decks, settings))
 }
 
 pub(crate) fn confirm(prompt: &str, yes: bool) -> Result<bool> {

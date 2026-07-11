@@ -6,7 +6,8 @@ use crate::{
     ask::{self, Reply},
     choice, picker,
     scheduler::{Fsrs, Grade},
-    trace::Delta,
+    session::Session,
+    trace::{Delta, SourceBase},
 };
 
 #[test]

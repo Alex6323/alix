@@ -26,15 +26,14 @@ use std::{
 };
 
 use alix::{
+    assemble::{Cfg, Pacing},
     config::Config,
     deck::Deck,
     parser,
     recent::RecentDecks,
-    scheduler::Fsrs,
-    serve::{self, CardsBuild, PairInfo, ReviewOptions, SelectOptions, SessionBuild, WalkBuild},
-    session::{Session, SessionOptions, now_ms},
+    serve::{self, CardsBuild, PairInfo, ReviewOptions},
+    session::now_ms,
     store::Store,
-    trace::{Trace, Walk},
 };
 use anyhow::{Result, anyhow};
 use tempfile::TempDir;
@@ -148,23 +147,6 @@ impl Drop for Guard {
     }
 }
 
-/// Turns a `/api/select` request's per-launch choices into the `Session`'s
-/// `SessionOptions` — depth/cram/max_new/limit passed through as requested,
-/// the rest at their library defaults, mirroring what `src/cli/launch.rs`
-/// wires up for the real CLI. Earlier harness revisions ignored `opts`
-/// entirely (always `SessionOptions::default()`); the `depth`-scoped choice
-/// questions and the `cram`-driven restart below need the real per-launch
-/// choices to reach the session, so this closes that gap.
-fn session_options(sel: &SelectOptions) -> SessionOptions {
-    SessionOptions {
-        depth: sel.depth.unwrap_or_default(),
-        cram: sel.cram,
-        max_new: sel.max_new.unwrap_or(10),
-        limit: sel.limit,
-        ..Default::default()
-    }
-}
-
 /// A minimal two-card fixture deck — enough for a grade→next-state sequence
 /// (grading the first card away still leaves the session in `"review"` phase
 /// on the second, rather than jumping straight to `"done"`) — and enough to
@@ -184,7 +166,7 @@ fn review_options(base: &str, auth: Option<String>) -> ReviewOptions {
         keys: config.keys,
         picker: config.picker,
         browse: config.browse,
-        ask: config.ask,
+        ask: config.ask.clone(),
         exam: config.exam,
         ai: config.ai,
         generate: config.generate,
@@ -200,6 +182,19 @@ fn review_options(base: &str, auth: Option<String>) -> ReviewOptions {
             lan: false,
         },
         scoped: true,
+        // Callers always overwrite this via a `..` struct-update once they
+        // know the fixture's own store path — see `spawn_test_server_fixture`
+        // / `spawn_full_server`.
+        cfg: Cfg {
+            review: config.review,
+            ask: config.ask,
+            trace_auto_grade: false,
+            pacing: Pacing {
+                max_new: 10,
+                limit: None,
+            },
+            instance_store: None,
+        },
     }
 }
 
@@ -242,42 +237,27 @@ fn spawn_test_server_fixture(token: Option<&str>, extra: impl FnOnce(&Path)) -> 
         .port();
     let base = format!("http://127.0.0.1:{port}");
     let opts = review_options(&base, token.map(str::to_string));
-    let retention = opts.review.retention;
-
-    // One deck at a time, exactly like the CLI's own `build_review`/`build_browse`
-    // (§`src/cli/launch.rs`) — just without the workspace/topology/virtual-card
-    // machinery those add, which no fixture deck here needs yet.
-    let build = move |paths: Vec<PathBuf>,
-                      sel: &SelectOptions,
-                      store: &Store,
-                      recent: &mut RecentDecks|
-          -> Result<SessionBuild> {
-        let path = paths
-            .into_iter()
-            .next()
-            .ok_or_else(|| anyhow!("no deck selected"))?;
-        let deck = Deck::load(&path)?;
-        let subject = deck.subject.clone();
-        let session = Session::new(
-            deck.cards,
-            store,
-            Box::new(Fsrs::new(retention)),
-            session_options(sel),
-            now_ms(),
-        );
-        recent.record(std::slice::from_ref(&path), now_ms());
-        let _ = recent.save();
-        Ok(SessionBuild {
-            session,
-            label: subject.clone(),
-            decks: HashMap::from([(subject, path)]),
-            links: HashMap::new(),
-            source_roots: HashMap::new(),
-            source_bases: HashMap::new(),
-            topology_name: None,
-        })
+    // `/api/select` now runs the real classifier/assembler (`assemble::select`)
+    // instead of a hand-rolled stub — give it the same pacing default the old
+    // stub's `session_options` used (`max_new: 10`), and pin the instance store
+    // to this fixture's own file.
+    let opts = ReviewOptions {
+        cfg: Cfg {
+            review: opts.review,
+            ask: opts.ask.clone(),
+            trace_auto_grade: false,
+            pacing: Pacing {
+                max_new: 10,
+                limit: None,
+            },
+            instance_store: Some(store_path.clone()),
+        },
+        ..opts
     };
-    let build_walk = |_paths: &[PathBuf]| -> Result<Option<WalkBuild>> { Ok(None) };
+
+    // One deck at a time, exactly like the CLI's own `build_browse`
+    // (§`src/cli/launch.rs`) — just without the workspace/augment machinery
+    // that adds, which no fixture deck here needs yet.
     let build_browse = |paths: Vec<PathBuf>, recent: &mut RecentDecks| -> Result<CardsBuild> {
         let path = paths
             .into_iter()
@@ -302,8 +282,6 @@ fn spawn_test_server_fixture(token: Option<&str>, extra: impl FnOnce(&Path)) -> 
             decks_dir,
             server,
             opts,
-            build,
-            build_walk,
             build_browse,
             store_for,
         );
@@ -358,14 +336,14 @@ const TRACE_SOURCE: &str = "first\nsecond\nthird\n";
 /// decks dir also carries [`CHOICE_DECK`] (pre-seeded "seen" in the store, so
 /// a Recognize-depth session quizzes it via the sibling-pool multiple-choice
 /// builder instead of the AI-only acquire on-ramp — see `current_question`,
-/// `src/serve/dto.rs`) and [`TRACE_DECK`] (routed to a real `Walk` by
-/// `build_walk` below, for the walk and trace-exam families).
+/// `src/serve/dto.rs`) and [`TRACE_DECK`] (routed to a real `Walk` by the real
+/// classifier in `assemble::select`, for the walk and trace-exam families).
 ///
 /// `ask_command`, when `Some`, points `[ask] command` at a fake CLI — see this
 /// module's `fake_reply` — so a walk picked here auto-grades
-/// (`WalkBuild::grade`) instead of self-grading; `None` keeps every AI path
-/// off (self-graded walk, no augmentation), which is what every non-AI test
-/// in this family wants.
+/// (`Cfg::trace_auto_grade`) instead of self-grading; `None` keeps every AI
+/// path off (self-graded walk, no augmentation), which is what every non-AI
+/// test in this family wants.
 fn spawn_full_server(ask_command: Option<&Path>) -> (String, Guard) {
     let dir = TempDir::new().unwrap();
     std::fs::write(dir.path().join("sample.txt"), FIXTURE_DECK).unwrap();
@@ -402,58 +380,25 @@ fn spawn_full_server(ask_command: Option<&Path>) -> (String, Guard) {
     if let Some(cmd) = ask_command {
         opts.ask.command = cmd.to_str().unwrap().to_string();
     }
-    let retention = opts.review.retention;
-    let ask_cfg = opts.ask.clone();
+    // A picked trace deck now walks (predict → verify) via the real
+    // classifier/assembler (`assemble::select`) instead of a hand-rolled
+    // `build_walk` stub — `trace_auto_grade` reproduces what this fixture's
+    // old stub computed itself (`ask_command.is_some()`).
     let auto_grade = ask_command.is_some();
+    let opts = ReviewOptions {
+        cfg: Cfg {
+            review: opts.review,
+            ask: opts.ask.clone(),
+            trace_auto_grade: auto_grade,
+            pacing: Pacing {
+                max_new: 10,
+                limit: None,
+            },
+            instance_store: Some(store_path.clone()),
+        },
+        ..opts
+    };
 
-    let build = move |paths: Vec<PathBuf>,
-                      sel: &SelectOptions,
-                      store: &Store,
-                      recent: &mut RecentDecks|
-          -> Result<SessionBuild> {
-        let path = paths
-            .into_iter()
-            .next()
-            .ok_or_else(|| anyhow!("no deck selected"))?;
-        let deck = Deck::load(&path)?;
-        let subject = deck.subject.clone();
-        let session = Session::new(
-            deck.cards,
-            store,
-            Box::new(Fsrs::new(retention)),
-            session_options(sel),
-            now_ms(),
-        );
-        recent.record(std::slice::from_ref(&path), now_ms());
-        let _ = recent.save();
-        Ok(SessionBuild {
-            session,
-            label: subject.clone(),
-            decks: HashMap::from([(subject, path)]),
-            links: HashMap::new(),
-            source_roots: HashMap::new(),
-            source_bases: HashMap::new(),
-            topology_name: None,
-        })
-    };
-    // Routes a picked trace deck to a real `Walk` instead of falling through
-    // to `build` (the review path) — earlier harness revisions always
-    // returned `None` here, so no walk endpoint was reachable at all.
-    let build_walk = move |paths: &[PathBuf]| -> Result<Option<WalkBuild>> {
-        let Some(path) = paths.first() else {
-            return Ok(None);
-        };
-        let deck = Deck::load(path)?;
-        if !deck.is_trace() {
-            return Ok(None);
-        }
-        let trace = Trace::from_deck(&deck)?;
-        let grade = auto_grade.then(|| ask_cfg.clone());
-        Ok(Some(WalkBuild {
-            walk: Walk::new(trace),
-            grade,
-        }))
-    };
     let build_browse = move |paths: Vec<PathBuf>, recent: &mut RecentDecks| -> Result<CardsBuild> {
         let path = paths
             .into_iter()
@@ -478,8 +423,6 @@ fn spawn_full_server(ask_command: Option<&Path>) -> (String, Guard) {
             decks_dir,
             server,
             opts,
-            build,
-            build_walk,
             build_browse,
             store_for,
         );
@@ -773,12 +716,10 @@ fn every_member_deck_name_from_api_decks_is_selectable() {
 /// A workspace row's `name` (`"animals"`) is a *resolution* key — valid for
 /// `/api/reset` — but a review session is exactly one deck file, so
 /// `/api/select` rejects a group row. The authoritative rule and its error
-/// message live in `build_review` (`src/cli/launch.rs`) and are unit-tested
-/// there (`build_review_rejects_a_folder_of_decks`); this test only pins the
-/// client-visible status code, because this harness injects its own `build`
-/// (`spawn_test_server_with`'s doc) — the 400 here comes from the stub's
-/// `Deck::load(<workspace dir>)` failing to load a directory as a deck file,
-/// not from `build_review`'s bail.
+/// message live in `assemble::select` and are unit-tested there
+/// (`select_rejects_a_folder_of_decks`); this test only pins the
+/// client-visible status code — `/api/select` now runs the real classifier,
+/// so the 400 here comes from `select`'s own "is a folder" bail.
 #[test]
 fn a_workspace_row_name_is_not_selectable() {
     let (base, _guard) = spawn_test_server_fixture(None, write_animals_workspace);
@@ -1543,6 +1484,20 @@ fn exam_grade_on_a_trace_deck_walks_from_answering_to_a_passing_result_via_the_f
 }
 
 // ── Walk (a two-hop trace deck) ───────────────────────────────────────────
+
+/// `/api/select` now classifies through the real `assemble::select` (no more
+/// per-fixture `build_walk` stub) — this pins that the trace fixture still
+/// round-trips as a walk through that real classifier, not a harness replica.
+#[test]
+fn selecting_a_trace_deck_returns_a_walk_through_the_real_classifier() {
+    let (base, _guard) = spawn_full_server(None);
+
+    let resp = post_json(&base, "/api/select", r#"{"deck":"trace.txt"}"#);
+
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("walk", body["kind"], "body: {body}");
+}
 
 #[test]
 fn selecting_a_trace_deck_returns_a_walk_dto_not_a_review_state() {

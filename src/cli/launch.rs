@@ -10,355 +10,23 @@ use std::{
 };
 
 use alix::{
-    assemble::{open_store, store_path_for},
-    augment::{self, AugmentCache, Topology, TopologyOrder},
+    assemble::{self, expand_workspaces, load_decks, open_store, store_path_for, subject_paths},
+    augment::{self, AugmentCache},
     card::Card,
     config::Config,
-    deck::{Deck, DeckSettings},
-    parser,
     recent::{self, RecentDecks},
-    scheduler::Fsrs,
     serve,
-    session::{DeckInfo, Order, Session, SessionOptions},
-    store::{Store, VirtualCard},
+    session::DeckInfo,
     time::now_ms,
-    trace::{Trace, Walk},
     workspace,
 };
 use anyhow::{Context, Result, bail};
 
-use crate::{
-    LaunchArgs,
-    common::{load_decks, store_for},
-};
-
-/// The per-session pacing an instance applies to every session it builds:
-/// CLI flag > `[review]` config key > built-in default.
-#[derive(Clone, Copy)]
-struct Pacing {
-    max_new: usize,
-    limit: Option<usize>,
-}
-
-/// The result of [`expand_workspaces`]: the deck file(s) to load and the per-deck
-/// workspace directive defaults (keyed by file name).
-struct Expanded {
-    decks: Vec<PathBuf>,
-    defaults: HashMap<String, DeckSettings>,
-}
-
-/// Resolves each deck file's workspace context: a member file whose parent folder
-/// is a workspace inherits that workspace's shared directive defaults (keyed by
-/// file name); plain files pass through untagged. A review/browse target is a
-/// single deck *file* (whole-workspace review was removed), so this no longer
-/// expands a folder — it just tags the file with its workspace's directives.
-fn expand_workspaces(deck_paths: &[PathBuf]) -> Result<Expanded> {
-    let mut decks = Vec::new();
-    let mut defaults: HashMap<String, DeckSettings> = HashMap::new();
-    for path in deck_paths {
-        // A deck file inside a workspace folder inherits its shared directives.
-        if let Some(parent) = path.parent()
-            && parent.join(workspace::MANIFEST).is_file()
-            && let Ok(ws) = workspace::Workspace::load(parent)
-            && let Some(name) = path.file_name().and_then(|n| n.to_str())
-        {
-            defaults.insert(name.to_string(), ws.settings);
-        }
-        decks.push(path.clone());
-    }
-    Ok(Expanded { decks, defaults })
-}
-
-/// Resolves a per-run setting from three sources, most specific first: an
-/// explicit CLI flag, then a value declared by the loaded decks (used when
-/// they agree), then the built-in default. Decks that disagree fall back to
-/// the default with a warning.
-fn resolve<T: Copy + PartialEq>(
-    name: &str,
-    cli: Option<T>,
-    declared: impl Iterator<Item = Option<T>>,
-    default: T,
-) -> T {
-    if let Some(value) = cli {
-        return value;
-    }
-    let mut distinct: Vec<T> = Vec::new();
-    for value in declared.flatten() {
-        if !distinct.contains(&value) {
-            distinct.push(value);
-        }
-    }
-    match distinct.as_slice() {
-        [] => default,
-        [only] => *only,
-        _ => {
-            eprintln!("warning: decks disagree on `{name}`; using the default");
-            default
-        }
-    }
-}
-
-/// A review session built from an explicit set of deck paths, ready for the web
-/// frontend. Produced by [`build_review`] and consumed by [`review_serve`].
-struct ReviewBuild {
-    session: Session,
-    label: String,
-    decks: HashMap<String, DeckInfo>,
-    /// The resolved topology's name, if the session is topology-ordered, so a
-    /// frontend can fetch it from the augment cache to show the connective cue.
-    topology_name: Option<String>,
-}
-
-/// Base line number for a synthesized virtual card ([`synthesize_virtual`]) —
-/// far past any real deck's line count, so a virtual card's `line` never
-/// collides with (and so never shares a sibling group with) a real card's
-/// front line.
-pub(crate) const VIRTUAL_LINE_BASE: usize = 1_000_000;
-
-/// Synthesizes a virtual card's stored deck-format `text` into the real `Card`
-/// it stands for — the one in `parse(vc.parent, vc.text)` whose `Card::id`
-/// matches `vc.id` (a cloze block yields several sub-cards; the id picks the
-/// right hole). `subject` MUST equal `vc.parent`, or the id won't reproduce
-/// (`Card::id` hashes the subject). `line` places it far past any real deck
-/// line so it never shares a sibling group with a deck card — id-neutral, since
-/// `Card::id` ignores `line`. Returns `None` if the text can't be parsed or no
-/// card matches (defensive — impossible in practice, but no `unwrap` here).
-pub(crate) fn synthesize_virtual(
-    vc: &VirtualCard,
-    subject: &Arc<str>,
-    line: usize,
-) -> Option<Card> {
-    let mut card = parser::parse_str(subject, &vc.text)
-        .ok()?
-        .into_iter()
-        .find(|c| c.id() == vc.id)?;
-    card.line = line;
-    Some(card)
-}
-
-/// Builds a review session from explicit `deck_paths` (no interactive picker):
-/// resolves `% requires:` prerequisites, applies deck directives, builds the
-/// `Session`, and records the decks as recent. The store is borrowed (the
-/// caller owns it), so the web server can reuse one store across repeated
-/// selections.
-fn build_review(
-    deck_paths: Vec<PathBuf>,
-    pacing: Pacing,
-    config: &Config,
-    store: &Store,
-    recent: &mut RecentDecks,
-    // The picker's per-launch choices: depth, focus-drawer topology/region,
-    // the cram tick-box, and optional pacing overrides.
-    opts: &serve::SelectOptions,
-) -> Result<ReviewBuild> {
-    let topology_sel = opts.topology.as_deref();
-    let region_sel = opts.region.as_deref();
-    let depth_sel = opts.depth;
-    // A session is exactly one deck file's cards — no merging of several loose
-    // decks, and no reviewing a whole workspace at once. Workspaces are an
-    // organizing layer: review their members one at a time (the picker drills in;
-    // `alix workspace <dir>` opens that picker).
-    let [deck] = deck_paths.as_slice() else {
-        bail!("review one deck at a time (merging decks was removed)");
-    };
-    if workspace::has_decks(deck) {
-        bail!(
-            "`{}` is a folder — serve it (`alix {}`) and pick a deck inside it",
-            deck.display(),
-            deck.display()
-        );
-    }
-    // Resolve the deck's workspace context (a member file inherits its workspace's
-    // shared directives). `% requires:` prerequisites are NOT pulled in — the
-    // dependency graph gates exams, not what a review session contains.
-    let expanded = expand_workspaces(&deck_paths)?;
-    let (mut cards, deck_label, mut decks, settings) =
-        load_decks(&expanded.decks, &expanded.defaults)?;
-    // Resolve each deck's effective ask-tutor source access: a deck in a
-    // workspace takes that workspace's `source_access` override if it sets one,
-    // else the global `[ask] source_access`.
-    for info in decks.values_mut() {
-        let workspace_override = info
-            .path
-            .parent()
-            .filter(|p| workspace::is_workspace(p))
-            .and_then(workspace::manifest_source_access);
-        info.source_access = workspace_override.unwrap_or(config.ask.source_access);
-    }
-    // One deck per session, so the label is the deck's own subject.
-    let label = deck_label;
-
-    // Every card id in this deck — used to pick out *this* deck's topologies from
-    // a cache that may be shared with other decks (one store).
-    let deck_ids: std::collections::HashSet<u64> = cards.iter().map(|c| c.id()).collect();
-
-    // Merge in any AI-generated notes from the sidecar cache (`alix deck augment
-    // --target notes`) — shown with the card's own deck note on reveal. (Question
-    // variants are rotated in per-presentation by the frontends, and distractors
-    // are read when a choice question is built.)
-    let augment = AugmentCache::open(augment::augment_path_for(store.path()));
-    for card in &mut cards {
-        // Reshape first (re-renders the deck note, front, answer, mode) …
-        augment.apply_format(card);
-        // … then stack the notes-target trivia on top of the reshaped note.
-        if let Some(note) = augment.note(card.id()) {
-            card.append_note(&[note.to_string()]);
-        }
-    }
-
-    // Resolve the topology that reorders this session (if any) and project it to
-    // a session-ready order. The resolved name travels on `ReviewBuild` so the
-    // web frontend can show the "why this card follows the last" cue from the
-    // same topology.
-    let topology = resolve_topology(topology_sel, &augment, &deck_ids)?;
-    let topology_name = topology.map(|t| t.name.clone());
-    let topology_order = topology.map(|t| TopologyOrder::from_walk(&t.walk));
-
-    // `--region` focuses the session on one region of the topology — drill a
-    // weak area. SRS still picks what's due *within* that region.
-    if let Some(region_name) = region_sel {
-        let Some(topology) = topology else {
-            bail!("--region needs a topology — pass --topology, or augment one for this deck");
-        };
-        let Some(region_ids) = topology.region_cards(region_name) else {
-            bail!(
-                "no region named `{region_name}` in topology `{}`",
-                topology.name
-            );
-        };
-        let ids: std::collections::HashSet<u64> = region_ids.iter().copied().collect();
-        cards.retain(|c| ids.contains(&c.id()));
-    }
-
-    // A workspace member drills under that workspace's `alix.local.toml` pacing
-    // override (retention + retirement), else the global `[review]` config.
-    let review = config
-        .review
-        .for_workspace(deck.parent().unwrap_or_else(|| Path::new("")));
-
-    // Inject this deck's virtual (remediation) cards alongside its authored
-    // ones, so both are drilled by the same FSRS-due queue — but not under a
-    // `--region` focus: a region is a deck-topology drill, and virtual cards
-    // aren't part of any topology. `decks` has exactly this one deck's entry
-    // (one deck per session), keyed by its subject — the same string a
-    // virtual card's `parent` is set to.
-    let subject: Arc<str> = decks
-        .keys()
-        .next()
-        .map(|s| Arc::from(s.as_str()))
-        .unwrap_or_else(|| Arc::from(label.as_str()));
-    if region_sel.is_none() {
-        for (k, vc) in store
-            .virtual_cards_for(subject.as_ref())
-            .into_iter()
-            .filter(|v| !alix::session::is_retired_id(v.id, store, review.retire_after_days))
-            .filter(|v| !deck_ids.contains(&v.id)) // collision belt-and-suspenders
-            .enumerate()
-        {
-            if let Some(mut card) = synthesize_virtual(vc, &subject, VIRTUAL_LINE_BASE + k) {
-                // Reshape/note a synth card exactly as deck cards are above
-                // (§8.1) — this loop runs after that one, so it must repeat the
-                // same two steps rather than widening the earlier loop's range.
-                augment.apply_format(&mut card);
-                if let Some(note) = augment.note(card.id()) {
-                    card.append_note(&[note.to_string()]);
-                }
-                cards.push(card);
-            }
-        }
-    }
-
-    // Directives (order) come from the session's decks — the `% order:`
-    // directive, else the scheduled default (the CLI override is gone; order
-    // is authored, not launched).
-    let target_settings: Vec<&DeckSettings> = settings.iter().collect();
-    let order = resolve(
-        "order",
-        None,
-        target_settings.iter().map(|s| s.order),
-        Order::default(),
-    );
-
-    // The session depth: an explicit `--depth` / picker choice, else the deck's
-    // last-used depth (keyed by deck subject, like the rest of the deck store),
-    // else the default (Recall). The web select handler persists the resolved
-    // value back to the store so a plain Learn reopens at it.
-    let depth = depth_sel
-        .or_else(|| store.last_depth(subject.as_ref()))
-        .unwrap_or_default();
-    // Pacing: the launch's own overrides win over the instance's flag/config
-    // values; cram is purely a per-launch choice (the ▾ menu tick-box).
-    let options = SessionOptions {
-        max_new: opts.max_new.unwrap_or(pacing.max_new),
-        limit: opts.limit.or(pacing.limit),
-        cram: opts.cram,
-        order,
-        topology: topology_order,
-        retire_after_days: review.retire_after_days,
-        depth,
-    };
-    let session = Session::new(
-        cards,
-        store,
-        Box::new(Fsrs::new(review.retention)),
-        options,
-        now_ms(),
-    );
-
-    // Remember these decks for next time's picker — but only when there is
-    // actually something to review, so merely opening a deck with nothing due
-    // doesn't bump it to the top of the recent list.
-    if !session.is_finished() {
-        recent.record(&deck_paths, now_ms());
-        let _ = recent.save();
-    }
-
-    Ok(ReviewBuild {
-        session,
-        label,
-        decks,
-        topology_name,
-    })
-}
-
-/// Resolves which stored topology, if any, reorders this session: an explicit
-/// `--topology <name>` must name a cached topology (else an error), no flag with
-/// exactly one cached topology auto-uses it, and zero-or-several without a name
-/// leaves ordering to the scheduler.
-fn resolve_topology<'a>(
-    name: Option<&str>,
-    augment: &'a AugmentCache,
-    deck_ids: &std::collections::HashSet<u64>,
-) -> Result<Option<&'a Topology>> {
-    // Only this deck's topologies — a shared cache (decks sharing a store) holds
-    // others', which must not be auto-applied or named here.
-    let mine = augment.topologies_for(deck_ids);
-    match name {
-        Some(name) => match mine.into_iter().find(|t| t.name == name) {
-            Some(topology) => Ok(Some(topology)),
-            None => bail!(
-                "no topology named `{name}` is cached for this deck — run `alix deck augment <deck> --target topology`"
-            ),
-        },
-        None => Ok(match mine.as_slice() {
-            [single] => Some(*single),
-            _ => None,
-        }),
-    }
-}
-
-/// If a single trace deck was picked, returns its loaded deck — the signal to
-/// walk it (predict → verify) rather than flatten it into a card review.
-fn single_trace_to_walk(deck_paths: &[PathBuf]) -> Option<Deck> {
-    match deck_paths {
-        [path] => Deck::load(path).ok().filter(|deck| deck.is_trace()),
-        _ => None,
-    }
-}
+use crate::{LaunchArgs, common::store_for};
 
 /// Builds the browse card list from explicit `deck_paths` (no picker). Mirrors
-/// [`build_review`] for the read-only browse view: loads decks, but builds no
-/// scheduler session.
+/// [`assemble::select`]'s review path for the read-only browse view: loads
+/// decks, but builds no scheduler session.
 fn build_browse(deck_paths: Vec<PathBuf>, recent: &mut RecentDecks) -> Result<BrowseBuild> {
     // One deck file per browse — no merging loose decks or whole workspaces.
     let [deck] = deck_paths.as_slice() else {
@@ -441,14 +109,6 @@ fn generate_token() -> Result<String> {
     Ok(buf.iter().map(|b| format!("{b:02x}")).collect())
 }
 
-/// Subject → deck file path, for the web frontend's card removal.
-fn subject_paths(decks: HashMap<String, DeckInfo>) -> HashMap<String, PathBuf> {
-    decks
-        .into_iter()
-        .map(|(subject, info)| (subject, info.path))
-        .collect()
-}
-
 /// Serves the web app: everything is picked in the browser (direct deck launch
 /// was removed — the picker is the one way into a review). A `dir` argument
 /// scopes this instance to that folder as a **self-contained root**: its own
@@ -499,44 +159,9 @@ pub(crate) fn launch(args: LaunchArgs) -> Result<()> {
     // its doc); the CLI never stops it — the process exits on Ctrl-C instead.
     let server = Arc::new(serve::bind(addr)?);
     // The instance-wide session pacing: flag > `[review]` config > default.
-    let pacing = Pacing {
+    let pacing = assemble::Pacing {
         max_new: args.new.or(config.review.max_new).unwrap_or(10),
         limit: args.limit.or(config.review.limit),
-    };
-
-    // Adapts a built review session to what the server holds (session + label +
-    // subject→path map for removal, subject→`% link:` links for ask-Claude).
-    let to_build = |b: ReviewBuild| {
-        let links = b
-            .decks
-            .iter()
-            .map(|(subject, info)| (subject.clone(), info.links.clone()))
-            .collect();
-        // Subject → `% source:` project root, but only for decks whose effective
-        // source access is on — so the web tutor grounds exactly those.
-        let source_roots = b
-            .decks
-            .iter()
-            .filter(|(_, info)| info.source_access)
-            .filter_map(|(subject, info)| {
-                info.source_root.clone().map(|root| (subject.clone(), root))
-            })
-            .collect();
-        // Subject → source base, so the web can resolve a card's `% at:` citation.
-        let source_bases = b
-            .decks
-            .iter()
-            .map(|(subject, info)| (subject.clone(), info.source_base.clone()))
-            .collect();
-        serve::SessionBuild {
-            session: b.session,
-            label: b.label,
-            decks: subject_paths(b.decks),
-            links,
-            source_roots,
-            source_bases,
-            topology_name: b.topology_name,
-        }
     };
 
     // The read-only browse card builder for the picker's "Browse" action.
@@ -562,27 +187,13 @@ pub(crate) fn launch(args: LaunchArgs) -> Result<()> {
         config_path: args.config.clone(),
         pair,
         scoped,
-    };
-    let build = |paths: Vec<PathBuf>,
-                 opts: &serve::SelectOptions,
-                 store: &Store,
-                 recent: &mut RecentDecks| {
-        build_review(paths, pacing, &config, store, recent, opts).map(to_build)
-    };
-    // A single trace picked from the in-browser picker walks (predict → verify)
-    // rather than flattening to a card review.
-    let build_walk = |paths: &[PathBuf]| -> Result<Option<serve::WalkBuild>> {
-        match single_trace_to_walk(paths) {
-            Some(deck) => {
-                let trace = Trace::from_deck(&deck)?;
-                Ok(Some(serve::WalkBuild {
-                    walk: Walk::new(trace),
-                    // Opt-in AI grading of predictions (`[trace] auto_grade`).
-                    grade: config.trace.auto_grade.then(|| config.ask.clone()),
-                }))
-            }
-            None => Ok(None),
-        }
+        cfg: assemble::Cfg {
+            review: config.review,
+            ask: config.ask.clone(),
+            trace_auto_grade: config.trace.auto_grade,
+            pacing,
+            instance_store: instance_store.clone(),
+        },
     };
     // Picks the right store for whatever decks a selection resolves to: a
     // workspace member's own store, else this instance's store (`&[]` → the
@@ -598,8 +209,6 @@ pub(crate) fn launch(args: LaunchArgs) -> Result<()> {
         decks_dir,
         server,
         opts,
-        build,
-        build_walk,
         build_browse_sel,
         store_for_sel,
     )
@@ -690,10 +299,6 @@ fn print_qr(text: &str) {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
-    use alix::answer::Mode;
-
     use super::*;
 
     #[test]
@@ -753,26 +358,6 @@ mod tests {
             return;
         }
         assert_eq!(abbreviate_home(&outside), outside.display().to_string());
-    }
-
-    #[test]
-    fn single_trace_to_walk_only_for_a_lone_trace_deck() {
-        let dir = tempfile::tempdir().unwrap();
-        let trace = dir.path().join("t.txt");
-        std::fs::write(
-            &trace,
-            "% trace: how it works\n% source: .\n\n# q\n\tpoint\n\t% at: 1\n",
-        )
-        .unwrap();
-        let fact = dir.path().join("f.txt");
-        std::fs::write(&fact, "# q\n\ta\n").unwrap();
-
-        // A lone trace → walk it.
-        assert!(single_trace_to_walk(std::slice::from_ref(&trace)).is_some());
-        // A lone facts deck → review, not walk.
-        assert!(single_trace_to_walk(std::slice::from_ref(&fact)).is_none());
-        // A trace alongside other decks isn't a lone trace → review/merge.
-        assert!(single_trace_to_walk(&[trace, fact]).is_none());
     }
 
     #[test]
@@ -853,239 +438,5 @@ mod tests {
         let mut recent = RecentDecks::load(dir.path().join("recent.json"));
         let err = build_browse(vec![ws], &mut recent).err().unwrap();
         assert!(format!("{err}").contains("workspace"), "{err}");
-    }
-
-    #[test]
-    fn expand_workspaces_member_file_inherits_workspace_settings() {
-        let dir = tempfile::tempdir().unwrap();
-        let ws = dir.path().join("eng");
-        std::fs::create_dir(&ws).unwrap();
-        std::fs::write(ws.join("a.txt"), "# a\n\tb\n").unwrap();
-        std::fs::write(ws.join("alix.toml"), "[defaults]\ndirection = \"both\"\n").unwrap();
-
-        // A member picked as a bare file (a subset selection) still inherits the
-        // workspace's directives.
-        let exp = expand_workspaces(&[ws.join("a.txt")]).unwrap();
-        assert_eq!(1, exp.decks.len());
-        assert_eq!(
-            Some(alix::card::Direction::Both),
-            exp.defaults.get("a.txt").unwrap().direction
-        );
-    }
-
-    /// The default per-session pacing for a `build_review` test: the built-in
-    /// `max_new`, no session cap.
-    fn test_pacing() -> Pacing {
-        Pacing {
-            max_new: 10,
-            limit: None,
-        }
-    }
-
-    /// Inserts a virtual (remediation) card for deck `subject` into `store` the
-    /// way the substrate does — sidecar content keyed by its `Card::id`, plus a
-    /// fresh schedule seeded at `t=0` (so it's due, not treated as unseen).
-    fn insert_virtual_card(store: &mut Store, subject: &str) {
-        use alix::store::VirtualKind;
-        let text = "# virtual front\n\tvirtual back\n".to_string();
-        let id = parser::parse_str(subject, &text).unwrap()[0].id();
-        store.insert_virtual(VirtualCard {
-            id,
-            kind: VirtualKind::Remediation,
-            parent: subject.to_string(),
-            text,
-            created_ms: 0,
-        });
-        store.get_or_insert(id, 0);
-    }
-
-    #[test]
-    fn build_review_rejects_a_folder_of_decks() {
-        let dir = tempfile::tempdir().unwrap();
-        let ws = dir.path().join("animals");
-        std::fs::create_dir(&ws).unwrap();
-        let member = ws.join("m.txt");
-        std::fs::write(&member, "# q\n\ta\n").unwrap();
-        // Pin the store explicitly — a bare `None` would fall through to the
-        // real global data dir.
-        let store = store_for(
-            std::slice::from_ref(&member),
-            Some(dir.path().join("store.json")),
-        )
-        .unwrap();
-        let config = Config::default();
-        let mut recent = RecentDecks::load(dir.path().join("recent.json"));
-
-        let err = build_review(
-            vec![ws],
-            test_pacing(),
-            &config,
-            &store,
-            &mut recent,
-            &serve::SelectOptions::default(),
-        )
-        .err()
-        .expect("a folder of decks is not a reviewable deck");
-
-        assert!(format!("{err}").contains("is a folder"), "{err}");
-    }
-
-    #[test]
-    fn build_review_injects_a_decks_virtual_cards() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("rust.txt");
-        std::fs::write(&path, "# q1\n\ta1\n").unwrap();
-        // Not a workspace, so pass an explicit `--store`-style override — a
-        // bare `None` here would fall through to the real global data dir.
-        let store_path = Some(dir.path().join("store.json"));
-        let mut store = store_for(std::slice::from_ref(&path), store_path).unwrap();
-        insert_virtual_card(&mut store, "rust.txt");
-
-        let config = Config::default();
-        let mut recent = RecentDecks::load(dir.path().join("recent.json"));
-        let build = build_review(
-            vec![path],
-            test_pacing(),
-            &config,
-            &store,
-            &mut recent,
-            &serve::SelectOptions::default(),
-        )
-        .unwrap();
-        // The deck's one (new) card, plus the injected due virtual card.
-        assert_eq!(2, build.session.initial_size);
-    }
-
-    #[test]
-    fn region_focus_excludes_virtual_cards() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("rust.txt");
-        std::fs::write(&path, "# q1\n\ta1\n").unwrap();
-        // Not a workspace, so pass an explicit `--store`-style override — a
-        // bare `None` here would fall through to the real global data dir.
-        let store_path = Some(dir.path().join("store.json"));
-        let mut store = store_for(std::slice::from_ref(&path), store_path).unwrap();
-
-        let deck = Deck::load(&path).unwrap();
-        let card_id = deck.cards[0].id();
-
-        // Cache a one-region topology covering this deck's one card.
-        let mut cache = AugmentCache::open(augment::augment_path_for(store.path()));
-        cache.add_topology(Topology {
-            name: "auto".to_string(),
-            principle: "test".to_string(),
-            edges: vec![],
-            walk: vec![card_id],
-            regions: vec![augment::TopologyRegion {
-                name: "r1".to_string(),
-                cards: vec![card_id],
-            }],
-        });
-        cache.save().unwrap();
-
-        // A matching virtual card for this deck.
-        insert_virtual_card(&mut store, "rust.txt");
-
-        let config = Config::default();
-        let mut recent = RecentDecks::load(dir.path().join("recent.json"));
-        let build = build_review(
-            vec![path],
-            test_pacing(),
-            &config,
-            &store,
-            &mut recent,
-            &serve::SelectOptions {
-                region: Some("r1".to_string()),
-                ..Default::default()
-            },
-        )
-        .unwrap();
-        // Only the region's one real card — a `--region` focus is a
-        // deck-topology drill, and virtual cards aren't part of any topology.
-        assert_eq!(1, build.session.initial_size);
-    }
-
-    #[test]
-    fn a_format_cache_entry_applies_to_a_synthesized_virtual_card() {
-        // A synthesized virtual card has a real `Card::id`, so an existing
-        // format-cache entry for that id applies with no change to
-        // `apply_format` itself — the "free" half of augment-for-virtuals (§8.1).
-        let subject: Arc<str> = Arc::from("rust.txt");
-        let text = "# List the parts\n\tA, B, C\n".to_string();
-        let id = parser::parse_str(&subject, &text).unwrap()[0].id();
-        let vc = VirtualCard {
-            id,
-            kind: alix::store::VirtualKind::Remediation,
-            parent: subject.to_string(),
-            text,
-            created_ms: 0,
-        };
-        let mut synth = synthesize_virtual(&vc, &subject, VIRTUAL_LINE_BASE).unwrap();
-
-        let mut cache =
-            AugmentCache::open(std::env::temp_dir().join("nonexistent-augment-virtual.json"));
-        cache.set_format(
-            id,
-            augment::Format {
-                front: Some("Name the parts".to_string()),
-                back: vec!["A".to_string(), "B".to_string(), "C".to_string()],
-                note: None,
-                mode: Some(Mode::LineByLine),
-            },
-        );
-        cache.apply_format(&mut synth);
-
-        assert_eq!("Name the parts", synth.front);
-        assert_eq!(["A", "B", "C"], *synth.back_for_display());
-        assert_eq!(id, synth.id(), "reshaping must not change identity");
-    }
-
-    #[test]
-    fn build_review_applies_a_cached_format_to_an_injected_virtual_card() {
-        // The display half of augment-for-virtuals (§8.1): `build_review` must
-        // reshape an injected synth card the same way it reshapes deck cards.
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("rust.txt");
-        std::fs::write(&path, "# q1\n\ta1\n").unwrap();
-        // Not a workspace, so pass an explicit `--store`-style override — a
-        // bare `None` here would fall through to the real global data dir.
-        let store_path = Some(dir.path().join("store.json"));
-        let mut store = store_for(std::slice::from_ref(&path), store_path).unwrap();
-        insert_virtual_card(&mut store, "rust.txt");
-        let virtual_id =
-            parser::parse_str("rust.txt", "# virtual front\n\tvirtual back\n").unwrap()[0].id();
-
-        let mut cache = AugmentCache::open(augment::augment_path_for(store.path()));
-        cache.set_format(
-            virtual_id,
-            augment::Format {
-                front: Some("Reshaped virtual front".to_string()),
-                back: vec!["Reshaped virtual back".to_string()],
-                note: None,
-                mode: None,
-            },
-        );
-        cache.save().unwrap();
-
-        let config = Config::default();
-        let mut recent = RecentDecks::load(dir.path().join("recent.json"));
-        let build = build_review(
-            vec![path],
-            test_pacing(),
-            &config,
-            &store,
-            &mut recent,
-            &serve::SelectOptions::default(),
-        )
-        .unwrap();
-
-        let synth = build
-            .session
-            .cards()
-            .iter()
-            .find(|c| c.id() == virtual_id)
-            .expect("the injected virtual card should be in the session");
-        assert_eq!("Reshaped virtual front", synth.front);
-        assert_eq!(["Reshaped virtual back"], *synth.back_for_display());
     }
 }

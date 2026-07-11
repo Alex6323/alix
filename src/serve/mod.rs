@@ -37,6 +37,7 @@ use tiny_http::{Method, Server};
 
 use crate::{
     answer::{TypedResult, grade_lines_ordered, grade_lines_unordered},
+    assemble::{self, SessionBuild},
     augment::{self, AugmentCache},
     card::Card,
     config::{
@@ -47,10 +48,10 @@ use crate::{
     depth::Depth,
     doctor, exam, generate, import,
     recent::RecentDecks,
-    session::{Session, now_ms},
+    session::now_ms,
     share,
     store::{self, Store},
-    trace::{self, SourceBase, Walk},
+    trace::{self, Walk},
 };
 
 const REVIEW_HTML: &str = include_str!("../../assets/web/review.html");
@@ -169,6 +170,10 @@ pub struct ReviewOptions {
     /// `alix`), whose `/api/decks` re-resolves the configured dir on every
     /// fetch so a `decks_dir` edit takes effect without a restart.
     pub scoped: bool,
+    /// Everything [`assemble::select`] needs to turn a deck-selection into a
+    /// review session or a trace walk (review/ask config, trace auto-grade,
+    /// pacing, this instance's store).
+    pub cfg: assemble::Cfg,
 }
 
 /// How this instance is reached, for the pairing sheet. Built by the
@@ -176,36 +181,6 @@ pub struct ReviewOptions {
 pub struct PairInfo {
     pub url: String,
     pub lan: bool,
-}
-
-/// A review session ready to serve: the session, its header label, the
-/// subject → deck file path map used for card removal, and the subject → deck
-/// reference links (`% link:`) offered to ask-Claude. Produced by the caller's
-/// builder closure when decks are chosen (on the CLI or in the browser picker).
-pub struct SessionBuild {
-    pub session: Session,
-    pub label: String,
-    pub decks: HashMap<String, PathBuf>,
-    pub links: HashMap<String, Vec<String>>,
-    /// Subject → its deck's `% source:` project root, for the grounded ask-tutor
-    /// (`[ask] source_access`). Only decks with a local source appear.
-    pub source_roots: HashMap<String, PathBuf>,
-    /// Subject → its deck's source base, for resolving a card's `% at:` citation
-    /// excerpt on reveal.
-    pub source_bases: HashMap<String, SourceBase>,
-    /// The resolved topology name when this session is topology-ordered, so the
-    /// server can show the connective cue from that topology. `None` otherwise.
-    pub topology_name: Option<String>,
-}
-
-/// A trace walk ready to serve, built when a single trace deck is picked from the
-/// review server's deck-selection screen. The walk is self-graded (no live
-/// `--grade`), matching the terminal picker's trace → walk.
-pub struct WalkBuild {
-    pub walk: Walk,
-    /// AI-grades each prediction when set (`[trace] auto_grade` + the ask
-    /// config); `None` = self-graded.
-    pub grade: Option<AskConfig>,
 }
 
 /// A browse card list ready to serve, with its label and deck paths.
@@ -229,10 +204,9 @@ pub fn bind(addr: SocketAddr) -> Result<Server> {
 /// Serves review on the already-bound `server` until the process is stopped
 /// (binding happens at the call site, *before* the URL is announced — so a
 /// port clash errors before any success-looking output), opening on the
-/// in-browser deck-selection screen; picking decks (`POST /api/select`)
-/// calls `build` to construct a session in place.
-/// `build` borrows the shared `store` and `recent`, so all sessions write one
-/// history and update the recent-decks list, exactly like the CLI.
+/// in-browser deck-selection screen; picking decks (`POST /api/select`) calls
+/// [`assemble::select`] to construct a session (or a trace walk) in place,
+/// using `opts.cfg`.
 ///
 /// `server` is shared (`Arc`) so a caller can stop the loop from outside it:
 /// call `.unblock()` on a clone of the same `Arc<Server>` to end
@@ -242,22 +216,12 @@ pub fn bind(addr: SocketAddr) -> Result<Server> {
 /// exits on Ctrl-C — but `tests/api.rs`'s round-trip harness uses it to run this
 /// real loop against a temp store + fixture deck and tear it down deterministically
 /// after each test.
-#[expect(clippy::too_many_arguments)] // each is a distinct, named server input
 pub fn run_review(
     mut store: Store,
     mut recent: RecentDecks,
     mut decks_dir: PathBuf,
     server: Arc<Server>,
     opts: ReviewOptions,
-    mut build: impl FnMut(
-        Vec<PathBuf>,
-        &SelectOptions,
-        &Store,
-        &mut RecentDecks,
-    ) -> Result<SessionBuild>,
-    // Builds a walk when the picked decks are a single trace (else `None`, so the
-    // caller flattens to a review); mirrors the terminal picker's trace → walk.
-    mut build_walk: impl FnMut(&[PathBuf]) -> Result<Option<WalkBuild>>,
     // Builds a read-only browse card list from the picked decks (the picker's
     // "Browse" action; the page navigates to `/browse`, which this server hosts).
     mut build_browse: impl FnMut(Vec<PathBuf>, &mut RecentDecks) -> Result<CardsBuild>,
@@ -281,6 +245,7 @@ pub fn run_review(
         config_path,
         pair,
         scoped,
+        cfg,
     } = opts;
     let keys = ReviewKeys::from(&bindings);
     let picker_keys = PickerKeysDto::from(&picker_keys);
@@ -456,8 +421,12 @@ pub fn run_review(
                             respond_status(request, 400);
                             continue;
                         }
-                        match build_walk(&paths) {
-                            Ok(Some(wb)) => {
+                        // `select` reborrows `paths` for its own walk-vs-review
+                        // classification, so keep a copy for the recent-decks
+                        // record below (only taken on an unfinished review).
+                        let recorded_paths = paths.clone();
+                        match assemble::select(paths, &mut store, &cfg, &opts) {
+                            Ok(assemble::Selected::Walk(wb)) => {
                                 let w = Walking::new(wb.walk, wb.grade);
                                 let dto = walk_dto(&w);
                                 walking = Some(w);
@@ -465,36 +434,24 @@ pub fn run_review(
                                 examining = None;
                                 respond_json(request, &dto);
                             }
-                            Ok(None) => match build(paths, &opts, &store, &mut recent) {
-                                Ok(b) => {
-                                    // Remember the resolved depth for this deck so a
-                                    // plain Learn next time reopens at it (keyed by
-                                    // deck subject, like the rest of the deck store).
-                                    let resolved = b.session.depth();
-                                    let subject = b.decks.keys().next().cloned();
-                                    let mut r = Reviewing::new(b);
-                                    r.open_augment(store.path());
-                                    r.rotate_variant();
-                                    if let Some(subject) = subject {
-                                        store.set_last_depth(&subject, resolved);
-                                        if let Err(e) = store.save() {
-                                            eprintln!("warning: could not save progress: {e}");
-                                        }
-                                    }
-                                    reviewing = Some(r);
-                                    walking = None;
-                                    respond_json(
-                                        request,
-                                        &review_state(reviewing.as_ref(), &store),
-                                    );
+                            Ok(assemble::Selected::Review(b)) => {
+                                // Remember these decks for next time's picker — but
+                                // only when there is actually something to review, so
+                                // merely opening a deck with nothing due doesn't bump
+                                // it to the top of the recent list.
+                                if !b.session.is_finished() {
+                                    recent.record(&recorded_paths, now_ms());
+                                    let _ = recent.save();
                                 }
-                                Err(e) => {
-                                    eprintln!("warning: could not load the selected decks: {e}");
-                                    respond_status(request, 400);
-                                }
-                            },
+                                let mut r = Reviewing::new(b);
+                                r.open_augment(store.path());
+                                r.rotate_variant();
+                                reviewing = Some(r);
+                                walking = None;
+                                respond_json(request, &review_state(reviewing.as_ref(), &store));
+                            }
                             Err(e) => {
-                                eprintln!("warning: could not load the selected trace: {e}");
+                                eprintln!("warning: could not load the selected decks: {e}");
                                 respond_status(request, 400);
                             }
                         }
