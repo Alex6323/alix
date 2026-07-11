@@ -79,7 +79,7 @@ and the timeout.
 ## Make this a card
 
 During an Ask exchange, if the tutor's reply answers a question about a concept
-you'd like to drill, click **Make this a card** (or press `Ctrl-M` in the panel).
+you'd like to drill, click **Make this a card**.
 The tutor distills the conversation into a draft front/back for you to edit.
 Once you're satisfied, click **Add** to land it as a new card on the current deck.
 
