@@ -11,6 +11,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 ### Fixed
+- **The trace walk screen now shares the session chrome.** It still rendered
+  pre-re-skin chrome: no ☰ menu in the header, and a footer that packed
+  Missed it/Partly/Got it/Ask/Leave into one centered row with a dead
+  `0✓ 0◐ 0✗` per-checkpoint counter (that readout was deliberately removed
+  from review's footer, but the walk kept its own copy). The walk now gets
+  the ☰ menu (Ask Tutor only — Remove/Promote don't apply to a checkpoint),
+  a zoned footer (Leave left, grade actions center, Ask tutor right, matching
+  review), and the counter is gone.
 
 ## [0.4.0] - 2026-07-11
 

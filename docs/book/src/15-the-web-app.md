@@ -88,12 +88,12 @@ multiple-choice pick — a new card's attempt-first on-ramp, or a genuine
 Recognize-session question (tap an option; a correct pick offers the quiet "I
 guessed" undo). Controls are big tap targets and
 follow *your* configured key bindings (the page reads them from the server). The
-**☰ menu** is context-aware: during review it holds **Ask Tutor**; on the
-deck picker, the library actions above plus **keyboard shortcuts**, **refresh
-decks**, and **about** — with **Theme…** and **Draw answers** (a per-device
-toggle, see below) in both. The ⟳ button re-reads your config, so a changed
-`decks_dir` takes effect without restarting — scoped `alix <dir>` instances
-stay pinned to their folder.
+**☰ menu** is context-aware: during review or a trace walk it holds **Ask
+Tutor**; on the deck picker, the library actions above plus **keyboard
+shortcuts**, **refresh decks**, and **about** — with **Theme…** and **Draw
+answers** (a per-device toggle, see below) in both. The ⟳ button re-reads
+your config, so a changed `decks_dir` takes effect without restarting —
+scoped `alix <dir>` instances stay pinned to their folder.
 
 The AI features come along too: the [tutor](10-tutor.md), the
 [AI exam](12-the-ai-exam.md), and [trace walks](13-trace-decks.md) all have a web

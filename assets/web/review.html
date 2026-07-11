@@ -3156,11 +3156,9 @@ function renderWalk() {
   deckEl.textContent = w.description || "trace";
   deckEl.title = w.description || "";
   histEl.textContent = "";
-  // Running tally in the score slot: got · partly · missed
-  let g = 0, p = 0, m = 0;
-  (w.path || []).forEach(h => { if (h.delta === "passed") g++; else if (h.delta === "partly") p++; else if (h.delta === "failed") m++; });
-  scoreEl.innerHTML = `<b>${g}✓</b> <i style="color:var(--warn)">${p}◐</i> <s>${m}✗</s>`;
-  menuWrap.style.display = "none";
+  scoreEl.innerHTML = ""; // the per-review score readout is intentionally omitted (noise) — matches review
+  menuWrap.style.display = w.phase === "done" ? "none" : "";
+  setMenuContext("walk");
 
   if (walkConfirmingLeave) { renderWalkLeaveConfirm(); return; }
   if (asking) {
@@ -3171,7 +3169,9 @@ function renderWalk() {
   if (w.phase === "predict")  renderWalkPredict();
   else if (w.phase === "reveal") renderWalkReveal();
   else if (w.phase === "done")   renderWalkDone();
-  chip("Leave", "", walkBackToDecks, "esc");
+  // Pinned bottom-left while the walk is active, like renderLegend(); on the
+  // "done" screen it sits centered with the other actions, like renderSummary().
+  chip("Leave", "", walkBackToDecks, "esc", w.phase === "done" ? undefined : legendLeft);
 }
 
 function renderWalkPredict() {
@@ -3252,7 +3252,7 @@ function renderWalkReveal() {
 function renderWalkRevealActions() {
   // Self-grade only — no live-grade path (Walking::new is always called with None).
   WALK_DELTAS.forEach(d => chip(d.label, d.cls, () => walkGrade(d.delta), label(d.keys())));
-  chip("Ask", "ask", openAsk, label(KEYS.ask) || "?");
+  chip("Ask tutor", "ask", openAsk, label(KEYS.ask) || "?", legendRight); // pinned bottom-right, like review
 }
 
 function renderWalkDone() {
@@ -3511,7 +3511,13 @@ document.getElementById("kebab").addEventListener("click", (e) => { e.stopPropag
 document.getElementById("kebab").addEventListener("mousedown", (e) => e.preventDefault());
 menu.addEventListener("mousedown", (e) => e.preventDefault());
 menu.addEventListener("click", (e) => e.stopPropagation());
-document.getElementById("mAsk").addEventListener("click", () => { menu.classList.remove("open"); if (isAnswered()) openAsk(); });
+document.getElementById("mAsk").addEventListener("click", () => {
+  menu.classList.remove("open");
+  // Mirrors the footer/keyboard availability: a walk offers the tutor only once
+  // a checkpoint is revealed (nothing to ask about while still predicting).
+  if (walkData) { if (walkData.phase === "reveal") openAsk(); }
+  else if (isAnswered()) openAsk();
+});
 document.getElementById("mRemove").addEventListener("click", () => { menu.classList.remove("open"); remove(); });
 document.getElementById("mPromote").addEventListener("click", () => { menu.classList.remove("open"); promote(); });
 const mDraw = document.getElementById("mDraw");
@@ -3864,10 +3870,14 @@ function openShortcuts() {
   );
 }
 
-// Show the right menu items for the current screen (picker vs review).
+// Show the right menu items for the current screen (picker vs review vs walk).
 function setMenuContext(ctx) {
   document.querySelectorAll("#menu .m-picker").forEach((b) => { b.style.display = ctx === "picker" ? "" : "none"; });
-  document.querySelectorAll("#menu .m-review").forEach((b) => { b.style.display = ctx === "review" ? "" : "none"; });
+  // Ask Tutor is the one .m-review item that also makes sense mid-walk; the
+  // rest (Remove card, Promote) are per-deck-card actions a trace checkpoint
+  // doesn't have, so they get their own narrower checks below.
+  document.querySelectorAll("#menu .m-review").forEach((b) => { b.style.display = (ctx === "review" || ctx === "walk") ? "" : "none"; });
+  document.getElementById("mRemove").style.display = ctx === "review" ? "" : "none";
   // Promote is a review action, but only while the current card is virtual
   // (a remediation card) — narrower than the other .m-review items, so it
   // gets its own check on top of the context toggle.
