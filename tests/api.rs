@@ -722,6 +722,10 @@ fn grading_a_workspace_member_writes_the_workspace_store_not_the_instance_store(
         ws_store.exists(),
         "the workspace's own progress.json must receive the grade write"
     );
+    assert!(
+        !guard.dir().join("store.json").exists(),
+        "the instance store must not receive a workspace member's progress"
+    );
 }
 
 #[test]
