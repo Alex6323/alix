@@ -23,6 +23,9 @@ PLAN.md
 /e2e/.tmp/
 /e2e/test-results/
 /e2e/playwright-report/
+# e2e/shots/capture.cjs's own scratch copies of ~/alix-demo and ~/alix-kids
+# (never the originals — see the script's header comment).
+/e2e/shots/.tmp/
 # A progress store is per-run state, never a fixture — the suite must start
 # from a fresh (no store) deck to exercise the never-seen/acquire path.
 /e2e/fixtures/decks/**/progress.json

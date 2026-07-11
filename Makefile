@@ -6,7 +6,7 @@
 # toolchain — `+nightly` is handled by rustup before cargo sees it — which is
 # why these live in a Makefile rather than .cargo/config.toml.)
 
-.PHONY: build test lint lint-js fmt fmt-check fmt-roadmap check ci coverage coverage-lcov eval run serve book site slides install clean sdd-clean heartbeat check-backends e2e
+.PHONY: build test lint lint-js fmt fmt-check fmt-roadmap check ci coverage coverage-lcov eval run serve book site slides install clean sdd-clean heartbeat check-backends e2e shots
 
 # Compile the workspace.
 build:
@@ -152,6 +152,19 @@ e2e:
 	npm --prefix e2e ci
 	npx --prefix e2e playwright install --with-deps chromium || npx --prefix e2e playwright install chromium
 	npx --prefix e2e playwright test --config=e2e/playwright.config.ts
+
+# Regenerate the landing-page carousel screenshots (site/img/shot-*.png) from
+# a fresh copy of ~/alix-demo and ~/alix-kids — never the originals directly
+# (see e2e/shots/capture.cjs's own header). Makes real Claude calls (deck
+# augmentation, the tutor, the exam): a few minutes, and needs the `claude`
+# CLI logged in. Not part of `make e2e`/CI — run it deliberately, around a
+# release, when the app's look has changed enough that the carousel is
+# stale. `make shots ONLY=6` re-shoots one slide (comma-separated for
+# several); ARGS="--fresh" forces a clean re-copy of the demo/kids dirs.
+shots:
+	npm --prefix e2e ci
+	npx --prefix e2e playwright install chromium
+	node e2e/shots/capture.cjs $(if $(ONLY),--only=$(ONLY)) $(ARGS)
 
 # Local, gitignored maintainer-only targets (e.g. wish-triage). The leading `-`
 # makes this a silent no-op for anyone whose tree doesn't have the file.
