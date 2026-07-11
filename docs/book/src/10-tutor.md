@@ -75,3 +75,20 @@ denied. That means a malicious page behind a deck link can't make the tutor run
 shell commands or touch your files. Both the permission mode and the allowlist live
 in the `[ask]` section of the config, along with the command, a `--model` override,
 and the timeout.
+
+## Make this a card
+
+During an Ask exchange, if the tutor's reply answers a question about a concept
+you'd like to drill, click **Make this a card** (or press `Ctrl-M` in the panel).
+The tutor distills the conversation into a draft front/back for you to edit.
+Once you're satisfied, click **Add** to land it as a new card on the current deck.
+
+The card is **virtual** until you promote it to the deck file; it lives in the
+review progress store but doesn't yet appear in the `.txt` deck. You drill it like
+any other card, building up history. When you're ready to make it permanent, the
+**Promote** button (or `p` key, visible on the card's review screen) writes it to
+the deck file at the end of the session, so future runs see it.
+
+This is an **adult-review feature only**; it's not available in the kids interface.
+If the tutor's draft can't be parsed as a valid front/back pair, `alix` reports the
+error plainly rather than inventing a card, so you can ask for a clearer format.

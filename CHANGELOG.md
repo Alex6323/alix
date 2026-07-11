@@ -17,6 +17,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The placeholder **"Fun" kids theme** — superseded by the three real kids
   themes above.
 
+- **Tutor: make this a card.** In a review exchange, "Make this a card" asks the
+  tutor to distill the conversation into a draft front/back; you edit it, then Add
+  lands it as a free-standing card on the current deck, drilled like any other and
+  promotable to the deck file. Adult review only; a non-parseable draft errors
+  rather than inventing a card.
+
 ### Changed
 
 ### Fixed
