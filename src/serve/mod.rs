@@ -1181,7 +1181,7 @@ pub fn run_review(
                         }
                         // No status-carrying JSON responder exists yet (only
                         // `respond_json`, always 200, and `respond_status`, no
-                        // body) — 200 here, not the 201 a "created" response
+                        // body): 200 here, not the 201 a "created" response
                         // would ideally carry. Documented as such in API.md.
                         respond_json(request, &CreateCardResp { id: id.to_string() });
                     }
