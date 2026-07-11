@@ -352,6 +352,16 @@ pub(super) struct AskDto {
     pub(super) thinking: bool,
     pub(super) status: Option<String>,
     pub(super) error: Option<String>,
+    /// The last card drafted from the conversation (`AskAction::DraftCard`),
+    /// until the subject changes.
+    pub(super) draft: Option<DraftCardDto>,
+}
+
+/// A card the tutor drafted from the conversation, before the learner edits it.
+#[derive(Debug, Clone, Serialize)]
+pub(super) struct DraftCardDto {
+    pub(super) front: String,
+    pub(super) back: Vec<String>,
 }
 
 /// The ask-tutor's model and effort, shown in the panel so it's clear which

@@ -647,6 +647,7 @@ fn askdto_populated_wire_shape() {
         thinking: true,
         status: Some("asking claude".to_string()),
         error: None,
+        draft: None,
     };
     pin(
         "AskDto.populated",
@@ -655,7 +656,8 @@ fn askdto_populated_wire_shape() {
             "transcript": [{"q": "why one owner?", "a": "so drops are deterministic"}],
             "thinking": true,
             "status": "asking claude",
-            "error": null
+            "error": null,
+            "draft": null
         }),
     );
 }
@@ -667,6 +669,7 @@ fn askdto_empty_wire_shape() {
         thinking: false,
         status: None,
         error: None,
+        draft: None,
     };
     pin(
         "AskDto.empty",
@@ -675,7 +678,8 @@ fn askdto_empty_wire_shape() {
             "transcript": [],
             "thinking": false,
             "status": null,
-            "error": null
+            "error": null,
+            "draft": null
         }),
     );
 }

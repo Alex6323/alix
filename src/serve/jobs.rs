@@ -80,6 +80,22 @@ pub(super) enum Purpose {
     Question(String),
     /// Condense the conversation into note lines appended to the deck file.
     Condense,
+    /// Distill the conversation into one draft card, surfaced on the ask DTO.
+    DraftCard,
+}
+
+/// What a review-tutor call should do with its turn.
+pub(super) enum AskAction {
+    /// Answer a question; the text is recorded in the transcript on success.
+    Question(String),
+    /// Condense the conversation into note lines appended to the deck.
+    Condense,
+    /// Distill the conversation into one draft card, surfaced on the ask DTO.
+    // Only a test constructs this variant so far (the HTTP endpoint lands in
+    // Task 5/6); `#[expect]` would be spuriously unfulfilled in the test build,
+    // where it's no longer dead, so this stays a plain `#[allow]`.
+    #[allow(dead_code)]
+    DraftCard,
 }
 
 /// The ask-Claude tutor's state, shared by a review session and a trace walk: the
@@ -96,6 +112,9 @@ pub(super) struct Ask {
     /// session, so Claude keeps the full context).
     pub(super) subject: Option<u64>,
     pub(super) pending: Option<Pending>,
+    /// The last card drafted from the conversation (`AskAction::DraftCard`),
+    /// surfaced on the ask DTO until the subject changes.
+    pub(super) draft: Option<ask::DraftCard>,
 }
 
 impl Ask {
@@ -105,6 +124,7 @@ impl Ask {
             transcript: Vec::new(),
             subject: None,
             pending: None,
+            draft: None,
         }
     }
 
@@ -113,6 +133,7 @@ impl Ask {
     fn align(&mut self, subject: Option<u64>) {
         if self.subject != subject {
             self.transcript.clear();
+            self.draft = None;
             self.subject = subject;
         }
     }
@@ -130,13 +151,17 @@ impl Ask {
             thinking: self.pending.is_some(),
             status,
             error,
+            draft: self.draft.as_ref().map(|d| DraftCardDto {
+                front: d.front.clone(),
+                back: d.back.clone(),
+            }),
         }
     }
 
-    /// Starts a question about `card` (or, with `question: None`, condenses the
-    /// conversation into note lines). `links`/`root` ground the tutor exactly as a
-    /// review does. Returns `false` (no-op) if a call is already pending or a
-    /// condense has nothing to summarize.
+    /// Starts a call about `card`: a question, a condense-into-note, or a
+    /// draft-a-card distillation (`action`). `links`/`root` ground the tutor
+    /// exactly as a review does. Returns `false` (no-op) if a call is already
+    /// pending, or a condense/draft has nothing to work from.
     #[expect(clippy::too_many_arguments)] // each is a distinct, named tutor input
     fn start(
         &mut self,
@@ -146,15 +171,18 @@ impl Ask {
         links: &[String],
         root: Option<&Path>,
         frozen: Option<&str>,
-        question: Option<String>,
+        action: AskAction,
     ) -> bool {
         if self.pending.is_some() {
             return false;
         }
         // A new subject starts a fresh visible transcript (and a subject-scoped
-        // condense), even though the CLI conversation continues.
+        // condense/draft), even though the CLI conversation continues.
         self.align(Some(card.id()));
-        if question.is_none() && self.transcript.is_empty() {
+        // nothing to condense or draft without a transcript
+        if matches!(action, AskAction::Condense | AskAction::DraftCard)
+            && self.transcript.is_empty()
+        {
             return false;
         }
         let run_cfg = match root {
@@ -171,8 +199,8 @@ impl Ask {
         let keeps_session = crate::backend::backend_for(&run_cfg)
             .map(|b| b.supports_session())
             .unwrap_or(false);
-        let (prompt, purpose) = match question {
-            Some(q) => {
+        let (prompt, purpose) = match action {
+            AskAction::Question(q) => {
                 let prompt = if keeps_session {
                     ask::question_prompt(card, audience, links, &q, !self.cli.started, root, frozen)
                 } else {
@@ -188,9 +216,13 @@ impl Ask {
                 };
                 (prompt, Purpose::Question(q))
             }
-            None => (
+            AskAction::Condense => (
                 ask::condense_prompt(card, &self.transcript),
                 Purpose::Condense,
+            ),
+            AskAction::DraftCard => (
+                ask::draft_card_prompt(card, &self.transcript),
+                Purpose::DraftCard,
             ),
         };
         let rx = ask::spawn(run_cfg, prompt, args);
@@ -259,6 +291,16 @@ impl Ask {
                 match save(&pending.card, &notes) {
                     Ok(()) => (Some("note saved".to_string()), None),
                     Err(e) => (None, Some(e)),
+                }
+            }
+            (Reply::Answer(text), Purpose::DraftCard) => {
+                self.cli.started = true;
+                match ask::parse_drafted_card(&text) {
+                    Ok(card) => {
+                        self.draft = Some(card);
+                        (Some("card drafted".to_string()), None)
+                    }
+                    Err(e) => (None, Some(e.to_string())),
                 }
             }
             // Don't resume a session in an unknown state; the next question starts
@@ -339,16 +381,16 @@ impl Reviewing {
         self.ask.dto(status, error)
     }
 
-    /// Starts an ask-Claude call about the current card. `question` is the text
-    /// to ask; `None` condenses the conversation into deck notes instead. Returns
+    /// Starts an ask-Claude call about the current card: a question, a
+    /// condense-into-note, or a draft-a-card distillation (`action`). Returns
     /// `false` (no-op) if a call is already pending, nothing is reviewable, or
-    /// there is nothing to condense. Grounds the tutor in the card's deck source
-    /// when that deck opted into `[ask] source_access` (`source_roots`).
+    /// there is nothing to condense/draft. Grounds the tutor in the card's deck
+    /// source when that deck opted into `[ask] source_access` (`source_roots`).
     pub(super) fn start_ask(
         &mut self,
         cfg: &AskConfig,
         audience: Audience,
-        question: Option<String>,
+        action: AskAction,
     ) -> bool {
         let Some(card) = self.session.current().cloned() else {
             return false;
@@ -376,7 +418,7 @@ impl Reviewing {
         // model to reply `SOURCE_NOT_FOUND` verbatim — a round trip that spends
         // real latency (and a chance of the model paraphrasing) to echo a
         // constant. Answer it here instead: deterministic wording, zero cost.
-        if let Some(q) = &question
+        if let AskAction::Question(q) = &action
             && frozen.is_some()
             && live_root.is_none()
         {
@@ -393,7 +435,7 @@ impl Reviewing {
             &links,
             live_root,
             frozen.as_deref(),
-            question,
+            action,
         )
     }
 
@@ -982,6 +1024,10 @@ impl Walking {
             self.walk.trace().frozen_block(c)
         });
         let live_root = root.as_deref().filter(|r| r.exists());
+        let action = match question {
+            Some(q) => AskAction::Question(q),
+            None => AskAction::Condense,
+        };
         self.ask.start(
             cfg,
             audience,
@@ -989,7 +1035,7 @@ impl Walking {
             &[],
             live_root,
             frozen.as_deref(),
-            question,
+            action,
         )
     }
 

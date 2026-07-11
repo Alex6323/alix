@@ -1119,7 +1119,7 @@ pub fn run_review(
                     continue;
                 };
                 if let Some(q) = question {
-                    r.start_ask(&ask_cfg, audience, Some(q));
+                    r.start_ask(&ask_cfg, audience, AskAction::Question(q));
                 }
                 respond_json(request, &r.ask_dto(None, None));
             }
@@ -1129,7 +1129,7 @@ pub fn run_review(
                     respond_status(request, 409);
                     continue;
                 };
-                r.start_ask(&ask_cfg, audience, None);
+                r.start_ask(&ask_cfg, audience, AskAction::Condense);
                 respond_json(request, &r.ask_dto(None, None));
             }
             // Poll for a pending reply; the page calls this every ~400ms while
