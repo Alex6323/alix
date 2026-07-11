@@ -136,6 +136,11 @@ that a change should match. The global rules (simple, readable, small focused
 functions, meaningful names) still apply on top; this section is what's specific
 to this codebase. When in doubt, mirror the surrounding code.
 
+- **Type names are spelled out.** No `Cfg`/`Mgr`/`Ctx`-style abbreviations on structs,
+  enums, or traits — `AssembleConfig`, not `Cfg`. Established domain acronyms (`Dto`,
+  `Api`, `Id`) and *variable/field* shorthand (`cfg`, `opts`) stay fine; an abbreviated
+  type name needs a stated reason, not habit (user rule, 2026-07-11).
+
 - **Errors come in two layers.** Domain modules (`deck`, `store`, `parser`)
   expose a `thiserror` enum for typed failures; workflow code (`exam`, `ask`,
   `generate`) returns `anyhow::Result` and uses `bail!` + `.context(...)` at call
