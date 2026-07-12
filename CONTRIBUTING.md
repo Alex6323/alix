@@ -98,6 +98,12 @@ CI runs the same gates on every PR: `fmt` (nightly rustfmt), `check` (clippy +
 tests, with `-Dwarnings`), `e2e` (Playwright, browser-driven — blocking), and an
 informational `coverage` job.
 
+The library crate is feature-gated behind `full` (on by default), which pulls in
+the AI backends and the web server. `make build-core` builds the lean core that a
+future mobile client would consume, and CI enforces it with its own `core` job.
+A core module must never reach into a gated one: if it must, the thing it reaches
+for belongs in core, not behind `full`.
+
 ### Formatting is nightly-only
 
 `rustfmt.toml` uses nightly-only options, so **format with `make fmt`**

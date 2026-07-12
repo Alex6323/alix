@@ -44,6 +44,17 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: make check
 
+  # The lean core must keep compiling AI/server-free: the mobile-client contract.
+  # This is the guard that stops a core module from quietly reaching into a gated one.
+  core:
+    name: lean core (no-default-features)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: make build-core
+
   # Browser-driven smoke over the real binary: a click must reach the server and
   # change the screen, with no uncaught page errors. This is the only layer that
   # catches a control which silently does nothing. Blocking, on purpose — an

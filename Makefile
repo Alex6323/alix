@@ -6,11 +6,17 @@
 # toolchain — `+nightly` is handled by rustup before cargo sees it — which is
 # why these live in a Makefile rather than .cargo/config.toml.)
 
-.PHONY: build test lint lint-js fmt fmt-check fmt-roadmap check ci coverage coverage-lcov eval run serve book site slides install clean sdd-clean heartbeat check-backends e2e shots
+.PHONY: build build-core test lint lint-js fmt fmt-check fmt-roadmap check ci coverage coverage-lcov eval run serve book site slides install clean sdd-clean heartbeat check-backends e2e shots
 
 # Compile the workspace.
 build:
 	cargo build
+
+# Compile the lean core only: no AI backends, no web server. This is the guard
+# that keeps the lib buildable AI/server-free for the future mobile client (see
+# CONTRIBUTING.md).
+build-core:
+	cargo build --no-default-features --lib
 
 # Run the test suite — the primary gate.
 test:
@@ -60,6 +66,7 @@ check: lint test
 ci:
 	$(MAKE) fmt-check
 	RUSTFLAGS="-Dwarnings" $(MAKE) check
+	RUSTFLAGS="-Dwarnings" $(MAKE) build-core
 	RUSTFLAGS= $(MAKE) coverage
 
 # Test coverage (needs cargo-llvm-cov: `cargo install cargo-llvm-cov`). Prints a
