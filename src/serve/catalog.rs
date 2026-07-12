@@ -363,8 +363,8 @@ pub(super) fn deck_catalog(
     let mut workspaces = Vec::new();
     let mut recent_decks = Vec::new();
     let mut folders = Vec::new();
-    // Opened once for the whole catalog: the global store's sidecar tells each
-    // loose deck whether it has a focus drawer (topology).
+    // Opened once for the whole catalog: the served instance's store's sidecar
+    // tells each loose deck whether it has a focus drawer (topology).
     let augment = AugmentCache::open(augment::augment_path_for(store.path()));
     for e in picker::catalog(decks_dir, recent) {
         // A workspace/folder row: its members open on click; it has no state of

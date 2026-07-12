@@ -31,7 +31,11 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
 
     // The cache sits beside whatever store the deck reviews against, so a
     // workspace deck's augmentations live with the workspace.
-    let store = store_for(std::slice::from_ref(&args.deck), args.store.clone())?;
+    let store = store_for(
+        std::slice::from_ref(&args.deck),
+        args.store.clone(),
+        &config,
+    )?;
     let cache_path = augment::augment_path_for(store.path());
     let mut cache = AugmentCache::open(&cache_path);
 

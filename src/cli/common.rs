@@ -78,10 +78,19 @@ pub(crate) fn expand_target(path: &Path, config: &Config) -> Result<Target> {
     })
 }
 
-/// Opens the progress store for `decks`, honoring `--store`. See
-/// [`alix::assemble::store_path_for`].
-pub(crate) fn store_for(decks: &[PathBuf], cli_override: Option<PathBuf>) -> Result<Store> {
-    open_store(store_path_for(decks, cli_override.as_deref()))
+/// Opens the progress store for `decks`, honoring `--store` > a workspace
+/// member's own store > the configured decks dir's root store > the global
+/// default — the same precedence [`Target::store_for_deck`] applies, so a
+/// loose deck's cache (e.g. `alix deck augment`'s `augment.json`) lands beside
+/// the `progress.json` review actually reads.
+pub(crate) fn store_for(
+    decks: &[PathBuf],
+    cli_override: Option<PathBuf>,
+    config: &Config,
+) -> Result<Store> {
+    let path = store_path_for(decks, cli_override.as_deref())
+        .or_else(|| config.decks_dir().map(|d| workspace::root_store_path(&d)));
+    open_store(path)
 }
 
 pub(crate) fn confirm(prompt: &str, yes: bool) -> Result<bool> {
@@ -186,6 +195,61 @@ pub(crate) fn truncate(s: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn store_for_resolves_a_loose_deck_to_the_decks_dir_root_store() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck = dir.path().join("loose.txt");
+        std::fs::write(&deck, "# q\n\ta\n").unwrap();
+        let config = Config {
+            decks_dir: Some(dir.path().to_path_buf()),
+            ..Default::default()
+        };
+
+        let store = store_for(std::slice::from_ref(&deck), None, &config).unwrap();
+
+        assert_eq!(store.path(), dir.path().join("progress.json").as_path());
+    }
+
+    #[test]
+    fn store_for_lets_a_cli_override_win_over_the_decks_dir_fallback() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck = dir.path().join("loose.txt");
+        std::fs::write(&deck, "# q\n\ta\n").unwrap();
+        let override_path = dir.path().join("custom.json");
+        let config = Config {
+            decks_dir: Some(dir.path().to_path_buf()),
+            ..Default::default()
+        };
+
+        let store = store_for(
+            std::slice::from_ref(&deck),
+            Some(override_path.clone()),
+            &config,
+        )
+        .unwrap();
+
+        assert_eq!(store.path(), override_path.as_path());
+    }
+
+    #[test]
+    fn store_for_still_resolves_a_workspace_deck_to_the_workspace_store() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path().join("box");
+        std::fs::create_dir(&ws).unwrap();
+        std::fs::write(ws.join("alix.toml"), "title = \"Box\"\n").unwrap();
+        let member = ws.join("a.txt");
+        std::fs::write(&member, "# q\n\ta\n").unwrap();
+        // decks_dir points elsewhere — the workspace store must still win.
+        let config = Config {
+            decks_dir: Some(dir.path().to_path_buf()),
+            ..Default::default()
+        };
+
+        let store = store_for(std::slice::from_ref(&member), None, &config).unwrap();
+
+        assert_eq!(store.path(), ws.join("progress.json").as_path());
+    }
 
     #[test]
     fn one_line_collapses_whitespace_runs_including_newlines() {

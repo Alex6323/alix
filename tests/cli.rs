@@ -1683,6 +1683,38 @@ fn augment_notes_caches_a_trivia_note() {
 }
 
 #[test]
+fn augment_without_a_store_flag_caches_beside_the_decks_dir_root_store() {
+    // Mirrors `stats_on_a_loose_deck_resolves_the_decks_dir_root_store_like_review_does`:
+    // with no `--store`, the cache must land at `<decks_dir>/augment.json` —
+    // beside the `<decks_dir>/progress.json` review reads — not the global
+    // platform store's sidecar (the pre-fix bug: `common::store_for` had no
+    // decks-dir fallback, so a loose deck's augmentations went missing at
+    // review time).
+    let decks = tempfile::tempdir().unwrap();
+    let deck = write(decks.path(), "quiz.txt", "# Q1\n\tA1\n");
+    let cli = fake_claude(decks.path(), r#"{"0": "a fun fact"}"#);
+
+    let cfg = decks.path().join("config.toml");
+    std::fs::write(
+        &cfg,
+        format!(
+            "decks_dir = \"{}\"\n[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n",
+            decks.path().display()
+        ),
+    )
+    .unwrap();
+    let cfg = cfg.to_str().unwrap();
+
+    let out = alix(&[
+        "deck", "augment", &deck, "--target", "notes", "--config", cfg,
+    ]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+
+    let cached = std::fs::read_to_string(decks.path().join("augment.json")).unwrap();
+    assert!(cached.contains("a fun fact"), "{cached}");
+}
+
+#[test]
 fn augment_questions_caches_a_reworded_variant() {
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "quiz.txt", "# Q1\n\tA1\n");

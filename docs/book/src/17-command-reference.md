@@ -31,8 +31,9 @@ session's depth ([reveal & session depths](04-review-modes.md)), not a flag.
 `alix stats`, `alix list`, and `alix reset` each take a **deck file, a plain
 folder, or a [workspace](08-workspaces.md)** — a folder or workspace expands to
 its member decks, and each deck resolves to the store the launcher would serve
-it with (`--store` > its workspace's store > a served folder's own
-`progress.json` > the global store).
+it with (`--store` > its workspace's store > a served root's own
+`progress.json` — the folder itself for a folder target, or your configured
+decks dir for a loose deck file — > the global store).
 
 - `alix stats <target>` — progress overview, completion state, and a
   per-depth due count.
