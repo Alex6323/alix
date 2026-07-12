@@ -348,7 +348,7 @@ struct AugmentArgs {
     with: Option<String>,
 
     /// Path of the progress store the augmentation cache sits beside (default:
-    /// platform data dir).
+    /// resolved from the deck, like `stats`/`list`/`reset`).
     #[arg(long)]
     store: Option<PathBuf>,
 
