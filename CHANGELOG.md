@@ -12,20 +12,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   palettes (every token the picker needs, contrast-checked for the adult UI's
   denser text), so a kid transitioning to the grown-up app can keep the look
   they learned to love.
-
-### Removed
-- The placeholder **"Fun" kids theme** — superseded by the three real kids
-  themes above.
-
 - **Tutor: make this a card.** In a review exchange, "Make this a card" asks the
   tutor to distill the conversation into a draft front/back; you edit it, then Add
   lands it as a free-standing card on the current deck, drilled like any other and
   promotable to the deck file. Adult review only; a non-parseable draft errors
   rather than inventing a card.
 
+### Removed
+- The placeholder **"Fun" kids theme**, superseded by the three real kids
+  themes above.
+
 ### Changed
+- **The review tutor is now offered during a card's first encounter (acquire),
+  once you reveal the answer.** It stays hidden during the blind attempt,
+  matching the after-reveal rule the rest of review follows, so you can ask about
+  a brand-new card (and make a card from it) without waiting for its first graded
+  review.
 
 ### Fixed
+- The tutor's **Save note** (and the new **Make this a card**) now stay disabled
+  until the tutor has actually answered, instead of looking active and silently
+  doing nothing on an empty conversation.
 - **The trace walk screen now shares the session chrome.** It still rendered
   pre-re-skin chrome: no ☰ menu in the header, and a footer that packed
   Missed it/Partly/Got it/Ask/Leave into one centered row with a dead

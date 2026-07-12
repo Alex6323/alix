@@ -2998,6 +2998,7 @@ function renderLegend() {
   if (feedback) {
     if (isAcquire()) {
       chip("Seen", "primary", acquire, label(KEYS.reveal)); // a pick acknowledges, never grades
+      chip("Ask tutor", "ask", openAsk, label(KEYS.ask), legendRight); // answer is showing: tutor allowed
     } else if (isRecognizeMc()) {
       if (feedback.passed) {
         // A correct Recognize pick: Next commits it; the quiet "I guessed"
@@ -3030,11 +3031,13 @@ function renderLegend() {
         chip("Skip", "", skip, label(KEYS.skip));
       } else {
         chip("Seen", "primary", acquire, label(KEYS.reveal));      // ungraded acknowledgment
+        chip("Ask tutor", "ask", openAsk, label(KEYS.ask), legendRight);
       }
     } else if (isAcquireChoice()) {
       chip("Skip", "", skip, label(KEYS.skip));            // options are tappable
     } else if (revealed > 0) {
       chip("Seen", "primary", acquire, label(KEYS.reveal)); // hide⟷show is the corner `h` toggle, not a footer button
+      chip("Ask tutor", "ask", openAsk, label(KEYS.ask), legendRight);
     } else {
       chip("Reveal", "primary", reveal, label(KEYS.reveal));
       chip("Skip", "", skip, label(KEYS.skip));
@@ -3471,6 +3474,9 @@ document.addEventListener("keydown", (e) => {
   // Handled before the feedback/grade paths so a pick never grades the card.
   if (isAcquire()) {
     if (hit(e, KEYS.remove)) { e.preventDefault(); remove(); return; }
+    // Post-reveal only: once the answer shows (revealed, or a pick's feedback),
+    // the tutor is allowed here too, matching review's after-reveal rule.
+    if ((revealed > 0 || feedback) && hit(e, KEYS.ask)) { e.preventDefault(); openAsk(); return; }
     if (effectiveDraw()) {
       if (revealed === 0) {
         if (hit(e, KEYS.skip)) { e.preventDefault(); skip(); return; }
