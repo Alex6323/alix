@@ -12,9 +12,9 @@
 //! This module is the frontend-agnostic engine: it builds the [`Trace`] from a
 //! [`Deck`], resolves each locator to a live [`Excerpt`] (read fresh from the
 //! source, the oracle), and drives the [`Walk`] state machine + per-checkpoint
-//! scheduling. The web walk is a thin reader over it. Grading is
-//! self-judged and offline — no model calls — so the mechanic can be validated
-//! cheaply; live Claude grading (`--grade`) is a later layer.
+//! scheduling. The web walk is a thin reader over it. Grading here is
+//! self-judged and offline (no model calls), so the mechanic can be validated
+//! cheaply; the model-graded pass lives in the sibling `trace_ai` module.
 
 use std::path::{Path, PathBuf};
 
