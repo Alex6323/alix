@@ -1120,15 +1120,19 @@ function sendAsk(text) {
   const ep = walkData ? "/api/walk/ask" : "/api/ask";
   api(ep, post({ question: q })).then(d => { askData = d; if (asking) syncAsk(); startAskPoll(); });
 }
+// Save-note and Make-this-a-card both distill a completed exchange into
+// something durable, so both need at least one tutor answer and no in-flight
+// turn. Their footer chips are disabled (and these guards no-op) until then.
+function canDistill() { return !askData.thinking && askData.transcript.length > 0; }
 function saveAskNote() {
-  if (askData.thinking || !askData.transcript.length) return;
+  if (!canDistill()) return;
   const ep = walkData ? "/api/walk/ask/note" : "/api/ask/note";
   api(ep, post({})).then(d => { askData = d; if (asking) syncAsk(); startAskPoll(); });
 }
 // Distill the conversation so far into one draft card, surfaced on askData.draft
 // once the poll picks up the tutor's reply. Adult-only (no walk equivalent).
 function draftCard() {
-  if (askData.thinking) return;
+  if (!canDistill()) return;
   api("/api/ask/card/draft", post({}))
     .then(d => { askData = d; if (asking) syncAsk(); startAskPoll(); })
     .catch(() => { askData = { ...askData, status: "couldn't draft a card" }; if (asking) syncAsk(); });
@@ -1237,6 +1241,9 @@ function syncAsk() {
   }
   const send = legend.querySelector(".chip.primary");
   if (send) send.disabled = askData.thinking;
+  // Enable Save note / Make this a card once an answer lands (or disable again
+  // when a follow-up is in flight). The legend is built once, so update here.
+  legend.querySelectorAll(".chip.distill").forEach(c => { c.disabled = !canDistill(); });
 }
 
 // `subject` is optional: null = use the current review card; an object with
@@ -1297,10 +1304,13 @@ function renderAsk(subject) {
   legend.innerHTML = "";
   const send = chip("Send", "primary", () => sendAsk(input.value), "shift+enter");
   send.disabled = askData.thinking;
-  chip("Save note", "", saveAskNote, label(KEYS.save_note));
+  // Save note / Make this a card distill a completed exchange, so they stay
+  // disabled (the `distill` class, refreshed on every poll in syncAsk) until a
+  // tutor answer exists.
+  chip("Save note", "distill", saveAskNote, label(KEYS.save_note)).disabled = !canDistill();
   // Adult-only, review-scoped: drafting posts to the review-only draft endpoint,
   // which the walk's tutor session (reviewing = None server-side) can't serve.
-  if (!walkData) chip("Make this a card", "", draftCard, "");
+  if (!walkData) chip("Make this a card", "distill", draftCard, "").disabled = !canDistill();
   chip("Close", "", closeAsk, "esc");
   if (!askData.thinking) input.focus();
 }
