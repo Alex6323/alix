@@ -32,6 +32,7 @@ use crate::{
     session::{Session, now_ms},
     share,
     trace::{self, Delta, SourceBase, Walk},
+    trace_ai,
 };
 
 /// The server's live review state once decks are chosen. Its absence (`None`)
@@ -1064,7 +1065,7 @@ impl Walking {
             .prediction(self.walk.current_index())
             .unwrap_or("")
             .to_string();
-        let rx = trace::spawn_grade(checkpoint.clone(), prediction, ask_cfg.clone());
+        let rx = trace_ai::spawn_grade(checkpoint.clone(), prediction, ask_cfg.clone());
         self.pending = Some(rx);
     }
 

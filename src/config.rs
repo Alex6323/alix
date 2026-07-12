@@ -1526,7 +1526,7 @@ mod tests {
         // (correctness-critical, fails silently), but the *model* is now left
         // unset here so each backend picks its own strong model
         // (`Backend::default_trace_model`); the effective model is resolved in
-        // `trace::build_run_config`.
+        // `trace_ai::build_run_config`.
         let trace = Config::default().trace;
         assert_eq!(None, trace.model);
         assert_eq!(Some("high".to_string()), trace.effort);

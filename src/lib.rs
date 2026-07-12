@@ -51,6 +51,7 @@ pub mod store;
 pub mod time;
 pub mod title;
 pub mod trace;
+pub mod trace_ai;
 pub mod workspace;
 
 #[cfg(test)]

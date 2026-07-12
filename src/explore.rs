@@ -1,6 +1,6 @@
 //! Goal-driven exploration of a source (`alix generate <dir>`'s planning half).
 //!
-//! Where [`crate::trace::suggest`] is the flat recon menu of candidate *traces*,
+//! Where [`crate::trace_ai::suggest`] is the flat recon menu of candidate *traces*,
 //! `explore` is goal-driven exploration: given a source and a learning **goal**,
 //! it manufactures the ordered set of **means** — fact *decks* and *traces* —
 //! that, worked through, would reach the goal. The means are chosen by the shape
@@ -23,13 +23,14 @@ use crate::{
     config::{AskConfig, TraceConfig},
     deck::{Deck, is_url},
     share, title,
-    trace::{self, build_run_config, clean_to_cards, resolve_source},
+    trace::{self, resolve_source},
+    trace_ai::{self, build_run_config, clean_to_cards},
     workspace,
 };
 
 /// Explore a source toward `goal` and return an ordered learning plan — the
 /// decks and traces worth authoring, each tagged and dependency-ordered. One
-/// read-only exploration pass (the same tools and cwd as [`crate::trace::build`]);
+/// read-only exploration pass (the same tools and cwd as [`crate::trace_ai::build`]);
 /// discovers nothing in depth and writes nothing. `source` is a scope directly
 /// (a repo `.`, a directory, a file, or a URL), not a deck.
 pub fn explore(source: &str, goal: &str, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<String> {
@@ -54,7 +55,7 @@ pub fn explore(source: &str, goal: &str, cfg: &TraceConfig, ask_cfg: &AskConfig)
 
 /// Builds the exploration prompt: explore the source and emit an ordered,
 /// prerequisite-sorted plan of means (decks + traces) sized to the goal by
-/// saturation. The counterpart to [`crate::trace::suggest`]'s recon prompt, one
+/// saturation. The counterpart to [`crate::trace_ai::suggest`]'s recon prompt, one
 /// tier up.
 fn explore_prompt(source: &str, goal: &str, url: bool, cfg: &TraceConfig) -> String {
     let explore = if url {
@@ -628,7 +629,7 @@ pub fn snapshot_workspace(dir: &Path) -> Result<SnapshotSummary> {
         }
         // `summary.files` is the running snippet count, passed as the start so each
         // deck's snippets get unique names in the shared `assets/`.
-        match trace::snapshot(&deck, summary.files, workspace_origin.as_deref()) {
+        match trace_ai::snapshot(&deck, summary.files, workspace_origin.as_deref()) {
             Ok(report) => {
                 summary.decks += 1;
                 summary.files += report.copied.len();

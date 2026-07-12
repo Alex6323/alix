@@ -369,7 +369,7 @@ fn trace_build(deck_path: &Path, deck: &Deck, yes: bool, config: &Config) -> Res
         "Tracing a path through {source} (exploring the source — this can take a \
          few minutes)…"
     );
-    let cards = alix::trace::build(deck, &config.trace, &config.ask)?;
+    let cards = alix::trace_ai::build(deck, &config.trace, &config.ask)?;
     alix::deck::set_trace_checkpoints(deck_path, &cards)?;
 
     let n = parser::parse_str(&deck.subject, &cards)
@@ -393,7 +393,7 @@ fn trace_suggest(source: &str, yes: bool, config: &Config) -> Result<()> {
         "Reconning {source} for traces worth tracing (one exploration pass — this \
          can take a minute)…"
     );
-    let menu = alix::trace::suggest(source, &config.trace, &config.ask)?;
+    let menu = alix::trace_ai::suggest(source, &config.trace, &config.ask)?;
     println!("{menu}");
     println!(
         "\n{DIM}Paste a suggestion into a new deck (its `% trace:` + `% source:`), \

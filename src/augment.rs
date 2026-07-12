@@ -1170,7 +1170,7 @@ fn format_prompt(items: &[WarmItem], guidance: Option<&str>) -> String {
 //
 // The web server can't block its request loop on a costed Claude call, so it
 // runs generation on a thread and polls the returned channel — the same shape
-// as `ask::spawn` and `trace::spawn_grade`. The worker only *generates*; the
+// as `ask::spawn` and `trace_ai::spawn_grade`. The worker only *generates*; the
 // caller applies the [`Outcome`] to the cache and saves, keeping cache writes
 // single-threaded.
 
