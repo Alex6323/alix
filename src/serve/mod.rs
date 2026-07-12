@@ -1415,7 +1415,7 @@ pub fn run_review(
             (Method::Post, "/api/augment/generate") => {
                 #[derive(Deserialize)]
                 struct Body {
-                    target: String,
+                    targets: Vec<String>,
                     with: Option<String>,
                 }
                 let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
@@ -1428,7 +1428,7 @@ pub fn run_review(
                         .with
                         .map(|s| s.trim().to_string())
                         .filter(|s| !s.is_empty());
-                    aug.generate_batch(vec![b.target.clone()], guidance, &ai_cfg, &ask_cfg);
+                    aug.generate_batch(b.targets, guidance, &ai_cfg, &ask_cfg);
                 }
                 respond_json(request, &aug.dto());
             }

@@ -147,11 +147,12 @@ in the `"cooldown"` phase with `cooldown_ms` set — one shape per endpoint.
 ### 4.4 Augment
 
 `POST /api/augment/open {deck}` → `AugmentDto` (coverage rows per target).
-`POST /api/augment/generate {target, with?}` kicks generation (poll
-`GET /api/augment` while `busy`); `POST /api/augment/remove {target,
-topology?}` deletes cached content; `POST /api/augment/close` → `StateDto`.
-Target names are an open set (currently include `choices`, `notes`,
-`keypoints`, `format`).
+`POST /api/augment/generate {targets, with?}` kicks a batch (poll
+`GET /api/augment` while `busy`); the `AugmentDto` reports batch progress via
+`queued`, `done`, and `failed` as the targets run one at a time.
+`POST /api/augment/remove {target, topology?}` deletes cached content;
+`POST /api/augment/close` → `StateDto`. Target names are an open set
+(currently include `choices`, `notes`, `keypoints`, `format`).
 
 ### 4.5 Ask (the tutor)
 
@@ -347,7 +348,7 @@ token holder is trusted to call it, the same trust class as `/api/grade`.
 | Method | Path | Body | Response | Errors |
 |---|---|---|---|---|
 | POST | `/api/augment/open` | `{deck}` | `AugmentDto` | 400 unknown deck; 409 load failure |
-| POST | `/api/augment/generate` | `{target, with?}` | `AugmentDto` | 409 |
+| POST | `/api/augment/generate` | `{targets, with?}` | `AugmentDto` | 409 |
 | GET | `/api/augment` | – | `AugmentDto` (poll) | 409 |
 | POST | `/api/augment/remove` | `{target, topology?}` | `AugmentDto` | 409 |
 | POST | `/api/augment/close` | – | `StateDto` | – |
@@ -651,7 +652,11 @@ Example (from the pinned test):
 ### AugmentDto / AugmentRowDto
 
 `AugmentDto`: `deck`, `cards: number`, `rows: [AugmentRowDto]`,
-`busy: string?` (the generating target), `elapsed: number?`, `error: string?`.
+`busy: string?` (the generating target), `elapsed: number?`, `error: string?`,
+`queued: [string]` (targets still waiting behind the busy one in the current
+batch), `done: [string]` (targets the current batch has already finished
+successfully), `failed: [{target, error}]` (targets the current batch
+attempted and failed; one target's error doesn't stop the rest from running).
 `AugmentRowDto`: `kind`, `label`, `covered: number`, `eligible: number`,
 `items: [string]`, `busy: bool`.
 

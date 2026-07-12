@@ -1398,6 +1398,48 @@ fn get_api_augment_with_no_open_screen_yields_409() {
     assert_eq!(409, resp.status);
 }
 
+#[test]
+fn post_api_augment_generate_with_a_targets_list_runs_every_target_even_after_one_fails() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    // Notes parses `{"index": "text"}`; choices parses `{"index": ["a", ...]}`.
+    // The same fixed reply is a valid note but the wrong shape for choices, so
+    // one fake-CLI reply splits the batch into a genuine success and a
+    // genuine failure without needing two scripted replies.
+    let fake = fake_reply(scripts.path(), r#"{"0": "a note"}"#);
+    let (base, _guard) = spawn_full_server(Some(&fake));
+    post_json(&base, "/api/augment/open", r#"{"deck":"choice.txt"}"#);
+
+    let resp = post_json(
+        &base,
+        "/api/augment/generate",
+        r#"{"targets":["notes","choices"]}"#,
+    );
+    assert_eq!(200, resp.status);
+
+    let body = poll_until(&base, "/api/augment", |b| {
+        b["busy"].is_null()
+            && b["queued"]
+                .as_array()
+                .is_some_and(|q| q.is_empty())
+    });
+
+    let done = body["done"].as_array().unwrap();
+    assert!(
+        done.iter().any(|t| t == "notes"),
+        "notes should have succeeded: body: {body}"
+    );
+    let failed = body["failed"].as_array().unwrap();
+    let choices_failure = failed
+        .iter()
+        .find(|f| f["target"] == "choices")
+        .unwrap_or_else(|| panic!("choices should have been attempted and failed: body: {body}"));
+    assert!(
+        !choices_failure["error"].as_str().unwrap().is_empty(),
+        "body: {body}"
+    );
+}
+
 // ── Exam (start / close on a trace deck — no AI needed for that path;
 // grading is additionally covered end-to-end via the fake backend) ───────
 
