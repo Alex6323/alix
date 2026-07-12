@@ -15,6 +15,7 @@ exclude = ["docs/", "site/", ".github/", "examples/", "apps/"]
 [[bin]]
 name = "alix"
 path = "src/cli/main.rs"
+required-features = ["full"]
 
 # Declares `cfg(coverage_nightly)` as a known cfg (set by `cargo +nightly
 # llvm-cov`, used by `#[cfg_attr(coverage_nightly, coverage(off))]` in a few
@@ -29,18 +30,25 @@ anyhow = "1"
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "serde"] }
 clap = { version = "4", features = ["derive"] }
 directories = "6"
-getrandom = "0.2" # portable OS CSPRNG for the serve pairing token (already a transitive dep)
-qrcodegen = "1.8.0" # zero-dep QR encoder for the terminal pairing QR (`--lan`)
+getrandom = { version = "0.2", optional = true } # portable OS CSPRNG for the serve pairing token (already a transitive dep)
+qrcodegen = { version = "1.8.0", optional = true } # zero-dep QR encoder for the terminal pairing QR (`--lan`)
 rs-fsrs = { version = "1.2.1", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 strsim = "0.11"
 thiserror = "2"
-tiny_http = "0.12"
+tiny_http = { version = "0.12", optional = true }
 tempfile = "3" # scratch dirs for staging `alix share` and landing `alix receive`
 toml = "1"
 twox-hash = "2"
-zip = { version = "8.6.0", default-features = false, features = ["deflate"] } # the .zip archives of `alix share --zip` / `alix receive`
+zip = { version = "8.6.0", default-features = false, features = ["deflate"], optional = true } # `alix share --zip` / `alix receive`
+
+[features]
+default = ["full"]
+# `full` is every non-core capability: the web server, the AI backend and all its
+# consumers, and sharing. `--no-default-features` builds the lean core the mobile
+# client cross-compiles. See docs/specs/2026-07-12-core-feature-gate-spec.md.
+full = ["dep:tiny_http", "dep:zip", "dep:qrcodegen", "dep:getrandom"]
 
 [dev-dependencies]
 

@@ -1585,6 +1585,7 @@ mod tests {
 
     /// A workspace (`alix.toml` + deck) at `root/ws` whose trace cites files in
     /// a sibling source tree at `root/src`.
+    #[cfg(feature = "full")]
     fn snapshot_workspace(root: &Path) -> PathBuf {
         std::fs::create_dir_all(root.join("src")).unwrap();
         write(&root.join("src"), "a.rs", "alpha\nbeta\ngamma\n");
@@ -1605,6 +1606,7 @@ mod tests {
         )
     }
 
+    #[cfg(feature = "full")]
     #[test]
     fn drifted_cards_flags_a_changed_or_missing_excerpt() {
         let dir = tempfile::tempdir().unwrap();

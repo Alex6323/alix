@@ -20,10 +20,13 @@
 #![recursion_limit = "256"]
 
 pub mod answer;
+#[cfg(feature = "full")]
 pub mod ask;
 pub mod assemble;
 pub mod augment;
+#[cfg(feature = "full")]
 pub mod augment_ai;
+#[cfg(feature = "full")]
 pub mod backend;
 pub mod card;
 pub mod choice;
@@ -31,29 +34,47 @@ pub mod cloze;
 pub mod config;
 pub mod deck;
 pub mod depth;
+#[cfg(feature = "full")]
 pub mod doctor;
+#[cfg(feature = "full")]
 pub mod exam;
+#[cfg(feature = "full")]
 pub mod explore;
+#[cfg(feature = "full")]
 pub mod generate;
+#[cfg(feature = "full")]
 pub mod icon;
+#[cfg(feature = "full")]
 pub mod import;
+#[cfg(feature = "full")]
 pub mod library;
 pub mod parser;
+#[cfg(feature = "full")]
 pub mod picker;
+#[cfg(feature = "full")]
 pub mod preflight;
+#[cfg(feature = "full")]
 pub mod qr;
+#[cfg(feature = "full")]
 pub mod recent;
 pub mod render;
 pub mod scheduler;
+#[cfg(feature = "full")]
 pub mod serve;
 pub mod session;
+#[cfg(feature = "full")]
 pub mod share;
 pub mod store;
 pub mod time;
+#[cfg(feature = "full")]
 pub mod title;
 pub mod trace;
+#[cfg(feature = "full")]
 pub mod trace_ai;
 pub mod workspace;
 
-#[cfg(test)]
+// Only the AI-facing modules (ask, exam, generate, ...) use these fake-CLI
+// helpers, and all of those are gated behind `full`, so the module itself
+// only needs to exist for a `full` test build.
+#[cfg(all(test, feature = "full"))]
 mod testutil;

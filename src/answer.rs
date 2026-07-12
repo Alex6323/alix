@@ -47,6 +47,7 @@ pub enum Mode {
 ///
 /// `pub(crate)`: reused by [`crate::serve`] to report a card's mode in its JSON
 /// state.
+#[cfg(feature = "full")]
 pub(crate) fn mode_name(mode: Mode) -> &'static str {
     match mode {
         Mode::Flip => "flip",
