@@ -75,11 +75,11 @@ it's picked per session, the same as for a loose deck (see
 
 A workspace keeps its progress **inside the folder**, in a `progress.json` next to
 the decks (override the location with a `store = "..."` line in the `alix.toml`),
-separate from the global store that loose decks share. That makes a workspace a
+separate from the store your loose decks use (your decks directory's own `progress.json`). That makes a workspace a
 **self-contained, portable unit**: its decks, its `assets/` (frozen trace
 excerpts — covered with traces later), and its history all live in one folder you
 can move, copy, or share, with its progress isolated from everything else. Decks
-outside any workspace keep using the global store; the terminal commands
+outside any workspace use your decks directory's store; the CLI commands
 (`alix stats`/`list`/`reset`) take a deck file, a plain folder, **or a
 workspace** — a folder or workspace expands to its member decks, each resolved
 against the same store the launcher would serve it with (`--store <path>` still
