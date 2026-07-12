@@ -17,6 +17,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   lands it as a free-standing card on the current deck, drilled like any other and
   promotable to the deck file. Adult review only; a non-parseable draft errors
   rather than inventing a card.
+- Your decks folder is self-contained: drop it in a cloud drive (Dropbox, iCloud,
+  Syncthing) for roaming multi-device (one device at a time), no accounts.
 
 ### Removed
 - The placeholder **"Fun" kids theme**, superseded by the three real kids
@@ -28,6 +30,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   matching the after-reveal rule the rest of review follows, so you can ask about
   a brand-new card (and make a card from it) without waiting for its first graded
   review.
+- **Breaking:** the progress store now lives with your decks
+  (`<decks_dir>/progress.json`) instead of the platform data dir
+  (`~/.local/share/alix/progress.json`); bare `alix` and `alix <decks_dir>` share
+  one store. Move an existing store once:
+  `mv ~/.local/share/alix/progress.json ~/decks/progress.json`.
 
 ### Fixed
 - The tutor's **Save note** (and the new **Make this a card**) now stay disabled

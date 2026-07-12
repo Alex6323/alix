@@ -107,6 +107,9 @@ Each links to its chapter in the manual:
   → [Workspaces](docs/book/src/08-workspaces.md), [Explore](docs/book/src/14-explore.md)
 - **A local web app** for review and the exam, LAN-shareable, no accounts or
   database. → [The web app](docs/book/src/15-the-web-app.md)
+- **Self-contained, portable decks.** Your decks and their progress live in one
+  folder; drop it in a cloud drive (Dropbox, iCloud, Syncthing) and it follows
+  you across devices, no accounts. → [Configuration](docs/book/src/16-configuration.md)
 
 ## Development
 

@@ -128,11 +128,21 @@ settings:
 ## Decks directory and storage
 
 By default `alix` looks for decks in `~/decks`; set `decks_dir` to change it.
-Progress is stored at `~/.local/share/alix/progress.json` (a workspace — or any
-folder you serve with `alix <dir>` — keeps its own inside the folder; the
-`stats`/`list`/`reset` commands take that deck, folder, or workspace as their
-target and resolve its store the same way, with `--store <path>` as an
-override).
+The progress store lives **in your decks folder** (`<decks_dir>/progress.json`)
+— the same store a scoped `alix <dir>` uses, so bare `alix` and `alix <dir>`
+share one store when `<dir>` is your configured `decks_dir`. A workspace, or any
+other folder you serve with `alix <dir>`, keeps its own `progress.json` inside
+that folder too. The `stats`/`list`/`reset` commands take a deck, folder, or
+workspace as their target and resolve its store the same way, with
+`--store <path>` as an override.
+
+### Multi-device via your cloud drive
+
+Because your decks and their progress live in one folder, put that folder in a
+cloud drive you already use (Dropbox, iCloud, OneDrive, Syncthing) and it follows
+you across devices. Use one device at a time; alix stays unaware that the folder
+is synced, and it writes the store atomically so a background sync never sees a
+half-written file. There are no accounts and nothing is uploaded by alix itself.
 
 Card identity is an XxHash64 over the deck **file name** plus the card's **back
 lines** — so your progress survives editing a front or adding notes, but renaming a
