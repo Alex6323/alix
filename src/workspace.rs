@@ -198,6 +198,17 @@ pub fn store_path(dir: &Path) -> PathBuf {
     }
 }
 
+/// The progress store for a **served root folder**: a workspace keeps its own
+/// (manifest `store =` respected), a plain folder uses `<dir>/progress.json`.
+/// One place for the resolution the launcher and `doctor` both apply to a root.
+pub fn root_store_path(dir: &Path) -> PathBuf {
+    if is_workspace(dir) {
+        store_path(dir)
+    } else {
+        dir.join(STORE_FILE)
+    }
+}
+
 /// The raw `store = "..."` value from the workspace's manifest, if any.
 fn manifest_store(dir: &Path) -> Option<String> {
     let text = std::fs::read_to_string(dir.join(MANIFEST)).ok()?;
@@ -336,6 +347,30 @@ mod tests {
         assert_eq!(Some(true), manifest_source_access(dir.path()));
         write(&dir.path().join(MANIFEST), "source_access = false\n");
         assert_eq!(Some(false), manifest_source_access(dir.path()));
+    }
+
+    #[test]
+    fn root_store_path_uses_in_folder_progress_for_a_plain_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(
+            root_store_path(dir.path()),
+            dir.path().join("progress.json")
+        );
+    }
+
+    #[test]
+    fn root_store_path_honors_a_workspace_store_override() {
+        let dir = tempfile::tempdir().unwrap();
+        // A workspace is a manifest *and* at least one deck, so write both.
+        std::fs::write(dir.path().join("d.txt"), "# Q\n    A\n").unwrap();
+        std::fs::write(
+            dir.path().join("alix.toml"),
+            "title = \"W\"\nstore = \"custom.json\"\n",
+        )
+        .unwrap();
+        // A workspace routes through store_path, so a manifest `store =` wins.
+        assert_eq!(root_store_path(dir.path()), dir.path().join("custom.json"));
+        assert_eq!(root_store_path(dir.path()), store_path(dir.path()));
     }
 
     #[test]
