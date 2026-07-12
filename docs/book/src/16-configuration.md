@@ -144,6 +144,14 @@ you across devices. Use one device at a time; alix stays unaware that the folder
 is synced, and it writes the store atomically so a background sync never sees a
 half-written file. There are no accounts and nothing is uploaded by alix itself.
 
+For a free, no-account option that fits alix's local-first grain,
+[Syncthing](https://syncthing.net) works well: install it on each machine, pair
+the devices, and share your decks folder between them. It syncs the folder
+peer-to-peer over your own network, with no cloud company in the middle. Because
+alix does not yet merge concurrent edits, keep to one device at a time; reviewing
+on two at once while offline would leave Syncthing to resolve a `progress.json`
+conflict.
+
 Card identity is an XxHash64 over the deck **file name** plus the card's **back
 lines** — so your progress survives editing a front or adding notes, but renaming a
 deck file or changing a back line resets the affected cards. The hash is
