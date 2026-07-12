@@ -1428,7 +1428,7 @@ pub fn run_review(
                         .with
                         .map(|s| s.trim().to_string())
                         .filter(|s| !s.is_empty());
-                    aug.generate(&b.target, guidance, &ai_cfg, &ask_cfg);
+                    aug.generate_batch(vec![b.target.clone()], guidance, &ai_cfg, &ask_cfg);
                 }
                 respond_json(request, &aug.dto());
             }
@@ -1438,7 +1438,7 @@ pub fn run_review(
                     respond_status(request, 409);
                     continue;
                 };
-                aug.poll();
+                aug.poll(&ai_cfg, &ask_cfg);
                 respond_json(request, &aug.dto());
             }
             // Remove a target's augmentations (or `all`) for this deck.

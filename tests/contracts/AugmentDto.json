@@ -2,8 +2,20 @@
   "busy": "choices",
   "cards": 12,
   "deck": "rust.txt",
+  "done": [
+    "format"
+  ],
   "elapsed": 3,
   "error": null,
+  "failed": [
+    {
+      "error": "the model did not return valid JSON",
+      "target": "topology"
+    }
+  ],
+  "queued": [
+    "notes"
+  ],
   "rows": [
     {
       "busy": true,

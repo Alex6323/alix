@@ -829,6 +829,12 @@ fn augmentdto_wire_shape() {
         busy: Some("choices"),
         elapsed: Some(3),
         error: None,
+        queued: vec!["notes"],
+        done: vec!["format"],
+        failed: vec![FailedTargetDto {
+            target: "topology",
+            error: "the model did not return valid JSON".to_string(),
+        }],
     };
     pin(
         "AugmentDto",
@@ -846,7 +852,13 @@ fn augmentdto_wire_shape() {
             }],
             "busy": "choices",
             "elapsed": 3,
-            "error": null
+            "error": null,
+            "queued": ["notes"],
+            "done": ["format"],
+            "failed": [{
+                "target": "topology",
+                "error": "the model did not return valid JSON"
+            }]
         }),
     );
 }

@@ -1319,9 +1319,64 @@ fn augmenting_generate_is_a_noop_when_a_target_is_fully_covered() {
 
     let mut aug = Augmenting::open("d.txt".into(), cards, cache_path);
     // Fully covered → no gap → no costed call is started.
-    let started = aug.generate("choices", None, &AiConfig::default(), &AskConfig::default());
+    let started = aug.generate_batch(
+        vec!["choices".into()],
+        None,
+        &AiConfig::default(),
+        &AskConfig::default(),
+    );
     assert!(!started);
     assert!(aug.dto().busy.is_none());
+    assert_eq!(
+        vec!["choices"],
+        aug.dto().done,
+        "no-gap target still counts as done"
+    );
+}
+
+#[test]
+fn generate_batch_runs_every_target_even_after_one_fails() {
+    let _g = crate::testutil::exec_lock();
+    let dir = tempfile::tempdir().unwrap();
+    let cache_path = dir.path().join("augment.json");
+    // A fresh card has both a missing note and missing choices.
+    let cards = vec![aug_card("Q", "a")];
+    let mut aug = Augmenting::open("d.txt".into(), cards, cache_path);
+
+    let ai = AiConfig::default();
+    // Notes parses `{"index": "text"}`; choices parses `{"index": ["a", ...]}`.
+    // The same fixed reply is a valid note but the wrong shape for choices, so
+    // one fake-CLI reply gives a genuine success/failure split across the batch.
+    // The failing target ("choices") is queued *first* so the assertion can
+    // only pass if the queue keeps advancing past a failure: if `poll` stopped
+    // draining after an error, "notes" would never run and the batch would
+    // never empty.
+    let cli = crate::testutil::fake_reply(dir.path(), r#"{"0": "a note"}"#);
+    let ask = crate::testutil::ask_config(&cli);
+
+    assert!(aug.generate_batch(vec!["choices".into(), "notes".into()], None, &ai, &ask));
+
+    for _ in 0..1_000_000 {
+        aug.poll(&ai, &ask);
+        if aug.pending.is_none() && aug.queue.is_empty() {
+            break;
+        }
+        std::thread::yield_now();
+    }
+    assert!(
+        aug.pending.is_none() && aug.queue.is_empty(),
+        "batch never finished draining"
+    );
+
+    let dto = aug.dto();
+    assert_eq!(vec!["notes"], dto.done, "notes succeeded");
+    assert_eq!(
+        1,
+        dto.failed.len(),
+        "choices was attempted and failed, not skipped"
+    );
+    assert_eq!("choices", dto.failed[0].target);
+    assert!(!dto.failed[0].error.is_empty());
 }
 
 #[test]

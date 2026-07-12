@@ -729,6 +729,20 @@ pub(super) struct AugmentDto {
     /// Seconds the in-flight generation has run (progress feedback).
     pub(super) elapsed: Option<u64>,
     pub(super) error: Option<String>,
+    /// Targets still waiting behind the busy one in the current batch.
+    pub(super) queued: Vec<&'static str>,
+    /// Targets the current batch has already finished successfully.
+    pub(super) done: Vec<&'static str>,
+    /// Targets the current batch attempted and failed (partial-failure safe:
+    /// one target's error doesn't stop the rest from running).
+    pub(super) failed: Vec<FailedTargetDto>,
+}
+
+/// One batch target that failed, with the error the worker returned.
+#[derive(Debug, Clone, Serialize)]
+pub(super) struct FailedTargetDto {
+    pub(super) target: &'static str,
+    pub(super) error: String,
 }
 
 /// One target's row. Per-card targets carry `covered`/`eligible`; the topology

@@ -7,7 +7,7 @@
 //! `augment_ai::spawn`, …), never by these types.
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     path::{Path, PathBuf},
     sync::{
         Arc,
@@ -488,6 +488,14 @@ pub(super) struct Augmenting {
     pub(super) pending: Option<AugmentPending>,
     /// The last generation/save error, shown until the next action clears it.
     pub(super) error: Option<String>,
+    /// Targets still to start in the current batch, in request order.
+    pub(super) queue: VecDeque<String>,
+    /// The `--with` steer shared by every target in the current batch.
+    pub(super) batch_guidance: Option<String>,
+    /// Targets the current batch has finished successfully.
+    pub(super) done: Vec<&'static str>,
+    /// Targets the current batch attempted and failed, with their error.
+    pub(super) failed: Vec<(&'static str, String)>,
 }
 
 /// An augmentation generation in flight: the channel the worker delivers on, the
@@ -496,6 +504,21 @@ pub(super) struct AugmentPending {
     pub(super) rx: Receiver<Result<augment_ai::Outcome, String>>,
     pub(super) target: &'static str,
     pub(super) started: Instant,
+}
+
+/// Maps a queued target string to its canonical `&'static str` token, so the
+/// DTO's `queued` list carries the same static tokens as `rows`/`done`/`failed`
+/// rather than the owned `String`s the queue holds.
+fn target_label(target: &str) -> Option<&'static str> {
+    match target {
+        "choices" => Some("choices"),
+        "notes" => Some("notes"),
+        "questions" => Some("questions"),
+        "keypoints" => Some("keypoints"),
+        "format" => Some("format"),
+        "topology" => Some("topology"),
+        _ => None,
+    }
 }
 
 impl Augmenting {
@@ -510,6 +533,10 @@ impl Augmenting {
             cache: AugmentCache::open(cache_path),
             pending: None,
             error: None,
+            queue: VecDeque::new(),
+            batch_guidance: None,
+            done: Vec::new(),
+            failed: Vec::new(),
         }
     }
 
@@ -548,15 +575,27 @@ impl Augmenting {
             busy,
             elapsed: self.pending.as_ref().map(|p| p.started.elapsed().as_secs()),
             error: self.error.clone(),
+            queued: self.queue.iter().filter_map(|t| target_label(t)).collect(),
+            done: self.done.clone(),
+            failed: self
+                .failed
+                .iter()
+                .map(|(t, e)| FailedTargetDto {
+                    target: t,
+                    error: e.clone(),
+                })
+                .collect(),
         }
     }
 
-    /// Spawns fill-the-gaps generation for `target` (no-op if one is already
-    /// running, the target is unknown, or a per-card target has no gap to fill).
-    /// `guidance` is the `--with` steer. Returns whether a job started.
-    pub(super) fn generate(
+    /// Starts a batch: `targets` run one at a time in order, a per-target
+    /// failure recorded in `failed` without aborting the rest. No-op (returns
+    /// `false`) while a generation is already in flight. Returns whether a job
+    /// started (a batch of only no-gap/unknown targets drains without starting
+    /// one).
+    pub(super) fn generate_batch(
         &mut self,
-        target: &str,
+        targets: Vec<String>,
         guidance: Option<String>,
         ai: &AiConfig,
         ask: &AskConfig,
@@ -564,86 +603,112 @@ impl Augmenting {
         if self.pending.is_some() {
             return false;
         }
-        let (job, tgt): (augment_ai::Job, &'static str) = match target {
-            "choices" => {
-                let items = self.cache.missing_choices(&self.cards);
-                if items.is_empty() {
-                    return false;
-                }
-                (
-                    augment_ai::Job::Choices {
-                        items,
-                        count: ai.distractor_count,
-                    },
-                    "choices",
-                )
-            }
-            "notes" => {
-                let items = self.cache.missing_notes(&self.cards);
-                if items.is_empty() {
-                    return false;
-                }
-                (augment_ai::Job::Notes { items }, "notes")
-            }
-            "questions" => {
-                let items = self.cache.missing_questions(&self.cards);
-                if items.is_empty() {
-                    return false;
-                }
-                (
-                    augment_ai::Job::Questions {
-                        items,
-                        count: ai.variant_count,
-                    },
-                    "questions",
-                )
-            }
-            "keypoints" => {
-                let items = self.cache.missing_keypoints(&self.cards);
-                if items.is_empty() {
-                    return false;
-                }
-                (
-                    augment_ai::Job::Keypoints {
-                        items,
-                        count: ai.keypoint_count,
-                    },
-                    "keypoints",
-                )
-            }
-            "format" => {
-                let items = self.cache.missing_format(&self.cards);
-                if items.is_empty() {
-                    return false;
-                }
-                (augment_ai::Job::Format { items }, "format")
-            }
-            // Topology always adds a new one (named by its guidance); no gap notion.
-            "topology" => (
-                augment_ai::Job::Topology {
-                    items: self
-                        .cards
-                        .iter()
-                        .map(augment::WarmItem::from_card)
-                        .collect(),
-                },
-                "topology",
-            ),
-            _ => return false,
-        };
         self.error = None;
-        let rx = augment_ai::spawn(job, guidance, augment_ai::run_config(ai, ask));
-        self.pending = Some(AugmentPending {
-            rx,
-            target: tgt,
-            started: Instant::now(),
-        });
-        true
+        self.done.clear();
+        self.failed.clear();
+        self.batch_guidance = guidance;
+        self.queue = targets.into_iter().collect();
+        self.start_next(ai, ask)
+    }
+
+    /// Pops targets off the queue until one spawns a job. A target with no gap
+    /// to fill (or an unrecognized one) is recorded as done in passing and
+    /// skipped, without spawning anything. Returns whether a job started.
+    fn start_next(&mut self, ai: &AiConfig, ask: &AskConfig) -> bool {
+        while let Some(target) = self.queue.pop_front() {
+            let (job, tgt): (augment_ai::Job, &'static str) = match target.as_str() {
+                "choices" => {
+                    let items = self.cache.missing_choices(&self.cards);
+                    if items.is_empty() {
+                        self.done.push("choices");
+                        continue;
+                    }
+                    (
+                        augment_ai::Job::Choices {
+                            items,
+                            count: ai.distractor_count,
+                        },
+                        "choices",
+                    )
+                }
+                "notes" => {
+                    let items = self.cache.missing_notes(&self.cards);
+                    if items.is_empty() {
+                        self.done.push("notes");
+                        continue;
+                    }
+                    (augment_ai::Job::Notes { items }, "notes")
+                }
+                "questions" => {
+                    let items = self.cache.missing_questions(&self.cards);
+                    if items.is_empty() {
+                        self.done.push("questions");
+                        continue;
+                    }
+                    (
+                        augment_ai::Job::Questions {
+                            items,
+                            count: ai.variant_count,
+                        },
+                        "questions",
+                    )
+                }
+                "keypoints" => {
+                    let items = self.cache.missing_keypoints(&self.cards);
+                    if items.is_empty() {
+                        self.done.push("keypoints");
+                        continue;
+                    }
+                    (
+                        augment_ai::Job::Keypoints {
+                            items,
+                            count: ai.keypoint_count,
+                        },
+                        "keypoints",
+                    )
+                }
+                "format" => {
+                    let items = self.cache.missing_format(&self.cards);
+                    if items.is_empty() {
+                        self.done.push("format");
+                        continue;
+                    }
+                    (augment_ai::Job::Format { items }, "format")
+                }
+                // Topology always adds a new one (named by its guidance); no gap notion.
+                "topology" => (
+                    augment_ai::Job::Topology {
+                        items: self
+                            .cards
+                            .iter()
+                            .map(augment::WarmItem::from_card)
+                            .collect(),
+                    },
+                    "topology",
+                ),
+                // Unknown target: nothing to record, try the next queued one.
+                _ => continue,
+            };
+            let rx = augment_ai::spawn(
+                job,
+                self.batch_guidance.clone(),
+                augment_ai::run_config(ai, ask),
+            );
+            self.pending = Some(AugmentPending {
+                rx,
+                target: tgt,
+                started: Instant::now(),
+            });
+            return true;
+        }
+        false
     }
 
     /// Drains a finished generation: applies its [`Outcome`](augment_ai::Outcome) to
-    /// the cache and saves, or records the error. A no-op while still running.
-    pub(super) fn poll(&mut self) {
+    /// the cache and saves it as done, or records the error in `failed` (a
+    /// per-target failure never aborts the batch). Then advances the queue.
+    /// A no-op while still running.
+    pub(super) fn poll(&mut self, ai: &AiConfig, ask: &AskConfig) {
         let Some(p) = self.pending.as_ref() else {
             return;
         };
@@ -654,14 +719,17 @@ impl Augmenting {
                 Err("the augment helper exited unexpectedly".to_string())
             }
         };
+        let target = p.target;
         self.pending = None;
         match outcome {
             Ok(o) => {
                 self.apply(o);
                 self.save();
+                self.done.push(target);
             }
-            Err(e) => self.error = Some(e),
+            Err(e) => self.failed.push((target, e)),
         }
+        self.start_next(ai, ask);
     }
 
     /// Writes a finished outcome into the cache (does not save).
