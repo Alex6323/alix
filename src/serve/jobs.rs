@@ -4,7 +4,7 @@
 //! loop, built when its screen opens and dropped when it closes.
 //! Each type only polls a background worker's channel for a finished result;
 //! the thread itself is spawned by the lib crate it calls (`ask::spawn`,
-//! `augment::spawn`, …), never by these types.
+//! `augment_ai::spawn`, …), never by these types.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -26,6 +26,7 @@ use super::{
 use crate::{
     ask::{self, CliSession, Exchange, Reply},
     augment::{self, AugmentCache},
+    augment_ai,
     card::Card,
     config::{AiConfig, AskConfig, Audience},
     exam, generate,
@@ -475,7 +476,7 @@ pub(super) struct Examining {
 /// any in-flight generation. Opened from the picker's Augment screen
 /// (`/api/augment/open`), it reports coverage, fills gaps, and removes — all
 /// scoped to this deck, since the cache may be shared by other decks on the same
-/// store. The single in-flight `Job` runs on a background thread (`augment::spawn`)
+/// store. The single in-flight `Job` runs on a background thread (`augment_ai::spawn`)
 /// while the page polls `GET /api/augment`.
 pub(super) struct Augmenting {
     /// Display name (a workspace member's qualified `<ws>/<file>`, or a deck file).
@@ -492,7 +493,7 @@ pub(super) struct Augmenting {
 /// An augmentation generation in flight: the channel the worker delivers on, the
 /// target it's filling (for the "busy" row), and when it started (for elapsed).
 pub(super) struct AugmentPending {
-    pub(super) rx: Receiver<Result<augment::Outcome, String>>,
+    pub(super) rx: Receiver<Result<augment_ai::Outcome, String>>,
     pub(super) target: &'static str,
     pub(super) started: Instant,
 }
@@ -563,14 +564,14 @@ impl Augmenting {
         if self.pending.is_some() {
             return false;
         }
-        let (job, tgt): (augment::Job, &'static str) = match target {
+        let (job, tgt): (augment_ai::Job, &'static str) = match target {
             "choices" => {
                 let items = self.cache.missing_choices(&self.cards);
                 if items.is_empty() {
                     return false;
                 }
                 (
-                    augment::Job::Choices {
+                    augment_ai::Job::Choices {
                         items,
                         count: ai.distractor_count,
                     },
@@ -582,7 +583,7 @@ impl Augmenting {
                 if items.is_empty() {
                     return false;
                 }
-                (augment::Job::Notes { items }, "notes")
+                (augment_ai::Job::Notes { items }, "notes")
             }
             "questions" => {
                 let items = self.cache.missing_questions(&self.cards);
@@ -590,7 +591,7 @@ impl Augmenting {
                     return false;
                 }
                 (
-                    augment::Job::Questions {
+                    augment_ai::Job::Questions {
                         items,
                         count: ai.variant_count,
                     },
@@ -603,7 +604,7 @@ impl Augmenting {
                     return false;
                 }
                 (
-                    augment::Job::Keypoints {
+                    augment_ai::Job::Keypoints {
                         items,
                         count: ai.keypoint_count,
                     },
@@ -615,11 +616,11 @@ impl Augmenting {
                 if items.is_empty() {
                     return false;
                 }
-                (augment::Job::Format { items }, "format")
+                (augment_ai::Job::Format { items }, "format")
             }
             // Topology always adds a new one (named by its guidance); no gap notion.
             "topology" => (
-                augment::Job::Topology {
+                augment_ai::Job::Topology {
                     items: self
                         .cards
                         .iter()
@@ -631,7 +632,7 @@ impl Augmenting {
             _ => return false,
         };
         self.error = None;
-        let rx = augment::spawn(job, guidance, augment::run_config(ai, ask));
+        let rx = augment_ai::spawn(job, guidance, augment_ai::run_config(ai, ask));
         self.pending = Some(AugmentPending {
             rx,
             target: tgt,
@@ -640,7 +641,7 @@ impl Augmenting {
         true
     }
 
-    /// Drains a finished generation: applies its [`Outcome`](augment::Outcome) to
+    /// Drains a finished generation: applies its [`Outcome`](augment_ai::Outcome) to
     /// the cache and saves, or records the error. A no-op while still running.
     pub(super) fn poll(&mut self) {
         let Some(p) = self.pending.as_ref() else {
@@ -664,30 +665,30 @@ impl Augmenting {
     }
 
     /// Writes a finished outcome into the cache (does not save).
-    fn apply(&mut self, outcome: augment::Outcome) {
+    fn apply(&mut self, outcome: augment_ai::Outcome) {
         match outcome {
-            augment::Outcome::Choices(map) => {
+            augment_ai::Outcome::Choices(map) => {
                 for (id, v) in map {
                     self.cache.set_distractors(id, v);
                 }
             }
-            augment::Outcome::Notes(map) => {
+            augment_ai::Outcome::Notes(map) => {
                 for (id, v) in map {
                     self.cache.set_note(id, v);
                 }
             }
-            augment::Outcome::Questions(map) => {
+            augment_ai::Outcome::Questions(map) => {
                 for (id, v) in map {
                     self.cache.set_variants(id, v);
                 }
             }
-            augment::Outcome::Keypoints(map) => {
+            augment_ai::Outcome::Keypoints(map) => {
                 for (id, v) in map {
                     self.cache.set_keypoints(id, v);
                 }
             }
-            augment::Outcome::Topology(t) => self.cache.add_topology(t),
-            augment::Outcome::Format(map) => {
+            augment_ai::Outcome::Topology(t) => self.cache.add_topology(t),
+            augment_ai::Outcome::Format(map) => {
                 for (id, v) in map {
                     self.cache.set_format(id, v);
                 }

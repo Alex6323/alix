@@ -23,6 +23,7 @@ pub mod answer;
 pub mod ask;
 pub mod assemble;
 pub mod augment;
+pub mod augment_ai;
 pub mod backend;
 pub mod card;
 pub mod choice;
