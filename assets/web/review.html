@@ -574,28 +574,58 @@
   .exam-missed li { color: var(--again); opacity: 0.8; }
   .exam-ready { color: var(--warn); margin-top: 8px; }
 
-  /* ── AI augment screen ── */
+  /* ── AI augment screen ── one card per target, a plain description, and a
+     BEFORE -> AFTER preview so a user sees what the augmentation does before
+     spending tokens on it (assets/ignore/design_handoff_alix_adult/Alix
+     Augment.dc.html was the visual reference; content comes from AUG_INFO,
+     not that mock's Dart text). Batch controls (checkboxes, multi-select
+     generate) are a separate, later change: this is presentation only. */
   .aug { width: var(--card-w); max-width: 92vw; display: flex; flex-direction: column; gap: 0; animation: deal 0.3s both; max-height: 78vh; overflow-y: auto; padding-right: 4px; }
-  .aug-row { display: flex; align-items: center; gap: 14px; padding: 13px 4px; border-bottom: 1px solid var(--line); }
-  .aug-row:last-of-type { border-bottom: 0; }
-  .aug-label { flex: 0 0 88px; color: var(--ink); font-size: 0.95rem; }
-  .aug-bar { flex: 1 1 auto; height: 7px; min-width: 60px; border-radius: 999px; background: rgba(255,255,255,0.07); overflow: hidden; }
-  .aug-bar i { display: block; height: 100%; width: 0; background: var(--bolt); border-radius: 999px; transition: width 0.3s; }
-  .aug-bar i.full { background: var(--good); }
-  .aug-count { flex: 0 0 auto; min-width: 46px; text-align: right; font-family: var(--mono); font-size: 0.74rem; color: var(--dim); font-variant-numeric: tabular-nums; }
-  .aug-actions { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 7px; }
+  .aug-card { border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; margin-bottom: 14px; }
+  .aug-card:last-of-type { margin-bottom: 0; }
+  /* head row: title + description (left, truncates), coverage + action (right, fixed). */
+  .aug-card-head { display: flex; align-items: flex-start; gap: 16px; }
+  .aug-card-info { flex: 1 1 auto; min-width: 0; }
+  .aug-card-title { color: var(--ink); font-size: 1rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .aug-card-desc { color: var(--dim); font-size: 0.83rem; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .aug-count { flex: 0 0 auto; font-family: var(--mono); font-size: 0.74rem; color: var(--dim); font-variant-numeric: tabular-nums; }
+  .aug-count.full { color: var(--good); }
+  .aug-actions { flex: 0 0 auto; display: inline-flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 7px; max-width: 58%; }
   .aug-btn { background: none; color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 5px 12px; font-family: var(--sans); font-size: 0.8rem; cursor: pointer; transition: border-color 0.12s, color 0.12s; }
   .aug-btn:hover:not(:disabled) { border-color: var(--bolt); color: var(--bolt-hi); }
   .aug-btn:disabled { opacity: 0.35; cursor: default; }
   .aug-btn.ghost { color: var(--dim); }
   .aug-btn.ghost:hover:not(:disabled) { border-color: var(--again); color: var(--again); }
-  .aug-row-topo { align-items: flex-start; }
-  .aug-topos { flex: 1 1 auto; display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+  .aug-topos { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
   .aug-topo { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; border: 1px solid var(--line); border-radius: 999px; padding: 2px 5px 2px 10px; font-size: 0.76rem; color: var(--ink); }
   .aug-topo > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .aug-x { background: none; border: 0; color: var(--dim); cursor: pointer; font-size: 0.74rem; line-height: 1; padding: 2px 4px; border-radius: 6px; }
   .aug-x:hover { color: var(--again); }
   .aug-none { color: var(--dim); font-size: 0.8rem; font-style: italic; }
+  /* the before/after preview: two bordered boxes + an arrow between them. */
+  .aug-ba { display: flex; align-items: stretch; gap: 12px; margin-top: 14px; }
+  .aug-before, .aug-after { flex: 1 1 0; min-width: 0; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .aug-after { border-color: var(--bolt); }
+  .aug-arrow { flex: 0 0 auto; display: flex; align-items: center; color: var(--dim); font-size: 1.1rem; }
+  .aug-ba-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .aug-ba-label { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); }
+  .aug-ba-label.accent { color: var(--bolt); }
+  .aug-ba-badge { font-family: var(--mono); font-size: 0.62rem; color: var(--dim); white-space: nowrap; }
+  .aug-ba-q { color: var(--ink); font-size: 0.86rem; margin-top: 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .aug-ba-a { color: var(--dim); font-size: 0.8rem; margin-top: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* longer prose (the raw "before" text a formatting/key-points pass reshapes)
+     clamps to 3 lines instead of truncating mid-sentence on one. */
+  .aug-ba-prose { color: var(--ink); font-size: 0.82rem; line-height: 1.45; margin-top: 7px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .aug-ba-note { border-left: 2px solid var(--bolt); padding: 3px 0 3px 10px; margin-top: 9px; font-size: 0.78rem; color: var(--dim); }
+  .aug-ba-list { margin: 7px 0 0; padding-left: 16px; font-size: 0.8rem; color: var(--ink); }
+  .aug-ba-list li { margin-bottom: 2px; }
+  .aug-ba-list li:last-child { margin-bottom: 0; }
+  .aug-ba-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+  .aug-ba-chip { font-family: var(--mono); font-size: 0.74rem; padding: 3px 9px; border-radius: 7px; border: 1px solid var(--line); color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .aug-ba-chip.good { border-color: var(--good); color: var(--good); }
+  .aug-ba-arrow-sm { color: var(--dim); font-size: 0.8rem; }
+  .aug-ba-code { font-family: var(--mono); font-size: 0.78rem; color: var(--ink); background: rgba(255,255,255,0.05); border-radius: 8px; padding: 8px 10px; margin-top: 7px; }
+  .aug-ba-meta { color: var(--dim); font-size: 0.7rem; font-style: italic; margin-top: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .aug-foot { display: flex; flex-direction: column; gap: 8px; padding: 16px 4px 2px; }
   .aug-guide-input { width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.25); border: 1px solid var(--line); border-radius: 10px; color: var(--ink); font: inherit; font-size: 0.84rem; padding: 8px 12px; }
   .aug-guide-input::placeholder { color: var(--dim); }
@@ -1566,40 +1596,166 @@ function augBusyCell(d) {
   sp.appendChild(document.createTextNode(augElapsedText(d)));
   return sp;
 }
-// A per-card target row: a coverage bar + Generate (fills the gap) and Remove.
+// ── AUG_INFO: static, client-only reference content for the augment cards ──
+// A plain description plus a neutral BEFORE -> AFTER preview per target kind,
+// so a user can see what an augmentation actually does before spending tokens
+// on it. Never sent by the server: d.rows only carries coverage counts.
+// `before`/`after` each fill a box element with the small, fixed preview.
+const AUG_INFO = {
+  choices: {
+    title: "Choices",
+    desc: "Turns a card into a multiple-choice question: adds three plausible distractors alongside the answer.",
+    before(b) {
+      b.appendChild(el("div", "aug-ba-q", "Q: What is the capital of Australia?"));
+      b.appendChild(el("div", "aug-ba-a", "A: Canberra"));
+    },
+    after(b) {
+      b.appendChild(el("div", "aug-ba-q", "Q: What is the capital of Australia?"));
+      const chips = el("div", "aug-ba-chips");
+      ["Sydney", "Melbourne", "Perth"].forEach(name => chips.appendChild(el("span", "aug-ba-chip", name)));
+      chips.appendChild(el("span", "aug-ba-chip good", "Canberra ✓"));
+      b.appendChild(chips);
+    },
+  },
+  notes: {
+    title: "Notes",
+    desc: "Attaches a short “why it matters” note that appears under the answer after you reveal.",
+    before(b) {
+      b.appendChild(el("div", "aug-ba-q", "Q: What is a leap year?"));
+      b.appendChild(el("div", "aug-ba-a", "A: A year with 366 days (an extra day in February)."));
+    },
+    after(b) {
+      b.appendChild(el("div", "aug-ba-q", "Q: What is a leap year?"));
+      b.appendChild(el("div", "aug-ba-a", "A: A year with 366 days (an extra day in February)."));
+      b.appendChild(el("div", "aug-ba-note", "Note: years divisible by 100 are not leap years unless also divisible by 400."));
+    },
+  },
+  questions: {
+    title: "Questions",
+    desc: "Rewrites a card's question into a few fresh phrasings, so you read and answer it each time instead of just recognising the wording.",
+    badge: "3 phrasings, 1 answer",
+    before(b) {
+      b.appendChild(el("div", "aug-ba-q", "Q: What is the freezing point of water in Celsius?"));
+      b.appendChild(el("div", "aug-ba-a", "A: 0"));
+    },
+    after(b) {
+      const ul = el("ul", "aug-ba-list");
+      ["What is the freezing point of water in Celsius?",
+       "At what Celsius temperature does water freeze?",
+       "Water turns to ice at what temperature (in C)?"].forEach(q => ul.appendChild(el("li", null, q)));
+      b.appendChild(ul);
+      b.appendChild(el("div", "aug-ba-a", "→ same answer: 0"));
+    },
+  },
+  keypoints: {
+    title: "Key points",
+    desc: "Distils a long answer into the few bullet points a good response must cover.",
+    before(b) {
+      b.appendChild(el("div", "aug-ba-prose",
+        "Photosynthesis lets plants turn sunlight, water, and carbon dioxide into glucose, releasing oxygen as a by-product."));
+    },
+    after(b) {
+      const ul = el("ul", "aug-ba-list");
+      ["Inputs: sunlight, water, CO2", "Output: glucose (stored energy)", "By-product: oxygen"]
+        .forEach(pt => ul.appendChild(el("li", null, pt)));
+      b.appendChild(ul);
+    },
+  },
+  format: {
+    title: "Formatting",
+    desc: "Rewrites a plain-prose answer into clean line breaks and formatting, without changing the wording.",
+    before(b) {
+      b.appendChild(el("div", "aug-ba-prose",
+        "Order of operations: parentheses, then exponents, then multiply and divide, then add and subtract."));
+    },
+    after(b) {
+      b.appendChild(el("div", "aug-ba-a", "Order of operations:"));
+      const code = el("div", "aug-ba-code");
+      ["1. Parentheses", "2. Exponents", "3. Multiply / Divide", "4. Add / Subtract"]
+        .forEach(line => code.appendChild(el("div", null, line)));
+      b.appendChild(code);
+    },
+  },
+  topology: {
+    title: "Topology",
+    desc: "Links cards into a prerequisite graph, so alix schedules foundations before what builds on them.",
+    before(b) {
+      const chips = el("div", "aug-ba-chips");
+      ["Addition", "Multiplication", "Exponents"].forEach(name => chips.appendChild(el("span", "aug-ba-chip", name)));
+      b.appendChild(chips);
+      b.appendChild(el("div", "aug-ba-meta", "unordered, reviewed at random"));
+    },
+    after(b) {
+      const chain = el("div", "aug-ba-chips");
+      ["Addition", "Multiplication", "Exponents"].forEach((name, i) => {
+        if (i > 0) chain.appendChild(el("span", "aug-ba-arrow-sm", "→"));
+        chain.appendChild(el("span", "aug-ba-chip good", name));
+      });
+      b.appendChild(chain);
+      b.appendChild(el("div", "aug-ba-meta", "foundations first"));
+    },
+  },
+};
+// One BEFORE or AFTER box: a label (+ optional badge on the same line, e.g.
+// "questions"'s "3 phrasings, 1 answer"), then the kind's preview content.
+function augBaBox(cls, label, accent, badge, fill) {
+  const box = el("div", cls);
+  const head = el("div", "aug-ba-head");
+  head.appendChild(el("span", "aug-ba-label" + (accent ? " accent" : ""), label));
+  if (badge) head.appendChild(el("span", "aug-ba-badge", badge));
+  box.appendChild(head);
+  fill(box);
+  return box;
+}
+// The BEFORE -> AFTER preview row for a target kind, from AUG_INFO. A kind
+// missing from AUG_INFO (shouldn't happen, the six targets are fixed) just
+// renders empty boxes rather than throwing.
+function augBeforeAfter(kind) {
+  const info = AUG_INFO[kind];
+  const wrap = el("div", "aug-ba");
+  wrap.appendChild(augBaBox("aug-before", "BEFORE", false, null, b => { if (info) info.before(b); }));
+  wrap.appendChild(el("div", "aug-arrow", "→"));
+  wrap.appendChild(augBaBox("aug-after", "AFTER", true, info && info.badge, b => { if (info) info.after(b); }));
+  return wrap;
+}
+// The shared card shell: title (AUG_INFO's, falling back to the server's
+// row.label) + description on the left, the caller's coverage/action markup
+// on the right, and the before/after preview underneath.
+function augCardShell(row, right) {
+  const info = AUG_INFO[row.kind];
+  const card = el("div", "aug-card");
+  const head = el("div", "aug-card-head");
+  const meta = el("div", "aug-card-info");
+  meta.appendChild(el("div", "aug-card-title", (info && info.title) || row.label));
+  if (info) meta.appendChild(el("div", "aug-card-desc", info.desc));
+  head.appendChild(meta);
+  head.appendChild(right);
+  card.appendChild(head);
+  card.appendChild(augBeforeAfter(row.kind));
+  return card;
+}
+// A per-target card: coverage count + Generate (fills the gap) and Remove.
 function augCardRow(d, row) {
-  const r = el("div", "aug-row");
-  r.appendChild(el("span", "aug-label", row.label));
-  const bar = el("span", "aug-bar");
-  const fill = el("i");
-  const frac = row.eligible ? row.covered / row.eligible : 0;
-  fill.style.width = Math.round(frac * 100) + "%";
   const full = row.eligible && row.covered >= row.eligible;
-  if (full) fill.className = "full";
-  bar.appendChild(fill);
-  r.appendChild(bar);
-  r.appendChild(el("span", "aug-count", row.covered + "/" + row.eligible));
-  const actions = el("span", "aug-actions");
-  if (row.busy) actions.appendChild(augBusyCell(d));
+  const right = el("div", "aug-actions");
+  right.appendChild(el("span", "aug-count" + (full ? " full" : ""), row.covered + "/" + row.eligible));
+  if (row.busy) right.appendChild(augBusyCell(d));
   else {
     const gen = el("button", "aug-btn", full ? "Complete" : "Generate");
     gen.disabled = !!d.busy || !row.eligible || !!full;
     gen.addEventListener("click", () => augmentGenerate(row.kind, augGuidance()));
-    actions.appendChild(gen);
+    right.appendChild(gen);
     if (row.covered > 0) {
       const rm = el("button", "aug-btn ghost", "Remove");
       rm.disabled = !!d.busy;
       rm.addEventListener("click", () => augmentRemove(row.kind, null));
-      actions.appendChild(rm);
+      right.appendChild(rm);
     }
   }
-  r.appendChild(actions);
-  return r;
+  return augCardShell(row, right);
 }
-// The topology row: its named topologies (each removable) + Add (uses guidance).
+// The topology card: its named topologies (each removable) + Add (uses guidance).
 function augTopologyRow(d, row) {
-  const r = el("div", "aug-row aug-row-topo");
-  r.appendChild(el("span", "aug-label", row.label));
   const list = el("span", "aug-topos");
   if (!row.items.length) list.appendChild(el("span", "aug-none", "none yet"));
   for (const name of row.items) {
@@ -1613,17 +1769,16 @@ function augTopologyRow(d, row) {
     }
     list.appendChild(pill);
   }
-  r.appendChild(list);
-  const actions = el("span", "aug-actions");
-  if (row.busy) actions.appendChild(augBusyCell(d));
+  const right = el("div", "aug-actions");
+  right.appendChild(list);
+  if (row.busy) right.appendChild(augBusyCell(d));
   else {
     const add = el("button", "aug-btn", "Add");
     add.disabled = !!d.busy;
     add.addEventListener("click", () => augmentGenerate("topology", augGuidance()));
-    actions.appendChild(add);
+    right.appendChild(add);
   }
-  r.appendChild(actions);
-  return r;
+  return augCardShell(row, right);
 }
 function renderAugment() {
   const d = augmentData;
