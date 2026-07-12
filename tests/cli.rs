@@ -1045,6 +1045,41 @@ fn doctor_bare_reports_config_store_and_decks_sections() {
 }
 
 #[test]
+fn bare_and_rooted_doctor_share_the_in_folder_store() {
+    let decks = tempfile::tempdir().unwrap();
+    std::fs::write(decks.path().join("q.txt"), "# Q\n    A\n").unwrap();
+
+    // A config pointing decks_dir at our temp folder.
+    let cfg = decks.path().join("config.toml");
+    std::fs::write(
+        &cfg,
+        format!("decks_dir = \"{}\"\n", decks.path().display()),
+    )
+    .unwrap();
+    let cfg = cfg.to_str().unwrap();
+    let dir = decks.path().to_str().unwrap();
+    let in_folder = decks.path().join("progress.json");
+    let in_folder = in_folder.display().to_string();
+
+    // No DIR: the "configured setup" branch must use the in-folder store,
+    // not the global platform store.
+    let bare = String::from_utf8_lossy(&alix(&["doctor", "--config", cfg]).stdout).into_owned();
+    assert!(bare.contains(&in_folder), "bare doctor store, got:\n{bare}");
+    assert!(
+        !bare.contains(".local/share/alix/progress.json"),
+        "bare doctor must not fall back to the global store:\n{bare}"
+    );
+
+    // Explicit root resolves to the SAME store (the gotcha is gone).
+    let rooted =
+        String::from_utf8_lossy(&alix(&["doctor", dir, "--config", cfg]).stdout).into_owned();
+    assert!(
+        rooted.contains(&in_folder),
+        "rooted doctor store, got:\n{rooted}"
+    );
+}
+
+#[test]
 fn doctor_on_a_folder_target_scopes_to_its_own_store() {
     let dir = TempDir::new().unwrap();
     write(dir.path(), "a.txt", VALID_DECK);

@@ -11,7 +11,7 @@ use std::{
 use alix::{
     assemble::{self, open_store},
     config::Config,
-    recent::{self, RecentDecks},
+    recent::RecentDecks,
     serve, workspace,
 };
 use anyhow::{Context, Result, bail};
@@ -67,36 +67,35 @@ pub(crate) fn launch(args: LaunchArgs) -> Result<()> {
     // config-derived instance (bare `alix`) re-resolves `decks_dir` on every
     // `/api/decks` fetch, so an edited config takes effect without a restart.
     let scoped = args.dir.is_some();
-    // The served root and this instance's state files. No dir → the configured
-    // decks directory with the global store/recent (the classic single-user
-    // setup). A dir → that folder, state kept inside it: a plain folder gets
-    // `progress.json`/`recent.json` at its top; a workspace root already keeps
-    // its store inside by convention (manifest `store =` respected).
+    // The served root and this instance's state files, kept inside that
+    // folder: a plain folder gets `progress.json`/`recent.json` at its top; a
+    // workspace root already keeps its store inside by convention (manifest
+    // `store =` respected). No dir → the configured decks directory, resolved
+    // the same way — it is served as this instance's own root, not a
+    // separate global store/recent.
     let (decks_dir, instance_store, recent_path) = match &args.dir {
-        None => (
-            config.decks_dir().context("cannot determine ~/decks")?,
-            None,
-            recent::default_recent_path().context("cannot determine the data directory")?,
-        ),
+        None => {
+            let dir = config.decks_dir().context("cannot determine ~/decks")?;
+            let store = workspace::root_store_path(&dir);
+            let recent = dir.join("recent.json");
+            (dir, Some(store), recent)
+        }
         Some(path) if path.is_file() => bail!(
             "`alix <deck>` was removed — run `alix` and pick the deck there, \
              or serve its folder: `alix {}`",
             path.parent().unwrap_or_else(|| Path::new(".")).display()
         ),
         Some(path) if !path.is_dir() => bail!("`{}` is not a folder", path.display()),
-        Some(path) => {
-            let store = if workspace::is_workspace(path) {
-                workspace::store_path(path)
-            } else {
-                path.join(workspace::STORE_FILE)
-            };
-            (path.clone(), Some(store), path.join("recent.json"))
-        }
+        Some(path) => (
+            path.clone(),
+            Some(workspace::root_store_path(path)),
+            path.join("recent.json"),
+        ),
     };
     let recent = RecentDecks::load(recent_path);
     // Sessions write to the decks' own store — a workspace's `progress.json`
-    // when the picked deck lives in one, else this instance's store (the
-    // global default, or the scoped root's own file).
+    // when the picked deck lives in one, else this instance's own root store
+    // (the configured decks dir's, or the scoped root's).
     let store = open_store(instance_store.clone())?;
     let addr = serve_addr(args.port, args.lan, &config);
     // Bind before announcing, so a taken port errors instead of printing a

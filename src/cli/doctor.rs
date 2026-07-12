@@ -192,20 +192,14 @@ pub(crate) fn doctor_cmd(args: DoctorArgs) -> Result<()> {
     let mut findings = vec![config_finding];
     // The same root/store resolution the launcher applies to `alix <dir>`.
     let (decks_dir, store_path) = match &args.dir {
-        Some(path) => {
-            let store = if workspace::is_workspace(path) {
-                workspace::store_path(path)
-            } else {
-                path.join(workspace::STORE_FILE)
-            };
-            (path.clone(), Some(store))
+        Some(path) => (path.clone(), workspace::root_store_path(path)),
+        None => {
+            let dir = config.decks_dir().context("cannot determine ~/decks")?;
+            let store = workspace::root_store_path(&dir);
+            (dir, store)
         }
-        None => (
-            config.decks_dir().context("cannot determine ~/decks")?,
-            None,
-        ),
     };
-    findings.push(doctor::check_store(store_path));
+    findings.push(doctor::check_store(Some(store_path)));
     findings.push(doctor::check_decks(&decks_dir));
     findings.push(doctor::check_binary(
         "backend",
