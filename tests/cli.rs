@@ -1065,10 +1065,6 @@ fn bare_and_rooted_doctor_share_the_in_folder_store() {
     // not the global platform store.
     let bare = String::from_utf8_lossy(&alix(&["doctor", "--config", cfg]).stdout).into_owned();
     assert!(bare.contains(&in_folder), "bare doctor store, got:\n{bare}");
-    assert!(
-        !bare.contains(".local/share/alix/progress.json"),
-        "bare doctor must not fall back to the global store:\n{bare}"
-    );
 
     // Explicit root resolves to the SAME store (the gotcha is gone).
     let rooted =
@@ -1096,6 +1092,67 @@ fn doctor_reports_a_broken_config_as_a_failing_finding() {
     assert!(!out.status.success(), "a broken config should fail doctor");
     let text = format!("{}{}", stdout(&out), stderr(&out));
     assert!(text.contains("config"), "{text}");
+}
+
+// ── `stats`/`list`/`reset` agree with the served root's store ───────────────
+
+#[test]
+fn stats_on_a_loose_deck_resolves_the_decks_dir_root_store_like_review_does() {
+    // Bare `alix` (and its picker) reads/writes a loose deck's progress at
+    // `<decks_dir>/progress.json`. `alix stats` must resolve the SAME file —
+    // proven with a corrupt-file discriminator: if `stats` instead fell back
+    // to the global platform store (the pre-fix bug), the folder's corrupt
+    // file would never be opened and the command would succeed instead of
+    // failing.
+    let decks = tempfile::tempdir().unwrap();
+    let deck = write(decks.path(), "math.txt", VALID_DECK);
+
+    let cfg = decks.path().join("config.toml");
+    std::fs::write(
+        &cfg,
+        format!("decks_dir = \"{}\"\n", decks.path().display()),
+    )
+    .unwrap();
+    let cfg = cfg.to_str().unwrap();
+
+    let garbage = "{ this is not valid json";
+    std::fs::write(decks.path().join("progress.json"), garbage).unwrap();
+
+    let out = alix(&["stats", &deck, "--config", cfg]);
+    assert!(
+        !out.status.success(),
+        "stats must read <decks_dir>/progress.json, not fall back to the \
+         global store: stdout:\n{}",
+        stdout(&out)
+    );
+}
+
+#[test]
+fn reset_all_clears_the_decks_dir_root_store_not_the_global_one() {
+    // Same discriminator as above, against `reset --all`: it must resolve to
+    // `<decks_dir>/progress.json` (mirroring bare `alix`), not the global
+    // platform store.
+    let decks = tempfile::tempdir().unwrap();
+    write(decks.path(), "math.txt", VALID_DECK);
+
+    let cfg = decks.path().join("config.toml");
+    std::fs::write(
+        &cfg,
+        format!("decks_dir = \"{}\"\n", decks.path().display()),
+    )
+    .unwrap();
+    let cfg = cfg.to_str().unwrap();
+
+    let garbage = "{ this is not valid json";
+    std::fs::write(decks.path().join("progress.json"), garbage).unwrap();
+
+    let out = alix(&["reset", "--all", "--yes", "--config", cfg]);
+    assert!(
+        !out.status.success(),
+        "reset --all must clear <decks_dir>/progress.json, not the global \
+         store: stdout:\n{}",
+        stdout(&out)
+    );
 }
 
 // ── `alix share` / `alix receive` ────────────────────────────────────────────

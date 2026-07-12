@@ -545,6 +545,61 @@ fn a_group_row_aggregates_member_reviewability_instead_of_hardcoding_true() {
 }
 
 #[test]
+fn a_plain_folders_member_badge_reads_the_served_instance_store_not_the_global_default() {
+    // A plain (non-workspace) subfolder has no store of its own, so its
+    // member badges must read the SAME store the top-level loose-deck
+    // badges do (the served instance/root store `deck_catalog` is called
+    // with) — never the abandoned global platform-data store. Proven by
+    // seeding the card as fully settled (recognized, scheduled well out at
+    // both depths) in the instance store passed to `deck_catalog`: an
+    // unrelated (fresh, empty) store would report it as new and reviewable.
+    let dir = tempfile::tempdir().unwrap();
+    let folder = dir.path().join("letters");
+    std::fs::create_dir(&folder).unwrap();
+    std::fs::write(folder.join("a.txt"), "# q\n\ta\n").unwrap();
+
+    let mut instance_store = Store::open(dir.path().join("instance.json")).unwrap();
+    let deck = Deck::load(folder.join("a.txt")).unwrap();
+    let id = deck.cards[0].id();
+    let now = now_ms();
+    let future = crate::store::FsrsState {
+        state: 2,
+        scheduled_days: 30,
+        due_ms: now + 30 * 86_400_000,
+        ..Default::default()
+    };
+    let entry = instance_store.get_or_insert(id, now);
+    entry.recognized_ms = Some(now);
+    entry.recall = Some(future);
+    entry.reconstruct = Some(future);
+    instance_store.save().unwrap();
+
+    let recent = RecentDecks::load(dir.path().join("recent.json"));
+    let mut icons = HashMap::new();
+    let dto = deck_catalog(
+        dir.path(),
+        &recent,
+        &instance_store,
+        true,
+        &mut icons,
+        ReviewConfig::default(),
+    );
+
+    let letters = dto
+        .folders
+        .iter()
+        .find(|f| f.name == "letters")
+        .expect("letters folder row");
+    assert_eq!(1, letters.members.len(), "row: {letters:?}");
+    let member = &letters.members[0];
+    assert!(
+        !member.reviewable,
+        "member badge must reflect the seeded instance store, not an empty \
+         global default: {member:?}"
+    );
+}
+
+#[test]
 fn a_deck_that_fails_to_load_reports_nothing_reviewable_but_stays_selectable() {
     let dir = tempfile::tempdir().unwrap();
     // A cloze card with no `{{...}}` holes fails to parse — `Deck::load` errors.

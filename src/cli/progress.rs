@@ -13,6 +13,7 @@ use alix::{
     scheduler::{Fsrs, Scheduler},
     store::Store,
     time::{humanize_ms, now_ms},
+    workspace,
 };
 use anyhow::{Result, bail};
 
@@ -34,10 +35,10 @@ fn state_label(fsrs_state: Option<u8>) -> &'static str {
 }
 
 pub(crate) fn stats(args: DeckArgs) -> Result<()> {
-    let config = Config::load(None)?;
+    let config = Config::load(args.config.as_deref())?;
     let now = now_ms();
 
-    let target = expand_target(&args.target)?;
+    let target = expand_target(&args.target, &config)?;
     for path in &target.decks {
         // Each deck reads its own store — a workspace deck's progress lives in the
         // workspace, not the global store.
@@ -117,10 +118,10 @@ pub(crate) fn stats(args: DeckArgs) -> Result<()> {
 }
 
 pub(crate) fn list(args: DeckArgs) -> Result<()> {
-    let config = Config::load(None)?;
+    let config = Config::load(args.config.as_deref())?;
     let now = now_ms();
 
-    let target = expand_target(&args.target)?;
+    let target = expand_target(&args.target, &config)?;
     for path in &target.decks {
         // Each deck reads its own store (workspace store for a workspace deck).
         let store = target.store_for_deck(path, args.store.as_deref())?;
@@ -184,9 +185,17 @@ fn select_reset_ids(cards: &[Card], card: Option<&str>) -> Vec<(u64, String)> {
 }
 
 pub(crate) fn reset(args: ResetArgs) -> Result<()> {
-    // `--all` / a numeric `--card` operate on the global store (or `--store`);
-    // a deck-scoped reset re-resolves to the deck's workspace store below.
-    let mut store = open_store(args.store.clone())?;
+    let config = Config::load(args.config.as_deref())?;
+
+    // `--all` / a numeric `--card` with no target operate on the decks-dir
+    // root store (or `--store`) — the same store bare `alix` writes to; a
+    // deck-scoped reset re-resolves to the deck's own root/workspace store
+    // below.
+    let mut store = open_store(
+        args.store
+            .clone()
+            .or_else(|| config.decks_dir().map(|d| workspace::root_store_path(&d))),
+    )?;
 
     // `--all`: wipe everything; no decks needed, count up front for the prompt.
     // `store.len()` now counts virtual schedules too (they live in `store.cards`),
@@ -226,7 +235,7 @@ pub(crate) fn reset(args: ResetArgs) -> Result<()> {
     let Some(target_path) = &args.target else {
         bail!("name a deck, folder, or workspace to reset, or pass `--card <id>` or `--all`");
     };
-    let target = expand_target(target_path)?;
+    let target = expand_target(target_path, &config)?;
     let deck_paths = target.decks.clone();
 
     // Reset against the target's store: `--store` > the members' shared

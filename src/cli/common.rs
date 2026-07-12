@@ -18,8 +18,11 @@ use alix::{
 use anyhow::{Context, Result, bail};
 
 /// A stats/list/reset target expanded to deck files, plus the store fallback
-/// for decks that belong to no workspace: a plain served folder keeps its own
-/// `progress.json` beside its decks; `None` falls through to the global store.
+/// for decks that belong to no workspace: the served root's store (a plain
+/// folder's own `progress.json`, or the configured decks dir's for a loose
+/// deck file) — the same resolution the launcher applies, so every command
+/// agrees with what `alix`/`alix <dir>` write. `None` only when that root
+/// can't be determined (e.g. no home dir), falling through to the global store.
 pub(crate) struct Target {
     pub(crate) decks: Vec<PathBuf>,
     pub(crate) default_store: Option<PathBuf>,
@@ -27,8 +30,9 @@ pub(crate) struct Target {
 
 impl Target {
     /// The store for one member deck: `--store` > its workspace's store > the
-    /// target's own store file (scoped folder) > the global default — the same
-    /// rule the launcher serves by, so every command sees the same progress.
+    /// target's root store (decks-dir root, or the folder itself) > the global
+    /// default — the same rule the launcher serves by, so every command sees
+    /// the same progress.
     pub(crate) fn store_for_deck(&self, deck: &Path, cli_override: Option<&Path>) -> Result<Store> {
         let path = cli_override
             .map(Path::to_path_buf)
@@ -40,11 +44,14 @@ impl Target {
 
 /// Expands a command target — a deck file, a workspace, or a plain folder —
 /// into its member decks (sorted by name for stable output).
-pub(crate) fn expand_target(path: &Path) -> Result<Target> {
+pub(crate) fn expand_target(path: &Path, config: &Config) -> Result<Target> {
     if path.is_file() {
         return Ok(Target {
             decks: vec![path.to_path_buf()],
-            default_store: None,
+            // A loose deck belongs to the default (bare-`alix`) root; if it's
+            // actually inside a workspace, `store_for_deck`'s `store_path_for`
+            // call overrides this with the workspace's own store first.
+            default_store: config.decks_dir().map(|d| workspace::root_store_path(&d)),
         });
     }
     if !path.is_dir() {
@@ -62,8 +69,8 @@ pub(crate) fn expand_target(path: &Path) -> Result<Target> {
     let default_store = if workspace::is_workspace(path) {
         None // members resolve to the workspace's own store anyway
     } else {
-        let scoped = path.join(workspace::STORE_FILE);
-        scoped.exists().then_some(scoped)
+        // The folder itself IS the served root, matching `alix <folder>`.
+        Some(workspace::root_store_path(path))
     };
     Ok(Target {
         decks,

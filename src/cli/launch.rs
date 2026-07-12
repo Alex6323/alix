@@ -56,11 +56,12 @@ fn generate_token() -> Result<String> {
 }
 
 /// Serves the web app: everything is picked in the browser (direct deck launch
-/// was removed — the picker is the one way into a review). A `dir` argument
-/// scopes this instance to that folder as a **self-contained root**: its own
-/// catalog, its own `progress.json` and `recent.json` inside it — so several
-/// instances (say, one per family member, each `--lan` on its own `--port`)
-/// run side by side without sharing any state.
+/// was removed — the picker is the one way into a review). Either bare `alix`
+/// (over the configured decks directory) or `alix <dir>` (scoped to a named
+/// folder) serves a **self-contained root**: its own catalog, its own
+/// `progress.json` and `recent.json` inside it — so several instances (say,
+/// one per family member, each `--lan` on its own `--port`) run side by side
+/// without sharing any state.
 pub(crate) fn launch(args: LaunchArgs) -> Result<()> {
     let config = Config::load(args.config.as_deref())?;
     // A scoped instance (`alix <dir>`) is pinned to its folder forever; the

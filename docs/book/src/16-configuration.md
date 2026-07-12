@@ -129,12 +129,12 @@ settings:
 
 By default `alix` looks for decks in `~/decks`; set `decks_dir` to change it.
 The progress store lives **in your decks folder** (`<decks_dir>/progress.json`)
-— the same store a scoped `alix <dir>` uses, so bare `alix` and `alix <dir>`
-share one store when `<dir>` is your configured `decks_dir`. A workspace, or any
-other folder you serve with `alix <dir>`, keeps its own `progress.json` inside
-that folder too. The `stats`/`list`/`reset` commands take a deck, folder, or
-workspace as their target and resolve its store the same way, with
-`--store <path>` as an override.
+— the same store `alix <dir>` uses for that folder, so bare `alix` and
+`alix <dir>` share one store when `<dir>` is your configured `decks_dir`. A
+workspace, or any other folder you serve with `alix <dir>`, keeps its own
+`progress.json` inside that folder too. The `stats`/`list`/`reset` commands
+take a deck, folder, or workspace as their target and resolve its store the
+same way, with `--store <path>` as an override.
 
 ### Multi-device via your cloud drive
 

@@ -419,6 +419,10 @@ struct DeckArgs {
     /// Path of the progress store (default: resolved from the target).
     #[arg(long)]
     store: Option<PathBuf>,
+
+    /// Path of the config file (default: platform config dir).
+    #[arg(long)]
+    config: Option<PathBuf>,
 }
 
 #[derive(Args)]
@@ -441,9 +445,14 @@ struct ResetArgs {
     #[arg(short = 'y', long)]
     yes: bool,
 
-    /// Path of the progress store (default: platform data dir).
+    /// Path of the progress store (default: resolved from the target, or the
+    /// decks-dir root store for `--all`/`--card` with no target).
     #[arg(long)]
     store: Option<PathBuf>,
+
+    /// Path of the config file (default: platform config dir).
+    #[arg(long)]
+    config: Option<PathBuf>,
 }
 
 fn main() -> Result<()> {

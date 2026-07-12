@@ -173,35 +173,39 @@ pub(super) fn deck_item_dto(
 
 /// A workspace/folder's members as an unlock dependency tree (the drill-in
 /// list): each member nests under the `% requires:` that gates it, siblings
-/// startable-first, carrying an `indent` for the tree nesting. Badges/locks come from
-/// the workspace's own store (a real workspace) or the global store (a plain
-/// folder), matching what a session will write.
+/// startable-first, carrying an `indent` for the tree nesting. Badges/locks come
+/// from the workspace's own store (a real workspace) or the served instance's
+/// root store (a plain folder) — the same store its top-level loose-deck
+/// badges use — matching what a session will write.
 pub(super) fn workspace_members(
     e: &picker::DeckEntry,
     decks_dir: &Path,
     with_lock: bool,
     review: ReviewConfig,
+    instance_store: &Store,
 ) -> Vec<MemberDto> {
     // Member badges reflect this workspace's personal pacing override, if any.
     let review = review.for_workspace(&e.path);
-    let store = if crate::workspace::is_workspace(&e.path) {
-        Store::open(crate::workspace::store_path(&e.path)).ok()
+    let is_ws = crate::workspace::is_workspace(&e.path);
+    let own_workspace_store = is_ws
+        .then(|| Store::open(crate::workspace::store_path(&e.path)).ok())
+        .flatten();
+    let store: Option<&Store> = if is_ws {
+        own_workspace_store.as_ref()
     } else {
-        crate::store::default_store_path().and_then(|p| Store::open(p).ok())
+        Some(instance_store)
     };
     let paths: Vec<PathBuf> = e.members.iter().map(|m| m.path.clone()).collect();
     // The workspace's own sidecar tells each member whether it has a focus
     // drawer (topology); opened once, alongside the status pass.
-    let augment = store
-        .as_ref()
-        .map(|s| AugmentCache::open(augment::augment_path_for(s.path())));
+    let augment = store.map(|s| AugmentCache::open(augment::augment_path_for(s.path())));
     // Load each member deck once, deriving its status, whether it has a
     // topology, and its last-used session depth from the same parse.
     let loaded: Vec<(Option<picker::DeckStatus>, bool, &'static str)> = paths
         .iter()
         .map(|p| {
             let deck = Deck::load(p).ok();
-            let status = match (store.as_ref(), deck.as_ref()) {
+            let status = match (store, deck.as_ref()) {
                 (Some(st), Some(d)) => Some(picker::deck_status(
                     d,
                     st,
@@ -219,7 +223,7 @@ pub(super) fn workspace_members(
                 _ => false,
             };
             // Subject-keyed like `deck_item_dto`, from the workspace's own store.
-            let last_depth = match (store.as_ref(), deck.as_ref()) {
+            let last_depth = match (store, deck.as_ref()) {
                 (Some(st), Some(d)) => st.last_depth(&d.subject).unwrap_or_default(),
                 _ => Depth::default(),
             };
@@ -368,7 +372,7 @@ pub(super) fn deck_catalog(
         // last-progress time); without one it's a plain folder.
         if e.is_workspace {
             let is_ws = crate::workspace::is_workspace(&e.path);
-            let members = workspace_members(&e, decks_dir, with_lock, review);
+            let members = workspace_members(&e, decks_dir, with_lock, review, store);
             let meta = if is_ws {
                 match picker::workspace_last_progress(&e.path) {
                     Some(when) => format!("{} decks · {when}", members.len()),
