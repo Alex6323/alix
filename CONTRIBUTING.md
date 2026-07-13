@@ -90,7 +90,7 @@ open a proposal to change the list itself.
 | `make coverage` | Coverage report (`cargo-llvm-cov`, HTML). |
 | `make calibrate` | Real-Claude grader calibration (costed): before touching `grade_*`. |
 | `make run ARGS="stats mydeck.txt"` | Run the binary. |
-| `make serve ARGS="~/decks-test --lan"` | Web frontend (a scoped root). |
+| `make web ARGS="~/decks-test --lan"` | Web frontend (a scoped root). |
 | `make book` | Serve the mdBook manual live. |
 | `make e2e` | Playwright smoke suite for the alix web clients (Node; needs a browser download the first time). |
 

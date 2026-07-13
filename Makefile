@@ -6,7 +6,7 @@
 # toolchain — `+nightly` is handled by rustup before cargo sees it — which is
 # why these live in a Makefile rather than .cargo/config.toml.)
 
-.PHONY: build build-core test lint lint-js fmt fmt-check fmt-roadmap check ci coverage coverage-lcov calibrate run serve book site slides install clean sdd-clean heartbeat check-backends e2e shots
+.PHONY: build build-core test lint lint-js fmt fmt-check fmt-roadmap check ci coverage coverage-lcov calibrate run web phone tablet desktop book site slides install clean sdd-clean heartbeat check-backends e2e shots
 
 # Compile the workspace.
 build:
@@ -100,9 +100,22 @@ run:
 
 # Run the web frontend: the in-browser deck picker. ARGS may name a decks
 # folder or workspace to serve as a scoped root, plus launcher flags,
-# e.g. `make serve ARGS="~/decks-test --lan"`.
-serve:
+# e.g. `make web ARGS="~/decks-test --lan"`.
+web:
 	cargo run -- $(ARGS) --port 7780
+
+# The mobile siblings of `web`: run the alix mobile app (apps/mobile) on a
+# phone or tablet emulator (booting that AVD first if needed; the script
+# resolves AVDs by name, so both can run side by side), or as a native Linux
+# desktop window (fastest loop: hot reload, no emulator). flutter compiles the
+# embedded Rust core through cargokit either way. Needs the frb toolchain and,
+# for the emulators, ANDROID_HOME (see docs/dev/frb-bridge-setup.md).
+phone:
+	@sh scripts/mobile-run.sh alix_phone
+tablet:
+	@sh scripts/mobile-run.sh alix_tablet
+desktop:
+	cd apps/mobile && flutter run -d linux
 
 # Serve the user manual (docs/book) with live reload and open it in the browser.
 # Requires mdBook: `cargo install mdbook`.

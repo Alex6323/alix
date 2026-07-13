@@ -105,7 +105,8 @@ noisy diff the way you'd treat a failing test: not done yet.
 | `make coverage` | Coverage report via `cargo-llvm-cov` (HTML). |
 | `make calibrate` | Real-Claude grader calibration (`tests/calibrate.rs`, costed): before touching `grade_*`. |
 | `make run ARGS="stats mydeck.txt"` | Run the binary with args. |
-| `make serve ARGS="~/decks-test"` | Web frontend; no ARGS → the picker over the configured decks dir. |
+| `make web ARGS="~/decks-test"` | Web frontend; no ARGS → the picker over the configured decks dir. |
+| `make phone` / `make tablet` / `make desktop` | Run the alix mobile app on the phone/tablet emulator (boots the AVD if needed) or as a native Linux window (fastest loop). |
 | `make book` | Serve the mdBook manual (`docs/book`), live reload. |
 | `make site` | Preview the `alix.study` landing page locally (`site/`). |
 | `make install` | `cargo install --path .`. |

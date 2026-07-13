@@ -116,7 +116,7 @@ Each links to its chapter in the manual:
 ```sh
 make check   # clippy + tests, the gate before a change is done
 make fmt     # format (nightly rustfmt, not plain cargo fmt)
-make serve   # run the web frontend
+make web     # run the web frontend
 ```
 
 Building a client? The web JSON API is a documented contract:
