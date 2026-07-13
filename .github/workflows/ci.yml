@@ -55,6 +55,22 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: make build-core
 
+  # The frb bridge crate (apps/mobile/rust) wraps the lean core for the mobile
+  # app. Pure host Rust (no Android SDK, no Flutter), so it is cheap enough to
+  # block every PR: this is what catches a lib API change silently breaking
+  # the mobile bridge between emulator runs. The full on-device story is the
+  # scheduled mobile build, not this job.
+  bridge:
+    name: mobile bridge (host tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/mobile/rust
+      - run: cargo test --manifest-path apps/mobile/rust/Cargo.toml
+
   # Browser-driven smoke over the real binary: a click must reach the server and
   # change the screen, with no uncaught page errors. This is the only layer that
   # catches a control which silently does nothing. Blocking, on purpose — an
