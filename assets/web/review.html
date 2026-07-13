@@ -581,7 +581,8 @@
      not that mock's Dart text). A gap-fill card with an actual gap also carries
      a batch-select checkbox, ticked in the module-level `augTicked` Set and
      submitted together via the footer's "Generate selected". */
-  .aug { width: var(--card-w); max-width: 92vw; display: flex; flex-direction: column; gap: 0; animation: deal 0.3s both; max-height: 78vh; overflow-y: auto; padding-right: 4px; }
+  .aug { width: var(--card-w); max-width: 92vw; display: flex; flex-direction: column; gap: 0; animation: deal 0.3s both; max-height: 78vh; overflow-y: auto; scrollbar-width: none; }
+  .aug::-webkit-scrollbar { width: 0; }
   .aug-card { border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; margin-bottom: 14px; }
   .aug-card:last-of-type { margin-bottom: 0; }
   /* head row: title + description (left, truncates), coverage + action (right, fixed). */
