@@ -1718,8 +1718,8 @@ const AUG_INFO = {
     },
   },
   topology: {
-    title: "Topology",
-    desc: "Links cards into a prerequisite graph, so alix schedules foundations before what builds on them.",
+    title: "Learning path",
+    desc: "Orders your cards into a learning path, so alix teaches the foundations before what builds on them.",
     before(b) {
       const chips = el("div", "aug-ba-chips");
       ["Addition", "Multiplication", "Exponents"].forEach(name => chips.appendChild(el("span", "aug-ba-chip", name)));
@@ -1857,7 +1857,9 @@ function augTopologyRow(d, row) {
       err.title = failedEntry.error;
       right.appendChild(err);
     }
-    const add = el("button", "aug-btn", "Add");
+    // "Generate" like the other targets when there are none yet; "Generate
+    // another" once some exist, since a deck can hold several named topologies.
+    const add = el("button", "aug-btn", row.items.length ? "Generate another" : "Generate");
     add.disabled = !!d.busy;
     add.addEventListener("click", () => augmentGenerate("topology", augGuidance()));
     right.appendChild(add);
