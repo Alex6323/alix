@@ -108,6 +108,7 @@ noisy diff the way you'd treat a failing test: not done yet.
 | `make web ARGS="~/decks-test"` | Web frontend; no ARGS → the picker over the configured decks dir. |
 | `make phone` / `make tablet` / `make desktop` | Run the alix mobile app on the phone/tablet emulator (boots the AVD if needed) or as a native Linux window (fastest loop). |
 | `make frb-check` | Assert the frb toolchain-alignment invariants (version pins, template patches, NDK); fails on drift. |
+| `make push-decks DIR=~/decks` | One-way copy of a host decks folder into the running emulator's app (dev-only; restart the app to re-list). |
 | `make book` | Serve the mdBook manual (`docs/book`), live reload. |
 | `make site` | Preview the `alix.study` landing page locally (`site/`). |
 | `make install` | `cargo install --path .`. |

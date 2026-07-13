@@ -46,11 +46,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   any other review action.
 - **An experimental native app lives in the tree (`apps/mobile`)**: a Flutter
   shell that embeds the same Rust core (the real parser, scheduler, and store)
-  and runs a first flip-card review loop offline on Android and as a Linux
-  desktop window. It is an early walking skeleton, source-built only (`make
-  phone` / `make tablet` / `make desktop`, see `docs/dev/frb-bridge-setup.md`),
-  not part of the released binaries, and its data layout may still change
-  without migration.
+  and reviews a real decks folder offline, on Android and as a Linux desktop
+  window. It browses workspaces and loose decks (titles plus a due dot), picks
+  a session depth, and runs the flip, multiple-choice, line-by-line, and typing
+  checks, with progress landing in the same per-workspace and root stores the
+  web and CLI use. Still early and source-built only (`make phone` / `make
+  tablet` / `make desktop`; `make push-decks` copies a host folder into the
+  emulator; the desktop window reads `ALIX_DECKS_DIR`), not part of the
+  released binaries, and its data layout may still change without migration.
+  Explain-mode cards render as plain flip cards for now.
 - **For library consumers: a `full` cargo feature** (on by default) now gates
   the AI backends and the web server. Depending on `alix` with
   `default-features = false` compiles just the lean core (decks, scheduling,

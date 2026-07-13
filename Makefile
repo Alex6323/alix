@@ -6,7 +6,7 @@
 # toolchain — `+nightly` is handled by rustup before cargo sees it — which is
 # why these live in a Makefile rather than .cargo/config.toml.)
 
-.PHONY: build build-core test lint lint-js fmt fmt-check fmt-roadmap roadmap check ci coverage coverage-lcov calibrate run web phone tablet desktop frb-check book site slides install clean sdd-clean heartbeat check-backends e2e shots
+.PHONY: build build-core test lint lint-js fmt fmt-check fmt-roadmap roadmap check ci coverage coverage-lcov calibrate run web phone tablet desktop frb-check push-decks book site slides install clean sdd-clean heartbeat check-backends e2e shots
 
 # Compile the workspace.
 build:
@@ -129,6 +129,12 @@ desktop:
 # Cheap and local; the mobile CI runs it before building.
 frb-check:
 	@sh scripts/frb-check.sh
+
+# One-way copy of a host decks folder into the running emulator's alix app
+# (dev-only, debug build). Restart the app to re-list. Progress made on the
+# emulator never syncs back.
+push-decks:
+	@sh scripts/push-decks.sh $(DIR)
 
 # Serve the user manual (docs/book) with live reload and open it in the browser.
 # Requires mdBook: `cargo install mdbook`.
