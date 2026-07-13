@@ -227,7 +227,7 @@ pub fn normalize_answer(s: &str) -> String {
 }
 
 /// The result of grading one typed line.
-#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TypedResult {
     /// What the user typed.
     pub input: String,
