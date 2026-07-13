@@ -327,12 +327,12 @@
     background: rgba(255,255,255,0.03); border: 1px solid var(--line); color: var(--text);
     border-radius: 12px; padding: 13px 16px; min-height: 52px;
     font-family: var(--mono); font-size: 1.05rem; cursor: pointer;
-    transition: border-color 0.12s, background 0.12s;
+    transition: background 0.12s;
   }
   .option .num { font-family: var(--mono); font-size: 0.85rem; color: var(--faint); }
   .option .opt { white-space: pre-wrap; }
   button.option:hover { border-color: var(--bolt); background: color-mix(in srgb, var(--bolt) 6%, transparent); }
-  .option.focused { background: color-mix(in srgb, var(--bolt) 10%, transparent); box-shadow: inset 0 0 0 2px var(--bolt); }
+  .option.focused { border-color: var(--bolt); background: color-mix(in srgb, var(--bolt) 10%, transparent); }
   button.option:focus-visible { outline: 2px solid var(--bolt-hi); outline-offset: 2px; }
   .option.correct { border-color: var(--good); background: color-mix(in srgb, var(--good) 12%, transparent); color: var(--good); }
   .option.correct .num { color: var(--good); }
