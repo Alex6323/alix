@@ -51,6 +51,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The topology augmentation now defaults to a pedagogical (foundations-first)
   order when you give no guidance, named `pedagogical order` rather than `auto`;
   a guidance steer still overrides it.
+- `alix generate` and its review pass now keep each card's answer to exactly
+  what its front asks, moving extra context into the note instead of
+  over-answering the question.
 
 ### Fixed
 - The tutor's **Save note** (and the new **Make this a card**) now stay disabled

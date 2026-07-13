@@ -69,6 +69,10 @@ four layers of understanding:
 
 CARD QUALITY:
 - One idea per card (minimum-information principle); split compound facts.
+- The answer must cover exactly what the front asks, no more. If it includes a \
+fact the question did not ask for, either narrow the answer to the question, \
+widen the question to cover the whole answer, or split into separate cards. \
+Extra context goes in the `! ` note, not the answer.
 - Do not cram an enumeration into one prose answer. If the answer is a list of \
 several items, split it into several one-idea cards instead — one card per item \
 or group. Only when the ordered list ITSELF is the thing to learn (steps, a \
@@ -147,6 +151,10 @@ four layers of understanding:
 
 CARD QUALITY:
 - One idea per card (minimum-information principle); split compound facts.
+- The answer must cover exactly what the front asks, no more. If it includes a \
+fact the question did not ask for, either narrow the answer to the question, \
+widen the question to cover the whole answer, or split into separate cards. \
+Extra context goes in the `! ` note, not the answer.
 - Do not cram an enumeration into one prose answer. If the answer is a list of \
 several items, split it into several one-idea cards instead — one card per item \
 or group. Only when the ordered list ITSELF is the thing to learn (steps, a \
@@ -181,6 +189,9 @@ Apply these edits:
 card must test something distinct. This is the most important fix.
 - Drop cards that are ambiguous or trivial, or whose `! ` note merely restates \
 the answer.
+- Tighten any card whose answer covers more than its front asks: narrow the \
+answer to the question, move the extra fact to the `! ` note, or split it into \
+distinct cards. A front and its answer must ask and tell the same thing.
 - Keep the EXACT same file format: the leading `%` comment lines, `# ` card \
 fronts at column 0, indented answer lines, and indented `! ` notes. A cloze \
 card carries a `% reveal: cloze` line below its front and keeps its blanks \
@@ -455,6 +466,8 @@ mod tests {
         // Always-on self-review against redundancy.
         assert!(p.contains("NO TWO CARDS MAY TEST THE SAME FACT"));
         assert!(p.contains("REVISE before finishing"));
+        // The answer must not over-answer the front (scope match).
+        assert!(p.contains("cover exactly what the front asks"));
     }
 
     #[test]
@@ -463,6 +476,7 @@ mod tests {
         assert!(p.contains("# Q"));
         assert!(p.contains("MERGE cards that test the same fact"));
         assert!(p.contains("Output ONLY the improved deck"));
+        assert!(p.contains("must ask and tell the same thing"));
         assert!(p.ends_with("% link: u\n# Q\n\tA\n"));
     }
 
