@@ -492,7 +492,7 @@
   /* matches the exam's .exam-wait busy idiom (italic, --dim) rather than the
      tutor mock's own style, so every "waiting on Claude" indicator in the app
      reads the same. */
-  .ask-thinking { align-self: flex-start; color: var(--dim); font-style: italic; }
+  .ask-thinking { align-self: flex-start; color: var(--dim); font-style: italic; display: flex; align-items: center; gap: 8px; }
   .ask-status { align-self: flex-start; color: var(--good); font-size: 0.85rem; }
   .ask-error { align-self: flex-start; color: var(--again); font-size: 0.85rem; }
   .ask-hint { color: var(--dim); }
@@ -854,6 +854,7 @@ let askInfo = { model: "default", effort: "default" }; // the tutor's model + ef
 let askPoll = null;   // setInterval handle while a reply is pending
 let examData = null;  // the ExamDto while an exam is active (null otherwise)
 let examConfirmingQuit = false; // showing the "abandon the exam?" confirmation
+let askConfirmingClose = false; // showing the "leave the tutor?" confirmation
 let examPoll = null;  // setInterval handle while an exam call is in flight
 let augmentData = null; // the AugmentDto while the Augment screen is open (null otherwise)
 let augmentPoll = null; // setInterval handle while a generation is in flight
@@ -1146,11 +1147,21 @@ function isAnswered() {
 }
 function openAsk() {
   asking = true;
+  askConfirmingClose = false;
   render(); // builds the panel once (entrance animation runs once)
   const ep = walkData ? "/api/walk/ask" : "/api/ask";
   api(ep).then(d => { askData = d; if (asking) syncAsk(); }); // pick up any prior transcript
 }
 function closeAsk() {
+  // Leaving with an unsaved conversation gets the same pause as leaving a
+  // session: the transcript survives on this card, but moving on to the next
+  // one drops it before it became a note or a card.
+  if (!askConfirmingClose && askData && askData.transcript && askData.transcript.length) {
+    askConfirmingClose = true;
+    renderAskLeaveConfirm();
+    return;
+  }
+  askConfirmingClose = false;
   asking = false;
   stopAskPoll();
   if (walkData) {
@@ -1234,12 +1245,28 @@ function stopAskPoll() { if (askPoll) { clearInterval(askPoll); askPoll = null; 
 
 // (Re)fill just the transcript log from askData.
 function fillAskLog(log) {
+  // Skip the rebuild when nothing visible changed (the poll ticks every 400ms
+  // while thinking): a rebuilt <alix-logo> would restart its loop each tick,
+  // and the scroll position would keep snapping.
+  const sig = JSON.stringify([askData.transcript.length, askData.thinking, askData.status, askData.error]);
+  if (log._sig === sig) return;
+  log._sig = sig;
   log.innerHTML = "";
   for (const ex of askData.transcript) {
     log.appendChild(el("div", "ask-q", ex.q));
     log.appendChild(el("div", "ask-a", ex.a));
   }
-  if (askData.thinking) log.appendChild(el("div", "ask-thinking", "Thinking…"));
+  if (askData.thinking) {
+    // The looping alix logo as the thinking indicator (the header's does too,
+    // but this one sits where you're looking).
+    const t = el("div", "ask-thinking");
+    const logo = document.createElement("alix-logo");
+    logo.setAttribute("height", "18");
+    logo.setAttribute("loop", "");
+    t.appendChild(logo);
+    t.appendChild(document.createTextNode("Thinking…"));
+    log.appendChild(t);
+  }
   if (askData.status) log.appendChild(el("div", "ask-status", askData.status));
   if (askData.error) log.appendChild(el("div", "ask-error", askData.error));
   if (!askData.transcript.length && !askData.thinking && !askData.status && !askData.error)
@@ -1353,6 +1380,12 @@ function renderAsk(subject) {
   wrap.appendChild(input);
   stage.appendChild(wrap);
 
+  renderAskFooter(input);
+  if (!askData.thinking) input.focus();
+}
+// The ask panel's footer chips — split out so Stay (below) can restore them
+// after the leave confirmation replaced the footer.
+function renderAskFooter(input) {
   legend.innerHTML = "";
   const send = chip("Send", "primary", () => sendAsk(input.value), "shift+enter");
   send.disabled = askData.thinking;
@@ -1364,7 +1397,20 @@ function renderAsk(subject) {
   // which the walk's tutor session (reviewing = None server-side) can't serve.
   if (!walkData) chip("Make this a card", "distill", draftCard, "").disabled = !canDistill();
   chip("Close", "", closeAsk, "esc");
-  if (!askData.thinking) input.focus();
+}
+// The leave-the-tutor confirmation, mirroring the session/walk leave prompts:
+// it swaps only the footer, so the conversation stays on screen while you decide.
+function renderAskLeaveConfirm() {
+  legend.innerHTML = "";
+  legend.appendChild(el("span", "leave-msg",
+    "Leave the tutor? Moving on to the next card drops this conversation. Save note or Make a card keeps it."));
+  chip("Leave anyway", "again", closeAsk, "enter");
+  chip("Stay", "primary", cancelAskLeave, "esc");
+}
+function cancelAskLeave() {
+  askConfirmingClose = false;
+  const input = document.querySelector(".ask-input");
+  if (input) { renderAskFooter(input); input.focus(); }
 }
 
 // ── AI exam ───────────────────────────────────────────────────────────

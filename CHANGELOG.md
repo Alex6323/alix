@@ -81,6 +81,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The mobile app renders note code blocks verbatim (fenced ``` blocks are
   no longer sentence-split), through the same structured note units the web
   serves.
+- **Leaving the tutor now asks first when the conversation is unsaved**, the
+  same pause as leaving a session: the transcript survives on the current
+  card, but moving on to the next one would drop it before it became a note
+  or a card. Enter leaves, Esc stays.
+- While the tutor is thinking, the panel shows the looping alix logo next to
+  "Thinking…" (the header logo already looped; this one sits where you're
+  looking), and the transcript no longer rebuilds on every poll tick.
 - **The review tutor is now offered during a card's first encounter (acquire),
   once you reveal the answer.** It stays hidden during the blind attempt,
   matching the after-reveal rule the rest of review follows, so you can ask about
