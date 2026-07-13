@@ -1718,7 +1718,7 @@ const AUG_INFO = {
     },
   },
   topology: {
-    title: "Paths",
+    title: "Order",
     desc: "Orders your cards foundations first, so alix teaches the prerequisites before what builds on them.",
     before(b) {
       const chips = el("div", "aug-ba-chips");
@@ -1844,7 +1844,7 @@ function augTopologyRow(d, row) {
     list.appendChild(pill);
   }
   const right = el("div", "aug-actions");
-  // Paths is batchable now that pedagogical order is the default: tick it and
+  // The topology card is batchable now that pedagogical order is the default: tick it and
   // "Generate selected" produces the default path (same-name paths replace, so
   // it never piles up duplicates). Always selectable, since there is no gap.
   const cb = el("input", "aug-check");
