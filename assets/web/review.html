@@ -1836,7 +1836,17 @@ function augTopologyRow(d, row) {
   const right = el("div", "aug-actions");
   right.appendChild(list);
   if (row.busy) right.appendChild(augBusyCell(d));
+  else if ((d.queued || []).includes("topology")) right.appendChild(el("span", "aug-status queued", "queued"));
   else {
+    // A failed topology generation lands in d.failed like any other target;
+    // show it here (d.error stays null for per-target failures) so an Add that
+    // errors isn't silent.
+    const failedEntry = (d.failed || []).find(f => f.target === "topology");
+    if (failedEntry) {
+      const err = el("span", "aug-status failed", failedEntry.error);
+      err.title = failedEntry.error;
+      right.appendChild(err);
+    }
     const add = el("button", "aug-btn", "Add");
     add.disabled = !!d.busy;
     add.addEventListener("click", () => augmentGenerate("topology", augGuidance()));
