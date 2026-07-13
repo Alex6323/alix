@@ -62,6 +62,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The formatting augmentation no longer strands already-clean cards as a
   permanent gap: a card the formatter checks and leaves as-is is now recorded as
   done, so coverage completes instead of a Generate that appears to do nothing.
+- The exam overlay now hides its scrollbar, matching the augment and review
+  surfaces, instead of showing one and reserving a gutter for it.
 - **The trace walk screen now shares the session chrome.** It still rendered
   pre-re-skin chrome: no ☰ menu in the header, and a footer that packed
   Missed it/Partly/Got it/Ask/Leave into one centered row with a dead
