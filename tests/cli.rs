@@ -1,7 +1,7 @@
 //! End-to-end CLI integration tests: each runs the built `alix` binary as a
 //! subprocess against temp decks and a temp progress store, asserting on exit
-//! status and output. Unlike `tests/eval.rs` these are fully deterministic — no
-//! real Claude — so they run in CI on every `make check`.
+//! status and output. Unlike `tests/calibrate.rs` these are fully deterministic
+//! (no real Claude) so they run in CI on every `make check`.
 //!
 //! A recurring property here is that a damaged progress store fails *safely*:
 //! the command errors and the file on disk is left exactly as it was, never

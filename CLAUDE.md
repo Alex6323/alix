@@ -103,7 +103,7 @@ noisy diff the way you'd treat a failing test: not done yet.
 | `make check` | `lint` + `test` — the fast, lenient inner-loop gate; run before considering work done. |
 | `make ci` | **Full CI parity** — `fmt-check` + `check` under `-Dwarnings` + `coverage`, exactly as `.github/workflows/ci.yml` runs them. A green `make ci` predicts a green CI; run it before a push/release. |
 | `make coverage` | Coverage report via `cargo-llvm-cov` (HTML). |
-| `make eval` | Real-Claude grader-calibration evals (`tests/eval.rs`, costed) — before touching `grade_*`. |
+| `make calibrate` | Real-Claude grader calibration (`tests/calibrate.rs`, costed): before touching `grade_*`. |
 | `make run ARGS="stats mydeck.txt"` | Run the binary with args. |
 | `make serve ARGS="~/decks-test"` | Web frontend; no ARGS → the picker over the configured decks dir. |
 | `make book` | Serve the mdBook manual (`docs/book`), live reload. |
@@ -162,8 +162,8 @@ to this codebase. When in doubt, mirror the surrounding code.
   `#[cfg(test)] mod tests` at the bottom of the module they cover. `tests/` holds
   the end-to-end suites: `tests/cli.rs` drives the built binary as a subprocess
   (deterministic — temp decks + `--store`, no real Claude — so it runs in CI),
-  and `tests/eval.rs` is the `#[ignore]`d real-Claude grader-calibration harness
-  (`make eval`). Name tests as full snake_case sentences stating condition +
+  and `tests/calibrate.rs` is the `#[ignore]`d real-Claude grader-calibration harness
+  (`make calibrate`). Name tests as full snake_case sentences stating condition +
   expectation (`passing_the_exam_masters_an_undrilled_deck`). Anything that shells
   out to Claude uses the shared harness in `src/testutil.rs`: `fake_reply` (drains
   stdin then emits a canned reply — use it for fixed outputs to avoid the EPIPE
@@ -202,8 +202,8 @@ to this codebase. When in doubt, mirror the surrounding code.
   local runs can mask races (the `testutil` fake-CLI tests exist because one such
   race slipped through). Thin frontend glue (`serve` wiring) is the
   exception — a follow-up or manual check is enough there. This is the
-  deterministic half of the QUALITY plan; the grader-calibration evals
-  (`make eval`) are the AI half, run deliberately before touching `grade_*`.
+  deterministic half of the QUALITY plan; the grader calibration
+  (`make calibrate`) is the AI half, run deliberately before touching `grade_*`.
 - **Tests and clippy must be green** before a change is done (`make check`).
   Formatting is run deliberately with `make fmt`, not enforced as a gate.
 - Don't commit unless asked; never push without permission.

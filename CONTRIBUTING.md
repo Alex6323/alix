@@ -88,7 +88,7 @@ open a proposal to change the list itself.
 | `make fmt-check` | Verify formatting without writing. |
 | `make check` | `lint` + `test` — run before you call work done. |
 | `make coverage` | Coverage report (`cargo-llvm-cov`, HTML). |
-| `make eval` | Real-Claude grader-calibration evals (costed) — before touching `grade_*`. |
+| `make calibrate` | Real-Claude grader calibration (costed): before touching `grade_*`. |
 | `make run ARGS="stats mydeck.txt"` | Run the binary. |
 | `make serve ARGS="~/decks-test --lan"` | Web frontend (a scoped root). |
 | `make book` | Serve the mdBook manual live. |
@@ -157,7 +157,7 @@ surrounding code; when in doubt, mirror it. The essentials:
   (Added / Changed / Fixed). While we're pre-1.0, **break freely** — change
   renamed/removed flags and directives outright and record a **Breaking** note
   under Changed; no back-compat shims.
-- **Prompt changes** (anything touching `grade_*`) ship with a `make eval` run
+- **Prompt changes** (anything touching `grade_*`) ship with a `make calibrate` run
   and the calibration delta noted — that's how "mastered" stays honest.
 
 ## Testing — two layers
@@ -172,13 +172,13 @@ today). That splits testing into two jobs, and it helps to know which you're in:
    model. This is the **blocking gate** (`make check`, enforced by CI).
 2. **AI-behaviour quality** — do the *prompts* produce good output: fair grades,
    coherent traces, a non-lenient exam? The fake CLI can't see this, so it needs
-   the **eval harness** (`make eval`), which runs the real prompts against a live
+   the **calibration harness** (`make calibrate`), which runs the real prompts against a live
    model and scores them. It's non-deterministic and costs money, so it lives
    **outside** the blocking gate — run it before any change to a `grade_*` prompt,
    and note the calibration delta.
 
 Rule of thumb: a code change must pass layer 1 (`make check`); a *prompt* change
-must also clear layer 2 (`make eval`).
+must also clear layer 2 (`make calibrate`).
 
 ### Backend flag-drift checks
 

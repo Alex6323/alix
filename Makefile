@@ -6,7 +6,7 @@
 # toolchain — `+nightly` is handled by rustup before cargo sees it — which is
 # why these live in a Makefile rather than .cargo/config.toml.)
 
-.PHONY: build build-core test lint lint-js fmt fmt-check fmt-roadmap check ci coverage coverage-lcov eval run serve book site slides install clean sdd-clean heartbeat check-backends e2e shots
+.PHONY: build build-core test lint lint-js fmt fmt-check fmt-roadmap check ci coverage coverage-lcov calibrate run serve book site slides install clean sdd-clean heartbeat check-backends e2e shots
 
 # Compile the workspace.
 build:
@@ -87,12 +87,12 @@ coverage:
 coverage-lcov:
 	cargo +nightly llvm-cov --workspace --lcov --output-path lcov.info
 
-# Grader-calibration evals (tests/eval.rs): the REAL grade prompt vs labeled
+# Grader calibration (tests/calibrate.rs): the REAL grade prompt vs labeled
 # adversarial answers, to catch a lenient grader. Needs the claude CLI logged in;
-# makes real, costed calls. Off the normal gate — run before shipping a change
+# makes real, costed calls. Off the normal gate: run before shipping a change
 # to grade_prompt.
-eval:
-	cargo test --test eval -- --ignored --nocapture --test-threads=1
+calibrate:
+	cargo test --test calibrate -- --ignored --nocapture --test-threads=1
 
 # Run the binary, e.g. `make run ARGS="stats mydeck.txt"`.
 run:
@@ -154,7 +154,7 @@ check-backends:
 # real `alix` servers (Chromium only) and asserts a click reaches the server —
 # request, response, and screen, with zero uncaught page errors. Deliberately
 # NOT part of `check` (needs Node + a browser download, and is slower) — run
-# it deliberately, like `eval`. See e2e/README.md.
+# it deliberately, like `calibrate`. See e2e/README.md.
 e2e:
 	npm --prefix e2e ci
 	npx --prefix e2e playwright install --with-deps chromium || npx --prefix e2e playwright install chromium

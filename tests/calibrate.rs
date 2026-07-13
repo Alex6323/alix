@@ -1,4 +1,4 @@
-//! Grader-calibration evals (QUALITY plan, step 4).
+//! Grader calibration (QUALITY plan, step 4).
 //!
 //! These run the REAL `grade_prompt` through the `claude` CLI against
 //! hand-labeled, adversarial answers, to catch the one failure mode the
@@ -6,14 +6,14 @@
 //! only as honest as this stays.
 //!
 //! Every test here is `#[ignore]`d, so `cargo test` (and CI) compile them but
-//! run none. Run them deliberately — before shipping a change to `grade_prompt`
-//! — with `make eval` (needs the `claude` CLI installed and logged in; makes
+//! run none. Run them deliberately, before shipping a change to `grade_prompt`,
+//! with `make calibrate` (needs the `claude` CLI installed and logged in; makes
 //! real, costed calls).
 //!
 //! Two rules keep them robust to the model's nondeterminism. First, fixtures are
 //! clear-cut, never borderline. Second, a "must not pass" case asserts that the
 //! verdict is not `Pass` (Partial or Fail are both fine) — only a genuine
-//! leniency, an actual `Pass`, fails it. A failing eval is not a code bug: it
+//! leniency, an actual `Pass`, fails it. A failing calibration run is not a code bug: it
 //! means `grade_prompt` drifted lenient and should be tightened.
 
 use alix::{
@@ -45,7 +45,7 @@ const MOVE_POINTS: &[&str] = &[
 ];
 
 #[test]
-#[ignore = "real claude CLI; run with `make eval`"]
+#[ignore = "real claude CLI; run with `make calibrate`"]
 fn confident_but_wrong_is_never_a_pass() {
     let v = verdict(
         MOVE_Q,
@@ -59,7 +59,7 @@ fn confident_but_wrong_is_never_a_pass() {
 }
 
 #[test]
-#[ignore = "real claude CLI; run with `make eval`"]
+#[ignore = "real claude CLI; run with `make calibrate`"]
 fn terse_but_correct_passes_at_balanced() {
     let v = verdict(
         MOVE_Q,
@@ -78,14 +78,14 @@ const TCP_POINTS: &[&str] = &[
 ];
 
 #[test]
-#[ignore = "real claude CLI; run with `make eval`"]
+#[ignore = "real claude CLI; run with `make calibrate`"]
 fn an_empty_answer_does_not_pass() {
     let v = verdict(TCP_Q, TCP_POINTS, "", Strictness::Balanced);
     assert_ne!(Verdict::Pass, v, "an empty answer was passed");
 }
 
 #[test]
-#[ignore = "real claude CLI; run with `make eval`"]
+#[ignore = "real claude CLI; run with `make calibrate`"]
 fn an_off_topic_answer_does_not_pass() {
     let v = verdict(
         TCP_Q,
@@ -108,7 +108,7 @@ const BORROW_HALF: &str = "You can have either many immutable references or a si
                            mutable one, but never both at the same time.";
 
 #[test]
-#[ignore = "real claude CLI; run with `make eval`"]
+#[ignore = "real claude CLI; run with `make calibrate`"]
 fn strict_fails_an_incomplete_answer() {
     let v = verdict(BORROW_Q, BORROW_POINTS, BORROW_HALF, Strictness::Strict);
     assert_ne!(
@@ -119,7 +119,7 @@ fn strict_fails_an_incomplete_answer() {
 }
 
 #[test]
-#[ignore = "real claude CLI; run with `make eval`"]
+#[ignore = "real claude CLI; run with `make calibrate`"]
 fn lenient_passes_the_same_incomplete_answer() {
     let v = verdict(BORROW_Q, BORROW_POINTS, BORROW_HALF, Strictness::Lenient);
     assert_eq!(Verdict::Pass, v, "lenient failed a roughly-right answer");

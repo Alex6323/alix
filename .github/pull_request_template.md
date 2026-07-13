@@ -36,8 +36,8 @@ tick on a feature PR is a useful signal it isn't ready yet.
 - [ ] docs synced: `docs/book/` (manual/reference) + `README.md` (landing page) for user-facing changes
 - [ ] `CHANGELOG.md` entry under `## [Unreleased]` for user-facing changes (Breaking note for a 0.x rename/removal)
 - [ ] new dependency? a one-line reason is included
-- [ ] touched a `grade_*` prompt? ran `make eval` and noted the calibration delta below
+- [ ] touched a `grade_*` prompt? ran `make calibrate` and noted the calibration delta below
 
 ## Anything reviewers should know
 
-<!-- Trade-offs, follow-ups, the calibration delta if you ran make eval, screenshots for UI changes. -->
+<!-- Trade-offs, follow-ups, the calibration delta if you ran make calibrate, screenshots for UI changes. -->
