@@ -683,6 +683,7 @@ fn reviewing_at(deck: PathBuf, cards: Vec<Card>, store: &Store, depth: Depth) ->
         },
         now_ms(),
     );
+    let augment = crate::augment::AugmentCache::open(deck.with_extension("augment.json"));
     let mut decks = HashMap::new();
     decks.insert("d.txt".to_string(), deck);
     Reviewing::new(SessionBuild {
@@ -693,6 +694,7 @@ fn reviewing_at(deck: PathBuf, cards: Vec<Card>, store: &Store, depth: Depth) ->
         source_roots: HashMap::new(),
         source_bases: HashMap::new(),
         topology_name: None,
+        augment,
     })
 }
 
@@ -949,6 +951,7 @@ fn one_card_reviewing(dir: &Path) -> (Reviewing, Card, PathBuf) {
         source_roots: HashMap::new(),
         source_bases: HashMap::new(),
         topology_name: None,
+        augment: crate::augment::AugmentCache::open(deck.with_extension("augment.json")),
     });
     (reviewing, card, deck)
 }
@@ -1080,6 +1083,7 @@ fn a_frozen_card_with_no_resolvable_source_root_answers_immediately_without_spaw
         source_roots,
         source_bases,
         topology_name: None,
+        augment: crate::augment::AugmentCache::open(dir.path().join("a.augment.json")),
     });
 
     let cfg = crate::testutil::ask_config(&dir.path().join("no-such-claude-binary"));

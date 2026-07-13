@@ -125,6 +125,11 @@ pub struct SessionBuild {
     /// The resolved topology name when this session is topology-ordered, so the
     /// server can show the connective cue from that topology. `None` otherwise.
     pub topology_name: Option<String>,
+    /// The decks' augment sidecar (distractors, keypoints, notes), already
+    /// opened by [`select`] for its format/note overlays and handed on so a
+    /// consumer (the frb bridge) can build choice questions from the same
+    /// cache instead of re-opening it.
+    pub augment: AugmentCache,
 }
 
 /// A trace walk ready to serve, built when a single trace deck is picked from the
@@ -559,6 +564,7 @@ pub fn select(
         source_roots,
         source_bases,
         topology_name,
+        augment,
     }))
 }
 
@@ -1099,6 +1105,32 @@ mod tests {
         std::fs::write(&b, "# q\n\tb\n").unwrap();
         let err = browse(vec![a, b]).err().unwrap();
         assert!(format!("{err}").contains("one deck"), "{err}");
+    }
+
+    #[test]
+    fn select_returns_the_decks_augment_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck = dir.path().join("f.txt");
+        std::fs::write(&deck, "# q\n\ta\n").unwrap();
+        let store_path = dir.path().join("p.json");
+        let mut store = open_store(Some(store_path.clone())).unwrap();
+        // Seed the sidecar select will open, next to the store.
+        let id = crate::deck::Deck::load(&deck).unwrap().cards[0].id();
+        let mut cache = AugmentCache::open(augment::augment_path_for(&store_path));
+        cache.set_note(id, "seeded".to_string());
+        cache.save().unwrap();
+
+        match select(
+            vec![deck],
+            &mut store,
+            &test_config(),
+            &SelectOptions::default(),
+        )
+        .unwrap()
+        {
+            Selected::Review(build) => assert_eq!(build.augment.note(id), Some("seeded")),
+            Selected::Walk(_) => panic!("a fact deck must review"),
+        }
     }
 
     #[test]
