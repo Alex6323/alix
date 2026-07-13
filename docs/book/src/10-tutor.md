@@ -13,7 +13,7 @@ The flashcard core never calls it.)
 
 On any post-answer screen — a revealed flip card, the feedback after a typed
 answer, an answered choice — an **Ask** button (or the `?` key) opens a chat
-panel without leaving the session: type a question, **Send**, **Save note**,
+panel without leaving the session: type a question, **Send**, **Make this a note**,
 **Close**. `alix` hands the tutor the card (its front, answer, note, and deck
 name) as context, and you can ask "why is that the answer?", "what's a
 simpler way to see this?", or anything else, and follow up. The server runs
@@ -37,7 +37,7 @@ enable it on a network you trust.
 When an exchange clears something up, press `Ctrl-N`: the tutor condenses the
 conversation into at most three short note lines and appends them to the card in
 its deck file. Notes aren't hashed, so the card's progress is untouched — you just
-keep the insight. (In the web panel, **Save note** does the same.)
+keep the insight. (In the web panel, **Make this a note** does the same.)
 
 ## Reference links — `% link:`
 

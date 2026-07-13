@@ -465,7 +465,8 @@ pub(super) struct ReviewKeys {
     remove: Vec<KeyDto>,
     restart: Vec<KeyDto>,
     ask: Vec<KeyDto>,
-    save_note: Vec<KeyDto>,
+    make_note: Vec<KeyDto>,
+    make_card: Vec<KeyDto>,
 }
 
 impl ReviewKeys {
@@ -481,7 +482,8 @@ impl ReviewKeys {
             remove: key_list(&b.remove),
             restart: key_list(&b.restart),
             ask: key_list(&b.ask),
-            save_note: key_list(&b.save_note),
+            make_note: key_list(&b.make_note),
+            make_card: key_list(&b.make_card),
         }
     }
 }

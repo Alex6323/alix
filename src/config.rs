@@ -123,8 +123,12 @@ pub struct Bindings {
     pub restart: Vec<KeyPattern>,
     /// Open the ask-Claude view on an answered card.
     pub ask: Vec<KeyPattern>,
-    /// Ask view: condense the conversation and save it as a card note.
-    pub save_note: Vec<KeyPattern>,
+    /// Ask view: condense the conversation into a note on the card
+    /// ("Make this a note").
+    pub make_note: Vec<KeyPattern>,
+    /// Ask view: distill the conversation into a draft card ("Make this a
+    /// card"; adult review only).
+    pub make_card: Vec<KeyPattern>,
     /// Quit the session.
     pub quit: Vec<KeyPattern>,
 }
@@ -147,7 +151,8 @@ impl Default for Bindings {
             cont: keys(&["enter", "space"]),
             restart: keys(&["r"]),
             ask: keys(&["?"]),
-            save_note: keys(&["ctrl-n"]),
+            make_note: keys(&["ctrl-n"]),
+            make_card: keys(&["ctrl-d"]),
             quit: keys(&["esc", "ctrl-c"]),
         }
     }
@@ -796,7 +801,8 @@ struct RawReview {
     r#continue: Option<Vec<String>>,
     restart: Option<Vec<String>>,
     ask: Option<Vec<String>>,
-    save_note: Option<Vec<String>>,
+    make_note: Option<Vec<String>>,
+    make_card: Option<Vec<String>>,
     quit: Option<Vec<String>>,
 }
 
@@ -835,7 +841,8 @@ impl Config {
         assign(&mut keys.cont, review.r#continue, "review.continue")?;
         assign(&mut keys.restart, review.restart, "review.restart")?;
         assign(&mut keys.ask, review.ask, "review.ask")?;
-        assign(&mut keys.save_note, review.save_note, "review.save_note")?;
+        assign(&mut keys.make_note, review.make_note, "review.make_note")?;
+        assign(&mut keys.make_card, review.make_card, "review.make_card")?;
         assign(&mut keys.quit, review.quit, "review.quit")?;
 
         let mut picker = PickerKeys::default();
@@ -1126,7 +1133,8 @@ pub fn default_config_toml() -> &'static str {
 # continue = ["enter", "space"] # leave the feedback screen
 # restart = ["r"]               # start a new session from the summary screen
 # ask = ["?"]                   # ask the tutor about an answered card
-# save_note = ["ctrl-n"]        # ask view: save a condensed note to the deck
+# make_note = ["ctrl-n"]        # ask view: condense the conversation into a note
+# make_card = ["ctrl-d"]        # ask view: distill the conversation into a card
 # quit = ["esc", "ctrl-c"]      # quit the session
 
 # Navigation keys for the deck picker (Vim-style by default). The arrow keys,
@@ -1446,6 +1454,26 @@ mod tests {
         let config = Config::from_toml("[keys.review]\nup = [\"w\"]\ndown = [\"s\"]\n").unwrap();
         assert_eq!(vec![parse_key("w").unwrap()], config.keys.up);
         assert_eq!(vec![parse_key("s").unwrap()], config.keys.down);
+    }
+
+    #[test]
+    fn tutor_distill_keys_default_and_can_be_rebound() {
+        // Make this a note (ctrl-n) and Make this a card (ctrl-d) are both
+        // rebindable [keys.review] actions like any other.
+        assert_eq!(
+            vec![parse_key("ctrl-n").unwrap()],
+            Bindings::default().make_note
+        );
+        assert_eq!(
+            vec![parse_key("ctrl-d").unwrap()],
+            Bindings::default().make_card
+        );
+        let config = Config::from_toml(
+            "[keys.review]\nmake_note = [\"ctrl-y\"]\nmake_card = [\"ctrl-u\"]\n",
+        )
+        .unwrap();
+        assert_eq!(vec![parse_key("ctrl-y").unwrap()], config.keys.make_note);
+        assert_eq!(vec![parse_key("ctrl-u").unwrap()], config.keys.make_card);
     }
 
     #[test]

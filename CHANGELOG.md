@@ -81,6 +81,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The mobile app renders note code blocks verbatim (fenced ``` blocks are
   no longer sentence-split), through the same structured note units the web
   serves.
+- **The tutor's "Save note" is now "Make this a note"**, matching "Make this a
+  card", and both distill actions are rebindable: **Breaking:** the
+  `[keys.review]` key `save_note` is renamed `make_note` (still `ctrl-n`), and
+  the new `make_card` (default `ctrl-d`) triggers "Make this a card" from the
+  keyboard.
 - **Leaving the tutor now asks first when the conversation is unsaved**, the
   same pause as leaving a session: the transcript survives on the current
   card, but moving on to the next one would drop it before it became a note

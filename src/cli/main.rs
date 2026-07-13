@@ -530,7 +530,8 @@ fn config_cmd(init: bool) -> Result<()> {
     show("continue", &keys.cont);
     show("restart", &keys.restart);
     show("ask", &keys.ask);
-    show("save_note", &keys.save_note);
+    show("make_note", &keys.make_note);
+    show("make_card", &keys.make_card);
     show("quit", &keys.quit);
     println!("browse bindings (first/last fixed: g/G/Home/End):");
     show("next", &config.browse.next);

@@ -1320,7 +1320,7 @@ function syncAsk() {
   }
   const send = legend.querySelector(".chip.primary");
   if (send) send.disabled = askData.thinking;
-  // Enable Save note / Make this a card once an answer lands (or disable again
+  // Enable Make this a note / Make this a card once an answer lands (or disable again
   // when a follow-up is in flight). The legend is built once, so update here.
   legend.querySelectorAll(".chip.distill").forEach(c => { c.disabled = !canDistill(); });
 }
@@ -1389,13 +1389,13 @@ function renderAskFooter(input) {
   legend.innerHTML = "";
   const send = chip("Send", "primary", () => sendAsk(input.value), "shift+enter");
   send.disabled = askData.thinking;
-  // Save note / Make this a card distill a completed exchange, so they stay
-  // disabled (the `distill` class, refreshed on every poll in syncAsk) until a
-  // tutor answer exists.
-  chip("Save note", "distill", saveAskNote, label(KEYS.save_note)).disabled = !canDistill();
+  // Make this a note / Make this a card distill a completed exchange, so they
+  // stay disabled (the `distill` class, refreshed on every poll in syncAsk)
+  // until a tutor answer exists.
+  chip("Make this a note", "distill", saveAskNote, label(KEYS.make_note)).disabled = !canDistill();
   // Adult-only, review-scoped: drafting posts to the review-only draft endpoint,
   // which the walk's tutor session (reviewing = None server-side) can't serve.
-  if (!walkData) chip("Make this a card", "distill", draftCard, "").disabled = !canDistill();
+  if (!walkData) chip("Make this a card", "distill", draftCard, label(KEYS.make_card)).disabled = !canDistill();
   chip("Close", "", closeAsk, "esc");
 }
 // The leave-the-tutor confirmation, mirroring the session/walk leave prompts:
@@ -1403,7 +1403,7 @@ function renderAskFooter(input) {
 function renderAskLeaveConfirm() {
   legend.innerHTML = "";
   legend.appendChild(el("span", "leave-msg",
-    "Leave the tutor? Moving on to the next card drops this conversation. Save note or Make a card keeps it."));
+    "Leave the tutor? Moving on to the next card drops this conversation. Making a note or a card keeps it."));
   chip("Leave anyway", "again", closeAsk, "enter");
   chip("Stay", "primary", cancelAskLeave, "esc");
 }
@@ -3926,7 +3926,8 @@ document.addEventListener("keydown", (e) => {
   // typing, Enter for a newline, and Shift+Enter to send.
   if (asking) {
     if (e.key === "Escape") { e.preventDefault(); closeAsk(); return; }
-    if (hit(e, KEYS.save_note)) { e.preventDefault(); saveAskNote(); return; }
+    if (hit(e, KEYS.make_note)) { e.preventDefault(); saveAskNote(); return; }
+    if (hit(e, KEYS.make_card)) { e.preventDefault(); draftCard(); return; }
     return;
   }
   // While the leave prompt is up: Enter confirms leaving, Esc stays; other keys
