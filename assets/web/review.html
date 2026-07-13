@@ -318,7 +318,7 @@
   .note pre { margin: 8px 0; padding: 10px 12px; overflow-x: auto; background: rgba(0,0,0,0.32); border-radius: 8px; font: 0.82rem/1.45 var(--mono); color: var(--note-code); }
 
   /* multiple-choice options */
-  .options { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 560px; margin: 0 auto; }
+  .options { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: min(96vw, 1040px); margin: 0 auto; }
   .option {
     display: flex; align-items: center; gap: 14px; width: 100%; text-align: left;
     background: rgba(255,255,255,0.03); border: 1px solid var(--line); color: var(--text);
@@ -329,6 +329,7 @@
   .option .num { font-family: var(--mono); font-size: 0.85rem; color: var(--faint); }
   .option .opt { white-space: pre-wrap; }
   button.option:hover { border-color: var(--bolt); background: color-mix(in srgb, var(--bolt) 6%, transparent); }
+  .option.focused { border-color: var(--bolt); background: color-mix(in srgb, var(--bolt) 11%, transparent); }
   button.option:focus-visible { outline: 2px solid var(--bolt-hi); outline-offset: 2px; }
   .option.correct { border-color: var(--good); background: color-mix(in srgb, var(--good) 12%, transparent); color: var(--good); }
   .option.correct .num { color: var(--good); }
@@ -2874,7 +2875,20 @@ function renderExcerpt(parent, ex) {
 }
 
 // Tappable multiple-choice options.
+// The keyboard-focused MC option (up/down via the configured nav keys or arrows),
+// -1 = none yet. Enter picks the focused one; number keys and click still work.
+let choiceFocus = -1;
+function moveChoiceFocus(delta) {
+  const opts = document.querySelectorAll(".options .option");
+  if (!opts.length) return;
+  choiceFocus = choiceFocus < 0
+    ? (delta > 0 ? 0 : opts.length - 1)
+    : (choiceFocus + delta + opts.length) % opts.length;
+  opts.forEach((o, i) => o.classList.toggle("focused", i === choiceFocus));
+  opts[choiceFocus].scrollIntoView({ block: "nearest" });
+}
 function renderChoices(a) {
+  choiceFocus = -1;
   const wrap = el("div", "options");
   state.choices.forEach((opt, i) => {
     const b = el("button", "option");
@@ -3758,6 +3772,9 @@ document.addEventListener("keydown", (e) => {
     if (isAcquireChoice()) {
       if (!feedback) {
         if (hit(e, KEYS.skip)) { e.preventDefault(); skip(); return; }
+        if (hit(e, KEYS.up) || e.key === "ArrowUp") { e.preventDefault(); moveChoiceFocus(-1); return; }
+        if (hit(e, KEYS.down) || e.key === "ArrowDown") { e.preventDefault(); moveChoiceFocus(1); return; }
+        if (e.key === "Enter" && choiceFocus >= 0 && choiceFocus < state.choices.length) { e.preventDefault(); choose(choiceFocus); return; }
         if (e.key >= "1" && e.key <= "9") {
           const i = +e.key - 1;
           if (i < state.choices.length) { e.preventDefault(); choose(i); }
@@ -3825,6 +3842,9 @@ document.addEventListener("keydown", (e) => {
   if (hit(e, KEYS.remove)) { e.preventDefault(); remove(); return; }
   if (isChoice()) {
     if (hit(e, KEYS.skip)) { e.preventDefault(); skip(); return; }
+    if (hit(e, KEYS.up) || e.key === "ArrowUp") { e.preventDefault(); moveChoiceFocus(-1); return; }
+    if (hit(e, KEYS.down) || e.key === "ArrowDown") { e.preventDefault(); moveChoiceFocus(1); return; }
+    if (e.key === "Enter" && choiceFocus >= 0 && choiceFocus < state.choices.length) { e.preventDefault(); choose(choiceFocus); return; }
     if (e.key >= "1" && e.key <= "9") {
       const i = +e.key - 1;
       if (i < state.choices.length) { e.preventDefault(); choose(i); }
