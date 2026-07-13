@@ -32,6 +32,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   multiple-choice and key-point lists move with `k`/`j` by default (the arrow
   keys always work too); rebind them under `[keys.review]` as `up`/`down`, like
   any other review action.
+- **An experimental native app lives in the tree (`apps/mobile`)**: a Flutter
+  shell that embeds the same Rust core (the real parser, scheduler, and store)
+  and runs a first flip-card review loop offline on Android and as a Linux
+  desktop window. It is an early walking skeleton, source-built only (`make
+  phone` / `make tablet` / `make desktop`, see `docs/dev/frb-bridge-setup.md`),
+  not part of the released binaries, and its data layout may still change
+  without migration.
+- **For library consumers: a `full` cargo feature** (on by default) now gates
+  the AI backends and the web server. Depending on `alix` with
+  `default-features = false` compiles just the lean core (decks, scheduling,
+  sessions, store) with no behavior change for anyone using the defaults; this
+  is the half the mobile app embeds.
 
 ### Removed
 - The placeholder **"Fun" kids theme**, superseded by the three real kids
@@ -81,6 +93,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   excerpt instead of marking the point — the click bubbled into the answer
   region's own answer/source toggle. The keypoint `<li>` now stops that
   propagation.
+- Opening the web app in the first moments after a server start could paint a
+  blank page (the page booted before the server was ready to answer); the boot
+  now retries briefly instead of giving up on the first failed fetch.
 
 ## [0.4.0] - 2026-07-11
 
