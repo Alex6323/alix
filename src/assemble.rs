@@ -101,6 +101,10 @@ pub struct SelectOptions {
     pub cram: bool,
     pub max_new: Option<usize>,
     pub limit: Option<usize>,
+    /// The session clock (Unix ms); `None` means the wall clock. Select was
+    /// the one core path that hardcoded `now_ms()` (everything else threads
+    /// time as a parameter), so embedders (the frb bridge, tests) inject here.
+    pub now_ms: Option<u64>,
 }
 
 /// A review session ready to serve: the session, its header label, the
@@ -517,7 +521,7 @@ pub fn select(
         store,
         Box::new(Fsrs::new(review.retention)),
         options,
-        now_ms(),
+        opts.now_ms.unwrap_or_else(now_ms),
     );
 
     // Remember the resolved depth for this deck so a plain Learn next time
@@ -1095,5 +1099,43 @@ mod tests {
         std::fs::write(&b, "# q\n\tb\n").unwrap();
         let err = browse(vec![a, b]).err().unwrap();
         assert!(format!("{err}").contains("one deck"), "{err}");
+    }
+
+    #[test]
+    fn select_serves_by_the_injected_clock() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck = dir.path().join("f.txt");
+        std::fs::write(&deck, "# q\n\ta\n").unwrap();
+        let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
+        // Acquire the card at t0: it cools until t0 + ACQUIRE_COOLDOWN_MS,
+        // so which side of that line the injected clock falls on decides
+        // whether select finds anything to serve.
+        let id = crate::deck::Deck::load(&deck).unwrap().cards[0].id();
+        let t0 = 1_000_000;
+        store.get_or_insert(id, t0);
+
+        let early = SelectOptions {
+            now_ms: Some(t0 + 30_000),
+            ..Default::default()
+        };
+        match select(vec![deck.clone()], &mut store, &test_config(), &early).unwrap() {
+            Selected::Review(build) => {
+                assert!(build.session.is_finished(), "nothing is due 30s in")
+            }
+            Selected::Walk(_) => panic!("a fact deck must review"),
+        }
+        let late = SelectOptions {
+            now_ms: Some(t0 + 61_000),
+            ..Default::default()
+        };
+        match select(vec![deck], &mut store, &test_config(), &late).unwrap() {
+            Selected::Review(build) => {
+                assert!(
+                    !build.session.is_finished(),
+                    "due once the cooldown elapsed"
+                )
+            }
+            Selected::Walk(_) => panic!("a fact deck must review"),
+        }
     }
 }

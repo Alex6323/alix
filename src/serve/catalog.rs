@@ -493,6 +493,8 @@ pub(super) fn read_selection(
             cram: body.cram,
             max_new: body.max_new,
             limit: body.limit,
+            // The web serves on the wall clock; only embedders inject time.
+            now_ms: None,
         },
     })
 }
