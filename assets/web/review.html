@@ -175,6 +175,9 @@
      scrolls inside its own region (fade masks + more-hint, driven by updateFade). */
   .region.a { flex: 1 1 auto; max-height: 82%; position: relative; }
   .region.a.withnote { max-height: 52%; }
+  /* An MC card's options fill the height down toward the note instead of
+     leaving a big gap above the bottom-pinned note; they use the room well. */
+  .region.a.choices.withnote { max-height: 74%; }
   .region.a.balanced { justify-content: center; }
   .region.a.filled { justify-content: flex-start; }
   .region.n { flex: 0 0 auto; max-height: 30%; }   /* note */
@@ -2909,6 +2912,7 @@ function moveChoiceFocus(delta) {
 }
 function renderChoices(a) {
   choiceFocus = -1;
+  a.classList.add("choices");
   const wrap = el("div", "options");
   state.choices.forEach((opt, i) => {
     const b = el("button", "option");
@@ -2972,6 +2976,7 @@ function renderTypeLine(a) {
 
 // The options after answering: correct in green, a wrong pick in red.
 function renderChoiceFeedback(a) {
+  a.classList.add("choices");
   const wrap = el("div", "options");
   state.choices.forEach((opt, i) => {
     let cls = "option";
