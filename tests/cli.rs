@@ -1829,7 +1829,7 @@ fn augment_topology_prints_and_caches_the_walk() {
     ]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     let text = stdout(&out);
-    assert!(text.contains("topology 'auto'"), "{text}");
+    assert!(text.contains("topology 'pedagogical order'"), "{text}");
     assert!(text.contains("by difficulty"), "{text}");
     assert!(text.contains("(1 topology stored for this deck)"), "{text}");
 }

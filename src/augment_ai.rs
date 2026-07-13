@@ -202,7 +202,7 @@ pub fn generate_topology(
     topology.name = guidance
         .map(|g| g.trim())
         .filter(|g| !g.is_empty())
-        .unwrap_or("auto")
+        .unwrap_or("pedagogical order")
         .to_string();
     Ok(topology)
 }
@@ -272,8 +272,13 @@ fn topology_prompt(items: &[WarmItem], guidance: Option<&str>) -> String {
          Use the card indices below. Relate cards by their meaning, not their \
          wording.\n",
     );
-    if let Some(g) = guidance {
-        s.push_str(&format!("\nFavored organizing principle: {}\n", g.trim()));
+    match guidance.map(str::trim).filter(|g| !g.is_empty()) {
+        Some(g) => s.push_str(&format!("\nFavored organizing principle: {g}\n")),
+        None => s.push_str(
+            "\nFavored organizing principle: a pedagogical order that puts \
+             foundational cards first, then the cards that build on them, so \
+             prerequisites come before what depends on them.\n",
+        ),
     }
     s.push_str("\nCards (index. question — answer):\n");
     for (i, item) in items.iter().enumerate() {
@@ -958,12 +963,26 @@ mod tests {
     }
 
     #[test]
-    fn generate_topology_names_auto_when_unguided() {
+    fn generate_topology_names_it_pedagogical_order_when_unguided() {
         let _g = exec_lock();
         let dir = tempfile::tempdir().unwrap();
         let cli = fake_reply(dir.path(), r#"{"principle":"p","edges":[],"walk":[0]}"#);
         let unguided = generate_topology(&[item(10, "q", "a")], None, &ask_config(&cli)).unwrap();
-        assert_eq!("auto", unguided.name);
+        assert_eq!("pedagogical order", unguided.name);
+    }
+
+    #[test]
+    fn topology_prompt_defaults_to_a_pedagogical_order_and_guidance_overrides_it() {
+        let items = [item(1, "q", "a")];
+        let unguided = topology_prompt(&items, None);
+        assert!(unguided.contains("pedagogical order"), "{unguided}");
+        assert!(unguided.contains("foundational cards first"), "{unguided}");
+        let guided = topology_prompt(&items, Some("by continent"));
+        assert!(
+            guided.contains("Favored organizing principle: by continent"),
+            "{guided}"
+        );
+        assert!(!guided.contains("foundational cards first"), "{guided}");
     }
 
     #[test]

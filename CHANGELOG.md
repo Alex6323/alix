@@ -48,6 +48,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `targets` list instead of a single `target`, and the augment poll response
   (`AugmentDto`) also reports `queued`, `done`, and `failed` targets for
   batch progress.
+- The topology augmentation now defaults to a pedagogical (foundations-first)
+  order when you give no guidance, named `pedagogical order` rather than `auto`;
+  a guidance steer still overrides it.
 
 ### Fixed
 - The tutor's **Save note** (and the new **Make this a card**) now stay disabled
