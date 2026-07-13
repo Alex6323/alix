@@ -163,7 +163,7 @@
     -webkit-mask-image: linear-gradient(to bottom, transparent, #000 34px, #000 calc(100% - 34px), transparent);
   }
   /* a clear "there's more below" marker when the answer/excerpt overflows the card */
-  .more-hint { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); font-family: var(--mono); font-size: 0.64rem; letter-spacing: 0.05em; color: var(--bolt); background: var(--panel-bot, rgba(6,18,26,0.95)); border: 1px solid var(--line); border-radius: 999px; padding: 3px 11px; pointer-events: none; opacity: 0; transition: opacity 0.15s; box-shadow: 0 5px 16px -7px rgba(0,0,0,0.8); }
+  .more-hint { position: absolute; left: 50%; transform: translateX(-50%); font-family: var(--mono); font-size: 0.64rem; letter-spacing: 0.05em; color: var(--bolt); background: var(--panel-bot, rgba(6,18,26,0.95)); border: 1px solid var(--line); border-radius: 999px; padding: 3px 11px; pointer-events: none; opacity: 0; transition: opacity 0.15s; box-shadow: 0 5px 16px -7px rgba(0,0,0,0.8); }
   .more-hint.show { opacity: 0.94; }
   /* The question reserves space beneath itself, so a clear gap between question
      and answer is ALWAYS present — even when the answer overflows and top-aligns,
@@ -2589,7 +2589,10 @@ function buildCardShell({ pile, cardId = null, ansId = null, withNote = false, m
   if (leftAlign) a.style.textAlign = "left";
   a.addEventListener("scroll", () => updateFade(a));
   card.appendChild(a);
-  if (moreHint) card.appendChild(el("div", "more-hint"));
+  if (moreHint) {
+    card.appendChild(el("div", "more-hint"));      // "more below", pinned to the answer's bottom edge
+    card.appendChild(el("div", "more-hint top"));  // "more above", pinned to the answer's top edge
+  }
   stack.appendChild(card);
   stage.appendChild(stack);
   return { stack, card, q, a };
@@ -2812,14 +2815,27 @@ function updateFade(a) {
   const atBottom = a.scrollTop + a.clientHeight >= a.scrollHeight - 2;
   a.classList.toggle("fade-top", a.scrollTop > 2);
   a.classList.toggle("fade-bottom", !atBottom);
-  const more = a.parentElement && a.parentElement.querySelector(".more-hint");
-  if (!more) return;
-  if (!atBottom && overflows) {
-    const n = hiddenLineCount(a);
-    more.textContent = n > 0 ? `⌵ ${n} more line${n === 1 ? "" : "s"}` : "⌵ more below";
-    more.classList.add("show");
-  } else {
-    more.classList.remove("show");
+  const parent = a.parentElement;
+  if (!parent) return;
+  const below = parent.querySelector(".more-hint:not(.top)");
+  const above = parent.querySelector(".more-hint.top");
+  // Pin the hints to the answer region's own top/bottom edges (not the card's),
+  // so "more below" sits above the note's divider instead of over the note.
+  const cardH = a.offsetParent ? a.offsetParent.clientHeight : parent.clientHeight;
+  const aTop = a.offsetTop;
+  const aBottom = a.offsetTop + a.offsetHeight;
+  if (below) {
+    below.style.bottom = Math.max(0, cardH - aBottom + 8) + "px";
+    if (!atBottom && overflows) {
+      const n = hiddenLineCount(a);
+      below.textContent = n > 0 ? `⌵ ${n} more line${n === 1 ? "" : "s"}` : "⌵ more below";
+      below.classList.add("show");
+    } else below.classList.remove("show");
+  }
+  if (above) {
+    above.style.top = (aTop + 8) + "px";
+    if (a.scrollTop > 2 && overflows) { above.textContent = "⌃ more above"; above.classList.add("show"); }
+    else above.classList.remove("show");
   }
 }
 
