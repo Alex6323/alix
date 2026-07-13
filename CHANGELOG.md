@@ -56,6 +56,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The tutor's **Save note** (and the new **Make this a card**) now stay disabled
   until the tutor has actually answered, instead of looking active and silently
   doing nothing on an empty conversation.
+- The formatting augmentation no longer strands already-clean cards as a
+  permanent gap: a card the formatter checks and leaves as-is is now recorded as
+  done, so coverage completes instead of a Generate that appears to do nothing.
 - **The trace walk screen now shares the session chrome.** It still rendered
   pre-re-skin chrome: no ☰ menu in the header, and a footer that packed
   Missed it/Partly/Got it/Ask/Leave into one centered row with a dead

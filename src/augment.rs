@@ -39,7 +39,8 @@ const CURRENT_VERSION: u32 = 1;
 /// A tidied presentation for a badly-shaped card (e.g. an enumeration crammed
 /// into one prose answer): reshaped display text for the front/answer/note and a
 /// suggested answer mode. Display-only — never part of `Card::id()`, so it
-/// preserves progress. Absent for a card already well-shaped.
+/// preserves progress. An all-empty Format marks a card the formatter checked
+/// and left as-is, so it still counts as covered.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Format {
     /// Reshaped question (readability only). `None` keeps the card's front.

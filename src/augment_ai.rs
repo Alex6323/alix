@@ -382,11 +382,15 @@ pub fn generate_format(
 
     let mut out = HashMap::new();
     for (index, item) in items.iter().enumerate() {
-        if let Some(raw_fmt) = parsed.get(&index.to_string())
-            && let Some(fmt) = clean_format(item, raw_fmt)
-        {
-            out.insert(item.id, fmt);
-        }
+        // A card the model reshapes gets its tidied Format; one it declines
+        // (already clean, so omitted from the reply) gets an all-empty no-op
+        // Format. The no-op still counts as covered, so a well-shaped card is
+        // marked done instead of lingering as a gap that re-runs to no effect.
+        let fmt = parsed
+            .get(&index.to_string())
+            .and_then(|raw_fmt| clean_format(item, raw_fmt))
+            .unwrap_or_default();
+        out.insert(item.id, fmt);
     }
     Ok(out)
 }
@@ -1100,6 +1104,24 @@ mod tests {
         }];
         let err = generate_format(&items, None, &ask_config(&cli)).unwrap_err();
         assert!(format!("{err:#}").contains("did not return valid JSON"));
+    }
+
+    #[test]
+    fn generate_format_marks_a_declined_card_with_a_noop_so_it_stays_covered() {
+        let _guard = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        // The model reshapes card 0 and omits card 1 as already clean.
+        let cli = fake_reply(dir.path(), r#"{"0": {"back": ["A", "B"]}}"#);
+        let items = vec![
+            WarmItem { id: 1, question: "List".into(), answer: "A, B".into(), note: None },
+            WarmItem { id: 2, question: "Atomic".into(), answer: "one thing".into(), note: None },
+        ];
+        let map = generate_format(&items, None, &ask_config(&cli)).unwrap();
+        assert_eq!(map[&1].back, ["A", "B"]);
+        // The declined card gets an all-empty no-op so it counts as covered
+        // instead of lingering as an eternal gap the user re-runs for nothing.
+        assert!(map.contains_key(&2), "declined card missing");
+        assert_eq!(map[&2], Format::default());
     }
 
     #[test]
