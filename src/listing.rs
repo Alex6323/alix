@@ -57,7 +57,7 @@ pub fn list_root(root: &Path, review: &ReviewConfig, now_ms: u64) -> Vec<DeckSum
 
 /// Lists the decks inside one drillable folder of `root`. Members review
 /// into the folder's own store when it is a workspace (`alix.toml`), else
-/// into the root's shared store — the same routing `assemble::store_for`
+/// into the root's shared store, the same routing `assemble::store_for`
 /// applies when one of them is opened.
 pub fn list_members(
     root: &Path,
