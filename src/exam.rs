@@ -991,11 +991,13 @@ because they didn't spell it out or skipped a secondary detail.\n\
         }
         Strictness::Lenient => {
             "\
-Grade generously — the goal is only to catch real misunderstandings. Give the \
+Grade generously: the goal is only to catch real misunderstandings. Give the \
 student the benefit of the doubt on anything plausibly correct or partially \
-stated. Put a point in `missed` ONLY if the answer is clearly wrong about it or \
-the question was essentially not answered.\n\
-- \"pass\": broadly correct, even if thin.\n\
+stated. An answer covering only some of the key points still passes when what \
+it says is correct; incompleteness alone is never \"partial\" here. Reserve \
+\"partial\" for an actual error. Put a point in `missed` ONLY if the answer is \
+clearly wrong about it or the question was essentially not answered.\n\
+- \"pass\": broadly correct, even if thin or incomplete.\n\
 - \"partial\": partly right but with a clear error.\n\
 - \"fail\": wrong or essentially unanswered."
         }
@@ -1323,6 +1325,12 @@ mod tests {
         assert!(balanced.contains("UNDERSTANDING, not completeness"));
         assert!(!balanced.contains("COMPLETENESS — treat the rubric"));
         assert!(lenient.contains("benefit of the doubt"));
+        // Lenient must spell out that incompleteness alone never downgrades a
+        // correct answer — models otherwise read "partial" as "some points
+        // covered" (calibration drift caught 2026-07-13).
+        assert!(lenient.contains("incompleteness alone is never"));
+        assert!(!strict.contains("incompleteness alone is never"));
+        assert!(!balanced.contains("incompleteness alone is never"));
     }
 
     #[test]
