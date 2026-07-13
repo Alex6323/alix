@@ -898,7 +898,7 @@ async function api(path, opts) { return (await fetch(path, opts)).json(); }
 function post(body) { return { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }; }
 // On load the page may be seeded in browse mode (a `alix browse --serve` launch):
 // the state then carries the browse phase + cards, so open the overlay directly.
-function load() { api("/api/state").then(s => { if (s.phase === "browse") { browsing = { cards: s.cards, label: s.label, i: 0 }; state = s; render(); } else apply(s); }); }
+function load() { return api("/api/state").then(s => { if (s.phase === "browse") { browsing = { cards: s.cards, label: s.label, i: 0 }; state = s; render(); } else apply(s); }); }
 function grade(g)  { api("/api/grade", post({ grade: g })).then(apply); }
 function skip()    { api("/api/skip", post({})).then(apply); }
 function acquire() { api("/api/acquire", post({})).then(apply); }
@@ -4299,29 +4299,35 @@ document.getElementById("mAbout").addEventListener("click", () => {
   });
 });
 
-// Load the configured key bindings first, then the session. The picker-keys
-// endpoint falls back to the Vim defaults if an older server lacks it.
-Promise.all([
-  api("/api/keys"),
-  api("/api/picker-keys").catch(() => ({})),
-  api("/api/ask-info").catch(() => null),
-  api("/api/browse-keys").catch(() => null),
-]).then(([k, pk, ai, bk]) => {
-  KEYS = k;
-  if (ai) askInfo = ai;
-  if (bk) BK = bk;
-  PK = Object.assign({
-    up: [{ k: "k", ctrl: false }], down: [{ k: "j", ctrl: false }],
-    open: [{ k: "l", ctrl: false }], back: [{ k: "h", ctrl: false }],
-    filter: [{ k: "/", ctrl: false }, { k: "f", ctrl: true }], mastered: [{ k: "m", ctrl: false }],
-    depth: [{ k: "v", ctrl: false }], recognize: [{ k: "1", ctrl: false }],
-    recall: [{ k: "2", ctrl: false }], reconstruct: [{ k: "3", ctrl: false }],
-    cram: [{ k: "c", ctrl: false }],
-  }, pk || {});
-  document.querySelector("#mRemove .mk").textContent = label(KEYS.remove);
-  document.getElementById("mAskKey").textContent = label(KEYS.ask);
-  load();
-});
+// Load the key bindings first, then the session, and retry on a transient
+// failure. A just-started server, or the browser reusing a dead keep-alive
+// connection from a killed one, can fail the first request; the picker-keys
+// endpoint also falls back to the Vim defaults on an older server. Without the
+// retry a failed first request left a blank page until a manual refresh.
+function boot() {
+  Promise.all([
+    api("/api/keys"),
+    api("/api/picker-keys").catch(() => ({})),
+    api("/api/ask-info").catch(() => null),
+    api("/api/browse-keys").catch(() => null),
+  ]).then(([k, pk, ai, bk]) => {
+    KEYS = k;
+    if (ai) askInfo = ai;
+    if (bk) BK = bk;
+    PK = Object.assign({
+      up: [{ k: "k", ctrl: false }], down: [{ k: "j", ctrl: false }],
+      open: [{ k: "l", ctrl: false }], back: [{ k: "h", ctrl: false }],
+      filter: [{ k: "/", ctrl: false }, { k: "f", ctrl: true }], mastered: [{ k: "m", ctrl: false }],
+      depth: [{ k: "v", ctrl: false }], recognize: [{ k: "1", ctrl: false }],
+      recall: [{ k: "2", ctrl: false }], reconstruct: [{ k: "3", ctrl: false }],
+      cram: [{ k: "c", ctrl: false }],
+    }, pk || {});
+    document.querySelector("#mRemove .mk").textContent = label(KEYS.remove);
+    document.getElementById("mAskKey").textContent = label(KEYS.ask);
+    return load();
+  }).catch(() => setTimeout(boot, 500));
+}
+boot();
 </script>
 <script src="/theme.js"></script>
 </body>
