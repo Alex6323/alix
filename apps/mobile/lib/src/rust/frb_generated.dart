@@ -66,7 +66,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => -1401422006;
+  int get rustContentHash => 1930606396;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -78,21 +78,35 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
 }
 
 abstract class RustLibApi extends BaseApi {
-  ReviewState crateApiReviewReviewSessionAcquire({required ReviewSession that});
+  ReviewState crateApiReviewReviewSessionAcquire({
+    required ReviewSession that,
+    BigInt? nowMs,
+  });
+
+  CheckFeedback? crateApiReviewReviewSessionCheck({
+    required ReviewSession that,
+    required List<String> lines,
+  });
+
+  ChoiceFeedback? crateApiReviewReviewSessionChoose({
+    required ReviewSession that,
+    required int chosen,
+  });
 
   ReviewState crateApiReviewReviewSessionGrade({
     required ReviewSession that,
     required Grade grade,
+    BigInt? nowMs,
   });
 
   ReviewSession crateApiReviewReviewSessionOpen({
     required String deckPath,
-    required String storeDir,
+    required String rootDir,
+    Depth? depth,
+    BigInt? nowMs,
   });
 
   ReviewState crateApiReviewReviewSessionState({required ReviewSession that});
-
-  bool crateApiReviewReviewSessionUnseen({required ReviewSession that});
 
   Future<void> crateApiSimpleInitApp();
 
@@ -117,6 +131,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @override
   ReviewState crateApiReviewReviewSessionAcquire({
     required ReviewSession that,
+    BigInt? nowMs,
   }) {
     return handler.executeSync(
       SyncTask(
@@ -126,6 +141,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that,
             serializer,
           );
+          sse_encode_opt_box_autoadd_u_64(nowMs, serializer);
           return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 1)!;
         },
         codec: SseCodec(
@@ -133,7 +149,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_AnyhowException,
         ),
         constMeta: kCrateApiReviewReviewSessionAcquireConstMeta,
-        argValues: [that],
+        argValues: [that, nowMs],
         apiImpl: this,
       ),
     );
@@ -142,13 +158,80 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiReviewReviewSessionAcquireConstMeta =>
       const TaskConstMeta(
         debugName: "ReviewSession_acquire",
-        argNames: ["that"],
+        argNames: ["that", "nowMs"],
+      );
+
+  @override
+  CheckFeedback? crateApiReviewReviewSessionCheck({
+    required ReviewSession that,
+    required List<String> lines,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerReviewSession(
+            that,
+            serializer,
+          );
+          sse_encode_list_String(lines, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 2)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_opt_box_autoadd_check_feedback,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiReviewReviewSessionCheckConstMeta,
+        argValues: [that, lines],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiReviewReviewSessionCheckConstMeta =>
+      const TaskConstMeta(
+        debugName: "ReviewSession_check",
+        argNames: ["that", "lines"],
+      );
+
+  @override
+  ChoiceFeedback? crateApiReviewReviewSessionChoose({
+    required ReviewSession that,
+    required int chosen,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerReviewSession(
+            that,
+            serializer,
+          );
+          sse_encode_u_32(chosen, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 3)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_opt_box_autoadd_choice_feedback,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiReviewReviewSessionChooseConstMeta,
+        argValues: [that, chosen],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiReviewReviewSessionChooseConstMeta =>
+      const TaskConstMeta(
+        debugName: "ReviewSession_choose",
+        argNames: ["that", "chosen"],
       );
 
   @override
   ReviewState crateApiReviewReviewSessionGrade({
     required ReviewSession that,
     required Grade grade,
+    BigInt? nowMs,
   }) {
     return handler.executeSync(
       SyncTask(
@@ -159,14 +242,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             serializer,
           );
           sse_encode_grade(grade, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 2)!;
+          sse_encode_opt_box_autoadd_u_64(nowMs, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 4)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_review_state,
           decodeErrorData: sse_decode_AnyhowException,
         ),
         constMeta: kCrateApiReviewReviewSessionGradeConstMeta,
-        argValues: [that, grade],
+        argValues: [that, grade, nowMs],
         apiImpl: this,
       ),
     );
@@ -175,21 +259,25 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiReviewReviewSessionGradeConstMeta =>
       const TaskConstMeta(
         debugName: "ReviewSession_grade",
-        argNames: ["that", "grade"],
+        argNames: ["that", "grade", "nowMs"],
       );
 
   @override
   ReviewSession crateApiReviewReviewSessionOpen({
     required String deckPath,
-    required String storeDir,
+    required String rootDir,
+    Depth? depth,
+    BigInt? nowMs,
   }) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(deckPath, serializer);
-          sse_encode_String(storeDir, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 3)!;
+          sse_encode_String(rootDir, serializer);
+          sse_encode_opt_box_autoadd_depth(depth, serializer);
+          sse_encode_opt_box_autoadd_u_64(nowMs, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 5)!;
         },
         codec: SseCodec(
           decodeSuccessData:
@@ -197,7 +285,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_AnyhowException,
         ),
         constMeta: kCrateApiReviewReviewSessionOpenConstMeta,
-        argValues: [deckPath, storeDir],
+        argValues: [deckPath, rootDir, depth, nowMs],
         apiImpl: this,
       ),
     );
@@ -206,7 +294,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiReviewReviewSessionOpenConstMeta =>
       const TaskConstMeta(
         debugName: "ReviewSession_open",
-        argNames: ["deckPath", "storeDir"],
+        argNames: ["deckPath", "rootDir", "depth", "nowMs"],
       );
 
   @override
@@ -219,7 +307,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that,
             serializer,
           );
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 4)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 6)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_review_state,
@@ -236,35 +324,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "ReviewSession_state", argNames: ["that"]);
 
   @override
-  bool crateApiReviewReviewSessionUnseen({required ReviewSession that}) {
-    return handler.executeSync(
-      SyncTask(
-        callFfi: () {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerReviewSession(
-            that,
-            serializer,
-          );
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 5)!;
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_bool,
-          decodeErrorData: null,
-        ),
-        constMeta: kCrateApiReviewReviewSessionUnseenConstMeta,
-        argValues: [that],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiReviewReviewSessionUnseenConstMeta =>
-      const TaskConstMeta(
-        debugName: "ReviewSession_unseen",
-        argNames: ["that"],
-      );
-
-  @override
   Future<void> crateApiSimpleInitApp() {
     return handler.executeNormal(
       NormalTask(
@@ -273,7 +332,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 6,
+            funcId: 7,
             port: port_,
           );
         },
@@ -360,15 +419,74 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  CheckFeedback dco_decode_box_autoadd_check_feedback(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_check_feedback(raw);
+  }
+
+  @protected
+  ChoiceFeedback dco_decode_box_autoadd_choice_feedback(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_choice_feedback(raw);
+  }
+
+  @protected
+  Depth dco_decode_box_autoadd_depth(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_depth(raw);
+  }
+
+  @protected
+  BigInt dco_decode_box_autoadd_u_64(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_u_64(raw);
+  }
+
+  @protected
   CardView dco_decode_card_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    return CardView(
+      front: dco_decode_String(arr[0]),
+      context: dco_decode_list_String(arr[1]),
+      back: dco_decode_list_String(arr[2]),
+      note: dco_decode_list_String(arr[3]),
+      image: dco_decode_opt_String(arr[4]),
+      imageBack: dco_decode_opt_String(arr[5]),
+    );
+  }
+
+  @protected
+  CheckFeedback dco_decode_check_feedback(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
     if (arr.length != 2)
       throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
-    return CardView(
-      front: dco_decode_String(arr[0]),
-      back: dco_decode_list_String(arr[1]),
+    return CheckFeedback(
+      results: dco_decode_list_typed_result(arr[0]),
+      passed: dco_decode_bool(arr[1]),
     );
+  }
+
+  @protected
+  ChoiceFeedback dco_decode_choice_feedback(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return ChoiceFeedback(
+      chosen: dco_decode_usize(arr[0]),
+      correct: dco_decode_usize(arr[1]),
+      passed: dco_decode_bool(arr[2]),
+    );
+  }
+
+  @protected
+  Depth dco_decode_depth(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return Depth.values[raw as int];
   }
 
   @protected
@@ -396,21 +514,86 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<TypedResult> dco_decode_list_typed_result(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_typed_result).toList();
+  }
+
+  @protected
+  Mode dco_decode_mode(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return Mode.values[raw as int];
+  }
+
+  @protected
+  String? dco_decode_opt_String(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_String(raw);
+  }
+
+  @protected
   CardView? dco_decode_opt_box_autoadd_card_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_card_view(raw);
   }
 
   @protected
+  CheckFeedback? dco_decode_opt_box_autoadd_check_feedback(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_check_feedback(raw);
+  }
+
+  @protected
+  ChoiceFeedback? dco_decode_opt_box_autoadd_choice_feedback(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_choice_feedback(raw);
+  }
+
+  @protected
+  Depth? dco_decode_opt_box_autoadd_depth(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_depth(raw);
+  }
+
+  @protected
+  BigInt? dco_decode_opt_box_autoadd_u_64(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_u_64(raw);
+  }
+
+  @protected
+  List<String>? dco_decode_opt_list_String(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_list_String(raw);
+  }
+
+  @protected
   ReviewState dco_decode_review_state(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    return ReviewState(
+      card: dco_decode_opt_box_autoadd_card_view(arr[0]),
+      mode: dco_decode_mode(arr[1]),
+      depth: dco_decode_depth(arr[2]),
+      acquire: dco_decode_bool(arr[3]),
+      choices: dco_decode_opt_list_String(arr[4]),
+      finished: dco_decode_bool(arr[5]),
+      remaining: dco_decode_u_32(arr[6]),
+    );
+  }
+
+  @protected
+  TypedResult dco_decode_typed_result(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
     if (arr.length != 3)
       throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
-    return ReviewState(
-      card: dco_decode_opt_box_autoadd_card_view(arr[0]),
-      finished: dco_decode_bool(arr[1]),
-      remaining: dco_decode_u_32(arr[2]),
+    return TypedResult(
+      input: dco_decode_String(arr[0]),
+      expected: dco_decode_String(arr[1]),
+      passed: dco_decode_bool(arr[2]),
     );
   }
 
@@ -418,6 +601,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   int dco_decode_u_32(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as int;
+  }
+
+  @protected
+  BigInt dco_decode_u_64(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dcoDecodeU64(raw);
   }
 
   @protected
@@ -513,11 +702,78 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  CheckFeedback sse_decode_box_autoadd_check_feedback(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_check_feedback(deserializer));
+  }
+
+  @protected
+  ChoiceFeedback sse_decode_box_autoadd_choice_feedback(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_choice_feedback(deserializer));
+  }
+
+  @protected
+  Depth sse_decode_box_autoadd_depth(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_depth(deserializer));
+  }
+
+  @protected
+  BigInt sse_decode_box_autoadd_u_64(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_u_64(deserializer));
+  }
+
+  @protected
   CardView sse_decode_card_view(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_front = sse_decode_String(deserializer);
+    var var_context = sse_decode_list_String(deserializer);
     var var_back = sse_decode_list_String(deserializer);
-    return CardView(front: var_front, back: var_back);
+    var var_note = sse_decode_list_String(deserializer);
+    var var_image = sse_decode_opt_String(deserializer);
+    var var_imageBack = sse_decode_opt_String(deserializer);
+    return CardView(
+      front: var_front,
+      context: var_context,
+      back: var_back,
+      note: var_note,
+      image: var_image,
+      imageBack: var_imageBack,
+    );
+  }
+
+  @protected
+  CheckFeedback sse_decode_check_feedback(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_results = sse_decode_list_typed_result(deserializer);
+    var var_passed = sse_decode_bool(deserializer);
+    return CheckFeedback(results: var_results, passed: var_passed);
+  }
+
+  @protected
+  ChoiceFeedback sse_decode_choice_feedback(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_chosen = sse_decode_usize(deserializer);
+    var var_correct = sse_decode_usize(deserializer);
+    var var_passed = sse_decode_bool(deserializer);
+    return ChoiceFeedback(
+      chosen: var_chosen,
+      correct: var_correct,
+      passed: var_passed,
+    );
+  }
+
+  @protected
+  Depth sse_decode_depth(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return Depth.values[inner];
   }
 
   @protected
@@ -553,6 +809,36 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<TypedResult> sse_decode_list_typed_result(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <TypedResult>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_typed_result(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  Mode sse_decode_mode(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return Mode.values[inner];
+  }
+
+  @protected
+  String? sse_decode_opt_String(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_String(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   CardView? sse_decode_opt_box_autoadd_card_view(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -564,15 +850,95 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  CheckFeedback? sse_decode_opt_box_autoadd_check_feedback(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_check_feedback(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  ChoiceFeedback? sse_decode_opt_box_autoadd_choice_feedback(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_choice_feedback(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  Depth? sse_decode_opt_box_autoadd_depth(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_depth(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  BigInt? sse_decode_opt_box_autoadd_u_64(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_u_64(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  List<String>? sse_decode_opt_list_String(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_list_String(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   ReviewState sse_decode_review_state(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_card = sse_decode_opt_box_autoadd_card_view(deserializer);
+    var var_mode = sse_decode_mode(deserializer);
+    var var_depth = sse_decode_depth(deserializer);
+    var var_acquire = sse_decode_bool(deserializer);
+    var var_choices = sse_decode_opt_list_String(deserializer);
     var var_finished = sse_decode_bool(deserializer);
     var var_remaining = sse_decode_u_32(deserializer);
     return ReviewState(
       card: var_card,
+      mode: var_mode,
+      depth: var_depth,
+      acquire: var_acquire,
+      choices: var_choices,
       finished: var_finished,
       remaining: var_remaining,
+    );
+  }
+
+  @protected
+  TypedResult sse_decode_typed_result(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_input = sse_decode_String(deserializer);
+    var var_expected = sse_decode_String(deserializer);
+    var var_passed = sse_decode_bool(deserializer);
+    return TypedResult(
+      input: var_input,
+      expected: var_expected,
+      passed: var_passed,
     );
   }
 
@@ -580,6 +946,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   int sse_decode_u_32(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return deserializer.buffer.getUint32();
+  }
+
+  @protected
+  BigInt sse_decode_u_64(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return deserializer.buffer.getBigUint64();
   }
 
   @protected
@@ -682,10 +1054,68 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_check_feedback(
+    CheckFeedback self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_check_feedback(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_choice_feedback(
+    ChoiceFeedback self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_choice_feedback(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_depth(Depth self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_depth(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_u_64(BigInt self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_64(self, serializer);
+  }
+
+  @protected
   void sse_encode_card_view(CardView self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.front, serializer);
+    sse_encode_list_String(self.context, serializer);
     sse_encode_list_String(self.back, serializer);
+    sse_encode_list_String(self.note, serializer);
+    sse_encode_opt_String(self.image, serializer);
+    sse_encode_opt_String(self.imageBack, serializer);
+  }
+
+  @protected
+  void sse_encode_check_feedback(CheckFeedback self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_list_typed_result(self.results, serializer);
+    sse_encode_bool(self.passed, serializer);
+  }
+
+  @protected
+  void sse_encode_choice_feedback(
+    ChoiceFeedback self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_usize(self.chosen, serializer);
+    sse_encode_usize(self.correct, serializer);
+    sse_encode_bool(self.passed, serializer);
+  }
+
+  @protected
+  void sse_encode_depth(Depth self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
   }
 
   @protected
@@ -720,6 +1150,34 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_typed_result(
+    List<TypedResult> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_typed_result(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_mode(Mode self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_opt_String(String? self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_String(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_opt_box_autoadd_card_view(
     CardView? self,
     SseSerializer serializer,
@@ -733,17 +1191,94 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_check_feedback(
+    CheckFeedback? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_check_feedback(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_choice_feedback(
+    ChoiceFeedback? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_choice_feedback(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_depth(Depth? self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_depth(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_u_64(BigInt? self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_u_64(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_list_String(
+    List<String>? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_list_String(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_review_state(ReviewState self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_opt_box_autoadd_card_view(self.card, serializer);
+    sse_encode_mode(self.mode, serializer);
+    sse_encode_depth(self.depth, serializer);
+    sse_encode_bool(self.acquire, serializer);
+    sse_encode_opt_list_String(self.choices, serializer);
     sse_encode_bool(self.finished, serializer);
     sse_encode_u_32(self.remaining, serializer);
+  }
+
+  @protected
+  void sse_encode_typed_result(TypedResult self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.input, serializer);
+    sse_encode_String(self.expected, serializer);
+    sse_encode_bool(self.passed, serializer);
   }
 
   @protected
   void sse_encode_u_32(int self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     serializer.buffer.putUint32(self);
+  }
+
+  @protected
+  void sse_encode_u_64(BigInt self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    serializer.buffer.putBigUint64(self);
   }
 
   @protected
@@ -783,22 +1318,28 @@ class ReviewSessionImpl extends RustOpaque implements ReviewSession {
         RustLib.instance.api.rust_arc_decrement_strong_count_ReviewSessionPtr,
   );
 
-  /// Mark the current never-seen card as acquired (first exposure, no grade)
-  /// and persist, returning the next position.
-  ReviewState acquire() =>
-      RustLib.instance.api.crateApiReviewReviewSessionAcquire(that: this);
+  /// Mark the current never-seen card as acquired (first exposure, no
+  /// grade) and persist, returning the next position.
+  ReviewState acquire({BigInt? nowMs}) => RustLib.instance.api
+      .crateApiReviewReviewSessionAcquire(that: this, nowMs: nowMs);
+
+  /// Check typed lines against the current card (pure evidence; the
+  /// learner-final grade is still a separate `grade` call).
+  CheckFeedback? check({required List<String> lines}) => RustLib.instance.api
+      .crateApiReviewReviewSessionCheck(that: this, lines: lines);
+
+  /// Grade a pick against the same options `state` served; `None` when no
+  /// pick is up. The learner-final grade is still a separate `grade` call.
+  ChoiceFeedback? choose({required int chosen}) => RustLib.instance.api
+      .crateApiReviewReviewSessionChoose(that: this, chosen: chosen);
 
   /// Grade the current card and persist, returning the next position.
-  ReviewState grade({required Grade grade}) => RustLib.instance.api
-      .crateApiReviewReviewSessionGrade(that: this, grade: grade);
+  ReviewState grade({required Grade grade, BigInt? nowMs}) => RustLib
+      .instance
+      .api
+      .crateApiReviewReviewSessionGrade(that: this, grade: grade, nowMs: nowMs);
 
   /// The current review position, for the screen to render.
   ReviewState state() =>
       RustLib.instance.api.crateApiReviewReviewSessionState(that: this);
-
-  /// Whether the current card is a first exposure (never seen). The client
-  /// then shows it with its answer and a single "Seen" action ([`Self::acquire`],
-  /// attempt-first lifecycle) instead of quizzing it cold.
-  bool unseen() =>
-      RustLib.instance.api.crateApiReviewReviewSessionUnseen(that: this);
 }

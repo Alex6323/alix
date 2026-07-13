@@ -10,43 +10,67 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ReviewSession>>
 abstract class ReviewSession implements RustOpaqueInterface {
-  /// Mark the current never-seen card as acquired (first exposure, no grade)
-  /// and persist, returning the next position.
-  ReviewState acquire();
+  /// Mark the current never-seen card as acquired (first exposure, no
+  /// grade) and persist, returning the next position.
+  ReviewState acquire({BigInt? nowMs});
+
+  /// Check typed lines against the current card (pure evidence; the
+  /// learner-final grade is still a separate `grade` call).
+  CheckFeedback? check({required List<String> lines});
+
+  /// Grade a pick against the same options `state` served; `None` when no
+  /// pick is up. The learner-final grade is still a separate `grade` call.
+  ChoiceFeedback? choose({required int chosen});
 
   /// Grade the current card and persist, returning the next position.
-  ReviewState grade({required Grade grade});
+  ReviewState grade({required Grade grade, BigInt? nowMs});
 
-  /// Open a deck file, with its progress store in `store_dir`.
+  /// Open a deck of the decks folder `root_dir` at `depth` (default:
+  /// the deck's last depth, else Recall). The progress store is routed the
+  /// way the web and CLI route it: a workspace member reviews into its
+  /// workspace's own store, everything else into the root's shared store.
+  /// `now_ms` injects the session clock (tests); `None` is the wall clock.
   static ReviewSession open({
     required String deckPath,
-    required String storeDir,
+    required String rootDir,
+    Depth? depth,
+    BigInt? nowMs,
   }) => RustLib.instance.api.crateApiReviewReviewSessionOpen(
     deckPath: deckPath,
-    storeDir: storeDir,
+    rootDir: rootDir,
+    depth: depth,
+    nowMs: nowMs,
   );
 
   /// The current review position, for the screen to render.
   ReviewState state();
-
-  /// Whether the current card is a first exposure (never seen). The client
-  /// then shows it with its answer and a single "Seen" action ([`Self::acquire`],
-  /// attempt-first lifecycle) instead of quizzing it cold.
-  bool unseen();
 }
 
-/// frb mirrors of the core review-state types (they live in the `alix` crate,
-/// which frb does not scan): field-for-field copies that teach the generator
-/// their shape so Dart gets real classes, not opaque handles. Keep in lock
-/// step with `alix::review`.
 class CardView {
   final String front;
+  final List<String> context;
   final List<String> back;
+  final List<String> note;
+  final String? image;
+  final String? imageBack;
 
-  const CardView({required this.front, required this.back});
+  const CardView({
+    required this.front,
+    required this.context,
+    required this.back,
+    required this.note,
+    this.image,
+    this.imageBack,
+  });
 
   @override
-  int get hashCode => front.hashCode ^ back.hashCode;
+  int get hashCode =>
+      front.hashCode ^
+      context.hashCode ^
+      back.hashCode ^
+      note.hashCode ^
+      image.hashCode ^
+      imageBack.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -54,25 +78,94 @@ class CardView {
       other is CardView &&
           runtimeType == other.runtimeType &&
           front == other.front &&
-          back == other.back;
+          context == other.context &&
+          back == other.back &&
+          note == other.note &&
+          image == other.image &&
+          imageBack == other.imageBack;
 }
+
+class CheckFeedback {
+  final List<TypedResult> results;
+  final bool passed;
+
+  const CheckFeedback({required this.results, required this.passed});
+
+  @override
+  int get hashCode => results.hashCode ^ passed.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is CheckFeedback &&
+          runtimeType == other.runtimeType &&
+          results == other.results &&
+          passed == other.passed;
+}
+
+class ChoiceFeedback {
+  final BigInt chosen;
+  final BigInt correct;
+  final bool passed;
+
+  const ChoiceFeedback({
+    required this.chosen,
+    required this.correct,
+    required this.passed,
+  });
+
+  @override
+  int get hashCode => chosen.hashCode ^ correct.hashCode ^ passed.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ChoiceFeedback &&
+          runtimeType == other.runtimeType &&
+          chosen == other.chosen &&
+          correct == other.correct &&
+          passed == other.passed;
+}
+
+enum Depth { recognize, recall, reconstruct }
 
 /// The learner's self-grade, mirrored so frb bridges it from this crate.
 enum Grade { fail, partial, pass }
 
+/// frb mirrors of the core contract types (they live in the `alix` crate,
+/// which frb does not scan): field-for-field copies that teach the generator
+/// their shape so Dart gets real classes and enums, not opaque handles. Keep
+/// in lock step with `alix::review`, `alix::answer`, and `alix::depth`.
+enum Mode { flip, typing, typeLine, choice, lineByLine, explain }
+
 class ReviewState {
   final CardView? card;
+  final Mode mode;
+  final Depth depth;
+  final bool acquire;
+  final List<String>? choices;
   final bool finished;
   final int remaining;
 
   const ReviewState({
     this.card,
+    required this.mode,
+    required this.depth,
+    required this.acquire,
+    this.choices,
     required this.finished,
     required this.remaining,
   });
 
   @override
-  int get hashCode => card.hashCode ^ finished.hashCode ^ remaining.hashCode;
+  int get hashCode =>
+      card.hashCode ^
+      mode.hashCode ^
+      depth.hashCode ^
+      acquire.hashCode ^
+      choices.hashCode ^
+      finished.hashCode ^
+      remaining.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -80,6 +173,34 @@ class ReviewState {
       other is ReviewState &&
           runtimeType == other.runtimeType &&
           card == other.card &&
+          mode == other.mode &&
+          depth == other.depth &&
+          acquire == other.acquire &&
+          choices == other.choices &&
           finished == other.finished &&
           remaining == other.remaining;
+}
+
+class TypedResult {
+  final String input;
+  final String expected;
+  final bool passed;
+
+  const TypedResult({
+    required this.input,
+    required this.expected,
+    required this.passed,
+  });
+
+  @override
+  int get hashCode => input.hashCode ^ expected.hashCode ^ passed.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TypedResult &&
+          runtimeType == other.runtimeType &&
+          input == other.input &&
+          expected == other.expected &&
+          passed == other.passed;
 }

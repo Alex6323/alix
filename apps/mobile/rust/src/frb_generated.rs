@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1401422006;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1930606396;
 
 // Section: executor
 
@@ -71,6 +71,7 @@ fn wire__crate__api__review__ReviewSession_acquire_impl(
             let api_that = <RustOpaqueMoi<
                 flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ReviewSession>,
             >>::sse_decode(&mut deserializer);
+            let api_now_ms = <Option<u64>>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
                 (move || {
@@ -88,11 +89,113 @@ fn wire__crate__api__review__ReviewSession_acquire_impl(
                         }
                     }
                     let mut api_that_guard = api_that_guard.unwrap();
-                    let output_ok =
-                        crate::api::review::ReviewSession::acquire(&mut *api_that_guard)?;
+                    let output_ok = crate::api::review::ReviewSession::acquire(
+                        &mut *api_that_guard,
+                        api_now_ms,
+                    )?;
                     Ok(output_ok)
                 })(),
             )
+        },
+    )
+}
+fn wire__crate__api__review__ReviewSession_check_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "ReviewSession_check",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ReviewSession>,
+            >>::sse_decode(&mut deserializer);
+            let api_lines = <Vec<String>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let mut api_that_guard = None;
+                let decode_indices_ =
+                    flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
+                        flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                            &api_that, 0, false,
+                        ),
+                    ]);
+                for i in decode_indices_ {
+                    match i {
+                        0 => api_that_guard = Some(api_that.lockable_decode_sync_ref()),
+                        _ => unreachable!(),
+                    }
+                }
+                let api_that_guard = api_that_guard.unwrap();
+                let output_ok = Result::<_, ()>::Ok(crate::api::review::ReviewSession::check(
+                    &*api_that_guard,
+                    api_lines,
+                ))?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__review__ReviewSession_choose_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "ReviewSession_choose",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ReviewSession>,
+            >>::sse_decode(&mut deserializer);
+            let api_chosen = <u32>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let mut api_that_guard = None;
+                let decode_indices_ =
+                    flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
+                        flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                            &api_that, 0, false,
+                        ),
+                    ]);
+                for i in decode_indices_ {
+                    match i {
+                        0 => api_that_guard = Some(api_that.lockable_decode_sync_ref()),
+                        _ => unreachable!(),
+                    }
+                }
+                let api_that_guard = api_that_guard.unwrap();
+                let output_ok = Result::<_, ()>::Ok(crate::api::review::ReviewSession::choose(
+                    &*api_that_guard,
+                    api_chosen,
+                ))?;
+                Ok(output_ok)
+            })())
         },
     )
 }
@@ -121,6 +224,7 @@ fn wire__crate__api__review__ReviewSession_grade_impl(
                 flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ReviewSession>,
             >>::sse_decode(&mut deserializer);
             let api_grade = <crate::api::review::Grade>::sse_decode(&mut deserializer);
+            let api_now_ms = <Option<u64>>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
                 (move || {
@@ -138,8 +242,11 @@ fn wire__crate__api__review__ReviewSession_grade_impl(
                         }
                     }
                     let mut api_that_guard = api_that_guard.unwrap();
-                    let output_ok =
-                        crate::api::review::ReviewSession::grade(&mut *api_that_guard, api_grade)?;
+                    let output_ok = crate::api::review::ReviewSession::grade(
+                        &mut *api_that_guard,
+                        api_grade,
+                        api_now_ms,
+                    )?;
                     Ok(output_ok)
                 })(),
             )
@@ -168,12 +275,18 @@ fn wire__crate__api__review__ReviewSession_open_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_deck_path = <String>::sse_decode(&mut deserializer);
-            let api_store_dir = <String>::sse_decode(&mut deserializer);
+            let api_root_dir = <String>::sse_decode(&mut deserializer);
+            let api_depth = <Option<crate::api::review::Depth>>::sse_decode(&mut deserializer);
+            let api_now_ms = <Option<u64>>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
                 (move || {
-                    let output_ok =
-                        crate::api::review::ReviewSession::open(api_deck_path, api_store_dir)?;
+                    let output_ok = crate::api::review::ReviewSession::open(
+                        api_deck_path,
+                        api_root_dir,
+                        api_depth,
+                        api_now_ms,
+                    )?;
                     Ok(output_ok)
                 })(),
             )
@@ -228,54 +341,6 @@ fn wire__crate__api__review__ReviewSession_state_impl(
         },
     )
 }
-fn wire__crate__api__review__ReviewSession_unseen_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "ReviewSession_unseen",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_that = <RustOpaqueMoi<
-                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ReviewSession>,
-            >>::sse_decode(&mut deserializer);
-            deserializer.end();
-            transform_result_sse::<_, ()>((move || {
-                let mut api_that_guard = None;
-                let decode_indices_ =
-                    flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
-                        flutter_rust_bridge::for_generated::LockableOrderInfo::new(
-                            &api_that, 0, false,
-                        ),
-                    ]);
-                for i in decode_indices_ {
-                    match i {
-                        0 => api_that_guard = Some(api_that.lockable_decode_sync_ref()),
-                        _ => unreachable!(),
-                    }
-                }
-                let api_that_guard = api_that_guard.unwrap();
-                let output_ok = Result::<_, ()>::Ok(crate::api::review::ReviewSession::unseen(
-                    &*api_that_guard,
-                ))?;
-                Ok(output_ok)
-            })())
-        },
-    )
-}
 fn wire__crate__api__simple__init_app_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -318,13 +383,38 @@ const _: fn() = || {
     {
         let CardView = None::<crate::api::review::CardView>.unwrap();
         let _: String = CardView.front;
+        let _: Vec<String> = CardView.context;
         let _: Vec<String> = CardView.back;
+        let _: Vec<String> = CardView.note;
+        let _: Option<String> = CardView.image;
+        let _: Option<String> = CardView.image_back;
+    }
+    {
+        let CheckFeedback = None::<crate::api::review::CheckFeedback>.unwrap();
+        let _: Vec<crate::api::review::TypedResult> = CheckFeedback.results;
+        let _: bool = CheckFeedback.passed;
+    }
+    {
+        let ChoiceFeedback = None::<crate::api::review::ChoiceFeedback>.unwrap();
+        let _: usize = ChoiceFeedback.chosen;
+        let _: usize = ChoiceFeedback.correct;
+        let _: bool = ChoiceFeedback.passed;
     }
     {
         let ReviewState = None::<crate::api::review::ReviewState>.unwrap();
         let _: Option<crate::api::review::CardView> = ReviewState.card;
+        let _: crate::api::review::Mode = ReviewState.mode;
+        let _: crate::api::review::Depth = ReviewState.depth;
+        let _: bool = ReviewState.acquire;
+        let _: Option<Vec<String>> = ReviewState.choices;
         let _: bool = ReviewState.finished;
         let _: u32 = ReviewState.remaining;
+    }
+    {
+        let TypedResult = None::<crate::api::review::TypedResult>.unwrap();
+        let _: String = TypedResult.input;
+        let _: String = TypedResult.expected;
+        let _: bool = TypedResult.passed;
     }
 };
 
@@ -383,10 +473,57 @@ impl SseDecode for crate::api::review::CardView {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_front = <String>::sse_decode(deserializer);
+        let mut var_context = <Vec<String>>::sse_decode(deserializer);
         let mut var_back = <Vec<String>>::sse_decode(deserializer);
+        let mut var_note = <Vec<String>>::sse_decode(deserializer);
+        let mut var_image = <Option<String>>::sse_decode(deserializer);
+        let mut var_imageBack = <Option<String>>::sse_decode(deserializer);
         return crate::api::review::CardView {
             front: var_front,
+            context: var_context,
             back: var_back,
+            note: var_note,
+            image: var_image,
+            image_back: var_imageBack,
+        };
+    }
+}
+
+impl SseDecode for crate::api::review::CheckFeedback {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_results = <Vec<crate::api::review::TypedResult>>::sse_decode(deserializer);
+        let mut var_passed = <bool>::sse_decode(deserializer);
+        return crate::api::review::CheckFeedback {
+            results: var_results,
+            passed: var_passed,
+        };
+    }
+}
+
+impl SseDecode for crate::api::review::ChoiceFeedback {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_chosen = <usize>::sse_decode(deserializer);
+        let mut var_correct = <usize>::sse_decode(deserializer);
+        let mut var_passed = <bool>::sse_decode(deserializer);
+        return crate::api::review::ChoiceFeedback {
+            chosen: var_chosen,
+            correct: var_correct,
+            passed: var_passed,
+        };
+    }
+}
+
+impl SseDecode for crate::api::review::Depth {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::review::Depth::Recognize,
+            1 => crate::api::review::Depth::Recall,
+            2 => crate::api::review::Depth::Reconstruct,
+            _ => unreachable!("Invalid variant for Depth: {}", inner),
         };
     }
 }
@@ -435,6 +572,45 @@ impl SseDecode for Vec<u8> {
     }
 }
 
+impl SseDecode for Vec<crate::api::review::TypedResult> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::review::TypedResult>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for crate::api::review::Mode {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::review::Mode::Flip,
+            1 => crate::api::review::Mode::Typing,
+            2 => crate::api::review::Mode::TypeLine,
+            3 => crate::api::review::Mode::Choice,
+            4 => crate::api::review::Mode::LineByLine,
+            5 => crate::api::review::Mode::Explain,
+            _ => unreachable!("Invalid variant for Mode: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for Option<String> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<String>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for Option<crate::api::review::CardView> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -446,16 +622,97 @@ impl SseDecode for Option<crate::api::review::CardView> {
     }
 }
 
+impl SseDecode for Option<crate::api::review::CheckFeedback> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::review::CheckFeedback>::sse_decode(
+                deserializer,
+            ));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<crate::api::review::ChoiceFeedback> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::review::ChoiceFeedback>::sse_decode(
+                deserializer,
+            ));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<crate::api::review::Depth> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::review::Depth>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<u64> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<u64>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<Vec<String>> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<Vec<String>>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for crate::api::review::ReviewState {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_card = <Option<crate::api::review::CardView>>::sse_decode(deserializer);
+        let mut var_mode = <crate::api::review::Mode>::sse_decode(deserializer);
+        let mut var_depth = <crate::api::review::Depth>::sse_decode(deserializer);
+        let mut var_acquire = <bool>::sse_decode(deserializer);
+        let mut var_choices = <Option<Vec<String>>>::sse_decode(deserializer);
         let mut var_finished = <bool>::sse_decode(deserializer);
         let mut var_remaining = <u32>::sse_decode(deserializer);
         return crate::api::review::ReviewState {
             card: var_card,
+            mode: var_mode,
+            depth: var_depth,
+            acquire: var_acquire,
+            choices: var_choices,
             finished: var_finished,
             remaining: var_remaining,
+        };
+    }
+}
+
+impl SseDecode for crate::api::review::TypedResult {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_input = <String>::sse_decode(deserializer);
+        let mut var_expected = <String>::sse_decode(deserializer);
+        let mut var_passed = <bool>::sse_decode(deserializer);
+        return crate::api::review::TypedResult {
+            input: var_input,
+            expected: var_expected,
+            passed: var_passed,
         };
     }
 }
@@ -464,6 +721,13 @@ impl SseDecode for u32 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         deserializer.cursor.read_u32::<NativeEndian>().unwrap()
+    }
+}
+
+impl SseDecode for u64 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        deserializer.cursor.read_u64::<NativeEndian>().unwrap()
     }
 }
 
@@ -495,7 +759,7 @@ fn pde_ffi_dispatcher_primary_impl(
 ) {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        6 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
+        7 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -509,10 +773,11 @@ fn pde_ffi_dispatcher_sync_impl(
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
         1 => wire__crate__api__review__ReviewSession_acquire_impl(ptr, rust_vec_len, data_len),
-        2 => wire__crate__api__review__ReviewSession_grade_impl(ptr, rust_vec_len, data_len),
-        3 => wire__crate__api__review__ReviewSession_open_impl(ptr, rust_vec_len, data_len),
-        4 => wire__crate__api__review__ReviewSession_state_impl(ptr, rust_vec_len, data_len),
-        5 => wire__crate__api__review__ReviewSession_unseen_impl(ptr, rust_vec_len, data_len),
+        2 => wire__crate__api__review__ReviewSession_check_impl(ptr, rust_vec_len, data_len),
+        3 => wire__crate__api__review__ReviewSession_choose_impl(ptr, rust_vec_len, data_len),
+        4 => wire__crate__api__review__ReviewSession_grade_impl(ptr, rust_vec_len, data_len),
+        5 => wire__crate__api__review__ReviewSession_open_impl(ptr, rust_vec_len, data_len),
+        6 => wire__crate__api__review__ReviewSession_state_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -539,7 +804,11 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::CardView> 
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
             self.0.front.into_into_dart().into_dart(),
+            self.0.context.into_into_dart().into_dart(),
             self.0.back.into_into_dart().into_dart(),
+            self.0.note.into_into_dart().into_dart(),
+            self.0.image.into_into_dart().into_dart(),
+            self.0.image_back.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -552,6 +821,71 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::review::CardView>>
     for crate::api::review::CardView
 {
     fn into_into_dart(self) -> FrbWrapper<crate::api::review::CardView> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::CheckFeedback> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.results.into_into_dart().into_dart(),
+            self.0.passed.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::review::CheckFeedback>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::review::CheckFeedback>>
+    for crate::api::review::CheckFeedback
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::review::CheckFeedback> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::ChoiceFeedback> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.chosen.into_into_dart().into_dart(),
+            self.0.correct.into_into_dart().into_dart(),
+            self.0.passed.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::review::ChoiceFeedback>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::review::ChoiceFeedback>>
+    for crate::api::review::ChoiceFeedback
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::review::ChoiceFeedback> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::Depth> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self.0 {
+            crate::api::review::Depth::Recognize => 0.into_dart(),
+            crate::api::review::Depth::Recall => 1.into_dart(),
+            crate::api::review::Depth::Reconstruct => 2.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::review::Depth>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::review::Depth>>
+    for crate::api::review::Depth
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::review::Depth> {
         self.into()
     }
 }
@@ -573,10 +907,39 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::review::Grade> for crate::api
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::Mode> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self.0 {
+            crate::api::review::Mode::Flip => 0.into_dart(),
+            crate::api::review::Mode::Typing => 1.into_dart(),
+            crate::api::review::Mode::TypeLine => 2.into_dart(),
+            crate::api::review::Mode::Choice => 3.into_dart(),
+            crate::api::review::Mode::LineByLine => 4.into_dart(),
+            crate::api::review::Mode::Explain => 5.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::review::Mode>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::review::Mode>>
+    for crate::api::review::Mode
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::review::Mode> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::ReviewState> {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
             self.0.card.into_into_dart().into_dart(),
+            self.0.mode.into_into_dart().into_dart(),
+            self.0.depth.into_into_dart().into_dart(),
+            self.0.acquire.into_into_dart().into_dart(),
+            self.0.choices.into_into_dart().into_dart(),
             self.0.finished.into_into_dart().into_dart(),
             self.0.remaining.into_into_dart().into_dart(),
         ]
@@ -591,6 +954,28 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::review::ReviewStat
     for crate::api::review::ReviewState
 {
     fn into_into_dart(self) -> FrbWrapper<crate::api::review::ReviewState> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::TypedResult> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.input.into_into_dart().into_dart(),
+            self.0.expected.into_into_dart().into_dart(),
+            self.0.passed.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::review::TypedResult>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::review::TypedResult>>
+    for crate::api::review::TypedResult
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::review::TypedResult> {
         self.into()
     }
 }
@@ -638,7 +1023,45 @@ impl SseEncode for crate::api::review::CardView {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.front, serializer);
+        <Vec<String>>::sse_encode(self.context, serializer);
         <Vec<String>>::sse_encode(self.back, serializer);
+        <Vec<String>>::sse_encode(self.note, serializer);
+        <Option<String>>::sse_encode(self.image, serializer);
+        <Option<String>>::sse_encode(self.image_back, serializer);
+    }
+}
+
+impl SseEncode for crate::api::review::CheckFeedback {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Vec<crate::api::review::TypedResult>>::sse_encode(self.results, serializer);
+        <bool>::sse_encode(self.passed, serializer);
+    }
+}
+
+impl SseEncode for crate::api::review::ChoiceFeedback {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <usize>::sse_encode(self.chosen, serializer);
+        <usize>::sse_encode(self.correct, serializer);
+        <bool>::sse_encode(self.passed, serializer);
+    }
+}
+
+impl SseEncode for crate::api::review::Depth {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::review::Depth::Recognize => 0,
+                crate::api::review::Depth::Recall => 1,
+                crate::api::review::Depth::Reconstruct => 2,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
     }
 }
 
@@ -686,6 +1109,46 @@ impl SseEncode for Vec<u8> {
     }
 }
 
+impl SseEncode for Vec<crate::api::review::TypedResult> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::review::TypedResult>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for crate::api::review::Mode {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::review::Mode::Flip => 0,
+                crate::api::review::Mode::Typing => 1,
+                crate::api::review::Mode::TypeLine => 2,
+                crate::api::review::Mode::Choice => 3,
+                crate::api::review::Mode::LineByLine => 4,
+                crate::api::review::Mode::Explain => 5,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for Option<String> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <String>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for Option<crate::api::review::CardView> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -696,12 +1159,75 @@ impl SseEncode for Option<crate::api::review::CardView> {
     }
 }
 
+impl SseEncode for Option<crate::api::review::CheckFeedback> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::review::CheckFeedback>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<crate::api::review::ChoiceFeedback> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::review::ChoiceFeedback>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<crate::api::review::Depth> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::review::Depth>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<u64> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <u64>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<Vec<String>> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <Vec<String>>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for crate::api::review::ReviewState {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <Option<crate::api::review::CardView>>::sse_encode(self.card, serializer);
+        <crate::api::review::Mode>::sse_encode(self.mode, serializer);
+        <crate::api::review::Depth>::sse_encode(self.depth, serializer);
+        <bool>::sse_encode(self.acquire, serializer);
+        <Option<Vec<String>>>::sse_encode(self.choices, serializer);
         <bool>::sse_encode(self.finished, serializer);
         <u32>::sse_encode(self.remaining, serializer);
+    }
+}
+
+impl SseEncode for crate::api::review::TypedResult {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.input, serializer);
+        <String>::sse_encode(self.expected, serializer);
+        <bool>::sse_encode(self.passed, serializer);
     }
 }
 
@@ -709,6 +1235,13 @@ impl SseEncode for u32 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         serializer.cursor.write_u32::<NativeEndian>(self).unwrap();
+    }
+}
+
+impl SseEncode for u64 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        serializer.cursor.write_u64::<NativeEndian>(self).unwrap();
     }
 }
 
