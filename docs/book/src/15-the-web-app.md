@@ -59,16 +59,23 @@ clients (see `docs/API.md`):
 ## Augmenting a deck from the picker
 
 Focus a deck and press **`a`** (or its **Augment** button) to open the **Augment
-screen** — the browser face of `alix deck augment`. It shows what the deck's
-augmentation cache already holds, one row per target
-([choices](04-review-modes.md), notes, questions, [key points](04-review-modes.md),
-format) with a coverage bar, alongside its topologies. **Generate** fills only
-the cards a target is still missing, run as a background model call while the
-page polls (a spinner shows it working); **Remove** clears a target, and the
-topology row adds or drops named ones. A guidance box feeds the same `--with`
-steer as the command line. It writes the same `augment.json` review reads, so
-this only saves you the trip to the terminal. The action shows on decks, not
-workspaces.
+screen**: the browser face of `alix deck augment`. Each of six targets,
+[choices](04-review-modes.md), notes, questions, [key points](04-review-modes.md),
+format, and topology, gets its own card: a short, plain description of what
+that augmentation does, a small neutral before/after preview, its coverage
+count, and its action. **Generate** fills only the cards a target is still
+missing, run as a background model call while the page polls (a spinner shows
+it working); **Remove** clears a target, and the topology card adds or drops
+named topologies. A guidance box feeds the same `--with` steer as the command
+line. It writes the same `augment.json` review reads, so this only saves you
+the trip to the terminal. The action shows on decks, not workspaces.
+
+Tick several of the gap-fill targets (choices, notes, questions, key points,
+format) and press **Generate selected** to run them in one batch: it shows a
+rough estimate of how many generations that will take, then walks each ticked
+card through its own status, queued, generating, done, or failed, as the
+batch runs. A target failing doesn't stop the others; a single per-target
+**Generate** still works the same way it always did.
 
 The **format** target is a non-destructive reshaping pass: for each plain card
 whose answer is poorly shaped (a list crammed into prose, a run-on sentence that

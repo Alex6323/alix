@@ -19,6 +19,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rather than inventing a card.
 - Your decks folder is self-contained: drop it in a cloud drive (Dropbox, iCloud,
   Syncthing) for roaming multi-device (one device at a time), no accounts.
+- **The Augment screen redesign: one card per target, not a row.** Each of the
+  six targets (choices, notes, questions, key points, format, topology) shows
+  a plain description of what it does and a small neutral before/after
+  preview next to its coverage count and action. You can also tick several of
+  the gap-fill targets and press "Generate selected" to run them as one
+  batch: a rough estimate of how many generations that will take shows up
+  front, then each ticked card tracks its own status, queued, generating,
+  done, or failed, as the batch runs, and one target failing doesn't stop the
+  rest.
 
 ### Removed
 - The placeholder **"Fun" kids theme**, superseded by the three real kids
@@ -35,6 +44,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`~/.local/share/alix/progress.json`); bare `alix` and `alix <decks_dir>` share
   one store. Move an existing store once:
   `mv ~/.local/share/alix/progress.json ~/decks/progress.json`.
+- **Breaking:** the `/api/augment/generate` request body now takes a
+  `targets` list instead of a single `target`, and the augment poll response
+  (`AugmentDto`) also reports `queued`, `done`, and `failed` targets for
+  batch progress.
 
 ### Fixed
 - The tutor's **Save note** (and the new **Make this a card**) now stay disabled
