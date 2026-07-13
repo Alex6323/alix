@@ -585,6 +585,7 @@
   .aug::-webkit-scrollbar { width: 0; }
   .aug-card { border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; margin-bottom: 14px; }
   .aug-card:last-of-type { margin-bottom: 0; }
+  .aug-card.done { border-color: var(--good); }
   /* head row: title + description (left, truncates), coverage + action (right, fixed). */
   .aug-card-head { display: flex; align-items: flex-start; gap: 16px; }
   .aug-card-info { flex: 1 1 auto; min-width: 0; }
@@ -1759,7 +1760,11 @@ function augBeforeAfter(kind) {
 // on the right, and the before/after preview underneath.
 function augCardShell(row, right) {
   const info = AUG_INFO[row.kind];
-  const card = el("div", "aug-card");
+  // A green border marks a target that is already fully generated (or, for
+  // topology, has at least one named topology), so you can see at a glance what
+  // this deck already holds versus what still needs generating.
+  const done = row.kind === "topology" ? row.items.length > 0 : row.eligible > 0 && row.covered >= row.eligible;
+  const card = el("div", "aug-card" + (done ? " done" : ""));
   const head = el("div", "aug-card-head");
   const meta = el("div", "aug-card-info");
   meta.appendChild(el("div", "aug-card-title", (info && info.title) || row.label));
