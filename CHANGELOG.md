@@ -22,8 +22,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **The Augment screen redesign: one card per target, not a row.** Each of the
   six targets (choices, notes, questions, key points, format, topology) shows
   a plain description of what it does and a small neutral before/after
-  preview next to its coverage count and action. You can also tick several of
-  the gap-fill targets and press "Generate selected" to run them as one
+  preview next to its coverage count and action. You can also tick several
+  targets and press "Generate selected" to run them as one
   batch: a rough estimate of how many generations that will take shows up
   front, then each ticked card tracks its own status, queued, generating,
   done, or failed, as the batch runs, and one target failing doesn't stop the

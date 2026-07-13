@@ -70,8 +70,8 @@ named topologies. A guidance box feeds the same `--with` steer as the command
 line. It writes the same `augment.json` review reads, so this only saves you
 the trip to the terminal. The action shows on decks, not workspaces.
 
-Tick several of the gap-fill targets (choices, notes, questions, key points,
-format) and press **Generate selected** to run them in one batch: it shows a
+Tick several targets and press **Generate selected** to run them in one batch:
+it shows a
 rough estimate of how many generations that will take, then walks each ticked
 card through its own status, queued, generating, done, or failed, as the
 batch runs. A target failing doesn't stop the others; a single per-target
