@@ -1,0 +1,22 @@
+[package]
+name = "rust_lib_alix_mobile"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+flutter_rust_bridge = "=2.12.0"
+# The embedded alix core, lean (no AI backend, no web server). The phone runs
+# the actual parser/scheduler/store, not a reimplementation.
+alix = { path = "../../..", default-features = false }
+# Error handling at the bridge boundary (frb maps anyhow errors to Dart).
+anyhow = "1"
+
+[dev-dependencies]
+# Temp dirs for the host-side store/deck tests.
+tempfile = "3"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }
