@@ -1113,8 +1113,18 @@ mod tests {
         // The model reshapes card 0 and omits card 1 as already clean.
         let cli = fake_reply(dir.path(), r#"{"0": {"back": ["A", "B"]}}"#);
         let items = vec![
-            WarmItem { id: 1, question: "List".into(), answer: "A, B".into(), note: None },
-            WarmItem { id: 2, question: "Atomic".into(), answer: "one thing".into(), note: None },
+            WarmItem {
+                id: 1,
+                question: "List".into(),
+                answer: "A, B".into(),
+                note: None,
+            },
+            WarmItem {
+                id: 2,
+                question: "Atomic".into(),
+                answer: "one thing".into(),
+                note: None,
+            },
         ];
         let map = generate_format(&items, None, &ask_config(&cli)).unwrap();
         assert_eq!(map[&1].back, ["A", "B"]);
