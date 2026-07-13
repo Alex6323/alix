@@ -635,7 +635,7 @@
   .aug-ba-code { font-family: var(--mono); font-size: 0.78rem; color: var(--ink); background: rgba(255,255,255,0.05); border-radius: 8px; padding: 8px 10px; margin-top: 7px; }
   .aug-ba-meta { color: var(--dim); font-size: 0.7rem; font-style: italic; margin-top: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .aug-foot { display: flex; flex-direction: column; gap: 8px; padding: 16px 4px 2px; }
-  .aug-guide-input { width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.25); border: 1px solid var(--line); border-radius: 10px; color: var(--ink); font: inherit; font-size: 0.84rem; padding: 8px 12px; }
+  .aug-guide-input { width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.25); border: 1px solid var(--line); border-radius: 10px; color: var(--ink); font: inherit; font-size: 0.8rem; padding: 6px 12px; margin: 10px 0 12px; }
   .aug-guide-input::placeholder { color: var(--dim); }
   .aug-guide-input:focus { outline: none; border-color: var(--bolt); }
   .aug-cost { color: var(--dim); font-size: 0.74rem; }
@@ -1570,25 +1570,28 @@ function closeAugment() {
   augTicked.clear();
   api("/api/augment/close", post({})).then(s => { augmentData = null; apply(s); });
 }
-// The shared guidance box's text, read when a Generate/Add is clicked.
-function augGuidance() {
-  const i = document.querySelector(".aug-guide-input");
+// A target card's own guidance input text, read when its Generate (or the
+// batch) is clicked.
+function augGuidance(kind) {
+  const i = document.querySelector(`.aug-guide-input[data-kind="${kind}"]`);
   return i ? i.value.trim() : "";
 }
-function augmentGenerate(target, guidance) {
+function augmentGenerate(target) {
   if (augmentData.busy) return;
-  api("/api/augment/generate", post({ targets: [target], with: guidance || null })).then(d => {
+  const body = { targets: [{ target, with: augGuidance(target) || null }] };
+  api("/api/augment/generate", post(body)).then(d => {
     augmentData = d; refreshAugment(); if (d.busy) startAugmentPoll();
   });
 }
 // The footer's "Generate selected" action: every ticked gap-fill kind in one
-// batch. The server runs them one at a time and reports queued/done/failed as
-// it goes (polled the same way as a single-target generate).
+// batch, each carrying its own card's guidance. The server runs them one at a
+// time and reports queued/done/failed as it goes (polled the same way as a
+// single-target generate).
 function augmentGenerateSelected() {
   if (augmentData.busy || !augTicked.size) return;
-  const targets = Array.from(augTicked);
+  const targets = Array.from(augTicked).map(t => ({ target: t, with: augGuidance(t) || null }));
   augTicked.clear();
-  api("/api/augment/generate", post({ targets, with: augGuidance() || null })).then(d => {
+  api("/api/augment/generate", post({ targets })).then(d => {
     augmentData = d; refreshAugment(); if (d.busy) startAugmentPoll();
   });
   refreshAugment();
@@ -1647,6 +1650,7 @@ const AUG_INFO = {
   choices: {
     title: "Choices",
     desc: "Turns a card into a multiple-choice question: adds three plausible distractors alongside the answer.",
+    hint: "e.g. use common misconceptions",
     before(b) {
       b.appendChild(el("div", "aug-ba-q", "Q: What is the capital of Australia?"));
       b.appendChild(el("div", "aug-ba-a", "A: Canberra"));
@@ -1662,6 +1666,7 @@ const AUG_INFO = {
   notes: {
     title: "Notes",
     desc: "Attaches a short “why it matters” note that appears under the answer after you reveal.",
+    hint: "e.g. add a mnemonic",
     before(b) {
       b.appendChild(el("div", "aug-ba-q", "Q: What is a leap year?"));
       b.appendChild(el("div", "aug-ba-a", "A: A year with 366 days (an extra day in February)."));
@@ -1675,6 +1680,7 @@ const AUG_INFO = {
   questions: {
     title: "Questions",
     desc: "Rewrites a card's question into a few fresh phrasings, so you read and answer it each time instead of just recognising the wording.",
+    hint: "e.g. vary the angle, not just the wording",
     badge: "3 phrasings, 1 answer",
     before(b) {
       b.appendChild(el("div", "aug-ba-q", "Q: What is the freezing point of water in Celsius?"));
@@ -1692,6 +1698,7 @@ const AUG_INFO = {
   keypoints: {
     title: "Key points",
     desc: "Distils a long answer into the few bullet points a good response must cover.",
+    hint: "e.g. at most three points",
     before(b) {
       b.appendChild(el("div", "aug-ba-prose",
         "Photosynthesis lets plants turn sunlight, water, and carbon dioxide into glucose, releasing oxygen as a by-product."));
@@ -1706,6 +1713,7 @@ const AUG_INFO = {
   format: {
     title: "Formatting",
     desc: "Rewrites a plain-prose answer into clean line breaks and formatting, without changing the wording.",
+    hint: "e.g. prefer numbered steps",
     before(b) {
       b.appendChild(el("div", "aug-ba-prose",
         "Order of operations: parentheses, then exponents, then multiply and divide, then add and subtract."));
@@ -1721,6 +1729,7 @@ const AUG_INFO = {
   topology: {
     title: "Order",
     desc: "Orders your cards foundations first, so alix teaches the prerequisites before what builds on them.",
+    hint: "e.g. by era, or north to south (also names the path)",
     before(b) {
       const chips = el("div", "aug-ba-chips");
       ["Addition", "Multiplication", "Exponents"].forEach(name => chips.appendChild(el("span", "aug-ba-chip", name)));
@@ -1760,9 +1769,22 @@ function augBeforeAfter(kind) {
   wrap.appendChild(augBaBox("aug-after", "AFTER", true, info && info.badge, b => { if (info) info.after(b); }));
   return wrap;
 }
+// A card's own compact guidance input. Its kind-specific example placeholder
+// doubles as the hint that a steer is possible here at all — the reason the
+// input sits on every card instead of once in the footer.
+function augGuideInput(kind) {
+  const gi = el("input", "aug-guide-input");
+  gi.type = "text";
+  gi.dataset.kind = kind;
+  const info = AUG_INFO[kind];
+  gi.placeholder = "guidance (optional)" + (info && info.hint ? ": " + info.hint : "");
+  // Backspace edits the guidance, it doesn't leave the view (like the picker filter).
+  gi.addEventListener("keydown", (e) => { if (e.key === "Backspace") e.stopPropagation(); });
+  return gi;
+}
 // The shared card shell: title (AUG_INFO's, falling back to the server's
 // row.label) + description on the left, the caller's coverage/action markup
-// on the right, and the before/after preview underneath.
+// on the right, then the card's guidance input and the before/after preview.
 function augCardShell(row, right) {
   const info = AUG_INFO[row.kind];
   // A green border marks a target that is already fully generated (or, for
@@ -1777,6 +1799,7 @@ function augCardShell(row, right) {
   head.appendChild(meta);
   head.appendChild(right);
   card.appendChild(head);
+  card.appendChild(augGuideInput(row.kind));
   card.appendChild(augBeforeAfter(row.kind));
   return card;
 }
@@ -1818,7 +1841,7 @@ function augCardRow(d, row) {
     } else if (justDone && !hasGap) right.appendChild(el("span", "aug-status done", "done ✓"));
     const gen = el("button", "aug-btn", full ? "Complete" : "Generate");
     gen.disabled = !!d.busy || !row.eligible || !!full;
-    gen.addEventListener("click", () => augmentGenerate(row.kind, augGuidance()));
+    gen.addEventListener("click", () => augmentGenerate(row.kind));
     right.appendChild(gen);
     if (row.covered > 0) {
       const rm = el("button", "aug-btn ghost", "Remove");
@@ -1875,12 +1898,12 @@ function augTopologyRow(d, row) {
     // another" once some exist, since a deck can hold several named topologies.
     const add = el("button", "aug-btn", row.items.length ? "Generate another" : "Generate");
     add.disabled = !!d.busy;
-    add.addEventListener("click", () => augmentGenerate("topology", augGuidance()));
+    add.addEventListener("click", () => augmentGenerate("topology"));
     right.appendChild(add);
   }
   return augCardShell(row, right);
 }
-// Builds the augment body (target cards + the guidance/cost footer) into `wrap`.
+// Builds the augment body (target cards + the cost footer) into `wrap`.
 // Shared by the first mount and the in-place refresh.
 function augFillContent(wrap) {
   const d = augmentData;
@@ -1888,12 +1911,6 @@ function augFillContent(wrap) {
   for (const row of d.rows)
     wrap.appendChild(row.kind === "topology" ? augTopologyRow(d, row) : augCardRow(d, row));
   const foot = el("div", "aug-foot");
-  const gi = el("input", "aug-guide-input");
-  gi.type = "text";
-  gi.placeholder = "Guidance for generation (optional): e.g. use common misconceptions";
-  // Backspace edits the guidance, it doesn't leave the view (like the picker filter).
-  gi.addEventListener("keydown", (e) => { if (e.key === "Backspace") e.stopPropagation(); });
-  foot.appendChild(gi);
   foot.appendChild(el("div", "aug-cost",
     "Generating runs Claude and costs tokens. It fills only the cards a target is missing."));
   wrap.appendChild(foot);
@@ -1912,17 +1929,28 @@ function renderAugment() {
 }
 // Updates the augment screen in place after an action (generate/remove/poll):
 // rebuild the cards + footer inside the existing container so the entrance
-// animation never replays and the scroll position (and any typed guidance) is
-// kept. Falls back to a full render if the screen is not mounted yet.
+// animation never replays and the scroll position (and any typed guidance,
+// per card, plus its focus) is kept. Falls back to a full render if the
+// screen is not mounted yet.
 function refreshAugment() {
   const existing = stage.querySelector(".aug");
   if (!existing) { render(); return; }
   const scrollTop = existing.scrollTop;
-  const guidance = augGuidance();
+  const typed = {};
+  let focused = null;
+  existing.querySelectorAll(".aug-guide-input").forEach(i => {
+    if (i.value) typed[i.dataset.kind] = i.value;
+    if (i === document.activeElement) focused = i.dataset.kind;
+  });
   existing.innerHTML = "";
   augFillContent(existing);
-  const gi = existing.querySelector(".aug-guide-input");
-  if (gi) gi.value = guidance;
+  existing.querySelectorAll(".aug-guide-input").forEach(i => {
+    if (typed[i.dataset.kind]) i.value = typed[i.dataset.kind];
+    if (i.dataset.kind === focused) {
+      i.focus();
+      i.setSelectionRange(i.value.length, i.value.length);
+    }
+  });
   existing.scrollTop = scrollTop;
   renderAugLegend();
 }

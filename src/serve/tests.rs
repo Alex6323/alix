@@ -1320,8 +1320,7 @@ fn augmenting_generate_is_a_noop_when_a_target_is_fully_covered() {
     let mut aug = Augmenting::open("d.txt".into(), cards, cache_path);
     // Fully covered → no gap → no costed call is started.
     let started = aug.generate_batch(
-        vec!["choices".into()],
-        None,
+        vec![("choices".into(), None)],
         &AiConfig::default(),
         &AskConfig::default(),
     );
@@ -1354,7 +1353,11 @@ fn generate_batch_runs_every_target_even_after_one_fails() {
     let cli = crate::testutil::fake_reply(dir.path(), r#"{"0": "a note"}"#);
     let ask = crate::testutil::ask_config(&cli);
 
-    assert!(aug.generate_batch(vec!["choices".into(), "notes".into()], None, &ai, &ask));
+    assert!(aug.generate_batch(
+        vec![("choices".into(), None), ("notes".into(), None)],
+        &ai,
+        &ask
+    ));
 
     for _ in 0..1_000_000 {
         aug.poll(&ai, &ask);

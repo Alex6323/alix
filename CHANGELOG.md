@@ -28,6 +28,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   front, then each ticked card tracks its own status, queued, generating,
   done, or failed, as the batch runs, and one target failing doesn't stop the
   rest.
+- **Every augment card carries its own guidance input.** Instead of one shared
+  guidance box in the footer, each target card has a compact steer field with a
+  kind-specific example as its placeholder (choices: "use common
+  misconceptions", notes: "add a mnemonic", ...), so you can see per target
+  what a steer is good for, and a batch sends each ticked card's own guidance.
 - **The review screen's up/down navigation is now rebindable.** The
   multiple-choice and key-point lists move with `k`/`j` by default (the arrow
   keys always work too); rebind them under `[keys.review]` as `up`/`down`, like
@@ -61,7 +66,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   one store. Move an existing store once:
   `mv ~/.local/share/alix/progress.json ~/decks/progress.json`.
 - **Breaking:** the `/api/augment/generate` request body now takes a
-  `targets` list instead of a single `target`, and the augment poll response
+  `targets` list of `{target, with?}` entries (each with its own optional
+  guidance) instead of a single `target`, and the augment poll response
   (`AugmentDto`) also reports `queued`, `done`, and `failed` targets for
   batch progress.
 - The topology augmentation now defaults to a pedagogical (foundations-first)

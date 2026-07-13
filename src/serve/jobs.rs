@@ -488,10 +488,9 @@ pub(super) struct Augmenting {
     pub(super) pending: Option<AugmentPending>,
     /// The last generation/save error, shown until the next action clears it.
     pub(super) error: Option<String>,
-    /// Targets still to start in the current batch, in request order.
-    pub(super) queue: VecDeque<String>,
-    /// The `--with` steer shared by every target in the current batch.
-    pub(super) batch_guidance: Option<String>,
+    /// Targets still to start in the current batch, in request order, each
+    /// paired with its own `--with` steer.
+    pub(super) queue: VecDeque<(String, Option<String>)>,
     /// Targets the current batch has finished successfully.
     pub(super) done: Vec<&'static str>,
     /// Targets the current batch attempted and failed, with their error.
@@ -534,7 +533,6 @@ impl Augmenting {
             pending: None,
             error: None,
             queue: VecDeque::new(),
-            batch_guidance: None,
             done: Vec::new(),
             failed: Vec::new(),
         }
@@ -575,7 +573,11 @@ impl Augmenting {
             busy,
             elapsed: self.pending.as_ref().map(|p| p.started.elapsed().as_secs()),
             error: self.error.clone(),
-            queued: self.queue.iter().filter_map(|t| target_label(t)).collect(),
+            queued: self
+                .queue
+                .iter()
+                .filter_map(|(t, _)| target_label(t))
+                .collect(),
             done: self.done.clone(),
             failed: self
                 .failed
@@ -588,15 +590,14 @@ impl Augmenting {
         }
     }
 
-    /// Starts a batch: `targets` run one at a time in order, a per-target
-    /// failure recorded in `failed` without aborting the rest. No-op (returns
-    /// `false`) while a generation is already in flight. Returns whether a job
-    /// started (a batch of only no-gap/unknown targets drains without starting
-    /// one).
+    /// Starts a batch: `targets` run one at a time in order, each carrying its
+    /// own `--with` steer, a per-target failure recorded in `failed` without
+    /// aborting the rest. No-op (returns `false`) while a generation is
+    /// already in flight. Returns whether a job started (a batch of only
+    /// no-gap/unknown targets drains without starting one).
     pub(super) fn generate_batch(
         &mut self,
-        targets: Vec<String>,
-        guidance: Option<String>,
+        targets: Vec<(String, Option<String>)>,
         ai: &AiConfig,
         ask: &AskConfig,
     ) -> bool {
@@ -606,7 +607,6 @@ impl Augmenting {
         self.error = None;
         self.done.clear();
         self.failed.clear();
-        self.batch_guidance = guidance;
         self.queue = targets.into_iter().collect();
         self.start_next(ai, ask)
     }
@@ -615,7 +615,7 @@ impl Augmenting {
     /// to fill (or an unrecognized one) is recorded as done in passing and
     /// skipped, without spawning anything. Returns whether a job started.
     fn start_next(&mut self, ai: &AiConfig, ask: &AskConfig) -> bool {
-        while let Some(target) = self.queue.pop_front() {
+        while let Some((target, guidance)) = self.queue.pop_front() {
             let (job, tgt): (augment_ai::Job, &'static str) = match target.as_str() {
                 "choices" => {
                     let items = self.cache.missing_choices(&self.cards);
@@ -689,11 +689,7 @@ impl Augmenting {
                 // Unknown target: nothing to record, try the next queued one.
                 _ => continue,
             };
-            let rx = augment_ai::spawn(
-                job,
-                self.batch_guidance.clone(),
-                augment_ai::run_config(ai, ask),
-            );
+            let rx = augment_ai::spawn(job, guidance, augment_ai::run_config(ai, ask));
             self.pending = Some(AugmentPending {
                 rx,
                 target: tgt,

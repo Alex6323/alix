@@ -1413,7 +1413,7 @@ fn post_api_augment_generate_with_a_targets_list_runs_every_target_even_after_on
     let resp = post_json(
         &base,
         "/api/augment/generate",
-        r#"{"targets":["notes","choices"]}"#,
+        r#"{"targets":[{"target":"notes"},{"target":"choices"}]}"#,
     );
     assert_eq!(200, resp.status);
 
@@ -1434,6 +1434,56 @@ fn post_api_augment_generate_with_a_targets_list_runs_every_target_even_after_on
     assert!(
         !choices_failure["error"].as_str().unwrap().is_empty(),
         "body: {body}"
+    );
+}
+
+#[test]
+fn each_batch_target_carries_its_own_guidance() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    // A capturing fake CLI: append each prompt (stdin) to a log before
+    // replying, so the test can see exactly what steer each spawned target
+    // received. The batch runs targets one at a time in request order, so the
+    // log holds the notes prompt first, then the questions prompt.
+    let log = scripts.path().join("prompts.log");
+    let reply = scripts.path().join("reply.json");
+    std::fs::write(&reply, r#"{"0": "a note"}"#).unwrap();
+    let fake = scripts.path().join("fake-claude");
+    std::fs::write(
+        &fake,
+        format!(
+            "#!/bin/sh\nPATH=/usr/bin:/bin\ncat >> {log}\necho '===EOM===' >> {log}\ncat {reply}\n",
+            log = log.display(),
+            reply = reply.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let (base, _guard) = spawn_full_server(Some(&fake));
+    post_json(&base, "/api/augment/open", r#"{"deck":"choice.txt"}"#);
+
+    let resp = post_json(
+        &base,
+        "/api/augment/generate",
+        r#"{"targets":[{"target":"notes","with":"mnemonic style"},
+                       {"target":"questions","with":"vary the angle"}]}"#,
+    );
+    assert_eq!(200, resp.status);
+    poll_until(&base, "/api/augment", |b| {
+        b["busy"].is_null() && b["queued"].as_array().is_some_and(|q| q.is_empty())
+    });
+
+    let captured = std::fs::read_to_string(&log).unwrap();
+    let prompts: Vec<&str> = captured.split("===EOM===").collect();
+    assert!(prompts.len() >= 2, "expected two prompts, got: {captured}");
+    let (notes, questions) = (prompts[0], prompts[1]);
+    assert!(
+        notes.contains("mnemonic style") && !notes.contains("vary the angle"),
+        "the notes prompt must carry only its own steer: {notes}"
+    );
+    assert!(
+        questions.contains("vary the angle") && !questions.contains("mnemonic style"),
+        "the questions prompt must carry only its own steer: {questions}"
     );
 }
 

@@ -1414,9 +1414,13 @@ pub fn run_review(
             // call); the page polls `GET /api/augment`.
             (Method::Post, "/api/augment/generate") => {
                 #[derive(Deserialize)]
-                struct Body {
-                    targets: Vec<String>,
+                struct TargetBody {
+                    target: String,
                     with: Option<String>,
+                }
+                #[derive(Deserialize)]
+                struct Body {
+                    targets: Vec<TargetBody>,
                 }
                 let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
                 let Some(aug) = augmenting.as_mut() else {
@@ -1424,11 +1428,18 @@ pub fn run_review(
                     continue;
                 };
                 if let Some(b) = body {
-                    let guidance = b
-                        .with
-                        .map(|s| s.trim().to_string())
-                        .filter(|s| !s.is_empty());
-                    aug.generate_batch(b.targets, guidance, &ai_cfg, &ask_cfg);
+                    let targets = b
+                        .targets
+                        .into_iter()
+                        .map(|t| {
+                            let guidance = t
+                                .with
+                                .map(|s| s.trim().to_string())
+                                .filter(|s| !s.is_empty());
+                            (t.target, guidance)
+                        })
+                        .collect();
+                    aug.generate_batch(targets, &ai_cfg, &ask_cfg);
                 }
                 respond_json(request, &aug.dto());
             }

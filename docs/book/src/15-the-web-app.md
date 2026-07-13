@@ -66,9 +66,12 @@ that augmentation does, a small neutral before/after preview, its coverage
 count, and its action. **Generate** fills only the cards a target is still
 missing, run as a background model call while the page polls (a spinner shows
 it working); **Remove** clears a target, and the topology card adds or drops
-named topologies. A guidance box feeds the same `--with` steer as the command
-line. It writes the same `augment.json` review reads, so this only saves you
-the trip to the terminal. The action shows on decks, not workspaces.
+named topologies. Each card has its own compact guidance input, feeding the
+same `--with` steer as the command line, with a kind-specific example as its
+placeholder so you can see what a steer is good for; a batch carries each
+ticked card's own guidance. It writes the same `augment.json` review reads, so
+this only saves you the trip to the terminal. The action shows on decks, not
+workspaces.
 
 Tick several targets and press **Generate selected** to run them in one batch:
 it shows a
