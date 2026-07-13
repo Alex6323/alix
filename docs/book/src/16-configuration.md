@@ -22,7 +22,8 @@ passed = ["l"]
 Keys are a single character (`"j"`), a special name (`"space"`, `"enter"`, `"tab"`,
 `"esc"`, `"backspace"`), or either with a `ctrl-` prefix (`"ctrl-s"`). The
 rebindable `[keys.review]` actions are `failed`, `partly`, `passed`, `reveal`, `hint`, `submit`, `skip`,
-`remove` (default `ctrl-x`), `continue`, `restart` (default `r`), and `quit`. While
+`remove` (default `ctrl-x`), `continue`, `restart` (default `r`), `quit`, and `up`/`down`
+(defaults `k`/`j`) to move within a multiple-choice or key-point list (the arrow keys always work too). While
 you're typing an answer (a reconstruct check), plain-character bindings are ignored so
 they can't shadow your input — use `ctrl-`/special keys for `hint`, `skip`, and
 `quit` there. Pass a different file with `--config <path>`.

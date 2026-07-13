@@ -3813,8 +3813,8 @@ document.addEventListener("keydown", (e) => {
     if (isAcquireChoice()) {
       if (!feedback) {
         if (hit(e, KEYS.skip)) { e.preventDefault(); skip(); return; }
-        if (hit(e, KEYS.up) || e.key === "ArrowUp" || e.key === "k") { e.preventDefault(); moveChoiceFocus(-1); return; }
-        if (hit(e, KEYS.down) || e.key === "ArrowDown" || e.key === "j") { e.preventDefault(); moveChoiceFocus(1); return; }
+        if (hit(e, KEYS.up) || e.key === "ArrowUp") { e.preventDefault(); moveChoiceFocus(-1); return; }
+        if (hit(e, KEYS.down) || e.key === "ArrowDown") { e.preventDefault(); moveChoiceFocus(1); return; }
         if (e.key === "Enter" && choiceFocus >= 0 && choiceFocus < state.choices.length) { e.preventDefault(); choose(choiceFocus); return; }
         if (e.key >= "1" && e.key <= "9") {
           const i = +e.key - 1;
@@ -3883,8 +3883,8 @@ document.addEventListener("keydown", (e) => {
   if (hit(e, KEYS.remove)) { e.preventDefault(); remove(); return; }
   if (isChoice()) {
     if (hit(e, KEYS.skip)) { e.preventDefault(); skip(); return; }
-    if (hit(e, KEYS.up) || e.key === "ArrowUp" || e.key === "k") { e.preventDefault(); moveChoiceFocus(-1); return; }
-    if (hit(e, KEYS.down) || e.key === "ArrowDown" || e.key === "j") { e.preventDefault(); moveChoiceFocus(1); return; }
+    if (hit(e, KEYS.up) || e.key === "ArrowUp") { e.preventDefault(); moveChoiceFocus(-1); return; }
+    if (hit(e, KEYS.down) || e.key === "ArrowDown") { e.preventDefault(); moveChoiceFocus(1); return; }
     if (e.key === "Enter" && choiceFocus >= 0 && choiceFocus < state.choices.length) { e.preventDefault(); choose(choiceFocus); return; }
     if (e.key >= "1" && e.key <= "9") {
       const i = +e.key - 1;
@@ -3899,13 +3899,13 @@ document.addEventListener("keydown", (e) => {
   }
   if (hit(e, KEYS.ask)) { e.preventDefault(); openAsk(); return; }
   // The key-point checklist replaces the grade buttons: walk the list top to
-  // bottom with y/n (auto-advancing), j/k or arrows to move, Enter to submit once
+  // bottom with y/n (auto-advancing), the review up/down keys or arrows to move, Enter to submit once
   // every point is answered (the server derives the grade from coverage).
   if (hasKeypoints()) {
     if (e.key === "y" || e.key === "Y") { e.preventDefault(); answerKeypoint(true); }
     else if (e.key === "n" || e.key === "N") { e.preventDefault(); answerKeypoint(false); }
-    else if (e.key === "ArrowDown" || e.key === "j") { e.preventDefault(); moveKeypoint(1); }
-    else if (e.key === "ArrowUp" || e.key === "k") { e.preventDefault(); moveKeypoint(-1); }
+    else if (hit(e, KEYS.down) || e.key === "ArrowDown") { e.preventDefault(); moveKeypoint(1); }
+    else if (hit(e, KEYS.up) || e.key === "ArrowUp") { e.preventDefault(); moveKeypoint(-1); }
     else if (e.key === "Enter" && keypointsAnswered()) { e.preventDefault(); submitKeypoints(); }
     return;
   }

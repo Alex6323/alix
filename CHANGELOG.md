@@ -28,6 +28,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   front, then each ticked card tracks its own status, queued, generating,
   done, or failed, as the batch runs, and one target failing doesn't stop the
   rest.
+- **The review screen's up/down navigation is now rebindable.** The
+  multiple-choice and key-point lists move with `k`/`j` by default (the arrow
+  keys always work too); rebind them under `[keys.review]` as `up`/`down`, like
+  any other review action.
 
 ### Removed
 - The placeholder **"Fun" kids theme**, superseded by the three real kids

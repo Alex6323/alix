@@ -98,6 +98,10 @@ pub struct Bindings {
     pub partly: Vec<KeyPattern>,
     /// Self-graded modes: grade as passed (FSRS `Good` — advances toward graduation).
     pub passed: Vec<KeyPattern>,
+    /// Recognition (multiple-choice) and key-point review: move the focus up or
+    /// down the list of choices or points. The arrow keys always work too.
+    pub up: Vec<KeyPattern>,
+    pub down: Vec<KeyPattern>,
     /// Flip mode: reveal the answer.
     pub reveal: Vec<KeyPattern>,
     /// Typing mode: reveal a hint (fails the card).
@@ -133,6 +137,8 @@ impl Default for Bindings {
             failed: keys(&["1", "f"]),
             partly: keys(&["2", "p"]),
             passed: keys(&["3", "n"]),
+            up: keys(&["k"]),
+            down: keys(&["j"]),
             reveal: keys(&["space", "enter"]),
             hint: keys(&["tab", "ctrl-h", "ctrl-backspace"]),
             submit: keys(&["enter"]),
@@ -766,6 +772,8 @@ struct RawReview {
     failed: Option<Vec<String>>,
     partly: Option<Vec<String>>,
     passed: Option<Vec<String>>,
+    up: Option<Vec<String>>,
+    down: Option<Vec<String>>,
     reveal: Option<Vec<String>>,
     hint: Option<Vec<String>>,
     submit: Option<Vec<String>>,
@@ -803,6 +811,8 @@ impl Config {
         assign(&mut keys.failed, review.failed, "review.failed")?;
         assign(&mut keys.partly, review.partly, "review.partly")?;
         assign(&mut keys.passed, review.passed, "review.passed")?;
+        assign(&mut keys.up, review.up, "review.up")?;
+        assign(&mut keys.down, review.down, "review.down")?;
         assign(&mut keys.reveal, review.reveal, "review.reveal")?;
         assign(&mut keys.hint, review.hint, "review.hint")?;
         assign(&mut keys.submit, review.submit, "review.submit")?;
@@ -1412,6 +1422,17 @@ mod tests {
     fn continue_is_a_valid_table_key() {
         let config = Config::from_toml("[keys.review]\ncontinue = [\"ctrl-n\"]\n").unwrap();
         assert_eq!(vec![parse_key("ctrl-n").unwrap()], config.keys.cont);
+    }
+
+    #[test]
+    fn review_nav_keys_default_to_k_j_and_can_be_rebound() {
+        // The MC-choice / key-point up-and-down nav defaults to Vim k (up) and
+        // j (down), and is rebindable under [keys.review] like any other action.
+        assert_eq!(vec![parse_key("k").unwrap()], Bindings::default().up);
+        assert_eq!(vec![parse_key("j").unwrap()], Bindings::default().down);
+        let config = Config::from_toml("[keys.review]\nup = [\"w\"]\ndown = [\"s\"]\n").unwrap();
+        assert_eq!(vec![parse_key("w").unwrap()], config.keys.up);
+        assert_eq!(vec![parse_key("s").unwrap()], config.keys.down);
     }
 
     #[test]
