@@ -287,6 +287,19 @@ impl Session {
         self.current_idx.is_none()
     }
 
+    /// The presentation-agnostic snapshot of the current review position,
+    /// rendered by any client. See [`crate::review`].
+    pub fn review_state(&self) -> crate::review::ReviewState {
+        crate::review::ReviewState {
+            card: self.current().map(|c| crate::review::CardView {
+                front: c.front.clone(),
+                back: c.back_for_display().to_vec(),
+            }),
+            finished: self.is_finished(),
+            remaining: self.remaining() as u32,
+        }
+    }
+
     /// How many times card `id` has become the current card this session so far
     /// (1 the first time, 2 the next time it cycles back in, ...); 0 if it has
     /// never been served, or if `id` isn't one of this session's cards. Lets a
@@ -2789,5 +2802,27 @@ mod tests {
             store.get(all[2].id()).unwrap().recognized_ms.is_none(),
             "a partial never marks recognized"
         );
+    }
+
+    #[test]
+    fn review_state_shows_the_current_card_and_remaining() {
+        let (store, _dir) = empty_store();
+        let session = Session::new(cards(2), &store, sched(), SessionOptions::default(), 0);
+        let state = session.review_state();
+        assert!(!state.finished);
+        assert_eq!(state.remaining, 2);
+        let card = state.card.expect("a current card");
+        assert!(card.front.starts_with("front "));
+        assert_eq!(card.back.len(), 1);
+    }
+
+    #[test]
+    fn review_state_of_an_empty_session_is_finished() {
+        let (store, _dir) = empty_store();
+        let session = Session::new(cards(0), &store, sched(), SessionOptions::default(), 0);
+        let state = session.review_state();
+        assert!(state.finished);
+        assert!(state.card.is_none());
+        assert_eq!(state.remaining, 0);
     }
 }

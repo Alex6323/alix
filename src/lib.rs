@@ -58,6 +58,7 @@ pub mod qr;
 #[cfg(feature = "full")]
 pub mod recent;
 pub mod render;
+pub mod review;
 pub mod scheduler;
 #[cfg(feature = "full")]
 pub mod serve;
