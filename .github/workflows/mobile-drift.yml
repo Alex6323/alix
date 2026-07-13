@@ -1,0 +1,81 @@
+name: Mobile toolchain-drift build
+
+# Scheduled drift detector for the frb mobile toolchain: `make frb-check`
+# first (so a failure names the drifted invariant), then a real end-to-end
+# APK build of apps/mobile against the CURRENT stable Flutter. This is the
+# only layer that proves the whole matrix (Flutter x frb x Gradle x AGP x
+# NDK x our two template patches) still assembles; the bring-up hit two such
+# breaks (Gradle 9 removed Project.exec(), compileSdk 33 too old) that only
+# a build can surface. Never a PR gate: a red run is an alert that the
+# toolchain moved, not a verdict on anyone's change.
+on:
+  schedule:
+    # Weekly (Mondays 05:17 UTC), not nightly: drift arrives with toolchain
+    # releases, not with days, and this job is ~15 runner-minutes.
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: frb-check + apk build
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      # Current STABLE Flutter, deliberately unpinned: meeting the newest
+      # Flutter early is the point of this job.
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      # The Rust side of the build: cargokit cross-compiles the core for the
+      # one ABI we build below.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            apps/mobile/rust
+
+      # The codegen at the version the project pins (read from pubspec, so
+      # this workflow never carries its own copy of the pin). Prebuilt via
+      # binstall; compiling it from source would dwarf the app build.
+      - uses: cargo-bins/cargo-binstall@main
+      - name: Install the pinned flutter_rust_bridge_codegen
+        run: |
+          ver=$(sed -n 's/^  flutter_rust_bridge: \([0-9][0-9.]*\)$/\1/p' apps/mobile/pubspec.yaml)
+          echo "pubspec pins flutter_rust_bridge $ver"
+          cargo binstall -y "flutter_rust_bridge_codegen@$ver"
+
+      # The NDK Flutter pins is what Gradle hands cargokit; frb-check asserts
+      # it is installed, so install it the way the runbook prescribes.
+      - name: Install the Flutter-pinned NDK
+        run: |
+          ext="$FLUTTER_ROOT/packages/flutter_tools/gradle/src/main/kotlin/FlutterExtension.kt"
+          ndk=$(sed -n 's/.*val ndkVersion: String = "\([0-9][0-9.]*\)".*/\1/p' "$ext")
+          echo "flutter pins NDK $ndk"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;$ndk"
+
+      # The cheap invariant pass: on drift this fails with the invariant's
+      # name, which beats the Gradle stacktrace the build below would give.
+      - run: make frb-check
+
+      # The proof: the whole toolchain still assembles our patched project.
+      # Debug build, one ABI: signing and per-ABI fanout add nothing to
+      # drift detection.
+      - name: Build the app (debug, arm64)
+        run: cd apps/mobile && flutter build apk --debug --target-platform android-arm64

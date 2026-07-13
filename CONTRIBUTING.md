@@ -95,8 +95,12 @@ open a proposal to change the list itself.
 | `make e2e` | Playwright smoke suite for the alix web clients (Node; needs a browser download the first time). |
 
 CI runs the same gates on every PR: `fmt` (nightly rustfmt), `check` (clippy +
-tests, with `-Dwarnings`), `e2e` (Playwright, browser-driven — blocking), and an
-informational `coverage` job.
+tests, with `-Dwarnings`), `core` (the lean no-default-features build),
+`bridge` (the mobile bridge crate's host tests), `e2e` (Playwright,
+browser-driven — blocking), and an informational `coverage` job. Two scheduled
+drift detectors run off the PR path: the backend CLI flag-drift smoke test and
+a weekly mobile toolchain build (`make frb-check` + an APK build against
+current stable Flutter).
 
 The library crate is feature-gated behind `full` (on by default), which pulls in
 the AI backends and the web server. `make build-core` builds the lean core that a
