@@ -6,7 +6,7 @@
 # toolchain — `+nightly` is handled by rustup before cargo sees it — which is
 # why these live in a Makefile rather than .cargo/config.toml.)
 
-.PHONY: build build-core test lint lint-js fmt fmt-check fmt-roadmap check ci coverage coverage-lcov calibrate run web phone tablet desktop frb-check book site slides install clean sdd-clean heartbeat check-backends e2e shots
+.PHONY: build build-core test lint lint-js fmt fmt-check fmt-roadmap roadmap check ci coverage coverage-lcov calibrate run web phone tablet desktop frb-check book site slides install clean sdd-clean heartbeat check-backends e2e shots
 
 # Compile the workspace.
 build:
@@ -51,6 +51,13 @@ fmt-check:
 # width are never touched, so hand-made breaks don't churn. Stdlib python3.
 fmt-roadmap:
 	python3 scripts/fmt-roadmap.py $(ARGS)
+
+# Roadmap stats, read-only: items by state (done/partial/open) and the open
+# items split by priority. The deterministic half of a roadmap audit; whether
+# an "open" item is secretly already shipped still needs a reader (see
+# CLAUDE.md's roadmap-drift note). Run from a checkout that has ROADMAP.md.
+roadmap:
+	@python3 scripts/fmt-roadmap.py --stats $(ARGS)
 
 # The gates that must stay green before work is done. (fmt is intentionally
 # separate — formatting uses nightly and is run deliberately, not as a gate.)
