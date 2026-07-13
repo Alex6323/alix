@@ -1574,7 +1574,7 @@ function augGuidance() {
 function augmentGenerate(target, guidance) {
   if (augmentData.busy) return;
   api("/api/augment/generate", post({ targets: [target], with: guidance || null })).then(d => {
-    augmentData = d; render(); if (d.busy) startAugmentPoll();
+    augmentData = d; refreshAugment(); if (d.busy) startAugmentPoll();
   });
 }
 // The footer's "Generate selected" action: every ticked gap-fill kind in one
@@ -1585,13 +1585,13 @@ function augmentGenerateSelected() {
   const targets = Array.from(augTicked);
   augTicked.clear();
   api("/api/augment/generate", post({ targets, with: augGuidance() || null })).then(d => {
-    augmentData = d; render(); if (d.busy) startAugmentPoll();
+    augmentData = d; refreshAugment(); if (d.busy) startAugmentPoll();
   });
-  render();
+  refreshAugment();
 }
 function augmentRemove(target, topology) {
   api("/api/augment/remove", post({ target, topology: topology || null }))
-    .then(d => { augmentData = d; render(); });
+    .then(d => { augmentData = d; refreshAugment(); });
 }
 // A cheap fingerprint of the batch bookkeeping (queued/done/failed target
 // kinds) so the poll can tell a batch transition (e.g. a no-gap target
@@ -1611,7 +1611,7 @@ function startAugmentPoll() {
       // the coverage bars move) or the batch queue/done/failed sets changed;
       // otherwise tick the elapsed counter in place so the spinner's entrance
       // animation doesn't restart (flicker).
-      if (!prev || prev.busy !== d.busy || prev.error !== d.error || augBatchSig(prev) !== augBatchSig(d)) render();
+      if (!prev || prev.busy !== d.busy || prev.error !== d.error || augBatchSig(prev) !== augBatchSig(d)) refreshAugment();
       else {
         const e = document.querySelector(".exam-elapsed");
         if (e) { e.innerHTML = ""; e.appendChild(el("span", "dot"));
@@ -1861,6 +1861,24 @@ function augTopologyRow(d, row) {
   }
   return augCardShell(row, right);
 }
+// Builds the augment body (target cards + the guidance/cost footer) into `wrap`.
+// Shared by the first mount and the in-place refresh.
+function augFillContent(wrap) {
+  const d = augmentData;
+  if (d.error) wrap.appendChild(el("div", "exam-error", "⚠ " + d.error));
+  for (const row of d.rows)
+    wrap.appendChild(row.kind === "topology" ? augTopologyRow(d, row) : augCardRow(d, row));
+  const foot = el("div", "aug-foot");
+  const gi = el("input", "aug-guide-input");
+  gi.type = "text";
+  gi.placeholder = "Guidance for generation (optional): e.g. use common misconceptions";
+  // Backspace edits the guidance, it doesn't leave the view (like the picker filter).
+  gi.addEventListener("keydown", (e) => { if (e.key === "Backspace") e.stopPropagation(); });
+  foot.appendChild(gi);
+  foot.appendChild(el("div", "aug-cost",
+    "Generating runs Claude and costs tokens. It fills only the cards a target is missing."));
+  wrap.appendChild(foot);
+}
 function renderAugment() {
   const d = augmentData;
   headerBreadcrumb();
@@ -1869,22 +1887,24 @@ function renderAugment() {
   scoreEl.innerHTML = "";
   menuWrap.style.display = "none";
   const wrap = el("div", "aug");
-  if (d.error) wrap.appendChild(el("div", "exam-error", "⚠ " + d.error));
-  for (const row of d.rows)
-    wrap.appendChild(row.kind === "topology" ? augTopologyRow(d, row) : augCardRow(d, row));
-  const foot = el("div", "aug-foot");
-  const gi = el("input", "aug-guide-input");
-  gi.type = "text";
-  gi.placeholder = "Guidance for generation (optional) — e.g. use common misconceptions";
-  // Backspace edits the guidance, it doesn't leave the view (like the picker filter).
-  gi.addEventListener("keydown", (e) => { if (e.key === "Backspace") e.stopPropagation(); });
-  foot.appendChild(gi);
-  foot.appendChild(el("div", "aug-cost",
-    "Generating runs Claude and costs tokens. It fills only the cards a target is missing."));
-  wrap.appendChild(foot);
+  augFillContent(wrap);
   stage.appendChild(wrap);
-  // Footer selection controls live in their own function so ticking a checkbox
-  // can refresh just the count, not rebuild the whole screen.
+  renderAugLegend();
+}
+// Updates the augment screen in place after an action (generate/remove/poll):
+// rebuild the cards + footer inside the existing container so the entrance
+// animation never replays and the scroll position (and any typed guidance) is
+// kept. Falls back to a full render if the screen is not mounted yet.
+function refreshAugment() {
+  const existing = stage.querySelector(".aug");
+  if (!existing) { render(); return; }
+  const scrollTop = existing.scrollTop;
+  const guidance = augGuidance();
+  existing.innerHTML = "";
+  augFillContent(existing);
+  const gi = existing.querySelector(".aug-guide-input");
+  if (gi) gi.value = guidance;
+  existing.scrollTop = scrollTop;
   renderAugLegend();
 }
 // Rebuilds only the footer's selection controls (work line + Generate selected
