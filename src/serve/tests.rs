@@ -1311,7 +1311,7 @@ fn augmenting_reports_coverage_and_removal_persists() {
     seed.set_note(cards[1].id(), "n".into());
     seed.save().unwrap();
 
-    let mut aug = Augmenting::open("d.txt".into(), cards.clone(), cache_path.clone());
+    let mut aug = Augmenting::open("d.txt".into(), cards.clone(), cache_path.clone(), None);
     let dto = aug.dto();
     assert_eq!(2, dto.cards);
     assert!(dto.busy.is_none());
@@ -1348,7 +1348,7 @@ fn augmenting_generate_is_a_noop_when_a_target_is_fully_covered() {
     seed.set_distractors(cards[0].id(), vec!["x".into()]);
     seed.save().unwrap();
 
-    let mut aug = Augmenting::open("d.txt".into(), cards, cache_path);
+    let mut aug = Augmenting::open("d.txt".into(), cards, cache_path, None);
     // Fully covered → no gap → no costed call is started.
     let started = aug.generate_batch(
         vec![("choices".into(), None)],
@@ -1371,7 +1371,7 @@ fn generate_batch_runs_every_target_even_after_one_fails() {
     let cache_path = dir.path().join("augment.json");
     // A fresh card has both a missing note and missing choices.
     let cards = vec![aug_card("Q", "a")];
-    let mut aug = Augmenting::open("d.txt".into(), cards, cache_path);
+    let mut aug = Augmenting::open("d.txt".into(), cards, cache_path, None);
 
     let ai = AiConfig::default();
     // Notes parses `{"index": "text"}`; choices parses `{"index": ["a", ...]}`.

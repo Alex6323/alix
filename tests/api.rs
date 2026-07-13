@@ -323,11 +323,22 @@ const TRACE_SOURCE: &str = "first\nsecond\nthird\n";
 /// path off (self-graded walk, no augmentation), which is what every non-AI
 /// test in this family wants.
 fn spawn_full_server(ask_command: Option<&Path>) -> (String, Guard) {
+    spawn_full_server_fixture(ask_command, |_dir| {})
+}
+
+/// Like [`spawn_full_server`], but runs `extra` against the decks dir before
+/// the server starts — lets a test add its own fixture files (e.g. a
+/// workspace folder) alongside the standard decks.
+fn spawn_full_server_fixture(
+    ask_command: Option<&Path>,
+    extra: impl FnOnce(&Path),
+) -> (String, Guard) {
     let dir = TempDir::new().unwrap();
     std::fs::write(dir.path().join("sample.txt"), FIXTURE_DECK).unwrap();
     std::fs::write(dir.path().join("choice.txt"), CHOICE_DECK).unwrap();
     std::fs::write(dir.path().join("trace.txt"), TRACE_DECK).unwrap();
     std::fs::write(dir.path().join("source.txt"), TRACE_SOURCE).unwrap();
+    extra(dir.path());
     let store_path = dir.path().join("store.json");
 
     // Pre-seed the choice deck's cards as "seen" (a store entry, no
@@ -1513,6 +1524,102 @@ fn each_batch_target_carries_its_own_guidance() {
     assert!(
         questions.contains("vary the angle") && !questions.contains("mnemonic style"),
         "the questions prompt must carry only its own steer: {questions}"
+    );
+}
+
+/// A small two-deck workspace written into the test decks dir by the
+/// `spawn_full_server_fixture` closure: 2 + 3 cards, so a union open reports 5.
+fn write_workspace_fixture(dir: &Path) {
+    let ws = dir.join("ws");
+    std::fs::create_dir_all(&ws).unwrap();
+    std::fs::write(ws.join("alix.toml"), "title = \"WS\"\n").unwrap();
+    std::fs::write(ws.join("m1.txt"), "# q1\n\ta1\n# q2\n\ta2\n").unwrap();
+    std::fs::write(ws.join("m2.txt"), "# q3\n\ta3\n# q4\n\ta4\n# q5\n\ta5\n").unwrap();
+}
+
+#[test]
+fn augment_open_on_a_workspace_unions_member_cards_and_offers_the_icon_row() {
+    let (base, _guard) = spawn_full_server_fixture(None, write_workspace_fixture);
+
+    let resp = post_json(&base, "/api/augment/open", r#"{"deck":"ws"}"#);
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!(5, body["cards"], "union of both members: body: {body}");
+    let rows = body["rows"].as_array().unwrap();
+    let icon = rows
+        .iter()
+        .find(|r| r["kind"] == "icon")
+        .unwrap_or_else(|| panic!("a workspace open must offer the icon row: {body}"));
+    assert_eq!(0, icon["covered"], "no assets/icon.* yet: {body}");
+    assert_eq!(1, icon["eligible"], "body: {body}");
+
+    // A plain deck's screen must NOT offer the icon target.
+    let resp = post_json(&base, "/api/augment/open", r#"{"deck":"sample.txt"}"#);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert!(
+        body["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|r| r["kind"] != "icon"),
+        "body: {body}"
+    );
+}
+
+#[test]
+fn icon_target_generates_the_workspace_emblem_with_its_steer() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    // A capturing fake CLI (same pattern as the guidance test above): log the
+    // prompt, then reply with a minimal SVG.
+    let log = scripts.path().join("prompts.log");
+    let reply = scripts.path().join("reply.svg");
+    std::fs::write(&reply, r#"<svg viewBox="0 0 24 24"><circle r="8"/></svg>"#).unwrap();
+    let fake = scripts.path().join("fake-claude");
+    std::fs::write(
+        &fake,
+        format!(
+            "#!/bin/sh\nPATH=/usr/bin:/bin\ncat >> {log}\ncat {reply}\n",
+            log = log.display(),
+            reply = reply.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let (base, guard) = spawn_full_server_fixture(Some(&fake), write_workspace_fixture);
+    post_json(&base, "/api/augment/open", r#"{"deck":"ws"}"#);
+
+    let resp = post_json(
+        &base,
+        "/api/augment/generate",
+        r#"{"targets":[{"target":"icon","with":"a compass rose"}]}"#,
+    );
+    assert_eq!(200, resp.status);
+    let body = poll_until(&base, "/api/augment", |b| {
+        b["busy"].is_null() && b["queued"].as_array().is_some_and(|q| q.is_empty())
+    });
+
+    assert!(
+        body["done"].as_array().unwrap().iter().any(|t| t == "icon"),
+        "body: {body}"
+    );
+    let icon_path = guard.dir.path().join("ws/assets/icon.svg");
+    assert!(
+        icon_path.exists(),
+        "the emblem was written to the workspace"
+    );
+    let icon_row = body["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["kind"] == "icon")
+        .unwrap()
+        .clone();
+    assert_eq!(1, icon_row["covered"], "coverage sees the new file: {body}");
+    let captured = std::fs::read_to_string(&log).unwrap();
+    assert!(
+        captured.contains("a compass rose"),
+        "the icon prompt must carry the card's steer: {captured}"
     );
 }
 

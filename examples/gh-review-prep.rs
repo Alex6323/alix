@@ -397,7 +397,7 @@ fn build_workspace(
         eprintln!("warning: source snapshot failed: {e}");
     }
     if std::env::var("ALIX_REVIEW_ICON").as_deref() == Ok("1")
-        && let Err(e) = alix::icon::generate(&report.dir, &config.ask)
+        && let Err(e) = alix::icon::generate(&report.dir, None, &config.ask)
     {
         eprintln!("warning: icon generation failed: {e}");
     }

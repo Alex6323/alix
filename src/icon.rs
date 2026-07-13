@@ -12,15 +12,17 @@ use anyhow::{Context, Result, anyhow};
 use crate::{ask, config::AskConfig, deck::Deck, workspace::Workspace};
 
 /// Draw an abstract monochrome SVG emblem for the workspace at `dir`, grounded
-/// in its title, description, and member topics, and write it to
-/// `assets/icon.svg`. Returns the path written.
-pub fn generate(dir: &Path, ask_cfg: &AskConfig) -> Result<PathBuf> {
+/// in its title, description, and member topics (plus an optional user steer,
+/// e.g. "a compass rose, flat colors"), and write it to `assets/icon.svg`.
+/// Returns the path written.
+pub fn generate(dir: &Path, guidance: Option<&str>, ask_cfg: &AskConfig) -> Result<PathBuf> {
     let ws = Workspace::load(dir).context("loading the workspace to ground its icon")?;
     let topics = member_topics(&ws);
     let prompt = build_prompt(
         &ws.display_name(),
         ws.description.as_deref().unwrap_or(""),
         &topics,
+        guidance,
     );
     let run_cfg = icon_run_config(ask_cfg);
     // Drawing an SVG is latency-variable and the whole step is best-effort, so one
@@ -65,12 +67,22 @@ fn member_topics(ws: &Workspace) -> Vec<String> {
         .collect()
 }
 
-/// The icon-generation prompt: an abstract, monochrome, self-contained SVG.
-fn build_prompt(title: &str, description: &str, topics: &[String]) -> String {
+/// The icon-generation prompt: an abstract, monochrome, self-contained SVG,
+/// optionally steered by the user's `guidance`.
+fn build_prompt(
+    title: &str,
+    description: &str,
+    topics: &[String],
+    guidance: Option<&str>,
+) -> String {
     let topics = if topics.is_empty() {
         String::new()
     } else {
         format!("\nIts decks and traces cover: {}.", topics.join("; "))
+    };
+    let topics = match guidance {
+        Some(g) => format!("{topics}\nStyle guidance from the user: {}.", g.trim()),
+        None => topics,
     };
     format!(
         "Design one flat, abstract SVG emblem representing the subject of a study \
@@ -274,7 +286,7 @@ mod tests {
             "<svg viewBox=\"0 0 24 24\"><script>x()</script><circle r=\"8\"/></svg>",
         );
 
-        let out = generate(ws.path(), &ask_config(&cli)).unwrap();
+        let out = generate(ws.path(), None, &ask_config(&cli)).unwrap();
 
         assert_eq!(out, ws.path().join("assets").join("icon.svg"));
         let svg = std::fs::read_to_string(&out).unwrap();
@@ -290,18 +302,31 @@ mod tests {
         let cli_dir = tempfile::tempdir().unwrap();
         let cli = fake_reply(cli_dir.path(), "sorry, I can't draw that");
 
-        let err = generate(ws.path(), &ask_config(&cli)).unwrap_err();
+        let err = generate(ws.path(), None, &ask_config(&cli)).unwrap_err();
         assert!(err.to_string().contains("no usable svg"));
         assert!(!ws.path().join("assets").join("icon.svg").exists());
     }
 
     #[test]
     fn build_prompt_bounds_the_output_for_a_fast_draw() {
-        let p = build_prompt("Rust", "ownership and borrowing", &["moves".to_string()]);
+        let p = build_prompt(
+            "Rust",
+            "ownership and borrowing",
+            &["moves".to_string()],
+            None,
+        );
         // The emblem is capped and steered to compact primitives so the model
         // can't emit long <path> coordinate data — the slow, timeout-prone part.
         assert!(p.contains("at most 6 shapes"));
         assert!(p.contains("PREFER primitives"));
+    }
+
+    #[test]
+    fn build_prompt_carries_the_user_steer_only_when_given() {
+        let steered = build_prompt("Rust", "", &[], Some(" a compass rose "));
+        assert!(steered.contains("Style guidance from the user: a compass rose."));
+        let plain = build_prompt("Rust", "", &[], None);
+        assert!(!plain.contains("Style guidance"));
     }
 
     #[test]
@@ -322,7 +347,7 @@ mod tests {
             ),
         );
 
-        let out = generate(ws.path(), &ask_config(&cli)).unwrap();
+        let out = generate(ws.path(), None, &ask_config(&cli)).unwrap();
         let svg = std::fs::read_to_string(&out).unwrap();
         assert!(svg.contains("<circle"));
     }

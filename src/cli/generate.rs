@@ -245,7 +245,7 @@ fn build_workspace(
             ),
             Err(e) => eprintln!("warning: could not install the workspace icon: {e:#}"),
         },
-        None => match alix::icon::generate(&dir, &config.ask) {
+        None => match alix::icon::generate(&dir, None, &config.ask) {
             Ok(_) => println!(
                 "{DIM}Drew a workspace icon into {}/assets.{RESET}",
                 dir.display()

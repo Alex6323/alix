@@ -28,6 +28,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   front, then each ticked card tracks its own status, queued, generating,
   done, or failed, as the batch runs, and one target failing doesn't stop the
   rest.
+- **The Augment screen now opens on a workspace (or folder).** The same six
+  target cards run across all member decks at once: Generate fills a target's
+  gaps in every member, Remove clears it everywhere, and an Order generated
+  here is one workspace-wide pedagogical path that a workspace review session
+  picks up. A workspace also gets an **Icon** card that draws (or redraws) the
+  emblem shown on its picker row, steered by the card's guidance input.
+- **A Select all button on the Augment screen** ticks every target that can
+  run, so a full batch is two clicks.
 - **Every augment card carries its own guidance input.** Instead of one shared
   guidance box in the footer, each target card has a compact steer field with a
   kind-specific example as its placeholder (choices: "use common

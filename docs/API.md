@@ -149,13 +149,16 @@ in the `"cooldown"` phase with `cooldown_ms` set — one shape per endpoint.
 ### 4.4 Augment
 
 `POST /api/augment/open {deck}` → `AugmentDto` (coverage rows per target).
+`deck` may also name a **workspace or folder**: the screen then covers the
+union of every member's cards, and the rows gain the workspace-only `icon`
+target (0/1-covered by whether an emblem exists).
 `POST /api/augment/generate {targets: [{target, with?}]}` kicks a batch, each
 entry carrying its own optional guidance steer (poll `GET /api/augment` while
 `busy`); the `AugmentDto` reports batch progress via `queued`, `done`, and
 `failed` as the targets run one at a time.
 `POST /api/augment/remove {target, topology?}` deletes cached content;
 `POST /api/augment/close` → `StateDto`. Target names are an open set
-(currently include `choices`, `notes`, `keypoints`, `format`).
+(currently include `choices`, `notes`, `keypoints`, `format`, `icon`).
 
 ### 4.5 Ask (the tutor)
 

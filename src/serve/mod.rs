@@ -1348,8 +1348,10 @@ pub fn run_review(
                 respond_json(request, &review_state(reviewing.as_ref(), &store));
             }
             // ── Deck augmentation (the picker's "Augment" action, decks only) ──
-            // Open a deck's Augment screen and report what its cache holds. Resolves
-            // the deck through the catalog (incl. workspace members) like the exam.
+            // Open the Augment screen and report what its cache holds. Resolves
+            // the name through the catalog (incl. workspace members) like the
+            // exam; a workspace name opens the screen over the UNION of its
+            // members' cards, which also unlocks the icon target.
             (Method::Post, "/api/augment/open") => {
                 #[derive(Deserialize)]
                 struct Body {
@@ -1360,24 +1362,33 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                let Some(path) = resolved_path(resolve_row(&body.deck, &decks_dir, &recent)) else {
-                    respond_status(request, 400);
-                    continue;
+                let (files, workspace_dir) = match resolve_row(&body.deck, &decks_dir, &recent) {
+                    Resolved::One(p) => (vec![p], None),
+                    Resolved::Many { dir, files } => (files, Some(dir)),
+                    _ => {
+                        respond_status(request, 400);
+                        continue;
+                    }
                 };
                 let name = body.deck;
-                // The cache lives beside the deck's own store (a workspace's, or the
-                // global one), mirroring how review reads it.
-                if let Ok(s) =
-                    assemble::store_for(std::slice::from_ref(&path), cfg.instance_store.as_deref())
-                {
+                // The cache lives beside the selection's own store (a workspace's,
+                // or the global one), mirroring how review reads it.
+                if let Ok(s) = assemble::store_for(&files, cfg.instance_store.as_deref()) {
                     store = s;
                 }
-                match Deck::load(&path) {
-                    Ok(deck) => {
+                // A plain deck is a one-member union; any member failing to load
+                // fails the open, so a broken deck never half-opens the screen.
+                let mut cards = Vec::new();
+                let loaded = files
+                    .iter()
+                    .try_for_each(|f| Deck::load(f).map(|d| cards.extend(d.cards)).map(|_| ()));
+                match loaded {
+                    Ok(()) => {
                         let aug = Augmenting::open(
                             name,
-                            deck.cards,
+                            cards,
                             augment::augment_path_for(store.path()),
+                            workspace_dir,
                         );
                         let dto = aug.dto();
                         augmenting = Some(aug);

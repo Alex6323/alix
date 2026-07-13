@@ -485,6 +485,10 @@ pub(super) struct Augmenting {
     /// This deck's card ids, for scoping removals against the shared cache.
     pub(super) deck_ids: HashSet<u64>,
     pub(super) cache: AugmentCache,
+    /// `Some(dir)` when this screen was opened on a workspace: targets run
+    /// across the union of member cards, and workspace-specific targets (the
+    /// icon) become available. `None` for a plain deck.
+    pub(super) workspace_dir: Option<PathBuf>,
     pub(super) pending: Option<AugmentPending>,
     /// The last generation/save error, shown until the next action clears it.
     pub(super) error: Option<String>,
@@ -516,20 +520,36 @@ fn target_label(target: &str) -> Option<&'static str> {
         "keypoints" => Some("keypoints"),
         "format" => Some("format"),
         "topology" => Some("topology"),
+        "icon" => Some("icon"),
         _ => None,
     }
 }
 
+/// Whether the workspace at `dir` has a resolved icon (a manifest `icon` or
+/// the conventional `assets/icon.*`) — the icon row's 0/1 coverage.
+fn has_icon(dir: &Path) -> bool {
+    crate::workspace::Workspace::load(dir).is_ok_and(|ws| ws.icon.is_some())
+}
+
 impl Augmenting {
-    /// Opens the Augment screen for a deck: loads its augmentation cache (beside
-    /// the deck's store) and records its cards for coverage + gap computation.
-    pub(super) fn open(deck: String, cards: Vec<Card>, cache_path: PathBuf) -> Self {
+    /// Opens the Augment screen: for a deck, `cards` are its own and
+    /// `workspace_dir` is `None`; for a workspace, `cards` are the union of
+    /// every member's and `workspace_dir` names its root (which also unlocks
+    /// the icon target). The augmentation cache lives beside the store either
+    /// way.
+    pub(super) fn open(
+        deck: String,
+        cards: Vec<Card>,
+        cache_path: PathBuf,
+        workspace_dir: Option<PathBuf>,
+    ) -> Self {
         let deck_ids = cards.iter().map(Card::id).collect();
         Self {
             deck,
             cards,
             deck_ids,
             cache: AugmentCache::open(cache_path),
+            workspace_dir,
             pending: None,
             error: None,
             queue: VecDeque::new(),
@@ -551,7 +571,7 @@ impl Augmenting {
                 items: Vec::new(),
                 busy: busy == Some(kind),
             };
-        let rows = vec![
+        let mut rows = vec![
             card_row("choices", "Choices", s.choices),
             card_row("notes", "Notes", s.notes),
             card_row("questions", "Questions", s.questions),
@@ -566,6 +586,18 @@ impl Augmenting {
                 busy: busy == Some("topology"),
             },
         ];
+        // Workspace mode only: the icon target, 0/1-covered by whether a
+        // conventional assets/icon.* exists.
+        if let Some(dir) = &self.workspace_dir {
+            rows.push(AugmentRowDto {
+                kind: "icon",
+                label: "Icon",
+                covered: has_icon(dir) as usize,
+                eligible: 1,
+                items: Vec::new(),
+                busy: busy == Some("icon"),
+            });
+        }
         AugmentDto {
             deck: self.deck.clone(),
             cards: self.cards.len(),
@@ -686,6 +718,12 @@ impl Augmenting {
                     },
                     "topology",
                 ),
+                // The icon regenerates unconditionally (a fresh draw replaces the
+                // old emblem); only a workspace has one to draw.
+                "icon" => match &self.workspace_dir {
+                    Some(dir) => (augment_ai::Job::Icon { dir: dir.clone() }, "icon"),
+                    None => continue,
+                },
                 // Unknown target: nothing to record, try the next queued one.
                 _ => continue,
             };
@@ -757,6 +795,9 @@ impl Augmenting {
                     self.cache.set_format(id, v);
                 }
             }
+            // Nothing to cache: icon::generate already wrote assets/icon.svg,
+            // and the dto's coverage reads the file system.
+            augment_ai::Outcome::Icon(_) => {}
         }
     }
 

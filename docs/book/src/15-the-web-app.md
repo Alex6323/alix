@@ -70,10 +70,17 @@ named topologies. Each card has its own compact guidance input, feeding the
 same `--with` steer as the command line, with a kind-specific example as its
 placeholder so you can see what a steer is good for; a batch carries each
 ticked card's own guidance. It writes the same `augment.json` review reads, so
-this only saves you the trip to the terminal. The action shows on decks, not
-workspaces.
+this only saves you the trip to the terminal.
 
-Tick several targets and press **Generate selected** to run them in one batch:
+The action also works on a **workspace or folder row**: the same screen opens
+over all its decks at once, so a Generate fills a target's gaps across every
+member, Remove clears it across every member, and an Order generated here is
+one workspace-wide pedagogical path (a workspace review session picks it up).
+A workspace additionally gets an **Icon** card: Generate draws (or redraws)
+the small emblem shown on its picker row, steered by the card's guidance.
+
+Tick several targets and press **Generate selected** to run them in one batch
+(a **Select all** button at the top ticks everything that can run):
 it shows a
 rough estimate of how many generations that will take, then walks each ticked
 card through its own status, queued, generating, done, or failed, as the

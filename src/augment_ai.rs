@@ -454,12 +454,32 @@ fn format_prompt(items: &[WarmItem], guidance: Option<&str>) -> String {
 /// caller computed (e.g. via [`AugmentCache::missing_choices`]); topology is
 /// whole-deck.
 pub enum Job {
-    Choices { items: Vec<WarmItem>, count: usize },
-    Notes { items: Vec<WarmItem> },
-    Questions { items: Vec<WarmItem>, count: usize },
-    Keypoints { items: Vec<WarmItem>, count: usize },
-    Topology { items: Vec<WarmItem> },
-    Format { items: Vec<WarmItem> },
+    Choices {
+        items: Vec<WarmItem>,
+        count: usize,
+    },
+    Notes {
+        items: Vec<WarmItem>,
+    },
+    Questions {
+        items: Vec<WarmItem>,
+        count: usize,
+    },
+    Keypoints {
+        items: Vec<WarmItem>,
+        count: usize,
+    },
+    Topology {
+        items: Vec<WarmItem>,
+    },
+    Format {
+        items: Vec<WarmItem>,
+    },
+    /// Draw the workspace emblem at `dir` (the workspace augment screen's
+    /// icon target); `guidance` steers the style.
+    Icon {
+        dir: std::path::PathBuf,
+    },
 }
 
 /// The result of a [`Job`], shaped per target so the caller can apply it to the
@@ -471,6 +491,9 @@ pub enum Outcome {
     Keypoints(HashMap<u64, Vec<String>>),
     Topology(Topology),
     Format(HashMap<u64, Format>),
+    /// The freshly written workspace icon. Nothing to cache — the file on
+    /// disk is the result.
+    Icon(std::path::PathBuf),
 }
 
 /// Runs a generation [`Job`] on a background thread; the [`Outcome`] (or an error
@@ -505,6 +528,7 @@ fn run_job(job: Job, guidance: Option<&str>, ask_cfg: &AskConfig) -> Result<Outc
         }
         Job::Topology { items } => Outcome::Topology(generate_topology(&items, guidance, ask_cfg)?),
         Job::Format { items } => Outcome::Format(generate_format(&items, guidance, ask_cfg)?),
+        Job::Icon { dir } => Outcome::Icon(crate::icon::generate(&dir, guidance, ask_cfg)?),
     })
 }
 

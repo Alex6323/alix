@@ -634,6 +634,7 @@
   .aug-ba-arrow-sm { color: var(--dim); font-size: 0.8rem; }
   .aug-ba-code { font-family: var(--mono); font-size: 0.78rem; color: var(--ink); background: rgba(255,255,255,0.05); border-radius: 8px; padding: 8px 10px; margin-top: 7px; }
   .aug-ba-meta { color: var(--dim); font-size: 0.7rem; font-style: italic; margin-top: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .aug-tools { display: flex; justify-content: flex-end; margin-bottom: 10px; }
   .aug-foot { display: flex; flex-direction: column; gap: 8px; padding: 16px 4px 2px; }
   .aug-guide-input { width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.25); border: 1px solid var(--line); border-radius: 10px; color: var(--ink); font: inherit; font-size: 0.8rem; padding: 6px 12px; margin: 10px 0 12px; }
   .aug-guide-input::placeholder { color: var(--dim); }
@@ -1727,6 +1728,23 @@ const AUG_INFO = {
       b.appendChild(code);
     },
   },
+  icon: {
+    title: "Icon",
+    desc: "Draws a small abstract emblem for this workspace, shown on its picker row.",
+    hint: "e.g. a compass rose, flat and minimal",
+    before(b) {
+      const chips = el("div", "aug-ba-chips");
+      chips.appendChild(el("span", "aug-ba-chip", "› My workspace"));
+      b.appendChild(chips);
+      b.appendChild(el("div", "aug-ba-meta", "a plain chevron"));
+    },
+    after(b) {
+      const chips = el("div", "aug-ba-chips");
+      chips.appendChild(el("span", "aug-ba-chip good", "◈ My workspace"));
+      b.appendChild(chips);
+      b.appendChild(el("div", "aug-ba-meta", "its own emblem"));
+    },
+  },
   topology: {
     title: "Order",
     desc: "Orders your cards foundations first, so alix teaches the prerequisites before what builds on them.",
@@ -1824,7 +1842,7 @@ function augCardRow(d, row) {
     cb.disabled = !!d.busy;
     cb.addEventListener("change", () => {
       if (cb.checked) augTicked.add(row.kind); else augTicked.delete(row.kind);
-      renderAugLegend();
+      renderAugLegend(); syncAugTools();
     });
     right.appendChild(cb);
   }
@@ -1879,7 +1897,7 @@ function augTopologyRow(d, row) {
   cb.disabled = !!d.busy;
   cb.addEventListener("change", () => {
     if (cb.checked) augTicked.add("topology"); else augTicked.delete("topology");
-    renderAugLegend();
+    renderAugLegend(); syncAugTools();
   });
   right.appendChild(cb);
   right.appendChild(list);
@@ -1904,13 +1922,73 @@ function augTopologyRow(d, row) {
   }
   return augCardShell(row, right);
 }
-// Builds the augment body (target cards + the cost footer) into `wrap`.
-// Shared by the first mount and the in-place refresh.
+// The workspace icon card: always regenerable (a fresh draw replaces the old
+// emblem), so unlike a gap-fill target it stays tickable and enabled when
+// covered; the green border still marks "has one".
+function augIconRow(d, row) {
+  const right = el("div", "aug-actions");
+  const cb = el("input", "aug-check");
+  cb.type = "checkbox";
+  cb.title = "Select for batch generate";
+  cb.checked = augTicked.has("icon");
+  cb.disabled = !!d.busy;
+  cb.addEventListener("change", () => {
+    if (cb.checked) augTicked.add("icon"); else augTicked.delete("icon");
+    renderAugLegend(); syncAugTools();
+  });
+  right.appendChild(cb);
+  if (row.busy) right.appendChild(augBusyCell(d));
+  else if ((d.queued || []).includes("icon")) right.appendChild(el("span", "aug-status queued", "queued"));
+  else {
+    const failedEntry = (d.failed || []).find(f => f.target === "icon");
+    if (failedEntry) {
+      const err = el("span", "aug-status failed", failedEntry.error);
+      err.title = failedEntry.error;
+      right.appendChild(err);
+    } else if ((d.done || []).includes("icon")) right.appendChild(el("span", "aug-status done", "done ✓"));
+    const gen = el("button", "aug-btn", row.covered ? "Regenerate" : "Generate");
+    gen.disabled = !!d.busy;
+    gen.addEventListener("click", () => augmentGenerate("icon"));
+    right.appendChild(gen);
+  }
+  return augCardShell(row, right);
+}
+// Whether a row can join the batch: gap-fill targets need an actual gap;
+// topology and the icon are always re-runnable.
+function augTickable(row) {
+  if (row.kind === "topology" || row.kind === "icon") return true;
+  return row.eligible > row.covered;
+}
+// Keeps the on-page Select all button's label honest after a manual tick,
+// without re-rendering the cards (ticking must never repaint the page).
+function syncAugTools() {
+  const d = augmentData;
+  const btn = document.querySelector(".aug-tools button");
+  if (!d || !btn) return;
+  const tickable = d.rows.filter(augTickable).map(r => r.kind);
+  const allOn = tickable.length > 0 && tickable.every(k => augTicked.has(k));
+  btn.textContent = allOn ? "Clear selection" : "Select all";
+}
+// Builds the augment body (select-all + target cards + the cost footer) into
+// `wrap`. Shared by the first mount and the in-place refresh.
 function augFillContent(wrap) {
   const d = augmentData;
   if (d.error) wrap.appendChild(el("div", "exam-error", "⚠ " + d.error));
+  const tools = el("div", "aug-tools");
+  const tickable = d.rows.filter(augTickable).map(r => r.kind);
+  const allOn = tickable.length > 0 && tickable.every(k => augTicked.has(k));
+  const sa = el("button", "aug-btn ghost", allOn ? "Clear selection" : "Select all");
+  sa.disabled = !!d.busy || !tickable.length;
+  sa.addEventListener("click", () => {
+    const on = tickable.length > 0 && tickable.every(k => augTicked.has(k));
+    if (on) augTicked.clear(); else tickable.forEach(k => augTicked.add(k));
+    refreshAugment();
+  });
+  tools.appendChild(sa);
+  wrap.appendChild(tools);
   for (const row of d.rows)
-    wrap.appendChild(row.kind === "topology" ? augTopologyRow(d, row) : augCardRow(d, row));
+    wrap.appendChild(row.kind === "topology" ? augTopologyRow(d, row)
+      : row.kind === "icon" ? augIconRow(d, row) : augCardRow(d, row));
   const foot = el("div", "aug-foot");
   foot.appendChild(el("div", "aug-cost",
     "Generating runs Claude and costs tokens. It fills only the cards a target is missing."));
@@ -1965,7 +2043,7 @@ function renderAugLegend() {
   const tickedCount = augTicked.size;
   if (tickedCount > 0) {
     let work = 0;
-    for (const row of d.rows) if (augTicked.has(row.kind)) work += row.kind === "topology" ? 1 : Math.max(0, row.eligible - row.covered);
+    for (const row of d.rows) if (augTicked.has(row.kind)) work += row.kind === "topology" || row.kind === "icon" ? 1 : Math.max(0, row.eligible - row.covered);
     legend.appendChild(el("span", "aug-work",
       `will run ~${work} generation${work === 1 ? "" : "s"} across ${tickedCount} target${tickedCount === 1 ? "" : "s"}`));
   }
@@ -2306,11 +2384,16 @@ async function renderSelect() {
         br.addEventListener("click", () => browseDeck(f._item, f._wsName));
         legend.appendChild(br);
       }
-      // Augment the focused deck (key a): add / remove AI augmentations.
-      if (f && f._item) {
+      // Augment the focused deck, workspace, or folder (key a): add / remove
+      // AI augmentations. A workspace/folder opens the same screen over the
+      // union of its members' cards (plus the icon target).
+      if (f && (f._item || f._open)) {
         const ag = el("button", "chip", "Augment");
         ag.appendChild(el("span", "k", "a"));
-        ag.addEventListener("click", () => { lastWorkspace = f._wsName || null; openAugment(f._item.name); });
+        ag.addEventListener("click", () => {
+          lastWorkspace = f._wsName || null;
+          openAugment(f._item ? f._item.name : f._open.name);
+        });
         legend.appendChild(ag);
       }
       // Back is the header ← nav button (and Esc/Backspace); no footer chip.
@@ -2563,7 +2646,7 @@ async function renderSelect() {
       else if (e.key === "ArrowRight" || hit(e, PK.open)) { e.preventDefault(); if (drawerCycle) drawerCycle(1); else if (cur && cur._open) renderDrill(cur._open); } // a deck is launched with Enter (the primary chip), not l/→
       else if (e.key === "ArrowLeft" || hit(e, PK.back)) { e.preventDefault(); if (drawerCycle) drawerCycle(-1); } // back-out is Esc/Backspace only; ←/h just steps the drawer
       else if (e.key === "b" && cur && cur._item) { e.preventDefault(); browseDeck(cur._item, cur._wsName); }
-      else if (e.key === "a" && cur && cur._item) { e.preventDefault(); lastWorkspace = cur._wsName || null; openAugment(cur._item.name); }
+      else if (e.key === "a" && cur && (cur._item || cur._open)) { e.preventDefault(); lastWorkspace = cur._wsName || null; openAugment(cur._item ? cur._item.name : cur._open.name); }
       else if (hit(e, PK.depth) && hasDepthSplit(cur) && canStart(cur._item, cur._gated)) { e.preventDefault(); depthMenuOpen = true; cramOn = false; syncPrimary(); }
       else if (e.key === "r") { e.preventDefault(); replayLogo(); renderSelect(); } // re-scan the decks (also the ⟳ nav button)
       else if (opts.allowMastered && hit(e, PK.mastered)) { e.preventDefault(); renderMastered(); }
