@@ -1804,7 +1804,7 @@ function augCardRow(d, row) {
       const err = el("span", "aug-status failed", failedEntry.error);
       err.title = failedEntry.error;
       right.appendChild(err);
-    } else if (justDone) right.appendChild(el("span", "aug-status done", "done ✓"));
+    } else if (justDone && !hasGap) right.appendChild(el("span", "aug-status done", "done ✓"));
     const gen = el("button", "aug-btn", full ? "Complete" : "Generate");
     gen.disabled = !!d.busy || !row.eligible || !!full;
     gen.addEventListener("click", () => augmentGenerate(row.kind, augGuidance()));
