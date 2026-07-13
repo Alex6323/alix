@@ -58,7 +58,12 @@ pub fn keypoint_grade(covered: usize, total: usize) -> Grade {
 /// `depth`: `Recall` and `Reconstruct` each own an independent schedule on
 /// `CardState` (see `CardState::schedule`/`schedule_slot`), so nothing here
 /// implicitly means "the Recall schedule" — the caller says which.
-pub trait Scheduler {
+///
+/// `Send + Sync` so a `Session` (which boxes one) can cross threads: an
+/// embedder like the frb mobile bridge holds the session behind a
+/// thread-shared handle. A scheduler is parameter math, not shared state, so
+/// implementors satisfy this for free.
+pub trait Scheduler: Send + Sync {
     /// When the card is due next (Unix ms) at `depth`.
     fn due_at(&self, state: &CardState, depth: Depth) -> u64;
 
