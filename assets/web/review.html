@@ -1790,7 +1790,7 @@ function augCardRow(d, row) {
     cb.disabled = !!d.busy;
     cb.addEventListener("change", () => {
       if (cb.checked) augTicked.add(row.kind); else augTicked.delete(row.kind);
-      render();
+      renderAugLegend();
     });
     right.appendChild(cb);
   }
@@ -1877,8 +1877,16 @@ function renderAugment() {
     "Generating runs Claude and costs tokens. It fills only the cards a target is missing."));
   wrap.appendChild(foot);
   stage.appendChild(wrap);
-  // Footer: the ticked-selection work line + Generate selected; "remove
-  // everything" sits behind a confirm; Close exits to the picker.
+  // Footer selection controls live in their own function so ticking a checkbox
+  // can refresh just the count, not rebuild the whole screen.
+  renderAugLegend();
+}
+// Rebuilds only the footer's selection controls (work line + Generate selected
+// + Remove all + Close). Ticking a checkbox calls this instead of a full
+// render, so the screen's entrance animation never replays and scroll is kept.
+function renderAugLegend() {
+  const d = augmentData;
+  if (!d) return;
   legend.innerHTML = "";
   const tickedCount = augTicked.size;
   if (tickedCount > 0) {
