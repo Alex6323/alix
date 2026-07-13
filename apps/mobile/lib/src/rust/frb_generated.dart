@@ -3,6 +3,7 @@
 
 // ignore_for_file: unused_import, unused_element, unnecessary_import, duplicate_ignore, invalid_use_of_internal_member, annotate_overrides, non_constant_identifier_names, curly_braces_in_flow_control_structures, prefer_const_literals_to_create_immutables, unused_field
 
+import 'api/listing.dart';
 import 'api/review.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -66,7 +67,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 1930606396;
+  int get rustContentHash => 1523286188;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -109,6 +110,17 @@ abstract class RustLibApi extends BaseApi {
   ReviewState crateApiReviewReviewSessionState({required ReviewSession that});
 
   Future<void> crateApiSimpleInitApp();
+
+  List<DeckEntry> crateApiListingListMembers({
+    required String root,
+    required String dir,
+    BigInt? nowMs,
+  });
+
+  List<DeckEntry> crateApiListingListRoot({
+    required String root,
+    BigInt? nowMs,
+  });
 
   RustArcIncrementStrongCountFnType
   get rust_arc_increment_strong_count_ReviewSession;
@@ -350,6 +362,64 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiSimpleInitAppConstMeta =>
       const TaskConstMeta(debugName: "init_app", argNames: []);
 
+  @override
+  List<DeckEntry> crateApiListingListMembers({
+    required String root,
+    required String dir,
+    BigInt? nowMs,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(root, serializer);
+          sse_encode_String(dir, serializer);
+          sse_encode_opt_box_autoadd_u_64(nowMs, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 8)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_deck_entry,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiListingListMembersConstMeta,
+        argValues: [root, dir, nowMs],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiListingListMembersConstMeta => const TaskConstMeta(
+    debugName: "list_members",
+    argNames: ["root", "dir", "nowMs"],
+  );
+
+  @override
+  List<DeckEntry> crateApiListingListRoot({
+    required String root,
+    BigInt? nowMs,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(root, serializer);
+          sse_encode_opt_box_autoadd_u_64(nowMs, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 9)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_deck_entry,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiListingListRootConstMeta,
+        argValues: [root, nowMs],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiListingListRootConstMeta =>
+      const TaskConstMeta(debugName: "list_root", argNames: ["root", "nowMs"]);
+
   RustArcIncrementStrongCountFnType
   get rust_arc_increment_strong_count_ReviewSession => wire
       .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerReviewSession;
@@ -484,6 +554,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  DeckEntry dco_decode_deck_entry(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return DeckEntry(
+      title: dco_decode_String(arr[0]),
+      path: dco_decode_String(arr[1]),
+      isWorkspace: dco_decode_bool(arr[2]),
+      due: dco_decode_bool(arr[3]),
+    );
+  }
+
+  @protected
   Depth dco_decode_depth(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return Depth.values[raw as int];
@@ -505,6 +589,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   List<String> dco_decode_list_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_String).toList();
+  }
+
+  @protected
+  List<DeckEntry> dco_decode_list_deck_entry(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_deck_entry).toList();
   }
 
   @protected
@@ -770,6 +860,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  DeckEntry sse_decode_deck_entry(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_title = sse_decode_String(deserializer);
+    var var_path = sse_decode_String(deserializer);
+    var var_isWorkspace = sse_decode_bool(deserializer);
+    var var_due = sse_decode_bool(deserializer);
+    return DeckEntry(
+      title: var_title,
+      path: var_path,
+      isWorkspace: var_isWorkspace,
+      due: var_due,
+    );
+  }
+
+  @protected
   Depth sse_decode_depth(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_i_32(deserializer);
@@ -797,6 +902,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var ans_ = <String>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_String(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<DeckEntry> sse_decode_list_deck_entry(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <DeckEntry>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_deck_entry(deserializer));
     }
     return ans_;
   }
@@ -1113,6 +1230,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_deck_entry(DeckEntry self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.title, serializer);
+    sse_encode_String(self.path, serializer);
+    sse_encode_bool(self.isWorkspace, serializer);
+    sse_encode_bool(self.due, serializer);
+  }
+
+  @protected
   void sse_encode_depth(Depth self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.index, serializer);
@@ -1136,6 +1262,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_String(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_deck_entry(
+    List<DeckEntry> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_deck_entry(item, serializer);
     }
   }
 
