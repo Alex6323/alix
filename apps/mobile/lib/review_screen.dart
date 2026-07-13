@@ -1,19 +1,23 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import 'package:alix_mobile/src/rust/api/review.dart';
 
-/// The one M1 screen: renders the ReviewState the embedded core returns and
-/// feeds grades back into it. All review logic lives in Rust; this widget
-/// only shows the current position and forwards the learner's action.
+/// The review screen: renders the core's ReviewState and feeds the learner's
+/// actions back. All review logic lives in Rust; this widget switches on
+/// `acquire` and `mode` and forwards taps.
 class ReviewScreen extends StatefulWidget {
   const ReviewScreen({
     super.key,
     required this.deckPath,
-    required this.storeDir,
+    required this.rootDir,
+    required this.depth,
   });
 
   final String deckPath;
-  final String storeDir;
+  final String rootDir;
+  final Depth depth;
 
   @override
   State<ReviewScreen> createState() => _ReviewScreenState();
@@ -22,8 +26,11 @@ class ReviewScreen extends StatefulWidget {
 class _ReviewScreenState extends State<ReviewScreen> {
   late ReviewSession _session;
   late ReviewState _state;
-  bool _unseen = false;
   bool _revealed = false;
+  int _revealedLines = 0;
+  ChoiceFeedback? _choice;
+  CheckFeedback? _check;
+  final List<TextEditingController> _typed = [];
 
   @override
   void initState() {
@@ -31,25 +38,43 @@ class _ReviewScreenState extends State<ReviewScreen> {
     _open();
   }
 
-  /// (Re)opens the session over the same deck and store; also the restart
-  /// action on the done screen, picking up whatever has come due since.
+  @override
+  void dispose() {
+    for (final c in _typed) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  /// (Re)opens the session; also the restart action on the done screen.
   void _open() {
     _session = ReviewSession.open(
       deckPath: widget.deckPath,
-      storeDir: widget.storeDir,
+      rootDir: widget.rootDir,
+      depth: widget.depth,
     );
-    _state = _session.state();
-    _unseen = _session.unseen();
-    _revealed = false;
+    _resetCard(_session.state());
   }
 
-  void _apply(ReviewState next) {
-    setState(() {
-      _state = next;
-      _unseen = _session.unseen();
-      _revealed = false;
-    });
+  /// Installs the next position and clears all per-card interaction state.
+  void _resetCard(ReviewState next) {
+    _state = next;
+    _revealed = false;
+    _revealedLines = 1;
+    _choice = null;
+    _check = null;
+    final lines = next.mode == Mode.typeLine ? (next.card?.back.length ?? 1) : 1;
+    while (_typed.length < lines) {
+      _typed.add(TextEditingController());
+    }
+    for (final c in _typed) {
+      c.clear();
+    }
   }
+
+  void _apply(ReviewState next) => setState(() => _resetCard(next));
+
+  void _grade(Grade grade) => _apply(_session.grade(grade: grade));
 
   @override
   Widget build(BuildContext context) {
@@ -65,7 +90,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
             ),
         ],
       ),
-      body: Center(
+      body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: card == null ? _done(context) : _card(context, card),
@@ -75,76 +100,237 @@ class _ReviewScreenState extends State<ReviewScreen> {
   }
 
   Widget _done(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text('Done for now', style: Theme.of(context).textTheme.headlineSmall),
-        const SizedBox(height: 8),
-        const Text('Cards come back once they are due again.'),
-        const SizedBox(height: 24),
-        OutlinedButton(
-          onPressed: () => setState(_open),
-          child: const Text('Check again'),
-        ),
-      ],
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('Done for now', style: Theme.of(context).textTheme.headlineSmall),
+          const SizedBox(height: 8),
+          const Text('Cards come back once they are due again.'),
+          const SizedBox(height: 24),
+          OutlinedButton(
+            onPressed: () => setState(_open),
+            child: const Text('Check again'),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _card(BuildContext context, CardView card) {
-    final showBack = _unseen || _revealed;
     return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Expanded(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                card.front,
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.headlineSmall,
-              ),
-              if (showBack) ...[
-                const SizedBox(height: 24),
-                Text(
-                  card.back.join('\n'),
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                ),
-              ],
-            ],
+          child: SingleChildScrollView(
+            // The scroll view hands loose width constraints; force full
+            // width so the face column actually centers.
+            child: SizedBox(width: double.infinity, child: _face(context, card)),
           ),
         ),
-        if (_unseen)
-          // A first exposure is acquired (attempt-first), not quizzed cold.
-          FilledButton(
-            onPressed: () => _apply(_session.acquire()),
-            child: const Text('Seen'),
-          )
-        else if (!_revealed)
-          FilledButton(
-            onPressed: () => setState(() => _revealed = true),
-            child: const Text('Reveal'),
-          )
-        else
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              for (final (label, grade) in [
-                ('Fail', Grade.fail),
-                ('Partial', Grade.partial),
-                ('Pass', Grade.pass),
-              ])
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 6),
-                  child: FilledButton.tonal(
-                    onPressed: () => _apply(_session.grade(grade: grade)),
-                    child: Text(label),
-                  ),
-                ),
-            ],
+        const SizedBox(height: 12),
+        Center(child: _actions(context, card)),
+      ],
+    );
+  }
+
+  /// The card face: front, cloze context, then whatever the current phase of
+  /// the current mode has uncovered.
+  Widget _face(BuildContext context, CardView card) {
+    final theme = Theme.of(context);
+    final answerStyle =
+        theme.textTheme.titleLarge?.copyWith(color: theme.colorScheme.primary);
+    final showBack = _state.acquire && _state.choices == null ||
+        _revealed ||
+        _check != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        const SizedBox(height: 24),
+        Text(
+          card.front,
+          textAlign: TextAlign.center,
+          style: theme.textTheme.headlineSmall,
+        ),
+        if (card.image != null) ...[
+          const SizedBox(height: 12),
+          Image.file(File(card.image!), height: 180),
+        ],
+        for (final line in card.context) ...[
+          const SizedBox(height: 8),
+          Text(line, textAlign: TextAlign.center, style: theme.textTheme.titleMedium),
+        ],
+        const SizedBox(height: 24),
+        if (_state.choices != null)
+          _options(context)
+        else if (_state.mode == Mode.lineByLine && !_state.acquire) ...[
+          for (final line in card.back.take(_revealedLines))
+            Text(line, textAlign: TextAlign.center, style: answerStyle),
+        ] else if (_isTyping && !_state.acquire)
+          _typing(context, card)
+        else if (showBack) ...[
+          for (final line in card.back)
+            Text(line, textAlign: TextAlign.center, style: answerStyle),
+        ],
+        if (showBack || _lineDone(card) || _choice != null) ...[
+          if (card.imageBack != null) ...[
+            const SizedBox(height: 12),
+            Image.file(File(card.imageBack!), height: 180),
+          ],
+          for (final note in card.note) ...[
+            const SizedBox(height: 8),
+            Text(
+              note,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+          ],
+        ],
+      ],
+    );
+  }
+
+  bool get _isTyping =>
+      _state.mode == Mode.typing || _state.mode == Mode.typeLine;
+
+  bool _lineDone(CardView card) =>
+      _state.mode == Mode.lineByLine && _revealedLines >= card.back.length;
+
+  /// Multiple-choice options, tinted once a pick was made.
+  Widget _options(BuildContext context) {
+    final options = _state.choices ?? const [];
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      children: [
+        for (final (i, option) in options.indexed)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                style: _choice == null
+                    ? null
+                    : OutlinedButton.styleFrom(
+                        backgroundColor: BigInt.from(i) == _choice!.correct
+                            ? scheme.primaryContainer
+                            : (BigInt.from(i) == _choice!.chosen
+                                ? scheme.errorContainer
+                                : null),
+                      ),
+                onPressed: _choice == null
+                    ? () => setState(() => _choice = _session.choose(chosen: i))
+                    : null,
+                child: Text(option, maxLines: 2, overflow: TextOverflow.ellipsis),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// Typed-answer entry plus, after checking, the per-line evidence.
+  Widget _typing(BuildContext context, CardView card) {
+    final scheme = Theme.of(context).colorScheme;
+    final fields = _state.mode == Mode.typeLine ? card.back.length : 1;
+    return Column(
+      children: [
+        for (var i = 0; i < fields; i++)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: TextField(
+              controller: _typed[i],
+              enabled: _check == null,
+              decoration: InputDecoration(
+                border: const OutlineInputBorder(),
+                labelText: fields > 1 ? 'line ${i + 1}' : 'your answer',
+              ),
+            ),
+          ),
+        if (_check != null) ...[
+          const SizedBox(height: 8),
+          for (final result in _check!.results)
+            Text(
+              result.passed ? result.expected : '${result.input} -> ${result.expected}',
+              style: TextStyle(
+                color: result.passed ? scheme.primary : scheme.error,
+              ),
+            ),
+        ],
+      ],
+    );
+  }
+
+  /// The bottom action row for the current phase.
+  Widget _actions(BuildContext context, CardView card) {
+    // First encounter: acknowledge, never grade.
+    if (_state.acquire) {
+      if (_state.choices != null && _choice == null) {
+        return const Text('pick what you think it is');
+      }
+      return FilledButton(
+        onPressed: () => _apply(_session.acquire()),
+        child: const Text('Seen'),
+      );
+    }
+    // A graded pick: web-parity mapping (right = Pass or own up to a guess;
+    // wrong = continue as a Fail).
+    if (_state.mode == Mode.choice) {
+      final choice = _choice;
+      if (choice == null) return const SizedBox.shrink();
+      return choice.passed
+          ? _row([
+              ('I guessed', () => _grade(Grade.fail)),
+              ('Next', () => _grade(Grade.pass)),
+            ])
+          : _row([('Continue', () => _grade(Grade.fail))]);
+    }
+    if (_state.mode == Mode.lineByLine) {
+      if (!_lineDone(card)) {
+        return FilledButton(
+          onPressed: () => setState(() => _revealedLines++),
+          child: const Text('Next line'),
+        );
+      }
+      return _gradeRow();
+    }
+    if (_isTyping) {
+      if (_check == null) {
+        return FilledButton(
+          onPressed: () => setState(() {
+            final fields = _state.mode == Mode.typeLine ? card.back.length : 1;
+            _check = _session.check(
+              lines: [for (var i = 0; i < fields; i++) _typed[i].text],
+            );
+          }),
+          child: const Text('Check'),
+        );
+      }
+      return _gradeRow();
+    }
+    // Flip (and, until M3, Explain rendered as flip).
+    if (!_revealed) {
+      return FilledButton(
+        onPressed: () => setState(() => _revealed = true),
+        child: const Text('Reveal'),
+      );
+    }
+    return _gradeRow();
+  }
+
+  Widget _gradeRow() => _row([
+        ('Fail', () => _grade(Grade.fail)),
+        ('Partial', () => _grade(Grade.partial)),
+        ('Pass', () => _grade(Grade.pass)),
+      ]);
+
+  Widget _row(List<(String, VoidCallback)> actions) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        for (final (label, action) in actions)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: FilledButton.tonal(onPressed: action, child: Text(label)),
           ),
       ],
     );

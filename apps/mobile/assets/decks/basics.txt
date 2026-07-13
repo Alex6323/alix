@@ -1,0 +1,12 @@
+% title: Alix Basics
+# What does spaced repetition space out?
+    reviews
+# Where does alix keep a deck?
+    in a plain text file
+# What grade ends a card for the session?
+    Pass
+# Which store file holds review progress?
+    progress.json
+# What marks a note line in a deck file?
+    an exclamation mark
+    ! Like this line, shown after the reveal.

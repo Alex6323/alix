@@ -3,21 +3,34 @@ import 'dart:io';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:path_provider/path_provider.dart';
 
-/// Resolves the app's private data directory and makes sure the bundled
-/// sample deck exists there (copied from assets on first run, left alone
-/// after so the file the store keys on stays stable). Returns the deck path
-/// and the store directory to hand to the Rust core.
-///
-/// The support dir, not the documents dir: on desktop the documents dir is
-/// the user's real ~/Documents, which app data must not pollute. Support is
-/// app-private everywhere (the Android files dir; `~/.local/share/<app-id>`
-/// on Linux).
-Future<({String deckPath, String storeDir})> prepare() async {
-  final dir = await getApplicationSupportDirectory();
-  final deck = File('${dir.path}/sample.txt');
-  if (!await deck.exists()) {
-    final content = await rootBundle.loadString('assets/sample.txt');
-    await deck.writeAsString(content);
+/// The bundled sample decks, copied into a fresh decks dir on first run.
+/// Keep in step with the `assets:` list in pubspec.yaml.
+const _samples = [
+  'decks/basics.txt',
+  'decks/sample-workspace/alix.toml',
+  'decks/sample-workspace/capitals.txt',
+  'decks/sample-workspace/steps.txt',
+];
+
+/// Resolves the decks root: `ALIX_DECKS_DIR` when set (the Linux desktop
+/// pointing at a real host folder), else the app-private `<support>/decks`,
+/// seeded with the bundled samples on first run. Existing files are never
+/// overwritten, so the file names the store keys on stay stable.
+Future<String> prepare() async {
+  final env = Platform.environment['ALIX_DECKS_DIR'];
+  if (env != null && env.isNotEmpty) {
+    return env;
   }
-  return (deckPath: deck.path, storeDir: dir.path);
+  final support = await getApplicationSupportDirectory();
+  final root = Directory('${support.path}/decks');
+  await root.create(recursive: true);
+  for (final sample in _samples) {
+    final target = File('${support.path}/$sample');
+    if (!await target.exists()) {
+      await target.parent.create(recursive: true);
+      final content = await rootBundle.loadString('assets/$sample');
+      await target.writeAsString(content);
+    }
+  }
+  return root.path;
 }

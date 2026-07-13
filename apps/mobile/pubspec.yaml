@@ -63,9 +63,13 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
-  # The sample deck copied into the app's documents dir on first run.
+  # The sample decks copied into the app's data dir on first run
+  # (bootstrap.dart carries the matching manifest list).
   assets:
-    - assets/sample.txt
+    - assets/decks/basics.txt
+    - assets/decks/sample-workspace/alix.toml
+    - assets/decks/sample-workspace/capitals.txt
+    - assets/decks/sample-workspace/steps.txt
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
