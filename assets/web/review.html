@@ -578,8 +578,9 @@
      BEFORE -> AFTER preview so a user sees what the augmentation does before
      spending tokens on it (assets/ignore/design_handoff_alix_adult/Alix
      Augment.dc.html was the visual reference; content comes from AUG_INFO,
-     not that mock's Dart text). Batch controls (checkboxes, multi-select
-     generate) are a separate, later change: this is presentation only. */
+     not that mock's Dart text). A gap-fill card with an actual gap also carries
+     a batch-select checkbox, ticked in the module-level `augTicked` Set and
+     submitted together via the footer's "Generate selected". */
   .aug { width: var(--card-w); max-width: 92vw; display: flex; flex-direction: column; gap: 0; animation: deal 0.3s both; max-height: 78vh; overflow-y: auto; padding-right: 4px; }
   .aug-card { border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; margin-bottom: 14px; }
   .aug-card:last-of-type { margin-bottom: 0; }
@@ -631,6 +632,17 @@
   .aug-guide-input::placeholder { color: var(--dim); }
   .aug-guide-input:focus { outline: none; border-color: var(--bolt); }
   .aug-cost { color: var(--dim); font-size: 0.74rem; }
+  .aug-check { flex: 0 0 auto; width: 15px; height: 15px; margin: 0; accent-color: var(--bolt); cursor: pointer; }
+  .aug-check:disabled { cursor: default; opacity: 0.5; }
+  /* A card's derived poll status (queued/failed/done), sized to sit beside the
+     Generate/Remove buttons without stretching the card; long text (a failed
+     target's error) truncates rather than wrapping the action row. */
+  .aug-status { flex: 0 1 auto; min-width: 0; max-width: 180px; font-size: 0.78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .aug-status.queued { color: var(--dim); font-style: italic; }
+  .aug-status.failed { color: var(--again); }
+  .aug-status.done { color: var(--good); }
+  /* The batch work estimate, next to "Generate selected" in the footer keys row. */
+  .aug-work { color: var(--dim); font-family: var(--mono); font-size: 0.76rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
 
   @media (prefers-reduced-motion: reduce) {
     /* Reduce, not remove: keep the soft opacity fade for everyone; drop only the
@@ -837,6 +849,7 @@ let examConfirmingQuit = false; // showing the "abandon the exam?" confirmation
 let examPoll = null;  // setInterval handle while an exam call is in flight
 let augmentData = null; // the AugmentDto while the Augment screen is open (null otherwise)
 let augmentPoll = null; // setInterval handle while a generation is in flight
+let augTicked = new Set(); // gap-fill target kinds ticked for the next batch generate
 let duePoll = null;   // setInterval handle while the summary waits for a cooling card
 let browsing = null;  // {cards, label, i} while the read-only browse overlay is open
 let walkData = null;  // the WalkDto while an in-page trace walk is active (null otherwise)
@@ -1540,12 +1553,14 @@ function renderExam() {
 // a time; the page polls /api/augment while it runs.
 function openAugment(deck) {
   rememberLaunch(deck);
+  augTicked.clear();
   api("/api/augment/open", post({ deck })).then(d => {
     if (d && d.rows) { augmentData = d; render(); }
   });
 }
 function closeAugment() {
   stopAugmentPoll();
+  augTicked.clear();
   api("/api/augment/close", post({})).then(s => { augmentData = null; apply(s); });
 }
 // The shared guidance box's text, read when a Generate/Add is clicked.
@@ -1555,13 +1570,32 @@ function augGuidance() {
 }
 function augmentGenerate(target, guidance) {
   if (augmentData.busy) return;
-  api("/api/augment/generate", post({ target, with: guidance || null })).then(d => {
+  api("/api/augment/generate", post({ targets: [target], with: guidance || null })).then(d => {
     augmentData = d; render(); if (d.busy) startAugmentPoll();
   });
+}
+// The footer's "Generate selected" action: every ticked gap-fill kind in one
+// batch. The server runs them one at a time and reports queued/done/failed as
+// it goes (polled the same way as a single-target generate).
+function augmentGenerateSelected() {
+  if (augmentData.busy || !augTicked.size) return;
+  const targets = Array.from(augTicked);
+  augTicked.clear();
+  api("/api/augment/generate", post({ targets, with: augGuidance() || null })).then(d => {
+    augmentData = d; render(); if (d.busy) startAugmentPoll();
+  });
+  render();
 }
 function augmentRemove(target, topology) {
   api("/api/augment/remove", post({ target, topology: topology || null }))
     .then(d => { augmentData = d; render(); });
+}
+// A cheap fingerprint of the batch bookkeeping (queued/done/failed target
+// kinds) so the poll can tell a batch transition (e.g. a no-gap target
+// draining straight to "done", or the last one finishing) from a steady
+// "same busy target still running" tick, even when `busy` itself doesn't change.
+function augBatchSig(d) {
+  return JSON.stringify([d.queued, d.done, (d.failed || []).map(f => f.target)]);
 }
 function startAugmentPoll() {
   stopAugmentPoll();
@@ -1571,9 +1605,10 @@ function startAugmentPoll() {
       augmentData = d;
       if (!d.busy) stopAugmentPoll();
       // Re-render when the in-flight state changed (a job started or finished, so
-      // the coverage bars move); otherwise tick the elapsed counter in place so
-      // the spinner's entrance animation doesn't restart (flicker).
-      if (!prev || prev.busy !== d.busy || prev.error !== d.error) render();
+      // the coverage bars move) or the batch queue/done/failed sets changed;
+      // otherwise tick the elapsed counter in place so the spinner's entrance
+      // animation doesn't restart (flicker).
+      if (!prev || prev.busy !== d.busy || prev.error !== d.error || augBatchSig(prev) !== augBatchSig(d)) render();
       else {
         const e = document.querySelector(".exam-elapsed");
         if (e) { e.innerHTML = ""; e.appendChild(el("span", "dot"));
@@ -1734,13 +1769,42 @@ function augCardShell(row, right) {
   card.appendChild(augBeforeAfter(row.kind));
   return card;
 }
-// A per-target card: coverage count + Generate (fills the gap) and Remove.
+// A per-target card: an optional batch-select checkbox (only while there's an
+// actual gap to fill), the coverage count, a status derived from the current
+// poll (busy/queued/failed/done take precedence over the plain buttons), and
+// Generate (fills the gap) + Remove.
 function augCardRow(d, row) {
   const full = row.eligible && row.covered >= row.eligible;
+  const hasGap = row.eligible > row.covered;
+  // A tick left over from before a gap closed (e.g. a direct per-card Generate
+  // while it was also ticked) would otherwise silently inflate the footer's
+  // selected count with no checkbox on screen to explain it.
+  if (!hasGap) augTicked.delete(row.kind);
   const right = el("div", "aug-actions");
+  if (hasGap) {
+    const cb = el("input", "aug-check");
+    cb.type = "checkbox";
+    cb.title = "Select for batch generate";
+    cb.checked = augTicked.has(row.kind);
+    cb.disabled = !!d.busy;
+    cb.addEventListener("change", () => {
+      if (cb.checked) augTicked.add(row.kind); else augTicked.delete(row.kind);
+      render();
+    });
+    right.appendChild(cb);
+  }
   right.appendChild(el("span", "aug-count" + (full ? " full" : ""), row.covered + "/" + row.eligible));
+  const failedEntry = (d.failed || []).find(f => f.target === row.kind);
+  const queued = (d.queued || []).includes(row.kind);
+  const justDone = (d.done || []).includes(row.kind);
   if (row.busy) right.appendChild(augBusyCell(d));
+  else if (queued) right.appendChild(el("span", "aug-status queued", "queued"));
   else {
+    if (failedEntry) {
+      const err = el("span", "aug-status failed", failedEntry.error);
+      err.title = failedEntry.error;
+      right.appendChild(err);
+    } else if (justDone) right.appendChild(el("span", "aug-status done", "done ✓"));
     const gen = el("button", "aug-btn", full ? "Complete" : "Generate");
     gen.disabled = !!d.busy || !row.eligible || !!full;
     gen.addEventListener("click", () => augmentGenerate(row.kind, augGuidance()));
@@ -1802,8 +1866,18 @@ function renderAugment() {
     "Generating runs Claude and costs tokens. It fills only the cards a target is missing."));
   wrap.appendChild(foot);
   stage.appendChild(wrap);
-  // Footer: "remove everything" sits behind a confirm; Close exits to the picker.
+  // Footer: the ticked-selection work line + Generate selected; "remove
+  // everything" sits behind a confirm; Close exits to the picker.
   legend.innerHTML = "";
+  const tickedCount = augTicked.size;
+  if (tickedCount > 0) {
+    let work = 0;
+    for (const row of d.rows) if (augTicked.has(row.kind)) work += Math.max(0, row.eligible - row.covered);
+    legend.appendChild(el("span", "aug-work",
+      `will run ~${work} generation${work === 1 ? "" : "s"} across ${tickedCount} target${tickedCount === 1 ? "" : "s"}`));
+  }
+  const genSel = chip(`Generate selected (${tickedCount})`, "primary", augmentGenerateSelected);
+  genSel.disabled = tickedCount === 0 || !!d.busy;
   const rmAll = chip("Remove all", "", () => {
     if (confirm("Remove every augmentation for this deck?")) augmentRemove("all");
   });
