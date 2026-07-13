@@ -1418,10 +1418,7 @@ fn post_api_augment_generate_with_a_targets_list_runs_every_target_even_after_on
     assert_eq!(200, resp.status);
 
     let body = poll_until(&base, "/api/augment", |b| {
-        b["busy"].is_null()
-            && b["queued"]
-                .as_array()
-                .is_some_and(|q| q.is_empty())
+        b["busy"].is_null() && b["queued"].as_array().is_some_and(|q| q.is_empty())
     });
 
     let done = body["done"].as_array().unwrap();
