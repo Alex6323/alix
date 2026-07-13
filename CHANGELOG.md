@@ -33,6 +33,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   kind-specific example as its placeholder (choices: "use common
   misconceptions", notes: "add a mnemonic", ...), so you can see per target
   what a steer is good for, and a batch sends each ticked card's own guidance.
+- **`alix doctor --grading`: is your model good enough to grade exams?** An
+  opt-in spot-check (three real, costed calls) that runs six hand-labeled
+  grading probes against the configured backend: wrong, empty, off-topic, and
+  incomplete answers that must not pass, and correct answers that should. It
+  reports the two directions with different weight, since a model that passes
+  a wrong answer makes "mastered" overstate understanding, while one that
+  misses a correct answer is only harsher than intended.
 - **The review screen's up/down navigation is now rebindable.** The
   multiple-choice and key-point lists move with `k`/`j` by default (the arrow
   keys always work too); rebind them under `[keys.review]` as `up`/`down`, like

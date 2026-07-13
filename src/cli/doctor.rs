@@ -234,8 +234,65 @@ pub(crate) fn doctor_cmd(args: DoctorArgs) -> Result<()> {
         println!();
         alix::backend::health::check(&config.ask, args.all_backends)?;
     }
+    // The grading spot-check is opt-in and costed too. Probe outcomes never
+    // flip the exit code — they are a spot check on the model, not a broken
+    // setup; only an infrastructure error (no CLI, no login) fails the run.
+    if args.grading {
+        println!();
+        grading_spot_check(&config)?;
+    }
     if failed {
         bail!("doctor found problems (✗ above)");
+    }
+    Ok(())
+}
+
+/// Runs the grader-calibration probes against the configured backend and
+/// prints a per-probe line plus a summary. Safety probes (a wrong answer that
+/// must not pass) and fairness probes (a correct answer that should pass) are
+/// reported with different weight: a safety failure means exam grades may
+/// overstate understanding; a fairness failure only means the grader is harsh.
+fn grading_spot_check(config: &alix::config::Config) -> Result<()> {
+    use alix::calibrate::{self, ProbeKind};
+    println!(
+        "grading spot-check: {} probes, 3 real calls to the configured backend…",
+        calibrate::PROBES.len()
+    );
+    let results = calibrate::run(&config.exam, &config.ask)?;
+    let (mut safety_bad, mut fairness_bad) = (0, 0);
+    for r in &results {
+        let expect = match r.kind {
+            ProbeKind::Safety => "must not pass",
+            ProbeKind::Fairness => "should pass",
+        };
+        let glyph = if r.ok {
+            "✓"
+        } else {
+            match r.kind {
+                ProbeKind::Safety => {
+                    safety_bad += 1;
+                    "✗"
+                }
+                ProbeKind::Fairness => {
+                    fairness_bad += 1;
+                    "!"
+                }
+            }
+        };
+        println!("{glyph} {:<20} {expect}: got {:?}", r.name, r.verdict);
+    }
+    if safety_bad > 0 {
+        println!(
+            "✗ the model passed {safety_bad} answer(s) that must not pass: exam grades from \
+             this model may be too lenient; consider a stronger `[ask]` model for grading"
+        );
+    } else if fairness_bad > 0 {
+        println!(
+            "! safe, but stricter than intended: {fairness_bad} should-pass probe(s) did not \
+             pass. Passing an exam stays honest; it may just be harder than calibrated."
+        );
+    } else {
+        println!("✓ grading looks trustworthy (a spot check, not a guarantee)");
     }
     Ok(())
 }

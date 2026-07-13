@@ -1,126 +1,94 @@
 //! Grader calibration (QUALITY plan, step 4).
 //!
-//! These run the REAL `grade_prompt` through the `claude` CLI against
-//! hand-labeled, adversarial answers, to catch the one failure mode the
-//! deterministic tests structurally cannot: a *lenient* grader. "mastered" is
-//! only as honest as this stays.
+//! These run the REAL `grade_prompt` through the `claude` CLI against the
+//! hand-labeled probes in `alix::calibrate` (the single source `alix doctor
+//! --grading` also runs), to catch the one failure mode the deterministic
+//! tests structurally cannot: a *lenient* grader. "mastered" is only as
+//! honest as this stays.
 //!
 //! Every test here is `#[ignore]`d, so `cargo test` (and CI) compile them but
 //! run none. Run them deliberately, before shipping a change to `grade_prompt`,
 //! with `make calibrate` (needs the `claude` CLI installed and logged in; makes
-//! real, costed calls).
+//! real, costed calls). Unlike doctor's batched spot-check, each test grades
+//! its one probe in its own call, so a failure names exactly the drifted case.
 //!
-//! Two rules keep them robust to the model's nondeterminism. First, fixtures are
-//! clear-cut, never borderline. Second, a "must not pass" case asserts that the
-//! verdict is not `Pass` (Partial or Fail are both fine) — only a genuine
-//! leniency, an actual `Pass`, fails it. A failing calibration run is not a code bug: it
-//! means `grade_prompt` drifted lenient and should be tightened.
+//! Two rules keep the probes robust to the model's nondeterminism. First,
+//! fixtures are clear-cut, never borderline. Second, a Safety probe asserts
+//! only that the verdict is not `Pass` (Partial or Fail are both fine) — only
+//! a genuine leniency, an actual `Pass`, fails it. A failing calibration run
+//! is not a code bug: it means `grade_prompt` drifted and should be re-tuned
+//! (lenient drift on a Safety probe is the serious direction).
 
 use alix::{
-    config::{AskConfig, ExamConfig, Strictness},
+    calibrate::{PROBES, ProbeKind},
+    config::{AskConfig, ExamConfig},
     exam::{ExamQuestion, Verdict, grade_answers},
 };
 
-/// Grades one `answer` against `points` at `strictness`, via the real CLI.
-fn verdict(prompt: &str, points: &[&str], answer: &str, strictness: Strictness) -> Verdict {
+/// Grades the named probe in its own real-CLI call and asserts what its kind
+/// requires: a Fairness probe must `Pass`, a Safety probe must NOT.
+fn assert_probe(name: &str) {
+    let p = PROBES
+        .iter()
+        .find(|p| p.name == name)
+        .unwrap_or_else(|| panic!("no probe named {name:?} in alix::calibrate::PROBES"));
     let q = ExamQuestion {
-        prompt: prompt.to_string(),
-        points: points.iter().map(|p| p.to_string()).collect(),
+        prompt: p.question.to_string(),
+        points: p.points.iter().map(|x| x.to_string()).collect(),
     };
     let result = grade_answers(
         &[q],
-        &[answer.to_string()],
-        strictness,
+        &[p.answer.to_string()],
+        p.strictness,
         &ExamConfig::default(),
         &AskConfig::default(),
     )
     .expect("grade call failed — is the `claude` CLI installed and logged in?");
-    result.grades[0].verdict
+    let v = result.grades[0].verdict;
+    match p.kind {
+        ProbeKind::Fairness => {
+            assert_eq!(Verdict::Pass, v, "{name}: a correct answer was not passed")
+        }
+        ProbeKind::Safety => assert_ne!(
+            Verdict::Pass,
+            v,
+            "{name}: an answer that must not pass was passed"
+        ),
+    }
 }
-
-const MOVE_Q: &str = "Why does Rust move a value on assignment instead of copying it?";
-const MOVE_POINTS: &[&str] = &[
-    "ownership transfers so there is a single owner",
-    "it prevents a double free / use-after-move",
-];
 
 #[test]
 #[ignore = "real claude CLI; run with `make calibrate`"]
 fn confident_but_wrong_is_never_a_pass() {
-    let v = verdict(
-        MOVE_Q,
-        MOVE_POINTS,
-        // Fluent, confident, and the exact opposite of the truth.
-        "Rust deep-copies the value on assignment, so both bindings own \
-         independent data and remain usable afterward.",
-        Strictness::Balanced,
-    );
-    assert_ne!(Verdict::Pass, v, "a confident-but-wrong answer was passed");
+    assert_probe("confident_but_wrong");
 }
 
 #[test]
 #[ignore = "real claude CLI; run with `make calibrate`"]
 fn terse_but_correct_passes_at_balanced() {
-    let v = verdict(
-        MOVE_Q,
-        MOVE_POINTS,
-        "Ownership moves to the new binding and the old one is invalidated, so \
-         the value isn't freed twice.",
-        Strictness::Balanced,
-    );
-    assert_eq!(Verdict::Pass, v, "a terse-but-correct answer was failed");
+    assert_probe("terse_correct");
 }
-
-const TCP_Q: &str = "Why does TCP use a three-way handshake to open a connection?";
-const TCP_POINTS: &[&str] = &[
-    "both sides exchange and agree on initial sequence numbers",
-    "it confirms each side can both send and receive before data flows",
-];
 
 #[test]
 #[ignore = "real claude CLI; run with `make calibrate`"]
 fn an_empty_answer_does_not_pass() {
-    let v = verdict(TCP_Q, TCP_POINTS, "", Strictness::Balanced);
-    assert_ne!(Verdict::Pass, v, "an empty answer was passed");
+    assert_probe("empty_answer");
 }
 
 #[test]
 #[ignore = "real claude CLI; run with `make calibrate`"]
 fn an_off_topic_answer_does_not_pass() {
-    let v = verdict(
-        TCP_Q,
-        TCP_POINTS,
-        // True statements, but they don't answer *why* the handshake is three-way.
-        "TCP is a transport-layer protocol that gives reliable, ordered byte \
-         streams and underpins HTTP, SMTP, and SSH.",
-        Strictness::Balanced,
-    );
-    assert_ne!(Verdict::Pass, v, "an off-topic answer was passed");
+    assert_probe("off_topic");
 }
-
-const BORROW_Q: &str = "What two guarantees does Rust's borrow checker enforce about references?";
-const BORROW_POINTS: &[&str] = &[
-    "many shared (immutable) references OR one mutable reference, never both at once",
-    "a reference must never outlive the data it points to (no dangling references)",
-];
-// Covers the aliasing rule, omits the lifetime / dangling-reference rule.
-const BORROW_HALF: &str = "You can have either many immutable references or a single \
-                           mutable one, but never both at the same time.";
 
 #[test]
 #[ignore = "real claude CLI; run with `make calibrate`"]
 fn strict_fails_an_incomplete_answer() {
-    let v = verdict(BORROW_Q, BORROW_POINTS, BORROW_HALF, Strictness::Strict);
-    assert_ne!(
-        Verdict::Pass,
-        v,
-        "strict passed an answer that omits a required point"
-    );
+    assert_probe("strict_incomplete");
 }
 
 #[test]
 #[ignore = "real claude CLI; run with `make calibrate`"]
 fn lenient_passes_the_same_incomplete_answer() {
-    let v = verdict(BORROW_Q, BORROW_POINTS, BORROW_HALF, Strictness::Lenient);
-    assert_eq!(Verdict::Pass, v, "lenient failed a roughly-right answer");
+    assert_probe("lenient_incomplete");
 }

@@ -111,5 +111,11 @@ notes it.
   in depth (syntax, duplicate answers, trace `% at:` locators, and frozen cards
   that have drifted from their `% origin:` source). `--backends` additionally
   probes the configured AI backend end to end (one real, tiny request);
-  `--all-backends` probes all four. Report-only — it fixes nothing itself.
+  `--all-backends` probes all four. `--grading` spot-checks the configured
+  model's exam grading against six hand-labeled probes (three real, costed
+  calls): answers that must not pass (wrong, empty, off-topic, incomplete at
+  strict) and answers that should (correct ones). A failed must-not-pass probe
+  is the serious direction (exam grades may be too lenient), while a missed
+  should-pass probe only means the grader is harsher than intended. It's a
+  spot check, not a certification. Report-only — it fixes nothing itself.
 - `--config <path>` — use a different config file.
