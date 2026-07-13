@@ -50,6 +50,7 @@ pub mod icon;
 pub mod import;
 #[cfg(feature = "full")]
 pub mod library;
+pub mod listing;
 pub mod parser;
 #[cfg(feature = "full")]
 pub mod picker;
