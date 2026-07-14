@@ -31,6 +31,11 @@ class _ReviewScreenState extends State<ReviewScreen> {
   ChoiceFeedback? _choice;
   CheckFeedback? _check;
   final List<TextEditingController> _typed = [];
+  /// Explain: which keypoint rows are ticked, and the optional client-only
+  /// attempt (never sent, never graded; a slot a draw canvas can fill later).
+  final Set<int> _ticked = {};
+  bool _attemptOpen = false;
+  final TextEditingController _attempt = TextEditingController();
 
   @override
   void initState() {
@@ -43,6 +48,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
     for (final c in _typed) {
       c.dispose();
     }
+    _attempt.dispose();
     super.dispose();
   }
 
@@ -63,6 +69,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
     _revealedLines = 1;
     _choice = null;
     _check = null;
+    _ticked.clear();
+    _attemptOpen = false;
+    _attempt.clear();
     final lines = next.mode == Mode.typeLine ? (next.card?.back.length ?? 1) : 1;
     while (_typed.length < lines) {
       _typed.add(TextEditingController());
@@ -167,7 +176,25 @@ class _ReviewScreenState extends State<ReviewScreen> {
             Text(line, textAlign: TextAlign.center, style: answerStyle),
         ] else if (_isTyping && !_state.acquire)
           _typing(context, card)
-        else if (showBack) ...[
+        else if (_isExplain) ...[
+          if (!_revealed)
+            _attemptSlot(context)
+          else ...[
+            if (_attempt.text.trim().isNotEmpty) ...[
+              Text(
+                _attempt.text.trim(),
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium
+                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 16),
+            ],
+            for (final line in card.back)
+              Text(line, textAlign: TextAlign.center, style: answerStyle),
+            const SizedBox(height: 16),
+            _checklist(context),
+          ],
+        ] else if (showBack) ...[
           for (final line in card.back)
             Text(line, textAlign: TextAlign.center, style: answerStyle),
         ],
@@ -202,6 +229,71 @@ class _ReviewScreenState extends State<ReviewScreen> {
 
   bool get _isTyping =>
       _state.mode == Mode.typing || _state.mode == Mode.typeLine;
+
+  /// Explain past acquire always carries a rubric (core fills the fallback).
+  bool get _isExplain =>
+      _state.mode == Mode.explain &&
+      !_state.acquire &&
+      _state.keypoints != null;
+
+  /// The optional client-only attempt: collapsed on every device; a phone
+  /// ignores it, a tablet gets its keyboard. Never sent, never graded.
+  Widget _attemptSlot(BuildContext context) {
+    if (!_attemptOpen) {
+      return TextButton(
+        onPressed: () => setState(() => _attemptOpen = true),
+        child: const Text('type it first'),
+      );
+    }
+    return TextField(
+      controller: _attempt,
+      minLines: 2,
+      maxLines: 5,
+      decoration: const InputDecoration(
+        border: OutlineInputBorder(),
+        labelText: 'your explanation (stays on this device)',
+      ),
+    );
+  }
+
+  /// The tick-each-keypoint rubric plus a live verdict hint; Continue in the
+  /// action row commits the tally as the grade.
+  Widget _checklist(BuildContext context) {
+    final theme = Theme.of(context);
+    final points = _state.keypoints ?? const [];
+    final hint = theme.textTheme.bodyMedium
+        ?.copyWith(color: theme.colorScheme.onSurfaceVariant);
+    return Column(
+      children: [
+        Text('did you cover these?', style: hint),
+        const SizedBox(height: 4),
+        for (final (i, point) in points.indexed)
+          CheckboxListTile(
+            dense: true,
+            controlAffinity: ListTileControlAffinity.leading,
+            value: _ticked.contains(i),
+            onChanged: (_) => setState(
+              () => _ticked.contains(i) ? _ticked.remove(i) : _ticked.add(i),
+            ),
+            title: Text(point),
+          ),
+        const SizedBox(height: 4),
+        Text('${_ticked.length}/${points.length} → ${_verdict()}', style: hint),
+      ],
+    );
+  }
+
+  String _verdict() {
+    final grade = keypointGrade(
+      covered: _ticked.length,
+      total: (_state.keypoints ?? const []).length,
+    );
+    return switch (grade) {
+      Grade.fail => 'fail',
+      Grade.partial => 'partial',
+      Grade.pass => 'pass',
+    };
+  }
 
   bool _lineDone(CardView card) =>
       _state.mode == Mode.lineByLine && _revealedLines >= card.back.length;
@@ -317,7 +409,18 @@ class _ReviewScreenState extends State<ReviewScreen> {
       }
       return _gradeRow();
     }
-    // Flip (and, until M3, Explain rendered as flip).
+    // Explain: the ticks ARE the grade (the same keypoint_grade rule the web
+    // submits {covered, total} to), so Continue replaces the grade row.
+    if (_isExplain && _revealed) {
+      return FilledButton(
+        onPressed: () => _grade(keypointGrade(
+          covered: _ticked.length,
+          total: _state.keypoints!.length,
+        )),
+        child: const Text('Continue'),
+      );
+    }
+    // Flip (and Explain before its reveal).
     if (!_revealed) {
       return FilledButton(
         onPressed: () => setState(() => _revealed = true),

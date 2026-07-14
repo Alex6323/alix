@@ -7,6 +7,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **The mobile app reviews Explain cards with the keypoint checklist.** After
+  the reveal you tick which key points your reconstruction covered (the cached
+  keypoints augment, else the card's own answer lines) and the tally derives
+  the grade, exactly like the web. An optional collapsed "type it first" field
+  lets you write your attempt before revealing; it never leaves the device.
 - **The adult theme gallery's Kids group now offers Sunrise, Ocean, and
   Berry** — the same three themes the kids app ships, re-derived as full adult
   palettes (every token the picker needs, contrast-checked for the adult UI's

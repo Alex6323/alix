@@ -114,6 +114,66 @@ void main() {
     expect(find.text('m'), findsOneWidget);
   });
 
+  test('keypointGrade maps the tally like core', () {
+    expect(keypointGrade(covered: 0, total: 3), Grade.fail);
+    expect(keypointGrade(covered: 2, total: 3), Grade.partial);
+    expect(keypointGrade(covered: 3, total: 3), Grade.pass);
+    expect(keypointGrade(covered: 0, total: 0), Grade.pass,
+        reason: 'no rubric, nothing to miss');
+  });
+
+  testWidgets('the explain checklist derives the grade from the ticks',
+      (tester) async {
+    final root = makeRoot();
+    addTearDown(() => root.deleteSync(recursive: true));
+    // A seen multi-line flip card at Reconstruct renders as Explain; with no
+    // cached keypoints the rubric falls back to the authored back lines.
+    final deck = '${root.path}/why.txt';
+    File(deck).writeAsStringSync(
+      '# why does spacing work?\n'
+      '    recall strengthens the memory\n'
+      '    stronger memories fade more slowly\n',
+    );
+    final backdated =
+        BigInt.from(DateTime.now().millisecondsSinceEpoch - 120000);
+    final s = ReviewSession.open(
+        deckPath: deck, rootDir: root.path, nowMs: backdated);
+    s.acquire(nowMs: backdated);
+
+    await tester.pumpWidget(MaterialApp(
+      home: ReviewScreen(
+        deckPath: deck,
+        rootDir: root.path,
+        depth: Depth.reconstruct,
+      ),
+    ));
+    expect(find.text('why does spacing work?'), findsOneWidget);
+    await tester.tap(find.text('Reveal'));
+    await tester.pump();
+
+    // The rubric renders as tickable rows; nothing ticked reads as a fail.
+    expect(find.byType(CheckboxListTile), findsNWidgets(2));
+    expect(find.textContaining('0/2'), findsOneWidget);
+
+    // Tick both keypoints: the live verdict flips to pass.
+    await tester.tap(find.byType(CheckboxListTile).at(0));
+    await tester.pump();
+    await tester.tap(find.byType(CheckboxListTile).at(1));
+    await tester.pump();
+    expect(find.textContaining('2/2'), findsOneWidget);
+
+    // Continue commits the tick-derived grade. The store's review history
+    // records the grade itself, so a full tally MUST land as a Pass; a
+    // "Done for now" screen alone can't tell (a Fail also floors the card).
+    await tester.tap(find.text('Continue'));
+    await tester.pump();
+    expect(find.text('Done for now'), findsOneWidget);
+    final store = File('${root.path}/progress.json').readAsStringSync();
+    expect(store, contains('"reconstruct"'));
+    expect(store, contains('"Pass"'),
+        reason: 'all keypoints ticked grades as a Pass, not a Fail');
+  });
+
   testWidgets('review flows from reveal to grade on a due card',
       (tester) async {
     final root = makeRoot();

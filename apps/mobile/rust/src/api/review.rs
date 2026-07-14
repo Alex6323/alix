@@ -96,6 +96,7 @@ pub struct _CheckFeedback {
 }
 
 /// The learner's self-grade, mirrored so frb bridges it from this crate.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Grade {
     Fail,
     Partial,
@@ -110,6 +111,24 @@ impl From<Grade> for alix::scheduler::Grade {
             Grade::Pass => alix::scheduler::Grade::Pass,
         }
     }
+}
+
+impl From<alix::scheduler::Grade> for Grade {
+    fn from(g: alix::scheduler::Grade) -> Self {
+        match g {
+            alix::scheduler::Grade::Fail => Grade::Fail,
+            alix::scheduler::Grade::Partial => Grade::Partial,
+            alix::scheduler::Grade::Pass => Grade::Pass,
+        }
+    }
+}
+
+/// The Explain checklist tally as a grade: none covered fails, all pass,
+/// some is a partial. The rule lives in core (`scheduler::keypoint_grade`);
+/// this is only the bridge.
+#[flutter_rust_bridge::frb(sync)]
+pub fn keypoint_grade(covered: u32, total: u32) -> Grade {
+    alix::scheduler::keypoint_grade(covered as usize, total as usize).into()
 }
 
 /// A live review session running in Rust: the alix session plus its open
@@ -296,6 +315,15 @@ mod tests {
         let correct = feedback.correct;
         assert!(s.choose(correct as u32).expect("feedback").passed);
         assert_eq!(s.state(Some(LATER)).choices.as_deref(), Some(&options[..]));
+    }
+
+    #[test]
+    fn keypoint_grade_maps_the_tally_like_core() {
+        assert_eq!(keypoint_grade(0, 3), Grade::Fail);
+        assert_eq!(keypoint_grade(1, 3), Grade::Partial);
+        assert_eq!(keypoint_grade(2, 3), Grade::Partial);
+        assert_eq!(keypoint_grade(3, 3), Grade::Pass);
+        assert_eq!(keypoint_grade(0, 0), Grade::Pass, "no rubric, nothing to miss");
     }
 
     #[test]

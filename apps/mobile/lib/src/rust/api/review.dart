@@ -8,7 +8,15 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'review.freezed.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `clone`, `eq`, `fmt`, `from`, `from`
+
+/// The Explain checklist tally as a grade: none covered fails, all pass,
+/// some is a partial. The rule lives in core (`scheduler::keypoint_grade`);
+/// this is only the bridge.
+Grade keypointGrade({required int covered, required int total}) => RustLib
+    .instance
+    .api
+    .crateApiReviewKeypointGrade(covered: covered, total: total);
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ReviewSession>>
 abstract class ReviewSession implements RustOpaqueInterface {
