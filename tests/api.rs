@@ -1655,6 +1655,155 @@ fn each_batch_target_carries_its_own_guidance() {
     );
 }
 
+/// A capturing fake CLI for batch-conversation tests: appends each call's argv
+/// to `args.log` and its prompt to `prompt-<n>.log`, then replies with the
+/// canned `replies[n]`. A `fail-<n>` marker file makes call n exit 1 instead.
+fn fake_conversation_cli(scripts: &TempDir, replies: &[&str]) -> PathBuf {
+    for (i, reply) in replies.iter().enumerate() {
+        std::fs::write(scripts.path().join(format!("reply-{i}")), reply).unwrap();
+    }
+    let d = scripts.path().display();
+    let fake = scripts.path().join("fake-claude");
+    std::fs::write(
+        &fake,
+        format!(
+            "#!/bin/sh\nPATH=/usr/bin:/bin\n\
+             N=$(cat {d}/n 2>/dev/null || echo 0)\n\
+             echo \"$@\" >> {d}/args.log\n\
+             cat >> {d}/prompt-$N.log\n\
+             echo $((N+1)) > {d}/n\n\
+             if [ -f {d}/fail-$N ]; then exit 1; fi\n\
+             cat {d}/reply-$N\n"
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    fake
+}
+
+/// The uuid following `flag` in a logged argv line.
+fn session_id_after(line: &str, flag: &str) -> String {
+    line.split_whitespace()
+        .skip_while(|w| *w != flag)
+        .nth(1)
+        .unwrap_or_else(|| panic!("no {flag} id in: {line}"))
+        .to_string()
+}
+
+#[test]
+fn a_batch_reuses_one_claude_session_across_targets() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let reply = r#"{"0": ["w1","w2","w3"]}"#;
+    let fake = fake_conversation_cli(&scripts, &[reply, reply]);
+    let (base, _guard) = spawn_full_server(Some(&fake));
+    post_json(&base, "/api/augment/open", r#"{"deck":"choice.txt"}"#);
+
+    let resp = post_json(
+        &base,
+        "/api/augment/generate",
+        r#"{"targets":[{"target":"choices"},{"target":"questions"}]}"#,
+    );
+    assert_eq!(200, resp.status);
+    poll_until(&base, "/api/augment", |b| {
+        b["busy"].is_null() && b["queued"].as_array().is_some_and(|q| q.is_empty())
+    });
+
+    let args = std::fs::read_to_string(scripts.path().join("args.log")).unwrap();
+    let calls: Vec<&str> = args.lines().collect();
+    assert_eq!(2, calls.len(), "{args}");
+    assert!(calls[0].contains("--session-id"), "{args}");
+    assert!(calls[1].contains("--resume"), "{args}");
+    let id = session_id_after(calls[0], "--session-id");
+    assert!(
+        calls[1].contains(&id),
+        "one conversation across the batch: {args}"
+    );
+
+    let primer = std::fs::read_to_string(scripts.path().join("prompt-0.log")).unwrap();
+    let follow_up = std::fs::read_to_string(scripts.path().join("prompt-1.log")).unwrap();
+    assert!(
+        primer.contains("3 + 3"),
+        "the first call lists the cards: {primer}"
+    );
+    assert!(
+        follow_up.contains("already provided in this conversation"),
+        "{follow_up}"
+    );
+    assert!(
+        !follow_up.contains("3 + 3"),
+        "a follow-up must not re-list the cards: {follow_up}"
+    );
+}
+
+#[test]
+fn a_failed_target_starts_a_fresh_session_for_the_rest_of_the_batch() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let reply = r#"{"0": ["w1","w2","w3"]}"#;
+    let fake = fake_conversation_cli(&scripts, &[reply, reply, reply]);
+    // The second call (the questions target) dies; the batch must carry on
+    // with a FRESH session for keypoints rather than resuming a dead one.
+    std::fs::write(scripts.path().join("fail-1"), "").unwrap();
+    let (base, _guard) = spawn_full_server(Some(&fake));
+    post_json(&base, "/api/augment/open", r#"{"deck":"choice.txt"}"#);
+
+    let resp = post_json(
+        &base,
+        "/api/augment/generate",
+        r#"{"targets":[{"target":"choices"},{"target":"questions"},{"target":"keypoints"}]}"#,
+    );
+    assert_eq!(200, resp.status);
+    poll_until(&base, "/api/augment", |b| {
+        b["busy"].is_null()
+            && b["queued"].as_array().is_some_and(|q| q.is_empty())
+            && b["failed"].as_array().is_some_and(|f| !f.is_empty())
+    });
+
+    let args = std::fs::read_to_string(scripts.path().join("args.log")).unwrap();
+    let calls: Vec<&str> = args.lines().collect();
+    assert_eq!(3, calls.len(), "{args}");
+    let first = session_id_after(calls[0], "--session-id");
+    assert!(calls[1].contains("--resume"), "{args}");
+    let third = session_id_after(calls[2], "--session-id");
+    assert_ne!(first, third, "a failed call must not be resumed: {args}");
+    let reprime = std::fs::read_to_string(scripts.path().join("prompt-2.log")).unwrap();
+    assert!(
+        reprime.contains("3 + 3"),
+        "the fresh session re-primes the roster: {reprime}"
+    );
+}
+
+#[test]
+fn a_single_target_batch_stays_a_stateless_one_shot() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let fake = fake_conversation_cli(&scripts, &[r#"{"0": "a note"}"#]);
+    let (base, _guard) = spawn_full_server(Some(&fake));
+    post_json(&base, "/api/augment/open", r#"{"deck":"choice.txt"}"#);
+
+    let resp = post_json(
+        &base,
+        "/api/augment/generate",
+        r#"{"targets":[{"target":"notes"}]}"#,
+    );
+    assert_eq!(200, resp.status);
+    poll_until(&base, "/api/augment", |b| {
+        b["busy"].is_null() && b["done"].as_array().is_some_and(|d| !d.is_empty())
+    });
+
+    let args = std::fs::read_to_string(scripts.path().join("args.log")).unwrap();
+    assert!(
+        !args.contains("--session-id") && !args.contains("--resume"),
+        "one call gains nothing from a session: {args}"
+    );
+    let prompt = std::fs::read_to_string(scripts.path().join("prompt-0.log")).unwrap();
+    assert!(
+        prompt.contains("3 + 3"),
+        "the one-shot lists its cards: {prompt}"
+    );
+}
+
 /// A small two-deck workspace written into the test decks dir by the
 /// `spawn_full_server_fixture` closure: 2 + 3 cards, so a union open reports 5.
 fn write_workspace_fixture(dir: &Path) {

@@ -489,6 +489,9 @@ pub(super) struct Augmenting {
     /// across the union of member cards, and workspace-specific targets (the
     /// icon) become available. `None` for a plain deck.
     pub(super) workspace_dir: Option<PathBuf>,
+    /// One Claude conversation spanning the current batch (`None`: a
+    /// sessionless backend, or a batch too small to profit); rebuilt per batch.
+    conversation: Option<augment_ai::BatchConversation>,
     pub(super) pending: Option<AugmentPending>,
     /// The last generation/save error, shown until the next action clears it.
     pub(super) error: Option<String>,
@@ -507,6 +510,9 @@ pub(super) struct AugmentPending {
     pub(super) rx: Receiver<Result<augment_ai::Outcome, String>>,
     pub(super) target: &'static str,
     pub(super) started: Instant,
+    /// Whether the job rode the batch conversation, so its outcome should
+    /// advance (or, on failure, reset) the session.
+    sessionful: bool,
 }
 
 /// Maps a queued target string to its canonical `&'static str` token, so the
@@ -531,6 +537,22 @@ fn has_icon(dir: &Path) -> bool {
     crate::workspace::Workspace::load(dir).is_ok_and(|ws| ws.icon.is_some())
 }
 
+/// The cards a batch target would generate for: its cache gap (topology: the
+/// whole deck), or `None` for a target with no card gap (icon, unknown). Gap
+/// sets are independent across targets (each outcome only fills its own kind),
+/// so a batch can compute them all up front.
+fn gap_items(target: &str, cards: &[Card], cache: &AugmentCache) -> Option<Vec<augment::WarmItem>> {
+    match target {
+        "choices" => Some(cache.missing_choices(cards)),
+        "notes" => Some(cache.missing_notes(cards)),
+        "questions" => Some(cache.missing_questions(cards)),
+        "keypoints" => Some(cache.missing_keypoints(cards)),
+        "format" => Some(cache.missing_format(cards)),
+        "topology" => Some(cards.iter().map(augment::WarmItem::from_card).collect()),
+        _ => None,
+    }
+}
+
 impl Augmenting {
     /// Opens the Augment screen: for a deck, `cards` are its own and
     /// `workspace_dir` is `None`; for a workspace, `cards` are the union of
@@ -550,6 +572,7 @@ impl Augmenting {
             deck_ids,
             cache: AugmentCache::open(cache_path),
             workspace_dir,
+            conversation: None,
             pending: None,
             error: None,
             queue: VecDeque::new(),
@@ -640,6 +663,28 @@ impl Augmenting {
         self.done.clear();
         self.failed.clear();
         self.queue = targets.into_iter().collect();
+        // One Claude conversation for the whole batch when at least two targets
+        // have cards to generate for: the roster (the union of their gaps) is
+        // sent once and each target references it by index. A single-call batch
+        // stays a stateless one-shot; its subset-only prompt is smaller than
+        // priming a roster.
+        self.conversation = None;
+        let gap_sets: Vec<Vec<augment::WarmItem>> = self
+            .queue
+            .iter()
+            .filter_map(|(target, _)| gap_items(target, &self.cards, &self.cache))
+            .filter(|items| !items.is_empty())
+            .collect();
+        if gap_sets.len() >= 2 {
+            let mut seen = HashSet::new();
+            let roster: Vec<augment::WarmItem> = gap_sets
+                .into_iter()
+                .flatten()
+                .filter(|item| seen.insert(item.id))
+                .collect();
+            let cfg = augment_ai::run_config(ai, ask);
+            self.conversation = augment_ai::BatchConversation::new(&cfg, roster);
+        }
         self.start_next(ai, ask)
     }
 
@@ -650,7 +695,7 @@ impl Augmenting {
         while let Some((target, guidance)) = self.queue.pop_front() {
             let (job, tgt): (augment_ai::Job, &'static str) = match target.as_str() {
                 "choices" => {
-                    let items = self.cache.missing_choices(&self.cards);
+                    let items = gap_items("choices", &self.cards, &self.cache).unwrap_or_default();
                     if items.is_empty() {
                         self.done.push("choices");
                         continue;
@@ -664,7 +709,7 @@ impl Augmenting {
                     )
                 }
                 "notes" => {
-                    let items = self.cache.missing_notes(&self.cards);
+                    let items = gap_items("notes", &self.cards, &self.cache).unwrap_or_default();
                     if items.is_empty() {
                         self.done.push("notes");
                         continue;
@@ -672,7 +717,8 @@ impl Augmenting {
                     (augment_ai::Job::Notes { items }, "notes")
                 }
                 "questions" => {
-                    let items = self.cache.missing_questions(&self.cards);
+                    let items =
+                        gap_items("questions", &self.cards, &self.cache).unwrap_or_default();
                     if items.is_empty() {
                         self.done.push("questions");
                         continue;
@@ -686,7 +732,8 @@ impl Augmenting {
                     )
                 }
                 "keypoints" => {
-                    let items = self.cache.missing_keypoints(&self.cards);
+                    let items =
+                        gap_items("keypoints", &self.cards, &self.cache).unwrap_or_default();
                     if items.is_empty() {
                         self.done.push("keypoints");
                         continue;
@@ -700,7 +747,7 @@ impl Augmenting {
                     )
                 }
                 "format" => {
-                    let items = self.cache.missing_format(&self.cards);
+                    let items = gap_items("format", &self.cards, &self.cache).unwrap_or_default();
                     if items.is_empty() {
                         self.done.push("format");
                         continue;
@@ -727,11 +774,20 @@ impl Augmenting {
                 // Unknown target: nothing to record, try the next queued one.
                 _ => continue,
             };
-            let rx = augment_ai::spawn(job, guidance, augment_ai::run_config(ai, ask), None);
+            // The icon draw never rides the batch conversation (card-free).
+            let sessionful = tgt != "icon" && self.conversation.is_some();
+            let conversation = if sessionful {
+                self.conversation.clone()
+            } else {
+                None
+            };
+            let rx =
+                augment_ai::spawn(job, guidance, augment_ai::run_config(ai, ask), conversation);
             self.pending = Some(AugmentPending {
                 rx,
                 target: tgt,
                 started: Instant::now(),
+                sessionful,
             });
             return true;
         }
@@ -754,14 +810,27 @@ impl Augmenting {
             }
         };
         let target = p.target;
+        let sessionful = p.sessionful;
         self.pending = None;
         match outcome {
             Ok(o) => {
+                // The call succeeded, so the conversation (if this job rode
+                // one) now exists CLI-side: later targets resume it.
+                if sessionful && let Some(conversation) = self.conversation.as_mut() {
+                    conversation.session.started = true;
+                }
                 self.apply(o);
                 self.save();
                 self.done.push(target);
             }
-            Err(e) => self.failed.push((target, e)),
+            Err(e) => {
+                // Never resume a session in an unknown state: the next
+                // sessionful target starts fresh and re-primes the roster.
+                if sessionful && let Some(conversation) = self.conversation.as_mut() {
+                    conversation.reset();
+                }
+                self.failed.push((target, e));
+            }
         }
         self.start_next(ai, ask);
     }
