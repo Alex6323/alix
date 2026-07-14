@@ -1,6 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Shared decks folder (opt-in via the picker menu, Android 11+): the
+         Rust core does plain-file I/O on a folder another all-files app
+         (e.g. Syncthing) already manages, so All Files Access is the honest
+         model. Never requested at launch. -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
     <application
-        android:label="alix_mobile"
+        android:label="alix"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
