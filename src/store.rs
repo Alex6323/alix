@@ -24,6 +24,11 @@ const HISTORY_CAP: usize = 50;
 /// that door stays open.
 const CURRENT_VERSION: u32 = 1;
 
+/// How recent a foreign write must be to warrant a warning: an older one is
+/// ordinary roaming (yesterday's desktop session), not a likely concurrent
+/// device. The rule lives here so every client warns the same way.
+pub const FOREIGN_WRITE_WARN_WINDOW_MS: u64 = 60 * 60 * 1000;
+
 /// One recorded review of a card.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Review {
@@ -262,6 +267,18 @@ pub struct VirtualCard {
     pub created_ms: u64,
 }
 
+/// The last-writer marker: which device wrote the store, and when. The
+/// multi-device discipline is one device at a time; this marker turns a
+/// silent violation into a visible warning (see
+/// [`Store::recent_foreign_writer`]).
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Writer {
+    /// The writing device's label (see [`device_label`]).
+    pub device: String,
+    /// When that device last saved (Unix ms).
+    pub at_ms: u64,
+}
+
 /// On-disk representation of the store.
 #[derive(Serialize, Deserialize)]
 struct StoreFile {
@@ -284,6 +301,10 @@ struct StoreFile {
     /// Absent in a store with no virtual cards.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     virtual_cards: HashMap<String, serde_json::Value>,
+    /// Who wrote this file last. Absent in stores from before the field or
+    /// written by an unnamed consumer; loaded leniently via the default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    writer: Option<Writer>,
 }
 
 /// The progress store for all decks.
@@ -292,6 +313,12 @@ pub struct Store {
     cards: HashMap<u64, CardState>,
     decks: HashMap<String, DeckProgress>,
     virtual_cards: HashMap<u64, VirtualCard>,
+    /// This device's label, stamped into the file on every save. `None` (the
+    /// default) leaves the file's existing marker untouched, so tests and
+    /// one-off tools do not masquerade as a device.
+    pub device: Option<String>,
+    /// The marker loaded from disk: the device that wrote this store last.
+    last_writer: Option<Writer>,
 }
 
 /// An error loading or saving the store.
@@ -323,6 +350,8 @@ impl Store {
                 cards: HashMap::new(),
                 decks: HashMap::new(),
                 virtual_cards: HashMap::new(),
+                device: None,
+                last_writer: None,
             });
         }
 
@@ -366,6 +395,8 @@ impl Store {
             cards,
             decks: file.decks,
             virtual_cards,
+            device: None,
+            last_writer: file.writer,
         })
     }
 
@@ -400,6 +431,16 @@ impl Store {
                 .collect(),
             decks: self.decks.clone(),
             virtual_cards,
+            // An unnamed consumer preserves the marker on disk rather than
+            // erasing what the last real device wrote.
+            writer: self
+                .device
+                .clone()
+                .map(|device| Writer {
+                    device,
+                    at_ms: crate::time::now_ms(),
+                })
+                .or_else(|| self.last_writer.clone()),
         };
         let json = serde_json::to_string_pretty(&file).map_err(|source| StoreError::Format {
             path: self.path.clone(),
@@ -410,6 +451,26 @@ impl Store {
         std::fs::write(&tmp, json).map_err(io_err)?;
         std::fs::rename(&tmp, &self.path).map_err(io_err)?;
         Ok(())
+    }
+
+    /// The device that last wrote this store when it was not `my_device`:
+    /// `(device, age_ms)` relative to `now_ms`. `None` when the store is
+    /// unmarked or this device wrote it itself.
+    pub fn foreign_writer(&self, my_device: &str, now_ms: u64) -> Option<(String, u64)> {
+        let writer = self.last_writer.as_ref()?;
+        if writer.device == my_device {
+            return None;
+        }
+        Some((writer.device.clone(), now_ms.saturating_sub(writer.at_ms)))
+    }
+
+    /// [`foreign_writer`](Self::foreign_writer) filtered to
+    /// [`FOREIGN_WRITE_WARN_WINDOW_MS`]: the "another device wrote this
+    /// moments ago" case a client surfaces before the user reviews on top
+    /// of a likely fork.
+    pub fn recent_foreign_writer(&self, my_device: &str, now_ms: u64) -> Option<(String, u64)> {
+        self.foreign_writer(my_device, now_ms)
+            .filter(|(_, age_ms)| *age_ms < FOREIGN_WRITE_WARN_WINDOW_MS)
     }
 
     /// Returns the state of a card, if it has been seen before.
@@ -786,6 +847,72 @@ fn adopt_legacy_dir(old: &Path, new: &Path) {
     let _ = std::fs::rename(old, new);
 }
 
+/// Syncthing conflict copies sitting next to `store_path`
+/// (`<stem>.sync-conflict-*.<ext>`): evidence that two devices wrote the
+/// store concurrently. Sorted for stable output; a missing directory is
+/// simply no conflicts.
+pub fn sync_conflicts(store_path: &Path) -> Vec<PathBuf> {
+    let Some(dir) = store_path.parent() else {
+        return Vec::new();
+    };
+    let (Some(stem), Some(ext)) = (
+        store_path.file_stem().and_then(|s| s.to_str()),
+        store_path.extension().and_then(|e| e.to_str()),
+    ) else {
+        return Vec::new();
+    };
+    let prefix = format!("{stem}.sync-conflict-");
+    let suffix = format!(".{ext}");
+    let mut out: Vec<PathBuf> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|name| name.starts_with(&prefix) && name.ends_with(&suffix))
+        })
+        .collect();
+    out.sort();
+    out
+}
+
+/// The label this machine stamps into stores it writes (see
+/// [`Store::device`]): the trimmed content of the `device` file in `dir`,
+/// created as `alix-<4 hex>` on first use. Plaintext on purpose: name your
+/// machine by editing the file (e.g. to `desktop`).
+pub fn device_label_in(dir: &Path) -> Option<String> {
+    let path = dir.join("device");
+    if let Ok(text) = std::fs::read_to_string(&path) {
+        let label = text.trim();
+        if !label.is_empty() {
+            return Some(label.to_string());
+        }
+    }
+    let label = generate_device_label();
+    std::fs::create_dir_all(dir).ok()?;
+    std::fs::write(&path, format!("{label}\n")).ok()?;
+    Some(label)
+}
+
+/// [`device_label_in`] against the default alix data dir
+/// (`~/.local/share/alix` on Linux).
+pub fn device_label() -> Option<String> {
+    let dirs = directories::ProjectDirs::from("", "", "alix")?;
+    device_label_in(dirs.data_dir())
+}
+
+/// `alix-<4 hex>`: unique enough to tell one user's devices apart, from
+/// std-only randomness (a randomly keyed hasher).
+fn generate_device_label() -> String {
+    use std::hash::{BuildHasher, Hasher};
+    let r = std::collections::hash_map::RandomState::new()
+        .build_hasher()
+        .finish();
+    format!("alix-{:04x}", r & 0xffff)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -796,6 +923,113 @@ mod tests {
         let path = dir.path().join("progress.json");
         let store = Store::open(&path).unwrap();
         assert!(store.is_empty());
+    }
+
+    #[test]
+    fn save_stamps_the_writer_and_a_reopen_sees_it_as_foreign_elsewhere() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("progress.json");
+        let mut store = Store::open(&path).unwrap();
+        store.device = Some("desk-1".into());
+        store.save().unwrap();
+
+        let reopened = Store::open(&path).unwrap();
+        let (device, _) = reopened
+            .foreign_writer("phone-1", crate::time::now_ms())
+            .expect("another device sees the marker");
+        assert_eq!(device, "desk-1");
+        assert!(
+            reopened
+                .foreign_writer("desk-1", crate::time::now_ms())
+                .is_none(),
+            "a device's own writes are not foreign"
+        );
+    }
+
+    #[test]
+    fn an_unnamed_save_preserves_the_existing_writer_marker() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("progress.json");
+        let mut store = Store::open(&path).unwrap();
+        store.device = Some("desk-1".into());
+        store.save().unwrap();
+
+        // A consumer with no device (a test, a one-off tool) saves without
+        // erasing who really wrote last.
+        let unnamed = Store::open(&path).unwrap();
+        unnamed.save().unwrap();
+        let reopened = Store::open(&path).unwrap();
+        let (device, _) = reopened
+            .foreign_writer("phone-1", crate::time::now_ms())
+            .expect("the marker survives an unnamed save");
+        assert_eq!(device, "desk-1");
+    }
+
+    #[test]
+    fn a_store_without_a_writer_marker_loads_and_reports_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("progress.json");
+        std::fs::write(&path, r#"{"version":1,"cards":{}}"#).unwrap();
+        let store = Store::open(&path).unwrap();
+        assert!(store.foreign_writer("phone-1", 0).is_none());
+    }
+
+    #[test]
+    fn the_warn_window_separates_roaming_from_concurrent_writes() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("progress.json")).unwrap();
+        store.last_writer = Some(Writer {
+            device: "desk-1".into(),
+            at_ms: 1_000,
+        });
+        let just_inside = 1_000 + FOREIGN_WRITE_WARN_WINDOW_MS - 1;
+        let at_the_edge = 1_000 + FOREIGN_WRITE_WARN_WINDOW_MS;
+        assert!(store.recent_foreign_writer("phone-1", just_inside).is_some());
+        assert!(
+            store.recent_foreign_writer("phone-1", at_the_edge).is_none(),
+            "an old write is ordinary roaming, not a warning"
+        );
+        assert!(store.recent_foreign_writer("desk-1", just_inside).is_none());
+    }
+
+    #[test]
+    fn sync_conflicts_finds_syncthing_copies_and_ignores_near_misses() {
+        let dir = tempfile::tempdir().unwrap();
+        let store_path = dir.path().join("progress.json");
+        std::fs::write(&store_path, "{}").unwrap();
+        let conflict = dir
+            .path()
+            .join("progress.sync-conflict-20260714-101112-ABCDEF7.json");
+        std::fs::write(&conflict, "{}").unwrap();
+        for near_miss in [
+            "recent.sync-conflict-20260714-101112-AAAAAAA.json",
+            "progress.sync-conflict-20260714.txt",
+            "progress.json.tmp",
+        ] {
+            std::fs::write(dir.path().join(near_miss), "{}").unwrap();
+        }
+        assert_eq!(sync_conflicts(&store_path), vec![conflict]);
+        assert_eq!(
+            sync_conflicts(&dir.path().join("missing/progress.json")),
+            Vec::<PathBuf>::new()
+        );
+    }
+
+    #[test]
+    fn device_label_is_created_once_and_stays_editable() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = device_label_in(dir.path()).unwrap();
+        assert!(
+            first.starts_with("alix-") && first.len() == 9,
+            "generated shape: {first}"
+        );
+        assert_eq!(
+            device_label_in(dir.path()).unwrap(),
+            first,
+            "stable across calls"
+        );
+        std::fs::write(dir.path().join("device"), "desktop\n").unwrap();
+        assert_eq!(device_label_in(dir.path()).unwrap(), "desktop");
     }
 
     #[test]

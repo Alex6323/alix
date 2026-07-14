@@ -7,7 +7,12 @@
 use std::path::{Path, PathBuf};
 
 use crate::{
-    config::ReviewConfig, deck::Deck, depth::Depth, scheduler::Fsrs, session, store::Store,
+    config::ReviewConfig,
+    deck::Deck,
+    depth::Depth,
+    scheduler::Fsrs,
+    session,
+    store::{self, Store},
     workspace,
 };
 
@@ -74,6 +79,28 @@ pub fn list_members(
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// Syncthing conflict copies next to any store `root` reviews into: the
+/// root's shared store plus each workspace member's own. Non-empty means two
+/// devices wrote concurrently; clients surface it so the user resolves the
+/// fork before reviewing on top of it.
+pub fn sync_conflicts_under(root: &Path) -> Vec<PathBuf> {
+    let mut out = store::sync_conflicts(&workspace::root_store_path(root));
+    let mut entries: Vec<PathBuf> = std::fs::read_dir(root)
+        .map(|entries| entries.flatten().map(|e| e.path()).collect())
+        .unwrap_or_default();
+    entries.sort();
+    for path in entries {
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if name.starts_with('.') {
+            continue;
+        }
+        if path.is_dir() && workspace::is_workspace(&path) {
+            out.extend(store::sync_conflicts(&workspace::store_path(&path)));
+        }
+    }
+    out
 }
 
 /// The store a folder's members review into: the workspace's own when the
@@ -241,6 +268,32 @@ mod tests {
         );
         let later = list_root(root, &ReviewConfig::default(), MUCH_LATER);
         assert!(later.iter().all(|r| r.due), "schedules elapsed: {later:?}");
+    }
+
+    #[test]
+    fn sync_conflicts_under_covers_the_root_and_workspace_stores() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(&root.join("loose.txt"), "# q\n\ta\n");
+        std::fs::create_dir(root.join("ws")).unwrap();
+        write(&root.join("ws/alix.toml"), "");
+        write(&root.join("ws/m.txt"), "# q\n\ta\n");
+
+        let root_conflict = root.join("progress.sync-conflict-20260714-101112-AAAAAAA.json");
+        let ws_conflict = root.join("ws/progress.sync-conflict-20260715-101112-BBBBBBB.json");
+        write(&root_conflict, "{}");
+        write(&ws_conflict, "{}");
+        // Wrong stem: not a store conflict, must not be reported.
+        write(
+            &root.join("ws/notes.sync-conflict-20260715-101112-CCCCCCC.json"),
+            "{}",
+        );
+
+        assert_eq!(sync_conflicts_under(root), vec![root_conflict, ws_conflict]);
+        assert_eq!(
+            sync_conflicts_under(&root.join("nowhere")),
+            Vec::<PathBuf>::new()
+        );
     }
 
     #[test]

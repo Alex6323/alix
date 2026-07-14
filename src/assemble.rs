@@ -37,7 +37,11 @@ pub fn open_store(path: Option<PathBuf>) -> Result<Store> {
         Some(path) => path,
         None => default_store_path().context("cannot determine the data directory")?,
     };
-    Store::open(&path).context("cannot open the progress store")
+    let mut store = Store::open(&path).context("cannot open the progress store")?;
+    // Saves from this machine stamp the store's last-writer marker, so a
+    // device sharing the folder can warn about a likely concurrent session.
+    store.device = crate::store::device_label();
+    Ok(store)
 }
 
 /// Which progress store a set of decks should use: the `--store` override, else
