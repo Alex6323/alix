@@ -10,6 +10,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The site gains an Impressum, a privacy note, a contact address and a
   sponsor link; personal details are injected at deploy time, not stored in
   the repo.
+- The legal notice and privacy pages are now in English (headings kept as
+  "Legal notice (Impressum)" and "Privacy (Datenschutz)" for recognizability).
+- The landing page counts visits with GoatCounter, a cookie-less,
+  privacy-friendly analytics service; the privacy page explains what it does
+  and does not collect.
 - **The mobile app reviews Explain cards with the keypoint checklist.** After
   the reveal you tick which key points your reconstruction covered (the cached
   keypoints augment, else the card's own answer lines) and the tally derives
