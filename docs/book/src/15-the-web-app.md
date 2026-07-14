@@ -87,6 +87,13 @@ card through its own status, queued, generating, done, or failed, as the
 batch runs. A target failing doesn't stop the others; a single per-target
 **Generate** still works the same way it always did.
 
+On the Claude backend a batch shares **one conversation**: the first target
+sends the cards once and every later target refers back to them by index,
+which is cheaper and a little faster than re-sending the deck per target.
+Other backends, and single-target runs, keep making one self-contained call
+per target. A failed target starts a fresh conversation for the rest of the
+batch.
+
 The **format** target is a non-destructive reshaping pass: for each plain card
 whose answer is poorly shaped (a list crammed into prose, a run-on sentence that
 wants to be lines) it caches a tidier front, split answer lines, an optional

@@ -118,6 +118,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   themes above.
 
 ### Changed
+- **Augment batches on the Claude backend now share one conversation**: the
+  first target sends the cards once, each later target runs as a short
+  follow-up that references them by index, cutting prompt cost and latency on
+  multi-target (and workspace-wide) batches. Other backends and single-target
+  runs keep their self-contained one-shot per call; a failed target starts a
+  fresh conversation for the rest of the batch.
 - **The acquire cooldown is configurable and defaults to 5 minutes** (was a
   fixed 1 minute): `[review] acquire_cooldown` (`"90s"`, `"10m"`, `"1h"`; a
   bare number is minutes, `"0"` disables it), also overridable per workspace
