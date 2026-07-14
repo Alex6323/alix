@@ -11,6 +11,12 @@ on:
       - "docs/book/**"
       - "assets/alix.svg"
       - ".github/workflows/pages.yml"
+      - "scripts/site-changelog.py"
+      # whatsnew.html and the landing teaser are generated from this file
+      # (see scripts/site-changelog.py) — without it here, a changelog-only
+      # push (the common case) would leave the deployed page stale until some
+      # unrelated site/book change happened to redeploy it.
+      - "CHANGELOG.md"
   workflow_dispatch:
 
 # The deploy job needs to publish to Pages; everything else is read-only.
@@ -33,7 +39,13 @@ jobs:
     env:
       SITE_DETAILS: ${{ secrets.SITE_DETAILS }}
     steps:
+      # Full history (not the default shallow, depth-1 clone), so
+      # scripts/site-changelog.py's `git tag --list` + tag dates resolve —
+      # otherwise a shallow clone has no tags at all and the cadence line
+      # would silently be omitted.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: taiki-e/install-action@v2
         with:
           tool: mdbook
@@ -45,6 +57,14 @@ jobs:
           cp -r site/. _site/
           cp assets/alix.svg _site/icon.svg
           cp -r docs/book/book _site/book
+      # Render whatsnew.html and the landing-page teaser from CHANGELOG.md
+      # (see scripts/site-changelog.py's own header). Runs before the details
+      # injection below — both operate on _site, on different files, so order
+      # between them doesn't matter, but generation reads naturally first.
+      # A malformed changelog line degrades (skipped, ::notice:: logged)
+      # rather than failing this step.
+      - name: Render the "What's new" page from CHANGELOG.md
+        run: python3 scripts/site-changelog.py _site
       # site/impressum.html + site/datenschutz.html carry {{placeholder}}
       # tokens (see scripts/site-details.py). Real postal details never
       # enter git history: they live only in the SITE_DETAILS repo secret

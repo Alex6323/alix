@@ -16,6 +16,14 @@ PLAN.md
 # mdBook build output (`make book` / `mdbook build`)
 /docs/book/book/
 
+# `make site`'s scratch copy of site/ (whatsnew.html generated in place there,
+# same scratch-dir name the pages workflow assembles into; see Makefile).
+/_site/
+
+# Python bytecode cache (scripts/*.py are run directly, e.g. `python3
+# scripts/site-changelog.py`, which creates this as a side effect).
+__pycache__/
+
 # Playwright e2e (`make e2e`) — Node tooling and both servers' scratch decks
 # copies (.tmp/kids/, .tmp/adult/); fixtures/ itself IS committed (see
 # e2e/README.md).

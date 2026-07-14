@@ -161,9 +161,20 @@ slides:
 # Serve the alix.study landing page locally for a quick preview (static files from
 # site/). Needs python3. The /book/ link only resolves on the deployed Pages
 # site — use `make book` to preview the manual itself.
+#
+# The "What's new" page (whatsnew.html) and the landing-page teaser are
+# generated from CHANGELOG.md at build time (scripts/site-changelog.py; see
+# the pages workflow for the real deploy-time run), so a local preview needs
+# a generated copy too. Rather than write into the tracked site/ directory,
+# this copies it into gitignored _site/ first (the same scratch directory
+# name and pattern the pages workflow uses) and serves that.
 site:
 	@echo "Landing page -> http://localhost:8000  (Ctrl-C to stop)"
-	python3 -m http.server -b 127.0.0.1 -d site 8000
+	rm -rf _site
+	mkdir -p _site
+	cp -r site/. _site/
+	python3 scripts/site-changelog.py _site
+	python3 -m http.server -b 127.0.0.1 -d _site 8000
 
 # Install `alix` from this checkout.
 install:
