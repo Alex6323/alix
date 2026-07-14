@@ -19,6 +19,10 @@
 // default macro recursion limit once a row carries this many fields.
 #![recursion_limit = "256"]
 
+/// The library's own version, for surfaces that display it (the mobile
+/// About screen; the web contract's version stamp).
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 pub mod answer;
 #[cfg(feature = "full")]
 pub mod ask;
