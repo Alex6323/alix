@@ -110,6 +110,51 @@ pub trait Scheduler: Send + Sync {
 /// screen can't hand it straight back. One knob deliberately moves both gaps.
 pub const DEFAULT_ACQUIRE_COOLDOWN_MS: u64 = 5 * 60 * 1000;
 
+/// The retention the pre-deadline ramp climbs to. Deliberately a constant,
+/// not a config key (spec 2026-07-14: an expert knob with no pre-exam
+/// feedback loop; base `retention` is the pressure valve). Revisit only on
+/// demonstrated demand.
+pub const DEADLINE_RETENTION: f64 = 0.95;
+
+/// Deadline-derived scheduler tuning (spec `{#deadlines}`): interval cap at
+/// days-left, windowed retention ramp, and the due-date ceiling that
+/// compensates rs-fsrs clamping BEFORE grade separation (Good = cap + 1).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DeadlineTuning {
+    pub retention: f64,
+    pub max_interval_days: i32,
+    pub due_ceiling_ms: u64,
+}
+
+/// The pure ramp: `None` past the date (the ramp releases; decision 4 of the
+/// spec). `today` and `due_ceiling_ms` are passed in so this stays fully
+/// deterministic; `time::local_date` / `time::end_of_local_day_ms` supply
+/// them in production.
+pub fn deadline_tuning(
+    deadline: chrono::NaiveDate,
+    ramp_days: u32,
+    base_retention: f64,
+    today: chrono::NaiveDate,
+    due_ceiling_ms: u64,
+) -> Option<DeadlineTuning> {
+    let days_left = (deadline - today).num_days();
+    if days_left < 0 {
+        return None;
+    }
+    let retention = if ramp_days == 0 || days_left >= i64::from(ramp_days) {
+        base_retention
+    } else {
+        let w = f64::from(ramp_days);
+        let progressed = (w - days_left as f64) / w;
+        (base_retention + (DEADLINE_RETENTION - base_retention) * progressed).max(base_retention)
+    };
+    Some(DeadlineTuning {
+        retention,
+        max_interval_days: days_left.max(1) as i32,
+        due_ceiling_ms,
+    })
+}
+
 /// One day in milliseconds — converts between FSRS's `scheduled_days` and alix's ms timestamps
 /// in [`Fsrs::apply`] and [`Fsrs::reanchor`].
 const DAY_MS: u64 = 86_400 * 1000;
@@ -575,5 +620,45 @@ mod tests {
             late.recall.unwrap().stability > early.recall.unwrap().stability,
             "an overdue-but-recalled card should gain more stability"
         );
+    }
+
+    #[test]
+    fn deadline_tuning_caps_the_interval_at_days_left() {
+        let d = |y, m, dd| chrono::NaiveDate::from_ymd_opt(y, m, dd).unwrap();
+        let t = deadline_tuning(d(2026, 9, 1), 14, 0.9, d(2026, 8, 12), 1_000).unwrap();
+        assert_eq!(20, t.max_interval_days); // 20 days out
+        assert_eq!(0.9, t.retention, "outside the window the base holds");
+        assert_eq!(1_000, t.due_ceiling_ms);
+    }
+
+    #[test]
+    fn deadline_tuning_ramps_retention_inside_the_window() {
+        let d = |y, m, dd| chrono::NaiveDate::from_ymd_opt(y, m, dd).unwrap();
+        // 7 of 14 days left: halfway between 0.90 and 0.95.
+        let mid = deadline_tuning(d(2026, 9, 1), 14, 0.9, d(2026, 8, 25), 0).unwrap();
+        assert!((mid.retention - 0.925).abs() < 1e-9);
+        // Deadline day: full DEADLINE_RETENTION, cap floors at 1 day.
+        let last = deadline_tuning(d(2026, 9, 1), 14, 0.9, d(2026, 9, 1), 0).unwrap();
+        assert_eq!(DEADLINE_RETENTION, last.retention);
+        assert_eq!(1, last.max_interval_days);
+        // Exactly at the window edge: still base.
+        let edge = deadline_tuning(d(2026, 9, 1), 14, 0.9, d(2026, 8, 18), 0).unwrap();
+        assert_eq!(0.9, edge.retention);
+    }
+
+    #[test]
+    fn deadline_tuning_never_lowers_a_higher_base_and_zero_ramp_is_cap_only() {
+        let d = |y, m, dd| chrono::NaiveDate::from_ymd_opt(y, m, dd).unwrap();
+        let high = deadline_tuning(d(2026, 9, 1), 14, 0.97, d(2026, 9, 1), 0).unwrap();
+        assert_eq!(0.97, high.retention, "a personal 0.97 is kept");
+        let capped = deadline_tuning(d(2026, 9, 1), 0, 0.9, d(2026, 9, 1), 0).unwrap();
+        assert_eq!(0.9, capped.retention, "ramp 0 = cap only");
+        assert_eq!(1, capped.max_interval_days);
+    }
+
+    #[test]
+    fn deadline_tuning_releases_past_the_date() {
+        let d = |y, m, dd| chrono::NaiveDate::from_ymd_opt(y, m, dd).unwrap();
+        assert!(deadline_tuning(d(2026, 9, 1), 14, 0.9, d(2026, 9, 2), 0).is_none());
     }
 }
