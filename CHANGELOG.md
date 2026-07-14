@@ -10,6 +10,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The site gains an Impressum, a privacy note, a contact address and a
   sponsor link; personal details are injected at deploy time, not stored in
   the repo.
+- **A "What's new" page on the site**, generated from this changelog at build
+  time (plus a short teaser on the landing page), so it can't go stale on its
+  own the way a hand-maintained page would.
 - The legal notice and privacy pages are now in English (headings kept as
   "Legal notice (Impressum)" and "Privacy (Datenschutz)" for recognizability).
 - The landing page counts visits with GoatCounter, a cookie-less,
