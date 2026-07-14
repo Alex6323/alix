@@ -1038,14 +1038,15 @@ function submitCheck() {
   const lines = Array.from(document.querySelectorAll("#ansRegion input.field")).map(i => i.value);
   api("/api/check", post({ lines })).then(f => { feedback = f; render(); });
 }
-// TypeLine: one line at a time, ordered so position pairs with the card's own
-// line index. Resubmits every line checked so far (the previously-graded
-// inputs plus the new one) so the server always pairs by true position; the
-// last request's response IS the full result set, so once it covers every
-// back line it doubles as `feedback` for the closing three-way grade.
+// TypeLine: one line at a time; the server derives the position-paired check
+// from the card's own mode. Resubmits every line checked so far (the
+// previously-graded inputs plus the new one) so the server always pairs by
+// true position; the last request's response IS the full result set, so once
+// it covers every back line it doubles as `feedback` for the closing
+// three-way grade.
 function submitTypeLine(value) {
   const lines = typelineChecked.map(r => r.input).concat([value]);
-  api("/api/check", post({ lines, ordered: true })).then(f => {
+  api("/api/check", post({ lines })).then(f => {
     typelineChecked = f.results;
     if (typelineChecked.length >= backCount()) feedback = f;
     render();

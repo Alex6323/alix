@@ -11,10 +11,9 @@ use serde::{Deserialize, Serialize};
 
 use super::{Browsing, Examining, Reviewing, Walking, catalog::img_key};
 use crate::{
-    answer::{Input, Mode, TypedResult, mode_name},
+    answer::{Input, Mode, mode_name},
     augment::AugmentCache,
     card::Card,
-    choice::{self, ChoiceQuestion},
     config::{
         AskConfig, Bindings, BrowseBindings, Key, KeyPattern, PickerKeys, ReviewConfig, Strictness,
     },
@@ -302,24 +301,6 @@ pub(super) struct MemberDto {
     /// The learner's last-used session depth for this member deck, defaulting
     /// to `"recall"` — what a plain Learn launches.
     pub(super) last_depth: &'static str,
-}
-
-/// The result of answering a choice card: which option was picked, which is
-/// correct, and whether they match. The page highlights the options with this.
-#[derive(Debug, Serialize)]
-pub(super) struct ChooseFeedbackDto {
-    pub(super) chosen: usize,
-    pub(super) correct: usize,
-    pub(super) passed: bool,
-}
-
-/// The result of submitting a typed answer: an honest `{ input, expected,
-/// passed }` per back line ([`TypedResult`]) plus whether they all passed. Pure
-/// evidence — the grade is the learner's, applied separately via `/api/grade`.
-#[derive(Debug, Serialize)]
-pub(super) struct CheckFeedbackDto {
-    pub(super) results: Vec<TypedResult>,
-    pub(super) passed: bool,
 }
 
 /// One ask-Claude exchange, for the browser.
@@ -984,42 +965,6 @@ pub(super) fn browse_payload(browsing: Option<&Browsing>) -> BrowseDto {
             cards: Vec::new(),
         },
     }
-}
-
-/// The multiple-choice question for `card` right now, or `None` when it doesn't
-/// render as a pick (or has too few distractors — the client then falls back to
-/// attempt→reveal). The one place the question is built, so `review_state`'s
-/// served options and `/api/choose`'s graded correct index stay in lockstep; the
-/// seed combines the card id with its appearance count this session
-/// (`choice::seed_for` / `Session::appearance`) so it stays stable across both
-/// requests for as long as the card is up (the client polls `/api/state` every
-/// ~3s), but differs the next time the same card is served
-/// ({#reorder-mc-on-each-appearance}).
-///
-/// - **Acquire** (first encounter): a recognition MC only under the strict bar (atomic answer + a
-///   full set of cached AI distractors), and — spec §4.6 — never for a card already recognized
-///   (such a card keeps its store entry, so it isn't acquired cold anyway).
-/// - **Recognize session** (non-acquire): the whole answer is picked among sibling backs via plain
-///   `build`, regardless of `% reveal:` — a `Line` card's options are complete orderings (the real
-///   sequence vs the AI's alternate wrong ones), not a pick-one-step built from the card's own
-///   lines (an expanded cloze sub-card's back IS its gap text — T6 review).
-/// - Any other depth renders no pick.
-pub(super) fn current_question(
-    r: &Reviewing,
-    store: &Store,
-    card: &Card,
-) -> Option<ChoiceQuestion> {
-    let ai = r.augment.distractors(card.id());
-    let seed = choice::seed_for(card.id(), r.session.appearance(card.id()));
-    if store.get(card.id()).is_none() {
-        // Acquire on-ramp. A recognized card has a store entry, so it never lands
-        // here — this branch already established `store.get(card.id())` is `None`.
-        return choice::recognition_question(card, r.session.cards(), seed, ai);
-    }
-    if r.session.depth() != Depth::Recognize {
-        return None;
-    }
-    choice::build(card, r.session.cards(), seed, ai)
 }
 
 /// Builds the state payload. In the select phase (`reviewing` is `None`) it

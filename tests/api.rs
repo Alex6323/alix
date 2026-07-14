@@ -1130,6 +1130,35 @@ fn post_api_check_with_a_wrong_answer_reports_failure() {
 }
 
 #[test]
+fn post_api_check_derives_orderedness_from_the_mode_not_the_client() {
+    // A `% reveal: line` deck at Reconstruct renders TypeLine: the check is
+    // position-sensitive by the server's own derivation. The request carries
+    // no ordering flag; the retired client `ordered` field is ignored.
+    let (base, _guard) = spawn_test_server_fixture(None, |dir| {
+        std::fs::write(
+            dir.join("steps.txt"),
+            "# steps\n% reveal: line\n\tone\n\ttwo\n",
+        )
+        .unwrap();
+    });
+    let resp = post_json(
+        &base,
+        "/api/select",
+        r#"{"deck":"steps.txt","depth":"reconstruct"}"#,
+    );
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("typeline", body["mode"], "body: {body}");
+
+    // The right lines in the wrong order must fail a TypeLine check.
+    let resp = post_json(&base, "/api/check", r#"{"lines":["two","one"]}"#);
+
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!(false, body["passed"], "body: {body}");
+}
+
+#[test]
 fn post_api_check_with_a_malformed_body_yields_400() {
     let (base, _guard) = spawn_test_server();
     select_fixture(&base);

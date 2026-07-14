@@ -9,7 +9,7 @@
 use serde_json::json;
 
 use super::*;
-use crate::render::NoteUnit;
+use crate::{answer::TypedResult, render::NoteUnit};
 
 /// Pins a DTO's exact wire shape and emits it to the codegen corpus.
 /// A failure means the JSON contract moved: update docs/API.md's field
@@ -604,23 +604,27 @@ fn browsedto_wire_shape() {
     );
 }
 
+// The choose/check feedback wire shapes are the core `review` types
+// serialized directly (the handlers delegate to `review::choose` /
+// `review::check_typed`); the anchors keep their historic DTO names so the
+// corpus filenames and docs/API.md sections stay stable.
 #[test]
 fn choosefeedbackdto_wire_shape() {
-    let dto = ChooseFeedbackDto {
+    let feedback = crate::review::ChoiceFeedback {
         chosen: 2,
         correct: 1,
         passed: false,
     };
     pin(
         "ChooseFeedbackDto",
-        &dto,
+        &feedback,
         json!({"chosen": 2, "correct": 1, "passed": false}),
     );
 }
 
 #[test]
 fn checkfeedbackdto_wire_shape() {
-    let dto = CheckFeedbackDto {
+    let feedback = crate::review::CheckFeedback {
         results: vec![TypedResult {
             input: "pars".to_string(),
             expected: "Paris".to_string(),
@@ -630,7 +634,7 @@ fn checkfeedbackdto_wire_shape() {
     };
     pin(
         "CheckFeedbackDto",
-        &dto,
+        &feedback,
         json!({
             "results": [{"input": "pars", "expected": "Paris", "passed": false}],
             "passed": false

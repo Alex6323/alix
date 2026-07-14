@@ -39,7 +39,6 @@ use tiny_http::{Method, Server};
 /// re-exported here so `serve::SelectOptions` keeps working for callers.
 pub use crate::assemble::SelectOptions;
 use crate::{
-    answer::{TypedResult, grade_lines_ordered, grade_lines_unordered},
     assemble::{self, CardsBuild, SessionBuild},
     augment::{self, AugmentCache},
     config::{
@@ -48,6 +47,7 @@ use crate::{
     deck::{self, Deck},
     doctor, exam, generate, import,
     recent::RecentDecks,
+    review,
     session::now_ms,
     share,
     store::{self, Store},
@@ -986,30 +986,17 @@ pub fn run_review(
                     respond_status(request, 409);
                     continue;
                 };
-                // Grade the typed lines against the current card: normalized then
-                // compared exactly, no edit-distance tolerance. Pure evidence —
-                // like choose, this only checks; the learner-final grade is applied
-                // separately on Continue via `/api/grade`. `ordered` (TypeLine, the
-                // `% reveal: line` reconstruct path) pairs line-by-position; the
-                // default matches each input to its closest expected line so a
-                // multi-item answer can be entered in any order.
+                // Check the typed lines against the current card: pure evidence,
+                // like choose (the learner-final grade is applied separately on
+                // Continue via `/api/grade`). Orderedness derives from the card's
+                // mode in core (TypeLine pairs line-by-position, everything else
+                // matches any order); the client sends only its lines.
                 #[derive(Deserialize)]
                 struct Body {
                     lines: Vec<String>,
-                    #[serde(default)]
-                    ordered: bool,
                 }
                 let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
-                let result = body.and_then(|body| {
-                    let card = r.session.current()?;
-                    let results: Vec<TypedResult> = if body.ordered {
-                        grade_lines_ordered(&body.lines, &card.back)
-                    } else {
-                        grade_lines_unordered(&body.lines, &card.back)
-                    };
-                    let passed = results.iter().all(|r| r.passed);
-                    Some(CheckFeedbackDto { results, passed })
-                });
+                let result = body.and_then(|body| review::check_typed(&r.session, &body.lines));
                 match result {
                     Some(f) => respond_json(request, &f),
                     None => respond_status(request, 400),
@@ -1020,26 +1007,15 @@ pub fn run_review(
                     respond_status(request, 409);
                     continue;
                 };
-                // Just reports which option is correct (the question is rebuilt via
-                // `current_question`, seeded from the card id and its appearance
-                // count, so it matches the one served by `review_state` for every
-                // question shape and appearance). The grade is applied
-                // later via /api/grade on Continue, so the session stays on this card
-                // during the result — Remove still works on it.
-                let picked = read_index(&mut request).and_then(|chosen| {
-                    let card = r.session.current()?.clone();
-                    let correct = current_question(r, &store, &card)?.correct;
-                    Some((chosen, correct))
-                });
+                // Just reports which option is correct: core `review::choose`
+                // rebuilds the question from the same seed `review_state` served
+                // it with, so the pick and the state can never diverge. The grade
+                // is applied later via /api/grade on Continue, so the session
+                // stays on this card during the result (Remove still works on it).
+                let picked = read_index(&mut request)
+                    .and_then(|chosen| review::choose(&r.session, &store, &r.augment, chosen));
                 match picked {
-                    Some((chosen, correct)) => respond_json(
-                        request,
-                        &ChooseFeedbackDto {
-                            chosen,
-                            correct,
-                            passed: chosen == correct,
-                        },
-                    ),
+                    Some(f) => respond_json(request, &f),
                     None => respond_status(request, 400),
                 }
             }

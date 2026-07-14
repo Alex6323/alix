@@ -107,10 +107,12 @@ so is every client.
    aren't due — a due card still grades as a normal review. `max_new` /
    `limit` override the instance's session pacing for this launch.
 3. Render from `StateDto` (`phase:"review"`, `card`, `mode`, `depth`, counts).
-   For typed checks call `POST /api/check {lines, ordered?}`; for a
-   multiple-choice pick call `POST /api/choose {index}`. **Both are evidence
-   only** — they report input-vs-expected and leave the session on the same
-   card. Nothing is recorded yet.
+   For typed checks call `POST /api/check {lines}`; whether the lines pair
+   by position (`typeline`) or match in any order is derived server-side
+   from the card's mode, never sent by the client. For a multiple-choice
+   pick call `POST /api/choose {index}`. **Both are evidence only**: they
+   report input-vs-expected and leave the session on the same card. Nothing
+   is recorded yet.
 4. `POST /api/grade` is **authoritative**: `{grade: "failed"|"partly"|"passed"}`
    *(closed)*, or `{covered, total}` for the explain-keypoints rubric. It
    applies the grade, saves progress, and returns the next `StateDto`.
@@ -281,7 +283,7 @@ Statuses: all endpoints can additionally return 401 (token) — omitted below.
 | POST | `/api/grade` | `{grade}` or `{covered, total}` | `StateDto` | 400 neither shape; 409 no session |
 | POST | `/api/skip` | – | `StateDto` | 409 |
 | POST | `/api/acquire` | – | `StateDto` | 409 |
-| POST | `/api/check` | `{lines: [string], ordered?}` | `CheckFeedbackDto` | 400 bad body / no card; 409 |
+| POST | `/api/check` | `{lines: [string]}` | `CheckFeedbackDto` | 400 bad body / no card; 409 |
 | POST | `/api/choose` | `{index}` | `ChooseFeedbackDto` | 400 bad body / no question; 409 |
 | POST | `/api/remove` | – | `StateDto` | 409 |
 | POST | `/api/promote` | – | `StateDto` | 400 not a virtual card / promote failed; 409 |

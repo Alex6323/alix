@@ -66,6 +66,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   themes above.
 
 ### Changed
+- **Breaking:** `POST /api/check` no longer reads the client-sent `ordered`
+  flag; whether typed lines pair by position (`typeline`) or match in any
+  order is derived server-side from the card's mode. Send `{lines}` only;
+  an `ordered` field in the body is ignored.
+- The mobile app renders note code blocks verbatim (fenced ``` blocks are
+  no longer sentence-split), through the same structured note units the web
+  serves.
 - **The review tutor is now offered during a card's first encounter (acquire),
   once you reveal the answer.** It stays hidden during the blind attempt,
   matching the after-reveal rule the rest of review follows, so you can ask about
