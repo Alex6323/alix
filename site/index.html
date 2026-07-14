@@ -88,6 +88,21 @@
   .card p{margin:0; color:var(--muted)}
   .card .k{color:var(--accent)}
 
+  .foryou{padding:70px 0 8px}
+  .foryou h2{font-size:30px; margin:0 0 6px; text-align:center}
+  .foryou-sub{color:var(--muted); margin:0 0 28px; text-align:center}
+  .foryou-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:18px}
+  .foryou-grid .card h3{font-size:16.5px}
+  .foryou-grid .card p{margin:8px 0 0}
+  .foryou-grid .card .k{margin-right:2px}
+  .notyet{margin:40px 0 0; padding-top:30px; border-top:1px solid var(--line)}
+  .notyet h3{font-size:18px; margin:0 0 16px; text-align:center}
+  .notyet-list{list-style:none; margin:0; padding:0; display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:10px 28px}
+  .notyet-list li{color:var(--muted); padding-left:16px; position:relative; font-size:15px}
+  .notyet-list li::before{content:"\2022"; position:absolute; left:0; color:var(--accent)}
+  .notyet-list li b{color:var(--text); font-weight:600}
+
   .download{padding:80px 0 6px; text-align:center}
   .download h2{font-size:30px; margin:0 0 6px}
   .dl-sub{color:var(--muted); margin:0 0 30px}
@@ -177,6 +192,44 @@
         <button class="dot" type="button" aria-label="Screenshot 9"></button>
         <button class="dot" type="button" aria-label="Screenshot 10"></button>
       </div>
+    </div>
+  </section>
+
+  <section class="foryou" id="for-you">
+    <h2>Is alix for you?</h2>
+    <p class="foryou-sub">Five situations it's built for, then an honest list of where it plainly isn't there yet.</p>
+    <div class="foryou-grid">
+      <div class="card">
+        <h3>You're working through a book, a course, or a codebase, and it needs to actually stick</h3>
+        <p><span class="k">&rarr;</span> Point alix at the source and it drafts a deck (or a connected set of decks) from it, then brings the cards back on a schedule instead of leaving you to re-read and hope.</p>
+      </div>
+      <div class="card">
+        <h3>An AI explained something to you, and privately you're not sure you could reproduce it without help</h3>
+        <p><span class="k">&rarr;</span> alix's exam asks you fresh questions about the material and grades your written answer against the source itself, not a multiple-choice key, before it marks the topic done.</p>
+      </div>
+      <div class="card">
+        <h3>You mostly want solid spaced repetition for plain facts, terms, or vocabulary</h3>
+        <p><span class="k">&rarr;</span> The core is a plain-text review engine (fill-in-the-blank cards, both-direction review, images) that works with no AI at all; the AI pieces are optional on top.</p>
+      </div>
+      <div class="card">
+        <h3>You're a parent or teacher building a set of cards for a kid to review</h3>
+        <p><span class="k">&rarr;</span> alix can serve a second, simpler screen aimed at kids: tap-to-answer, no keyboard. You build and check the deck yourself; the kid just opens it.</p>
+      </div>
+      <div class="card">
+        <h3>You already use Anki and wonder if there's a reason to look elsewhere</h3>
+        <p><span class="k">&rarr;</span> You can bring existing cards in with a plain import. What's different is the exam and the tutor layered on top, but if a mature tool with a large shared-deck community is what you need, Anki still does that better.</p>
+      </div>
+    </div>
+
+    <div class="notyet">
+      <h3>alix isn't (yet) for you if you want&hellip;</h3>
+      <ul class="notyet-list">
+        <li><b>A mobile app you download from a store.</b> alix runs as a local web app you start from a terminal; a phone or tablet browser works fine, but there's no app-store listing yet.</li>
+        <li><b>Zero setup for the AI parts.</b> The tutor, deck generation, and the exam need you to separately install and log into an AI assistant (Claude Code by default, or Gemini, Codex, Copilot); that's extra setup, and typically its own subscription too.</li>
+        <li><b>Automatic sync across your devices.</b> Everything is plain files, no server, no accounts. Keeping them in sync means putting the folder in your own cloud tool (Dropbox, iCloud, Syncthing); alix doesn't do it for you.</li>
+        <li><b>A finished, settled tool.</b> alix is pre-1.0 and still changing: the deck format and the progress store can change between updates with no migration path, so an update can lose your review history.</li>
+        <li><b>A library of ready-made decks.</b> alix is built around decks you generate or write from your own material, not a marketplace of existing content.</li>
+      </ul>
     </div>
   </section>
 
