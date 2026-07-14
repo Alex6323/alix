@@ -49,8 +49,9 @@
   .bar .sep { color: var(--line); }
   .bar .spacer { flex: 1; }
   /* Reused readout: exam strictness while examining, the deck's card count
-     while augmenting; empty during review. */
+     while augmenting, the dim "N left" token while reviewing. */
   .bar .hist { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .bar .hist .left-token { color: var(--dim); font-size: 0.82rem; white-space: nowrap; }
   .bar-filter { width: min(300px, 56vw); background: rgba(0,0,0,0.25); border: 1px solid var(--line); border-radius: 8px; color: var(--ink); font: inherit; font-size: 0.82rem; padding: 5px 12px; }
   .bar-filter::placeholder { color: var(--dim); }
   .bar-filter:focus { outline: none; border-color: var(--bolt); }
@@ -1127,7 +1128,12 @@ function render() {
 
   headerBreadcrumb();
   deckEl.textContent = state.label;
-  histEl.textContent = ""; // no per-review readout in the header — it's noise
+  // The one header readout during review: a dim "N left" convergence token.
+  // The card pile hints at it but caps at 3 layers, so 40 left and 4 left look
+  // the same there; the number may honestly tick UP when a missed card cools
+  // back in. Anything richer (score breakdowns, ETA) stays out: noise.
+  histEl.textContent = "";
+  if (state.phase === "review") histEl.appendChild(el("span", "left-token", `${state.remaining} left`));
   scoreEl.innerHTML = ""; // the per-review score readout is intentionally omitted (noise)
   menuWrap.style.display = state.phase === "done" ? "none" : "";
   setMenuContext("review");

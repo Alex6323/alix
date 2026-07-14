@@ -20,6 +20,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   keypoints augment, else the card's own answer lines) and the tally derives
   the grade, exactly like the web. An optional collapsed "type it first" field
   lets you write your attempt before revealing; it never leaves the device.
+- **The review header shows a dim "N left" count**: how many cards the session
+  still holds, updated after every card. It can honestly tick up when a card
+  you missed cools back in for its retry. (The card pile already hinted at
+  this but flattens at 3, so a long backlog and a nearly-done session looked
+  the same.)
 - **The adult theme gallery's Kids group now offers Sunrise, Ocean, and
   Berry** — the same three themes the kids app ships, re-derived as full adult
   palettes (every token the picker needs, contrast-checked for the adult UI's

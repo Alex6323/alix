@@ -41,6 +41,8 @@ test("clicking a deck row fires POST /api/select, and a card front renders", asy
   expect(response.status(), await response.text().catch(() => "")).toBe(200);
 
   await expect(page.locator(".front-text")).toBeVisible();
+  // The header carries the one in-session readout: the "N left" token.
+  await expect(page.locator("#hist .left-token")).toHaveText(/^\d+ left$/);
 });
 
 test("the ☰ menu opens without error", async ({ page }) => {
