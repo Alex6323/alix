@@ -1591,7 +1591,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   resize with the dimensions the resize event itself carries — picker, review,
   exam, and browse.
 
-## [0.1.0] - 2026-06-16
+## [flash 0.1.0] - 2026-06-16
 
 First release of `alix`: a terminal spaced-repetition flashcard trainer with
 a ratatui TUI, plain-text decks, two schedulers, several answer modes, cloze
