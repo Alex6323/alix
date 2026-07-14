@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:path_provider/path_provider.dart';
@@ -12,16 +14,78 @@ const _samples = [
   'decks/sample-workspace/steps.txt',
 ];
 
-/// Resolves the decks root: `ALIX_DECKS_DIR` when set (the Linux desktop
-/// pointing at a real host folder), else the app-private `<support>/decks`,
-/// seeded with the bundled samples on first run. Existing files are never
-/// overwritten, so the file names the store keys on stay stable.
-Future<String> prepare() async {
-  final env = Platform.environment['ALIX_DECKS_DIR'];
+/// What [prepare] resolved for this launch.
+class Prepared {
+  const Prepared({
+    required this.root,
+    required this.device,
+    this.sharedDir,
+    this.staleDecksDir,
+  });
+
+  /// The decks root to list.
+  final String root;
+
+  /// This install's label in the store's last-writer marker.
+  final String device;
+
+  /// The persisted shared-folder setting, stale or not (`null` when the
+  /// user never chose one).
+  final String? sharedDir;
+
+  /// Set when the settings pointed at a folder that is gone or unreadable:
+  /// this launch fell back to app storage, the setting was kept so a
+  /// re-grant or re-mount heals it.
+  final String? staleDecksDir;
+}
+
+/// Resolves the decks root and this install's device label.
+///
+/// Order: `ALIX_DECKS_DIR` (the Linux desktop pointing at a real host
+/// folder), then the settings' shared folder while it is still listable,
+/// else the app-private `<support>/decks`, seeded with the bundled samples
+/// on first run. Existing files are never overwritten, so the file names
+/// the store keys on stay stable. `support` and `env` inject the platform
+/// pieces for tests.
+Future<Prepared> prepare({Directory? support, String? env}) async {
+  support ??= await getApplicationSupportDirectory();
+  final settings = readSettings(support);
+  final device = await _ensureDevice(support, settings);
+  final shared = settings['decksDir'];
+  final sharedDir = shared is String && shared.isNotEmpty ? shared : null;
+
+  env ??= Platform.environment['ALIX_DECKS_DIR'];
   if (env != null && env.isNotEmpty) {
-    return env;
+    return Prepared(root: env, device: device, sharedDir: sharedDir);
   }
-  final support = await getApplicationSupportDirectory();
+
+  if (sharedDir != null) {
+    if (_listable(sharedDir)) {
+      return Prepared(root: sharedDir, device: device, sharedDir: sharedDir);
+    }
+    return Prepared(
+      root: await _appPrivate(support),
+      device: device,
+      sharedDir: sharedDir,
+      staleDecksDir: sharedDir,
+    );
+  }
+  return Prepared(root: await _appPrivate(support), device: device);
+}
+
+/// True when the directory exists and can actually be listed (a revoked
+/// permission surfaces as a listing error, not a missing dir).
+bool _listable(String dir) {
+  try {
+    Directory(dir).listSync();
+    return true;
+  } on FileSystemException {
+    return false;
+  }
+}
+
+/// The app-private decks dir, created and sample-seeded on first use.
+Future<String> _appPrivate(Directory support) async {
   final root = Directory('${support.path}/decks');
   await root.create(recursive: true);
   for (final sample in _samples) {
@@ -33,4 +97,58 @@ Future<String> prepare() async {
     }
   }
   return root.path;
+}
+
+File _settingsFile(Directory support) => File('${support.path}/settings.json');
+
+/// The app's persisted choices (`settings.json` in the support dir), e.g.
+/// `{"decksDir": "/storage/emulated/0/decks", "device": "phone-3f2a"}`.
+/// Unreadable or malformed settings read as empty.
+Map<String, dynamic> readSettings(Directory support) {
+  try {
+    final decoded = jsonDecode(_settingsFile(support).readAsStringSync());
+    return decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
+  } on FormatException {
+    return <String, dynamic>{};
+  } on FileSystemException {
+    return <String, dynamic>{};
+  }
+}
+
+Future<void> _writeSettings(
+  Directory support,
+  Map<String, dynamic> settings,
+) async {
+  await support.create(recursive: true);
+  await _settingsFile(support).writeAsString(jsonEncode(settings));
+}
+
+/// Persists the shared decks folder choice; `null` reverts to app storage.
+Future<void> setDecksDir(String? dir, {Directory? support}) async {
+  support ??= await getApplicationSupportDirectory();
+  final settings = readSettings(support);
+  if (dir == null) {
+    settings.remove('decksDir');
+  } else {
+    settings['decksDir'] = dir;
+  }
+  await _writeSettings(support, settings);
+}
+
+/// This install's device label (`phone-<4 hex>`), minted once into the
+/// settings. It names the phone in the store's last-writer marker; it lives
+/// in the support dir, never in the synced folder.
+Future<String> _ensureDevice(
+  Directory support,
+  Map<String, dynamic> settings,
+) async {
+  final existing = settings['device'];
+  if (existing is String && existing.isNotEmpty) {
+    return existing;
+  }
+  final device =
+      'phone-${Random().nextInt(0x10000).toRadixString(16).padLeft(4, '0')}';
+  settings['device'] = device;
+  await _writeSettings(support, settings);
+  return device;
 }
