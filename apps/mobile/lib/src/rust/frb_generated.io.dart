@@ -93,10 +93,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int dco_decode_i_32(dynamic raw);
 
   @protected
+  Input dco_decode_input(dynamic raw);
+
+  @protected
   List<String> dco_decode_list_String(dynamic raw);
 
   @protected
   List<DeckEntry> dco_decode_list_deck_entry(dynamic raw);
+
+  @protected
+  List<NoteUnit> dco_decode_list_note_unit(dynamic raw);
 
   @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
@@ -106,6 +112,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Mode dco_decode_mode(dynamic raw);
+
+  @protected
+  NoteUnit dco_decode_note_unit(dynamic raw);
 
   @protected
   String? dco_decode_opt_String(dynamic raw);
@@ -223,10 +232,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int sse_decode_i_32(SseDeserializer deserializer);
 
   @protected
+  Input sse_decode_input(SseDeserializer deserializer);
+
+  @protected
   List<String> sse_decode_list_String(SseDeserializer deserializer);
 
   @protected
   List<DeckEntry> sse_decode_list_deck_entry(SseDeserializer deserializer);
+
+  @protected
+  List<NoteUnit> sse_decode_list_note_unit(SseDeserializer deserializer);
 
   @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
@@ -236,6 +251,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Mode sse_decode_mode(SseDeserializer deserializer);
+
+  @protected
+  NoteUnit sse_decode_note_unit(SseDeserializer deserializer);
 
   @protected
   String? sse_decode_opt_String(SseDeserializer deserializer);
@@ -372,6 +390,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_i_32(int self, SseSerializer serializer);
 
   @protected
+  void sse_encode_input(Input self, SseSerializer serializer);
+
+  @protected
   void sse_encode_list_String(List<String> self, SseSerializer serializer);
 
   @protected
@@ -379,6 +400,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     List<DeckEntry> self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_list_note_unit(List<NoteUnit> self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_prim_u_8_strict(
@@ -394,6 +418,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_mode(Mode self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_note_unit(NoteUnit self, SseSerializer serializer);
 
   @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer);

@@ -5,6 +5,8 @@
 
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
+import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
+part 'review.freezed.dart';
 
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `from`
 
@@ -42,25 +44,31 @@ abstract class ReviewSession implements RustOpaqueInterface {
     nowMs: nowMs,
   );
 
-  /// The current review position, for the screen to render.
-  ReviewState state();
+  /// The current review position, for the screen to render. `now_ms`
+  /// injects the clock behind the restartability check (tests); `None` is
+  /// the wall clock.
+  ReviewState state({BigInt? nowMs});
 }
 
 class CardView {
   final String front;
   final List<String> context;
   final List<String> back;
-  final List<String> note;
+  final bool reshaped;
+  final List<NoteUnit> note;
   final String? image;
   final String? imageBack;
+  final String? at;
 
   const CardView({
     required this.front,
     required this.context,
     required this.back,
+    required this.reshaped,
     required this.note,
     this.image,
     this.imageBack,
+    this.at,
   });
 
   @override
@@ -68,9 +76,11 @@ class CardView {
       front.hashCode ^
       context.hashCode ^
       back.hashCode ^
+      reshaped.hashCode ^
       note.hashCode ^
       image.hashCode ^
-      imageBack.hashCode;
+      imageBack.hashCode ^
+      at.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -80,9 +90,11 @@ class CardView {
           front == other.front &&
           context == other.context &&
           back == other.back &&
+          reshaped == other.reshaped &&
           note == other.note &&
           image == other.image &&
-          imageBack == other.imageBack;
+          imageBack == other.imageBack &&
+          at == other.at;
 }
 
 class CheckFeedback {
@@ -132,11 +144,21 @@ enum Depth { recognize, recall, reconstruct }
 /// The learner's self-grade, mirrored so frb bridges it from this crate.
 enum Grade { fail, partial, pass }
 
+enum Input { type, draw }
+
 /// frb mirrors of the core contract types (they live in the `alix` crate,
 /// which frb does not scan): field-for-field copies that teach the generator
 /// their shape so Dart gets real classes and enums, not opaque handles. Keep
 /// in lock step with `alix::review`, `alix::answer`, and `alix::depth`.
 enum Mode { flip, typing, typeLine, choice, lineByLine, explain }
+
+@freezed
+sealed class NoteUnit with _$NoteUnit {
+  const NoteUnit._();
+
+  const factory NoteUnit.sentence({required String text}) = NoteUnit_Sentence;
+  const factory NoteUnit.code({required List<String> lines}) = NoteUnit_Code;
+}
 
 class ReviewState {
   final CardView? card;
@@ -144,8 +166,16 @@ class ReviewState {
   final Depth depth;
   final bool acquire;
   final List<String>? choices;
+  final List<String>? keypoints;
+  final Input input;
   final bool finished;
   final int remaining;
+  final int initial;
+  final int reviews;
+  final int passed;
+  final int failed;
+  final bool canRestart;
+  final bool promotable;
 
   const ReviewState({
     this.card,
@@ -153,8 +183,16 @@ class ReviewState {
     required this.depth,
     required this.acquire,
     this.choices,
+    this.keypoints,
+    required this.input,
     required this.finished,
     required this.remaining,
+    required this.initial,
+    required this.reviews,
+    required this.passed,
+    required this.failed,
+    required this.canRestart,
+    required this.promotable,
   });
 
   @override
@@ -164,8 +202,16 @@ class ReviewState {
       depth.hashCode ^
       acquire.hashCode ^
       choices.hashCode ^
+      keypoints.hashCode ^
+      input.hashCode ^
       finished.hashCode ^
-      remaining.hashCode;
+      remaining.hashCode ^
+      initial.hashCode ^
+      reviews.hashCode ^
+      passed.hashCode ^
+      failed.hashCode ^
+      canRestart.hashCode ^
+      promotable.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -177,8 +223,16 @@ class ReviewState {
           depth == other.depth &&
           acquire == other.acquire &&
           choices == other.choices &&
+          keypoints == other.keypoints &&
+          input == other.input &&
           finished == other.finished &&
-          remaining == other.remaining;
+          remaining == other.remaining &&
+          initial == other.initial &&
+          reviews == other.reviews &&
+          passed == other.passed &&
+          failed == other.failed &&
+          canRestart == other.canRestart &&
+          promotable == other.promotable;
 }
 
 class TypedResult {

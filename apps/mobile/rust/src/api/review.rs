@@ -6,8 +6,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
 
-pub use alix::answer::{Mode, TypedResult};
+pub use alix::answer::{Input, Mode, TypedResult};
 pub use alix::depth::Depth;
+pub use alix::render::NoteUnit;
 pub use alix::review::{CardView, CheckFeedback, ChoiceFeedback, ReviewState};
 
 /// frb mirrors of the core contract types (they live in the `alix` crate,
@@ -31,14 +32,28 @@ pub enum _Depth {
     Reconstruct,
 }
 
+#[flutter_rust_bridge::frb(mirror(Input))]
+pub enum _Input {
+    Type,
+    Draw,
+}
+
+#[flutter_rust_bridge::frb(mirror(NoteUnit))]
+pub enum _NoteUnit {
+    Sentence { text: String },
+    Code { lines: Vec<String> },
+}
+
 #[flutter_rust_bridge::frb(mirror(CardView))]
 pub struct _CardView {
     pub front: String,
     pub context: Vec<String>,
     pub back: Vec<String>,
-    pub note: Vec<String>,
+    pub reshaped: bool,
+    pub note: Vec<NoteUnit>,
     pub image: Option<String>,
     pub image_back: Option<String>,
+    pub at: Option<String>,
 }
 
 #[flutter_rust_bridge::frb(mirror(ReviewState))]
@@ -48,8 +63,16 @@ pub struct _ReviewState {
     pub depth: Depth,
     pub acquire: bool,
     pub choices: Option<Vec<String>>,
+    pub keypoints: Option<Vec<String>>,
+    pub input: Input,
     pub finished: bool,
     pub remaining: u32,
+    pub initial: u32,
+    pub reviews: u32,
+    pub passed: u32,
+    pub failed: u32,
+    pub can_restart: bool,
+    pub promotable: bool,
 }
 
 #[flutter_rust_bridge::frb(mirror(ChoiceFeedback))]
@@ -145,10 +168,12 @@ impl ReviewSession {
         })
     }
 
-    /// The current review position, for the screen to render.
+    /// The current review position, for the screen to render. `now_ms`
+    /// injects the clock behind the restartability check (tests); `None` is
+    /// the wall clock.
     #[flutter_rust_bridge::frb(sync)]
-    pub fn state(&self) -> ReviewState {
-        alix::review::state(&self.session, &self.store, &self.augment)
+    pub fn state(&self, now_ms: Option<u64>) -> ReviewState {
+        alix::review::state(&self.session, &self.store, &self.augment, now_ms)
     }
 
     /// Grade a pick against the same options `state` served; `None` when no
@@ -172,7 +197,7 @@ impl ReviewSession {
         self.session.grade(&mut self.store, grade.into(), now);
         self.store.save()?;
         self.session.poll(&self.store, now);
-        Ok(self.state())
+        Ok(self.state(Some(now)))
     }
 
     /// Mark the current never-seen card as acquired (first exposure, no
@@ -183,7 +208,7 @@ impl ReviewSession {
         self.session.acquire_current(&mut self.store, now);
         self.store.save()?;
         self.session.poll(&self.store, now);
-        Ok(self.state())
+        Ok(self.state(Some(now)))
     }
 }
 
@@ -209,7 +234,7 @@ mod tests {
             Some(T0),
         )
         .unwrap();
-        while s.state().acquire {
+        while s.state(Some(T0)).acquire {
             s.acquire(Some(T0)).unwrap();
         }
         ReviewSession::open(
@@ -235,7 +260,10 @@ mod tests {
             (root.join("ws/member.txt"), root.join("ws/progress.json")),
         ] {
             let mut s = opened_after_acquire(&deck, root, None);
-            assert!(!s.state().acquire, "past the cooldown this is a quiz");
+            assert!(
+                !s.state(Some(LATER)).acquire,
+                "past the cooldown this is a quiz"
+            );
             s.grade(Grade::Pass, Some(LATER)).unwrap();
             let json = std::fs::read_to_string(&store_file).unwrap();
             assert!(
@@ -260,14 +288,49 @@ mod tests {
             "# q1\n\ta1\n# q2\n\ta2\n# q3\n\ta3\n# q4\n\ta4\n",
         );
         let s = opened_after_acquire(&root.join("d.txt"), root, Some(Depth::Recognize));
-        let state = s.state();
+        let state = s.state(Some(LATER));
         assert_eq!(state.mode, Mode::Choice);
         let options = state.choices.expect("a recognize pick");
         assert_eq!(options.len(), 4);
         let feedback = s.choose(0).expect("feedback");
         let correct = feedback.correct;
         assert!(s.choose(correct as u32).expect("feedback").passed);
-        assert_eq!(s.state().choices.as_deref(), Some(&options[..]));
+        assert_eq!(s.state(Some(LATER)).choices.as_deref(), Some(&options[..]));
+    }
+
+    #[test]
+    fn explain_state_carries_the_keypoints_rubric() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        // A multi-line back at Reconstruct renders as Explain.
+        write(&root.join("d.txt"), "# why\n\tfirst fact\n\tsecond fact\n");
+        let s = opened_after_acquire(&root.join("d.txt"), root, Some(Depth::Reconstruct));
+        let state = s.state(Some(LATER));
+        assert_eq!(state.mode, Mode::Explain);
+        assert_eq!(
+            state.keypoints,
+            Some(vec!["first fact".to_string(), "second fact".to_string()]),
+            "no cached keypoints: the rubric is the authored back"
+        );
+
+        // Cached keypoints (the augment sidecar the session reads) win.
+        let store_path = alix::workspace::root_store_path(root);
+        let mut cache =
+            alix::augment::AugmentCache::open(alix::augment::augment_path_for(&store_path));
+        let deck = alix::deck::Deck::load(&root.join("d.txt")).unwrap();
+        cache.set_keypoints(deck.cards[0].id(), vec!["one claim".to_string()]);
+        cache.save().unwrap();
+        let s = ReviewSession::open(
+            root.join("d.txt").to_string_lossy().into_owned(),
+            root.to_string_lossy().into_owned(),
+            Some(Depth::Reconstruct),
+            Some(LATER),
+        )
+        .unwrap();
+        assert_eq!(
+            s.state(Some(LATER)).keypoints,
+            Some(vec!["one claim".to_string()])
+        );
     }
 
     #[test]

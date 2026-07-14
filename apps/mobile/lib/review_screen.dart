@@ -178,12 +178,22 @@ class _ReviewScreenState extends State<ReviewScreen> {
           ],
           for (final note in card.note) ...[
             const SizedBox(height: 8),
-            Text(
-              note,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-            ),
+            switch (note) {
+              NoteUnit_Sentence(:final text) => Text(
+                  text,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium
+                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                ),
+              NoteUnit_Code(:final lines) => Text(
+                  lines.join('\n'),
+                  textAlign: TextAlign.left,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+            },
           ],
         ],
       ],
