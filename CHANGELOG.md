@@ -114,6 +114,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `alix generate` and its review pass now keep each card's answer to exactly
   what its front asks, moving extra context into the note instead of
   over-answering the question.
+- `alix generate` and its review pass now turn a mapping of pairs into one
+  cloze card (one line per pair, the recalled half blanked) instead of a
+  "match each X to its Y" card that asks to recall the whole table at once.
 
 ### Fixed
 - The tutor's **Save note** (and the new **Make this a card**) now stay disabled

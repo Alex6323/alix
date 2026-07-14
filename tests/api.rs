@@ -1228,6 +1228,134 @@ fn post_api_choose_reports_the_correct_index_for_a_recognize_session() {
 }
 
 #[test]
+fn choices_keep_their_order_across_state_pulls_while_the_card_is_on_screen() {
+    // Returning from the tutor re-pulls /api/state while the client keeps its
+    // answered feedback as INDICES (chosen/correct). If the served option
+    // order shifts between the answer and that re-pull, the indices decorate
+    // the wrong options and a wrong pick renders as "correct" (user report,
+    // 2026-07-14).
+    let (base, _guard) = spawn_full_server(None);
+    let resp = post_json(
+        &base,
+        "/api/select",
+        r#"{"deck":"choice.txt","depth":"recognize"}"#,
+    );
+    let first: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    let before = first["choices"].clone();
+
+    post_json(&base, "/api/choose", r#"{"index":0}"#);
+    let resp = http(&base, "GET", "/api/state", &[], &[]);
+    let after: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+
+    assert_eq!(
+        first["card"]["front"], after["card"]["front"],
+        "the session stays on the answered card while its feedback shows"
+    );
+    assert_eq!(
+        before, after["choices"],
+        "the option order must not shift while the card is on screen"
+    );
+}
+
+#[test]
+fn choices_keep_their_order_across_a_full_tutor_round_trip() {
+    // The exact user flow of the 2026-07-14 report: answer a choice card, open
+    // the tutor, ask a question, save the conversation as a note (which
+    // rewrites the deck file and mutates the in-memory card), close the tutor
+    // (the client re-pulls /api/state) — the option order must survive it all.
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let fake = fake_reply(scripts.path(), "a condensed tutor note");
+    let (base, _guard) = spawn_full_server(Some(&fake));
+    let resp = post_json(
+        &base,
+        "/api/select",
+        r#"{"deck":"choice.txt","depth":"recognize"}"#,
+    );
+    let first: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    let before = first["choices"].clone();
+    assert!(before.is_array(), "body: {first}");
+
+    post_json(&base, "/api/choose", r#"{"index":0}"#);
+    post_json(
+        &base,
+        "/api/ask",
+        r#"{"question":"why is that the answer?"}"#,
+    );
+    poll_until(&base, "/api/ask", |b| b["thinking"] == false);
+    post_json(&base, "/api/ask/note", "{}");
+    poll_until(&base, "/api/ask", |b| b["thinking"] == false);
+
+    let resp = http(&base, "GET", "/api/state", &[], &[]);
+    let after: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!(
+        first["card"]["front"], after["card"]["front"],
+        "the session stays on the answered card through the tutor round trip"
+    );
+    assert_eq!(
+        before, after["choices"],
+        "the option order must not shift across the tutor round trip"
+    );
+}
+
+#[test]
+fn cloze_choice_options_with_ai_distractors_keep_their_order_across_pulls() {
+    // High-fidelity shape of the 2026-07-14 report: a two-hole cloze card whose
+    // hole has AI distractors cached, served as a choice, answered, then the
+    // state re-pulled (the tutor-close pull). The order must hold on both the
+    // Recognize path (seen card) and the acquire path (unseen card).
+    const CLOZE_DECK: &str = "# What is frb, in one sentence?\n\
+        % reveal: cloze\n\
+        \tA {{code-generation}} tool generating the {{FFI}} glue on both sides.\n";
+    for seed_store in [true, false] {
+        let (base, _guard) = spawn_full_server_fixture(None, |dir| {
+            std::fs::write(dir.join("frb.txt"), CLOZE_DECK).unwrap();
+            let cards = parser::parse_str("frb.txt", CLOZE_DECK).unwrap();
+            // Real distractor sets on every sub-card, mirroring the user's
+            // augment.json (the lib computes the ids — never hand-rolled).
+            let mut cache = alix::augment::AugmentCache::open(dir.join("augment.json"));
+            for c in &cards {
+                cache.set_distractors(
+                    c.id(),
+                    vec!["IPC".into(), "RPC".into(), "a REST API".into()],
+                );
+            }
+            cache.save().unwrap();
+            if seed_store {
+                let mut store = Store::open(dir.join("store.json")).unwrap();
+                for c in &cards {
+                    store.get_or_insert(c.id(), 0);
+                }
+                store.save().unwrap();
+            }
+        });
+        let resp = post_json(
+            &base,
+            "/api/select",
+            r#"{"deck":"frb.txt","depth":"recognize"}"#,
+        );
+        let first: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+        let before = first["choices"].clone();
+        assert!(
+            before.is_array(),
+            "expected a choice question (seed_store={seed_store}): {first}"
+        );
+
+        post_json(&base, "/api/choose", r#"{"index":0}"#);
+        let resp = http(&base, "GET", "/api/state", &[], &[]);
+        let after: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+        assert_eq!(
+            first["card"]["front"], after["card"]["front"],
+            "same card (seed_store={seed_store})"
+        );
+        assert_eq!(
+            before, after["choices"],
+            "option order shifted (seed_store={seed_store})"
+        );
+    }
+}
+
+#[test]
 fn post_api_choose_with_a_malformed_body_yields_400() {
     let (base, _guard) = spawn_test_server();
     select_fixture(&base);

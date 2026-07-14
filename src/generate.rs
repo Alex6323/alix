@@ -78,6 +78,11 @@ several items, split it into several one-idea cards instead — one card per ite
 or group. Only when the ordered list ITSELF is the thing to learn (steps, a \
 sequence) keep it as one card with `% reveal: line` and one item per indented \
 answer line.
+- A MAPPING of pairs (each X with its Y: ABIs to target triples, terms to \
+meanings) is not an ordered sequence. Never author a \"match each X to its Y\" \
+card that recalls the whole table at once, and never use `% reveal: line` for \
+one; make it ONE cloze card, one line per pair with the recalled half in \
+{{...}}, so every pair is drilled on its own.
 - Give answers and notes clean structure when the content has it (short lines, \
 one point per line — do NOT prefix items with a bullet or dash; bullets are added \
 later by `alix deck augment --target format`); keep an atomic answer atomic — \
@@ -160,6 +165,11 @@ several items, split it into several one-idea cards instead — one card per ite
 or group. Only when the ordered list ITSELF is the thing to learn (steps, a \
 sequence) keep it as one card with `% reveal: line` and one item per indented \
 answer line.
+- A MAPPING of pairs (each X with its Y: ABIs to target triples, terms to \
+meanings) is not an ordered sequence. Never author a \"match each X to its Y\" \
+card that recalls the whole table at once, and never use `% reveal: line` for \
+one; make it ONE cloze card, one line per pair with the recalled half in \
+{{...}}, so every pair is drilled on its own.
 - Give answers and notes clean structure when the content has it (short lines, \
 one point per line — do NOT prefix items with a bullet or dash; bullets are added \
 later by `alix deck augment --target format`); keep an atomic answer atomic — \
@@ -192,6 +202,10 @@ the answer.
 - Tighten any card whose answer covers more than its front asks: narrow the \
 answer to the question, move the extra fact to the `! ` note, or split it into \
 distinct cards. A front and its answer must ask and tell the same thing.
+- Rewrite any card that recalls a whole mapping or table of pairs at once \
+(\"match each X to its Y\") as one cloze card: one line per pair, the recalled \
+half in {{...}}. Ordered steps may stay a `% reveal: line` card; unordered \
+pairs never.
 - Keep the EXACT same file format: the leading `%` comment lines, `# ` card \
 fronts at column 0, indented answer lines, and indented `! ` notes. A cloze \
 card carries a `% reveal: cloze` line below its front and keeps its blanks \
@@ -468,6 +482,9 @@ mod tests {
         assert!(p.contains("REVISE before finishing"));
         // The answer must not over-answer the front (scope match).
         assert!(p.contains("cover exactly what the front asks"));
+        // A mapping of pairs becomes one cloze card, never a recall-the-table
+        // card (the "match each Android ABI" bug, 2026-07-14).
+        assert!(p.contains("drilled on its own"));
     }
 
     #[test]
@@ -477,6 +494,8 @@ mod tests {
         assert!(p.contains("MERGE cards that test the same fact"));
         assert!(p.contains("Output ONLY the improved deck"));
         assert!(p.contains("must ask and tell the same thing"));
+        // The review pass also converts recall-the-whole-mapping cards to cloze.
+        assert!(p.contains("one line per pair"));
         assert!(p.ends_with("% link: u\n# Q\n\tA\n"));
     }
 
@@ -509,6 +528,8 @@ mod tests {
         // It asks for per-card `% at:` source citations (read the real lines).
         assert!(p.contains("% at: file:start-end"));
         assert!(p.contains("never guess"));
+        // The mapping-to-cloze rule holds in the local-source template too.
+        assert!(p.contains("drilled on its own"));
     }
 
     #[test]
