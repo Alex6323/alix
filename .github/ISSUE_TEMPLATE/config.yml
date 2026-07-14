@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Feature idea or feedback
+    url: mailto:contact@alix.study
+    about: The fastest way to reach the maintainer. Ideas land on the roadmap, not in a public backlog.
+  - name: Questions and docs
+    url: https://alix.study/book/
+    about: The manual covers setup, the deck format, and every feature in depth.

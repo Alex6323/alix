@@ -41,10 +41,9 @@ it.
   its place; staying small and focused is the whole bet. That's not hostility,
   and it's rarely final — "no" usually means "not like this" or "not yet," not
   "never."
-- **For anything non-trivial, open a [feature proposal](../../issues/new/choose)
-  first.** Get a go/no-go before you build. A surprise PR for a big feature is
-  the hardest to accept, however good the code — talking first means your effort
-  lands somewhere it'll actually get merged.
+- **For anything non-trivial, email first.** Get a go/no-go before you build. A
+  surprise PR for a big feature is the hardest to accept, however good the code:
+  talking first means your effort lands somewhere it'll actually get merged.
 - **Reach is welcome; scope must clear the gate.**
   - *Reach* = work that widens access to the **same one job**: install and
     onboarding, the web surface, backends, performance, reliability,
@@ -72,8 +71,15 @@ Negative space defines the focus. `alix` is **not**:
 - a content marketplace (you bring or generate decks from *your* sources).
 
 Proposals that move `alix` toward any of these are unlikely to land as-is. If
-you think something here actually belongs in `alix`, that's a fair discussion —
-open a proposal to change the list itself.
+you think something here actually belongs in `alix`, that's a fair discussion:
+email contact@alix.study to raise it.
+
+## Feature requests and PRs
+
+Feature ideas go to contact@alix.study and get triaged onto the maintainer's
+roadmap, not into a public backlog. Bug reports use the issue form. PRs come
+after a discussed issue or email thread; large or generated PRs without prior
+discussion are usually closed unread.
 
 ## Development setup
 
@@ -208,8 +214,9 @@ this is a maintainer-only check, not part of the normal contributor flow).
 - **Don't break the build, and run `make check` before pushing.**
 - We keep a **linear history** — rebase your branch on `main` and avoid merge
   commits; a clean fast-forward is the goal.
-- The PR template's checklist is the gate in miniature. If you can't honestly
-  tick a fit-gate box, stop and open a discussion before going further.
+- Fill in the PR template: which issue or email thread it follows up on, what
+  it changes, how you tested it. If you can't answer the first one, stop and
+  open a discussion before going further.
 - Commits made with AI assistance carry a `Co-Authored-By` trailer; keep that if
   you use it.
 

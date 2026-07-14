@@ -1,0 +1,64 @@
+name: Bug report
+description: Something isn't working the way it should
+title: ""
+labels: ["bug"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: alix version
+      description: Run `alix --version` and paste the output.
+      placeholder: alix 0.4.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: How did you install alix?
+      options:
+        - Binary download
+        - cargo install
+        - Built from source
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: The actual behavior, including the exact command you ran and any error output.
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-expected
+    attributes:
+      label: What did you expect instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Number them if you can, e.g. 1. run X, 2. do Y, 3. see Z.
+    validations:
+      required: true
+
+  - type: textarea
+    id: deck-or-logs
+    attributes:
+      label: Deck snippet or logs (optional)
+      description: Decks are plain text, so pasting the smallest excerpt that still triggers the bug helps a lot.
+      render: text
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: duplicate-check
+    attributes:
+      label: Before submitting
+      options:
+        - label: I checked existing issues for duplicates
+          required: true
