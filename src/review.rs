@@ -1,9 +1,10 @@
-//! The presentation-agnostic view of a review session: the client contract a
-//! non-web frontend (the frb mobile client) renders, and the seed the gated
-//! web `StateDto` converges onto later. The builders live here as free
-//! functions over a [`Session`] plus its [`Store`] and [`AugmentCache`], the
-//! same three the web's state builder reads; nothing in this module is
-//! transport- or markup-flavored.
+//! The presentation-agnostic view of a review session: the ONE review
+//! contract every client renders. The embedded mobile client consumes these
+//! types directly over FFI; the gated web `StateDto` is a thin wire envelope
+//! derived from [`state`] (naming, phase, serve-held context), never a
+//! re-derivation. The builders live here as free functions over a
+//! [`Session`] plus its [`Store`] and [`AugmentCache`]; nothing in this
+//! module is transport- or markup-flavored.
 use serde::{Deserialize, Serialize};
 
 use crate::{
