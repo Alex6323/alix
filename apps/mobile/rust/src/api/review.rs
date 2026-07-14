@@ -237,7 +237,7 @@ mod tests {
 
     const T0: u64 = 1_000_000;
     /// Past the acquire cooldown.
-    const LATER: u64 = T0 + 61_000;
+    const LATER: u64 = T0 + alix::scheduler::DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
 
     fn write(path: &Path, text: &str) {
         std::fs::write(path, text).unwrap();

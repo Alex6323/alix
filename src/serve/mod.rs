@@ -261,9 +261,18 @@ pub fn run_review(
     // Workspace icons resolved while building the picker, served via `/img/` at
     // launcher time (when no review/browse session owns the registry).
     let mut launcher_icons: HashMap<String, PathBuf> = HashMap::new();
+    // Diagnostic net for {#server-subresource-stall}: with ALIX_HTTP_LOG set,
+    // one stderr line as each request is POPPED off tiny_http's queue. On the
+    // next stall the pattern is decisive: a wedged request that never prints
+    // never left tiny_http's connection reader; one that prints but is
+    // followed by nothing hung in a handler (this loop is single-threaded).
+    let http_log = std::env::var_os("ALIX_HTTP_LOG").is_some();
     for mut request in server.incoming_requests() {
         let method = request.method().clone();
         let path = request_path(&request);
+        if http_log {
+            eprintln!("[http] {method} {path}");
+        }
         if !is_authorized(
             &path,
             header_value(&request, "Authorization"),

@@ -13,9 +13,11 @@ import 'package:alix_mobile/src/rust/api/listing.dart';
 import 'package:alix_mobile/src/rust/api/review.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
 
-/// Acquired at T0, quizzed once the cooldown has elapsed.
+/// Acquired at T0, quizzed once the cooldown has elapsed. 301000 = the
+/// core's DEFAULT_ACQUIRE_COOLDOWN_MS (5 min, src/scheduler.rs) + 1s; keep
+/// them in step.
 final t0 = BigInt.from(1000000);
-final later = BigInt.from(1000000 + 61000);
+final later = BigInt.from(1000000 + 301000);
 
 /// A decks root with one loose deck and one workspace member deck.
 Directory makeRoot() {
@@ -135,7 +137,7 @@ void main() {
       '    stronger memories fade more slowly\n',
     );
     final backdated =
-        BigInt.from(DateTime.now().millisecondsSinceEpoch - 120000);
+        BigInt.from(DateTime.now().millisecondsSinceEpoch - 600000);
     final s = ReviewSession.open(
         deckPath: deck, rootDir: root.path, nowMs: backdated);
     s.acquire(nowMs: backdated);
@@ -180,10 +182,10 @@ void main() {
     addTearDown(() => root.deleteSync(recursive: true));
     final deck = '${root.path}/loose.txt';
     // Backdate the acquire far enough that the real clock is past the
-    // cooldown: the UI (which always uses the wall clock) then serves the
-    // first quiz immediately.
+    // cooldown (5 min default): the UI (which always uses the wall clock)
+    // then serves the first quiz immediately.
     final backdated =
-        BigInt.from(DateTime.now().millisecondsSinceEpoch - 120000);
+        BigInt.from(DateTime.now().millisecondsSinceEpoch - 600000);
     final s =
         ReviewSession.open(deckPath: deck, rootDir: root.path, nowMs: backdated);
     s.acquire(nowMs: backdated);

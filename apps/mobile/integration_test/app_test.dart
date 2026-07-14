@@ -23,9 +23,10 @@ void main() {
     File('${root.path}/greek.txt').writeAsStringSync(
       '% title: Greek\n# capital of greece?\n    Athens\n',
     );
-    // Acquired two minutes "ago": the app, on the wall clock, serves the quiz.
+    // Acquired ten minutes "ago" (past the 5-min default acquire cooldown):
+    // the app, on the wall clock, serves the quiz.
     final backdated =
-        BigInt.from(DateTime.now().millisecondsSinceEpoch - 120000);
+        BigInt.from(DateTime.now().millisecondsSinceEpoch - 600000);
     ReviewSession.open(
       deckPath: '${root.path}/greek.txt',
       rootDir: root.path,

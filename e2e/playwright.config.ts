@@ -27,6 +27,17 @@ export default defineConfig({
   // page load can still be slow for a few seconds under that build's tail-end
   // CPU load. Everything after warms up and finishes in well under a second.
   timeout: 60_000,
+  // {#server-subresource-stall}: about 1 CI run in 10, the adult project's
+  // FIRST navigation stalls — the server answers a dozen requests in
+  // milliseconds, then one or two subresources (a sync script, a font) never
+  // complete, so `domcontentloaded` never fires. Recurred on warm runners
+  // (2026-07-13, 2026-07-14), so it is not cold-start starvation; the
+  // server-side request log (ALIX_HTTP_LOG below) exists to pin it on the
+  // next occurrence. Until it is found, retry in CI only: a stall passes on
+  // retry and is reported "flaky" (still visible, with its trace retained),
+  // while a genuine regression fails all three attempts. Locally: no
+  // retries, a failure is a failure.
+  retries: process.env.CI ? 2 : 0,
   // Each server has one review session live on it at a time — tests read and
   // build on each other's server-side state, so they must not run
   // concurrently (within a project, or across the two).
@@ -53,6 +64,11 @@ export default defineConfig({
       cwd: REPO_ROOT,
       url: KIDS_BASE_URL,
       timeout: 180_000, // cargo may need to build first
+      // The {#server-subresource-stall} net: log every request the server
+      // loop handles into this suite's output, so a stalled run shows
+      // whether the missing request ever reached the loop.
+      env: { ALIX_HTTP_LOG: "1" },
+      stderr: "pipe",
       // Never reuse: a server carries session state (and a handle on a decks
       // dir this config wipes and recopies each run). Reusing one that a
       // previous run left mid-session made `/` render the review screen
@@ -67,6 +83,9 @@ export default defineConfig({
       cwd: REPO_ROOT,
       url: ADULT_BASE_URL,
       timeout: 180_000,
+      // Same {#server-subresource-stall} net as the kids server above.
+      env: { ALIX_HTTP_LOG: "1" },
+      stderr: "pipe",
       // Never reuse: a server carries session state (and a handle on a decks
       // dir this config wipes and recopies each run). Reusing one that a
       // previous run left mid-session made `/` render the review screen
