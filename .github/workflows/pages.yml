@@ -41,6 +41,33 @@ jobs:
           cp -r site/. _site/
           cp assets/alix.svg _site/icon.svg
           cp -r docs/book/book _site/book
+      # site/impressum.html + site/datenschutz.html carry {{placeholder}}
+      # tokens (see scripts/site-details.py). Real postal details never
+      # enter git history: they live only in the SITE_DETAILS repo secret
+      # (JSON: name/street/city/email/phone) and get stamped into the built
+      # _site artifact here, right before deploy.
+      #
+      # No secret configured (forks, or before it's set up): skip silently,
+      # deploy with the templates' own visible "[wird beim Deploy
+      # eingesetzt]" placeholder text, never fail the build for this.
+      # Secret set but malformed (bad JSON, or a missing/empty required
+      # key): --check fails the build loudly, before anything deploys.
+      - name: Check site details placeholders
+        if: env.SITE_DETAILS != ''
+        env:
+          SITE_DETAILS: ${{ secrets.SITE_DETAILS }}
+        run: python3 scripts/site-details.py --check _site
+      - name: Inject site details
+        if: env.SITE_DETAILS != ''
+        env:
+          SITE_DETAILS: ${{ secrets.SITE_DETAILS }}
+        run: python3 scripts/site-details.py --inject _site
+      - name: Note missing SITE_DETAILS secret
+        if: env.SITE_DETAILS == ''
+        env:
+          SITE_DETAILS: ${{ secrets.SITE_DETAILS }}
+        run: |
+          echo "::notice::SITE_DETAILS secret not set, deploying site/impressum.html and site/datenschutz.html with their local-preview placeholder text."
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

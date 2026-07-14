@@ -7,6 +7,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- The site gains an Impressum, a privacy note, a contact address and a
+  sponsor link; personal details are injected at deploy time, not stored in
+  the repo.
 - **The mobile app reviews Explain cards with the keypoint checklist.** After
   the reveal you tick which key points your reconstruction covered (the cached
   keypoints augment, else the card's own answer lines) and the tally derives
