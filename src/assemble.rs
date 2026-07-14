@@ -525,12 +525,29 @@ pub fn select(
         retire_after_days: review.retire_after_days,
         depth,
     };
+    let now = opts.now_ms.unwrap_or_else(now_ms);
+    // A workspace deadline bends the scheduler toward the date: interval cap +
+    // windowed retention ramp + due ceiling ({#deadlines} spec). Past the date
+    // the tuning is None and the base parameters hold.
+    let tuning = review.deadline.and_then(|date| {
+        crate::scheduler::deadline_tuning(
+            date,
+            review.deadline_ramp_days,
+            review.retention,
+            crate::time::local_date(now),
+            crate::time::end_of_local_day_ms(date),
+        )
+    });
     let session = Session::new(
         cards,
         store,
-        Box::new(Fsrs::new(review.retention, review.acquire_cooldown_ms)),
+        Box::new(Fsrs::tuned(
+            review.retention,
+            review.acquire_cooldown_ms,
+            tuning,
+        )),
         options,
-        opts.now_ms.unwrap_or_else(now_ms),
+        now,
     );
 
     // Remember the resolved depth for this deck so a plain Learn next time
@@ -1201,5 +1218,58 @@ mod tests {
             }
             Selected::Walk(_) => panic!("a fact deck must review"),
         }
+    }
+
+    #[test]
+    fn a_workspace_deadline_ceilings_what_a_session_schedules() {
+        // Spec assumption A2, closed by execution: the alix.local.toml deadline
+        // reaches the scheduler a real select() builds. A mature card graded
+        // Pass three days before the deadline must come due before it.
+        let dir = tempfile::tempdir().unwrap();
+        let deck = dir.path().join("m.txt");
+        std::fs::write(&deck, "# q\n\ta\n").unwrap();
+        let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
+        let id = crate::deck::Deck::load(&deck).unwrap().cards[0].id();
+
+        // A mature Review-state card that would schedule ~months uncapped.
+        let now = crate::time::now_ms();
+        store.get_or_insert(id, now).recall = Some(crate::store::FsrsState {
+            stability: 200.0,
+            difficulty: 5.0,
+            state: 2,
+            reps: 10,
+            scheduled_days: 90,
+            last_review_ms: now.saturating_sub(90 * 86_400_000),
+            due_ms: now.saturating_sub(1_000), // due now
+            ..Default::default()
+        });
+
+        // Deadline three days from today, written the way a user would.
+        let deadline = crate::time::local_date(now) + chrono::Days::new(3);
+        std::fs::write(
+            dir.path().join("alix.local.toml"),
+            format!("[review]\ndeadline = \"{}\"\n", deadline.format("%Y-%m-%d")),
+        )
+        .unwrap();
+
+        let opts = SelectOptions {
+            now_ms: Some(now),
+            ..Default::default()
+        };
+        let Selected::Review(mut build) =
+            select(vec![deck], &mut store, &test_config(), &opts).unwrap()
+        else {
+            panic!("a fact deck must review");
+        };
+        build
+            .session
+            .grade(&mut store, crate::scheduler::Grade::Pass, now);
+
+        let ceiling = crate::time::end_of_local_day_ms(deadline);
+        let due = store.get(id).unwrap().recall.unwrap().due_ms;
+        assert!(
+            due <= ceiling,
+            "due {due} must respect the deadline ceiling {ceiling}"
+        );
     }
 }
