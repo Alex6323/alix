@@ -8,7 +8,8 @@ use crate::{answer::Input, depth::Reveal};
 
 /// Which way a card is reviewed. Set per card (or per deck) with
 /// `% direction:`; `both` generates a forward and a reversed card.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "full", derive(clap::ValueEnum))]
 pub enum Direction {
     /// The card as written: front asks, back answers (the default).
     #[default]
@@ -17,6 +18,19 @@ pub enum Direction {
     Reverse,
     /// Both the forward and the reversed card.
     Both,
+}
+
+impl Direction {
+    /// Parses the directive value name (case-insensitive), mirroring the clap
+    /// value names; the gated parity test keeps the two in step.
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.to_ascii_lowercase().as_str() {
+            "forward" => Some(Self::Forward),
+            "reverse" => Some(Self::Reverse),
+            "both" => Some(Self::Both),
+            _ => None,
+        }
+    }
 }
 
 /// A single flashcard.
@@ -365,5 +379,27 @@ mod tests {
         a.input = Some(Input::Draw);
         b.input = None;
         assert_eq!(a.id(), b.id()); // input is a review property, not content
+    }
+}
+
+#[cfg(all(test, feature = "full"))]
+mod clap_parity {
+    use clap::ValueEnum;
+
+    use super::*;
+
+    /// The hand-written `parse` and the clap value names must agree on every
+    /// variant, or a `%` directive would parse differently from the CLI flag.
+    #[test]
+    fn parse_matches_the_clap_value_names() {
+        for variant in Direction::value_variants() {
+            let name = variant.to_possible_value().expect("a value name");
+            assert_eq!(
+                Some(*variant),
+                Direction::parse(name.get_name()),
+                "{name:?}"
+            );
+        }
+        assert_eq!(None, Direction::parse("no-such-value"));
     }
 }

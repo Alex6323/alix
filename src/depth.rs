@@ -13,26 +13,29 @@ use crate::{answer::Mode, card::Card};
 /// boolean; Recall and Reconstruct each own an independent FSRS schedule per
 /// card (stationarity: one schedule, one task, forever).
 #[derive(
-    Clone,
-    Copy,
-    Debug,
-    Default,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Serialize,
-    Deserialize,
-    clap::ValueEnum,
+    Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
+#[cfg_attr(feature = "full", derive(clap::ValueEnum))]
+#[cfg_attr(feature = "full", clap(rename_all = "lowercase"))]
 #[serde(rename_all = "lowercase")]
-#[clap(rename_all = "lowercase")]
 pub enum Depth {
     Recognize,
     #[default]
     Recall,
     Reconstruct,
+}
+
+impl Depth {
+    /// Parses the directive/config value name (case-insensitive), mirroring
+    /// the clap value names; the gated parity test keeps the two in step.
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.to_ascii_lowercase().as_str() {
+            "recognize" => Some(Self::Recognize),
+            "recall" => Some(Self::Recall),
+            "reconstruct" => Some(Self::Reconstruct),
+            _ => None,
+        }
+    }
 }
 
 /// The lowercase name of a depth, matching its serde/clap rendering — for
@@ -47,7 +50,8 @@ pub fn depth_name(depth: Depth) -> &'static str {
 
 /// How a card's answer is presented / uncovered — authored (`% reveal:`),
 /// independent of depth. Composes with any depth.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize, clap::ValueEnum)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "full", derive(clap::ValueEnum))]
 #[serde(rename_all = "lowercase")]
 pub enum Reveal {
     /// Reveal the whole answer at once (default).
@@ -57,6 +61,19 @@ pub enum Reveal {
     Cloze,
     /// Reveal progressively, line by line (ordered material).
     Line,
+}
+
+impl Reveal {
+    /// Parses the directive value name (case-insensitive), mirroring the clap
+    /// value names; the gated parity test keeps the two in step.
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.to_ascii_lowercase().as_str() {
+            "flip" => Some(Self::Flip),
+            "cloze" => Some(Self::Cloze),
+            "line" => Some(Self::Line),
+            _ => None,
+        }
+    }
 }
 
 /// Whether an answer is atomic (a single short line → typed exactly) vs rich
@@ -153,5 +170,28 @@ mod tests {
             "\"recognize\"",
             serde_json::to_string(&Depth::Recognize).unwrap()
         );
+    }
+}
+
+#[cfg(all(test, feature = "full"))]
+mod clap_parity {
+    use clap::ValueEnum;
+
+    use super::*;
+
+    /// The hand-written `parse` and the clap value names must agree on every
+    /// variant, or a `%` directive would parse differently from the CLI flag.
+    #[test]
+    fn parse_matches_the_clap_value_names() {
+        for variant in Depth::value_variants() {
+            let name = variant.to_possible_value().expect("a value name");
+            assert_eq!(Some(*variant), Depth::parse(name.get_name()), "{name:?}");
+        }
+        assert_eq!(None, Depth::parse("no-such-value"));
+        for variant in Reveal::value_variants() {
+            let name = variant.to_possible_value().expect("a value name");
+            assert_eq!(Some(*variant), Reveal::parse(name.get_name()), "{name:?}");
+        }
+        assert_eq!(None, Reveal::parse("no-such-value"));
     }
 }

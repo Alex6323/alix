@@ -17,7 +17,6 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
-use clap::ValueEnum;
 use serde::Deserialize;
 
 /// A key without modifiers.
@@ -354,7 +353,8 @@ impl Default for GenerateDeckConfig {
 /// points. This is a per-deck choice (set with `% strictness:`, the `[exam]`
 /// default, or `alix exam --strictness`) because some material demands
 /// recalling everything while other material is about grasping the idea.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, ValueEnum)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "full", derive(clap::ValueEnum))]
 pub enum Strictness {
     /// Completeness required: every rubric point must be present, so omitting
     /// one is a gap. For procedures, exact syntax, security — where knowing
@@ -368,6 +368,19 @@ pub enum Strictness {
     /// Benefit of the doubt: only clearly wrong or unanswered points are gaps.
     /// For breadth or casual learning.
     Lenient,
+}
+
+impl Strictness {
+    /// Parses the config value name (case-insensitive), mirroring the clap
+    /// value names; the gated parity test keeps the two in step.
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.to_ascii_lowercase().as_str() {
+            "strict" => Some(Self::Strict),
+            "balanced" => Some(Self::Balanced),
+            "lenient" => Some(Self::Lenient),
+            _ => None,
+        }
+    }
 }
 
 /// Settings for the AI exam (`alix exam`, the `[exam]` section). Like
@@ -925,9 +938,9 @@ impl Config {
             exam.retry_cooldown_secs = secs;
         }
         if let Some(s) = raw.exam.strictness.filter(|s| !s.trim().is_empty()) {
-            match Strictness::from_str(s.trim(), true) {
-                Ok(v) => exam.strictness = v,
-                Err(_) => {
+            match Strictness::parse(s.trim()) {
+                Some(v) => exam.strictness = v,
+                None => {
                     bail!("invalid exam.strictness {s:?}: expected strict, balanced, or lenient")
                 }
             }
@@ -1701,5 +1714,27 @@ mod tests {
             msg.contains("backend"),
             "error should mention 'backend': {msg}"
         );
+    }
+}
+
+#[cfg(all(test, feature = "full"))]
+mod clap_parity {
+    use clap::ValueEnum;
+
+    use super::*;
+
+    /// The hand-written `parse` and the clap value names must agree on every
+    /// variant, or a `%` directive would parse differently from the CLI flag.
+    #[test]
+    fn parse_matches_the_clap_value_names() {
+        for variant in Strictness::value_variants() {
+            let name = variant.to_possible_value().expect("a value name");
+            assert_eq!(
+                Some(*variant),
+                Strictness::parse(name.get_name()),
+                "{name:?}"
+            );
+        }
+        assert_eq!(None, Strictness::parse("no-such-value"));
     }
 }

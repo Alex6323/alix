@@ -9,17 +9,8 @@
 //!   module).
 
 /// Which answer mode a review session uses.
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    Default,
-    PartialEq,
-    Eq,
-    clap::ValueEnum,
-    serde::Serialize,
-    serde::Deserialize,
-)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "full", derive(clap::ValueEnum))]
 pub enum Mode {
     /// Reveal the answer and grade yourself (again / good / easy).
     #[default]
@@ -27,7 +18,7 @@ pub enum Mode {
     /// Type the answer exactly, character by character.
     Typing,
     /// Type one line at a time, checked in order (Reconstruct + `% reveal: line`).
-    #[value(name = "typeline")]
+    #[cfg_attr(feature = "full", value(name = "typeline"))]
     #[serde(rename = "typeline")]
     TypeLine,
     /// Pick the right answer out of four; the wrong options are sampled from
@@ -35,7 +26,7 @@ pub enum Mode {
     Choice,
     /// Reveal the back one line at a time (useful for lyrics or poems), then
     /// grade yourself once the whole card is uncovered.
-    #[value(name = "line")]
+    #[cfg_attr(feature = "full", value(name = "line"))]
     LineByLine,
     /// Understanding cards: an open prompt; type your explanation (optional),
     /// reveal the back lines (the key points it should cover), then grade
@@ -47,6 +38,22 @@ pub enum Mode {
 ///
 /// `pub(crate)`: reused by [`crate::serve`] to report a card's mode in its JSON
 /// state.
+impl Mode {
+    /// Parses the directive value name (case-insensitive), mirroring the clap
+    /// value names; the gated parity test keeps the two in step.
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.to_ascii_lowercase().as_str() {
+            "flip" => Some(Self::Flip),
+            "typing" => Some(Self::Typing),
+            "typeline" => Some(Self::TypeLine),
+            "choice" => Some(Self::Choice),
+            "line" => Some(Self::LineByLine),
+            "explain" => Some(Self::Explain),
+            _ => None,
+        }
+    }
+}
+
 #[cfg(feature = "full")]
 pub(crate) fn mode_name(mode: Mode) -> &'static str {
     match mode {
@@ -63,25 +70,28 @@ pub(crate) fn mode_name(mode: Mode) -> &'static str {
 /// mode). `Draw` swaps the typed/flip input for a canvas (web only) and
 /// self-grades against the card's normal reveal. Set with `% input:` (card
 /// override, else deck); absent falls back to `Type`.
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    Default,
-    PartialEq,
-    Eq,
-    clap::ValueEnum,
-    serde::Serialize,
-    serde::Deserialize,
-)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "full", derive(clap::ValueEnum))]
 pub enum Input {
     /// Type the answer (the default).
     #[default]
-    #[value(name = "type")]
+    #[cfg_attr(feature = "full", value(name = "type"))]
     Type,
     /// Draw / handwrite the answer on a canvas (web only), then self-grade.
-    #[value(name = "draw")]
+    #[cfg_attr(feature = "full", value(name = "draw"))]
     Draw,
+}
+
+impl Input {
+    /// Parses the directive value name (case-insensitive), mirroring the clap
+    /// value names; the gated parity test keeps the two in step.
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.to_ascii_lowercase().as_str() {
+            "type" => Some(Self::Type),
+            "draw" => Some(Self::Draw),
+            _ => None,
+        }
+    }
 }
 
 /// The state of one typed character.
@@ -319,10 +329,9 @@ mod tests {
 
     #[test]
     fn input_parses_its_value_names_and_defaults_to_type() {
-        use clap::ValueEnum;
-        assert_eq!(Input::Draw, Input::from_str("draw", true).unwrap());
-        assert_eq!(Input::Type, Input::from_str("type", true).unwrap());
-        assert!(Input::from_str("scribble", true).is_err());
+        assert_eq!(Some(Input::Draw), Input::parse("draw"));
+        assert_eq!(Some(Input::Type), Input::parse("TYPE"));
+        assert_eq!(None, Input::parse("scribble"));
         assert_eq!(Input::Type, Input::default());
     }
 
@@ -550,5 +559,28 @@ mod tests {
         v.set_expected("car");
         assert!(v.is_complete());
         assert!(v.passed());
+    }
+}
+
+#[cfg(all(test, feature = "full"))]
+mod clap_parity {
+    use clap::ValueEnum;
+
+    use super::*;
+
+    /// The hand-written `parse` and the clap value names must agree on every
+    /// variant, or a `%` directive would parse differently from the CLI flag.
+    #[test]
+    fn parse_matches_the_clap_value_names() {
+        for variant in Mode::value_variants() {
+            let name = variant.to_possible_value().expect("a value name");
+            assert_eq!(Some(*variant), Mode::parse(name.get_name()), "{name:?}");
+        }
+        assert_eq!(None, Mode::parse("no-such-value"));
+        for variant in Input::value_variants() {
+            let name = variant.to_possible_value().expect("a value name");
+            assert_eq!(Some(*variant), Input::parse(name.get_name()), "{name:?}");
+        }
+        assert_eq!(None, Input::parse("no-such-value"));
     }
 }

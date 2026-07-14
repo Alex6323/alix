@@ -23,7 +23,6 @@
 
 use std::{path::PathBuf, sync::Arc};
 
-use clap::ValueEnum;
 use thiserror::Error;
 
 use crate::{
@@ -349,7 +348,7 @@ pub fn parse_str(subject: &str, text: &str) -> Result<Vec<Card>, ParseError> {
                     let partial = partial.as_mut().unwrap();
                     match key.as_str() {
                         "reveal" => {
-                            if let Ok(r) = Reveal::from_str(&value, true) {
+                            if let Some(r) = Reveal::parse(&value) {
                                 partial.reveal = Some(r);
                                 if r == Reveal::Cloze {
                                     partial.cloze = true;
@@ -357,12 +356,12 @@ pub fn parse_str(subject: &str, text: &str) -> Result<Vec<Card>, ParseError> {
                             }
                         }
                         "input" => {
-                            if let Ok(i) = Input::from_str(&value, true) {
+                            if let Some(i) = Input::parse(&value) {
                                 partial.input = Some(i);
                             }
                         }
                         "direction" => {
-                            if let Ok(d) = Direction::from_str(&value, true) {
+                            if let Some(d) = Direction::parse(&value) {
                                 partial.direction = Some(d);
                             }
                         }

@@ -28,7 +28,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ["cfg(coverage_nightly)"] }
 [dependencies]
 anyhow = "1"
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "serde"] }
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive"], optional = true }
 directories = "6"
 getrandom = { version = "0.2", optional = true } # portable OS CSPRNG for the serve pairing token (already a transitive dep)
 qrcodegen = { version = "1.8.0", optional = true } # zero-dep QR encoder for the terminal pairing QR (`--lan`)
@@ -48,7 +48,7 @@ default = ["full"]
 # `full` is every non-core capability: the web server, the AI backend and all its
 # consumers, and sharing. `--no-default-features` builds the lean core the mobile
 # client cross-compiles. See docs/specs/2026-07-12-core-feature-gate-spec.md.
-full = ["dep:tiny_http", "dep:zip", "dep:qrcodegen", "dep:getrandom"]
+full = ["dep:tiny_http", "dep:zip", "dep:qrcodegen", "dep:getrandom", "dep:clap"]
 
 [dev-dependencies]
 

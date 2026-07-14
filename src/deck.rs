@@ -5,7 +5,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use clap::ValueEnum;
 use thiserror::Error;
 
 use crate::{
@@ -51,12 +50,12 @@ impl DeckSettings {
         let mut settings = Self::default();
         for (key, value) in directives {
             match key.as_str() {
-                "reveal" => settings.reveal = Reveal::from_str(value, true).ok(),
-                "input" => settings.input = Input::from_str(value, true).ok(),
-                "order" => settings.order = Order::from_str(value, true).ok(),
-                "direction" => settings.direction = Direction::from_str(value, true).ok(),
+                "reveal" => settings.reveal = Reveal::parse(value),
+                "input" => settings.input = Input::parse(value),
+                "order" => settings.order = Order::parse(value),
+                "direction" => settings.direction = Direction::parse(value),
                 "img-dir" => settings.img_dir = Some(PathBuf::from(value)),
-                "strictness" => settings.exam_strictness = Strictness::from_str(value, true).ok(),
+                "strictness" => settings.exam_strictness = Strictness::parse(value),
                 "origin" => {
                     let v = value.trim();
                     if !v.is_empty() {

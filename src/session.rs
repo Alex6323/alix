@@ -52,7 +52,8 @@ pub struct DeckInfo {
 }
 
 /// The order in which the due/new cards of a session are presented.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "full", derive(clap::ValueEnum))]
 pub enum Order {
     /// The scheduler decides the order (FSRS: earliest due first), then up to
     /// `max_new` new cards.
@@ -61,6 +62,18 @@ pub enum Order {
     /// Present the cards in deck/file order, top to bottom — useful for
     /// memorizing something with an inherent sequence, like song lyrics.
     Sequential,
+}
+
+impl Order {
+    /// Parses the directive value name (case-insensitive), mirroring the clap
+    /// value names; the gated parity test keeps the two in step.
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.to_ascii_lowercase().as_str() {
+            "scheduled" => Some(Self::Scheduled),
+            "sequential" => Some(Self::Sequential),
+            _ => None,
+        }
+    }
 }
 
 /// Options controlling which cards enter a session and in what order.
@@ -2789,5 +2802,23 @@ mod tests {
             store.get(all[2].id()).unwrap().recognized_ms.is_none(),
             "a partial never marks recognized"
         );
+    }
+}
+
+#[cfg(all(test, feature = "full"))]
+mod clap_parity {
+    use clap::ValueEnum;
+
+    use super::*;
+
+    /// The hand-written `parse` and the clap value names must agree on every
+    /// variant, or a `%` directive would parse differently from the CLI flag.
+    #[test]
+    fn parse_matches_the_clap_value_names() {
+        for variant in Order::value_variants() {
+            let name = variant.to_possible_value().expect("a value name");
+            assert_eq!(Some(*variant), Order::parse(name.get_name()), "{name:?}");
+        }
+        assert_eq!(None, Order::parse("no-such-value"));
     }
 }
