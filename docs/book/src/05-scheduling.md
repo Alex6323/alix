@@ -51,9 +51,12 @@ layout stay put. If the deck has AI distractors (`alix deck augment
 --target choices`) and the card is **atomic** (single-line answer), it instead
 greets you as a **multiple-choice** question — pick one, see which was right.
 Either way a guess never marks it recognized or punishes it, and the first
-*graded* quiz then comes back **later in the same session** — once a short
-(~1-minute) settle passes it resurfaces, interleaved behind the other cards
-you're seeing, so seeing a deck flows straight into drilling it. Each session
+*graded* quiz then comes back **later in the same session** — once a settle
+gap passes it resurfaces, interleaved behind the other cards you're seeing,
+so seeing a deck flows straight into drilling it. That gap is
+**`acquire_cooldown`** in the `[review]` config (default `"5m"`); it also
+sets the floor before *any* just-seen card (a miss, a wrong pick) may return,
+so nothing you moved off comes straight back. `"0"` disables both gaps. Each session
 introduces up to 10 new cards (`[review] max_new` in the config changes that;
 `--new N` on the launch overrides it per instance); start another session for
 more. This is the first step of a card's life — *acquire*, then let its

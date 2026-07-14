@@ -289,6 +289,7 @@ pub(crate) fn workspace_init_cmd(args: WorkspaceInitArgs) -> Result<()> {
          \n\
          # retention = 0.9              # FSRS target recall probability (0.70–0.99)\n\
          # retire_after = \"1y\"          # a card rests at this interval (\"never\" disables)\n\
+         # acquire_cooldown = \"5m\"      # settle gap before a new card's first quiz (\"90s\", \"0\" = none)\n\
          # max_new = 10                 # max never-seen cards a session introduces\n\
          # limit = 40                   # cap on total cards per session\n";
     std::fs::write(args.dir.join(config::LOCAL_MANIFEST), local)

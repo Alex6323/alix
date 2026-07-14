@@ -886,7 +886,7 @@ fn recognize_state_reshuffles_choice_options_on_the_next_appearance_but_not_mid_
             r.session.is_finished(),
             "the only card floors instead of resurfacing instantly"
         );
-        now += crate::scheduler::ACQUIRE_COOLDOWN_MS;
+        now += crate::scheduler::DEFAULT_ACQUIRE_COOLDOWN_MS;
         r.session.poll(&store, now);
         assert_eq!(
             Some(id),

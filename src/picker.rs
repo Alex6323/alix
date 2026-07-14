@@ -256,7 +256,7 @@ pub fn deck_status(
     // correctly picked; Recall/Reconstruct each read their own independent
     // schedule — the scheduler's cross-depth immediacy rule (`Fsrs::due_at`)
     // is what makes a Recall-settled deck due right now at Reconstruct too.
-    let scheduler = crate::scheduler::Fsrs::new(review.retention);
+    let scheduler = crate::scheduler::Fsrs::new(review.retention, review.acquire_cooldown_ms);
     let now = session::now_ms();
     let reviewable_recognize = session::has_reviewable(
         &deck.cards,

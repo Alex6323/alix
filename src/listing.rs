@@ -136,7 +136,7 @@ fn deck_summary(
 /// (`picker::deck_status`) minus its trace and exam special cases, which the
 /// mobile client does not open yet.
 fn deck_due(deck: &Deck, store: &Store, review: &ReviewConfig, now_ms: u64) -> bool {
-    let scheduler = Fsrs::new(review.retention);
+    let scheduler = Fsrs::new(review.retention, review.acquire_cooldown_ms);
     let retire = review.retire_after_days;
     [Depth::Recognize, Depth::Recall, Depth::Reconstruct]
         .into_iter()

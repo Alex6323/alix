@@ -92,6 +92,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   themes above.
 
 ### Changed
+- **The acquire cooldown is configurable and defaults to 5 minutes** (was a
+  fixed 1 minute): `[review] acquire_cooldown` (`"90s"`, `"10m"`, `"1h"`; a
+  bare number is minutes, `"0"` disables it), also overridable per workspace
+  in `alix.local.toml`. One knob paces both gaps it always governed: the
+  settle before a new card's first graded quiz, and the floor before any
+  just-seen card (a miss, a wrong pick) may return. With the longer default
+  a short session can now end while a missed card is still cooling; it slots
+  back in on its own (the summary keeps polling), or next session.
 - **Breaking:** `POST /api/check` no longer reads the client-sent `ordered`
   flag; whether typed lines pair by position (`typeline`) or match in any
   order is derived server-side from the card's mode. Send `{lines}` only;

@@ -1123,7 +1123,7 @@ pub(super) fn deck_topology_dto(
     let review = review.for_workspace(parent);
     let by_id: HashMap<u64, &Card> = deck.cards.iter().map(|c| (c.id(), c)).collect();
     let deck_ids: HashSet<u64> = by_id.keys().copied().collect();
-    let scheduler = Fsrs::new(review.retention);
+    let scheduler = Fsrs::new(review.retention, review.acquire_cooldown_ms);
     let now = now_ms();
     // Cards in a region resolved back to the deck (ids absent from the deck —
     // e.g. a topology built before an edit — are skipped).

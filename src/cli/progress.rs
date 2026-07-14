@@ -48,7 +48,7 @@ pub(crate) fn stats(args: DeckArgs) -> Result<()> {
         let review = config
             .review
             .for_workspace(path.parent().unwrap_or_else(|| Path::new("")));
-        let scheduler = Fsrs::new(review.retention);
+        let scheduler = Fsrs::new(review.retention, review.acquire_cooldown_ms);
 
         let mut due_now = 0usize;
         let mut due_24h = 0usize;
@@ -130,7 +130,7 @@ pub(crate) fn list(args: DeckArgs) -> Result<()> {
         let review = config
             .review
             .for_workspace(path.parent().unwrap_or_else(|| Path::new("")));
-        let scheduler = Fsrs::new(review.retention);
+        let scheduler = Fsrs::new(review.retention, review.acquire_cooldown_ms);
         println!("{}", deck.display_name());
         for card in &deck.cards {
             let (recall_label, recon_label, recognized_mark, due) = match store.get(card.id()) {

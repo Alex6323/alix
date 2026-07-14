@@ -557,6 +557,9 @@ pub struct ReviewConfig {
     /// A card retires once its scheduled interval reaches this many days; `None`
     /// disables retirement (drill forever).
     pub retire_after_days: Option<u32>,
+    /// Settle gap (ms) between acquiring a card and its first quiz; also the
+    /// session's same-card re-serve floor. `0` disables both gaps.
+    pub acquire_cooldown_ms: u64,
     /// Max new (never-seen) cards a session introduces. `None` = unset here —
     /// the launcher resolves `--new` > this > its built-in default.
     pub max_new: Option<usize>,
@@ -569,6 +572,7 @@ impl Default for ReviewConfig {
         Self {
             retention: 0.9,
             retire_after_days: Some(crate::session::DEFAULT_RETIRE_AFTER_DAYS),
+            acquire_cooldown_ms: crate::scheduler::DEFAULT_ACQUIRE_COOLDOWN_MS,
             max_new: None,
             limit: None,
         }
@@ -598,6 +602,11 @@ impl ReviewConfig {
             && let Ok(days) = parse_retire_after(&retire_after)
         {
             review.retire_after_days = days;
+        }
+        if let Some(cooldown) = raw.review.acquire_cooldown
+            && let Ok(ms) = parse_acquire_cooldown(&cooldown)
+        {
+            review.acquire_cooldown_ms = ms;
         }
         if let Some(n) = raw.review.max_new {
             review.max_new = Some(n);
@@ -669,6 +678,7 @@ struct RawConfig {
 struct RawReviewConfig {
     retention: Option<f64>,
     retire_after: Option<String>,
+    acquire_cooldown: Option<String>,
     max_new: Option<usize>,
     limit: Option<usize>,
 }
@@ -1003,6 +1013,10 @@ impl Config {
             review.retire_after_days =
                 parse_retire_after(&retire_after).context("in [review] retire_after")?;
         }
+        if let Some(cooldown) = raw.review.acquire_cooldown {
+            review.acquire_cooldown_ms =
+                parse_acquire_cooldown(&cooldown).context("in [review] acquire_cooldown")?;
+        }
         review.max_new = raw.review.max_new;
         review.limit = raw.review.limit;
 
@@ -1090,6 +1104,27 @@ fn parse_retire_after(s: &str) -> Result<Option<u32>> {
         }
     };
     Ok(Some(days))
+}
+
+/// Parses an `acquire_cooldown` value: `<n><unit>` with unit `s`/`m`/`h`
+/// (seconds/minutes/hours; a bare number is minutes) → milliseconds. `"0"`
+/// disables the cooldown (and with it the same-card re-serve floor).
+fn parse_acquire_cooldown(s: &str) -> Result<u64> {
+    let s = s.trim();
+    let split = s.find(|c: char| c.is_ascii_alphabetic()).unwrap_or(s.len());
+    let (num, unit) = s.split_at(split);
+    let Ok(n) = num.trim().parse::<u64>() else {
+        bail!("invalid acquire_cooldown {s:?}: expected e.g. \"90s\", \"5m\", or \"1h\"");
+    };
+    let ms = match unit.trim().to_ascii_lowercase().as_str() {
+        "s" => n.saturating_mul(1000),
+        "" | "m" => n.saturating_mul(60 * 1000),
+        "h" => n.saturating_mul(60 * 60 * 1000),
+        other => {
+            bail!("invalid acquire_cooldown unit {other:?}: expected s, m, or h")
+        }
+    };
+    Ok(ms)
 }
 
 /// A self-documenting template for `config --init`: every option is shown
@@ -1242,6 +1277,7 @@ pub fn default_config_toml() -> &'static str {
 [review]
 # retention = 0.9               # FSRS target retrievability (0.70–0.99); higher = shorter intervals
 # retire_after = "1y"           # a card rests once its interval reaches this ("2w", "6m", "30d", or "never")
+# acquire_cooldown = "5m"       # settle gap before a new card's first quiz, and the same-card retry floor ("90s", "10m"; "0" = none)
 # max_new = 10                  # max never-seen cards a session introduces (--new overrides per instance)
 # limit = 40                    # session size cap (--limit overrides; unset = no cap)
 "#
@@ -1256,6 +1292,31 @@ mod tests {
         let config = Config::from_toml("").unwrap();
         assert_eq!(0.9, config.review.retention);
         assert_eq!(Some(365), config.review.retire_after_days);
+        assert_eq!(
+            crate::scheduler::DEFAULT_ACQUIRE_COOLDOWN_MS,
+            config.review.acquire_cooldown_ms
+        );
+    }
+
+    #[test]
+    fn review_parses_acquire_cooldown_units() {
+        let load = |v: &str| {
+            Config::from_toml(&format!("[review]\nacquire_cooldown = \"{v}\"\n"))
+                .unwrap()
+                .review
+                .acquire_cooldown_ms
+        };
+        assert_eq!(90_000, load("90s"));
+        assert_eq!(600_000, load("10m"));
+        assert_eq!(3_600_000, load("1h"));
+        assert_eq!(120_000, load("2"), "a bare number is minutes");
+        assert_eq!(0, load("0"), "zero disables the cooldown");
+    }
+
+    #[test]
+    fn review_rejects_a_malformed_acquire_cooldown() {
+        assert!(Config::from_toml("[review]\nacquire_cooldown = \"soon\"\n").is_err());
+        assert!(Config::from_toml("[review]\nacquire_cooldown = \"5x\"\n").is_err());
     }
 
     #[test]
@@ -1294,6 +1355,20 @@ mod tests {
         let resolved = ReviewConfig::default().for_workspace(dir.path());
         assert_eq!(0.85, resolved.retention);
         assert_eq!(None, resolved.retire_after_days);
+    }
+
+    #[test]
+    fn for_workspace_overlays_the_acquire_cooldown() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("alix.local.toml"),
+            "[review]\nacquire_cooldown = \"90s\"\n",
+        )
+        .unwrap();
+        let resolved = ReviewConfig::default().for_workspace(dir.path());
+        assert_eq!(90_000, resolved.acquire_cooldown_ms);
+        // Other keys keep their base values.
+        assert_eq!(0.9, resolved.retention);
     }
 
     #[test]

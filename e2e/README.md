@@ -67,8 +67,10 @@ where it is rather than fixed:
   record failed, never passed", fix `c46dad5`) has a real test body, but it's
   marked `test.fixme` in `tests/kids-review.spec.ts` (see the annotation
   there) — reaching it needs a card that is past acquire *and* due again, and
-  the real acquire cooldown is a fixed ~1 min server-side constant
-  (`ACQUIRE_COOLDOWN_MS`, `src/scheduler.rs`). Reaching that deterministically
+  the real acquire cooldown is a server-side gap (5 min default; configurable
+  since 2026-07-14 via `[review] acquire_cooldown`, `"0"` = none — a fixture
+  config with a zero cooldown is now the cleanest route to close this gap).
+  Reaching that deterministically without the knob
   would mean either a real wait (this suite avoids real-time waits — the
   fixed exception is the adult grading test's pre-seeded card, see below,
   which sidesteps the wait rather than taking it) or committing pre-warmed

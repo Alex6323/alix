@@ -56,15 +56,16 @@ test("the ☰ menu opens without error", async ({ page }) => {
 //
 // The fixture ships no progress store, so every card is never-seen (`acquire`)
 // and the adult app posts /api/acquire, never /api/grade. Reaching a genuinely
-// graded card needs one past the server's acquire cooldown (ACQUIRE_COOLDOWN_MS,
-// src/scheduler.rs — about a minute). The two ways to force it are both
-// unacceptable: a 61-second sleep inside the suite, or a committed pre-warmed
-// store (banned — see ../README.md, "fixture contract").
+// graded card needs one past the server's acquire cooldown (5 min default; a
+// sleep or a committed pre-warmed store are both banned — see ../README.md,
+// "fixture contract").
 //
-// Lead worth verifying: `POST /api/select {cram: true}` is documented to queue
-// cards that are not due, and the adult picker exposes a cram tick-box. If that
-// bypasses the cooldown for an already-acquired card, this test becomes cheap.
-// Verify it with curl before writing the test — do not assume it.
+// Two leads worth verifying: (a) since 2026-07-14 the cooldown is configurable
+// (`[review] acquire_cooldown`, "0" = none) — a fixture config with a zero
+// cooldown would make graded cards reachable in one run. (b) `POST /api/select
+// {cram: true}` is documented to queue cards that are not due; if it bypasses
+// the cooldown for an already-acquired card, this test becomes cheap. Verify
+// either with curl before writing the test — do not assume.
 //
 // The same gap blocks the kids honest-grading rule (a wrong Recognize pick must
 // only ever record `failed`). Neither has automated coverage today.

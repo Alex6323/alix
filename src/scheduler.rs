@@ -90,17 +90,25 @@ pub trait Scheduler: Send + Sync {
     fn is_due(&self, state: &CardState, depth: Depth, now_ms: u64) -> bool {
         self.due_at(state, depth) <= now_ms
     }
+
+    /// The acquire cooldown this scheduler runs with: the settle gap before a
+    /// fresh card's first quiz, which `Session` also uses as its same-card
+    /// re-serve floor. One `[review] acquire_cooldown` knob moves both.
+    fn acquire_cooldown_ms(&self) -> u64 {
+        DEFAULT_ACQUIRE_COOLDOWN_MS
+    }
 }
 
-/// Fixed settle gap between acquiring a card (its answer is shown, acknowledged)
-/// and its first real quiz — ~1 min, gating only the next session/restart. An
-/// in-session retry is position-based and unaffected. Was the stage-1 cooldown.
+/// Default settle gap between acquiring a card (its answer is shown,
+/// acknowledged) and its first real quiz — 5 min. Configurable via
+/// `[review] acquire_cooldown`; the value lives on the scheduler
+/// ([`Scheduler::acquire_cooldown_ms`]).
 ///
 /// Doubles as `Session`'s same-card floor (`floors`,
 /// {#seen-interleaves-too-early}): a card just moved off can't immediately
 /// re-serve until this long past the transition, so lingering on the feedback
-/// screen can't hand it straight back.
-pub const ACQUIRE_COOLDOWN_MS: u64 = 60 * 1000;
+/// screen can't hand it straight back. One knob deliberately moves both gaps.
+pub const DEFAULT_ACQUIRE_COOLDOWN_MS: u64 = 5 * 60 * 1000;
 
 /// One day in milliseconds — converts between FSRS's `scheduled_days` and alix's ms timestamps
 /// in [`Fsrs::apply`] and [`Fsrs::reanchor`].
@@ -189,11 +197,13 @@ fn seed_card(_state: &CardState, now_ms: u64) -> FsrsCard {
 /// gates graduation to `Review` on two full Goods so a fail no longer fast-tracks it.
 pub struct Fsrs {
     fsrs: FSRS,
+    acquire_cooldown_ms: u64,
 }
 
 impl Fsrs {
-    /// An FSRS scheduler targeting `retention` (e.g. 0.9).
-    pub fn new(retention: f64) -> Self {
+    /// An FSRS scheduler targeting `retention` (e.g. 0.9), with the given
+    /// acquire cooldown (see [`DEFAULT_ACQUIRE_COOLDOWN_MS`]).
+    pub fn new(retention: f64, acquire_cooldown_ms: u64) -> Self {
         let parameters = Parameters {
             request_retention: retention,
             enable_short_term: true,
@@ -201,13 +211,14 @@ impl Fsrs {
         };
         Self {
             fsrs: FSRS::new(parameters),
+            acquire_cooldown_ms,
         }
     }
 }
 
 impl Default for Fsrs {
     fn default() -> Self {
-        Self::new(0.9)
+        Self::new(0.9, DEFAULT_ACQUIRE_COOLDOWN_MS)
     }
 }
 
@@ -222,10 +233,14 @@ impl Scheduler for Fsrs {
             // This is the one place that rule lives, so `is_due`, the queue sort, and
             // the picker helpers can't diverge.
             None if state.recall.is_some() || state.reconstruct.is_some() => 0,
-            // A genuinely fresh card (no schedule anywhere) settles for one fixed
+            // A genuinely fresh card (no schedule anywhere) settles for one
             // acquire cooldown before its first quiz.
-            None => state.acquired_ms.saturating_add(ACQUIRE_COOLDOWN_MS),
+            None => state.acquired_ms.saturating_add(self.acquire_cooldown_ms),
         }
+    }
+
+    fn acquire_cooldown_ms(&self) -> u64 {
+        self.acquire_cooldown_ms
     }
 
     fn apply(
@@ -292,11 +307,14 @@ mod tests {
         let sched = Fsrs::default();
         let mut s = CardState::new(1000); // acquired_ms = 1000, recall = None
         // No FSRS state yet: due is exactly the fixed acquire cooldown past acquire.
-        assert_eq!(sched.due_at(&s, Depth::Recall), 1000 + ACQUIRE_COOLDOWN_MS);
+        assert_eq!(
+            sched.due_at(&s, Depth::Recall),
+            1000 + DEFAULT_ACQUIRE_COOLDOWN_MS
+        );
         // Once graduated to FSRS, the schedule owns the due date, not the cooldown.
         sched.apply(&mut s, Depth::Recall, Grade::Pass, 1000, false);
         assert!(s.recall.is_some());
-        assert!(sched.due_at(&s, Depth::Recall) != 1000 + ACQUIRE_COOLDOWN_MS);
+        assert!(sched.due_at(&s, Depth::Recall) != 1000 + DEFAULT_ACQUIRE_COOLDOWN_MS);
     }
 
     #[test]
@@ -317,7 +335,7 @@ mod tests {
         // A card with no schedule anywhere still waits one acquire cooldown.
         let fresh = CardState::new(1_000);
         assert_eq!(
-            1_000 + ACQUIRE_COOLDOWN_MS,
+            1_000 + DEFAULT_ACQUIRE_COOLDOWN_MS,
             sched.due_at(&fresh, Depth::Reconstruct)
         );
     }
@@ -358,10 +376,24 @@ mod tests {
     }
 
     #[test]
-    fn the_acquire_cooldown_is_stable() {
-        // The single acquire cooldown is exactly the old stage-1 gap (~1 min), so
-        // freshly-acquired timing is unchanged by the depth-dial removal.
-        assert_eq!(60 * 1000, ACQUIRE_COOLDOWN_MS);
+    fn the_default_acquire_cooldown_is_five_minutes() {
+        // Deliberately pinned: raised from the old 1-min stage-1 gap on
+        // 2026-07-14 (user request). Changing it changes every default
+        // session's rhythm, so it should fail a test first.
+        assert_eq!(5 * 60 * 1000, DEFAULT_ACQUIRE_COOLDOWN_MS);
+    }
+
+    #[test]
+    fn a_configured_cooldown_moves_the_first_quiz_and_the_floor() {
+        let sched = Fsrs::new(0.9, 90_000);
+        let fresh = CardState::new(1_000);
+        assert_eq!(1_000 + 90_000, sched.due_at(&fresh, Depth::Recall));
+        assert_eq!(90_000, sched.acquire_cooldown_ms());
+        // The default-cooldown scheduler still reports the default.
+        assert_eq!(
+            DEFAULT_ACQUIRE_COOLDOWN_MS,
+            Fsrs::default().acquire_cooldown_ms()
+        );
     }
 
     #[test]
@@ -390,7 +422,7 @@ mod tests {
 
     #[test]
     fn fsrs_pass_on_a_new_card_sets_stability_and_schedules_out() {
-        let sched = Fsrs::new(0.9);
+        let sched = Fsrs::new(0.9, DEFAULT_ACQUIRE_COOLDOWN_MS);
         let mut s = CardState::new(0);
         sched.apply(&mut s, Depth::Recall, Grade::Pass, 0, false);
         let f = s.recall.expect("fsrs state set");
@@ -406,7 +438,7 @@ mod tests {
     #[test]
     fn fsrs_partly_grows_stability_less_than_got_it() {
         // partly → Hard (a weak success) grows stability less than Pass → Good.
-        let sched = Fsrs::new(0.9);
+        let sched = Fsrs::new(0.9, DEFAULT_ACQUIRE_COOLDOWN_MS);
         let mut good = CardState::new(0);
         sched.apply(&mut good, Depth::Recall, Grade::Pass, 0, false);
         let mut hard = CardState::new(0);
@@ -416,7 +448,7 @@ mod tests {
 
     #[test]
     fn fsrs_a_miss_shortens_the_next_interval() {
-        let sched = Fsrs::new(0.9);
+        let sched = Fsrs::new(0.9, DEFAULT_ACQUIRE_COOLDOWN_MS);
         let mut s = CardState::new(0);
         sched.apply(&mut s, Depth::Recall, Grade::Pass, 0, false);
         let pass_interval = sched.due_at(&s, Depth::Recall); // reviewed at t = 0
@@ -435,7 +467,7 @@ mod tests {
     fn fsrs_new_card_good_enters_a_learning_step() {
         // With short-term on, a New card graded Good is due a short learning step out
         // (FSRS's built-in ~10 min), in `Learning` — not scheduled days out yet.
-        let sched = Fsrs::new(0.9);
+        let sched = Fsrs::new(0.9, DEFAULT_ACQUIRE_COOLDOWN_MS);
         let mut s = CardState::new(0);
         sched.apply(&mut s, Depth::Recall, Grade::Pass, 0, false);
         let f = s.recall.expect("fsrs state set");
@@ -451,7 +483,7 @@ mod tests {
     fn fsrs_two_goods_graduate_to_review() {
         // A second Good graduates the card out of the learning steps into Review, now
         // scheduled inter-day.
-        let sched = Fsrs::new(0.9);
+        let sched = Fsrs::new(0.9, DEFAULT_ACQUIRE_COOLDOWN_MS);
         let mut s = CardState::new(0);
         sched.apply(&mut s, Depth::Recall, Grade::Pass, 0, false);
         let step_due = sched.due_at(&s, Depth::Recall);
@@ -469,7 +501,7 @@ mod tests {
 
     #[test]
     fn fail_then_one_good_does_not_graduate() {
-        let sched = Fsrs::new(0.9);
+        let sched = Fsrs::new(0.9, DEFAULT_ACQUIRE_COOLDOWN_MS);
         let mut s = CardState::new(0);
         sched.apply(&mut s, Depth::Recall, Grade::Fail, 0, false); // New -> Learning
         sched.apply(&mut s, Depth::Recall, Grade::Pass, 60_000, false); // one Good: held, not graduated
@@ -480,7 +512,7 @@ mod tests {
 
     #[test]
     fn two_goods_after_a_fail_do_graduate() {
-        let sched = Fsrs::new(0.9);
+        let sched = Fsrs::new(0.9, DEFAULT_ACQUIRE_COOLDOWN_MS);
         let mut s = CardState::new(0);
         sched.apply(&mut s, Depth::Recall, Grade::Fail, 0, false); // New -> Learning, goods = 0
         sched.apply(&mut s, Depth::Recall, Grade::Pass, 60_000, false); // goods = 1, held
@@ -491,7 +523,7 @@ mod tests {
 
     #[test]
     fn a_fail_resets_graduation_progress() {
-        let sched = Fsrs::new(0.9);
+        let sched = Fsrs::new(0.9, DEFAULT_ACQUIRE_COOLDOWN_MS);
         let mut s = CardState::new(0);
         sched.apply(&mut s, Depth::Recall, Grade::Pass, 0, false); // goods = 1
         sched.apply(&mut s, Depth::Recall, Grade::Fail, 60_000, false); // reset -> goods = 0
@@ -503,7 +535,7 @@ mod tests {
 
     #[test]
     fn partial_is_neutral_for_graduation() {
-        let sched = Fsrs::new(0.9);
+        let sched = Fsrs::new(0.9, DEFAULT_ACQUIRE_COOLDOWN_MS);
         let mut s = CardState::new(0);
         sched.apply(&mut s, Depth::Recall, Grade::Pass, 0, false); // goods = 1, Learning
         sched.apply(&mut s, Depth::Recall, Grade::Partial, 600_000, false); // neutral: stays Learning, goods = 1
@@ -515,7 +547,7 @@ mod tests {
 
     #[test]
     fn a_lapsed_card_regraduates_on_one_good() {
-        let sched = Fsrs::new(0.9);
+        let sched = Fsrs::new(0.9, DEFAULT_ACQUIRE_COOLDOWN_MS);
         let mut s = CardState::new(0);
         sched.apply(&mut s, Depth::Recall, Grade::Pass, 0, false);
         sched.apply(&mut s, Depth::Recall, Grade::Pass, 600_000, false); // -> Review
@@ -530,7 +562,7 @@ mod tests {
         // The spacing effect (long-term / Review state): recalling a more-overdue card
         // (lower retrievability) grows stability more. Graduate two identical cards to
         // Review first, then re-pass at different lateness.
-        let sched = Fsrs::new(0.9);
+        let sched = Fsrs::new(0.9, DEFAULT_ACQUIRE_COOLDOWN_MS);
         let mut early = CardState::new(0);
         sched.apply(&mut early, Depth::Recall, Grade::Pass, 0, false); // New -> Learning
         let step_due = sched.due_at(&early, Depth::Recall);

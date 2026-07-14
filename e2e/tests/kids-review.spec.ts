@@ -148,8 +148,8 @@ test("a wrong Recognize pick can only record failed, never passed", async ({ pag
   test.fixme(
     true,
     "Needs a card that is PAST acquire (already acknowledged once) AND due " +
-      "again for a real Recognize quiz. The real acquire cooldown is a fixed " +
-      "~1 min server-side constant (ACQUIRE_COOLDOWN_MS, src/scheduler.rs), so " +
+      "again for a real Recognize quiz. The acquire cooldown is a server-side " +
+      "gap (5 min default; [review] acquire_cooldown, '0' = none), so " +
       "reaching that state deterministically means either a real ~60s wait " +
       "(this suite avoids real-time waits) or committing pre-warmed progress " +
       "state (forbidden by the fixture contract — see ../README.md). Left " +

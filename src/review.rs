@@ -240,7 +240,7 @@ mod tests {
     /// Cards were acquired at T0 and the session runs at NOW, past the
     /// acquire cooldown, so seen cards are servable.
     const T0: u64 = 1_000_000;
-    const NOW: u64 = T0 + 61_000;
+    const NOW: u64 = T0 + crate::scheduler::DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
 
     fn parse(text: &str) -> Vec<Card> {
         parser::parse_str("deck.txt", text).unwrap()

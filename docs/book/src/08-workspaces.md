@@ -53,7 +53,8 @@ system from chapter 3, just sourced from one more place.
 The `alix.toml` is shared: it travels with the workspace when you hand it to
 someone. Your **personal** review pacing doesn't belong there. Drop an
 `alix.local.toml` beside it to override the global `[review]` config — FSRS
-`retention` and `retire_after` — for this workspace's decks only:
+`retention`, `retire_after`, `acquire_cooldown` — for this workspace's decks
+only:
 
 ```toml
 # ~/decks/spanish/alix.local.toml

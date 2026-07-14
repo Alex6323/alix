@@ -61,7 +61,7 @@ responsive while it thinks.
 Those remediation cards are **virtual**: they live in alix's store rather than in
 the deck file. While drilling one, the review screen's mode badge reads
 "remediation card" in place of the "new card" badge. A virtual card drills like
-any other — its first pass comes about a minute later, then FSRS schedules it
+any other — its first pass comes one acquire cooldown later, then FSRS schedules it
 — and it counts toward the deck's *due* total but not toward the deck's card
 count, and it never rewrites your `.txt`.
 Regenerating the same gap won't duplicate it; once its interval reaches the

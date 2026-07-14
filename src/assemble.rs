@@ -524,7 +524,7 @@ pub fn select(
     let session = Session::new(
         cards,
         store,
-        Box::new(Fsrs::new(review.retention)),
+        Box::new(Fsrs::new(review.retention, review.acquire_cooldown_ms)),
         options,
         opts.now_ms.unwrap_or_else(now_ms),
     );
@@ -613,7 +613,7 @@ pub fn browse(paths: Vec<PathBuf>) -> Result<CardsBuild> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{answer::Mode, store::VirtualKind};
+    use crate::{answer::Mode, scheduler::DEFAULT_ACQUIRE_COOLDOWN_MS, store::VirtualKind};
 
     #[test]
     fn selectable_is_false_only_for_a_folder_that_contains_decks() {
@@ -1134,12 +1134,40 @@ mod tests {
     }
 
     #[test]
+    fn a_configured_acquire_cooldown_reaches_the_session() {
+        // The `[review] acquire_cooldown` knob must actually arrive at the
+        // scheduler `select` builds: with a 1s cooldown a just-acquired card
+        // is servable 2s later, which the default cooldown would still block.
+        let dir = tempfile::tempdir().unwrap();
+        let deck = dir.path().join("f.txt");
+        std::fs::write(&deck, "# q\n\ta\n").unwrap();
+        let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
+        let id = crate::deck::Deck::load(&deck).unwrap().cards[0].id();
+        let t0 = 1_000_000;
+        store.get_or_insert(id, t0);
+
+        let mut config = test_config();
+        config.review.acquire_cooldown_ms = 1_000;
+        let opts = SelectOptions {
+            now_ms: Some(t0 + 2_000),
+            ..Default::default()
+        };
+        match select(vec![deck], &mut store, &config, &opts).unwrap() {
+            Selected::Review(build) => assert!(
+                !build.session.is_finished(),
+                "served once the short cooldown passed"
+            ),
+            Selected::Walk(_) => panic!("a fact deck must review"),
+        }
+    }
+
+    #[test]
     fn select_serves_by_the_injected_clock() {
         let dir = tempfile::tempdir().unwrap();
         let deck = dir.path().join("f.txt");
         std::fs::write(&deck, "# q\n\ta\n").unwrap();
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
-        // Acquire the card at t0: it cools until t0 + ACQUIRE_COOLDOWN_MS,
+        // Acquire the card at t0: it cools until t0 + DEFAULT_ACQUIRE_COOLDOWN_MS,
         // so which side of that line the injected clock falls on decides
         // whether select finds anything to serve.
         let id = crate::deck::Deck::load(&deck).unwrap().cards[0].id();
@@ -1157,7 +1185,7 @@ mod tests {
             Selected::Walk(_) => panic!("a fact deck must review"),
         }
         let late = SelectOptions {
-            now_ms: Some(t0 + 61_000),
+            now_ms: Some(t0 + DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000),
             ..Default::default()
         };
         match select(vec![deck], &mut store, &test_config(), &late).unwrap() {

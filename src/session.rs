@@ -8,7 +8,8 @@
 //! pass (or acquire) leaves the session. When nothing is due right now the
 //! session is finished-for-now; [`Session::poll`] lets a frontend re-enter it
 //! when a cooling card comes back. A never-seen card is *acquired* first — shown,
-//! recorded as acquired, then left to settle ~1 min before its first quiz.
+//! recorded as acquired, then left to settle one acquire cooldown (5 min default) before its first
+//! quiz.
 //!
 //! [`SessionOptions::depth`] picks the session's depth (Recognize | Recall |
 //! Reconstruct); see `crate::depth`. Recall and Reconstruct are each an
@@ -27,7 +28,7 @@ use crate::{
     augment::TopologyOrder,
     card::Card,
     depth::Depth,
-    scheduler::{ACQUIRE_COOLDOWN_MS, Grade, Scheduler},
+    scheduler::{Grade, Scheduler},
     store::{Store, VirtualCard},
     time,
     trace::SourceBase,
@@ -144,7 +145,7 @@ pub struct Session {
     /// Roster cards servable at the last `advance` — the "remaining now" count.
     remaining_now: usize,
     /// Cards the session recently moved off, by id → transition time. A card
-    /// can't be re-served before `transition + ACQUIRE_COOLDOWN_MS`; entries
+    /// can't be re-served before `transition + DEFAULT_ACQUIRE_COOLDOWN_MS`; entries
     /// self-prune once expired. Session-local — never persisted.
     floors: HashMap<u64, u64>,
     /// How many times each card (indexed as in `cards`) has become the current
@@ -352,7 +353,7 @@ impl Session {
             }
             // Recognize now participates in the same-card transition floor too
             // (reverses an earlier deliberate exclusion): a wrong pick re-queues
-            // but can't resurface before `ACQUIRE_COOLDOWN_MS` has passed — see
+            // but can't resurface before `DEFAULT_ACQUIRE_COOLDOWN_MS` has passed — see
             // `servable` ({#seen-interleaves-too-early}).
             self.floor(id, now_ms);
             self.advance(store, now_ms);
@@ -425,13 +426,13 @@ impl Session {
     /// Introduces the current never-seen card: records it as acquired and moves on.
     /// It is *not* graded and gets *no* history entry — acquiring is a first
     /// exposure, not a review. The card is **kept** in the session, cooling on its
-    /// ~1 min acquire cooldown, so its first real quiz surfaces again later in *this
+    /// acquire cooldown (5 min default), so its first real quiz surfaces again later in *this
     /// same session* once that gap passes. Does nothing when nothing is up.
     pub fn acquire_current(&mut self, store: &mut Store, now_ms: u64) {
         let Some(index) = self.current_idx else {
             return;
         };
-        // `get_or_insert` creates the state as freshly acquired, due ~1 min out via
+        // `get_or_insert` creates the state as freshly acquired, due one acquire cooldown out via
         // the acquire cooldown — no `scheduler.apply`, no recorded review. The card
         // stays in the roster so the due-driven serving surfaces it again for its
         // first real quiz once the gap elapses, in this same session. A virtual
@@ -537,7 +538,9 @@ impl Session {
             return false;
         }
         match self.floors.get(&card.id()) {
-            Some(&transition_ms) => now_ms >= transition_ms.saturating_add(ACQUIRE_COOLDOWN_MS),
+            Some(&transition_ms) => {
+                now_ms >= transition_ms.saturating_add(self.scheduler.acquire_cooldown_ms())
+            }
             None => true,
         }
     }
@@ -546,8 +549,9 @@ impl Session {
     /// prunes any entries whose cooldown has already elapsed so the map never
     /// grows past the cards actually cooling right now.
     fn floor(&mut self, id: u64, now_ms: u64) {
+        let cooldown_ms = self.scheduler.acquire_cooldown_ms();
         self.floors
-            .retain(|_, &mut t| now_ms < t.saturating_add(ACQUIRE_COOLDOWN_MS));
+            .retain(|_, &mut t| now_ms < t.saturating_add(cooldown_ms));
         self.floors.insert(id, now_ms);
     }
 
@@ -939,7 +943,10 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::store::{FsrsState, Store};
+    use crate::{
+        scheduler::DEFAULT_ACQUIRE_COOLDOWN_MS,
+        store::{FsrsState, Store},
+    };
 
     fn card(subject: &str, n: usize) -> Card {
         Card::plain(
@@ -969,7 +976,7 @@ mod tests {
     /// Inserts a virtual (remediation) card for `parent` into `store` the way
     /// the substrate does — sidecar content keyed by its `Card::id`, plus a
     /// fresh `store.cards` schedule at `created_ms` (freshly acquired, no FSRS
-    /// yet, due ~1 min out) — and returns its synthesized `Card` (mirroring
+    /// yet, due one acquire cooldown out) — and returns its synthesized `Card` (mirroring
     /// `main::synthesize_virtual`: the parsed card on a far-out `line`). `back`
     /// drives the id, so distinct `back` values give distinct virtual cards.
     fn insert_virtual(store: &mut Store, parent: &str, back: &str, created_ms: u64) -> Card {
@@ -1120,11 +1127,11 @@ mod tests {
         let mut session = Session::new(cards(1), &store, sched(), SessionOptions::default(), 1000);
         session.acquire_current(&mut store, 1000);
 
-        // Just acquired: nothing is due the instant it was seen (the ~1-min gap).
+        // Just acquired: nothing is due the instant it was seen (the acquire-cooldown gap).
         assert!(!session.has_due_now(&store, 1000));
-        assert!(!session.has_due_now(&store, 1000 + 60 * 1000 - 1));
-        // Once the ~1-min cooldown passes, it is due for its first quiz.
-        assert!(session.has_due_now(&store, 1000 + 60 * 1000));
+        assert!(!session.has_due_now(&store, 1000 + DEFAULT_ACQUIRE_COOLDOWN_MS - 1));
+        // Once the acquire cooldown passes, it is due for its first quiz.
+        assert!(session.has_due_now(&store, 1000 + DEFAULT_ACQUIRE_COOLDOWN_MS));
     }
 
     #[test]
@@ -1135,8 +1142,8 @@ mod tests {
         session.acquire_current(&mut store, 1000);
         // Kept in the roster but cooling: nothing servable the instant it was seen.
         assert!(session.is_finished());
-        // Once its ~1 min gap elapses the same session serves it for its first quiz.
-        assert!(session.poll(&store, 1000 + 60 * 1000));
+        // Once its acquire-cooldown gap elapses the same session serves it for its first quiz.
+        assert!(session.poll(&store, 1000 + DEFAULT_ACQUIRE_COOLDOWN_MS));
         assert_eq!(session.current().map(|c| c.id()), Some(id));
         assert!(!session.current_unseen(&store)); // a real quiz now, not another acquire
     }
@@ -1148,7 +1155,7 @@ mod tests {
         for c in &all {
             store.get_or_insert(c.id(), 0);
         }
-        let now = 5 * 60 * 1000; // past the stage-1 cooldown: both due
+        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000; // past the acquire cooldown: both due
         let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
 
         let first = session.current().unwrap().id();
@@ -1166,14 +1173,15 @@ mod tests {
         for c in &all {
             store.get_or_insert(c.id(), 0);
         }
-        let now = 5 * 60 * 1000;
+        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
         let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
 
         assert_eq!(first_id, session.current().unwrap().id());
-        session.grade(&mut store, Grade::Fail, now); // card 0 missed → cooling ~1 min
+        session.grade(&mut store, Grade::Fail, now); // card 0 missed → cooling one floor
         session.grade(&mut store, Grade::Pass, now + 1000); // clear card 1
-        // Well past the ~1 min learning step: the missed card is due again.
-        session.poll(&store, now + 5 * 60_000);
+        // Past both the learning step and the transition floor: the missed
+        // card is due again.
+        session.poll(&store, now + DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000);
         assert_eq!(first_id, session.current().unwrap().id());
     }
 
@@ -1192,7 +1200,7 @@ mod tests {
         for c in &all {
             store.get_or_insert(c.id(), 0);
         }
-        let now = 5 * 60 * 1000; // past the acquire cooldown: both due
+        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000; // past the acquire cooldown: both due
         let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
         assert_eq!(a_id, session.current().unwrap().id());
 
@@ -1222,20 +1230,20 @@ mod tests {
         );
 
         // Past the floor: A may finally return (still nothing else due).
-        session.poll(&store, now + ACQUIRE_COOLDOWN_MS);
+        session.poll(&store, now + DEFAULT_ACQUIRE_COOLDOWN_MS);
         assert_eq!(a_id, session.current().unwrap().id());
     }
 
     #[test]
     fn the_only_servable_card_may_repeat_once_the_floor_passes() {
         // One-card session: after grading it, it becomes servable again once
-        // transition + ACQUIRE_COOLDOWN_MS elapses — the floor delays, never
+        // transition + DEFAULT_ACQUIRE_COOLDOWN_MS elapses — the floor delays, never
         // starves.
         let (mut store, _dir) = empty_store();
         let all = cards(1);
         let id = all[0].id();
         store.get_or_insert(id, 0);
-        let now = 5 * 60 * 1000;
+        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
         let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
 
         session.grade(&mut store, Grade::Fail, now);
@@ -1249,11 +1257,35 @@ mod tests {
         store.get_or_insert(id, now).recall.as_mut().unwrap().due_ms = now + 1_000;
 
         // Its own schedule says due, but the transition floor hasn't passed.
-        session.poll(&store, now + ACQUIRE_COOLDOWN_MS - 1);
+        session.poll(&store, now + DEFAULT_ACQUIRE_COOLDOWN_MS - 1);
         assert!(session.is_finished(), "the floor delays the repeat");
 
         // The floor has passed: the only card may repeat — delayed, not starved.
-        session.poll(&store, now + ACQUIRE_COOLDOWN_MS);
+        session.poll(&store, now + DEFAULT_ACQUIRE_COOLDOWN_MS);
+        assert_eq!(Some(id), session.current().map(|c| c.id()));
+    }
+
+    #[test]
+    fn the_transition_floor_follows_the_configured_cooldown() {
+        // The same-card floor reads the scheduler's cooldown, not the default
+        // constant: with a 1s cooldown the only card may repeat 2s after its
+        // miss, which the default floor would still block.
+        let (mut store, _dir) = empty_store();
+        let all = cards(1);
+        let id = all[0].id();
+        store.get_or_insert(id, 0);
+        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
+        let mut session = Session::new(
+            all,
+            &store,
+            Box::new(crate::scheduler::Fsrs::new(0.9, 1_000)),
+            SessionOptions::default(),
+            now,
+        );
+        session.grade(&mut store, Grade::Fail, now);
+        // Force its schedule due almost immediately so only the floor gates.
+        store.get_or_insert(id, now).recall.as_mut().unwrap().due_ms = now + 500;
+        session.poll(&store, now + 1_000);
         assert_eq!(Some(id), session.current().map(|c| c.id()));
     }
 
@@ -1271,7 +1303,7 @@ mod tests {
         for c in &all {
             store.get_or_insert(c.id(), 0);
         }
-        let now = 5 * 60 * 1000;
+        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
         let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
         assert_eq!(a_id, session.current().unwrap().id());
         assert_eq!(
@@ -1299,9 +1331,9 @@ mod tests {
             .recall
             .as_mut()
             .unwrap()
-            .due_ms = now + ACQUIRE_COOLDOWN_MS;
+            .due_ms = now + DEFAULT_ACQUIRE_COOLDOWN_MS;
         session.grade(&mut store, Grade::Pass, now + 1_000); // B passes, leaves
-        session.poll(&store, now + ACQUIRE_COOLDOWN_MS + 1_000);
+        session.poll(&store, now + DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000);
         assert_eq!(a_id, session.current().unwrap().id(), "A is due again");
         assert_eq!(
             2,
@@ -1318,7 +1350,7 @@ mod tests {
         let all = cards(1);
         let id = all[0].id();
         store.get_or_insert(id, 0);
-        let now = 5 * 60 * 1000;
+        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
         let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
 
         session.grade(&mut store, Grade::Fail, now);
@@ -1336,7 +1368,7 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
         store.get_or_insert(all[0].id(), 0);
-        let now = 5 * 60 * 1000;
+        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
         let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
         session.grade(&mut store, Grade::Fail, now);
         assert!(session.is_finished(), "nothing due now → finished");
@@ -1353,7 +1385,7 @@ mod tests {
         for c in &all {
             store.get_or_insert(c.id(), 0);
         }
-        let now = 5 * 60 * 1000;
+        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
         let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
         session.grade(&mut store, Grade::Fail, now); // card 0 kept (cooling)
         session.grade(&mut store, Grade::Pass, now); // card 1 removed
@@ -1404,7 +1436,7 @@ mod tests {
                 retire_after_days: Some(DEFAULT_RETIRE_AFTER_DAYS),
                 depth: crate::depth::Depth::default(),
             },
-            5 * 60 * 1000,
+            DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000,
         );
         assert_eq!(3, session.initial_size);
         // The queue holds exactly the due cards, not the new ones.
@@ -1504,7 +1536,7 @@ mod tests {
         for c in &all {
             store.get_or_insert(c.id(), 0);
         }
-        let now = 5 * 60 * 1000;
+        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
         let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
         assert_eq!(2, session.remaining());
 
@@ -2134,7 +2166,7 @@ mod tests {
     fn virtual_card_joins_the_roster_and_is_served() {
         let (mut store, _dir) = empty_store();
         let synth = insert_virtual(&mut store, "deck.txt", "virtual back", 0);
-        let now = 60_000; // past the stage-1 cooldown: due
+        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000; // past the acquire cooldown: due
         let session = Session::new(vec![synth], &store, sched(), SessionOptions::default(), now);
         assert_eq!(1, session.initial_size);
         assert_eq!("virtual front", session.current().unwrap().front);
@@ -2146,7 +2178,7 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let synth = insert_virtual(&mut store, "deck.txt", "virtual back", 0);
         let id = synth.id();
-        let now = 60_000;
+        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
         let mut session =
             Session::new(vec![synth], &store, sched(), SessionOptions::default(), now);
 
@@ -2165,7 +2197,7 @@ mod tests {
     fn virtual_card_not_treated_as_unseen() {
         let (mut store, _dir) = empty_store();
         let synth = insert_virtual(&mut store, "deck.txt", "virtual back", 0);
-        let now = 60_000;
+        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
         let session = Session::new(vec![synth], &store, sched(), SessionOptions::default(), now);
         assert!(!session.current_unseen(&store));
     }
@@ -2178,7 +2210,7 @@ mod tests {
         let deck_card = card("deck.txt", 0);
         store.get_or_insert(deck_card.id(), 0);
 
-        let now = 5 * 60 * 1000; // both due (past the stage-1 cooldown)
+        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000; // both due (past the acquire cooldown)
         let mut session = Session::new(
             vec![synth, deck_card],
             &store,
@@ -2190,15 +2222,16 @@ mod tests {
         assert_eq!(synth_id, session.current().unwrap().id());
         session.grade(&mut store, Grade::Fail, now); // virtual missed → cooling
         session.grade(&mut store, Grade::Pass, now + 1000); // clear the deck card
-        // Well past the ~1 min learning step: the missed virtual card is due again.
-        session.poll(&store, now + 5 * 60_000);
+        // Past both the learning step and the transition floor: the missed
+        // virtual card is due again.
+        session.poll(&store, now + DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000);
         assert_eq!(synth_id, session.current().unwrap().id());
     }
 
     #[test]
     fn count_reviewable_virtual_counts_due_excludes_archived() {
         let (mut store, _dir) = empty_store();
-        let now = 61_000; // past the stage-1 cooldown for a t=0 card
+        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000; // past the acquire cooldown for a t=0 card
         let cap = Some(DEFAULT_RETIRE_AFTER_DAYS);
         let sched = sched();
 
@@ -2235,12 +2268,12 @@ mod tests {
             SessionOptions::default(),
             1000,
         );
-        // The virtual card's schedule (stage 1 @ t=1000) has an FSRS fallback
-        // due of 1000 + the stage-1 cooldown.
+        // The virtual card (acquired @ t=1000) has an FSRS fallback due of
+        // 1000 + the acquire cooldown.
         let due = session
             .next_due_at(&store)
             .expect("a virtual card's due time is reported");
-        assert_eq!(1000 + 60_000, due);
+        assert_eq!(1000 + DEFAULT_ACQUIRE_COOLDOWN_MS, due);
     }
 
     #[test]
@@ -2255,7 +2288,7 @@ mod tests {
 
         // First real review: still acquiring (needs two Goods to graduate), so
         // the interval stays at 0 — well under the cap.
-        let now = 60_000;
+        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
         let mut session = Session::new(vec![synth.clone()], &store, sched(), options.clone(), now);
         session.grade(&mut store, Grade::Pass, now);
         assert!(!is_retired_id(id, &store, options.retire_after_days));
@@ -2305,7 +2338,7 @@ mod tests {
 
         // Confirmed through the exclusion path too: the same card is excluded
         // from due counts at the lower cap, and counted at the raised one.
-        let now = 61_000;
+        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
         let sched = sched();
         assert_eq!(
             0,
@@ -2325,7 +2358,7 @@ mod tests {
         store.get_or_insert(id, 0).recall = Some(retired_fsrs());
 
         // Otherwise past its stage-1 cooldown: would be due if not archived.
-        let now = 61_000;
+        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
         let session = Session::new(vec![synth], &store, sched(), SessionOptions::default(), now);
         assert!(session.is_finished()); // not served: no roster entry
 
@@ -2344,7 +2377,7 @@ mod tests {
         let synth = insert_virtual(&mut store, "deck.txt", "virtual back", 0);
         let id = synth.id();
 
-        let now = 60_000; // past the stage-1 cooldown
+        let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000; // past the acquire cooldown
         let mut session =
             Session::new(vec![synth], &store, sched(), SessionOptions::default(), now);
         session.grade(&mut store, Grade::Pass, now);
@@ -2412,7 +2445,7 @@ mod tests {
     fn recognize_marks_a_correct_pick_and_requeues_a_floored_wrong_one() {
         // Reverses an earlier deliberate exclusion: Recognize now participates in
         // the same-card transition floor, so a wrong pick re-queues but cannot
-        // resurface before `ACQUIRE_COOLDOWN_MS` has passed — the user-reported
+        // resurface before `DEFAULT_ACQUIRE_COOLDOWN_MS` has passed — the user-reported
         // instant boomerang at "one card left" is what this closes.
         let (mut store, _dir) = empty_store();
         let all = cards(2);
@@ -2440,7 +2473,7 @@ mod tests {
             s.remaining(),
             "the wrong pick re-queues, but the floor holds it back"
         );
-        s.poll(&store, 2_000 + ACQUIRE_COOLDOWN_MS);
+        s.poll(&store, 2_000 + DEFAULT_ACQUIRE_COOLDOWN_MS);
         assert_eq!(
             1,
             s.remaining(),
@@ -2469,17 +2502,17 @@ mod tests {
         );
         assert_eq!(a, s.current().unwrap().id());
 
-        s.grade(&mut store, Grade::Fail, 1_000); // A wrong → floored until 61_000
+        s.grade(&mut store, Grade::Fail, 1_000); // A wrong → floored for one cooldown
         assert_eq!(b, s.current().unwrap().id());
 
-        s.grade(&mut store, Grade::Fail, 2_000); // B wrong → floored until 62_000
+        s.grade(&mut store, Grade::Fail, 2_000); // B wrong → floored 1s later than A
         assert_eq!(
             c,
             s.current().unwrap().id(),
             "A and B are both still floored — C is the only unfloored card left"
         );
 
-        s.poll(&store, 61_001);
+        s.poll(&store, 1_000 + DEFAULT_ACQUIRE_COOLDOWN_MS + 500);
         assert_eq!(
             a,
             s.current().unwrap().id(),
@@ -2512,10 +2545,10 @@ mod tests {
             "the only card floors instead of resurfacing instantly"
         );
 
-        s.poll(&store, 1_000 + ACQUIRE_COOLDOWN_MS - 1);
+        s.poll(&store, 1_000 + DEFAULT_ACQUIRE_COOLDOWN_MS - 1);
         assert!(s.is_finished(), "the floor hasn't passed yet");
 
-        s.poll(&store, 1_000 + ACQUIRE_COOLDOWN_MS);
+        s.poll(&store, 1_000 + DEFAULT_ACQUIRE_COOLDOWN_MS);
         assert_eq!(
             Some(id),
             s.current().map(|c| c.id()),
