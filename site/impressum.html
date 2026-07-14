@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Impressum: alix</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<style>
+  :root{
+    --bg:#0d1117; --surface:#161b22; --line:#283039;
+    --text:#e6edf3; --muted:#9aa4b2; --accent:#ffb454;
+    --maxw:680px;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--accent); text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:var(--maxw); margin:0 auto; padding:0 24px}
+  header{border-bottom:1px solid var(--line)}
+  .nav{display:flex; align-items:center; height:64px; gap:22px}
+  .brand{font-weight:800; font-size:19px; letter-spacing:.5px; color:var(--text)}
+  .nav a{color:var(--muted); font-size:15px}
+  .nav a:hover{color:var(--text); text-decoration:none}
+  main{padding:52px 0 60px}
+  h1{font-size:26px; margin:0 0 28px}
+  h2{font-size:16px; margin:32px 0 8px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px}
+  p{margin:0 0 4px}
+  footer{border-top:1px solid var(--line); margin-top:64px; padding:34px 0; color:var(--muted); font-size:14px}
+  .foot{display:flex; justify-content:space-between; flex-wrap:wrap; gap:14px}
+  .foot a{color:var(--muted)}
+  .foot a:hover{color:var(--text)}
+</style>
+</head>
+<body>
+<header><div class="wrap nav">
+  <div class="brand">alix</div>
+  <a href="/">Startseite</a>
+</div></header>
+
+<main class="wrap">
+  <h1>Impressum</h1>
+
+  <h2>Angaben gemäß § 5 DDG</h2>
+  <p><!--{{name}}-->[wird beim Deploy eingesetzt]<!--/{{name}}--></p>
+  <p><!--{{street}}-->[wird beim Deploy eingesetzt]<!--/{{street}}--></p>
+  <p><!--{{city}}-->[wird beim Deploy eingesetzt]<!--/{{city}}--></p>
+
+  <h2>Kontakt</h2>
+  <p>E-Mail: <a href="mailto:<!--{{email}}-->[wird beim Deploy eingesetzt]<!--/{{email}}-->"><!--{{email}}-->[wird beim Deploy eingesetzt]<!--/{{email}}--></a></p>
+  <p data-detail="phone">Telefon: <!--{{phone}}-->[wird beim Deploy eingesetzt]<!--/{{phone}}--></p>
+
+  <h2>Verantwortlich für den Inhalt</h2>
+  <p>Verantwortlich für den Inhalt dieser Website ist die oben genannte Person nach den Angaben gemäß § 5 DDG.</p>
+
+  <h2>Haftungshinweis</h2>
+  <p>alix ist ein privates, quelloffenes Projekt. Für externe Links (z. B. GitHub, crates.io) wird keine Haftung für deren Inhalte übernommen; verantwortlich sind die jeweiligen Betreiber.</p>
+</main>
+
+<footer><div class="wrap foot">
+  <div>MIT OR Apache-2.0 &middot; built by Alex with Claude</div>
+  <div>
+    <a href="/impressum.html">Impressum</a> &middot;
+    <a href="/datenschutz.html">Datenschutz</a> &middot;
+    <a href="mailto:contact@alix.study">contact@alix.study</a> &middot;
+    <a href="https://github.com/sponsors/Alex6323">Support alix</a>
+  </div>
+</div></footer>
+</body>
+</html>

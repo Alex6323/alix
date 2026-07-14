@@ -1,0 +1,10 @@
+# Sponsor button configuration for this repo (shows a "Sponsor" button on
+# GitHub next to Watch/Fork/Star). Inert until a platform below is
+# uncommented with a real handle. GitHub only renders the button for
+# uncommented, valid entries, so this skeleton is safe to commit as-is.
+#
+# Pick one (or more) and uncomment once the account exists:
+#
+# github: [Alex6323]
+# ko_fi: your_kofi_username
+# liberapay: your_liberapay_username
