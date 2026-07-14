@@ -298,7 +298,9 @@ pub(crate) fn workspace_init_cmd(args: WorkspaceInitArgs) -> Result<()> {
          # retire_after = \"1y\"          # a card rests at this interval (\"never\" disables)\n\
          # acquire_cooldown = \"5m\"      # settle gap before a new card's first quiz (\"90s\", \"0\" = none)\n\
          # max_new = 10                 # max never-seen cards a session introduces\n\
-         # limit = 40                   # cap on total cards per session\n";
+         # limit = 40                   # cap on total cards per session\n\
+         # deadline = \"2026-09-01\"     # make me ready by this date (picker readout + drilling ramp)\n\
+         # deadline_ramp = \"14d\"       # how early the pre-deadline retention ramp starts (\"2w\"; \"0\" = cap only)\n";
     std::fs::write(args.dir.join(config::LOCAL_MANIFEST), local)
         .with_context(|| format!("cannot write {}/alix.local.toml", args.dir.display()))?;
     println!(

@@ -565,6 +565,12 @@ pub struct ReviewConfig {
     pub max_new: Option<usize>,
     /// Session size cap. `None` = unset (no cap unless `--limit` says so).
     pub limit: Option<usize>,
+    /// A personal per-workspace target date ("ready by <date>", inclusive),
+    /// set ONLY via a workspace's `alix.local.toml`; never global.
+    pub deadline: Option<chrono::NaiveDate>,
+    /// How many days before the deadline the retention ramp starts
+    /// (`deadline_ramp`); 0 = interval cap only. Meaningless without `deadline`.
+    pub deadline_ramp_days: u32,
 }
 
 impl Default for ReviewConfig {
@@ -575,6 +581,8 @@ impl Default for ReviewConfig {
             acquire_cooldown_ms: crate::scheduler::DEFAULT_ACQUIRE_COOLDOWN_MS,
             max_new: None,
             limit: None,
+            deadline: None,
+            deadline_ramp_days: 14,
         }
     }
 }
@@ -613,6 +621,16 @@ impl ReviewConfig {
         }
         if let Some(n) = raw.review.limit {
             review.limit = Some(n);
+        }
+        if let Some(date) = raw.review.deadline
+            && let Ok(d) = chrono::NaiveDate::parse_from_str(&date, "%Y-%m-%d")
+        {
+            review.deadline = Some(d);
+        }
+        if let Some(ramp) = raw.review.deadline_ramp
+            && let Ok(days) = parse_ramp_days(&ramp)
+        {
+            review.deadline_ramp_days = days;
         }
         review
     }
@@ -683,12 +701,27 @@ struct RawReviewConfig {
     limit: Option<usize>,
 }
 
+/// The `alix.local.toml` `[review]` section: everything the global section
+/// accepts, plus the per-workspace deadline keys that are meaningless
+/// globally.
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct RawLocalReviewConfig {
+    retention: Option<f64>,
+    retire_after: Option<String>,
+    acquire_cooldown: Option<String>,
+    max_new: Option<usize>,
+    limit: Option<usize>,
+    deadline: Option<String>,
+    deadline_ramp: Option<String>,
+}
+
 /// The `alix.local.toml` schema: personal per-workspace overrides. Currently just
 /// `[review]`; lenient (unknown top-level tables are ignored) so it can grow.
 #[derive(Deserialize, Default)]
 struct RawLocalConfig {
     #[serde(default)]
-    review: RawReviewConfig,
+    review: RawLocalReviewConfig,
 }
 
 #[derive(Deserialize, Default)]
@@ -1127,6 +1160,22 @@ fn parse_acquire_cooldown(s: &str) -> Result<u64> {
     Ok(ms)
 }
 
+/// Parses a `deadline_ramp` value: `<n><unit>` with unit `d`/`w` (a bare
+/// number is days) → days. `0` disables the retention ramp (cap only).
+fn parse_ramp_days(s: &str) -> Result<u32> {
+    let s = s.trim();
+    let split = s.find(|c: char| c.is_ascii_alphabetic()).unwrap_or(s.len());
+    let (num, unit) = s.split_at(split);
+    let Ok(n) = num.trim().parse::<u32>() else {
+        bail!("invalid deadline_ramp {s:?}: expected e.g. \"14d\", \"2w\", or \"0\"");
+    };
+    match unit.trim().to_ascii_lowercase().as_str() {
+        "" | "d" => Ok(n),
+        "w" => Ok(n.saturating_mul(7)),
+        other => bail!("invalid deadline_ramp unit {other:?}: expected d or w"),
+    }
+}
+
 /// A self-documenting template for `config --init`: every option is shown
 /// commented out at its default value, so the emitted file overrides nothing
 /// (uncomment a line to change it; defaults you leave commented still track
@@ -1413,6 +1462,61 @@ mod tests {
         assert_eq!(base, base.for_workspace(dir.path())); // missing → unchanged
         std::fs::write(dir.path().join("alix.local.toml"), "this is = = not toml\n").unwrap();
         assert_eq!(base, base.for_workspace(dir.path())); // malformed → unchanged
+    }
+
+    #[test]
+    fn review_deadline_defaults_to_none_and_ramp_to_14() {
+        let review = ReviewConfig::default();
+        assert_eq!(None, review.deadline);
+        assert_eq!(14, review.deadline_ramp_days);
+    }
+
+    #[test]
+    fn for_workspace_overlays_deadline_and_ramp() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("alix.local.toml"),
+            "[review]\ndeadline = \"2026-09-01\"\ndeadline_ramp = \"3w\"\n",
+        )
+        .unwrap();
+        let resolved = ReviewConfig::default().for_workspace(dir.path());
+        assert_eq!(
+            Some(chrono::NaiveDate::from_ymd_opt(2026, 9, 1).unwrap()),
+            resolved.deadline
+        );
+        assert_eq!(21, resolved.deadline_ramp_days);
+    }
+
+    #[test]
+    fn for_workspace_ignores_a_malformed_deadline_but_keeps_other_keys() {
+        // The overlay is lenient key-by-key: a bad date must not eat the file.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("alix.local.toml"),
+            "[review]\ndeadline = \"soonish\"\nretention = 0.85\n",
+        )
+        .unwrap();
+        let resolved = ReviewConfig::default().for_workspace(dir.path());
+        assert_eq!(None, resolved.deadline);
+        assert_eq!(0.85, resolved.retention);
+    }
+
+    #[test]
+    fn ramp_days_parse_units_and_zero() {
+        assert_eq!(14, parse_ramp_days("14d").unwrap());
+        assert_eq!(21, parse_ramp_days("3w").unwrap());
+        assert_eq!(10, parse_ramp_days("10").unwrap(), "bare number is days");
+        assert_eq!(0, parse_ramp_days("0").unwrap(), "0 = cap only, no ramp");
+        assert!(parse_ramp_days("soon").is_err());
+        assert!(parse_ramp_days("5m").is_err(), "months are not a ramp unit");
+    }
+
+    #[test]
+    fn the_global_config_rejects_deadline_keys() {
+        // A deadline is a per-workspace concept; the global [review] table
+        // must refuse it loudly (serde deny_unknown_fields).
+        assert!(Config::from_toml("[review]\ndeadline = \"2026-09-01\"\n").is_err());
+        assert!(Config::from_toml("[review]\ndeadline_ramp = \"14d\"\n").is_err());
     }
 
     #[test]
