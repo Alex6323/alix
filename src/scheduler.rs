@@ -243,20 +243,37 @@ fn seed_card(_state: &CardState, now_ms: u64) -> FsrsCard {
 pub struct Fsrs {
     fsrs: FSRS,
     acquire_cooldown_ms: u64,
+    /// Deadline due-date ceiling for newly scheduled dues; `None` = no deadline.
+    due_ceiling_ms: Option<u64>,
 }
 
 impl Fsrs {
     /// An FSRS scheduler targeting `retention` (e.g. 0.9), with the given
-    /// acquire cooldown (see [`DEFAULT_ACQUIRE_COOLDOWN_MS`]).
+    /// acquire cooldown (see [`DEFAULT_ACQUIRE_COOLDOWN_MS`]). Delegates to
+    /// [`Fsrs::tuned`] with no deadline.
     pub fn new(retention: f64, acquire_cooldown_ms: u64) -> Self {
+        Self::tuned(retention, acquire_cooldown_ms, None)
+    }
+
+    /// A deadline-tuned scheduler ({#deadlines} spec): the tuning's retention and
+    /// interval cap go into the FSRS parameters (native knobs); the due ceiling is
+    /// enforced in [`apply`](Fsrs::apply) because rs-fsrs separates grades AFTER
+    /// clamping the interval, so a mature card can still land past the cap.
+    pub fn tuned(
+        retention: f64,
+        acquire_cooldown_ms: u64,
+        deadline: Option<DeadlineTuning>,
+    ) -> Self {
         let parameters = Parameters {
-            request_retention: retention,
+            request_retention: deadline.map_or(retention, |t| t.retention),
+            maximum_interval: deadline.map_or(36500, |t| t.max_interval_days),
             enable_short_term: true,
             ..Parameters::default()
         };
         Self {
             fsrs: FSRS::new(parameters),
             acquire_cooldown_ms,
+            due_ceiling_ms: deadline.map(|t| t.due_ceiling_ms),
         }
     }
 }
@@ -325,6 +342,16 @@ impl Scheduler for Fsrs {
             next.due_ms = now_ms.saturating_add(LEARNING_HOLD_MS);
         }
         next.learning_goods = if next.state == 2 { 0 } else { goods };
+
+        // Deadline ceiling ({#deadlines} spec): nothing newly scheduled may
+        // pass the date. Only clamp dues beyond the ceiling; minute-scale
+        // learning steps stay untouched. `reanchor` is deliberately free.
+        if let Some(ceiling) = self.due_ceiling_ms
+            && next.due_ms > ceiling
+        {
+            next.due_ms = ceiling;
+            next.scheduled_days = (ceiling.saturating_sub(now_ms) / DAY_MS) as u32;
+        }
 
         // `Recognize` has no slot (unscheduled + boolean) — a silent no-op, never
         // reached in practice since Recognize is graded by pick, not by `apply`.
@@ -660,5 +687,62 @@ mod tests {
     fn deadline_tuning_releases_past_the_date() {
         let d = |y, m, dd| chrono::NaiveDate::from_ymd_opt(y, m, dd).unwrap();
         assert!(deadline_tuning(d(2026, 9, 1), 14, 0.9, d(2026, 9, 2), 0).is_none());
+    }
+
+    #[test]
+    fn a_deadline_ceiling_bounds_the_due_date_where_the_raw_cap_does_not() {
+        // Verified upstream quirk (spec A1, run 2026-07-14): rs-fsrs clamps to
+        // maximum_interval and THEN separates grades, so a mature card graded
+        // Pass (-> Good) lands at cap + 1. The ceiling is what actually keeps
+        // the promise "nothing schedules past the date".
+        let now = 100 * 86_400_000u64;
+        let ceiling = now + 3 * 86_400_000;
+        let sched = Fsrs::tuned(
+            0.9,
+            1_000,
+            Some(DeadlineTuning {
+                retention: 0.9,
+                max_interval_days: 3,
+                due_ceiling_ms: ceiling,
+            }),
+        );
+        let mut st = CardState::new(0);
+        st.recall = Some(FsrsState {
+            stability: 200.0,
+            difficulty: 5.0,
+            state: 2, // Review: months out uncapped
+            reps: 10,
+            scheduled_days: 90,
+            last_review_ms: 0,
+            due_ms: 0,
+            ..Default::default()
+        });
+        sched.apply(&mut st, Depth::Recall, Grade::Pass, now, false);
+        let s = st.recall.unwrap();
+        assert!(
+            s.due_ms <= ceiling,
+            "due {} must not pass the ceiling {ceiling}",
+            s.due_ms
+        );
+        assert!(
+            s.scheduled_days <= 3,
+            "scheduled_days consistent with the ceiling"
+        );
+
+        // Control: untuned, the same card schedules far beyond 3 days (so this
+        // test can actually fail).
+        let mut free = CardState::new(0);
+        free.recall = Some(FsrsState {
+            stability: 200.0,
+            difficulty: 5.0,
+            state: 2,
+            reps: 10,
+            scheduled_days: 90,
+            last_review_ms: 0,
+            due_ms: 0,
+            ..Default::default()
+        });
+        Fsrs::new(0.9, 1_000).apply(&mut free, Depth::Recall, Grade::Pass, now, false);
+        assert!(free.recall.unwrap().scheduled_days > 3);
     }
 }
