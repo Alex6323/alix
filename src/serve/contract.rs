@@ -9,6 +9,7 @@
 use serde_json::json;
 
 use super::*;
+use crate::render::NoteUnit;
 
 /// Pins a DTO's exact wire shape and emits it to the codegen corpus.
 /// A failure means the JSON contract moved: update docs/API.md's field
@@ -88,10 +89,10 @@ fn statedto_review_phase_wire_shape() {
             back: vec!["every value has one owner".to_string()],
             reshaped: true,
             note: vec![
-                NoteUnitDto::Sentence {
+                NoteUnit::Sentence {
                     text: "Ownership frees memory deterministically.".to_string(),
                 },
-                NoteUnitDto::Code {
+                NoteUnit::Code {
                     lines: vec!["let s = String::new();".to_string()],
                 },
             ],

@@ -9,6 +9,7 @@ use crate::{
     config::{AskConfig, ReviewConfig},
     depth::Depth,
     picker,
+    render::NoteUnit,
     scheduler::{Fsrs, Grade},
     session::Session,
     trace::{Delta, SourceBase},
@@ -106,11 +107,11 @@ fn card_dto_structures_the_note() {
     assert_eq!(dto.back, vec!["the back".to_string()]);
     assert_eq!(dto.note.len(), 2);
     match &dto.note[0] {
-        NoteUnitDto::Sentence { text } => assert_eq!(text, "Intro here."),
+        NoteUnit::Sentence { text } => assert_eq!(text, "Intro here."),
         other => panic!("expected a sentence, got {other:?}"),
     }
     match &dto.note[1] {
-        NoteUnitDto::Code { lines } => assert_eq!(lines, &vec!["fn main() {}".to_string()]),
+        NoteUnit::Code { lines } => assert_eq!(lines, &vec!["fn main() {}".to_string()]),
         other => panic!("expected a code block, got {other:?}"),
     }
 }

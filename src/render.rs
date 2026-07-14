@@ -12,6 +12,8 @@
 //! frontend, as is anything reveal-state-dependent (typing progress,
 //! line-by-line, cloze holes), which belongs with the interactive layer.
 
+use serde::{Deserialize, Serialize};
+
 use crate::{
     card::Card,
     cloze::{BLANK, HIDDEN},
@@ -20,16 +22,20 @@ use crate::{
 /// A note decomposed into ordered display units.
 ///
 /// Units appear in document order. The frontend separates consecutive units
-/// from one another and applies its own wrapping and styling.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// from one another and applies its own wrapping and styling. Serializes as
+/// the documented client wire shape (`{"kind": "sentence", "text": …}`, see
+/// docs/API.md): struct variants, because serde's internal tagging cannot
+/// tag newtype variants.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
 pub enum NoteUnit {
     /// One sentence of prose, trimmed, with its terminating period attached.
     /// Hard-wrapped `!` lines are joined before splitting, so a sentence is a
     /// real sentence rather than a source line.
-    Sentence(String),
+    Sentence { text: String },
     /// A fenced code block: its lines verbatim, indentation preserved. Never
     /// sentence-split or wrapped — code reads as written.
-    Code(Vec<String>),
+    Code { lines: Vec<String> },
 }
 
 /// Decomposes a card's note into ordered [`NoteUnit`]s. Returns an empty list
@@ -56,7 +62,7 @@ pub fn note_units(card: &Card) -> Vec<NoteUnit> {
             if in_code {
                 let block = std::mem::take(&mut code);
                 if !block.is_empty() {
-                    units.push(NoteUnit::Code(block));
+                    units.push(NoteUnit::Code { lines: block });
                 }
                 in_code = false;
             } else {
@@ -82,7 +88,7 @@ pub fn note_units(card: &Card) -> Vec<NoteUnit> {
     flush_prose(&mut prose, &mut units);
     // An unterminated code fence still yields its gathered lines.
     if !code.is_empty() {
-        units.push(NoteUnit::Code(code));
+        units.push(NoteUnit::Code { lines: code });
     }
     units
 }
@@ -92,7 +98,7 @@ pub fn note_units(card: &Card) -> Vec<NoteUnit> {
 fn flush_prose(prose: &mut String, units: &mut Vec<NoteUnit>) {
     for sentence in split_sentences(prose) {
         if !sentence.is_empty() {
-            units.push(NoteUnit::Sentence(sentence));
+            units.push(NoteUnit::Sentence { text: sentence });
         }
     }
     prose.clear();
@@ -198,8 +204,12 @@ mod tests {
         assert_eq!(
             units,
             vec![
-                NoteUnit::Sentence("First one.".into()),
-                NoteUnit::Sentence("Second one.".into()),
+                NoteUnit::Sentence {
+                    text: "First one.".into()
+                },
+                NoteUnit::Sentence {
+                    text: "Second one.".into()
+                },
             ]
         );
     }
@@ -210,9 +220,9 @@ mod tests {
         let units = note_units(&card_with_note("A sentence spread\nacross two lines."));
         assert_eq!(
             units,
-            vec![NoteUnit::Sentence(
-                "A sentence spread across two lines.".into()
-            )]
+            vec![NoteUnit::Sentence {
+                text: "A sentence spread across two lines.".into()
+            }]
         );
     }
 
@@ -223,12 +233,12 @@ mod tests {
         assert_eq!(
             units,
             vec![
-                NoteUnit::Sentence("Intro here.".into()),
-                NoteUnit::Code(vec![
-                    "fn main() {".into(),
-                    "    let x = 1;".into(),
-                    "}".into(),
-                ]),
+                NoteUnit::Sentence {
+                    text: "Intro here.".into()
+                },
+                NoteUnit::Code {
+                    lines: vec!["fn main() {".into(), "    let x = 1;".into(), "}".into(),]
+                },
             ]
         );
     }
@@ -240,8 +250,12 @@ mod tests {
         assert_eq!(
             units,
             vec![
-                NoteUnit::Code(vec!["code".into()]),
-                NoteUnit::Sentence("After the block.".into()),
+                NoteUnit::Code {
+                    lines: vec!["code".into()]
+                },
+                NoteUnit::Sentence {
+                    text: "After the block.".into()
+                },
             ]
         );
     }
@@ -249,7 +263,12 @@ mod tests {
     #[test]
     fn unterminated_fence_still_yields_code() {
         let units = note_units(&card_with_note("```\nlonely line"));
-        assert_eq!(units, vec![NoteUnit::Code(vec!["lonely line".into()])]);
+        assert_eq!(
+            units,
+            vec![NoteUnit::Code {
+                lines: vec!["lonely line".into()]
+            }]
+        );
     }
 
     #[test]
@@ -257,7 +276,30 @@ mod tests {
         let units = note_units(&card_with_note("See section 2.1 for details."));
         assert_eq!(
             units,
-            vec![NoteUnit::Sentence("See section 2.1 for details.".into())]
+            vec![NoteUnit::Sentence {
+                text: "See section 2.1 for details.".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn note_units_serialize_as_the_documented_wire_shape() {
+        // The client contract (docs/API.md, pinned by the serve snapshot
+        // tests): internally tagged with `kind`, lowercase variant names.
+        let units = vec![
+            NoteUnit::Sentence {
+                text: "One owner.".into(),
+            },
+            NoteUnit::Code {
+                lines: vec!["let s;".into()],
+            },
+        ];
+        assert_eq!(
+            serde_json::json!([
+                {"kind": "sentence", "text": "One owner."},
+                {"kind": "code", "lines": ["let s;"]},
+            ]),
+            serde_json::to_value(&units).unwrap()
         );
     }
 

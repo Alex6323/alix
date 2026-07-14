@@ -28,25 +28,6 @@ use crate::{
     trace::{self, Delta, Excerpt, Phase},
 };
 
-/// One display unit of a card's note, ready for JSON. Mirrors
-/// [`render::NoteUnit`]; the web page renders `sentence` as a paragraph and
-/// `code` as a verbatim block.
-#[derive(Debug, Serialize)]
-#[serde(tag = "kind", rename_all = "lowercase")]
-pub(super) enum NoteUnitDto {
-    Sentence { text: String },
-    Code { lines: Vec<String> },
-}
-
-impl From<NoteUnit> for NoteUnitDto {
-    fn from(unit: NoteUnit) -> Self {
-        match unit {
-            NoteUnit::Sentence(text) => NoteUnitDto::Sentence { text },
-            NoteUnit::Code(lines) => NoteUnitDto::Code { lines },
-        }
-    }
-}
-
 /// A card serialized for the browser.
 #[derive(Debug, Serialize)]
 pub(super) struct CardDto {
@@ -57,7 +38,9 @@ pub(super) struct CardDto {
     /// so the frontend bullets a multi-line list. Never set for the card's own
     /// authored back lines (a poem, typing answers) — only the reshape.
     pub(super) reshaped: bool,
-    pub(super) note: Vec<NoteUnitDto>,
+    /// The core note units serialize as the documented wire shape directly;
+    /// the web page renders `sentence` as a paragraph and `code` verbatim.
+    pub(super) note: Vec<NoteUnit>,
     /// `/img/<key>` URL for the question-side image, or `null`.
     pub(super) img: Option<String>,
     /// `/img/<key>` URL for the answer-side image, shown on reveal, or `null`.
@@ -1285,10 +1268,7 @@ pub(super) fn card_dto(card: &Card) -> CardDto {
         context: card.context.clone(),
         back: card.back_for_display().to_vec(),
         reshaped: card.display_back.is_some(),
-        note: render::note_units(card)
-            .into_iter()
-            .map(NoteUnitDto::from)
-            .collect(),
+        note: render::note_units(card),
         img: card.image.as_ref().map(img_url),
         img_back: card.image_back.as_ref().map(img_url),
         // The citation is resolved by `review_state`, which has the source base;
