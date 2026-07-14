@@ -5,6 +5,7 @@
 
 import 'api/listing.dart';
 import 'api/review.dart';
+import 'api/simple.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi' as ffi;
@@ -69,6 +70,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Depth dco_decode_box_autoadd_depth(dynamic raw);
 
   @protected
+  ForeignWriter dco_decode_box_autoadd_foreign_writer(dynamic raw);
+
+  @protected
   BigInt dco_decode_box_autoadd_u_64(dynamic raw);
 
   @protected
@@ -85,6 +89,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Depth dco_decode_depth(dynamic raw);
+
+  @protected
+  ForeignWriter dco_decode_foreign_writer(dynamic raw);
 
   @protected
   Grade dco_decode_grade(dynamic raw);
@@ -130,6 +137,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Depth? dco_decode_opt_box_autoadd_depth(dynamic raw);
+
+  @protected
+  ForeignWriter? dco_decode_opt_box_autoadd_foreign_writer(dynamic raw);
 
   @protected
   BigInt? dco_decode_opt_box_autoadd_u_64(dynamic raw);
@@ -208,6 +218,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Depth sse_decode_box_autoadd_depth(SseDeserializer deserializer);
 
   @protected
+  ForeignWriter sse_decode_box_autoadd_foreign_writer(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   BigInt sse_decode_box_autoadd_u_64(SseDeserializer deserializer);
 
   @protected
@@ -224,6 +239,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Depth sse_decode_depth(SseDeserializer deserializer);
+
+  @protected
+  ForeignWriter sse_decode_foreign_writer(SseDeserializer deserializer);
 
   @protected
   Grade sse_decode_grade(SseDeserializer deserializer);
@@ -273,6 +291,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Depth? sse_decode_opt_box_autoadd_depth(SseDeserializer deserializer);
+
+  @protected
+  ForeignWriter? sse_decode_opt_box_autoadd_foreign_writer(
+    SseDeserializer deserializer,
+  );
 
   @protected
   BigInt? sse_decode_opt_box_autoadd_u_64(SseDeserializer deserializer);
@@ -363,6 +386,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_box_autoadd_depth(Depth self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_foreign_writer(
+    ForeignWriter self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_u_64(BigInt self, SseSerializer serializer);
 
   @protected
@@ -382,6 +411,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_depth(Depth self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_foreign_writer(ForeignWriter self, SseSerializer serializer);
 
   @protected
   void sse_encode_grade(Grade self, SseSerializer serializer);
@@ -445,6 +477,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_opt_box_autoadd_depth(Depth? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_foreign_writer(
+    ForeignWriter? self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_opt_box_autoadd_u_64(BigInt? self, SseSerializer serializer);

@@ -12,6 +12,12 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 List<DeckEntry> listRoot({required String root, BigInt? nowMs}) =>
     RustLib.instance.api.crateApiListingListRoot(root: root, nowMs: nowMs);
 
+/// Syncthing conflict copies next to any store under `root`: non-empty
+/// means two devices wrote concurrently and the picker should warn before
+/// the user reviews on top of a fork.
+List<String> syncConflicts({required String root}) =>
+    RustLib.instance.api.crateApiListingSyncConflicts(root: root);
+
 /// Lists one drillable folder of the root.
 List<DeckEntry> listMembers({
   required String root,

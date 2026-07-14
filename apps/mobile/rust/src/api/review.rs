@@ -131,6 +131,15 @@ pub fn keypoint_grade(covered: u32, total: u32) -> Grade {
     alix::scheduler::keypoint_grade(covered as usize, total as usize).into()
 }
 
+/// Another device's recent write of this session's store (see
+/// [`ReviewSession::foreign_writer`]): the roaming-discipline banner's data.
+pub struct ForeignWriter {
+    /// The other device's label.
+    pub device: String,
+    /// How long ago it wrote, in ms.
+    pub age_ms: u64,
+}
+
 /// A live review session running in Rust: the alix session plus its open
 /// store and augment cache. Dart holds this as an opaque handle.
 pub struct ReviewSession {
@@ -145,17 +154,24 @@ impl ReviewSession {
     /// way the web and CLI route it: a workspace member reviews into its
     /// workspace's own store, everything else into the root's shared store.
     /// `now_ms` injects the session clock (tests); `None` is the wall clock.
+    /// `device` names this device in the store's last-writer marker (the
+    /// app passes its settings.json label); `None` keeps whatever the core
+    /// derived for this machine.
     #[flutter_rust_bridge::frb(sync)]
     pub fn open(
         deck_path: String,
         root_dir: String,
         depth: Option<Depth>,
         now_ms: Option<u64>,
+        device: Option<String>,
     ) -> Result<ReviewSession> {
         let deck = PathBuf::from(deck_path);
         let root_store = alix::workspace::root_store_path(Path::new(&root_dir));
         let mut store =
             alix::assemble::store_for(std::slice::from_ref(&deck), Some(&root_store))?;
+        if device.is_some() {
+            store.device = device;
+        }
         // The instance config a CLI/server launch would carry, at its built-in
         // defaults (`AssembleConfig` has no `Default`; pacing matches launch.rs).
         let cfg = alix::assemble::AssembleConfig {
@@ -229,6 +245,18 @@ impl ReviewSession {
         self.session.poll(&self.store, now);
         Ok(self.state(Some(now)))
     }
+
+    /// The device that last wrote this session's store, when it was another
+    /// one within the lib's warn window: the "review on one device at a
+    /// time" banner's data. `now_ms` injects the clock (tests).
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn foreign_writer(&self, now_ms: Option<u64>) -> Option<ForeignWriter> {
+        let now = now_ms.unwrap_or_else(alix::time::now_ms);
+        let mine = self.store.device.as_deref()?;
+        self.store
+            .recent_foreign_writer(mine, now)
+            .map(|(device, age_ms)| ForeignWriter { device, age_ms })
+    }
 }
 
 #[cfg(test)]
@@ -251,6 +279,7 @@ mod tests {
             root.to_string_lossy().into_owned(),
             None,
             Some(T0),
+            None,
         )
         .unwrap();
         while s.state(Some(T0)).acquire {
@@ -261,6 +290,7 @@ mod tests {
             root.to_string_lossy().into_owned(),
             depth,
             Some(LATER),
+            None,
         )
         .unwrap()
     }
@@ -353,12 +383,47 @@ mod tests {
             root.to_string_lossy().into_owned(),
             Some(Depth::Reconstruct),
             Some(LATER),
+            None,
         )
         .unwrap();
         assert_eq!(
             s.state(Some(LATER)).keypoints,
             Some(vec!["one claim".to_string()])
         );
+    }
+
+    #[test]
+    fn foreign_writer_warns_the_other_device_and_never_the_writer() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(&root.join("d.txt"), "# q\n\ta\n");
+        let open_as = |device: &str| {
+            ReviewSession::open(
+                root.join("d.txt").to_string_lossy().into_owned(),
+                root.to_string_lossy().into_owned(),
+                None,
+                Some(T0),
+                Some(device.to_string()),
+            )
+            .unwrap()
+        };
+        // Nothing written yet: no marker to warn about. Note that assembly
+        // itself saves (it records the last depth), so every `open` below
+        // stamps the store as a write by that device.
+        assert!(open_as("phone-1").foreign_writer(None).is_none());
+
+        // desk-1 acquires: the store is now desk-1's write.
+        let mut desk = open_as("desk-1");
+        desk.acquire(Some(T0)).unwrap();
+        assert!(
+            open_as("desk-1").foreign_writer(None).is_none(),
+            "a device's own writes are not foreign"
+        );
+        let seen = open_as("phone-1")
+            .foreign_writer(None)
+            .expect("the other device sees the fresh write");
+        assert_eq!(seen.device, "desk-1");
+        assert!(seen.age_ms < alix::store::FOREIGN_WRITE_WARN_WINDOW_MS);
     }
 
     #[test]

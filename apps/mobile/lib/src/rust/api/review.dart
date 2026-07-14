@@ -32,6 +32,11 @@ abstract class ReviewSession implements RustOpaqueInterface {
   /// pick is up. The learner-final grade is still a separate `grade` call.
   ChoiceFeedback? choose({required int chosen});
 
+  /// The device that last wrote this session's store, when it was another
+  /// one within the lib's warn window: the "review on one device at a
+  /// time" banner's data. `now_ms` injects the clock (tests).
+  ForeignWriter? foreignWriter({BigInt? nowMs});
+
   /// Grade the current card and persist, returning the next position.
   ReviewState grade({required Grade grade, BigInt? nowMs});
 
@@ -40,16 +45,21 @@ abstract class ReviewSession implements RustOpaqueInterface {
   /// way the web and CLI route it: a workspace member reviews into its
   /// workspace's own store, everything else into the root's shared store.
   /// `now_ms` injects the session clock (tests); `None` is the wall clock.
+  /// `device` names this device in the store's last-writer marker (the
+  /// app passes its settings.json label); `None` keeps whatever the core
+  /// derived for this machine.
   static ReviewSession open({
     required String deckPath,
     required String rootDir,
     Depth? depth,
     BigInt? nowMs,
+    String? device,
   }) => RustLib.instance.api.crateApiReviewReviewSessionOpen(
     deckPath: deckPath,
     rootDir: rootDir,
     depth: depth,
     nowMs: nowMs,
+    device: device,
   );
 
   /// The current review position, for the screen to render. `now_ms`
@@ -148,6 +158,29 @@ class ChoiceFeedback {
 }
 
 enum Depth { recognize, recall, reconstruct }
+
+/// Another device's recent write of this session's store (see
+/// [`ReviewSession::foreign_writer`]): the roaming-discipline banner's data.
+class ForeignWriter {
+  /// The other device's label.
+  final String device;
+
+  /// How long ago it wrote, in ms.
+  final BigInt ageMs;
+
+  const ForeignWriter({required this.device, required this.ageMs});
+
+  @override
+  int get hashCode => device.hashCode ^ ageMs.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ForeignWriter &&
+          runtimeType == other.runtimeType &&
+          device == other.device &&
+          ageMs == other.ageMs;
+}
 
 /// The learner's self-grade, mirrored so frb bridges it from this crate.
 enum Grade { fail, partial, pass }
