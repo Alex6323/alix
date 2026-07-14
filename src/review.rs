@@ -7,13 +7,13 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    answer::{self, Mode},
+    answer::{self, Input, Mode},
     augment::AugmentCache,
     card::Card,
     choice::{self, ChoiceQuestion},
     depth::{self, Depth},
     render::{self, NoteUnit},
-    session::Session,
+    session::{self, Session},
     store::Store,
 };
 
@@ -72,8 +72,26 @@ pub struct ReviewState {
     /// deliberately NOT here: it only travels in [`ChoiceFeedback`], so a
     /// state payload can never leak the answer.
     pub choices: Option<Vec<String>>,
+    /// The Explain checklist rubric: the cached keypoints augment when
+    /// present, else the card's authored back lines. Only for an Explain
+    /// check past acquire; `None` everywhere else.
+    pub keypoints: Option<Vec<String>>,
+    /// How the learner answers (`% input:`): typed (default) or drawn.
+    pub input: Input,
     pub finished: bool,
     pub remaining: u32,
+    /// Distinct cards that entered the roster at session start.
+    pub initial: u32,
+    /// Grades given this session (a re-served card counts again).
+    pub reviews: u32,
+    pub passed: u32,
+    pub failed: u32,
+    /// Whether a restart right now would find due (or new) cards, so a
+    /// summary screen can offer another round.
+    pub can_restart: bool,
+    /// The current card is a virtual (remediation) card the client may offer
+    /// to promote into the deck.
+    pub promotable: bool,
 }
 
 /// What a pick revealed: which option was chosen, which was right, and
@@ -93,8 +111,15 @@ pub struct CheckFeedback {
     pub passed: bool,
 }
 
-/// Builds the state a client renders right now.
-pub fn state(session: &Session, store: &Store, augment: &AugmentCache) -> ReviewState {
+/// Builds the state a client renders right now. `now_ms` feeds the
+/// restartability check and defaults to the wall clock; tests inject it.
+pub fn state(
+    session: &Session,
+    store: &Store,
+    augment: &AugmentCache,
+    now_ms: Option<u64>,
+) -> ReviewState {
+    let now = now_ms.unwrap_or_else(session::now_ms);
     let card = session.current();
     let depth = session.depth();
     let mode = card
@@ -102,14 +127,37 @@ pub fn state(session: &Session, store: &Store, augment: &AugmentCache) -> Review
         .unwrap_or_default();
     let acquire = session.current_unseen(store);
     let choices = current_question(session, store, augment).map(|q| q.options);
+    // Explain reveals the key points as a tick-each-line checklist whose
+    // coverage derives the grade: the cached keypoints when present, else the
+    // card's AUTHORED back lines (never a reshaped display back). Any other
+    // check keeps the plain reveal; never on a first encounter, where
+    // acquiring just reveals the answer.
+    let keypoints = if !acquire && mode == Mode::Explain {
+        card.map(|c| {
+            augment
+                .keypoints(c.id())
+                .map(<[String]>::to_vec)
+                .unwrap_or_else(|| c.back.clone())
+        })
+    } else {
+        None
+    };
     ReviewState {
         card: card.map(CardView::from),
         mode,
         depth,
         acquire,
         choices,
+        keypoints,
+        input: card.and_then(|c| c.input).unwrap_or_default(),
         finished: session.is_finished(),
         remaining: session.remaining() as u32,
+        initial: session.initial_size as u32,
+        reviews: session.stats.reviews as u32,
+        passed: session.stats.passed as u32,
+        failed: session.stats.failed as u32,
+        can_restart: session.has_due_now(store, now),
+        promotable: session.current_is_virtual(store),
     }
 }
 
@@ -183,9 +231,9 @@ mod tests {
         card::Card,
         depth::Depth,
         parser,
-        scheduler::Fsrs,
+        scheduler::{Fsrs, Grade},
         session::{Session, SessionOptions},
-        store::Store,
+        store::{Store, VirtualCard, VirtualKind},
     };
 
     /// Cards were acquired at T0 and the session runs at NOW, past the
@@ -241,7 +289,11 @@ mod tests {
         for (cards, depth, want) in cases {
             let session = session_at(cards, &store, depth, NOW);
             assert!(session.current().is_some(), "{depth:?} serves the card");
-            assert_eq!(state(&session, &store, &augment).mode, want, "{depth:?}");
+            assert_eq!(
+                state(&session, &store, &augment, Some(NOW)).mode,
+                want,
+                "{depth:?}"
+            );
         }
     }
 
@@ -250,11 +302,17 @@ mod tests {
         let (mut store, augment, _dir) = fixtures();
         let cards = parse("# q\n\ta\n");
         let fresh = session_at(cards.clone(), &store, Depth::Recall, NOW);
-        assert!(state(&fresh, &store, &augment).acquire, "never-seen card");
+        assert!(
+            state(&fresh, &store, &augment, Some(NOW)).acquire,
+            "never-seen card"
+        );
 
         seen(&mut store, &cards);
         let again = session_at(cards, &store, Depth::Recall, NOW);
-        assert!(!state(&again, &store, &augment).acquire, "seen card");
+        assert!(
+            !state(&again, &store, &augment, Some(NOW)).acquire,
+            "seen card"
+        );
     }
 
     #[test]
@@ -266,7 +324,9 @@ mod tests {
         cards[0].image_back = Some("/pics/back.png".into());
         seen(&mut store, &cards);
         let session = session_at(cards, &store, Depth::Recall, NOW);
-        let card = state(&session, &store, &augment).card.expect("a card");
+        let card = state(&session, &store, &augment, Some(NOW))
+            .card
+            .expect("a card");
         assert!(
             card.context.iter().any(|l| l.contains("____")),
             "cloze context blanks the hole: {:?}",
@@ -330,10 +390,10 @@ mod tests {
         seen(&mut store, &cards);
 
         let recall = session_at(cards.clone(), &store, Depth::Recall, NOW);
-        assert_eq!(state(&recall, &store, &augment).choices, None);
+        assert_eq!(state(&recall, &store, &augment, Some(NOW)).choices, None);
 
         let recognize = session_at(cards.clone(), &store, Depth::Recognize, NOW);
-        let options = state(&recognize, &store, &augment)
+        let options = state(&recognize, &store, &augment, Some(NOW))
             .choices
             .expect("a recognize pick");
         assert_eq!(options.len(), crate::choice::NUM_OPTIONS);
@@ -343,7 +403,7 @@ mod tests {
         // attempt-then-reveal.
         let fresh_store = Store::open(_dir.path().join("fresh.json")).unwrap();
         let acquire = session_at(cards.clone(), &fresh_store, Depth::Recall, NOW);
-        let bare = state(&acquire, &fresh_store, &augment);
+        let bare = state(&acquire, &fresh_store, &augment, Some(NOW));
         assert!(bare.acquire);
         assert_eq!(bare.choices, None, "no distractors, no recognition pick");
 
@@ -352,7 +412,7 @@ mod tests {
             id,
             vec!["w1".to_string(), "w2".to_string(), "w3".to_string()],
         );
-        let armed = state(&acquire, &fresh_store, &augment);
+        let armed = state(&acquire, &fresh_store, &augment, Some(NOW));
         assert!(armed.choices.is_some(), "full distractors arm the pick");
     }
 
@@ -364,11 +424,13 @@ mod tests {
         let session = session_at(cards, &store, Depth::Recognize, NOW);
 
         let question = current_question(&session, &store, &augment).expect("a pick");
-        let shown = state(&session, &store, &augment).choices.expect("options");
+        let shown = state(&session, &store, &augment, Some(NOW))
+            .choices
+            .expect("options");
         assert_eq!(shown, question.options, "state serves the same options");
         // Stable across repeated builds while the same card is up.
         assert_eq!(
-            state(&session, &store, &augment).choices,
+            state(&session, &store, &augment, Some(NOW)).choices,
             Some(question.options.clone())
         );
 
@@ -402,10 +464,114 @@ mod tests {
     }
 
     #[test]
+    fn keypoints_appear_only_for_an_explain_check_past_acquire() {
+        let (mut store, mut augment, _dir) = fixtures();
+        // A seen multi-line flip card at Reconstruct renders as Explain.
+        let mut cards = parse("# q\n\tfirst fact\n\tsecond fact\n");
+        seen(&mut store, &cards);
+
+        // Uncached: the rubric falls back to the AUTHORED back lines. The
+        // reshaped display back must not leak into the checklist.
+        cards[0].display_back = Some(vec!["a reshaped answer".into()]);
+        let session = session_at(cards.clone(), &store, Depth::Reconstruct, NOW);
+        let fallback = state(&session, &store, &augment, Some(NOW));
+        assert_eq!(fallback.mode, Mode::Explain);
+        assert_eq!(
+            fallback.keypoints,
+            Some(vec!["first fact".to_string(), "second fact".to_string()])
+        );
+
+        // Cached keypoints win over the fallback.
+        augment.set_keypoints(cards[0].id(), vec!["one claim".to_string()]);
+        let cached = state(&session, &store, &augment, Some(NOW));
+        assert_eq!(cached.keypoints, Some(vec!["one claim".to_string()]));
+
+        // Any other check keeps the plain reveal.
+        let recall = session_at(cards.clone(), &store, Depth::Recall, NOW);
+        assert_eq!(state(&recall, &store, &augment, Some(NOW)).keypoints, None);
+
+        // A first encounter acquires: no checklist even at Reconstruct.
+        let fresh = Store::open(_dir.path().join("fresh.json")).unwrap();
+        let acquire = session_at(cards, &fresh, Depth::Reconstruct, NOW);
+        let acquired = state(&acquire, &fresh, &augment, Some(NOW));
+        assert!(acquired.acquire);
+        assert_eq!(acquired.keypoints, None);
+    }
+
+    #[test]
+    fn session_counters_mirror_the_session() {
+        let (mut store, augment, _dir) = fixtures();
+        let cards = parse(FOUR);
+        seen(&mut store, &cards);
+        let mut session = session_at(cards, &store, Depth::Recall, NOW);
+        let start = state(&session, &store, &augment, Some(NOW));
+        assert_eq!(start.initial, 4);
+        assert_eq!((start.reviews, start.passed, start.failed), (0, 0, 0));
+
+        session.grade(&mut store, Grade::Pass, NOW);
+        session.grade(&mut store, Grade::Fail, NOW);
+        let later = state(&session, &store, &augment, Some(NOW));
+        assert_eq!(later.reviews, 2);
+        assert_eq!(later.passed, 1);
+        assert_eq!(later.failed, 1);
+    }
+
+    #[test]
+    fn promotable_flags_a_virtual_card_only() {
+        let (mut store, augment, _dir) = fixtures();
+        let text = "# virtual front\n\tvirtual back\n";
+        let mut synth = parser::parse_str("deck.txt", text).unwrap().remove(0);
+        synth.line = 1_000_000;
+        store.insert_virtual(VirtualCard {
+            id: synth.id(),
+            kind: VirtualKind::Remediation,
+            parent: "deck.txt".to_string(),
+            text: text.to_string(),
+            created_ms: T0,
+        });
+        store.get_or_insert(synth.id(), T0);
+        let session = session_at(vec![synth], &store, Depth::Recall, NOW);
+        assert!(state(&session, &store, &augment, Some(NOW)).promotable);
+
+        let regular = parse("# q\n\ta\n");
+        seen(&mut store, &regular);
+        let plain = session_at(regular, &store, Depth::Recall, NOW);
+        assert!(!state(&plain, &store, &augment, Some(NOW)).promotable);
+    }
+
+    #[test]
+    fn can_restart_flips_with_the_injected_clock() {
+        let (mut store, augment, _dir) = fixtures();
+        let cards = parse("# q\n\ta\n");
+        seen(&mut store, &cards);
+        let mut session = session_at(cards, &store, Depth::Recall, NOW);
+        session.grade(&mut store, Grade::Pass, NOW);
+        assert!(session.is_finished());
+
+        let done = state(&session, &store, &augment, Some(NOW));
+        assert!(!done.can_restart, "nothing is due right after the pass");
+        let much_later = NOW + 90 * 24 * 3_600_000;
+        let again = state(&session, &store, &augment, Some(much_later));
+        assert!(again.can_restart, "the card comes due again");
+    }
+
+    #[test]
+    fn input_follows_the_card() {
+        let (mut store, augment, _dir) = fixtures();
+        let cards = parse("# q\n\t% input: draw\n\ta\n");
+        seen(&mut store, &cards);
+        let session = session_at(cards, &store, Depth::Recall, NOW);
+        assert_eq!(
+            state(&session, &store, &augment, Some(NOW)).input,
+            Input::Draw
+        );
+    }
+
+    #[test]
     fn a_finished_session_reports_no_card_and_no_choices() {
         let (store, augment, _dir) = fixtures();
         let session = session_at(Vec::new(), &store, Depth::Recall, NOW);
-        let state = state(&session, &store, &augment);
+        let state = state(&session, &store, &augment, Some(NOW));
         assert!(state.finished);
         assert!(state.card.is_none());
         assert_eq!(state.choices, None);
