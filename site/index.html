@@ -119,9 +119,13 @@
   .dl-note code{background:var(--surface); border:1px solid var(--line); border-radius:6px; padding:2px 7px}
 
   footer{border-top:1px solid var(--line); margin-top:64px; padding:34px 0; color:var(--muted); font-size:14px}
-  .foot{display:flex; justify-content:space-between; flex-wrap:wrap; gap:14px}
+  .foot{display:flex; justify-content:space-between; flex-wrap:wrap; gap:14px; align-items:center}
   .foot a{color:var(--muted)}
   .foot a:hover{color:var(--text)}
+  .foot a.sponsor{display:inline-block; padding:6px 14px; border-radius:8px;
+    background:var(--accent); color:var(--bg); font-weight:600;
+    transition:transform .15s, filter .15s}
+  .foot a.sponsor:hover{filter:brightness(1.1); transform:translateY(-1px); text-decoration:none; color:var(--bg)}
 
   @media(max-width:680px){ .grid{grid-template-columns:1fr} .dl-grid{grid-template-columns:1fr} }
 </style>
@@ -280,7 +284,7 @@
     <a href="/impressum.html">Impressum</a> &middot;
     <a href="/datenschutz.html">Datenschutz</a> &middot;
     <a href="mailto:contact@alix.study">contact@alix.study</a> &middot;
-    <a href="https://github.com/sponsors/Alex6323">Support alix</a>
+    <a class="sponsor" href="https://github.com/sponsors/Alex6323">&hearts; Support alix</a>
   </div>
 </div></footer>
 
