@@ -28,6 +28,18 @@ optional: when its value is "" (or the key is omitted entirely), any
 template line wrapped in a `data-detail="phone"` element is deleted outright
 rather than left showing an empty "Telefon:" label.
 
+Bulk-crawler hardening, applied only at --inject time (the templates'
+{{key}} tokens are untouched, so --check's resolution logic is unaffected):
+`street`, `city`, `phone` are written as `<span data-obf="...">` holding
+their value base64-of-UTF-8 encoded, with one small inline decoder script
+appended before `</body>` (only when at least one such span was written)
+that fills them in on DOMContentLoaded. `email` is written as visible text
+HTML-entity-encoded character by character (browsers decode entities in
+both text and attribute values, so a `mailto:` href keeps working without
+JS). `name` stays plain. This keeps the details out of a page's raw HTML
+for crawlers that don't execute JavaScript, while real visitors still see
+everything.
+
 Modes:
   --inject SITE_DIR   Resolve every placeholder in SITE_DIR/impressum.html
                        and SITE_DIR/datenschutz.html and write the result
@@ -61,6 +73,7 @@ deploying broken or partial legal pages.
 from __future__ import annotations
 
 import argparse
+import base64
 import html
 import json
 import os
@@ -71,6 +84,22 @@ from pathlib import Path
 TEMPLATE_FILES = ("impressum.html", "datenschutz.html")
 REQUIRED_KEYS = ("name", "street", "city", "email")
 OPTIONAL_KEYS = ("phone",)
+
+# Keys whose value is hidden from raw HTML at inject time (see module
+# docstring): rendered as a base64 <span data-obf> instead of plain text.
+OBFUSCATE_KEYS = ("street", "city", "phone")
+
+# Marks the decoder script so a second --inject run (nothing left to
+# obfuscate) doesn't re-append it.
+DECODER_SCRIPT = '''<script data-obf-decoder>
+document.addEventListener("DOMContentLoaded", () => {
+  document.querySelectorAll("[data-obf]").forEach((el) => {
+    const bytes = Uint8Array.from(atob(el.dataset.obf), (c) => c.charCodeAt(0));
+    el.textContent = new TextDecoder().decode(bytes);
+  });
+});
+</script>
+'''
 
 SAMPLE_DETAILS = {
     "name": "Erika Musterfrau",
@@ -101,19 +130,48 @@ def remove_empty_optional_lines(text: str, details: dict) -> str:
     return DETAIL_LINE_RE.sub(repl, text)
 
 
-def apply_markers(text: str, details: dict) -> str:
-    def repl(m: re.Match) -> str:
-        key = m.group(1)
-        if key in details:
-            return html.escape(str(details[key]), quote=True)
-        return m.group(0)  # key not provided at all: leave the marker as-is
+def obfuscate_value(value: str) -> str:
+    """Base64-of-UTF-8 encode a value for a `<span data-obf="...">`."""
+    return base64.b64encode(value.encode("utf-8")).decode("ascii")
 
-    return MARKER_RE.sub(repl, text)
+
+def entity_encode(value: str) -> str:
+    """HTML-entity-encode every character (safe in both text and attrs)."""
+    return "".join(f"&#{ord(c)};" for c in value)
+
+
+def apply_markers(text: str, details: dict) -> tuple[str, bool]:
+    used_obf = False
+
+    def repl(m: re.Match) -> str:
+        nonlocal used_obf
+        key = m.group(1)
+        if key not in details:
+            return m.group(0)  # key not provided at all: leave the marker as-is
+        value = str(details[key])
+        if key in OBFUSCATE_KEYS:
+            used_obf = True
+            return f'<span data-obf="{obfuscate_value(value)}"></span>'
+        if key == "email":
+            return entity_encode(value)
+        return html.escape(value, quote=True)
+
+    new_text = MARKER_RE.sub(repl, text)
+    return new_text, used_obf
+
+
+def insert_before_body_close(text: str, snippet: str) -> str:
+    idx = text.rfind("</body>")
+    if idx == -1:
+        return text + snippet
+    return text[:idx] + snippet + text[idx:]
 
 
 def process(text: str, details: dict) -> str:
     text = remove_empty_optional_lines(text, details)
-    text = apply_markers(text, details)
+    text, used_obf = apply_markers(text, details)
+    if used_obf and "data-obf-decoder" not in text:
+        text = insert_before_body_close(text, DECODER_SCRIPT)
     return text
 
 
