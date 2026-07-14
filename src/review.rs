@@ -12,6 +12,7 @@ use crate::{
     card::Card,
     choice::{self, ChoiceQuestion},
     depth::{self, Depth},
+    render::{self, NoteUnit},
     session::Session,
     store::Store,
 };
@@ -25,11 +26,33 @@ pub struct CardView {
     /// non-cloze cards.
     pub context: Vec<String>,
     pub back: Vec<String>,
-    /// Note lines (`!` lines plus any augment-merged trivia), shown after the
-    /// reveal.
-    pub note: Vec<String>,
+    /// True when `back` is a reshaped answer (a `format` augment's
+    /// `display_back`), never for the card's own authored lines.
+    pub reshaped: bool,
+    /// The note (`!` lines plus any augment-merged trivia) decomposed into
+    /// display units, shown after the reveal.
+    pub note: Vec<NoteUnit>,
     pub image: Option<String>,
     pub image_back: Option<String>,
+    /// The raw authored `% at:` source locator. Resolving it to an excerpt
+    /// (and any display relabeling) is the consumer's business: it takes a
+    /// source base and a filesystem read.
+    pub at: Option<String>,
+}
+
+impl From<&Card> for CardView {
+    fn from(card: &Card) -> Self {
+        CardView {
+            front: card.front.clone(),
+            context: card.context.clone(),
+            back: card.back_for_display().to_vec(),
+            reshaped: card.display_back.is_some(),
+            note: render::note_units(card),
+            image: card.image.as_ref().map(|p| p.display().to_string()),
+            image_back: card.image_back.as_ref().map(|p| p.display().to_string()),
+            at: card.at.clone(),
+        }
+    }
 }
 
 /// The current position in a review session: the card to show (or none when
@@ -80,7 +103,7 @@ pub fn state(session: &Session, store: &Store, augment: &AugmentCache) -> Review
     let acquire = session.current_unseen(store);
     let choices = current_question(session, store, augment).map(|q| q.options);
     ReviewState {
-        card: card.map(card_view),
+        card: card.map(CardView::from),
         mode,
         depth,
         acquire,
@@ -149,21 +172,6 @@ pub fn check_typed(session: &Session, lines: &[String]) -> Option<CheckFeedback>
     };
     let passed = results.iter().all(|r| r.passed);
     Some(CheckFeedback { results, passed })
-}
-
-fn card_view(card: &Card) -> CardView {
-    CardView {
-        front: card.front.clone(),
-        context: card.context.clone(),
-        back: card.back_for_display().to_vec(),
-        note: card
-            .note
-            .as_deref()
-            .map(|n| n.lines().map(str::to_string).collect())
-            .unwrap_or_default(),
-        image: card.image.as_ref().map(|p| p.display().to_string()),
-        image_back: card.image_back.as_ref().map(|p| p.display().to_string()),
-    }
 }
 
 #[cfg(test)]
@@ -265,9 +273,50 @@ mod tests {
             card.context
         );
         assert_eq!(card.back, ["answer"], "the gap text is the answer");
-        assert_eq!(card.note, ["a note line"]);
+        assert_eq!(
+            card.note,
+            [NoteUnit::Sentence {
+                text: "a note line".into()
+            }]
+        );
         assert_eq!(card.image.as_deref(), Some("/pics/front.png"));
         assert_eq!(card.image_back.as_deref(), Some("/pics/back.png"));
+    }
+
+    #[test]
+    fn card_view_structures_the_note_and_flags_a_reshape() {
+        let mut cards =
+            parse("# q\n\tan answer\n\t! Intro here.\n\t! ```\n\t! let x = 1;\n\t! ```\n");
+        let plain = CardView::from(&cards[0]);
+        assert_eq!(
+            plain.note,
+            [
+                NoteUnit::Sentence {
+                    text: "Intro here.".into()
+                },
+                NoteUnit::Code {
+                    lines: vec!["let x = 1;".into()]
+                },
+            ]
+        );
+        assert!(!plain.reshaped, "an authored back is not a reshape");
+        assert_eq!(plain.back, ["an answer"]);
+
+        cards[0].display_back = Some(vec!["a reshaped answer".into()]);
+        let reshaped = CardView::from(&cards[0]);
+        assert!(reshaped.reshaped);
+        assert_eq!(
+            reshaped.back,
+            ["a reshaped answer"],
+            "back shows the reshape"
+        );
+    }
+
+    #[test]
+    fn card_view_carries_the_raw_at_locator() {
+        let cards = parse("# q\n\t% at: src/lib.rs:10-20\n\ta\n");
+        let view = CardView::from(&cards[0]);
+        assert_eq!(view.at.as_deref(), Some("src/lib.rs:10-20"));
     }
 
     /// Four seen cards with distinct answers: enough siblings for a plain
