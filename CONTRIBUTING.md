@@ -96,11 +96,12 @@ open a proposal to change the list itself.
 
 CI runs the same gates on every PR: `fmt` (nightly rustfmt), `check` (clippy +
 tests, with `-Dwarnings`), `core` (the lean no-default-features build),
-`bridge` (the mobile bridge crate's host tests), `e2e` (Playwright,
-browser-driven — blocking), and an informational `coverage` job. Two scheduled
-drift detectors run off the PR path: the backend CLI flag-drift smoke test and
-a weekly mobile toolchain build (`make frb-check` + an APK build against
-current stable Flutter).
+`bridge` (the mobile bridge crate's host tests), `mobile-e2e` (the mobile app's
+Dart tests plus a full-app integration run in a headless Linux window, against
+the real embedded core), `e2e` (Playwright, browser-driven, blocking), and an
+informational `coverage` job. Two scheduled drift detectors run off the PR
+path: the backend CLI flag-drift smoke test and a weekly mobile toolchain
+build (`make frb-check` + an APK build against current stable Flutter).
 
 The library crate is feature-gated behind `full` (on by default), which pulls in
 the AI backends and the web server. `make build-core` builds the lean core that a

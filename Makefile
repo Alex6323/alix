@@ -6,7 +6,7 @@
 # toolchain — `+nightly` is handled by rustup before cargo sees it — which is
 # why these live in a Makefile rather than .cargo/config.toml.)
 
-.PHONY: build build-core test lint lint-js fmt fmt-check fmt-roadmap roadmap check ci coverage coverage-lcov calibrate run web phone tablet desktop frb-check push-decks book site slides install clean sdd-clean heartbeat check-backends e2e shots
+.PHONY: build build-core test lint lint-js fmt fmt-check fmt-roadmap roadmap check ci coverage coverage-lcov calibrate run web phone tablet desktop frb-check push-decks mobile-test book site slides install clean sdd-clean heartbeat check-backends e2e shots
 
 # Compile the workspace.
 build:
@@ -135,6 +135,17 @@ frb-check:
 # emulator never syncs back.
 push-decks:
 	@sh scripts/push-decks.sh $(DIR)
+
+# The mobile test suite against the REAL embedded core, no emulator: builds
+# the bridge dylib (frb's test loader reads rust/target/release/), runs the
+# Dart unit + widget tests, then the full-app integration test in a Linux
+# window. Time is injected through the bridge, so nothing sleeps. The
+# on-Android tier of the same suite is the weekly mobile-drift workflow's
+# to grow.
+mobile-test:
+	cargo build --release --manifest-path apps/mobile/rust/Cargo.toml
+	cd apps/mobile && flutter test
+	cd apps/mobile && flutter test integration_test -d linux
 
 # Serve the user manual (docs/book) with live reload and open it in the browser.
 # Requires mdBook: `cargo install mdbook`.

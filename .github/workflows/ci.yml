@@ -71,6 +71,35 @@ jobs:
           workspaces: apps/mobile/rust
       - run: cargo test --manifest-path apps/mobile/rust/Cargo.toml
 
+  # The mobile suite against the real embedded core, no emulator: the Dart
+  # unit + widget tests load the host dylib, then the full-app integration
+  # test drives picker -> review -> grade in a headless Linux window and
+  # asserts the store file. Blocking like e2e, and for the same reason: this
+  # is the layer that catches a change silently breaking the mobile review
+  # flow. Time is injected through the bridge, so nothing here sleeps; the
+  # on-Android tier of the same suite belongs to the weekly mobile-drift
+  # workflow.
+  mobile-e2e:
+    name: mobile e2e (linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            apps/mobile/rust
+      - name: Linux desktop build dependencies
+        run: sudo apt-get update && sudo apt-get install -y ninja-build libgtk-3-dev xvfb
+      - run: cargo build --release --manifest-path apps/mobile/rust/Cargo.toml
+      - run: cd apps/mobile && flutter test
+      - run: cd apps/mobile && xvfb-run -a flutter test integration_test -d linux
+
   # Browser-driven smoke over the real binary: a click must reach the server and
   # change the screen, with no uncaught page errors. This is the only layer that
   # catches a control which silently does nothing. Blocking, on purpose — an
