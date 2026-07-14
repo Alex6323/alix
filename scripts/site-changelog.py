@@ -749,6 +749,16 @@ PAGE_CSS = """
   .timeline{margin:0 0 44px}
   .tl-scroll{overflow-x:auto; -webkit-overflow-scrolling:touch;
     border:1px solid var(--line); border-radius:12px; background:var(--surface)}
+  /* Slim, theme-matched scrollbars on the page's scroll surfaces; the OS
+     default paints a bright strip across the dark card. Standard properties
+     for modern engines, ::-webkit-* for older Chromium. */
+  .tl-scroll, .upnext, #tl-pop{scrollbar-width:thin; scrollbar-color:var(--line) transparent}
+  .tl-scroll::-webkit-scrollbar, .upnext::-webkit-scrollbar, #tl-pop::-webkit-scrollbar{
+    height:8px; width:8px; background:transparent}
+  .tl-scroll::-webkit-scrollbar-thumb, .upnext::-webkit-scrollbar-thumb,
+  #tl-pop::-webkit-scrollbar-thumb{background:var(--line); border-radius:4px}
+  .tl-scroll::-webkit-scrollbar-thumb:hover, .upnext::-webkit-scrollbar-thumb:hover,
+  #tl-pop::-webkit-scrollbar-thumb:hover{background:var(--tl-entry)}
   .tl-canvas{position:relative; height:150px}
   .tl-axis{position:absolute; left:0; right:0; top:86px; border-top:1px solid var(--line)}
   .tl-tick{position:absolute; top:86px; width:1px; height:7px; background:var(--line)}
