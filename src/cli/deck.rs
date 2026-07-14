@@ -69,7 +69,8 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
                 bail!("the deck has no cards to augment");
             }
             let total = items.len();
-            let map = augment_ai::generate(&items, config.ai.distractor_count, guidance, &ask_cfg)?;
+            let map =
+                augment_ai::generate(&items, config.ai.distractor_count, guidance, &ask_cfg, None)?;
             for (id, distractors) in &map {
                 cache.set_distractors(*id, distractors.clone());
             }
@@ -81,7 +82,7 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
                 bail!("the deck has no cards to augment");
             }
             let total = items.len();
-            let map = augment_ai::generate_notes(&items, guidance, &ask_cfg)?;
+            let map = augment_ai::generate_notes(&items, guidance, &ask_cfg, None)?;
             for (id, note) in &map {
                 cache.set_note(*id, note.clone());
             }
@@ -101,8 +102,13 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
                 bail!("the deck has no plain (non-cloze) cards to add question variants to");
             }
             let total = items.len();
-            let map =
-                augment_ai::generate_variants(&items, config.ai.variant_count, guidance, &ask_cfg)?;
+            let map = augment_ai::generate_variants(
+                &items,
+                config.ai.variant_count,
+                guidance,
+                &ask_cfg,
+                None,
+            )?;
             for (id, variants) in &map {
                 cache.set_variants(*id, variants.clone());
             }
@@ -119,6 +125,7 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
                 config.ai.keypoint_count,
                 guidance,
                 &ask_cfg,
+                None,
             )?;
             for (id, keypoints) in &map {
                 cache.set_keypoints(*id, keypoints.clone());
@@ -131,7 +138,7 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
                 bail!("the deck has no cards to build a topology over");
             }
             let total = items.len();
-            let topo = augment_ai::generate_topology(&items, guidance, &ask_cfg)?;
+            let topo = augment_ai::generate_topology(&items, guidance, &ask_cfg, None)?;
             print_topology(&topo, &deck.cards);
             let walked = topo.walk.len();
             cache.add_topology(topo);
@@ -188,7 +195,7 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
                 bail!("the deck has no plain (non-cloze) cards to format");
             }
             let total = items.len();
-            let map = augment_ai::generate_format(&items, guidance, &ask_cfg)?;
+            let map = augment_ai::generate_format(&items, guidance, &ask_cfg, None)?;
             for (id, fmt) in &map {
                 cache.set_format(*id, fmt.clone());
             }

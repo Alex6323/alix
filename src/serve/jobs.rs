@@ -727,7 +727,7 @@ impl Augmenting {
                 // Unknown target: nothing to record, try the next queued one.
                 _ => continue,
             };
-            let rx = augment_ai::spawn(job, guidance, augment_ai::run_config(ai, ask));
+            let rx = augment_ai::spawn(job, guidance, augment_ai::run_config(ai, ask), None);
             self.pending = Some(AugmentPending {
                 rx,
                 target: tgt,

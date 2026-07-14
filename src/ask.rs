@@ -33,7 +33,9 @@ pub enum Reply {
     Error(String),
 }
 
-/// The CLI conversation spanning one review run.
+/// The CLI conversation spanning one review run (or one augment batch, where
+/// the batch owner keeps it across polls and hands clones into worker threads).
+#[derive(Clone)]
 pub struct CliSession {
     id: String,
     /// Whether the session has been created on the CLI side (a first call

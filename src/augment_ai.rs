@@ -4,7 +4,10 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    sync::mpsc::{Receiver, channel},
+    sync::{
+        Arc,
+        mpsc::{Receiver, channel},
+    },
 };
 
 use anyhow::{Context, Result};
@@ -17,6 +20,140 @@ use crate::{
     augment::{Format, Topology, TopologyEdge, TopologyRegion, WarmItem},
     config::{AiConfig, AskConfig},
 };
+
+// ── Batch conversations ──────────────────────────────────────────────────────
+//
+// A batch of augmentations re-reads the same cards once per target when every
+// call is a stateless one-shot. On a backend that keeps sessions (Claude), the
+// batch instead primes ONE conversation with the card roster and runs each
+// target as a `--resume` follow-up referencing cards by roster index, so the
+// cards travel once.
+
+/// One CLI conversation spanning a batch of augmentations: the session plus
+/// the card roster its first call sends. Plain cloneable data: the batch owner
+/// keeps it across polls, hands a snapshot into each spawned job, and flips
+/// `session.started` (or [`reset`](Self::reset)s) when the job reports back.
+#[derive(Clone)]
+pub struct BatchConversation {
+    /// The CLI session; `started` decides between priming and resuming.
+    pub session: ask::CliSession,
+    /// The batch's card roster, index-stable for the whole conversation.
+    roster: Arc<Vec<WarmItem>>,
+    /// Card id to roster index, for referencing a call's subset.
+    index_of: Arc<HashMap<u64, usize>>,
+}
+
+impl BatchConversation {
+    /// A conversation over `roster`, or `None` when the configured backend
+    /// keeps no sessions (only Claude does); callers then pass `None` through
+    /// and every call stays a stateless one-shot, exactly as before.
+    pub fn new(cfg: &AskConfig, roster: Vec<WarmItem>) -> Option<Self> {
+        let keeps_session = crate::backend::backend_for(cfg)
+            .map(|b| b.supports_session())
+            .unwrap_or(false);
+        if !keeps_session || roster.is_empty() {
+            return None;
+        }
+        let index_of = roster
+            .iter()
+            .enumerate()
+            .map(|(index, item)| (item.id, index))
+            .collect();
+        Some(Self {
+            session: ask::CliSession::new(),
+            roster: Arc::new(roster),
+            index_of: Arc::new(index_of),
+        })
+    }
+
+    /// Forgets the CLI session after a failed call (never `--resume` a session
+    /// in an unknown state, mirroring the tutor's error arm). The roster stays,
+    /// so the next call primes a fresh conversation with it.
+    pub fn reset(&mut self) {
+        self.session = ask::CliSession::new();
+    }
+
+    /// The roster indices of `items`, or `None` if any item is missing from
+    /// the roster (that call then degrades to a stateless one-shot).
+    fn indices_of(&self, items: &[WarmItem]) -> Option<Vec<usize>> {
+        items
+            .iter()
+            .map(|item| self.index_of.get(&item.id).copied())
+            .collect()
+    }
+}
+
+/// The primer a conversation's first call sends: the whole roster, numbered,
+/// in a shape every target's follow-up can reference.
+fn roster_block(roster: &[WarmItem]) -> String {
+    let mut s = String::from(
+        "You will perform a series of augmentation tasks over one shared set \
+         of flashcards in this conversation. Every task refers to these cards \
+         by their index numbers.\n\
+         Cards (index. FRONT / ANSWER / NOTE):\n",
+    );
+    s.push_str(&front_answer_note_lines(roster));
+    s.push('\n');
+    s
+}
+
+/// The card block for a call inside a conversation: reference the primed
+/// roster by index instead of re-listing the cards.
+fn reference_block(indices: &[usize], roster_len: usize) -> String {
+    let mut s = String::from(
+        "\nWork on the numbered flashcards already provided in this \
+         conversation. ",
+    );
+    if indices.len() == roster_len {
+        s.push_str("This task covers ALL the numbered cards.\n");
+    } else {
+        let list = indices
+            .iter()
+            .map(usize::to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
+        s.push_str(&format!(
+            "This task covers the cards with these indices: {list}.\n"
+        ));
+    }
+    s
+}
+
+/// Runs one generation call for `items` and returns the raw reply plus the
+/// JSON key each item's answer arrives under. Stateless (no conversation, or
+/// an item outside the roster): the prompt carries `listing` and keys are the
+/// items' positions. In a conversation: the first turn is prefixed with the
+/// roster primer, the card block references roster indices, and keys are those
+/// indices. The tool allowlist is cleared either way (generation is a pure
+/// text call, like exam remediation).
+fn call_for_items(
+    items: &[WarmItem],
+    listing: &str,
+    prompt_for: impl Fn(&str) -> String,
+    conversation: Option<&BatchConversation>,
+    ask_cfg: &AskConfig,
+) -> Result<(String, Vec<String>)> {
+    let cfg = tool_free(ask_cfg);
+    if let Some(conversation) = conversation
+        && let Some(indices) = conversation.indices_of(items)
+    {
+        let mut prompt = String::new();
+        if !conversation.session.started {
+            prompt.push_str(&roster_block(&conversation.roster));
+        }
+        prompt.push_str(&prompt_for(&reference_block(
+            &indices,
+            conversation.roster.len(),
+        )));
+        // `run_config` never sets a cwd, so every call in a batch shares this
+        // process's directory and a plain `args()` resume finds the session.
+        let raw = ask::run(&cfg, &prompt, &conversation.session.args())?;
+        let keys = indices.iter().map(usize::to_string).collect();
+        return Ok((raw, keys));
+    }
+    let raw = ask::run(&cfg, &prompt_for(listing), &[])?;
+    Ok((raw, (0..items.len()).map(|i| i.to_string()).collect()))
+}
 
 // ── Generation ───────────────────────────────────────────────────────────────
 //
@@ -35,18 +172,25 @@ pub fn generate(
     count: usize,
     guidance: Option<&str>,
     ask_cfg: &AskConfig,
+    conversation: Option<&BatchConversation>,
 ) -> Result<HashMap<u64, Vec<String>>> {
     if items.is_empty() {
         return Ok(HashMap::new());
     }
-    let prompt = distractors_prompt(items, count, guidance);
-    let raw = ask::run(&tool_free(ask_cfg), &prompt, &[])?;
+    let listing = question_answer_listing(items, "index. question — correct answer");
+    let (raw, keys) = call_for_items(
+        items,
+        &listing,
+        |cards| distractors_prompt(cards, count, guidance),
+        conversation,
+        ask_cfg,
+    )?;
     let parsed: HashMap<String, Vec<String>> =
         parse_json(&raw).context("parsing the generated distractors")?;
 
     let mut out = HashMap::new();
-    for (index, item) in items.iter().enumerate() {
-        let Some(raw_options) = parsed.get(&index.to_string()) else {
+    for (key, item) in keys.iter().zip(items) {
+        let Some(raw_options) = parsed.get(key) else {
             continue;
         };
         let cleaned = clean_distractors(raw_options, &item.answer, count);
@@ -64,18 +208,25 @@ pub fn generate_notes(
     items: &[WarmItem],
     guidance: Option<&str>,
     ask_cfg: &AskConfig,
+    conversation: Option<&BatchConversation>,
 ) -> Result<HashMap<u64, String>> {
     if items.is_empty() {
         return Ok(HashMap::new());
     }
-    let prompt = notes_prompt(items, guidance);
-    let raw = ask::run(&tool_free(ask_cfg), &prompt, &[])?;
+    let listing = question_answer_listing(items, "index. question — answer");
+    let (raw, keys) = call_for_items(
+        items,
+        &listing,
+        |cards| notes_prompt(cards, guidance),
+        conversation,
+        ask_cfg,
+    )?;
     let parsed: HashMap<String, String> =
         parse_json(&raw).context("parsing the generated notes")?;
 
     let mut out = HashMap::new();
-    for (index, item) in items.iter().enumerate() {
-        if let Some(note) = parsed.get(&index.to_string()) {
+    for (key, item) in keys.iter().zip(items) {
+        if let Some(note) = parsed.get(key) {
             let note = note.trim();
             if !note.is_empty() {
                 out.insert(item.id, note.to_string());
@@ -96,18 +247,25 @@ pub fn generate_keypoints(
     count: usize,
     guidance: Option<&str>,
     ask_cfg: &AskConfig,
+    conversation: Option<&BatchConversation>,
 ) -> Result<HashMap<u64, Vec<String>>> {
     if items.is_empty() {
         return Ok(HashMap::new());
     }
-    let prompt = keypoints_prompt(items, count, guidance);
-    let raw = ask::run(&tool_free(ask_cfg), &prompt, &[])?;
+    let listing = question_answer_listing(items, "index. question — answer");
+    let (raw, keys) = call_for_items(
+        items,
+        &listing,
+        |cards| keypoints_prompt(cards, count, guidance),
+        conversation,
+        ask_cfg,
+    )?;
     let parsed: HashMap<String, Vec<String>> =
         parse_json(&raw).context("parsing the generated key points")?;
 
     let mut out = HashMap::new();
-    for (index, item) in items.iter().enumerate() {
-        let Some(raw_points) = parsed.get(&index.to_string()) else {
+    for (key, item) in keys.iter().zip(items) {
+        let Some(raw_points) = parsed.get(key) else {
             continue;
         };
         let cleaned = clean_keypoints(raw_points, count);
@@ -129,18 +287,25 @@ pub fn generate_variants(
     count: usize,
     guidance: Option<&str>,
     ask_cfg: &AskConfig,
+    conversation: Option<&BatchConversation>,
 ) -> Result<HashMap<u64, Vec<String>>> {
     if items.is_empty() {
         return Ok(HashMap::new());
     }
-    let prompt = variants_prompt(items, count, guidance);
-    let raw = ask::run(&tool_free(ask_cfg), &prompt, &[])?;
+    let listing = question_answer_listing(items, "index. question — the answer it must still have");
+    let (raw, keys) = call_for_items(
+        items,
+        &listing,
+        |cards| variants_prompt(cards, count, guidance),
+        conversation,
+        ask_cfg,
+    )?;
     let parsed: HashMap<String, Vec<String>> =
         parse_json(&raw).context("parsing the generated question variants")?;
 
     let mut out = HashMap::new();
-    for (index, item) in items.iter().enumerate() {
-        let Some(raw_variants) = parsed.get(&index.to_string()) else {
+    for (key, item) in keys.iter().zip(items) {
+        let Some(raw_variants) = parsed.get(key) else {
             continue;
         };
         let cleaned = clean_variants(raw_variants, &item.question, count);
@@ -191,14 +356,29 @@ pub fn generate_topology(
     items: &[WarmItem],
     guidance: Option<&str>,
     ask_cfg: &AskConfig,
+    conversation: Option<&BatchConversation>,
 ) -> Result<Topology> {
     if items.is_empty() {
         return Ok(Topology::default());
     }
-    let prompt = topology_prompt(items, guidance);
-    let raw = ask::run(&tool_free(ask_cfg), &prompt, &[])?;
+    let listing = question_answer_listing(items, "index. question — answer");
+    let (raw, keys) = call_for_items(
+        items,
+        &listing,
+        |cards| topology_prompt(cards, guidance),
+        conversation,
+        ask_cfg,
+    )?;
     let parsed: RawTopology = parse_json(&raw).context("parsing the generated topology")?;
-    let mut topology = to_topology(parsed, items);
+    // The indices embedded in the reply (edges, walk, regions) are the same
+    // ones the cards were listed under: positions stateless, roster indices in
+    // a conversation. The keys give exactly that mapping per item.
+    let key_ids: HashMap<usize, u64> = keys
+        .iter()
+        .zip(items)
+        .filter_map(|(key, item)| key.parse::<usize>().ok().map(|index| (index, item.id)))
+        .collect();
+    let mut topology = to_topology(parsed, &key_ids);
     topology.name = guidance
         .map(|g| g.trim())
         .filter(|g| !g.is_empty())
@@ -207,10 +387,11 @@ pub fn generate_topology(
     Ok(topology)
 }
 
-/// Maps a [`RawTopology`]'s card indices back to identity hashes, dropping any
-/// index outside `items` and any card repeated in the walk.
-fn to_topology(raw: RawTopology, items: &[WarmItem]) -> Topology {
-    let id_of = |idx: usize| items.get(idx).map(|it| it.id);
+/// Maps a [`RawTopology`]'s card indices back to identity hashes via `ids`
+/// (index under which a card was listed, to its id), dropping any unknown
+/// index and any card repeated in the walk.
+fn to_topology(raw: RawTopology, ids: &HashMap<usize, u64>) -> Topology {
+    let id_of = |idx: usize| ids.get(&idx).copied();
     let edges = raw
         .edges
         .into_iter()
@@ -248,9 +429,10 @@ fn to_topology(raw: RawTopology, items: &[WarmItem]) -> Topology {
     }
 }
 
-/// Builds the topology prompt: list the cards, ask for an organizing principle, a
-/// labeled edge set, and a walk that visits every card so consecutive ones relate.
-fn topology_prompt(items: &[WarmItem], guidance: Option<&str>) -> String {
+/// Builds the topology prompt: the instructions, then `cards_block` (a listing
+/// or a conversation reference), asking for an organizing principle, a labeled
+/// edge set, and a walk that visits every card so consecutive ones relate.
+fn topology_prompt(cards_block: &str, guidance: Option<&str>) -> String {
     let mut s = String::from(
         "You are organizing a set of flashcards into a TOPOLOGY: a graph of how \
          the facts relate, so a learner can be quizzed in a connected order \
@@ -269,7 +451,7 @@ fn topology_prompt(items: &[WarmItem], guidance: Option<&str>) -> String {
          indices of its cards; every card belongs to exactly one region. The \
          name must orient WITHOUT giving away any card's answer — name the area, \
          never the fact (\"Persistence\", not \"saves to progress.json\").\n\
-         Use the card indices below. Relate cards by their meaning, not their \
+         Use the cards' index numbers. Relate cards by their meaning, not their \
          wording.\n",
     );
     match guidance.map(str::trim).filter(|g| !g.is_empty()) {
@@ -280,14 +462,7 @@ fn topology_prompt(items: &[WarmItem], guidance: Option<&str>) -> String {
              prerequisites come before what depends on them.\n",
         ),
     }
-    s.push_str("\nCards (index. question — answer):\n");
-    for (i, item) in items.iter().enumerate() {
-        s.push_str(&format!(
-            "{i}. {} — {}\n",
-            one_line(&item.question),
-            one_line(&item.answer)
-        ));
-    }
+    s.push_str(cards_block);
     s.push_str(
         "\nOutput ONLY JSON in exactly this shape, no prose, no code fences:\n\
          {\"principle\": \"...\", \
@@ -371,23 +546,33 @@ pub fn generate_format(
     items: &[WarmItem],
     guidance: Option<&str>,
     ask_cfg: &AskConfig,
+    conversation: Option<&BatchConversation>,
 ) -> Result<HashMap<u64, Format>> {
     if items.is_empty() {
         return Ok(HashMap::new());
     }
-    let prompt = format_prompt(items, guidance);
-    let raw = ask::run(&tool_free(ask_cfg), &prompt, &[])?;
+    let listing = format!(
+        "\nCards (index. FRONT / ANSWER / NOTE):\n{}",
+        front_answer_note_lines(items)
+    );
+    let (raw, keys) = call_for_items(
+        items,
+        &listing,
+        |cards| format_prompt(cards, guidance),
+        conversation,
+        ask_cfg,
+    )?;
     let parsed: HashMap<String, RawFormat> =
         parse_json(&raw).context("parsing the generated card formats")?;
 
     let mut out = HashMap::new();
-    for (index, item) in items.iter().enumerate() {
+    for (key, item) in keys.iter().zip(items) {
         // A card the model reshapes gets its tidied Format; one it declines
         // (already clean, so omitted from the reply) gets an all-empty no-op
         // Format. The no-op still counts as covered, so a well-shaped card is
         // marked done instead of lingering as a gap that re-runs to no effect.
         let fmt = parsed
-            .get(&index.to_string())
+            .get(key)
             .and_then(|raw_fmt| clean_format(item, raw_fmt))
             .unwrap_or_default();
         out.insert(item.id, fmt);
@@ -395,7 +580,7 @@ pub fn generate_format(
     Ok(out)
 }
 
-fn format_prompt(items: &[WarmItem], guidance: Option<&str>) -> String {
+fn format_prompt(cards_block: &str, guidance: Option<&str>) -> String {
     let mut s = String::from(
         "You improve the PRESENTATION of flashcards. For each card decide whether \
          it is badly shaped — most often a list of several items crammed into one \
@@ -422,15 +607,7 @@ fn format_prompt(items: &[WarmItem], guidance: Option<&str>) -> String {
     if let Some(g) = guidance {
         s.push_str(&format!("\nExtra guidance: {}\n", g.trim()));
     }
-    s.push_str("\nCards (index. FRONT / ANSWER / NOTE):\n");
-    for (i, item) in items.iter().enumerate() {
-        s.push_str(&format!(
-            "{i}. {} / {} / {}\n",
-            one_line(&item.question),
-            one_line(&item.answer),
-            item.note.as_deref().map(one_line).unwrap_or_default()
-        ));
-    }
+    s.push_str(cards_block);
     s.push_str(
         "\nOutput ONLY JSON, no prose, and no markdown fence around the JSON itself \
          (a code snippet inside a `back` string may still be fenced). The key is the card index; \
@@ -498,15 +675,18 @@ pub enum Outcome {
 
 /// Runs a generation [`Job`] on a background thread; the [`Outcome`] (or an error
 /// message) arrives on the returned channel, which the caller polls with
-/// `try_recv`. `guidance` is the `--with` steer.
+/// `try_recv`. `guidance` is the `--with` steer; `conversation` is the batch's
+/// shared conversation snapshot (None: a stateless one-shot).
 pub fn spawn(
     job: Job,
     guidance: Option<String>,
     ask_cfg: AskConfig,
+    conversation: Option<BatchConversation>,
 ) -> Receiver<Result<Outcome, String>> {
     let (tx, rx) = channel();
     std::thread::spawn(move || {
-        let reply = run_job(job, guidance.as_deref(), &ask_cfg).map_err(|e| format!("{e:#}"));
+        let reply = run_job(job, guidance.as_deref(), &ask_cfg, conversation.as_ref())
+            .map_err(|e| format!("{e:#}"));
         // The receiver may be gone if the user left the Augment screen.
         let _ = tx.send(reply);
     });
@@ -514,20 +694,41 @@ pub fn spawn(
 }
 
 /// The synchronous core of [`spawn`]: dispatches to the matching `generate_*`.
-fn run_job(job: Job, guidance: Option<&str>, ask_cfg: &AskConfig) -> Result<Outcome> {
+fn run_job(
+    job: Job,
+    guidance: Option<&str>,
+    ask_cfg: &AskConfig,
+    conversation: Option<&BatchConversation>,
+) -> Result<Outcome> {
     Ok(match job {
         Job::Choices { items, count } => {
-            Outcome::Choices(generate(&items, count, guidance, ask_cfg)?)
+            Outcome::Choices(generate(&items, count, guidance, ask_cfg, conversation)?)
         }
-        Job::Notes { items } => Outcome::Notes(generate_notes(&items, guidance, ask_cfg)?),
-        Job::Questions { items, count } => {
-            Outcome::Questions(generate_variants(&items, count, guidance, ask_cfg)?)
+        Job::Notes { items } => {
+            Outcome::Notes(generate_notes(&items, guidance, ask_cfg, conversation)?)
         }
-        Job::Keypoints { items, count } => {
-            Outcome::Keypoints(generate_keypoints(&items, count, guidance, ask_cfg)?)
+        Job::Questions { items, count } => Outcome::Questions(generate_variants(
+            &items,
+            count,
+            guidance,
+            ask_cfg,
+            conversation,
+        )?),
+        Job::Keypoints { items, count } => Outcome::Keypoints(generate_keypoints(
+            &items,
+            count,
+            guidance,
+            ask_cfg,
+            conversation,
+        )?),
+        Job::Topology { items } => {
+            Outcome::Topology(generate_topology(&items, guidance, ask_cfg, conversation)?)
         }
-        Job::Topology { items } => Outcome::Topology(generate_topology(&items, guidance, ask_cfg)?),
-        Job::Format { items } => Outcome::Format(generate_format(&items, guidance, ask_cfg)?),
+        Job::Format { items } => {
+            Outcome::Format(generate_format(&items, guidance, ask_cfg, conversation)?)
+        }
+        // Card-free and prompt-owning: an icon draw never rides (or disturbs)
+        // the batch conversation.
         Job::Icon { dir } => Outcome::Icon(crate::icon::generate(&dir, guidance, ask_cfg)?),
     })
 }
@@ -554,9 +755,10 @@ pub fn run_config(ai: &AiConfig, ask: &AskConfig) -> AskConfig {
     cfg
 }
 
-/// Builds the batched distractor prompt: each card as `index. question —
-/// answer`, then a strict JSON output shape keyed by that index.
-fn distractors_prompt(items: &[WarmItem], count: usize, guidance: Option<&str>) -> String {
+/// Builds the batched distractor prompt: the instructions, then `cards_block`
+/// (a listing or a conversation reference), then a strict JSON output shape
+/// keyed by card index.
+fn distractors_prompt(cards_block: &str, count: usize, guidance: Option<&str>) -> String {
     let mut s = format!(
         "You are writing distractors — plausible but incorrect options — for \
          multiple-choice flashcards.\n\n\
@@ -571,14 +773,7 @@ fn distractors_prompt(items: &[WarmItem], count: usize, guidance: Option<&str>) 
     if let Some(g) = guidance {
         s.push_str(&format!("\nExtra guidance: {}\n", g.trim()));
     }
-    s.push_str("\nCards (index. question — correct answer):\n");
-    for (i, item) in items.iter().enumerate() {
-        s.push_str(&format!(
-            "{i}. {} — {}\n",
-            one_line(&item.question),
-            one_line(&item.answer)
-        ));
-    }
+    s.push_str(cards_block);
     let slots = vec!["\"...\""; count].join(", ");
     s.push_str(&format!(
         "\nOutput ONLY JSON in exactly this shape, no prose, no code fences — \
@@ -589,7 +784,7 @@ fn distractors_prompt(items: &[WarmItem], count: usize, guidance: Option<&str>) 
 }
 
 /// Builds the batched notes prompt: one short note per card, keyed by index.
-fn notes_prompt(items: &[WarmItem], guidance: Option<&str>) -> String {
+fn notes_prompt(cards_block: &str, guidance: Option<&str>) -> String {
     let mut s = String::from(
         "You are adding a short note to each flashcard — one or two sentences of \
          memorable trivia, context, or a mnemonic that makes the answer easier to \
@@ -599,14 +794,7 @@ fn notes_prompt(items: &[WarmItem], guidance: Option<&str>) -> String {
     if let Some(g) = guidance {
         s.push_str(&format!("\nExtra guidance: {}\n", g.trim()));
     }
-    s.push_str("\nCards (index. question — answer):\n");
-    for (i, item) in items.iter().enumerate() {
-        s.push_str(&format!(
-            "{i}. {} — {}\n",
-            one_line(&item.question),
-            one_line(&item.answer)
-        ));
-    }
+    s.push_str(cards_block);
     s.push_str(
         "\nOutput ONLY JSON, no prose, no code fences — the key is the card index, \
          the value its note as a single string:\n{\"0\": \"...\", ...}\n",
@@ -617,7 +805,7 @@ fn notes_prompt(items: &[WarmItem], guidance: Option<&str>) -> String {
 /// Builds the batched key-points prompt: decompose each answer into its
 /// load-bearing claims, keyed by index. Atomic answers return an empty list so
 /// they aren't forced into a meaningless single "point".
-fn keypoints_prompt(items: &[WarmItem], count: usize, guidance: Option<&str>) -> String {
+fn keypoints_prompt(cards_block: &str, count: usize, guidance: Option<&str>) -> String {
     let mut s = format!(
         "Break each flashcard's ANSWER into its load-bearing claims — a checklist \
          a learner ticks off after recalling the card. Give at most {count} per card.\n\
@@ -645,14 +833,7 @@ fn keypoints_prompt(items: &[WarmItem], count: usize, guidance: Option<&str>) ->
     if let Some(g) = guidance {
         s.push_str(&format!("\nExtra guidance: {}\n", g.trim()));
     }
-    s.push_str("\nCards (index. question — answer):\n");
-    for (i, item) in items.iter().enumerate() {
-        s.push_str(&format!(
-            "{i}. {} — {}\n",
-            one_line(&item.question),
-            one_line(&item.answer)
-        ));
-    }
+    s.push_str(cards_block);
     s.push_str(
         "\nOutput ONLY JSON, no prose, no code fences — the key is the card index, \
          the value its list of key points (an empty list for an atomic answer):\n\
@@ -662,7 +843,7 @@ fn keypoints_prompt(items: &[WarmItem], count: usize, guidance: Option<&str>) ->
 }
 
 /// Builds the batched variants prompt: rephrase each question, keep the answer.
-fn variants_prompt(items: &[WarmItem], count: usize, guidance: Option<&str>) -> String {
+fn variants_prompt(cards_block: &str, count: usize, guidance: Option<&str>) -> String {
     let mut s = format!(
         "You are rephrasing flashcard questions. For each card, give {count} \
          different ways to ask the SAME question — reworded enough that a learner \
@@ -673,14 +854,7 @@ fn variants_prompt(items: &[WarmItem], count: usize, guidance: Option<&str>) -> 
     if let Some(g) = guidance {
         s.push_str(&format!("\nExtra guidance: {}\n", g.trim()));
     }
-    s.push_str("\nCards (index. question — the answer it must still have):\n");
-    for (i, item) in items.iter().enumerate() {
-        s.push_str(&format!(
-            "{i}. {} — {}\n",
-            one_line(&item.question),
-            one_line(&item.answer)
-        ));
-    }
+    s.push_str(cards_block);
     let slots = vec!["\"...\""; count].join(", ");
     s.push_str(&format!(
         "\nOutput ONLY JSON in exactly this shape, no prose, no code fences — the \
@@ -738,6 +912,35 @@ fn one_line(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// The stateless question/answer card listing under `heading` (each target
+/// keeps its own heading wording).
+fn question_answer_listing(items: &[WarmItem], heading: &str) -> String {
+    let mut s = format!("\nCards ({heading}):\n");
+    for (i, item) in items.iter().enumerate() {
+        s.push_str(&format!(
+            "{i}. {} — {}\n",
+            one_line(&item.question),
+            one_line(&item.answer)
+        ));
+    }
+    s
+}
+
+/// One `index. FRONT / ANSWER / NOTE` line per card, shared by the format
+/// target's listing and the conversation primer.
+fn front_answer_note_lines(items: &[WarmItem]) -> String {
+    let mut s = String::new();
+    for (i, item) in items.iter().enumerate() {
+        s.push_str(&format!(
+            "{i}. {} / {} / {}\n",
+            one_line(&item.question),
+            one_line(&item.answer),
+            item.note.as_deref().map(one_line).unwrap_or_default()
+        ));
+    }
+    s
+}
+
 /// Trims, drops empties, drops anything equal (case-insensitively) to the
 /// correct answer or to an already-kept option, and caps the result at `count`.
 fn clean_distractors(raw: &[String], answer: &str, count: usize) -> Vec<String> {
@@ -778,10 +981,13 @@ fn parse_json<T: for<'de> Deserialize<'de>>(raw: &str) -> Result<T> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     use super::*;
-    use crate::testutil::{ask_config, exec_lock, fake_reply};
+    use crate::{
+        config::BackendKind,
+        testutil::{ask_config, exec_lock, fake_cli, fake_reply},
+    };
 
     // ── generation ──
 
@@ -806,7 +1012,7 @@ mod tests {
             item(10, "Capital of France?", "Paris"),
             item(20, "2+2?", "4"),
         ];
-        let out = generate(&items, 3, None, &ask_config(&cli)).unwrap();
+        let out = generate(&items, 3, None, &ask_config(&cli), None).unwrap();
         assert_eq!(vec!["w1", "w2", "w3"], out[&10]);
         assert_eq!(vec!["x1", "x2", "x3"], out[&20]);
     }
@@ -817,7 +1023,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cli = fake_reply(dir.path(), r#"{"0": ["it moves a", "use_it owns a"]}"#);
         let items = vec![item(10, "What happens to a?", "a is moved into use_it")];
-        let out = generate_keypoints(&items, 5, None, &ask_config(&cli)).unwrap();
+        let out = generate_keypoints(&items, 5, None, &ask_config(&cli), None).unwrap();
         assert_eq!(vec!["it moves a", "use_it owns a"], out[&10]);
     }
 
@@ -832,7 +1038,7 @@ mod tests {
             item(10, "Capital of France?", "Paris"),
             item(20, "How does X work?", "first A, then B"),
         ];
-        let out = generate_keypoints(&items, 5, None, &ask_config(&cli)).unwrap();
+        let out = generate_keypoints(&items, 5, None, &ask_config(&cli), None).unwrap();
         assert!(!out.contains_key(&10)); // atomic → omitted
         assert_eq!(vec!["claim a", "claim b"], out[&20]);
     }
@@ -844,7 +1050,7 @@ mod tests {
         // One lone point isn't a checklist — treated as atomic and dropped.
         let cli = fake_reply(dir.path(), r#"{"0": ["the only claim"]}"#);
         let items = vec![item(10, "Q?", "a single fact")];
-        let out = generate_keypoints(&items, 5, None, &ask_config(&cli)).unwrap();
+        let out = generate_keypoints(&items, 5, None, &ask_config(&cli), None).unwrap();
         assert!(out.is_empty());
     }
 
@@ -854,7 +1060,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cli = fake_reply(dir.path(), "not json at all");
         let items = vec![item(10, "Q?", "A")];
-        assert!(generate_keypoints(&items, 5, None, &ask_config(&cli)).is_err());
+        assert!(generate_keypoints(&items, 5, None, &ask_config(&cli), None).is_err());
     }
 
     #[test]
@@ -871,6 +1077,7 @@ mod tests {
             3,
             None,
             &ask_config(&cli),
+            None,
         )
         .unwrap();
         assert_eq!(vec!["Lyon", "Nice"], out[&1]);
@@ -881,7 +1088,7 @@ mod tests {
         let _g = exec_lock();
         let dir = tempfile::tempdir().unwrap();
         let cli = fake_reply(dir.path(), r#"{"0": ["a","b","c","d","e"]}"#);
-        let out = generate(&[item(1, "q", "z")], 3, None, &ask_config(&cli)).unwrap();
+        let out = generate(&[item(1, "q", "z")], 3, None, &ask_config(&cli), None).unwrap();
         assert_eq!(3, out[&1].len());
     }
 
@@ -896,6 +1103,7 @@ mod tests {
             3,
             None,
             &ask_config(&cli),
+            None,
         )
         .unwrap();
         assert!(!out.contains_key(&1));
@@ -907,7 +1115,7 @@ mod tests {
         let _g = exec_lock();
         let dir = tempfile::tempdir().unwrap();
         let cli = fake_reply(dir.path(), "sorry, I can't do that");
-        let err = generate(&[item(1, "q", "a")], 3, None, &ask_config(&cli)).unwrap_err();
+        let err = generate(&[item(1, "q", "a")], 3, None, &ask_config(&cli), None).unwrap_err();
         assert!(format!("{err:#}").contains("valid JSON"));
     }
 
@@ -915,7 +1123,7 @@ mod tests {
     fn generate_with_no_items_makes_no_call() {
         // No real CLI: empty input must short-circuit to an empty map.
         let cfg = ask_config(Path::new("/nonexistent/claude"));
-        assert!(generate(&[], 3, None, &cfg).unwrap().is_empty());
+        assert!(generate(&[], 3, None, &cfg, None).unwrap().is_empty());
     }
 
     #[test]
@@ -924,7 +1132,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cli = fake_reply(dir.path(), r#"{"0": "note a", "1": "note b"}"#);
         let items = vec![item(10, "q1", "a1"), item(20, "q2", "a2")];
-        let out = generate_notes(&items, None, &ask_config(&cli)).unwrap();
+        let out = generate_notes(&items, None, &ask_config(&cli), None).unwrap();
         assert_eq!("note a", out[&10]);
         assert_eq!("note b", out[&20]);
     }
@@ -935,7 +1143,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cli = fake_reply(dir.path(), r#"{"0": "   ", "1": "real note"}"#);
         let items = vec![item(1, "q", "a"), item(2, "q", "a")];
-        let out = generate_notes(&items, None, &ask_config(&cli)).unwrap();
+        let out = generate_notes(&items, None, &ask_config(&cli), None).unwrap();
         assert!(!out.contains_key(&1));
         assert_eq!("real note", out[&2]);
     }
@@ -949,8 +1157,14 @@ mod tests {
             dir.path(),
             r#"{"0": ["What year?", "In which year?", "Which year was it?"]}"#,
         );
-        let out = generate_variants(&[item(1, "What year?", "1589")], 3, None, &ask_config(&cli))
-            .unwrap();
+        let out = generate_variants(
+            &[item(1, "What year?", "1589")],
+            3,
+            None,
+            &ask_config(&cli),
+            None,
+        )
+        .unwrap();
         assert_eq!(vec!["In which year?", "Which year was it?"], out[&1]);
     }
 
@@ -965,7 +1179,7 @@ mod tests {
             r#"{"principle":"by topic","edges":[{"from":0,"to":1,"label":"leads to"}],"walk":[0,1]}"#,
         );
         let items = vec![item(10, "q0", "a0"), item(20, "q1", "a1")];
-        let topo = generate_topology(&items, None, &ask_config(&cli)).unwrap();
+        let topo = generate_topology(&items, None, &ask_config(&cli), None).unwrap();
         assert_eq!("by topic", topo.principle);
         assert_eq!(vec![10, 20], topo.walk);
         assert_eq!(1, topo.edges.len());
@@ -985,7 +1199,7 @@ mod tests {
             r#"{"principle":"p","edges":[{"from":0,"to":5,"label":"l"}],"walk":[0,5,1]}"#,
         );
         let items = vec![item(10, "q", "a"), item(20, "q", "a")];
-        let topo = generate_topology(&items, None, &ask_config(&cli)).unwrap();
+        let topo = generate_topology(&items, None, &ask_config(&cli), None).unwrap();
         assert_eq!(vec![10, 20], topo.walk);
         assert!(topo.edges.is_empty());
     }
@@ -995,17 +1209,19 @@ mod tests {
         let _g = exec_lock();
         let dir = tempfile::tempdir().unwrap();
         let cli = fake_reply(dir.path(), r#"{"principle":"p","edges":[],"walk":[0]}"#);
-        let unguided = generate_topology(&[item(10, "q", "a")], None, &ask_config(&cli)).unwrap();
+        let unguided =
+            generate_topology(&[item(10, "q", "a")], None, &ask_config(&cli), None).unwrap();
         assert_eq!("pedagogical order", unguided.name);
     }
 
     #[test]
     fn topology_prompt_defaults_to_a_pedagogical_order_and_guidance_overrides_it() {
         let items = [item(1, "q", "a")];
-        let unguided = topology_prompt(&items, None);
+        let listing = question_answer_listing(&items, "index. question — answer");
+        let unguided = topology_prompt(&listing, None);
         assert!(unguided.contains("pedagogical order"), "{unguided}");
         assert!(unguided.contains("foundational cards first"), "{unguided}");
-        let guided = topology_prompt(&items, Some("by continent"));
+        let guided = topology_prompt(&listing, Some("by continent"));
         assert!(
             guided.contains("Favored organizing principle: by continent"),
             "{guided}"
@@ -1022,7 +1238,7 @@ mod tests {
             r#"{"principle":"p","edges":[],"walk":[0,1],"regions":[{"name":"Start","cards":[0]},{"name":"End","cards":[1]}]}"#,
         );
         let items = vec![item(10, "q0", "a0"), item(20, "q1", "a1")];
-        let topo = generate_topology(&items, None, &ask_config(&cli)).unwrap();
+        let topo = generate_topology(&items, None, &ask_config(&cli), None).unwrap();
         assert_eq!(2, topo.regions.len());
         assert_eq!("Start", topo.regions[0].name);
         assert_eq!(vec![10], topo.regions[0].cards);
@@ -1068,12 +1284,135 @@ mod tests {
             items: vec![item(10, "Capital of France?", "Paris")],
             count: 3,
         };
-        let rx = spawn(job, None, ask_config(&cli));
+        let rx = spawn(job, None, ask_config(&cli), None);
         match rx.recv().unwrap() {
             Ok(Outcome::Choices(map)) => assert_eq!(vec!["w1", "w2", "w3"], map[&10]),
             Ok(_) => panic!("expected a Choices outcome"),
             Err(e) => panic!("generation failed: {e}"),
         }
+    }
+
+    // ── batch conversations ──
+
+    /// A fake CLI for multi-call conversations: appends each call's argv and
+    /// prompt to numbered logs, then replies with the matching canned reply.
+    fn fake_conversation(dir: &Path, replies: &[&str]) -> PathBuf {
+        for (i, reply) in replies.iter().enumerate() {
+            std::fs::write(dir.join(format!("reply-{i}")), reply).unwrap();
+        }
+        let d = dir.display();
+        fake_cli(
+            dir,
+            &format!(
+                "N=$(cat {d}/n 2>/dev/null || echo 0)\n\
+                 echo \"$@\" >> {d}/args.log\n\
+                 cat >> {d}/prompt-$N.log\n\
+                 echo $((N+1)) > {d}/n\n\
+                 cat {d}/reply-$N"
+            ),
+        )
+    }
+
+    #[test]
+    fn a_conversation_primes_once_and_follows_up_by_index() {
+        let _g = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = fake_conversation(
+            dir.path(),
+            &[r#"{"0": ["w1","w2","w3"]}"#, r#"{"1": "a note"}"#],
+        );
+        let cfg = ask_config(&cli);
+        let roster = vec![
+            item(10, "Capital of France?", "Paris"),
+            item(20, "2+2?", "4"),
+        ];
+        let mut conversation =
+            BatchConversation::new(&cfg, roster.clone()).expect("claude keeps sessions");
+
+        // First target: choices for card 0 only (a subset) primes the roster.
+        let out = generate(&roster[..1], 3, None, &cfg, Some(&conversation)).unwrap();
+        assert_eq!(vec!["w1", "w2", "w3"], out[&10]);
+        // what the batch owner does after a successful call
+        conversation.session.started = true;
+
+        // Second target: notes for card 1; the reply is keyed by ROSTER index.
+        let out = generate_notes(&roster[1..], None, &cfg, Some(&conversation)).unwrap();
+        assert_eq!("a note", out[&20]);
+
+        let args = std::fs::read_to_string(dir.path().join("args.log")).unwrap();
+        let calls: Vec<&str> = args.lines().collect();
+        assert_eq!(2, calls.len(), "{args}");
+        assert!(calls[0].contains("--session-id"), "{args}");
+        assert!(calls[1].contains("--resume"), "{args}");
+        let id = calls[0]
+            .split_whitespace()
+            .skip_while(|w| *w != "--session-id")
+            .nth(1)
+            .expect("an id follows --session-id");
+        assert!(calls[1].contains(id), "one conversation: {args}");
+
+        let primer = std::fs::read_to_string(dir.path().join("prompt-0.log")).unwrap();
+        let follow_up = std::fs::read_to_string(dir.path().join("prompt-1.log")).unwrap();
+        assert!(
+            primer.contains("Paris") && primer.contains("2+2?"),
+            "the primer lists the whole roster: {primer}"
+        );
+        assert!(follow_up.contains("indices: 1"), "{follow_up}");
+        assert!(
+            !follow_up.contains("2+2?"),
+            "a follow-up must not re-list cards: {follow_up}"
+        );
+    }
+
+    #[test]
+    fn conversation_replies_are_keyed_by_roster_index() {
+        let _g = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = fake_reply(dir.path(), r#"{"0": ["x1"], "2": ["z1"]}"#);
+        let cfg = ask_config(&cli);
+        let roster = vec![
+            item(10, "q0", "a0"),
+            item(20, "q1", "a1"),
+            item(30, "q2", "a2"),
+        ];
+        let conversation = BatchConversation::new(&cfg, roster).unwrap();
+        // The call covers roster cards 0 and 2; keys "0"/"2" must land on
+        // those cards, not on positions 0/1 of the subset.
+        let items = vec![item(10, "q0", "a0"), item(30, "q2", "a2")];
+        let out = generate(&items, 3, None, &cfg, Some(&conversation)).unwrap();
+        assert_eq!(vec!["x1"], out[&10]);
+        assert_eq!(vec!["z1"], out[&30]);
+        assert!(!out.contains_key(&20));
+    }
+
+    #[test]
+    fn a_sessionless_backend_gets_no_conversation() {
+        let cfg = AskConfig {
+            backend: BackendKind::Gemini,
+            ..AskConfig::default()
+        };
+        assert!(BatchConversation::new(&cfg, vec![item(1, "q", "a")]).is_none());
+    }
+
+    #[test]
+    fn an_item_outside_the_roster_degrades_to_a_stateless_call() {
+        let _g = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = fake_conversation(dir.path(), &[r#"{"0": ["x1"]}"#]);
+        let cfg = ask_config(&cli);
+        let conversation = BatchConversation::new(&cfg, vec![item(10, "q0", "a0")]).unwrap();
+        // Card 99 is not in the roster: the call must re-list it and carry no
+        // session flags (and position keys apply again).
+        let items = vec![item(99, "Rogue?", "yes")];
+        let out = generate(&items, 3, None, &cfg, Some(&conversation)).unwrap();
+        assert_eq!(vec!["x1"], out[&99]);
+        let args = std::fs::read_to_string(dir.path().join("args.log")).unwrap();
+        assert!(
+            !args.contains("--session-id") && !args.contains("--resume"),
+            "{args}"
+        );
+        let prompt = std::fs::read_to_string(dir.path().join("prompt-0.log")).unwrap();
+        assert!(prompt.contains("Rogue?"), "{prompt}");
     }
 
     // ── format generation ──
@@ -1126,7 +1465,7 @@ mod tests {
             answer: "A, B, C".to_string(),
             note: None,
         }];
-        let err = generate_format(&items, None, &ask_config(&cli)).unwrap_err();
+        let err = generate_format(&items, None, &ask_config(&cli), None).unwrap_err();
         assert!(format!("{err:#}").contains("did not return valid JSON"));
     }
 
@@ -1150,7 +1489,7 @@ mod tests {
                 note: None,
             },
         ];
-        let map = generate_format(&items, None, &ask_config(&cli)).unwrap();
+        let map = generate_format(&items, None, &ask_config(&cli), None).unwrap();
         assert_eq!(map[&1].back, ["A", "B"]);
         // The declined card gets an all-empty no-op so it counts as covered
         // instead of lingering as an eternal gap the user re-runs for nothing.
@@ -1169,7 +1508,7 @@ mod tests {
             answer: "A, B".to_string(),
             note: None,
         }];
-        let map = generate_format(&items, None, &ask_config(&cli)).unwrap();
+        let map = generate_format(&items, None, &ask_config(&cli), None).unwrap();
         let fmt = map.get(&7).expect("a format for card 7");
         assert_eq!(fmt.back, ["A", "B"]);
         assert_eq!(fmt.mode, Some(Mode::LineByLine));
