@@ -101,7 +101,7 @@ fn card_dto_structures_the_note() {
         Some(note.to_string()),
         1,
     );
-    let dto = card_dto(&card);
+    let dto = card_dto((&card).into());
 
     assert_eq!(dto.front, "the front");
     assert_eq!(dto.back, vec!["the back".to_string()]);
@@ -128,7 +128,7 @@ fn card_dto_exposes_image_urls_and_registry_matches() {
     card.image = Some(PathBuf::from("/imgs/moon.png"));
     card.image_back = Some(PathBuf::from("/imgs/tab.png"));
 
-    let dto = card_dto(&card);
+    let dto = card_dto((&card).into());
     let img = dto.img.expect("front image url");
     let img_back = dto.img_back.expect("back image url");
     assert!(img.starts_with("/img/"));
@@ -156,7 +156,7 @@ fn plain_card_has_no_image_urls() {
         None,
         1,
     );
-    let dto = card_dto(&card);
+    let dto = card_dto((&card).into());
     assert!(dto.img.is_none() && dto.img_back.is_none());
     assert!(collect_images(std::slice::from_ref(&card)).is_empty());
 }
@@ -719,6 +719,32 @@ fn state_reports_the_sessions_depth_and_typeline_mode() {
         "typeline", dto.mode,
         "reconstruct + `% reveal: line` types the next line"
     );
+}
+
+#[test]
+fn explain_state_serves_the_keypoints_rubric_cached_or_fallback() {
+    let dir = tempfile::tempdir().unwrap();
+    let deck = dir.path().join("d.txt");
+    let text = "# why\n\tfirst fact\n\tsecond fact\n";
+    std::fs::write(&deck, text).unwrap();
+    let cards = crate::parser::parse_str("d.txt", text).unwrap();
+    let mut store = Store::open(dir.path().join("p.json")).unwrap();
+    store.get_or_insert(cards[0].id(), 0); // seen, so it's a quiz not an acquire
+    let mut r = reviewing_at(deck, cards.clone(), &store, Depth::Reconstruct);
+
+    // No cached keypoints: the rubric falls back to the authored back lines.
+    let fallback = review_state(Some(&r), &store);
+    assert_eq!(fallback.mode, "explain");
+    assert_eq!(
+        fallback.keypoints,
+        Some(vec!["first fact".to_string(), "second fact".to_string()])
+    );
+
+    // Cached keypoints win over the fallback.
+    r.augment
+        .set_keypoints(cards[0].id(), vec!["one claim".to_string()]);
+    let cached = review_state(Some(&r), &store);
+    assert_eq!(cached.keypoints, Some(vec!["one claim".to_string()]));
 }
 
 #[test]

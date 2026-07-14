@@ -4,7 +4,7 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 use serde::{Deserialize, Serialize};
@@ -19,9 +19,10 @@ use crate::{
         AskConfig, Bindings, BrowseBindings, Key, KeyPattern, PickerKeys, ReviewConfig, Strictness,
     },
     deck::{self, Deck, DeckState},
-    depth::{self, Depth, depth_name},
+    depth::{Depth, depth_name},
     doctor, exam,
-    render::{self, NoteUnit},
+    render::NoteUnit,
+    review::{self, CardView},
     scheduler::Fsrs,
     session::now_ms,
     store::Store,
@@ -119,9 +120,10 @@ pub(super) struct StateDto {
     /// otherwise, or when the card has too few distractors (the page then
     /// falls back to reveal). The correct index is never sent here.
     pub(super) choices: Option<Vec<String>>,
-    /// For `explain` mode with cached key points, the rubric the reveal checks a
-    /// reconstruction against — each ticked ✓/✗, the coverage deriving the grade.
-    /// `null` for any other mode or when none are cached (plain self-grade).
+    /// For `explain` mode past acquire, the rubric the reveal checks a
+    /// reconstruction against (each ticked ✓/✗, the coverage deriving the
+    /// grade): the cached key points when present, else the card's own back
+    /// lines. `null` for any other mode.
     pub(super) keypoints: Option<Vec<String>>,
     /// Whether the current card has never been seen and should be *acquired*
     /// (shown, then acknowledged with one key) rather than quizzed cold. The page
@@ -138,11 +140,11 @@ pub(super) struct StateDto {
     /// canvas for a self-graded card; orthogonal to `mode`. The runtime "Draw
     /// answers" toggle lives in the browser and never appears here.
     pub(super) input: &'static str,
-    pub(super) remaining: usize,
-    pub(super) initial: usize,
-    pub(super) reviews: usize,
-    pub(super) passed: usize,
-    pub(super) failed: usize,
+    pub(super) remaining: u32,
+    pub(super) initial: u32,
+    pub(super) reviews: u32,
+    pub(super) passed: u32,
+    pub(super) failed: u32,
     /// Subjects of decks in this (finished) session that are now `ExamDue` —
     /// drilled, sourced, and not yet mastered. The summary offers to sit each.
     /// Empty until the session is finished.
@@ -974,7 +976,7 @@ pub(super) fn browse_payload(browsing: Option<&Browsing>) -> BrowseDto {
         Some(b) => BrowseDto {
             phase: "browse",
             label: b.label.clone(),
-            cards: b.cards.iter().map(card_dto).collect(),
+            cards: b.cards.iter().map(|c| card_dto(c.into())).collect(),
         },
         None => BrowseDto {
             phase: "select",
@@ -1050,41 +1052,16 @@ pub(super) fn review_state(reviewing: Option<&Reviewing>, store: &Store) -> Stat
         };
     };
     let session = &r.session;
-    let card = session.current();
-    // The session owns its depth (Recognize | Recall | Reconstruct); the concrete
-    // check derives from that and the card's authored `% reveal:` (spec §4).
-    let depth = session.depth();
-    let mode = card
-        .map(|c| depth::check_for(c.reveal.unwrap_or_default(), depth, c))
-        .unwrap_or_default();
-    // A never-seen card is *acquired* (an attempt, then reveal), not quizzed cold.
-    let acquire = session.current_unseen(store);
-    // The multiple-choice options, if this card renders as a pick — the acquire
-    // on-ramp or a Recognize session. `current_question` is the single source both
-    // this state and `/api/choose` build from (same `c.id()` seed), so the served
-    // options and the graded correct index can never diverge.
-    let choices = card
-        .and_then(|c| current_question(r, store, c))
-        .map(|q| q.options);
-    // Explain mode reveals the key points as a tick-each-line checklist whose
-    // coverage derives the grade: the cached `keypoints` augment when present,
-    // else the card's own back lines (that IS the multi-line reconstruct check —
-    // spec §4.3). Any other mode keeps the plain reveal; never on a first
-    // encounter, where acquiring just reveals the answer.
-    let keypoints = if !acquire && mode == Mode::Explain {
-        card.map(|c| {
-            r.augment
-                .keypoints(c.id())
-                .map(<[String]>::to_vec)
-                .unwrap_or_else(|| c.back.clone())
-        })
-    } else {
-        None
-    };
+    // ONE core build: every session/store-derived review fact comes from the
+    // shared contract (`crate::review`), the same state the embedded mobile
+    // client renders. This envelope only adds the wire naming, the phase, and
+    // serve-held context (the label, the exam-due deck scan, and the card
+    // enrichment below), never a re-derivation of a fact the core state
+    // already carries.
+    let s = review::state(session, store, &r.augment, None);
     // On a finished session, surface any deck that just reached "exam due" so the
     // summary can offer to sit it. Only computed when finished (it reloads decks).
-    let finished = session.is_finished();
-    let exam_due = if finished {
+    let exam_due = if s.finished {
         let mut due: Vec<String> = r
             .files
             .paths
@@ -1103,8 +1080,10 @@ pub(super) fn review_state(reviewing: Option<&Reviewing>, store: &Store) -> Stat
     };
     // Resolve a fact card's `% at:` citation against its deck's source base, so
     // the browser can show it on reveal (the same live read a trace walk does).
-    let card_with_citation = card.map(|c| {
-        let mut dto = card_dto(c);
+    // The core view is the card's substance; this closure only adds what needs
+    // the serve-held maps (crumb, citation) on top.
+    let card_with_citation = s.card.zip(session.current()).map(|(view, c)| {
+        let mut dto = card_dto(view);
         // The "where am I" region breadcrumb, when topology-ordered. A cache can
         // hold several like-named topologies (decks sharing a store), so pick the
         // one of this principle that actually contains the current card — the card
@@ -1128,7 +1107,8 @@ pub(super) fn review_state(reviewing: Option<&Reviewing>, store: &Store) -> Stat
             });
         }
         if let Some(locator) = c.at.as_deref() {
-            dto.at = Some(locator.to_string());
+            // `dto.at` already carries the raw locator via the core view; a
+            // resolved excerpt may relabel it to its display form below.
             if let Some(base) = r.source_bases.get(&*c.subject) {
                 match base.excerpt(locator) {
                     Ok(ex) => {
@@ -1151,22 +1131,22 @@ pub(super) fn review_state(reviewing: Option<&Reviewing>, store: &Store) -> Stat
         kind: "review",
         // The session-end signal is a phase value (matching the walk's `done`),
         // not a side flag.
-        phase: if finished { "done" } else { "review" },
+        phase: if s.finished { "done" } else { "review" },
         card: card_with_citation,
-        choices,
-        keypoints,
-        acquire,
-        mode: mode_name(mode),
-        depth: depth_name(depth),
-        input: input_name(card.and_then(|c| c.input).unwrap_or_default()),
-        remaining: session.remaining(),
-        initial: session.initial_size,
-        reviews: session.stats.reviews,
-        passed: session.stats.passed,
-        failed: session.stats.failed,
+        choices: s.choices,
+        keypoints: s.keypoints,
+        acquire: s.acquire,
+        mode: mode_name(s.mode),
+        depth: depth_name(s.depth),
+        input: input_name(s.input),
+        remaining: s.remaining,
+        initial: s.initial,
+        reviews: s.reviews,
+        passed: s.passed,
+        failed: s.failed,
         exam_due,
-        can_restart: session.has_due_now(store, now_ms()),
-        promotable: session.current_is_virtual(store),
+        can_restart: s.can_restart,
+        promotable: s.promotable,
         label: r.label.clone(),
     }
 }
@@ -1259,25 +1239,24 @@ pub(super) fn deck_topology_dto(
     }
 }
 
-/// Serializes a card for the browser, structuring its note via the shared
-/// [`render`] model.
-pub(super) fn card_dto(card: &Card) -> CardDto {
-    let img_url = |p: &PathBuf| format!("/img/{}", img_key(p));
+/// Serializes a card for the browser from its core [`CardView`]. The only
+/// transport touch is mapping the view's image paths to `/img/<key>` URLs
+/// (the same hash the registry derives from the path). The citation and
+/// crumb are resolved by `review_state`, which holds the source base and
+/// topology; browse leaves them empty.
+pub(super) fn card_dto(view: CardView) -> CardDto {
+    let img_url = |p: &str| format!("/img/{}", img_key(Path::new(p)));
     CardDto {
-        front: card.front.clone(),
-        context: card.context.clone(),
-        back: card.back_for_display().to_vec(),
-        reshaped: card.display_back.is_some(),
-        note: render::note_units(card),
-        img: card.image.as_ref().map(img_url),
-        img_back: card.image_back.as_ref().map(img_url),
-        // The citation is resolved by `review_state`, which has the source base;
-        // browse (no base) leaves these empty.
-        at: None,
+        img: view.image.as_deref().map(img_url),
+        img_back: view.image_back.as_deref().map(img_url),
+        front: view.front,
+        context: view.context,
+        back: view.back,
+        reshaped: view.reshaped,
+        note: view.note,
+        at: view.at,
         citation: None,
         citation_error: None,
-        // Resolved by `review_state`, which holds the topology; browse and
-        // non-topology sessions leave it empty.
         crumb: None,
     }
 }
