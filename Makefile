@@ -6,7 +6,7 @@
 # toolchain — `+nightly` is handled by rustup before cargo sees it — which is
 # why these live in a Makefile rather than .cargo/config.toml.)
 
-.PHONY: build build-core test lint lint-js fmt fmt-check fmt-roadmap roadmap check ci coverage coverage-lcov calibrate run web phone tablet desktop frb-check push-decks mobile-test book site slides install clean sdd-clean heartbeat check-backends e2e shots
+.PHONY: build build-core test lint lint-js fmt fmt-check fmt-roadmap roadmap check ci coverage coverage-lcov calibrate run web phone tablet desktop frb-check push-decks mobile-test book site slides install clean sdd-clean heartbeat check-backends e2e shots stats
 
 # Compile the workspace.
 build:
@@ -215,6 +215,12 @@ shots:
 	npm --prefix e2e ci
 	npx --prefix e2e playwright install chromium
 	node e2e/shots/capture.cjs $(if $(ONLY),--only=$(ONLY)) $(ARGS)
+
+# Download numbers: GitHub release assets + crates.io, in a terminal table.
+# Read-only, no auth needed, stdlib python3. Run deliberately (network call),
+# like heartbeat.
+stats:
+	@python3 scripts/stats.py
 
 # Local, gitignored maintainer-only targets (e.g. wish-triage). The leading `-`
 # makes this a silent no-op for anyone whose tree doesn't have the file.
