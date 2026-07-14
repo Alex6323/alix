@@ -7,11 +7,31 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:alix_mobile/bootstrap.dart';
+import 'package:alix_mobile/main.dart';
 import 'package:alix_mobile/picker_screen.dart';
+import 'package:alix_mobile/platform_access.dart';
 import 'package:alix_mobile/review_screen.dart';
 import 'package:alix_mobile/src/rust/api/listing.dart';
 import 'package:alix_mobile/src/rust/api/review.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
+
+/// The platform seam's test double: no channels exist under `flutter test`.
+class FakeAccess implements PlatformAccess {
+  FakeAccess({this.dir});
+
+  /// What the "picker" returns; null models a cancel.
+  final String? dir;
+
+  @override
+  Future<bool> supportsSharedFolders() async => true;
+
+  @override
+  Future<bool> ensureAllFilesAccess() async => true;
+
+  @override
+  Future<String?> pickDirectory() async => dir;
+}
 
 /// Acquired at T0, quizzed once the cooldown has elapsed. 301000 = the
 /// core's DEFAULT_ACQUIRE_COOLDOWN_MS (5 min, src/scheduler.rs) + 1s; keep
@@ -114,6 +134,120 @@ void main() {
     await tester.tap(find.text('Ws'));
     await tester.pumpAndSettle();
     expect(find.text('m'), findsOneWidget);
+  });
+
+  testWidgets('choosing a shared folder swaps the picker root live',
+      (tester) async {
+    final support = Directory.systemTemp.createTempSync('alix-support-');
+    addTearDown(() => support.deleteSync(recursive: true));
+    final rootA = makeRoot();
+    addTearDown(() => rootA.deleteSync(recursive: true));
+    final rootB = Directory.systemTemp.createTempSync('alix-shared-');
+    addTearDown(() => rootB.deleteSync(recursive: true));
+    File('${rootB.path}/shared.txt')
+        .writeAsStringSync('% title: Shared Deck\n# q\n    a\n');
+
+    await tester.pumpWidget(AlixApp(
+      prepared: Prepared(root: rootA.path, device: 'phone-test'),
+      access: FakeAccess(dir: rootB.path),
+      persistDecksDir: (dir) => setDecksDir(dir, support: support),
+      reprepare: () => prepare(support: support, env: ''),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('Loose'), findsOneWidget);
+
+    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Decks folder…'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Choose shared folder…'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Shared Deck'), findsOneWidget);
+    expect(find.text('Loose'), findsNothing);
+  });
+
+  testWidgets('a cancelled folder pick leaves the root unchanged',
+      (tester) async {
+    final support = Directory.systemTemp.createTempSync('alix-support-');
+    addTearDown(() => support.deleteSync(recursive: true));
+    final root = makeRoot();
+    addTearDown(() => root.deleteSync(recursive: true));
+
+    await tester.pumpWidget(AlixApp(
+      prepared: Prepared(root: root.path, device: 'phone-test'),
+      access: FakeAccess(dir: null),
+      persistDecksDir: (dir) => setDecksDir(dir, support: support),
+      reprepare: () => prepare(support: support, env: ''),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Decks folder…'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Choose shared folder…'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Loose'), findsOneWidget);
+    expect(find.textContaining('stays on its current'), findsOneWidget);
+  });
+
+  testWidgets('the picker warns about a sync conflict file until dismissed',
+      (tester) async {
+    final root = makeRoot();
+    addTearDown(() => root.deleteSync(recursive: true));
+    File('${root.path}/progress.sync-conflict-20260714-101112-AAAAAAA.json')
+        .writeAsStringSync('{}');
+
+    await tester.pumpWidget(MaterialApp(home: PickerScreen(root: root.path)));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('sync conflict'), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.close));
+    await tester.pump();
+    expect(find.textContaining('sync conflict'), findsNothing);
+  });
+
+  testWidgets('the review screen warns when another device wrote the store',
+      (tester) async {
+    final root = makeRoot();
+    addTearDown(() => root.deleteSync(recursive: true));
+    final deck = '${root.path}/loose.txt';
+    final backdated =
+        BigInt.from(DateTime.now().millisecondsSinceEpoch - 600000);
+    final s = ReviewSession.open(
+      deckPath: deck,
+      rootDir: root.path,
+      nowMs: backdated,
+      device: 'desk-1',
+    );
+    s.acquire(nowMs: backdated);
+
+    await tester.pumpWidget(MaterialApp(
+      home: ReviewScreen(
+        deckPath: deck,
+        rootDir: root.path,
+        depth: Depth.recall,
+        device: 'phone-1',
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.textContaining("Last written by 'desk-1'"), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.close));
+    await tester.pump();
+    expect(find.textContaining('Last written by'), findsNothing);
+
+    // The store's last writer is now this screen's own device (opening
+    // saves), so a re-open as the same device stays quiet.
+    await tester.pumpWidget(MaterialApp(
+      home: ReviewScreen(
+        deckPath: deck,
+        rootDir: root.path,
+        depth: Depth.recall,
+        device: 'phone-1',
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Last written by'), findsNothing);
   });
 
   test('keypointGrade maps the tally like core', () {

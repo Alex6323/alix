@@ -8,6 +8,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+import 'package:alix_mobile/bootstrap.dart';
 import 'package:alix_mobile/main.dart';
 import 'package:alix_mobile/src/rust/api/review.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
@@ -33,7 +34,9 @@ void main() {
       nowMs: backdated,
     ).acquire(nowMs: backdated);
 
-    await tester.pumpWidget(AlixApp(root: root.path));
+    await tester.pumpWidget(AlixApp(
+      prepared: Prepared(root: root.path, device: 'e2e-test'),
+    ));
     await tester.pumpAndSettle();
     expect(find.text('Greek'), findsOneWidget);
 

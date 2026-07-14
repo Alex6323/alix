@@ -13,11 +13,16 @@ class ReviewScreen extends StatefulWidget {
     required this.deckPath,
     required this.rootDir,
     required this.depth,
+    this.device,
   });
 
   final String deckPath;
   final String rootDir;
   final Depth depth;
+
+  /// This install's label for the store's last-writer marker; also enables
+  /// the "another device wrote this recently" banner.
+  final String? device;
 
   @override
   State<ReviewScreen> createState() => _ReviewScreenState();
@@ -52,13 +57,19 @@ class _ReviewScreenState extends State<ReviewScreen> {
     super.dispose();
   }
 
+  /// Another device's recent write of this store, shown once per session
+  /// open until dismissed.
+  ForeignWriter? _foreign;
+
   /// (Re)opens the session; also the restart action on the done screen.
   void _open() {
     _session = ReviewSession.open(
       deckPath: widget.deckPath,
       rootDir: widget.rootDir,
       depth: widget.depth,
+      device: widget.device,
     );
+    _foreign = widget.device == null ? null : _session.foreignWriter();
     _resetCard(_session.state());
   }
 
@@ -100,10 +111,49 @@ class _ReviewScreenState extends State<ReviewScreen> {
         ],
       ),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: card == null ? _done(context) : _card(context, card),
+        child: Column(
+          children: [
+            if (_foreign case final foreign?) _foreignBanner(context, foreign),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: card == null ? _done(context) : _card(context, card),
+              ),
+            ),
+          ],
         ),
+      ),
+    );
+  }
+
+  /// The roaming-discipline warning: this store was just written elsewhere,
+  /// so reviewing here would fork it.
+  Widget _foreignBanner(BuildContext context, ForeignWriter foreign) {
+    final theme = Theme.of(context);
+    final minutes = (foreign.ageMs.toInt() / 60000).round();
+    final age = minutes < 1 ? 'moments' : '$minutes min';
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.errorContainer,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              "Last written by '${foreign.device}' $age ago. "
+              'Review on one device at a time.',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.onErrorContainer),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close, size: 18),
+            onPressed: () => setState(() => _foreign = null),
+          ),
+        ],
       ),
     );
   }

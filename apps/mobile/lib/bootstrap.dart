@@ -115,12 +115,12 @@ Map<String, dynamic> readSettings(Directory support) {
   }
 }
 
-Future<void> _writeSettings(
-  Directory support,
-  Map<String, dynamic> settings,
-) async {
-  await support.create(recursive: true);
-  await _settingsFile(support).writeAsString(jsonEncode(settings));
+// Synchronous on purpose: the file is ~100 bytes, and sync I/O lets the
+// widget-test zone (fake async, no real event-loop turns) drive the
+// choose-folder flow to completion.
+void _writeSettings(Directory support, Map<String, dynamic> settings) {
+  support.createSync(recursive: true);
+  _settingsFile(support).writeAsStringSync(jsonEncode(settings));
 }
 
 /// Persists the shared decks folder choice; `null` reverts to app storage.
@@ -132,7 +132,7 @@ Future<void> setDecksDir(String? dir, {Directory? support}) async {
   } else {
     settings['decksDir'] = dir;
   }
-  await _writeSettings(support, settings);
+  _writeSettings(support, settings);
 }
 
 /// This install's device label (`phone-<4 hex>`), minted once into the
@@ -149,6 +149,6 @@ Future<String> _ensureDevice(
   final device =
       'phone-${Random().nextInt(0x10000).toRadixString(16).padLeft(4, '0')}';
   settings['device'] = device;
-  await _writeSettings(support, settings);
+  _writeSettings(support, settings);
   return device;
 }
