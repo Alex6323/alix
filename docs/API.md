@@ -282,7 +282,7 @@ Statuses: all endpoints can additionally return 401 (token) — omitted below.
 | POST | `/api/browse` | `{deck}` | `BrowseDto` | 400 (same causes) |
 | POST | `/api/deck-topology` | `{deck}` | `DeckTopologyDto` | never errors — empty DTO on any failure |
 | POST | `/api/reset` | `{deck}` | `ResetDto` | 400 bad body / unknown deck / load failure |
-| POST | `/api/workspace/deadline` | `{name, date}` (`date`: `"YYYY-MM-DD"` \| `null`) | `DeckListDto` (refreshed) | 400 bad body / bad date / not a workspace row; 500 write failure |
+| POST | `/api/workspace/deadline` | `{name, date}` (`date`: `"YYYY-MM-DD"` \| `null`, required) | `DeckListDto` (refreshed) | 400 bad body / missing or bad date / not a workspace row; 500 write failure |
 | POST | `/api/deselect` | – | `StateDto` | – |
 | POST | `/api/grade` | `{grade}` or `{covered, total}` | `StateDto` | 400 neither shape; 409 no session |
 | POST | `/api/skip` | – | `StateDto` | 409 |
@@ -298,13 +298,15 @@ flag) outright — a typed-name confirmation is client UX, not enforced here; a
 token holder is trusted to call it, the same trust class as `/api/grade`.
 
 `/api/workspace/deadline` sets, moves, or clears (`date: null`) a workspace's
-"ready by" target in its `alix.local.toml` ({#deadlines}). `name` must
-resolve to a real workspace row (an `alix.toml` manifest, not a plain folder
-of decks); anything else, or a `date` that doesn't parse as `YYYY-MM-DD`, is
-400 and the file is left untouched. It responds with the same `DeckListDto`
-shape `GET /api/decks` returns, refreshed, so the picker re-renders the
-`deadline` readout (§6 `DeckItemDto`/`DeadlineDto`) in one round trip instead
-of a follow-up fetch.
+"ready by" target in its `alix.local.toml` ({#deadlines}). `date` is a
+required key: send `null` explicitly to clear a deadline, but omitting the
+key entirely is a 400, not a clear (a client bug must never be read as
+"clear"). `name` must resolve to a real workspace row (an `alix.toml`
+manifest, not a plain folder of decks); anything else, a missing `date` key,
+or a `date` that doesn't parse as `YYYY-MM-DD`, is 400 and the file is left
+untouched. It responds with the same `DeckListDto` shape `GET /api/decks`
+returns, refreshed, so the picker re-renders the `deadline` readout (§6
+`DeckItemDto`/`DeadlineDto`) in one round trip instead of a follow-up fetch.
 
 ### Import
 

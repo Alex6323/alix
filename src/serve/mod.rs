@@ -564,10 +564,26 @@ pub fn run_review(
             // readout in one round trip, matching `/api/reset`'s pattern of
             // returning caller-relevant state rather than a bare 200.
             (Method::Post, "/api/workspace/deadline") => {
+                // `date` is required. A missing key is a 400 (a client bug
+                // must never be read as "clear"); an explicit JSON `null` is
+                // the real clear signal. Serde's "double option" idiom tells
+                // them apart: `#[serde(default)]` supplies the outer `None`
+                // only when the key is absent, and `deserialize_some` fires
+                // when the key IS present, wrapping whatever it parses to
+                // (including `null`) in `Some`.
+                fn deserialize_some<'de, D>(
+                    deserializer: D,
+                ) -> Result<Option<Option<String>>, D::Error>
+                where
+                    D: serde::Deserializer<'de>,
+                {
+                    Option::<String>::deserialize(deserializer).map(Some)
+                }
                 #[derive(Deserialize)]
                 struct Body {
                     name: String,
-                    date: Option<String>,
+                    #[serde(default, deserialize_with = "deserialize_some")]
+                    date: Option<Option<String>>,
                 }
                 let Some(body) = serde_json::from_reader::<_, Body>(request.as_reader()).ok()
                 else {
@@ -575,8 +591,12 @@ pub fn run_review(
                     continue;
                 };
                 let date = match body.date {
-                    None => None,
-                    Some(s) => match chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d") {
+                    None => {
+                        respond_status(request, 400);
+                        continue;
+                    }
+                    Some(None) => None,
+                    Some(Some(s)) => match chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d") {
                         Ok(d) => Some(d),
                         Err(_) => {
                             respond_status(request, 400);

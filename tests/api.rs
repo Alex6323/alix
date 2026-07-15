@@ -1814,6 +1814,17 @@ fn write_workspace_fixture(dir: &Path) {
     std::fs::write(ws.join("m2.txt"), "# q3\n\ta3\n# q4\n\ta4\n# q5\n\ta5\n").unwrap();
 }
 
+/// A folder holding a deck but no `alix.toml` manifest. `workspace::has_decks`
+/// is still true (it is drillable, `resolve_row` still classifies it as
+/// `Resolved::Many` since it has members), but `workspace::is_workspace` is
+/// false. This is exactly the row shape the deadline route's
+/// `is_workspace(&dir)` guard exists to reject.
+fn write_plain_folder_fixture(dir: &Path) {
+    let folder = dir.join("plainfolder");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(folder.join("loose.txt"), "# q\n\ta\n").unwrap();
+}
+
 #[test]
 fn augment_open_on_a_workspace_unions_member_cards_and_offers_the_icon_row() {
     let (base, _guard) = spawn_full_server_fixture(None, write_workspace_fixture);
@@ -2469,4 +2480,70 @@ fn workspace_deadline_rejects_a_plain_deck_row_and_an_unknown_name() {
         r#"{"name":"does-not-exist","date":"2099-01-02"}"#,
     );
     assert_eq!(400, resp.status);
+}
+
+/// The row-shape guard (`Resolved::Many { dir, .. } if is_workspace(&dir)`)
+/// specifically rejects a `Resolved::Many` row that is NOT a workspace: a
+/// plain folder of loose decks with no `alix.toml`. The previous rejection
+/// test only covered `Resolved::One` and `Resolved::Unknown`, which hit the
+/// same 400 fallback whether or not the `is_workspace` guard was even there;
+/// this is the one that actually exercises it.
+#[test]
+fn workspace_deadline_rejects_a_plain_folder_that_is_not_a_workspace() {
+    let (base, guard) = spawn_test_server_fixture(None, |dir| {
+        write_workspace_fixture(dir);
+        write_plain_folder_fixture(dir);
+    });
+
+    let resp = post_json(
+        &base,
+        "/api/workspace/deadline",
+        r#"{"name":"plainfolder","date":"2099-01-02"}"#,
+    );
+    assert_eq!(400, resp.status);
+    assert!(
+        !guard.dir().join("plainfolder/alix.local.toml").is_file(),
+        "a non-workspace folder must never get a deadline file written into it"
+    );
+}
+
+/// A missing `date` key must be a 400 (a client bug), never treated the same
+/// as an explicit `null` (the real clear signal). Sets a deadline first so a
+/// wrongly-lenient parse (reading the missing key as `None`, same as
+/// `null`) would be visible as a silent clear instead of just a bad status.
+#[test]
+fn workspace_deadline_with_a_missing_date_key_is_a_400_not_a_silent_clear() {
+    let (base, guard) = spawn_test_server_fixture(None, write_workspace_fixture);
+
+    let resp = post_json(
+        &base,
+        "/api/workspace/deadline",
+        r#"{"name":"ws","date":"2099-01-02"}"#,
+    );
+    assert_eq!(200, resp.status);
+
+    let resp = post_json(&base, "/api/workspace/deadline", r#"{"name":"ws"}"#);
+    assert_eq!(400, resp.status);
+
+    let local = std::fs::read_to_string(guard.dir().join("ws/alix.local.toml")).unwrap();
+    assert!(
+        local.contains("deadline = \"2099-01-02\""),
+        "a missing `date` key must not clear the deadline: local: {local}"
+    );
+}
+
+/// `workspace::set_deadline` bails when `[review]` exists in the local
+/// manifest but is not a table (e.g. a hand-edited `review = 5`); the route
+/// must surface that as 500, not silently swallow it into a 200 or a 400.
+#[test]
+fn workspace_deadline_returns_500_when_the_local_manifest_has_a_non_table_review_key() {
+    let (base, guard) = spawn_test_server_fixture(None, write_workspace_fixture);
+    std::fs::write(guard.dir().join("ws/alix.local.toml"), "review = 5\n").unwrap();
+
+    let resp = post_json(
+        &base,
+        "/api/workspace/deadline",
+        r#"{"name":"ws","date":"2099-01-02"}"#,
+    );
+    assert_eq!(500, resp.status);
 }
