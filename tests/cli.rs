@@ -112,6 +112,27 @@ fn check_rejects_a_malformed_deck() {
 }
 
 #[test]
+fn doctor_warns_about_a_malformed_deadline_without_failing() {
+    let dir = TempDir::new().unwrap();
+    let ws = dir.path();
+    std::fs::write(ws.join("alix.toml"), "").unwrap();
+    std::fs::write(
+        ws.join("alix.local.toml"),
+        "[review]\ndeadline = \"soonish\"\n",
+    )
+    .unwrap();
+    write(ws, "cards.txt", VALID_DECK);
+    let out = alix(&["doctor", ws.to_str().unwrap()]);
+    assert!(
+        out.status.success(),
+        "warnings should not fail the doctor check"
+    );
+    let err = stderr(&out);
+    assert!(err.contains("deadline"), "stderr: {err}");
+    assert!(err.contains("warning"), "stderr: {err}");
+}
+
+#[test]
 fn workspace_init_writes_both_documented_manifests() {
     let dir = TempDir::new().unwrap();
     let ws = dir.path().join("fresh");

@@ -187,10 +187,14 @@ pub(crate) fn doctor_cmd(args: DoctorArgs) -> Result<()> {
     use alix::doctor::{self, Status};
     // A deck-file target = lint exactly that deck (syntax, duplicate answers,
     // trace locators) — the old `deck check`, now one more thing doctor checks.
-    if let Some(path) = &args.dir
-        && path.is_file()
-    {
-        return check(vec![path.clone()]);
+    if let Some(path) = &args.dir {
+        if path.is_file() {
+            return check(vec![path.clone()]);
+        }
+        // A workspace directory: run detailed workspace-level checks.
+        if alix::workspace::is_workspace(path) {
+            check(vec![path.clone()])?;
+        }
     }
     let (config_finding, config) = doctor::check_config(args.config.as_deref());
     let mut findings = vec![config_finding];
