@@ -93,7 +93,7 @@ class _PickerScreenState extends State<PickerScreen> {
     final isRoot = widget.dir == null;
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.title ?? 'alix'),
+        title: const AlixWordmark(),
         actions: [
           if (isRoot && widget.onSetDecksDir != null)
             PopupMenuButton<String>(
@@ -119,53 +119,110 @@ class _PickerScreenState extends State<PickerScreen> {
           if (_conflicts.isNotEmpty && !_conflictsDismissed)
             _conflictBanner(context),
           Expanded(
-            child: _entries.isEmpty
-                ? const Center(child: Text('no decks here'))
-                : ListView(
-                    children: [
-                      for (final entry in _entries)
-                        ListTile(
-                          leading: Icon(
-                            entry.isWorkspace
-                                ? Icons.folder_outlined
-                                : Icons.description_outlined,
-                          ),
-                          title: Text(
-                            entry.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          trailing: entry.due
-                              ? Icon(
-                                  Icons.circle,
-                                  size: 10,
-                                  // The web picker's cyan due dot (--bolt);
-                                  // primary is the brand action fill.
-                                  color: Theme.of(context).alix.bolt,
-                                )
-                              : null,
-                          onTap: () {
-                            if (entry.isWorkspace) {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) => PickerScreen(
-                                    root: widget.root,
-                                    dir: entry.path,
-                                    title: entry.title,
-                                    device: widget.device,
-                                  ),
-                                ),
-                              );
-                            } else {
-                              _openDeck(entry);
-                            }
-                          },
-                        ),
-                    ],
-                  ),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+              children: [
+                // Drilled into a workspace: its name as the cyan eyebrow,
+                // matching the web picker's lede.
+                if (!isRoot && widget.title != null) _lede(context, widget.title!),
+                if (_entries.isEmpty)
+                  _emptyHint(context)
+                else
+                  for (final entry in _entries) _deckRow(context, entry),
+              ],
+            ),
           ),
         ],
       ),
+    );
+  }
+
+  /// The web picker's cyan uppercase mono eyebrow.
+  Widget _lede(BuildContext context, String text) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(2, 0, 2, 16),
+      child: Text(
+        text.toUpperCase(),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontFamily: 'IBM Plex Mono',
+          color: Theme.of(context).alix.bolt,
+          fontSize: 12,
+          letterSpacing: 2.2,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+  }
+
+  /// A deck or workspace as the web's bordered rounded row: no file icons,
+  /// a chevron marks a drillable folder, a cyan dot marks something due.
+  Widget _deckRow(BuildContext context, DeckEntry entry) {
+    final theme = Theme.of(context);
+    final tokens = theme.alix;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(11),
+          onTap: () => entry.isWorkspace ? _drillInto(entry) : _openDeck(entry),
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 54),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              border: Border.all(color: tokens.line),
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    entry.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                ),
+                if (entry.due) ...[
+                  const SizedBox(width: 12),
+                  Icon(Icons.circle, size: 8, color: tokens.bolt),
+                ],
+                if (entry.isWorkspace) ...[
+                  const SizedBox(width: 8),
+                  Icon(Icons.chevron_right, size: 22, color: tokens.dim),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _drillInto(DeckEntry entry) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PickerScreen(
+          root: widget.root,
+          dir: entry.path,
+          title: entry.title,
+          device: widget.device,
+        ),
+      ),
+    );
+  }
+
+  Widget _emptyHint(BuildContext context) {
+    final theme = Theme.of(context);
+    return Text(
+      widget.dir == null
+          ? 'No decks here yet. Put .txt decks in this folder, or choose a '
+              'shared folder from the menu.'
+          : 'no decks here',
+      style: theme.textTheme.bodyMedium?.copyWith(color: theme.alix.dim),
     );
   }
 

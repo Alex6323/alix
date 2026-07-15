@@ -102,12 +102,21 @@ class _ReviewScreenState extends State<ReviewScreen> {
     final card = _state.card;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('alix'),
+        title: const AlixWordmark(),
         actions: [
           if (!_state.finished)
             Padding(
               padding: const EdgeInsets.only(right: 16),
-              child: Center(child: Text('${_state.remaining} left')),
+              child: Center(
+                child: Text(
+                  '${_state.remaining} left',
+                  style: TextStyle(
+                    fontFamily: 'IBM Plex Mono',
+                    fontSize: 13,
+                    color: Theme.of(context).alix.dim,
+                  ),
+                ),
+              ),
             ),
         ],
       ),

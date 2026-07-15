@@ -91,6 +91,26 @@ extension AlixThemeTokens on ThemeData {
   AlixTokens get alix => extension<AlixTokens>() ?? _darkTokens;
 }
 
+/// The flat orange wordmark, the web app's header brand (never reskinned).
+/// Used as the AppBar title on every screen.
+class AlixWordmark extends StatelessWidget {
+  const AlixWordmark({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Text(
+      'alix',
+      style: TextStyle(
+        fontFamily: 'IBM Plex Sans',
+        fontWeight: FontWeight.w700,
+        fontSize: 20,
+        letterSpacing: 0.5,
+        color: _brand,
+      ),
+    );
+  }
+}
+
 /// --brand / --brand-ink: the one primary action's fill, never reskinned.
 const _brand = Color(0xFFF0883C);
 const _brandInk = Color(0xFF1A1206);

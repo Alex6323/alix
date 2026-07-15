@@ -25,8 +25,10 @@ same core the desktop runs. Early software; expect rough edges.
 - Roaming guards: a banner when another device wrote the progress store
   moments ago, and a loud warning when a sync conflict file sits next to
   it. One device at a time is the rule; these make slips visible.
-- The alix look: the web app's dark and light palettes, IBM Plex faces,
-  and the brand-orange primary action, following the system theme.
+- The alix look: the web app's dark palette (its default identity), the
+  orange wordmark, IBM Plex faces, bordered deck rows, and the brand-orange
+  primary action. A light palette exists; the app opens dark to match the
+  web out of the box.
 - About (in the picker menu): the app version and the embedded core
   version side by side.
 - The alix launcher icon and app name.

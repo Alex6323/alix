@@ -62,7 +62,11 @@ class _AlixAppState extends State<AlixApp> {
       title: 'alix',
       theme: alixLight(),
       darkTheme: alixDark(),
-      themeMode: ThemeMode.system,
+      // The alix identity is the dark theme (the web app's default); a
+      // light-mode phone should still open into the alix look, not a
+      // generic Material list. A theme picker (the web's gallery) is a
+      // separate future feature.
+      themeMode: ThemeMode.dark,
       home: PickerScreen(
         // Remount the whole picker tree when the root swaps.
         key: ValueKey(_prepared.root),
