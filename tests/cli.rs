@@ -127,6 +127,40 @@ fn workspace_init_writes_both_documented_manifests() {
 }
 
 #[test]
+fn workspace_deadline_shows_sets_and_clears() {
+    let dir = TempDir::new().unwrap();
+    let ws = dir.path().join("ws");
+    std::fs::create_dir(&ws).unwrap();
+    std::fs::write(ws.join("alix.toml"), "title = \"Ws\"\n").unwrap();
+    std::fs::write(ws.join("cards.txt"), "# Q?\n    A\n").unwrap();
+
+    let out = alix(&["workspace", "deadline", ws.to_str().unwrap()]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(stdout(&out).contains("no deadline"), "stdout: {}", stdout(&out));
+
+    let out = alix(&["workspace", "deadline", ws.to_str().unwrap(), "2099-01-02"]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(std::fs::read_to_string(ws.join("alix.local.toml"))
+        .unwrap()
+        .contains("2099-01-02"));
+
+    let out = alix(&["workspace", "deadline", ws.to_str().unwrap()]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let show_output = stdout(&out);
+    assert!(show_output.contains("2099-01-02"), "stdout: {show_output}");
+    assert!(show_output.contains("days"), "stdout: {show_output}");
+
+    let out = alix(&["workspace", "deadline", ws.to_str().unwrap(), "clear"]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(!std::fs::read_to_string(ws.join("alix.local.toml"))
+        .unwrap()
+        .contains("deadline"));
+
+    let out = alix(&["workspace", "deadline", ws.to_str().unwrap(), "not-a-date"]);
+    assert!(!out.status.success(), "stderr: {}", stderr(&out));
+}
+
+#[test]
 fn stats_on_a_folder_reports_every_deck_inside() {
     let dir = TempDir::new().unwrap();
     write(dir.path(), "alpha.txt", "# a?\n    a\n");

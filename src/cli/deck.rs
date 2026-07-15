@@ -15,9 +15,10 @@ use alix::{
     generate, import, library, parser, workspace,
 };
 use anyhow::{Context, Result, bail};
+use chrono::NaiveDate;
 
 use crate::{
-    AugmentArgs, AugmentTarget, ImportArgs, WorkspaceInitArgs,
+    AugmentArgs, AugmentTarget, ImportArgs, WorkspaceInitArgs, WorkspaceDeadlineArgs,
     common::{deck_out_dir, one_line, store_for, truncate},
 };
 
@@ -375,4 +376,34 @@ pub(crate) fn import_cmd(args: ImportArgs) -> Result<()> {
             placed.path.display()
         ),
     }
+}
+
+pub(crate) fn workspace_deadline_cmd(args: WorkspaceDeadlineArgs) -> Result<()> {
+    let dir = &args.dir;
+    if !workspace::is_workspace(dir) && !workspace::has_decks(dir) {
+        bail!("{} is not a workspace or decks folder", dir.display());
+    }
+    match args.date.as_deref() {
+        None => {
+            let review = Config::load(None)?.review.for_workspace(dir);
+            match review.deadline {
+                Some(d) => {
+                    let days = (d - alix::time::local_date(alix::time::now_ms())).num_days();
+                    if days < 0 {
+                        println!("{d} (was due {} days ago)", -days);
+                    } else {
+                        println!("{d} ({days} days left)");
+                    }
+                }
+                None => println!("no deadline set (set one: alix workspace deadline {} 2026-09-01)", dir.display()),
+            }
+        }
+        Some("clear") => workspace::set_deadline(dir, None)?,
+        Some(s) => {
+            let date = NaiveDate::parse_from_str(s, "%Y-%m-%d")
+                .map_err(|_| anyhow::anyhow!("invalid date {s:?}: expected YYYY-MM-DD (or \"clear\")"))?;
+            workspace::set_deadline(dir, Some(date))?;
+        }
+    }
+    Ok(())
 }

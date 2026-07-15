@@ -167,6 +167,8 @@ enum WorkspaceAction {
     /// `assets/` dir, no decks yet. Grow it with `alix generate … --workspace
     /// <dir>` or `alix deck import … --workspace <dir>`.
     Init(WorkspaceInitArgs),
+    /// Show, set, or clear this workspace's personal "ready by" deadline.
+    Deadline(WorkspaceDeadlineArgs),
 }
 
 #[derive(Args)]
@@ -177,6 +179,14 @@ struct WorkspaceInitArgs {
     /// The workspace's display title (default: the folder name).
     #[arg(long)]
     title: Option<String>,
+}
+
+#[derive(Args)]
+struct WorkspaceDeadlineArgs {
+    /// The workspace directory.
+    dir: PathBuf,
+    /// A date (YYYY-MM-DD) to set, `clear` to remove; omit to show.
+    date: Option<String>,
 }
 
 #[derive(Args)]
@@ -477,6 +487,7 @@ fn main() -> Result<()> {
         },
         Some(Command::Workspace(action)) => match action {
             WorkspaceAction::Init(args) => deck::workspace_init_cmd(args),
+            WorkspaceAction::Deadline(args) => deck::workspace_deadline_cmd(args),
         },
         Some(Command::Share(args)) => share::share_cmd(args),
         Some(Command::Receive(args)) => share::receive_cmd(args),
