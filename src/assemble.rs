@@ -22,7 +22,7 @@ use crate::{
     config::{AskConfig, ReviewConfig},
     deck::{Deck, DeckSettings},
     depth::Depth,
-    parser,
+    parser, picker,
     scheduler::Fsrs,
     session::{self, DeckInfo, Order, Session, SessionOptions},
     store::{Store, VirtualCard, default_store_path},
@@ -509,11 +509,12 @@ pub fn select(
 
     // The session depth: an explicit `--depth` / picker choice, else the deck's
     // last-used depth (keyed by deck subject, like the rest of the deck store),
-    // else the default (Recall). The persisted value below lets a plain Learn
-    // reopen at it.
+    // else `{#recognize-smart-default}` (Recognize when the deck already has AI
+    // distractor coverage, else Recall). The persisted value below lets a plain
+    // Learn reopen at it.
     let depth = depth_sel
         .or_else(|| store.last_depth(subject.as_ref()))
-        .unwrap_or_default();
+        .unwrap_or_else(|| picker::default_depth(&cards, &augment));
     // Pacing: the launch's own overrides win over the instance's flag/config
     // values; cram is purely a per-launch choice (the ▾ menu tick-box).
     let options = SessionOptions {
@@ -1049,6 +1050,53 @@ mod tests {
             panic!("a fact deck must review");
         };
         assert_eq!(Depth::Recognize, build.session.depth());
+    }
+
+    #[test]
+    fn select_defaults_a_never_drilled_deck_to_recognize_when_choices_are_cached() {
+        use crate::depth::Depth;
+
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("d.txt");
+        std::fs::write(&deck_path, "# q\n\ta\n").unwrap();
+        let store_path = dir.path().join("p.json");
+        let mut store = open_store(Some(store_path.clone())).unwrap();
+        let cfg = test_config();
+
+        // Seed the augment cache with a distractor set for this deck's one
+        // card — the real id, read from the loaded deck, never hand-computed.
+        let card_id = Deck::load(&deck_path).unwrap().cards[0].id();
+        let mut cache = AugmentCache::open(augment::augment_path_for(&store_path));
+        cache.set_distractors(card_id, vec!["w1".into(), "w2".into(), "w3".into()]);
+        cache.save().unwrap();
+
+        // No explicit depth and no prior session: `{#recognize-smart-default}`
+        // must resolve Recognize, not the plain Recall default.
+        let Selected::Review(build) =
+            select(vec![deck_path], &mut store, &cfg, &SelectOptions::default()).unwrap()
+        else {
+            panic!("a fact deck must review");
+        };
+        assert_eq!(Depth::Recognize, build.session.depth());
+    }
+
+    #[test]
+    fn select_keeps_recall_for_a_never_drilled_unaugmented_deck() {
+        use crate::depth::Depth;
+
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("d.txt");
+        std::fs::write(&deck_path, "# q\n\ta\n").unwrap();
+        let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
+        let cfg = test_config();
+
+        // No augment coverage at all: the classic Recall default still holds.
+        let Selected::Review(build) =
+            select(vec![deck_path], &mut store, &cfg, &SelectOptions::default()).unwrap()
+        else {
+            panic!("a fact deck must review");
+        };
+        assert_eq!(Depth::Recall, build.session.depth());
     }
 
     #[test]

@@ -126,6 +126,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   themes above.
 
 ### Changed
+- **A never-drilled deck now defaults to Recognize when it already has AI
+  distractors.** Plain Learn used to always start a fresh deck at Recall; now
+  it starts at Recognize if the deck's augment cache has cached choices for at
+  least one card (a genuine multiple-choice pick is ready), else Recall as
+  before. The stricter acquire-time bar already protected an unaugmented
+  card from ever seeing a junk multiple-choice, so this only changes which
+  depth a well-augmented deck opens at, never what it's allowed to ask.
 - **Picker UX pass: quieter refresh, a footer Back chip, a clearer depth
   button.** The window-focus re-scan now repaints only when the catalog
   actually changed, so alt-tabbing back no longer visibly flickers; the header

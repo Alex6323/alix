@@ -107,7 +107,11 @@ pub(super) fn deck_item_dto(
         Ok(deck) => {
             let s = picker::deck_status(&deck, store, Some(decks_dir), with_lock, review);
             let deck_ids: HashSet<u64> = deck.cards.iter().map(|c| c.id()).collect();
-            let last_depth = depth_name(store.last_depth(&deck.subject).unwrap_or_default());
+            let last_depth = depth_name(
+                store
+                    .last_depth(&deck.subject)
+                    .unwrap_or_else(|| picker::default_depth(&deck.cards, augment)),
+            );
             DeckItemDto {
                 name: e.name.clone(),
                 selectable: assemble::selectable(&e.path),
@@ -228,8 +232,13 @@ pub(super) fn workspace_members(
                 _ => false,
             };
             // Subject-keyed like `deck_item_dto`, from the workspace's own store.
-            let last_depth = match (store, deck.as_ref()) {
-                (Some(st), Some(d)) => st.last_depth(&d.subject).unwrap_or_default(),
+            // `augment` is `Some` exactly when `store` is (both come from the
+            // same `store.map(...)` above), so the three-way match never needs
+            // to unwrap that pairing.
+            let last_depth = match (store, augment.as_ref(), deck.as_ref()) {
+                (Some(st), Some(ag), Some(d)) => st
+                    .last_depth(&d.subject)
+                    .unwrap_or_else(|| picker::default_depth(&d.cards, ag)),
                 _ => Depth::default(),
             };
             (status, has_topology, depth_name(last_depth))

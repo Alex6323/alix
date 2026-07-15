@@ -50,8 +50,10 @@ button, whose small ▾ opens a menu of the three (on the keyboard: `v`, then
 `1`/`2`/`3` — `Esc` cancels; rebindable in
 [`[keys.picker]`](16-configuration.md)). The menu also carries the **cram**
 tick-box (`c`) — see [Cramming](05-scheduling.md). Plain **Learn** reuses the
-deck's own last-used depth, remembered per deck (the first time you ever open
-it: Recall).
+deck's own last-used depth, remembered per deck. The first time you ever open
+a deck, that default is Recognize if it already has AI-generated distractors
+(`alix deck augment --target choices`, or the web Augment screen), since a
+genuine multiple-choice pick is ready to go; otherwise it's Recall.
 
 - **Recognize** — unscheduled and boolean. There's no FSRS state for it at
   all, just a per-card *recognized* flag. Where there's enough material to
