@@ -5,6 +5,7 @@ import 'package:alix_mobile/review_screen.dart';
 import 'package:alix_mobile/theme.dart';
 import 'package:alix_mobile/src/rust/api/listing.dart';
 import 'package:alix_mobile/src/rust/api/review.dart';
+import 'package:alix_mobile/src/rust/api/simple.dart';
 
 /// One list screen serving both levels: the decks root, and (with [dir]) a
 /// drilled-into workspace or deck folder. The root level also owns the
@@ -98,9 +99,11 @@ class _PickerScreenState extends State<PickerScreen> {
             PopupMenuButton<String>(
               onSelected: (choice) {
                 if (choice == 'folder') _folderSheet();
+                if (choice == 'about') _about();
               },
               itemBuilder: (_) => const [
                 PopupMenuItem(value: 'folder', child: Text('Decks folder…')),
+                PopupMenuItem(value: 'about', child: Text('About')),
               ],
             ),
         ],
@@ -291,6 +294,25 @@ class _PickerScreenState extends State<PickerScreen> {
   void _snack(String text) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  }
+
+  /// App and embedded-core versions side by side; the app's from the
+  /// installed package (never drifts from the build), the core's across
+  /// the bridge.
+  Future<void> _about() async {
+    final app = await widget.access?.appVersion();
+    if (!mounted) return;
+    showAboutDialog(
+      context: context,
+      applicationName: 'alix',
+      applicationVersion: 'mobile ${app ?? 'dev'} / core ${coreVersion()}',
+      applicationIcon: Image.asset(
+        'assets/icon/alix-192.png',
+        width: 48,
+        height: 48,
+      ),
+      applicationLegalese: 'MIT or Apache-2.0, at your option.',
+    );
   }
 }
 

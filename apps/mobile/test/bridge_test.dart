@@ -14,6 +14,7 @@ import 'package:alix_mobile/platform_access.dart';
 import 'package:alix_mobile/review_screen.dart';
 import 'package:alix_mobile/src/rust/api/listing.dart';
 import 'package:alix_mobile/src/rust/api/review.dart';
+import 'package:alix_mobile/src/rust/api/simple.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
 import 'package:alix_mobile/theme.dart';
 
@@ -35,6 +36,9 @@ class FakeAccess implements PlatformAccess {
 
   @override
   Future<String?> pickDirectory() async => dir;
+
+  @override
+  Future<String?> appVersion() async => '9.9.9+9';
 }
 
 /// Acquired at T0, quizzed once the cooldown has elapsed. 301000 = the
@@ -194,6 +198,27 @@ void main() {
 
     expect(find.text('Loose'), findsOneWidget);
     expect(find.textContaining('stays on its current'), findsOneWidget);
+  });
+
+  testWidgets('About shows the app and the embedded core versions',
+      (tester) async {
+    final root = makeRoot();
+    addTearDown(() => root.deleteSync(recursive: true));
+    await tester.pumpWidget(AlixApp(
+      prepared: Prepared(root: root.path, device: 'phone-test'),
+      access: FakeAccess(),
+      persistDecksDir: (_) async {},
+      reprepare: () async => Prepared(root: root.path, device: 'phone-test'),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('About'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('mobile 9.9.9+9 / core ${coreVersion()}'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('the picker warns about a sync conflict file until dismissed',

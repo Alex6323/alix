@@ -39,7 +39,7 @@ dependencies:
   flutter_rust_bridge: 2.12.0
   path_provider: ^2.1.6
   freezed_annotation: ^3.1.0
-  # Directory picker that resolves Android tree URIs to real filesystem paths.
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -54,6 +54,18 @@ dev_dependencies:
     sdk: flutter
   freezed: ^3.2.5
   build_runner: ^2.15.1
+  # Generates every mipmap density + the adaptive icon pair from one PNG
+  # (a dev-time tool, no runtime plugin); rerun: dart run flutter_launcher_icons
+  flutter_launcher_icons: ^0.14.4
+
+# The launcher icon: the brand wordmark (rendered from assets/alix.svg) on
+# the web theme's panel color.
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: assets/icon/alix-icon.png
+  adaptive_icon_background: "#171a24"
+  adaptive_icon_foreground: assets/icon/alix-adaptive-fg.png
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -73,6 +85,7 @@ flutter:
     - assets/decks/sample-workspace/alix.toml
     - assets/decks/sample-workspace/capitals.txt
     - assets/decks/sample-workspace/steps.txt
+    - assets/icon/alix-192.png
 
   # IBM Plex (OFL, assets/fonts/OFL.txt): the web app's identity faces,
   # converted from the woff2 files vendored in assets/web/fonts.

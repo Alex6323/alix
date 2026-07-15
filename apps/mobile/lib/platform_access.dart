@@ -23,6 +23,11 @@ abstract class PlatformAccess {
 
   /// The picked directory as a real filesystem path, or null on cancel.
   Future<String?> pickDirectory();
+
+  /// The installed package's version (`X.Y.Z+N`), read from the platform so
+  /// About can never drift from the build; null where no package exists
+  /// (the desktop dev build).
+  Future<String?> appVersion();
 }
 
 /// The real thing: a small platform channel into MainActivity (the
@@ -56,6 +61,14 @@ class RealPlatformAccess implements PlatformAccess {
     }
     await _channel.invokeMethod<void>('requestAllFilesAccess');
     return false;
+  }
+
+  @override
+  Future<String?> appVersion() async {
+    if (!Platform.isAndroid) {
+      return null;
+    }
+    return _channel.invokeMethod<String>('appVersion');
   }
 
   @override

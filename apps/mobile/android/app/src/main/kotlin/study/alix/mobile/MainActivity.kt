@@ -23,6 +23,10 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "sdkInt" -> result.success(Build.VERSION.SDK_INT)
+                    "appVersion" -> {
+                        val info = packageManager.getPackageInfo(packageName, 0)
+                        result.success("${info.versionName}+${info.longVersionCode}")
+                    }
                     "hasAllFilesAccess" -> result.success(
                         Build.VERSION.SDK_INT >= 30 && Environment.isExternalStorageManager()
                     )
