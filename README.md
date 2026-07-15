@@ -78,6 +78,7 @@ directive: [the deck format](docs/book/src/03-the-deck-format.md),
 | `alix generate <source>` | Draft a deck, a trace (`--trace`), or a whole workspace |
 | `alix deck augment <deck> --target …` | Add distractors, notes, or key points |
 | `alix workspace init <dir>` | Scaffold an empty workspace to grow into |
+| `alix workspace deadline <dir> [<date>\|clear]` | Show, set, or clear a workspace's "ready by" date |
 | `alix <dir>` | Serve a folder or workspace as its own scoped instance |
 | `alix deck import <file.tsv>` | Import an Anki TSV export (`--workspace` places it) |
 | `alix stats <path>` · `alix list <path>` | Progress · schedules (deck, folder, or workspace) |
@@ -112,6 +113,8 @@ Each links to its chapter in the manual:
 - **Self-contained, portable decks.** Your decks and their progress live in one
   folder; drop it in a cloud drive (Dropbox, iCloud, Syncthing) and it follows
   you across devices, no accounts. → [Configuration](docs/book/src/16-configuration.md)
+- **A personal deadline on a workspace**, with scheduling that leans toward it
+  and a readiness readout. → [Workspaces](docs/book/src/08-workspaces.md)
 
 ## Development
 

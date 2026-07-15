@@ -61,12 +61,21 @@ only:
 [review]
 retention = 0.95         # see these cards more often
 retire_after = "never"   # never let them retire
+deadline = "2026-09-01"  # a personal "ready by" date, the day itself inclusive
+deadline_ramp = "14d"    # how early the pre-deadline retention ramp starts
 ```
 
 It uses the same `[review]` keys as the [config file](16-configuration.md), and
 it's kept separate from `alix.toml` on purpose — so it stays yours and never
 travels when you share the workspace. A missing or malformed one is simply
 ignored.
+
+`deadline` and `deadline_ramp` only take effect **inside a real workspace**
+(a directory with an `alix.toml`). Set them on a plain decks folder, or on a
+loose deck's `alix.local.toml`, and they parse but do nothing: no scheduling
+ramp, no picker readout, no doctor warning. See
+[Configuration](16-configuration.md) for the full reference and
+[Scheduling](05-scheduling.md) for what the ramp does to review.
 
 The session depth (Recognize/Recall/Reconstruct) isn't a workspace setting —
 it's picked per session, the same as for a loose deck (see

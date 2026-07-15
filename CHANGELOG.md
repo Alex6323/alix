@@ -28,6 +28,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   signed APK on GitHub Releases): a user-chosen shared decks folder for
   the Syncthing roaming story, the web app's look (palettes, IBM Plex, the
   brand action), a launcher identity, and an About with both versions.
+- **Workspaces can carry a personal deadline.** Set `deadline = "YYYY-MM-DD"`
+  and `deadline_ramp` in a workspace's `alix.local.toml` (CLI: `alix workspace
+  deadline <dir> <date>`; also the API and the web picker's **Ready by…**
+  action, key `d`), and scheduling bends toward it: intervals cap at the days
+  left, target retention ramps up in the final stretch, and nothing schedules
+  past the date, releasing back to normal once it passes. The picker shows a
+  chip (date, days left, ready percent) on the workspace row and its drawer;
+  `alix doctor` warns about a malformed deadline key.
 - The site gains an Impressum, a privacy note, a contact address and a
   sponsor link; personal details are injected at deploy time, not stored in
   the repo.
@@ -118,6 +126,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   themes above.
 
 ### Changed
+- **Picker UX pass: quieter refresh, a footer Back chip, a clearer depth
+  button.** The window-focus re-scan now repaints only when the catalog
+  actually changed, so alt-tabbing back no longer visibly flickers; the header
+  back arrow is replaced by a footer **Back** chip (`esc`); the depth split
+  button now reads **Depth…** instead of a bare triangle; and refreshing
+  (`r`, or the header button) also re-fetches workspace icon images, so a
+  regenerated emblem shows without a reload.
 - **Augment batches on the Claude backend now share one conversation**: the
   first target sends the cards once, each later target runs as a short
   follow-up that references them by index, cutting prompt cost and latency on
@@ -177,6 +192,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   "match each X to its Y" card that asks to recall the whole table at once.
 
 ### Fixed
+- **`alix doctor <dir>` now actually runs its workspace lints** (the
+  missing-icon warning, the deadline-key check) for a directory target; a
+  routing gap meant they never printed.
 - The tutor's **Save note** (and the new **Make this a card**) now stay disabled
   until the tutor has actually answered, instead of looking active and silently
   doing nothing on an empty conversation.

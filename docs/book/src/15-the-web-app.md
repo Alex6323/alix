@@ -27,8 +27,17 @@ which topology orders the session, and pick a region to drill — click it or st
 through with **← / →** — its strength heatmap and the number of cards **due** in
 it shown as you go ("Whole deck" is the default). On a workspace row instead,
 ← / → enter and leave it. After a session, "Choose other decks" (on the summary)
-or **Esc** returns here, so you can switch decks without restarting. Every
-review starts from this screen — there's no direct deck launch.
+or **Esc** (also the footer's **Back** chip while inside a drill-in) returns
+here, so you can switch decks without restarting. Every review starts from
+this screen; there's no direct deck launch. A focused deck's split
+**Depth…** button opens the depth menu ([Scheduling](05-scheduling.md))
+without starting it.
+
+A workspace row that has a personal [deadline](08-workspaces.md) set shows a
+small chip: a date, days left, and ready percent, colored to flag urgency
+inside the last week or past due; the same readout sits inline behind the
+title once you drill in. Press **`d`** (or the row's **Ready by…** action) to
+set, move, or clear it from an inline date prompt.
 
 ## Library actions
 
@@ -117,9 +126,11 @@ holds; it can tick up when a card you missed cools back in for its retry. The
 **☰ menu** is context-aware: during review or a trace walk it holds **Ask
 Tutor**; on the deck picker, the library actions above plus **keyboard
 shortcuts**, **refresh decks**, and **about** — with **Theme…** and **Draw
-answers** (a per-device toggle, see below) in both. The ⟳ button re-reads
-your config, so a changed `decks_dir` takes effect without restarting —
-scoped `alix <dir>` instances stay pinned to their folder.
+answers** (a per-device toggle, see below) in both. The ⟳ button (also key
+`r`) re-reads your config, so a changed `decks_dir` takes effect without
+restarting (scoped `alix <dir>` instances stay pinned to their folder), and
+re-fetches workspace icon images, so a regenerated emblem shows without a
+reload.
 
 The AI features come along too: the [tutor](10-tutor.md), the
 [AI exam](12-the-ai-exam.md), and [trace walks](13-trace-decks.md) all have a web

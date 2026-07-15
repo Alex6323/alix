@@ -75,6 +75,34 @@ A workspace can override any of these keys for its own decks in an
 pace a session; the precedence is `--new`/`--limit` on the launch > these
 config keys > the built-ins (10 new, no cap).
 
+### Ready by a deadline
+
+Two more `[review]` keys exist only in a workspace's `alix.local.toml`, never
+in the global config (which rejects both outright):
+
+```toml
+[review]
+deadline = "2026-09-01"   # a personal "ready by" date; the day itself counts
+deadline_ramp = "14d"     # how early the pre-deadline ramp starts ("2w"; "0" = cap only)
+```
+
+`deadline` is an ISO date (`YYYY-MM-DD`). `deadline_ramp` takes a bare number
+of days, `"<n>d"`, or `"<n>w"`; `"0"` caps intervals at the days left without
+ramping retention early. Inside the window the target retention climbs
+linearly toward a fixed **0.95** by the deadline day (deliberately not a
+config key); see [Scheduling](05-scheduling.md) for the full mechanics.
+
+These keys are **workspace-only**: they take effect only in a directory with
+an `alix.toml`. In a plain decks folder, or on a loose deck, they parse but do
+nothing (no ramp, no picker readout, no doctor warning). `alix workspace
+deadline` refuses a non-workspace directory and points at `alix workspace
+init`.
+
+The picker's ready percent counts a deadline's member decks as ready once
+mastered (or finished, for a source-less deck), and mastery itself rests on
+the [AI exam](12-the-ai-exam.md)'s sampled questions, not a check of every
+card. Treat ready% as evidence toward readiness, not proof of it.
+
 How deeply you drill is never configuration: it's the **session depth** you
 pick per review (the picker's Learn ▾ menu) — see
 [Reveal & session depths](04-review-modes.md). The old `[review] depth` config

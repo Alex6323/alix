@@ -38,6 +38,16 @@ aims for (0.70–0.99, default 0.9). Raise it to see cards more often, lower it 
 stretch the gaps. Set it in the `[review]` config section, or per workspace in an
 `alix.local.toml` (see [Configuration](16-configuration.md)).
 
+## A workspace deadline
+
+Set a personal `deadline` on a workspace ([Workspaces](08-workspaces.md)) and
+scheduling leans toward it while the date hasn't passed: FSRS intervals cap at
+the days left (floored at one day), the target retention ramps up linearly to a
+fixed 0.95 over the last `deadline_ramp` days (never lowering a higher personal
+`retention`), and a due-date ceiling keeps anything from being scheduled past
+the deadline day. Once the date passes, both the cap and the ramp lift and
+scheduling releases back to your base pacing automatically.
+
 ### New cards: an attempt before they're tested
 
 A card you've never seen isn't quizzed cold — you can't reconstruct what you've
