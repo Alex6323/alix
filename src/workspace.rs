@@ -229,6 +229,42 @@ pub fn manifest_icon(dir: &Path) -> Option<String> {
     toml::from_str::<Manifest>(&text).ok()?.icon
 }
 
+/// Sets, moves, or clears (`None`) the workspace's personal `deadline` in its
+/// `alix.local.toml`, preserving everything else in the file byte-for-byte
+/// (toml_edit). Creates the file when setting into a bare workspace; clearing
+/// leaves an existing file in place. Atomic write (tmp + rename).
+pub fn set_deadline(dir: &Path, date: Option<chrono::NaiveDate>) -> anyhow::Result<()> {
+    use anyhow::Context;
+    let path = dir.join(crate::config::LOCAL_MANIFEST);
+    let text = std::fs::read_to_string(&path).unwrap_or_default();
+    let mut doc: toml_edit::DocumentMut = text
+        .parse()
+        .with_context(|| format!("cannot parse {}", path.display()))?;
+    match date {
+        Some(d) => {
+            // Ensure we have a proper [review] section, not an inline table.
+            if !doc.contains_key("review") {
+                doc["review"] = toml_edit::table();
+            }
+            doc["review"]["deadline"] = toml_edit::value(d.format("%Y-%m-%d").to_string());
+        }
+        None => {
+            // Handle both inline tables and proper tables safely.
+            if let Some(review) = doc.get_mut("review") {
+                if let Some(table) = review.as_table_mut() {
+                    table.remove("deadline");
+                } else if let Some(inline) = review.as_inline_table_mut() {
+                    inline.remove("deadline");
+                }
+            }
+        }
+    }
+    let tmp = path.with_extension("toml.tmp");
+    std::fs::write(&tmp, doc.to_string())
+        .and_then(|()| std::fs::rename(&tmp, &path))
+        .with_context(|| format!("cannot write {}", path.display()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -401,5 +437,43 @@ mod tests {
             resolve_icon(dir.path(), Some("assets/nope.png")),
             Some(assets.join("icon.svg"))
         );
+    }
+
+    #[test]
+    fn set_deadline_creates_updates_and_clears_the_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let date = chrono::NaiveDate::from_ymd_opt(2026, 9, 1).unwrap();
+        set_deadline(dir.path(), Some(date)).unwrap();
+        let text = std::fs::read_to_string(dir.path().join(crate::config::LOCAL_MANIFEST)).unwrap();
+        assert!(text.contains("deadline = \"2026-09-01\""));
+
+        let moved = chrono::NaiveDate::from_ymd_opt(2026, 10, 1).unwrap();
+        set_deadline(dir.path(), Some(moved)).unwrap();
+        let text = std::fs::read_to_string(dir.path().join(crate::config::LOCAL_MANIFEST)).unwrap();
+        assert!(text.contains("2026-10-01") && !text.contains("2026-09-01"));
+
+        set_deadline(dir.path(), None).unwrap();
+        let text = std::fs::read_to_string(dir.path().join(crate::config::LOCAL_MANIFEST)).unwrap();
+        assert!(!text.contains("deadline"));
+    }
+
+    #[test]
+    fn set_deadline_preserves_comments_and_other_keys_byte_for_byte() {
+        // The workspace-init scaffold ships commented docs; editing the deadline
+        // must not reformat or eat them (spec A3; the reason toml_edit exists).
+        let dir = tempfile::tempdir().unwrap();
+        let scaffold = "# Personal pacing for THIS workspace\n\n[review]\n\n# retention = 0.9              # FSRS target\nretention = 0.85\n";
+        std::fs::write(dir.path().join(crate::config::LOCAL_MANIFEST), scaffold).unwrap();
+        let date = chrono::NaiveDate::from_ymd_opt(2026, 9, 1).unwrap();
+        set_deadline(dir.path(), Some(date)).unwrap();
+        let text = std::fs::read_to_string(dir.path().join(crate::config::LOCAL_MANIFEST)).unwrap();
+        assert!(text.contains("# Personal pacing for THIS workspace"));
+        assert!(text.contains("# retention = 0.9              # FSRS target"));
+        assert!(text.contains("retention = 0.85"));
+        assert!(text.contains("deadline = \"2026-09-01\""));
+
+        set_deadline(dir.path(), None).unwrap();
+        let after = std::fs::read_to_string(dir.path().join(crate::config::LOCAL_MANIFEST)).unwrap();
+        assert_eq!(scaffold, after, "clearing restores the file byte-identically");
     }
 }
