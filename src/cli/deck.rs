@@ -18,7 +18,7 @@ use anyhow::{Context, Result, bail};
 use chrono::NaiveDate;
 
 use crate::{
-    AugmentArgs, AugmentTarget, ImportArgs, WorkspaceInitArgs, WorkspaceDeadlineArgs,
+    AugmentArgs, AugmentTarget, ImportArgs, WorkspaceDeadlineArgs, WorkspaceInitArgs,
     common::{deck_out_dir, one_line, store_for, truncate},
 };
 
@@ -385,23 +385,32 @@ pub(crate) fn workspace_deadline_cmd(args: WorkspaceDeadlineArgs) -> Result<()> 
     }
     match args.date.as_deref() {
         None => {
-            let review = Config::load(None)?.review.for_workspace(dir);
+            let review = Config::load(args.config.as_deref())?
+                .review
+                .for_workspace(dir);
             match review.deadline {
                 Some(d) => {
                     let days = (d - alix::time::local_date(alix::time::now_ms())).num_days();
                     if days < 0 {
-                        println!("{d} (was due {} days ago)", -days);
+                        let past = -days;
+                        let unit = if past == 1 { "day" } else { "days" };
+                        println!("{d} (was due {past} {unit} ago)");
                     } else {
-                        println!("{d} ({days} days left)");
+                        let unit = if days == 1 { "day" } else { "days" };
+                        println!("{d} ({days} {unit} left)");
                     }
                 }
-                None => println!("no deadline set (set one: alix workspace deadline {} 2026-09-01)", dir.display()),
+                None => println!(
+                    "no deadline set (set one: alix workspace deadline {} 2026-09-01)",
+                    dir.display()
+                ),
             }
         }
         Some("clear") => workspace::set_deadline(dir, None)?,
         Some(s) => {
-            let date = NaiveDate::parse_from_str(s, "%Y-%m-%d")
-                .map_err(|_| anyhow::anyhow!("invalid date {s:?}: expected YYYY-MM-DD (or \"clear\")"))?;
+            let date = NaiveDate::parse_from_str(s, "%Y-%m-%d").map_err(|_| {
+                anyhow::anyhow!("invalid date {s:?}: expected YYYY-MM-DD (or \"clear\")")
+            })?;
             workspace::set_deadline(dir, Some(date))?;
         }
     }

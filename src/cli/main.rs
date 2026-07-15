@@ -187,6 +187,9 @@ struct WorkspaceDeadlineArgs {
     dir: PathBuf,
     /// A date (YYYY-MM-DD) to set, `clear` to remove; omit to show.
     date: Option<String>,
+    /// Path of the config file (default: platform config dir).
+    #[arg(long)]
+    config: Option<PathBuf>,
 }
 
 #[derive(Args)]

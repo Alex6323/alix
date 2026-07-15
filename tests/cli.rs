@@ -136,13 +136,19 @@ fn workspace_deadline_shows_sets_and_clears() {
 
     let out = alix(&["workspace", "deadline", ws.to_str().unwrap()]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
-    assert!(stdout(&out).contains("no deadline"), "stdout: {}", stdout(&out));
+    assert!(
+        stdout(&out).contains("no deadline"),
+        "stdout: {}",
+        stdout(&out)
+    );
 
     let out = alix(&["workspace", "deadline", ws.to_str().unwrap(), "2099-01-02"]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
-    assert!(std::fs::read_to_string(ws.join("alix.local.toml"))
-        .unwrap()
-        .contains("2099-01-02"));
+    assert!(
+        std::fs::read_to_string(ws.join("alix.local.toml"))
+            .unwrap()
+            .contains("2099-01-02")
+    );
 
     let out = alix(&["workspace", "deadline", ws.to_str().unwrap()]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
@@ -152,12 +158,31 @@ fn workspace_deadline_shows_sets_and_clears() {
 
     let out = alix(&["workspace", "deadline", ws.to_str().unwrap(), "clear"]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
-    assert!(!std::fs::read_to_string(ws.join("alix.local.toml"))
-        .unwrap()
-        .contains("deadline"));
+    assert!(
+        !std::fs::read_to_string(ws.join("alix.local.toml"))
+            .unwrap()
+            .contains("deadline")
+    );
 
     let out = alix(&["workspace", "deadline", ws.to_str().unwrap(), "not-a-date"]);
     assert!(!out.status.success(), "stderr: {}", stderr(&out));
+}
+
+#[test]
+fn workspace_deadline_rejects_non_workspace_non_decks_dir() {
+    let dir = TempDir::new().unwrap();
+    let empty_dir = dir.path().join("empty");
+    std::fs::create_dir(&empty_dir).unwrap();
+
+    let out = alix(&["workspace", "deadline", empty_dir.to_str().unwrap()]);
+    assert!(!out.status.success(), "stderr: {}", stderr(&out));
+    let err = stderr(&out);
+    assert!(
+        err.contains("not a workspace")
+            || err.contains("not a decks folder")
+            || err.contains("not a workspace or decks folder"),
+        "stderr should mention neither workspace nor decks folder: {err}"
+    );
 }
 
 #[test]
