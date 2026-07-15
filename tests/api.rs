@@ -2358,3 +2358,115 @@ fn ask_card_create_with_a_back_matching_an_authored_card_yields_422() {
 
     assert_eq!(422, resp.status);
 }
+
+// ── Workspace deadline ───────────────────────────────────────────────────
+
+/// Set, then clear, a workspace's deadline through `POST
+/// /api/workspace/deadline`, checking both the file `set_deadline` writes and
+/// the refreshed `/api/decks` payload the endpoint hands back in the same
+/// round trip. Pins the catalog's date-arithmetic and workspace-gating path
+/// (`deck_catalog`'s `is_ws.then(...)`) under test for the first time: until
+/// now only `set_deadline`'s own file-writing unit tests exercised the write
+/// side, and no test read the `deadline` readout back off a real workspace.
+#[test]
+fn workspace_deadline_set_and_clear_round_trip_through_the_file_and_the_decks_readout() {
+    let (base, guard) = spawn_test_server_fixture(None, write_workspace_fixture);
+
+    // Set: 200, the file carries the key, and the refreshed decks payload
+    // (returned inline, no second fetch needed) carries the readout.
+    let resp = post_json(
+        &base,
+        "/api/workspace/deadline",
+        r#"{"name":"ws","date":"2099-01-02"}"#,
+    );
+    assert_eq!(
+        200,
+        resp.status,
+        "body: {}",
+        String::from_utf8_lossy(&resp.body)
+    );
+    let local = std::fs::read_to_string(guard.dir().join("ws/alix.local.toml")).unwrap();
+    assert!(
+        local.contains("deadline = \"2099-01-02\""),
+        "local: {local}"
+    );
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    let ws = body["workspaces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|w| w["name"] == "ws")
+        .unwrap_or_else(|| panic!("no `ws` workspace row in the response: {body}"));
+    assert_eq!("2099-01-02", ws["deadline"]["date"], "row: {ws}");
+    assert!(
+        ws["deadline"]["days_left"].as_i64().unwrap() > 0,
+        "row: {ws}"
+    );
+    assert!(ws["deadline"]["ready"].is_number(), "row: {ws}");
+    assert!(ws["deadline"]["total"].is_number(), "row: {ws}");
+
+    // A second fetch (not just the inline response) must agree: the readout
+    // is really coming from the file, not a stale in-memory echo.
+    let decks_resp = http(&base, "GET", "/api/decks", &[], &[]);
+    let decks: serde_json::Value = serde_json::from_slice(&decks_resp.body).unwrap();
+    let ws = decks["workspaces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|w| w["name"] == "ws")
+        .unwrap();
+    assert_eq!("2099-01-02", ws["deadline"]["date"], "row: {ws}");
+
+    // Malformed date: 400, file untouched.
+    let bad = post_json(
+        &base,
+        "/api/workspace/deadline",
+        r#"{"name":"ws","date":"tomorrow"}"#,
+    );
+    assert_eq!(400, bad.status);
+    let local = std::fs::read_to_string(guard.dir().join("ws/alix.local.toml")).unwrap();
+    assert!(
+        local.contains("deadline = \"2099-01-02\""),
+        "local: {local}"
+    );
+
+    // Clear: 200, key gone, readout gone.
+    let resp = post_json(
+        &base,
+        "/api/workspace/deadline",
+        r#"{"name":"ws","date":null}"#,
+    );
+    assert_eq!(200, resp.status);
+    let local = std::fs::read_to_string(guard.dir().join("ws/alix.local.toml")).unwrap();
+    assert!(!local.contains("deadline"), "local: {local}");
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    let ws = body["workspaces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|w| w["name"] == "ws")
+        .unwrap();
+    assert!(ws["deadline"].is_null(), "row: {ws}");
+}
+
+/// A plain deck row and an unknown name each lack a directory to write a
+/// deadline into: `resolve_row` only carries a `dir` on a container row
+/// (`Resolved::Many`), so both fall into the same 400 as a malformed date.
+#[test]
+fn workspace_deadline_rejects_a_plain_deck_row_and_an_unknown_name() {
+    let (base, _guard) = spawn_test_server_fixture(None, write_workspace_fixture);
+
+    let resp = post_json(
+        &base,
+        "/api/workspace/deadline",
+        r#"{"name":"sample.txt","date":"2099-01-02"}"#,
+    );
+    assert_eq!(400, resp.status);
+
+    let resp = post_json(
+        &base,
+        "/api/workspace/deadline",
+        r#"{"name":"does-not-exist","date":"2099-01-02"}"#,
+    );
+    assert_eq!(400, resp.status);
+}

@@ -355,19 +355,12 @@ pub fn run_review(
             (Method::Get, "/api/picker-keys") => respond_json(request, &picker_keys),
             (Method::Get, "/api/ask-info") => respond_json(request, &ask_info),
             (Method::Get, "/api/decks") => {
-                // Unscoped instances re-resolve the configured decks dir on
-                // every fetch, so an edited `decks_dir` takes effect on the
-                // next reload/focus without a restart (`{#page-reload-refetches-decks}`).
-                let dir = effective_decks_dir(scoped, config_path.as_deref(), &decks_dir);
-                if dir != decks_dir {
-                    decks_dir = dir;
-                }
-                // Review enforces locking; the picker won't start a locked deck.
-                let catalog = deck_catalog(
-                    &decks_dir,
+                let catalog = decks_list_dto(
+                    scoped,
+                    config_path.as_deref(),
+                    &mut decks_dir,
                     &recent,
                     &store,
-                    true,
                     &mut launcher_icons,
                     review_cfg,
                 );
@@ -564,6 +557,59 @@ pub fn run_review(
                     }
                     Err(_) => respond_status(request, 400),
                 }
+            }
+            // Set, move, or clear (`date: null`) a workspace's "ready by"
+            // deadline in its `alix.local.toml` ({#deadlines}). Responds with
+            // the refreshed decks payload so the picker re-renders the
+            // readout in one round trip, matching `/api/reset`'s pattern of
+            // returning caller-relevant state rather than a bare 200.
+            (Method::Post, "/api/workspace/deadline") => {
+                #[derive(Deserialize)]
+                struct Body {
+                    name: String,
+                    date: Option<String>,
+                }
+                let Some(body) = serde_json::from_reader::<_, Body>(request.as_reader()).ok()
+                else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                let date = match body.date {
+                    None => None,
+                    Some(s) => match chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d") {
+                        Ok(d) => Some(d),
+                        Err(_) => {
+                            respond_status(request, 400);
+                            continue;
+                        }
+                    },
+                };
+                // Only a workspace row (an `alix.toml` manifest, not just a
+                // plain folder of decks) has a deadline concept, see
+                // `workspace::is_workspace`; the catalog only ever computes a
+                // `deadline` readout for one.
+                let dir = match resolve_row(&body.name, &decks_dir, &recent) {
+                    Resolved::Many { dir, .. } if crate::workspace::is_workspace(&dir) => dir,
+                    _ => {
+                        respond_status(request, 400);
+                        continue;
+                    }
+                };
+                if let Err(e) = crate::workspace::set_deadline(&dir, date) {
+                    eprintln!("workspace deadline write failed: {e:#}");
+                    respond_status(request, 500);
+                    continue;
+                }
+                let catalog = decks_list_dto(
+                    scoped,
+                    config_path.as_deref(),
+                    &mut decks_dir,
+                    &recent,
+                    &store,
+                    &mut launcher_icons,
+                    review_cfg,
+                );
+                respond_json(request, &catalog);
             }
             // Land an uploaded `.tsv`/`.txt` file via `place_deck`. Strict
             // unlike `generate`'s lenient save: an invalid upload is 400 and
@@ -1577,6 +1623,29 @@ pub fn run_review(
         }
     }
     Ok(())
+}
+
+/// Builds the decks-catalog payload `GET /api/decks` returns: first
+/// re-resolving the served decks dir for an unscoped instance (a `decks_dir`
+/// edit takes effect on the next reload/focus without a restart,
+/// `{#page-reload-refetches-decks}`), then the catalog itself (review
+/// enforces locking; the picker won't start a locked deck). Shared with any
+/// mutation that wants the picker to re-render in one round trip instead of
+/// a second `GET /api/decks` (e.g. `POST /api/workspace/deadline`).
+fn decks_list_dto(
+    scoped: bool,
+    config_path: Option<&Path>,
+    decks_dir: &mut PathBuf,
+    recent: &RecentDecks,
+    store: &Store,
+    launcher_icons: &mut HashMap<String, PathBuf>,
+    review_cfg: crate::config::ReviewConfig,
+) -> DeckListDto {
+    let dir = effective_decks_dir(scoped, config_path, decks_dir);
+    if dir != *decks_dir {
+        *decks_dir = dir;
+    }
+    deck_catalog(decks_dir, recent, store, true, launcher_icons, review_cfg)
 }
 
 #[cfg(test)]
