@@ -38,6 +38,10 @@ fn check(decks: Vec<PathBuf>) -> Result<()> {
                     path.display()
                 );
             }
+            for complaint in alix::config::local_review_lint(path) {
+                warnings += 1;
+                eprintln!("warning: {}: {complaint}", path.display());
+            }
             continue;
         }
         match Deck::load(path) {
@@ -307,6 +311,19 @@ mod tests {
         std::fs::write(dir.path().join("alix.toml"), "icon = \"assets/gone.svg\"\n").unwrap();
         std::fs::write(dir.path().join("a.txt"), "# a\n\t1\n").unwrap();
         // Warnings don't fail the check; the missing-icon path just adds one.
+        assert!(check(vec![dir.path().to_path_buf()]).is_ok());
+    }
+
+    #[test]
+    fn check_warns_on_a_malformed_deadline() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("alix.toml"), "").unwrap();
+        std::fs::write(
+            dir.path().join("alix.local.toml"),
+            "[review]\ndeadline = \"soonish\"\n",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("a.txt"), "# a\n\t1\n").unwrap();
         assert!(check(vec![dir.path().to_path_buf()]).is_ok());
     }
 }

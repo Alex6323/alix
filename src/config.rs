@@ -1176,6 +1176,42 @@ fn parse_ramp_days(s: &str) -> Result<u32> {
     }
 }
 
+/// Lint for malformed deadline keys in a workspace's `alix.local.toml`.
+/// Returns a vector of human-readable complaints (empty when the file is absent,
+/// unparseable as TOML, or both keys are fine). The rule lives in the lib so the
+/// lenient overlay and the lint cannot drift.
+pub fn local_review_lint(dir: &Path) -> Vec<String> {
+    let path = dir.join(LOCAL_MANIFEST);
+    let text = match std::fs::read_to_string(&path) {
+        Ok(t) => t,
+        Err(_) => return Vec::new(),
+    };
+    let raw: RawLocalConfig = match toml::from_str(&text) {
+        Ok(r) => r,
+        Err(_) => return Vec::new(),
+    };
+
+    let mut complaints = Vec::new();
+
+    if let Some(date) = &raw.review.deadline {
+        if let Err(e) = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d") {
+            complaints.push(format!(
+                "deadline = {date:?}: invalid date (expected YYYY-MM-DD). {e}"
+            ));
+        }
+    }
+
+    if let Some(ramp) = &raw.review.deadline_ramp {
+        if let Err(e) = parse_ramp_days(ramp) {
+            complaints.push(format!(
+                "deadline_ramp = {ramp:?}: {e}"
+            ));
+        }
+    }
+
+    complaints
+}
+
 /// A self-documenting template for `config --init`: every option is shown
 /// commented out at its default value, so the emitted file overrides nothing
 /// (uncomment a line to change it; defaults you leave commented still track
@@ -1921,6 +1957,24 @@ mod tests {
             msg.contains("backend"),
             "error should mention 'backend': {msg}"
         );
+    }
+
+    #[test]
+    fn local_review_lint_flags_malformed_deadline_keys() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join(LOCAL_MANIFEST),
+            "[review]\ndeadline = \"soonish\"\ndeadline_ramp = \"5m\"\n",
+        )
+        .unwrap();
+        let complaints = local_review_lint(dir.path());
+        assert_eq!(2, complaints.len());
+        assert!(complaints[0].contains("deadline"));
+
+        std::fs::write(dir.path().join(LOCAL_MANIFEST), "[review]\ndeadline = \"2026-09-01\"\n").unwrap();
+        assert!(local_review_lint(dir.path()).is_empty());
+        let empty = tempfile::tempdir().unwrap();
+        assert!(local_review_lint(empty.path()).is_empty());
     }
 }
 
