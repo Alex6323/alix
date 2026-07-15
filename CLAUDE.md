@@ -106,6 +106,7 @@ noisy diff the way you'd treat a failing test: not done yet.
 | `make calibrate` | Real-Claude grader calibration (`tests/calibrate.rs`, costed): before touching `grade_*`. |
 | `make run ARGS="stats mydeck.txt"` | Run the binary with args. |
 | `make web ARGS="~/decks-test"` | Web frontend; no ARGS → the picker over the configured decks dir. |
+| `make web-debug` | `web` + per-request stderr logging (the `{#server-subresource-stall}` net). |
 | `make phone` / `make tablet` / `make desktop` | Run the alix mobile app on the phone/tablet emulator (boots the AVD if needed) or as a native Linux window (fastest loop). |
 | `make frb-check` | Assert the frb toolchain-alignment invariants (version pins, template patches, NDK); fails on drift. |
 | `make push-decks DIR=~/decks` | One-way copy of a host decks folder into the running emulator's app (dev-only; restart the app to re-list). |

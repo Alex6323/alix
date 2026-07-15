@@ -6,7 +6,7 @@
 # toolchain — `+nightly` is handled by rustup before cargo sees it — which is
 # why these live in a Makefile rather than .cargo/config.toml.)
 
-.PHONY: build build-core test lint lint-js fmt fmt-check fmt-roadmap roadmap check ci coverage coverage-lcov calibrate run web phone tablet desktop frb-check push-decks mobile-test apk book site slides install clean sdd-clean heartbeat check-backends e2e shots stats
+.PHONY: build build-core test lint lint-js fmt fmt-check fmt-roadmap roadmap check ci coverage coverage-lcov calibrate run web web-debug phone tablet desktop frb-check push-decks mobile-test apk book site slides install clean sdd-clean heartbeat check-backends e2e shots stats
 
 # Compile the workspace.
 build:
@@ -110,6 +110,12 @@ run:
 # e.g. `make web ARGS="~/decks-test --lan"`.
 web:
 	cargo run -- $(ARGS) --port 7780
+
+# `web` with per-request stderr logging (ALIX_HTTP_LOG), the diagnostic net
+# for {#server-subresource-stall}: when a page load hangs, the log decides
+# whether the stuck request ever left tiny_http's connection reader.
+web-debug:
+	ALIX_HTTP_LOG=1 cargo run -- $(ARGS) --port 7780
 
 # The mobile siblings of `web`: run the alix mobile app (apps/mobile) on a
 # phone or tablet emulator (booting that AVD first if needed; the script
