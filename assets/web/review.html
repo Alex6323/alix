@@ -357,6 +357,12 @@
   .select .lede { font-family: var(--mono); color: var(--bolt); font-size: 0.7rem; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 16px; }
   /* a workspace drill-in's goal, shown under the eyebrow (pulled up close to it). */
   .select .lede-desc { color: var(--dim); font-size: 0.85rem; line-height: 1.4; max-width: 64ch; margin: -10px 0 16px; }
+  /* the drill-in's deadline readout ({#deadlines}): same pulled-up placement as
+     lede-desc, right below it (or the eyebrow, when there's no description). */
+  /* inline behind the eyebrow title: undo its uppercase/letterspacing */
+  .select .lede .lede-deadline { color: var(--dim); font-size: 0.85rem; margin-left: 12px; font-variant-numeric: tabular-nums; text-transform: none; letter-spacing: normal; font-weight: 400; white-space: nowrap; }
+  .select .lede .lede-deadline.near { color: var(--bolt); }
+  .select .lede .lede-deadline.past { color: var(--warn); }
   .select .msg { color: var(--dim); }
   .deck-filter { width: 100%; box-sizing: border-box; margin-bottom: 12px; padding: 11px 14px; background: rgba(0,0,0,0.25); border: 1px solid var(--line); border-radius: 11px; color: var(--ink); font: inherit; font-size: 0.95rem; }
   .deck-filter::placeholder { color: var(--dim); }
@@ -411,6 +417,21 @@
   .deckrow .meta { margin-left: auto; padding-left: 10px; font-family: var(--mono); font-size: 0.74rem; color: var(--dim); white-space: nowrap; }
   .deckrow .meta.state-finished { color: var(--good); }
   .deckrow .meta.state-examdue { color: var(--warn); }
+  /* a workspace row's "ready by" readout ({#deadlines}): dim, fixed-form, never
+     wraps or reflows the row — past due tints the same as an exam-due meta. */
+  /* Right-aligned as a column next to the meta: the chip does the flex
+     right-pushing (the meta's own auto margin then has nothing to eat), and
+     rows with a chip give the meta a stable width so chip right edges align
+     vertically across rows. */
+  /* A fixed-width column slot, content left-aligned: the target glyph starts
+     on the same vertical line in every row (a table column, not a ragged
+     right-aligned blob). 26ch fits the widest realistic form. */
+  .deckrow .deadline-chip { color: var(--dim); font-size: 0.78rem; white-space: nowrap; font-variant-numeric: tabular-nums; margin-left: auto; padding-left: 10px; min-width: 26ch; text-align: left; }
+  /* margin-left 0: with the chip's auto margin in the same row, two autos
+     would split the free space and strand the chip mid-row. */
+  .deckrow:has(.deadline-chip) .meta { min-width: 18ch; text-align: right; margin-left: 0; }
+  .deckrow .deadline-chip.near { color: var(--bolt); }
+  .deckrow .deadline-chip.past { color: var(--warn); }
   /* the highest depth with a badge: solid border = currently solid, dashed =
      earned once but lapsed (subsumption — only the highest ever shows). */
   .deckrow .badge-depth { flex: none; font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -442,6 +463,10 @@
     transition: border-color 0.12s, color 0.12s, background 0.12s, filter 0.12s;
   }
   .chip .k { font-family: var(--mono); font-size: 0.68rem; color: var(--dim); border: 1px solid var(--line); border-radius: 6px; padding: 2px 7px; }
+  /* the inline "Ready by…" date prompt, sized to sit level with the footer's
+     chips rather than a full sheet — a minimal in-place form, not a modal. */
+  .deadline-input { background: rgba(0,0,0,0.25); border: 1px solid var(--line); border-radius: 10px; color: var(--ink); font: inherit; font-size: 0.85rem; padding: 9px 12px; min-height: 42px; box-sizing: border-box; }
+  .deadline-input:focus { outline: none; border-color: var(--bolt); }
   .chip:hover { border-color: var(--bolt); color: var(--bolt-hi); }
   .chip:focus-visible { outline: 2px solid var(--bolt-hi); outline-offset: 2px; }
   /* primary action = brand orange (Reveal / Continue / Submit) */
@@ -729,7 +754,6 @@
       <span class="bar-left">
         <!--%brand%-->
         <span class="bar-nav" id="barNav" style="display:none">
-          <button class="navbtn" id="navBack" aria-label="Back" title="Back">←</button>
           <button class="navbtn" id="navRefresh" aria-label="Refresh decks" title="Refresh decks (r)">⟳</button>
         </span>
       </span>
@@ -885,14 +909,17 @@ const masteredBtn = document.getElementById("masteredBtn");
 function headerSearch() { deckEl.style.display = "none"; barFilter.style.display = ""; }
 function headerBreadcrumb() { barFilter.style.display = "none"; deckEl.style.display = ""; masteredBtn.style.display = "none"; }
 function headerNone() { barFilter.style.display = "none"; deckEl.style.display = "none"; masteredBtn.style.display = "none"; }
-// Browser-style picker nav: ← goes back (mirrors Esc; off at the top level), ⟳
-// re-scans the decks (same as the `r` key). Shown only on the picker.
+// Picker nav: ⟳ re-scans the decks (same as the `r` key) and busts the icon
+// cache so regenerated emblems show without an app reload. Going back is the
+// footer's Back chip (esc), consistent with the sessions' Leave chip.
 const barNav = document.getElementById("barNav");
-const navBack = document.getElementById("navBack");
 const navRefresh = document.getElementById("navRefresh");
-function updateNavBack() { navBack.disabled = !selectEsc; }
-navBack.addEventListener("click", () => { if (selectEsc) selectEsc(); });
-navRefresh.addEventListener("click", () => { replayLogo(); renderSelect(); });
+// Bumped on every manual refresh and appended to /img/ URLs: the icon URLs
+// are otherwise stable across regenerations, so the browser would keep the
+// old bytes for the lifetime of the app.
+let iconNonce = 0;
+const refreshDecks = () => { iconNonce = Date.now(); replayLogo(); renderSelect(); };
+navRefresh.addEventListener("click", refreshDecks);
 const menu = document.getElementById("menu");
 
 // Rejects on error statuses only incidentally: an error response's body is
@@ -2111,11 +2138,18 @@ function renderAugLegend() {
 // A CLI action while the tab is blurred — `alix receive`, `alix generate`, a
 // file dropped into the decks dir — adds decks the open picker can't see. The
 // catalog is read fresh from disk on every fetch, so regaining focus in the
-// select phase just re-scans (same as the ⟳ button). Overlays and sessions
-// are left alone.
-window.addEventListener("focus", () => {
-  if (state && state.phase === "select" && !browsing && !examData && !augmentData && !walkData && !asking) {
-    renderSelect();
+// select phase re-scans (same as the ⟳ button). The scan is QUIET: the screen
+// repaints only when the catalog actually changed, so a plain alt-tab back
+// never visibly refreshes the picker. Overlays and sessions are left alone.
+let lastDecksJson = "";
+const idleInSelect = () =>
+  state && state.phase === "select" && !browsing && !examData && !augmentData && !walkData && !asking;
+window.addEventListener("focus", async () => {
+  if (!idleInSelect()) return;
+  const fresh = await api("/api/decks");
+  // Re-check after the await: the user may have started something meanwhile.
+  if (idleInSelect() && JSON.stringify(fresh) !== lastDecksJson) {
+    renderSelect(fresh);
   }
 });
 
@@ -2126,7 +2160,10 @@ window.addEventListener("focus", () => {
 // into its unlock dependency tree. 🔒 exam locked (still drillable) · 🕒 nothing due ·
 // mastered 🎉 decks live in the Mastered window (m). The filter searches every
 // loose deck.
-async function renderSelect() {
+// `preloaded`, when given, skips the GET — used after a POST (e.g. setting a
+// workspace deadline) whose response is already the refreshed decks payload,
+// so the round trip stays singular instead of following up with a fetch.
+async function renderSelect(preloaded) {
   deckEl.textContent = "";
   histEl.textContent = "";
   scoreEl.innerHTML = "";
@@ -2136,7 +2173,8 @@ async function renderSelect() {
   // session just finished (the strengths are recomputed on next focus).
   topoCache = {};
 
-  const data = await api("/api/decks");
+  const data = preloaded || await api("/api/decks");
+  lastDecksJson = JSON.stringify(data);
   const workspaces = data.workspaces || [];
   const recent = data.recent || [];
   const folders = data.folders || [];
@@ -2215,19 +2253,61 @@ async function renderSelect() {
   // theme-tinted mask (so it follows the active theme); a raster renders as-is.
   function rowIcon(grp) {
     if (grp.icon) {
+      // The nonce (bumped by ⟳/r) makes a regenerated emblem's stable URL
+      // look new to the browser cache; 0 = untouched URLs on a fresh load.
+      const src = iconNonce ? `${grp.icon}?v=${iconNonce}` : grp.icon;
       if (grp.icon_svg) {
         const span = el("span", "icon mask");
-        span.style.webkitMaskImage = `url("${grp.icon}")`;
-        span.style.maskImage = `url("${grp.icon}")`;
+        span.style.webkitMaskImage = `url("${src}")`;
+        span.style.maskImage = `url("${src}")`;
         return span;
       }
       const img = document.createElement("img");
       img.className = "icon";
-      img.src = grp.icon;
+      img.src = src;
       img.alt = "";
       return img;
     }
     return el("span", "open", "›");
+  }
+
+  // A workspace's deadline readout ({#deadlines}): the chip's short form and
+  // the drawer's long form only differ in phrasing — both key off
+  // `days_left < 0` for "past". A folder's `deadline` is always null (only a
+  // real workspace has one — see catalog.rs), so callers just gate on it.
+  function deadlineChipText(dl) {
+    return dl.days_left < 0
+      ? `🎯 was due ${dl.date}`
+      : `🎯 ${dl.date} · ${dl.days_left}d · ${Math.round(100 * dl.ready / Math.max(1, dl.total))}%`;
+  }
+  // Urgency tier for the chip's color: silent (dim) while the date is far,
+  // accent inside the last week, warn past due. Aware when it matters.
+  function deadlineTier(dl) {
+    if (dl.days_left < 0) return " past";
+    return dl.days_left <= 7 ? " near" : "";
+  }
+  function deadlineLineText(dl) {
+    const when = dl.days_left < 0 ? `was due ${dl.date}` : dl.date;
+    return `🎯 ${when} · ${dl.ready}/${dl.total} mastered`;
+  }
+
+  // Sets, moves, or clears a workspace's deadline. The endpoint returns the
+  // refreshed decks payload, so this is a single round trip — feed it straight
+  // back into renderSelect rather than following up with a GET. Sets the
+  // one-shot re-land marker (the same trick renderDrill's `back` uses below)
+  // so the top list re-focuses this workspace row rather than the first one.
+  function submitDeadline(name, date) {
+    api("/api/workspace/deadline", post({ name, date }))
+      .then(async (d) => {
+        sessionStorage.setItem("alix.lastDeck", name);
+        await renderSelect(d);
+        // Put focus back on the workspace row the change was made from, so
+        // set AND clear both resume keyboard flow in place.
+        for (const r of deckEl.querySelectorAll(".deckrow")) {
+          if (r._open && r._open.name === name) { r.focus(); break; }
+        }
+      })
+      .catch(() => notice("could not update the deadline — the server log has details"));
   }
 
   // A drillable workspace/folder row (icon/chevron, opens its members).
@@ -2241,6 +2321,12 @@ async function renderSelect() {
     if (grp.description) text.appendChild(el("span", "desc", grp.description));
     row.appendChild(text);
     if (grp.path) row.appendChild(el("span", "loc", grp.path));
+    // The deadline chip sits BEFORE the meta so the deck-count/ago column
+    // stays vertically aligned across rows with and without a deadline.
+    if (grp.deadline) {
+      const dl = grp.deadline;
+      row.appendChild(el("span", "deadline-chip" + deadlineTier(dl), deadlineChipText(dl)));
+    }
     if (grp.meta) row.appendChild(el("span", "meta", grp.meta));
     row.addEventListener("click", () => renderDrill(grp));
     row._open = grp;
@@ -2302,16 +2388,24 @@ async function renderSelect() {
   // `allowMastered` binds the m key + a chip to the Mastered window.
   function renderList(opts) {
     selectEsc = opts.back || null;
-    updateNavBack();
     stage.innerHTML = ""; legend.innerHTML = "";
     focusedEl = null; // module-level (see declaration) — reset fresh each render
     let drawerEl = null; // the focus drawer under the focused deck, if it has a topology
     let closingEl = null; // a drawer mid-close (animating out before removal)
     let drawerCycle = null; // (dir)=>{} to step the drawer's region selection, when open
     let depthMenuOpen = false; // the split Learn button's ▾ menu (Recognize/Recall/Reconstruct) is open
+    let deadlinePromptOpen = false; // the "Ready by…" inline date prompt is open
 
     const wrap = el("div", "select");
-    if (opts.lede) wrap.appendChild(el("div", "lede", opts.lede));
+    if (opts.lede) {
+      const lede = el("div", "lede", opts.lede);
+      // The deadline readout rides inline behind the title (no extra line).
+      if (opts.deadline) {
+        const dl = opts.deadline;
+        lede.appendChild(el("span", "lede-deadline" + deadlineTier(dl), deadlineLineText(dl)));
+      }
+      wrap.appendChild(lede);
+    }
     // A workspace drill-in shows its goal (description) under the eyebrow.
     if (opts.ledeDesc) wrap.appendChild(el("div", "lede-desc", opts.ledeDesc));
     let filter;
@@ -2354,6 +2448,15 @@ async function renderSelect() {
     // Start/Take exam a deck (disabled when locked or nothing due).
     function syncPrimary() {
       legend.innerHTML = "";
+      // Going back (Esc) gets the same footer-chip UI the sessions use for
+      // Leave, pinned bottom-left; nothing at the picker's top level. While a
+      // footer submenu (depth menu, the date prompt) is open, Esc means
+      // "close it" via that menu's own Cancel, so Back hides to keep the key
+      // meaning single.
+      legendLeft.innerHTML = "";
+      if (selectEsc && !depthMenuOpen && !deadlinePromptOpen) {
+        chip("Back", "", () => selectEsc(), "esc", legendLeft);
+      }
       const f = focusedEl;
       // The split Learn button's depth menu: temporarily swaps the whole footer
       // for Recognize/Recall/Reconstruct + Cancel, focused row's own last-used
@@ -2390,6 +2493,44 @@ async function renderSelect() {
         legend.appendChild(cancel);
         return;
       }
+      // "Ready by…"'s inline date prompt: the same whole-footer swap as the
+      // depth menu above, but the date input needs real focus to be typed
+      // into — so unlike the depth menu it doesn't try to keep the row
+      // focused; it owns Enter/Escape itself instead (see its keydown below).
+      if (f && f._open && f._open.state === "workspace" && deadlinePromptOpen) {
+        const row = f;
+        const dl = f._open.deadline;
+        // Closing without a change puts focus back on the row the prompt
+        // came from, so keyboard flow resumes where the user left it.
+        const closePrompt = () => { deadlinePromptOpen = false; syncPrimary(); row.focus(); };
+        const input = el("input", "deadline-input");
+        input.type = "date";
+        if (dl) input.value = dl.date;
+        input.addEventListener("keydown", (e) => {
+          e.stopPropagation(); // owns every key while editing — the picker's
+                                // own Esc-to-leave must not fire mid-edit
+          if (e.key === "Enter") { e.preventDefault(); submitDeadline(f._open.name, input.value || null); }
+          else if (e.key === "Escape") { e.preventDefault(); closePrompt(); }
+          else if (e.key === "c" && dl) { e.preventDefault(); submitDeadline(f._open.name, null); }
+        });
+        legend.appendChild(input);
+        const set = el("button", "chip primary", "Set");
+        set.appendChild(el("span", "k", "enter"));
+        set.addEventListener("click", () => submitDeadline(f._open.name, input.value || null));
+        legend.appendChild(set);
+        if (dl) {
+          const clear = el("button", "chip", "Clear");
+          clear.appendChild(el("span", "k", "c"));
+          clear.addEventListener("click", () => submitDeadline(f._open.name, null));
+          legend.appendChild(clear);
+        }
+        const cancel = el("button", "chip", "Cancel");
+        cancel.appendChild(el("span", "k", "esc"));
+        cancel.addEventListener("click", closePrompt);
+        legend.appendChild(cancel);
+        input.focus();
+        return;
+      }
       let primary;
       if (f && f._open) {
         primary = el("button", "chip primary", "Open");
@@ -2419,7 +2560,7 @@ async function renderSelect() {
       // rows carry it.
       if (hasDepthSplit(f)) {
         const it = f._item;
-        const lv = el("button", "chip split", "▾");
+        const lv = el("button", "chip split", "Depth…");
         lv.title = "choose a depth";
         lv.appendChild(el("span", "k", label(PK.depth)));
         lv.disabled = !canStart(it, f._gated);
@@ -2447,6 +2588,15 @@ async function renderSelect() {
           openAugment(f._item ? f._item.name : f._open.name);
         });
         legend.appendChild(ag);
+      }
+      // "Ready by…" (key d): opens the inline date prompt above to set, move,
+      // or clear a workspace's personal deadline. A real workspace only — a
+      // folder has no deadline concept (see catalog.rs).
+      if (f && f._open && f._open.state === "workspace") {
+        const rb = el("button", "chip", "Ready by…");
+        rb.appendChild(el("span", "k", "d"));
+        rb.addEventListener("click", () => { deadlinePromptOpen = true; syncPrimary(); });
+        legend.appendChild(rb);
       }
       // Back is the header ← nav button (and Esc/Backspace); no footer chip.
       // "Take exam" sits to the RIGHT of Back for any deck that HAS an exam but
@@ -2688,8 +2838,9 @@ async function renderSelect() {
       // workspace and left is inert (returning is Esc/Backspace). The primary
       // action — Learn a deck / Open a workspace / Take exam — is Enter, not l.
       // g/G/Home/End jump to ends; / or Ctrl-F focus the filter; b browses;
-      // a augments; the depth key (v) opens the depth menu (same gate as its
-      // ▾ chip, and only when that chip is enabled); m opens Mastered.
+      // a augments; d opens "Ready by…" (a real workspace only); the depth
+      // key (v) opens the depth menu (same gate as its ▾ chip, and only when
+      // that chip is enabled); m opens Mastered.
       if (e.key === "ArrowDown" || hit(e, PK.down)) { e.preventDefault(); if (idx < v.length - 1) v[idx + 1].focus(); }
       else if (e.key === "ArrowUp" || hit(e, PK.up)) { e.preventDefault(); if (idx > 0) v[idx - 1].focus(); } // stays on the first row; the filter is only reachable via / or Ctrl-F
       else if (e.key === "g" || e.key === "Home") { e.preventDefault(); if (v.length) v[0].focus(); }
@@ -2699,8 +2850,9 @@ async function renderSelect() {
       else if (e.key === "ArrowLeft" || hit(e, PK.back)) { e.preventDefault(); if (drawerCycle) drawerCycle(-1); } // back-out is Esc/Backspace only; ←/h just steps the drawer
       else if (e.key === "b" && cur && cur._item) { e.preventDefault(); browseDeck(cur._item, cur._wsName); }
       else if (e.key === "a" && cur && (cur._item || cur._open)) { e.preventDefault(); lastWorkspace = cur._wsName || null; openAugment(cur._item ? cur._item.name : cur._open.name); }
+      else if (e.key === "d" && cur && cur._open && cur._open.state === "workspace") { e.preventDefault(); deadlinePromptOpen = true; syncPrimary(); }
       else if (hit(e, PK.depth) && hasDepthSplit(cur) && canStart(cur._item, cur._gated)) { e.preventDefault(); depthMenuOpen = true; cramOn = false; syncPrimary(); }
-      else if (e.key === "r") { e.preventDefault(); replayLogo(); renderSelect(); } // re-scan the decks (also the ⟳ nav button)
+      else if (e.key === "r") { e.preventDefault(); refreshDecks(); } // re-scan the decks (also the ⟳ nav button)
       else if (opts.allowMastered && hit(e, PK.mastered)) { e.preventDefault(); renderMastered(); }
       else if (e.key === "x" && cur && cur._item && cur._item.examable) {
         e.preventDefault(); lastWorkspace = cur._wsName || null; startExam(cur._item.name);
@@ -2747,6 +2899,7 @@ async function renderSelect() {
       filterPlaceholder: "Search  ·  /",
       lede: grp.label || grp.name,
       ledeDesc: grp.description || null,
+      deadline: grp.deadline || null,
       sections: [{ title: null, rows: grp.members.map(m => deckRow(m, true, grp.name, true, true)) }],
       back, allowMastered: false,
     });
@@ -4461,7 +4614,6 @@ function setMenuContext(ctx) {
   // gets its own check on top of the context toggle.
   document.getElementById("mPromote").style.display = ctx === "review" && state.promotable ? "" : "none";
   barNav.style.display = ctx === "picker" ? "" : "none";
-  updateNavBack();
 }
 
 document.getElementById("mShortcuts").addEventListener("click", () => { menu.classList.remove("open"); openShortcuts(); });
