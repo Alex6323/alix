@@ -316,23 +316,25 @@ void main() {
     await tester.tap(find.text('Reveal'));
     await tester.pump();
 
-    // The rubric renders as tickable rows; nothing ticked reads as a fail.
-    expect(find.byType(CheckboxListTile), findsNWidgets(2));
-    expect(find.textContaining('0/2'), findsOneWidget);
+    // The rubric renders as tickable keypoint rows; the verdict chip mirrors
+    // the tally. Nothing ticked reads as a fail.
+    expect(find.byKey(const ValueKey('kp-0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('kp-1')), findsOneWidget);
+    expect(find.text('Failed'), findsOneWidget);
 
-    // Tick both keypoints: the live verdict flips to pass.
-    await tester.tap(find.byType(CheckboxListTile).at(0));
+    // Tick both keypoints: the verdict chip flips to pass.
+    await tester.tap(find.byKey(const ValueKey('kp-0')));
     await tester.pump();
-    await tester.tap(find.byType(CheckboxListTile).at(1));
+    await tester.tap(find.byKey(const ValueKey('kp-1')));
     await tester.pump();
-    expect(find.textContaining('2/2'), findsOneWidget);
+    expect(find.text('Passed'), findsOneWidget);
 
-    // Continue commits the tick-derived grade. The store's review history
-    // records the grade itself, so a full tally MUST land as a Pass; a
-    // "Done for now" screen alone can't tell (a Fail also floors the card).
-    await tester.tap(find.text('Continue'));
+    // The verdict chip commits the tick-derived grade. The store's review
+    // history records the grade itself, so a full tally MUST land as a Pass;
+    // the done screen alone can't tell (a Fail also floors the card).
+    await tester.tap(find.text('Passed'));
     await tester.pump();
-    expect(find.text('Done for now'), findsOneWidget);
+    expect(find.text('SESSION COMPLETE'), findsOneWidget);
     final store = File('${root.path}/progress.json').readAsStringSync();
     expect(store, contains('"reconstruct"'));
     expect(store, contains('"Pass"'),
@@ -365,20 +367,17 @@ void main() {
     await tester.pump();
     expect(find.text('Paris'), findsOneWidget);
 
-    // The grade trio is always tinted from the theme tokens.
-    final tokens = Theme.of(tester.element(find.text('Pass'))).alix;
-    Color? fg(String label) => tester
-        .widget<OutlinedButton>(find.widgetWithText(OutlinedButton, label))
-        .style
-        ?.foregroundColor
-        ?.resolve({});
-    expect(fg('Fail'), tokens.again);
-    expect(fg('Partial'), tokens.warn);
-    expect(fg('Pass'), tokens.good);
+    // The grade trio carries the web's labels, each tinted from the tokens.
+    final tokens = Theme.of(tester.element(find.text('Got it'))).alix;
+    Color? chipColor(String label) =>
+        tester.widget<Text>(find.text(label)).style?.color;
+    expect(chipColor('Missed it'), tokens.again);
+    expect(chipColor('Partly'), tokens.warn);
+    expect(chipColor('Got it'), tokens.good);
 
-    await tester.tap(find.text('Pass'));
+    await tester.tap(find.text('Got it'));
     await tester.pump();
-    expect(find.text('Done for now'), findsOneWidget);
+    expect(find.text('SESSION COMPLETE'), findsOneWidget);
     expect(
       File('${root.path}/progress.json').readAsStringSync(),
       contains('"stability"'),
@@ -409,15 +408,16 @@ void main() {
     ));
     await tester.pumpAndSettle();
     expect(find.text('capital of france?'), findsOneWidget);
-    // The way forward: reveal the answer, then grade it.
+    // The way forward: reveal the answer, then grade it. A recognize card
+    // with no pick grades with the web's Knew it / Not yet chips.
     expect(find.text('Reveal'), findsOneWidget,
         reason: 'a card with no choices must still be answerable');
     await tester.tap(find.text('Reveal'));
     await tester.pump();
     expect(find.text('Paris'), findsOneWidget);
-    await tester.tap(find.text('Pass'));
+    await tester.tap(find.text('Knew it'));
     await tester.pump();
-    expect(find.text('Done for now'), findsOneWidget);
+    expect(find.text('SESSION COMPLETE'), findsOneWidget);
   });
 
   testWidgets('a choice pick washes the correct option green',
@@ -437,18 +437,25 @@ void main() {
     ));
     await tester.pumpAndSettle();
     final tokens = Theme.of(tester.element(find.byType(ReviewScreen))).alix;
-    await tester.tap(find.byType(OutlinedButton).first);
+    // Options render as bordered rows keyed by index; pick the first.
+    expect(find.byKey(const ValueKey('option-0')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('option-0')));
     await tester.pump();
 
-    Color? bg(OutlinedButton b) => b.style?.backgroundColor?.resolve({});
-    final washes = tester
-        .widgetList<OutlinedButton>(find.byType(OutlinedButton))
-        .map(bg)
-        .toList();
+    // After a pick the correct option tints green (its number and text),
+    // and the pick locks (the row is no longer a tappable Material/InkWell).
+    final greens = tester
+        .widgetList<Text>(find.byType(Text))
+        .where((t) => t.style?.color == tokens.good)
+        .length;
+    expect(greens, greaterThanOrEqualTo(1),
+        reason: 'the correct option washes green');
     expect(
-      washes.where((c) => c == tokens.good.withValues(alpha: 0.18)).length,
-      1,
-      reason: 'exactly the correct option washes green',
+      find.descendant(
+          of: find.byKey(const ValueKey('option-0')),
+          matching: find.byType(InkWell)),
+      findsNothing,
+      reason: 'the options lock after a pick',
     );
   });
 }

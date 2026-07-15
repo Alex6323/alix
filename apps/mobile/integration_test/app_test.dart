@@ -49,9 +49,9 @@ void main() {
     await tester.tap(find.text('Reveal'));
     await tester.pumpAndSettle();
     expect(find.text('Athens'), findsOneWidget);
-    await tester.tap(find.text('Pass'));
+    await tester.tap(find.text('Got it'));
     await tester.pumpAndSettle();
-    expect(find.text('Done for now'), findsOneWidget);
+    expect(find.text('SESSION COMPLETE'), findsOneWidget);
 
     final store = File('${root.path}/progress.json').readAsStringSync();
     expect(store, contains('"stability"'));

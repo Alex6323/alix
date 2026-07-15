@@ -29,6 +29,11 @@ same core the desktop runs. Early software; expect rough edges.
   orange wordmark, IBM Plex faces, bordered deck rows, and the brand-orange
   primary action. A light palette exists; the app opens dark to match the
   web out of the box.
+- The review surface mirrors the web client closely: a mono mode-tag, a
+  bold question over a faded divider, monospace numbered multiple-choice
+  options that lock and tint green/red on a pick, monospace answers, the
+  keypoint checklist, a warm boxed note, and the web's chip legend (Missed
+  it / Partly / Got it, Next, Continue, Knew it / Not yet, Reveal, Seen).
 - About (in the picker menu): the app version and the embedded core
   version side by side.
 - The alix launcher icon and app name.

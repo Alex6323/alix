@@ -17,6 +17,8 @@ class AlixTokens extends ThemeExtension<AlixTokens> {
     required this.boltHi,
     required this.line,
     required this.dim,
+    required this.faint,
+    required this.text,
     required this.noteBorder,
     required this.noteInk,
   });
@@ -31,9 +33,13 @@ class AlixTokens extends ThemeExtension<AlixTokens> {
   final Color bolt;
   final Color boltHi;
 
-  /// Hairline borders (--line) and muted ink (--dim).
+  /// Hairline borders (--line), muted ink (--dim), the faintest labels
+  /// (--faint: option numbers, the mode tag), and body text a touch softer
+  /// than the primary ink (--text: option/chip labels).
   final Color line;
   final Color dim;
+  final Color faint;
+  final Color text;
 
   /// The note block's warm pair (--note-border / --note-ink).
   final Color noteBorder;
@@ -48,6 +54,8 @@ class AlixTokens extends ThemeExtension<AlixTokens> {
     Color? boltHi,
     Color? line,
     Color? dim,
+    Color? faint,
+    Color? text,
     Color? noteBorder,
     Color? noteInk,
   }) {
@@ -59,6 +67,8 @@ class AlixTokens extends ThemeExtension<AlixTokens> {
       boltHi: boltHi ?? this.boltHi,
       line: line ?? this.line,
       dim: dim ?? this.dim,
+      faint: faint ?? this.faint,
+      text: text ?? this.text,
       noteBorder: noteBorder ?? this.noteBorder,
       noteInk: noteInk ?? this.noteInk,
     );
@@ -78,6 +88,8 @@ class AlixTokens extends ThemeExtension<AlixTokens> {
       boltHi: mix(boltHi, other.boltHi),
       line: mix(line, other.line),
       dim: mix(dim, other.dim),
+      faint: mix(faint, other.faint),
+      text: mix(text, other.text),
       noteBorder: mix(noteBorder, other.noteBorder),
       noteInk: mix(noteInk, other.noteInk),
     );
@@ -123,6 +135,8 @@ const _darkTokens = AlixTokens(
   boltHi: Color(0xFF8CE9EF),
   line: Color(0x17FFFFFF),
   dim: Color(0xFF9096A8),
+  faint: Color(0xFF6B7085),
+  text: Color(0xFFC9CDD8),
   noteBorder: Color(0xFFE6B45C),
   noteInk: Color(0xFFF0DCAE),
 );
@@ -135,6 +149,8 @@ const _lightTokens = AlixTokens(
   boltHi: Color(0xFF129AA6),
   line: Color(0x21141228),
   dim: Color(0xFF6B6B7A),
+  faint: Color(0xFF9696A5),
+  text: Color(0xFF3B3B48),
   noteBorder: Color(0xFFC98A12),
   noteInk: Color(0xFF6A5117),
 );
