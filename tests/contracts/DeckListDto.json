@@ -1,10 +1,46 @@
 {
   "folders": [],
-  "recent": [],
+  "recent": [
+    {
+      "badge_depth": null,
+      "badge_dotted": false,
+      "deadline": null,
+      "description": null,
+      "examable": false,
+      "has_exam": false,
+      "has_topology": false,
+      "icon": null,
+      "icon_svg": false,
+      "is_trace": false,
+      "is_workspace": false,
+      "label": "Vocab",
+      "last_depth": "recall",
+      "locked": false,
+      "mastered": false,
+      "members": [],
+      "meta": "new",
+      "name": "vocab.txt",
+      "new_cards": true,
+      "path": null,
+      "recent": true,
+      "reviewable": true,
+      "reviewable_recall": true,
+      "reviewable_recognize": true,
+      "reviewable_reconstruct": false,
+      "selectable": true,
+      "state": "new"
+    }
+  ],
   "workspaces": [
     {
       "badge_depth": "recall",
       "badge_dotted": true,
+      "deadline": {
+        "date": "2026-09-01",
+        "days_left": 23,
+        "ready": 2,
+        "total": 5
+      },
       "description": "learn Rust ownership",
       "examable": false,
       "has_exam": false,

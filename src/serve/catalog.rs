@@ -135,6 +135,7 @@ pub(super) fn deck_item_dto(
                 badge_dotted: s.badge_dotted,
                 new_cards: s.new_cards,
                 last_depth,
+                deadline: None, // a deadline is a workspace-level setting, not a deck's
             }
         }
         // A deck that fails to load stays launchable so the error surfaces —
@@ -167,6 +168,7 @@ pub(super) fn deck_item_dto(
             badge_dotted: false,
             new_cards: false,
             last_depth: depth_name(Depth::default()),
+            deadline: None,
         },
     }
 }
@@ -177,13 +179,16 @@ pub(super) fn deck_item_dto(
 /// from the workspace's own store (a real workspace) or the served instance's
 /// root store (a plain folder) — the same store its top-level loose-deck
 /// badges use — matching what a session will write.
+///
+/// Also returns the [`picker::WorkspaceReadiness`] computed from the same
+/// statuses, for a caller building a deadline readout.
 pub(super) fn workspace_members(
     e: &picker::DeckEntry,
     decks_dir: &Path,
     with_lock: bool,
     review: ReviewConfig,
     instance_store: &Store,
-) -> Vec<MemberDto> {
+) -> (Vec<MemberDto>, picker::WorkspaceReadiness) {
     // Member badges reflect this workspace's personal pacing override, if any.
     let review = review.for_workspace(&e.path);
     let is_ws = crate::workspace::is_workspace(&e.path);
@@ -230,6 +235,14 @@ pub(super) fn workspace_members(
             (status, has_topology, depth_name(last_depth))
         })
         .collect();
+    // The readiness RULE lives in `picker::workspace_readiness`; this only
+    // gathers the statuses it needs (a member whose deck failed to load
+    // contributes to neither `ready` nor `total`).
+    let member_statuses: Vec<picker::DeckStatus> = loaded
+        .iter()
+        .filter_map(|(status, _, _)| status.clone())
+        .collect();
+    let readiness = picker::workspace_readiness(&member_statuses);
     // Order siblings startable-first (blocked = locked, or — when gating —
     // nothing to review), then by label.
     let parent = picker::member_parents(&paths, decks_dir);
@@ -245,7 +258,7 @@ pub(super) fn workspace_members(
             (blocked, m.label.clone())
         })
         .collect();
-    picker::dependency_forest(&parent, &key)
+    let members = picker::dependency_forest(&parent, &key)
         .into_iter()
         .map(|(i, prefix)| {
             let m = &e.members[i];
@@ -305,7 +318,8 @@ pub(super) fn workspace_members(
                 },
             }
         })
-        .collect()
+        .collect();
+    (members, readiness)
 }
 
 /// The picker icon URL for a resolved icon path, registering it in the launcher
@@ -372,7 +386,21 @@ pub(super) fn deck_catalog(
         // last-progress time); without one it's a plain folder.
         if e.is_workspace {
             let is_ws = crate::workspace::is_workspace(&e.path);
-            let members = workspace_members(&e, decks_dir, with_lock, review, store);
+            let (members, readiness) = workspace_members(&e, decks_dir, with_lock, review, store);
+            // A deadline is a real workspace's own setting (`alix.local.toml`);
+            // a plain folder never has one.
+            let deadline = is_ws
+                .then(|| review.for_workspace(&e.path).deadline)
+                .flatten()
+                .map(|date| {
+                    let today = crate::time::local_date(crate::time::now_ms());
+                    DeadlineDto {
+                        date: date.format("%Y-%m-%d").to_string(),
+                        days_left: (date - today).num_days(),
+                        ready: readiness.ready,
+                        total: readiness.total,
+                    }
+                });
             let meta = if is_ws {
                 match picker::workspace_last_progress(&e.path) {
                     Some(when) => format!("{} decks · {when}", members.len()),
@@ -416,6 +444,7 @@ pub(super) fn deck_catalog(
                 badge_dotted: false,
                 new_cards: false,
                 last_depth: depth_name(Depth::default()),
+                deadline,
             };
             if is_ws {
                 workspaces.push(dto);

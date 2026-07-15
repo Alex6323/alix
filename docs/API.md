@@ -479,6 +479,16 @@ per region per card) *(presentational)*.
 | `badge_dotted` | bool | The badge lapsed (render dotted) *(presentational)*. |
 | `new_cards` | bool | Fresh material since badging. |
 | `last_depth` | string | The deck's remembered session depth (default `recall`). |
+| `deadline` | DeadlineDto? | A workspace's "ready by" target ({#deadlines}). Present only on a workspace row whose `alix.local.toml` sets one; `null` on every deck/folder row and on a workspace with none set. **Additive**: clients must tolerate its absence/null, same as any other optional field here. |
+
+### DeadlineDto
+
+| Key | Type | Meaning |
+|---|---|---|
+| `date` | string | ISO `YYYY-MM-DD`. |
+| `days_left` | number | `date` minus today, in local days. Goes negative past the date (render "was due", not an error). |
+| `ready` | number | Member decks counted ready: mastered, or finished with no exam to pass (source-less). |
+| `total` | number | The workspace's member decks. |
 
 ### MemberDto
 

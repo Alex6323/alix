@@ -259,6 +259,23 @@ pub(super) struct DeckItemDto {
     /// The learner's last-used session depth for this deck (`"recognize"` /
     /// `"recall"` / `"reconstruct"`), defaulting to `"recall"`.
     pub(super) last_depth: &'static str,
+    /// A workspace's deadline readout ({#deadlines}): present only when the
+    /// workspace's `alix.local.toml` sets one. `null` for deck and folder
+    /// rows, and for a workspace with no deadline set.
+    pub(super) deadline: Option<DeadlineDto>,
+}
+
+/// A workspace row's deadline readout ({#deadlines}): present only when the
+/// workspace's `alix.local.toml` sets one. `days_left` goes negative past the
+/// date (the client renders "was due").
+#[derive(Debug, Serialize)]
+pub(super) struct DeadlineDto {
+    pub(super) date: String, // ISO YYYY-MM-DD
+    pub(super) days_left: i64,
+    /// Mastered (or done source-less) member decks.
+    pub(super) ready: usize,
+    /// Member decks.
+    pub(super) total: usize,
 }
 
 /// A workspace member deck in the drill-in list: a qualified selection `name`

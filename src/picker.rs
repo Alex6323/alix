@@ -111,6 +111,7 @@ fn build_candidates(decks_dir: &Path, recent: &RecentDecks) -> Vec<Candidate> {
 /// The store-derived status of a deck, computed once so the web deck-selection
 /// screen (and any thin client consuming the same API) shows the same badge,
 /// lock, and gating.
+#[derive(Clone)]
 pub struct DeckStatus {
     /// Completion state — drives the meta tint (finished → green, exam due →
     /// yellow) and the frontend's machine-readable state string.
@@ -316,6 +317,27 @@ pub fn deck_status(
         badge_depth,
         badge_dotted,
         new_cards,
+    }
+}
+
+/// A workspace's progress toward its deadline ({#deadlines}): how many member
+/// decks count as ready, out of how many total.
+pub struct WorkspaceReadiness {
+    pub ready: usize,
+    pub total: usize,
+}
+
+/// Counts a workspace's member decks as ready for its deadline (spec decision
+/// 2): mastered (exam passed), or, for a source-less deck (no exam to pass),
+/// simply finished drilling.
+pub fn workspace_readiness(statuses: &[DeckStatus]) -> WorkspaceReadiness {
+    let ready = statuses
+        .iter()
+        .filter(|s| s.mastered || (s.state == DeckState::Finished && !s.has_exam))
+        .count();
+    WorkspaceReadiness {
+        ready,
+        total: statuses.len(),
     }
 }
 
@@ -960,6 +982,46 @@ mod tests {
         let status = deck_status(&deck, &store, None, false, ReviewConfig::default());
         assert_eq!(Some(Depth::Recall), status.badge_depth);
         assert!(status.badge_dotted);
+    }
+
+    /// A minimal `DeckStatus` for readiness tests: only `state`/`mastered`/
+    /// `has_exam` vary (the readiness rule reads none of the rest).
+    fn status_for_readiness(state: DeckState, mastered: bool, has_exam: bool) -> DeckStatus {
+        DeckStatus {
+            state,
+            badge: String::new(),
+            locked: false,
+            reviewable: false,
+            reviewable_recognize: false,
+            reviewable_recall: false,
+            reviewable_reconstruct: false,
+            mastered,
+            is_trace: false,
+            examable: false,
+            has_exam,
+            badge_depth: None,
+            badge_dotted: false,
+            new_cards: false,
+        }
+    }
+
+    /// 4 members: mastered+sourced (ready), finished sourceless (ready),
+    /// finished sourced but exam not passed (NOT ready), started (NOT
+    /// ready).
+    fn readiness_fixture() -> Vec<DeckStatus> {
+        vec![
+            status_for_readiness(DeckState::Finished, true, true),
+            status_for_readiness(DeckState::Finished, false, false),
+            status_for_readiness(DeckState::Finished, false, true),
+            status_for_readiness(DeckState::Started, false, false),
+        ]
+    }
+
+    #[test]
+    fn workspace_readiness_counts_mastered_and_done_sourceless_members() {
+        let statuses = readiness_fixture();
+        let r = workspace_readiness(&statuses);
+        assert_eq!((2, 4), (r.ready, r.total));
     }
 
     #[test]
