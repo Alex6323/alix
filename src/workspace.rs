@@ -249,10 +249,11 @@ pub fn set_deadline(dir: &Path, date: Option<chrono::NaiveDate>) -> anyhow::Resu
         Some(d) => {
             // A hand-edited `review = 5` (not a table) can't be indexed into
             // safely; error rather than panic on `doc["review"]["deadline"]`.
-            if let Some(review) = doc.get("review") {
-                if review.as_table().is_none() && review.as_inline_table().is_none() {
-                    bail!("[review] in {} is not a table", path.display());
-                }
+            if let Some(review) = doc.get("review")
+                && review.as_table().is_none()
+                && review.as_inline_table().is_none()
+            {
+                bail!("[review] in {} is not a table", path.display());
             }
             // Ensure we have a proper [review] section, not an inline table.
             if !doc.contains_key("review") {
