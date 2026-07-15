@@ -44,8 +44,11 @@ class _ReviewScreenState extends State<ReviewScreen> {
   CheckFeedback? _check;
   final List<TextEditingController> _typed = [];
 
-  /// Explain: which keypoint rows are ticked (covered).
+  /// Explain: which keypoint rows are ticked (covered), and the optional
+  /// pre-reveal attempt (client-only, never sent).
   final Set<int> _ticked = {};
+  bool _attemptOpen = false;
+  final TextEditingController _attempt = TextEditingController();
 
   /// Another device's recent write of this store, shown once per session
   /// open until dismissed.
@@ -62,6 +65,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
     for (final c in _typed) {
       c.dispose();
     }
+    _attempt.dispose();
     super.dispose();
   }
 
@@ -81,10 +85,12 @@ class _ReviewScreenState extends State<ReviewScreen> {
   void _resetCard(ReviewState next) {
     _state = next;
     _revealed = false;
-    _revealedLines = 1;
+    _revealedLines = 0;
     _choice = null;
     _check = null;
     _ticked.clear();
+    _attemptOpen = false;
+    _attempt.clear();
     final lines = next.mode == Mode.typeLine ? (next.card?.back.length ?? 1) : 1;
     while (_typed.length < lines) {
       _typed.add(TextEditingController());
@@ -163,22 +169,25 @@ class _ReviewScreenState extends State<ReviewScreen> {
 
   /// The mode-tag label, matching the web's modeLabel().
   String _modeLabel() {
-    if (_state.acquire) return 'new';
-    if (_hasChoices) return 'choice';
-    return switch (_state.mode) {
-      Mode.typeLine => 'typing · line',
-      Mode.typing => 'typing',
-      Mode.explain => 'explain',
-      Mode.lineByLine => 'line',
-      Mode.choice => 'choice',
-      Mode.flip => 'flip',
-    };
+    final prefix = _state.promotable ? 'remediation · ' : '';
+    if (_state.acquire) return '${prefix}new';
+    if (_hasChoices) return '${prefix}choice';
+    return prefix +
+        switch (_state.mode) {
+          Mode.typeLine => 'typing · line',
+          Mode.typing => 'typing',
+          Mode.explain => 'explain',
+          Mode.lineByLine => 'line',
+          Mode.choice => 'choice',
+          Mode.flip => 'flip',
+        };
   }
 
   Widget _face(BuildContext context, CardView card) {
     final theme = Theme.of(context);
     final tokens = theme.alix;
-    final answered = _revealed || _check != null || _choice != null;
+    final answered =
+        _revealed || _check != null || _choice != null || _lineDone(card);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
@@ -190,9 +199,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
           textAlign: TextAlign.center,
           style: TextStyle(
             fontFamily: _sans,
-            fontWeight: FontWeight.w700,
+            fontWeight: FontWeight.w600,
             fontSize: 23,
-            height: 1.25,
+            height: 1.4,
             color: theme.colorScheme.onSurface,
           ),
         ),
@@ -212,6 +221,10 @@ class _ReviewScreenState extends State<ReviewScreen> {
         _divider(tokens),
         const SizedBox(height: 22),
         _body(context, card, tokens),
+        if (answered && card.imageBack != null) ...[
+          const SizedBox(height: 12),
+          Image.file(File(card.imageBack!), height: 180),
+        ],
         if (_state.acquire && !_hasChoices && !_revealed) ...[
           const SizedBox(height: 18),
           Text(
@@ -268,7 +281,10 @@ class _ReviewScreenState extends State<ReviewScreen> {
   Widget _body(BuildContext context, CardView card, AlixTokens tokens) {
     if (_hasChoices) return _options(tokens);
     if (_state.mode == Mode.lineByLine && !_state.acquire) {
-      return _revealLines(context, card.back.take(_revealedLines).toList(), tokens);
+      // Line mode keeps its revealed lines tight (no stanza gap).
+      return _revealLines(
+          context, card.back.take(_revealedLines).toList(), tokens,
+          stanza: false);
     }
     if (_isTyping && !_state.acquire) return _typing(context, card, tokens);
     if (_isExplain) return _explainBody(context, card, tokens);
@@ -278,10 +294,12 @@ class _ReviewScreenState extends State<ReviewScreen> {
     return const SizedBox.shrink();
   }
 
-  /// Revealed answer lines: monospace, neutral ink, centered; multi-line
-  /// backs read as a stanza (a blank line between).
+  /// Revealed answer lines: monospace, neutral ink, centered. A plain
+  /// multi-line flip answer reads as a stanza (a blank line between lines);
+  /// line-mode and the explain answer stay tight.
   Widget _revealLines(
-      BuildContext context, List<String> lines, AlixTokens tokens) {
+      BuildContext context, List<String> lines, AlixTokens tokens,
+      {bool stanza = true}) {
     final style = TextStyle(
       fontFamily: _mono,
       fontWeight: FontWeight.w500,
@@ -289,11 +307,11 @@ class _ReviewScreenState extends State<ReviewScreen> {
       height: 1.5,
       color: Theme.of(context).colorScheme.onSurface,
     );
-    final stanza = lines.length > 1;
+    final gap = stanza && lines.length > 1 ? 22.0 : 6.0;
     return Column(
       children: [
         for (final (i, line) in lines.indexed) ...[
-          if (i > 0) SizedBox(height: stanza ? 20 : 6),
+          if (i > 0) SizedBox(height: gap),
           Text(line, textAlign: TextAlign.center, style: style),
         ],
       ],
@@ -376,6 +394,15 @@ class _ReviewScreenState extends State<ReviewScreen> {
   // ── typed answer ─────────────────────────────────────────────────────────
 
   Widget _typing(BuildContext context, CardView card, AlixTokens tokens) {
+    // After a check the fields are replaced by the per-line evidence (the
+    // web clears the inputs and renders only the result).
+    if (_check != null) {
+      return Column(
+        children: [
+          for (final r in _check!.results) _evidenceLine(r, tokens),
+        ],
+      );
+    }
     final onSurface = Theme.of(context).colorScheme.onSurface;
     final fields = _state.mode == Mode.typeLine ? card.back.length : 1;
     OutlineInputBorder border(Color c) => OutlineInputBorder(
@@ -390,7 +417,6 @@ class _ReviewScreenState extends State<ReviewScreen> {
             constraints: const BoxConstraints(maxWidth: 520),
             child: TextField(
               controller: _typed[i],
-              enabled: _check == null,
               textAlign: TextAlign.center,
               style: TextStyle(fontFamily: _mono, fontSize: 17, color: onSurface),
               decoration: InputDecoration(
@@ -404,10 +430,6 @@ class _ReviewScreenState extends State<ReviewScreen> {
               ),
             ),
           ),
-        ],
-        if (_check != null) ...[
-          const SizedBox(height: 14),
-          for (final r in _check!.results) _evidenceLine(r, tokens),
         ],
       ],
     );
@@ -442,22 +464,24 @@ class _ReviewScreenState extends State<ReviewScreen> {
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Column(
         children: [
-          Text.rich(
-            TextSpan(children: [
-              TextSpan(
-                  text: input,
-                  style: TextStyle(
-                      fontFamily: _mono,
-                      fontSize: 15,
-                      color: tokens.again.withValues(alpha: 0.5))),
-              TextSpan(
-                  text: '  ✗',
-                  style: TextStyle(
-                      color: tokens.again,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15)),
-            ]),
-            textAlign: TextAlign.center,
+          // The miss line (your input + the ✗) recedes at half opacity; the
+          // expected answer below stays full green.
+          Opacity(
+            opacity: 0.5,
+            child: Text.rich(
+              TextSpan(children: [
+                TextSpan(
+                    text: input,
+                    style: TextStyle(fontFamily: _mono, fontSize: 15, color: tokens.again)),
+                TextSpan(
+                    text: '  ✗',
+                    style: TextStyle(
+                        color: tokens.again,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15)),
+              ]),
+              textAlign: TextAlign.center,
+            ),
           ),
           Text(
             r.expected,
@@ -484,33 +508,61 @@ class _ReviewScreenState extends State<ReviewScreen> {
 
   Widget _explainBody(BuildContext context, CardView card, AlixTokens tokens) {
     if (!_revealed) {
-      return Text(
-        'reconstruct the answer in your head, then reveal.',
-        textAlign: TextAlign.center,
-        style: TextStyle(color: tokens.dim, fontSize: 14, fontStyle: FontStyle.italic),
+      // An optional client-only attempt: write it before revealing, or just
+      // reveal. Never sent, never graded.
+      if (!_attemptOpen) {
+        return Align(
+          child: TextButton(
+            onPressed: () => setState(() => _attemptOpen = true),
+            child: const Text('type your answer first'),
+          ),
+        );
+      }
+      return ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: TextField(
+          controller: _attempt,
+          minLines: 2,
+          maxLines: 5,
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: Colors.black.withValues(alpha: 0.25),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            hintText: 'your answer (stays on this device)',
+          ),
+        ),
       );
     }
     final points = _state.keypoints ?? const [];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (_attempt.text.trim().isNotEmpty) ...[
+          _explainLabel('your answer', tokens.dim),
+          const SizedBox(height: 6),
+          Text(
+            _attempt.text.trim(),
+            style: TextStyle(color: tokens.text, height: 1.4),
+          ),
+          const SizedBox(height: 16),
+        ],
         _explainLabel('the answer', tokens.dim),
         const SizedBox(height: 6),
-        _revealLines(context, card.back, tokens),
+        _revealLines(context, card.back, tokens, stanza: false),
         const SizedBox(height: 16),
-        _explainLabel('did your answer cover these?', tokens.good),
+        _explainLabel('did your answer cover these?', tokens.good, small: true),
         const SizedBox(height: 6),
         for (final (i, pt) in points.indexed) _keypointRow(i, pt, tokens),
       ],
     );
   }
 
-  Widget _explainLabel(String text, Color color) {
+  Widget _explainLabel(String text, Color color, {bool small = false}) {
     return Text(
       text.toUpperCase(),
       style: TextStyle(
         fontFamily: _mono,
-        fontSize: 10.5,
+        fontSize: small ? 9.5 : 10.5,
         letterSpacing: 1.4,
         color: color,
       ),
@@ -652,16 +704,17 @@ class _ReviewScreenState extends State<ReviewScreen> {
     if (_state.mode == Mode.lineByLine) {
       if (!_lineDone(card)) {
         return [
-          _chip(_revealedLines <= 1 ? 'Reveal' : 'Reveal next', _ChipKind.primary,
-              () => setState(() => _revealedLines++)),
+          _chip(_revealedLines == 0 ? 'Reveal' : 'Reveal next',
+              _ChipKind.primary, () => setState(() => _revealedLines++)),
         ];
       }
       return _gradeTrio();
     }
-    // Typed answer.
+    // Typed answer (the line variant checks one submission at a time).
     if (_isTyping) {
       if (_check == null) {
-        return [_chip('Submit', _ChipKind.primary, () => _submitCheck(card))];
+        final label = _state.mode == Mode.typeLine ? 'Check' : 'Submit';
+        return [_chip(label, _ChipKind.primary, () => _submitCheck(card))];
       }
       return _gradeTrio();
     }
@@ -678,8 +731,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
     }
     if (_state.depth == Depth.recognize) {
       return [
-        _chip('Not yet', _ChipKind.failed, () => _grade(Grade.fail)),
         _chip('Knew it', _ChipKind.passed, () => _grade(Grade.pass)),
+        _chip('Not yet', _ChipKind.failed, () => _grade(Grade.fail)),
       ];
     }
     return _gradeTrio();
