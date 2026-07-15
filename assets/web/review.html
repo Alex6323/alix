@@ -2141,14 +2141,23 @@ function renderAugLegend() {
 // select phase re-scans (same as the ⟳ button). The scan is QUIET: the screen
 // repaints only when the catalog actually changed, so a plain alt-tab back
 // never visibly refreshes the picker. Overlays and sessions are left alone.
-let lastDecksJson = "";
+let lastDecksSignature = "";
+// A comparable snapshot of a decks payload that ignores the volatile
+// "<n><unit> ago" tokens (src/time.rs humanize_ms: e.g. "8s ago", "3m ago"),
+// which tick every second on their own and would otherwise make every
+// payload look changed. `days_left` (deadline chips) is NOT touched here —
+// its rollover is a real change (the chip's urgency tier can flip) worth
+// repainting for.
+function catalogSignature(data) {
+  return JSON.stringify(data).replace(/\d+[smhdw] ago/g, "  ago");
+}
 const idleInSelect = () =>
   state && state.phase === "select" && !browsing && !examData && !augmentData && !walkData && !asking;
 window.addEventListener("focus", async () => {
   if (!idleInSelect()) return;
   const fresh = await api("/api/decks");
   // Re-check after the await: the user may have started something meanwhile.
-  if (idleInSelect() && JSON.stringify(fresh) !== lastDecksJson) {
+  if (idleInSelect() && catalogSignature(fresh) !== lastDecksSignature) {
     renderSelect(fresh);
   }
 });
@@ -2174,7 +2183,7 @@ async function renderSelect(preloaded) {
   topoCache = {};
 
   const data = preloaded || await api("/api/decks");
-  lastDecksJson = JSON.stringify(data);
+  lastDecksSignature = catalogSignature(data);
   const workspaces = data.workspaces || [];
   const recent = data.recent || [];
   const folders = data.folders || [];
