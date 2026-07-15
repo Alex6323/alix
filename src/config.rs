@@ -622,15 +622,24 @@ impl ReviewConfig {
         if let Some(n) = raw.review.limit {
             review.limit = Some(n);
         }
-        if let Some(date) = raw.review.deadline
-            && let Ok(d) = chrono::NaiveDate::parse_from_str(&date, "%Y-%m-%d")
-        {
-            review.deadline = Some(d);
-        }
-        if let Some(ramp) = raw.review.deadline_ramp
-            && let Ok(days) = parse_ramp_days(&ramp)
-        {
-            review.deadline_ramp_days = days;
+        // The deadline overlay applies only inside a real workspace (manifest
+        // present): outside one, a deadline has no chip, no web action, and no
+        // doctor lint to explain why retention is quietly ramping — a trap, not a
+        // feature. Pacing knobs above have no such visible product surface, so they
+        // stay folder-friendly. Checked once here (not per key) against the same
+        // `is_workspace` definition the picker/serve/doctor use, so the config
+        // layer can't drift from them.
+        if crate::workspace::is_workspace(workspace_dir) {
+            if let Some(date) = raw.review.deadline
+                && let Ok(d) = chrono::NaiveDate::parse_from_str(&date, "%Y-%m-%d")
+            {
+                review.deadline = Some(d);
+            }
+            if let Some(ramp) = raw.review.deadline_ramp
+                && let Ok(days) = parse_ramp_days(&ramp)
+            {
+                review.deadline_ramp_days = days;
+            }
         }
         review
     }
@@ -1508,6 +1517,9 @@ mod tests {
     #[test]
     fn for_workspace_overlays_deadline_and_ramp() {
         let dir = tempfile::tempdir().unwrap();
+        // The deadline overlay only fires inside a real workspace (manifest + a deck).
+        std::fs::write(dir.path().join("alix.toml"), "title = \"W\"\n").unwrap();
+        std::fs::write(dir.path().join("a.txt"), "# q\n\ta\n").unwrap();
         std::fs::write(
             dir.path().join("alix.local.toml"),
             "[review]\ndeadline = \"2026-09-01\"\ndeadline_ramp = \"3w\"\n",
@@ -1523,8 +1535,12 @@ mod tests {
 
     #[test]
     fn for_workspace_ignores_a_malformed_deadline_but_keeps_other_keys() {
-        // The overlay is lenient key-by-key: a bad date must not eat the file.
+        // The overlay is lenient key-by-key: a bad date must not eat the file. A real
+        // workspace fixture (manifest + a deck) keeps this test about leniency, not
+        // about the workspace gate (covered separately).
         let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("alix.toml"), "title = \"W\"\n").unwrap();
+        std::fs::write(dir.path().join("a.txt"), "# q\n\ta\n").unwrap();
         std::fs::write(
             dir.path().join("alix.local.toml"),
             "[review]\ndeadline = \"soonish\"\nretention = 0.85\n",
@@ -1533,6 +1549,26 @@ mod tests {
         let resolved = ReviewConfig::default().for_workspace(dir.path());
         assert_eq!(None, resolved.deadline);
         assert_eq!(0.85, resolved.retention);
+    }
+
+    #[test]
+    fn a_plain_folder_gets_no_deadline_overlay() {
+        // DECISION 2026-07-15: deadline/deadline_ramp apply only inside a real
+        // workspace (manifest present). A bare decks folder has no chip, no web
+        // action, and no doctor lint for a deadline — applying it there would
+        // silently ramp retention with nothing to explain why. Pacing keys
+        // (retention, retire_after, acquire_cooldown, max_new, limit) have no such
+        // product surface gap, so they keep working in plain folders as before.
+        let dir = tempfile::tempdir().unwrap();
+        // Deliberately no alix.toml manifest: a bare tempdir is not a workspace.
+        std::fs::write(
+            dir.path().join("alix.local.toml"),
+            "[review]\ndeadline = \"2026-09-01\"\nretention = 0.85\n",
+        )
+        .unwrap();
+        let resolved = ReviewConfig::default().for_workspace(dir.path());
+        assert_eq!(None, resolved.deadline, "a plain folder's deadline is dead");
+        assert_eq!(0.85, resolved.retention, "pacing keys stay folder-friendly");
     }
 
     #[test]

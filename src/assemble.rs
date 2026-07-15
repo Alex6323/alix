@@ -1226,6 +1226,8 @@ mod tests {
         // reaches the scheduler a real select() builds. A mature card graded
         // Pass three days before the deadline must come due before it.
         let dir = tempfile::tempdir().unwrap();
+        // The deadline overlay only fires inside a real workspace (manifest present).
+        std::fs::write(dir.path().join("alix.toml"), "title = \"W\"\n").unwrap();
         let deck = dir.path().join("m.txt");
         std::fs::write(&deck, "# q\n\ta\n").unwrap();
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();

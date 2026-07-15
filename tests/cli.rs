@@ -207,6 +207,22 @@ fn workspace_deadline_rejects_non_workspace_non_decks_dir() {
 }
 
 #[test]
+fn workspace_deadline_rejects_a_decks_folder_without_a_manifest() {
+    // DECISION 2026-07-15: deadline keys apply only inside a real workspace
+    // (manifest present); a plain decks folder is rejected and pointed at the
+    // upgrade path, rather than silently accepted like before.
+    let dir = TempDir::new().unwrap();
+    let plain = dir.path().join("plain");
+    std::fs::create_dir(&plain).unwrap();
+    write(&plain, "cards.txt", "# Q?\n    A\n");
+
+    let out = alix(&["workspace", "deadline", plain.to_str().unwrap()]);
+    assert!(!out.status.success(), "stderr: {}", stderr(&out));
+    let err = stderr(&out);
+    assert!(err.contains("workspace init"), "stderr: {err}");
+}
+
+#[test]
 fn stats_on_a_folder_reports_every_deck_inside() {
     let dir = TempDir::new().unwrap();
     write(dir.path(), "alpha.txt", "# a?\n    a\n");

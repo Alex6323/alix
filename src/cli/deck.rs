@@ -380,8 +380,15 @@ pub(crate) fn import_cmd(args: ImportArgs) -> Result<()> {
 
 pub(crate) fn workspace_deadline_cmd(args: WorkspaceDeadlineArgs) -> Result<()> {
     let dir = &args.dir;
-    if !workspace::is_workspace(dir) && !workspace::has_decks(dir) {
-        bail!("{} is not a workspace or decks folder", dir.display());
+    // A deadline only has a product surface (chip, web action, doctor lint) inside
+    // a real workspace — a plain decks folder never gets it, so point at the
+    // upgrade path rather than silently accepting a folder that would ignore it.
+    if !workspace::is_workspace(dir) {
+        bail!(
+            "{} is not a workspace; make it one first: alix workspace init {}",
+            dir.display(),
+            dir.display()
+        );
     }
     match args.date.as_deref() {
         None => {
