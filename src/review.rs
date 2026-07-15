@@ -123,11 +123,21 @@ pub fn state(
     let now = now_ms.unwrap_or_else(session::now_ms);
     let card = session.current();
     let depth = session.depth();
-    let mode = card
+    let base_mode = card
         .map(|c| depth::check_for(c.reveal.unwrap_or_default(), depth, c))
         .unwrap_or_default();
     let acquire = session.current_unseen(store);
     let choices = current_question(session, store, augment).map(|q| q.options);
+    // A Recognize card renders as a pick only when a question can be built;
+    // a deck too small for distractors (or lacking cached ones) has no
+    // options, so the mode falls back to a plain reveal rather than claiming
+    // a choice with nothing to choose (which would strand the card with no
+    // way forward). Keeps the reported mode honest for every client.
+    let mode = if base_mode == Mode::Choice && choices.is_none() {
+        Mode::Flip
+    } else {
+        base_mode
+    };
     // Explain reveals the key points as a tick-each-line checklist whose
     // coverage derives the grade: the cached keypoints when present, else the
     // card's AUTHORED back lines (never a reshaped display back). Any other
@@ -277,15 +287,20 @@ mod tests {
         let (mut store, augment, _dir) = fixtures();
         let flip = parse("# q\n\ta\n");
         let line = parse("# q\n\t% reveal: line\n\tone\n\ttwo\n");
+        // Recognize renders a Choice only when a pick can be built, so its
+        // case needs enough siblings for distractors (a lone card falls back
+        // to Flip, see `a_recognize_card_with_no_buildable_pick...`).
+        let many = parse(FOUR);
         seen(&mut store, &flip);
         seen(&mut store, &line);
+        seen(&mut store, &many);
 
         let cases = [
             (flip.clone(), Depth::Recall, Mode::Flip),
             (line.clone(), Depth::Recall, Mode::LineByLine),
             (flip.clone(), Depth::Reconstruct, Mode::Typing),
             (line.clone(), Depth::Reconstruct, Mode::TypeLine),
-            (flip, Depth::Recognize, Mode::Choice),
+            (many, Depth::Recognize, Mode::Choice),
         ];
         for (cards, depth, want) in cases {
             let session = session_at(cards, &store, depth, NOW);
@@ -415,6 +430,21 @@ mod tests {
         );
         let armed = state(&acquire, &fresh_store, &augment, Some(NOW));
         assert!(armed.choices.is_some(), "full distractors arm the pick");
+    }
+
+    #[test]
+    fn a_recognize_card_with_no_buildable_pick_falls_back_to_flip() {
+        // One seen card: too few siblings for distractors and no cached AI
+        // ones, so Recognize can build no question. The mode must not stay
+        // Choice (a pick with no options strands the card); it falls back to
+        // a plain reveal, and every client renders an answerable card.
+        let (mut store, augment, _dir) = fixtures();
+        let cards = parse("# lone q\n\tlone a\n");
+        seen(&mut store, &cards);
+        let recognize = session_at(cards, &store, Depth::Recognize, NOW);
+        let s = state(&recognize, &store, &augment, Some(NOW));
+        assert_eq!(s.choices, None, "no siblings, no pick");
+        assert_eq!(s.mode, Mode::Flip, "a choiceless Recognize card is a flip");
     }
 
     #[test]

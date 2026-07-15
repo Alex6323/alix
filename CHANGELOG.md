@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- **A Recognize card with no buildable multiple-choice question no longer
+  strands the review.** A deck too small for distractors (or without cached
+  AI ones) reported the choice mode with no options to show, leaving the
+  card with no way forward; it now falls back to a plain reveal-and-grade,
+  so the reported mode is honest for every client.
+
 ### Added
 - **Multi-device roaming guards in the store.** Every save stamps which
   device wrote `progress.json` (the device name is a plaintext file in the

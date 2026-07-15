@@ -385,6 +385,41 @@ void main() {
     );
   });
 
+  testWidgets('a deck too small for a choice quiz still offers a way forward',
+      (tester) async {
+    // A one-card deck can build no multiple-choice distractors, so at
+    // Recognize the core serves no choices. The screen must not dead-end
+    // (front only, no button); it falls back to a reveal-and-grade flow.
+    final root = makeRoot();
+    addTearDown(() => root.deleteSync(recursive: true));
+    final deck = '${root.path}/loose.txt';
+    final backdated =
+        BigInt.from(DateTime.now().millisecondsSinceEpoch - 600000);
+    final s =
+        ReviewSession.open(deckPath: deck, rootDir: root.path, nowMs: backdated);
+    s.acquire(nowMs: backdated);
+
+    await tester.pumpWidget(MaterialApp(
+      theme: alixDark(),
+      home: ReviewScreen(
+        deckPath: deck,
+        rootDir: root.path,
+        depth: Depth.recognize,
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('capital of france?'), findsOneWidget);
+    // The way forward: reveal the answer, then grade it.
+    expect(find.text('Reveal'), findsOneWidget,
+        reason: 'a card with no choices must still be answerable');
+    await tester.tap(find.text('Reveal'));
+    await tester.pump();
+    expect(find.text('Paris'), findsOneWidget);
+    await tester.tap(find.text('Pass'));
+    await tester.pump();
+    expect(find.text('Done for now'), findsOneWidget);
+  });
+
   testWidgets('a choice pick washes the correct option green',
       (tester) async {
     final root = makeRoot();
