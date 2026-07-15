@@ -234,14 +234,26 @@ pub fn manifest_icon(dir: &Path) -> Option<String> {
 /// (toml_edit). Creates the file when setting into a bare workspace; clearing
 /// leaves an existing file in place. Atomic write (tmp + rename).
 pub fn set_deadline(dir: &Path, date: Option<chrono::NaiveDate>) -> anyhow::Result<()> {
-    use anyhow::Context;
+    use anyhow::{Context, bail};
     let path = dir.join(crate::config::LOCAL_MANIFEST);
+    // Clearing a deadline that was never set, with no file to touch, is a
+    // true no-op: don't create the manifest as a side effect.
+    if date.is_none() && !path.is_file() {
+        return Ok(());
+    }
     let text = std::fs::read_to_string(&path).unwrap_or_default();
     let mut doc: toml_edit::DocumentMut = text
         .parse()
         .with_context(|| format!("cannot parse {}", path.display()))?;
     match date {
         Some(d) => {
+            // A hand-edited `review = 5` (not a table) can't be indexed into
+            // safely; error rather than panic on `doc["review"]["deadline"]`.
+            if let Some(review) = doc.get("review") {
+                if review.as_table().is_none() && review.as_inline_table().is_none() {
+                    bail!("[review] in {} is not a table", path.display());
+                }
+            }
             // Ensure we have a proper [review] section, not an inline table.
             if !doc.contains_key("review") {
                 doc["review"] = toml_edit::table();
@@ -249,7 +261,9 @@ pub fn set_deadline(dir: &Path, date: Option<chrono::NaiveDate>) -> anyhow::Resu
             doc["review"]["deadline"] = toml_edit::value(d.format("%Y-%m-%d").to_string());
         }
         None => {
-            // Handle both inline tables and proper tables safely.
+            // Handle both inline tables and proper tables safely. A non-table
+            // `review` (e.g. `review = 5`) has no deadline key to remove, so
+            // this is a silent no-op rather than an error.
             if let Some(review) = doc.get_mut("review") {
                 if let Some(table) = review.as_table_mut() {
                     table.remove("deadline");
@@ -475,5 +489,40 @@ mod tests {
         set_deadline(dir.path(), None).unwrap();
         let after = std::fs::read_to_string(dir.path().join(crate::config::LOCAL_MANIFEST)).unwrap();
         assert_eq!(scaffold, after, "clearing restores the file byte-identically");
+    }
+
+    #[test]
+    fn set_deadline_errors_instead_of_panicking_when_review_is_not_a_table() {
+        let dir = tempfile::tempdir().unwrap();
+        let manifest = dir.path().join(crate::config::LOCAL_MANIFEST);
+        let scaffold = "review = 5\n";
+        std::fs::write(&manifest, scaffold).unwrap();
+
+        let date = chrono::NaiveDate::from_ymd_opt(2026, 9, 1).unwrap();
+        let result = set_deadline(dir.path(), Some(date));
+
+        assert!(
+            result.is_err(),
+            "a non-table [review] must error, not panic"
+        );
+        let after = std::fs::read_to_string(&manifest).unwrap();
+        assert_eq!(
+            scaffold, after,
+            "a failed set must leave the file untouched"
+        );
+    }
+
+    #[test]
+    fn clearing_a_deadline_without_a_manifest_creates_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let manifest = dir.path().join(crate::config::LOCAL_MANIFEST);
+        assert!(!manifest.is_file());
+
+        set_deadline(dir.path(), None).unwrap();
+
+        assert!(
+            !manifest.is_file(),
+            "clearing with no manifest must be a true no-op"
+        );
     }
 }
