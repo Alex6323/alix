@@ -984,9 +984,15 @@ mod tests {
         });
         let just_inside = 1_000 + FOREIGN_WRITE_WARN_WINDOW_MS - 1;
         let at_the_edge = 1_000 + FOREIGN_WRITE_WARN_WINDOW_MS;
-        assert!(store.recent_foreign_writer("phone-1", just_inside).is_some());
         assert!(
-            store.recent_foreign_writer("phone-1", at_the_edge).is_none(),
+            store
+                .recent_foreign_writer("phone-1", just_inside)
+                .is_some()
+        );
+        assert!(
+            store
+                .recent_foreign_writer("phone-1", at_the_edge)
+                .is_none(),
             "an old write is ordinary roaming, not a warning"
         );
         assert!(store.recent_foreign_writer("desk-1", just_inside).is_none());
