@@ -10,8 +10,13 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
-    // The All-Files-Access dance for the shared decks folder: three tiny
-    // calls, kept as a plain channel instead of a plugin dependency.
+    private var pendingPick: MethodChannel.Result? = null
+
+    // The shared-decks-folder plumbing: the All-Files-Access dance plus the
+    // system folder picker, kept as one plain channel. The plugin ecosystem
+    // for these is mid-migration to AGP 9 / built-in Kotlin and does not
+    // build against this project's toolchain; four small calls do not earn
+    // a dependency anyway.
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "alix/platform")
@@ -36,8 +41,35 @@ class MainActivity : FlutterActivity() {
                         }
                         result.success(null)
                     }
+                    "pickDirectory" -> {
+                        if (pendingPick != null) {
+                            result.error("busy", "a folder pick is already open", null)
+                        } else {
+                            pendingPick = result
+                            startActivityForResult(
+                                Intent(Intent.ACTION_OPEN_DOCUMENT_TREE),
+                                PICK_DIRECTORY,
+                            )
+                        }
+                    }
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    // Returns the picked tree URI as a string (Dart maps it to a real path);
+    // null on cancel.
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode == PICK_DIRECTORY) {
+            val uri = if (resultCode == RESULT_OK) data?.data?.toString() else null
+            pendingPick?.success(uri)
+            pendingPick = null
+            return
+        }
+        super.onActivityResult(requestCode, resultCode, data)
+    }
+
+    private companion object {
+        const val PICK_DIRECTORY = 41337
     }
 }
