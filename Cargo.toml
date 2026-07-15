@@ -61,7 +61,7 @@ zip = { version = "8.6.0", default-features = false, features = ["deflate"], opt
 default = ["full"]
 # `full` is every non-core capability: the web server, the AI backend and all its
 # consumers, and sharing. `--no-default-features` builds the lean core the mobile
-# client cross-compiles. See docs/specs/2026-07-12-core-feature-gate-spec.md.
+# client cross-compiles. See CONTRIBUTING.md.
 full = ["dep:tiny_http", "dep:zip", "dep:qrcodegen", "dep:getrandom", "dep:clap"]
 
 [dev-dependencies]
