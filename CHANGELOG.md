@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-15
+
 ### Fixed
 - **A Recognize card with no buildable multiple-choice question no longer
   strands the review.** A deck too small for distractors (or without cached
@@ -23,11 +25,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   visible instead of silent.
 - The library exposes its version as `alix::VERSION` (the mobile About
   screen shows it next to the app's own).
-- **The mobile app grew up to real phones** (its own changelog:
-  `apps/mobile/CHANGELOG.md`, released as `mobile-vX.Y.Z` tags with a
-  signed APK on GitHub Releases): a user-chosen shared decks folder for
-  the Syncthing roaming story, the web app's look (palettes, IBM Plex, the
-  brand action), a launcher identity, and an About with both versions.
 - **Workspaces can carry a personal deadline.** Set `deadline = "YYYY-MM-DD"`
   and `deadline_ramp` in a workspace's `alix.local.toml` (CLI: `alix workspace
   deadline <dir> <date>`; also the API and the web picker's **Ready by…**
@@ -49,11 +46,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The landing page counts visits with GoatCounter, a cookie-less,
   privacy-friendly analytics service; the privacy page explains what it does
   and does not collect.
-- **The mobile app reviews Explain cards with the keypoint checklist.** After
-  the reveal you tick which key points your reconstruction covered (the cached
-  keypoints augment, else the card's own answer lines) and the tally derives
-  the grade, exactly like the web. An optional collapsed "type it first" field
-  lets you write your attempt before revealing; it never leaves the device.
 - **The review header shows a dim "N left" count**: how many cards the session
   still holds, updated after every card. It can honestly tick up when a card
   you missed cools back in for its retry. (The card pile already hinted at
@@ -104,17 +96,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   multiple-choice and key-point lists move with `k`/`j` by default (the arrow
   keys always work too); rebind them under `[keys.review]` as `up`/`down`, like
   any other review action.
-- **An experimental native app lives in the tree (`apps/mobile`)**: a Flutter
-  shell that embeds the same Rust core (the real parser, scheduler, and store)
-  and reviews a real decks folder offline, on Android and as a Linux desktop
-  window. It browses workspaces and loose decks (titles plus a due dot), picks
-  a session depth, and runs the flip, multiple-choice, line-by-line, and typing
-  checks, with progress landing in the same per-workspace and root stores the
-  web and CLI use. Still early and source-built only (`make phone` / `make
-  tablet` / `make desktop`; `make push-decks` copies a host folder into the
-  emulator; the desktop window reads `ALIX_DECKS_DIR`), not part of the
-  released binaries, and its data layout may still change without migration.
-  Explain-mode cards render as plain flip cards for now.
+- **An experimental native app now lives in `apps/mobile`**: a Flutter shell
+  embedding the lean Rust core to review decks offline on Android (and as a
+  Linux desktop window). It has its own release track (`mobile-vX.Y.Z` tags,
+  a signed APK on GitHub Releases) and its own changelog
+  (`apps/mobile/CHANGELOG.md`); it is not part of the crate's released
+  binaries.
 - **For library consumers: a `full` cargo feature** (on by default) now gates
   the AI backends and the web server. Depending on `alix` with
   `default-features = false` compiles just the lean core (decks, scheduling,
@@ -158,9 +145,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   flag; whether typed lines pair by position (`typeline`) or match in any
   order is derived server-side from the card's mode. Send `{lines}` only;
   an `ordered` field in the body is ignored.
-- The mobile app renders note code blocks verbatim (fenced ``` blocks are
-  no longer sentence-split), through the same structured note units the web
-  serves.
 - **The tutor's "Save note" is now "Make this a note"**, matching "Make this a
   card", and both distill actions are rebindable: **Breaking:** the
   `[keys.review]` key `save_note` is renamed `make_note` (still `ctrl-n`), and

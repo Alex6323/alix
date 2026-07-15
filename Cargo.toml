@@ -1,6 +1,6 @@
 [package]
 name = "alix"
-version = "0.4.0"
+version = "0.5.0"
 authors = ["Alex6323 <Al3k5@protonmail.com>"]
 edition = "2024"
 description = "A learning tool built for understanding, not just remembering."
