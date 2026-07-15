@@ -44,18 +44,31 @@ four binaries — `alix-aarch64-apple-darwin.tar.gz`,
 `alix-x86_64-pc-windows-msvc.zip` — that `alix.study` and `site/install.sh` point
 at. **crates.io is not automated.**
 
-1. **Green gate.** `make check` (clippy + tests) and `make fmt` clean; README,
-   `docs/book`, and `CHANGELOG.md` in sync with the work being shipped. (The README
-   coverage badge is live Codecov since 0.4.0 — it tracks `main` by itself, no
-   per-release refresh.)
+1. **Green gate.** `make fmt`, then `make preflight` (the strict gate: CI's
+   blocking jobs under `-Dwarnings` plus a clean-tree check). Do NOT rely on
+   `make check` here: it is lenient (no `-Dwarnings`), so it passes on warnings
+   that CI rejects. README, `docs/book`, and `CHANGELOG.md` in sync with the work
+   being shipped. Move any mobile-app-only entries out of the crate `CHANGELOG.md`
+   into `apps/mobile/CHANGELOG.md` (they ship on `mobile-v*` tags, not here). (The
+   README coverage badge is live Codecov since 0.4.0, tracking `main` by itself,
+   no per-release refresh.)
 2. **Bump the version.** Set `version = "X.Y.Z"` in `Cargo.toml`; refresh
    `Cargo.lock` (`cargo build`).
 3. **Finalize the changelog.** Rename `## [Unreleased]` → `## [X.Y.Z] - YYYY-MM-DD`,
    then add a fresh empty `## [Unreleased]` (Added / Changed / Fixed) above it.
    The release notes come from this section, so its heading must match the tag.
-4. **Commit** the bump + changelog: `Release vX.Y.Z`.
-5. **Tag & push:** `git tag vX.Y.Z && git push origin main --tags`. CI creates the
-   GitHub Release and attaches the binaries.
+4. **Stage everything the bump touched, then commit.** The version bump
+   regenerates files beyond `Cargo.toml`: the `tests/contracts/VersionDto.json`
+   snapshot and the mobile `Cargo.lock` both pick up the new version once the
+   suite runs. Run `make preflight` again: its clean-tree step lists anything
+   still unstaged. Then `git add -A` (stage ALL of it, never a hand-picked
+   list), commit `Release vX.Y.Z`, and confirm a final `make preflight` is green
+   with a clean tree.
+5. **Tag & push:** push `main` first and let CI go green, then
+   `git tag vX.Y.Z && git push origin vX.Y.Z`. Tagging fires the release workflow
+   immediately (it is not gated on CI), so tag only after CI is green on the
+   release commit. The workflow creates the GitHub Release and attaches the
+   binaries.
 6. **Publish to crates.io (manual):** `cargo publish` (the package stays lean via
    `Cargo.toml`'s `exclude`; `cargo publish --dry-run` first if unsure).
 7. **Verify reach.** The `pages` workflow redeploys `alix.study` + the mdBook on

@@ -6,7 +6,7 @@
 # toolchain — `+nightly` is handled by rustup before cargo sees it — which is
 # why these live in a Makefile rather than .cargo/config.toml.)
 
-.PHONY: build build-core test lint lint-js fmt fmt-check fmt-roadmap roadmap check ci coverage coverage-lcov calibrate run web web-debug phone tablet desktop frb-check push-decks mobile-test apk book site slides install clean sdd-clean heartbeat check-backends e2e shots stats
+.PHONY: build build-core test lint lint-js fmt fmt-check fmt-roadmap roadmap check ci preflight coverage coverage-lcov calibrate run web web-debug phone tablet desktop frb-check push-decks mobile-test apk book site slides install clean sdd-clean heartbeat check-backends e2e shots stats
 
 # Compile the workspace.
 build:
@@ -75,6 +75,29 @@ ci:
 	RUSTFLAGS="-Dwarnings" $(MAKE) check
 	RUSTFLAGS="-Dwarnings" $(MAKE) build-core
 	RUSTFLAGS= $(MAKE) coverage
+
+# The "am I ready to push or tag" gate. Runs CI's BLOCKING jobs under
+# -Dwarnings (fmt, clippy + tests, the lean core, and the mobile bridge),
+# then frb-check, then asserts the working tree is clean. Two failure modes
+# this catches that `make check` (lenient, no -Dwarnings) does not: a warning
+# that only fails under -Dwarnings, and a regenerated-but-unstaged file (a
+# `tests/contracts/*.json` snapshot, a `Cargo.lock`) that would otherwise slip
+# past a hand-picked `git add` into a release. Lighter than `make ci` (no
+# coverage) and more complete (adds bridge + frb-check + the clean-tree
+# check), so run it before every push and before every `git tag vX.Y.Z`.
+# `make check` stays the fast, lenient inner-loop gate. The clean-tree
+# assertion runs last, so commit or stash first (it is a release gate, not a
+# mid-edit check).
+preflight:
+	$(MAKE) fmt-check
+	RUSTFLAGS="-Dwarnings" $(MAKE) check
+	RUSTFLAGS="-Dwarnings" $(MAKE) build-core
+	RUSTFLAGS="-Dwarnings" cargo test --manifest-path apps/mobile/rust/Cargo.toml
+	$(MAKE) frb-check
+	@test -z "$$(git status --porcelain)" || { \
+		printf '\npreflight: working tree not clean; commit or stash before pushing/tagging:\n'; \
+		git status --short; exit 1; }
+	@echo 'preflight: OK'
 
 # Test coverage (needs cargo-llvm-cov: `cargo install cargo-llvm-cov`). Prints a
 # per-file summary and writes a browsable report to target/llvm-cov/html/. A
