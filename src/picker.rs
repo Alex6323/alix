@@ -9,7 +9,6 @@ use std::{
 };
 
 use crate::{
-    augment::AugmentCache,
     card::Card,
     config::ReviewConfig,
     deck::{self, Deck, DeckState},
@@ -644,16 +643,6 @@ mod tests {
         let mut indices: Vec<usize> = order.iter().map(|(i, _)| *i).collect();
         indices.sort();
         assert_eq!(vec![0, 1], indices);
-    }
-
-    fn plain_card(id_seed: &str) -> Card {
-        Card::plain(
-            std::sync::Arc::from("deck.txt"),
-            format!("front {id_seed}"),
-            vec![format!("back {id_seed}")],
-            None,
-            1,
-        )
     }
 
     #[test]
