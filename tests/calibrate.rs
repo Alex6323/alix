@@ -92,3 +92,33 @@ fn strict_fails_an_incomplete_answer() {
 fn lenient_passes_the_same_incomplete_answer() {
     assert_probe("lenient_incomplete");
 }
+
+#[test]
+#[ignore = "real claude CLI; run with `make calibrate`"]
+fn a_complete_correct_proof_passes() {
+    assert_probe("math_proof_full");
+}
+
+#[test]
+#[ignore = "real claude CLI; run with `make calibrate`"]
+fn a_complete_correct_derivation_passes() {
+    assert_probe("math_derivation_full");
+}
+
+#[test]
+#[ignore = "real claude CLI; run with `make calibrate`"]
+fn a_wrong_algebraic_step_does_not_pass() {
+    assert_probe("math_wrong_algebra");
+}
+
+#[test]
+#[ignore = "real claude CLI; run with `make calibrate`"]
+fn a_correct_answer_by_the_wrong_method_does_not_pass() {
+    assert_probe("math_answer_without_method");
+}
+
+#[test]
+#[ignore = "real claude CLI; run with `make calibrate`"]
+fn a_hollow_proof_with_no_mechanism_does_not_pass() {
+    assert_probe("math_hollow_proof");
+}
