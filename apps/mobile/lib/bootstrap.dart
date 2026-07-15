@@ -42,12 +42,21 @@ class Prepared {
 /// Resolves the decks root and this install's device label.
 ///
 /// Order: `ALIX_DECKS_DIR` (the Linux desktop pointing at a real host
-/// folder), then the settings' shared folder while it is still listable,
+/// folder), then the settings' shared folder while it is still usable,
 /// else the app-private `<support>/decks`, seeded with the bundled samples
 /// on first run. Existing files are never overwritten, so the file names
 /// the store keys on stay stable. `support` and `env` inject the platform
 /// pieces for tests.
-Future<Prepared> prepare({Directory? support, String? env}) async {
+///
+/// `hasStorageAccess` is the All-Files-Access query: a revoked grant does
+/// not make a shared dir unlistable (Android's FUSE filters it to empty),
+/// so a configured shared folder counts as usable only when this reports
+/// true. `null` skips the check (desktop, tests).
+Future<Prepared> prepare({
+  Directory? support,
+  String? env,
+  Future<bool> Function()? hasStorageAccess,
+}) async {
   support ??= await getApplicationSupportDirectory();
   final settings = readSettings(support);
   final device = await _ensureDevice(support, settings);
@@ -60,7 +69,8 @@ Future<Prepared> prepare({Directory? support, String? env}) async {
   }
 
   if (sharedDir != null) {
-    if (_listable(sharedDir)) {
+    final granted = await hasStorageAccess?.call() ?? true;
+    if (granted && _listable(sharedDir)) {
       return Prepared(root: sharedDir, device: device, sharedDir: sharedDir);
     }
     return Prepared(

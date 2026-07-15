@@ -8,8 +8,9 @@ import 'package:alix_mobile/src/rust/frb_generated.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await RustLib.init();
-  final prepared = await prepare();
-  runApp(AlixApp(prepared: prepared));
+  final access = RealPlatformAccess();
+  final prepared = await prepare(hasStorageAccess: access.hasAllFilesAccess);
+  runApp(AlixApp(prepared: prepared, access: access));
 }
 
 /// The app shell: holds the resolved decks root and swaps it live when the
@@ -43,9 +44,14 @@ class AlixApp extends StatefulWidget {
 class _AlixAppState extends State<AlixApp> {
   late Prepared _prepared = widget.prepared;
 
+  PlatformAccess get _access => widget.access ?? RealPlatformAccess();
+
+  Future<Prepared> _defaultReprepare() =>
+      prepare(hasStorageAccess: _access.hasAllFilesAccess);
+
   Future<void> _setDecksDir(String? dir) async {
     await (widget.persistDecksDir ?? setDecksDir)(dir);
-    final fresh = await (widget.reprepare ?? prepare)();
+    final fresh = await (widget.reprepare ?? _defaultReprepare)();
     setState(() => _prepared = fresh);
   }
 
@@ -61,7 +67,7 @@ class _AlixAppState extends State<AlixApp> {
         device: _prepared.device,
         sharedDir: _prepared.sharedDir,
         staleDecksDir: _prepared.staleDecksDir,
-        access: widget.access ?? RealPlatformAccess(),
+        access: _access,
         onSetDecksDir: _setDecksDir,
       ),
     );

@@ -10,6 +10,12 @@ abstract class PlatformAccess {
   /// (Android 11+, or any desktop).
   Future<bool> supportsSharedFolders();
 
+  /// Whether All Files Access is currently granted (a pure query, no
+  /// side effect). A revoked grant does NOT make shared dirs unlistable:
+  /// FUSE silently filters them to empty, so launch checks must ask this
+  /// instead of probing the filesystem.
+  Future<bool> hasAllFilesAccess();
+
   /// Ensures All Files Access. On Android this may bounce through the
   /// system settings page: `false` means "not granted yet, sent the user
   /// there"; the user taps the action again after granting.
@@ -36,12 +42,16 @@ class RealPlatformAccess implements PlatformAccess {
   }
 
   @override
-  Future<bool> ensureAllFilesAccess() async {
+  Future<bool> hasAllFilesAccess() async {
     if (!Platform.isAndroid) {
       return true;
     }
-    final has = await _channel.invokeMethod<bool>('hasAllFilesAccess') ?? false;
-    if (has) {
+    return await _channel.invokeMethod<bool>('hasAllFilesAccess') ?? false;
+  }
+
+  @override
+  Future<bool> ensureAllFilesAccess() async {
+    if (await hasAllFilesAccess()) {
       return true;
     }
     await _channel.invokeMethod<void>('requestAllFilesAccess');

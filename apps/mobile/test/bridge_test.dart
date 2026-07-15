@@ -27,6 +27,9 @@ class FakeAccess implements PlatformAccess {
   Future<bool> supportsSharedFolders() async => true;
 
   @override
+  Future<bool> hasAllFilesAccess() async => true;
+
+  @override
   Future<bool> ensureAllFilesAccess() async => true;
 
   @override

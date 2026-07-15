@@ -63,6 +63,31 @@ void main() {
     expect((await prepare(support: support, env: '')).root, shared.path);
   });
 
+  test('a revoked storage grant falls back even though the dir still lists',
+      () async {
+    // On Android, revoking All Files Access does NOT make the dir
+    // unlistable (FUSE filters it to empty), so prepare must trust the
+    // grant query over the filesystem probe.
+    final support = temp('alix-support-');
+    final shared = temp('alix-shared-');
+    await setDecksDir(shared.path, support: support);
+
+    final revoked = await prepare(
+      support: support,
+      env: '',
+      hasStorageAccess: () async => false,
+    );
+    expect(revoked.root, '${support.path}/decks');
+    expect(revoked.staleDecksDir, shared.path);
+
+    final granted = await prepare(
+      support: support,
+      env: '',
+      hasStorageAccess: () async => true,
+    );
+    expect(granted.root, shared.path);
+  });
+
   test('reverting to app storage clears the setting', () async {
     final support = temp('alix-support-');
     final shared = temp('alix-shared-');
