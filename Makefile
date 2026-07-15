@@ -6,7 +6,7 @@
 # toolchain — `+nightly` is handled by rustup before cargo sees it — which is
 # why these live in a Makefile rather than .cargo/config.toml.)
 
-.PHONY: build build-core test lint lint-js fmt fmt-check fmt-roadmap roadmap check ci preflight coverage coverage-lcov calibrate run web web-debug phone tablet desktop frb-check push-decks mobile-test apk book site slides install clean sdd-clean heartbeat check-backends e2e shots stats
+.PHONY: build build-core test lint lint-js fmt fmt-check fmt-roadmap roadmap check ci preflight package-check coverage coverage-lcov calibrate run web web-debug phone tablet desktop frb-check push-decks mobile-test apk book site slides install clean sdd-clean heartbeat check-backends e2e shots stats
 
 # Compile the workspace.
 build:
@@ -82,9 +82,10 @@ ci:
 # this catches that `make check` (lenient, no -Dwarnings) does not: a warning
 # that only fails under -Dwarnings, and a regenerated-but-unstaged file (a
 # `tests/contracts/*.json` snapshot, a `Cargo.lock`) that would otherwise slip
-# past a hand-picked `git add` into a release. Lighter than `make ci` (no
-# coverage) and more complete (adds bridge + frb-check + the clean-tree
-# check), so run it before every push and before every `git tag vX.Y.Z`.
+# past a hand-picked `git add` into a release. Also runs `package-check` (no
+# non-tracked file leaks into the crate tarball). Lighter than `make ci` (no
+# coverage) and more complete (adds bridge + frb-check + package-check + the
+# clean-tree check), so run it before every push and before every `git tag`.
 # `make check` stays the fast, lenient inner-loop gate. The clean-tree
 # assertion runs last, so commit or stash first (it is a release gate, not a
 # mid-edit check).
@@ -94,10 +95,33 @@ preflight:
 	RUSTFLAGS="-Dwarnings" $(MAKE) build-core
 	RUSTFLAGS="-Dwarnings" cargo test --manifest-path apps/mobile/rust/Cargo.toml
 	$(MAKE) frb-check
+	$(MAKE) package-check
 	@test -z "$$(git status --porcelain)" || { \
 		printf '\npreflight: working tree not clean; commit or stash before pushing/tagging:\n'; \
 		git status --short; exit 1; }
 	@echo 'preflight: OK'
+
+# Guard the crate package. Cargo.toml uses an `include` allowlist, which makes
+# cargo walk the filesystem rather than list files via git -- so it does NOT
+# honor .gitignore. A stray build artifact or a forgotten untracked file under
+# an included path (src/**, assets/web/**) would ship to crates.io. This asserts
+# every file `cargo package` would publish is git-tracked (cargo's two
+# synthesized entries, Cargo.toml.orig and .cargo_vcs_info.json, excepted). Runs
+# inside `preflight`, so it fires before every push/tag; run it standalone
+# before a manual `cargo publish` too. Paths in the package list never contain
+# spaces (source + assets), so the unquoted word-split loop is safe.
+package-check:
+	@leak=''; \
+	for f in $$(cargo package --list --allow-dirty 2>/dev/null); do \
+		case "$$f" in Cargo.toml.orig|.cargo_vcs_info.json) continue;; esac; \
+		git ls-files --error-unmatch "$$f" >/dev/null 2>&1 || leak="$$leak $$f"; \
+	done; \
+	if [ -n "$$leak" ]; then \
+		printf '\npackage-check: these files would be PUBLISHED to crates.io but are not\ngit-tracked (git-ignored or untracked -- the Cargo.toml `include` allowlist\ndoes not honor .gitignore):\n'; \
+		for f in $$leak; do echo "  $$f"; done; \
+		exit 1; \
+	fi; \
+	echo 'package-check: OK (every published file is git-tracked)'
 
 # Test coverage (needs cargo-llvm-cov: `cargo install cargo-llvm-cov`). Prints a
 # per-file summary and writes a browsable report to target/llvm-cov/html/. A

@@ -70,7 +70,10 @@ at. **crates.io is not automated.**
    release commit. The workflow creates the GitHub Release and attaches the
    binaries.
 6. **Publish to crates.io (manual):** `cargo publish` (the package stays lean via
-   `Cargo.toml`'s `exclude`; `cargo publish --dry-run` first if unsure).
+   `Cargo.toml`'s `include` allowlist: only `src/**`, `assets/web/**`, and the
+   root README/CHANGELOG/licenses ship). `make package-check` (also run inside
+   `preflight`) asserts nothing untracked leaks into the tarball; eyeball
+   `cargo package --list` too if unsure. Publish is irreversible.
 7. **Verify reach.** The `pages` workflow redeploys `alix.study` + the mdBook on
    the `main` push automatically — confirm the site, the download buttons, and
    `install.sh` resolve the new asset names.
