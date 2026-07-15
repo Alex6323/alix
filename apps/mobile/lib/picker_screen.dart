@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:alix_mobile/platform_access.dart';
 import 'package:alix_mobile/review_screen.dart';
+import 'package:alix_mobile/theme.dart';
 import 'package:alix_mobile/src/rust/api/listing.dart';
 import 'package:alix_mobile/src/rust/api/review.dart';
 
@@ -135,7 +136,9 @@ class _PickerScreenState extends State<PickerScreen> {
                               ? Icon(
                                   Icons.circle,
                                   size: 10,
-                                  color: Theme.of(context).colorScheme.primary,
+                                  // The web picker's cyan due dot (--bolt);
+                                  // primary is the brand action fill.
+                                  color: Theme.of(context).alix.bolt,
                                 )
                               : null,
                           onTap: () {

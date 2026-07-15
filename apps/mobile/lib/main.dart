@@ -4,6 +4,7 @@ import 'package:alix_mobile/bootstrap.dart';
 import 'package:alix_mobile/picker_screen.dart';
 import 'package:alix_mobile/platform_access.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
+import 'package:alix_mobile/theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -59,7 +60,9 @@ class _AlixAppState extends State<AlixApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'alix',
-      theme: ThemeData(colorSchemeSeed: Colors.indigo),
+      theme: alixLight(),
+      darkTheme: alixDark(),
+      themeMode: ThemeMode.system,
       home: PickerScreen(
         // Remount the whole picker tree when the root swaps.
         key: ValueKey(_prepared.root),

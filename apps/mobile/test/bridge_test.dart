@@ -15,6 +15,7 @@ import 'package:alix_mobile/review_screen.dart';
 import 'package:alix_mobile/src/rust/api/listing.dart';
 import 'package:alix_mobile/src/rust/api/review.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
+import 'package:alix_mobile/theme.dart';
 
 /// The platform seam's test double: no channels exist under `flutter test`.
 class FakeAccess implements PlatformAccess {
@@ -338,12 +339,56 @@ void main() {
     await tester.tap(find.text('Reveal'));
     await tester.pump();
     expect(find.text('Paris'), findsOneWidget);
+
+    // The grade trio is always tinted from the theme tokens.
+    final tokens = Theme.of(tester.element(find.text('Pass'))).alix;
+    Color? fg(String label) => tester
+        .widget<OutlinedButton>(find.widgetWithText(OutlinedButton, label))
+        .style
+        ?.foregroundColor
+        ?.resolve({});
+    expect(fg('Fail'), tokens.again);
+    expect(fg('Partial'), tokens.warn);
+    expect(fg('Pass'), tokens.good);
+
     await tester.tap(find.text('Pass'));
     await tester.pump();
     expect(find.text('Done for now'), findsOneWidget);
     expect(
       File('${root.path}/progress.json').readAsStringSync(),
       contains('"stability"'),
+    );
+  });
+
+  testWidgets('a choice pick washes the correct option green',
+      (tester) async {
+    final root = makeRoot();
+    addTearDown(() => root.deleteSync(recursive: true));
+    final deck = '${root.path}/ws/m.txt';
+    acquireAll(deck, root.path);
+
+    await tester.pumpWidget(MaterialApp(
+      theme: alixDark(),
+      home: ReviewScreen(
+        deckPath: deck,
+        rootDir: root.path,
+        depth: Depth.recognize,
+      ),
+    ));
+    await tester.pumpAndSettle();
+    final tokens = Theme.of(tester.element(find.byType(ReviewScreen))).alix;
+    await tester.tap(find.byType(OutlinedButton).first);
+    await tester.pump();
+
+    Color? bg(OutlinedButton b) => b.style?.backgroundColor?.resolve({});
+    final washes = tester
+        .widgetList<OutlinedButton>(find.byType(OutlinedButton))
+        .map(bg)
+        .toList();
+    expect(
+      washes.where((c) => c == tokens.good.withValues(alpha: 0.18)).length,
+      1,
+      reason: 'exactly the correct option washes green',
     );
   });
 }

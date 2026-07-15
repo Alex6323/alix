@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import 'package:alix_mobile/src/rust/api/review.dart';
+import 'package:alix_mobile/theme.dart';
 
 /// The review screen: renders the core's ReviewState and feeds the learner's
 /// actions back. All review logic lives in Rust; this widget switches on
@@ -196,8 +197,10 @@ class _ReviewScreenState extends State<ReviewScreen> {
   /// the current mode has uncovered.
   Widget _face(BuildContext context, CardView card) {
     final theme = Theme.of(context);
-    final answerStyle =
-        theme.textTheme.titleLarge?.copyWith(color: theme.colorScheme.primary);
+    // The web's revealed answer: mono, medium weight, neutral ink (green
+    // stays reserved for a genuinely-correct check).
+    final answerStyle = theme.textTheme.titleLarge
+        ?.copyWith(fontFamily: 'IBM Plex Mono', fontWeight: FontWeight.w500);
     final showBack = _state.acquire && _state.choices == null ||
         _revealed ||
         _check != null;
@@ -260,14 +263,14 @@ class _ReviewScreenState extends State<ReviewScreen> {
                   text,
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyMedium
-                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                      ?.copyWith(color: theme.alix.noteInk),
                 ),
               NoteUnit_Code(:final lines) => Text(
                   lines.join('\n'),
                   textAlign: TextAlign.left,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
-                    fontFamily: 'monospace',
+                    fontFamily: 'IBM Plex Mono',
                   ),
                 ),
             },
@@ -348,10 +351,23 @@ class _ReviewScreenState extends State<ReviewScreen> {
   bool _lineDone(CardView card) =>
       _state.mode == Mode.lineByLine && _revealedLines >= card.back.length;
 
-  /// Multiple-choice options, tinted once a pick was made.
+  /// Multiple-choice options, tinted once a pick was made: the web's
+  /// correct/wrong wash (--good / --again), not Material containers.
   Widget _options(BuildContext context) {
     final options = _state.choices ?? const [];
-    final scheme = Theme.of(context).colorScheme;
+    final tokens = Theme.of(context).alix;
+    Color? wash(int i) {
+      final choice = _choice;
+      if (choice == null) return null;
+      if (BigInt.from(i) == choice.correct) {
+        return tokens.good.withValues(alpha: 0.18);
+      }
+      if (BigInt.from(i) == choice.chosen) {
+        return tokens.again.withValues(alpha: 0.18);
+      }
+      return null;
+    }
+
     return Column(
       children: [
         for (final (i, option) in options.indexed)
@@ -362,13 +378,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
               child: OutlinedButton(
                 style: _choice == null
                     ? null
-                    : OutlinedButton.styleFrom(
-                        backgroundColor: BigInt.from(i) == _choice!.correct
-                            ? scheme.primaryContainer
-                            : (BigInt.from(i) == _choice!.chosen
-                                ? scheme.errorContainer
-                                : null),
-                      ),
+                    : OutlinedButton.styleFrom(backgroundColor: wash(i)),
                 onPressed: _choice == null
                     ? () => setState(() => _choice = _session.choose(chosen: i))
                     : null,
@@ -382,7 +392,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
 
   /// Typed-answer entry plus, after checking, the per-line evidence.
   Widget _typing(BuildContext context, CardView card) {
-    final scheme = Theme.of(context).colorScheme;
+    final tokens = Theme.of(context).alix;
     final fields = _state.mode == Mode.typeLine ? card.back.length : 1;
     return Column(
       children: [
@@ -404,7 +414,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
             Text(
               result.passed ? result.expected : '${result.input} -> ${result.expected}',
               style: TextStyle(
-                color: result.passed ? scheme.primary : scheme.error,
+                color: result.passed ? tokens.good : tokens.again,
               ),
             ),
         ],
@@ -480,11 +490,33 @@ class _ReviewScreenState extends State<ReviewScreen> {
     return _gradeRow();
   }
 
-  Widget _gradeRow() => _row([
-        ('Fail', () => _grade(Grade.fail)),
-        ('Partial', () => _grade(Grade.partial)),
-        ('Pass', () => _grade(Grade.pass)),
-      ]);
+  /// The self-rate trio, always tinted like the web's legend chips:
+  /// red / amber / green washes with matching border and label.
+  Widget _gradeRow() {
+    final tokens = Theme.of(context).alix;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        for (final (label, color, grade) in [
+          ('Fail', tokens.again, Grade.fail),
+          ('Partial', tokens.warn, Grade.partial),
+          ('Pass', tokens.good, Grade.pass),
+        ])
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: color,
+                backgroundColor: color.withValues(alpha: 0.12),
+                side: BorderSide(color: color.withValues(alpha: 0.55)),
+              ),
+              onPressed: () => _grade(grade),
+              child: Text(label),
+            ),
+          ),
+      ],
+    );
+  }
 
   Widget _row(List<(String, VoidCallback)> actions) {
     return Row(

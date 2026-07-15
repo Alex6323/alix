@@ -74,6 +74,26 @@ flutter:
     - assets/decks/sample-workspace/capitals.txt
     - assets/decks/sample-workspace/steps.txt
 
+  # IBM Plex (OFL, assets/fonts/OFL.txt): the web app's identity faces,
+  # converted from the woff2 files vendored in assets/web/fonts.
+  fonts:
+    - family: IBM Plex Sans
+      fonts:
+        - asset: assets/fonts/ibm-plex-sans-400.ttf
+          weight: 400
+        - asset: assets/fonts/ibm-plex-sans-500.ttf
+          weight: 500
+        - asset: assets/fonts/ibm-plex-sans-600.ttf
+          weight: 600
+        - asset: assets/fonts/ibm-plex-sans-700.ttf
+          weight: 700
+    - family: IBM Plex Mono
+      fonts:
+        - asset: assets/fonts/ibm-plex-mono-400.ttf
+          weight: 400
+        - asset: assets/fonts/ibm-plex-mono-600.ttf
+          weight: 600
+
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
 
