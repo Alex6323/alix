@@ -21,8 +21,8 @@ use crate::{
     card::Card,
     config::{AskConfig, ReviewConfig},
     deck::{Deck, DeckSettings},
-    depth::Depth,
-    parser, picker,
+    depth::{Depth, default_depth},
+    parser,
     scheduler::Fsrs,
     session::{self, DeckInfo, Order, Session, SessionOptions},
     store::{Store, VirtualCard, default_store_path},
@@ -514,7 +514,7 @@ pub fn select(
     // Learn reopen at it.
     let depth = depth_sel
         .or_else(|| store.last_depth(subject.as_ref()))
-        .unwrap_or_else(|| picker::default_depth(&cards, &augment));
+        .unwrap_or_else(|| default_depth(&cards, &augment));
     // Pacing: the launch's own overrides win over the instance's flag/config
     // values; cram is purely a per-launch choice (the ▾ menu tick-box).
     let options = SessionOptions {

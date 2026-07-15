@@ -197,22 +197,6 @@ fn badge_depth_for(subject: &str, cards: &[Card], store: &Store) -> (Option<Dept
     (earned, dotted)
 }
 
-/// The depth a never-drilled deck should start at (`{#recognize-smart-default}`):
-/// Recognize when `cache` already has AI distractors for at least one of
-/// `cards`, else the classic Recall default. Encodes the real rule ("Recognize
-/// is right because the deck has usable distractors"), not a fixed habit — a
-/// deck with no coverage keeps today's Recall start. Only ever consulted as a
-/// fallback when the store has no remembered `last_depth` for the deck; the
-/// acquire-time bar in `choice.rs` (`recognition_question`) separately protects
-/// an unaugmented card from ever seeing a junk multiple-choice.
-pub fn default_depth(cards: &[Card], cache: &AugmentCache) -> Depth {
-    if cards.iter().any(|c| cache.distractors(c.id()).is_some()) {
-        Depth::Recognize
-    } else {
-        Depth::default()
-    }
-}
-
 /// Computes a deck's [`DeckStatus`] from the progress `store`, mirroring what a
 /// review session would see. `decks_dir` roots `% requires:` resolution for the
 /// lock check; `enforce_locks` is false for browse (any deck is browsable).
@@ -670,32 +654,6 @@ mod tests {
             None,
             1,
         )
-    }
-
-    #[test]
-    fn default_depth_is_recognize_when_any_card_has_cached_distractors() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut cache = AugmentCache::open(dir.path().join("augment.json"));
-        let covered = plain_card("a");
-        let uncovered = plain_card("b");
-        cache.set_distractors(covered.id(), vec!["x".into(), "y".into()]);
-        let cards = vec![covered, uncovered];
-        assert_eq!(Depth::Recognize, default_depth(&cards, &cache));
-    }
-
-    #[test]
-    fn default_depth_stays_recall_without_any_cached_distractors() {
-        let dir = tempfile::tempdir().unwrap();
-        let cache = AugmentCache::open(dir.path().join("augment.json"));
-        let cards = vec![plain_card("a"), plain_card("b")];
-        assert_eq!(Depth::Recall, default_depth(&cards, &cache));
-    }
-
-    #[test]
-    fn default_depth_stays_recall_for_an_empty_deck() {
-        let dir = tempfile::tempdir().unwrap();
-        let cache = AugmentCache::open(dir.path().join("augment.json"));
-        assert_eq!(Depth::Recall, default_depth(&[], &cache));
     }
 
     #[test]

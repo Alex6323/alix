@@ -74,6 +74,10 @@ mod tests {
         let end = end_of_local_day_ms(today);
         assert!(end >= now);
         assert!(end - now < 86_400_000);
-        assert_eq!(today, local_date(end), "the ceiling is still the same local day");
+        assert_eq!(
+            today,
+            local_date(end),
+            "the ceiling is still the same local day"
+        );
     }
 }

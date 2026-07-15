@@ -488,8 +488,12 @@ mod tests {
         assert!(text.contains("deadline = \"2026-09-01\""));
 
         set_deadline(dir.path(), None).unwrap();
-        let after = std::fs::read_to_string(dir.path().join(crate::config::LOCAL_MANIFEST)).unwrap();
-        assert_eq!(scaffold, after, "clearing restores the file byte-identically");
+        let after =
+            std::fs::read_to_string(dir.path().join(crate::config::LOCAL_MANIFEST)).unwrap();
+        assert_eq!(
+            scaffold, after,
+            "clearing restores the file byte-identically"
+        );
     }
 
     #[test]

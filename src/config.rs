@@ -2005,7 +2005,11 @@ mod tests {
         assert_eq!(2, complaints.len());
         assert!(complaints[0].contains("deadline"));
 
-        std::fs::write(dir.path().join(LOCAL_MANIFEST), "[review]\ndeadline = \"2026-09-01\"\n").unwrap();
+        std::fs::write(
+            dir.path().join(LOCAL_MANIFEST),
+            "[review]\ndeadline = \"2026-09-01\"\n",
+        )
+        .unwrap();
         assert!(local_review_lint(dir.path()).is_empty());
         let empty = tempfile::tempdir().unwrap();
         assert!(local_review_lint(empty.path()).is_empty());
