@@ -1246,6 +1246,37 @@ mod tests {
     }
 
     #[test]
+    fn topology_in_a_conversation_remaps_embedded_indices_through_the_roster() {
+        let _g = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        // The model's reply addresses cards by ROSTER index (what the primer
+        // showed), not by their position in `items` below — the roster is
+        // deliberately ordered differently from `items` so a positional
+        // (rather than roster-lookup) remapping would silently misattribute.
+        let cli = fake_reply(
+            dir.path(),
+            r#"{"principle":"p","edges":[{"from":0,"to":1,"label":"l"}],"walk":[0,1,2]}"#,
+        );
+        let cfg = ask_config(&cli);
+        let roster = vec![
+            item(30, "q30", "a30"),
+            item(10, "q10", "a10"),
+            item(20, "q20", "a20"),
+        ];
+        let conversation = BatchConversation::new(&cfg, roster).expect("claude keeps sessions");
+        let items = vec![
+            item(10, "q10", "a10"),
+            item(20, "q20", "a20"),
+            item(30, "q30", "a30"),
+        ];
+        let topo = generate_topology(&items, None, &cfg, Some(&conversation)).unwrap();
+        // Roster indices 0,1,2 are cards 30,10,20 — not the input order 10,20,30.
+        assert_eq!(vec![30, 10, 20], topo.walk);
+        assert_eq!(30, topo.edges[0].from);
+        assert_eq!(10, topo.edges[0].to);
+    }
+
+    #[test]
     fn run_config_clears_tools_and_applies_ai_overrides() {
         let ask = AskConfig {
             model: Some("sonnet".into()),
