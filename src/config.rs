@@ -1193,20 +1193,18 @@ pub fn local_review_lint(dir: &Path) -> Vec<String> {
 
     let mut complaints = Vec::new();
 
-    if let Some(date) = &raw.review.deadline {
-        if let Err(e) = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d") {
-            complaints.push(format!(
-                "deadline = {date:?}: invalid date (expected YYYY-MM-DD). {e}"
-            ));
-        }
+    if let Some(date) = &raw.review.deadline
+        && let Err(e) = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+    {
+        complaints.push(format!(
+            "deadline = {date:?}: invalid date (expected YYYY-MM-DD). {e}"
+        ));
     }
 
-    if let Some(ramp) = &raw.review.deadline_ramp {
-        if let Err(e) = parse_ramp_days(ramp) {
-            complaints.push(format!(
-                "deadline_ramp = {ramp:?}: {e}"
-            ));
-        }
+    if let Some(ramp) = &raw.review.deadline_ramp
+        && let Err(e) = parse_ramp_days(ramp)
+    {
+        complaints.push(format!("deadline_ramp = {ramp:?}: {e}"));
     }
 
     complaints
