@@ -62,6 +62,55 @@ at. **crates.io is not automated.**
    the `main` push automatically — confirm the site, the download buttons, and
    `install.sh` resolve the new asset names.
 
+## The mobile app (apps/mobile)
+
+The Android app releases on its **own version stream**: pubspec `version:
+X.Y.Z+N` and a **`mobile-vX.Y.Z` tag** (disjoint from the crate's `v*`
+pattern, so neither track ever triggers the other). The `mobile-release`
+workflow builds one signed arm64 APK (`alix-arm64-v8a.apk`) and attaches it
+to a GitHub Release, notes lifted from `apps/mobile/CHANGELOG.md`'s matching
+section.
+
+Rules:
+
+- **`+N` (the Android versionCode) is monotonic forever**: bump it by one
+  every release, never reset it. Android orders installs by it, and a
+  lower-or-equal N refuses to update.
+- `X.Y.Z` follows the same pre-1.0 semver spirit as the crate, on the app's
+  own clock. The About screen shows both the app and the embedded core
+  version.
+
+To cut one:
+
+1. **Green gate:** `make check && make frb-check && make mobile-test &&
+   make apk`, then install the APK on a real phone
+   (`adb install -r apps/mobile/build/app/outputs/flutter-apk/app-release.apk`)
+   and run one review.
+2. **Finalize** `apps/mobile/CHANGELOG.md` (rename `## [Unreleased]` to
+   `## [X.Y.Z] - date`, fresh empty Unreleased above) and bump pubspec's
+   `version:` to `X.Y.Z+N`.
+3. **Commit** as `Release mobile-vX.Y.Z`, then
+   `git tag mobile-vX.Y.Z && git push origin main --tags`.
+4. The workflow **fails loud** on: tag/pubspec mismatch, a debug-signed APK
+   (missing secrets), non-16KB-aligned native libs, or a missing changelog
+   section.
+
+**One-time keystore setup** (the release signature; losing the keystore
+orphans every installed app, so back it up privately):
+
+```sh
+keytool -genkeypair -v -keystore ~/keys/alix-release.jks -alias alix \
+        -keyalg RSA -keysize 4096 -validity 10950
+base64 -w0 ~/keys/alix-release.jks | gh secret set ANDROID_KEYSTORE_BASE64
+gh secret set ANDROID_KEYSTORE_PASSWORD   # the -storepass you chose
+gh secret set ANDROID_KEY_ALIAS --body alix
+gh secret set ANDROID_KEY_PASSWORD        # the -keypass (often = storepass)
+```
+
+Local `make apk` builds are debug-signed while `android/key.properties` is
+absent; that file (gitignored) can point at the keystore for local signed
+builds if ever needed.
+
 ## After a release
 
 Resync the local (gitignored) planning files: strike shipped items in `ROADMAP.md`

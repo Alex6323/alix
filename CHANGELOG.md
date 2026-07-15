@@ -7,6 +7,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Multi-device roaming guards in the store.** Every save stamps which
+  device wrote `progress.json` (the device name is a plaintext file in the
+  data dir, rename it freely), and the library can report a recent
+  *foreign* write plus any Syncthing conflict copies sitting next to a
+  store. The mobile app surfaces both as banners; the web/CLI surfaces are
+  a follow-up. The rule stays one device at a time; these make a slip
+  visible instead of silent.
+- The library exposes its version as `alix::VERSION` (the mobile About
+  screen shows it next to the app's own).
+- **The mobile app grew up to real phones** (its own changelog:
+  `apps/mobile/CHANGELOG.md`, released as `mobile-vX.Y.Z` tags with a
+  signed APK on GitHub Releases): a user-chosen shared decks folder for
+  the Syncthing roaming story, the web app's look (palettes, IBM Plex, the
+  brand action), a launcher identity, and an About with both versions.
 - The site gains an Impressum, a privacy note, a contact address and a
   sponsor link; personal details are injected at deploy time, not stored in
   the repo.

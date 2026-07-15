@@ -31,6 +31,7 @@
 # Part V — Surface & reference
 
 - [The web app](15-the-web-app.md)
+- [alix on your phone](18-the-phone-app.md)
 - [Configuration](16-configuration.md)
 - [Command reference](17-command-reference.md)
 
