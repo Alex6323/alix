@@ -1,0 +1,146 @@
+name: Mobile release
+
+# A signed arm64 release APK on GitHub Releases, driven by mobile-vX.Y.Z
+# tags. The mobile app versions independently of the crate (whose pipeline
+# listens to v* tags, a disjoint pattern), so an app hotfix never forces a
+# crate release and vice versa. Process + one-time keystore setup:
+# RELEASING.md, "The mobile app".
+on:
+  push:
+    tags: ["mobile-v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: signed arm64 apk
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      # The tag must state the truth: mobile-vX.Y.Z == pubspec `version:
+      # X.Y.Z+N`, with the +N build number present (N is the monotonic
+      # versionCode Android orders installs by; it never resets).
+      - name: Check the tag against pubspec
+        run: |
+          tag="${GITHUB_REF_NAME#mobile-v}"
+          pub=$(sed -n 's/^version: //p' apps/mobile/pubspec.yaml)
+          name="${pub%+*}"
+          build="${pub#*+}"
+          echo "tag $tag / pubspec $pub"
+          if [ -z "$build" ] || [ "$build" = "$pub" ]; then
+            echo "pubspec version carries no +N build number"; exit 1
+          fi
+          if [ "$tag" != "$name" ]; then
+            echo "tag mobile-v$tag does not match pubspec $name"; exit 1
+          fi
+          echo "MOBILE_VERSION=$tag" >> "$GITHUB_ENV"
+
+      # The toolchain bring-up mirrors mobile-drift.yml (current stable
+      # Flutter, pinned codegen read from pubspec, Flutter-pinned NDK).
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            apps/mobile/rust
+
+      - uses: cargo-bins/cargo-binstall@main
+      - name: Install the pinned flutter_rust_bridge_codegen
+        run: |
+          ver=$(sed -n 's/^  flutter_rust_bridge: \([0-9][0-9.]*\)$/\1/p' apps/mobile/pubspec.yaml)
+          echo "pubspec pins flutter_rust_bridge $ver"
+          cargo binstall -y "flutter_rust_bridge_codegen@$ver"
+
+      - name: Install the Flutter-pinned NDK
+        run: |
+          ext="$FLUTTER_ROOT/packages/flutter_tools/gradle/src/main/kotlin/FlutterExtension.kt"
+          ndk=$(sed -n 's/.*val ndkVersion: String = "\([0-9][0-9.]*\)".*/\1/p' "$ext")
+          echo "flutter pins NDK $ndk"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;$ndk"
+
+      - run: make frb-check
+
+      # The keystore, from secrets (one-time setup in RELEASING.md).
+      # key.properties is gitignored; storeFile resolves relative to
+      # android/app.
+      - name: Materialize the signing key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > apps/mobile/android/app/alix-release.jks
+          {
+            echo "storeFile=alix-release.jks"
+            echo "storePassword=$ANDROID_KEYSTORE_PASSWORD"
+            echo "keyAlias=$ANDROID_KEY_ALIAS"
+            echo "keyPassword=$ANDROID_KEY_PASSWORD"
+          } > apps/mobile/android/key.properties
+
+      # ONE arm64 APK, no --split-per-abi: the split offsets versionCode
+      # per ABI, which would poison the monotonic scheme for zero benefit
+      # when only aarch64 is built anyway.
+      - name: Build the signed release APK (arm64)
+        run: cd apps/mobile && flutter build apk --release --target-platform android-arm64
+
+      # Missing secrets would silently fall back to debug signing (the
+      # local-build convenience); a published debug-signed APK is worse
+      # than a failed run.
+      - name: Assert the APK is not debug-signed
+        run: |
+          cert=$(keytool -printcert -jarfile apps/mobile/build/app/outputs/flutter-apk/app-release.apk)
+          echo "$cert" | head -3
+          if echo "$cert" | grep -q "CN=Android Debug"; then
+            echo "the APK is debug-signed; are the signing secrets set?"; exit 1
+          fi
+
+      # Android 15 requires 16KB-aligned native libs; NDK r28 emits them by
+      # default, and this guard fails loud if the toolchain regresses.
+      - name: Assert 16KB page alignment
+        run: |
+          unzip -o -q apps/mobile/build/app/outputs/flutter-apk/app-release.apk 'lib/arm64-v8a/*' -d /tmp/apk
+          align=$(readelf -l /tmp/apk/lib/arm64-v8a/librust_lib_alix_mobile.so | awk '/LOAD/ {print $NF; exit}')
+          echo "librust_lib_alix_mobile.so LOAD align: $align"
+          case "$align" in
+            0x4000|0x10000) ;;
+            *) echo "not 16KB-aligned"; exit 1 ;;
+          esac
+
+      # Release notes are this version's section of the mobile changelog;
+      # an empty section fails rather than shipping a blank release.
+      - name: Extract the release notes
+        run: |
+          awk -v ver="$MOBILE_VERSION" \
+            '$0 ~ "^## \\[" ver "\\]" {on=1; next} /^## \[/ {on=0} on' \
+            apps/mobile/CHANGELOG.md > /tmp/notes.md
+          if ! grep -q '[^[:space:]]' /tmp/notes.md; then
+            echo "no [$MOBILE_VERSION] section in apps/mobile/CHANGELOG.md"; exit 1
+          fi
+          cat /tmp/notes.md
+
+      - name: Name the artifact
+        run: cp apps/mobile/build/app/outputs/flutter-apk/app-release.apk alix-arm64-v8a.apk
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: alix mobile v${{ env.MOBILE_VERSION }}
+          body_path: /tmp/notes.md
+          files: alix-arm64-v8a.apk

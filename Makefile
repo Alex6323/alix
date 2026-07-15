@@ -6,7 +6,7 @@
 # toolchain — `+nightly` is handled by rustup before cargo sees it — which is
 # why these live in a Makefile rather than .cargo/config.toml.)
 
-.PHONY: build build-core test lint lint-js fmt fmt-check fmt-roadmap roadmap check ci coverage coverage-lcov calibrate run web phone tablet desktop frb-check push-decks mobile-test book site slides install clean sdd-clean heartbeat check-backends e2e shots stats
+.PHONY: build build-core test lint lint-js fmt fmt-check fmt-roadmap roadmap check ci coverage coverage-lcov calibrate run web phone tablet desktop frb-check push-decks mobile-test apk book site slides install clean sdd-clean heartbeat check-backends e2e shots stats
 
 # Compile the workspace.
 build:
@@ -146,6 +146,13 @@ mobile-test:
 	cargo build --release --manifest-path apps/mobile/rust/Cargo.toml
 	cd apps/mobile && flutter test
 	cd apps/mobile && flutter test integration_test -d linux
+
+# The release APK (one arm64 artifact, matching the mobile-release workflow);
+# debug-signed unless android/key.properties exists. Smoke-install this on a
+# real phone before tagging mobile-vX.Y.Z (see RELEASING.md).
+apk:
+	cd apps/mobile && flutter build apk --release --target-platform android-arm64
+	@echo "APK: apps/mobile/build/app/outputs/flutter-apk/app-release.apk"
 
 # Serve the user manual (docs/book) with live reload and open it in the browser.
 # Requires mdBook: `cargo install mdbook`.
