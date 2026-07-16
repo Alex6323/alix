@@ -353,6 +353,21 @@ pub enum Phase {
     Remediated,
 }
 
+/// A store outcome [`Sitting::advance`] hands back as data instead of
+/// performing, so a storeless caller (the M6 remote exam handler) can apply it
+/// itself; [`Sitting::poll`] is the store-writing wrapper that applies these
+/// for the existing store-backed callers.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Effect {
+    /// The sitting passed: persist "mastered" for the subject.
+    Passed,
+    /// A trace sitting failed: start the re-sit cooldown for the subject.
+    TraceFailed,
+    /// Remediation produced this deck-format card text: store it as virtual
+    /// cards for the subject.
+    RemediationCards(String),
+}
+
 /// The in-flight background call for a [`Sitting`].
 enum Pending {
     Questions(Receiver<Result<Vec<ExamQuestion>, String>>),
@@ -542,6 +557,21 @@ impl Sitting {
             *slot = text;
         }
     }
+
+    /// Stores a full batch of answers at once, in [`Phase::Answering`] and
+    /// only when `answers` has exactly one entry per question; otherwise a
+    /// no-op. Unlike [`set_answer`](Sitting::set_answer)'s per-question edits
+    /// for the web's page-at-a-time UI, this is for a remote client that
+    /// answers locally and submits everything in one call. Returns whether
+    /// they were stored.
+    pub fn set_answers(&mut self, answers: Vec<String>) -> bool {
+        if self.phase == Phase::Answering && answers.len() == self.questions.len() {
+            self.answers = answers;
+            true
+        } else {
+            false
+        }
+    }
     pub fn next(&mut self) {
         if self.current + 1 < self.questions.len() {
             self.current += 1;
@@ -630,30 +660,32 @@ impl Sitting {
         self.phase = Phase::Remediating;
     }
 
-    /// Drains a finished background call and advances the phase, applying side
-    /// effects: on a passing grade, persist "mastered" and save `store`; on
-    /// remediation, create/dedupe/revive virtual cards in `store` (the deck
-    /// file is never touched). `retire_after_days` is the caller's resolved
-    /// `[review] retire_after` cap (per-workspace), needed to tell an active
-    /// remediation dupe from a derived-retired one to revive, see
-    /// [`crate::store::store_remediation_cards`]. Returns `true` when the phase
-    /// advanced.
-    pub fn poll(&mut self, store: &mut Store, now_ms: u64, retire_after_days: Option<u32>) -> bool {
+    /// Drains a finished background call and advances the phase. Performs NO
+    /// store access (a storeless caller, like the M6 remote exam handler,
+    /// drives a sitting through this alone); returns the store outcome the
+    /// caller should apply as data ([`Effect`]), or `None` when nothing landed
+    /// or the landed reply carries no store outcome (a failed non-trace
+    /// grade just gets resubmitted or remediated, not stored).
+    /// [`poll`](Sitting::poll) is the store-writing wrapper over this for the
+    /// existing store-backed callers. `now_ms` is unused here (advance itself
+    /// never touches the clock) but kept so the remote contract can pass it
+    /// explicitly.
+    pub fn advance(&mut self, _now_ms: u64) -> Option<Effect> {
         let reply = match &self.pending {
-            None => return false,
+            None => return None,
             Some(Pending::Questions(rx)) => match rx.try_recv() {
                 Ok(r) => Reply::Questions(r),
-                Err(TryRecvError::Empty) => return false,
+                Err(TryRecvError::Empty) => return None,
                 Err(TryRecvError::Disconnected) => Reply::Questions(Err(thread_gone())),
             },
             Some(Pending::Grade(rx)) => match rx.try_recv() {
                 Ok(r) => Reply::Grade(r),
-                Err(TryRecvError::Empty) => return false,
+                Err(TryRecvError::Empty) => return None,
                 Err(TryRecvError::Disconnected) => Reply::Grade(Err(thread_gone())),
             },
             Some(Pending::Remediation(rx)) => match rx.try_recv() {
                 Ok(r) => Reply::Remediation(r),
-                Err(TryRecvError::Empty) => return false,
+                Err(TryRecvError::Empty) => return None,
                 Err(TryRecvError::Disconnected) => Reply::Remediation(Err(thread_gone())),
             },
         };
@@ -665,30 +697,71 @@ impl Sitting {
                 self.questions = qs;
                 self.current = 0;
                 self.phase = Phase::Answering;
+                None
             }
             // Generation failed before any questions: stays Generating, but with
             // an error and nothing in flight; the frontend offers to close.
-            Reply::Questions(Err(e)) => self.error = Some(e),
+            Reply::Questions(Err(e)) => {
+                self.error = Some(e);
+                None
+            }
             Reply::Grade(Ok(result)) => {
-                if result.passed {
-                    store.set_deck_mastered(&self.subject, now_ms);
-                    let _ = store.save();
+                let effect = if result.passed {
+                    Some(Effect::Passed)
                 } else if self.kind == SittingKind::Trace {
                     // A failed trace exam starts the re-sit cooldown, so the
                     // graded feedback can't be pasted straight back into the one
                     // fixed question.
-                    store.set_exam_failed(&self.subject, now_ms);
-                    let _ = store.save();
-                }
+                    Some(Effect::TraceFailed)
+                } else {
+                    None
+                };
                 self.result = Some(result);
                 self.phase = Phase::Results;
+                effect
             }
             // Grading failed: back to answering so the student can resubmit.
             Reply::Grade(Err(e)) => {
                 self.error = Some(e);
                 self.phase = Phase::Answering;
+                None
             }
             Reply::Remediation(Ok(cards)) => {
+                self.phase = Phase::Remediated;
+                Some(Effect::RemediationCards(cards))
+            }
+            Reply::Remediation(Err(e)) => {
+                self.error = Some(e);
+                self.phase = Phase::Results;
+                None
+            }
+        }
+    }
+
+    /// The store-writing wrapper over [`advance`](Sitting::advance): drains a
+    /// finished background call, advances the phase, and applies the store
+    /// side effect the reply carries (persist "mastered" on a pass, start the
+    /// re-sit cooldown on a failed trace exam, create/dedupe/revive
+    /// remediation virtual cards in `store` on remediation; the deck file is
+    /// never touched). `retire_after_days` is the caller's resolved `[review]
+    /// retire_after` cap (per-workspace), needed to tell an active remediation
+    /// dupe from a derived-retired one to revive, see
+    /// [`crate::store::store_remediation_cards`]. Returns `true` when the phase
+    /// advanced.
+    pub fn poll(&mut self, store: &mut Store, now_ms: u64, retire_after_days: Option<u32>) -> bool {
+        let was_pending = self.pending.is_some();
+        let effect = self.advance(now_ms);
+        let advanced = was_pending && self.pending.is_none();
+        match effect {
+            Some(Effect::Passed) => {
+                store.set_deck_mastered(&self.subject, now_ms);
+                let _ = store.save();
+            }
+            Some(Effect::TraceFailed) => {
+                store.set_exam_failed(&self.subject, now_ms);
+                let _ = store.save();
+            }
+            Some(Effect::RemediationCards(cards)) => {
                 match crate::store::store_remediation_cards(
                     store,
                     &self.subject,
@@ -697,26 +770,20 @@ impl Sitting {
                     now_ms,
                     retire_after_days,
                 ) {
-                    Ok(n) => {
-                        self.remediated_count = Some(n);
-                        self.phase = Phase::Remediated;
-                    }
+                    Ok(n) => self.remediated_count = Some(n),
                     Err(e) => {
                         self.error = Some(format!("{e}"));
                         self.phase = Phase::Results;
                     }
                 }
             }
-            Reply::Remediation(Err(e)) => {
-                self.error = Some(e);
-                self.phase = Phase::Results;
-            }
+            None => {}
         }
-        true
+        advanced
     }
 }
 
-/// A drained background reply, used inside [`Sitting::poll`].
+/// A drained background reply, used inside [`Sitting::advance`].
 enum Reply {
     Questions(Result<Vec<ExamQuestion>, String>),
     Grade(Result<ExamResult, String>),
@@ -1661,6 +1728,22 @@ mod tests {
         panic!("exam background call did not complete");
     }
 
+    /// Calls `advance` (storeless) until the in-flight background call lands
+    /// (or times out), returning the landed effect. That effect may itself be
+    /// `None` (e.g. a failed non-trace grade has no store outcome) even though
+    /// a reply did land, so callers that need to tell "landed with no effect"
+    /// from "still pending" should check `s.thinking()` too.
+    fn advance_until_idle(s: &mut Sitting) -> Option<Effect> {
+        for _ in 0..500 {
+            let effect = s.advance(0);
+            if !s.thinking() {
+                return effect;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        panic!("exam background call did not complete");
+    }
+
     /// A fake CLI that answers the three exam calls by branching on the
     /// prompt's JSON-shape marker (`"grades"` / `"questions"`), else emits
     /// a deck.
@@ -1918,6 +2001,117 @@ mod tests {
                 "a passing re-sit must not retire remediation cards"
             );
         }
+    }
+
+    // ── advance()/set_answers() (storeless split, M6) ───────────────────────
+
+    #[test]
+    fn advance_surfaces_remediation_text_without_a_store() {
+        let _lock = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = branching_cli(
+            dir.path(),
+            "{\"grades\":[{\"verdict\":\"fail\",\"feedback\":\"no\",\"missed\":[\"the move rule\"]},\
+             {\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]}]}",
+        );
+        let deck = sourced_deck(dir.path());
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+
+        // Drive to Remediating with poll+store, exactly like the existing
+        // sitting tests.
+        let mut s = Sitting::start(
+            &deck,
+            Strictness::Balanced,
+            ExamConfig::default(),
+            ask_config(&cli),
+        );
+        drain(&mut s, &mut store);
+        s.set_answer("a1".to_string());
+        s.next();
+        s.set_answer("a2".to_string());
+        s.submit();
+        drain(&mut s, &mut store);
+        assert!(s.can_remediate());
+        s.remediate();
+        assert_eq!(&Phase::Remediating, s.phase());
+
+        // No Store from here on: advance alone drains the remediation reply.
+        let effect = advance_until_idle(&mut s);
+        let Some(Effect::RemediationCards(text)) = effect else {
+            panic!("expected Some(Effect::RemediationCards(_)), got {effect:?}");
+        };
+        let synth = parser::parse_str("d.txt", &text).unwrap();
+        assert_eq!("Why does X?", synth[0].front);
+        assert_eq!(vec!["point one".to_string()], synth[0].back);
+        assert_eq!(&Phase::Remediated, s.phase());
+        assert_eq!(None, s.remediated_count()); // a store outcome, not advance's job
+    }
+
+    #[test]
+    fn advance_keeps_grade_fail_storeless() {
+        let _lock = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = branching_cli(
+            dir.path(),
+            "{\"grades\":[{\"verdict\":\"fail\",\"feedback\":\"no\",\"missed\":[\"the move rule\"]},\
+             {\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]}]}",
+        );
+        let deck = sourced_deck(dir.path());
+
+        // No Store anywhere: advance alone drives generation through to a
+        // graded failure.
+        let mut s = Sitting::start(
+            &deck,
+            Strictness::Balanced,
+            ExamConfig::default(),
+            ask_config(&cli),
+        );
+        assert_eq!(None, advance_until_idle(&mut s));
+        assert_eq!(&Phase::Answering, s.phase());
+        s.set_answer("a1".to_string());
+        s.next();
+        s.set_answer("a2".to_string());
+        s.submit();
+
+        let effect = advance_until_idle(&mut s);
+        assert_eq!(None, effect); // a failed non-trace grade has no store outcome
+        assert_eq!(&Phase::Results, s.phase());
+        assert!(!s.result().unwrap().passed);
+    }
+
+    #[test]
+    fn set_answers_rejects_wrong_arity_and_wrong_phase() {
+        let _lock = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = branching_cli(
+            dir.path(),
+            "{\"grades\":[{\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]},\
+             {\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]}]}",
+        );
+        let deck = sourced_deck(dir.path());
+
+        let mut s = Sitting::start(
+            &deck,
+            Strictness::Balanced,
+            ExamConfig::default(),
+            ask_config(&cli),
+        );
+        // Right arity (0 questions while still Generating) but the wrong phase.
+        assert_eq!(&Phase::Generating, s.phase());
+        assert!(!s.set_answers(Vec::new()));
+        assert!(s.answers().is_empty());
+
+        advance_until_idle(&mut s);
+        assert_eq!(&Phase::Answering, s.phase());
+        assert_eq!(2, s.total());
+
+        // Wrong arity in Answering: rejected, answers untouched.
+        assert!(!s.set_answers(vec!["only one".to_string()]));
+        assert_eq!(vec!["".to_string(), "".to_string()], s.answers());
+
+        // Right arity in Answering: stored.
+        assert!(s.set_answers(vec!["a1".to_string(), "a2".to_string()]));
+        assert_eq!(vec!["a1".to_string(), "a2".to_string()], s.answers());
     }
 
     // ── Trace exam (the compression) ────────────────────────────────────────
