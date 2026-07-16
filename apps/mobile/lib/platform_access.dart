@@ -73,11 +73,11 @@ class RealPlatformAccess implements PlatformAccess {
 
   @override
   Future<String?> pickDirectory() async {
-    if (Platform.isAndroid) {
-      final uri = await _channel.invokeMethod<String>('pickDirectory');
-      return uri == null ? null : pathFromTreeUri(uri);
-    }
-    // The desktop build is a dev vehicle; zenity covers it without a dep.
+    // Android chooses via the in-app FolderBrowser (the system SAF picker's
+    // DocumentsUI crashes on some devices, and full-filesystem access makes it
+    // unnecessary). This path stays for the desktop dev vehicle, where zenity
+    // covers it without a dep.
+    if (Platform.isAndroid) return null;
     try {
       final res = await Process.run('zenity', [
         '--file-selection',
@@ -89,28 +89,4 @@ class RealPlatformAccess implements PlatformAccess {
       return null;
     }
   }
-}
-
-/// Maps a document-tree URI from the system picker to a real filesystem
-/// path, e.g. `content://com.android.externalstorage.documents/tree/
-/// primary%3Adecks` to `/storage/emulated/0/decks`. Only the device-storage
-/// provider maps; anything else (cloud providers, downloads) returns null
-/// and the caller tells the user to pick a folder on device storage.
-String? pathFromTreeUri(String uri) {
-  const treePrefix = 'content://com.android.externalstorage.documents/tree/';
-  if (!uri.startsWith(treePrefix)) {
-    return null;
-  }
-  final id = Uri.decodeComponent(uri.substring(treePrefix.length));
-  final colon = id.indexOf(':');
-  if (colon < 0) {
-    return null;
-  }
-  final volume = id.substring(0, colon);
-  final rest = id.substring(colon + 1);
-  if (volume == 'raw') {
-    return rest.isEmpty ? null : rest;
-  }
-  final base = volume == 'primary' ? '/storage/emulated/0' : '/storage/$volume';
-  return rest.isEmpty ? base : '$base/$rest';
 }

@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
+import 'package:alix_mobile/folder_browser.dart';
 import 'package:alix_mobile/platform_access.dart';
 import 'package:alix_mobile/review_screen.dart';
 import 'package:alix_mobile/theme.dart';
@@ -340,7 +343,16 @@ class _PickerScreenState extends State<PickerScreen> {
           'just opened, then try again.');
       return;
     }
-    final dir = await access.pickDirectory();
+    if (!mounted) return;
+    // Android browses in-app (the system SAF picker's DocumentsUI crashes on
+    // some devices); the desktop dev vehicle keeps its native dialog.
+    final dir = Platform.isAndroid
+        ? await Navigator.of(context).push<String>(
+            MaterialPageRoute(
+              builder: (_) => const FolderBrowser(start: '/storage/emulated/0'),
+            ),
+          )
+        : await access.pickDirectory();
     if (dir == null) {
       _snack('alix stays on its current decks folder.');
       return;

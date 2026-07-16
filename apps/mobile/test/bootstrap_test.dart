@@ -5,7 +5,6 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:alix_mobile/bootstrap.dart';
-import 'package:alix_mobile/platform_access.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -106,48 +105,4 @@ void main() {
     expect(prepared.root, '${support.path}/decks');
   });
 
-  test('tree URIs from the system picker map to real paths', () {
-    expect(
-      pathFromTreeUri(
-        'content://com.android.externalstorage.documents/tree/primary%3Adecks',
-      ),
-      '/storage/emulated/0/decks',
-    );
-    expect(
-      pathFromTreeUri(
-        'content://com.android.externalstorage.documents/tree/'
-        'primary%3ADocuments%2Fdecks',
-      ),
-      '/storage/emulated/0/Documents/decks',
-    );
-    expect(
-      pathFromTreeUri(
-        'content://com.android.externalstorage.documents/tree/primary%3A',
-      ),
-      '/storage/emulated/0',
-      reason: 'the storage root itself is pickable',
-    );
-    expect(
-      pathFromTreeUri(
-        'content://com.android.externalstorage.documents/tree/'
-        '1A2B-3C4D%3Adecks',
-      ),
-      '/storage/1A2B-3C4D/decks',
-      reason: 'an SD card volume maps under /storage',
-    );
-    expect(
-      pathFromTreeUri(
-        'content://com.android.externalstorage.documents/tree/'
-        'raw%3A%2Fstorage%2Femulated%2F0%2FDownload%2Fdecks',
-      ),
-      '/storage/emulated/0/Download/decks',
-    );
-    expect(
-      pathFromTreeUri(
-        'content://com.android.providers.downloads.documents/tree/downloads',
-      ),
-      isNull,
-      reason: 'only the device-storage provider maps',
-    );
-  });
 }
