@@ -1,0 +1,5 @@
+A fresh install now starts with The alix tutorial, a small deck that
+teaches the app while you review it (delete it when done; it never
+returns). Trace decks (guided source walks, a web-app feature) no
+longer blank the screen: the picker marks them, and any deck that
+cannot open shows the reason instead.

@@ -7,6 +7,8 @@ Release notes, so a release without its section fails loud.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-07-16
+
 ### Added
 
 - The alix tutorial deck: a fresh install's app-private decks folder now
