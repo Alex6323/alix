@@ -14,6 +14,14 @@ Release notes, so a release without its section fails loud.
   it is the graduation; it only seeds into a brand-new folder, so it never
   comes back.
 
+### Fixed
+
+- **A trace deck no longer white-screens the review.** Trace decks
+  (`% trace:`, guided source walks) live in the web app; the phone refused
+  to open them but rendered the refusal as a blank screen. The picker now
+  marks trace rows and explains on tap, and any deck the session cannot
+  open shows the reason with a way back instead of going white.
+
 ## [0.1.0] - 2026-07-15
 
 The first published build: the review loop on your own phone, against the

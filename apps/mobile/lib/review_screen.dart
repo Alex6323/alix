@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge.dart'
+    show AnyhowException;
 
 import 'package:alix_mobile/src/rust/api/review.dart';
 import 'package:alix_mobile/theme.dart';
@@ -38,6 +40,11 @@ class ReviewScreen extends StatefulWidget {
 class _ReviewScreenState extends State<ReviewScreen> {
   late ReviewSession _session;
   late ReviewState _state;
+
+  /// Why the session could not open (a trace deck, an unparseable file, an
+  /// IO error). Rendered as a calm message with a way back; without this a
+  /// failed open left `_state` uninitialized and the screen built white.
+  String? _openError;
   bool _revealed = false;
   int _revealedLines = 0;
   ChoiceFeedback? _choice;
@@ -71,12 +78,18 @@ class _ReviewScreenState extends State<ReviewScreen> {
 
   /// (Re)opens the session; also the restart action on the done screen.
   void _open() {
-    _session = ReviewSession.open(
-      deckPath: widget.deckPath,
-      rootDir: widget.rootDir,
-      depth: widget.depth,
-      device: widget.device,
-    );
+    try {
+      _session = ReviewSession.open(
+        deckPath: widget.deckPath,
+        rootDir: widget.rootDir,
+        depth: widget.depth,
+        device: widget.device,
+      );
+    } catch (e) {
+      _openError = e is AnyhowException ? e.message : '$e';
+      return;
+    }
+    _openError = null;
     _foreign = widget.device == null ? null : _session.foreignWriter();
     _resetCard(_session.state());
   }
@@ -114,8 +127,51 @@ class _ReviewScreenState extends State<ReviewScreen> {
   bool _lineDone(CardView card) =>
       _state.mode == Mode.lineByLine && _revealedLines >= card.back.length;
 
+  /// The failed-open surface: the reason, plainly, and a way back. Loud
+  /// beats blank — the message is the core's own error text.
+  Widget _cantOpen(BuildContext context, String message) {
+    final theme = Theme.of(context);
+    final tokens = theme.alix;
+    return Scaffold(
+      appBar: AppBar(title: const AlixWordmark()),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'CAN\'T OPEN THIS DECK',
+                style: TextStyle(
+                  fontFamily: _mono,
+                  fontSize: 12,
+                  letterSpacing: 2,
+                  color: tokens.faint,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium?.copyWith(color: tokens.dim),
+              ),
+              const SizedBox(height: 24),
+              FilledButton(
+                onPressed: () => Navigator.of(context).maybePop(),
+                child: const Text('Back'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_openError != null) {
+      return _cantOpen(context, _openError ?? '');
+    }
     final card = _state.card;
     return Scaffold(
       appBar: AppBar(

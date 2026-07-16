@@ -756,11 +756,13 @@ impl SseDecode for crate::api::listing::DeckEntry {
         let mut var_path = <String>::sse_decode(deserializer);
         let mut var_isWorkspace = <bool>::sse_decode(deserializer);
         let mut var_due = <bool>::sse_decode(deserializer);
+        let mut var_isTrace = <bool>::sse_decode(deserializer);
         return crate::api::listing::DeckEntry {
             title: var_title,
             path: var_path,
             is_workspace: var_isWorkspace,
             due: var_due,
+            is_trace: var_isTrace,
         };
     }
 }
@@ -1232,6 +1234,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::listing::DeckEntry {
             self.path.into_into_dart().into_dart(),
             self.is_workspace.into_into_dart().into_dart(),
             self.due.into_into_dart().into_dart(),
+            self.is_trace.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -1514,6 +1517,7 @@ impl SseEncode for crate::api::listing::DeckEntry {
         <String>::sse_encode(self.path, serializer);
         <bool>::sse_encode(self.is_workspace, serializer);
         <bool>::sse_encode(self.due, serializer);
+        <bool>::sse_encode(self.is_trace, serializer);
     }
 }
 

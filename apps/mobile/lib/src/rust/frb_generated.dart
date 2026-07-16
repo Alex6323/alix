@@ -698,13 +698,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   DeckEntry dco_decode_deck_entry(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 4)
-      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
     return DeckEntry(
       title: dco_decode_String(arr[0]),
       path: dco_decode_String(arr[1]),
       isWorkspace: dco_decode_bool(arr[2]),
       due: dco_decode_bool(arr[3]),
+      isTrace: dco_decode_bool(arr[4]),
     );
   }
 
@@ -1070,11 +1071,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_path = sse_decode_String(deserializer);
     var var_isWorkspace = sse_decode_bool(deserializer);
     var var_due = sse_decode_bool(deserializer);
+    var var_isTrace = sse_decode_bool(deserializer);
     return DeckEntry(
       title: var_title,
       path: var_path,
       isWorkspace: var_isWorkspace,
       due: var_due,
+      isTrace: var_isTrace,
     );
   }
 
@@ -1524,6 +1527,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.path, serializer);
     sse_encode_bool(self.isWorkspace, serializer);
     sse_encode_bool(self.due, serializer);
+    sse_encode_bool(self.isTrace, serializer);
   }
 
   @protected

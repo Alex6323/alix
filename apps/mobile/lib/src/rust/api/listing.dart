@@ -40,16 +40,26 @@ class DeckEntry {
   /// Anything to do right now, against the store this entry reviews into.
   final bool due;
 
+  /// A trace deck (`% trace:`): a predict-and-verify walk that lives in
+  /// the web app; the phone cannot review it, so the picker must say so
+  /// instead of opening a session the core will refuse.
+  final bool isTrace;
+
   const DeckEntry({
     required this.title,
     required this.path,
     required this.isWorkspace,
     required this.due,
+    required this.isTrace,
   });
 
   @override
   int get hashCode =>
-      title.hashCode ^ path.hashCode ^ isWorkspace.hashCode ^ due.hashCode;
+      title.hashCode ^
+      path.hashCode ^
+      isWorkspace.hashCode ^
+      due.hashCode ^
+      isTrace.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -59,5 +69,6 @@ class DeckEntry {
           title == other.title &&
           path == other.path &&
           isWorkspace == other.isWorkspace &&
-          due == other.due;
+          due == other.due &&
+          isTrace == other.isTrace;
 }

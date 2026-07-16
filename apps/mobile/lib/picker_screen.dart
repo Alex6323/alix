@@ -170,7 +170,11 @@ class _PickerScreenState extends State<PickerScreen> {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(11),
-          onTap: () => entry.isWorkspace ? _drillInto(entry) : _openDeck(entry),
+          onTap: () => entry.isWorkspace
+              ? _drillInto(entry)
+              : entry.isTrace
+                  ? _traceNotice()
+                  : _openDeck(entry),
           child: Container(
             constraints: const BoxConstraints(minHeight: 54),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -189,7 +193,17 @@ class _PickerScreenState extends State<PickerScreen> {
                         ?.copyWith(fontWeight: FontWeight.w600),
                   ),
                 ),
-                if (entry.due) ...[
+                if (entry.isTrace) ...[
+                  const SizedBox(width: 12),
+                  Text(
+                    'trace',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: tokens.faint,
+                      fontFamily: 'monospace',
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                ] else if (entry.due) ...[
                   const SizedBox(width: 12),
                   Icon(Icons.circle, size: 8, color: tokens.bolt),
                 ],
@@ -203,6 +217,16 @@ class _PickerScreenState extends State<PickerScreen> {
         ),
       ),
     );
+  }
+
+  /// A trace deck is a predict-and-verify walk; the phone has no walk yet,
+  /// and opening a review session on one is refused by the core. Say so
+  /// calmly instead of white-screening.
+  void _traceNotice() {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('Trace decks are guided source walks; for now they '
+          'live in the web app.'),
+    ));
   }
 
   void _drillInto(DeckEntry entry) {

@@ -30,6 +30,11 @@ pub struct DeckSummary {
     /// card), against the store this entry actually reviews into. Matches the
     /// web picker's launchable signal.
     pub due: bool,
+    /// A trace deck (`% trace:`): a predict-and-verify walk, not a card
+    /// review. A client without the walk (the phone, today) must not open a
+    /// review session on it — the core refuses, so offering the row unmarked
+    /// turns into a dead end.
+    pub is_trace: bool,
 }
 
 /// Lists a decks root: workspaces and plain deck folders as drillable
@@ -130,6 +135,7 @@ fn folder_summary(root: &Path, dir: &Path, review: &ReviewConfig, now_ms: u64) -
         path: dir.to_path_buf(),
         is_workspace: true,
         due,
+        is_trace: false,
     }
 }
 
@@ -143,19 +149,24 @@ fn deck_summary(
         .file_stem()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let (title, due) = match (Deck::load(path), store) {
+    let (title, due, is_trace) = match (Deck::load(path), store) {
         (Ok(deck), Some(store)) => {
             let due = deck_due(&deck, store, review, now_ms);
-            (deck.display_name(), due)
+            let is_trace = deck.trace.is_some();
+            (deck.display_name(), due, is_trace)
         }
-        (Ok(deck), None) => (deck.display_name(), false),
-        (Err(_), _) => (stem.clone(), false),
+        (Ok(deck), None) => {
+            let is_trace = deck.trace.is_some();
+            (deck.display_name(), false, is_trace)
+        }
+        (Err(_), _) => (stem.clone(), false, false),
     };
     DeckSummary {
         title: if title.is_empty() { stem } else { title },
         path: path.to_path_buf(),
         is_workspace: false,
         due,
+        is_trace,
     }
 }
 
@@ -182,6 +193,22 @@ mod tests {
 
     fn write(path: &Path, text: &str) {
         std::fs::write(path, text).unwrap();
+    }
+
+    #[test]
+    fn a_trace_deck_lists_flagged_so_a_client_never_opens_a_doomed_review() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            &dir.path().join("walk.txt"),
+            "% trace: How it flows\n# hop?\n\tstep\n",
+        );
+        write(&dir.path().join("facts.txt"), "# q?\n\ta\n");
+        let rows = list_root(dir.path(), &ReviewConfig::default(), T0);
+        let flags: Vec<(&str, bool)> = rows
+            .iter()
+            .map(|r| (r.title.as_str(), r.is_trace))
+            .collect();
+        assert_eq!(vec![("facts", false), ("How it flows", true)], flags);
     }
 
     /// Marks the deck's single card fully settled at T0: recognized, and

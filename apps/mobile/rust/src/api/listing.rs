@@ -12,6 +12,10 @@ pub struct DeckEntry {
     pub is_workspace: bool,
     /// Anything to do right now, against the store this entry reviews into.
     pub due: bool,
+    /// A trace deck (`% trace:`): a predict-and-verify walk that lives in
+    /// the web app; the phone cannot review it, so the picker must say so
+    /// instead of opening a session the core will refuse.
+    pub is_trace: bool,
 }
 
 impl From<alix::listing::DeckSummary> for DeckEntry {
@@ -21,6 +25,7 @@ impl From<alix::listing::DeckSummary> for DeckEntry {
             path: s.path.to_string_lossy().into_owned(),
             is_workspace: s.is_workspace,
             due: s.due,
+            is_trace: s.is_trace,
         }
     }
 }
