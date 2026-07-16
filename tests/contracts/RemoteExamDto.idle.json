@@ -9,6 +9,6 @@
   "passed": null,
   "phase": "idle",
   "questions": [],
-  "strictness": "normal",
+  "strictness": "balanced",
   "thinking": false
 }

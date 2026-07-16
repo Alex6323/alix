@@ -1050,7 +1050,7 @@ fn remoteexamdto_idle_wire_shape() {
     let dto = RemoteExamDto {
         phase: "idle",
         deck: String::new(),
-        strictness: "normal",
+        strictness: "balanced",
         questions: Vec::new(),
         passed: None,
         grades: Vec::new(),
@@ -1067,7 +1067,7 @@ fn remoteexamdto_idle_wire_shape() {
         json!({
             "phase": "idle",
             "deck": "",
-            "strictness": "normal",
+            "strictness": "balanced",
             "questions": [],
             "passed": null,
             "grades": [],
