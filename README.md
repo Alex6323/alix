@@ -19,6 +19,8 @@ offline; you work through several **degrees of depth**, from recognizing an
 answer to reconstructing it from memory, and only passing that exam marks a deck
 as understood.
 
+![A review card in the alix web app: a multiple-choice question over a plain-text deck](https://alix.study/img/shot-3-modes.png)
+
 **Manual → [alix.study/book](https://alix.study/book/)  ·  Slides → [alix.study/slides.html](https://alix.study/slides.html)  ·  Site → [alix.study](https://alix.study)**
 
 **Feedback → bugs via the [issue form](https://github.com/Alex6323/alix/issues/new/choose), ideas at [contact@alix.study](mailto:contact@alix.study)**
