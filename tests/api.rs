@@ -22,7 +22,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex, MutexGuard},
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use alix::{
@@ -2546,4 +2546,437 @@ fn workspace_deadline_returns_500_when_the_local_manifest_has_a_non_table_review
         r#"{"name":"ws","date":"2099-01-02"}"#,
     );
     assert_eq!(500, resp.status);
+}
+
+// ── Remote (a paired phone's tutor + exam, /api/remote/*) ────────────────
+//
+// The desktop plays model backend for a paired phone's tutor and AI exam; the
+// phone owns all state (transcript, mastery, cards) and resends it every
+// call. THE IRON RULE this family exists to pin: nothing under
+// `/api/remote/*` ever touches the server's own store
+// (`remote_endpoints_never_write_the_server_store`).
+
+/// A source-backed fact deck (`% source:` at a local file) alongside
+/// `spawn_full_server`'s other fixtures: enough for the AI exam's
+/// generate → answer → grade → remediate walk. One card is enough; the exam
+/// grades the source, never the deck's own cards.
+fn write_exam_deck_fixture(dir: &Path) {
+    std::fs::write(
+        dir.join("examdeck.txt"),
+        "% source: examsource.txt\n# c\n\ta\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join("examsource.txt"), "c stands for a concept.\n").unwrap();
+}
+
+/// A fake CLI for the exam family: branches on the prompt's JSON-shape
+/// marker, mirroring `exam.rs`'s own `branching_cli` unit-test helper (not
+/// reachable from this integration test, so replicated). `"grades"` reads
+/// its reply from `grades_path` (a test can rewrite that file between calls
+/// to vary the verdict across sittings); `"questions"` always answers with
+/// one fixed question; anything else (a remediation call, or a tutor
+/// ask/draft call) gets a one-card deck-format reply, which is valid input
+/// for all three: a tutor question stores it as-is, and both remediation and
+/// draft-parsing accept deck-format text.
+fn branching_exam_cli(dir: &Path, grades_path: &Path) -> PathBuf {
+    let path = dir.join("fake-claude");
+    std::fs::write(
+        &path,
+        format!(
+            "#!/bin/sh\nPATH=/usr/bin:/bin\ninput=$(cat)\ncase \"$input\" in\n\
+             *'\"grades\"'*) cat {grades} ;;\n\
+             *'\"questions\"'*) printf '%s' '{{\"questions\":[{{\"prompt\":\"Q1\",\"points\":[\"p1\"]}}]}}' ;;\n\
+             *) printf '# term?\\n\\tdefinition\\n' ;;\n\
+             esac\n",
+            grades = grades_path.display(),
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    path
+}
+
+/// Releases a fifo-gated fake CLI exactly once, on an explicit call or on
+/// drop (including a panic unwind), so a failing assertion in a fifo-gated
+/// test can never leave the fake CLI, and this file's global `EXEC_LOCK`,
+/// wedged for the rest of the suite.
+struct FifoRelease {
+    path: PathBuf,
+    released: bool,
+}
+
+impl FifoRelease {
+    fn new(path: PathBuf) -> Self {
+        Self {
+            path,
+            released: false,
+        }
+    }
+
+    fn release(&mut self) {
+        if !self.released {
+            self.released = true;
+            let _ = std::fs::write(&self.path, "go\n");
+        }
+    }
+}
+
+impl Drop for FifoRelease {
+    fn drop(&mut self) {
+        self.release();
+    }
+}
+
+/// A round trip for a client-supplied card (no server session at all): ask a
+/// question, poll to the settled answer, then a second turn (now with a
+/// history entry) proves the slot is fully REPLACED rather than accumulating
+/// or leaking the previous turn's answer while the new one is in flight.
+#[test]
+fn remote_ask_round_trips_an_answer_for_a_client_supplied_card() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let fake = fake_reply(scripts.path(), "because it demonstrates addition");
+    let (base, _guard) = spawn_full_server(Some(&fake));
+
+    let resp = post_json(
+        &base,
+        "/api/remote/ask",
+        r#"{"card":{"subject":"sample.txt","front":"2 + 2","back":["4"],"at":null},
+            "history":[],"question":"why does this matter?"}"#,
+    );
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!(true, body["thinking"], "body: {body}");
+
+    let body = poll_until(&base, "/api/remote/ask", |b| {
+        !b["thinking"].as_bool().unwrap()
+    });
+    assert_eq!(
+        "because it demonstrates addition",
+        body["answer"],
+        "body: {body}"
+    );
+    assert!(body["error"].is_null(), "body: {body}");
+
+    // A second turn, with a history entry: the settled slot must be replaced
+    // outright (thinking flips back to true in the POST's own response), not
+    // left showing the first turn's answer until the new one lands.
+    let resp = post_json(
+        &base,
+        "/api/remote/ask",
+        r#"{"card":{"subject":"sample.txt","front":"2 + 2","back":["4"],"at":null},
+            "history":[{"q":"why does this matter?","a":"because it demonstrates addition"}],
+            "question":"anything else?"}"#,
+    );
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!(true, body["thinking"], "body: {body}");
+
+    let body = poll_until(&base, "/api/remote/ask", |b| {
+        !b["thinking"].as_bool().unwrap()
+    });
+    assert_eq!(
+        "because it demonstrates addition",
+        body["answer"],
+        "body: {body}"
+    );
+    assert!(body["error"].is_null(), "body: {body}");
+}
+
+/// {#M6-ledger-row-1}: the backend call for a remote tutor turn runs on a
+/// background thread, never inline in the request loop, so a second POST
+/// while the first is still thinking answers 409 (never blocks waiting for
+/// it), AND the loop stays live for every other endpoint the whole time. A
+/// fifo-gated fake CLI parks the backend call open-endedly (past the stdin
+/// drain, blocked reading a fifo nothing has written to yet) so the test can
+/// make both assertions before ever letting the call finish.
+#[test]
+fn remote_ask_answers_409_while_a_turn_is_thinking_and_the_loop_stays_live() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let fifo = scripts.path().join("gate");
+    assert!(
+        std::process::Command::new("/usr/bin/mkfifo")
+            .arg(&fifo)
+            .status()
+            .unwrap()
+            .success(),
+        "mkfifo {fifo:?} failed"
+    );
+    let reply = scripts.path().join("reply");
+    std::fs::write(&reply, "eventually").unwrap();
+    let fake = scripts.path().join("fake-claude");
+    std::fs::write(
+        &fake,
+        format!(
+            "#!/bin/sh\nPATH=/usr/bin:/bin\ncat >/dev/null\ncat {} >/dev/null\ncat {}\n",
+            fifo.display(),
+            reply.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let (base, _guard) = spawn_full_server(Some(&fake));
+
+    let resp = post_json(
+        &base,
+        "/api/remote/ask",
+        r#"{"card":{"subject":"sample.txt","front":"2 + 2","back":["4"],"at":null},
+            "history":[],"question":"why?"}"#,
+    );
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!(true, body["thinking"], "body: {body}");
+
+    // From here on an assertion could panic; the fifo must still get released
+    // so the parked child (and this test's `exec_lock`) never wedges the rest
+    // of the suite.
+    let mut release = FifoRelease::new(fifo.clone());
+
+    let resp = post_json(
+        &base,
+        "/api/remote/ask",
+        r#"{"card":{"subject":"sample.txt","front":"2 + 2","back":["4"],"at":null},
+            "history":[],"question":"again?"}"#,
+    );
+    assert_eq!(409, resp.status);
+    assert!(resp.body.is_empty(), "body: {:?}", resp.body);
+
+    let started = Instant::now();
+    let resp = http(&base, "GET", "/api/version", &[], &[]);
+    let elapsed = started.elapsed();
+    assert_eq!(200, resp.status);
+    assert!(
+        elapsed < Duration::from_millis(500),
+        "the request loop must not block on a parked backend call: {elapsed:?}"
+    );
+
+    release.release();
+    poll_until(&base, "/api/remote/ask", |b| {
+        !b["thinking"].as_bool().unwrap()
+    });
+}
+
+#[test]
+fn remote_draft_is_refused_for_the_kids_audience() {
+    let (base, _guard) = spawn_kids_server();
+
+    let resp = post_json(&base, "/api/remote/ask/draft", "{}");
+
+    assert_eq!(403, resp.status);
+    assert!(resp.body.is_empty(), "body: {:?}", resp.body);
+}
+
+/// The full remote-exam walk over a fact deck: generate → answering (prompts
+/// only) → grade → results (a fail, with gaps) → remediate → the deck-format
+/// `cards` payload → close → idle.
+#[test]
+fn remote_exam_walks_generate_answer_grade_fail_remediate_to_cards_payload() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let grades_path = scripts.path().join("grades");
+    std::fs::write(
+        &grades_path,
+        r#"{"grades":[{"verdict":"fail","feedback":"no","missed":["gap one"]}]}"#,
+    )
+    .unwrap();
+    let fake = branching_exam_cli(scripts.path(), &grades_path);
+    let (base, _guard) = spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture);
+
+    let resp = post_json(&base, "/api/remote/exam/start", r#"{"deck":"examdeck.txt"}"#);
+    assert_eq!(200, resp.status);
+
+    let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
+    let questions = body["questions"].as_array().expect("questions is an array");
+    assert_eq!(1, questions.len(), "body: {body}");
+    assert!(
+        questions[0].as_str().is_some_and(|q| !q.is_empty()),
+        "body: {body}"
+    );
+
+    let resp = post_json(&base, "/api/remote/exam/grade", r#"{"answers":["a1"]}"#);
+    assert_eq!(200, resp.status);
+
+    let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "results");
+    assert_eq!(false, body["passed"], "body: {body}");
+    assert!(
+        !body["gaps"].as_array().unwrap().is_empty(),
+        "body: {body}"
+    );
+    assert_eq!(true, body["can_remediate"], "body: {body}");
+
+    let resp = post_json(&base, "/api/remote/exam/remediate", "{}");
+    assert_eq!(200, resp.status);
+
+    let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "remediated");
+    let cards = body["cards"]
+        .as_str()
+        .expect("cards is a deck-format string");
+    assert!(cards.trim_start().starts_with('#'), "cards: {cards}");
+
+    let resp = post_json(&base, "/api/remote/exam/close", "{}");
+    assert_eq!(200, resp.status);
+
+    let resp = http(&base, "GET", "/api/remote/exam", &[], &[]);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("idle", body["phase"], "body: {body}");
+}
+
+#[test]
+fn remote_exam_grade_rejects_wrong_arity_with_400_and_wrong_phase_with_409() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let grades_path = scripts.path().join("grades");
+    std::fs::write(
+        &grades_path,
+        r#"{"grades":[{"verdict":"pass","feedback":"ok","missed":[]}]}"#,
+    )
+    .unwrap();
+    let fake = branching_exam_cli(scripts.path(), &grades_path);
+    let (base, _guard) = spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture);
+
+    post_json(&base, "/api/remote/exam/start", r#"{"deck":"examdeck.txt"}"#);
+    let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
+    assert_eq!(
+        1,
+        body["questions"].as_array().unwrap().len(),
+        "body: {body}"
+    );
+
+    // Wrong arity while answering: 400, the sitting stays in `answering`.
+    let resp = post_json(&base, "/api/remote/exam/grade", r#"{"answers":[]}"#);
+    assert_eq!(400, resp.status);
+    assert!(resp.body.is_empty(), "body: {:?}", resp.body);
+    let resp = post_json(&base, "/api/remote/exam/grade", r#"{"answers":["a","b"]}"#);
+    assert_eq!(400, resp.status);
+    assert!(resp.body.is_empty(), "body: {:?}", resp.body);
+
+    // Close (back to idle), then any grade against the empty slot: 409.
+    let resp = post_json(&base, "/api/remote/exam/close", "{}");
+    assert_eq!(200, resp.status);
+    let resp = post_json(&base, "/api/remote/exam/grade", r#"{"answers":["a"]}"#);
+    assert_eq!(409, resp.status);
+    assert!(resp.body.is_empty(), "body: {:?}", resp.body);
+}
+
+/// Trace decks are the browser's walk, not a phone's exam: `resolve_row`
+/// finds `trace.txt` fine, but the remote start handler refuses it before
+/// ever spawning a sitting (unlike the browser's own exam-start path,
+/// `/api/remote/exam/start` never falls back to a trace-shaped sitting).
+#[test]
+fn remote_exam_start_refuses_a_trace_deck_with_409() {
+    let (base, _guard) = spawn_full_server(None);
+
+    let resp = post_json(&base, "/api/remote/exam/start", r#"{"deck":"trace.txt"}"#);
+
+    assert_eq!(409, resp.status);
+    assert!(resp.body.is_empty(), "body: {:?}", resp.body);
+}
+
+#[test]
+fn remote_endpoints_require_the_token_like_the_rest_of_the_api() {
+    let (base, _guard) = spawn_test_server_with(Some("secret"));
+
+    let resp = http(
+        &base,
+        "POST",
+        "/api/remote/ask",
+        &[("Content-Type", "application/json")],
+        b"not json",
+    );
+    assert_eq!(401, resp.status);
+    assert!(resp.body.is_empty(), "body: {:?}", resp.body);
+
+    let resp = http(
+        &base,
+        "POST",
+        "/api/remote/ask",
+        &[
+            ("Content-Type", "application/json"),
+            ("Authorization", "Bearer secret"),
+        ],
+        b"not json",
+    );
+    assert_ne!(401, resp.status, "body: {:?}", resp.body);
+}
+
+/// THE IRON RULE, pinned: nothing under `/api/remote/*` ever writes the
+/// server's own store. A paired phone owns its mastery/progress/cards, and
+/// the desktop only computes answers for it. Runs a full PASSING remote exam,
+/// a full FAILING-then-remediated remote exam, and a tutor ask+draft round
+/// trip against ONE server, then diffs the store file's bytes before and
+/// after: a passing exam must not mark the deck mastered, and a remediation
+/// must not create server-side virtual cards; either would show up here as
+/// changed bytes.
+#[test]
+fn remote_endpoints_never_write_the_server_store() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let grades_path = scripts.path().join("grades");
+    std::fs::write(
+        &grades_path,
+        r#"{"grades":[{"verdict":"pass","feedback":"ok","missed":[]}]}"#,
+    )
+    .unwrap();
+    let fake = branching_exam_cli(scripts.path(), &grades_path);
+    let (base, guard) = spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture);
+    let store_path = guard.dir().join("store.json");
+    let before = std::fs::read(&store_path).ok();
+
+    // (a) a full remote exam that PASSES.
+    post_json(&base, "/api/remote/exam/start", r#"{"deck":"examdeck.txt"}"#);
+    poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
+    post_json(&base, "/api/remote/exam/grade", r#"{"answers":["a1"]}"#);
+    let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "results");
+    assert_eq!(true, body["passed"], "body: {body}");
+    post_json(&base, "/api/remote/exam/close", "{}");
+
+    // (b) a full remote exam that FAILS and remediates through to cards.
+    std::fs::write(
+        &grades_path,
+        r#"{"grades":[{"verdict":"fail","feedback":"no","missed":["gap one"]}]}"#,
+    )
+    .unwrap();
+    post_json(&base, "/api/remote/exam/start", r#"{"deck":"examdeck.txt"}"#);
+    poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
+    post_json(&base, "/api/remote/exam/grade", r#"{"answers":["a1"]}"#);
+    let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "results");
+    assert_eq!(false, body["passed"], "body: {body}");
+    post_json(&base, "/api/remote/exam/remediate", "{}");
+    let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "remediated");
+    assert!(
+        body["cards"]
+            .as_str()
+            .is_some_and(|c| c.trim_start().starts_with('#')),
+        "body: {body}"
+    );
+    post_json(&base, "/api/remote/exam/close", "{}");
+
+    // (c) a tutor ask + draft round trip.
+    post_json(
+        &base,
+        "/api/remote/ask",
+        r#"{"card":{"subject":"examdeck.txt","front":"c","back":["a"],"at":null},
+            "history":[],"question":"why?"}"#,
+    );
+    let body = poll_until(&base, "/api/remote/ask", |b| {
+        !b["thinking"].as_bool().unwrap()
+    });
+    assert!(body["error"].is_null(), "body: {body}");
+    post_json(
+        &base,
+        "/api/remote/ask/draft",
+        r#"{"card":{"subject":"examdeck.txt","front":"c","back":["a"],"at":null},
+            "history":[{"q":"why?","a":"because"}]}"#,
+    );
+    let body = poll_until(&base, "/api/remote/ask", |b| {
+        !b["thinking"].as_bool().unwrap()
+    });
+    assert!(body["draft"].is_object(), "body: {body}");
+
+    let after = std::fs::read(&store_path).ok();
+    assert_eq!(
+        before, after,
+        "no /api/remote/* call may write the server's own store"
+    );
 }
