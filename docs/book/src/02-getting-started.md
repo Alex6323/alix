@@ -28,6 +28,12 @@ entire core without ever touching the AI layer.
 
 ## Your first deck
 
+On a first run (no decks directory yet), `alix` creates it and seeds **The
+alix tutorial** — a small deck that teaches alix while you review it, from
+grading honestly to the deck format below. Its last card tells you to delete
+it; alix seeds it only into a brand-new decks directory, so once deleted it
+never returns. If you already have decks, nothing is seeded.
+
 A deck is a plain `.txt` file. A card is a `#` line — the question — with its
 answer on the indented lines beneath it:
 

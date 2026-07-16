@@ -17,6 +17,7 @@ categories = ["command-line-utilities"]
 # and root dev files stay out by omission. Cargo.toml + Cargo.lock are implicit.
 include = [
     "src/**",
+    "assets/decks/**",
     "assets/web/**",
     "/README.md",
     "/CHANGELOG.md",

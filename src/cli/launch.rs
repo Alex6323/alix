@@ -12,7 +12,7 @@ use alix::{
     assemble::{self, open_store},
     config::Config,
     recent::RecentDecks,
-    serve, workspace,
+    serve, tutorial, workspace,
 };
 use anyhow::{Context, Result, bail};
 
@@ -77,6 +77,10 @@ pub(crate) fn launch(args: LaunchArgs) -> Result<()> {
     let (decks_dir, instance_store, recent_path) = match &args.dir {
         None => {
             let dir = config.decks_dir().context("cannot determine ~/decks")?;
+            // A first run (no decks folder yet) starts with the bundled
+            // tutorial deck instead of an empty picker; an existing folder
+            // is never touched (see `tutorial::seed_new_decks_dir`).
+            tutorial::seed_new_decks_dir(&dir);
             let store = workspace::root_store_path(&dir);
             let recent = dir.join("recent.json");
             (dir, Some(store), recent)

@@ -97,7 +97,17 @@ bool _listable(String dir) {
 /// The app-private decks dir, created and sample-seeded on first use.
 Future<String> _appPrivate(Directory support) async {
   final root = Directory('${support.path}/decks');
+  // The tutorial seeds ONLY into a brand-new decks dir (unlike the samples
+  // below, which re-seed per file): its last card says "delete me when
+  // done", so a deletion must be final. Mirrors the desktop rule in the
+  // core's `tutorial::seed_new_decks_dir`; the bundled copy is pinned to
+  // the canonical assets/decks/tutorial.txt by a core test.
+  final fresh = !await root.exists();
   await root.create(recursive: true);
+  if (fresh) {
+    final content = await rootBundle.loadString('assets/decks/tutorial.txt');
+    await File('${root.path}/tutorial.txt').writeAsString(content);
+  }
   for (final sample in _samples) {
     final target = File('${support.path}/$sample');
     if (!await target.exists()) {

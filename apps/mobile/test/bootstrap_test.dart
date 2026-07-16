@@ -34,6 +34,24 @@ void main() {
     expect(again.device, prepared.device, reason: 'the label is minted once');
   });
 
+  test('a fresh install seeds the tutorial deck', () async {
+    final support = temp('alix-support-');
+    await prepare(support: support, env: '');
+    final tutorial = File('${support.path}/decks/tutorial.txt');
+    expect(tutorial.existsSync(), isTrue);
+    expect(tutorial.readAsStringSync(), contains('The alix tutorial'));
+  });
+
+  test('a deleted tutorial stays deleted on the next launch', () async {
+    final support = temp('alix-support-');
+    await prepare(support: support, env: '');
+    final tutorial = File('${support.path}/decks/tutorial.txt');
+    tutorial.deleteSync();
+    await prepare(support: support, env: '');
+    expect(tutorial.existsSync(), isFalse,
+        reason: 'deleting the tutorial is the graduation; it must not return');
+  });
+
   test('the env var wins over a configured shared folder', () async {
     final support = temp('alix-support-');
     final shared = temp('alix-shared-');

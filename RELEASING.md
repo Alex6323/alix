@@ -51,7 +51,10 @@ at. **crates.io is not automated.**
    being shipped. Move any mobile-app-only entries out of the crate `CHANGELOG.md`
    into `apps/mobile/CHANGELOG.md` (they ship on `mobile-v*` tags, not here). (The
    README coverage badge is live Codecov since 0.4.0, tracking `main` by itself,
-   no per-release refresh.)
+   no per-release refresh.) Re-read the tutorial deck
+   (`assets/decks/tutorial.txt`) against what shipped this release: a card
+   that teaches something that is no longer true must be fixed before the
+   tag (an outdated tutorial is worse than none).
 2. **Bump the version.** Set `version = "X.Y.Z"` in `Cargo.toml`; refresh
    `Cargo.lock` (`cargo build`).
 3. **Finalize the changelog.** Rename `## [Unreleased]` → `## [X.Y.Z] - YYYY-MM-DD`,

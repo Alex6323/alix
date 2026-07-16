@@ -7,6 +7,13 @@ Release notes, so a release without its section fails loud.
 
 ## [Unreleased]
 
+### Added
+
+- The alix tutorial deck: a fresh install's app-private decks folder now
+  starts with a small deck that teaches alix while you review it. Deleting
+  it is the graduation; it only seeds into a brand-new folder, so it never
+  comes back.
+
 ## [0.1.0] - 2026-07-15
 
 The first published build: the review loop on your own phone, against the

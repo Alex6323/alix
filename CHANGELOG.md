@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **A tutorial deck on first run.** A brand-new decks directory is seeded
+  with "The alix tutorial": ten cards that teach alix by being reviewed —
+  honest grading, spacing, depths, where decks come from, the AI features
+  and what they send, and that your decks are plain files you own. Its
+  last card says to delete it, and a deleted tutorial never comes back
+  (seeding happens only when the decks directory itself is first created).
+  The mobile app seeds the same deck into a fresh app-private folder.
+
 ### Changed
 - **The web app names your configured AI backend instead of assuming
   Claude.** The tutor header and the "working…" progress lines during

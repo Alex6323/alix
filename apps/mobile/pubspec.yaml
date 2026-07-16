@@ -84,6 +84,7 @@ flutter:
   # The sample decks copied into the app's data dir on first run
   # (bootstrap.dart carries the matching manifest list).
   assets:
+    - assets/decks/tutorial.txt
     - assets/decks/basics.txt
     - assets/decks/sample-workspace/alix.toml
     - assets/decks/sample-workspace/capitals.txt
