@@ -30,9 +30,7 @@ use crate::{
     ask,
     config::{AskConfig, ExamConfig, Strictness},
     deck::{self, Deck},
-    parser,
-    session::is_retired_id,
-    store::{CardState, Store, VirtualCard, VirtualKind},
+    store::Store,
 };
 
 /// Largest embedded local source file, in bytes. Larger files are truncated
@@ -338,89 +336,6 @@ pub fn spawn_remediation(
     rx
 }
 
-/// Splits deck-format text into one string per top-level card block: a new
-/// block begins at each raw line starting with `#` at column 0 (the parser's
-/// `is_front` rule); indented `#`/`#?` lines and the following back/note/`%`
-/// directive lines attach to the current block. Any preamble before the first
-/// front (blank lines, deck-level `%` directives) is dropped — it belongs to no
-/// card and enters no `Card::id`. Each block is verbatim source lines joined
-/// with `\n` and ends with a newline.
-fn split_card_blocks(text: &str) -> Vec<String> {
-    let mut blocks: Vec<Vec<&str>> = Vec::new();
-    for raw in text.lines() {
-        if raw.starts_with('#') {
-            blocks.push(vec![raw]);
-        } else if let Some(current) = blocks.last_mut() {
-            current.push(raw);
-        }
-        // else: preamble before the first front — dropped.
-    }
-    blocks
-        .into_iter()
-        .map(|lines| format!("{}\n", lines.join("\n")))
-        .collect()
-}
-
-/// Turns the cleaned remediation deck-text into virtual cards in `store`
-/// (kind [`VirtualKind::Remediation`], `parent = subject`). Each top-level card
-/// block is stored verbatim as a [`VirtualCard::text`]; its id is the
-/// `Card::id` that re-parsing that block yields (a cloze block yields one
-/// sidecar entry per hole, all sharing the block text but keyed by distinct
-/// ids). Per card: skip it if it's already a deck card (`deck_ids`), create it
-/// if its id is new (seeding a fresh `store.cards` schedule), revive it if a
-/// matching card exists and is retired (its interval has reached
-/// `retire_after_days`), or leave it alone if an active match already exists
-/// (dedupe — no schedule reset). Saves the store once after the batch. The deck
-/// file is never touched. Returns how many cards were created or revived.
-fn store_remediation_cards(
-    store: &mut Store,
-    subject: &str,
-    deck_ids: &HashSet<u64>,
-    cards_text: &str,
-    now_ms: u64,
-    retire_after_days: Option<u32>,
-) -> Result<usize> {
-    let blocks = split_card_blocks(cards_text);
-    if blocks.is_empty() {
-        bail!("remediation produced no cards to store");
-    }
-
-    let mut created_or_revived = 0;
-    for block in &blocks {
-        // Parse the block on its own so a cloze block yields its N sub-cards,
-        // each with its own id. A malformed block is a hard error (error, never
-        // fabricate) rather than a silently-dropped card.
-        let cards = parser::parse_str(subject, block)?;
-        for card in &cards {
-            let id = card.id();
-            // Already drillable as a deck card — don't shadow it with a virtual.
-            if deck_ids.contains(&id) {
-                continue;
-            }
-            if !store.is_virtual(id) {
-                // New: store the block text and seed a fresh schedule.
-                store.insert_virtual(VirtualCard {
-                    id,
-                    kind: VirtualKind::Remediation,
-                    parent: subject.to_string(),
-                    text: block.clone(),
-                    created_ms: now_ms,
-                });
-                store.get_or_insert(id, now_ms);
-                created_or_revived += 1;
-            } else if is_retired_id(id, store, retire_after_days) {
-                // Retired dupe: revive it — reset the schedule below the cap.
-                // The sidecar text is unchanged (same content), so leave it.
-                *store.get_or_insert(id, now_ms) = CardState::new(now_ms);
-                created_or_revived += 1;
-            }
-            // Else an active dupe — leave it, no schedule reset.
-        }
-    }
-    store.save()?;
-    Ok(created_or_revived)
-}
-
 /// The phase of an exam [`Sitting`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Phase {
@@ -486,9 +401,9 @@ pub struct Sitting {
     /// progress indicator; `None` when idle.
     pending_since: Option<u64>,
     /// How many remediation cards the last successful remediation created or
-    /// revived ([`store_remediation_cards`]'s return value), so both
-    /// frontends can tell the learner what the failure produced. `None` until
-    /// a remediation completes.
+    /// revived ([`crate::store::store_remediation_cards`]'s return value), so
+    /// both frontends can tell the learner what the failure produced. `None`
+    /// until a remediation completes.
     remediated_count: Option<usize>,
 }
 
@@ -720,8 +635,9 @@ impl Sitting {
     /// remediation, create/dedupe/revive virtual cards in `store` (the deck
     /// file is never touched). `retire_after_days` is the caller's resolved
     /// `[review] retire_after` cap (per-workspace), needed to tell an active
-    /// remediation dupe from a derived-retired one to revive — see
-    /// [`store_remediation_cards`]. Returns `true` when the phase advanced.
+    /// remediation dupe from a derived-retired one to revive, see
+    /// [`crate::store::store_remediation_cards`]. Returns `true` when the phase
+    /// advanced.
     pub fn poll(&mut self, store: &mut Store, now_ms: u64, retire_after_days: Option<u32>) -> bool {
         let reply = match &self.pending {
             None => return false,
@@ -773,7 +689,7 @@ impl Sitting {
                 self.phase = Phase::Answering;
             }
             Reply::Remediation(Ok(cards)) => {
-                match store_remediation_cards(
+                match crate::store::store_remediation_cards(
                     store,
                     &self.subject,
                     &self.deck_card_ids,
@@ -1469,7 +1385,9 @@ mod tests {
     }
 
     use crate::{
-        depth::Reveal,
+        parser,
+        session::is_retired_id,
+        store::VirtualKind,
         testutil::{ask_config, exec_lock, fake_cli, fake_reply},
     };
 
@@ -1936,187 +1854,6 @@ mod tests {
         assert_eq!("d.txt", virtuals[0].parent);
     }
 
-    /// `store_remediation_cards` with no deck-id dedup baseline (the common
-    /// test case — the deck has no card equal to the remediation output).
-    fn store_remediation(
-        store: &mut Store,
-        subject: &str,
-        cards_text: &str,
-        now_ms: u64,
-        retire_after_days: Option<u32>,
-    ) -> Result<usize> {
-        store_remediation_cards(
-            store,
-            subject,
-            &HashSet::new(),
-            cards_text,
-            now_ms,
-            retire_after_days,
-        )
-    }
-
-    #[test]
-    fn split_card_blocks_one_block_per_top_depth_front() {
-        // Two plain cards separated by a blank line → two blocks.
-        let blocks = split_card_blocks("# a\n\t1\n\n# b\n\t2\n");
-        assert_eq!(2, blocks.len());
-        assert!(blocks[0].starts_with("# a"));
-        assert!(blocks[1].starts_with("# b"));
-    }
-
-    #[test]
-    fn split_card_blocks_keeps_indented_hash_and_directives_inside_a_block() {
-        // An indented `#` answer line, a per-card `% reveal:`, and a `#?`-looking
-        // indented line all stay inside the one card block.
-        let text = "# front\n% reveal: line\n\t#[derive(Clone)]\n\t#? not a front\n";
-        let blocks = split_card_blocks(text);
-        assert_eq!(1, blocks.len());
-        assert!(blocks[0].contains("% reveal: line"));
-        assert!(blocks[0].contains("#[derive(Clone)]"));
-        assert!(blocks[0].contains("#? not a front"));
-    }
-
-    #[test]
-    fn split_card_blocks_is_one_block_for_a_cloze_and_drops_preamble() {
-        // A leading deck-level directive/blank line is preamble (dropped); the
-        // whole cloze block (front + `% reveal: cloze` + answer) is one block.
-        let text =
-            "% source: x\n\n# Complete the quote\n% reveal: cloze\n\tTo {{be}} or not to {{be}}\n";
-        let blocks = split_card_blocks(text);
-        assert_eq!(1, blocks.len());
-        assert!(blocks[0].starts_with("# Complete the quote"));
-        assert!(blocks[0].contains("% reveal: cloze"));
-        assert!(!blocks[0].contains("% source:"));
-    }
-
-    #[test]
-    fn regenerating_the_same_remediation_dedupes() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let text = "# Why does X?\n\tpoint one\n";
-
-        let n1 = store_remediation(&mut store, "d.txt", text, 1_000, None).unwrap();
-        assert_eq!(1, n1);
-        assert_eq!(1, store.virtual_cards_for("d.txt").len());
-
-        let n2 = store_remediation(&mut store, "d.txt", text, 2_000, None).unwrap();
-        assert_eq!(0, n2, "an active dupe is left alone, not recreated");
-        assert_eq!(1, store.virtual_cards_for("d.txt").len());
-    }
-
-    #[test]
-    fn distinct_answer_cloze_holes_stay_distinct() {
-        // Both holes hold the same token ("be"), so the sub-cards share the
-        // sentence — but their ids differ by the `#cloze:k` hole index, so the
-        // substrate keeps BOTH (no discriminator, no merge). Two sidecar
-        // entries share one `text` but are keyed by distinct ids.
-        let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let text = "# Complete the quote\n% reveal: cloze\n\tTo {{be}} or not to {{be}}\n";
-
-        let n = store_remediation(&mut store, "d.txt", text, 1_000, None).unwrap();
-        assert_eq!(2, n, "both cloze sub-cards should be created, not deduped");
-        let virtuals = store.virtual_cards_for("d.txt");
-        assert_eq!(2, virtuals.len());
-        assert_ne!(
-            virtuals[0].id, virtuals[1].id,
-            "distinct ids for the two holes"
-        );
-        // They share the same stored block text.
-        assert_eq!(virtuals[0].text, virtuals[1].text);
-    }
-
-    #[test]
-    fn remediation_deduped_against_a_deck_card() {
-        // A remediation card whose id is already a deck card's id must be
-        // skipped — no sidecar entry, no `store.cards` entry created for it.
-        let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let text = "# Why does X?\n\tpoint one\n";
-        // The deck already has this exact card.
-        let deck_id = parser::parse_str("d.txt", text).unwrap()[0].id();
-        let deck_ids: HashSet<u64> = [deck_id].into_iter().collect();
-
-        let n = store_remediation_cards(&mut store, "d.txt", &deck_ids, text, 1_000, None).unwrap();
-        assert_eq!(0, n, "a card already in the deck is not made virtual");
-        assert!(store.virtual_cards_for("d.txt").is_empty());
-        assert!(store.get(deck_id).is_none(), "no ghost schedule seeded");
-    }
-
-    #[test]
-    fn virtual_id_agrees_across_create_synth_and_promote() {
-        // The load-bearing invariant: the id derived at CREATE
-        // (`store_remediation_cards`), at SYNTH (`parse(parent, text).find`) and
-        // at PROMOTE (append the block, re-parse the whole deck) must all agree —
-        // for a plain card AND for every hole of a cloze card. Subject is always
-        // `vc.parent`.
-        for text in [
-            "# Why does X?\n\tpoint one\n",
-            "# Complete the quote\n% reveal: cloze\n\tTo {{be}} or not to {{bee}}\n",
-        ] {
-            let dir = tempfile::tempdir().unwrap();
-            let deck_path = dir.path().join("d.txt");
-            std::fs::write(&deck_path, "# existing\n\tanswer\n").unwrap();
-            let mut store = Store::open(dir.path().join("p.json")).unwrap();
-
-            let created = store_remediation(&mut store, "d.txt", text, 1_000, None).unwrap();
-            let virtuals = store.virtual_cards_for("d.txt");
-            assert_eq!(created, virtuals.len());
-
-            for vc in &virtuals {
-                // SYNTH: re-derive from the stored text under the same parent.
-                let synth = parser::parse_str(&vc.parent, &vc.text)
-                    .unwrap()
-                    .into_iter()
-                    .find(|c| c.id() == vc.id)
-                    .expect("synth reproduces the same id");
-                assert_eq!(vc.id, synth.id());
-            }
-
-            // PROMOTE one card: append its block to the deck, re-parse the whole
-            // file, and confirm the matching card carries the same id.
-            let vid = virtuals[0].id;
-            crate::store::promote_virtual(&mut store, vid, &deck_path).unwrap();
-            let deck =
-                parser::parse_str("d.txt", &std::fs::read_to_string(&deck_path).unwrap()).unwrap();
-            assert!(
-                deck.iter().any(|c| c.id() == vid),
-                "the appended deck card reproduces the id"
-            );
-        }
-    }
-
-    #[test]
-    fn reviving_replaces_an_archived_remediation_card() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let text = "# Why does X?\n\tpoint one\n";
-        let cap = Some(30);
-
-        store_remediation(&mut store, "d.txt", text, 1_000, cap).unwrap();
-        let id = store.virtual_cards_for("d.txt")[0].id;
-        {
-            // Retired: push the interval (in `store.cards`) to the cap rather
-            // than setting a flag (there is none).
-            let state = store.get_or_insert(id, 1_000);
-            state.recall = Some(crate::store::FsrsState {
-                scheduled_days: 30,
-                ..Default::default()
-            });
-            state.total_reviews = 3;
-        }
-
-        let n = store_remediation(&mut store, "d.txt", text, 5_000, cap).unwrap();
-        assert_eq!(1, n);
-        assert_eq!(1, store.virtual_cards_for("d.txt").len());
-        assert!(!is_retired_id(id, &store, cap));
-        assert_eq!(
-            0,
-            store.get(id).unwrap().total_reviews,
-            "revive resets to a fresh state"
-        );
-    }
-
     #[test]
     fn a_re_pass_does_not_retire_the_remediation_batch() {
         let _lock = exec_lock();
@@ -2181,30 +1918,6 @@ mod tests {
                 "a passing re-sit must not retire remediation cards"
             );
         }
-    }
-
-    #[test]
-    fn remediation_card_reveal_is_carried() {
-        // A per-card `% reveal:` survives in the stored `text` and re-parses on
-        // synth.
-        let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let text = "# Why does X?\n% reveal: line\n\tpoint one\n\n# fact card\n\tplain answer\n";
-
-        store_remediation(&mut store, "d.txt", text, 1_000, None).unwrap();
-        // Synthesize each virtual card from its stored text to read its reveal.
-        let synthesized: Vec<_> = store
-            .virtual_cards_for("d.txt")
-            .iter()
-            .map(|vc| parser::parse_str(&vc.parent, &vc.text).unwrap().remove(0))
-            .collect();
-        let lined = synthesized
-            .iter()
-            .find(|c| c.front == "Why does X?")
-            .unwrap();
-        let plain = synthesized.iter().find(|c| c.front == "fact card").unwrap();
-        assert_eq!(Some(Reveal::Line), lined.reveal);
-        assert_eq!(None, plain.reveal);
     }
 
     // ── Trace exam (the compression) ────────────────────────────────────────
