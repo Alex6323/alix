@@ -715,6 +715,85 @@ pub(super) fn exam_dto(ex: &Examining, decks_dir: &Path) -> ExamDto {
     }
 }
 
+/// The card context a paired phone sends with a remote tutor call
+/// (`/api/remote/*`): the server holds no session for remote clients, so
+/// every request carries the card in full.
+#[derive(Debug, Deserialize)]
+pub(super) struct RemoteCard {
+    pub(super) subject: String,
+    pub(super) front: String,
+    pub(super) back: Vec<String>,
+    /// The card's `% at:` source citation, if any.
+    pub(super) at: Option<String>,
+}
+
+/// One prior tutor exchange, re-sent by the phone with every call: the
+/// phone owns the transcript, the server never stores or replays one.
+#[derive(Debug, Deserialize)]
+pub(super) struct RemoteTurn {
+    pub(super) q: String,
+    pub(super) a: String,
+}
+
+/// `POST /api/remote/ask`: a paired phone's tutor question, with the card and
+/// the prior exchanges it needs re-sent alongside it.
+#[derive(Debug, Deserialize)]
+pub(super) struct RemoteAskReq {
+    pub(super) card: RemoteCard,
+    pub(super) history: Vec<RemoteTurn>,
+    pub(super) question: String,
+}
+
+/// `POST /api/remote/draft`: asks the tutor to draft a card from the
+/// exchange so far.
+#[derive(Debug, Deserialize)]
+pub(super) struct RemoteDraftReq {
+    pub(super) card: RemoteCard,
+    pub(super) history: Vec<RemoteTurn>,
+}
+
+/// The reply to a remote tutor call. The phone polls while `thinking`, like
+/// the browser's [`AskDto`], but carries no transcript of its own: the
+/// phone already holds it, so this is just the newest turn's outcome.
+#[derive(Debug, Serialize)]
+pub(super) struct RemoteAskDto {
+    pub(super) thinking: bool,
+    pub(super) answer: Option<String>,
+    pub(super) draft: Option<DraftCardDto>,
+    pub(super) error: Option<String>,
+    /// Seconds the in-flight backend call has been running, like
+    /// [`ExamDto::elapsed`].
+    pub(super) elapsed: Option<u64>,
+}
+
+/// The AI exam over `/api/remote/*`: a paired phone sits an exam with no
+/// server-side session either. Unlike [`ExamDto`], answering happens
+/// phone-local and is graded as one batch, so there is no
+/// `total`/`current`/`question`/`answer`/`on_last`; the phone counts its own
+/// remediation cards, so there is no `remediated_count`; and trace decks are
+/// refused at the start (the server's store is not the phone's truth), so
+/// there is no `is_trace`/`unlocks`/`cooldown_ms`.
+#[derive(Serialize)]
+pub(super) struct RemoteExamDto {
+    /// `idle | generating | answering | grading | results | remediating |
+    /// remediated` (open set, like [`ExamDto::phase`]).
+    pub(super) phase: &'static str,
+    pub(super) deck: String,
+    pub(super) strictness: &'static str,
+    /// Prompts only; the rubric never leaves the server.
+    pub(super) questions: Vec<String>,
+    pub(super) passed: Option<bool>,
+    pub(super) grades: Vec<ExamGradeDto>,
+    pub(super) gaps: Vec<String>,
+    pub(super) can_remediate: bool,
+    /// Deck-format text, set in the `remediated` phase. The phone stores
+    /// these cards; the server never does.
+    pub(super) cards: Option<String>,
+    pub(super) thinking: bool,
+    pub(super) elapsed: Option<u64>,
+    pub(super) error: Option<String>,
+}
+
 /// The Augment screen payload. `rows` is a flat, data-driven list so a new
 /// augmentation target is one more row with no page-layout change.
 #[derive(Serialize)]

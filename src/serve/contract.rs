@@ -991,3 +991,234 @@ fn receivedto_done_wire_shape() {
                "stripped": ["progress.json"], "elapsed": 9, "error": null}),
     );
 }
+
+#[test]
+fn remoteaskdto_thinking_wire_shape() {
+    let dto = RemoteAskDto {
+        thinking: true,
+        answer: None,
+        draft: None,
+        error: None,
+        elapsed: Some(3),
+    };
+    pin(
+        "RemoteAskDto.thinking",
+        &dto,
+        json!({
+            "thinking": true,
+            "answer": null,
+            "draft": null,
+            "error": null,
+            "elapsed": 3
+        }),
+    );
+}
+
+#[test]
+fn remoteaskdto_done_wire_shape() {
+    let dto = RemoteAskDto {
+        thinking: false,
+        answer: Some("so drops are deterministic".to_string()),
+        draft: Some(DraftCardDto {
+            front: "Why does Rust use one owner per value?".to_string(),
+            back: vec![
+                "so drops are deterministic".to_string(),
+                "no GC needed".to_string(),
+            ],
+        }),
+        error: None,
+        elapsed: None,
+    };
+    pin(
+        "RemoteAskDto.done",
+        &dto,
+        json!({
+            "thinking": false,
+            "answer": "so drops are deterministic",
+            "draft": {
+                "front": "Why does Rust use one owner per value?",
+                "back": ["so drops are deterministic", "no GC needed"]
+            },
+            "error": null,
+            "elapsed": null
+        }),
+    );
+}
+
+#[test]
+fn remoteexamdto_idle_wire_shape() {
+    let dto = RemoteExamDto {
+        phase: "idle",
+        deck: String::new(),
+        strictness: "normal",
+        questions: Vec::new(),
+        passed: None,
+        grades: Vec::new(),
+        gaps: Vec::new(),
+        can_remediate: false,
+        cards: None,
+        thinking: false,
+        elapsed: None,
+        error: None,
+    };
+    pin(
+        "RemoteExamDto.idle",
+        &dto,
+        json!({
+            "phase": "idle",
+            "deck": "",
+            "strictness": "normal",
+            "questions": [],
+            "passed": null,
+            "grades": [],
+            "gaps": [],
+            "can_remediate": false,
+            "cards": null,
+            "thinking": false,
+            "elapsed": null,
+            "error": null
+        }),
+    );
+}
+
+#[test]
+fn remoteexamdto_answering_wire_shape() {
+    let dto = RemoteExamDto {
+        phase: "answering",
+        deck: "rust.txt".to_string(),
+        strictness: "balanced",
+        questions: vec![
+            "Why does Rust use ownership?".to_string(),
+            "What is borrowing?".to_string(),
+        ],
+        passed: None,
+        grades: Vec::new(),
+        gaps: Vec::new(),
+        can_remediate: false,
+        cards: None,
+        thinking: false,
+        elapsed: None,
+        error: None,
+    };
+    pin(
+        "RemoteExamDto.answering",
+        &dto,
+        json!({
+            "phase": "answering",
+            "deck": "rust.txt",
+            "strictness": "balanced",
+            "questions": ["Why does Rust use ownership?", "What is borrowing?"],
+            "passed": null,
+            "grades": [],
+            "gaps": [],
+            "can_remediate": false,
+            "cards": null,
+            "thinking": false,
+            "elapsed": null,
+            "error": null
+        }),
+    );
+}
+
+#[test]
+fn remoteexamdto_results_wire_shape() {
+    let dto = RemoteExamDto {
+        phase: "results",
+        deck: "rust.txt".to_string(),
+        strictness: "balanced",
+        questions: vec!["Why does Rust use ownership?".to_string()],
+        passed: Some(false),
+        grades: vec![ExamGradeDto {
+            question: "Why does Rust use ownership?".to_string(),
+            points: vec!["memory safety without a GC".to_string()],
+            answer: "it has a garbage collector".to_string(),
+            verdict: "FAIL",
+            feedback: "Rust has no GC".to_string(),
+            missed: vec!["memory safety without a GC".to_string()],
+        }],
+        gaps: vec!["ownership and the GC-free memory model".to_string()],
+        can_remediate: true,
+        cards: None,
+        thinking: false,
+        elapsed: None,
+        error: None,
+    };
+    pin(
+        "RemoteExamDto.results",
+        &dto,
+        json!({
+            "phase": "results",
+            "deck": "rust.txt",
+            "strictness": "balanced",
+            "questions": ["Why does Rust use ownership?"],
+            "passed": false,
+            "grades": [{
+                "question": "Why does Rust use ownership?",
+                "points": ["memory safety without a GC"],
+                "answer": "it has a garbage collector",
+                "verdict": "FAIL",
+                "feedback": "Rust has no GC",
+                "missed": ["memory safety without a GC"]
+            }],
+            "gaps": ["ownership and the GC-free memory model"],
+            "can_remediate": true,
+            "cards": null,
+            "thinking": false,
+            "elapsed": null,
+            "error": null
+        }),
+    );
+}
+
+#[test]
+fn remoteexamdto_remediated_wire_shape() {
+    let dto = RemoteExamDto {
+        phase: "remediated",
+        deck: "rust.txt".to_string(),
+        strictness: "balanced",
+        questions: vec!["Why does Rust use ownership?".to_string()],
+        passed: Some(false),
+        grades: vec![ExamGradeDto {
+            question: "Why does Rust use ownership?".to_string(),
+            points: vec!["memory safety without a GC".to_string()],
+            answer: "it has a garbage collector".to_string(),
+            verdict: "FAIL",
+            feedback: "Rust has no GC".to_string(),
+            missed: vec!["memory safety without a GC".to_string()],
+        }],
+        gaps: vec!["ownership and the GC-free memory model".to_string()],
+        can_remediate: false,
+        cards: Some(
+            "# Why does Rust use ownership?\n\tso drops are deterministic, no GC needed"
+                .to_string(),
+        ),
+        thinking: false,
+        elapsed: None,
+        error: None,
+    };
+    pin(
+        "RemoteExamDto.remediated",
+        &dto,
+        json!({
+            "phase": "remediated",
+            "deck": "rust.txt",
+            "strictness": "balanced",
+            "questions": ["Why does Rust use ownership?"],
+            "passed": false,
+            "grades": [{
+                "question": "Why does Rust use ownership?",
+                "points": ["memory safety without a GC"],
+                "answer": "it has a garbage collector",
+                "verdict": "FAIL",
+                "feedback": "Rust has no GC",
+                "missed": ["memory safety without a GC"]
+            }],
+            "gaps": ["ownership and the GC-free memory model"],
+            "can_remediate": false,
+            "cards": "# Why does Rust use ownership?\n\tso drops are deterministic, no GC needed",
+            "thinking": false,
+            "elapsed": null,
+            "error": null
+        }),
+    );
+}

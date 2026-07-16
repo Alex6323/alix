@@ -1,0 +1,14 @@
+{
+  "can_remediate": false,
+  "cards": null,
+  "deck": "",
+  "elapsed": null,
+  "error": null,
+  "gaps": [],
+  "grades": [],
+  "passed": null,
+  "phase": "idle",
+  "questions": [],
+  "strictness": "normal",
+  "thinking": false
+}

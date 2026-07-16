@@ -1,0 +1,31 @@
+{
+  "can_remediate": true,
+  "cards": null,
+  "deck": "rust.txt",
+  "elapsed": null,
+  "error": null,
+  "gaps": [
+    "ownership and the GC-free memory model"
+  ],
+  "grades": [
+    {
+      "answer": "it has a garbage collector",
+      "feedback": "Rust has no GC",
+      "missed": [
+        "memory safety without a GC"
+      ],
+      "points": [
+        "memory safety without a GC"
+      ],
+      "question": "Why does Rust use ownership?",
+      "verdict": "FAIL"
+    }
+  ],
+  "passed": false,
+  "phase": "results",
+  "questions": [
+    "Why does Rust use ownership?"
+  ],
+  "strictness": "balanced",
+  "thinking": false
+}
