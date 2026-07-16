@@ -7,7 +7,7 @@
 //! acquisition phase (a Fail resets that progress rather than fast-tracking it — see
 //! [`Fsrs::apply`]).
 //!
-//! The legacy Leitner `stage` field is gone entirely. `acquired_ms` marks when a card was first
+//! The legacy pre-FSRS `stage` field is gone entirely. `acquired_ms` marks when a card was first
 //! shown, and `seed_card` always seeds fresh FSRS state as `New` — there is no pre-FSRS carry-over
 //! to derive from anymore.
 
@@ -227,7 +227,7 @@ fn from_fsrs_card(c: &FsrsCard) -> FsrsState {
 
 /// Seeds an `rs-fsrs` `Card` for a card with no FSRS state yet: always `New`,
 /// so FSRS derives its initial stability from the first grade. (Pre-FSRS
-/// Leitner carry-over was dropped with the stage field — pre-1.0.)
+/// carry-over was dropped with the legacy stage field, pre-1.0.)
 fn seed_card(_state: &CardState, now_ms: u64) -> FsrsCard {
     let mut c = FsrsCard::new();
     c.last_review = ms_to_dt(now_ms);

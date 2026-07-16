@@ -2149,7 +2149,7 @@ let lastDecksSignature = "";
 // its rollover is a real change (the chip's urgency tier can flip) worth
 // repainting for.
 function catalogSignature(data) {
-  return JSON.stringify(data).replace(/\d+[smhdw] ago/g, "  ago");
+  return JSON.stringify(data).replace(/\d+[smhdw] ago/g, "\u0000 ago");
 }
 const idleInSelect = () =>
   state && state.phase === "select" && !browsing && !examData && !augmentData && !walkData && !asking;

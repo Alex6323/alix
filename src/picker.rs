@@ -614,9 +614,9 @@ mod tests {
 
     #[test]
     fn dependency_forest_nests_dependents_under_prerequisites() {
-        // 0 data-model (root); 1 leitner, 3 sm2, 4 queue-building require 0;
+        // 0 data-model (root); 1 lapses, 3 stability, 4 queue-building require 0;
         // 2 grading requires 1. Siblings order by name.
-        let names: Vec<String> = ["data-model", "leitner", "grading", "sm2", "queue-building"]
+        let names: Vec<String> = ["data-model", "lapses", "grading", "stability", "queue-building"]
             .iter()
             .map(|s| s.to_string())
             .collect();

@@ -1749,7 +1749,7 @@ mod tests {
             ..Default::default()
         });
         assert!(!is_retired(&c, &store, Some(DEFAULT_RETIRE_AFTER_DAYS)));
-        // A legacy card at the top Leitner stage but with no FSRS state is no longer
+        // A legacy card at the top pre-FSRS stage but with no FSRS state is no longer
         // retired — retirement now needs a grown FSRS interval, not a stage.
         let s = store.get_or_insert(c.id(), 0);
         s.recall = None;
