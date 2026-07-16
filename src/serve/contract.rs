@@ -801,13 +801,14 @@ fn createcardresp_wire_shape() {
 #[test]
 fn askinfodto_and_versiondto_wire_shape() {
     let info = AskInfoDto {
+        backend: "claude",
         model: "default".to_string(),
         effort: "default".to_string(),
     };
     pin(
         "AskInfoDto",
         &info,
-        json!({"model": "default", "effort": "default"}),
+        json!({"backend": "claude", "model": "default", "effort": "default"}),
     );
     let version = VersionDto {
         version: env!("CARGO_PKG_VERSION"),

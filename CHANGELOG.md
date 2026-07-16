@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- **The web app names your configured AI backend instead of assuming
+  Claude.** The tutor header and the "working…" progress lines during
+  augment and the exam now show the `[ask] backend` you actually use, so a
+  Gemini, Codex, or Copilot user no longer reads "Claude is working…"
+  (`AskInfoDto` gained a `backend` field).
+
 ## [0.5.0] - 2026-07-15
 
 ### Fixed

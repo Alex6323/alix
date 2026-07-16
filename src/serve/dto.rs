@@ -361,11 +361,16 @@ pub(super) struct CreateCardResp {
     pub(super) id: String,
 }
 
-/// The ask-tutor's model and effort, shown in the panel so it's clear which
-/// model is answering — and that it's the CLI default (`"default"`) unless the
-/// `[ask]` config pins one, not the stronger model that built the deck.
+/// The ask-tutor's backend, model and effort, shown in the panel so it's clear
+/// who is answering — and that it's the CLI default (`"default"`) unless the
+/// `[ask]` config pins one, not the stronger model that built the deck. The
+/// backend name also feeds every "X is working…" progress line, so a Copilot
+/// user never reads "Claude".
 #[derive(Debug, Serialize)]
 pub(super) struct AskInfoDto {
+    /// The configured backend's canonical lowercase name
+    /// (`claude` | `gemini` | `codex` | `copilot`).
+    pub(super) backend: &'static str,
     pub(super) model: String,
     pub(super) effort: String,
 }
@@ -439,6 +444,7 @@ impl AskInfoDto {
     pub(super) fn from(cfg: &AskConfig) -> Self {
         let or_default = |s: &Option<String>| s.clone().unwrap_or_else(|| "default".to_string());
         Self {
+            backend: cfg.backend.name(),
             model: or_default(&cfg.model),
             effort: or_default(&cfg.effort),
         }

@@ -501,7 +501,7 @@
   .chip.quiet { border-color: transparent; background: none; color: var(--dim); font-weight: 400; }
   .chip.quiet:hover { border-color: transparent; color: var(--bolt-hi); }
 
-  /* ── ask Claude ── */
+  /* ── ask tutor ── */
   .ask-panel { width: var(--card-w); max-width: 92vw; display: flex; flex-direction: column; gap: 12px; animation: deal 0.3s both; }
   /* mono eyebrow header ("ASK TUTOR · card-scoped"), same idiom as the exam's
      "QUESTION n/N" and the walk's "checkpoint n/N" — model/effort readout
@@ -516,7 +516,7 @@
   .ask-q { align-self: flex-end; max-width: 85%; background: color-mix(in srgb, var(--bolt) 10%, transparent); border: 1px solid var(--line); border-radius: 12px 12px 4px 12px; padding: 9px 13px; }
   .ask-a { align-self: flex-start; max-width: 92%; white-space: pre-wrap; line-height: 1.5; border-left: 3px solid var(--bolt); padding: 4px 0 4px 12px; }
   /* matches the exam's .exam-wait busy idiom (italic, --dim) rather than the
-     tutor mock's own style, so every "waiting on Claude" indicator in the app
+     tutor mock's own style, so every "waiting on the backend" indicator in the app
      reads the same. */
   .ask-thinking { align-self: flex-start; color: var(--dim); font-style: italic; display: flex; align-items: center; gap: 8px; }
   .ask-status { align-self: flex-start; color: var(--good); font-size: 0.85rem; }
@@ -873,9 +873,18 @@ let drawTool = "pen";    // "pen" | "erase"
 let drawCanvasEl = null; // the live <canvas> while drawing
 // Per-device "Draw answers" preference (wired to the menu in Task 5).
 let drawToggle = (function () { try { return localStorage.getItem("alix-draw") === "1"; } catch (e) { return false; } })();
-let asking = false;   // the ask-Claude overlay is open
+let asking = false;   // the ask-tutor overlay is open
 let askData = { transcript: [], thinking: false, status: null, error: null };
-let askInfo = { model: "default", effort: "default" }; // the tutor's model + effort, from /api/ask-info
+let askInfo = { backend: "claude", model: "default", effort: "default" }; // who answers, from /api/ask-info
+// The configured backend's display name ("Claude", "Copilot", …) and the
+// shared "X is working…" progress line the exam and augment overlays show:
+// one place, so no surface can drift back to a hardcoded backend.
+const backendName = () => askInfo.backend.charAt(0).toUpperCase() + askInfo.backend.slice(1);
+function workingText(s) {
+  if (s < 2) return `${backendName()} is working…`;
+  if (s < 90) return `${backendName()} is working… ${s}s`;
+  return `${backendName()} is working… ${Math.floor(s / 60)}m ${s % 60}s — this can take a couple of minutes`;
+}
 let askPoll = null;   // setInterval handle while a reply is pending
 let examData = null;  // the ExamDto while an exam is active (null otherwise)
 let examConfirmingQuit = false; // showing the "abandon the exam?" confirmation
@@ -1170,7 +1179,7 @@ function render() {
   else renderCard();
 }
 
-// ── ask Claude ────────────────────────────────────────────────────────
+// ── ask tutor ─────────────────────────────────────────────────────────
 // Available once a card is answered. Sends run the CLI on the server; we poll
 // /api/ask while it's thinking. One conversation spans the session.
 function isAnswered() {
@@ -1242,7 +1251,7 @@ function createCard(front, back) {
     .catch(() => { askData = { ...askData, status: "couldn't add that card" }; if (asking) syncAsk(); });
 }
 function cancelDraft() { askData = { ...askData, draft: null }; if (asking) syncAsk(); }
-// Loop the header logo while any Claude/server call is in flight — a calm loader
+// Loop the header logo while any backend/server call is in flight — a calm loader
 // that complements the inline spinners; rest it otherwise.
 function updateBusy() {
   var logo = document.querySelector(".brand alix-logo");
@@ -1347,7 +1356,7 @@ function syncAsk() {
   const input = wrap.querySelector(".ask-input");
   if (input) {
     input.disabled = askData.thinking;
-    // Once Claude's reply lands, focus the box so a follow-up can be typed
+    // Once the reply lands, focus the box so a follow-up can be typed
     // immediately (the poll stops here, so this fires once per answer).
     if (!askData.thinking) input.focus();
   }
@@ -1371,11 +1380,11 @@ function renderAsk(subject) {
   title.appendChild(el("span", "ask-eyebrow", "ASK TUTOR"));
   title.appendChild(el("span", "ask-scope", subject ? "· step-scoped" : "· card-scoped"));
   head.appendChild(title);
-  head.appendChild(el("span", "ask-model", `claude · model: ${askInfo.model} · effort: ${askInfo.effort}`));
+  head.appendChild(el("span", "ask-model", `${askInfo.backend} · model: ${askInfo.model} · effort: ${askInfo.effort}`));
   wrap.appendChild(head);
 
   // The card/checkpoint and the conversation share one scroll region: the subject
-  // sticks to the top as a reference while Claude's conversation scrolls under it.
+  // sticks to the top as a reference while the conversation scrolls under it.
   const scroll = el("div", "ask-scroll");
   if (subject) {
     // Walk: show the checkpoint prompt + key points.
@@ -1447,7 +1456,7 @@ function cancelAskLeave() {
 }
 
 // ── AI exam ───────────────────────────────────────────────────────────
-// A self-contained overlay (like ask): the server runs the three Claude calls
+// A self-contained overlay (like ask): the server runs the three backend calls
 // on a background thread and we poll /api/exam while `thinking`. Answers are
 // entered one question at a time; grading is a single batch call.
 function startExam(deck) {
@@ -1511,13 +1520,10 @@ function startExamPoll() {
   updateBusy();
 }
 function stopExamPoll() { if (examPoll) { clearInterval(examPoll); examPoll = null; } updateBusy(); }
-// Progress line under the spinner: a live "Claude is working" counter — the only
-// honest signal we get from a `claude -p` call that streams no token-level state.
+// Progress line under the spinner: a live "X is working" counter — the only
+// honest signal we get from a headless CLI call that streams no token-level state.
 function examElapsedText(d) {
-  const s = d.elapsed || 0;
-  if (s < 2) return "Claude is working…";
-  if (s < 90) return `Claude is working… ${s}s`;
-  return `Claude is working… ${Math.floor(s / 60)}m ${s % 60}s — this can take a couple of minutes`;
+  return workingText(d.elapsed || 0);
 }
 // Save the current answer, then move to question `goto`.
 function examNav(goto) {
@@ -1543,7 +1549,7 @@ function renderExam() {
   scoreEl.innerHTML = "";
   menuWrap.style.display = "none";
   const wrap = el("div", "exam");
-  // A failed Claude call surfaces a prominent banner up top, so it's never
+  // A failed backend call surfaces a prominent banner up top, so it's never
   // mistaken for "nothing happened" (the result/grades may scroll below it).
   if (d.error) wrap.appendChild(el("div", "exam-error", "⚠ " + d.error));
 
@@ -1710,10 +1716,7 @@ function startAugmentPoll() {
 }
 function stopAugmentPoll() { if (augmentPoll) { clearInterval(augmentPoll); augmentPoll = null; } }
 function augElapsedText(d) {
-  const s = d.elapsed || 0;
-  if (s < 2) return "Claude is working…";
-  if (s < 90) return `Claude is working… ${s}s`;
-  return `Claude is working… ${Math.floor(s / 60)}m ${s % 60}s — this can take a couple of minutes`;
+  return workingText(d.elapsed || 0);
 }
 // The in-flight spinner cell (reuses the exam's pulsing dot + elapsed styling).
 function augBusyCell(d) {
@@ -2070,7 +2073,7 @@ function augFillContent(wrap) {
       : row.kind === "icon" ? augIconRow(d, row) : augCardRow(d, row));
   const foot = el("div", "aug-foot");
   foot.appendChild(el("div", "aug-cost",
-    "Generating runs Claude and costs tokens. It fills only the cards a target is missing."));
+    `Generating runs ${backendName()} and costs tokens. It fills only the cards a target is missing.`));
   wrap.appendChild(foot);
 }
 function renderAugment() {

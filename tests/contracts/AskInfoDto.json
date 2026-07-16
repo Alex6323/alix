@@ -1,4 +1,5 @@
 {
+  "backend": "claude",
   "effort": "default",
   "model": "default"
 }

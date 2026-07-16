@@ -530,8 +530,10 @@ choice index is disclosed.
 `error: string?`, `draft: DraftCardDto?`. `draft` is the last card the tutor
 drafted from the conversation (`POST /api/ask/card/draft`, §4.5); it persists
 until the subject changes. `DraftCardDto`: `front: string`, `back:
-[string]`. `AskInfoDto`: `model: string`, `effort: string` (literal
-`"default"` when unset).
+[string]`. `AskInfoDto`: `backend: string` (the configured AI backend's
+canonical lowercase name: `"claude"` | `"gemini"` | `"codex"` | `"copilot"`;
+clients use it to name who is answering), `model: string`, `effort: string`
+(literal `"default"` when unset).
 
 ### CreateCardReq / CreateCardResp
 

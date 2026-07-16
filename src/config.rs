@@ -260,6 +260,20 @@ pub enum BackendKind {
     Copilot,
 }
 
+impl BackendKind {
+    /// The backend's canonical lowercase name — the same word the config
+    /// file's `[ask] backend` accepts, and what the web client shows in its
+    /// "who is answering" surfaces (the tutor header, progress lines).
+    pub fn name(self) -> &'static str {
+        match self {
+            BackendKind::Claude => "claude",
+            BackendKind::Gemini => "gemini",
+            BackendKind::Codex => "codex",
+            BackendKind::Copilot => "copilot",
+        }
+    }
+}
+
 /// Settings for the ask-Claude integration (`[ask]` in the config file).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AskConfig {
@@ -1971,6 +1985,20 @@ mod tests {
         assert_eq!(BackendKind::Gemini, config.ask.backend);
         // Other [ask] fields keep their defaults.
         assert_eq!("claude", config.ask.command);
+    }
+
+    #[test]
+    fn backend_names_round_trip_through_the_config_parser() {
+        for kind in [
+            BackendKind::Claude,
+            BackendKind::Gemini,
+            BackendKind::Codex,
+            BackendKind::Copilot,
+        ] {
+            let toml = format!("[ask]\nbackend = \"{}\"\n", kind.name());
+            let config = Config::from_toml(&toml).unwrap();
+            assert_eq!(kind, config.ask.backend, "name() must be the parser's inverse");
+        }
     }
 
     #[test]
