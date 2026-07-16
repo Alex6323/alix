@@ -15,6 +15,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   "introduced" count, hiding the grade rows when nothing was graded.
 
 ### Added
+- **A paired phone can borrow the desktop's AI backend for the tutor and the
+  exam, over `/api/remote/*`.** The client re-sends its own card, transcript,
+  and answers with every call and keeps its own progress; the server only
+  computes replies, it never writes its own store, session, decks, or recent
+  list. This is the server side only: the phone app's own pairing screen
+  ships in a later mobile release.
 - **A tutorial deck on first run.** A brand-new decks directory is seeded
   with "The alix tutorial": ten cards that teach alix by being reviewed —
   honest grading, spacing, depths, where decks come from, the AI features

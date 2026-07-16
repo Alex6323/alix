@@ -256,6 +256,45 @@ polling, it takes a `.zip` archive as the raw request body (§8) instead of a
 wormhole code, unpacks it, lands it the same way, and responds a `"done"`-
 phase `ReceiveDto` (`elapsed: 0`).
 
+### 4.10 The remote surface (paired thin clients)
+
+A paired phone, or any other native client, can borrow the desktop's AI
+backend for the tutor and the AI exam over `/api/remote/*`, instead of
+needing a model CLI of its own. **The iron rule: no endpoint under
+`/api/remote/*` ever writes the server's own store, session, decks, or
+recent list.** These handlers only compute an answer and hand it back: a
+result leaves the server only as the HTTP response, never onto disk.
+
+A remote tutor turn is stateless on the server: `POST /api/remote/ask
+{card, history, question}` re-sends the whole card and prior exchanges
+(`history`, a list of `RemoteTurn`) every time; an empty `history` is
+exactly the first turn. Poll `GET /api/remote/ask` while `thinking`, then
+read `answer` or `error`, mirroring §4.5's pattern. `POST
+/api/remote/ask/draft {card, history}` distills the exchange into a draft
+card the same way `/api/ask/card/draft` does. Both are adult-only (403
+under `[serve] audience = "kids"`).
+
+A remote exam sitting starts with `POST /api/remote/exam/start {deck}`: the
+server resolves **its own copy** of the named deck, by the same resolution
+`/api/select` uses (a bare name, or a qualified `<workspace>/<file>`). A
+trace deck or a source-less deck is refused outright (409): a phone has no
+walk, and there is nothing to examine. Unlike the browser's page-at-a-time
+`/api/exam/answer` + `/api/exam/grade`, a remote client answers every
+question locally and submits them as one batch: `POST
+/api/remote/exam/grade {answers: [string]}` grades the whole sitting in one
+call. A failed, remediable result's cards come back as deck-format text on
+`RemoteExamDto.cards` (§6) for the **client** to parse and store: the
+server generates them but never keeps them.
+
+Each family is single-flight and lives in its own slot, kept separate from
+the browser's own `ask`/`exam` state: a second client pairing to the same
+instance, or a double `POST` while one call is already in flight, gets
+`409`. Every `/api/remote/*` POST body is capped at 256 KiB; an over-cap or
+malformed body is a bare `400`: a long re-sent transcript is the likely way
+to reach it as a conversation grows. Errors are bare status codes here too
+(§3), and the pairing token (§2) applies exactly as it does to the rest of
+`/api/*`.
+
 ## 5. Endpoint reference
 
 Statuses: all endpoints can additionally return 401 (token) — omitted below.
@@ -383,6 +422,24 @@ returns, refreshed, so the picker re-renders the `deadline` readout (§6
 | GET | `/api/walk/ask` | – | `AskDto` | 409 |
 | POST | `/api/walk/ask/note` | – | `AskDto` | 409 |
 | POST | `/api/walk/leave` | – | `StateDto` | 409 |
+
+### Remote (paired clients) (since 0.6.0)
+
+Every arm below is `/api/remote/*` (§4.10). `remote_ask` and `remote_exam`
+are single-flight slots kept separate from the browser's own `ask`/`exam`
+state: a second client pairing to the same instance collides with the
+first, same as a double `POST`.
+
+| Method | Path | Body | Response | Errors |
+|---|---|---|---|---|
+| POST | `/api/remote/ask` | `{card, history, question}` (`RemoteAskReq`) | `RemoteAskDto` | 400 bad/oversized body / empty question / a card with empty front and back; 409 a turn is already thinking |
+| GET | `/api/remote/ask` | – | `RemoteAskDto` (poll) | – |
+| POST | `/api/remote/ask/draft` | `{card, history}` (`RemoteDraftReq`) | `RemoteAskDto` | 400 bad/oversized body / empty `history`; 403 kids; 409 a turn is already thinking |
+| POST | `/api/remote/exam/start` | `{deck}` | `RemoteExamDto` | 400 bad/oversized body / unknown or ambiguous deck name; 409 a sitting is already open (close it first) / the deck fails to load / a trace or source-less deck / the backend can't reach the deck's source |
+| GET | `/api/remote/exam` | – | `RemoteExamDto` (poll; `phase:"idle"` when no sitting is open) | – |
+| POST | `/api/remote/exam/grade` | `{answers: [string]}` | `RemoteExamDto` | 400 bad/oversized body / wrong number of answers; 409 no sitting open / not in the answering phase |
+| POST | `/api/remote/exam/remediate` | – | `RemoteExamDto` | 409 no sitting open / nothing to remediate |
+| POST | `/api/remote/exam/close` | – | 200 | – |
 
 ### Images
 
@@ -723,6 +780,74 @@ while unwalked), `current: bool`.
 
 `passed`, `partly`, `failed`, `total`: numbers; `weak: [number]` (**1-based**
 hop numbers).
+
+### RemoteCard / RemoteTurn / RemoteAskReq / RemoteDraftReq
+
+Request bodies for the remote surface (§4.10). The server holds no card or
+session of its own for a remote call, so the client sends full context every
+time; these derive `Deserialize` only, so, like `CreateCardReq`, they are
+documented here but not snapshot-pinned (§8).
+
+`RemoteCard`: `subject: string`, `front: string`, `back: [string]`, `at:
+string?` (the card's `% at:` citation locator, if any: carried through for
+completeness, though the ungrounded tutor prompt doesn't read it).
+
+`RemoteTurn`: one prior tutor exchange the client re-sends: `q: string`,
+`a: string`.
+
+`RemoteAskReq` (`POST /api/remote/ask`): `card: RemoteCard`, `history:
+[RemoteTurn]`, `question: string`.
+
+`RemoteDraftReq` (`POST /api/remote/ask/draft`): `card: RemoteCard`,
+`history: [RemoteTurn]`.
+
+Example `RemoteAskReq` body (a real request from `tests/api.rs`'s remote
+round-trip suite):
+`{"card":{"subject":"sample.txt","front":"2 + 2","back":["4"],"at":null},"history":[],"question":"why does this matter?"}`.
+
+### RemoteAskDto
+
+The reply to a remote tutor call (`POST`/`GET /api/remote/ask`, `POST
+/api/remote/ask/draft`; §4.10). Unlike `AskDto`, it carries no transcript of
+its own (the client already holds it), just the newest turn's outcome.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `thinking` | bool | Poll while true. |
+| `answer` | string? | The tutor's reply to a question call. `null` for a draft call, or while thinking. |
+| `draft` | DraftCardDto? | The drafted card from a draft call. `null` for a question call, or while thinking. |
+| `error` | string? | Set on failure. |
+| `elapsed` | number? | Seconds the in-flight call has run; `null` once settled. |
+
+Example, settled with a draft (from the pinned test):
+`{"thinking":false,"answer":"so drops are deterministic","draft":{"front":"Why does Rust use one owner per value?","back":["so drops are deterministic","no GC needed"]},"error":null,"elapsed":null}`.
+
+### RemoteExamDto
+
+A paired phone's AI exam sitting (`/api/remote/exam/*`; §4.10). Unlike
+`ExamDto`, there is no server-side session: answering happens client-local
+as one batch, so there is no `total`/`current`/`question`/`answer`/`on_last`;
+the client counts its own remediation cards, so there is no
+`remediated_count`; and a trace or source-less deck is refused at the start,
+so there is no `is_trace`/`unlocks`/`cooldown_ms`.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `phase` | string | `idle` \| `generating` \| `answering` \| `grading` \| `results` \| `remediating` \| `remediated` (open set). `idle` is the baseline when no sitting is open: `ExamDto` has no equivalent, since the browser's exam slot simply doesn't exist between sittings. |
+| `deck` | string | Deck name; empty at `idle`. |
+| `strictness` | string | `strict` \| `balanced` \| `lenient` *(closed)*. |
+| `questions` | [string] | Prompts only: the rubric (`ExamQuestion.points`) never leaves the server. |
+| `passed` | bool? | Null until graded. |
+| `grades` | [ExamGradeDto] | Populated in `results`/`remediated`. |
+| `gaps` | [string] | Named understanding gaps. |
+| `can_remediate` | bool | |
+| `cards` | string? | Deck-format text, set in the `remediated` phase: the client parses and stores these; the server never does. |
+| `thinking` | bool | Poll while true. |
+| `elapsed` | number? | Seconds the in-flight call has run. |
+| `error` | string? | |
+
+Example, remediated (from the pinned test):
+`{"phase":"remediated","deck":"rust.txt","strictness":"balanced","questions":["Why does Rust use ownership?"],"passed":false,"grades":[{"question":"Why does Rust use ownership?","points":["memory safety without a GC"],"answer":"it has a garbage collector","verdict":"FAIL","feedback":"Rust has no GC","missed":["memory safety without a GC"]}],"gaps":["ownership and the GC-free memory model"],"can_remediate":false,"cards":"# Why does Rust use ownership?\n\tso drops are deterministic, no GC needed","thinking":false,"elapsed":null,"error":null}`.
 
 ## 7. Web-page-private surface
 
