@@ -1,5 +1,6 @@
 {
   "acquire": false,
+  "acquired": 4,
   "can_restart": true,
   "card": {
     "at": "string.rs:120-128",

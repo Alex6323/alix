@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- **The session summary no longer reads all zeros after a first pass.** A
+  fresh deck's first sitting is acquire-only (attempt-first exposure, no
+  grades), but the summary said "Nothing due." with 0 reviews right after
+  every card was introduced. The wire state now carries `acquired`
+  (`StateDto`), and the summary leads with "New cards planted." and an
+  "introduced" count, hiding the grade rows when nothing was graded.
+
 ### Added
 - **A tutorial deck on first run.** A brand-new decks directory is seeded
   with "The alix tutorial": ten cards that teach alix by being reviewed —

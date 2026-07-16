@@ -7,6 +7,12 @@ Release notes, so a release without its section fails loud.
 
 ## [Unreleased]
 
+### Fixed
+
+- The session summary no longer shows all zeros after a first pass over a
+  fresh deck: it now says how many new cards were introduced, and hides
+  the passed/failed rows when nothing was graded.
+
 ## [0.1.1] - 2026-07-16
 
 ### Added

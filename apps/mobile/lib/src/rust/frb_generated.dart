@@ -846,8 +846,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ReviewState dco_decode_review_state(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 15)
-      throw Exception('unexpected arr length: expect 15 but see ${arr.length}');
+    if (arr.length != 16)
+      throw Exception('unexpected arr length: expect 16 but see ${arr.length}');
     return ReviewState(
       card: dco_decode_opt_box_autoadd_card_view(arr[0]),
       mode: dco_decode_mode(arr[1]),
@@ -862,8 +862,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       reviews: dco_decode_u_32(arr[10]),
       passed: dco_decode_u_32(arr[11]),
       failed: dco_decode_u_32(arr[12]),
-      canRestart: dco_decode_bool(arr[13]),
-      promotable: dco_decode_bool(arr[14]),
+      acquired: dco_decode_u_32(arr[13]),
+      canRestart: dco_decode_bool(arr[14]),
+      promotable: dco_decode_bool(arr[15]),
     );
   }
 
@@ -1305,6 +1306,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_reviews = sse_decode_u_32(deserializer);
     var var_passed = sse_decode_u_32(deserializer);
     var var_failed = sse_decode_u_32(deserializer);
+    var var_acquired = sse_decode_u_32(deserializer);
     var var_canRestart = sse_decode_bool(deserializer);
     var var_promotable = sse_decode_bool(deserializer);
     return ReviewState(
@@ -1321,6 +1323,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       reviews: var_reviews,
       passed: var_passed,
       failed: var_failed,
+      acquired: var_acquired,
       canRestart: var_canRestart,
       promotable: var_promotable,
     );
@@ -1746,6 +1749,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.reviews, serializer);
     sse_encode_u_32(self.passed, serializer);
     sse_encode_u_32(self.failed, serializer);
+    sse_encode_u_32(self.acquired, serializer);
     sse_encode_bool(self.canRestart, serializer);
     sse_encode_bool(self.promotable, serializer);
   }

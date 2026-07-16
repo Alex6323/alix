@@ -912,7 +912,15 @@ class _ReviewScreenState extends State<ReviewScreen> {
     final theme = Theme.of(context);
     final tokens = theme.alix;
     final reviews = _state.reviews;
+    final acquired = _state.acquired;
     final acc = reviews > 0 ? '${(100 * _state.passed / reviews).round()}%' : '–';
+    // A first pass over a fresh deck is acquire-only: reviews stay 0 while
+    // every card was introduced. Say what actually happened.
+    final headline = reviews > 0
+        ? 'Nicely charged.'
+        : acquired > 0
+            ? 'New cards planted.'
+            : 'Nothing due.';
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -929,16 +937,20 @@ class _ReviewScreenState extends State<ReviewScreen> {
           ),
           const SizedBox(height: 14),
           Text(
-            reviews > 0 ? 'Nicely charged.' : 'Nothing due.',
+            headline,
             style: TextStyle(
                 fontSize: 26,
                 fontWeight: FontWeight.w600,
                 color: theme.colorScheme.onSurface),
           ),
           const SizedBox(height: 18),
+          if (acquired > 0) _summaryRow('introduced', '$acquired', tokens),
           _summaryRow('reviewed', '$reviews', tokens),
-          _summaryRow('passed / failed', '${_state.passed} / ${_state.failed}', tokens),
-          _summaryRow('accuracy', acc, tokens),
+          if (reviews > 0) ...[
+            _summaryRow('passed / failed',
+                '${_state.passed} / ${_state.failed}', tokens),
+            _summaryRow('accuracy', acc, tokens),
+          ],
           if (!_state.canRestart) ...[
             const SizedBox(height: 18),
             Container(

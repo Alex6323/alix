@@ -417,7 +417,7 @@ The review-session payload; returned by every review action.
 | `mode` | string | The check being rendered: `flip` \| `typing` \| `typeline` \| `choice` \| `line` \| `explain` (open set). |
 | `depth` | string | `recognize` \| `recall` \| `reconstruct` *(closed)*. |
 | `input` | string | `type` \| `draw`. |
-| `remaining` / `initial` / `reviews` / `passed` / `failed` | number | Session counters. |
+| `remaining` / `initial` / `reviews` / `passed` / `failed` / `acquired` | number | Session counters; `acquired` counts never-seen cards introduced this sitting (a first pass is acquire-only, so `reviews` alone reads 0). |
 | `exam_due` | [string] | Deck names whose exam unlocked; populated at `done`. |
 | `can_restart` | bool | Anything due/new right now. |
 | `promotable` | bool | Current card is a virtual (remediation) card. |

@@ -144,6 +144,9 @@ pub(super) struct StateDto {
     pub(super) reviews: u32,
     pub(super) passed: u32,
     pub(super) failed: u32,
+    /// Never-seen cards introduced this session; a first pass over a fresh
+    /// deck is acquire-only, and the summary must say so instead of "0".
+    pub(super) acquired: u32,
     /// Subjects of decks in this (finished) session that are now `ExamDue` —
     /// drilled, sourced, and not yet mastered. The summary offers to sit each.
     /// Empty until the session is finished.
@@ -1015,6 +1018,7 @@ pub(super) fn review_state(reviewing: Option<&Reviewing>, store: &Store) -> Stat
             reviews: 0,
             passed: 0,
             failed: 0,
+            acquired: 0,
             exam_due: Vec::new(),
             can_restart: false,
             promotable: false,
@@ -1114,6 +1118,7 @@ pub(super) fn review_state(reviewing: Option<&Reviewing>, store: &Store) -> Stat
         reviews: s.reviews,
         passed: s.passed,
         failed: s.failed,
+        acquired: s.acquired,
         exam_due,
         can_restart: s.can_restart,
         promotable: s.promotable,

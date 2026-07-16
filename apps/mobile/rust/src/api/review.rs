@@ -71,6 +71,7 @@ pub struct _ReviewState {
     pub reviews: u32,
     pub passed: u32,
     pub failed: u32,
+    pub acquired: u32,
     pub can_restart: bool,
     pub promotable: bool,
 }

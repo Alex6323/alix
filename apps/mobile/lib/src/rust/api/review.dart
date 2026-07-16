@@ -215,6 +215,7 @@ class ReviewState {
   final int reviews;
   final int passed;
   final int failed;
+  final int acquired;
   final bool canRestart;
   final bool promotable;
 
@@ -232,6 +233,7 @@ class ReviewState {
     required this.reviews,
     required this.passed,
     required this.failed,
+    required this.acquired,
     required this.canRestart,
     required this.promotable,
   });
@@ -251,6 +253,7 @@ class ReviewState {
       reviews.hashCode ^
       passed.hashCode ^
       failed.hashCode ^
+      acquired.hashCode ^
       canRestart.hashCode ^
       promotable.hashCode;
 
@@ -272,6 +275,7 @@ class ReviewState {
           reviews == other.reviews &&
           passed == other.passed &&
           failed == other.failed &&
+          acquired == other.acquired &&
           canRestart == other.canRestart &&
           promotable == other.promotable;
 }

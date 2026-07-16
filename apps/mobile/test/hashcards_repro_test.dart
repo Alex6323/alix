@@ -61,6 +61,35 @@ void main() {
         reason: 'the tap explains itself instead of doing nothing');
   });
 
+  testWidgets('an acquire-only first pass says new cards were met, not zeros',
+      (tester) async {
+    final root = traceRoot();
+    addTearDown(() => root.deleteSync(recursive: true));
+
+    await tester.pumpWidget(MaterialApp(
+      theme: alixDark(),
+      home: ReviewScreen(
+        deckPath: '${root.path}/facts.txt',
+        rootDir: root.path,
+        depth: Depth.recall,
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // The fresh deck's single card is acquired (Reveal, then Seen).
+    await tester.tap(find.text('Reveal'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Seen'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('SESSION COMPLETE'), findsOneWidget);
+    expect(find.text('New cards planted.'), findsOneWidget,
+        reason: 'an acquire-only sitting is not "Nothing due."');
+    expect(find.text('introduced'), findsOneWidget);
+    expect(find.text('passed / failed'), findsNothing,
+        reason: 'grade rows are noise when nothing was graded');
+  });
+
   testWidgets('a failed session open renders a message, never a white screen',
       (tester) async {
     final root = traceRoot();

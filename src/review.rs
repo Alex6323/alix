@@ -87,6 +87,10 @@ pub struct ReviewState {
     pub reviews: u32,
     pub passed: u32,
     pub failed: u32,
+    /// Never-seen cards introduced (acquired) this session. A first pass over
+    /// a fresh deck is acquire-only, so without this the summary reads
+    /// "reviewed 0 / nothing due" right after the learner met every card.
+    pub acquired: u32,
     /// Whether a restart right now would find due (or new) cards, so a
     /// summary screen can offer another round.
     pub can_restart: bool,
@@ -167,6 +171,7 @@ pub fn state(
         reviews: session.stats.reviews as u32,
         passed: session.stats.passed as u32,
         failed: session.stats.failed as u32,
+        acquired: session.stats.acquired as u32,
         can_restart: session.has_due_now(store, now),
         promotable: session.current_is_virtual(store),
     }
@@ -545,6 +550,19 @@ mod tests {
         assert_eq!(later.reviews, 2);
         assert_eq!(later.passed, 1);
         assert_eq!(later.failed, 1);
+    }
+
+    #[test]
+    fn an_acquire_only_sitting_reports_its_acquired_count() {
+        let (_store, augment, _dir) = fixtures();
+        let cards = parse(FOUR);
+        let mut fresh = Store::open(_dir.path().join("fresh.json")).unwrap();
+        let mut session = session_at(cards, &fresh, Depth::Recall, NOW);
+        session.acquire_current(&mut fresh, NOW);
+        session.acquire_current(&mut fresh, NOW);
+        let s = state(&session, &fresh, &augment, Some(NOW));
+        assert_eq!(s.acquired, 2, "the summary must know new cards were met");
+        assert_eq!((s.reviews, s.passed, s.failed), (0, 0, 0));
     }
 
     #[test]

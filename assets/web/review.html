@@ -3743,16 +3743,25 @@ function renderSummary() {
   const acc = state.reviews > 0 ? Math.round(100 * state.passed / state.reviews) + "%" : "–";
   const wrap = el("div", "summary");
   wrap.appendChild(el("div", "lede", "session complete"));
-  wrap.appendChild(el("h2", null, state.reviews > 0 ? "Nicely charged." : "Nothing due."));
+  // A first pass over a fresh deck is acquire-only: reviews stay 0 while
+  // every card was introduced. Say what actually happened.
+  const acquired = state.acquired || 0;
+  const headline = state.reviews > 0 ? "Nicely charged."
+    : acquired > 0 ? "New cards planted."
+    : "Nothing due.";
+  wrap.appendChild(el("h2", null, headline));
   const row = (label, value) => {
     const r = el("div", "row");
     r.appendChild(el("span", null, label));
     r.appendChild(el("b", null, value));
     wrap.appendChild(r);
   };
+  if (acquired > 0) row("introduced", `${acquired}`);
   row("reviewed", `${state.reviews}`);
-  row("passed / failed", `${state.passed} / ${state.failed}`);
-  row("accuracy", acc);
+  if (state.reviews > 0) {
+    row("passed / failed", `${state.passed} / ${state.failed}`);
+    row("accuracy", acc);
+  }
   if (!state.can_restart) {
     wrap.appendChild(el("div", "note", "Nothing due right now — come back later."));
   }

@@ -637,6 +637,7 @@ const _: fn() = || {
         let _: u32 = ReviewState.reviews;
         let _: u32 = ReviewState.passed;
         let _: u32 = ReviewState.failed;
+        let _: u32 = ReviewState.acquired;
         let _: bool = ReviewState.can_restart;
         let _: bool = ReviewState.promotable;
     }
@@ -1030,6 +1031,7 @@ impl SseDecode for crate::api::review::ReviewState {
         let mut var_reviews = <u32>::sse_decode(deserializer);
         let mut var_passed = <u32>::sse_decode(deserializer);
         let mut var_failed = <u32>::sse_decode(deserializer);
+        let mut var_acquired = <u32>::sse_decode(deserializer);
         let mut var_canRestart = <bool>::sse_decode(deserializer);
         let mut var_promotable = <bool>::sse_decode(deserializer);
         return crate::api::review::ReviewState {
@@ -1046,6 +1048,7 @@ impl SseDecode for crate::api::review::ReviewState {
             reviews: var_reviews,
             passed: var_passed,
             failed: var_failed,
+            acquired: var_acquired,
             can_restart: var_canRestart,
             promotable: var_promotable,
         };
@@ -1400,6 +1403,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::ReviewStat
             self.0.reviews.into_into_dart().into_dart(),
             self.0.passed.into_into_dart().into_dart(),
             self.0.failed.into_into_dart().into_dart(),
+            self.0.acquired.into_into_dart().into_dart(),
             self.0.can_restart.into_into_dart().into_dart(),
             self.0.promotable.into_into_dart().into_dart(),
         ]
@@ -1771,6 +1775,7 @@ impl SseEncode for crate::api::review::ReviewState {
         <u32>::sse_encode(self.reviews, serializer);
         <u32>::sse_encode(self.passed, serializer);
         <u32>::sse_encode(self.failed, serializer);
+        <u32>::sse_encode(self.acquired, serializer);
         <bool>::sse_encode(self.can_restart, serializer);
         <bool>::sse_encode(self.promotable, serializer);
     }

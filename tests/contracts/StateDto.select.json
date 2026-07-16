@@ -1,5 +1,6 @@
 {
   "acquire": false,
+  "acquired": 0,
   "can_restart": false,
   "card": null,
   "choices": null,
