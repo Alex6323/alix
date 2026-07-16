@@ -129,6 +129,12 @@ make web     # run the web frontend
 Building a client? The web JSON API is a documented contract:
 [docs/API.md](docs/API.md). See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Support
+
+alix is free and open source. Telling someone who studies is the best
+support; if you want to support the project financially, you can do so
+[here](https://github.com/sponsors/Alex6323).
+
 ## License
 
 Licensed under either of
