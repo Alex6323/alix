@@ -31,8 +31,8 @@
 # What decides whether you pick from choices or answer from memory?
     the depth you choose when starting a session
     ! The depths are Recognize (pick the answer), Recall (from memory),
-    ! and Explain (cover the key points). Deeper is stronger; start easy
-    ! and go deeper as a deck grows familiar.
+    ! and Reconstruct (rebuild the answer in your own words). Deeper is
+    ! stronger; start easy and go deeper as a deck grows familiar.
 
 # Where do new decks come from?
     write them yourself, or let the AI draft them from a source

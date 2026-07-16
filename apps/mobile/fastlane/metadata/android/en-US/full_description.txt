@@ -1,0 +1,30 @@
+alix is a local-first spaced-repetition learning tool. Decks are plain text
+files you own; the app schedules reviews so each card comes back just before
+you would forget it.
+
+This Android app is the mobile client of the alix project. It reviews the
+same decks as the desktop and web versions, fully offline: flip cards,
+gap-fill, line-by-line reveal, multiple choice, typed answers, and an
+explain-style key-point checklist. Progress lives next to your decks as a
+plain file.
+
+A new install starts with a small tutorial deck that teaches the app while
+you review it. Delete it when it has nothing left to teach you; it will not
+come back.
+
+Optional shared decks folder: you can point alix at a folder you choose
+(for example one synced by Syncthing), so decks and progress roam between
+your devices. On Android 11 and newer this uses the "All files access"
+permission. It is opt-in: if you never pick a shared folder, alix keeps
+everything in its own app storage and the permission is not used.
+
+The AI features of the alix project (deck generation from your own
+sources, a tutor, an exam that checks understanding) currently live in the
+desktop and web app; the phone app is planned to reach them by pairing
+with your own alix instance. Nothing on the phone talks to any server.
+
+Status: early, pre-1.0, under active development. Expect rough edges.
+
+Source and documentation: https://github.com/Alex6323/alix
+Website: https://alix.study
+License: MIT OR Apache-2.0

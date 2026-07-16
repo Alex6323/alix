@@ -1,0 +1,4 @@
+First release: the full review loop, offline (flip, gap-fill,
+line-by-line, multiple choice, typing, key-point checklist), FSRS
+scheduling, plain-text decks, an optional user-chosen shared decks
+folder, and multi-device sync guards.
