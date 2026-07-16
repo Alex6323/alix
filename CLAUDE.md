@@ -91,6 +91,12 @@ of content. When in doubt, remove it; if it's genuinely useful but rare, hide it
 behind a `⋮`/`m`/`?`-style affordance rather than leaving it on screen. Treat a
 noisy diff the way you'd treat a failing test: not done yet.
 
+**Funding tone: subtle hints only, never begging.** Sponsoring the development
+is mentioned quietly where it fits (a Support link), and the copy always leads
+with the free alternative (telling someone about alix). Never print concrete
+cost figures (they go stale and are never quite true). No banners, no nags, no
+guilt, nothing in-app. If a sentence reads like an ask for money, cut it.
+
 ## Dev commands — use the Makefile
 
 | Command | What it does |
