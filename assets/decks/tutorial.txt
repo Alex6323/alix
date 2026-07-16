@@ -60,4 +60,4 @@
     ! It is a plain text file in your decks folder; delete the file and
     ! it will not come back (alix seeds it only for a brand-new install).
     ! If it taught you something, telling someone who studies is the best
-    ! support alix can get.
+    ! support; alix.study shows the other ways.
