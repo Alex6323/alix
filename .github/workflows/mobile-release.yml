@@ -117,7 +117,9 @@ jobs:
       - name: Assert 16KB page alignment
         run: |
           unzip -o -q apps/mobile/build/app/outputs/flutter-apk/app-release.apk 'lib/arm64-v8a/*' -d /tmp/apk
-          align=$(readelf -l /tmp/apk/lib/arm64-v8a/librust_lib_alix_mobile.so | awk '/LOAD/ {print $NF; exit}')
+          # -W (wide) keeps each program header on ONE line; without it readelf
+          # wraps LOAD onto two lines and `$NF` grabs PhysAddr (0x0), not Align.
+          align=$(readelf -lW /tmp/apk/lib/arm64-v8a/librust_lib_alix_mobile.so | awk '/LOAD/ {print $NF; exit}')
           echo "librust_lib_alix_mobile.so LOAD align: $align"
           case "$align" in
             0x4000|0x10000) ;;
