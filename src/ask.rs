@@ -730,6 +730,31 @@ mod tests {
     }
 
     #[test]
+    fn an_empty_history_prompt_is_exactly_the_first_turn_prompt() {
+        // The M6 remote tutor is stateless per turn: the phone re-sends the
+        // whole transcript, and the first turn sends an empty one. The server
+        // can skip per-client session state only if an empty history builds
+        // byte-for-byte the first-turn prompt (the `first = true` arm).
+        let links = vec!["https://docs.rs/tokio".to_string()];
+        let first = question_prompt(&card(), Audience::Adult, &links, "why?", true, None, None);
+        let empty =
+            question_prompt_with_history(&card(), Audience::Adult, &links, &[], "why?", None, None);
+        assert_eq!(first, empty, "empty history must equal the first turn");
+
+        // The reduction must survive grounding too: a source root and a frozen
+        // excerpt flow through both paths unchanged.
+        let root = Some(Path::new("/repo/x"));
+        let frozen = Some("src/caching.rs:46-66\n46\tfn get_object() {}\n");
+        let first = question_prompt(&card(), Audience::Adult, &[], "why?", true, root, frozen);
+        let empty =
+            question_prompt_with_history(&card(), Audience::Adult, &[], &[], "why?", root, frozen);
+        assert_eq!(
+            first, empty,
+            "grounded empty history must equal the first turn"
+        );
+    }
+
+    #[test]
     fn source_access_grounds_every_prompt_in_the_crate_root() {
         // Even a follow-up reminds Claude it can read the source and must verify.
         let p = question_prompt(
