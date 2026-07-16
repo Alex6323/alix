@@ -254,6 +254,7 @@ fn spawn_job(cmd: &str, args: &[&str], cwd: Option<&Path>) -> Result<ShareJob> {
         )
     })?;
     let (tx, rx) = mpsc::channel();
+    let mut readers = Vec::new();
     // magic-wormhole prints the code line to stderr; scan both pipes to be safe.
     for pipe in [
         child
@@ -269,13 +270,13 @@ fn spawn_job(cmd: &str, args: &[&str], cwd: Option<&Path>) -> Result<ShareJob> {
     .flatten()
     {
         let tx = tx.clone();
-        std::thread::spawn(move || {
+        readers.push(std::thread::spawn(move || {
             for line in std::io::BufReader::new(pipe).lines().map_while(|l| l.ok()) {
                 if let Some(code) = line.trim().strip_prefix("Wormhole code is:") {
                     let _ = tx.send(ShareEvent::Code(code.trim().to_string()));
                 }
             }
-        });
+        }));
     }
     let child = Arc::new(Mutex::new(child));
     let waiter = Arc::clone(&child);
@@ -287,6 +288,13 @@ fn spawn_job(cmd: &str, args: &[&str], cwd: Option<&Path>) -> Result<ShareJob> {
                 .ok()
                 .and_then(|mut c| c.try_wait().ok().flatten());
             if let Some(status) = status {
+                // Drain the pipe readers before the terminal event: a
+                // fast-exiting process could otherwise have Done overtake its
+                // own Code line (a scheduling race a slow CI runner caught;
+                // exit closes the pipes, so these joins are bounded by EOF).
+                for reader in readers.drain(..) {
+                    let _ = reader.join();
+                }
                 let _ = tx.send(if status.success() {
                     ShareEvent::Done
                 } else {
