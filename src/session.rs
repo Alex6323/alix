@@ -727,8 +727,8 @@ pub const DEFAULT_RETIRE_AFTER_DAYS: u32 = 365;
 
 /// Whether a card is *retired* (resting), so it is no longer scheduled until
 /// `alix reset`: its FSRS interval has reached `retire_after_days`. `None` disables
-/// retirement (drill forever). A card with no FSRS state yet — unseen, or a legacy
-/// card not yet reviewed under FSRS — is never retired; its first FSRS review is what
+/// retirement (drill forever). A card with no FSRS state yet — unseen, or acquired
+/// but never quiz-graded — is never retired; its first FSRS review is what
 /// can push the interval past the cap. Pinned to the Recall schedule regardless of
 /// session depth — retirement is a deck-lifecycle concept (spec §4.5), not per-depth.
 pub fn is_retired(card: &Card, store: &Store, retire_after_days: Option<u32>) -> bool {

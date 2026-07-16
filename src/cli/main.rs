@@ -475,8 +475,6 @@ struct ResetArgs {
 }
 
 fn main() -> Result<()> {
-    // One-time: adopt a pre-rename `flash` data dir so existing progress survives.
-    alix::store::migrate_legacy_data_dir();
     let cli = Cli::parse();
     match cli.command {
         None => launch(cli.launch),

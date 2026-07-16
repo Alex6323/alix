@@ -821,32 +821,6 @@ pub fn default_store_path() -> Option<PathBuf> {
     directories::ProjectDirs::from("", "", "alix").map(|dirs| dirs.data_dir().join("progress.json"))
 }
 
-/// One-time adoption of a pre-rename `flash` data directory. The tool used to
-/// store progress under `flash/`; if the new `alix/` data dir doesn't exist yet
-/// but the legacy `flash/` one does, move it across so existing progress
-/// survives the rename. Best-effort — any error is ignored (a failed move just
-/// means the user starts fresh, never a crash). Call once at startup.
-pub fn migrate_legacy_data_dir() {
-    let old = directories::ProjectDirs::from("", "", "flash").map(|d| d.data_dir().to_path_buf());
-    let new = directories::ProjectDirs::from("", "", "alix").map(|d| d.data_dir().to_path_buf());
-    if let (Some(old), Some(new)) = (old, new) {
-        adopt_legacy_dir(&old, &new);
-    }
-}
-
-/// Renames `old` to `new` when `new` is absent and `old` exists. Split out from
-/// [`migrate_legacy_data_dir`] so it can be tested without touching the real
-/// platform data directory.
-fn adopt_legacy_dir(old: &Path, new: &Path) {
-    if new.exists() || !old.exists() {
-        return;
-    }
-    if let Some(parent) = new.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    let _ = std::fs::rename(old, new);
-}
-
 /// Syncthing conflict copies sitting next to `store_path`
 /// (`<stem>.sync-conflict-*.<ext>`): evidence that two devices wrote the
 /// store concurrently. Sorted for stable output; a missing directory is
@@ -1036,41 +1010,6 @@ mod tests {
         );
         std::fs::write(dir.path().join("device"), "desktop\n").unwrap();
         assert_eq!(device_label_in(dir.path()).unwrap(), "desktop");
-    }
-
-    #[test]
-    fn adopt_legacy_dir_moves_when_new_is_absent() {
-        let tmp = tempfile::tempdir().unwrap();
-        let old = tmp.path().join("flash");
-        let new = tmp.path().join("alix");
-        std::fs::create_dir_all(&old).unwrap();
-        std::fs::write(old.join("progress.json"), "{}").unwrap();
-        adopt_legacy_dir(&old, &new);
-        assert!(
-            new.join("progress.json").exists(),
-            "progress should have moved"
-        );
-        assert!(
-            !old.exists(),
-            "the legacy dir should be gone after the move"
-        );
-    }
-
-    #[test]
-    fn adopt_legacy_dir_leaves_an_existing_new_dir_untouched() {
-        let tmp = tempfile::tempdir().unwrap();
-        let old = tmp.path().join("flash");
-        let new = tmp.path().join("alix");
-        std::fs::create_dir_all(&old).unwrap();
-        std::fs::write(old.join("progress.json"), "OLD").unwrap();
-        std::fs::create_dir_all(&new).unwrap();
-        std::fs::write(new.join("progress.json"), "NEW").unwrap();
-        adopt_legacy_dir(&old, &new);
-        assert_eq!(
-            "NEW",
-            std::fs::read_to_string(new.join("progress.json")).unwrap()
-        );
-        assert!(old.exists(), "the legacy dir should be left in place");
     }
 
     #[test]
