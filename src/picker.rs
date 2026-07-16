@@ -616,10 +616,16 @@ mod tests {
     fn dependency_forest_nests_dependents_under_prerequisites() {
         // 0 data-model (root); 1 lapses, 3 stability, 4 queue-building require 0;
         // 2 grading requires 1. Siblings order by name.
-        let names: Vec<String> = ["data-model", "lapses", "grading", "stability", "queue-building"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
+        let names: Vec<String> = [
+            "data-model",
+            "lapses",
+            "grading",
+            "stability",
+            "queue-building",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
         let parent = vec![None, Some(0), Some(1), Some(0), Some(0)];
         let order = dependency_forest(&parent, &names);
         assert_eq!(

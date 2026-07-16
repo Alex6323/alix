@@ -1997,7 +1997,10 @@ mod tests {
         ] {
             let toml = format!("[ask]\nbackend = \"{}\"\n", kind.name());
             let config = Config::from_toml(&toml).unwrap();
-            assert_eq!(kind, config.ask.backend, "name() must be the parser's inverse");
+            assert_eq!(
+                kind, config.ask.backend,
+                "name() must be the parser's inverse"
+            );
         }
     }
 

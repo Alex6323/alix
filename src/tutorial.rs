@@ -79,8 +79,8 @@ mod tests {
     /// assets/ only), stated loudly so the skip is never mistaken for a pass.
     #[test]
     fn the_mobile_copy_matches_the_canonical_deck() {
-        let mobile = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("apps/mobile/assets/decks/tutorial.txt");
+        let mobile =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("apps/mobile/assets/decks/tutorial.txt");
         if !mobile.exists() {
             eprintln!("skipping: no apps/mobile tree here (published crate)");
             return;
