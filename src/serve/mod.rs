@@ -62,6 +62,11 @@ const ALIX_LOGO_JS: &str = include_str!("../../assets/web/alix-logo.js");
 const HEAD_HTML: &str = include_str!("../../assets/web/_head.html");
 const BRAND_HTML: &str = include_str!("../../assets/web/_brand.html");
 
+/// Body-size cap for a paired phone's `/api/remote/*` POSTs (card context,
+/// history, exam answers): the same defensive idiom `read_capped` gives the
+/// zip upload, sized for a chat transcript rather than a file.
+const MAX_REMOTE_BODY: usize = 256 * 1024;
+
 // Self-hosted IBM Plex webfonts (Latin + Latin-Ext subset; see
 // `assets/web/fonts/OFL.txt`), embedded so the app works fully offline —
 // served by name at `GET /fonts/<name>.woff2` (see `font_bytes`).
@@ -261,6 +266,12 @@ pub fn run_review(
     // Workspace icons resolved while building the picker, served via `/img/` at
     // launcher time (when no review/browse session owns the registry).
     let mut launcher_icons: HashMap<String, PathBuf> = HashMap::new();
+    // A paired phone's tutor turn and exam sitting (`/api/remote/*`), kept
+    // SEPARATE from `reviewing`/`examining` so a phone can never see or kill a
+    // browser session, and vice versa. Neither ever touches `store`: the phone
+    // owns its own state and only reads these as computed answers.
+    let mut remote_ask: Option<RemoteAsk> = None;
+    let mut remote_exam: Option<RemoteExamining> = None;
     // Diagnostic net for {#server-subresource-stall}: with ALIX_HTTP_LOG set,
     // one stderr line as each request is POPPED off tiny_http's queue. On the
     // next stall the pattern is decisive: a wedged request that never prints
@@ -1638,6 +1649,218 @@ pub fn run_review(
                 }
                 // Every closer returns the picker StateDto — one teardown rule.
                 respond_json(request, &review_state(reviewing.as_ref(), &store));
+            }
+            // ── Remote (a paired phone's tutor + exam) ──────────────────────
+            // The desktop plays model backend for a phone's tutor and exam; the
+            // phone owns all state (transcript, mastery, cards) and resends it
+            // every call. THE IRON RULE: nothing under `/api/remote/*` touches
+            // `store`. These handlers only compute and reply.
+            //
+            // Ask a remote tutor question. Single-flight in `remote_ask`,
+            // separate from the browser's `reviewing.ask` slot.
+            (Method::Post, "/api/remote/ask") => {
+                if let Some(a) = remote_ask.as_mut() {
+                    a.poll();
+                }
+                if remote_ask.as_ref().is_some_and(RemoteAsk::thinking) {
+                    respond_status(request, 409);
+                    continue;
+                }
+                let Some(bytes) = read_capped(request.as_reader(), MAX_REMOTE_BODY) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                let Ok(RemoteAskReq {
+                    card,
+                    history,
+                    question,
+                }) = serde_json::from_slice::<RemoteAskReq>(&bytes)
+                else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                // No card context at all: nothing for the tutor to ground on.
+                if question.trim().is_empty()
+                    || (card.front.trim().is_empty()
+                        && card.back.iter().all(|l| l.trim().is_empty()))
+                {
+                    respond_status(request, 400);
+                    continue;
+                }
+                let job = RemoteAsk::ask(&ask_cfg, &card, history, &question);
+                let dto = job.dto();
+                remote_ask = Some(job);
+                respond_json(request, &dto);
+            }
+            // Poll a remote tutor call; the settled reply stays readable until
+            // the next POST replaces the slot.
+            (Method::Get, "/api/remote/ask") => {
+                let dto = match remote_ask.as_mut() {
+                    Some(a) => {
+                        a.poll();
+                        a.dto()
+                    }
+                    None => RemoteAskDto {
+                        thinking: false,
+                        answer: None,
+                        draft: None,
+                        error: None,
+                        elapsed: None,
+                    },
+                };
+                respond_json(request, &dto);
+            }
+            // Draft a card from the phone's own tutor history (adult-only,
+            // same gate as the web draft handler).
+            (Method::Post, "/api/remote/ask/draft") => {
+                if audience == Audience::Kids {
+                    respond_status(request, 403);
+                    continue;
+                }
+                if let Some(a) = remote_ask.as_mut() {
+                    a.poll();
+                }
+                if remote_ask.as_ref().is_some_and(RemoteAsk::thinking) {
+                    respond_status(request, 409);
+                    continue;
+                }
+                let Some(bytes) = read_capped(request.as_reader(), MAX_REMOTE_BODY) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                let Ok(RemoteDraftReq { card, history }) =
+                    serde_json::from_slice::<RemoteDraftReq>(&bytes)
+                else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                if history.is_empty() {
+                    respond_status(request, 400); // nothing to draft from
+                    continue;
+                }
+                let job = RemoteAsk::draft(&ask_cfg, &card, history);
+                let dto = job.dto();
+                remote_ask = Some(job);
+                respond_json(request, &dto);
+            }
+            // Start a remote exam sitting. Trace decks and source-less decks
+            // are refused (a phone has no walk, and there is nothing to
+            // examine); the store-side `% requires:` lock and trace re-sit
+            // cooldown are the browser's own truth, not the phone's, so both
+            // are skipped here.
+            (Method::Post, "/api/remote/exam/start") => {
+                if remote_exam.is_some() {
+                    respond_status(request, 409);
+                    continue;
+                }
+                #[derive(Deserialize)]
+                struct Body {
+                    deck: String,
+                }
+                let Some(bytes) = read_capped(request.as_reader(), MAX_REMOTE_BODY) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                let Ok(body) = serde_json::from_slice::<Body>(&bytes) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                let Some(path) = resolved_path(resolve_row(&body.deck, &decks_dir, &recent)) else {
+                    respond_status(request, 400); // unknown or ambiguous deck name
+                    continue;
+                };
+                let Ok(deck) = Deck::load(&path) else {
+                    respond_status(request, 409);
+                    continue;
+                };
+                if deck.is_trace() || deck.sources.is_empty() {
+                    respond_status(request, 409);
+                    continue;
+                }
+                if exam::ensure_backend_can_examine(&deck, &ask_cfg).is_err() {
+                    respond_status(request, 409);
+                    continue;
+                }
+                let strictness = deck.settings.exam_strictness.unwrap_or(exam_cfg.strictness);
+                let sitting =
+                    exam::Sitting::start(&deck, strictness, exam_cfg.clone(), ask_cfg.clone());
+                let ex = RemoteExamining {
+                    sitting,
+                    cards: None,
+                };
+                let dto = ex.dto();
+                remote_exam = Some(ex);
+                respond_json(request, &dto);
+            }
+            // Poll the remote sitting: `advance` only, never `poll` (which
+            // writes the store). A passed/failed verdict is read off
+            // `result()`/`gaps()` and left for the phone to apply.
+            (Method::Get, "/api/remote/exam") => {
+                let dto = match remote_exam.as_mut() {
+                    Some(ex) => {
+                        ex.advance();
+                        ex.dto()
+                    }
+                    None => remote_exam_idle_dto(),
+                };
+                respond_json(request, &dto);
+            }
+            // Submit a full batch of answers for grading (unlike the browser's
+            // page-at-a-time `/api/exam/answer`, a remote client answers
+            // locally and sends everything at once).
+            (Method::Post, "/api/remote/exam/grade") => {
+                #[derive(Deserialize)]
+                struct Body {
+                    answers: Vec<String>,
+                }
+                let Some(bytes) = read_capped(request.as_reader(), MAX_REMOTE_BODY) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                let Ok(body) = serde_json::from_slice::<Body>(&bytes) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                let Some(ex) = remote_exam.as_mut() else {
+                    respond_status(request, 409);
+                    continue;
+                };
+                if !matches!(ex.sitting.phase(), exam::Phase::Answering) {
+                    respond_status(request, 409);
+                    continue;
+                }
+                let got = body.answers.len();
+                if !ex.sitting.set_answers(body.answers) {
+                    eprintln!(
+                        "remote exam grade: expected {} answers, got {got}",
+                        ex.sitting.total()
+                    );
+                    respond_status(request, 400);
+                    continue;
+                }
+                ex.sitting.submit();
+                respond_json(request, &ex.dto());
+            }
+            // Generate remediation cards for a failed fact-deck result; the
+            // phone stores them (`RemoteExamDto.cards`), never this server.
+            (Method::Post, "/api/remote/exam/remediate") => {
+                let Some(ex) = remote_exam.as_mut() else {
+                    respond_status(request, 409);
+                    continue;
+                };
+                if !ex.sitting.can_remediate() {
+                    respond_status(request, 409);
+                    continue;
+                }
+                ex.sitting.remediate();
+                respond_json(request, &ex.dto());
+            }
+            // Leave the remote exam: drop the slot (a thread still in flight
+            // just finds its receiver gone, its send fails harmlessly, same
+            // as the browser's exam close). The next GET reports idle.
+            (Method::Post, "/api/remote/exam/close") => {
+                remote_exam = None;
+                respond_status(request, 200);
             }
             _ => respond_status(request, 404),
         }

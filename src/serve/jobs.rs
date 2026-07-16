@@ -311,6 +311,164 @@ impl Ask {
     }
 }
 
+/// Builds a tutor-ready [`Card`] from a paired phone's card context
+/// ([`RemoteCard`]): the server holds no card of its own for a remote call,
+/// so the phone sends everything needed to reconstruct one. `line` is
+/// meaningless off a deck file, so it's `0`; `at` carries through for
+/// completeness even though v1's ungrounded prompt never reads it.
+fn remote_card(c: &RemoteCard) -> Card {
+    let mut card = Card::plain(
+        Arc::from(c.subject.as_str()),
+        c.front.clone(),
+        c.back.clone(),
+        None,
+        0,
+    );
+    card.at = c.at.clone();
+    card
+}
+
+/// What a remote tutor call will do with its reply: a question's answer
+/// lands as-is; a draft is parsed into a card the same way the web draft
+/// handler does.
+enum RemoteAskPurpose {
+    Question,
+    Draft,
+}
+
+/// The settled outcome of a finished remote tutor call, kept until the next
+/// POST replaces the slot ([`RemoteAsk::poll`]'s one-shot drain, held rather
+/// than consumed).
+enum RemoteAskOutcome {
+    Answer(String),
+    Draft(ask::DraftCard),
+    Error(String),
+}
+
+/// A paired phone's in-flight or just-settled tutor turn. Unlike [`Ask`], the
+/// server keeps no transcript or CLI session across calls here: the phone
+/// resends its own history every time, so this only tracks the one backend
+/// call in flight, or its settled result.
+pub(super) struct RemoteAsk {
+    rx: Receiver<Reply>,
+    purpose: RemoteAskPurpose,
+    started_ms: u64,
+    outcome: Option<RemoteAskOutcome>,
+}
+
+impl RemoteAsk {
+    /// Starts a remote tutor question: builds the prompt from the client's
+    /// card and re-sent history (no session, no links, no source grounding:
+    /// v1 sends none) and spawns it on the same background helper the web
+    /// tutor uses.
+    pub(super) fn ask(
+        cfg: &AskConfig,
+        card: &RemoteCard,
+        history: Vec<RemoteTurn>,
+        question: &str,
+    ) -> Self {
+        let card = remote_card(card);
+        let prior: Vec<Exchange> = history.into_iter().map(|t| (t.q, t.a)).collect();
+        let prompt = ask::question_prompt_with_history(
+            &card,
+            Audience::Adult,
+            &[],
+            &prior,
+            question,
+            None,
+            None,
+        );
+        Self::spawn(cfg, prompt, RemoteAskPurpose::Question)
+    }
+
+    /// Starts a remote draft-a-card call from the client's re-sent history.
+    pub(super) fn draft(cfg: &AskConfig, card: &RemoteCard, history: Vec<RemoteTurn>) -> Self {
+        let card = remote_card(card);
+        let prior: Vec<Exchange> = history.into_iter().map(|t| (t.q, t.a)).collect();
+        let prompt = ask::draft_card_prompt(&card, &prior);
+        Self::spawn(cfg, prompt, RemoteAskPurpose::Draft)
+    }
+
+    fn spawn(cfg: &AskConfig, prompt: String, purpose: RemoteAskPurpose) -> Self {
+        // No CliSession, no `--session-id`/`--resume`: every remote call is a
+        // fresh, stateless backend run, the phone re-sends its transcript
+        // each turn instead.
+        let rx = ask::spawn(cfg.clone(), prompt, Vec::new());
+        Self {
+            rx,
+            purpose,
+            started_ms: now_ms(),
+            outcome: None,
+        }
+    }
+
+    /// Whether a call is in flight (drain with `poll` first).
+    pub(super) fn thinking(&self) -> bool {
+        self.outcome.is_none()
+    }
+
+    /// Drains a finished reply into the settled outcome; a no-op once already
+    /// settled or while the channel is still empty.
+    pub(super) fn poll(&mut self) {
+        if self.outcome.is_some() {
+            return;
+        }
+        let reply = match self.rx.try_recv() {
+            Ok(r) => r,
+            Err(TryRecvError::Empty) => return,
+            Err(TryRecvError::Disconnected) => {
+                Reply::Error("the ask helper exited unexpectedly".to_string())
+            }
+        };
+        self.outcome = Some(match (reply, &self.purpose) {
+            (Reply::Answer(text), RemoteAskPurpose::Question) => RemoteAskOutcome::Answer(text),
+            (Reply::Answer(text), RemoteAskPurpose::Draft) => {
+                match ask::parse_drafted_card(&text) {
+                    Ok(card) => RemoteAskOutcome::Draft(card),
+                    Err(e) => RemoteAskOutcome::Error(e.to_string()),
+                }
+            }
+            (Reply::Error(e), _) => RemoteAskOutcome::Error(e),
+        });
+    }
+
+    pub(super) fn dto(&self) -> RemoteAskDto {
+        match &self.outcome {
+            None => RemoteAskDto {
+                thinking: true,
+                answer: None,
+                draft: None,
+                error: None,
+                elapsed: Some(now_ms().saturating_sub(self.started_ms) / 1000),
+            },
+            Some(RemoteAskOutcome::Answer(a)) => RemoteAskDto {
+                thinking: false,
+                answer: Some(a.clone()),
+                draft: None,
+                error: None,
+                elapsed: None,
+            },
+            Some(RemoteAskOutcome::Draft(d)) => RemoteAskDto {
+                thinking: false,
+                answer: None,
+                draft: Some(DraftCardDto {
+                    front: d.front.clone(),
+                    back: d.back.clone(),
+                }),
+                error: None,
+                elapsed: None,
+            },
+            Some(RemoteAskOutcome::Error(e)) => RemoteAskDto {
+                thinking: false,
+                answer: None,
+                draft: None,
+                error: Some(e.clone()),
+                elapsed: None,
+            },
+        }
+    }
+}
+
 impl Reviewing {
     pub(super) fn new(build: SessionBuild) -> Self {
         let images = collect_images(build.session.cards());
@@ -470,6 +628,88 @@ impl Reviewing {
 pub(super) struct Examining {
     pub(super) sitting: exam::Sitting,
     pub(super) deck_path: PathBuf,
+}
+
+/// A paired phone's exam sitting: no deck path, no store, no unlocks. The
+/// server computes questions/grading, the phone owns the rest (mastery,
+/// remediation cards, what a pass unlocks). `cards` holds the last
+/// remediation's deck-format text, surfaced on the DTO until the phone closes
+/// or starts another remediation; the server itself never stores it.
+pub(super) struct RemoteExamining {
+    pub(super) sitting: exam::Sitting,
+    pub(super) cards: Option<String>,
+}
+
+impl RemoteExamining {
+    /// Drains a finished background call ([`exam::Sitting::advance`] only,
+    /// never `poll`, which writes the store). `Passed`/`TraceFailed` are
+    /// dropped: the verdict already sits in `sitting.result()`, and the phone
+    /// applies it to its own store. `RemediationCards` is surfaced onto
+    /// `cards` for the next DTO.
+    pub(super) fn advance(&mut self) {
+        match self.sitting.advance(now_ms()) {
+            Some(exam::Effect::RemediationCards(text)) => self.cards = Some(text),
+            Some(exam::Effect::Passed | exam::Effect::TraceFailed) | None => {}
+        }
+    }
+
+    pub(super) fn dto(&self) -> RemoteExamDto {
+        let s = &self.sitting;
+        let result = s.result();
+        let grades = result
+            .map(|r| {
+                s.questions()
+                    .iter()
+                    .zip(s.answers())
+                    .zip(&r.grades)
+                    .map(|((q, a), g)| ExamGradeDto {
+                        question: q.prompt.clone(),
+                        points: q.points.clone(),
+                        answer: a.clone(),
+                        verdict: g.verdict.label(),
+                        feedback: g.feedback.clone(),
+                        missed: g.missed.clone(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        RemoteExamDto {
+            phase: exam_phase_name(s.phase()),
+            deck: s.subject().to_string(),
+            strictness: strictness_name(s.strictness()),
+            // Prompts only: the rubric (`ExamQuestion::points`) never leaves
+            // the server outside a graded result.
+            questions: s.questions().iter().map(|q| q.prompt.clone()).collect(),
+            passed: result.map(|r| r.passed),
+            grades,
+            gaps: s.gaps(),
+            can_remediate: s.can_remediate(),
+            cards: self.cards.clone(),
+            thinking: s.thinking(),
+            elapsed: s.elapsed_secs(),
+            error: s.error().map(str::to_string),
+        }
+    }
+}
+
+/// The `phase:"idle"` [`RemoteExamDto`] for `GET /api/remote/exam` with no
+/// sitting in flight: every field at its baseline, matching the pinned wire
+/// shape (`contract.rs`'s `remoteexamdto_idle_wire_shape`).
+pub(super) fn remote_exam_idle_dto() -> RemoteExamDto {
+    RemoteExamDto {
+        phase: "idle",
+        deck: String::new(),
+        strictness: "balanced",
+        questions: Vec::new(),
+        passed: None,
+        grades: Vec::new(),
+        gaps: Vec::new(),
+        can_remediate: false,
+        cards: None,
+        thinking: false,
+        elapsed: None,
+        error: None,
+    }
 }
 
 /// The server's live deck-augmentation state: one deck's augmentation cache and
