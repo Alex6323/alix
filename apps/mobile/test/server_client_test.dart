@@ -111,6 +111,11 @@ void main() {
       await request.response.close();
     }
 
+    Future<Map<String, dynamic>> readJsonBody(HttpRequest request) async {
+      final text = await utf8.decoder.bind(request).join();
+      return jsonDecode(text) as Map<String, dynamic>;
+    }
+
     tearDown(() async {
       await server?.close(force: true);
       server = null;
@@ -220,6 +225,246 @@ void main() {
       expect(exam.gaps, ['ownership and the GC-free memory model']);
       expect(exam.canRemediate, isFalse);
       expect(exam.passed, isFalse);
+    });
+
+    group('RemoteAsk.note (three wire states)', () {
+      test('a corpus body with note: null parses as null (not a note result)', () async {
+        final corpus = jsonDecode(File('../../tests/contracts/RemoteAskDto.done.json').readAsStringSync());
+        final s = await startServer((request) async {
+          await request.drain<void>();
+          await respondJson(request, 200, corpus);
+        });
+        final client = HttpServerClient(ServerConfig(host: '127.0.0.1', port: s.port, token: 'x'));
+        addTearDown(client.close);
+
+        final ask = await client.getAsk();
+        expect(ask, isNotNull);
+        expect(ask!.note, isNull);
+      });
+
+      test('note: [] parses as an empty list (a settled "nothing to save")', () async {
+        final s = await startServer((request) async {
+          await request.drain<void>();
+          await respondJson(request, 200, {
+            'answer': null,
+            'draft': null,
+            'elapsed': null,
+            'error': null,
+            'note': <String>[],
+            'thinking': false,
+          });
+        });
+        final client = HttpServerClient(ServerConfig(host: '127.0.0.1', port: s.port, token: 'x'));
+        addTearDown(client.close);
+
+        final ask = await client.getAsk();
+        expect(ask, isNotNull);
+        expect(ask!.note, isNotNull);
+        expect(ask.note, isEmpty);
+      });
+
+      test('a corpus body with note lines parses as those lines', () async {
+        final corpus = jsonDecode(File('../../tests/contracts/RemoteAskDto.note.json').readAsStringSync());
+        final s = await startServer((request) async {
+          await request.drain<void>();
+          await respondJson(request, 200, corpus);
+        });
+        final client = HttpServerClient(ServerConfig(host: '127.0.0.1', port: s.port, token: 'x'));
+        addTearDown(client.close);
+
+        final ask = await client.getAsk();
+        expect(ask, isNotNull);
+        expect(ask!.note, ['ownership drops values deterministically', 'no GC needed']);
+      });
+    });
+
+    test('examGet parses is_trace: true from the trace_results corpus', () async {
+      final corpus =
+          jsonDecode(File('../../tests/contracts/RemoteExamDto.trace_results.json').readAsStringSync());
+      final s = await startServer((request) async {
+        await request.drain<void>();
+        await respondJson(request, 200, corpus);
+      });
+      final client = HttpServerClient(ServerConfig(host: '127.0.0.1', port: s.port, token: 'x'));
+      addTearDown(client.close);
+
+      final exam = await client.examGet();
+      expect(exam, isNotNull);
+      expect(exam!.isTrace, isTrue);
+    });
+
+    test('examGet defaults isTrace to false when is_trace is absent from the wire', () async {
+      final s = await startServer((request) async {
+        await request.drain<void>();
+        await respondJson(request, 200, <String, dynamic>{}); // an older server, no is_trace at all
+      });
+      final client = HttpServerClient(ServerConfig(host: '127.0.0.1', port: s.port, token: 'x'));
+      addTearDown(client.close);
+
+      final exam = await client.examGet();
+      expect(exam, isNotNull);
+      expect(exam!.isTrace, isFalse);
+    });
+
+    test('postNote sends card+history to /api/remote/ask/note and returns true on 2xx', () async {
+      String? seenMethod;
+      String? seenPath;
+      Map<String, dynamic>? seenBody;
+      final s = await startServer((request) async {
+        seenMethod = request.method;
+        seenPath = request.uri.path;
+        seenBody = await readJsonBody(request);
+        await respondJson(request, 200, {
+          'thinking': false,
+          'answer': null,
+          'draft': null,
+          'note': null,
+          'error': null,
+          'elapsed': null,
+        });
+      });
+      final client = HttpServerClient(ServerConfig(host: '127.0.0.1', port: s.port, token: 'x'));
+      addTearDown(client.close);
+
+      final result = await client.postNote(
+        const TutorCardContext(subject: 's', front: 'f', back: ['b']),
+        const [TutorTurn(q: 'q1', a: 'a1')],
+      );
+
+      expect(result, isTrue);
+      expect(seenMethod, 'POST');
+      expect(seenPath, '/api/remote/ask/note');
+      expect(seenBody?['card'], {'subject': 's', 'front': 'f', 'back': ['b'], 'at': null});
+      expect(seenBody?['history'], [
+        {'q': 'q1', 'a': 'a1'},
+      ]);
+    });
+
+    test('generateGet parses the done, generating, and error corpus phases', () async {
+      final done = jsonDecode(File('../../tests/contracts/RemoteGenerateDto.done.json').readAsStringSync());
+      final generating =
+          jsonDecode(File('../../tests/contracts/RemoteGenerateDto.generating.json').readAsStringSync());
+      final error =
+          jsonDecode(File('../../tests/contracts/RemoteGenerateDto.error.json').readAsStringSync());
+
+      Future<RemoteGenerate?> fetch(Object corpus) async {
+        final s = await startServer((request) async {
+          await request.drain<void>();
+          await respondJson(request, 200, corpus);
+        });
+        final client = HttpServerClient(ServerConfig(host: '127.0.0.1', port: s.port, token: 'x'));
+        final result = await client.generateGet();
+        client.close();
+        await s.close(force: true);
+        return result;
+      }
+
+      final doneResult = await fetch(done);
+      expect(doneResult, isNotNull);
+      expect(doneResult!.phase, 'done');
+      expect(doneResult.deck, contains('% link: https://example.org'));
+      expect(doneResult.filename, 'example-org.txt');
+      expect(doneResult.cards, 1);
+
+      final generatingResult = await fetch(generating);
+      expect(generatingResult, isNotNull);
+      expect(generatingResult!.phase, 'generating');
+      expect(generatingResult.deck, isNull);
+      expect(generatingResult.elapsed, 4);
+
+      final errorResult = await fetch(error);
+      expect(errorResult, isNotNull);
+      expect(errorResult!.phase, 'error');
+      expect(errorResult.deck, isNull);
+      expect(errorResult.error, 'the model returned no deck content');
+    });
+
+    test('generateStart sends url to /api/remote/generate and omits guidance when empty', () async {
+      String? seenPath;
+      Map<String, dynamic>? seenBody;
+      final s = await startServer((request) async {
+        seenPath = request.uri.path;
+        seenBody = await readJsonBody(request);
+        await respondJson(request, 200, {'phase': 'generating'});
+      });
+      final client = HttpServerClient(ServerConfig(host: '127.0.0.1', port: s.port, token: 'x'));
+      addTearDown(client.close);
+
+      final result = await client.generateStart('https://example.org', guidance: '  ');
+
+      expect(result, isTrue);
+      expect(seenPath, '/api/remote/generate');
+      expect(seenBody, {'url': 'https://example.org'});
+      expect(seenBody?.containsKey('guidance'), isFalse);
+    });
+
+    test('generateStart sends a trimmed non-empty guidance', () async {
+      Map<String, dynamic>? seenBody;
+      final s = await startServer((request) async {
+        seenBody = await readJsonBody(request);
+        await respondJson(request, 200, {'phase': 'generating'});
+      });
+      final client = HttpServerClient(ServerConfig(host: '127.0.0.1', port: s.port, token: 'x'));
+      addTearDown(client.close);
+
+      final result = await client.generateStart('https://example.org', guidance: ' focus on lifetimes ');
+
+      expect(result, isTrue);
+      expect(seenBody, {'url': 'https://example.org', 'guidance': 'focus on lifetimes'});
+    });
+
+    test('generateClose posts to /api/remote/generate/close', () async {
+      String? seenMethod;
+      String? seenPath;
+      final s = await startServer((request) async {
+        seenMethod = request.method;
+        seenPath = request.uri.path;
+        await request.drain<void>();
+        await respondJson(request, 200, const {});
+      });
+      final client = HttpServerClient(ServerConfig(host: '127.0.0.1', port: s.port, token: 'x'));
+      addTearDown(client.close);
+
+      await client.generateClose();
+
+      expect(seenMethod, 'POST');
+      expect(seenPath, '/api/remote/generate/close');
+    });
+
+    test('a 401 throws PairingExpired for postNote, generateStart, and generateGet', () async {
+      final s = await startServer((request) async {
+        await request.drain<void>();
+        request.response.statusCode = 401;
+        await request.response.close();
+      });
+      final client = HttpServerClient(ServerConfig(host: '127.0.0.1', port: s.port, token: 'stale'));
+      addTearDown(client.close);
+
+      expect(
+        client.postNote(const TutorCardContext(subject: 's', front: 'f', back: ['b']), const []),
+        throwsA(isA<PairingExpired>()),
+      );
+      expect(client.generateStart('https://example.org'), throwsA(isA<PairingExpired>()));
+      expect(client.generateGet(), throwsA(isA<PairingExpired>()));
+    });
+
+    test('a dead port reads as null/false for postNote, generateStart, and generateGet, never throws',
+        () async {
+      final probe = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      final deadPort = probe.port;
+      await probe.close();
+
+      final client = HttpServerClient(ServerConfig(host: '127.0.0.1', port: deadPort, token: 'x'));
+      addTearDown(client.close);
+
+      expect(
+        await client.postNote(const TutorCardContext(subject: 's', front: 'f', back: ['b']), const []),
+        isFalse,
+      );
+      expect(await client.generateStart('https://example.org'), isFalse);
+      expect(await client.generateGet(), isNull);
+      // generateClose returns void; the assertion is that it completes without throwing.
+      await client.generateClose();
     });
   });
 }

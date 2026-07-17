@@ -109,6 +109,18 @@ class FakeServerClient implements ServerClient {
   Future<bool> postDraft(TutorCardContext card, List<TutorTurn> history) async => false;
 
   @override
+  Future<bool> postNote(TutorCardContext card, List<TutorTurn> history) async => false;
+
+  @override
+  Future<bool> generateStart(String url, {String? guidance}) async => false;
+
+  @override
+  Future<RemoteGenerate?> generateGet() async => null;
+
+  @override
+  Future<void> generateClose() async {}
+
+  @override
   void close() {}
 }
 
@@ -144,6 +156,7 @@ void main() {
     grades: [],
     gaps: [],
     canRemediate: false,
+    isTrace: false,
     thinking: false,
   );
 
@@ -155,6 +168,7 @@ void main() {
     grades: [],
     gaps: [],
     canRemediate: false,
+    isTrace: false,
     thinking: true,
     elapsed: 1,
   );
@@ -167,6 +181,7 @@ void main() {
     grades: [],
     gaps: [],
     canRemediate: false,
+    isTrace: false,
     thinking: true,
     elapsed: 2,
   );
@@ -189,6 +204,7 @@ void main() {
     ],
     gaps: [],
     canRemediate: false,
+    isTrace: false,
     thinking: false,
   );
 
@@ -210,6 +226,7 @@ void main() {
     ],
     gaps: ['ownership and the GC-free memory model'],
     canRemediate: true,
+    isTrace: false,
     thinking: false,
   );
 
@@ -222,6 +239,7 @@ void main() {
     grades: [],
     gaps: ['ownership and the GC-free memory model'],
     canRemediate: true,
+    isTrace: false,
     thinking: true,
   );
 
@@ -235,6 +253,7 @@ void main() {
     gaps: ['ownership and the GC-free memory model'],
     canRemediate: false,
     cards: '# q?\n\ta\n',
+    isTrace: false,
     thinking: false,
   );
 
@@ -438,6 +457,7 @@ void main() {
       grades: [],
       gaps: [],
       canRemediate: false,
+      isTrace: false,
       thinking: false,
     );
     final client = FakeServerClient(getReplies: const [oneQuestion], gradeReplies: const [false]);

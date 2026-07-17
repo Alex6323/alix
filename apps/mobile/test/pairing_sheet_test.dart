@@ -42,6 +42,9 @@ class FakeServerClient implements ServerClient {
   Future<bool> postDraft(TutorCardContext card, List<TutorTurn> history) async => false;
 
   @override
+  Future<bool> postNote(TutorCardContext card, List<TutorTurn> history) async => false;
+
+  @override
   Future<bool> examStart(String deck) async => false;
 
   @override
@@ -55,6 +58,15 @@ class FakeServerClient implements ServerClient {
 
   @override
   Future<void> examClose() async {}
+
+  @override
+  Future<bool> generateStart(String url, {String? guidance}) async => false;
+
+  @override
+  Future<RemoteGenerate?> generateGet() async => null;
+
+  @override
+  Future<void> generateClose() async {}
 
   @override
   void close() => closed = true;

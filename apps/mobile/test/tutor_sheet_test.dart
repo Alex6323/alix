@@ -80,6 +80,9 @@ class FakeServerClient implements ServerClient {
   }
 
   @override
+  Future<bool> postNote(TutorCardContext card, List<TutorTurn> history) async => false;
+
+  @override
   Future<String?> version() async => null;
 
   @override
@@ -96,6 +99,15 @@ class FakeServerClient implements ServerClient {
 
   @override
   Future<void> examClose() async {}
+
+  @override
+  Future<bool> generateStart(String url, {String? guidance}) async => false;
+
+  @override
+  Future<RemoteGenerate?> generateGet() async => null;
+
+  @override
+  Future<void> generateClose() async {}
 
   @override
   void close() {}

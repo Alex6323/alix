@@ -179,6 +179,7 @@ class RemoteAsk {
     required this.thinking,
     this.answer,
     this.draft,
+    this.note,
     this.error,
     this.elapsed,
   });
@@ -186,6 +187,14 @@ class RemoteAsk {
   final bool thinking;
   final String? answer;
   final DraftCard? draft;
+
+  /// Condensed note lines from a note call. THREE distinct wire states,
+  /// all preserved: absent/null (this reply is not a note result) reads as
+  /// null here; `[]` (a note call that found nothing to save) reads as an
+  /// empty list; `["a", "b"]` reads as those lines. Do not collapse the
+  /// first two with `_asStringList` alone, it would turn absent into `[]`
+  /// and lose the "not a note result" state the UI depends on.
+  final List<String>? note;
   final String? error;
   final int? elapsed;
 
@@ -193,6 +202,7 @@ class RemoteAsk {
         thinking: _asBool(json['thinking']),
         answer: _asString(json['answer']),
         draft: DraftCard.fromJson(json['draft']),
+        note: json['note'] is List ? _asStringList(json['note']) : null,
         error: _asString(json['error']),
         elapsed: _asInt(json['elapsed']),
       );
@@ -253,6 +263,7 @@ class RemoteExam {
     required this.gaps,
     required this.canRemediate,
     this.cards,
+    required this.isTrace,
     required this.thinking,
     this.elapsed,
     this.error,
@@ -270,6 +281,10 @@ class RemoteExam {
   /// Deck-format text set only in the `remediated` phase: the client parses
   /// and stores these cards, the server never keeps them (the iron rule).
   final String? cards;
+
+  /// A trace (compression) sitting vs a fact-deck sitting. Tolerant,
+  /// defaults to false when absent (an older server or the idle baseline).
+  final bool isTrace;
   final bool thinking;
   final int? elapsed;
   final String? error;
@@ -286,7 +301,48 @@ class RemoteExam {
         gaps: _asStringList(json['gaps']),
         canRemediate: _asBool(json['can_remediate']),
         cards: _asString(json['cards']),
+        isTrace: _asBool(json['is_trace']),
         thinking: _asBool(json['thinking']),
+        elapsed: _asInt(json['elapsed']),
+        error: _asString(json['error']),
+      );
+}
+
+/// A paired desktop's deck generation from a URL (`POST`/`GET
+/// /api/remote/generate`). Mirrors `RemoteGenerateDto`; unknown wire fields
+/// are ignored and absent ones read as their default, so an older client
+/// survives a server that has grown new fields. The iron rule: the finished
+/// [deck] text is only ever read back here, this app places the file, the
+/// server never does.
+class RemoteGenerate {
+  const RemoteGenerate({
+    required this.phase,
+    this.deck,
+    this.filename,
+    this.cards,
+    this.elapsed,
+    this.error,
+  });
+
+  /// `generating` | `done` | `error` (open set); `generating` is the safe
+  /// baseline when absent.
+  final String phase;
+
+  /// The full generated deck text, set only in `done`.
+  final String? deck;
+
+  /// A suggested file name, set only in `done`; this app decides where and
+  /// under what name to save it.
+  final String? filename;
+  final int? cards;
+  final int? elapsed;
+  final String? error;
+
+  static RemoteGenerate fromJson(Map<String, dynamic> json) => RemoteGenerate(
+        phase: _asString(json['phase']) ?? 'generating',
+        deck: _asString(json['deck']),
+        filename: _asString(json['filename']),
+        cards: _asInt(json['cards']),
         elapsed: _asInt(json['elapsed']),
         error: _asString(json['error']),
       );
@@ -325,6 +381,11 @@ abstract class ServerClient {
   /// `POST /api/remote/ask/draft`: distills [history] into a draft card.
   Future<bool> postDraft(TutorCardContext card, List<TutorTurn> history);
 
+  /// `POST /api/remote/ask/note`: distills [history] into condensed note
+  /// lines. The lines themselves come back on the shared ask slot: after
+  /// this returns true, poll [getAsk] and read its `note`.
+  Future<bool> postNote(TutorCardContext card, List<TutorTurn> history);
+
   /// `POST /api/remote/exam/start`: opens a sitting on [deck] (a bare name
   /// or `<workspace>/<file>`, resolved the same way `/api/select` does).
   Future<bool> examStart(String deck);
@@ -341,6 +402,18 @@ abstract class ServerClient {
 
   /// `POST /api/remote/exam/close`: drops the server's sitting slot.
   Future<void> examClose();
+
+  /// `POST /api/remote/generate`: starts generating a deck from [url],
+  /// optionally steered by [guidance]. Omits `guidance` from the body when
+  /// null or empty.
+  Future<bool> generateStart(String url, {String? guidance});
+
+  /// `GET /api/remote/generate`: polls the in-flight or last-settled
+  /// generation.
+  Future<RemoteGenerate?> generateGet();
+
+  /// `POST /api/remote/generate/close`: drops the server's generation slot.
+  Future<void> generateClose();
 
   /// Releases any held resources (the underlying HTTP client).
   void close();
@@ -429,6 +502,15 @@ class HttpServerClient implements ServerClient {
   }
 
   @override
+  Future<bool> postNote(TutorCardContext card, List<TutorTurn> history) async {
+    final json = await _post('/api/remote/ask/note', {
+      'card': card.toJson(),
+      'history': history.map((t) => t.toJson()).toList(),
+    });
+    return json != null;
+  }
+
+  @override
   Future<bool> examStart(String deck) async {
     final json = await _post('/api/remote/exam/start', {'deck': deck});
     return json != null;
@@ -455,6 +537,27 @@ class HttpServerClient implements ServerClient {
   @override
   Future<void> examClose() async {
     await _post('/api/remote/exam/close');
+  }
+
+  @override
+  Future<bool> generateStart(String url, {String? guidance}) async {
+    final trimmedGuidance = guidance?.trim();
+    final json = await _post('/api/remote/generate', {
+      'url': url,
+      if (trimmedGuidance != null && trimmedGuidance.isNotEmpty) 'guidance': trimmedGuidance,
+    });
+    return json != null;
+  }
+
+  @override
+  Future<RemoteGenerate?> generateGet() async {
+    final json = await _get('/api/remote/generate');
+    return json == null ? null : RemoteGenerate.fromJson(json);
+  }
+
+  @override
+  Future<void> generateClose() async {
+    await _post('/api/remote/generate/close');
   }
 
   @override
