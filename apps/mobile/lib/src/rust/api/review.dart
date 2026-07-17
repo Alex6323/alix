@@ -8,7 +8,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'review.freezed.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `clone`, `eq`, `fmt`, `from`, `from`
+// These functions are ignored because they are not marked as `pub`: `walk_excerpt`, `walk_state`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`
 
 /// The Explain checklist tally as a grade: none covered fails, all pass,
 /// some is a partial. The rule lives in core (`scheduler::keypoint_grade`);
@@ -105,6 +106,59 @@ abstract class ReviewSession implements RustOpaqueInterface {
   /// answer on, never the masked [`CardView`] a cloze review renders.
   /// `None` when no card is current.
   TutorCard? tutorCard();
+}
+
+// Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<WalkSession>>
+abstract class WalkSession implements RustOpaqueInterface {
+  /// Records a FAILED trace exam so a re-sit waits out the cooldown. The
+  /// phone owns this write; the server never persists a trace-exam fail.
+  void applyExamFailed({required BigInt nowMs});
+
+  /// Records a PASSED trace exam as this deck's mastery, mirroring the
+  /// browser exam's own persistence.
+  void applyExamPassed({required BigInt nowMs});
+
+  /// Whether this deck sits an AI exam (the flag `open` captured; always
+  /// true for a trace, since its exam is the graded compression).
+  bool deckHasExam();
+
+  /// Milliseconds left on a re-sit cooldown after a failed trace exam, or
+  /// `None` if it can be sat now. The cooldown length reads
+  /// `ExamConfig::default()` (the phone carries no `[exam]` config to
+  /// override it in this milestone).
+  BigInt? examCooldownMs({required BigInt nowMs});
+
+  /// Records the self-judged delta for the current checkpoint, schedules
+  /// it in the store (the walk's only SRS write), persists, and returns
+  /// the next position.
+  WalkState grade({required WalkDelta delta, BigInt? nowMs});
+
+  /// Opens a trace deck of the decks folder `root_dir` for an on-device
+  /// walk. The progress store is routed the same way
+  /// [`ReviewSession::open`] routes it (a workspace member's own store,
+  /// else the root's shared one). `now_ms` injects the session clock
+  /// (tests); `None` is the wall clock. `device` names this device in the
+  /// store's last-writer marker; `None` keeps whatever the core derived
+  /// for this machine. Bails if `deck_path` is not a trace deck: a card
+  /// review opens through [`ReviewSession::open`] instead.
+  static WalkSession open({
+    required String deckPath,
+    required String rootDir,
+    BigInt? nowMs,
+    String? device,
+  }) => RustLib.instance.api.crateApiReviewWalkSessionOpen(
+    deckPath: deckPath,
+    rootDir: rootDir,
+    nowMs: nowMs,
+    device: device,
+  );
+
+  /// Commits the learner's prediction for the current checkpoint and moves
+  /// to the reveal.
+  void predict({required String text});
+
+  /// The current walk position, for the screen to render.
+  WalkState state();
 }
 
 class CardView {
@@ -373,4 +427,177 @@ class TypedResult {
           input == other.input &&
           expected == other.expected &&
           passed == other.passed;
+}
+
+/// The learner's self-judged trace-walk delta, mirrored the same way
+/// [`Grade`] is: `alix::trace::Delta` lives in the core crate frb doesn't
+/// scan, so this is a field-for-field bridge copy with explicit conversions
+/// both ways, not a `#[frb(mirror(..))]` teaching shim.
+enum WalkDelta { missed, partly, got }
+
+/// A revealed source excerpt for the walk screen: line-numbered,
+/// contiguous. Mirrors the web's `ExcerptDto` (`src/serve/dto.rs`).
+class WalkExcerpt {
+  final String path;
+  final List<WalkLine> lines;
+  final bool truncated;
+
+  const WalkExcerpt({
+    required this.path,
+    required this.lines,
+    required this.truncated,
+  });
+
+  @override
+  int get hashCode => path.hashCode ^ lines.hashCode ^ truncated.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is WalkExcerpt &&
+          runtimeType == other.runtimeType &&
+          path == other.path &&
+          lines == other.lines &&
+          truncated == other.truncated;
+}
+
+/// One line of a revealed excerpt: its file line number and text.
+class WalkLine {
+  final int n;
+  final String text;
+
+  const WalkLine({required this.n, required this.text});
+
+  @override
+  int get hashCode => n.hashCode ^ text.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is WalkLine &&
+          runtimeType == other.runtimeType &&
+          n == other.n &&
+          text == other.text;
+}
+
+enum WalkPhase { predict, reveal, done }
+
+/// The current position in an on-device trace walk, for the screen to
+/// render. Mirrors the web's `WalkDto` (`src/serve/dto.rs`) minus the hop
+/// rail and the live (`--grade`) fields: the phone walk is always
+/// self-graded, so there is no path rail to draw and no auto-grade to poll.
+class WalkState {
+  final WalkPhase phase;
+  final String description;
+  final String? source;
+  final int total;
+
+  /// 1-based index of the hop being walked.
+  final int current;
+  final String? prompt;
+  final List<String> givens;
+  final String? locator;
+
+  /// What the learner predicted (shown on reveal).
+  final String? prediction;
+  final WalkExcerpt? excerpt;
+
+  /// The honest fallback when the checkpoint's source can't be revealed (a
+  /// URL `% source:`, none at all, or a resolution failure).
+  final String? excerptError;
+  final List<String> points;
+  final String? note;
+  final WalkSummary? summary;
+
+  const WalkState({
+    required this.phase,
+    required this.description,
+    this.source,
+    required this.total,
+    required this.current,
+    this.prompt,
+    required this.givens,
+    this.locator,
+    this.prediction,
+    this.excerpt,
+    this.excerptError,
+    required this.points,
+    this.note,
+    this.summary,
+  });
+
+  @override
+  int get hashCode =>
+      phase.hashCode ^
+      description.hashCode ^
+      source.hashCode ^
+      total.hashCode ^
+      current.hashCode ^
+      prompt.hashCode ^
+      givens.hashCode ^
+      locator.hashCode ^
+      prediction.hashCode ^
+      excerpt.hashCode ^
+      excerptError.hashCode ^
+      points.hashCode ^
+      note.hashCode ^
+      summary.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is WalkState &&
+          runtimeType == other.runtimeType &&
+          phase == other.phase &&
+          description == other.description &&
+          source == other.source &&
+          total == other.total &&
+          current == other.current &&
+          prompt == other.prompt &&
+          givens == other.givens &&
+          locator == other.locator &&
+          prediction == other.prediction &&
+          excerpt == other.excerpt &&
+          excerptError == other.excerptError &&
+          points == other.points &&
+          note == other.note &&
+          summary == other.summary;
+}
+
+/// The walk tally shown on the done screen. Mirrors the web's `SummaryDto`.
+class WalkSummary {
+  final int passed;
+  final int partly;
+  final int failed;
+
+  /// 1-based hop numbers judged partly or failed.
+  final Uint32List weak;
+  final int total;
+
+  const WalkSummary({
+    required this.passed,
+    required this.partly,
+    required this.failed,
+    required this.weak,
+    required this.total,
+  });
+
+  @override
+  int get hashCode =>
+      passed.hashCode ^
+      partly.hashCode ^
+      failed.hashCode ^
+      weak.hashCode ^
+      total.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is WalkSummary &&
+          runtimeType == other.runtimeType &&
+          passed == other.passed &&
+          partly == other.partly &&
+          failed == other.failed &&
+          weak == other.weak &&
+          total == other.total;
 }

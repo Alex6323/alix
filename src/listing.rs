@@ -40,9 +40,8 @@ pub struct DeckSummary {
     /// web picker's launchable signal.
     pub due: bool,
     /// A trace deck (`% trace:`): a predict-and-verify walk, not a card
-    /// review. A client without the walk (the phone, today) must not open a
-    /// review session on it — the core refuses, so offering the row unmarked
-    /// turns into a dead end.
+    /// review. A client dispatches on this flag: the phone opens a trace row
+    /// as a walk (`WalkSession`), never as a review session.
     pub is_trace: bool,
     /// The session depth remembered for this deck (`Store::last_depth`), else
     /// the deck's fresh-session default (`depth::default_depth`). Deck rows

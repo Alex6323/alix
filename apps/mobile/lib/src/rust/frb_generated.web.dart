@@ -26,6 +26,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   get rust_arc_decrement_strong_count_ReviewSessionPtr => wire
       .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerReviewSession;
 
+  CrossPlatformFinalizerArg
+  get rust_arc_decrement_strong_count_WalkSessionPtr => wire
+      .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession;
+
   @protected
   AnyhowException dco_decode_AnyhowException(dynamic raw);
 
@@ -36,8 +40,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  WalkSession
+  dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession(
+    dynamic raw,
+  );
+
+  @protected
   ReviewSession
   dco_decode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerReviewSession(
+    dynamic raw,
+  );
+
+  @protected
+  WalkSession
+  dco_decode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession(
     dynamic raw,
   );
 
@@ -48,8 +64,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  WalkSession
+  dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession(
+    dynamic raw,
+  );
+
+  @protected
   ReviewSession
   dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerReviewSession(
+    dynamic raw,
+  );
+
+  @protected
+  WalkSession
+  dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession(
     dynamic raw,
   );
 
@@ -79,6 +107,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BigInt dco_decode_box_autoadd_u_64(dynamic raw);
+
+  @protected
+  WalkExcerpt dco_decode_box_autoadd_walk_excerpt(dynamic raw);
+
+  @protected
+  WalkSummary dco_decode_box_autoadd_walk_summary(dynamic raw);
 
   @protected
   CardView dco_decode_card_view(dynamic raw);
@@ -117,10 +151,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<NoteUnit> dco_decode_list_note_unit(dynamic raw);
 
   @protected
+  Uint32List dco_decode_list_prim_u_32_strict(dynamic raw);
+
+  @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
   List<TypedResult> dco_decode_list_typed_result(dynamic raw);
+
+  @protected
+  List<WalkLine> dco_decode_list_walk_line(dynamic raw);
 
   @protected
   Mode dco_decode_mode(dynamic raw);
@@ -153,6 +193,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BigInt? dco_decode_opt_box_autoadd_u_64(dynamic raw);
 
   @protected
+  WalkExcerpt? dco_decode_opt_box_autoadd_walk_excerpt(dynamic raw);
+
+  @protected
+  WalkSummary? dco_decode_opt_box_autoadd_walk_summary(dynamic raw);
+
+  @protected
   List<String>? dco_decode_opt_list_String(dynamic raw);
 
   @protected
@@ -180,11 +226,35 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BigInt dco_decode_usize(dynamic raw);
 
   @protected
+  WalkDelta dco_decode_walk_delta(dynamic raw);
+
+  @protected
+  WalkExcerpt dco_decode_walk_excerpt(dynamic raw);
+
+  @protected
+  WalkLine dco_decode_walk_line(dynamic raw);
+
+  @protected
+  WalkPhase dco_decode_walk_phase(dynamic raw);
+
+  @protected
+  WalkState dco_decode_walk_state(dynamic raw);
+
+  @protected
+  WalkSummary dco_decode_walk_summary(dynamic raw);
+
+  @protected
   AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer);
 
   @protected
   ReviewSession
   sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerReviewSession(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  WalkSession
+  sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession(
     SseDeserializer deserializer,
   );
 
@@ -195,14 +265,32 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  WalkSession
+  sse_decode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ReviewSession
   sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerReviewSession(
     SseDeserializer deserializer,
   );
 
   @protected
+  WalkSession
+  sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ReviewSession
   sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerReviewSession(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  WalkSession
+  sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession(
     SseDeserializer deserializer,
   );
 
@@ -238,6 +326,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BigInt sse_decode_box_autoadd_u_64(SseDeserializer deserializer);
+
+  @protected
+  WalkExcerpt sse_decode_box_autoadd_walk_excerpt(SseDeserializer deserializer);
+
+  @protected
+  WalkSummary sse_decode_box_autoadd_walk_summary(SseDeserializer deserializer);
 
   @protected
   CardView sse_decode_card_view(SseDeserializer deserializer);
@@ -276,10 +370,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<NoteUnit> sse_decode_list_note_unit(SseDeserializer deserializer);
 
   @protected
+  Uint32List sse_decode_list_prim_u_32_strict(SseDeserializer deserializer);
+
+  @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
   List<TypedResult> sse_decode_list_typed_result(SseDeserializer deserializer);
+
+  @protected
+  List<WalkLine> sse_decode_list_walk_line(SseDeserializer deserializer);
 
   @protected
   Mode sse_decode_mode(SseDeserializer deserializer);
@@ -320,6 +420,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BigInt? sse_decode_opt_box_autoadd_u_64(SseDeserializer deserializer);
 
   @protected
+  WalkExcerpt? sse_decode_opt_box_autoadd_walk_excerpt(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  WalkSummary? sse_decode_opt_box_autoadd_walk_summary(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<String>? sse_decode_opt_list_String(SseDeserializer deserializer);
 
   @protected
@@ -347,6 +457,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BigInt sse_decode_usize(SseDeserializer deserializer);
 
   @protected
+  WalkDelta sse_decode_walk_delta(SseDeserializer deserializer);
+
+  @protected
+  WalkExcerpt sse_decode_walk_excerpt(SseDeserializer deserializer);
+
+  @protected
+  WalkLine sse_decode_walk_line(SseDeserializer deserializer);
+
+  @protected
+  WalkPhase sse_decode_walk_phase(SseDeserializer deserializer);
+
+  @protected
+  WalkState sse_decode_walk_state(SseDeserializer deserializer);
+
+  @protected
+  WalkSummary sse_decode_walk_summary(SseDeserializer deserializer);
+
+  @protected
   void sse_encode_AnyhowException(
     AnyhowException self,
     SseSerializer serializer,
@@ -361,8 +489,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void
+  sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession(
+    WalkSession self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void
   sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerReviewSession(
     ReviewSession self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void
+  sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession(
+    WalkSession self,
     SseSerializer serializer,
   );
 
@@ -375,8 +517,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void
+  sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession(
+    WalkSession self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void
   sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerReviewSession(
     ReviewSession self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void
+  sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession(
+    WalkSession self,
     SseSerializer serializer,
   );
 
@@ -423,6 +579,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_box_autoadd_u_64(BigInt self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_walk_excerpt(
+    WalkExcerpt self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_walk_summary(
+    WalkSummary self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_card_view(CardView self, SseSerializer serializer);
 
   @protected
@@ -465,6 +633,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_list_note_unit(List<NoteUnit> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_prim_u_32_strict(
+    Uint32List self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_prim_u_8_strict(
     Uint8List self,
     SseSerializer serializer,
@@ -475,6 +649,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     List<TypedResult> self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_list_walk_line(List<WalkLine> self, SseSerializer serializer);
 
   @protected
   void sse_encode_mode(Mode self, SseSerializer serializer);
@@ -522,6 +699,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_opt_box_autoadd_u_64(BigInt? self, SseSerializer serializer);
 
   @protected
+  void sse_encode_opt_box_autoadd_walk_excerpt(
+    WalkExcerpt? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_walk_summary(
+    WalkSummary? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_list_String(List<String>? self, SseSerializer serializer);
 
   @protected
@@ -547,6 +736,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_usize(BigInt self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_walk_delta(WalkDelta self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_walk_excerpt(WalkExcerpt self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_walk_line(WalkLine self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_walk_phase(WalkPhase self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_walk_state(WalkState self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_walk_summary(WalkSummary self, SseSerializer serializer);
 }
 
 // Section: wire_class
@@ -569,6 +776,22 @@ class RustLibWire implements BaseWire {
       .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerReviewSession(
         ptr,
       );
+
+  void
+  rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession(
+    int ptr,
+  ) => wasmModule
+      .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession(
+        ptr,
+      );
+
+  void
+  rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession(
+    int ptr,
+  ) => wasmModule
+      .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession(
+        ptr,
+      );
 }
 
 @JS('wasm_bindgen')
@@ -584,6 +807,16 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
 
   external void
   rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerReviewSession(
+    int ptr,
+  );
+
+  external void
+  rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession(
+    int ptr,
+  );
+
+  external void
+  rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession(
     int ptr,
   );
 }

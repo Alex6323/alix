@@ -11,6 +11,9 @@ pub use alix::answer::{Input, Mode, TypedResult};
 pub use alix::depth::Depth;
 pub use alix::render::NoteUnit;
 pub use alix::review::{CardView, CheckFeedback, ChoiceFeedback, ReviewState};
+/// Renamed on re-export so the walk's own mirror (below) reads as its own
+/// concept rather than a bare "Phase" borrowed from the review vocabulary.
+pub use alix::trace::Phase as WalkPhase;
 
 /// frb mirrors of the core contract types (they live in the `alix` crate,
 /// which frb does not scan): field-for-field copies that teach the generator
@@ -97,6 +100,13 @@ pub struct _CheckFeedback {
     pub passed: bool,
 }
 
+#[flutter_rust_bridge::frb(mirror(WalkPhase))]
+pub enum _WalkPhase {
+    Predict,
+    Reveal,
+    Done,
+}
+
 /// The learner's self-grade, mirrored so frb bridges it from this crate.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Grade {
@@ -121,6 +131,37 @@ impl From<alix::scheduler::Grade> for Grade {
             alix::scheduler::Grade::Fail => Grade::Fail,
             alix::scheduler::Grade::Partial => Grade::Partial,
             alix::scheduler::Grade::Pass => Grade::Pass,
+        }
+    }
+}
+
+/// The learner's self-judged trace-walk delta, mirrored the same way
+/// [`Grade`] is: `alix::trace::Delta` lives in the core crate frb doesn't
+/// scan, so this is a field-for-field bridge copy with explicit conversions
+/// both ways, not a `#[frb(mirror(..))]` teaching shim.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WalkDelta {
+    Missed,
+    Partly,
+    Got,
+}
+
+impl From<WalkDelta> for alix::trace::Delta {
+    fn from(d: WalkDelta) -> Self {
+        match d {
+            WalkDelta::Missed => alix::trace::Delta::Failed,
+            WalkDelta::Partly => alix::trace::Delta::Partial,
+            WalkDelta::Got => alix::trace::Delta::Passed,
+        }
+    }
+}
+
+impl From<alix::trace::Delta> for WalkDelta {
+    fn from(d: alix::trace::Delta) -> Self {
+        match d {
+            alix::trace::Delta::Failed => WalkDelta::Missed,
+            alix::trace::Delta::Partial => WalkDelta::Partly,
+            alix::trace::Delta::Passed => WalkDelta::Got,
         }
     }
 }
@@ -169,9 +210,10 @@ pub struct ReviewSession {
     /// remediation (mirrors `exam::Sitting::deck_card_ids`, captured the same
     /// way, off a freshly loaded `Deck`, not the live session roster).
     deck_card_ids: HashSet<u64>,
-    /// Whether this deck sits an AI exam: a fact deck with at least one
-    /// `% source:`, never a trace (mirrors the server's
-    /// `/api/remote/exam/start` predicate; a phone has no walk to sit).
+    /// Whether this deck sits an AI exam (`Deck::has_exam`, lean and
+    /// canonical). `ReviewSession` only ever opens a non-trace deck (a lone
+    /// trace walks instead, via [`WalkSession`]), so in practice this is
+    /// exactly "has a `% source:`".
     has_exam: bool,
 }
 
@@ -200,10 +242,11 @@ impl ReviewSession {
         let loaded = alix::deck::Deck::load(&deck)?;
         let subject = loaded.subject.clone();
         let deck_card_ids: HashSet<u64> = loaded.cards.iter().map(|c| c.id()).collect();
-        // Mirrors the server's `/api/remote/exam/start` predicate: a trace's
-        // exam is a graded compression the phone does not sit, and a
-        // source-less fact deck has no exam at all.
-        let has_exam = !loaded.is_trace() && !loaded.sources.is_empty();
+        // The lean, canonical predicate (`Deck::has_exam`, shared with the
+        // server and the picker), equivalent here since this session only
+        // ever opens a non-trace deck; a lone trace walks and is examined
+        // through `WalkSession` instead.
+        let has_exam = loaded.has_exam();
 
         let root_store = alix::workspace::root_store_path(Path::new(&root_dir));
         let mut store =
@@ -383,6 +426,299 @@ impl ReviewSession {
             None,
         )?;
         Ok(count as u32)
+    }
+}
+
+/// One line of a revealed excerpt: its file line number and text.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WalkLine {
+    pub n: u32,
+    pub text: String,
+}
+
+/// A revealed source excerpt for the walk screen: line-numbered,
+/// contiguous. Mirrors the web's `ExcerptDto` (`src/serve/dto.rs`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WalkExcerpt {
+    pub path: String,
+    pub lines: Vec<WalkLine>,
+    pub truncated: bool,
+}
+
+/// The walk tally shown on the done screen. Mirrors the web's `SummaryDto`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WalkSummary {
+    pub passed: u32,
+    pub partly: u32,
+    pub failed: u32,
+    /// 1-based hop numbers judged partly or failed.
+    pub weak: Vec<u32>,
+    pub total: u32,
+}
+
+/// The current position in an on-device trace walk, for the screen to
+/// render. Mirrors the web's `WalkDto` (`src/serve/dto.rs`) minus the hop
+/// rail and the live (`--grade`) fields: the phone walk is always
+/// self-graded, so there is no path rail to draw and no auto-grade to poll.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WalkState {
+    pub phase: WalkPhase,
+    pub description: String,
+    pub source: Option<String>,
+    pub total: u32,
+    /// 1-based index of the hop being walked.
+    pub current: u32,
+    // predict + reveal
+    pub prompt: Option<String>,
+    pub givens: Vec<String>,
+    pub locator: Option<String>,
+    /// What the learner predicted (shown on reveal).
+    pub prediction: Option<String>,
+    // reveal
+    pub excerpt: Option<WalkExcerpt>,
+    /// The honest fallback when the checkpoint's source can't be revealed (a
+    /// URL `% source:`, none at all, or a resolution failure).
+    pub excerpt_error: Option<String>,
+    pub points: Vec<String>,
+    pub note: Option<String>,
+    // done
+    pub summary: Option<WalkSummary>,
+}
+
+fn walk_excerpt(excerpt: &alix::trace::Excerpt) -> WalkExcerpt {
+    WalkExcerpt {
+        path: excerpt.path.display().to_string(),
+        lines: excerpt
+            .lines
+            .iter()
+            .map(|(n, text)| WalkLine {
+                n: *n as u32,
+                text: text.clone(),
+            })
+            .collect(),
+        truncated: excerpt.truncated,
+    }
+}
+
+/// Builds the current [`WalkState`] off the Walk engine's own accessors,
+/// the same ones the web's `walk_dto` reads (`src/serve/dto.rs:1015-1095`),
+/// minus the hop rail and live-grade bookkeeping this on-device (self-graded
+/// only) walk has no use for.
+fn walk_state(walk: &alix::trace::Walk) -> WalkState {
+    let trace = walk.trace();
+    let phase = walk.phase();
+
+    let mut state = WalkState {
+        phase,
+        description: trace.description.clone(),
+        source: trace.source.clone(),
+        total: walk.total() as u32,
+        current: walk.current_index() as u32 + 1,
+        prompt: None,
+        givens: Vec::new(),
+        locator: None,
+        prediction: None,
+        excerpt: None,
+        excerpt_error: None,
+        points: Vec::new(),
+        note: None,
+        summary: None,
+    };
+
+    match phase {
+        WalkPhase::Predict => {
+            if let Some(c) = walk.checkpoint() {
+                state.prompt = Some(c.prompt.clone());
+                state.givens = c.givens.clone();
+                state.locator = c.locator.clone();
+            }
+        }
+        WalkPhase::Reveal => {
+            if let Some(c) = walk.checkpoint() {
+                state.prompt = Some(c.prompt.clone());
+                state.givens = c.givens.clone();
+                state.locator = c.locator.clone();
+                state.points = c.points.clone();
+                state.note = c.note.clone();
+                match trace.excerpt(c) {
+                    Ok(ex) => {
+                        // Relabel a frozen-snapshot excerpt to its original
+                        // source, exactly as the web reveal does, so the
+                        // gutter shows real line numbers, not the asset's.
+                        let (ex, label) =
+                            alix::trace::relabel_for_display(ex, c.at_origin.as_deref());
+                        if let Some(label) = label {
+                            state.locator = Some(label);
+                        }
+                        state.excerpt = Some(walk_excerpt(&ex));
+                    }
+                    Err(e) => state.excerpt_error = Some(format!("{e:#}")),
+                }
+            }
+            state.prediction = walk
+                .prediction(walk.current_index())
+                .map(str::to_string)
+                .filter(|p| !p.is_empty());
+        }
+        WalkPhase::Done => {
+            let s = walk.summary();
+            state.summary = Some(WalkSummary {
+                passed: s.passed as u32,
+                partly: s.partly as u32,
+                failed: s.failed as u32,
+                weak: s.weak.iter().map(|i| *i as u32 + 1).collect(),
+                total: walk.total() as u32,
+            });
+        }
+    }
+
+    state
+}
+
+/// A live on-device trace walk: the [`alix::trace::Walk`] engine plus its
+/// open store. Dart holds this as an opaque handle, the walk's sibling of
+/// [`ReviewSession`]. The walk runs entirely on-device (self-graded, no
+/// server, no AI); only the trace exam (a later screen) needs the paired
+/// desktop.
+pub struct WalkSession {
+    walk: alix::trace::Walk,
+    store: alix::store::Store,
+    /// The deck's file-name subject, captured off the loaded `Deck` exactly
+    /// as `ReviewSession` does (see its own field doc): the exam-mastery and
+    /// exam-failed-cooldown store calls key off this.
+    subject: String,
+    /// This deck's own checkpoint card ids at open time, held for parity
+    /// with `ReviewSession`'s dedup baseline.
+    #[expect(dead_code)] // no walk-side remediation flow yet to dedup against
+    deck_card_ids: HashSet<u64>,
+    /// Whether this deck sits an AI exam (always true for a trace: its exam
+    /// is the graded compression). Captured at open time.
+    has_exam: bool,
+}
+
+impl WalkSession {
+    /// Opens a trace deck of the decks folder `root_dir` for an on-device
+    /// walk. The progress store is routed the same way
+    /// [`ReviewSession::open`] routes it (a workspace member's own store,
+    /// else the root's shared one). `now_ms` injects the session clock
+    /// (tests); `None` is the wall clock. `device` names this device in the
+    /// store's last-writer marker; `None` keeps whatever the core derived
+    /// for this machine. Bails if `deck_path` is not a trace deck: a card
+    /// review opens through [`ReviewSession::open`] instead.
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn open(
+        deck_path: String,
+        root_dir: String,
+        now_ms: Option<u64>,
+        device: Option<String>,
+    ) -> Result<WalkSession> {
+        let deck = PathBuf::from(deck_path);
+        let loaded = alix::deck::Deck::load(&deck)?;
+        let subject = loaded.subject.clone();
+        let deck_card_ids: HashSet<u64> = loaded.cards.iter().map(|c| c.id()).collect();
+        let has_exam = loaded.has_exam();
+
+        let root_store = alix::workspace::root_store_path(Path::new(&root_dir));
+        let mut store =
+            alix::assemble::store_for(std::slice::from_ref(&deck), Some(&root_store))?;
+        if device.is_some() {
+            store.device = device;
+        }
+        // The instance config a CLI/server launch would carry, at its built-in
+        // defaults, exactly mirroring `ReviewSession::open` (`AssembleConfig`
+        // has no `Default`). `trace_auto_grade` stays false: the phone walk
+        // is always self-graded, never AI-graded.
+        let cfg = alix::assemble::AssembleConfig {
+            review: alix::config::ReviewConfig::default(),
+            ask: alix::config::AskConfig::default(),
+            trace_auto_grade: false,
+            pacing: alix::assemble::Pacing {
+                max_new: 10,
+                limit: None,
+            },
+            instance_store: None,
+        };
+        let opts = alix::assemble::SelectOptions {
+            now_ms,
+            ..Default::default()
+        };
+        let selected = alix::assemble::select(vec![deck], &mut store, &cfg, &opts)?;
+        let build = match selected {
+            alix::assemble::Selected::Walk(build) => build,
+            alix::assemble::Selected::Review(_) => {
+                bail!("this deck is a card review, not a trace walk")
+            }
+        };
+        Ok(WalkSession {
+            walk: build.walk,
+            store,
+            subject,
+            deck_card_ids,
+            has_exam,
+        })
+    }
+
+    /// The current walk position, for the screen to render.
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn state(&self) -> WalkState {
+        walk_state(&self.walk)
+    }
+
+    /// Commits the learner's prediction for the current checkpoint and moves
+    /// to the reveal.
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn predict(&mut self, text: String) {
+        self.walk.predict(text);
+    }
+
+    /// Records the self-judged delta for the current checkpoint, schedules
+    /// it in the store (the walk's only SRS write), persists, and returns
+    /// the next position.
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn grade(&mut self, delta: WalkDelta, now_ms: Option<u64>) -> Result<WalkState> {
+        let now = now_ms.unwrap_or_else(alix::time::now_ms);
+        self.walk.grade(&mut self.store, delta.into(), now);
+        self.store.save()?;
+        Ok(self.state())
+    }
+
+    /// Whether this deck sits an AI exam (the flag `open` captured; always
+    /// true for a trace, since its exam is the graded compression).
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn deck_has_exam(&self) -> bool {
+        self.has_exam
+    }
+
+    /// Milliseconds left on a re-sit cooldown after a failed trace exam, or
+    /// `None` if it can be sat now. The cooldown length reads
+    /// `ExamConfig::default()` (the phone carries no `[exam]` config to
+    /// override it in this milestone).
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn exam_cooldown_ms(&self, now_ms: u64) -> Option<u64> {
+        alix::store::cooldown_remaining_ms(
+            &self.store,
+            &self.subject,
+            alix::config::ExamConfig::default().retry_cooldown_secs,
+            now_ms,
+        )
+    }
+
+    /// Records a PASSED trace exam as this deck's mastery, mirroring the
+    /// browser exam's own persistence.
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn apply_exam_passed(&mut self, now_ms: u64) -> Result<()> {
+        self.store.set_deck_mastered(&self.subject, now_ms);
+        self.store.save()?;
+        Ok(())
+    }
+
+    /// Records a FAILED trace exam so a re-sit waits out the cooldown. The
+    /// phone owns this write; the server never persists a trace-exam fail.
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn apply_exam_failed(&mut self, now_ms: u64) -> Result<()> {
+        self.store.set_exam_failed(&self.subject, now_ms);
+        self.store.save()?;
+        Ok(())
     }
 }
 
@@ -694,5 +1030,264 @@ mod tests {
         );
         let reopened_again = alix::store::Store::open(&store_path).unwrap();
         assert_eq!(reopened_again.virtual_len(), 1);
+    }
+
+    /// A two-hop trace over a real in-folder source file, subject `t.txt`.
+    fn trace_fixture(root: &Path) -> PathBuf {
+        write(&root.join("source.txt"), "first\nsecond\nthird\n");
+        let path = root.join("t.txt");
+        write(
+            &path,
+            "% trace: how it works\n\
+             % source: source.txt\n\
+             # Predict the first hop\n\
+             \tit reads the first line\n\
+             \t% at: 1\n\
+             # Predict the second hop\n\
+             \tit reads lines two and three\n\
+             \t% at: 2-3\n",
+        );
+        path
+    }
+
+    #[test]
+    fn walking_a_trace_predicts_reveals_a_real_excerpt_and_tallies_the_summary() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let deck = trace_fixture(root);
+        let mut s = WalkSession::open(
+            deck.to_string_lossy().into_owned(),
+            root.to_string_lossy().into_owned(),
+            Some(T0),
+            None,
+        )
+        .unwrap();
+
+        let state = s.state();
+        assert_eq!(state.phase, WalkPhase::Predict);
+        assert_eq!(state.description, "how it works");
+        assert_eq!(state.source.as_deref(), Some("source.txt"));
+        assert_eq!(state.total, 2);
+        assert_eq!(state.current, 1);
+        assert_eq!(state.prompt.as_deref(), Some("Predict the first hop"));
+        assert!(state.givens.is_empty());
+
+        s.predict("guess1".to_string());
+        let state = s.state();
+        assert_eq!(state.phase, WalkPhase::Reveal);
+        assert_eq!(state.prediction.as_deref(), Some("guess1"));
+        assert!(state.excerpt_error.is_none());
+        let excerpt = state.excerpt.expect("a real in-folder source resolves");
+        assert!(excerpt.path.ends_with("source.txt"), "{}", excerpt.path);
+        assert_eq!(
+            excerpt.lines,
+            vec![WalkLine {
+                n: 1,
+                text: "first".to_string()
+            }]
+        );
+        assert_eq!(state.points, vec!["it reads the first line".to_string()]);
+
+        let state = s.grade(WalkDelta::Got, Some(T0)).unwrap();
+        assert_eq!(state.phase, WalkPhase::Predict);
+        assert_eq!(state.current, 2);
+        assert_eq!(state.prompt.as_deref(), Some("Predict the second hop"));
+
+        s.predict("guess2".to_string());
+        let state = s.state();
+        assert_eq!(state.phase, WalkPhase::Reveal);
+        let excerpt = state.excerpt.expect("a real in-folder source resolves");
+        assert_eq!(
+            excerpt.lines,
+            vec![
+                WalkLine {
+                    n: 2,
+                    text: "second".to_string()
+                },
+                WalkLine {
+                    n: 3,
+                    text: "third".to_string()
+                },
+            ]
+        );
+
+        let state = s.grade(WalkDelta::Partly, Some(T0)).unwrap();
+        assert_eq!(state.phase, WalkPhase::Done);
+        let summary = state.summary.expect("the done screen tallies the walk");
+        assert_eq!(summary.passed, 1);
+        assert_eq!(summary.partly, 1);
+        assert_eq!(summary.failed, 0);
+        assert_eq!(summary.weak, vec![2], "1-based hop numbers");
+        assert_eq!(summary.total, 2);
+    }
+
+    #[test]
+    fn walk_excerpt_resolves_an_in_folder_source_inside_a_workspace_member() {
+        // Ledger row 1: a synced workspace member's `% source:` is relative
+        // to ITS OWN folder, not the root passed to `open`. This guards
+        // against a regression that resolves it against the wrong base.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let ws = root.join("box");
+        std::fs::create_dir(&ws).unwrap();
+        write(&ws.join("alix.toml"), "title = \"Box\"\n");
+        write(&ws.join("source.txt"), "alpha\nbeta\ngamma\n");
+        write(
+            &ws.join("t.txt"),
+            "% trace: a member walk\n\
+             % source: source.txt\n\
+             # Predict\n\
+             \tit reads line two\n\
+             \t% at: 2\n",
+        );
+
+        let mut s = WalkSession::open(
+            ws.join("t.txt").to_string_lossy().into_owned(),
+            root.to_string_lossy().into_owned(),
+            Some(T0),
+            None,
+        )
+        .unwrap();
+        s.predict("guess".to_string());
+        let state = s.state();
+        assert_eq!(state.phase, WalkPhase::Reveal);
+        assert!(state.excerpt_error.is_none());
+        let excerpt = state.excerpt.expect("the member's own source resolves");
+        assert!(excerpt.path.ends_with("source.txt"), "{}", excerpt.path);
+        assert_eq!(
+            excerpt.lines,
+            vec![WalkLine {
+                n: 2,
+                text: "beta".to_string()
+            }]
+        );
+    }
+
+    #[test]
+    fn walk_excerpt_error_is_honest_for_a_url_or_absent_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        // No `% source:` at all: a bare line-number locator has no file to
+        // resolve against.
+        let no_source = root.join("no-source.txt");
+        write(
+            &no_source,
+            "% trace: a path with no source\n\
+             # Predict something\n\
+             \tthe answer\n\
+             \t% at: 1\n",
+        );
+        let mut s = WalkSession::open(
+            no_source.to_string_lossy().into_owned(),
+            root.to_string_lossy().into_owned(),
+            Some(T0),
+            None,
+        )
+        .unwrap();
+        s.predict("guess".to_string());
+        let state = s.state();
+        assert_eq!(state.phase, WalkPhase::Reveal);
+        assert!(state.excerpt.is_none(), "no panic, just an honest fallback");
+        assert!(state.excerpt_error.is_some());
+
+        // A URL `% source:` has no local line ranges either.
+        let url_source = root.join("url-source.txt");
+        write(
+            &url_source,
+            "% trace: a path with a URL source\n\
+             % source: https://example.com/readme.md\n\
+             # Predict something\n\
+             \tthe answer\n\
+             \t% at: 1\n",
+        );
+        let mut s = WalkSession::open(
+            url_source.to_string_lossy().into_owned(),
+            root.to_string_lossy().into_owned(),
+            Some(T0),
+            None,
+        )
+        .unwrap();
+        s.predict("guess".to_string());
+        let state = s.state();
+        assert_eq!(state.phase, WalkPhase::Reveal);
+        assert!(state.excerpt.is_none(), "no panic, just an honest fallback");
+        assert!(state.excerpt_error.is_some());
+    }
+
+    #[test]
+    fn exam_cooldown_gates_a_resit_after_a_failed_trace_exam_and_a_pass_clears_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let deck = trace_fixture(root);
+        let mut s = WalkSession::open(
+            deck.to_string_lossy().into_owned(),
+            root.to_string_lossy().into_owned(),
+            Some(T0),
+            None,
+        )
+        .unwrap();
+        assert!(s.deck_has_exam(), "a trace always sits an exam");
+        assert_eq!(s.exam_cooldown_ms(T0), None, "never failed: no cooldown");
+
+        s.apply_exam_failed(T0).unwrap();
+        let cooldown_ms = alix::config::ExamConfig::default().retry_cooldown_secs * 1000;
+        assert_eq!(s.exam_cooldown_ms(T0), Some(cooldown_ms));
+        assert_eq!(
+            s.exam_cooldown_ms(T0 + cooldown_ms + 1),
+            None,
+            "the cooldown elapsed"
+        );
+
+        let store_path = alix::workspace::root_store_path(root);
+        assert!(
+            !alix::store::Store::open(&store_path)
+                .unwrap()
+                .deck_mastered("t.txt"),
+            "fresh: not yet mastered"
+        );
+        s.apply_exam_passed(T0 + cooldown_ms + 1).unwrap();
+        assert!(
+            s.deck_has_exam(),
+            "the flag is captured at open, not derived from the store"
+        );
+        let reopened = alix::store::Store::open(&store_path).unwrap();
+        assert!(reopened.deck_mastered("t.txt"));
+        assert_eq!(
+            reopened.deck_mastered_at("t.txt"),
+            Some(T0 + cooldown_ms + 1)
+        );
+    }
+
+    #[test]
+    fn walk_and_review_open_refuse_each_others_deck_kind() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let trace = trace_fixture(root);
+        let facts = root.join("facts.txt");
+        write(&facts, "# q\n\ta\n");
+
+        // `.err()` (not `.unwrap_err()`): the opaque session handles carry no
+        // `Debug` impl, which `unwrap_err`'s panic message would require.
+        let err = WalkSession::open(
+            facts.to_string_lossy().into_owned(),
+            root.to_string_lossy().into_owned(),
+            Some(T0),
+            None,
+        )
+        .err()
+        .expect("a facts deck is not a trace walk");
+        assert!(format!("{err:#}").contains("not a trace walk"), "{err}");
+
+        let err = ReviewSession::open(
+            trace.to_string_lossy().into_owned(),
+            root.to_string_lossy().into_owned(),
+            None,
+            Some(T0),
+            None,
+        )
+        .err()
+        .expect("a trace deck is not a card review");
+        assert!(format!("{err:#}").contains("not a trace"), "{err}");
     }
 }
