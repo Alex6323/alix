@@ -4,9 +4,16 @@
          (e.g. Syncthing) already manages, so All Files Access is the honest
          model. Never requested at launch. -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
+    <!-- Pairing (opt-in, overflow menu -> Pair with desktop...): the phone
+         talks to your own alix desktop server on your Wi-Fi, plain HTTP with
+         a bearer token. A network security config cannot express "cleartext
+         only to private-IP ranges", so this is an app-wide flag; without it
+         the paired connection is refused outright. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <application
         android:label="alix"
         android:name="${applicationName}"
+        android:usesCleartextTraffic="true"
         android:icon="@mipmap/ic_launcher">
         <activity
             android:name=".MainActivity"

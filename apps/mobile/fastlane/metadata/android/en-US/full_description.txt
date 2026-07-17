@@ -18,10 +18,11 @@ your devices. On Android 11 and newer this uses the "All files access"
 permission. It is opt-in: if you never pick a shared folder, alix keeps
 everything in its own app storage and the permission is not used.
 
-The AI features of the alix project (deck generation from your own
-sources, a tutor, an exam that checks understanding) currently live in the
-desktop and web app; the phone app is planned to reach them by pairing
-with your own alix instance. Nothing on the phone talks to any server.
+Review stays fully offline. Optionally, you can pair the app with your own
+alix desktop app on your Wi-Fi (paste the URL alix prints) and the phone
+gains the tutor and the AI exam, served by your computer over plain HTTP
+with a token, on your local network only. There is no third-party server
+and no account; nothing leaves your network. You can unpair at any time.
 
 Status: early, pre-1.0, under active development. Expect rough edges.
 
