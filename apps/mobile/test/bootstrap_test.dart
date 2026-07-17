@@ -160,4 +160,42 @@ void main() {
       expect(raw.containsKey('server'), isFalse);
     });
   });
+
+  group('readTheme / setTheme', () {
+    test('a theme choice round-trips through set and read', () async {
+      final support = temp('alix-support-');
+      await setTheme('solarized-light', support: support);
+      expect(readTheme(support), 'solarized-light');
+    });
+
+    test('an absent theme key reads as null', () async {
+      final support = temp('alix-support-');
+      expect(readTheme(support), isNull);
+    });
+
+    test('a malformed theme value reads as null, never throws', () async {
+      final support = temp('alix-support-');
+      File('${support.path}/settings.json')
+          .writeAsStringSync(jsonEncode({'theme': 42}));
+      expect(readTheme(support), isNull);
+    });
+
+    test('setTheme(null) removes only the theme key; other keys survive',
+        () async {
+      final support = temp('alix-support-');
+      final shared = temp('alix-shared-');
+      const config = ServerConfig(host: '192.168.1.5', port: 7777, token: 'abc123');
+      await setDecksDir(shared.path, support: support);
+      await setServer(config, support: support);
+      await setTheme('solarized-light', support: support);
+
+      await setTheme(null, support: support);
+
+      expect(readTheme(support), isNull);
+      final raw = jsonDecode(File('${support.path}/settings.json').readAsStringSync()) as Map;
+      expect(raw.containsKey('theme'), isFalse);
+      expect(raw['decksDir'], shared.path);
+      expect(readServer(support), config);
+    });
+  });
 }

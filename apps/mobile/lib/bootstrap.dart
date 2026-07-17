@@ -174,6 +174,25 @@ Future<void> setServer(ServerConfig? config, {Directory? support}) async {
   _writeSettings(support, settings);
 }
 
+/// The persisted color theme choice, if any (a `theme` key in
+/// settings.json). Absent or malformed reads as null, never throws.
+String? readTheme(Directory support) {
+  final theme = readSettings(support)['theme'];
+  return theme is String ? theme : null;
+}
+
+/// Persists the theme choice; `null` reverts to the default.
+Future<void> setTheme(String? theme, {Directory? support}) async {
+  support ??= await getApplicationSupportDirectory();
+  final settings = readSettings(support);
+  if (theme == null) {
+    settings.remove('theme');
+  } else {
+    settings['theme'] = theme;
+  }
+  _writeSettings(support, settings);
+}
+
 /// This install's device label (`phone-<4 hex>`), minted once into the
 /// settings. It names the phone in the store's last-writer marker; it lives
 /// in the support dir, never in the synced folder.
