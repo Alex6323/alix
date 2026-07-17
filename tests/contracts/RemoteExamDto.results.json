@@ -21,6 +21,7 @@
       "verdict": "FAIL"
     }
   ],
+  "is_trace": false,
   "passed": false,
   "phase": "results",
   "questions": [

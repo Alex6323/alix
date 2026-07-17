@@ -784,9 +784,11 @@ pub(super) struct RemoteAskDto {
 /// server-side session either. Unlike [`ExamDto`], answering happens
 /// phone-local and is graded as one batch, so there is no
 /// `total`/`current`/`question`/`answer`/`on_last`; the phone counts its own
-/// remediation cards, so there is no `remediated_count`; and trace decks are
-/// refused at the start (the server's store is not the phone's truth), so
-/// there is no `is_trace`/`unlocks`/`cooldown_ms`.
+/// remediation cards, so there is no `remediated_count`; and there is no
+/// server-side cooldown or `unlocks` (the server's store is not the phone's
+/// truth, so a trace re-sit is never gated here, and a pass unlocks nothing
+/// server-side, so the phone applies both to its own state). A trace deck now
+/// starts and sits like a fact deck, distinguished by `is_trace`.
 #[derive(Serialize)]
 pub(super) struct RemoteExamDto {
     /// `idle | generating | answering | grading | results | remediating |
@@ -799,10 +801,15 @@ pub(super) struct RemoteExamDto {
     pub(super) passed: Option<bool>,
     pub(super) grades: Vec<ExamGradeDto>,
     pub(super) gaps: Vec<String>,
+    /// Always false for a trace sitting (a failed compression is re-walked,
+    /// not remediated), like [`ExamDto::can_remediate`].
     pub(super) can_remediate: bool,
     /// Deck-format text, set in the `remediated` phase. The phone stores
     /// these cards; the server never does.
     pub(super) cards: Option<String>,
+    /// A trace (compression) sitting vs a fact-deck sitting, like
+    /// [`ExamDto::is_trace`]. `false` at `idle`.
+    pub(super) is_trace: bool,
     pub(super) thinking: bool,
     pub(super) elapsed: Option<u64>,
     pub(super) error: Option<String>,

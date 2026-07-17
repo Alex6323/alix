@@ -1778,11 +1778,12 @@ pub fn run_review(
                 remote_ask = Some(job);
                 respond_json(request, &dto);
             }
-            // Start a remote exam sitting. Trace decks and source-less decks
-            // are refused (a phone has no walk, and there is nothing to
-            // examine); the store-side `% requires:` lock and trace re-sit
-            // cooldown are the browser's own truth, not the phone's, so both
-            // are skipped here.
+            // Start a remote exam sitting. A trace deck starts a compression
+            // sitting straight into `answering` (mirrors the browser's own
+            // trace-exam start); a non-trace, source-less deck still 409s
+            // (nothing to examine). The store-side `% requires:` lock and the
+            // trace re-sit cooldown are the browser's own truth, not the
+            // phone's, so both are skipped here.
             (Method::Post, "/api/remote/exam/start") => {
                 if remote_exam.is_some() {
                     respond_status(request, 409);
@@ -1808,17 +1809,33 @@ pub fn run_review(
                     respond_status(request, 409);
                     continue;
                 };
-                if deck.is_trace() || deck.sources.is_empty() {
-                    respond_status(request, 409);
-                    continue;
-                }
-                if exam::ensure_backend_can_examine(&deck, &ask_cfg).is_err() {
+                if !deck.is_trace() && deck.sources.is_empty() {
                     respond_status(request, 409);
                     continue;
                 }
                 let strictness = deck.settings.exam_strictness.unwrap_or(exam_cfg.strictness);
-                let sitting =
-                    exam::Sitting::start(&deck, strictness, exam_cfg.clone(), ask_cfg.clone());
+                let sitting = if deck.is_trace() {
+                    match trace::Trace::from_deck(&deck) {
+                        Ok(t) => exam::Sitting::start_trace(
+                            t.description.clone(),
+                            t.compression_rubric(),
+                            deck.subject.clone(),
+                            strictness,
+                            exam_cfg.clone(),
+                            ask_cfg.clone(),
+                        ),
+                        Err(_) => {
+                            respond_status(request, 409);
+                            continue;
+                        }
+                    }
+                } else {
+                    if exam::ensure_backend_can_examine(&deck, &ask_cfg).is_err() {
+                        respond_status(request, 409);
+                        continue;
+                    }
+                    exam::Sitting::start(&deck, strictness, exam_cfg.clone(), ask_cfg.clone())
+                };
                 let ex = RemoteExamining {
                     sitting,
                     cards: None,

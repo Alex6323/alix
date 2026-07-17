@@ -289,18 +289,24 @@ owns placing them.
 A remote exam sitting starts with `POST /api/remote/exam/start {deck}`: the
 server resolves **its own copy** of the named deck, by the same resolution
 `/api/select` uses (a bare name, or a qualified `<workspace>/<file>`). A
-trace deck or a source-less deck is refused outright (409): a phone has no
-walk, and there is nothing to examine. The browser's `% requires:` deck
-lock and trace re-sit cooldown are read from the server's own store, which
-is not the phone's truth, so a remote sitting skips both checks: it can
-start on a deck the web app would show as locked, and the phone applies
-its own gates. Unlike the browser's page-at-a-time
+trace deck now sits too (since 0.6.0): it opens straight in `answering`
+with the path's one fixed compression question, graded the same way the
+browser's own trace exam is (`RemoteExamDto.is_trace` tells the two apart,
+§6). A non-trace, source-less deck is still refused outright (409): there is
+nothing to examine. The browser's `% requires:` deck lock and trace re-sit
+cooldown are read from the server's own store, which is not the phone's
+truth, so a remote sitting skips both checks: it can start on a deck the web
+app would show as locked or cooling down, and the phone applies its own
+gates (a failed remote trace exam does not start the store-side cooldown,
+so the phone must track its own). Unlike the browser's page-at-a-time
 `/api/exam/answer` + `/api/exam/grade`, a remote client answers every
 question locally and submits them as one batch: `POST
 /api/remote/exam/grade {answers: [string]}` grades the whole sitting in one
 call. A failed, remediable result's cards come back as deck-format text on
 `RemoteExamDto.cards` (§6) for the **client** to parse and store: the
-server generates them but never keeps them.
+server generates them but never keeps them. A trace sitting never offers
+remediation (`can_remediate` stays false): a failed compression is re-walked
+instead.
 
 `POST /api/remote/generate {url, guidance?}` mirrors §4.7's `/api/generate`,
 minus everything the iron rule forbids: there is no `dest` (a phone chooses
@@ -463,7 +469,7 @@ first, same as a double `POST`.
 | GET | `/api/remote/ask` | – | `RemoteAskDto` (poll) | – |
 | POST | `/api/remote/ask/draft` | `{card, history}` (`RemoteDraftReq`) | `RemoteAskDto` | 400 bad/oversized body / empty `history`; 403 kids; 409 a turn is already thinking |
 | POST | `/api/remote/ask/note` | `{card, history}` (`RemoteNoteReq`) | `RemoteAskDto` | 400 bad/oversized body / empty `history`; 409 a turn is already thinking |
-| POST | `/api/remote/exam/start` | `{deck}` | `RemoteExamDto` | 400 bad/oversized body / unknown or ambiguous deck name; 409 a sitting is already open (close it first) / the deck fails to load / a trace or source-less deck / the backend can't reach the deck's source |
+| POST | `/api/remote/exam/start` | `{deck}` | `RemoteExamDto` | 400 bad/oversized body / unknown or ambiguous deck name; 409 a sitting is already open (close it first) / the deck fails to load / a non-trace source-less deck / a trace deck with no checkpoints / the backend can't reach a non-trace deck's source |
 | GET | `/api/remote/exam` | – | `RemoteExamDto` (poll; `phase:"idle"` when no sitting is open) | – |
 | POST | `/api/remote/exam/grade` | `{answers: [string]}` | `RemoteExamDto` | 400 bad/oversized body / wrong number of answers; 409 no sitting open / not in the answering phase |
 | POST | `/api/remote/exam/remediate` | – | `RemoteExamDto` | 409 no sitting open / nothing to remediate |
@@ -868,26 +874,32 @@ A paired phone's AI exam sitting (`/api/remote/exam/*`; §4.10). Unlike
 `ExamDto`, there is no server-side session: answering happens client-local
 as one batch, so there is no `total`/`current`/`question`/`answer`/`on_last`;
 the client counts its own remediation cards, so there is no
-`remediated_count`; and a trace or source-less deck is refused at the start,
-so there is no `is_trace`/`unlocks`/`cooldown_ms`.
+`remediated_count`; and there is no server-side `cooldown_ms` or `unlocks` (a
+trace re-sit is never gated here, and a pass unlocks nothing server-side,
+so the phone applies both to its own state). A trace deck sits like a fact
+deck, distinguished by `is_trace` (since 0.6.0).
 
 | Key | Type | Meaning |
 |---|---|---|
 | `phase` | string | `idle` \| `generating` \| `answering` \| `grading` \| `results` \| `remediating` \| `remediated` (open set). `idle` is the baseline when no sitting is open: `ExamDto` has no equivalent, since the browser's exam slot simply doesn't exist between sittings. |
 | `deck` | string | Deck name; empty at `idle`. |
 | `strictness` | string | `strict` \| `balanced` \| `lenient` *(closed)*. |
-| `questions` | [string] | Prompts only: the rubric (`ExamQuestion.points`) never leaves the server. |
+| `questions` | [string] | Prompts only: the rubric (`ExamQuestion.points`) never leaves the server. A trace sitting has exactly one, the path's fixed compression question. |
 | `passed` | bool? | Null until graded. |
-| `grades` | [ExamGradeDto] | Populated in `results`/`remediated`. |
+| `grades` | [ExamGradeDto] | Populated in `results`/`remediated`. A trace sitting's is always one holistic grade. |
 | `gaps` | [string] | Named understanding gaps. |
-| `can_remediate` | bool | |
-| `cards` | string? | Deck-format text, set in the `remediated` phase: the client parses and stores these; the server never does. |
+| `can_remediate` | bool | Always false for a trace sitting: a failed compression is re-walked, not remediated into cards. |
+| `cards` | string? | Deck-format text, set in the `remediated` phase: the client parses and stores these; the server never does. Always null for a trace sitting. |
+| `is_trace` | bool | A trace (compression) sitting vs a fact-deck sitting, since 0.6.0. `false` at `idle`. |
 | `thinking` | bool | Poll while true. |
 | `elapsed` | number? | Seconds the in-flight call has run. |
 | `error` | string? | |
 
 Example, remediated (from the pinned test):
-`{"phase":"remediated","deck":"rust.txt","strictness":"balanced","questions":["Why does Rust use ownership?"],"passed":false,"grades":[{"question":"Why does Rust use ownership?","points":["memory safety without a GC"],"answer":"it has a garbage collector","verdict":"FAIL","feedback":"Rust has no GC","missed":["memory safety without a GC"]}],"gaps":["ownership and the GC-free memory model"],"can_remediate":false,"cards":"# Why does Rust use ownership?\n\tso drops are deterministic, no GC needed","thinking":false,"elapsed":null,"error":null}`.
+`{"phase":"remediated","deck":"rust.txt","strictness":"balanced","questions":["Why does Rust use ownership?"],"passed":false,"grades":[{"question":"Why does Rust use ownership?","points":["memory safety without a GC"],"answer":"it has a garbage collector","verdict":"FAIL","feedback":"Rust has no GC","missed":["memory safety without a GC"]}],"gaps":["ownership and the GC-free memory model"],"can_remediate":false,"cards":"# Why does Rust use ownership?\n\tso drops are deterministic, no GC needed","is_trace":false,"thinking":false,"elapsed":null,"error":null}`.
+
+Example, a trace sitting's failed result (from the pinned test):
+`{"phase":"results","deck":"trace.txt","strictness":"balanced","questions":["how it works"],"passed":false,"grades":[{"question":"how it works","points":["it reads the first line"],"answer":"it reads the file","verdict":"FAIL","feedback":"missed the second hop","missed":["it reads the second line"]}],"gaps":["it reads the second line"],"can_remediate":false,"cards":null,"is_trace":true,"thinking":false,"elapsed":null,"error":null}`.
 
 ### RemoteGenerateDto (since 0.6.0)
 

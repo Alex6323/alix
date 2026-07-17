@@ -6,6 +6,7 @@
   "error": null,
   "gaps": [],
   "grades": [],
+  "is_trace": false,
   "passed": null,
   "phase": "idle",
   "questions": [],

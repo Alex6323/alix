@@ -16,11 +16,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 - **A paired phone can borrow the desktop's AI backend for the tutor and the
-  exam, over `/api/remote/*`.** The client re-sends its own card, transcript,
-  and answers with every call and keeps its own progress; the server only
-  computes replies, it never writes its own store, session, decks, or recent
-  list. This is the server side only: the phone app's own pairing screen
-  ships in a later mobile release.
+  exam, over `/api/remote/*`, including a trace deck's compression exam.**
+  The client re-sends its own card, transcript, and answers with every call
+  and keeps its own progress; the server only computes replies, it never
+  writes its own store, session, decks, or recent list. A remote trace
+  sitting checks no re-sit cooldown either, since that state is the
+  browser's own store, not the phone's (`RemoteExamDto.is_trace` tells a
+  trace sitting apart from a fact deck's). This is the server side only:
+  the phone app's own pairing screen ships in a later mobile release.
 - **A paired phone can also generate a deck from a URL through the desktop's
   AI backend, over `POST /api/remote/generate`.** The server returns the full
   deck text and a suggested file name; placing the file, and any collision
