@@ -20,9 +20,10 @@ everything in its own app storage and the permission is not used.
 
 Review stays fully offline. Optionally, you can pair the app with your own
 alix desktop app on your Wi-Fi (paste the URL alix prints) and the phone
-gains the tutor and the AI exam, served by your computer over plain HTTP
-with a token, on your local network only. There is no third-party server
-and no account; nothing leaves your network. You can unpair at any time.
+gains the tutor and the AI exam. The phone talks only to your desktop, with
+a token, on your local network; your desktop answers using whatever AI
+backend you have configured there. The alix project runs no server and has
+no accounts. You can unpair at any time.
 
 Status: early, pre-1.0, under active development. Expect rough edges.
 

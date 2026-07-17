@@ -61,9 +61,9 @@ config, nothing else on the phone changes.
 
 Once paired, review gains two things it doesn't have offline:
 
-- An **Ask** chip, once you've attempted the current card (revealed it,
-  picked a choice, submitted a typed answer, or walked all its lines) and
-  never before: the same attempt-first rule the web tutor follows. It opens
+- An **Ask** chip, shown once you've attempted the current card (revealed
+  it, picked a choice, submitted a typed answer, or walked all its lines)
+  but not before: the same attempt-first rule the web tutor follows. It opens
   the same question/answer flow as the desktop tutor, including **Make a
   card**, re-sending the whole exchange to the paired desktop on every turn
   (the server keeps no session of its own for a remote turn).
