@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'package:alix_mobile/bootstrap.dart';
@@ -87,9 +88,11 @@ class _PickerScreenState extends State<PickerScreen> {
     }
   }
 
-  Future<void> _openDeck(DeckEntry entry) async {
-    final depth = await _pickDepth(context);
-    if (depth == null || !mounted) return;
+  /// Opens a review session. `depth: null` (the tap path) lets the core
+  /// resolve the deck's remembered depth, or its default when it has none:
+  /// no sheet, no per-tap prompt.
+  Future<void> _openDeck(DeckEntry entry, {Depth? depth}) async {
+    if (!mounted) return;
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => ReviewScreen(
@@ -102,6 +105,14 @@ class _PickerScreenState extends State<PickerScreen> {
     );
     // Progress changed while reviewing; refresh the due dots.
     setState(_load);
+  }
+
+  /// The long-press re-pick: `_pickDepth` with the deck's remembered depth
+  /// highlighted, opening with whatever is chosen.
+  Future<void> _rePickDepth(DeckEntry entry) async {
+    final depth = await _pickDepth(context, selected: entry.lastDepth);
+    if (depth == null || !mounted) return;
+    await _openDeck(entry, depth: depth);
   }
 
   @override
@@ -174,11 +185,15 @@ class _PickerScreenState extends State<PickerScreen> {
     );
   }
 
-  /// A deck or workspace as the web's bordered rounded row: no file icons,
-  /// a chevron marks a drillable folder, a cyan dot marks something due.
+  /// A deck or workspace as the web's bordered rounded row: a workspace's
+  /// resolved emblem leads the title (else no leading icon), a chevron
+  /// marks a drillable folder, and one trailing marker (trace / exam-due /
+  /// due) reports the row's state. Tap opens at the remembered depth with
+  /// no prompt; a deck row's long-press re-picks it (item 10).
   Widget _deckRow(BuildContext context, DeckEntry entry) {
     final theme = Theme.of(context);
     final tokens = theme.alix;
+    final canRePick = !entry.isWorkspace && !entry.isTrace;
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Material(
@@ -190,6 +205,7 @@ class _PickerScreenState extends State<PickerScreen> {
               : entry.isTrace
                   ? _traceNotice()
                   : _openDeck(entry),
+          onLongPress: canRePick ? () => _rePickDepth(entry) : null,
           child: Container(
             constraints: const BoxConstraints(minHeight: 54),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -199,6 +215,10 @@ class _PickerScreenState extends State<PickerScreen> {
             ),
             child: Row(
               children: [
+                if (entry.icon != null) ...[
+                  _emblem(entry.icon!, tokens),
+                  const SizedBox(width: 10),
+                ],
                 Expanded(
                   child: Text(
                     entry.title,
@@ -218,6 +238,19 @@ class _PickerScreenState extends State<PickerScreen> {
                       letterSpacing: 1.2,
                     ),
                   ),
+                ] else if (entry.examDue) ...[
+                  // Drilled and awaiting its AI exam: the more actionable of
+                  // the two states when a deck happens to also read due, so
+                  // it wins the one trailing marker slot.
+                  const SizedBox(width: 12),
+                  Text(
+                    'exam',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: tokens.warn,
+                      fontFamily: 'monospace',
+                      letterSpacing: 1.2,
+                    ),
+                  ),
                 ] else if (entry.due) ...[
                   const SizedBox(width: 12),
                   Icon(Icons.circle, size: 8, color: tokens.bolt),
@@ -230,6 +263,30 @@ class _PickerScreenState extends State<PickerScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// A workspace's picker emblem: a small leading glyph, tinted to the
+  /// row's icon ink (mirrors the web picker's CSS-mask recolor). Constrained
+  /// to the row's icon size so a hand-authored file cannot blow up the row.
+  Widget _emblem(String path, AlixTokens tokens) {
+    const size = 22.0;
+    if (path.toLowerCase().endsWith('.svg')) {
+      return SvgPicture.file(
+        File(path),
+        width: size,
+        height: size,
+        colorFilter: ColorFilter.mode(tokens.dim, BlendMode.srcIn),
+      );
+    }
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(4),
+      child: Image.file(
+        File(path),
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
       ),
     );
   }
@@ -589,8 +646,9 @@ class _PairSheetState extends State<_PairSheet> {
   }
 }
 
-/// The session depth pick, defaulting to Recall.
-Future<Depth?> _pickDepth(BuildContext context) {
+/// The session depth pick (the long-press re-pick); [selected], when given,
+/// gets one calm check-mark leading its tile as the current choice.
+Future<Depth?> _pickDepth(BuildContext context, {Depth? selected}) {
   return showModalBottomSheet<Depth>(
     context: context,
     builder: (context) => SafeArea(
@@ -603,6 +661,12 @@ Future<Depth?> _pickDepth(BuildContext context) {
             (Depth.reconstruct, 'Reconstruct', 'type or rebuild the answer'),
           ])
             ListTile(
+              leading: SizedBox(
+                width: 22,
+                child: depth == selected
+                    ? Icon(Icons.check, size: 18, color: Theme.of(context).alix.bolt)
+                    : null,
+              ),
               title: Text(label),
               subtitle: Text(hint),
               onTap: () => Navigator.of(context).pop(depth),

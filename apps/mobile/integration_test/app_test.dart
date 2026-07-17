@@ -1,8 +1,9 @@
 // Tier-2 mobile e2e: the full app widget tree on a REAL device target (the
 // Linux desktop window in CI, an emulator for the on-Android tier), driving
-// picker -> depth pick -> review -> grade against the real core and
-// asserting the store file. The acquire is backdated through the bridge so
-// the wall-clock UI serves a quiz immediately; nothing sleeps.
+// picker -> review -> grade against the real core and asserting the store
+// file. A tap opens straight at the deck's remembered depth (T5.1a, item
+// 10): no depth sheet on this path. The acquire is backdated through the
+// bridge so the wall-clock UI serves a quiz immediately; nothing sleeps.
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -41,8 +42,6 @@ void main() {
     expect(find.text('Greek'), findsOneWidget);
 
     await tester.tap(find.text('Greek'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Recall'));
     await tester.pumpAndSettle();
 
     expect(find.text('capital of greece?'), findsOneWidget);

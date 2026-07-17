@@ -34,7 +34,10 @@ class ReviewScreen extends StatefulWidget {
 
   final String deckPath;
   final String rootDir;
-  final Depth depth;
+
+  /// `null` lets the core resolve the deck's remembered depth, or its
+  /// default when it has none (the picker's tap path).
+  final Depth? depth;
 
   /// This install's label for the store's last-writer marker; also enables
   /// the "another device wrote this recently" banner.
