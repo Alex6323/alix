@@ -5,6 +5,8 @@
 // fake's canned in-flight/settled replies without a long real wait (the
 // binding runs each test inside a fake-async zone, so Timer.periodic only
 // advances when pumped).
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -28,6 +30,7 @@ class FakeServerClient implements ServerClient {
     List<RemoteAsk>? getAskReplies,
     List<bool>? postDraftReplies,
     this.expireOnPostAsk = false,
+    this.postAskGate,
   })  : postAskReplies = postAskReplies ?? const [true],
         getAskReplies = getAskReplies ?? const [],
         postDraftReplies = postDraftReplies ?? const [true];
@@ -37,6 +40,10 @@ class FakeServerClient implements ServerClient {
   final List<RemoteAsk> getAskReplies;
   final List<bool> postDraftReplies;
   final bool expireOnPostAsk;
+
+  /// When set, postAsk parks on this until the test completes it: the
+  /// "request still in flight while the sheet is dismissed" lever.
+  final Completer<bool>? postAskGate;
 
   final List<List<TutorTurn>> postAskHistories = [];
   final List<List<TutorTurn>> postDraftHistories = [];
@@ -51,6 +58,7 @@ class FakeServerClient implements ServerClient {
   Future<bool> postAsk(TutorCardContext card, List<TutorTurn> history, String question) async {
     postAskHistories.add(history);
     if (expireOnPostAsk) throw const PairingExpired();
+    if (postAskGate != null) return postAskGate!.future;
     final reply = postAskReplies[_askCall.clamp(0, postAskReplies.length - 1)];
     _askCall++;
     return reply;
@@ -263,5 +271,80 @@ void main() {
 
     expect(find.text('Ask something first.'), findsOneWidget);
     expect(client.postDraftHistories, isEmpty);
+  });
+
+  testWidgets('dismissing the sheet mid-send starts no poll timer after dispose', (tester) async {
+    // postAsk parks until the test releases it; the sheet is dismissed in
+    // the meantime, so the resumed _send must not start a poll timer (a
+    // leaked periodic timer fails the test at teardown, which is the net).
+    final gate = Completer<bool>();
+    final client = FakeServerClient(postAskGate: gate);
+    await pumpSheet(tester, client: client);
+
+    await tester.enterText(find.byKey(const ValueKey('tutor-question-field')), 'still out there?');
+    await tester.tap(find.byKey(const ValueKey('tutor-send-button')));
+    await tester.pump();
+
+    tester.state<NavigatorState>(find.byType(Navigator)).pop();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('tutor-question-field')), findsNothing,
+        reason: 'the sheet must be gone before the reply settles');
+
+    gate.complete(true);
+    await tester.pump();
+    await tester.pump(_pollInterval * 3);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a settled error shows the failed SnackBar and restores the question', (tester) async {
+    final client = FakeServerClient(
+      getAskReplies: const [
+        RemoteAsk(thinking: false, error: 'backend prose the user never sees'),
+      ],
+    );
+    await pumpSheet(tester, client: client);
+
+    await tester.enterText(find.byKey(const ValueKey('tutor-question-field')), 'my question');
+    await tester.tap(find.byKey(const ValueKey('tutor-send-button')));
+    await tester.pump();
+    await tester.pump(_pollInterval);
+    await tester.pumpAndSettle();
+
+    expect(find.text('The tutor call failed.'), findsOneWidget);
+    final field = tester.widget<TextField>(find.byKey(const ValueKey('tutor-question-field')));
+    expect(field.controller?.text, 'my question',
+        reason: 'the unanswered question goes back in the input, nothing is lost');
+    expect(find.textContaining('backend prose'), findsNothing,
+        reason: 'the DTO error is backend prose, never shown raw');
+  });
+
+  testWidgets('send stays disabled while a draft is in flight', (tester) async {
+    // The ask settles on the first getAsk reply; the draft poll then sees
+    // thinking forever. A send tap during the draft would cancel its poll
+    // timer and orphan the working row, so the button must be disabled.
+    final client = FakeServerClient(
+      getAskReplies: const [
+        RemoteAsk(thinking: false, answer: 'an answer'),
+        RemoteAsk(thinking: true, elapsed: 1),
+      ],
+    );
+    await pumpSheet(tester, client: client);
+
+    await tester.enterText(find.byKey(const ValueKey('tutor-question-field')), 'q');
+    await tester.tap(find.byKey(const ValueKey('tutor-send-button')));
+    await tester.pump();
+    await tester.pump(_pollInterval);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('tutor-make-card-button')));
+    await tester.pump();
+    await tester.pump(_pollInterval);
+
+    final send = tester.widget<IconButton>(find.byKey(const ValueKey('tutor-send-button')));
+    expect(send.onPressed, isNull);
+
+    // Close the sheet so dispose cancels the still-thinking draft poll.
+    tester.state<NavigatorState>(find.byType(Navigator)).pop();
+    await tester.pumpAndSettle();
   });
 }

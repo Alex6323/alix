@@ -815,15 +815,27 @@ class _ReviewScreenState extends State<ReviewScreen> {
     );
   }
 
+  /// Whether the learner has made an attempt on [card]: revealed it,
+  /// picked an option, submitted a check, or walked all its lines. Mirrors
+  /// the web client's attempt-first rule for the tutor: help arrives after
+  /// you have tried, never instead of trying.
+  bool _attempted(CardView card) {
+    if (_hasChoices) return _choice != null;
+    if (_state.acquire) return _revealed;
+    if (_state.mode == Mode.lineByLine) return _lineDone(card);
+    if (_isTyping) return _check != null;
+    return _revealed;
+  }
+
   /// The web's renderLegend() state matrix, mapped to chips, plus the Ask
-  /// chip appended when a paired desktop answered the probe: gated on
-  /// `session.tutorCard()` too, since a card can be showing with nothing
-  /// authored to ground the tutor on (keyboard hints are dropped, touch
-  /// only; Skip awaits a later milestone).
+  /// chip appended when a paired desktop answered the probe AND an attempt
+  /// was made: gated on `session.tutorCard()` too, since a card can be
+  /// showing with nothing authored to ground the tutor on (keyboard hints
+  /// are dropped, touch only; Skip awaits a later milestone).
   List<Widget> _legendChips(CardView card) {
     final chips = [..._modeChips(card)];
     final tutor = _session.tutorCard();
-    if (_serverLive && tutor != null) {
+    if (_serverLive && tutor != null && _attempted(card)) {
       chips.add(_chip('Ask', _ChipKind.quiet, () => _openTutor(tutor)));
     }
     return chips;

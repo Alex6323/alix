@@ -107,7 +107,7 @@ class _TutorSheetState extends State<TutorSheet> {
 
   Future<void> _send() async {
     final question = _question.text.trim();
-    if (question.isEmpty || _pendingQuestion != null) return;
+    if (question.isEmpty || _pendingQuestion != null || _draftPending) return;
     final history = _historyTurns();
     setState(() {
       _pendingQuestion = question;
@@ -128,6 +128,9 @@ class _TutorSheetState extends State<TutorSheet> {
       if (mounted) setState(() => _pendingQuestion = null);
       return;
     }
+    // The sheet may have been dismissed while postAsk was in flight; a
+    // timer started now would outlive dispose and never be cancelled.
+    if (!mounted) return;
     _pollTimer?.cancel();
     _pollTimer = Timer.periodic(widget.pollInterval, (_) => _pollAsk());
   }
@@ -193,6 +196,8 @@ class _TutorSheetState extends State<TutorSheet> {
       if (mounted) setState(() => _draftPending = false);
       return;
     }
+    // Same guard as _send: no timer may start once the sheet is gone.
+    if (!mounted) return;
     _pollTimer?.cancel();
     _pollTimer = Timer.periodic(widget.pollInterval, (_) => _pollDraft());
   }
@@ -362,7 +367,9 @@ class _TutorSheetState extends State<TutorSheet> {
             IconButton(
               key: const ValueKey('tutor-send-button'),
               icon: const Icon(Icons.send),
-              onPressed: _pendingQuestion == null ? _send : null,
+              // Disabled during a draft too: ask and draft share the one
+              // poll timer, so a send now would orphan the draft's row.
+              onPressed: _pendingQuestion == null && !_draftPending ? _send : null,
             ),
           ],
         ),

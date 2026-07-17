@@ -1,8 +1,9 @@
 // The Ask chip's gating: it exists only with a pairing config AND a
-// reachable, current-enough desktop (capability presence, no status
-// chrome). ReviewScreen's own listing/session calls the real bridge in
-// initState, so RustLib.init() is required to mount it, same as
-// hashcards_repro_test.dart's own screens.
+// reachable, current-enough desktop AND an attempt made on the current
+// card (capability presence, no status chrome; attempt-first, like the
+// web client's tutor chip). ReviewScreen's own listing/session calls the
+// real bridge in initState, so RustLib.init() is required to mount it,
+// same as hashcards_repro_test.dart's own screens.
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -98,13 +99,22 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  // The fixture card is a fresh deck's acquire card, so "an attempt" is
+  // the Reveal tap. The negative cases reveal too: without it, they would
+  // pass trivially off the attempt gate rather than the server gate.
+  Future<void> reveal(WidgetTester tester) async {
+    await tester.tap(find.text('Reveal'));
+    await tester.pumpAndSettle();
+  }
+
   testWidgets('no pairing config: the Ask chip does not exist', (tester) async {
     await pumpReview(tester, support: tempSupport());
+    await reveal(tester);
 
     expect(find.text('Ask'), findsNothing);
   });
 
-  testWidgets('a paired, current-enough desktop: the Ask chip appears', (tester) async {
+  testWidgets('a paired, current-enough desktop: the Ask chip appears after an attempt', (tester) async {
     final support = tempSupport();
     await setServer(const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok'), support: support);
 
@@ -114,6 +124,9 @@ void main() {
       buildClient: (_) => FakeServerClient(versionReply: '0.6.0'),
     );
 
+    expect(find.text('Ask'), findsNothing,
+        reason: 'attempt-first: no tutor before the learner has tried');
+    await reveal(tester);
     expect(find.text('Ask'), findsOneWidget);
   });
 
@@ -126,6 +139,7 @@ void main() {
       support: support,
       buildClient: (_) => FakeServerClient(versionReply: null),
     );
+    await reveal(tester);
 
     expect(find.text('Ask'), findsNothing);
   });
@@ -139,6 +153,7 @@ void main() {
       support: support,
       buildClient: (_) => FakeServerClient(versionReply: '0.5.0'),
     );
+    await reveal(tester);
 
     expect(find.text('Ask'), findsNothing);
   });
@@ -152,6 +167,7 @@ void main() {
       support: support,
       buildClient: (_) => FakeServerClient(expireOnVersion: true),
     );
+    await reveal(tester);
 
     expect(find.text('Ask'), findsNothing);
     expect(
