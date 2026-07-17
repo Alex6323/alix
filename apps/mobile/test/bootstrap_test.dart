@@ -1,10 +1,12 @@
 // The decks-root resolution order, driven with an injected support dir and
 // env override so no platform channel is touched.
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:alix_mobile/bootstrap.dart';
+import 'package:alix_mobile/server_client.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -123,4 +125,39 @@ void main() {
     expect(prepared.root, '${support.path}/decks');
   });
 
+  group('readServer / setServer', () {
+    test('a paired server round-trips through set and read', () async {
+      final support = temp('alix-support-');
+      const config = ServerConfig(host: '192.168.1.5', port: 7777, token: 'abc123');
+      await setServer(config, support: support);
+      expect(readServer(support), config);
+    });
+
+    test('an absent server key reads as null', () async {
+      final support = temp('alix-support-');
+      expect(readServer(support), isNull);
+    });
+
+    test('a malformed server value reads as null, never throws', () async {
+      final support = temp('alix-support-');
+
+      File('${support.path}/settings.json').writeAsStringSync(jsonEncode({'server': 'not a map'}));
+      expect(readServer(support), isNull);
+
+      File('${support.path}/settings.json').writeAsStringSync(jsonEncode({
+        'server': {'host': '1.2.3.4', 'port': 'eight', 'token': 'abc'},
+      }));
+      expect(readServer(support), isNull);
+    });
+
+    test('setServer(null) removes the key', () async {
+      final support = temp('alix-support-');
+      const config = ServerConfig(host: '192.168.1.5', port: 7777, token: 'abc123');
+      await setServer(config, support: support);
+      await setServer(null, support: support);
+      expect(readServer(support), isNull);
+      final raw = jsonDecode(File('${support.path}/settings.json').readAsStringSync()) as Map;
+      expect(raw.containsKey('server'), isFalse);
+    });
+  });
 }

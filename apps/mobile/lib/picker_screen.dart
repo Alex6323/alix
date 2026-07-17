@@ -1,10 +1,13 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 
+import 'package:alix_mobile/bootstrap.dart';
 import 'package:alix_mobile/folder_browser.dart';
 import 'package:alix_mobile/platform_access.dart';
 import 'package:alix_mobile/review_screen.dart';
+import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/theme.dart';
 import 'package:alix_mobile/src/rust/api/listing.dart';
 import 'package:alix_mobile/src/rust/api/review.dart';
@@ -24,6 +27,8 @@ class PickerScreen extends StatefulWidget {
     this.staleDecksDir,
     this.access,
     this.onSetDecksDir,
+    this.supportDir,
+    this.buildClient,
   });
 
   final String root;
@@ -45,6 +50,14 @@ class PickerScreen extends StatefulWidget {
 
   /// Persists a folder choice and swaps the root (null = app storage).
   final Future<void> Function(String?)? onSetDecksDir;
+
+  /// The support dir the pairing sheet reads and writes settings from;
+  /// null uses the real app support dir. Tests inject a temp one.
+  final Directory? supportDir;
+
+  /// Builds the probe client the pairing sheet uses; null uses
+  /// [HttpServerClient]. Tests inject a fake.
+  final ServerClient Function(ServerConfig)? buildClient;
 
   @override
   State<PickerScreen> createState() => _PickerScreenState();
@@ -102,10 +115,12 @@ class _PickerScreenState extends State<PickerScreen> {
             PopupMenuButton<String>(
               onSelected: (choice) {
                 if (choice == 'folder') _folderSheet();
+                if (choice == 'pair') _pairSheet();
                 if (choice == 'about') _about();
               },
               itemBuilder: (_) => const [
                 PopupMenuItem(value: 'folder', child: Text('Decks folder…')),
+                PopupMenuItem(value: 'pair', child: Text('Pair with desktop…')),
                 PopupMenuItem(value: 'about', child: Text('About')),
               ],
             ),
@@ -359,6 +374,26 @@ class _PickerScreenState extends State<PickerScreen> {
     );
   }
 
+  Future<Directory> _support() async => widget.supportDir ?? await getApplicationSupportDirectory();
+
+  /// The pairing sheet: paste the URL `alix --lan` prints, probe it, and
+  /// persist on success. The only pairing surface in the app; a failed
+  /// probe shows one inline line, never a dialog.
+  Future<void> _pairSheet() async {
+    final support = await _support();
+    if (!mounted) return;
+    final message = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheet) => _PairSheet(
+        support: support,
+        current: readServer(support),
+        buildClient: widget.buildClient ?? HttpServerClient.new,
+      ),
+    );
+    if (message != null) _snack(message);
+  }
+
   Future<void> _chooseShared() async {
     final access = widget.access;
     if (access == null) return;
@@ -405,6 +440,142 @@ class _PickerScreenState extends State<PickerScreen> {
         height: 48,
       ),
       applicationLegalese: 'MIT or Apache-2.0, at your option.',
+    );
+  }
+}
+
+/// The pairing sheet's body: a paste field, a Pair button, an inline status
+/// line, and, while paired, the current host:port with a ghost Unpair
+/// button. Pops with a SnackBar message on success (paired or unpaired),
+/// or stays open showing `_status` on any failure.
+class _PairSheet extends StatefulWidget {
+  const _PairSheet({
+    required this.support,
+    required this.current,
+    required this.buildClient,
+  });
+
+  final Directory support;
+  final ServerConfig? current;
+  final ServerClient Function(ServerConfig) buildClient;
+
+  @override
+  State<_PairSheet> createState() => _PairSheetState();
+}
+
+class _PairSheetState extends State<_PairSheet> {
+  final _controller = TextEditingController();
+  String? _status;
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pair() async {
+    final parsed = parsePairingUrl(_controller.text);
+    if (parsed == null) {
+      setState(() => _status = 'that does not look like an alix pairing URL');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _status = null;
+    });
+    final client = widget.buildClient(parsed);
+    String? version;
+    try {
+      version = await client.version();
+    } on PairingExpired {
+      // A 401 while pairing means the pasted token is already stale (the
+      // desktop was restarted since it printed this URL); to a phone that
+      // was never paired, that reads the same as no answer at all.
+      version = null;
+    } finally {
+      client.close();
+    }
+    if (!mounted) return;
+    if (version == null) {
+      setState(() {
+        _busy = false;
+        _status = 'no alix answered at ${parsed.host}:${parsed.port}';
+      });
+      return;
+    }
+    if (compareVersions(version, minServerVersion) < 0) {
+      setState(() {
+        _busy = false;
+        _status = 'alix $version found, this app needs $minServerVersion or newer';
+      });
+      return;
+    }
+    await setServer(parsed, support: widget.support);
+    if (!mounted) return;
+    Navigator.of(context).pop('Paired with ${parsed.host}');
+  }
+
+  Future<void> _unpair() async {
+    await setServer(null, support: widget.support);
+    if (!mounted) return;
+    Navigator.of(context).pop('Unpaired');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final current = widget.current;
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + MediaQuery.of(context).viewInsets.bottom),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('Pair with desktop', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 8),
+            if (current != null) ...[
+              Text(
+                'Paired with ${current.host}:${current.port}',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontFamily: 'monospace',
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+            TextField(
+              key: const ValueKey('pairing-url-field'),
+              controller: _controller,
+              decoration: const InputDecoration(
+                labelText: 'Pairing URL',
+                hintText: 'http://<ip>:<port>/?token=...',
+              ),
+              maxLines: 1,
+            ),
+            const SizedBox(height: 12),
+            FilledButton(
+              onPressed: _busy ? null : _pair,
+              child: Text(_busy ? 'Pairing…' : 'Pair'),
+            ),
+            if (_status != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _status!,
+                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
+              ),
+            ],
+            if (current != null) ...[
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: _busy ? null : _unpair,
+                child: const Text('Unpair'),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }

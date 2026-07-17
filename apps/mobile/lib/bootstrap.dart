@@ -5,6 +5,8 @@ import 'dart:math';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:path_provider/path_provider.dart';
 
+import 'package:alix_mobile/server_client.dart';
+
 /// The bundled sample decks, copied into a fresh decks dir on first run.
 /// Keep in step with the `assets:` list in pubspec.yaml.
 const _samples = [
@@ -151,6 +153,23 @@ Future<void> setDecksDir(String? dir, {Directory? support}) async {
     settings.remove('decksDir');
   } else {
     settings['decksDir'] = dir;
+  }
+  _writeSettings(support, settings);
+}
+
+/// The paired desktop, if any (a `server` key in settings.json holding
+/// `{host, port, token}`). Absent or malformed reads as unpaired, never
+/// throws.
+ServerConfig? readServer(Directory support) => ServerConfig.fromJson(readSettings(support)['server']);
+
+/// Persists the pairing; `null` un-pairs (removes the key).
+Future<void> setServer(ServerConfig? config, {Directory? support}) async {
+  support ??= await getApplicationSupportDirectory();
+  final settings = readSettings(support);
+  if (config == null) {
+    settings.remove('server');
+  } else {
+    settings['server'] = config.toJson();
   }
   _writeSettings(support, settings);
 }
