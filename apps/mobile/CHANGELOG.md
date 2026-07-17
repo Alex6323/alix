@@ -7,6 +7,22 @@ Release notes, so a release without its section fails loud.
 
 ## [Unreleased]
 
+### Added
+
+- **Pair with your desktop's alix for the tutor and the AI exam.** The
+  overflow menu's "Pair with desktop…" sheet takes the URL `alix --lan`
+  prints; a bad paste, an unreachable desktop, a too-old server, and a
+  rejected token each show one inline line instead of failing silently.
+  Once paired, review gains an Ask chip once you've attempted the current
+  card, opening the same tutor conversation as the desktop (including
+  "Make a card"), and the session summary gains a "Take the exam" chip for
+  any deck with a `% source:`. Both borrow the desktop's AI backend over
+  your LAN; the phone keeps its own decks and progress, the desktop only
+  computes answers. The same menu item reopens the sheet with an Unpair
+  button.
+- The app now declares the INTERNET permission and allows cleartext HTTP,
+  both only for talking to a paired desktop on your LAN.
+
 ### Fixed
 
 - The session summary no longer shows all zeros after a first pass over a

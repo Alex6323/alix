@@ -3,9 +3,9 @@
 There is a native Android app: the same review loop as the web app, running
 the same core (parser, scheduler, progress store) compiled into the app, so
 it works entirely offline. It is early software with a deliberately small
-surface: reviewing decks. Generating decks, the tutor, and the exam still
-live on your computer; a future release is planned to let a phone borrow
-them from a running `alix` server on your network.
+surface: reviewing decks. Deck generation still lives on your computer; the
+tutor and the exam can join the phone too, by pairing it with a running
+`alix` server on your network: see [Pairing a device](19-pairing.md).
 
 ## Install
 

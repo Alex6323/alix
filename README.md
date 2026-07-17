@@ -117,6 +117,8 @@ Each links to its chapter in the manual:
   you across devices, no accounts. → [Configuration](docs/book/src/16-configuration.md)
 - **A personal deadline on a workspace**, with scheduling that leans toward it
   and a readiness readout. → [Workspaces](docs/book/src/08-workspaces.md)
+- **A paired phone** can borrow your desktop's AI for the tutor and the exam,
+  over your LAN. → [Pairing a device](docs/book/src/19-pairing.md)
 
 ## Development
 
