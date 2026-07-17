@@ -2098,19 +2098,19 @@ class ReviewSessionImpl extends RustOpaque implements ReviewSession {
 
   /// Records a PASSED remote exam sitting as this deck's mastery, mirroring
   /// the browser exam's own persistence. Callers must never call this on a
-  /// fail — a failed fact-deck exam writes nothing on the phone.
+  /// fail: a failed fact-deck exam writes nothing on the phone.
   void applyExamPassed({required BigInt nowMs}) => RustLib.instance.api
       .crateApiReviewReviewSessionApplyExamPassed(that: this, nowMs: nowMs);
 
   /// Turns cleaned remediation deck-text (a failed remote exam's gaps)
   /// into virtual cards in the phone's own store, deduping against this
   /// deck's own cards and any already-stored virtuals
-  /// (`alix::store::store_remediation_cards`, which saves internally — not
+  /// (`alix::store::store_remediation_cards`, which saves internally, not
   /// saved again here). Returns how many cards were created or revived.
   ///
   /// `retire_after`: the bridge has no way today to read a session's
   /// resolved `[review] retire_after` cap back out of `alix::session::Session`
-  /// (it holds no public accessor), so this passes `None` — the phone
+  /// (it holds no public accessor), so this passes `None`: the phone
   /// applies no retire cap in v1, rather than guess a value.
   int applyRemediation({required String cardsText, required BigInt nowMs}) =>
       RustLib.instance.api.crateApiReviewReviewSessionApplyRemediation(
@@ -2149,9 +2149,9 @@ class ReviewSessionImpl extends RustOpaque implements ReviewSession {
   /// mirroring the web mint handler (`POST /api/ask/card/create`,
   /// `src/serve/mod.rs`): same validation and the same dedup against the
   /// session's own deck cards and any already-minted virtuals
-  /// (`alix::store::mint_tutor_card`), then saves. Errors — malformed
+  /// (`alix::store::mint_tutor_card`), then saves. Errors (malformed
   /// input, a duplicate of an existing card, or no card current to mint
-  /// against — surface as the message text. Returns the new card's id,
+  /// against) surface as the message text. Returns the new card's id,
   /// rendered as a string (the handler exposes nothing richer).
   String mintTutorCard({
     required String front,
@@ -2171,7 +2171,7 @@ class ReviewSessionImpl extends RustOpaque implements ReviewSession {
       .crateApiReviewReviewSessionState(that: this, nowMs: nowMs);
 
   /// The current card's authored fields for the remote tutor to ground its
-  /// answer on — never the masked [`CardView`] a cloze review renders.
+  /// answer on, never the masked [`CardView`] a cloze review renders.
   /// `None` when no card is current.
   TutorCard? tutorCard() =>
       RustLib.instance.api.crateApiReviewReviewSessionTutorCard(that: this);
