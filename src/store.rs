@@ -662,6 +662,26 @@ impl Store {
     }
 }
 
+/// Milliseconds left on a failed trace exam's re-sit cooldown, or `None` if it
+/// can be sat now: it never failed, the cooldown has elapsed, or the cooldown
+/// is disabled (`cooldown_secs == 0`). The launch sites (the web `Take exam`
+/// among them) gate on this so the graded feedback can't be pasted straight
+/// back into the one fixed trace question.
+pub fn cooldown_remaining_ms(
+    store: &Store,
+    subject: &str,
+    cooldown_secs: u64,
+    now_ms: u64,
+) -> Option<u64> {
+    if cooldown_secs == 0 {
+        return None;
+    }
+    let until = store
+        .exam_failed_at(subject)?
+        .saturating_add(cooldown_secs.saturating_mul(1000));
+    (until > now_ms).then(|| until - now_ms)
+}
+
 /// Why a tutor-minted card could not be added.
 #[derive(Debug, thiserror::Error)]
 pub enum MintError {
@@ -1240,6 +1260,45 @@ mod tests {
         store.set_exam_failed("t.txt", 1);
         assert!(store.clear_deck_mastered("t.txt"));
         assert_eq!(None, store.exam_failed_at("t.txt"));
+    }
+
+    #[test]
+    fn cooldown_remaining_is_none_for_a_subject_that_never_failed() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path().join("p.json")).unwrap();
+        assert_eq!(None, cooldown_remaining_ms(&store, "t.txt", 3600, 0));
+    }
+
+    #[test]
+    fn cooldown_remaining_is_none_when_the_cooldown_is_disabled() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        store.set_exam_failed("t.txt", 1_000);
+        assert_eq!(None, cooldown_remaining_ms(&store, "t.txt", 0, 1_030_000));
+    }
+
+    #[test]
+    fn cooldown_remaining_reports_the_exact_ms_left_inside_the_window() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        store.set_exam_failed("t.txt", 1_000);
+        // 1h cooldown, 30s after the fail -> the rest of the hour remains.
+        let now = 1_000 + 30_000;
+        assert_eq!(
+            Some(3_600_000 - 30_000),
+            cooldown_remaining_ms(&store, "t.txt", 3600, now)
+        );
+    }
+
+    #[test]
+    fn cooldown_remaining_is_none_once_the_window_has_elapsed() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        store.set_exam_failed("t.txt", 1_000);
+        assert_eq!(
+            None,
+            cooldown_remaining_ms(&store, "t.txt", 3600, 1_000 + 3_600_001)
+        );
     }
 
     #[test]

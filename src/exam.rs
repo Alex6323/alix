@@ -795,24 +795,12 @@ fn thread_gone() -> String {
 }
 
 /// Milliseconds left on a failed trace exam's re-sit cooldown, or `None` if it
-/// can be sat now — it never failed, the cooldown has elapsed, or the cooldown
-/// is disabled (`cooldown_secs == 0`). The launch sites (CLI `exam`, the web
-/// `Take exam`) gate on this so the graded feedback can't be pasted straight
-/// back into the one fixed trace question.
-pub fn cooldown_remaining_ms(
-    store: &Store,
-    subject: &str,
-    cooldown_secs: u64,
-    now_ms: u64,
-) -> Option<u64> {
-    if cooldown_secs == 0 {
-        return None;
-    }
-    let until = store
-        .exam_failed_at(subject)?
-        .saturating_add(cooldown_secs.saturating_mul(1000));
-    (until > now_ms).then(|| until - now_ms)
-}
+/// can be sat now: it never failed, the cooldown has elapsed, or the cooldown
+/// is disabled (`cooldown_secs == 0`). The launch sites (the web `Take exam`
+/// among them) gate on this so the graded feedback can't be pasted straight
+/// back into the one fixed trace question. Lives in `store` (lean core) so
+/// non-`full` builds can call it too; re-exported here for existing callers.
+pub use crate::store::cooldown_remaining_ms;
 
 /// `true` when the fraction of full passes meets the threshold.
 fn passed(grades: &[AnswerGrade], threshold: f64) -> bool {
@@ -2222,27 +2210,5 @@ mod tests {
         assert!(!store.deck_mastered("t.txt"));
         assert!(store.exam_failed_at("t.txt").is_some()); // re-sit cooldown started
         assert!(!s.can_remediate());
-    }
-
-    #[test]
-    fn cooldown_remaining_reflects_failed_time_and_config() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        // Never failed -> no cooldown.
-        assert_eq!(None, cooldown_remaining_ms(&store, "t.txt", 3600, 0));
-        store.set_exam_failed("t.txt", 1_000);
-        // 1h cooldown, 30s after the fail -> the rest of the hour remains.
-        let now = 1_000 + 30_000;
-        assert_eq!(
-            Some(3_600_000 - 30_000),
-            cooldown_remaining_ms(&store, "t.txt", 3600, now)
-        );
-        // Once the hour elapses -> None.
-        assert_eq!(
-            None,
-            cooldown_remaining_ms(&store, "t.txt", 3600, 1_000 + 3_600_001)
-        );
-        // Disabled (0) -> None even right after a fail.
-        assert_eq!(None, cooldown_remaining_ms(&store, "t.txt", 0, now));
     }
 }
