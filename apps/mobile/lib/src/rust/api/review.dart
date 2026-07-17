@@ -25,6 +25,17 @@ abstract class ReviewSession implements RustOpaqueInterface {
   /// grade) and persist, returning the next position.
   ReviewState acquire({BigInt? nowMs});
 
+  /// Appends condensed tutor-note `notes` as `!` lines under the card at
+  /// `line` of this session's deck file (`alix::deck::append_note`, atomic
+  /// tmp+rename), mirroring the web note flow (`jobs.rs`'s `poll_ask`
+  /// condense). Note lines are never hashed, so every card's id, and thus
+  /// its review history, survives the append unchanged. An empty `notes`
+  /// is a no-op, returning `Ok(())` without touching the file, mirroring
+  /// the web's "nothing to save" guard. Mirrors the note onto the live
+  /// session's current card so it shows without a reopen; this is a
+  /// deck-file edit, not progress, so the store is never saved here.
+  void applyCardNote({required int line, required List<String> notes});
+
   /// Records a PASSED remote exam sitting as this deck's mastery, mirroring
   /// the browser exam's own persistence. Callers must never call this on a
   /// fail: a failed fact-deck exam writes nothing on the phone.
@@ -383,16 +394,26 @@ class TutorCard {
   final List<String> back;
   final String? at;
 
+  /// The 1-based deck-file line of this card's front (`Card::line`): the
+  /// append anchor [`ReviewSession::apply_card_note`] targets when the
+  /// tutor's condensed note comes back.
+  final BigInt line;
+
   const TutorCard({
     required this.subject,
     required this.front,
     required this.back,
     this.at,
+    required this.line,
   });
 
   @override
   int get hashCode =>
-      subject.hashCode ^ front.hashCode ^ back.hashCode ^ at.hashCode;
+      subject.hashCode ^
+      front.hashCode ^
+      back.hashCode ^
+      at.hashCode ^
+      line.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -402,7 +423,8 @@ class TutorCard {
           subject == other.subject &&
           front == other.front &&
           back == other.back &&
-          at == other.at;
+          at == other.at &&
+          line == other.line;
 }
 
 class TypedResult {

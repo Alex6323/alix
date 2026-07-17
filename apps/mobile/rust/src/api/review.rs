@@ -192,6 +192,10 @@ pub struct TutorCard {
     pub front: String,
     pub back: Vec<String>,
     pub at: Option<String>,
+    /// The 1-based deck-file line of this card's front (`Card::line`): the
+    /// append anchor [`ReviewSession::apply_card_note`] targets when the
+    /// tutor's condensed note comes back.
+    pub line: usize,
 }
 
 /// A live review session running in Rust: the alix session plus its open
@@ -200,6 +204,10 @@ pub struct ReviewSession {
     session: alix::session::Session,
     store: alix::store::Store,
     augment: alix::augment::AugmentCache,
+    /// This deck's own file path, captured at open time so
+    /// [`ReviewSession::apply_card_note`] can append to the right file
+    /// without the caller passing it again.
+    deck_path: PathBuf,
     /// The deck's file-name subject exactly as the lib derived it when this
     /// deck's cards were parsed (`Card::id` hashes it). Captured straight off
     /// the loaded `Deck`, never re-derived from `deck_path` by hand: a
@@ -247,6 +255,8 @@ impl ReviewSession {
         // ever opens a non-trace deck; a lone trace walks and is examined
         // through `WalkSession` instead.
         let has_exam = loaded.has_exam();
+        // Captured before `deck` moves into `assemble::select` below.
+        let deck_path = deck.clone();
 
         let root_store = alix::workspace::root_store_path(Path::new(&root_dir));
         let mut store =
@@ -282,6 +292,7 @@ impl ReviewSession {
             session: build.session,
             store,
             augment: build.augment,
+            deck_path,
             subject,
             deck_card_ids,
             has_exam,
@@ -354,6 +365,7 @@ impl ReviewSession {
             front: card.front.clone(),
             back: card.back.clone(),
             at: card.at.clone(),
+            line: card.line,
         })
     }
 
@@ -387,6 +399,27 @@ impl ReviewSession {
         )?;
         self.store.save()?;
         Ok(id.to_string())
+    }
+
+    /// Appends condensed tutor-note `notes` as `!` lines under the card at
+    /// `line` of this session's deck file (`alix::deck::append_note`, atomic
+    /// tmp+rename), mirroring the web note flow (`jobs.rs`'s `poll_ask`
+    /// condense). Note lines are never hashed, so every card's id, and thus
+    /// its review history, survives the append unchanged. An empty `notes`
+    /// is a no-op, returning `Ok(())` without touching the file, mirroring
+    /// the web's "nothing to save" guard. Mirrors the note onto the live
+    /// session's current card so it shows without a reopen; this is a
+    /// deck-file edit, not progress, so the store is never saved here.
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn apply_card_note(&mut self, line: u32, notes: Vec<String>) -> Result<()> {
+        if notes.is_empty() {
+            return Ok(());
+        }
+        alix::deck::append_note(&self.deck_path, line as usize, &notes)?;
+        if let Some(cur) = self.session.current_mut() {
+            cur.append_note(&notes);
+        }
+        Ok(())
     }
 
     /// Whether this deck sits an AI exam (the flag `open` captured).
@@ -972,6 +1005,123 @@ mod tests {
             .get_virtual(id)
             .expect("the fresh mint is retrievable from disk");
         assert_eq!(vc.kind, alix::store::VirtualKind::Tutor);
+    }
+
+    #[test]
+    fn tutor_card_carries_the_cards_front_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        // A header directive shifts the front off line 1, so a hardcoded `1`
+        // would not pass this test by accident.
+        write(&root.join("d.txt"), "% link: https://x\n# q\n\ta\n");
+        let authored = alix::deck::Deck::load(root.join("d.txt")).unwrap();
+        let authored_line = authored.cards[0].line;
+
+        let s = ReviewSession::open(
+            root.join("d.txt").to_string_lossy().into_owned(),
+            root.to_string_lossy().into_owned(),
+            None,
+            Some(T0),
+            None,
+        )
+        .unwrap();
+        let tutor = s.tutor_card().expect("a card is current");
+        assert_eq!(tutor.line, authored_line);
+    }
+
+    #[test]
+    fn apply_card_note_writes_note_lines_and_preserves_the_card_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(&root.join("d.txt"), "# q\n\ta\n");
+
+        let before = alix::deck::Deck::load(root.join("d.txt")).unwrap();
+        let id_before = before.cards[0].id();
+        let line = before.cards[0].line;
+
+        let store_path = alix::workspace::root_store_path(root);
+        let mut s = opened_after_acquire(&root.join("d.txt"), root, None);
+        s.grade(Grade::Pass, Some(LATER)).unwrap();
+        let schedule_before = alix::store::Store::open(&store_path)
+            .unwrap()
+            .get(id_before)
+            .and_then(|cs| cs.recall);
+        assert!(
+            schedule_before.is_some(),
+            "grading scheduled the card at Recall before the note append"
+        );
+
+        s.apply_card_note(line as u32, vec!["first".to_string(), "second".to_string()])
+            .unwrap();
+
+        let text = std::fs::read_to_string(root.join("d.txt")).unwrap();
+        assert!(text.contains("! first"), "{text}");
+        assert!(text.contains("! second"), "{text}");
+
+        // The load-bearing assertion: reload the deck via the lib and
+        // recompute the id independently. A note append must not reshuffle
+        // it, or a learner's review history would silently reset.
+        let after = alix::deck::Deck::load(root.join("d.txt")).unwrap();
+        let id_after = after.cards[0].id();
+        assert_eq!(
+            id_before, id_after,
+            "appending a note must not change the card's id"
+        );
+
+        // And the schedule keyed on that (unchanged) id is still there after
+        // the append: progress survived.
+        let reopened = alix::store::Store::open(&store_path).unwrap();
+        assert_eq!(
+            reopened.get(id_after).and_then(|cs| cs.recall),
+            schedule_before,
+            "the id-keyed schedule survives the note append"
+        );
+    }
+
+    #[test]
+    fn apply_card_note_with_empty_notes_writes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(&root.join("d.txt"), "# q\n\ta\n");
+        let before_bytes = std::fs::read(root.join("d.txt")).unwrap();
+
+        let mut s = opened_after_acquire(&root.join("d.txt"), root, None);
+        s.apply_card_note(1, Vec::new()).unwrap();
+
+        let after_bytes = std::fs::read(root.join("d.txt")).unwrap();
+        assert_eq!(
+            before_bytes, after_bytes,
+            "an empty notes vec is a no-op: not one byte changes"
+        );
+    }
+
+    #[test]
+    fn apply_card_note_mirrors_onto_the_live_session_without_reopening() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(&root.join("d.txt"), "# q\n\ta\n");
+        let mut s = opened_after_acquire(&root.join("d.txt"), root, None);
+        let line = s.tutor_card().expect("a card is current").line;
+
+        assert!(
+            s.state(Some(LATER))
+                .card
+                .expect("a rendered card")
+                .note
+                .is_empty(),
+            "no note yet"
+        );
+
+        s.apply_card_note(line as u32, vec!["explained".to_string()])
+            .unwrap();
+
+        // Read back through the live session, never a reopen: the mirror
+        // onto `session.current_mut()` is what makes this visible at once.
+        let note = s.state(Some(LATER)).card.expect("a rendered card").note;
+        assert!(
+            !note.is_empty(),
+            "the note shows on the live session without a reopen"
+        );
     }
 
     #[test]
