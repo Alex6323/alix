@@ -276,7 +276,15 @@ and a GET before any POST is not an error, just a blank `RemoteAskDto`
 (`thinking: false`, everything else `null`). `POST
 /api/remote/ask/draft {card, history}` distills the exchange into a draft
 card the same way `/api/ask/card/draft` does. Both are adult-only (403
-under `[serve] audience = "kids"`).
+under `[serve] audience = "kids"`). `POST /api/remote/ask/note {card,
+history}` (since 0.6.0) condenses the exchange into at most three note lines
+the same way `/api/ask/note` does; unlike the draft call it carries no kids
+gate, matching the web's own note route. An empty `history` is refused
+(400): there is nothing to condense. All three share the `remote_ask` slot,
+so a call into any one while another is thinking answers 409. The server
+only returns the condensed lines (`RemoteAskDto.note`); it never appends
+them to a deck file, same iron rule as everything else here, and the client
+owns placing them.
 
 A remote exam sitting starts with `POST /api/remote/exam/start {deck}`: the
 server resolves **its own copy** of the named deck, by the same resolution
@@ -454,6 +462,7 @@ first, same as a double `POST`.
 | POST | `/api/remote/ask` | `{card, history, question}` (`RemoteAskReq`) | `RemoteAskDto` | 400 bad/oversized body / empty question / a card with empty front and back; 409 a turn is already thinking |
 | GET | `/api/remote/ask` | – | `RemoteAskDto` (poll) | – |
 | POST | `/api/remote/ask/draft` | `{card, history}` (`RemoteDraftReq`) | `RemoteAskDto` | 400 bad/oversized body / empty `history`; 403 kids; 409 a turn is already thinking |
+| POST | `/api/remote/ask/note` | `{card, history}` (`RemoteNoteReq`) | `RemoteAskDto` | 400 bad/oversized body / empty `history`; 409 a turn is already thinking |
 | POST | `/api/remote/exam/start` | `{deck}` | `RemoteExamDto` | 400 bad/oversized body / unknown or ambiguous deck name; 409 a sitting is already open (close it first) / the deck fails to load / a trace or source-less deck / the backend can't reach the deck's source |
 | GET | `/api/remote/exam` | – | `RemoteExamDto` (poll; `phase:"idle"` when no sitting is open) | – |
 | POST | `/api/remote/exam/grade` | `{answers: [string]}` | `RemoteExamDto` | 400 bad/oversized body / wrong number of answers; 409 no sitting open / not in the answering phase |
@@ -803,7 +812,7 @@ while unwalked), `current: bool`.
 `passed`, `partly`, `failed`, `total`: numbers; `weak: [number]` (**1-based**
 hop numbers).
 
-### RemoteCard / RemoteTurn / RemoteAskReq / RemoteDraftReq
+### RemoteCard / RemoteTurn / RemoteAskReq / RemoteDraftReq / RemoteNoteReq
 
 Request bodies for the remote surface (§4.10). The server holds no card or
 session of its own for a remote call, so the client sends full context every
@@ -823,6 +832,10 @@ completeness, though the ungrounded tutor prompt doesn't read it).
 `RemoteDraftReq` (`POST /api/remote/ask/draft`): `card: RemoteCard`,
 `history: [RemoteTurn]`.
 
+`RemoteNoteReq` (`POST /api/remote/ask/note`; since 0.6.0): `card:
+RemoteCard`, `history: [RemoteTurn]` (the same shape as `RemoteDraftReq`,
+kept as its own type so the name matches its own endpoint).
+
 Example `RemoteAskReq` body (a real request from `tests/api.rs`'s remote
 round-trip suite):
 `{"card":{"subject":"sample.txt","front":"2 + 2","back":["4"],"at":null},"history":[],"question":"why does this matter?"}`.
@@ -830,19 +843,24 @@ round-trip suite):
 ### RemoteAskDto
 
 The reply to a remote tutor call (`POST`/`GET /api/remote/ask`, `POST
-/api/remote/ask/draft`; §4.10). Unlike `AskDto`, it carries no transcript of
-its own (the client already holds it), just the newest turn's outcome.
+/api/remote/ask/draft`, `POST /api/remote/ask/note`; §4.10). Unlike
+`AskDto`, it carries no transcript of its own (the client already holds it),
+just the newest turn's outcome.
 
 | Key | Type | Meaning |
 |---|---|---|
 | `thinking` | bool | Poll while true. |
-| `answer` | string? | The tutor's reply to a question call. `null` for a draft call, or while thinking. |
-| `draft` | DraftCardDto? | The drafted card from a draft call. `null` for a question call, or while thinking. |
+| `answer` | string? | The tutor's reply to a question call. `null` for a draft or note call, or while thinking. |
+| `draft` | DraftCardDto? | The drafted card from a draft call. `null` for a question or note call, or while thinking. |
+| `note` | [string]? | Condensed note lines (at most three) from a note call, since 0.6.0. `null` for a question/draft call, or while thinking; an empty array is a valid settled outcome ("nothing to save"), not an error. |
 | `error` | string? | Set on failure. |
 | `elapsed` | number? | Seconds the in-flight call has run; `null` once settled. |
 
 Example, settled with a draft (from the pinned test):
-`{"thinking":false,"answer":"so drops are deterministic","draft":{"front":"Why does Rust use one owner per value?","back":["so drops are deterministic","no GC needed"]},"error":null,"elapsed":null}`.
+`{"thinking":false,"answer":"so drops are deterministic","draft":{"front":"Why does Rust use one owner per value?","back":["so drops are deterministic","no GC needed"]},"note":null,"error":null,"elapsed":null}`.
+
+Example, settled with a note (from the pinned test):
+`{"thinking":false,"answer":null,"draft":null,"note":["ownership drops values deterministically","no GC needed"],"error":null,"elapsed":null}`.
 
 ### RemoteExamDto
 

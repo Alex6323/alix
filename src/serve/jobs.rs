@@ -330,10 +330,12 @@ fn remote_card(c: &RemoteCard) -> Card {
 
 /// What a remote tutor call will do with its reply: a question's answer
 /// lands as-is; a draft is parsed into a card the same way the web draft
-/// handler does.
+/// handler does; a note is condensed into note lines the same way the web
+/// note-save does.
 enum RemoteAskPurpose {
     Question,
     Draft,
+    Note,
 }
 
 /// The settled outcome of a finished remote tutor call, kept until the next
@@ -342,6 +344,9 @@ enum RemoteAskPurpose {
 enum RemoteAskOutcome {
     Answer(String),
     Draft(ask::DraftCard),
+    /// Condensed note lines (at most three). An empty vec is a settled
+    /// success, not an error: nothing in the exchange was worth saving.
+    Note(Vec<String>),
     Error(String),
 }
 
@@ -389,6 +394,18 @@ impl RemoteAsk {
         Self::spawn(cfg, prompt, RemoteAskPurpose::Draft)
     }
 
+    /// Starts a remote note-condense call: condenses the client's re-sent
+    /// history into at most three note lines the same way the web's
+    /// `Purpose::Condense` does (`Ask::poll`), except the server only
+    /// returns the lines; it never appends them to a deck, that's the
+    /// client's job (the iron rule).
+    pub(super) fn note(cfg: &AskConfig, card: &RemoteCard, history: Vec<RemoteTurn>) -> Self {
+        let card = remote_card(card);
+        let prior: Vec<Exchange> = history.into_iter().map(|t| (t.q, t.a)).collect();
+        let prompt = ask::condense_prompt(&card, &prior);
+        Self::spawn(cfg, prompt, RemoteAskPurpose::Note)
+    }
+
     fn spawn(cfg: &AskConfig, prompt: String, purpose: RemoteAskPurpose) -> Self {
         // No CliSession, no `--session-id`/`--resume`: every remote call is a
         // fresh, stateless backend run, the phone re-sends its transcript
@@ -428,6 +445,9 @@ impl RemoteAsk {
                     Err(e) => RemoteAskOutcome::Error(e.to_string()),
                 }
             }
+            (Reply::Answer(text), RemoteAskPurpose::Note) => {
+                RemoteAskOutcome::Note(ask::extract_note_lines(&text))
+            }
             (Reply::Error(e), _) => RemoteAskOutcome::Error(e),
         });
     }
@@ -438,6 +458,7 @@ impl RemoteAsk {
                 thinking: true,
                 answer: None,
                 draft: None,
+                note: None,
                 error: None,
                 elapsed: Some(now_ms().saturating_sub(self.started_ms) / 1000),
             },
@@ -445,6 +466,7 @@ impl RemoteAsk {
                 thinking: false,
                 answer: Some(a.clone()),
                 draft: None,
+                note: None,
                 error: None,
                 elapsed: None,
             },
@@ -455,6 +477,15 @@ impl RemoteAsk {
                     front: d.front.clone(),
                     back: d.back.clone(),
                 }),
+                note: None,
+                error: None,
+                elapsed: None,
+            },
+            Some(RemoteAskOutcome::Note(lines)) => RemoteAskDto {
+                thinking: false,
+                answer: None,
+                draft: None,
+                note: Some(lines.clone()),
                 error: None,
                 elapsed: None,
             },
@@ -462,6 +493,7 @@ impl RemoteAsk {
                 thinking: false,
                 answer: None,
                 draft: None,
+                note: None,
                 error: Some(e.clone()),
                 elapsed: None,
             },

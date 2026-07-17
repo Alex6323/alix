@@ -1705,6 +1705,7 @@ pub fn run_review(
                         thinking: false,
                         answer: None,
                         draft: None,
+                        note: None,
                         error: None,
                         elapsed: None,
                     },
@@ -1740,6 +1741,39 @@ pub fn run_review(
                     continue;
                 }
                 let job = RemoteAsk::draft(&ask_cfg, &card, history);
+                let dto = job.dto();
+                remote_ask = Some(job);
+                respond_json(request, &dto);
+            }
+            // Condense the phone's own tutor history into note lines
+            // (ungated, mirroring the web's own `/api/ask/note`, which has
+            // no kids gate either). Shares `remote_ask` with ask/draft. THE
+            // IRON RULE applies in full here: the server only returns the
+            // condensed lines, it never calls `deck::append_note` or
+            // touches any deck/store path: the phone appends locally.
+            (Method::Post, "/api/remote/ask/note") => {
+                if let Some(a) = remote_ask.as_mut() {
+                    a.poll();
+                }
+                if remote_ask.as_ref().is_some_and(RemoteAsk::thinking) {
+                    respond_status(request, 409);
+                    continue;
+                }
+                let Some(bytes) = read_capped(request.as_reader(), MAX_REMOTE_BODY) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                let Ok(RemoteNoteReq { card, history }) =
+                    serde_json::from_slice::<RemoteNoteReq>(&bytes)
+                else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                if history.is_empty() {
+                    respond_status(request, 400); // nothing to condense
+                    continue;
+                }
+                let job = RemoteAsk::note(&ask_cfg, &card, history);
                 let dto = job.dto();
                 remote_ask = Some(job);
                 respond_json(request, &dto);

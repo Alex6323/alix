@@ -1,0 +1,11 @@
+{
+  "answer": null,
+  "draft": null,
+  "elapsed": null,
+  "error": null,
+  "note": [
+    "ownership drops values deterministically",
+    "no GC needed"
+  ],
+  "thinking": false
+}

@@ -998,6 +998,7 @@ fn remoteaskdto_thinking_wire_shape() {
         thinking: true,
         answer: None,
         draft: None,
+        note: None,
         error: None,
         elapsed: Some(3),
     };
@@ -1008,6 +1009,7 @@ fn remoteaskdto_thinking_wire_shape() {
             "thinking": true,
             "answer": null,
             "draft": null,
+            "note": null,
             "error": null,
             "elapsed": 3
         }),
@@ -1026,6 +1028,7 @@ fn remoteaskdto_done_wire_shape() {
                 "no GC needed".to_string(),
             ],
         }),
+        note: None,
         error: None,
         elapsed: None,
     };
@@ -1039,6 +1042,34 @@ fn remoteaskdto_done_wire_shape() {
                 "front": "Why does Rust use one owner per value?",
                 "back": ["so drops are deterministic", "no GC needed"]
             },
+            "note": null,
+            "error": null,
+            "elapsed": null
+        }),
+    );
+}
+
+#[test]
+fn remoteaskdto_note_wire_shape() {
+    let dto = RemoteAskDto {
+        thinking: false,
+        answer: None,
+        draft: None,
+        note: Some(vec![
+            "ownership drops values deterministically".to_string(),
+            "no GC needed".to_string(),
+        ]),
+        error: None,
+        elapsed: None,
+    };
+    pin(
+        "RemoteAskDto.note",
+        &dto,
+        json!({
+            "thinking": false,
+            "answer": null,
+            "draft": null,
+            "note": ["ownership drops values deterministically", "no GC needed"],
             "error": null,
             "elapsed": null
         }),

@@ -26,6 +26,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   deck text and a suggested file name; placing the file, and any collision
   handling, is the client's job, same iron rule as the tutor and exam. Server
   half only.
+- **A paired phone can also condense its tutor conversation into note lines,
+  over `POST /api/remote/ask/note`.** The server condenses up to three lines
+  the same way the web's own note-save does; appending them to the deck is
+  the client's job, same iron rule as the rest of the remote surface. Server
+  half only.
 - **A tutorial deck on first run.** A brand-new decks directory is seeded
   with "The alix tutorial": ten cards that teach alix by being reviewed —
   honest grading, spacing, depths, where decks come from, the AI features

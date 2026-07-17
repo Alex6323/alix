@@ -752,6 +752,16 @@ pub(super) struct RemoteDraftReq {
     pub(super) history: Vec<RemoteTurn>,
 }
 
+/// `POST /api/remote/ask/note`: asks the tutor to condense the exchange so
+/// far into note lines. Same shape as [`RemoteDraftReq`] (card + history, no
+/// extra field); kept as its own type so each remote request's name matches
+/// its own endpoint, like [`RemoteAskReq`]/[`RemoteDraftReq`].
+#[derive(Debug, Deserialize)]
+pub(super) struct RemoteNoteReq {
+    pub(super) card: RemoteCard,
+    pub(super) history: Vec<RemoteTurn>,
+}
+
 /// The reply to a remote tutor call. The phone polls while `thinking`, like
 /// the browser's [`AskDto`], but carries no transcript of its own: the
 /// phone already holds it, so this is just the newest turn's outcome.
@@ -760,6 +770,10 @@ pub(super) struct RemoteAskDto {
     pub(super) thinking: bool,
     pub(super) answer: Option<String>,
     pub(super) draft: Option<DraftCardDto>,
+    /// Condensed note lines (at most three) from a note call. `Some` only
+    /// for a settled note outcome; an empty vec is itself a valid settled
+    /// result ("nothing to save"), not an error.
+    pub(super) note: Option<Vec<String>>,
     pub(super) error: Option<String>,
     /// Seconds the in-flight backend call has been running, like
     /// [`ExamDto::elapsed`].

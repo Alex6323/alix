@@ -2765,6 +2765,129 @@ fn remote_draft_is_refused_for_the_kids_audience() {
     assert!(resp.body.is_empty(), "body: {:?}", resp.body);
 }
 
+/// A note-condense round trip: the fake CLI's reply carries bullet prefixes
+/// and a fourth line past the three-line cap, so a `note` array of exactly
+/// three CLEAN lines (no bullets) proves `extract_note_lines` ran
+/// server-side, not just that the raw reply was echoed back.
+#[test]
+fn remote_note_round_trips_condensed_lines_capped_and_cleaned_server_side() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let fake = fake_reply(
+        scripts.path(),
+        "- first the key insight\n\
+         * second worth rereading\n\
+         third plain line\n\
+         fourth line dropped by the cap",
+    );
+    let (base, _guard) = spawn_full_server(Some(&fake));
+
+    let resp = post_json(
+        &base,
+        "/api/remote/ask/note",
+        r#"{"card":{"subject":"sample.txt","front":"2 + 2","back":["4"],"at":null},
+            "history":[{"q":"why does this matter?","a":"because it demonstrates addition"},
+                       {"q":"anything else?","a":"no, that covers it"}]}"#,
+    );
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!(true, body["thinking"], "body: {body}");
+
+    let body = poll_until(&base, "/api/remote/ask", |b| {
+        !b["thinking"].as_bool().unwrap()
+    });
+    assert_eq!(
+        serde_json::json!([
+            "first the key insight",
+            "second worth rereading",
+            "third plain line"
+        ]),
+        body["note"],
+        "body: {body}"
+    );
+    assert!(body["answer"].is_null(), "body: {body}");
+    assert!(body["draft"].is_null(), "body: {body}");
+    assert!(body["error"].is_null(), "body: {body}");
+}
+
+#[test]
+fn remote_note_rejects_empty_history_and_garbage_body_with_400() {
+    let (base, _guard) = spawn_full_server(None);
+
+    let resp = post_json(
+        &base,
+        "/api/remote/ask/note",
+        r#"{"card":{"subject":"sample.txt","front":"2 + 2","back":["4"],"at":null},"history":[]}"#,
+    );
+    assert_eq!(400, resp.status);
+    assert!(resp.body.is_empty(), "body: {:?}", resp.body);
+
+    let resp = post_json(&base, "/api/remote/ask/note", "not json");
+    assert_eq!(400, resp.status);
+    assert!(resp.body.is_empty(), "body: {:?}", resp.body);
+}
+
+/// `/api/remote/ask/note` shares the single `remote_ask` slot with
+/// `/api/remote/ask` and `/api/remote/ask/draft`: a call into the slot while
+/// a note is still thinking collides just like two overlapping questions do.
+#[test]
+fn remote_note_answers_409_while_a_call_is_thinking_in_the_shared_slot() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let fifo = scripts.path().join("gate");
+    assert!(
+        std::process::Command::new("/usr/bin/mkfifo")
+            .arg(&fifo)
+            .status()
+            .unwrap()
+            .success(),
+        "mkfifo {fifo:?} failed"
+    );
+    let reply = scripts.path().join("reply");
+    std::fs::write(&reply, "eventually").unwrap();
+    let fake = scripts.path().join("fake-claude");
+    std::fs::write(
+        &fake,
+        format!(
+            "#!/bin/sh\nPATH=/usr/bin:/bin\ncat >/dev/null\ncat {} >/dev/null\ncat {}\n",
+            fifo.display(),
+            reply.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let (base, _guard) = spawn_full_server(Some(&fake));
+
+    let resp = post_json(
+        &base,
+        "/api/remote/ask/note",
+        r#"{"card":{"subject":"sample.txt","front":"2 + 2","back":["4"],"at":null},
+            "history":[{"q":"why?","a":"because"}]}"#,
+    );
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!(true, body["thinking"], "body: {body}");
+
+    // From here on an assertion could panic; the fifo must still get released
+    // so the parked child (and this test's `exec_lock`) never wedges the rest
+    // of the suite.
+    let mut release = FifoRelease::new(fifo.clone());
+
+    let resp = post_json(
+        &base,
+        "/api/remote/ask",
+        r#"{"card":{"subject":"sample.txt","front":"2 + 2","back":["4"],"at":null},
+            "history":[],"question":"again?"}"#,
+    );
+    assert_eq!(409, resp.status);
+    assert!(resp.body.is_empty(), "body: {:?}", resp.body);
+
+    release.release();
+    poll_until(&base, "/api/remote/ask", |b| {
+        !b["thinking"].as_bool().unwrap()
+    });
+}
+
 /// Generates a deck from a URL and reads back the full deck text, mirroring
 /// the web's `/api/generate` round trip but with no `dest` and no saved file:
 /// `filename` is only a suggestion, `cards` is the finished text's own parsed
@@ -3023,6 +3146,28 @@ fn remote_endpoints_require_the_token_like_the_rest_of_the_api() {
     let resp = http(
         &base,
         "POST",
+        "/api/remote/ask/note",
+        &[("Content-Type", "application/json")],
+        b"not json",
+    );
+    assert_eq!(401, resp.status);
+    assert!(resp.body.is_empty(), "body: {:?}", resp.body);
+
+    let resp = http(
+        &base,
+        "POST",
+        "/api/remote/ask/note",
+        &[
+            ("Content-Type", "application/json"),
+            ("Authorization", "Bearer secret"),
+        ],
+        b"not json",
+    );
+    assert_ne!(401, resp.status, "body: {:?}", resp.body);
+
+    let resp = http(
+        &base,
+        "POST",
         "/api/remote/generate",
         &[("Content-Type", "application/json")],
         b"not json",
@@ -3070,7 +3215,7 @@ fn snapshot_dir(dir: &Path) -> HashMap<PathBuf, Vec<u8>> {
 /// owns its mastery/progress/cards (and, for generation, its own
 /// destination), and the desktop only computes answers for it. Runs a full
 /// PASSING remote exam, a full FAILING-then-remediated remote exam, a tutor
-/// ask+draft round trip, and a full remote deck generation against ONE
+/// ask+draft+note round trip, and a full remote deck generation against ONE
 /// server, then diffs the store file's bytes AND a whole-tree snapshot of the
 /// decks dir before and after: a passing exam must not mark the deck
 /// mastered, a remediation must not create server-side virtual cards, and a
@@ -3150,6 +3295,16 @@ fn remote_endpoints_never_write_the_server_store() {
         !b["thinking"].as_bool().unwrap()
     });
     assert!(body["draft"].is_object(), "body: {body}");
+    post_json(
+        &base,
+        "/api/remote/ask/note",
+        r#"{"card":{"subject":"examdeck.txt","front":"c","back":["a"],"at":null},
+            "history":[{"q":"why?","a":"because"}]}"#,
+    );
+    let body = poll_until(&base, "/api/remote/ask", |b| {
+        !b["thinking"].as_bool().unwrap()
+    });
+    assert!(body["note"].is_array(), "body: {body}");
 
     // (d) a full remote deck generation.
     post_json(
