@@ -275,8 +275,10 @@ readable on `GET /api/remote/ask` until the next POST replaces the slot,
 and a GET before any POST is not an error, just a blank `RemoteAskDto`
 (`thinking: false`, everything else `null`). `POST
 /api/remote/ask/draft {card, history}` distills the exchange into a draft
-card the same way `/api/ask/card/draft` does. Both are adult-only (403
-under `[serve] audience = "kids"`). `POST /api/remote/ask/note {card,
+card the same way `/api/ask/card/draft` does. Like `/api/ask/card/draft` and
+`/api/ask/card/create` (§4.5), it is adult-only (403 under `[serve] audience
+= "kids"`); `POST /api/remote/ask` itself carries no such gate. `POST
+/api/remote/ask/note {card,
 history}` (since 0.6.0) condenses the exchange into at most three note lines
 the same way `/api/ask/note` does; unlike the draft call it carries no kids
 gate, matching the web's own note route. An empty `history` is refused

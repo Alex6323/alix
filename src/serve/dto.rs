@@ -744,7 +744,7 @@ pub(super) struct RemoteAskReq {
     pub(super) question: String,
 }
 
-/// `POST /api/remote/draft`: asks the tutor to draft a card from the
+/// `POST /api/remote/ask/draft`: asks the tutor to draft a card from the
 /// exchange so far.
 #[derive(Debug, Deserialize)]
 pub(super) struct RemoteDraftReq {
