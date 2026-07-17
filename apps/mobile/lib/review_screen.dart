@@ -3,9 +3,13 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge.dart'
     show AnyhowException;
+import 'package:path_provider/path_provider.dart';
 
+import 'package:alix_mobile/bootstrap.dart';
+import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/src/rust/api/review.dart';
 import 'package:alix_mobile/theme.dart';
+import 'package:alix_mobile/tutor_sheet.dart';
 
 const _mono = 'IBM Plex Mono';
 const _sans = 'IBM Plex Sans';
@@ -23,6 +27,8 @@ class ReviewScreen extends StatefulWidget {
     required this.rootDir,
     required this.depth,
     this.device,
+    this.supportDir,
+    this.buildClient,
   });
 
   final String deckPath;
@@ -32,6 +38,15 @@ class ReviewScreen extends StatefulWidget {
   /// This install's label for the store's last-writer marker; also enables
   /// the "another device wrote this recently" banner.
   final String? device;
+
+  /// The support dir the pairing config is read from; null uses the real
+  /// app support dir. Tests inject a temp one.
+  final Directory? supportDir;
+
+  /// Builds the server-live probe's (and the tutor sheet's) client; null
+  /// uses [HttpServerClient]. Tests inject a fake, following how
+  /// PickerScreen injects its own probe client.
+  final ServerClient Function(ServerConfig)? buildClient;
 
   @override
   State<ReviewScreen> createState() => _ReviewScreenState();
@@ -61,10 +76,18 @@ class _ReviewScreenState extends State<ReviewScreen> {
   /// open until dismissed.
   ForeignWriter? _foreign;
 
+  /// Set once the pairing probe finds a reachable, current-enough desktop:
+  /// gates the Ask chip. No status chrome for the negative cases (absent
+  /// pairing, dead server, too old) per the UI-noise gate: the chip simply
+  /// does not exist.
+  bool _serverLive = false;
+  ServerClient? _client;
+
   @override
   void initState() {
     super.initState();
     _open();
+    if (_openError == null) _probeServer();
   }
 
   @override
@@ -73,7 +96,68 @@ class _ReviewScreenState extends State<ReviewScreen> {
       c.dispose();
     }
     _attempt.dispose();
+    _client?.close();
     super.dispose();
+  }
+
+  /// Probes a configured pairing once per screen open: absence (no config,
+  /// unreachable, refused, or an older server) leaves the Ask chip out
+  /// entirely, no retry, no periodic re-probe. The one exception is a 401:
+  /// the paired server is right there but rejects this app's token (a
+  /// restarted desktop mints a fresh one), so it gets one SnackBar naming
+  /// the fix; a merely dead server stays silent.
+  Future<void> _probeServer() async {
+    final support = widget.supportDir ?? await getApplicationSupportDirectory();
+    final config = readServer(support);
+    if (config == null) return;
+    final client = (widget.buildClient ?? HttpServerClient.new)(config);
+    String? version;
+    try {
+      version = await client.version();
+    } on PairingExpired {
+      client.close();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Pairing expired. Pair again from the deck list menu.'),
+      ));
+      return;
+    }
+    final live = version != null && compareVersions(version, minServerVersion) >= 0;
+    if (!live || !mounted) {
+      client.close();
+      return;
+    }
+    setState(() {
+      _client = client;
+      _serverLive = true;
+    });
+  }
+
+  /// Opens the tutor sheet over [tutor], the current card's authored
+  /// fields (never the masked [CardView] a cloze review renders). The
+  /// sheet never touches the bridge itself; this closure to
+  /// `mintTutorCard` is its only path back to it.
+  void _openTutor(TutorCard tutor) {
+    final client = _client;
+    if (client == null) return;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => TutorSheet(
+        card: TutorCardContext(
+          subject: tutor.subject,
+          front: tutor.front,
+          back: tutor.back,
+          at: tutor.at,
+        ),
+        client: client,
+        mint: (front, back) async => _session.mintTutorCard(
+          front: front,
+          back: back,
+          nowMs: BigInt.from(DateTime.now().millisecondsSinceEpoch),
+        ),
+      ),
+    );
   }
 
   /// (Re)opens the session; also the restart action on the done screen.
@@ -128,7 +212,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
       _state.mode == Mode.lineByLine && _revealedLines >= card.back.length;
 
   /// The failed-open surface: the reason, plainly, and a way back. Loud
-  /// beats blank — the message is the core's own error text.
+  /// beats blank: the message is the core's own error text.
   Widget _cantOpen(BuildContext context, String message) {
     final theme = Theme.of(context);
     final tokens = theme.alix;
@@ -731,9 +815,21 @@ class _ReviewScreenState extends State<ReviewScreen> {
     );
   }
 
-  /// The web's renderLegend() state matrix, mapped to chips. Keyboard hints
-  /// are dropped (touch), and Ask-tutor/Skip await the AI-pairing milestone.
+  /// The web's renderLegend() state matrix, mapped to chips, plus the Ask
+  /// chip appended when a paired desktop answered the probe: gated on
+  /// `session.tutorCard()` too, since a card can be showing with nothing
+  /// authored to ground the tutor on (keyboard hints are dropped, touch
+  /// only; Skip awaits a later milestone).
   List<Widget> _legendChips(CardView card) {
+    final chips = [..._modeChips(card)];
+    final tutor = _session.tutorCard();
+    if (_serverLive && tutor != null) {
+      chips.add(_chip('Ask', _ChipKind.quiet, () => _openTutor(tutor)));
+    }
+    return chips;
+  }
+
+  List<Widget> _modeChips(CardView card) {
     // Acquire: reveal, then acknowledge with Seen.
     if (_state.acquire) {
       if (_hasChoices) {
