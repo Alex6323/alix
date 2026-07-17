@@ -2652,8 +2652,7 @@ fn remote_ask_round_trips_an_answer_for_a_client_supplied_card() {
         !b["thinking"].as_bool().unwrap()
     });
     assert_eq!(
-        "because it demonstrates addition",
-        body["answer"],
+        "because it demonstrates addition", body["answer"],
         "body: {body}"
     );
     assert!(body["error"].is_null(), "body: {body}");
@@ -2676,8 +2675,7 @@ fn remote_ask_round_trips_an_answer_for_a_client_supplied_card() {
         !b["thinking"].as_bool().unwrap()
     });
     assert_eq!(
-        "because it demonstrates addition",
-        body["answer"],
+        "because it demonstrates addition", body["answer"],
         "body: {body}"
     );
     assert!(body["error"].is_null(), "body: {body}");
@@ -2783,7 +2781,11 @@ fn remote_exam_walks_generate_answer_grade_fail_remediate_to_cards_payload() {
     let fake = branching_exam_cli(scripts.path(), &grades_path);
     let (base, _guard) = spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture);
 
-    let resp = post_json(&base, "/api/remote/exam/start", r#"{"deck":"examdeck.txt"}"#);
+    let resp = post_json(
+        &base,
+        "/api/remote/exam/start",
+        r#"{"deck":"examdeck.txt"}"#,
+    );
     assert_eq!(200, resp.status);
 
     let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
@@ -2799,10 +2801,7 @@ fn remote_exam_walks_generate_answer_grade_fail_remediate_to_cards_payload() {
 
     let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "results");
     assert_eq!(false, body["passed"], "body: {body}");
-    assert!(
-        !body["gaps"].as_array().unwrap().is_empty(),
-        "body: {body}"
-    );
+    assert!(!body["gaps"].as_array().unwrap().is_empty(), "body: {body}");
     assert_eq!(true, body["can_remediate"], "body: {body}");
 
     let resp = post_json(&base, "/api/remote/exam/remediate", "{}");
@@ -2835,7 +2834,11 @@ fn remote_exam_grade_rejects_wrong_arity_with_400_and_wrong_phase_with_409() {
     let fake = branching_exam_cli(scripts.path(), &grades_path);
     let (base, _guard) = spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture);
 
-    post_json(&base, "/api/remote/exam/start", r#"{"deck":"examdeck.txt"}"#);
+    post_json(
+        &base,
+        "/api/remote/exam/start",
+        r#"{"deck":"examdeck.txt"}"#,
+    );
     let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
     assert_eq!(
         1,
@@ -2924,7 +2927,11 @@ fn remote_endpoints_never_write_the_server_store() {
     let before = std::fs::read(&store_path).ok();
 
     // (a) a full remote exam that PASSES.
-    post_json(&base, "/api/remote/exam/start", r#"{"deck":"examdeck.txt"}"#);
+    post_json(
+        &base,
+        "/api/remote/exam/start",
+        r#"{"deck":"examdeck.txt"}"#,
+    );
     poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
     post_json(&base, "/api/remote/exam/grade", r#"{"answers":["a1"]}"#);
     let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "results");
@@ -2937,7 +2944,11 @@ fn remote_endpoints_never_write_the_server_store() {
         r#"{"grades":[{"verdict":"fail","feedback":"no","missed":["gap one"]}]}"#,
     )
     .unwrap();
-    post_json(&base, "/api/remote/exam/start", r#"{"deck":"examdeck.txt"}"#);
+    post_json(
+        &base,
+        "/api/remote/exam/start",
+        r#"{"deck":"examdeck.txt"}"#,
+    );
     poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
     post_json(&base, "/api/remote/exam/grade", r#"{"answers":["a1"]}"#);
     let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "results");

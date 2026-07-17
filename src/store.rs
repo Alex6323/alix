@@ -2098,11 +2098,9 @@ mod tests {
             // file, and confirm the matching card carries the same id.
             let vid = virtuals[0].id;
             promote_virtual(&mut store, vid, &deck_path).unwrap();
-            let deck = crate::parser::parse_str(
-                "d.txt",
-                &std::fs::read_to_string(&deck_path).unwrap(),
-            )
-            .unwrap();
+            let deck =
+                crate::parser::parse_str("d.txt", &std::fs::read_to_string(&deck_path).unwrap())
+                    .unwrap();
             assert!(
                 deck.iter().any(|c| c.id() == vid),
                 "the appended deck card reproduces the id"
