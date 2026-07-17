@@ -269,7 +269,10 @@ A remote tutor turn is stateless on the server: `POST /api/remote/ask
 {card, history, question}` re-sends the whole card and prior exchanges
 (`history`, a list of `RemoteTurn`) every time; an empty `history` is
 exactly the first turn. Poll `GET /api/remote/ask` while `thinking`, then
-read `answer` or `error`, mirroring §4.5's pattern. `POST
+read `answer` or `error`, mirroring §4.5's pattern. A settled reply stays
+readable on `GET /api/remote/ask` until the next POST replaces the slot,
+and a GET before any POST is not an error, just a blank `RemoteAskDto`
+(`thinking: false`, everything else `null`). `POST
 /api/remote/ask/draft {card, history}` distills the exchange into a draft
 card the same way `/api/ask/card/draft` does. Both are adult-only (403
 under `[serve] audience = "kids"`).
@@ -278,7 +281,11 @@ A remote exam sitting starts with `POST /api/remote/exam/start {deck}`: the
 server resolves **its own copy** of the named deck, by the same resolution
 `/api/select` uses (a bare name, or a qualified `<workspace>/<file>`). A
 trace deck or a source-less deck is refused outright (409): a phone has no
-walk, and there is nothing to examine. Unlike the browser's page-at-a-time
+walk, and there is nothing to examine. The browser's `% requires:` deck
+lock and trace re-sit cooldown are read from the server's own store, which
+is not the phone's truth, so a remote sitting skips both checks: it can
+start on a deck the web app would show as locked, and the phone applies
+its own gates. Unlike the browser's page-at-a-time
 `/api/exam/answer` + `/api/exam/grade`, a remote client answers every
 question locally and submits them as one batch: `POST
 /api/remote/exam/grade {answers: [string]}` grades the whole sitting in one
