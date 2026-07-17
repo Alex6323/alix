@@ -149,9 +149,10 @@ struct DoctorArgs {
     #[arg(long, conflicts_with = "backends")]
     all_backends: bool,
 
-    /// Spot-check the configured model's exam grading against six hand-labeled
-    /// probes (three real, costed calls): does a wrong answer fail, does a
-    /// correct one pass? A spot check, not a certification.
+    /// Spot-check the configured model's exam grading against the hand-labeled
+    /// calibration probes (a few real, costed calls, batched by strictness):
+    /// does a wrong answer fail, does a correct one pass? A spot check, not a
+    /// certification.
     #[arg(long)]
     grading: bool,
 

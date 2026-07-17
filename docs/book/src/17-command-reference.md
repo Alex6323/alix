@@ -115,9 +115,10 @@ notes it.
   that have drifted from their `% origin:` source). `--backends` additionally
   probes the configured AI backend end to end (one real, tiny request);
   `--all-backends` probes all four. `--grading` spot-checks the configured
-  model's exam grading against six hand-labeled probes (three real, costed
-  calls): answers that must not pass (wrong, empty, off-topic, incomplete at
-  strict) and answers that should (correct ones). A failed must-not-pass probe
+  model's exam grading against the hand-labeled calibration probes (a few
+  real, costed calls, batched by strictness): answers that must not pass
+  (wrong, empty, off-topic, incomplete at strict, flawed math derivations)
+  and answers that should (correct ones, including full proofs). A failed must-not-pass probe
   is the serious direction (exam grades may be too lenient), while a missed
   should-pass probe only means the grader is harsher than intended. It's a
   spot check, not a certification. Report-only — it fixes nothing itself.
