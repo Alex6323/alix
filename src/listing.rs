@@ -1,21 +1,24 @@
 //! A minimal deck lister for folder-picking clients (the frb mobile app):
 //! what is in a decks folder, with a title and a due-now signal per entry.
 //! The core sibling of the gated picker's catalog, deliberately without its
-//! recency ordering, badges, and dependency locks; scan rules mirror
-//! `picker::dir_candidates` so both surfaces agree on what a folder
-//! contains. The store-derived deck status ([`deck_status`]) and workspace
-//! dependency-layout helpers ([`member_parents`], [`dependency_forest`])
-//! live here too, moved from `picker` (which re-exports them for the web
-//! picker) so the lean mobile build can use them — though this module's own
-//! `list_root`/`list_members` still compute their own simpler due signal via
-//! [`deck_due`], not yet reconciled with `deck_status`.
+//! recency ordering and badges; scan rules mirror `picker::dir_candidates`
+//! so both surfaces agree on what a folder contains. The store-derived deck
+//! status ([`deck_status`]) and workspace dependency-layout helpers
+//! ([`member_parents`], [`dependency_forest`]) live here too, moved from
+//! `picker` (which re-exports them for the web picker) so the lean mobile
+//! build can use them — and `DeckSummary`'s own `mastered`/`exam_due`/
+//! `has_exam`/`locked`/`is_trace` are now built from those same helpers, one
+//! reconciled truth (pinned by a parity test against `deck_status`). `due`
+//! remains this module's own simpler signal via [`deck_due`], still not
+//! reconciled with `deck_status.reviewable`.
 use std::path::{Path, PathBuf};
 
 use crate::{
+    augment::{self, AugmentCache},
     card::Card,
     config::ReviewConfig,
     deck::{self, Deck, DeckState},
-    depth::Depth,
+    depth::{self, Depth},
     scheduler::Fsrs,
     session,
     store::{self, Store},
@@ -41,6 +44,39 @@ pub struct DeckSummary {
     /// review session on it — the core refuses, so offering the row unmarked
     /// turns into a dead end.
     pub is_trace: bool,
+    /// The session depth remembered for this deck (`Store::last_depth`), else
+    /// the deck's fresh-session default (`depth::default_depth`). Deck rows
+    /// only; `Depth::default()` for workspace/folder rows, an unreadable
+    /// deck, or a missing store.
+    pub last_depth: Depth,
+    /// Finished *and* exam-passed (`Store::deck_mastered`). Deck rows only;
+    /// `false` for workspace/folder rows, an unreadable deck, or a missing
+    /// store.
+    pub mastered: bool,
+    /// Drilled and awaiting its AI exam (`DeckState::ExamDue`). Deck rows
+    /// only; `false` for workspace/folder rows, an unreadable deck, or a
+    /// missing store.
+    pub exam_due: bool,
+    /// The deck has an AI exam at all (`Deck::has_exam`) — a sourced fact
+    /// deck, or a trace. Deck rows only; `false` for workspace/folder rows
+    /// or an unreadable deck (needs no store).
+    pub has_exam: bool,
+    /// A `% requires:` prerequisite isn't finished (`deck::is_locked`) — the
+    /// fact of the lock, unconditional; display gating is the client's
+    /// choice. Deck rows only; `false` for workspace/folder rows, an
+    /// unreadable deck, or a missing store.
+    pub locked: bool,
+    /// The workspace's resolved picker icon file (manifest `icon`, else a
+    /// conventional `assets/icon.*`). Workspace/folder rows only; `None` for
+    /// deck rows and when nothing resolves.
+    pub icon: Option<PathBuf>,
+    /// Nesting depth in the workspace's dependency tree. Member rows only;
+    /// `0` for loose-deck and workspace/folder rows.
+    pub indent: usize,
+    /// The branch-line prefix (`├─`/`└─`/`│`) for this row in the
+    /// workspace's dependency tree. Member rows only; empty for loose-deck
+    /// and workspace/folder rows.
+    pub tree: String,
 }
 
 /// Lists a decks root: workspaces and plain deck folders as drillable
@@ -52,6 +88,10 @@ pub fn list_root(root: &Path, review: &ReviewConfig, now_ms: u64) -> Vec<DeckSum
         return vec![folder_summary(root, root, review, now_ms)];
     }
     let root_store = Store::open(workspace::root_store_path(root)).ok();
+    // Opened once for the whole root, same as the web picker's catalog pass.
+    let augment = root_store
+        .as_ref()
+        .map(|s| AugmentCache::open(augment::augment_path_for(s.path())));
     let mut names: Vec<PathBuf> = std::fs::read_dir(root)
         .map(|entries| entries.flatten().map(|e| e.path()).collect())
         .unwrap_or_default();
@@ -65,7 +105,14 @@ pub fn list_root(root: &Path, review: &ReviewConfig, now_ms: u64) -> Vec<DeckSum
         if path.is_dir() && workspace::has_decks(&path) {
             out.push(folder_summary(root, &path, review, now_ms));
         } else if path.is_file() && path.extension().is_some_and(|e| e == "txt") {
-            out.push(deck_summary(&path, root_store.as_ref(), review, now_ms));
+            out.push(deck_summary(
+                &path,
+                root_store.as_ref(),
+                augment.as_ref(),
+                root,
+                review,
+                now_ms,
+            ));
         }
     }
     out
@@ -74,7 +121,9 @@ pub fn list_root(root: &Path, review: &ReviewConfig, now_ms: u64) -> Vec<DeckSum
 /// Lists the decks inside one drillable folder of `root`. Members review
 /// into the folder's own store when it is a workspace (`alix.toml`), else
 /// into the root's shared store, the same routing `assemble::store_for`
-/// applies when one of them is opened.
+/// applies when one of them is opened. Ordered as a dependency forest —
+/// each member nested under the `% requires:` that gates it, siblings
+/// startable-first — mirroring the web picker's `workspace_members`.
 pub fn list_members(
     root: &Path,
     dir: &Path,
@@ -82,14 +131,36 @@ pub fn list_members(
     now_ms: u64,
 ) -> Vec<DeckSummary> {
     let store = member_store(root, dir);
-    workspace::Workspace::load(dir)
-        .map(|ws| {
-            ws.members
-                .iter()
-                .map(|m| deck_summary(m, store.as_ref(), review, now_ms))
-                .collect()
+    // Opened once for the whole folder, same as the web picker's catalog pass.
+    let augment = store
+        .as_ref()
+        .map(|s| AugmentCache::open(augment::augment_path_for(s.path())));
+    let paths: Vec<PathBuf> = match workspace::Workspace::load(dir) {
+        Ok(ws) => ws.members,
+        Err(_) => return Vec::new(),
+    };
+    let rows: Vec<DeckSummary> = paths
+        .iter()
+        .map(|m| deck_summary(m, store.as_ref(), augment.as_ref(), root, review, now_ms))
+        .collect();
+    // Sibling key mirrors catalog.rs's `blocked = locked || (with_lock &&
+    // !reviewable)`, as closely as listing's data allows: `due` is its
+    // reviewable signal, and `with_lock` is unconditionally true here (a
+    // locked deck is never startable-first in a drill-in list).
+    let parent = member_parents(&paths, root);
+    let key: Vec<(bool, String)> = rows
+        .iter()
+        .map(|row| (row.locked || !row.due, row.title.clone()))
+        .collect();
+    dependency_forest(&parent, &key)
+        .into_iter()
+        .map(|(i, prefix)| {
+            let mut row = rows[i].clone();
+            row.indent = prefix.chars().count() / 3;
+            row.tree = prefix;
+            row
         })
-        .unwrap_or_default()
+        .collect()
 }
 
 /// Syncthing conflict copies next to any store `root` reviews into: the
@@ -126,13 +197,13 @@ fn member_store(root: &Path, dir: &Path) -> Option<Store> {
 }
 
 fn folder_summary(root: &Path, dir: &Path, review: &ReviewConfig, now_ms: u64) -> DeckSummary {
-    let title = workspace::Workspace::load(dir)
-        .map(|ws| ws.display_name())
-        .unwrap_or_else(|_| {
-            dir.file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default()
-        });
+    let ws = workspace::Workspace::load(dir).ok();
+    let title = ws.as_ref().map(|ws| ws.display_name()).unwrap_or_else(|| {
+        dir.file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    });
+    let icon = ws.and_then(|ws| ws.icon);
     let due = list_members(root, dir, review, now_ms)
         .iter()
         .any(|m| m.due);
@@ -142,12 +213,28 @@ fn folder_summary(root: &Path, dir: &Path, review: &ReviewConfig, now_ms: u64) -
         is_workspace: true,
         due,
         is_trace: false,
+        last_depth: Depth::default(),
+        mastered: false,
+        exam_due: false,
+        has_exam: false,
+        locked: false,
+        icon,
+        indent: 0,
+        tree: String::new(),
     }
 }
 
+/// A loose deck's summary row: title/due/trace as before, plus the
+/// store-derived status fields, one truth with [`deck_status`] (pinned by a
+/// parity test). `decks_dir` roots `% requires:` lock resolution, mirroring
+/// what the web picker's catalog passes (the served root for a loose deck,
+/// the same root `member_parents` gets for a workspace member). `augment` is
+/// opened once per store by the caller, like the web picker's catalog pass.
 fn deck_summary(
     path: &Path,
     store: Option<&Store>,
+    augment: Option<&AugmentCache>,
+    decks_dir: &Path,
     review: &ReviewConfig,
     now_ms: u64,
 ) -> DeckSummary {
@@ -155,17 +242,27 @@ fn deck_summary(
         .file_stem()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let (title, due, is_trace) = match (Deck::load(path), store) {
-        (Ok(deck), Some(store)) => {
-            let due = deck_due(&deck, store, review, now_ms);
-            let is_trace = deck.trace.is_some();
-            (deck.display_name(), due, is_trace)
-        }
-        (Ok(deck), None) => {
-            let is_trace = deck.trace.is_some();
-            (deck.display_name(), false, is_trace)
-        }
-        (Err(_), _) => (stem.clone(), false, false),
+    let deck = Deck::load(path).ok();
+    let title = deck.as_ref().map(|d| d.display_name()).unwrap_or_default();
+    let is_trace = deck.as_ref().is_some_and(|d| d.is_trace());
+    let has_exam = deck.as_ref().is_some_and(|d| d.has_exam());
+    let due = match (&deck, store) {
+        (Some(d), Some(s)) => deck_due(d, s, review, now_ms),
+        _ => false,
+    };
+    let (mastered, exam_due, locked) = match (&deck, store) {
+        (Some(d), Some(s)) => (
+            s.deck_mastered(&d.subject),
+            d.state(s) == DeckState::ExamDue,
+            deck::is_locked(d, Some(decks_dir), s),
+        ),
+        _ => (false, false, false),
+    };
+    let last_depth = match (&deck, store, augment) {
+        (Some(d), Some(s), Some(a)) => s
+            .last_depth(&d.subject)
+            .unwrap_or_else(|| depth::default_depth(&d.cards, a)),
+        _ => Depth::default(),
     };
     DeckSummary {
         title: if title.is_empty() { stem } else { title },
@@ -173,6 +270,14 @@ fn deck_summary(
         is_workspace: false,
         due,
         is_trace,
+        last_depth,
+        mastered,
+        exam_due,
+        has_exam,
+        locked,
+        icon: None,
+        indent: 0,
+        tree: String::new(),
     }
 }
 
@@ -713,6 +818,147 @@ mod tests {
         let mut indices: Vec<usize> = order.iter().map(|(i, _)| *i).collect();
         indices.sort();
         assert_eq!(vec![0, 1], indices);
+    }
+
+    // ---- parity: DeckSummary's status fields pinned to deck_status --------
+
+    #[test]
+    fn listing_status_fields_match_deck_status_for_the_same_deck_and_store() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let ws = root.join("ws");
+        std::fs::create_dir(&ws).unwrap();
+        write(&ws.join("alix.toml"), "title = \"WS\"\n");
+        // base: sourced (has an exam), no prerequisite — settled to ExamDue.
+        write(&ws.join("base.txt"), "% source: https://x\n# q\n\ta\n");
+        // advanced: source-less, requires base — locked while base isn't Finished.
+        write(&ws.join("advanced.txt"), "% requires: base\n# q2\n\tb\n");
+        // walk: a trace deck (its own kind of exam), independent of the chain.
+        write(
+            &ws.join("walk.txt"),
+            "% trace: How it flows\n# hop?\n\tstep\n",
+        );
+
+        // Graduate base's one card (Recall reaches FSRS Review) without a
+        // real drill session, so `deck.state` reads `ExamDue`.
+        let store_path = workspace::store_path(&ws);
+        let base_id = Deck::load(ws.join("base.txt")).unwrap().cards[0].id();
+        let mut store = Store::open(&store_path).unwrap();
+        store.get_or_insert(base_id, T0).recall = Some(graduated_not_due(T0));
+        store.save().unwrap();
+        let review = ReviewConfig::default();
+
+        let assert_parity = |rows: &[DeckSummary], store: &Store| {
+            assert_eq!(3, rows.len());
+            for row in rows {
+                let deck = Deck::load(&row.path).unwrap();
+                let status = deck_status(&deck, store, Some(root), true, review);
+                assert_eq!(row.mastered, status.mastered, "mastered: {}", row.title);
+                assert_eq!(
+                    row.exam_due,
+                    status.state == DeckState::ExamDue,
+                    "exam_due: {}",
+                    row.title
+                );
+                assert_eq!(row.has_exam, status.has_exam, "has_exam: {}", row.title);
+                assert_eq!(row.locked, status.locked, "locked: {}", row.title);
+                assert_eq!(row.is_trace, status.is_trace, "is_trace: {}", row.title);
+            }
+        };
+
+        // Before base is mastered: base is exam-due, advanced is locked behind it.
+        let rows = list_members(root, &ws, &review, T0 + 1_000);
+        let store = Store::open(&store_path).unwrap();
+        assert_parity(&rows, &store);
+        let base = rows.iter().find(|r| r.title == "base").unwrap();
+        assert!(base.exam_due);
+        assert!(!base.mastered);
+        let advanced = rows.iter().find(|r| r.title == "advanced").unwrap();
+        assert!(advanced.locked);
+        let walk = rows.iter().find(|r| r.title == "How it flows").unwrap();
+        assert!(walk.is_trace);
+        assert!(walk.has_exam);
+
+        // Master base: it unlocks advanced, and every field must still agree.
+        let mut store = Store::open(&store_path).unwrap();
+        let base_deck = Deck::load(ws.join("base.txt")).unwrap();
+        store.set_deck_mastered(&base_deck.subject, T0 + 1_000);
+        store.save().unwrap();
+
+        let rows = list_members(root, &ws, &review, T0 + 1_000);
+        let store = Store::open(&store_path).unwrap();
+        assert_parity(&rows, &store);
+        let base = rows.iter().find(|r| r.title == "base").unwrap();
+        assert!(base.mastered);
+        assert!(!base.exam_due);
+        let advanced = rows.iter().find(|r| r.title == "advanced").unwrap();
+        assert!(!advanced.locked, "base mastered: advanced should unlock");
+    }
+
+    #[test]
+    fn last_depth_falls_back_to_default_then_remembers_after_being_set() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(&root.join("d.txt"), "# q\n\ta\n");
+
+        let rows = list_root(root, &ReviewConfig::default(), T0);
+        let row = rows.iter().find(|r| r.title == "d").expect("listed");
+        assert_eq!(Depth::default(), row.last_depth);
+
+        let store_path = workspace::root_store_path(root);
+        let mut store = Store::open(&store_path).unwrap();
+        store.set_last_depth("d.txt", Depth::Reconstruct);
+        store.save().unwrap();
+
+        let rows = list_root(root, &ReviewConfig::default(), T0);
+        let row = rows.iter().find(|r| r.title == "d").expect("listed");
+        assert_eq!(Depth::Reconstruct, row.last_depth);
+    }
+
+    #[test]
+    fn list_members_orders_and_indents_a_requires_chain_like_the_dependency_forest() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let ws = root.join("ws");
+        std::fs::create_dir(&ws).unwrap();
+        write(&ws.join("alix.toml"), "");
+        write(&ws.join("base.txt"), "# q\n\ta\n");
+        write(&ws.join("mid.txt"), "% requires: base\n# q\n\ta\n");
+        write(&ws.join("tip.txt"), "% requires: mid\n# q\n\ta\n");
+        write(&ws.join("other.txt"), "# q\n\ta\n");
+
+        let rows = list_members(root, &ws, &ReviewConfig::default(), T0);
+        let shape: Vec<(&str, usize, &str)> = rows
+            .iter()
+            .map(|r| (r.title.as_str(), r.indent, r.tree.as_str()))
+            .collect();
+        assert_eq!(
+            vec![
+                ("base", 0, ""),
+                ("mid", 1, "└─ "),
+                ("tip", 2, "   └─ "),
+                ("other", 0, ""),
+            ],
+            shape
+        );
+    }
+
+    #[test]
+    fn workspace_icon_resolves_only_for_workspace_rows() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir(root.join("ws")).unwrap();
+        write(&root.join("ws/alix.toml"), "");
+        std::fs::create_dir_all(root.join("ws/assets")).unwrap();
+        write(&root.join("ws/assets/icon.svg"), "<svg/>");
+        write(&root.join("ws/m.txt"), "# q\n\ta\n");
+        write(&root.join("loose.txt"), "# q\n\ta\n");
+
+        let rows = list_root(root, &ReviewConfig::default(), T0);
+        let ws_row = rows.iter().find(|r| r.is_workspace).expect("listed");
+        assert_eq!(Some(root.join("ws/assets/icon.svg")), ws_row.icon);
+        let deck_row = rows.iter().find(|r| !r.is_workspace).expect("listed");
+        assert_eq!(None, deck_row.icon);
     }
 
     /// A graduated-and-not-due `FsrsState`, so the deck card it's attached to
