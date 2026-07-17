@@ -52,7 +52,6 @@ pub mod generate;
 pub mod icon;
 #[cfg(feature = "full")]
 pub mod import;
-#[cfg(feature = "full")]
 pub mod library;
 pub mod listing;
 pub mod parser;
