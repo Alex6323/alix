@@ -75,6 +75,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ForeignWriter dco_decode_box_autoadd_foreign_writer(dynamic raw);
 
   @protected
+  TutorCard dco_decode_box_autoadd_tutor_card(dynamic raw);
+
+  @protected
   BigInt dco_decode_box_autoadd_u_64(dynamic raw);
 
   @protected
@@ -144,6 +147,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ForeignWriter? dco_decode_opt_box_autoadd_foreign_writer(dynamic raw);
 
   @protected
+  TutorCard? dco_decode_opt_box_autoadd_tutor_card(dynamic raw);
+
+  @protected
   BigInt? dco_decode_opt_box_autoadd_u_64(dynamic raw);
 
   @protected
@@ -151,6 +157,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ReviewState dco_decode_review_state(dynamic raw);
+
+  @protected
+  TutorCard dco_decode_tutor_card(dynamic raw);
 
   @protected
   TypedResult dco_decode_typed_result(dynamic raw);
@@ -223,6 +232,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ForeignWriter sse_decode_box_autoadd_foreign_writer(
     SseDeserializer deserializer,
   );
+
+  @protected
+  TutorCard sse_decode_box_autoadd_tutor_card(SseDeserializer deserializer);
 
   @protected
   BigInt sse_decode_box_autoadd_u_64(SseDeserializer deserializer);
@@ -300,6 +312,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  TutorCard? sse_decode_opt_box_autoadd_tutor_card(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   BigInt? sse_decode_opt_box_autoadd_u_64(SseDeserializer deserializer);
 
   @protected
@@ -307,6 +324,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ReviewState sse_decode_review_state(SseDeserializer deserializer);
+
+  @protected
+  TutorCard sse_decode_tutor_card(SseDeserializer deserializer);
 
   @protected
   TypedResult sse_decode_typed_result(SseDeserializer deserializer);
@@ -390,6 +410,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_foreign_writer(
     ForeignWriter self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_tutor_card(
+    TutorCard self,
     SseSerializer serializer,
   );
 
@@ -487,6 +513,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_tutor_card(
+    TutorCard? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_u_64(BigInt? self, SseSerializer serializer);
 
   @protected
@@ -494,6 +526,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_review_state(ReviewState self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_tutor_card(TutorCard self, SseSerializer serializer);
 
   @protected
   void sse_encode_typed_result(TypedResult self, SseSerializer serializer);

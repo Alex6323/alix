@@ -68,7 +68,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 2110943679;
+  int get rustContentHash => -585242153;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -85,6 +85,17 @@ abstract class RustLibApi extends BaseApi {
     BigInt? nowMs,
   });
 
+  void crateApiReviewReviewSessionApplyExamPassed({
+    required ReviewSession that,
+    required BigInt nowMs,
+  });
+
+  int crateApiReviewReviewSessionApplyRemediation({
+    required ReviewSession that,
+    required String cardsText,
+    required BigInt nowMs,
+  });
+
   CheckFeedback? crateApiReviewReviewSessionCheck({
     required ReviewSession that,
     required List<String> lines,
@@ -95,6 +106,8 @@ abstract class RustLibApi extends BaseApi {
     required int chosen,
   });
 
+  bool crateApiReviewReviewSessionDeckHasExam({required ReviewSession that});
+
   ForeignWriter? crateApiReviewReviewSessionForeignWriter({
     required ReviewSession that,
     BigInt? nowMs,
@@ -104,6 +117,13 @@ abstract class RustLibApi extends BaseApi {
     required ReviewSession that,
     required Grade grade,
     BigInt? nowMs,
+  });
+
+  String crateApiReviewReviewSessionMintTutorCard({
+    required ReviewSession that,
+    required String front,
+    required List<String> back,
+    required BigInt nowMs,
   });
 
   ReviewSession crateApiReviewReviewSessionOpen({
@@ -117,6 +137,10 @@ abstract class RustLibApi extends BaseApi {
   ReviewState crateApiReviewReviewSessionState({
     required ReviewSession that,
     BigInt? nowMs,
+  });
+
+  TutorCard? crateApiReviewReviewSessionTutorCard({
+    required ReviewSession that,
   });
 
   String crateApiSimpleCoreVersion();
@@ -190,6 +214,74 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  void crateApiReviewReviewSessionApplyExamPassed({
+    required ReviewSession that,
+    required BigInt nowMs,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerReviewSession(
+            that,
+            serializer,
+          );
+          sse_encode_u_64(nowMs, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 2)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiReviewReviewSessionApplyExamPassedConstMeta,
+        argValues: [that, nowMs],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiReviewReviewSessionApplyExamPassedConstMeta =>
+      const TaskConstMeta(
+        debugName: "ReviewSession_apply_exam_passed",
+        argNames: ["that", "nowMs"],
+      );
+
+  @override
+  int crateApiReviewReviewSessionApplyRemediation({
+    required ReviewSession that,
+    required String cardsText,
+    required BigInt nowMs,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerReviewSession(
+            that,
+            serializer,
+          );
+          sse_encode_String(cardsText, serializer);
+          sse_encode_u_64(nowMs, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 3)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_u_32,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiReviewReviewSessionApplyRemediationConstMeta,
+        argValues: [that, cardsText, nowMs],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiReviewReviewSessionApplyRemediationConstMeta =>
+      const TaskConstMeta(
+        debugName: "ReviewSession_apply_remediation",
+        argNames: ["that", "cardsText", "nowMs"],
+      );
+
+  @override
   CheckFeedback? crateApiReviewReviewSessionCheck({
     required ReviewSession that,
     required List<String> lines,
@@ -203,7 +295,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             serializer,
           );
           sse_encode_list_String(lines, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 2)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 4)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_opt_box_autoadd_check_feedback,
@@ -236,7 +328,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             serializer,
           );
           sse_encode_u_32(chosen, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 3)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 5)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_opt_box_autoadd_choice_feedback,
@@ -256,6 +348,35 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  bool crateApiReviewReviewSessionDeckHasExam({required ReviewSession that}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerReviewSession(
+            that,
+            serializer,
+          );
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 6)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiReviewReviewSessionDeckHasExamConstMeta,
+        argValues: [that],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiReviewReviewSessionDeckHasExamConstMeta =>
+      const TaskConstMeta(
+        debugName: "ReviewSession_deck_has_exam",
+        argNames: ["that"],
+      );
+
+  @override
   ForeignWriter? crateApiReviewReviewSessionForeignWriter({
     required ReviewSession that,
     BigInt? nowMs,
@@ -269,7 +390,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             serializer,
           );
           sse_encode_opt_box_autoadd_u_64(nowMs, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 4)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 7)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_opt_box_autoadd_foreign_writer,
@@ -304,7 +425,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           );
           sse_encode_grade(grade, serializer);
           sse_encode_opt_box_autoadd_u_64(nowMs, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 5)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 8)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_review_state,
@@ -324,6 +445,43 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  String crateApiReviewReviewSessionMintTutorCard({
+    required ReviewSession that,
+    required String front,
+    required List<String> back,
+    required BigInt nowMs,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerReviewSession(
+            that,
+            serializer,
+          );
+          sse_encode_String(front, serializer);
+          sse_encode_list_String(back, serializer);
+          sse_encode_u_64(nowMs, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 9)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiReviewReviewSessionMintTutorCardConstMeta,
+        argValues: [that, front, back, nowMs],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiReviewReviewSessionMintTutorCardConstMeta =>
+      const TaskConstMeta(
+        debugName: "ReviewSession_mint_tutor_card",
+        argNames: ["that", "front", "back", "nowMs"],
+      );
+
+  @override
   ReviewSession crateApiReviewReviewSessionOpen({
     required String deckPath,
     required String rootDir,
@@ -340,7 +498,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_opt_box_autoadd_depth(depth, serializer);
           sse_encode_opt_box_autoadd_u_64(nowMs, serializer);
           sse_encode_opt_String(device, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 6)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 10)!;
         },
         codec: SseCodec(
           decodeSuccessData:
@@ -374,7 +532,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             serializer,
           );
           sse_encode_opt_box_autoadd_u_64(nowMs, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 7)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 11)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_review_state,
@@ -394,12 +552,43 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  TutorCard? crateApiReviewReviewSessionTutorCard({
+    required ReviewSession that,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerReviewSession(
+            that,
+            serializer,
+          );
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 12)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_opt_box_autoadd_tutor_card,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiReviewReviewSessionTutorCardConstMeta,
+        argValues: [that],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiReviewReviewSessionTutorCardConstMeta =>
+      const TaskConstMeta(
+        debugName: "ReviewSession_tutor_card",
+        argNames: ["that"],
+      );
+
+  @override
   String crateApiSimpleCoreVersion() {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 8)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 13)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -424,7 +613,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 9,
+            funcId: 14,
             port: port_,
           );
         },
@@ -453,7 +642,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_u_32(covered, serializer);
           sse_encode_u_32(total, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 10)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 15)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_grade,
@@ -485,7 +674,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(root, serializer);
           sse_encode_String(dir, serializer);
           sse_encode_opt_box_autoadd_u_64(nowMs, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 11)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 16)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_deck_entry,
@@ -514,7 +703,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(root, serializer);
           sse_encode_opt_box_autoadd_u_64(nowMs, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 12)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 17)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_deck_entry,
@@ -537,7 +726,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(root, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 13)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 18)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_String,
@@ -643,6 +832,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ForeignWriter dco_decode_box_autoadd_foreign_writer(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_foreign_writer(raw);
+  }
+
+  @protected
+  TutorCard dco_decode_box_autoadd_tutor_card(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_tutor_card(raw);
   }
 
   @protected
@@ -831,6 +1026,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  TutorCard? dco_decode_opt_box_autoadd_tutor_card(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_tutor_card(raw);
+  }
+
+  @protected
   BigInt? dco_decode_opt_box_autoadd_u_64(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_u_64(raw);
@@ -865,6 +1066,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       acquired: dco_decode_u_32(arr[13]),
       canRestart: dco_decode_bool(arr[14]),
       promotable: dco_decode_bool(arr[15]),
+    );
+  }
+
+  @protected
+  TutorCard dco_decode_tutor_card(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return TutorCard(
+      subject: dco_decode_String(arr[0]),
+      front: dco_decode_String(arr[1]),
+      back: dco_decode_list_String(arr[2]),
+      at: dco_decode_opt_String(arr[3]),
     );
   }
 
@@ -1013,6 +1228,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_foreign_writer(deserializer));
+  }
+
+  @protected
+  TutorCard sse_decode_box_autoadd_tutor_card(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_tutor_card(deserializer));
   }
 
   @protected
@@ -1269,6 +1490,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  TutorCard? sse_decode_opt_box_autoadd_tutor_card(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_tutor_card(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   BigInt? sse_decode_opt_box_autoadd_u_64(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -1326,6 +1560,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       acquired: var_acquired,
       canRestart: var_canRestart,
       promotable: var_promotable,
+    );
+  }
+
+  @protected
+  TutorCard sse_decode_tutor_card(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_subject = sse_decode_String(deserializer);
+    var var_front = sse_decode_String(deserializer);
+    var var_back = sse_decode_list_String(deserializer);
+    var var_at = sse_decode_opt_String(deserializer);
+    return TutorCard(
+      subject: var_subject,
+      front: var_front,
+      back: var_back,
+      at: var_at,
     );
   }
 
@@ -1484,6 +1733,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_foreign_writer(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_tutor_card(
+    TutorCard self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_tutor_card(self, serializer);
   }
 
   @protected
@@ -1711,6 +1969,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_tutor_card(
+    TutorCard? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_tutor_card(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_opt_box_autoadd_u_64(BigInt? self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -1752,6 +2023,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.acquired, serializer);
     sse_encode_bool(self.canRestart, serializer);
     sse_encode_bool(self.promotable, serializer);
+  }
+
+  @protected
+  void sse_encode_tutor_card(TutorCard self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.subject, serializer);
+    sse_encode_String(self.front, serializer);
+    sse_encode_list_String(self.back, serializer);
+    sse_encode_opt_String(self.at, serializer);
   }
 
   @protected
@@ -1816,6 +2096,29 @@ class ReviewSessionImpl extends RustOpaque implements ReviewSession {
   ReviewState acquire({BigInt? nowMs}) => RustLib.instance.api
       .crateApiReviewReviewSessionAcquire(that: this, nowMs: nowMs);
 
+  /// Records a PASSED remote exam sitting as this deck's mastery, mirroring
+  /// the browser exam's own persistence. Callers must never call this on a
+  /// fail — a failed fact-deck exam writes nothing on the phone.
+  void applyExamPassed({required BigInt nowMs}) => RustLib.instance.api
+      .crateApiReviewReviewSessionApplyExamPassed(that: this, nowMs: nowMs);
+
+  /// Turns cleaned remediation deck-text (a failed remote exam's gaps)
+  /// into virtual cards in the phone's own store, deduping against this
+  /// deck's own cards and any already-stored virtuals
+  /// (`alix::store::store_remediation_cards`, which saves internally — not
+  /// saved again here). Returns how many cards were created or revived.
+  ///
+  /// `retire_after`: the bridge has no way today to read a session's
+  /// resolved `[review] retire_after` cap back out of `alix::session::Session`
+  /// (it holds no public accessor), so this passes `None` — the phone
+  /// applies no retire cap in v1, rather than guess a value.
+  int applyRemediation({required String cardsText, required BigInt nowMs}) =>
+      RustLib.instance.api.crateApiReviewReviewSessionApplyRemediation(
+        that: this,
+        cardsText: cardsText,
+        nowMs: nowMs,
+      );
+
   /// Check typed lines against the current card (pure evidence; the
   /// learner-final grade is still a separate `grade` call).
   CheckFeedback? check({required List<String> lines}) => RustLib.instance.api
@@ -1825,6 +2128,10 @@ class ReviewSessionImpl extends RustOpaque implements ReviewSession {
   /// pick is up. The learner-final grade is still a separate `grade` call.
   ChoiceFeedback? choose({required int chosen}) => RustLib.instance.api
       .crateApiReviewReviewSessionChoose(that: this, chosen: chosen);
+
+  /// Whether this deck sits an AI exam (the flag `open` captured).
+  bool deckHasExam() =>
+      RustLib.instance.api.crateApiReviewReviewSessionDeckHasExam(that: this);
 
   /// The device that last wrote this session's store, when it was another
   /// one within the lib's warn window: the "review on one device at a
@@ -1838,9 +2145,34 @@ class ReviewSessionImpl extends RustOpaque implements ReviewSession {
       .api
       .crateApiReviewReviewSessionGrade(that: this, grade: grade, nowMs: nowMs);
 
+  /// Mints a free-standing Tutor virtual card from an edited front/back,
+  /// mirroring the web mint handler (`POST /api/ask/card/create`,
+  /// `src/serve/mod.rs`): same validation and the same dedup against the
+  /// session's own deck cards and any already-minted virtuals
+  /// (`alix::store::mint_tutor_card`), then saves. Errors — malformed
+  /// input, a duplicate of an existing card, or no card current to mint
+  /// against — surface as the message text. Returns the new card's id,
+  /// rendered as a string (the handler exposes nothing richer).
+  String mintTutorCard({
+    required String front,
+    required List<String> back,
+    required BigInt nowMs,
+  }) => RustLib.instance.api.crateApiReviewReviewSessionMintTutorCard(
+    that: this,
+    front: front,
+    back: back,
+    nowMs: nowMs,
+  );
+
   /// The current review position, for the screen to render. `now_ms`
   /// injects the clock behind the restartability check (tests); `None` is
   /// the wall clock.
   ReviewState state({BigInt? nowMs}) => RustLib.instance.api
       .crateApiReviewReviewSessionState(that: this, nowMs: nowMs);
+
+  /// The current card's authored fields for the remote tutor to ground its
+  /// answer on — never the masked [`CardView`] a cloze review renders.
+  /// `None` when no card is current.
+  TutorCard? tutorCard() =>
+      RustLib.instance.api.crateApiReviewReviewSessionTutorCard(that: this);
 }

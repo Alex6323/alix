@@ -24,6 +24,23 @@ abstract class ReviewSession implements RustOpaqueInterface {
   /// grade) and persist, returning the next position.
   ReviewState acquire({BigInt? nowMs});
 
+  /// Records a PASSED remote exam sitting as this deck's mastery, mirroring
+  /// the browser exam's own persistence. Callers must never call this on a
+  /// fail — a failed fact-deck exam writes nothing on the phone.
+  void applyExamPassed({required BigInt nowMs});
+
+  /// Turns cleaned remediation deck-text (a failed remote exam's gaps)
+  /// into virtual cards in the phone's own store, deduping against this
+  /// deck's own cards and any already-stored virtuals
+  /// (`alix::store::store_remediation_cards`, which saves internally — not
+  /// saved again here). Returns how many cards were created or revived.
+  ///
+  /// `retire_after`: the bridge has no way today to read a session's
+  /// resolved `[review] retire_after` cap back out of `alix::session::Session`
+  /// (it holds no public accessor), so this passes `None` — the phone
+  /// applies no retire cap in v1, rather than guess a value.
+  int applyRemediation({required String cardsText, required BigInt nowMs});
+
   /// Check typed lines against the current card (pure evidence; the
   /// learner-final grade is still a separate `grade` call).
   CheckFeedback? check({required List<String> lines});
@@ -32,6 +49,9 @@ abstract class ReviewSession implements RustOpaqueInterface {
   /// pick is up. The learner-final grade is still a separate `grade` call.
   ChoiceFeedback? choose({required int chosen});
 
+  /// Whether this deck sits an AI exam (the flag `open` captured).
+  bool deckHasExam();
+
   /// The device that last wrote this session's store, when it was another
   /// one within the lib's warn window: the "review on one device at a
   /// time" banner's data. `now_ms` injects the clock (tests).
@@ -39,6 +59,20 @@ abstract class ReviewSession implements RustOpaqueInterface {
 
   /// Grade the current card and persist, returning the next position.
   ReviewState grade({required Grade grade, BigInt? nowMs});
+
+  /// Mints a free-standing Tutor virtual card from an edited front/back,
+  /// mirroring the web mint handler (`POST /api/ask/card/create`,
+  /// `src/serve/mod.rs`): same validation and the same dedup against the
+  /// session's own deck cards and any already-minted virtuals
+  /// (`alix::store::mint_tutor_card`), then saves. Errors — malformed
+  /// input, a duplicate of an existing card, or no card current to mint
+  /// against — surface as the message text. Returns the new card's id,
+  /// rendered as a string (the handler exposes nothing richer).
+  String mintTutorCard({
+    required String front,
+    required List<String> back,
+    required BigInt nowMs,
+  });
 
   /// Open a deck of the decks folder `root_dir` at `depth` (default:
   /// the deck's last depth, else Recall). The progress store is routed the
@@ -66,6 +100,11 @@ abstract class ReviewSession implements RustOpaqueInterface {
   /// injects the clock behind the restartability check (tests); `None` is
   /// the wall clock.
   ReviewState state({BigInt? nowMs});
+
+  /// The current card's authored fields for the remote tutor to ground its
+  /// answer on — never the masked [`CardView`] a cloze review renders.
+  /// `None` when no card is current.
+  TutorCard? tutorCard();
 }
 
 class CardView {
@@ -278,6 +317,38 @@ class ReviewState {
           acquired == other.acquired &&
           canRestart == other.canRestart &&
           promotable == other.promotable;
+}
+
+/// The current card's fields exactly as authored, for the remote tutor to
+/// ground its answer on — never the masked [`CardView`] a cloze review
+/// renders (its `context` blanks the hole under review; the tutor needs the
+/// real text). See [`ReviewSession::tutor_card`].
+class TutorCard {
+  final String subject;
+  final String front;
+  final List<String> back;
+  final String? at;
+
+  const TutorCard({
+    required this.subject,
+    required this.front,
+    required this.back,
+    this.at,
+  });
+
+  @override
+  int get hashCode =>
+      subject.hashCode ^ front.hashCode ^ back.hashCode ^ at.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TutorCard &&
+          runtimeType == other.runtimeType &&
+          subject == other.subject &&
+          front == other.front &&
+          back == other.back &&
+          at == other.at;
 }
 
 class TypedResult {
