@@ -6,6 +6,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge.dart'
 import 'package:path_provider/path_provider.dart';
 
 import 'package:alix_mobile/bootstrap.dart';
+import 'package:alix_mobile/exam_screen.dart';
 import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/src/rust/api/review.dart';
 import 'package:alix_mobile/theme.dart';
@@ -158,6 +159,45 @@ class _ReviewScreenState extends State<ReviewScreen> {
         ),
       ),
     );
+  }
+
+  /// The name the paired server's own catalog resolves this deck by
+  /// (`resolve_row`, `src/serve/catalog.rs`, keyed off `picker::catalog`,
+  /// `src/picker.rs`): a bare top-level file name, or `<workspace>/<file>`
+  /// for a workspace member deck. The screen only holds device-absolute
+  /// paths (`deckPath`, `rootDir`, both sourced from `DeckEntry`/
+  /// `PickerScreen.root`, themselves device-absolute), never the
+  /// server-relative key the picker keys rows by, so this derives it fresh:
+  /// strip the root prefix, then rejoin the remaining path components with
+  /// `/`. One level of drilling only, matching this app's own navigation
+  /// (root -> loose deck, or root -> workspace folder -> member deck), so
+  /// the result is exactly a bare name or a two-part qualified key, never
+  /// deeper.
+  String _deckName() {
+    var rel = widget.deckPath;
+    if (rel.startsWith(widget.rootDir)) {
+      rel = rel.substring(widget.rootDir.length);
+    }
+    final parts = rel.split(RegExp(r'[\\/]+')).where((p) => p.isNotEmpty);
+    return parts.join('/');
+  }
+
+  /// Pushes the exam screen over the current deck. The screen never touches
+  /// the bridge itself; these two closures plus a nowMs provider are its
+  /// only path back to it, mirroring `_openTutor`'s seam.
+  void _openExam() {
+    final client = _client;
+    if (client == null) return;
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => ExamScreen(
+        deckName: _deckName(),
+        client: client,
+        applyPassed: (nowMs) => _session.applyExamPassed(nowMs: nowMs),
+        applyRemediation: (cardsText, nowMs) =>
+            _session.applyRemediation(cardsText: cardsText, nowMs: nowMs),
+        nowMs: () => BigInt.from(DateTime.now().millisecondsSinceEpoch),
+      ),
+    ));
   }
 
   /// (Re)opens the session; also the restart action on the done screen.
@@ -1081,6 +1121,10 @@ class _ReviewScreenState extends State<ReviewScreen> {
             _state.canRestart ? _ChipKind.primary : _ChipKind.base,
             _state.canRestart ? () => setState(_open) : null,
           ),
+          if (_serverLive && _session.deckHasExam()) ...[
+            const SizedBox(height: 12),
+            _chip('Take the exam', _ChipKind.quiet, _openExam),
+          ],
         ],
       ),
     );
