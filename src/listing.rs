@@ -105,14 +105,17 @@ pub fn list_root(root: &Path, review: &ReviewConfig, now_ms: u64) -> Vec<DeckSum
         if path.is_dir() && workspace::has_decks(&path) {
             out.push(folder_summary(root, &path, review, now_ms));
         } else if path.is_file() && path.extension().is_some_and(|e| e == "txt") {
-            out.push(deck_summary(
-                &path,
-                root_store.as_ref(),
-                augment.as_ref(),
-                root,
-                review,
-                now_ms,
-            ));
+            out.push(
+                deck_summary(
+                    &path,
+                    root_store.as_ref(),
+                    augment.as_ref(),
+                    root,
+                    review,
+                    now_ms,
+                )
+                .0,
+            );
         }
     }
     out
@@ -139,23 +142,32 @@ pub fn list_members(
         Ok(ws) => ws.members,
         Err(_) => return Vec::new(),
     };
-    let rows: Vec<DeckSummary> = paths
+    let rows: Vec<(DeckSummary, bool)> = paths
         .iter()
         .map(|m| deck_summary(m, store.as_ref(), augment.as_ref(), root, review, now_ms))
         .collect();
     // Sibling key mirrors catalog.rs's `blocked = locked || (with_lock &&
-    // !reviewable)`, as closely as listing's data allows: `due` is its
-    // reviewable signal, and `with_lock` is unconditionally true here (a
-    // locked deck is never startable-first in a drill-in list).
+    // !reviewable)` exactly (`with_lock` is unconditionally true here, a
+    // locked deck is never startable-first in a drill-in list): `reviewable`
+    // expands to `is_trace || (exam_due && has_exam && !locked) || due`,
+    // matching `deck_status`'s trace/exam-due special cases plus the
+    // per-depth OR that `due` already covers. A deck that failed to load
+    // sorts as NOT blocked, mirroring catalog's `Option<DeckStatus>::None`
+    // arm (`is_some_and` is false for `None`).
     let parent = member_parents(&paths, root);
     let key: Vec<(bool, String)> = rows
         .iter()
-        .map(|row| (row.locked || !row.due, row.title.clone()))
+        .map(|(row, loaded)| {
+            let blocked = *loaded
+                && (row.locked
+                    || !(row.is_trace || (row.exam_due && row.has_exam && !row.locked) || row.due));
+            (blocked, row.title.clone())
+        })
         .collect();
     dependency_forest(&parent, &key)
         .into_iter()
         .map(|(i, prefix)| {
-            let mut row = rows[i].clone();
+            let mut row = rows[i].0.clone();
             row.indent = prefix.chars().count() / 3;
             row.tree = prefix;
             row
@@ -230,6 +242,9 @@ fn folder_summary(root: &Path, dir: &Path, review: &ReviewConfig, now_ms: u64) -
 /// what the web picker's catalog passes (the served root for a loose deck,
 /// the same root `member_parents` gets for a workspace member). `augment` is
 /// opened once per store by the caller, like the web picker's catalog pass.
+/// The returned `bool` is whether `Deck::load` succeeded — `list_members`
+/// needs it (unlike any `DeckSummary` field) to sort a load-failed member as
+/// NOT blocked, mirroring catalog's `Option<DeckStatus>::None` arm.
 fn deck_summary(
     path: &Path,
     store: Option<&Store>,
@@ -237,12 +252,13 @@ fn deck_summary(
     decks_dir: &Path,
     review: &ReviewConfig,
     now_ms: u64,
-) -> DeckSummary {
+) -> (DeckSummary, bool) {
     let stem = path
         .file_stem()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
     let deck = Deck::load(path).ok();
+    let loaded = deck.is_some();
     let title = deck.as_ref().map(|d| d.display_name()).unwrap_or_default();
     let is_trace = deck.as_ref().is_some_and(|d| d.is_trace());
     let has_exam = deck.as_ref().is_some_and(|d| d.has_exam());
@@ -264,7 +280,7 @@ fn deck_summary(
             .unwrap_or_else(|| depth::default_depth(&d.cards, a)),
         _ => Depth::default(),
     };
-    DeckSummary {
+    let row = DeckSummary {
         title: if title.is_empty() { stem } else { title },
         path: path.to_path_buf(),
         is_workspace: false,
@@ -278,7 +294,8 @@ fn deck_summary(
         icon: None,
         indent: 0,
         tree: String::new(),
-    }
+    };
+    (row, loaded)
 }
 
 /// Anything to launch right now at any depth: the web picker's aggregate
@@ -940,6 +957,95 @@ mod tests {
                 ("other", 0, ""),
             ],
             shape
+        );
+    }
+
+    #[test]
+    fn list_members_sorts_an_exam_due_sibling_before_a_merely_locked_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        // Sits outside the workspace at `root`, so it gates `aaa-locked.txt`
+        // without becoming its dependency-forest parent (it isn't a member
+        // of the workspace's own listing) — an unmastered sourced deck, so
+        // it has an exam that isn't yet passed.
+        write(&root.join("gate.txt"), "% source: https://x\n# q\n\ta\n");
+        let ws = root.join("ws");
+        std::fs::create_dir(&ws).unwrap();
+        write(&ws.join("alix.toml"), "");
+        // Named to sort BEFORE the exam-due deck alphabetically, so a plain
+        // name sort (ignoring `blocked`) would rank "aaa-locked" first —
+        // only the fixed `blocked` key correctly ranks the startable
+        // exam-due deck ahead of it.
+        write(
+            &ws.join("aaa-locked.txt"),
+            "% requires: gate.txt\n# q2\n\tb\n",
+        );
+        write(
+            &ws.join("zzz-examdue.txt"),
+            "% source: https://y\n# q\n\ta\n",
+        );
+
+        // Graduate zzz-examdue's card at Recall and settle it at every depth
+        // (no real drill session), so `due` reads false while `state` reads
+        // `ExamDue` — the case the web treats as startable but the old
+        // `locked || !due` key sorted as blocked.
+        let store_path = workspace::store_path(&ws);
+        let examdue_id = Deck::load(ws.join("zzz-examdue.txt")).unwrap().cards[0].id();
+        let mut store = Store::open(&store_path).unwrap();
+        let entry = store.get_or_insert(examdue_id, T0);
+        entry.recognized_ms = Some(T0);
+        entry.recall = Some(graduated_not_due(T0));
+        entry.reconstruct = Some(graduated_not_due(T0));
+        store.save().unwrap();
+
+        let rows = list_members(root, &ws, &ReviewConfig::default(), T0 + 1_000);
+        assert_eq!(2, rows.len());
+        let examdue = rows.iter().find(|r| r.title == "zzz-examdue").unwrap();
+        assert!(examdue.exam_due, "should have graduated into ExamDue");
+        assert!(!examdue.due, "settled at every depth: nothing due");
+        assert!(!examdue.locked);
+        let locked = rows.iter().find(|r| r.title == "aaa-locked").unwrap();
+        assert!(locked.locked, "gated by the unmastered gate.txt");
+
+        let titles: Vec<&str> = rows.iter().map(|r| r.title.as_str()).collect();
+        assert_eq!(
+            vec!["zzz-examdue", "aaa-locked"],
+            titles,
+            "the startable exam-due deck must sort before the locked sibling"
+        );
+    }
+
+    #[test]
+    fn list_members_sorts_a_load_failed_member_as_not_blocked() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(&root.join("gate.txt"), "% source: https://x\n# q\n\ta\n");
+        let ws = root.join("ws");
+        std::fs::create_dir(&ws).unwrap();
+        write(&ws.join("alix.toml"), "");
+        // A cloze with no holes fails to parse: `Deck::load` errors, so this
+        // member degrades (see `unreadable_entries_degrade_instead_of_failing`).
+        // Named to sort AFTER the locked deck alphabetically, so only the
+        // fixed `blocked` key (a load failure is not-blocked) puts it first.
+        write(
+            &ws.join("zzz-broken.txt"),
+            "# q\n\t% reveal: cloze\n\tno holes here\n",
+        );
+        write(
+            &ws.join("aaa-locked.txt"),
+            "% requires: gate.txt\n# q2\n\tb\n",
+        );
+
+        let rows = list_members(root, &ws, &ReviewConfig::default(), T0);
+        assert_eq!(2, rows.len());
+        let locked = rows.iter().find(|r| r.title == "aaa-locked").unwrap();
+        assert!(locked.locked, "gated by the unmastered gate.txt");
+
+        let titles: Vec<&str> = rows.iter().map(|r| r.title.as_str()).collect();
+        assert_eq!(
+            vec!["zzz-broken", "aaa-locked"],
+            titles,
+            "a load-failed member must sort as not-blocked, before a locked sibling"
         );
     }
 
