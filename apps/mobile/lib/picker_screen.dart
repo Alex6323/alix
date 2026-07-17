@@ -486,17 +486,26 @@ class _PairSheetState extends State<_PairSheet> {
     });
     final client = widget.buildClient(parsed);
     String? version;
+    var refused = false;
     try {
       version = await client.version();
     } on PairingExpired {
-      // A 401 while pairing means the pasted token is already stale (the
-      // desktop was restarted since it printed this URL); to a phone that
-      // was never paired, that reads the same as no answer at all.
-      version = null;
+      // alix answered and rejected the token: the pasted URL is stale (a
+      // restarted server mints a fresh token). Say so distinctly; "no alix
+      // answered" would send the user chasing the wrong problem.
+      refused = true;
     } finally {
       client.close();
     }
     if (!mounted) return;
+    if (refused) {
+      setState(() {
+        _busy = false;
+        _status = 'alix answered but refused this token. '
+            'Copy a fresh pairing URL from the server.';
+      });
+      return;
+    }
     if (version == null) {
       setState(() {
         _busy = false;

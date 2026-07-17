@@ -54,8 +54,9 @@ class ServerConfig {
   @override
   int get hashCode => Object.hash(host, port, token);
 
+  // The token is a secret; keep it out of every print/interpolation path.
   @override
-  String toString() => 'ServerConfig(host: $host, port: $port, token: $token)';
+  String toString() => 'ServerConfig(host: $host, port: $port, token: <redacted>)';
 }
 
 /// Parses the URL `alix --lan` prints for pairing

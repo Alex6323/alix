@@ -14,15 +14,20 @@ import 'package:alix_mobile/picker_screen.dart';
 import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
 
-/// The pairing probe's test double: no network, a canned version() reply.
+/// The pairing probe's test double: no network, a canned version() reply
+/// (or a thrown PairingExpired, modelling a stale pasted token).
 class FakeServerClient implements ServerClient {
-  FakeServerClient({this.versionReply});
+  FakeServerClient({this.versionReply, this.expiredOnVersion = false});
 
   final String? versionReply;
+  final bool expiredOnVersion;
   bool closed = false;
 
   @override
-  Future<String?> version() async => versionReply;
+  Future<String?> version() async {
+    if (expiredOnVersion) throw const PairingExpired();
+    return versionReply;
+  }
 
   @override
   Future<String?> backendName() async => null;
@@ -123,6 +128,29 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('no alix answered at 192.168.1.9:7777'), findsOneWidget);
+  });
+
+  testWidgets('a refused token shows its own inline message and persists nothing', (tester) async {
+    final support = temp('alix-support-');
+    await openPairSheet(
+      tester,
+      support: support,
+      buildClient: (_) => FakeServerClient(expiredOnVersion: true),
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey('pairing-url-field')),
+      'http://192.168.1.9:7777/?token=stale00',
+    );
+    await tester.tap(find.text('Pair'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('alix answered but refused this token. '
+          'Copy a fresh pairing URL from the server.'),
+      findsOneWidget,
+    );
+    expect(readSettings(support)['server'], isNull, reason: 'a refused token must not persist');
   });
 
   testWidgets('an older server version shows the too-old inline message', (tester) async {
