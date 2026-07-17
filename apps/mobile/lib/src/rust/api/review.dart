@@ -32,8 +32,10 @@ abstract class ReviewSession implements RustOpaqueInterface {
   /// its review history, survives the append unchanged. An empty `notes`
   /// is a no-op, returning `Ok(())` without touching the file, mirroring
   /// the web's "nothing to save" guard. Mirrors the note onto the live
-  /// session's current card so it shows without a reopen; this is a
-  /// deck-file edit, not progress, so the store is never saved here.
+  /// session's current card so it shows without a reopen, guarded on the
+  /// anchor line still matching the current card (mirroring the web's own
+  /// card-identity guard, `jobs.rs`'s `poll_ask`); this is a deck-file
+  /// edit, not progress, so the store is never saved here.
   void applyCardNote({required int line, required List<String> notes});
 
   /// Records a PASSED remote exam sitting as this deck's mastery, mirroring
@@ -60,6 +62,17 @@ abstract class ReviewSession implements RustOpaqueInterface {
   /// Grade a pick against the same options `state` served; `None` when no
   /// pick is up. The learner-final grade is still a separate `grade` call.
   ChoiceFeedback? choose({required int chosen});
+
+  /// The "where am I" region breadcrumb, when this session is
+  /// topology-ordered and the current card sits in a region of its
+  /// topology; `None` otherwise (no topology, no current card, or the
+  /// current card isn't grouped into any region). A faithful mirror of the
+  /// web's crumb build (`src/serve/dto.rs`): a shared augment cache can
+  /// hold several like-named topologies (decks sharing a store), so this
+  /// picks the one of the resolved name that actually contains the
+  /// current card. `now_ms` injects the clock behind the strength heatmap
+  /// (tests); `None` is the wall clock.
+  CrumbState? crumb({BigInt? nowMs});
 
   /// Whether this deck sits an AI exam (the flag `open` captured).
   bool deckHasExam();
@@ -259,6 +272,37 @@ class ChoiceFeedback {
           chosen == other.chosen &&
           correct == other.correct &&
           passed == other.passed;
+}
+
+/// The "where am I" region breadcrumb for a topology-ordered session: the
+/// topology's region names in walk order, the index of the current card's
+/// region, and each region's per-card strength for a heatmap bar. Mirrors
+/// the web's `CrumbDto` (`src/serve/dto.rs`). See [`ReviewSession::crumb`].
+class CrumbState {
+  final List<String> regions;
+  final int current;
+
+  /// Per-region, per-card strength (`0..=1`, outer index aligns with
+  /// `regions`), red (weak) to green (strong).
+  final List<Float32List> cells;
+
+  const CrumbState({
+    required this.regions,
+    required this.current,
+    required this.cells,
+  });
+
+  @override
+  int get hashCode => regions.hashCode ^ current.hashCode ^ cells.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is CrumbState &&
+          runtimeType == other.runtimeType &&
+          regions == other.regions &&
+          current == other.current &&
+          cells == other.cells;
 }
 
 enum Depth { recognize, recall, reconstruct }

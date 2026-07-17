@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -488751540;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 386037475;
 
 // Section: executor
 
@@ -353,6 +353,56 @@ fn wire__crate__api__review__ReviewSession_choose_impl(
                 let output_ok = Result::<_, ()>::Ok(crate::api::review::ReviewSession::choose(
                     &*api_that_guard,
                     api_chosen,
+                ))?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__review__ReviewSession_crumb_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "ReviewSession_crumb",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ReviewSession>,
+            >>::sse_decode(&mut deserializer);
+            let api_now_ms = <Option<u64>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let mut api_that_guard = None;
+                let decode_indices_ =
+                    flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
+                        flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                            &api_that, 0, false,
+                        ),
+                    ]);
+                for i in decode_indices_ {
+                    match i {
+                        0 => api_that_guard = Some(api_that.lockable_decode_sync_ref()),
+                        _ => unreachable!(),
+                    }
+                }
+                let api_that_guard = api_that_guard.unwrap();
+                let output_ok = Result::<_, ()>::Ok(crate::api::review::ReviewSession::crumb(
+                    &*api_that_guard,
+                    api_now_ms,
                 ))?;
                 Ok(output_ok)
             })())
@@ -1514,6 +1564,20 @@ impl SseDecode for crate::api::review::ChoiceFeedback {
     }
 }
 
+impl SseDecode for crate::api::review::CrumbState {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_regions = <Vec<String>>::sse_decode(deserializer);
+        let mut var_current = <u32>::sse_decode(deserializer);
+        let mut var_cells = <Vec<Vec<f32>>>::sse_decode(deserializer);
+        return crate::api::review::CrumbState {
+            regions: var_regions,
+            current: var_current,
+            cells: var_cells,
+        };
+    }
+}
+
 impl SseDecode for crate::api::listing::DeckEntry {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1558,6 +1622,13 @@ impl SseDecode for crate::api::review::Depth {
             2 => crate::api::review::Depth::Reconstruct,
             _ => unreachable!("Invalid variant for Depth: {}", inner),
         };
+    }
+}
+
+impl SseDecode for f32 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        deserializer.cursor.read_f32::<NativeEndian>().unwrap()
     }
 }
 
@@ -1629,6 +1700,18 @@ impl SseDecode for Vec<crate::api::listing::DeckEntry> {
     }
 }
 
+impl SseDecode for Vec<Vec<f32>> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<Vec<f32>>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::api::review::NoteUnit> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1636,6 +1719,18 @@ impl SseDecode for Vec<crate::api::review::NoteUnit> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<crate::api::review::NoteUnit>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<f32> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<f32>::sse_decode(deserializer));
         }
         return ans_;
     }
@@ -1767,6 +1862,17 @@ impl SseDecode for Option<crate::api::review::ChoiceFeedback> {
             return Some(<crate::api::review::ChoiceFeedback>::sse_decode(
                 deserializer,
             ));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<crate::api::review::CrumbState> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::review::CrumbState>::sse_decode(deserializer));
         } else {
             return None;
         }
@@ -2072,7 +2178,7 @@ fn pde_ffi_dispatcher_primary_impl(
 ) {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        24 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
+        25 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -2103,45 +2209,46 @@ fn pde_ffi_dispatcher_sync_impl(
         ),
         5 => wire__crate__api__review__ReviewSession_check_impl(ptr, rust_vec_len, data_len),
         6 => wire__crate__api__review__ReviewSession_choose_impl(ptr, rust_vec_len, data_len),
-        7 => {
+        7 => wire__crate__api__review__ReviewSession_crumb_impl(ptr, rust_vec_len, data_len),
+        8 => {
             wire__crate__api__review__ReviewSession_deck_has_exam_impl(ptr, rust_vec_len, data_len)
         }
-        8 => {
+        9 => {
             wire__crate__api__review__ReviewSession_foreign_writer_impl(ptr, rust_vec_len, data_len)
         }
-        9 => wire__crate__api__review__ReviewSession_grade_impl(ptr, rust_vec_len, data_len),
-        10 => wire__crate__api__review__ReviewSession_mint_tutor_card_impl(
+        10 => wire__crate__api__review__ReviewSession_grade_impl(ptr, rust_vec_len, data_len),
+        11 => wire__crate__api__review__ReviewSession_mint_tutor_card_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        11 => wire__crate__api__review__ReviewSession_open_impl(ptr, rust_vec_len, data_len),
-        12 => wire__crate__api__review__ReviewSession_state_impl(ptr, rust_vec_len, data_len),
-        13 => wire__crate__api__review__ReviewSession_tutor_card_impl(ptr, rust_vec_len, data_len),
-        14 => wire__crate__api__review__WalkSession_apply_exam_failed_impl(
+        12 => wire__crate__api__review__ReviewSession_open_impl(ptr, rust_vec_len, data_len),
+        13 => wire__crate__api__review__ReviewSession_state_impl(ptr, rust_vec_len, data_len),
+        14 => wire__crate__api__review__ReviewSession_tutor_card_impl(ptr, rust_vec_len, data_len),
+        15 => wire__crate__api__review__WalkSession_apply_exam_failed_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        15 => wire__crate__api__review__WalkSession_apply_exam_passed_impl(
+        16 => wire__crate__api__review__WalkSession_apply_exam_passed_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        16 => wire__crate__api__review__WalkSession_deck_has_exam_impl(ptr, rust_vec_len, data_len),
-        17 => {
+        17 => wire__crate__api__review__WalkSession_deck_has_exam_impl(ptr, rust_vec_len, data_len),
+        18 => {
             wire__crate__api__review__WalkSession_exam_cooldown_ms_impl(ptr, rust_vec_len, data_len)
         }
-        18 => wire__crate__api__review__WalkSession_grade_impl(ptr, rust_vec_len, data_len),
-        19 => wire__crate__api__review__WalkSession_open_impl(ptr, rust_vec_len, data_len),
-        20 => wire__crate__api__review__WalkSession_predict_impl(ptr, rust_vec_len, data_len),
-        21 => wire__crate__api__review__WalkSession_state_impl(ptr, rust_vec_len, data_len),
-        22 => wire__crate__api__generate__apply_generated_deck_impl(ptr, rust_vec_len, data_len),
-        23 => wire__crate__api__simple__core_version_impl(ptr, rust_vec_len, data_len),
-        25 => wire__crate__api__review__keypoint_grade_impl(ptr, rust_vec_len, data_len),
-        26 => wire__crate__api__listing__list_members_impl(ptr, rust_vec_len, data_len),
-        27 => wire__crate__api__listing__list_root_impl(ptr, rust_vec_len, data_len),
-        28 => wire__crate__api__listing__sync_conflicts_impl(ptr, rust_vec_len, data_len),
+        19 => wire__crate__api__review__WalkSession_grade_impl(ptr, rust_vec_len, data_len),
+        20 => wire__crate__api__review__WalkSession_open_impl(ptr, rust_vec_len, data_len),
+        21 => wire__crate__api__review__WalkSession_predict_impl(ptr, rust_vec_len, data_len),
+        22 => wire__crate__api__review__WalkSession_state_impl(ptr, rust_vec_len, data_len),
+        23 => wire__crate__api__generate__apply_generated_deck_impl(ptr, rust_vec_len, data_len),
+        24 => wire__crate__api__simple__core_version_impl(ptr, rust_vec_len, data_len),
+        26 => wire__crate__api__review__keypoint_grade_impl(ptr, rust_vec_len, data_len),
+        27 => wire__crate__api__listing__list_members_impl(ptr, rust_vec_len, data_len),
+        28 => wire__crate__api__listing__list_root_impl(ptr, rust_vec_len, data_len),
+        29 => wire__crate__api__listing__sync_conflicts_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -2246,6 +2353,28 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::review::ChoiceFeed
 {
     fn into_into_dart(self) -> FrbWrapper<crate::api::review::ChoiceFeedback> {
         self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::review::CrumbState {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.regions.into_into_dart().into_dart(),
+            self.current.into_into_dart().into_dart(),
+            self.cells.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::review::CrumbState
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::review::CrumbState>
+    for crate::api::review::CrumbState
+{
+    fn into_into_dart(self) -> crate::api::review::CrumbState {
+        self
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
@@ -2715,6 +2844,15 @@ impl SseEncode for crate::api::review::ChoiceFeedback {
     }
 }
 
+impl SseEncode for crate::api::review::CrumbState {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Vec<String>>::sse_encode(self.regions, serializer);
+        <u32>::sse_encode(self.current, serializer);
+        <Vec<Vec<f32>>>::sse_encode(self.cells, serializer);
+    }
+}
+
 impl SseEncode for crate::api::listing::DeckEntry {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -2748,6 +2886,13 @@ impl SseEncode for crate::api::review::Depth {
             },
             serializer,
         );
+    }
+}
+
+impl SseEncode for f32 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        serializer.cursor.write_f32::<NativeEndian>(self).unwrap();
     }
 }
 
@@ -2819,12 +2964,32 @@ impl SseEncode for Vec<crate::api::listing::DeckEntry> {
     }
 }
 
+impl SseEncode for Vec<Vec<f32>> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <Vec<f32>>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::api::review::NoteUnit> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::api::review::NoteUnit>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<f32> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <f32>::sse_encode(item, serializer);
         }
     }
 }
@@ -2944,6 +3109,16 @@ impl SseEncode for Option<crate::api::review::ChoiceFeedback> {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <crate::api::review::ChoiceFeedback>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<crate::api::review::CrumbState> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::review::CrumbState>::sse_encode(value, serializer);
         }
     }
 }

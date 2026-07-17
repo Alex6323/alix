@@ -198,12 +198,29 @@ pub struct TutorCard {
     pub line: usize,
 }
 
+/// The "where am I" region breadcrumb for a topology-ordered session: the
+/// topology's region names in walk order, the index of the current card's
+/// region, and each region's per-card strength for a heatmap bar. Mirrors
+/// the web's `CrumbDto` (`src/serve/dto.rs`). See [`ReviewSession::crumb`].
+pub struct CrumbState {
+    pub regions: Vec<String>,
+    pub current: u32,
+    /// Per-region, per-card strength (`0..=1`, outer index aligns with
+    /// `regions`), red (weak) to green (strong).
+    pub cells: Vec<Vec<f32>>,
+}
+
 /// A live review session running in Rust: the alix session plus its open
 /// store and augment cache. Dart holds this as an opaque handle.
 pub struct ReviewSession {
     session: alix::session::Session,
     store: alix::store::Store,
     augment: alix::augment::AugmentCache,
+    /// The resolved topology name when this session is topology-ordered
+    /// (`assemble::SessionBuild::topology_name`), else `None`. Captured at
+    /// open time so [`ReviewSession::crumb`] can pick this session's own
+    /// topology out of a (possibly shared) augment cache.
+    topology_name: Option<String>,
     /// This deck's own file path, captured at open time so
     /// [`ReviewSession::apply_card_note`] can append to the right file
     /// without the caller passing it again.
@@ -292,6 +309,7 @@ impl ReviewSession {
             session: build.session,
             store,
             augment: build.augment,
+            topology_name: build.topology_name,
             deck_path,
             subject,
             deck_card_ids,
@@ -354,6 +372,37 @@ impl ReviewSession {
             .map(|(device, age_ms)| ForeignWriter { device, age_ms })
     }
 
+    /// The "where am I" region breadcrumb, when this session is
+    /// topology-ordered and the current card sits in a region of its
+    /// topology; `None` otherwise (no topology, no current card, or the
+    /// current card isn't grouped into any region). A faithful mirror of the
+    /// web's crumb build (`src/serve/dto.rs`): a shared augment cache can
+    /// hold several like-named topologies (decks sharing a store), so this
+    /// picks the one of the resolved name that actually contains the
+    /// current card. `now_ms` injects the clock behind the strength heatmap
+    /// (tests); `None` is the wall clock.
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn crumb(&self, now_ms: Option<u64>) -> Option<CrumbState> {
+        let now = now_ms.unwrap_or_else(alix::time::now_ms);
+        let card = self.session.current()?;
+        let name = self.topology_name.as_ref()?;
+        let (topo, regions, current) = self
+            .augment
+            .topologies()
+            .iter()
+            .filter(|t| t.name == *name)
+            .find_map(|t| t.region_path(card.id()).map(|(rg, cur)| (t, rg, cur)))?;
+        Some(CrumbState {
+            regions: regions.into_iter().map(str::to_string).collect(),
+            current: current as u32,
+            cells: topo
+                .regions
+                .iter()
+                .map(|reg| alix::session::card_strengths(&reg.cards, &self.store, now))
+                .collect(),
+        })
+    }
+
     /// The current card's authored fields for the remote tutor to ground its
     /// answer on, never the masked [`CardView`] a cloze review renders.
     /// `None` when no card is current.
@@ -408,15 +457,21 @@ impl ReviewSession {
     /// its review history, survives the append unchanged. An empty `notes`
     /// is a no-op, returning `Ok(())` without touching the file, mirroring
     /// the web's "nothing to save" guard. Mirrors the note onto the live
-    /// session's current card so it shows without a reopen; this is a
-    /// deck-file edit, not progress, so the store is never saved here.
+    /// session's current card so it shows without a reopen, guarded on the
+    /// anchor line still matching the current card (mirroring the web's own
+    /// card-identity guard, `jobs.rs`'s `poll_ask`); this is a deck-file
+    /// edit, not progress, so the store is never saved here.
     #[flutter_rust_bridge::frb(sync)]
     pub fn apply_card_note(&mut self, line: u32, notes: Vec<String>) -> Result<()> {
         if notes.is_empty() {
             return Ok(());
         }
         alix::deck::append_note(&self.deck_path, line as usize, &notes)?;
-        if let Some(cur) = self.session.current_mut() {
+        if let Some(cur) = self
+            .session
+            .current_mut()
+            .filter(|cur| cur.line == line as usize)
+        {
             cur.append_note(&notes);
         }
         Ok(())
@@ -1124,6 +1179,42 @@ mod tests {
         );
     }
 
+    /// The T3.3-review rider: the in-memory mirror onto `session.current_mut()`
+    /// must only fire when the append anchor still targets the current card's
+    /// own line, mirroring the web's card-identity guard (`jobs.rs`'s
+    /// `poll_ask`). The file append itself stays unconditional (line-keyed).
+    #[test]
+    fn apply_card_note_mirror_is_guarded_by_the_anchor_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(&root.join("d.txt"), "# q1\n\ta1\n# q2\n\ta2\n");
+        let loaded = alix::deck::Deck::load(root.join("d.txt")).unwrap();
+        let line1 = loaded.cards[0].line;
+        let line2 = loaded.cards[1].line;
+
+        let mut s = opened_after_acquire(&root.join("d.txt"), root, None);
+        let current_line = s.tutor_card().expect("a card is current").line;
+        let other_line = if current_line == line1 { line2 } else { line1 };
+
+        s.apply_card_note(other_line as u32, vec!["stale".to_string()])
+            .unwrap();
+
+        assert!(
+            s.state(Some(LATER))
+                .card
+                .expect("a rendered card")
+                .note
+                .is_empty(),
+            "a note anchored to a different card's line must not mirror onto \
+             the current card"
+        );
+        let text = std::fs::read_to_string(root.join("d.txt")).unwrap();
+        assert!(
+            text.contains("! stale"),
+            "the file append is unconditional (line-keyed): {text}"
+        );
+    }
+
     #[test]
     fn apply_exam_passed_marks_the_phone_store_mastered() {
         let dir = tempfile::tempdir().unwrap();
@@ -1180,6 +1271,102 @@ mod tests {
         );
         let reopened_again = alix::store::Store::open(&store_path).unwrap();
         assert_eq!(reopened_again.virtual_len(), 1);
+    }
+
+    #[test]
+    fn crumb_is_none_for_a_plain_non_topology_deck() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(&root.join("d.txt"), "# q\n\ta\n");
+        let s = opened_after_acquire(&root.join("d.txt"), root, None);
+        assert!(
+            s.crumb(Some(LATER)).is_none(),
+            "no topology cached, so no crumb"
+        );
+    }
+
+    /// Caches a two-region topology (ids resolved from a real parse, never
+    /// hand-derived) into `root`'s augment sidecar, so `ReviewSession::open`'s
+    /// own `assemble::select` auto-picks it up (a deck with exactly one
+    /// cached topology needs no explicit `--topology` selection). `walk`
+    /// controls which card the scheduler serves first among two equally-due
+    /// cards (`session.rs` sorts the due set by topology rank), so tests can
+    /// pin the "current" card by choosing `walk`'s order.
+    fn cache_two_region_topology(root: &Path, walk: Vec<u64>, regions: Vec<(&str, Vec<u64>)>) {
+        let store_path = alix::workspace::root_store_path(root);
+        let mut cache =
+            alix::augment::AugmentCache::open(alix::augment::augment_path_for(&store_path));
+        cache.add_topology(alix::augment::Topology {
+            name: "auto".to_string(),
+            principle: "test order".to_string(),
+            walk,
+            regions: regions
+                .into_iter()
+                .map(|(name, cards)| alix::augment::TopologyRegion {
+                    name: name.to_string(),
+                    cards,
+                })
+                .collect(),
+            ..Default::default()
+        });
+        cache.save().unwrap();
+    }
+
+    #[test]
+    fn crumb_reports_the_current_cards_region_in_a_topology_session() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let deck = root.join("d.txt");
+        write(&deck, "# q1\n\ta1\n# q2\n\ta2\n");
+        let loaded = alix::deck::Deck::load(&deck).unwrap();
+        let id1 = loaded.cards[0].id();
+        let id2 = loaded.cards[1].id();
+
+        cache_two_region_topology(
+            root,
+            vec![id1, id2],
+            vec![("Intro", vec![id1]), ("Body", vec![id2])],
+        );
+
+        let s = opened_after_acquire(&deck, root, None);
+        let current_front = s.state(Some(LATER)).card.expect("a card is current").front;
+        let expected_current = if current_front == "q1" { 0u32 } else { 1u32 };
+
+        let crumb = s
+            .crumb(Some(LATER))
+            .expect("a topology-ordered session with the card in a region crumbs");
+        assert_eq!(crumb.regions, vec!["Intro".to_string(), "Body".to_string()]);
+        assert_eq!(crumb.current, expected_current);
+        assert_eq!(crumb.cells.len(), 2, "one cell row per region");
+        assert_eq!(crumb.cells[0].len(), 1, "Intro holds one card");
+        assert_eq!(crumb.cells[1].len(), 1, "Body holds one card");
+    }
+
+    #[test]
+    fn crumb_is_none_when_the_current_card_has_no_region() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let deck = root.join("d.txt");
+        write(&deck, "# q1\n\ta1\n# q2\n\ta2\n");
+        let loaded = alix::deck::Deck::load(&deck).unwrap();
+        let id1 = loaded.cards[0].id();
+        let id2 = loaded.cards[1].id();
+
+        // id2 ranks first (so it's served first among two equally-due
+        // cards), but only id1 has a region: the current card (id2) sits in
+        // no region, so no crumb, no panic.
+        cache_two_region_topology(root, vec![id2, id1], vec![("Intro", vec![id1])]);
+
+        let s = opened_after_acquire(&deck, root, None);
+        let current_front = s.state(Some(LATER)).card.expect("a card is current").front;
+        assert_eq!(
+            current_front, "q2",
+            "topology ranks id2 first among due cards"
+        );
+        assert!(
+            s.crumb(Some(LATER)).is_none(),
+            "the current card sits in no region, so no crumb, and no panic"
+        );
     }
 
     /// A two-hop trace over a real in-folder source file, subject `t.txt`.

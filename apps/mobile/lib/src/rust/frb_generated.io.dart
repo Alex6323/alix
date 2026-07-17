@@ -96,6 +96,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ChoiceFeedback dco_decode_box_autoadd_choice_feedback(dynamic raw);
 
   @protected
+  CrumbState dco_decode_box_autoadd_crumb_state(dynamic raw);
+
+  @protected
   Depth dco_decode_box_autoadd_depth(dynamic raw);
 
   @protected
@@ -123,10 +126,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ChoiceFeedback dco_decode_choice_feedback(dynamic raw);
 
   @protected
+  CrumbState dco_decode_crumb_state(dynamic raw);
+
+  @protected
   DeckEntry dco_decode_deck_entry(dynamic raw);
 
   @protected
   Depth dco_decode_depth(dynamic raw);
+
+  @protected
+  double dco_decode_f_32(dynamic raw);
 
   @protected
   ForeignWriter dco_decode_foreign_writer(dynamic raw);
@@ -147,7 +156,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<DeckEntry> dco_decode_list_deck_entry(dynamic raw);
 
   @protected
+  List<Float32List> dco_decode_list_list_prim_f_32_strict(dynamic raw);
+
+  @protected
   List<NoteUnit> dco_decode_list_note_unit(dynamic raw);
+
+  @protected
+  Float32List dco_decode_list_prim_f_32_strict(dynamic raw);
 
   @protected
   Uint32List dco_decode_list_prim_u_32_strict(dynamic raw);
@@ -178,6 +193,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ChoiceFeedback? dco_decode_opt_box_autoadd_choice_feedback(dynamic raw);
+
+  @protected
+  CrumbState? dco_decode_opt_box_autoadd_crumb_state(dynamic raw);
 
   @protected
   Depth? dco_decode_opt_box_autoadd_depth(dynamic raw);
@@ -313,6 +331,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  CrumbState sse_decode_box_autoadd_crumb_state(SseDeserializer deserializer);
+
+  @protected
   Depth sse_decode_box_autoadd_depth(SseDeserializer deserializer);
 
   @protected
@@ -342,10 +363,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ChoiceFeedback sse_decode_choice_feedback(SseDeserializer deserializer);
 
   @protected
+  CrumbState sse_decode_crumb_state(SseDeserializer deserializer);
+
+  @protected
   DeckEntry sse_decode_deck_entry(SseDeserializer deserializer);
 
   @protected
   Depth sse_decode_depth(SseDeserializer deserializer);
+
+  @protected
+  double sse_decode_f_32(SseDeserializer deserializer);
 
   @protected
   ForeignWriter sse_decode_foreign_writer(SseDeserializer deserializer);
@@ -366,7 +393,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<DeckEntry> sse_decode_list_deck_entry(SseDeserializer deserializer);
 
   @protected
+  List<Float32List> sse_decode_list_list_prim_f_32_strict(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<NoteUnit> sse_decode_list_note_unit(SseDeserializer deserializer);
+
+  @protected
+  Float32List sse_decode_list_prim_f_32_strict(SseDeserializer deserializer);
 
   @protected
   Uint32List sse_decode_list_prim_u_32_strict(SseDeserializer deserializer);
@@ -399,6 +434,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ChoiceFeedback? sse_decode_opt_box_autoadd_choice_feedback(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  CrumbState? sse_decode_opt_box_autoadd_crumb_state(
     SseDeserializer deserializer,
   );
 
@@ -560,6 +600,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_crumb_state(
+    CrumbState self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_depth(Depth self, SseSerializer serializer);
 
   @protected
@@ -602,10 +648,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_crumb_state(CrumbState self, SseSerializer serializer);
+
+  @protected
   void sse_encode_deck_entry(DeckEntry self, SseSerializer serializer);
 
   @protected
   void sse_encode_depth(Depth self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_f_32(double self, SseSerializer serializer);
 
   @protected
   void sse_encode_foreign_writer(ForeignWriter self, SseSerializer serializer);
@@ -629,7 +681,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_list_prim_f_32_strict(
+    List<Float32List> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_note_unit(List<NoteUnit> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_prim_f_32_strict(
+    Float32List self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_list_prim_u_32_strict(
@@ -676,6 +740,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_choice_feedback(
     ChoiceFeedback? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_crumb_state(
+    CrumbState? self,
     SseSerializer serializer,
   );
 
