@@ -1251,14 +1251,22 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   DeckEntry dco_decode_deck_entry(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 5)
-      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    if (arr.length != 13)
+      throw Exception('unexpected arr length: expect 13 but see ${arr.length}');
     return DeckEntry(
       title: dco_decode_String(arr[0]),
       path: dco_decode_String(arr[1]),
       isWorkspace: dco_decode_bool(arr[2]),
       due: dco_decode_bool(arr[3]),
       isTrace: dco_decode_bool(arr[4]),
+      lastDepth: dco_decode_depth(arr[5]),
+      mastered: dco_decode_bool(arr[6]),
+      examDue: dco_decode_bool(arr[7]),
+      hasExam: dco_decode_bool(arr[8]),
+      locked: dco_decode_bool(arr[9]),
+      icon: dco_decode_opt_String(arr[10]),
+      indent: dco_decode_u_32(arr[11]),
+      tree: dco_decode_String(arr[12]),
     );
   }
 
@@ -1816,12 +1824,28 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_isWorkspace = sse_decode_bool(deserializer);
     var var_due = sse_decode_bool(deserializer);
     var var_isTrace = sse_decode_bool(deserializer);
+    var var_lastDepth = sse_decode_depth(deserializer);
+    var var_mastered = sse_decode_bool(deserializer);
+    var var_examDue = sse_decode_bool(deserializer);
+    var var_hasExam = sse_decode_bool(deserializer);
+    var var_locked = sse_decode_bool(deserializer);
+    var var_icon = sse_decode_opt_String(deserializer);
+    var var_indent = sse_decode_u_32(deserializer);
+    var var_tree = sse_decode_String(deserializer);
     return DeckEntry(
       title: var_title,
       path: var_path,
       isWorkspace: var_isWorkspace,
       due: var_due,
       isTrace: var_isTrace,
+      lastDepth: var_lastDepth,
+      mastered: var_mastered,
+      examDue: var_examDue,
+      hasExam: var_hasExam,
+      locked: var_locked,
+      icon: var_icon,
+      indent: var_indent,
+      tree: var_tree,
     );
   }
 
@@ -2513,6 +2537,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self.isWorkspace, serializer);
     sse_encode_bool(self.due, serializer);
     sse_encode_bool(self.isTrace, serializer);
+    sse_encode_depth(self.lastDepth, serializer);
+    sse_encode_bool(self.mastered, serializer);
+    sse_encode_bool(self.examDue, serializer);
+    sse_encode_bool(self.hasExam, serializer);
+    sse_encode_bool(self.locked, serializer);
+    sse_encode_opt_String(self.icon, serializer);
+    sse_encode_u_32(self.indent, serializer);
+    sse_encode_String(self.tree, serializer);
   }
 
   @protected

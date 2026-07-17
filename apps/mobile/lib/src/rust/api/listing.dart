@@ -5,6 +5,7 @@
 
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
+import 'review.dart';
 
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `from`
 
@@ -40,10 +41,41 @@ class DeckEntry {
   /// Anything to do right now, against the store this entry reviews into.
   final bool due;
 
-  /// A trace deck (`% trace:`): a predict-and-verify walk that lives in
-  /// the web app; the phone cannot review it, so the picker must say so
-  /// instead of opening a session the core will refuse.
+  /// A trace deck (`% trace:`): opens a walk (`WalkSession`), not a card
+  /// review; the flag lets the picker route the row to the walk screen
+  /// instead of a review session.
   final bool isTrace;
+
+  /// The session depth remembered for this deck, else its fresh-session
+  /// default. Deck rows only.
+  final Depth lastDepth;
+
+  /// Finished and exam-passed, mirroring the web picker's mastered badge.
+  /// Deck rows only.
+  final bool mastered;
+
+  /// Drilled and awaiting its AI exam. Deck rows only.
+  final bool examDue;
+
+  /// The deck has an AI exam at all (a sourced fact deck, or a trace).
+  /// Deck rows only.
+  final bool hasExam;
+
+  /// A `% requires:` prerequisite isn't finished, mirroring the web
+  /// picker's lock icon. Deck rows only.
+  final bool locked;
+
+  /// The workspace's resolved picker icon file, mirroring the web
+  /// picker's emblem. Workspace/folder rows only; `None` otherwise.
+  final String? icon;
+
+  /// Nesting depth in the workspace's dependency tree. Member rows only;
+  /// `0` otherwise.
+  final int indent;
+
+  /// The branch-line prefix (`├─`/`└─`/`│`) for this row in the
+  /// workspace's dependency tree. Member rows only; empty otherwise.
+  final String tree;
 
   const DeckEntry({
     required this.title,
@@ -51,6 +83,14 @@ class DeckEntry {
     required this.isWorkspace,
     required this.due,
     required this.isTrace,
+    required this.lastDepth,
+    required this.mastered,
+    required this.examDue,
+    required this.hasExam,
+    required this.locked,
+    this.icon,
+    required this.indent,
+    required this.tree,
   });
 
   @override
@@ -59,7 +99,15 @@ class DeckEntry {
       path.hashCode ^
       isWorkspace.hashCode ^
       due.hashCode ^
-      isTrace.hashCode;
+      isTrace.hashCode ^
+      lastDepth.hashCode ^
+      mastered.hashCode ^
+      examDue.hashCode ^
+      hasExam.hashCode ^
+      locked.hashCode ^
+      icon.hashCode ^
+      indent.hashCode ^
+      tree.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -70,5 +118,13 @@ class DeckEntry {
           path == other.path &&
           isWorkspace == other.isWorkspace &&
           due == other.due &&
-          isTrace == other.isTrace;
+          isTrace == other.isTrace &&
+          lastDepth == other.lastDepth &&
+          mastered == other.mastered &&
+          examDue == other.examDue &&
+          hasExam == other.hasExam &&
+          locked == other.locked &&
+          icon == other.icon &&
+          indent == other.indent &&
+          tree == other.tree;
 }

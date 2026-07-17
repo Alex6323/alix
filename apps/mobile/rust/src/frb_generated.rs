@@ -1430,12 +1430,28 @@ impl SseDecode for crate::api::listing::DeckEntry {
         let mut var_isWorkspace = <bool>::sse_decode(deserializer);
         let mut var_due = <bool>::sse_decode(deserializer);
         let mut var_isTrace = <bool>::sse_decode(deserializer);
+        let mut var_lastDepth = <crate::api::review::Depth>::sse_decode(deserializer);
+        let mut var_mastered = <bool>::sse_decode(deserializer);
+        let mut var_examDue = <bool>::sse_decode(deserializer);
+        let mut var_hasExam = <bool>::sse_decode(deserializer);
+        let mut var_locked = <bool>::sse_decode(deserializer);
+        let mut var_icon = <Option<String>>::sse_decode(deserializer);
+        let mut var_indent = <u32>::sse_decode(deserializer);
+        let mut var_tree = <String>::sse_decode(deserializer);
         return crate::api::listing::DeckEntry {
             title: var_title,
             path: var_path,
             is_workspace: var_isWorkspace,
             due: var_due,
             is_trace: var_isTrace,
+            last_depth: var_lastDepth,
+            mastered: var_mastered,
+            exam_due: var_examDue,
+            has_exam: var_hasExam,
+            locked: var_locked,
+            icon: var_icon,
+            indent: var_indent,
+            tree: var_tree,
         };
     }
 }
@@ -2141,6 +2157,14 @@ impl flutter_rust_bridge::IntoDart for crate::api::listing::DeckEntry {
             self.is_workspace.into_into_dart().into_dart(),
             self.due.into_into_dart().into_dart(),
             self.is_trace.into_into_dart().into_dart(),
+            self.last_depth.into_into_dart().into_dart(),
+            self.mastered.into_into_dart().into_dart(),
+            self.exam_due.into_into_dart().into_dart(),
+            self.has_exam.into_into_dart().into_dart(),
+            self.locked.into_into_dart().into_dart(),
+            self.icon.into_into_dart().into_dart(),
+            self.indent.into_into_dart().into_dart(),
+            self.tree.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -2598,6 +2622,14 @@ impl SseEncode for crate::api::listing::DeckEntry {
         <bool>::sse_encode(self.is_workspace, serializer);
         <bool>::sse_encode(self.due, serializer);
         <bool>::sse_encode(self.is_trace, serializer);
+        <crate::api::review::Depth>::sse_encode(self.last_depth, serializer);
+        <bool>::sse_encode(self.mastered, serializer);
+        <bool>::sse_encode(self.exam_due, serializer);
+        <bool>::sse_encode(self.has_exam, serializer);
+        <bool>::sse_encode(self.locked, serializer);
+        <Option<String>>::sse_encode(self.icon, serializer);
+        <u32>::sse_encode(self.indent, serializer);
+        <String>::sse_encode(self.tree, serializer);
     }
 }
 
