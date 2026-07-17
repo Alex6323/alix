@@ -259,11 +259,12 @@ phase `ReceiveDto` (`elapsed: 0`).
 ### 4.10 The remote surface (paired thin clients)
 
 A paired phone, or any other native client, can borrow the desktop's AI
-backend for the tutor and the AI exam over `/api/remote/*`, instead of
-needing a model CLI of its own. **The iron rule: no endpoint under
-`/api/remote/*` ever writes the server's own store, session, decks, or
-recent list.** These handlers only compute an answer and hand it back: a
-result leaves the server only as the HTTP response, never onto disk.
+backend for the tutor, the AI exam, and deck generation over
+`/api/remote/*`, instead of needing a model CLI of its own. **The iron rule:
+no endpoint under `/api/remote/*` ever writes the server's own store,
+session, decks, or recent list.** These handlers only compute an answer and
+hand it back: a result leaves the server only as the HTTP response, never
+onto disk.
 
 A remote tutor turn is stateless on the server: `POST /api/remote/ask
 {card, history, question}` re-sends the whole card and prior exchanges
@@ -292,6 +293,17 @@ question locally and submits them as one batch: `POST
 call. A failed, remediable result's cards come back as deck-format text on
 `RemoteExamDto.cards` (§6) for the **client** to parse and store: the
 server generates them but never keeps them.
+
+`POST /api/remote/generate {url, guidance?}` mirrors §4.7's `/api/generate`,
+minus everything the iron rule forbids: there is no `dest` (a phone chooses
+its own destination) and no server-side collision pre-check (the phone owns
+collisions). `url` must be `http://`/`https://`, exactly like the web.
+Poll `GET /api/remote/generate` while `phase:"generating"`, then read the
+full deck text off `RemoteGenerateDto.deck` and a suggested file name off
+`filename` (§6): the client places the file, the server never does, so
+unlike `GenerateDto` a parse failure does not flip `phase` to `error`; `cards`
+is simply `null` and the client validates its own copy. `POST
+/api/remote/generate/close` clears the job unconditionally.
 
 Each family is single-flight and lives in its own slot, kept separate from
 the browser's own `ask`/`exam` state: a second client pairing to the same
@@ -447,6 +459,9 @@ first, same as a double `POST`.
 | POST | `/api/remote/exam/grade` | `{answers: [string]}` | `RemoteExamDto` | 400 bad/oversized body / wrong number of answers; 409 no sitting open / not in the answering phase |
 | POST | `/api/remote/exam/remediate` | – | `RemoteExamDto` | 409 no sitting open / nothing to remediate |
 | POST | `/api/remote/exam/close` | – | 200 | – |
+| POST | `/api/remote/generate` | `{url, guidance?}` | `RemoteGenerateDto` | 400 bad/oversized body / `url` not `http://`/`https://`; 409 a generation is already thinking |
+| GET | `/api/remote/generate` | – | `RemoteGenerateDto` (poll) | 409 no job |
+| POST | `/api/remote/generate/close` | – | 200 | – |
 
 ### Images
 
@@ -855,6 +870,25 @@ so there is no `is_trace`/`unlocks`/`cooldown_ms`.
 
 Example, remediated (from the pinned test):
 `{"phase":"remediated","deck":"rust.txt","strictness":"balanced","questions":["Why does Rust use ownership?"],"passed":false,"grades":[{"question":"Why does Rust use ownership?","points":["memory safety without a GC"],"answer":"it has a garbage collector","verdict":"FAIL","feedback":"Rust has no GC","missed":["memory safety without a GC"]}],"gaps":["ownership and the GC-free memory model"],"can_remediate":false,"cards":"# Why does Rust use ownership?\n\tso drops are deterministic, no GC needed","thinking":false,"elapsed":null,"error":null}`.
+
+### RemoteGenerateDto (since 0.6.0)
+
+A paired phone's deck generation (`/api/remote/generate*`; §4.10). Mirrors
+`GenerateDto` (§4.7), but the server places nothing: there is no saved file
+name, only the full deck text and a suggested one for the client to save
+under.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `phase` | string | `generating` \| `done` \| `error` (open set). |
+| `deck` | string? | The full generated deck text, set only in `done`. |
+| `filename` | string? | A suggested file name (`generate::deck_name`, normalized to a `.txt` stem), set only in `done`; the client decides where and under what name to save it. |
+| `cards` | number? | The finished text's own parsed card count, best-effort: `null` if it doesn't parse. Unlike `GenerateDto`, a parse failure does not flip `phase` to `error`, since the server never saves the file either way; the client parses and validates its own copy. |
+| `elapsed` | number? | Seconds the in-flight call has run. |
+| `error` | string? | |
+
+Example, done (from the pinned test):
+`{"phase":"done","deck":"% link: https://example.org\n# Q\n\tA\n","filename":"example-org.txt","cards":1,"elapsed":null,"error":null}`.
 
 ## 7. Web-page-private surface
 

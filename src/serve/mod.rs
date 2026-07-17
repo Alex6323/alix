@@ -272,6 +272,7 @@ pub fn run_review(
     // owns its own state and only reads these as computed answers.
     let mut remote_ask: Option<RemoteAsk> = None;
     let mut remote_exam: Option<RemoteExamining> = None;
+    let mut remote_generate: Option<RemoteGenerating> = None;
     // Diagnostic net for {#server-subresource-stall}: with ALIX_HTTP_LOG set,
     // one stderr line as each request is POPPED off tiny_http's queue. On the
     // next stall the pattern is decisive: a wedged request that never prints
@@ -1860,6 +1861,69 @@ pub fn run_review(
             // as the browser's exam close). The next GET reports idle.
             (Method::Post, "/api/remote/exam/close") => {
                 remote_exam = None;
+                respond_status(request, 200);
+            }
+            // Generate a deck from a URL, mirroring the web's
+            // `POST /api/generate` (:706) under the iron rule: the server
+            // returns the full deck text, it never places a file. No
+            // `dest`, no destination collision pre-check (both are the
+            // phone's job).
+            (Method::Post, "/api/remote/generate") => {
+                if let Some(g) = remote_generate.as_mut() {
+                    g.poll();
+                }
+                if remote_generate
+                    .as_ref()
+                    .is_some_and(RemoteGenerating::thinking)
+                {
+                    respond_status(request, 409);
+                    continue;
+                }
+                #[derive(Deserialize)]
+                struct Body {
+                    url: String,
+                    guidance: Option<String>,
+                }
+                let Some(bytes) = read_capped(request.as_reader(), MAX_REMOTE_BODY) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                let Ok(body) = serde_json::from_slice::<Body>(&bytes) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                if !(body.url.starts_with("http://") || body.url.starts_with("https://")) {
+                    respond_status(request, 400); // remote generation is URLs only, same as the web
+                    continue;
+                }
+                let mut cfg = generate_cfg.clone();
+                if let Some(g) = body
+                    .guidance
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                {
+                    cfg.extra = Some(g);
+                }
+                let job = RemoteGenerating::start(body.url, cfg, ask_cfg.clone());
+                let dto = job.dto();
+                remote_generate = Some(job);
+                respond_json(request, &dto);
+            }
+            // Poll a remote generation; the finished deck text stays
+            // readable until close or the next POST replaces the slot.
+            (Method::Get, "/api/remote/generate") => {
+                let Some(g) = remote_generate.as_mut() else {
+                    respond_status(request, 409);
+                    continue;
+                };
+                g.poll();
+                respond_json(request, &g.dto());
+            }
+            // Leave remote generation: drop the slot (a worker still
+            // running just finds its receiver gone, same as the browser's
+            // `/api/generate/close`). The next GET reports 409 (no job).
+            (Method::Post, "/api/remote/generate/close") => {
+                remote_generate = None;
                 respond_status(request, 200);
             }
             _ => respond_status(request, 404),

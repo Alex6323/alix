@@ -794,6 +794,29 @@ pub(super) struct RemoteExamDto {
     pub(super) error: Option<String>,
 }
 
+/// `POST`/`GET /api/remote/generate`: mirrors [`GenerateDto`], but the
+/// server never places the result (a paired phone owns its own destination
+/// and collision handling), so this carries the full deck text back instead
+/// of a saved file name, plus a suggested one for the phone to use.
+#[derive(Serialize)]
+pub(super) struct RemoteGenerateDto {
+    /// `generating` | `done` | `error` (open set).
+    pub(super) phase: &'static str,
+    /// The full generated deck text, set only in `done`.
+    pub(super) deck: Option<String>,
+    /// A suggested file name (`generate::deck_name`), set only in `done`;
+    /// the phone decides where and under what name to save it.
+    pub(super) filename: Option<String>,
+    /// The finished text's parsed card count, best-effort: `null` if it does
+    /// not parse. Unlike [`GenerateDto`], a parse failure here does not flip
+    /// `phase` to `error`, since the server never saves the file either way:
+    /// there is nothing to warn "saved but broken" about; the phone parses
+    /// and validates its own copy.
+    pub(super) cards: Option<usize>,
+    pub(super) elapsed: Option<u64>,
+    pub(super) error: Option<String>,
+}
+
 /// The Augment screen payload. `rows` is a flat, data-driven list so a new
 /// augmentation target is one more row with no page-layout change.
 #[derive(Serialize)]

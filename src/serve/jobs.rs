@@ -28,8 +28,8 @@ use crate::{
     augment::{self, AugmentCache},
     augment_ai,
     card::Card,
-    config::{AiConfig, AskConfig, Audience},
-    exam, generate,
+    config::{AiConfig, AskConfig, Audience, GenerateDeckConfig},
+    exam, generate, parser,
     session::{Session, now_ms},
     share,
     trace::{self, Delta, SourceBase, Walk},
@@ -464,6 +464,96 @@ impl RemoteAsk {
                 draft: None,
                 error: Some(e.clone()),
                 elapsed: None,
+            },
+        }
+    }
+}
+
+/// A paired phone's in-flight or just-settled remote deck generation. Unlike
+/// the browser's [`Generating`], the server places nothing: `poll` only
+/// drains the worker's channel, it never calls `library::place_deck` or
+/// otherwise touches the decks dir. The phone owns the destination and any
+/// collision handling.
+pub(super) struct RemoteGenerating {
+    rx: Receiver<Result<String, String>>,
+    url: String,
+    started_ms: u64,
+    outcome: Option<Result<String, String>>,
+}
+
+impl RemoteGenerating {
+    /// Starts a remote deck generation on the same background worker the
+    /// browser's own `Generating` uses (`generate::spawn`).
+    pub(super) fn start(url: String, cfg: GenerateDeckConfig, ask_cfg: AskConfig) -> Self {
+        let rx = generate::spawn(url.clone(), cfg, ask_cfg);
+        Self {
+            rx,
+            url,
+            started_ms: now_ms(),
+            outcome: None,
+        }
+    }
+
+    /// Whether a call is in flight (drain with `poll` first).
+    pub(super) fn thinking(&self) -> bool {
+        self.outcome.is_none()
+    }
+
+    /// Drains a finished worker into the settled outcome; a no-op once
+    /// already settled or while the channel is still empty.
+    pub(super) fn poll(&mut self) {
+        if self.outcome.is_some() {
+            return;
+        }
+        let result = match self.rx.try_recv() {
+            Ok(r) => r,
+            Err(TryRecvError::Empty) => return,
+            Err(TryRecvError::Disconnected) => {
+                Err("the generate worker exited unexpectedly".to_string())
+            }
+        };
+        self.outcome = Some(result);
+    }
+
+    /// The suggested file name a placed deck would get: [`generate::deck_name`]
+    /// normalized to a `.txt` stem, exactly like `library::place_deck`'s own
+    /// normalization (mirrored here, never called, since the server must not
+    /// place the file itself).
+    fn suggested_filename(&self) -> String {
+        let name = generate::deck_name(&self.url);
+        let stem = name.strip_suffix(".txt").unwrap_or(&name);
+        format!("{stem}.txt")
+    }
+
+    pub(super) fn dto(&self) -> RemoteGenerateDto {
+        match &self.outcome {
+            None => RemoteGenerateDto {
+                phase: "generating",
+                deck: None,
+                filename: None,
+                cards: None,
+                elapsed: Some(now_ms().saturating_sub(self.started_ms) / 1000),
+                error: None,
+            },
+            Some(Ok(text)) => {
+                let filename = self.suggested_filename();
+                let cards = parser::parse_str(&filename, text).ok().map(|c| c.len());
+                RemoteGenerateDto {
+                    phase: "done",
+                    deck: Some(text.clone()),
+                    filename: Some(filename),
+                    cards,
+                    elapsed: None,
+                    error: None,
+                }
+            }
+            Some(Err(e)) => RemoteGenerateDto {
+                phase: "error",
+                deck: None,
+                filename: None,
+                cards: None,
+                elapsed: None,
+                error: Some(e.clone()),
             },
         }
     }

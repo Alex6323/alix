@@ -2765,6 +2765,124 @@ fn remote_draft_is_refused_for_the_kids_audience() {
     assert!(resp.body.is_empty(), "body: {:?}", resp.body);
 }
 
+/// Generates a deck from a URL and reads back the full deck text, mirroring
+/// the web's `/api/generate` round trip but with no `dest` and no saved file:
+/// `filename` is only a suggestion, `cards` is the finished text's own parsed
+/// count.
+#[test]
+fn remote_generate_round_trips_deck_text_for_a_url() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let fake = fake_reply(
+        scripts.path(),
+        "% Generated from https://example.org\n% link: https://example.org\n# Q\n\tA\n",
+    );
+    let (base, _guard) = spawn_full_server(Some(&fake));
+
+    let resp = post_json(
+        &base,
+        "/api/remote/generate",
+        r#"{"url":"https://example.org"}"#,
+    );
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("generating", body["phase"], "body: {body}");
+
+    let body = poll_until(&base, "/api/remote/generate", |b| {
+        b["phase"] != "generating"
+    });
+    assert_eq!("done", body["phase"], "body: {body}");
+    let deck = body["deck"].as_str().expect("deck is a string");
+    assert!(deck.contains("# Q"), "deck: {deck}");
+    assert_eq!("example-org.txt", body["filename"], "body: {body}");
+    assert_eq!(1, body["cards"], "body: {body}");
+    assert!(body["error"].is_null(), "body: {body}");
+}
+
+/// A second `POST` while a generation is thinking answers 409; once it
+/// settles (confirmed via `GET`), a later `POST` is accepted again: the
+/// same finished-but-unpolled-doesn't-409 idiom the tutor endpoints use.
+#[test]
+fn remote_generate_answers_409_while_thinking_then_a_later_post_after_settle_succeeds() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let fifo = scripts.path().join("gate");
+    assert!(
+        std::process::Command::new("/usr/bin/mkfifo")
+            .arg(&fifo)
+            .status()
+            .unwrap()
+            .success(),
+        "mkfifo {fifo:?} failed"
+    );
+    let reply = scripts.path().join("reply");
+    std::fs::write(&reply, "# Q\n\tA\n").unwrap();
+    let fake = scripts.path().join("fake-claude");
+    std::fs::write(
+        &fake,
+        format!(
+            "#!/bin/sh\nPATH=/usr/bin:/bin\ncat >/dev/null\ncat {} >/dev/null\ncat {}\n",
+            fifo.display(),
+            reply.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let (base, _guard) = spawn_full_server(Some(&fake));
+
+    let resp = post_json(
+        &base,
+        "/api/remote/generate",
+        r#"{"url":"https://example.org"}"#,
+    );
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("generating", body["phase"], "body: {body}");
+
+    // From here on an assertion could panic; the fifo must still get released
+    // so the parked child (and this test's `exec_lock`) never wedges the rest
+    // of the suite.
+    let mut release = FifoRelease::new(fifo.clone());
+
+    let resp = post_json(
+        &base,
+        "/api/remote/generate",
+        r#"{"url":"https://example.org"}"#,
+    );
+    assert_eq!(409, resp.status);
+    assert!(resp.body.is_empty(), "body: {:?}", resp.body);
+
+    release.release();
+    let body = poll_until(&base, "/api/remote/generate", |b| {
+        b["phase"] != "generating"
+    });
+    assert_eq!("done", body["phase"], "body: {body}");
+
+    let resp = post_json(
+        &base,
+        "/api/remote/generate",
+        r#"{"url":"https://example.org"}"#,
+    );
+    assert_eq!(200, resp.status, "a settled job must not 409 the next POST");
+}
+
+#[test]
+fn remote_generate_rejects_a_non_http_url_and_a_missing_url_with_400() {
+    let (base, _guard) = spawn_full_server(None);
+
+    let resp = post_json(
+        &base,
+        "/api/remote/generate",
+        r#"{"url":"file:///etc/passwd"}"#,
+    );
+    assert_eq!(400, resp.status);
+    assert!(resp.body.is_empty(), "body: {:?}", resp.body);
+
+    let resp = post_json(&base, "/api/remote/generate", r#"{"guidance":"only"}"#);
+    assert_eq!(400, resp.status);
+    assert!(resp.body.is_empty(), "body: {:?}", resp.body);
+}
+
 /// The full remote-exam walk over a fact deck: generate → answering (prompts
 /// only) → grade → results (a fail, with gaps) → remediate → the deck-format
 /// `cards` payload → close → idle.
@@ -2901,16 +3019,63 @@ fn remote_endpoints_require_the_token_like_the_rest_of_the_api() {
         b"not json",
     );
     assert_ne!(401, resp.status, "body: {:?}", resp.body);
+
+    let resp = http(
+        &base,
+        "POST",
+        "/api/remote/generate",
+        &[("Content-Type", "application/json")],
+        b"not json",
+    );
+    assert_eq!(401, resp.status);
+    assert!(resp.body.is_empty(), "body: {:?}", resp.body);
+
+    let resp = http(
+        &base,
+        "POST",
+        "/api/remote/generate",
+        &[
+            ("Content-Type", "application/json"),
+            ("Authorization", "Bearer secret"),
+        ],
+        b"not json",
+    );
+    assert_ne!(401, resp.status, "body: {:?}", resp.body);
+}
+
+/// Recursively reads every regular file under `dir` into a byte-keyed map
+/// (path relative to `dir` → contents): a whole-tree byte snapshot for
+/// asserting a remote endpoint placed no file anywhere in the decks dir, the
+/// other half of THE IRON RULE alongside the store-file diff below.
+fn snapshot_dir(dir: &Path) -> HashMap<PathBuf, Vec<u8>> {
+    fn walk(root: &Path, dir: &Path, out: &mut HashMap<PathBuf, Vec<u8>>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            if path.is_dir() {
+                walk(root, &path, out);
+            } else {
+                let rel = path.strip_prefix(root).unwrap().to_path_buf();
+                out.insert(rel, std::fs::read(&path).unwrap());
+            }
+        }
+    }
+    let mut out = HashMap::new();
+    walk(dir, dir, &mut out);
+    out
 }
 
 /// THE IRON RULE, pinned: nothing under `/api/remote/*` ever writes the
-/// server's own store. A paired phone owns its mastery/progress/cards, and
-/// the desktop only computes answers for it. Runs a full PASSING remote exam,
-/// a full FAILING-then-remediated remote exam, and a tutor ask+draft round
-/// trip against ONE server, then diffs the store file's bytes before and
-/// after: a passing exam must not mark the deck mastered, and a remediation
-/// must not create server-side virtual cards; either would show up here as
-/// changed bytes.
+/// server's own store OR places a file into its decks dir. A paired phone
+/// owns its mastery/progress/cards (and, for generation, its own
+/// destination), and the desktop only computes answers for it. Runs a full
+/// PASSING remote exam, a full FAILING-then-remediated remote exam, a tutor
+/// ask+draft round trip, and a full remote deck generation against ONE
+/// server, then diffs the store file's bytes AND a whole-tree snapshot of the
+/// decks dir before and after: a passing exam must not mark the deck
+/// mastered, a remediation must not create server-side virtual cards, and a
+/// generation must not save the deck it returns: any of those would show up
+/// here as changed bytes or a new file.
 #[test]
 fn remote_endpoints_never_write_the_server_store() {
     let _lock = exec_lock();
@@ -2925,6 +3090,7 @@ fn remote_endpoints_never_write_the_server_store() {
     let (base, guard) = spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture);
     let store_path = guard.dir().join("store.json");
     let before = std::fs::read(&store_path).ok();
+    let decks_before = snapshot_dir(guard.dir());
 
     // (a) a full remote exam that PASSES.
     post_json(
@@ -2985,9 +3151,26 @@ fn remote_endpoints_never_write_the_server_store() {
     });
     assert!(body["draft"].is_object(), "body: {body}");
 
+    // (d) a full remote deck generation.
+    post_json(
+        &base,
+        "/api/remote/generate",
+        r#"{"url":"https://example.org"}"#,
+    );
+    let body = poll_until(&base, "/api/remote/generate", |b| {
+        b["phase"] != "generating"
+    });
+    assert_eq!("done", body["phase"], "body: {body}");
+    post_json(&base, "/api/remote/generate/close", "{}");
+
     let after = std::fs::read(&store_path).ok();
     assert_eq!(
         before, after,
         "no /api/remote/* call may write the server's own store"
+    );
+    let decks_after = snapshot_dir(guard.dir());
+    assert_eq!(
+        decks_before, decks_after,
+        "no /api/remote/* call may place a file into the server's decks dir"
     );
 }

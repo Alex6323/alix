@@ -21,6 +21,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   computes replies, it never writes its own store, session, decks, or recent
   list. This is the server side only: the phone app's own pairing screen
   ships in a later mobile release.
+- **A paired phone can also generate a deck from a URL through the desktop's
+  AI backend, over `POST /api/remote/generate`.** The server returns the full
+  deck text and a suggested file name; placing the file, and any collision
+  handling, is the client's job, same iron rule as the tutor and exam. Server
+  half only.
 - **A tutorial deck on first run.** A brand-new decks directory is seeded
   with "The alix tutorial": ten cards that teach alix by being reviewed —
   honest grading, spacing, depths, where decks come from, the AI features

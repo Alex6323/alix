@@ -1222,3 +1222,75 @@ fn remoteexamdto_remediated_wire_shape() {
         }),
     );
 }
+
+#[test]
+fn remotegeneratedto_generating_wire_shape() {
+    let dto = RemoteGenerateDto {
+        phase: "generating",
+        deck: None,
+        filename: None,
+        cards: None,
+        elapsed: Some(4),
+        error: None,
+    };
+    pin(
+        "RemoteGenerateDto.generating",
+        &dto,
+        json!({
+            "phase": "generating",
+            "deck": null,
+            "filename": null,
+            "cards": null,
+            "elapsed": 4,
+            "error": null
+        }),
+    );
+}
+
+#[test]
+fn remotegeneratedto_done_wire_shape() {
+    let dto = RemoteGenerateDto {
+        phase: "done",
+        deck: Some("% link: https://example.org\n# Q\n\tA\n".to_string()),
+        filename: Some("example-org.txt".to_string()),
+        cards: Some(1),
+        elapsed: None,
+        error: None,
+    };
+    pin(
+        "RemoteGenerateDto.done",
+        &dto,
+        json!({
+            "phase": "done",
+            "deck": "% link: https://example.org\n# Q\n\tA\n",
+            "filename": "example-org.txt",
+            "cards": 1,
+            "elapsed": null,
+            "error": null
+        }),
+    );
+}
+
+#[test]
+fn remotegeneratedto_error_wire_shape() {
+    let dto = RemoteGenerateDto {
+        phase: "error",
+        deck: None,
+        filename: None,
+        cards: None,
+        elapsed: None,
+        error: Some("the model returned no deck content".to_string()),
+    };
+    pin(
+        "RemoteGenerateDto.error",
+        &dto,
+        json!({
+            "phase": "error",
+            "deck": null,
+            "filename": null,
+            "cards": null,
+            "elapsed": null,
+            "error": "the model returned no deck content"
+        }),
+    );
+}
