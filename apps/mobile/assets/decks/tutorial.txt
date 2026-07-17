@@ -39,11 +39,12 @@
     ! In the web app: point alix at an article or your notes and it
     ! drafts the cards, which you edit like any deck.
 
-# In the web app, you are stuck on a card. Where do you get help without leaving the review?
+# You are stuck on a card. Where do you get help without leaving the review?
     the tutor, right on the card
-    ! The AI features (tutor, deck generation, the exam) live in the web
-    ! app and need an AI assistant signed in. Plain reviewing works
-    ! offline, on any device.
+    ! The AI features (tutor, deck generation, the exam) need an AI
+    ! assistant signed in where alix runs. On the phone, pairing with
+    ! your desktop brings the tutor and the exam along. Plain reviewing
+    ! works offline, on any device.
 
 # How does alix check that you truly understood a deck, not just memorized it?
     a short AI exam about the deck's material
