@@ -5,6 +5,7 @@
 // `tester.pump` can step through the fake's canned phase-walk without a
 // long real wait (Timer.periodic only advances when pumped).
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -133,6 +134,17 @@ class FakeServerClient implements ServerClient {
 }
 
 void main() {
+  /// A fresh temp dir standing in for the app support dir the "Re-pair"
+  /// action would reopen the pairing sheet against; this suite never
+  /// exercises a real pair, so its contents never matter beyond existing.
+  Directory tempSupport() {
+    final dir = Directory.systemTemp.createTempSync('alix-exam-support-');
+    addTearDown(() {
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+    });
+    return dir;
+  }
+
   Future<void> pumpExam(
     WidgetTester tester, {
     required ServerClient client,
@@ -148,6 +160,8 @@ void main() {
       home: ExamScreen(
         deckName: 'rust.txt',
         client: client,
+        support: tempSupport(),
+        buildClient: (_) => client,
         applyPassed: (nowMs) => passedCalls.add(nowMs),
         applyRemediation: (cardsText, nowMs) {
           remediationCalls.add((cardsText, nowMs));
@@ -483,6 +497,8 @@ void main() {
               builder: (_) => ExamScreen(
                 deckName: 'rust.txt',
                 client: client,
+                support: tempSupport(),
+                buildClient: (_) => client,
                 applyPassed: (_) {},
                 applyRemediation: (_, _) => 0,
                 nowMs: () => BigInt.from(1000),
@@ -581,6 +597,8 @@ void main() {
               builder: (_) => ExamScreen(
                 deckName: 'rust.txt',
                 client: client,
+                support: tempSupport(),
+                buildClient: (_) => client,
                 applyPassed: (_) {},
                 applyRemediation: (_, _) => 0,
                 nowMs: () => BigInt.from(1000),
@@ -599,7 +617,9 @@ void main() {
     expect(find.byType(ExamScreen), findsNothing);
   });
 
-  testWidgets('PairingExpired on start shows the exact re-pair SnackBar and pops', (tester) async {
+  testWidgets(
+      'PairingExpired on start shows the exact re-pair SnackBar and pops; '
+      'tapping Re-pair opens the pairing sheet on a live context', (tester) async {
     final client = FakeServerClient(expireOnStart: true);
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
@@ -609,6 +629,8 @@ void main() {
               builder: (_) => ExamScreen(
                 deckName: 'rust.txt',
                 client: client,
+                support: tempSupport(),
+                buildClient: (_) => client,
                 applyPassed: (_) {},
                 applyRemediation: (_, _) => 0,
                 nowMs: () => BigInt.from(1000),
@@ -628,6 +650,16 @@ void main() {
       findsOneWidget,
     );
     expect(find.byType(ExamScreen), findsNothing);
+    expect(find.text('Re-pair'), findsOneWidget);
+
+    // The exam screen has already popped (its own context is dead); the
+    // action must still open the pairing sheet safely on the surviving
+    // root context, not throw.
+    await tester.tap(find.text('Re-pair'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('pairing-url-field')), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('submit failure: examGrade false shows the SnackBar and stays on the last question',

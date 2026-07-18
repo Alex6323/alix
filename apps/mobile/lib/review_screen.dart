@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:alix_mobile/bootstrap.dart';
 import 'package:alix_mobile/exam_screen.dart';
+import 'package:alix_mobile/pairing_sheet.dart';
 import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/src/rust/api/review.dart';
 import 'package:alix_mobile/theme.dart';
@@ -87,6 +88,16 @@ class _ReviewScreenState extends State<ReviewScreen> {
   bool _serverLive = false;
   ServerClient? _client;
 
+  /// Resolved once `_probeServer` finishes its async lookup, regardless of
+  /// whether pairing is present or live: cached so `_openExam` (only
+  /// reachable once `_serverLive` is true, i.e. after this has settled) can
+  /// hand its "Re-pair" action down without a fresh async support-dir
+  /// resolution of its own. (`_openTutor` does not: TutorSheet's own 401
+  /// SnackBar is unreachable while it stays open as a modal sheet on top of
+  /// its own ROOT messenger, so wiring "Re-pair" there is deferred; see the
+  /// task report.)
+  Directory? _support;
+
   @override
   void initState() {
     super.initState();
@@ -112,6 +123,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
   /// the fix; a merely dead server stays silent.
   Future<void> _probeServer() async {
     final support = widget.supportDir ?? await getApplicationSupportDirectory();
+    _support = support;
     final config = readServer(support);
     if (config == null) return;
     final client = (widget.buildClient ?? HttpServerClient.new)(config);
@@ -121,8 +133,22 @@ class _ReviewScreenState extends State<ReviewScreen> {
     } on PairingExpired {
       client.close();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Pairing expired. Pair again from the deck list menu.'),
+      // Unlike exam_screen.dart, this screen never pops itself here, so its
+      // own context stays valid for as long as `mounted` holds; no
+      // navigator capture needed.
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('Pairing expired. Pair again from the deck list menu.'),
+        action: SnackBarAction(
+          label: 'Re-pair',
+          onPressed: () {
+            if (!mounted) return;
+            showPairingSheet(
+              context,
+              support: support,
+              buildClient: widget.buildClient ?? HttpServerClient.new,
+            );
+          },
+        ),
       ));
       return;
     }
@@ -195,11 +221,14 @@ class _ReviewScreenState extends State<ReviewScreen> {
   /// only path back to it, mirroring `_openTutor`'s seam.
   void _openExam() {
     final client = _client;
-    if (client == null) return;
+    final support = _support;
+    if (client == null || support == null) return;
     Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => ExamScreen(
         deckName: _deckName(),
         client: client,
+        support: support,
+        buildClient: widget.buildClient ?? HttpServerClient.new,
         applyPassed: (nowMs) => _session.applyExamPassed(nowMs: nowMs),
         applyRemediation: (cardsText, nowMs) =>
             _session.applyRemediation(cardsText: cardsText, nowMs: nowMs),

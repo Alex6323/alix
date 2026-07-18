@@ -170,7 +170,9 @@ void main() {
     expect(find.text('Ask'), findsNothing);
   });
 
-  testWidgets('a refused token (401 on the probe): no chip, and the exact re-pair SnackBar', (tester) async {
+  testWidgets(
+      'a refused token (401 on the probe): no chip, the exact re-pair SnackBar, '
+      'and Re-pair opens the pairing sheet', (tester) async {
     final support = tempSupport();
     await setServer(const ServerConfig(host: '127.0.0.1', port: 7777, token: 'stale'), support: support);
 
@@ -186,5 +188,14 @@ void main() {
       find.text('Pairing expired. Pair again from the deck list menu.'),
       findsOneWidget,
     );
+
+    // This screen never pops itself on a 401 (unlike exam_screen.dart), so
+    // its own context is still alive; the action must open the sheet on it
+    // without throwing.
+    await tester.tap(find.text('Re-pair'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('pairing-url-field')), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }

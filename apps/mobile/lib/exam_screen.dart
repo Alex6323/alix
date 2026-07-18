@@ -5,9 +5,11 @@
 // never imports the generated bridge (`src/rust/*`), so its tests run
 // without a Rust dylib, the same seam tutor_sheet.dart plays.
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import 'package:alix_mobile/pairing_sheet.dart';
 import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/theme.dart';
 
@@ -33,6 +35,8 @@ class ExamScreen extends StatefulWidget {
     super.key,
     required this.deckName,
     required this.client,
+    required this.support,
+    required this.buildClient,
     required this.applyPassed,
     required this.applyRemediation,
     required this.nowMs,
@@ -47,6 +51,15 @@ class ExamScreen extends StatefulWidget {
 
   /// The paired desktop's AI backend, over `/api/remote/*`.
   final ServerClient client;
+
+  /// The support dir the "Re-pair" action reopens the pairing sheet
+  /// against on a 401 (see `_expirePairingAndPop`); the caller (review or
+  /// walk screen) resolves this once and hands it down.
+  final Directory support;
+
+  /// Builds the pairing sheet's own probe client, the same way the caller
+  /// resolves its own.
+  final ServerClient Function(ServerConfig) buildClient;
 
   /// Applies a PASSED sitting to the phone's own store (a closure over the
   /// bridge session's `applyExamPassed`). Called at most once per sitting.
@@ -265,9 +278,24 @@ class _ExamScreenState extends State<ExamScreen> {
   void _expirePairingAndPop() {
     _pollTimer?.cancel();
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text(_pairingExpiredMessage)));
-    Navigator.of(context).maybePop();
+    // This screen's own context dies the moment it pops below, but a
+    // "Re-pair" tap on the SnackBar (shown on the ROOT messenger, so it
+    // survives) can fire well after that. Capture the navigator itself
+    // (not this screen's context) now: it outlives the pop, and `.mounted`
+    // at tap time guards the one case it wouldn't (the whole app tearing
+    // down in between).
+    final navigator = Navigator.of(context);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: const Text(_pairingExpiredMessage),
+      action: SnackBarAction(
+        label: 'Re-pair',
+        onPressed: () {
+          if (!navigator.mounted) return;
+          showPairingSheet(navigator.context, support: widget.support, buildClient: widget.buildClient);
+        },
+      ),
+    ));
+    navigator.maybePop();
   }
 
   void _snackAndPop(String message) {

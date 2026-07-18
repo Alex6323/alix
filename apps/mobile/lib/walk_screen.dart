@@ -69,6 +69,11 @@ class _WalkScreenState extends State<WalkScreen> {
   /// when opened, so a second probe here would just duplicate that work.
   ServerClient? _client;
 
+  /// Resolved alongside [_client]; handed to [ExamScreen] so its "Re-pair"
+  /// action (on a 401 mid-exam) can reopen the pairing sheet, mirroring
+  /// review_screen.dart's `_support` cache.
+  Directory? _support;
+
   @override
   void initState() {
     super.initState();
@@ -89,6 +94,7 @@ class _WalkScreenState extends State<WalkScreen> {
 
   Future<void> _loadClient() async {
     final support = widget.supportDir ?? await getApplicationSupportDirectory();
+    _support = support;
     final config = readServer(support);
     if (config == null || !mounted) return;
     setState(() => _client = (widget.buildClient ?? HttpServerClient.new)(config));
@@ -156,10 +162,14 @@ class _WalkScreenState extends State<WalkScreen> {
   /// trace never remediates (the server reports `canRemediate: false`), so
   /// `applyRemediation` is a no-op ExamScreen still requires.
   void _openExam(ServerClient client) {
+    final support = _support;
+    if (support == null) return;
     Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => ExamScreen(
         deckName: _deckName(),
         client: client,
+        support: support,
+        buildClient: widget.buildClient ?? HttpServerClient.new,
         applyPassed: (nowMs) => _session.applyExamPassed(nowMs: nowMs),
         applyFailed: (nowMs) => _session.applyExamFailed(nowMs: nowMs),
         applyRemediation: (_, _) => 0,
