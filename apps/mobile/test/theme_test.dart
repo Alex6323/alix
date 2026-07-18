@@ -48,4 +48,58 @@ void main() {
     expect(tokens.again, const Color(0xFFD23B34));
     expect(tokens.bolt, const Color(0xFF0E7C86));
   });
+
+  // themeFromVars's fall-back cascade (--text/--faint/--accent-ink inherit
+  // the SAME theme's own ink/dim/void when a theme block omits them - see
+  // ThemeVars's doc comment). None of the 4 shipped themes (dark/light/
+  // nord/solarized-light) actually omit any of the 3 in assets/web/
+  // theme.css today, so this is exercised here with a synthetic ThemeVars,
+  // not via the CSS drift guard (test/theme_gallery_test.dart).
+  const probe = ThemeVars(
+    surface: Color(0xFF112233),
+    ink: Color(0xFFAABBCC),
+    dim: Color(0xFF445566),
+    line: Color(0xFF778899),
+    bolt: Color(0xFF001122),
+    boltHi: Color(0xFF334455),
+    good: Color(0xFF00FF00),
+    warn: Color(0xFFFFFF00),
+    again: Color(0xFFFF0000),
+    noteBorder: Color(0xFF123456),
+    noteInk: Color(0xFF654321),
+    // text / faint / accentInk intentionally omitted.
+  );
+
+  test('an omitted extra falls back to the theme\'s own ink/dim/void', () {
+    final data = themeFromVars(probe, Brightness.dark);
+    final tokens = data.extension<AlixTokens>()!;
+    expect(tokens.text, probe.ink, reason: '--text falls back to --ink');
+    expect(tokens.faint, probe.dim, reason: '--faint falls back to --dim');
+    expect(data.colorScheme.onSecondary, probe.surface,
+        reason: '--accent-ink falls back to --void (surface)');
+  });
+
+  test('a present extra overrides its fall-back', () {
+    final overridden = ThemeVars(
+      surface: probe.surface,
+      ink: probe.ink,
+      dim: probe.dim,
+      line: probe.line,
+      bolt: probe.bolt,
+      boltHi: probe.boltHi,
+      good: probe.good,
+      warn: probe.warn,
+      again: probe.again,
+      noteBorder: probe.noteBorder,
+      noteInk: probe.noteInk,
+      text: const Color(0xFFEEDDCC),
+      faint: const Color(0xFFBBAA99),
+      accentInk: const Color(0xFF998877),
+    );
+    final data = themeFromVars(overridden, Brightness.light);
+    final tokens = data.extension<AlixTokens>()!;
+    expect(tokens.text, const Color(0xFFEEDDCC));
+    expect(tokens.faint, const Color(0xFFBBAA99));
+    expect(data.colorScheme.onSecondary, const Color(0xFF998877));
+  });
 }
