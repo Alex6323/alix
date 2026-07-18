@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:alix_mobile/bootstrap.dart';
 import 'package:alix_mobile/exam_screen.dart';
+import 'package:alix_mobile/leave_guard.dart';
 import 'package:alix_mobile/pairing_sheet.dart';
 import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/src/rust/api/review.dart';
@@ -119,23 +120,28 @@ class _WalkScreenState extends State<WalkScreen> {
     } on PairingExpired {
       client.close();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('Pairing expired. Pair again from the deck list menu.'),
-        action: SnackBarAction(
-          label: 'Re-pair',
-          onPressed: () {
-            if (!mounted) return;
-            showPairingSheet(
-              context,
-              support: support,
-              buildClient: widget.buildClient ?? HttpServerClient.new,
-            );
-          },
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Pairing expired. Pair again from the deck list menu.',
+          ),
+          action: SnackBarAction(
+            label: 'Re-pair',
+            onPressed: () {
+              if (!mounted) return;
+              showPairingSheet(
+                context,
+                support: support,
+                buildClient: widget.buildClient ?? HttpServerClient.new,
+              );
+            },
+          ),
         ),
-      ));
+      );
       return;
     }
-    final live = version != null && compareVersions(version, minServerVersion) >= 0;
+    final live =
+        version != null && compareVersions(version, minServerVersion) >= 0;
     if (!live || !mounted) {
       client.close();
       return;
@@ -188,7 +194,8 @@ class _WalkScreenState extends State<WalkScreen> {
     _predict.clear();
   }
 
-  void _grade(WalkDelta delta) => setState(() => _state = _session.grade(delta: delta));
+  void _grade(WalkDelta delta) =>
+      setState(() => _state = _session.grade(delta: delta));
 
   /// The name the paired server's own catalog resolves this deck by,
   /// mirroring review_screen.dart's `_deckName()` exactly (see its own
@@ -213,18 +220,20 @@ class _WalkScreenState extends State<WalkScreen> {
     final client = _client;
     final support = _support;
     if (client == null || support == null) return;
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => ExamScreen(
-        deckName: _deckName(),
-        client: client,
-        support: support,
-        buildClient: widget.buildClient ?? HttpServerClient.new,
-        applyPassed: (nowMs) => _session.applyExamPassed(nowMs: nowMs),
-        applyFailed: (nowMs) => _session.applyExamFailed(nowMs: nowMs),
-        applyRemediation: (_, _) => 0,
-        nowMs: () => BigInt.from(DateTime.now().millisecondsSinceEpoch),
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ExamScreen(
+          deckName: _deckName(),
+          client: client,
+          support: support,
+          buildClient: widget.buildClient ?? HttpServerClient.new,
+          applyPassed: (nowMs) => _session.applyExamPassed(nowMs: nowMs),
+          applyFailed: (nowMs) => _session.applyExamFailed(nowMs: nowMs),
+          applyRemediation: (_, _) => 0,
+          nowMs: () => BigInt.from(DateTime.now().millisecondsSinceEpoch),
+        ),
       ),
-    ));
+    );
   }
 
   @override
@@ -235,39 +244,60 @@ class _WalkScreenState extends State<WalkScreen> {
     }
     final tokens = Theme.of(context).alix;
     final done = _state.phase == WalkPhase.done;
-    return Scaffold(
-      appBar: AppBar(
-        title: const AlixWordmark(),
-        actions: [
-          if (!done)
-            Padding(
-              padding: const EdgeInsets.only(right: 16),
-              child: Center(
-                child: Text(
-                  'checkpoint ${_state.current} / ${_state.total}',
-                  style: TextStyle(fontFamily: _mono, fontSize: 13, color: tokens.dim),
+    return LeaveGuard(
+      // The trace walk guards a stray back-swipe exactly as a fact review does
+      // (leave_guard.dart): while checkpoints remain, leaving asks first.
+      finished: done,
+      confirm: () => _confirmLeave(context),
+      child: Scaffold(
+        appBar: AppBar(
+          title: const AlixWordmark(),
+          actions: [
+            if (!done)
+              Padding(
+                padding: const EdgeInsets.only(right: 16),
+                child: Center(
+                  child: Text(
+                    'checkpoint ${_state.current} / ${_state.total}',
+                    style: TextStyle(
+                      fontFamily: _mono,
+                      fontSize: 13,
+                      color: tokens.dim,
+                    ),
+                  ),
                 ),
               ),
-            ),
-        ],
-      ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            if (!done) _descriptionEyebrow(tokens),
-            Expanded(
-              child: done
-                  ? _done(context, tokens)
-                  : Column(
-                      children: [
-                        Expanded(child: _phaseBody(context, tokens)),
-                        _footer(context, tokens),
-                      ],
-                    ),
-            ),
           ],
         ),
+        body: SafeArea(
+          child: Column(
+            children: [
+              if (!done) _descriptionEyebrow(tokens),
+              Expanded(
+                child: done
+                    ? _done(context, tokens)
+                    : Column(
+                        children: [
+                          Expanded(child: _phaseBody(context, tokens)),
+                          _footer(context, tokens),
+                        ],
+                      ),
+              ),
+            ],
+          ),
+        ),
       ),
+    );
+  }
+
+  /// Confirms abandoning a walk that still has checkpoints. Returns true to
+  /// leave, false to keep walking.
+  Future<bool> _confirmLeave(BuildContext context) {
+    return confirmLeaveSession(
+      context,
+      title: 'Leave the walk?',
+      body: "You're on checkpoint ${_state.current} of ${_state.total}.",
+      stayLabel: 'Keep walking',
     );
   }
 
@@ -285,7 +315,12 @@ class _WalkScreenState extends State<WalkScreen> {
           _state.description,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: TextStyle(fontFamily: _mono, fontSize: 11.5, letterSpacing: 0.4, color: tokens.bolt),
+          style: TextStyle(
+            fontFamily: _mono,
+            fontSize: 11.5,
+            letterSpacing: 0.4,
+            color: tokens.bolt,
+          ),
         ),
       ),
     );
@@ -333,8 +368,11 @@ class _WalkScreenState extends State<WalkScreen> {
             decoration: InputDecoration(
               filled: true,
               fillColor: Colors.black.withValues(alpha: 0.25),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              hintText: 'predict the next checkpoint, even a hunch beats nothing',
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              hintText:
+                  'predict the next checkpoint, even a hunch beats nothing',
             ),
           ),
         ),
@@ -362,7 +400,10 @@ class _WalkScreenState extends State<WalkScreen> {
         border: Border.all(color: tokens.line),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Text(text, style: TextStyle(fontFamily: _mono, fontSize: 12, color: tokens.dim)),
+      child: Text(
+        text,
+        style: TextStyle(fontFamily: _mono, fontSize: 12, color: tokens.dim),
+      ),
     );
   }
 
@@ -371,8 +412,14 @@ class _WalkScreenState extends State<WalkScreen> {
     if (locator == null) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(top: 8),
-      child: Text('at $locator',
-          style: TextStyle(fontFamily: _mono, fontSize: 11.5, color: tokens.faint)),
+      child: Text(
+        'at $locator',
+        style: TextStyle(
+          fontFamily: _mono,
+          fontSize: 11.5,
+          color: tokens.faint,
+        ),
+      ),
     );
   }
 
@@ -413,7 +460,12 @@ class _WalkScreenState extends State<WalkScreen> {
   Widget _label(String text, Color color) {
     return Text(
       text.toUpperCase(),
-      style: TextStyle(fontFamily: _mono, fontSize: 10.5, letterSpacing: 1.4, color: color),
+      style: TextStyle(
+        fontFamily: _mono,
+        fontSize: 10.5,
+        letterSpacing: 1.4,
+        color: color,
+      ),
     );
   }
 
@@ -432,7 +484,11 @@ class _WalkScreenState extends State<WalkScreen> {
         ),
         child: Text(
           _state.excerptError ?? 'no excerpt for this checkpoint',
-          style: TextStyle(color: tokens.dim, fontStyle: FontStyle.italic, fontSize: 13),
+          style: TextStyle(
+            color: tokens.dim,
+            fontStyle: FontStyle.italic,
+            fontSize: 13,
+          ),
         ),
       );
     }
@@ -450,7 +506,11 @@ class _WalkScreenState extends State<WalkScreen> {
               excerpt.path,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontFamily: _mono, fontSize: 11, color: tokens.dim),
+              style: TextStyle(
+                fontFamily: _mono,
+                fontSize: 11,
+                color: tokens.dim,
+              ),
             ),
           ),
           Divider(height: 1, color: tokens.line),
@@ -463,8 +523,14 @@ class _WalkScreenState extends State<WalkScreen> {
                 if (excerpt.truncated)
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
-                    child: Text('… excerpt truncated',
-                        style: TextStyle(color: tokens.faint, fontSize: 11, fontStyle: FontStyle.italic)),
+                    child: Text(
+                      '… excerpt truncated',
+                      style: TextStyle(
+                        color: tokens.faint,
+                        fontSize: 11,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
                   ),
               ],
             ),
@@ -482,10 +548,24 @@ class _WalkScreenState extends State<WalkScreen> {
         children: [
           SizedBox(
             width: 32,
-            child: Text('${line.n}', style: TextStyle(fontFamily: _mono, fontSize: 12, color: tokens.faint)),
+            child: Text(
+              '${line.n}',
+              style: TextStyle(
+                fontFamily: _mono,
+                fontSize: 12,
+                color: tokens.faint,
+              ),
+            ),
           ),
           Expanded(
-            child: Text(line.text, style: TextStyle(fontFamily: _mono, fontSize: 13, color: tokens.text)),
+            child: Text(
+              line.text,
+              style: TextStyle(
+                fontFamily: _mono,
+                fontSize: 13,
+                color: tokens.text,
+              ),
+            ),
           ),
         ],
       ),
@@ -505,8 +585,19 @@ class _WalkScreenState extends State<WalkScreen> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SizedBox(width: 18, child: Text('▸', style: TextStyle(color: tokens.good, fontSize: 14))),
-                Expanded(child: Text(pt, style: TextStyle(color: onSurface, height: 1.4))),
+                SizedBox(
+                  width: 18,
+                  child: Text(
+                    '▸',
+                    style: TextStyle(color: tokens.good, fontSize: 14),
+                  ),
+                ),
+                Expanded(
+                  child: Text(
+                    pt,
+                    style: TextStyle(color: onSurface, height: 1.4),
+                  ),
+                ),
               ],
             ),
           ),
@@ -529,7 +620,10 @@ class _WalkScreenState extends State<WalkScreen> {
         border: Border.all(color: tokens.noteBorder.withValues(alpha: 0.24)),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: Text(note, style: TextStyle(color: tokens.noteInk, fontSize: 15, height: 1.4)),
+      child: Text(
+        note,
+        style: TextStyle(color: tokens.noteInk, fontSize: 15, height: 1.4),
+      ),
     );
   }
 
@@ -539,16 +633,27 @@ class _WalkScreenState extends State<WalkScreen> {
     final chips = switch (_state.phase) {
       WalkPhase.predict => [_chip('Reveal', _ChipKind.primary, _submitPredict)],
       WalkPhase.reveal => [
-          _chip('Missed it', _ChipKind.failed, () => _grade(WalkDelta.missed)),
-          _chip('Partly', _ChipKind.partly, () => _grade(WalkDelta.partly)),
-          _chip('Got it', _ChipKind.passed, () => _grade(WalkDelta.got)),
-        ],
+        _chip('Missed it', _ChipKind.failed, () => _grade(WalkDelta.missed)),
+        _chip('Partly', _ChipKind.partly, () => _grade(WalkDelta.partly)),
+        _chip('Got it', _ChipKind.passed, () => _grade(WalkDelta.got)),
+      ],
       WalkPhase.done => const <Widget>[],
     };
-    if (chips.isEmpty) return SizedBox(height: 12 + MediaQuery.of(context).padding.bottom);
+    if (chips.isEmpty)
+      return SizedBox(height: 12 + MediaQuery.of(context).padding.bottom);
     return Padding(
-      padding: EdgeInsets.fromLTRB(12, 10, 12, 12 + MediaQuery.of(context).padding.bottom),
-      child: Wrap(alignment: WrapAlignment.center, spacing: 10, runSpacing: 8, children: chips),
+      padding: EdgeInsets.fromLTRB(
+        12,
+        10,
+        12,
+        12 + MediaQuery.of(context).padding.bottom,
+      ),
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        spacing: 10,
+        runSpacing: 8,
+        children: chips,
+      ),
     );
   }
 
@@ -556,11 +661,20 @@ class _WalkScreenState extends State<WalkScreen> {
 
   Widget _done(BuildContext context, AlixTokens tokens) {
     final summary =
-        _state.summary ?? WalkSummary(passed: 0, partly: 0, failed: 0, weak: Uint32List(0), total: 0);
+        _state.summary ??
+        WalkSummary(
+          passed: 0,
+          partly: 0,
+          failed: 0,
+          weak: Uint32List(0),
+          total: 0,
+        );
     final client = _client;
     final cooldown = client == null
         ? null
-        : _session.examCooldownMs(nowMs: BigInt.from(DateTime.now().millisecondsSinceEpoch));
+        : _session.examCooldownMs(
+            nowMs: BigInt.from(DateTime.now().millisecondsSinceEpoch),
+          );
     final examAvailable = _serverLive && cooldown == null;
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -570,28 +684,64 @@ class _WalkScreenState extends State<WalkScreen> {
           const SizedBox(height: 12),
           Text(
             'WALK COMPLETE',
-            style: TextStyle(fontFamily: _mono, color: tokens.bolt, fontSize: 11, letterSpacing: 2.2),
+            style: TextStyle(
+              fontFamily: _mono,
+              color: tokens.bolt,
+              fontSize: 11,
+              letterSpacing: 2.2,
+            ),
           ),
           const SizedBox(height: 14),
           Text(
             _state.description.isEmpty ? 'Trace walked.' : _state.description,
             style: TextStyle(
-                fontSize: 24, fontWeight: FontWeight.w600, color: Theme.of(context).colorScheme.onSurface),
+              fontSize: 24,
+              fontWeight: FontWeight.w600,
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
           ),
           const SizedBox(height: 18),
-          _summaryRow('got it', '${summary.passed}', tokens, valueColor: tokens.good),
-          _summaryRow('partly', '${summary.partly}', tokens, valueColor: tokens.warn),
-          _summaryRow('missed it', '${summary.failed}', tokens, valueColor: tokens.again),
+          _summaryRow(
+            'got it',
+            '${summary.passed}',
+            tokens,
+            valueColor: tokens.good,
+          ),
+          _summaryRow(
+            'partly',
+            '${summary.partly}',
+            tokens,
+            valueColor: tokens.warn,
+          ),
+          _summaryRow(
+            'missed it',
+            '${summary.failed}',
+            tokens,
+            valueColor: tokens.again,
+          ),
           if (summary.weak.isNotEmpty)
-            _summaryRow('weak (resurface sooner)', summary.weak.map((h) => '#$h').join(' · '), tokens)
+            _summaryRow(
+              'weak (resurface sooner)',
+              summary.weak.map((h) => '#$h').join(' · '),
+              tokens,
+            )
           else if (summary.total > 0)
-            _summaryRow('every checkpoint landed', '✓', tokens, valueColor: tokens.good),
+            _summaryRow(
+              'every checkpoint landed',
+              '✓',
+              tokens,
+              valueColor: tokens.good,
+            ),
           const SizedBox(height: 24),
           if (examAvailable) ...[
             _chip('Take the exam', _ChipKind.primary, _openExam),
             const SizedBox(height: 12),
           ],
-          _chip('Walk again', examAvailable ? _ChipKind.base : _ChipKind.primary, _restart),
+          _chip(
+            'Walk again',
+            examAvailable ? _ChipKind.base : _ChipKind.primary,
+            _restart,
+          ),
           if (client != null && cooldown != null) ...[
             const SizedBox(height: 12),
             Text(
@@ -604,10 +754,17 @@ class _WalkScreenState extends State<WalkScreen> {
     );
   }
 
-  Widget _summaryRow(String label, String value, AlixTokens tokens, {Color? valueColor}) {
+  Widget _summaryRow(
+    String label,
+    String value,
+    AlixTokens tokens, {
+    Color? valueColor,
+  }) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 9),
-      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: tokens.line))),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: tokens.line)),
+      ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
@@ -615,7 +772,10 @@ class _WalkScreenState extends State<WalkScreen> {
           Text(
             value,
             style: TextStyle(
-                fontFamily: _mono, fontWeight: FontWeight.w600, color: valueColor ?? Theme.of(context).colorScheme.onSurface),
+              fontFamily: _mono,
+              fontWeight: FontWeight.w600,
+              color: valueColor ?? Theme.of(context).colorScheme.onSurface,
+            ),
           ),
         ],
       ),
@@ -671,7 +831,12 @@ class _WalkScreenState extends State<WalkScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 11),
           child: Text(
             label,
-            style: TextStyle(fontFamily: _sans, fontWeight: FontWeight.w600, fontSize: 14, color: fg),
+            style: TextStyle(
+              fontFamily: _sans,
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+              color: fg,
+            ),
           ),
         ),
       ),

@@ -66,6 +66,10 @@ Release notes, so a release without its section fails loud.
 
 ### Fixed
 
+- **Leaving a trace walk mid-way now asks to confirm, like a fact review.**
+  The leave-confirmation only guarded review sessions, so a stray back-swipe
+  abandoned a walk silently; both screens now share one guard, so the two
+  deck kinds behave the same.
 - The session summary no longer shows all zeros after a first pass over a
   fresh deck: it now says how many new cards were introduced, and hides
   the passed/failed rows when nothing was graded.

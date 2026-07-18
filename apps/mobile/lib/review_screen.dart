@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:alix_mobile/bootstrap.dart';
 import 'package:alix_mobile/exam_screen.dart';
+import 'package:alix_mobile/leave_guard.dart';
 import 'package:alix_mobile/pairing_sheet.dart';
 import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/src/rust/api/review.dart';
@@ -136,23 +137,28 @@ class _ReviewScreenState extends State<ReviewScreen> {
       // Unlike exam_screen.dart, this screen never pops itself here, so its
       // own context stays valid for as long as `mounted` holds; no
       // navigator capture needed.
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('Pairing expired. Pair again from the deck list menu.'),
-        action: SnackBarAction(
-          label: 'Re-pair',
-          onPressed: () {
-            if (!mounted) return;
-            showPairingSheet(
-              context,
-              support: support,
-              buildClient: widget.buildClient ?? HttpServerClient.new,
-            );
-          },
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Pairing expired. Pair again from the deck list menu.',
+          ),
+          action: SnackBarAction(
+            label: 'Re-pair',
+            onPressed: () {
+              if (!mounted) return;
+              showPairingSheet(
+                context,
+                support: support,
+                buildClient: widget.buildClient ?? HttpServerClient.new,
+              );
+            },
+          ),
         ),
-      ));
+      );
       return;
     }
-    final live = version != null && compareVersions(version, minServerVersion) >= 0;
+    final live =
+        version != null && compareVersions(version, minServerVersion) >= 0;
     if (!live || !mounted) {
       client.close();
       return;
@@ -223,18 +229,20 @@ class _ReviewScreenState extends State<ReviewScreen> {
     final client = _client;
     final support = _support;
     if (client == null || support == null) return;
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => ExamScreen(
-        deckName: _deckName(),
-        client: client,
-        support: support,
-        buildClient: widget.buildClient ?? HttpServerClient.new,
-        applyPassed: (nowMs) => _session.applyExamPassed(nowMs: nowMs),
-        applyRemediation: (cardsText, nowMs) =>
-            _session.applyRemediation(cardsText: cardsText, nowMs: nowMs),
-        nowMs: () => BigInt.from(DateTime.now().millisecondsSinceEpoch),
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ExamScreen(
+          deckName: _deckName(),
+          client: client,
+          support: support,
+          buildClient: widget.buildClient ?? HttpServerClient.new,
+          applyPassed: (nowMs) => _session.applyExamPassed(nowMs: nowMs),
+          applyRemediation: (cardsText, nowMs) =>
+              _session.applyRemediation(cardsText: cardsText, nowMs: nowMs),
+          nowMs: () => BigInt.from(DateTime.now().millisecondsSinceEpoch),
+        ),
       ),
-    ));
+    );
   }
 
   /// (Re)opens the session; also the restart action on the done screen.
@@ -265,7 +273,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
     _ticked.clear();
     _attemptOpen = false;
     _attempt.clear();
-    final lines = next.mode == Mode.typeLine ? (next.card?.back.length ?? 1) : 1;
+    final lines = next.mode == Mode.typeLine
+        ? (next.card?.back.length ?? 1)
+        : 1;
     while (_typed.length < lines) {
       _typed.add(TextEditingController());
     }
@@ -277,8 +287,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
   void _apply(ReviewState next) => setState(() => _resetCard(next));
   void _grade(Grade grade) => _apply(_session.grade(grade: grade));
 
-  bool get _hasChoices =>
-      _state.choices != null && _state.choices!.isNotEmpty;
+  bool get _hasChoices => _state.choices != null && _state.choices!.isNotEmpty;
   bool get _isTyping =>
       _state.mode == Mode.typing || _state.mode == Mode.typeLine;
   bool get _isExplain =>
@@ -334,91 +343,74 @@ class _ReviewScreenState extends State<ReviewScreen> {
       return _cantOpen(context, _openError ?? '');
     }
     final card = _state.card;
-    return PopScope(
+    return LeaveGuard(
       // Leaving is immediate once the session is done; while cards are still
-      // due, a back gesture or the AppBar back asks first, so a session isn't
-      // abandoned by a stray swipe.
-      canPop: _state.finished,
-      onPopInvokedWithResult: (didPop, _) async {
-        if (didPop || !mounted) return;
-        final navigator = Navigator.of(context);
-        final leave = await _confirmLeave(context);
-        if (leave && navigator.mounted) navigator.pop();
-      },
+      // due, a back gesture or the AppBar back asks first, so a stray swipe
+      // doesn't abandon a session. Shared with the walk screen so both deck
+      // kinds behave the same (leave_guard.dart).
+      finished: _state.finished,
+      confirm: () => _confirmLeave(context),
       child: Scaffold(
-      appBar: AppBar(
-        title: const AlixWordmark(),
-        actions: [
-          if (!_state.finished)
-            Padding(
-              padding: const EdgeInsets.only(right: 16),
-              child: Center(
-                child: Text(
-                  '${_state.remaining} left',
-                  style: TextStyle(
-                    fontFamily: _mono,
-                    fontSize: 13,
-                    color: Theme.of(context).alix.dim,
+        appBar: AppBar(
+          title: const AlixWordmark(),
+          actions: [
+            if (!_state.finished)
+              Padding(
+                padding: const EdgeInsets.only(right: 16),
+                child: Center(
+                  child: Text(
+                    '${_state.remaining} left',
+                    style: TextStyle(
+                      fontFamily: _mono,
+                      fontSize: 13,
+                      color: Theme.of(context).alix.dim,
+                    ),
                   ),
                 ),
               ),
-            ),
-        ],
-      ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            _crumbStrip(context),
-            if (_foreign case final foreign?) _foreignBanner(context, foreign),
-            Expanded(
-              child: card == null
-                  ? _done(context)
-                  : Column(
-                      children: [
-                        Expanded(
-                          child: SingleChildScrollView(
-                            padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
-                            child: SizedBox(
-                              width: double.infinity,
-                              child: _face(context, card),
-                            ),
-                          ),
-                        ),
-                        _legend(context, card),
-                      ],
-                    ),
-            ),
           ],
         ),
-      ),
+        body: SafeArea(
+          child: Column(
+            children: [
+              _crumbStrip(context),
+              if (_foreign case final foreign?)
+                _foreignBanner(context, foreign),
+              Expanded(
+                child: card == null
+                    ? _done(context)
+                    : Column(
+                        children: [
+                          Expanded(
+                            child: SingleChildScrollView(
+                              padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+                              child: SizedBox(
+                                width: double.infinity,
+                                child: _face(context, card),
+                              ),
+                            ),
+                          ),
+                          _legend(context, card),
+                        ],
+                      ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 
   /// Confirms abandoning a session that still has due cards. Returns true to
   /// leave, false to keep reviewing.
-  Future<bool> _confirmLeave(BuildContext context) async {
+  Future<bool> _confirmLeave(BuildContext context) {
     final n = _state.remaining;
-    final leave = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Leave the review?'),
-        content: Text(
-          '$n card${n == 1 ? '' : 's'} still due in this session.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Keep reviewing'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Leave'),
-          ),
-        ],
-      ),
+    return confirmLeaveSession(
+      context,
+      title: 'Leave the review?',
+      body: '$n card${n == 1 ? '' : 's'} still due in this session.',
+      stayLabel: 'Keep reviewing',
     );
-    return leave ?? false;
   }
 
   // ── crumb strip (region breadcrumb) ──────────────────────────────────────
@@ -543,7 +535,12 @@ class _ReviewScreenState extends State<ReviewScreen> {
         height: 1,
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [Colors.transparent, tokens.line, tokens.line, Colors.transparent],
+            colors: [
+              Colors.transparent,
+              tokens.line,
+              tokens.line,
+              Colors.transparent,
+            ],
             stops: const [0, 0.18, 0.82, 1],
           ),
         ),
@@ -557,8 +554,11 @@ class _ReviewScreenState extends State<ReviewScreen> {
     if (_state.mode == Mode.lineByLine && !_state.acquire) {
       // Line mode keeps its revealed lines tight (no stanza gap).
       return _revealLines(
-          context, card.back.take(_revealedLines).toList(), tokens,
-          stanza: false);
+        context,
+        card.back.take(_revealedLines).toList(),
+        tokens,
+        stanza: false,
+      );
     }
     if (_isTyping && !_state.acquire) return _typing(context, card, tokens);
     if (_isExplain) return _explainBody(context, card, tokens);
@@ -572,8 +572,11 @@ class _ReviewScreenState extends State<ReviewScreen> {
   /// multi-line flip answer reads as a stanza (a blank line between lines);
   /// line-mode and the explain answer stay tight.
   Widget _revealLines(
-      BuildContext context, List<String> lines, AlixTokens tokens,
-      {bool stanza = true}) {
+    BuildContext context,
+    List<String> lines,
+    AlixTokens tokens, {
+    bool stanza = true,
+  }) {
     final style = TextStyle(
       fontFamily: _mono,
       fontWeight: FontWeight.w500,
@@ -638,21 +641,35 @@ class _ReviewScreenState extends State<ReviewScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Text('${i + 1}',
-              style: TextStyle(fontFamily: _mono, fontSize: 13.5, color: numColor)),
+          Text(
+            '${i + 1}',
+            style: TextStyle(
+              fontFamily: _mono,
+              fontSize: 13.5,
+              color: numColor,
+            ),
+          ),
           const SizedBox(width: 14),
           Expanded(
             child: Text(
               opt,
               style: TextStyle(
-                  fontFamily: _mono, fontSize: 16, height: 1.35, color: textColor),
+                fontFamily: _mono,
+                fontSize: 16,
+                height: 1.35,
+                color: textColor,
+              ),
             ),
           ),
         ],
       ),
     );
     if (locked) {
-      return Opacity(key: ValueKey('option-$i'), opacity: opacity, child: inner);
+      return Opacity(
+        key: ValueKey('option-$i'),
+        opacity: opacity,
+        child: inner,
+      );
     }
     return Material(
       key: ValueKey('option-$i'),
@@ -672,17 +689,15 @@ class _ReviewScreenState extends State<ReviewScreen> {
     // web clears the inputs and renders only the result).
     if (_check != null) {
       return Column(
-        children: [
-          for (final r in _check!.results) _evidenceLine(r, tokens),
-        ],
+        children: [for (final r in _check!.results) _evidenceLine(r, tokens)],
       );
     }
     final onSurface = Theme.of(context).colorScheme.onSurface;
     final fields = _state.mode == Mode.typeLine ? card.back.length : 1;
     OutlineInputBorder border(Color c) => OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: c),
-        );
+      borderRadius: BorderRadius.circular(12),
+      borderSide: BorderSide(color: c),
+    );
     return Column(
       children: [
         for (var i = 0; i < fields; i++) ...[
@@ -692,12 +707,18 @@ class _ReviewScreenState extends State<ReviewScreen> {
             child: TextField(
               controller: _typed[i],
               textAlign: TextAlign.center,
-              style: TextStyle(fontFamily: _mono, fontSize: 17, color: onSurface),
+              style: TextStyle(
+                fontFamily: _mono,
+                fontSize: 17,
+                color: onSurface,
+              ),
               decoration: InputDecoration(
                 filled: true,
                 fillColor: Colors.white.withValues(alpha: 0.04),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 13,
+                ),
                 enabledBorder: border(tokens.line),
                 focusedBorder: border(tokens.bolt),
                 border: border(tokens.line),
@@ -717,19 +738,27 @@ class _ReviewScreenState extends State<ReviewScreen> {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 3),
         child: Text.rich(
-          TextSpan(children: [
-            TextSpan(
+          TextSpan(
+            children: [
+              TextSpan(
                 text: input,
                 style: TextStyle(
-                    fontFamily: _mono,
-                    fontWeight: FontWeight.w500,
-                    fontSize: 18,
-                    color: tokens.good)),
-            TextSpan(
+                  fontFamily: _mono,
+                  fontWeight: FontWeight.w500,
+                  fontSize: 18,
+                  color: tokens.good,
+                ),
+              ),
+              TextSpan(
                 text: '  ✓',
                 style: TextStyle(
-                    color: tokens.good, fontWeight: FontWeight.w700, fontSize: 18)),
-          ]),
+                  color: tokens.good,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 18,
+                ),
+              ),
+            ],
+          ),
           textAlign: TextAlign.center,
         ),
       );
@@ -743,17 +772,26 @@ class _ReviewScreenState extends State<ReviewScreen> {
           Opacity(
             opacity: 0.5,
             child: Text.rich(
-              TextSpan(children: [
-                TextSpan(
+              TextSpan(
+                children: [
+                  TextSpan(
                     text: input,
-                    style: TextStyle(fontFamily: _mono, fontSize: 15, color: tokens.again)),
-                TextSpan(
+                    style: TextStyle(
+                      fontFamily: _mono,
+                      fontSize: 15,
+                      color: tokens.again,
+                    ),
+                  ),
+                  TextSpan(
                     text: '  ✗',
                     style: TextStyle(
-                        color: tokens.again,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15)),
-              ]),
+                      color: tokens.again,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                    ),
+                  ),
+                ],
+              ),
               textAlign: TextAlign.center,
             ),
           ),
@@ -761,10 +799,11 @@ class _ReviewScreenState extends State<ReviewScreen> {
             r.expected,
             textAlign: TextAlign.center,
             style: TextStyle(
-                fontFamily: _mono,
-                fontWeight: FontWeight.w500,
-                fontSize: 18,
-                color: tokens.good),
+              fontFamily: _mono,
+              fontWeight: FontWeight.w500,
+              fontSize: 18,
+              color: tokens.good,
+            ),
           ),
         ],
       ),
@@ -772,11 +811,11 @@ class _ReviewScreenState extends State<ReviewScreen> {
   }
 
   void _submitCheck(CardView card) => setState(() {
-        final fields = _state.mode == Mode.typeLine ? card.back.length : 1;
-        _check = _session.check(
-          lines: [for (var i = 0; i < fields; i++) _typed[i].text],
-        );
-      });
+    final fields = _state.mode == Mode.typeLine ? card.back.length : 1;
+    _check = _session.check(
+      lines: [for (var i = 0; i < fields; i++) _typed[i].text],
+    );
+  });
 
   // ── explain keypoint checklist ───────────────────────────────────────────
 
@@ -849,8 +888,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
     return InkWell(
       key: ValueKey('kp-$i'),
       borderRadius: BorderRadius.circular(7),
-      onTap: () => setState(
-          () => ticked ? _ticked.remove(i) : _ticked.add(i)),
+      onTap: () => setState(() => ticked ? _ticked.remove(i) : _ticked.add(i)),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
         child: Row(
@@ -858,8 +896,14 @@ class _ReviewScreenState extends State<ReviewScreen> {
           children: [
             SizedBox(
               width: 22,
-              child: Text(ticked ? '✓' : '▸',
-                  style: TextStyle(color: tokens.good, fontSize: 15, height: 1.45)),
+              child: Text(
+                ticked ? '✓' : '▸',
+                style: TextStyle(
+                  color: tokens.good,
+                  fontSize: 15,
+                  height: 1.45,
+                ),
+              ),
             ),
             Expanded(
               child: Text(
@@ -890,7 +934,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
           decoration: BoxDecoration(
             color: tokens.noteBorder.withValues(alpha: 0.12),
-            border: Border.all(color: tokens.noteBorder.withValues(alpha: 0.24)),
+            border: Border.all(
+              color: tokens.noteBorder.withValues(alpha: 0.24),
+            ),
             borderRadius: BorderRadius.circular(10),
           ),
           child: Column(
@@ -900,27 +946,33 @@ class _ReviewScreenState extends State<ReviewScreen> {
                 if (i > 0) const SizedBox(height: 10),
                 switch (note) {
                   NoteUnit_Sentence(:final text) => Text(
-                      text,
-                      style: TextStyle(
-                          color: tokens.noteInk, fontSize: 15, height: 1.4),
+                    text,
+                    style: TextStyle(
+                      color: tokens.noteInk,
+                      fontSize: 15,
+                      height: 1.4,
                     ),
+                  ),
                   NoteUnit_Code(:final lines) => Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.32),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        lines.join('\n'),
-                        style: TextStyle(
-                            fontFamily: _mono,
-                            fontSize: 13,
-                            height: 1.45,
-                            color: tokens.text),
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.32),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      lines.join('\n'),
+                      style: TextStyle(
+                        fontFamily: _mono,
+                        fontSize: 13,
+                        height: 1.45,
+                        color: tokens.text,
                       ),
                     ),
+                  ),
                 },
               ],
             ],
@@ -939,7 +991,11 @@ class _ReviewScreenState extends State<ReviewScreen> {
     }
     return Padding(
       padding: EdgeInsets.fromLTRB(
-          12, 10, 12, 12 + MediaQuery.of(context).padding.bottom),
+        12,
+        10,
+        12,
+        12 + MediaQuery.of(context).padding.bottom,
+      ),
       child: Wrap(
         alignment: WrapAlignment.center,
         spacing: 10,
@@ -981,11 +1037,23 @@ class _ReviewScreenState extends State<ReviewScreen> {
       if (_hasChoices) {
         return _choice == null
             ? const []
-            : [_chip('Seen', _ChipKind.primary, () => _apply(_session.acquire()))];
+            : [
+                _chip(
+                  'Seen',
+                  _ChipKind.primary,
+                  () => _apply(_session.acquire()),
+                ),
+              ];
       }
       return _revealed
           ? [_chip('Seen', _ChipKind.primary, () => _apply(_session.acquire()))]
-          : [_chip('Reveal', _ChipKind.primary, () => setState(() => _revealed = true))];
+          : [
+              _chip(
+                'Reveal',
+                _ChipKind.primary,
+                () => setState(() => _revealed = true),
+              ),
+            ];
     }
     // Recognize multiple choice.
     if (_hasChoices) {
@@ -1002,8 +1070,11 @@ class _ReviewScreenState extends State<ReviewScreen> {
     if (_state.mode == Mode.lineByLine) {
       if (!_lineDone(card)) {
         return [
-          _chip(_revealedLines == 0 ? 'Reveal' : 'Reveal next',
-              _ChipKind.primary, () => setState(() => _revealedLines++)),
+          _chip(
+            _revealedLines == 0 ? 'Reveal' : 'Reveal next',
+            _ChipKind.primary,
+            () => setState(() => _revealedLines++),
+          ),
         ];
       }
       return _gradeTrio();
@@ -1019,13 +1090,25 @@ class _ReviewScreenState extends State<ReviewScreen> {
     // Explain checklist.
     if (_isExplain) {
       if (!_revealed) {
-        return [_chip('Reveal', _ChipKind.primary, () => setState(() => _revealed = true))];
+        return [
+          _chip(
+            'Reveal',
+            _ChipKind.primary,
+            () => setState(() => _revealed = true),
+          ),
+        ];
       }
       return [_verdictChip()];
     }
     // Flip / recognize-fallback: reveal, then grade.
     if (!_revealed) {
-      return [_chip('Reveal', _ChipKind.primary, () => setState(() => _revealed = true))];
+      return [
+        _chip(
+          'Reveal',
+          _ChipKind.primary,
+          () => setState(() => _revealed = true),
+        ),
+      ];
     }
     if (_state.depth == Depth.recognize) {
       return [
@@ -1037,27 +1120,38 @@ class _ReviewScreenState extends State<ReviewScreen> {
   }
 
   List<Widget> _gradeTrio() => [
-        _chip('Missed it', _ChipKind.failed, () => _grade(Grade.fail)),
-        _chip('Partly', _ChipKind.partly, () => _grade(Grade.partial)),
-        _chip('Got it', _ChipKind.passed, () => _grade(Grade.pass)),
-      ];
+    _chip('Missed it', _ChipKind.failed, () => _grade(Grade.fail)),
+    _chip('Partly', _ChipKind.partly, () => _grade(Grade.partial)),
+    _chip('Got it', _ChipKind.passed, () => _grade(Grade.pass)),
+  ];
 
   /// The explain verdict chip: a filled chip showing the tick-tally's grade,
   /// committing it on tap (the web's Passed/Partly/Failed submit chip).
   Widget _verdictChip() {
     final tokens = Theme.of(context).alix;
     final grade = keypointGrade(
-        covered: _ticked.length, total: (_state.keypoints ?? const []).length);
+      covered: _ticked.length,
+      total: (_state.keypoints ?? const []).length,
+    );
     final (label, color) = switch (grade) {
       Grade.fail => ('Failed', tokens.again),
       Grade.partial => ('Partly', tokens.warn),
       Grade.pass => ('Passed', tokens.good),
     };
-    return _chip(label, _ChipKind.verdict, () => _grade(grade), verdictColor: color);
+    return _chip(
+      label,
+      _ChipKind.verdict,
+      () => _grade(grade),
+      verdictColor: color,
+    );
   }
 
-  Widget _chip(String label, _ChipKind kind, VoidCallback? onTap,
-      {Color? verdictColor}) {
+  Widget _chip(
+    String label,
+    _ChipKind kind,
+    VoidCallback? onTap, {
+    Color? verdictColor,
+  }) {
     final theme = Theme.of(context);
     final tokens = theme.alix;
     Color? fill;
@@ -1108,7 +1202,11 @@ class _ReviewScreenState extends State<ReviewScreen> {
           child: Text(
             label,
             style: TextStyle(
-                fontFamily: _sans, fontWeight: weight, fontSize: 14, color: fg),
+              fontFamily: _sans,
+              fontWeight: weight,
+              fontSize: 14,
+              color: fg,
+            ),
           ),
         ),
       ),
@@ -1136,8 +1234,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
             child: Text(
               "Last written by '${foreign.device}' $age ago. "
               'Review on one device at a time.',
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.onErrorContainer),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onErrorContainer,
+              ),
             ),
           ),
           IconButton(
@@ -1155,14 +1254,16 @@ class _ReviewScreenState extends State<ReviewScreen> {
     final tokens = theme.alix;
     final reviews = _state.reviews;
     final acquired = _state.acquired;
-    final acc = reviews > 0 ? '${(100 * _state.passed / reviews).round()}%' : '–';
+    final acc = reviews > 0
+        ? '${(100 * _state.passed / reviews).round()}%'
+        : '–';
     // A first pass over a fresh deck is acquire-only: reviews stay 0 while
     // every card was introduced. Say what actually happened.
     final headline = reviews > 0
         ? 'Nicely charged.'
         : acquired > 0
-            ? 'New cards planted.'
-            : 'Nothing due.';
+        ? 'New cards planted.'
+        : 'Nothing due.';
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -1172,25 +1273,30 @@ class _ReviewScreenState extends State<ReviewScreen> {
           Text(
             'SESSION COMPLETE',
             style: TextStyle(
-                fontFamily: _mono,
-                color: tokens.bolt,
-                fontSize: 11,
-                letterSpacing: 2.2),
+              fontFamily: _mono,
+              color: tokens.bolt,
+              fontSize: 11,
+              letterSpacing: 2.2,
+            ),
           ),
           const SizedBox(height: 14),
           Text(
             headline,
             style: TextStyle(
-                fontSize: 26,
-                fontWeight: FontWeight.w600,
-                color: theme.colorScheme.onSurface),
+              fontSize: 26,
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurface,
+            ),
           ),
           const SizedBox(height: 18),
           if (acquired > 0) _summaryRow('introduced', '$acquired', tokens),
           _summaryRow('reviewed', '$reviews', tokens),
           if (reviews > 0) ...[
-            _summaryRow('passed / failed',
-                '${_state.passed} / ${_state.failed}', tokens),
+            _summaryRow(
+              'passed / failed',
+              '${_state.passed} / ${_state.failed}',
+              tokens,
+            ),
             _summaryRow('accuracy', acc, tokens),
           ],
           if (!_state.canRestart) ...[
@@ -1200,7 +1306,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
               decoration: BoxDecoration(
                 color: tokens.noteBorder.withValues(alpha: 0.12),
-                border: Border.all(color: tokens.noteBorder.withValues(alpha: 0.24)),
+                border: Border.all(
+                  color: tokens.noteBorder.withValues(alpha: 0.24),
+                ),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
@@ -1237,9 +1345,10 @@ class _ReviewScreenState extends State<ReviewScreen> {
           Text(
             value,
             style: TextStyle(
-                fontFamily: _mono,
-                fontWeight: FontWeight.w600,
-                color: Theme.of(context).colorScheme.onSurface),
+              fontFamily: _mono,
+              fontWeight: FontWeight.w600,
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
           ),
         ],
       ),
@@ -1322,9 +1431,7 @@ class CrumbStrip extends StatelessWidget {
         const SizedBox(height: 3),
         Row(
           mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final s in cells) _cell(s),
-          ],
+          children: [for (final s in cells) _cell(s)],
         ),
       ],
     );
@@ -1339,8 +1446,12 @@ class CrumbStrip extends StatelessWidget {
       height: 3,
       margin: const EdgeInsets.only(right: 1),
       decoration: BoxDecoration(
-        color: HSLColor.fromAHSL(1, 120 * clamped, 0.62, (40 + 12 * clamped) / 100)
-            .toColor(),
+        color: HSLColor.fromAHSL(
+          1,
+          120 * clamped,
+          0.62,
+          (40 + 12 * clamped) / 100,
+        ).toColor(),
         borderRadius: BorderRadius.circular(1),
       ),
     );
