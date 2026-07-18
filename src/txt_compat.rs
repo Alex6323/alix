@@ -62,34 +62,78 @@ pub enum TxtSegment {
 }
 
 /// Splits an answer line on old-style cloze markers: `{{` opens a hole, the
-/// FIRST `}}` after it closes it, brace-agnostic (nested `{`/`}` inside a hole
-/// are just hole content). An unclosed `{{` is not a hole: the rest of the
-/// line, including the unmatched marker, is kept as literal text.
+/// FIRST `}}` after it closes it, brace-agnostic (nested `{`/`}` inside a
+/// hole, even a doubled one, are just hole content — this reader never
+/// rejects a deck, unlike the strict cloze parser). A backslash before `{`,
+/// `}`, or `\` escapes it: the backslash is dropped, the escaped character is
+/// kept as literal content (in whichever buffer is open, text or hole) and
+/// never counts toward marker detection — mirrors `crate::cloze::parse_line`'s
+/// escape handling (`src/cloze.rs:48-53`). An unclosed `{{` (no matching `}}`
+/// before the end of the line) is not a hole: its marker and everything
+/// captured since are folded back into the literal text that precedes it, as
+/// one segment.
 pub fn cloze_segments(line: &str) -> Vec<TxtSegment> {
     let mut segments = Vec::new();
-    let mut rest = line;
+    let mut text = String::new();
+    let mut hole: Option<String> = None;
+    let mut chars = line.chars().peekable();
 
-    while let Some(open) = rest.find("{{") {
-        let before = &rest[..open];
-        let after_open = &rest[open + 2..];
-        match after_open.find("}}") {
-            Some(close) => {
-                if !before.is_empty() {
-                    segments.push(TxtSegment::Text(before.to_string()));
+    while let Some(c) = chars.next() {
+        match c {
+            // A backslash escapes the very next character only when that
+            // character is itself markup (`{`, `}`, `\`); the pair is
+            // consumed together, so the escaped char never triggers the
+            // open/close checks below.
+            '\\' if matches!(chars.peek(), Some('{' | '}' | '\\')) => {
+                if let Some(escaped) = chars.next() {
+                    match &mut hole {
+                        Some(h) => h.push(escaped),
+                        None => text.push(escaped),
+                    }
                 }
-                segments.push(TxtSegment::Hole(after_open[..close].to_string()));
-                rest = &after_open[close + 2..];
             }
-            // No closing marker anywhere after this `{{`: stop looking and
-            // fall through to keep the remainder (below) as literal text.
-            None => break,
+            // `{{` opens a hole, but only outside an already-open one: a
+            // doubled brace found while already inside a hole is just hole
+            // content (brace-agnostic).
+            '{' if hole.is_none() && chars.peek() == Some(&'{') => {
+                chars.next();
+                hole = Some(String::new());
+            }
+            // `}}` closes the open hole at the FIRST occurrence, regardless
+            // of what braces it contains.
+            '}' if hole.is_some() && chars.peek() == Some(&'}') => {
+                chars.next();
+                if !text.is_empty() {
+                    segments.push(TxtSegment::Text(std::mem::take(&mut text)));
+                }
+                segments.push(TxtSegment::Hole(hole.take().unwrap_or_default()));
+            }
+            c => match &mut hole {
+                Some(h) => h.push(c),
+                None => text.push(c),
+            },
         }
     }
-    if !rest.is_empty() {
-        segments.push(TxtSegment::Text(rest.to_string()));
+
+    // An unclosed `{{` is not a hole: fold its marker and everything
+    // captured since back into the pending literal text, as one segment.
+    if let Some(h) = hole {
+        text.push_str("{{");
+        text.push_str(&h);
+    }
+    if !text.is_empty() {
+        segments.push(TxtSegment::Text(text));
     }
     segments
 }
+
+/// Keys the old parser collects with dedicated WHOLE-FILE scans
+/// (`parser::parse_links`, `parse_requires`, `parse_sources`, `parse_title`,
+/// `parse_trace`, `src/parser.rs:160-218`), independent of the card-by-card
+/// state machine: they're deck-level wherever they sit in the file, even
+/// after a card front, and are never a per-card override. `title` is one of
+/// them but is split out into `TxtDeck.title` rather than joining `header`.
+const DECK_LEVEL_KEYS: [&str; 5] = ["link", "requires", "source", "title", "trace"];
 
 /// Parses a `% key: value` line (already trimmed, still carrying its leading
 /// `%`) into a lower-cased key and trimmed value. Returns `None` for lines
@@ -144,19 +188,25 @@ pub fn parse_txt(text: &str) -> Result<TxtDeck, TxtError> {
                 let Some((key, value)) = directive(line) else {
                     continue;
                 };
-                match &mut current {
-                    // Inside a card, every directive is a per-card override,
-                    // recorded uninterpreted; a later task acts on it.
-                    Some(card) => card.directives.push((key, value)),
-                    // Before the first card, `% title:` is split out into its
-                    // own field; every other directive joins the header, in
-                    // order.
-                    None => {
-                        if key == "title" {
-                            title = title.or(Some(value));
-                        } else {
-                            header.push((key, value));
-                        }
+                if key == "title" {
+                    // Whole-file, first-line-wins, regardless of position
+                    // (mirrors `parser::parse_title`'s `find_map` over every
+                    // line) — never joins `header` or a card's directives.
+                    title = title.or(Some(value));
+                } else if DECK_LEVEL_KEYS.contains(&key.as_str()) {
+                    // Deck-level wherever it sits, even inside a card
+                    // (mirrors the dedicated whole-file collectors) — never a
+                    // per-card override.
+                    header.push((key, value));
+                } else {
+                    match &mut current {
+                        // Inside a card, every other directive is a per-card
+                        // override, recorded uninterpreted; a later task acts
+                        // on it.
+                        Some(card) => card.directives.push((key, value)),
+                        // Before the first card, it joins the header, in
+                        // order.
+                        None => header.push((key, value)),
                     }
                 }
             }
@@ -301,10 +351,65 @@ mod tests {
     }
 
     #[test]
+    fn an_escaped_brace_never_opens_a_hole() {
+        // Empirically confirmed against `crate::cloze::parse_line("\\{{a}}",
+        // 1)`: the escaped first `{` loses its backslash but stays a literal
+        // char, so it can no longer pair with the second `{` to open a hole;
+        // the whole line stays one literal Text segment, no Hole at all.
+        let segments = cloze_segments("\\{{a}}");
+        assert_eq!(vec![TxtSegment::Text("{{a}}".to_string())], segments);
+    }
+
+    #[test]
+    fn escaped_braces_unescape_to_literal_text() {
+        let segments = cloze_segments("a \\{\\{ b");
+        assert_eq!(vec![TxtSegment::Text("a {{ b".to_string())], segments);
+    }
+
+    #[test]
+    fn an_escaped_brace_inside_a_hole_stays_literal_hole_content() {
+        // Mirrors `crate::cloze::parse_line`'s own escape handling, which
+        // doesn't care whether a hole is open: verified via
+        // `crate::cloze::parse_line("{{a \\{ b}}", 1)` ==
+        // `[Segment::Hole("a { b")]` (the closest existing cloze.rs coverage
+        // is `escaped_double_brace_is_literal`, which only exercises the
+        // escape outside a hole; this reproduces the same escape arm with a
+        // hole open).
+        let segments = cloze_segments("{{a \\{ b}}");
+        assert_eq!(vec![TxtSegment::Hole("a { b".to_string())], segments);
+    }
+
+    #[test]
     fn empty_text_yields_an_empty_deck() {
         let deck = parse_txt("").unwrap();
         assert_eq!(None, deck.title);
         assert!(deck.header.is_empty());
         assert!(deck.cards.is_empty());
+    }
+
+    #[test]
+    fn deck_level_keys_after_a_card_stay_deck_level() {
+        let text = "# front\n\tback\n% source: rustbook.md\n% link: https://example.org\n";
+        let deck = parse_txt(text).unwrap();
+        assert!(deck.cards[0].directives.is_empty());
+        assert_eq!(
+            vec![
+                ("source".to_string(), "rustbook.md".to_string()),
+                ("link".to_string(), "https://example.org".to_string()),
+            ],
+            deck.header
+        );
+    }
+
+    #[test]
+    fn a_second_title_mirrors_the_old_parsers_pick() {
+        // `parser::parse_title` is a whole-file `find_map`: the first `%
+        // title:` line anywhere wins, position-independent. A second one
+        // (even after a card) is dropped outright, not stored anywhere.
+        let text = "% title: First\n# front\n\tback\n% title: Second\n";
+        let deck = parse_txt(text).unwrap();
+        assert_eq!(Some("First".to_string()), deck.title);
+        assert!(deck.cards[0].directives.is_empty());
+        assert!(deck.header.iter().all(|(k, _)| k != "title"));
     }
 }
