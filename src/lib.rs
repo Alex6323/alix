@@ -80,6 +80,7 @@ pub mod trace;
 #[cfg(feature = "full")]
 pub mod trace_ai;
 pub mod tutorial;
+pub mod txt_compat;
 pub mod workspace;
 
 // Only the AI-facing modules (ask, exam, generate, ...) use these fake-CLI
