@@ -41,6 +41,12 @@ pub struct DeckSummary {
     /// card), against the store this entry actually reviews into. Matches the
     /// web picker's launchable signal.
     pub due: bool,
+    /// The deck has at least one recognizable card ([`depth::deck_recognizable`])
+    /// — cached distractors that build a pick. The client gates the Recognize
+    /// depth on this: Recognize is pick-only, so an un-augmented deck greys it
+    /// out. Deck rows only; `false` for workspace/folder rows or a missing
+    /// store/augment. Mirrors [`DeckStatus::can_recognize`].
+    pub can_recognize: bool,
     /// A trace deck (`% trace:`): a predict-and-verify walk, not a card
     /// review. A client dispatches on this flag: the phone opens a trace row
     /// as a walk (`WalkSession`), never as a review session.
@@ -217,14 +223,16 @@ fn folder_summary(root: &Path, dir: &Path, review: &ReviewConfig, now_ms: u64) -
             .unwrap_or_default()
     });
     let icon = ws.and_then(|ws| ws.icon);
-    let due = list_members(root, dir, review, now_ms)
-        .iter()
-        .any(|m| m.due);
+    // A group row aggregates its members, like the web catalog's group DTO.
+    let members = list_members(root, dir, review, now_ms);
+    let due = members.iter().any(|m| m.due);
+    let can_recognize = members.iter().any(|m| m.can_recognize);
     DeckSummary {
         title,
         path: dir.to_path_buf(),
         is_workspace: true,
         due,
+        can_recognize,
         is_trace: false,
         last_depth: Depth::default(),
         mastered: false,
@@ -270,6 +278,10 @@ fn deck_summary(
         (Some(d), Some(s), Some(a)) => deck_due(d, s, a, review, now_ms),
         _ => false,
     };
+    let can_recognize = match (&deck, augment) {
+        (Some(d), Some(a)) => depth::deck_recognizable(&d.cards, a),
+        _ => false,
+    };
     let (mastered, exam_due, locked) = match (&deck, store) {
         (Some(d), Some(s)) => (
             s.deck_mastered(&d.subject),
@@ -289,6 +301,7 @@ fn deck_summary(
         path: path.to_path_buf(),
         is_workspace: false,
         due,
+        can_recognize,
         is_trace,
         last_depth,
         mastered,
@@ -944,6 +957,11 @@ mod tests {
                 assert_eq!(row.has_exam, status.has_exam, "has_exam: {}", row.title);
                 assert_eq!(row.locked, status.locked, "locked: {}", row.title);
                 assert_eq!(row.is_trace, status.is_trace, "is_trace: {}", row.title);
+                assert_eq!(
+                    row.can_recognize, status.can_recognize,
+                    "can_recognize: {}",
+                    row.title
+                );
             }
         };
 
@@ -1303,6 +1321,39 @@ mod tests {
         );
         assert!(!status.reviewable_recognize);
         assert!(!status.can_recognize);
+    }
+
+    #[test]
+    fn deck_summary_can_recognize_tracks_augmentation() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("d.txt");
+        std::fs::write(&deck_path, "# q1\n\ta1\n").unwrap();
+        let deck = Deck::load(&deck_path).unwrap();
+        let store = Store::open(dir.path().join("progress.json")).unwrap();
+        let review = ReviewConfig::default();
+        let now = session::now_ms();
+
+        let (bare, _) = deck_summary(
+            &deck_path,
+            Some(&store),
+            Some(&no_augment()),
+            dir.path(),
+            &review,
+            now,
+        );
+        assert!(!bare.can_recognize, "un-augmented deck is not recognizable");
+
+        let mut augment = AugmentCache::open(dir.path().join("augment.json"));
+        arm(&mut augment, &deck.cards);
+        let (armed, _) = deck_summary(
+            &deck_path,
+            Some(&store),
+            Some(&augment),
+            dir.path(),
+            &review,
+            now,
+        );
+        assert!(armed.can_recognize, "cached distractors make it recognizable");
     }
 
     #[test]

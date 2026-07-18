@@ -69,7 +69,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 386037475;
+  int get rustContentHash => 683990424;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -213,6 +213,11 @@ abstract class RustLibApi extends BaseApi {
   List<DeckEntry> crateApiListingListRoot({
     required String root,
     BigInt? nowMs,
+  });
+
+  void crateApiReviewSeedChoiceDistractors({
+    required String deckPath,
+    required String rootDir,
   });
 
   List<String> crateApiListingSyncConflicts({required String root});
@@ -1140,13 +1145,43 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "list_root", argNames: ["root", "nowMs"]);
 
   @override
+  void crateApiReviewSeedChoiceDistractors({
+    required String deckPath,
+    required String rootDir,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(deckPath, serializer);
+          sse_encode_String(rootDir, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 29)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiReviewSeedChoiceDistractorsConstMeta,
+        argValues: [deckPath, rootDir],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiReviewSeedChoiceDistractorsConstMeta =>
+      const TaskConstMeta(
+        debugName: "seed_choice_distractors",
+        argNames: ["deckPath", "rootDir"],
+      );
+
+  @override
   List<String> crateApiListingSyncConflicts({required String root}) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(root, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 29)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 30)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_String,
@@ -1388,22 +1423,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   DeckEntry dco_decode_deck_entry(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 13)
-      throw Exception('unexpected arr length: expect 13 but see ${arr.length}');
+    if (arr.length != 14)
+      throw Exception('unexpected arr length: expect 14 but see ${arr.length}');
     return DeckEntry(
       title: dco_decode_String(arr[0]),
       path: dco_decode_String(arr[1]),
       isWorkspace: dco_decode_bool(arr[2]),
       due: dco_decode_bool(arr[3]),
-      isTrace: dco_decode_bool(arr[4]),
-      lastDepth: dco_decode_depth(arr[5]),
-      mastered: dco_decode_bool(arr[6]),
-      examDue: dco_decode_bool(arr[7]),
-      hasExam: dco_decode_bool(arr[8]),
-      locked: dco_decode_bool(arr[9]),
-      icon: dco_decode_opt_String(arr[10]),
-      indent: dco_decode_u_32(arr[11]),
-      tree: dco_decode_String(arr[12]),
+      canRecognize: dco_decode_bool(arr[4]),
+      isTrace: dco_decode_bool(arr[5]),
+      lastDepth: dco_decode_depth(arr[6]),
+      mastered: dco_decode_bool(arr[7]),
+      examDue: dco_decode_bool(arr[8]),
+      hasExam: dco_decode_bool(arr[9]),
+      locked: dco_decode_bool(arr[10]),
+      icon: dco_decode_opt_String(arr[11]),
+      indent: dco_decode_u_32(arr[12]),
+      tree: dco_decode_String(arr[13]),
     );
   }
 
@@ -2006,6 +2042,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_path = sse_decode_String(deserializer);
     var var_isWorkspace = sse_decode_bool(deserializer);
     var var_due = sse_decode_bool(deserializer);
+    var var_canRecognize = sse_decode_bool(deserializer);
     var var_isTrace = sse_decode_bool(deserializer);
     var var_lastDepth = sse_decode_depth(deserializer);
     var var_mastered = sse_decode_bool(deserializer);
@@ -2020,6 +2057,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       path: var_path,
       isWorkspace: var_isWorkspace,
       due: var_due,
+      canRecognize: var_canRecognize,
       isTrace: var_isTrace,
       lastDepth: var_lastDepth,
       mastered: var_mastered,
@@ -2778,6 +2816,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.path, serializer);
     sse_encode_bool(self.isWorkspace, serializer);
     sse_encode_bool(self.due, serializer);
+    sse_encode_bool(self.canRecognize, serializer);
     sse_encode_bool(self.isTrace, serializer);
     sse_encode_depth(self.lastDepth, serializer);
     sse_encode_bool(self.mastered, serializer);

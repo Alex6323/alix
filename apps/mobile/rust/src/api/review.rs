@@ -174,6 +174,30 @@ pub fn keypoint_grade(covered: u32, total: u32) -> Grade {
     alix::scheduler::keypoint_grade(covered as usize, total as usize).into()
 }
 
+/// Test/dev support: cache a full set of choice distractors on every card of
+/// `deck_path`, into the same augment sidecar the review session reads (routed
+/// like [`ReviewSession::open`]). The phone never generates distractors itself
+/// — they sync from the desktop's `alix deck augment` — so a widget or bridge
+/// test uses this to drive the pick-only Recognize path without a live
+/// augmentation, keeping card-id computation in the lib (never in Dart).
+#[flutter_rust_bridge::frb(sync)]
+pub fn seed_choice_distractors(deck_path: String, root_dir: String) -> Result<()> {
+    let deck_pb = PathBuf::from(&deck_path);
+    let deck = alix::deck::Deck::load(&deck_pb)?;
+    let root_store = alix::workspace::root_store_path(Path::new(&root_dir));
+    let store = alix::assemble::store_for(std::slice::from_ref(&deck_pb), Some(&root_store))?;
+    let mut cache =
+        alix::augment::AugmentCache::open(alix::augment::augment_path_for(store.path()));
+    for card in &deck.cards {
+        cache.set_distractors(
+            card.id(),
+            vec!["one".to_string(), "two".to_string(), "three".to_string()],
+        );
+    }
+    cache.save()?;
+    Ok(())
+}
+
 /// Another device's recent write of this session's store (see
 /// [`ReviewSession::foreign_writer`]): the roaming-discipline banner's data.
 pub struct ForeignWriter {

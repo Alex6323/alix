@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 386037475;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 683990424;
 
 // Section: executor
 
@@ -1348,6 +1348,40 @@ fn wire__crate__api__listing__list_root_impl(
         },
     )
 }
+fn wire__crate__api__review__seed_choice_distractors_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "seed_choice_distractors",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_deck_path = <String>::sse_decode(&mut deserializer);
+            let api_root_dir = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                (move || {
+                    let output_ok =
+                        crate::api::review::seed_choice_distractors(api_deck_path, api_root_dir)?;
+                    Ok(output_ok)
+                })(),
+            )
+        },
+    )
+}
 fn wire__crate__api__listing__sync_conflicts_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -1585,6 +1619,7 @@ impl SseDecode for crate::api::listing::DeckEntry {
         let mut var_path = <String>::sse_decode(deserializer);
         let mut var_isWorkspace = <bool>::sse_decode(deserializer);
         let mut var_due = <bool>::sse_decode(deserializer);
+        let mut var_canRecognize = <bool>::sse_decode(deserializer);
         let mut var_isTrace = <bool>::sse_decode(deserializer);
         let mut var_lastDepth = <crate::api::review::Depth>::sse_decode(deserializer);
         let mut var_mastered = <bool>::sse_decode(deserializer);
@@ -1599,6 +1634,7 @@ impl SseDecode for crate::api::listing::DeckEntry {
             path: var_path,
             is_workspace: var_isWorkspace,
             due: var_due,
+            can_recognize: var_canRecognize,
             is_trace: var_isTrace,
             last_depth: var_lastDepth,
             mastered: var_mastered,
@@ -2248,7 +2284,8 @@ fn pde_ffi_dispatcher_sync_impl(
         26 => wire__crate__api__review__keypoint_grade_impl(ptr, rust_vec_len, data_len),
         27 => wire__crate__api__listing__list_members_impl(ptr, rust_vec_len, data_len),
         28 => wire__crate__api__listing__list_root_impl(ptr, rust_vec_len, data_len),
-        29 => wire__crate__api__listing__sync_conflicts_impl(ptr, rust_vec_len, data_len),
+        29 => wire__crate__api__review__seed_choice_distractors_impl(ptr, rust_vec_len, data_len),
+        30 => wire__crate__api__listing__sync_conflicts_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -2385,6 +2422,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::listing::DeckEntry {
             self.path.into_into_dart().into_dart(),
             self.is_workspace.into_into_dart().into_dart(),
             self.due.into_into_dart().into_dart(),
+            self.can_recognize.into_into_dart().into_dart(),
             self.is_trace.into_into_dart().into_dart(),
             self.last_depth.into_into_dart().into_dart(),
             self.mastered.into_into_dart().into_dart(),
@@ -2860,6 +2898,7 @@ impl SseEncode for crate::api::listing::DeckEntry {
         <String>::sse_encode(self.path, serializer);
         <bool>::sse_encode(self.is_workspace, serializer);
         <bool>::sse_encode(self.due, serializer);
+        <bool>::sse_encode(self.can_recognize, serializer);
         <bool>::sse_encode(self.is_trace, serializer);
         <crate::api::review::Depth>::sse_encode(self.last_depth, serializer);
         <bool>::sse_encode(self.mastered, serializer);

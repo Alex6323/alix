@@ -50,9 +50,9 @@ final later = BigInt.from(1000000 + 301000);
 /// A decks root with one loose deck and one workspace member deck.
 Directory makeRoot() {
   final root = Directory.systemTemp.createTempSync('alix-decks-');
-  File('${root.path}/loose.txt').writeAsStringSync(
-    '% title: Loose\n# capital of france?\n    Paris\n',
-  );
+  File(
+    '${root.path}/loose.txt',
+  ).writeAsStringSync('% title: Loose\n# capital of france?\n    Paris\n');
   Directory('${root.path}/ws').createSync();
   File('${root.path}/ws/alix.toml').writeAsStringSync('title = "Ws"\n');
   File('${root.path}/ws/m.txt').writeAsStringSync(
@@ -79,12 +79,15 @@ void main() {
     final root = makeRoot();
     addTearDown(() => root.deleteSync(recursive: true));
     final rows = listRoot(root: root.path, nowMs: t0);
-    expect(
-      rows.map((r) => (r.title, r.isWorkspace, r.due)).toList(),
-      [('Loose', false, true), ('Ws', true, true)],
+    expect(rows.map((r) => (r.title, r.isWorkspace, r.due)).toList(), [
+      ('Loose', false, true),
+      ('Ws', true, true),
+    ]);
+    final members = listMembers(
+      root: root.path,
+      dir: '${root.path}/ws',
+      nowMs: t0,
     );
-    final members =
-        listMembers(root: root.path, dir: '${root.path}/ws', nowMs: t0);
     expect(members.single.title, 'm');
   });
 
@@ -118,6 +121,9 @@ void main() {
     addTearDown(() => root.deleteSync(recursive: true));
     final deck = '${root.path}/ws/m.txt';
     acquireAll(deck, root.path);
+    // Recognize is pick-only: arm the deck's cached distractors so it renders a
+    // real pick (on a phone these arrive by syncing the desktop's augmentation).
+    seedChoiceDistractors(deckPath: deck, rootDir: root.path);
 
     final s = ReviewSession.open(
       deckPath: deck,
@@ -131,14 +137,9 @@ void main() {
     final correct = s.choose(chosen: 0)!.correct;
     expect(s.choose(chosen: correct.toInt())!.passed, isTrue);
     expect(s.state().choices, options, reason: 'options hold still');
-  },
-      skip: 'A pick now needs cached AI distractors (offline sampling removed '
-          '2026-07-18, CHANGELOG Breaking). Re-enable in the mobile-0.2 build '
-          "by seeding this fixture's augment sidecar; the lockstep invariant is "
-          'still covered by the rust choose_agrees_with_the_served_options.');
+  });
 
-  testWidgets('the picker lists and drills into the workspace',
-      (tester) async {
+  testWidgets('the picker lists and drills into the workspace', (tester) async {
     final root = makeRoot();
     addTearDown(() => root.deleteSync(recursive: true));
     await tester.pumpWidget(MaterialApp(home: PickerScreen(root: root.path)));
@@ -148,23 +149,27 @@ void main() {
     expect(find.text('m'), findsOneWidget);
   });
 
-  testWidgets('choosing a shared folder swaps the picker root live',
-      (tester) async {
+  testWidgets('choosing a shared folder swaps the picker root live', (
+    tester,
+  ) async {
     final support = Directory.systemTemp.createTempSync('alix-support-');
     addTearDown(() => support.deleteSync(recursive: true));
     final rootA = makeRoot();
     addTearDown(() => rootA.deleteSync(recursive: true));
     final rootB = Directory.systemTemp.createTempSync('alix-shared-');
     addTearDown(() => rootB.deleteSync(recursive: true));
-    File('${rootB.path}/shared.txt')
-        .writeAsStringSync('% title: Shared Deck\n# q\n    a\n');
+    File(
+      '${rootB.path}/shared.txt',
+    ).writeAsStringSync('% title: Shared Deck\n# q\n    a\n');
 
-    await tester.pumpWidget(AlixApp(
-      prepared: Prepared(root: rootA.path, device: 'phone-test'),
-      access: FakeAccess(dir: rootB.path),
-      persistDecksDir: (dir) => setDecksDir(dir, support: support),
-      reprepare: () => prepare(support: support, env: ''),
-    ));
+    await tester.pumpWidget(
+      AlixApp(
+        prepared: Prepared(root: rootA.path, device: 'phone-test'),
+        access: FakeAccess(dir: rootB.path),
+        persistDecksDir: (dir) => setDecksDir(dir, support: support),
+        reprepare: () => prepare(support: support, env: ''),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.text('Loose'), findsOneWidget);
 
@@ -179,19 +184,22 @@ void main() {
     expect(find.text('Loose'), findsNothing);
   });
 
-  testWidgets('a cancelled folder pick leaves the root unchanged',
-      (tester) async {
+  testWidgets('a cancelled folder pick leaves the root unchanged', (
+    tester,
+  ) async {
     final support = Directory.systemTemp.createTempSync('alix-support-');
     addTearDown(() => support.deleteSync(recursive: true));
     final root = makeRoot();
     addTearDown(() => root.deleteSync(recursive: true));
 
-    await tester.pumpWidget(AlixApp(
-      prepared: Prepared(root: root.path, device: 'phone-test'),
-      access: FakeAccess(dir: null),
-      persistDecksDir: (dir) => setDecksDir(dir, support: support),
-      reprepare: () => prepare(support: support, env: ''),
-    ));
+    await tester.pumpWidget(
+      AlixApp(
+        prepared: Prepared(root: root.path, device: 'phone-test'),
+        access: FakeAccess(dir: null),
+        persistDecksDir: (dir) => setDecksDir(dir, support: support),
+        reprepare: () => prepare(support: support, env: ''),
+      ),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.byType(PopupMenuButton<String>));
     await tester.pumpAndSettle();
@@ -204,37 +212,40 @@ void main() {
     expect(find.textContaining('stays on its current'), findsOneWidget);
   });
 
-  testWidgets('About shows the app and the embedded core versions',
-      (tester) async {
+  testWidgets('About shows the app and the embedded core versions', (
+    tester,
+  ) async {
     final root = makeRoot();
     addTearDown(() => root.deleteSync(recursive: true));
-    await tester.pumpWidget(AlixApp(
-      prepared: Prepared(root: root.path, device: 'phone-test'),
-      access: FakeAccess(),
-      persistDecksDir: (_) async {},
-      reprepare: () async => Prepared(root: root.path, device: 'phone-test'),
-    ));
+    await tester.pumpWidget(
+      AlixApp(
+        prepared: Prepared(root: root.path, device: 'phone-test'),
+        access: FakeAccess(),
+        persistDecksDir: (_) async {},
+        reprepare: () async => Prepared(root: root.path, device: 'phone-test'),
+      ),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.byType(PopupMenuButton<String>));
     await tester.pumpAndSettle();
     await tester.tap(find.text('About'));
     await tester.pumpAndSettle();
-    expect(
-      find.text('mobile 9.9.9+9 / core ${coreVersion()}'),
-      findsOneWidget,
-    );
+    expect(find.text('mobile 9.9.9+9 / core ${coreVersion()}'), findsOneWidget);
   });
 
-  testWidgets('About carries the one quiet Support line, and only About',
-      (tester) async {
+  testWidgets('About carries the one quiet Support line, and only About', (
+    tester,
+  ) async {
     final root = makeRoot();
     addTearDown(() => root.deleteSync(recursive: true));
-    await tester.pumpWidget(AlixApp(
-      prepared: Prepared(root: root.path, device: 'phone-test'),
-      access: FakeAccess(),
-      persistDecksDir: (_) async {},
-      reprepare: () async => Prepared(root: root.path, device: 'phone-test'),
-    ));
+    await tester.pumpWidget(
+      AlixApp(
+        prepared: Prepared(root: root.path, device: 'phone-test'),
+        access: FakeAccess(),
+        persistDecksDir: (_) async {},
+        reprepare: () async => Prepared(root: root.path, device: 'phone-test'),
+      ),
+    );
     await tester.pumpAndSettle();
 
     // Not on the picker (a study surface) before About is opened.
@@ -249,50 +260,61 @@ void main() {
       find.textContaining('Telling someone who studies is the best support'),
       findsOneWidget,
     );
-    expect(
-      find.text('https://github.com/sponsors/Alex6323'),
-      findsOneWidget,
-    );
+    expect(find.text('https://github.com/sponsors/Alex6323'), findsOneWidget);
   });
 
   group('theme picker (T6.2)', () {
-    testWidgets('startup resolves the saved theme via themeById',
-        (tester) async {
+    testWidgets('startup resolves the saved theme via themeById', (
+      tester,
+    ) async {
       final root = makeRoot();
       addTearDown(() => root.deleteSync(recursive: true));
-      await tester.pumpWidget(AlixApp(
-        prepared:
-            Prepared(root: root.path, device: 'phone-test', themeId: 'dracula'),
-      ));
+      await tester.pumpWidget(
+        AlixApp(
+          prepared: Prepared(
+            root: root.path,
+            device: 'phone-test',
+            themeId: 'dracula',
+          ),
+        ),
+      );
       await tester.pumpAndSettle();
 
       final theme = Theme.of(tester.element(find.byType(PickerScreen)));
-      expect(theme.colorScheme.surface, themeById('dracula').colorScheme.surface);
+      expect(
+        theme.colorScheme.surface,
+        themeById('dracula').colorScheme.surface,
+      );
     });
 
     testWidgets('no saved theme resolves to the dark default', (tester) async {
       final root = makeRoot();
       addTearDown(() => root.deleteSync(recursive: true));
-      await tester.pumpWidget(AlixApp(
-        prepared: Prepared(root: root.path, device: 'phone-test'),
-      ));
+      await tester.pumpWidget(
+        AlixApp(
+          prepared: Prepared(root: root.path, device: 'phone-test'),
+        ),
+      );
       await tester.pumpAndSettle();
 
       final theme = Theme.of(tester.element(find.byType(PickerScreen)));
       expect(theme.colorScheme.surface, alixDark().colorScheme.surface);
     });
 
-    testWidgets('an unknown saved theme id falls back to dark, no crash',
-        (tester) async {
+    testWidgets('an unknown saved theme id falls back to dark, no crash', (
+      tester,
+    ) async {
       final root = makeRoot();
       addTearDown(() => root.deleteSync(recursive: true));
-      await tester.pumpWidget(AlixApp(
-        prepared: Prepared(
-          root: root.path,
-          device: 'phone-test',
-          themeId: 'not-a-real-theme',
+      await tester.pumpWidget(
+        AlixApp(
+          prepared: Prepared(
+            root: root.path,
+            device: 'phone-test',
+            themeId: 'not-a-real-theme',
+          ),
         ),
-      ));
+      );
       await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);
@@ -301,75 +323,86 @@ void main() {
     });
 
     testWidgets(
-        'the theme sheet lists themes grouped Dark/Light with the current '
-        'one marked, and tapping a theme re-themes the app live and persists',
-        (tester) async {
-      final support = Directory.systemTemp.createTempSync('alix-support-');
-      addTearDown(() => support.deleteSync(recursive: true));
-      final root = makeRoot();
-      addTearDown(() => root.deleteSync(recursive: true));
+      'the theme sheet lists themes grouped Dark/Light with the current '
+      'one marked, and tapping a theme re-themes the app live and persists',
+      (tester) async {
+        final support = Directory.systemTemp.createTempSync('alix-support-');
+        addTearDown(() => support.deleteSync(recursive: true));
+        final root = makeRoot();
+        addTearDown(() => root.deleteSync(recursive: true));
 
-      await tester.pumpWidget(AlixApp(
-        prepared: Prepared(root: root.path, device: 'phone-test'),
-        persistTheme: (id) => setTheme(id, support: support),
-      ));
-      await tester.pumpAndSettle();
+        await tester.pumpWidget(
+          AlixApp(
+            prepared: Prepared(root: root.path, device: 'phone-test'),
+            persistTheme: (id) => setTheme(id, support: support),
+          ),
+        );
+        await tester.pumpAndSettle();
 
-      await tester.tap(find.byType(PopupMenuButton<String>));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Theme…'));
-      await tester.pumpAndSettle();
+        await tester.tap(find.byType(PopupMenuButton<String>));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Theme…'));
+        await tester.pumpAndSettle();
 
-      // Grouped under the two mode headers.
-      expect(find.text('DARK'), findsOneWidget);
-      final scrollable = find.descendant(
-        of: find.byKey(const ValueKey('theme-sheet-list')),
-        matching: find.byType(Scrollable),
-      );
-      await tester.scrollUntilVisible(find.text('LIGHT'), 300,
-          scrollable: scrollable);
-      expect(find.text('LIGHT'), findsOneWidget);
+        // Grouped under the two mode headers.
+        expect(find.text('DARK'), findsOneWidget);
+        final scrollable = find.descendant(
+          of: find.byKey(const ValueKey('theme-sheet-list')),
+          matching: find.byType(Scrollable),
+        );
+        await tester.scrollUntilVisible(
+          find.text('LIGHT'),
+          300,
+          scrollable: scrollable,
+        );
+        expect(find.text('LIGHT'), findsOneWidget);
 
-      // No saved theme yet: the dark default carries the one current-marker.
-      await tester.scrollUntilVisible(
-        find.byKey(const ValueKey('theme-tile-dark')),
-        -300,
-        scrollable: scrollable,
-      );
-      expect(
-        find.descendant(
-          of: find.byKey(const ValueKey('theme-tile-dark')),
-          matching: find.byIcon(Icons.check),
-        ),
-        findsOneWidget,
-      );
-      expect(
-        find.descendant(
-          of: find.byKey(const ValueKey('theme-tile-dracula')),
-          matching: find.byIcon(Icons.check),
-        ),
-        findsNothing,
-      );
+        // No saved theme yet: the dark default carries the one current-marker.
+        await tester.scrollUntilVisible(
+          find.byKey(const ValueKey('theme-tile-dark')),
+          -300,
+          scrollable: scrollable,
+        );
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey('theme-tile-dark')),
+            matching: find.byIcon(Icons.check),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey('theme-tile-dracula')),
+            matching: find.byIcon(Icons.check),
+          ),
+          findsNothing,
+        );
 
-      await tester.tap(find.byKey(const ValueKey('theme-tile-dracula')));
-      await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('theme-tile-dracula')));
+        await tester.pumpAndSettle();
 
-      // The sheet closed; the whole app re-themed live, with no restart.
-      expect(find.byKey(const ValueKey('theme-sheet-list')), findsNothing);
-      final theme = Theme.of(tester.element(find.byType(PickerScreen)));
-      expect(theme.colorScheme.surface, themeById('dracula').colorScheme.surface);
+        // The sheet closed; the whole app re-themed live, with no restart.
+        expect(find.byKey(const ValueKey('theme-sheet-list')), findsNothing);
+        final theme = Theme.of(tester.element(find.byType(PickerScreen)));
+        expect(
+          theme.colorScheme.surface,
+          themeById('dracula').colorScheme.surface,
+        );
 
-      // Persisted via the injected seam.
-      expect(readTheme(support), 'dracula');
-    });
+        // Persisted via the injected seam.
+        expect(readTheme(support), 'dracula');
+      },
+    );
   });
 
-  testWidgets('the picker warns about a sync conflict file until dismissed',
-      (tester) async {
+  testWidgets('the picker warns about a sync conflict file until dismissed', (
+    tester,
+  ) async {
     final root = makeRoot();
     addTearDown(() => root.deleteSync(recursive: true));
-    File('${root.path}/progress.sync-conflict-20260714-101112-AAAAAAA.json')
-        .writeAsStringSync('{}');
+    File(
+      '${root.path}/progress.sync-conflict-20260714-101112-AAAAAAA.json',
+    ).writeAsStringSync('{}');
 
     await tester.pumpWidget(MaterialApp(home: PickerScreen(root: root.path)));
     await tester.pumpAndSettle();
@@ -379,13 +412,15 @@ void main() {
     expect(find.textContaining('sync conflict'), findsNothing);
   });
 
-  testWidgets('the review screen warns when another device wrote the store',
-      (tester) async {
+  testWidgets('the review screen warns when another device wrote the store', (
+    tester,
+  ) async {
     final root = makeRoot();
     addTearDown(() => root.deleteSync(recursive: true));
     final deck = '${root.path}/loose.txt';
-    final backdated =
-        BigInt.from(DateTime.now().millisecondsSinceEpoch - 600000);
+    final backdated = BigInt.from(
+      DateTime.now().millisecondsSinceEpoch - 600000,
+    );
     final s = ReviewSession.open(
       deckPath: deck,
       rootDir: root.path,
@@ -394,14 +429,16 @@ void main() {
     );
     s.acquire(nowMs: backdated);
 
-    await tester.pumpWidget(MaterialApp(
-      home: ReviewScreen(
-        deckPath: deck,
-        rootDir: root.path,
-        depth: Depth.recall,
-        device: 'phone-1',
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReviewScreen(
+          deckPath: deck,
+          rootDir: root.path,
+          depth: Depth.recall,
+          device: 'phone-1',
+        ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
     expect(find.textContaining("Last written by 'desk-1'"), findsOneWidget);
     await tester.tap(find.byIcon(Icons.close));
@@ -410,14 +447,16 @@ void main() {
 
     // The store's last writer is now this screen's own device (opening
     // saves), so a re-open as the same device stays quiet.
-    await tester.pumpWidget(MaterialApp(
-      home: ReviewScreen(
-        deckPath: deck,
-        rootDir: root.path,
-        depth: Depth.recall,
-        device: 'phone-1',
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReviewScreen(
+          deckPath: deck,
+          rootDir: root.path,
+          depth: Depth.recall,
+          device: 'phone-1',
+        ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
     expect(find.textContaining('Last written by'), findsNothing);
   });
@@ -426,12 +465,16 @@ void main() {
     expect(keypointGrade(covered: 0, total: 3), Grade.fail);
     expect(keypointGrade(covered: 2, total: 3), Grade.partial);
     expect(keypointGrade(covered: 3, total: 3), Grade.pass);
-    expect(keypointGrade(covered: 0, total: 0), Grade.pass,
-        reason: 'no rubric, nothing to miss');
+    expect(
+      keypointGrade(covered: 0, total: 0),
+      Grade.pass,
+      reason: 'no rubric, nothing to miss',
+    );
   });
 
-  testWidgets('the explain checklist derives the grade from the ticks',
-      (tester) async {
+  testWidgets('the explain checklist derives the grade from the ticks', (
+    tester,
+  ) async {
     final root = makeRoot();
     addTearDown(() => root.deleteSync(recursive: true));
     // A seen multi-line flip card at Reconstruct renders as Explain; with no
@@ -442,19 +485,25 @@ void main() {
       '    recall strengthens the memory\n'
       '    stronger memories fade more slowly\n',
     );
-    final backdated =
-        BigInt.from(DateTime.now().millisecondsSinceEpoch - 600000);
+    final backdated = BigInt.from(
+      DateTime.now().millisecondsSinceEpoch - 600000,
+    );
     final s = ReviewSession.open(
-        deckPath: deck, rootDir: root.path, nowMs: backdated);
+      deckPath: deck,
+      rootDir: root.path,
+      nowMs: backdated,
+    );
     s.acquire(nowMs: backdated);
 
-    await tester.pumpWidget(MaterialApp(
-      home: ReviewScreen(
-        deckPath: deck,
-        rootDir: root.path,
-        depth: Depth.reconstruct,
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReviewScreen(
+          deckPath: deck,
+          rootDir: root.path,
+          depth: Depth.reconstruct,
+        ),
       ),
-    ));
+    );
     expect(find.text('why does spacing work?'), findsOneWidget);
     await tester.tap(find.text('Reveal'));
     await tester.pump();
@@ -480,31 +529,41 @@ void main() {
     expect(find.text('SESSION COMPLETE'), findsOneWidget);
     final store = File('${root.path}/progress.json').readAsStringSync();
     expect(store, contains('"reconstruct"'));
-    expect(store, contains('"Pass"'),
-        reason: 'all keypoints ticked grades as a Pass, not a Fail');
+    expect(
+      store,
+      contains('"Pass"'),
+      reason: 'all keypoints ticked grades as a Pass, not a Fail',
+    );
   });
 
-  testWidgets('review flows from reveal to grade on a due card',
-      (tester) async {
+  testWidgets('review flows from reveal to grade on a due card', (
+    tester,
+  ) async {
     final root = makeRoot();
     addTearDown(() => root.deleteSync(recursive: true));
     final deck = '${root.path}/loose.txt';
     // Backdate the acquire far enough that the real clock is past the
     // cooldown (5 min default): the UI (which always uses the wall clock)
     // then serves the first quiz immediately.
-    final backdated =
-        BigInt.from(DateTime.now().millisecondsSinceEpoch - 600000);
-    final s =
-        ReviewSession.open(deckPath: deck, rootDir: root.path, nowMs: backdated);
+    final backdated = BigInt.from(
+      DateTime.now().millisecondsSinceEpoch - 600000,
+    );
+    final s = ReviewSession.open(
+      deckPath: deck,
+      rootDir: root.path,
+      nowMs: backdated,
+    );
     s.acquire(nowMs: backdated);
 
-    await tester.pumpWidget(MaterialApp(
-      home: ReviewScreen(
-        deckPath: deck,
-        rootDir: root.path,
-        depth: Depth.recall,
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReviewScreen(
+          deckPath: deck,
+          rootDir: root.path,
+          depth: Depth.recall,
+        ),
       ),
-    ));
+    );
     expect(find.text('capital of france?'), findsOneWidget);
     await tester.tap(find.text('Reveal'));
     await tester.pump();
@@ -527,59 +586,57 @@ void main() {
     );
   });
 
-  testWidgets('a deck too small for a choice quiz still offers a way forward',
-      (tester) async {
-    // OBSOLETE as of 2026-07-18: Recognize is now pick-only (assemble filters
-    // the roster to recognizable cards), so an un-augmented deck yields an EMPTY
-    // Recognize session, not a reveal fallback — the picker greys Recognize out
-    // instead. Rework in the mobile-0.2 build (the picker should not offer
-    // Recognize here, and this should assert the empty/greyed path).
-    final root = makeRoot();
-    addTearDown(() => root.deleteSync(recursive: true));
-    final deck = '${root.path}/loose.txt';
-    final backdated =
-        BigInt.from(DateTime.now().millisecondsSinceEpoch - 600000);
-    final s =
-        ReviewSession.open(deckPath: deck, rootDir: root.path, nowMs: backdated);
-    s.acquire(nowMs: backdated);
+  testWidgets(
+    'an un-augmented deck at Recognize opens an empty pick-only session',
+    (tester) async {
+      // Recognize is pick-only: a one-card un-augmented deck can build no pick, so
+      // the session schedules nothing (the picker greys Recognize out for such a
+      // deck). Opened directly, the screen shows the done state, never a card —
+      // no plain-flip fallback, and no dead-end.
+      final root = makeRoot();
+      addTearDown(() => root.deleteSync(recursive: true));
+      final deck = '${root.path}/loose.txt';
 
-    await tester.pumpWidget(MaterialApp(
-      theme: alixDark(),
-      home: ReviewScreen(
-        deckPath: deck,
-        rootDir: root.path,
-        depth: Depth.recognize,
-      ),
-    ));
-    await tester.pumpAndSettle();
-    expect(find.text('capital of france?'), findsOneWidget);
-    // The way forward: reveal the answer, then grade it. A recognize card
-    // with no pick grades with the web's Knew it / Not yet chips.
-    expect(find.text('Reveal'), findsOneWidget,
-        reason: 'a card with no choices must still be answerable');
-    await tester.tap(find.text('Reveal'));
-    await tester.pump();
-    expect(find.text('Paris'), findsOneWidget);
-    await tester.tap(find.text('Knew it'));
-    await tester.pump();
-    expect(find.text('SESSION COMPLETE'), findsOneWidget);
-  }, skip: true); // Recognize is pick-only now; rework in the mobile-0.2 build.
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: alixDark(),
+          home: ReviewScreen(
+            deckPath: deck,
+            rootDir: root.path,
+            depth: Depth.recognize,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.text('SESSION COMPLETE'),
+        findsOneWidget,
+        reason:
+            'a pick-only Recognize session over an un-augmented deck is empty',
+      );
+      expect(find.text('capital of france?'), findsNothing);
+    },
+  );
 
-  testWidgets('a choice pick washes the correct option green',
-      (tester) async {
+  testWidgets('a choice pick washes the correct option green', (tester) async {
     final root = makeRoot();
     addTearDown(() => root.deleteSync(recursive: true));
     final deck = '${root.path}/ws/m.txt';
     acquireAll(deck, root.path);
+    // Recognize is pick-only: arm the deck's cached distractors so it renders a
+    // real pick (on a phone these arrive by syncing the desktop's augmentation).
+    seedChoiceDistractors(deckPath: deck, rootDir: root.path);
 
-    await tester.pumpWidget(MaterialApp(
-      theme: alixDark(),
-      home: ReviewScreen(
-        deckPath: deck,
-        rootDir: root.path,
-        depth: Depth.recognize,
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: alixDark(),
+        home: ReviewScreen(
+          deckPath: deck,
+          rootDir: root.path,
+          depth: Depth.recognize,
+        ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
     final tokens = Theme.of(tester.element(find.byType(ReviewScreen))).alix;
     // Options render as bordered rows keyed by index; pick the first.
@@ -593,17 +650,18 @@ void main() {
         .widgetList<Text>(find.byType(Text))
         .where((t) => t.style?.color == tokens.good)
         .length;
-    expect(greens, greaterThanOrEqualTo(1),
-        reason: 'the correct option washes green');
+    expect(
+      greens,
+      greaterThanOrEqualTo(1),
+      reason: 'the correct option washes green',
+    );
     expect(
       find.descendant(
-          of: find.byKey(const ValueKey('option-0')),
-          matching: find.byType(InkWell)),
+        of: find.byKey(const ValueKey('option-0')),
+        matching: find.byType(InkWell),
+      ),
       findsNothing,
       reason: 'the options lock after a pick',
     );
-    // Renders a real pick, which now needs cached AI distractors (offline
-    // sampling removed 2026-07-18, CHANGELOG Breaking). Re-enable in the
-    // mobile-0.2 build by seeding this fixture's augment sidecar.
-  }, skip: true);
+  });
 }

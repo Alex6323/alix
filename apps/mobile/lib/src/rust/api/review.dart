@@ -19,6 +19,20 @@ Grade keypointGrade({required int covered, required int total}) => RustLib
     .api
     .crateApiReviewKeypointGrade(covered: covered, total: total);
 
+/// Test/dev support: cache a full set of choice distractors on every card of
+/// `deck_path`, into the same augment sidecar the review session reads (routed
+/// like [`ReviewSession::open`]). The phone never generates distractors itself
+/// — they sync from the desktop's `alix deck augment` — so a widget or bridge
+/// test uses this to drive the pick-only Recognize path without a live
+/// augmentation, keeping card-id computation in the lib (never in Dart).
+void seedChoiceDistractors({
+  required String deckPath,
+  required String rootDir,
+}) => RustLib.instance.api.crateApiReviewSeedChoiceDistractors(
+  deckPath: deckPath,
+  rootDir: rootDir,
+);
+
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ReviewSession>>
 abstract class ReviewSession implements RustOpaqueInterface {
   /// Mark the current never-seen card as acquired (first exposure, no

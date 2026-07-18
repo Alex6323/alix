@@ -12,6 +12,10 @@ pub struct DeckEntry {
     pub is_workspace: bool,
     /// Anything to do right now, against the store this entry reviews into.
     pub due: bool,
+    /// The deck has at least one recognizable card (cached distractors that
+    /// build a pick). Recognize is pick-only, so the picker greys the Recognize
+    /// depth out for a deck without it. Deck rows only; group rows aggregate.
+    pub can_recognize: bool,
     /// A trace deck (`% trace:`): opens a walk (`WalkSession`), not a card
     /// review; the flag lets the picker route the row to the walk screen
     /// instead of a review session.
@@ -48,6 +52,7 @@ impl From<alix::listing::DeckSummary> for DeckEntry {
             path: s.path.to_string_lossy().into_owned(),
             is_workspace: s.is_workspace,
             due: s.due,
+            can_recognize: s.can_recognize,
             is_trace: s.is_trace,
             last_depth: s.last_depth,
             mastered: s.mastered,

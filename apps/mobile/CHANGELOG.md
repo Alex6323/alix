@@ -54,6 +54,16 @@ Release notes, so a release without its section fails loud.
 - About gained one quiet Support line: the free alternative first, a
   sponsors link second.
 
+### Changed
+
+- **Breaking: the Recognize depth is greyed out on a deck without an
+  augmentation.** Recognize is now pick-only (it builds its multiple-choice
+  from cached AI distractors, never sampled options), so a deck with none can't
+  be drilled at Recognize; the depth sheet disables it, and a deck whose
+  remembered depth was Recognize opens at Recall instead of an empty session.
+  Augment the deck on the desktop (`alix deck augment --target choices`) and
+  sync it to enable Recognize.
+
 ### Fixed
 
 - The session summary no longer shows all zeros after a first pass over a

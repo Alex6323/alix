@@ -47,18 +47,18 @@ class PickerScreen extends StatefulWidget {
     required this.root,
     required List<DeckEntry> entries,
     this.device,
-  })  : masteredEntries = entries,
-        dir = null,
-        title = null,
-        sharedDir = null,
-        staleDecksDir = null,
-        access = null,
-        onSetDecksDir = null,
-        currentThemeId = null,
-        onSetTheme = null,
-        supportDir = null,
-        buildClient = null,
-        generatePollInterval = null;
+  }) : masteredEntries = entries,
+       dir = null,
+       title = null,
+       sharedDir = null,
+       staleDecksDir = null,
+       access = null,
+       onSetDecksDir = null,
+       currentThemeId = null,
+       onSetTheme = null,
+       supportDir = null,
+       buildClient = null,
+       generatePollInterval = null;
 
   final String root;
   final String? dir;
@@ -157,6 +157,13 @@ class _PickerScreenState extends State<PickerScreen> {
   /// no sheet, no per-tap prompt.
   Future<void> _openDeck(DeckEntry entry, {Depth? depth}) async {
     if (!mounted) return;
+    // A stale remembered Recognize on a now-unaugmented deck would open an
+    // empty pick-only session; fall back to Recall (the default) instead.
+    if (depth == null &&
+        entry.lastDepth == Depth.recognize &&
+        !entry.canRecognize) {
+      depth = Depth.recall;
+    }
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => ReviewScreen(
@@ -192,7 +199,11 @@ class _PickerScreenState extends State<PickerScreen> {
   /// The long-press re-pick: `_pickDepth` with the deck's remembered depth
   /// highlighted, opening with whatever is chosen.
   Future<void> _rePickDepth(DeckEntry entry) async {
-    final depth = await _pickDepth(context, selected: entry.lastDepth);
+    final depth = await _pickDepth(
+      context,
+      selected: entry.lastDepth,
+      canRecognize: entry.canRecognize,
+    );
     if (depth == null || !mounted) return;
     await _openDeck(entry, depth: depth);
   }
@@ -224,13 +235,22 @@ class _PickerScreenState extends State<PickerScreen> {
                 if (choice == 'about') _about();
               },
               itemBuilder: (_) => [
-                const PopupMenuItem(value: 'folder', child: Text('Decks folder…')),
-                const PopupMenuItem(value: 'pair', child: Text('Pair with desktop…')),
+                const PopupMenuItem(
+                  value: 'folder',
+                  child: Text('Decks folder…'),
+                ),
+                const PopupMenuItem(
+                  value: 'pair',
+                  child: Text('Pair with desktop…'),
+                ),
                 // Generate needs the paired desktop's AI; an unpaired phone
                 // has nothing to ask, so the item is absent rather than a
                 // dead button that would only fail (item T5.5).
                 if (_pairedConfig != null)
-                  const PopupMenuItem(value: 'generate', child: Text('Generate deck…')),
+                  const PopupMenuItem(
+                    value: 'generate',
+                    child: Text('Generate deck…'),
+                  ),
                 const PopupMenuItem(value: 'theme', child: Text('Theme…')),
                 const PopupMenuItem(value: 'about', child: Text('About')),
               ],
@@ -261,7 +281,8 @@ class _PickerScreenState extends State<PickerScreen> {
                   _emptyHint(context)
                 else ...[
                   for (final entry in active) _deckRow(context, entry),
-                  if (mastered.isNotEmpty) _masteredAffordance(context, mastered),
+                  if (mastered.isNotEmpty)
+                    _masteredAffordance(context, mastered),
                 ],
               ],
             ),
@@ -316,8 +337,8 @@ class _PickerScreenState extends State<PickerScreen> {
             onTap: () => entry.isWorkspace
                 ? _drillInto(entry)
                 : entry.isTrace
-                    ? _openWalk(entry)
-                    : _openDeck(entry),
+                ? _openWalk(entry)
+                : _openDeck(entry),
             onLongPress: canRePick ? () => _rePickDepth(entry) : null,
             child: Container(
               constraints: const BoxConstraints(minHeight: 54),
@@ -337,8 +358,9 @@ class _PickerScreenState extends State<PickerScreen> {
                       entry.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w600),
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                   ..._trailingMarker(theme, entry),
@@ -432,8 +454,9 @@ class _PickerScreenState extends State<PickerScreen> {
                               entry.title,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.titleMedium
-                                  ?.copyWith(fontWeight: FontWeight.w600),
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
                           ..._trailingMarker(theme, entry),
@@ -477,8 +500,10 @@ class _PickerScreenState extends State<PickerScreen> {
                     'Mastered · ${mastered.length}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w600, color: tokens.good),
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: tokens.good,
+                    ),
                   ),
                 ),
                 Icon(Icons.chevron_right, size: 22, color: tokens.good),
@@ -544,7 +569,7 @@ class _PickerScreenState extends State<PickerScreen> {
     return Text(
       widget.dir == null
           ? 'No decks here yet. Put .txt decks in this folder, or choose a '
-              'shared folder from the menu.'
+                'shared folder from the menu.'
           : 'no decks here',
       style: theme.textTheme.bodyMedium?.copyWith(color: theme.alix.dim),
     );
@@ -557,8 +582,9 @@ class _PickerScreenState extends State<PickerScreen> {
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
       child: Text(
         text,
-        style: theme.textTheme.bodySmall
-            ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
       ),
     );
   }
@@ -580,8 +606,9 @@ class _PickerScreenState extends State<PickerScreen> {
               'A sync conflict file sits next to your progress '
               '(${_conflicts.length}). Review on one device at a time and '
               'resolve it first; see the manual.',
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.onErrorContainer),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onErrorContainer,
+              ),
             ),
           ),
           IconButton(
@@ -635,8 +662,9 @@ class _PickerScreenState extends State<PickerScreen> {
                 else
                   Text(
                     'Shared folders need Android 11 or newer.',
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 if (widget.sharedDir != null) ...[
                   const SizedBox(height: 8),
@@ -677,9 +705,17 @@ class _PickerScreenState extends State<PickerScreen> {
             padding: const EdgeInsets.symmetric(vertical: 8),
             children: [
               for (final mode in const [Brightness.dark, Brightness.light]) ...[
-                _themeGroupLabel(sheet, mode == Brightness.dark ? 'Dark' : 'Light'),
+                _themeGroupLabel(
+                  sheet,
+                  mode == Brightness.dark ? 'Dark' : 'Light',
+                ),
                 for (final entry in alixThemes.where((t) => t.mode == mode))
-                  _themeTile(sheet, entry, current: current, onSetTheme: onSetTheme),
+                  _themeTile(
+                    sheet,
+                    entry,
+                    current: current,
+                    onSetTheme: onSetTheme,
+                  ),
               ],
             ],
           ),
@@ -718,7 +754,9 @@ class _PickerScreenState extends State<PickerScreen> {
       key: ValueKey('theme-tile-${theme.id}'),
       leading: _themeSwatch(theme),
       title: Text(theme.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-      trailing: isCurrent ? Icon(Icons.check, size: 18, color: tokens.bolt) : null,
+      trailing: isCurrent
+          ? Icon(Icons.check, size: 18, color: tokens.bolt)
+          : null,
       onTap: () {
         onSetTheme(theme.id);
         Navigator.of(context).pop();
@@ -757,7 +795,8 @@ class _PickerScreenState extends State<PickerScreen> {
     decoration: BoxDecoration(color: color, shape: BoxShape.circle),
   );
 
-  Future<Directory> _support() async => widget.supportDir ?? await getApplicationSupportDirectory();
+  Future<Directory> _support() async =>
+      widget.supportDir ?? await getApplicationSupportDirectory();
 
   /// Opens the pairing sheet (see pairing_sheet.dart) and refreshes the
   /// paired-desktop gate on close: the only pairing surface in the app.
@@ -788,7 +827,8 @@ class _PickerScreenState extends State<PickerScreen> {
     final support = await _support();
     if (!mounted) return;
     final config = readServer(support);
-    if (config == null) return; // the menu item is pairing-gated; a race here is a quiet no-op
+    if (config == null)
+      return; // the menu item is pairing-gated; a race here is a quiet no-op
     final client = (widget.buildClient ?? HttpServerClient.new)(config);
 
     final dto = await showModalBottomSheet<RemoteGenerate>(
@@ -796,13 +836,15 @@ class _PickerScreenState extends State<PickerScreen> {
       isScrollControlled: true,
       builder: (_) => _GenerateSheet(
         client: client,
-        pollInterval: widget.generatePollInterval ?? const Duration(milliseconds: 400),
+        pollInterval:
+            widget.generatePollInterval ?? const Duration(milliseconds: 400),
       ),
     );
 
     final deck = dto?.deck;
     final filename = dto?.filename;
-    if (deck == null || filename == null) return; // cancelled or failed; the sheet's dispose closed the slot
+    if (deck == null || filename == null)
+      return; // cancelled or failed; the sheet's dispose closed the slot
 
     if (!mounted) {
       await client.generateClose().catchError((_) {});
@@ -823,7 +865,11 @@ class _PickerScreenState extends State<PickerScreen> {
       return;
     }
 
-    final written = applyGeneratedDeck(decksDir: dest, filename: filename, text: deck);
+    final written = applyGeneratedDeck(
+      decksDir: dest,
+      filename: filename,
+      text: deck,
+    );
     await client.generateClose().catchError((_) {});
     client.close();
     if (!mounted) return;
@@ -835,8 +881,10 @@ class _PickerScreenState extends State<PickerScreen> {
     final access = widget.access;
     if (access == null) return;
     if (!await access.ensureAllFilesAccess()) {
-      _snack('Allow "All files access" for alix on the settings page that '
-          'just opened, then try again.');
+      _snack(
+        'Allow "All files access" for alix on the settings page that '
+        'just opened, then try again.',
+      );
       return;
     }
     if (!mounted) return;
@@ -868,7 +916,9 @@ class _PickerScreenState extends State<PickerScreen> {
     final app = await widget.access?.appVersion();
     if (!mounted) return;
     final tokens = Theme.of(context).alix;
-    final dimStyle = Theme.of(context).textTheme.bodySmall?.copyWith(color: tokens.dim);
+    final dimStyle = Theme.of(
+      context,
+    ).textTheme.bodySmall?.copyWith(color: tokens.dim);
     showAboutDialog(
       context: context,
       applicationName: 'alix',
@@ -901,7 +951,10 @@ class _PickerScreenState extends State<PickerScreen> {
 /// name both present); the caller places the file. Pops with `null` when the
 /// user cancels without ever reaching `done` (back, or tapping outside).
 class _GenerateSheet extends StatefulWidget {
-  const _GenerateSheet({required this.client, this.pollInterval = const Duration(milliseconds: 400)});
+  const _GenerateSheet({
+    required this.client,
+    this.pollInterval = const Duration(milliseconds: 400),
+  });
 
   /// Owned by the caller ([_PickerScreenState._generateSheet]), which keeps
   /// it open past this sheet's own lifetime for the dest-pick step; see
@@ -951,7 +1004,10 @@ class _GenerateSheetState extends State<_GenerateSheet> {
     final url = _urlController.text.trim();
     final scheme = Uri.tryParse(url)?.scheme;
     if (scheme != 'http' && scheme != 'https') {
-      setState(() => _message = 'alix can only generate from an http:// or https:// URL.');
+      setState(
+        () => _message =
+            'alix can only generate from an http:// or https:// URL.',
+      );
       return;
     }
     setState(() {
@@ -962,7 +1018,10 @@ class _GenerateSheetState extends State<_GenerateSheet> {
     final guidance = _guidanceController.text.trim();
     bool ok;
     try {
-      ok = await widget.client.generateStart(url, guidance: guidance.isEmpty ? null : guidance);
+      ok = await widget.client.generateStart(
+        url,
+        guidance: guidance.isEmpty ? null : guidance,
+      );
     } on PairingExpired {
       if (!mounted) return;
       setState(() {
@@ -1011,7 +1070,9 @@ class _GenerateSheetState extends State<_GenerateSheet> {
       return;
     }
     final settled = dto;
-    if (settled.phase == 'done' && settled.deck != null && settled.filename != null) {
+    if (settled.phase == 'done' &&
+        settled.deck != null &&
+        settled.filename != null) {
       _handedOff = true;
       Navigator.of(context).pop(settled);
       return;
@@ -1027,7 +1088,12 @@ class _GenerateSheetState extends State<_GenerateSheet> {
     final theme = Theme.of(context);
     return SafeArea(
       child: Padding(
-        padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + MediaQuery.of(context).viewInsets.bottom),
+        padding: EdgeInsets.fromLTRB(
+          24,
+          24,
+          24,
+          24 + MediaQuery.of(context).viewInsets.bottom,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1036,33 +1102,41 @@ class _GenerateSheetState extends State<_GenerateSheet> {
             const SizedBox(height: 8),
             if (_busy)
               Text(
-                _elapsed != null ? 'The desktop is working… ${_elapsed}s' : 'The desktop is working…',
-                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                _elapsed != null
+                    ? 'The desktop is working… ${_elapsed}s'
+                    : 'The desktop is working…',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               )
             else ...[
               TextField(
                 key: const ValueKey('generate-url-field'),
                 controller: _urlController,
-                decoration: const InputDecoration(labelText: 'URL', hintText: 'https://...'),
+                decoration: const InputDecoration(
+                  labelText: 'URL',
+                  hintText: 'https://...',
+                ),
                 maxLines: 1,
               ),
               const SizedBox(height: 12),
               TextField(
                 key: const ValueKey('generate-guidance-field'),
                 controller: _guidanceController,
-                decoration: const InputDecoration(labelText: 'Guidance (optional)'),
+                decoration: const InputDecoration(
+                  labelText: 'Guidance (optional)',
+                ),
                 maxLines: 1,
               ),
               const SizedBox(height: 12),
-              FilledButton(
-                onPressed: _submit,
-                child: const Text('Generate'),
-              ),
+              FilledButton(onPressed: _submit, child: const Text('Generate')),
               if (_message != null) ...[
                 const SizedBox(height: 8),
                 Text(
                   _message!,
-                  style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.error,
+                  ),
                 ),
               ],
             ],
@@ -1075,23 +1149,40 @@ class _GenerateSheetState extends State<_GenerateSheet> {
 
 /// The session depth pick (the long-press re-pick); [selected], when given,
 /// gets one calm check-mark leading its tile as the current choice.
-Future<Depth?> _pickDepth(BuildContext context, {Depth? selected}) {
+Future<Depth?> _pickDepth(
+  BuildContext context, {
+  Depth? selected,
+  bool canRecognize = true,
+}) {
   return showModalBottomSheet<Depth>(
     context: context,
     builder: (context) => SafeArea(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // Recognize is pick-only: a deck with no cached distractors can build
+          // no pick, so the depth is greyed out until it's augmented.
           for (final (depth, label, hint) in [
-            (Depth.recognize, 'Recognize', 'pick the answer out of four'),
+            (
+              Depth.recognize,
+              'Recognize',
+              canRecognize
+                  ? 'pick the answer out of four'
+                  : 'augment the deck to enable',
+            ),
             (Depth.recall, 'Recall', 'the everyday review'),
             (Depth.reconstruct, 'Reconstruct', 'type or rebuild the answer'),
           ])
             ListTile(
+              enabled: canRecognize || depth != Depth.recognize,
               leading: SizedBox(
                 width: 22,
                 child: depth == selected
-                    ? Icon(Icons.check, size: 18, color: Theme.of(context).alix.bolt)
+                    ? Icon(
+                        Icons.check,
+                        size: 18,
+                        color: Theme.of(context).alix.bolt,
+                      )
                     : null,
               ),
               title: Text(label),
@@ -1125,7 +1216,9 @@ class TreeGuides extends StatelessWidget {
     final columns = tree.length ~/ 3;
     return SizedBox(
       width: columns * _column,
-      child: CustomPaint(painter: TreeGuidesPainter(tree: tree, color: color)),
+      child: CustomPaint(
+        painter: TreeGuidesPainter(tree: tree, color: color),
+      ),
     );
   }
 }
@@ -1156,7 +1249,11 @@ class TreeGuidesPainter extends CustomPainter {
       }
       // The connector (tee or last-child) reaches right toward the title.
       if (segment == '├' || segment == '└') {
-        canvas.drawLine(Offset(x, midY), Offset(i * column + column, midY), paint);
+        canvas.drawLine(
+          Offset(x, midY),
+          Offset(i * column + column, midY),
+          paint,
+        );
       }
     }
   }

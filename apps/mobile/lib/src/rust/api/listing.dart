@@ -41,6 +41,11 @@ class DeckEntry {
   /// Anything to do right now, against the store this entry reviews into.
   final bool due;
 
+  /// The deck has at least one recognizable card (cached distractors that
+  /// build a pick). Recognize is pick-only, so the picker greys the Recognize
+  /// depth out for a deck without it. Deck rows only; group rows aggregate.
+  final bool canRecognize;
+
   /// A trace deck (`% trace:`): opens a walk (`WalkSession`), not a card
   /// review; the flag lets the picker route the row to the walk screen
   /// instead of a review session.
@@ -82,6 +87,7 @@ class DeckEntry {
     required this.path,
     required this.isWorkspace,
     required this.due,
+    required this.canRecognize,
     required this.isTrace,
     required this.lastDepth,
     required this.mastered,
@@ -99,6 +105,7 @@ class DeckEntry {
       path.hashCode ^
       isWorkspace.hashCode ^
       due.hashCode ^
+      canRecognize.hashCode ^
       isTrace.hashCode ^
       lastDepth.hashCode ^
       mastered.hashCode ^
@@ -118,6 +125,7 @@ class DeckEntry {
           path == other.path &&
           isWorkspace == other.isWorkspace &&
           due == other.due &&
+          canRecognize == other.canRecognize &&
           isTrace == other.isTrace &&
           lastDepth == other.lastDepth &&
           mastered == other.mastered &&
