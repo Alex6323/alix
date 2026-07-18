@@ -44,6 +44,7 @@ pub fn is_canonical(token: &str) -> bool {
 /// Compose a full card id from its parts. `hole` and `reversed` are mutually
 /// exclusive by construction upstream (cloze cards never reverse).
 pub fn card_id(token: &str, hole: Option<u32>, reversed: bool) -> String {
+    debug_assert!(hole.is_none() || !reversed, "a cloze sub-card never reverses");
     if let Some(n) = hole {
         format!("{token}-{n}")
     } else if reversed {
@@ -56,6 +57,13 @@ pub fn card_id(token: &str, hole: Option<u32>, reversed: bool) -> String {
 /// Split a full card id back into `(token, hole, reversed)`. `-` cannot occur
 /// inside a token, so the first `-` is always the suffix boundary. `None` if
 /// the shape is invalid.
+///
+/// A numeric hole suffix is accepted only in canonical decimal: exactly
+/// `"0"`, or a first digit `1`-`9` followed by digits. A leading zero
+/// (`"01"`) is rejected as a second spelling of `"1"`.
+///
+/// This validates only the id's shape; it does not check the token's
+/// charset (that's `is_valid`'s job at the parse site).
 pub fn parse_card_id(id: &str) -> Option<(&str, Option<u32>, bool)> {
     match id.split_once('-') {
         None => Some((id, None, false)),
@@ -64,13 +72,25 @@ pub fn parse_card_id(id: &str) -> Option<(&str, Option<u32>, bool)> {
                 None
             } else if suffix == "r" {
                 Some((token, None, true))
-            } else if !suffix.is_empty() && suffix.bytes().all(|b| b.is_ascii_digit()) {
+            } else if is_canonical_decimal(suffix) {
                 let hole: u32 = suffix.parse().ok()?;
                 Some((token, Some(hole), false))
             } else {
                 None
             }
         }
+    }
+}
+
+/// True if `s` is `"0"`, or a nonzero digit followed by digits: a canonical
+/// decimal integer with no leading zero.
+fn is_canonical_decimal(s: &str) -> bool {
+    match s.as_bytes() {
+        [b'0'] => true,
+        [first, rest @ ..] => {
+            (b'1'..=b'9').contains(first) && rest.iter().all(|b| b.is_ascii_digit())
+        }
+        [] => false,
     }
 }
 
@@ -121,5 +141,13 @@ mod tests {
         assert_eq!(parse_card_id("-r"), None);
         assert_eq!(parse_card_id("t0-1-2"), None);
         assert_eq!(parse_card_id("t0-12"), Some(("t0", Some(12), false)));
+    }
+
+    #[test]
+    fn a_leading_zero_hole_suffix_is_rejected() {
+        assert_eq!(parse_card_id("t0-01"), None);
+        assert_eq!(parse_card_id("t0-00"), None);
+        assert_eq!(parse_card_id("t0-0"), Some(("t0", Some(0), false)));
+        assert_eq!(parse_card_id("t0-10"), Some(("t0", Some(10), false)));
     }
 }
