@@ -904,6 +904,59 @@ mod tests {
     }
 
     #[test]
+    fn an_on_device_session_honors_the_workspace_deadline_ceiling() {
+        // The phone's own session path (ReviewSession::open → assemble::select)
+        // must apply a synced workspace's alix.local.toml deadline: a mature
+        // card graded Pass three days before the date comes due before it.
+        // Closed by execution, not by reading — the bridge builds its own
+        // AssembleConfig, so the overlay firing here is the claim under test.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let ws = root.join("ws");
+        std::fs::create_dir(&ws).unwrap();
+        write(&ws.join("alix.toml"), "title = \"W\"\n");
+        write(&ws.join("m.txt"), "# q\n\ta\n");
+        let deadline = alix::time::local_date(T0) + chrono::Days::new(3);
+        write(
+            &ws.join("alix.local.toml"),
+            &format!("[review]\ndeadline = \"{}\"\n", deadline.format("%Y-%m-%d")),
+        );
+
+        // A mature Review-state card that would schedule ~months uncapped.
+        let id = alix::deck::Deck::load(ws.join("m.txt")).unwrap().cards[0].id();
+        let mut store = alix::store::Store::open(alix::workspace::store_path(&ws)).unwrap();
+        store.get_or_insert(id, T0).recall = Some(alix::store::FsrsState {
+            stability: 200.0,
+            difficulty: 5.0,
+            state: 2,
+            reps: 10,
+            scheduled_days: 90,
+            last_review_ms: T0.saturating_sub(90 * 86_400_000),
+            due_ms: T0.saturating_sub(1_000), // due now
+            ..Default::default()
+        });
+        store.save().unwrap();
+
+        let mut s = ReviewSession::open(
+            ws.join("m.txt").to_string_lossy().into_owned(),
+            root.to_string_lossy().into_owned(),
+            None,
+            Some(T0),
+            None,
+        )
+        .unwrap();
+        s.grade(Grade::Pass, Some(T0)).unwrap();
+
+        let ceiling = alix::time::end_of_local_day_ms(deadline);
+        let store = alix::store::Store::open(alix::workspace::store_path(&ws)).unwrap();
+        let due = store.get(id).unwrap().recall.unwrap().due_ms;
+        assert!(
+            due <= ceiling,
+            "due {due} must respect the deadline ceiling {ceiling}"
+        );
+    }
+
+    #[test]
     fn choose_agrees_with_the_served_options() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();

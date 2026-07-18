@@ -11,8 +11,13 @@ use std::{
     path::{Path, PathBuf},
 };
 
+// Only the readiness test uses `DeckState` since `workspace_readiness` moved
+// to `listing`; a top-level import would be an unused-import warning outside
+// tests.
+#[cfg(test)]
+use crate::deck::DeckState;
 pub use crate::listing::{DeckStatus, deck_status, dependency_forest, member_parents};
-use crate::{deck::DeckState, parser, recent::RecentDecks, store::Store, title, workspace};
+use crate::{parser, recent::RecentDecks, store::Store, title, workspace};
 
 // ---- deck candidates ----------------------------------------------------
 
@@ -102,26 +107,9 @@ fn build_candidates(decks_dir: &Path, recent: &RecentDecks) -> Vec<Candidate> {
     out
 }
 
-/// A workspace's progress toward its deadline ({#deadlines}): how many member
-/// decks count as ready, out of how many total.
-pub struct WorkspaceReadiness {
-    pub ready: usize,
-    pub total: usize,
-}
-
-/// Counts a workspace's member decks as ready for its deadline (spec decision
-/// 2): mastered (exam passed), or, for a source-less deck (no exam to pass),
-/// simply finished drilling.
-pub fn workspace_readiness(statuses: &[DeckStatus]) -> WorkspaceReadiness {
-    let ready = statuses
-        .iter()
-        .filter(|s| s.mastered || (s.state == DeckState::Finished && !s.has_exam))
-        .count();
-    WorkspaceReadiness {
-        ready,
-        total: statuses.len(),
-    }
-}
+// The deadline-readiness rule moved to `listing` (the deck_status precedent:
+// the lean mobile build needs it too); re-exported here for the web picker.
+pub use crate::listing::{WorkspaceReadiness, workspace_readiness};
 
 fn file_name(path: &Path) -> String {
     path.file_name()

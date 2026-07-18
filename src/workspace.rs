@@ -280,6 +280,20 @@ pub fn set_deadline(dir: &Path, date: Option<chrono::NaiveDate>) -> anyhow::Resu
         .with_context(|| format!("cannot write {}", path.display()))
 }
 
+/// [`set_deadline`] taking the wire's `YYYY-MM-DD` form (or `None` to clear),
+/// so a thin client (the frb bridge) hands the string through and the parse —
+/// and its error — stays in the lib.
+pub fn set_deadline_str(dir: &Path, date: Option<&str>) -> anyhow::Result<()> {
+    use anyhow::Context;
+    let parsed = date
+        .map(|d| {
+            chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d")
+                .with_context(|| format!("not a YYYY-MM-DD date: {d}"))
+        })
+        .transpose()?;
+    set_deadline(dir, parsed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

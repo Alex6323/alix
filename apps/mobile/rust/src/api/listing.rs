@@ -4,6 +4,8 @@
 
 use std::path::Path;
 
+use anyhow::Result;
+
 /// One row of a folder listing, as the picker screen renders it.
 pub struct DeckEntry {
     pub title: String,
@@ -43,6 +45,35 @@ pub struct DeckEntry {
     /// The branch-line prefix (`├─`/`└─`/`│`) for this row in the
     /// workspace's dependency tree. Member rows only; empty otherwise.
     pub tree: String,
+    /// The workspace's "ready by" target with live readiness, mirroring the
+    /// web picker's deadline chip. Real-workspace rows with a set deadline
+    /// only; `None` otherwise.
+    pub deadline: Option<Deadline>,
+}
+
+/// A workspace's "ready by" target as the picker renders it — the bridge
+/// mirror of `alix::listing::DeckDeadline`, with the date in its wire
+/// `YYYY-MM-DD` form.
+pub struct Deadline {
+    /// The target date, `YYYY-MM-DD`.
+    pub date: String,
+    /// Whole days until the date in local time; negative once it has passed.
+    pub days_left: i64,
+    /// Member decks currently ready (mastered, or finished with no exam).
+    pub ready: u32,
+    /// Member decks counted.
+    pub total: u32,
+}
+
+impl From<alix::listing::DeckDeadline> for Deadline {
+    fn from(d: alix::listing::DeckDeadline) -> Self {
+        Deadline {
+            date: d.date.format("%Y-%m-%d").to_string(),
+            days_left: d.days_left,
+            ready: d.ready as u32,
+            total: d.total as u32,
+        }
+    }
 }
 
 impl From<alix::listing::DeckSummary> for DeckEntry {
@@ -62,8 +93,33 @@ impl From<alix::listing::DeckSummary> for DeckEntry {
             icon: s.icon.map(|p| p.to_string_lossy().into_owned()),
             indent: s.indent as u32,
             tree: s.tree,
+            deadline: s.deadline.map(Deadline::from),
         }
     }
+}
+
+/// The workspace's "ready by" readout, fetched on its own so the drilled-in
+/// picker can refresh it after a review changes mastery, without re-listing
+/// the root. `None` for a plain folder or when no deadline is set.
+#[flutter_rust_bridge::frb(sync)]
+pub fn workspace_deadline(root: String, dir: String, now_ms: Option<u64>) -> Option<Deadline> {
+    let now = now_ms.unwrap_or_else(alix::time::now_ms);
+    alix::listing::workspace_deadline(
+        Path::new(&root),
+        Path::new(&dir),
+        &alix::config::ReviewConfig::default(),
+        now,
+    )
+    .map(Deadline::from)
+}
+
+/// Sets, moves, or clears (`None`) the workspace's "ready by" date in its
+/// `alix.local.toml` — the same file the desktop edits, so a synced folder
+/// carries the change both ways. The date parse (and its error) lives in the
+/// lib (`workspace::set_deadline_str`).
+#[flutter_rust_bridge::frb(sync)]
+pub fn set_workspace_deadline(dir: String, date: Option<String>) -> Result<()> {
+    alix::workspace::set_deadline_str(Path::new(&dir), date.as_deref())
 }
 
 /// Lists the decks root. `now_ms` injects the clock (tests); `None` is now.
@@ -277,6 +333,50 @@ mod tests {
             ],
             shape
         );
+    }
+
+    #[test]
+    fn workspace_deadline_sets_moves_clears_and_lists_across_the_boundary() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let ws = root.join("ws");
+        std::fs::create_dir(&ws).unwrap();
+        write(&ws.join("alix.toml"), "title = \"Ws\"\n");
+        write(&ws.join("m.txt"), "# q\n\ta\n");
+        let ws_s = ws.to_string_lossy().into_owned();
+        let root_s = root.to_string_lossy().into_owned();
+
+        // Unset: nothing to fetch, and the row lists without one.
+        assert!(workspace_deadline(root_s.clone(), ws_s.clone(), Some(T0)).is_none());
+
+        // Set: the local manifest gains the key, and both the fetch and the
+        // root listing carry it with live readiness (0/1 — m.txt is fresh).
+        let date = alix::time::local_date(T0) + chrono::Days::new(5);
+        let date_s = date.format("%Y-%m-%d").to_string();
+        set_workspace_deadline(ws_s.clone(), Some(date_s.clone())).unwrap();
+        let text = std::fs::read_to_string(ws.join("alix.local.toml")).unwrap();
+        assert!(text.contains(&format!("deadline = \"{date_s}\"")));
+        let fetched = workspace_deadline(root_s.clone(), ws_s.clone(), Some(T0)).unwrap();
+        assert_eq!((date_s.as_str(), 5, 0, 1), (
+            fetched.date.as_str(),
+            fetched.days_left,
+            fetched.ready,
+            fetched.total,
+        ));
+        let rows = list_root(root_s.clone(), Some(T0));
+        let row = rows.iter().find(|r| r.is_workspace).unwrap();
+        assert_eq!(Some(date_s.as_str()), row.deadline.as_ref().map(|d| d.date.as_str()));
+
+        // A bad date errors in the lib rather than writing junk.
+        assert!(set_workspace_deadline(ws_s.clone(), Some("someday".into())).is_err());
+
+        // Clear: gone from the file, the fetch, and the listing.
+        set_workspace_deadline(ws_s.clone(), None).unwrap();
+        let text = std::fs::read_to_string(ws.join("alix.local.toml")).unwrap();
+        assert!(!text.contains("deadline"));
+        assert!(workspace_deadline(root_s.clone(), ws_s, Some(T0)).is_none());
+        let rows = list_root(root_s, Some(T0));
+        assert!(rows.iter().find(|r| r.is_workspace).unwrap().deadline.is_none());
     }
 
     #[test]

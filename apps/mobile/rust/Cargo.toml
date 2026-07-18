@@ -17,6 +17,9 @@ anyhow = "1"
 [dev-dependencies]
 # Temp dirs for the host-side store/deck tests.
 tempfile = "3"
+# Deadline-test fixtures construct the dates alix's own API speaks
+# (`chrono::NaiveDate`); pinned to the core's version line.
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }

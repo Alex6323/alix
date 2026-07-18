@@ -53,6 +53,13 @@ Release notes, so a release without its section fails loud.
   back to the menu.
 - About gained one quiet Support line: the free alternative first, a
   sponsors link second.
+- **Workspace deadlines, on the phone too.** A workspace's "ready by" date
+  shows on its row (date, days left, ready percent, colored when near or
+  past) and again once you drill in; long-press the row to set, move, or
+  clear it. The date lives in the workspace's own `alix.local.toml`, so a
+  synced folder carries it between phone and desktop, and the phone's
+  offline sessions bend their scheduling toward the date exactly as the
+  desktop does.
 
 ### Changed
 

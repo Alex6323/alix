@@ -7,7 +7,29 @@ import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'review.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `from`, `from`
+
+/// The workspace's "ready by" readout, fetched on its own so the drilled-in
+/// picker can refresh it after a review changes mastery, without re-listing
+/// the root. `None` for a plain folder or when no deadline is set.
+Deadline? workspaceDeadline({
+  required String root,
+  required String dir,
+  BigInt? nowMs,
+}) => RustLib.instance.api.crateApiListingWorkspaceDeadline(
+  root: root,
+  dir: dir,
+  nowMs: nowMs,
+);
+
+/// Sets, moves, or clears (`None`) the workspace's "ready by" date in its
+/// `alix.local.toml` — the same file the desktop edits, so a synced folder
+/// carries the change both ways. The date parse (and its error) lives in the
+/// lib (`workspace::set_deadline_str`).
+void setWorkspaceDeadline({required String dir, String? date}) => RustLib
+    .instance
+    .api
+    .crateApiListingSetWorkspaceDeadline(dir: dir, date: date);
 
 /// Lists the decks root. `now_ms` injects the clock (tests); `None` is now.
 List<DeckEntry> listRoot({required String root, BigInt? nowMs}) =>
@@ -29,6 +51,44 @@ List<DeckEntry> listMembers({
   dir: dir,
   nowMs: nowMs,
 );
+
+/// A workspace's "ready by" target as the picker renders it — the bridge
+/// mirror of `alix::listing::DeckDeadline`, with the date in its wire
+/// `YYYY-MM-DD` form.
+class Deadline {
+  /// The target date, `YYYY-MM-DD`.
+  final String date;
+
+  /// Whole days until the date in local time; negative once it has passed.
+  final PlatformInt64 daysLeft;
+
+  /// Member decks currently ready (mastered, or finished with no exam).
+  final int ready;
+
+  /// Member decks counted.
+  final int total;
+
+  const Deadline({
+    required this.date,
+    required this.daysLeft,
+    required this.ready,
+    required this.total,
+  });
+
+  @override
+  int get hashCode =>
+      date.hashCode ^ daysLeft.hashCode ^ ready.hashCode ^ total.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is Deadline &&
+          runtimeType == other.runtimeType &&
+          date == other.date &&
+          daysLeft == other.daysLeft &&
+          ready == other.ready &&
+          total == other.total;
+}
 
 /// One row of a folder listing, as the picker screen renders it.
 class DeckEntry {
@@ -82,6 +142,11 @@ class DeckEntry {
   /// workspace's dependency tree. Member rows only; empty otherwise.
   final String tree;
 
+  /// The workspace's "ready by" target with live readiness, mirroring the
+  /// web picker's deadline chip. Real-workspace rows with a set deadline
+  /// only; `None` otherwise.
+  final Deadline? deadline;
+
   const DeckEntry({
     required this.title,
     required this.path,
@@ -97,6 +162,7 @@ class DeckEntry {
     this.icon,
     required this.indent,
     required this.tree,
+    this.deadline,
   });
 
   @override
@@ -114,7 +180,8 @@ class DeckEntry {
       locked.hashCode ^
       icon.hashCode ^
       indent.hashCode ^
-      tree.hashCode;
+      tree.hashCode ^
+      deadline.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -134,5 +201,6 @@ class DeckEntry {
           locked == other.locked &&
           icon == other.icon &&
           indent == other.indent &&
-          tree == other.tree;
+          tree == other.tree &&
+          deadline == other.deadline;
 }

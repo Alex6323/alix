@@ -47,6 +47,15 @@ pub struct DeckSummary {
     /// out. Deck rows only; `false` for workspace/folder rows or a missing
     /// store/augment. Mirrors [`DeckStatus::can_recognize`].
     pub can_recognize: bool,
+    /// The deck counts as ready toward its workspace's deadline
+    /// ([`deadline_ready`]): mastered, or finished with no exam to pass. Deck
+    /// rows only; `false` for workspace/folder rows or a missing store.
+    pub ready: bool,
+    /// The workspace's "ready by" target with live readiness ({#deadlines}),
+    /// mirroring the web catalog's `DeadlineDto`. Real-workspace rows only
+    /// (`alix.local.toml` present with a `deadline`); `None` for deck rows,
+    /// plain folders, and workspaces without one.
+    pub deadline: Option<DeckDeadline>,
     /// A trace deck (`% trace:`): a predict-and-verify walk, not a card
     /// review. A client dispatches on this flag: the phone opens a trace row
     /// as a walk (`WalkSession`), never as a review session.
@@ -84,6 +93,23 @@ pub struct DeckSummary {
     /// workspace's dependency tree. Member rows only; empty for loose-deck
     /// and workspace/folder rows.
     pub tree: String,
+}
+
+/// A workspace's "ready by" target ({#deadlines}) as a client renders it:
+/// the date, how far off it is, and how many member decks are ready — the
+/// lean sibling of the web catalog's `DeadlineDto`, computed from the same
+/// [`deadline_ready`] rule.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DeckDeadline {
+    /// The target date (`[review] deadline` in the workspace's
+    /// `alix.local.toml`).
+    pub date: chrono::NaiveDate,
+    /// Whole days until the date in local time; negative once it has passed.
+    pub days_left: i64,
+    /// Member decks currently ready ([`deadline_ready`]).
+    pub ready: usize,
+    /// Member decks counted (loadable ones, matching the web catalog).
+    pub total: usize,
 }
 
 /// Lists a decks root: workspaces and plain deck folders as drillable
@@ -140,19 +166,7 @@ pub fn list_members(
     review: &ReviewConfig,
     now_ms: u64,
 ) -> Vec<DeckSummary> {
-    let store = member_store(root, dir);
-    // Opened once for the whole folder, same as the web picker's catalog pass.
-    let augment = store
-        .as_ref()
-        .map(|s| AugmentCache::open(augment::augment_path_for(s.path())));
-    let paths: Vec<PathBuf> = match workspace::Workspace::load(dir) {
-        Ok(ws) => ws.members,
-        Err(_) => return Vec::new(),
-    };
-    let rows: Vec<(DeckSummary, bool)> = paths
-        .iter()
-        .map(|m| deck_summary(m, store.as_ref(), augment.as_ref(), root, review, now_ms))
-        .collect();
+    let (paths, rows) = member_rows(root, dir, review, now_ms);
     // Sibling key mirrors catalog.rs's `blocked = locked || (with_lock &&
     // !reviewable)` exactly (`with_lock` is unconditionally true here, a
     // locked deck is never startable-first in a drill-in list): `reviewable`
@@ -180,6 +194,69 @@ pub fn list_members(
             row
         })
         .collect()
+}
+
+/// One folder's member rows in manifest order, each with whether its deck
+/// file parsed — the shared first half of [`list_members`], kept separate so
+/// [`folder_summary`] and [`workspace_deadline`] can count readiness over
+/// loadable members only (a failed parse contributes to neither `ready` nor
+/// `total`, mirroring the web catalog's `Option<DeckStatus>::None` arm).
+fn member_rows(
+    root: &Path,
+    dir: &Path,
+    review: &ReviewConfig,
+    now_ms: u64,
+) -> (Vec<PathBuf>, Vec<(DeckSummary, bool)>) {
+    let store = member_store(root, dir);
+    // Opened once for the whole folder, same as the web picker's catalog pass.
+    let augment = store
+        .as_ref()
+        .map(|s| AugmentCache::open(augment::augment_path_for(s.path())));
+    let paths: Vec<PathBuf> = match workspace::Workspace::load(dir) {
+        Ok(ws) => ws.members,
+        Err(_) => return (Vec::new(), Vec::new()),
+    };
+    let rows: Vec<(DeckSummary, bool)> = paths
+        .iter()
+        .map(|m| deck_summary(m, store.as_ref(), augment.as_ref(), root, review, now_ms))
+        .collect();
+    (paths, rows)
+}
+
+/// The workspace's "ready by" target with live readiness ({#deadlines}), for
+/// a client's chip or drill-in header. `None` for a plain folder (only a real
+/// workspace carries a deadline) or when none is set. Fetchable on its own so
+/// a drilled-in client can refresh the readout after reviews change mastery,
+/// without re-listing the whole root.
+pub fn workspace_deadline(
+    root: &Path,
+    dir: &Path,
+    review: &ReviewConfig,
+    now_ms: u64,
+) -> Option<DeckDeadline> {
+    let rows = member_rows(root, dir, review, now_ms).1;
+    deadline_for(dir, &rows, review, now_ms)
+}
+
+/// [`workspace_deadline`] over already-listed member rows, so
+/// [`folder_summary`] doesn't list the folder twice.
+fn deadline_for(
+    dir: &Path,
+    rows: &[(DeckSummary, bool)],
+    review: &ReviewConfig,
+    now_ms: u64,
+) -> Option<DeckDeadline> {
+    if !workspace::is_workspace(dir) {
+        return None;
+    }
+    let date = (*review).for_workspace(dir).deadline?;
+    let loadable = rows.iter().filter(|(_, loaded)| *loaded);
+    Some(DeckDeadline {
+        date,
+        days_left: (date - crate::time::local_date(now_ms)).num_days(),
+        ready: loadable.clone().filter(|(m, _)| m.ready).count(),
+        total: loadable.count(),
+    })
 }
 
 /// Syncthing conflict copies next to any store `root` reviews into: the
@@ -224,15 +301,18 @@ fn folder_summary(root: &Path, dir: &Path, review: &ReviewConfig, now_ms: u64) -
     });
     let icon = ws.and_then(|ws| ws.icon);
     // A group row aggregates its members, like the web catalog's group DTO.
-    let members = list_members(root, dir, review, now_ms);
-    let due = members.iter().any(|m| m.due);
-    let can_recognize = members.iter().any(|m| m.can_recognize);
+    let rows = member_rows(root, dir, review, now_ms).1;
+    let due = rows.iter().any(|(m, _)| m.due);
+    let can_recognize = rows.iter().any(|(m, _)| m.can_recognize);
+    let deadline = deadline_for(dir, &rows, review, now_ms);
     DeckSummary {
         title,
         path: dir.to_path_buf(),
         is_workspace: true,
         due,
         can_recognize,
+        ready: false,
+        deadline,
         is_trace: false,
         last_depth: Depth::default(),
         mastered: false,
@@ -282,13 +362,18 @@ fn deck_summary(
         (Some(d), Some(a)) => depth::deck_recognizable(&d.cards, a),
         _ => false,
     };
-    let (mastered, exam_due, locked) = match (&deck, store) {
-        (Some(d), Some(s)) => (
-            s.deck_mastered(&d.subject),
-            d.state(s) == DeckState::ExamDue,
-            deck::is_locked(d, Some(decks_dir), s),
-        ),
-        _ => (false, false, false),
+    let (mastered, exam_due, ready, locked) = match (&deck, store) {
+        (Some(d), Some(s)) => {
+            let mastered = s.deck_mastered(&d.subject);
+            let state = d.state(s);
+            (
+                mastered,
+                state == DeckState::ExamDue,
+                deadline_ready(mastered, state == DeckState::Finished, has_exam),
+                deck::is_locked(d, Some(decks_dir), s),
+            )
+        }
+        _ => (false, false, false, false),
     };
     let last_depth = match (&deck, store, augment) {
         (Some(d), Some(s), Some(a)) => s
@@ -302,6 +387,8 @@ fn deck_summary(
         is_workspace: false,
         due,
         can_recognize,
+        ready,
+        deadline: None,
         is_trace,
         last_depth,
         mastered,
@@ -355,6 +442,36 @@ fn deck_due(
 }
 
 // ---- deck status and dependency layout (shared with the web picker) -----
+
+/// One deck's readiness toward its workspace's deadline ({#deadlines} spec
+/// decision 2): mastered (exam passed), or, for a source-less deck (no exam to
+/// pass), simply finished drilling. The single rule behind
+/// [`workspace_readiness`], `DeckSummary::ready`, and the web catalog's
+/// deadline readout — keep them one truth.
+pub fn deadline_ready(mastered: bool, finished: bool, has_exam: bool) -> bool {
+    mastered || (finished && !has_exam)
+}
+
+/// A workspace's progress toward its deadline ({#deadlines}): how many member
+/// decks count as ready, out of how many total.
+pub struct WorkspaceReadiness {
+    pub ready: usize,
+    pub total: usize,
+}
+
+/// Counts a workspace's member decks as ready for its deadline
+/// ([`deadline_ready`] per member). Moved from `picker` (which re-exports it)
+/// so the lean mobile build shares the rule.
+pub fn workspace_readiness(statuses: &[DeckStatus]) -> WorkspaceReadiness {
+    let ready = statuses
+        .iter()
+        .filter(|s| deadline_ready(s.mastered, s.state == DeckState::Finished, s.has_exam))
+        .count();
+    WorkspaceReadiness {
+        ready,
+        total: statuses.len(),
+    }
+}
 
 /// The store-derived status of a deck, computed once so the web deck-selection
 /// screen (and any thin client consuming the same API) shows the same badge,
@@ -1324,6 +1441,56 @@ mod tests {
     }
 
     #[test]
+    fn a_workspace_deadline_lists_with_live_readiness_and_a_plain_folder_has_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let ws = root.join("ws");
+        std::fs::create_dir(&ws).unwrap();
+        write(&ws.join("alix.toml"), "title = \"WS\"\n");
+        // done: source-less and fully drilled — Finished, no exam, so it counts
+        // as ready. fresh: untouched, not ready.
+        write(&ws.join("done.txt"), "# q\n\ta\n");
+        write(&ws.join("fresh.txt"), "# q2\n\tb\n");
+        let date = crate::time::local_date(T0) + chrono::Days::new(5);
+        write(
+            &ws.join("alix.local.toml"),
+            &format!("[review]\ndeadline = \"{}\"\n", date.format("%Y-%m-%d")),
+        );
+        let done_id = Deck::load(ws.join("done.txt")).unwrap().cards[0].id();
+        let mut store = Store::open(workspace::store_path(&ws)).unwrap();
+        store.get_or_insert(done_id, T0).recall = Some(graduated_not_due(T0));
+        store.save().unwrap();
+
+        let review = ReviewConfig::default();
+        let rows = list_root(root, &review, T0);
+        let ws_row = rows.iter().find(|r| r.is_workspace).expect("listed");
+        let deadline = ws_row.deadline.as_ref().expect("a set deadline lists");
+        assert_eq!(date, deadline.date);
+        assert_eq!(5, deadline.days_left);
+        assert_eq!((1, 2), (deadline.ready, deadline.total));
+
+        // The standalone fetch (the drill-in header's refresh path) agrees.
+        let fetched = workspace_deadline(root, &ws, &review, T0).expect("fetchable");
+        assert_eq!(Some(fetched), ws_row.deadline);
+
+        // A PLAIN folder never carries a deadline, even with a local manifest
+        // (only a real workspace does — the web catalog's rule).
+        let plain = root.join("plain");
+        std::fs::create_dir(&plain).unwrap();
+        write(&plain.join("d.txt"), "# q\n\ta\n");
+        write(
+            &plain.join("alix.local.toml"),
+            "[review]\ndeadline = \"2027-01-01\"\n",
+        );
+        let rows = list_root(root, &review, T0);
+        let plain_row = rows
+            .iter()
+            .find(|r| r.path.file_name().is_some_and(|n| n == "plain"))
+            .expect("listed");
+        assert_eq!(None, plain_row.deadline);
+    }
+
+    #[test]
     fn deck_summary_can_recognize_tracks_augmentation() {
         let dir = tempfile::tempdir().unwrap();
         let deck_path = dir.path().join("d.txt");
@@ -1353,7 +1520,10 @@ mod tests {
             &review,
             now,
         );
-        assert!(armed.can_recognize, "cached distractors make it recognizable");
+        assert!(
+            armed.can_recognize,
+            "cached distractors make it recognizable"
+        );
     }
 
     #[test]

@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 683990424;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1328582285;
 
 // Section: executor
 
@@ -1382,6 +1382,39 @@ fn wire__crate__api__review__seed_choice_distractors_impl(
         },
     )
 }
+fn wire__crate__api__listing__set_workspace_deadline_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "set_workspace_deadline",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_dir = <String>::sse_decode(&mut deserializer);
+            let api_date = <Option<String>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                (move || {
+                    let output_ok = crate::api::listing::set_workspace_deadline(api_dir, api_date)?;
+                    Ok(output_ok)
+                })(),
+            )
+        },
+    )
+}
 fn wire__crate__api__listing__sync_conflicts_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -1407,6 +1440,40 @@ fn wire__crate__api__listing__sync_conflicts_impl(
             deserializer.end();
             transform_result_sse::<_, ()>((move || {
                 let output_ok = Result::<_, ()>::Ok(crate::api::listing::sync_conflicts(api_root))?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__listing__workspace_deadline_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "workspace_deadline",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_root = <String>::sse_decode(&mut deserializer);
+            let api_dir = <String>::sse_decode(&mut deserializer);
+            let api_now_ms = <Option<u64>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Result::<_, ()>::Ok(crate::api::listing::workspace_deadline(
+                    api_root, api_dir, api_now_ms,
+                ))?;
                 Ok(output_ok)
             })())
         },
@@ -1612,6 +1679,22 @@ impl SseDecode for crate::api::review::CrumbState {
     }
 }
 
+impl SseDecode for crate::api::listing::Deadline {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_date = <String>::sse_decode(deserializer);
+        let mut var_daysLeft = <i64>::sse_decode(deserializer);
+        let mut var_ready = <u32>::sse_decode(deserializer);
+        let mut var_total = <u32>::sse_decode(deserializer);
+        return crate::api::listing::Deadline {
+            date: var_date,
+            days_left: var_daysLeft,
+            ready: var_ready,
+            total: var_total,
+        };
+    }
+}
+
 impl SseDecode for crate::api::listing::DeckEntry {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1629,6 +1712,7 @@ impl SseDecode for crate::api::listing::DeckEntry {
         let mut var_icon = <Option<String>>::sse_decode(deserializer);
         let mut var_indent = <u32>::sse_decode(deserializer);
         let mut var_tree = <String>::sse_decode(deserializer);
+        let mut var_deadline = <Option<crate::api::listing::Deadline>>::sse_decode(deserializer);
         return crate::api::listing::DeckEntry {
             title: var_title,
             path: var_path,
@@ -1644,6 +1728,7 @@ impl SseDecode for crate::api::listing::DeckEntry {
             icon: var_icon,
             indent: var_indent,
             tree: var_tree,
+            deadline: var_deadline,
         };
     }
 }
@@ -1697,6 +1782,13 @@ impl SseDecode for i32 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         deserializer.cursor.read_i32::<NativeEndian>().unwrap()
+    }
+}
+
+impl SseDecode for i64 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        deserializer.cursor.read_i64::<NativeEndian>().unwrap()
     }
 }
 
@@ -1909,6 +2001,17 @@ impl SseDecode for Option<crate::api::review::CrumbState> {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         if (<bool>::sse_decode(deserializer)) {
             return Some(<crate::api::review::CrumbState>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<crate::api::listing::Deadline> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::listing::Deadline>::sse_decode(deserializer));
         } else {
             return None;
         }
@@ -2285,7 +2388,9 @@ fn pde_ffi_dispatcher_sync_impl(
         27 => wire__crate__api__listing__list_members_impl(ptr, rust_vec_len, data_len),
         28 => wire__crate__api__listing__list_root_impl(ptr, rust_vec_len, data_len),
         29 => wire__crate__api__review__seed_choice_distractors_impl(ptr, rust_vec_len, data_len),
-        30 => wire__crate__api__listing__sync_conflicts_impl(ptr, rust_vec_len, data_len),
+        30 => wire__crate__api__listing__set_workspace_deadline_impl(ptr, rust_vec_len, data_len),
+        31 => wire__crate__api__listing__sync_conflicts_impl(ptr, rust_vec_len, data_len),
+        32 => wire__crate__api__listing__workspace_deadline_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -2415,6 +2520,26 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::review::CrumbState>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::listing::Deadline {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.date.into_into_dart().into_dart(),
+            self.days_left.into_into_dart().into_dart(),
+            self.ready.into_into_dart().into_dart(),
+            self.total.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::listing::Deadline {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::listing::Deadline>
+    for crate::api::listing::Deadline
+{
+    fn into_into_dart(self) -> crate::api::listing::Deadline {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::listing::DeckEntry {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -2432,6 +2557,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::listing::DeckEntry {
             self.icon.into_into_dart().into_dart(),
             self.indent.into_into_dart().into_dart(),
             self.tree.into_into_dart().into_dart(),
+            self.deadline.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -2891,6 +3017,16 @@ impl SseEncode for crate::api::review::CrumbState {
     }
 }
 
+impl SseEncode for crate::api::listing::Deadline {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.date, serializer);
+        <i64>::sse_encode(self.days_left, serializer);
+        <u32>::sse_encode(self.ready, serializer);
+        <u32>::sse_encode(self.total, serializer);
+    }
+}
+
 impl SseEncode for crate::api::listing::DeckEntry {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -2908,6 +3044,7 @@ impl SseEncode for crate::api::listing::DeckEntry {
         <Option<String>>::sse_encode(self.icon, serializer);
         <u32>::sse_encode(self.indent, serializer);
         <String>::sse_encode(self.tree, serializer);
+        <Option<crate::api::listing::Deadline>>::sse_encode(self.deadline, serializer);
     }
 }
 
@@ -2964,6 +3101,13 @@ impl SseEncode for i32 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         serializer.cursor.write_i32::<NativeEndian>(self).unwrap();
+    }
+}
+
+impl SseEncode for i64 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        serializer.cursor.write_i64::<NativeEndian>(self).unwrap();
     }
 }
 
@@ -3158,6 +3302,16 @@ impl SseEncode for Option<crate::api::review::CrumbState> {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <crate::api::review::CrumbState>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<crate::api::listing::Deadline> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::listing::Deadline>::sse_encode(value, serializer);
         }
     }
 }

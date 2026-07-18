@@ -124,6 +124,10 @@ class _PickerScreenState extends State<PickerScreen> {
   /// pair/unpair while this screen is up must not leave a stale gate).
   ServerConfig? _pairedConfig;
 
+  /// The drilled-into workspace's "ready by" target, if one is set; null at
+  /// the root level (each workspace row carries its own there).
+  Deadline? _deadline;
+
   @override
   void initState() {
     super.initState();
@@ -149,6 +153,10 @@ class _PickerScreenState extends State<PickerScreen> {
         : listMembers(root: widget.root, dir: dir);
     if (dir == null) {
       _conflicts = syncConflicts(root: widget.root);
+    } else {
+      // The drilled-in workspace's "ready by" readout, re-fetched with each
+      // load so it tracks mastery changes from reviews inside.
+      _deadline = workspaceDeadline(root: widget.root, dir: dir);
     }
   }
 
@@ -206,6 +214,102 @@ class _PickerScreenState extends State<PickerScreen> {
     );
     if (depth == null || !mounted) return;
     await _openDeck(entry, depth: depth);
+  }
+
+  /// The workspace row's chip text, the web's short form: past-due names the
+  /// missed date; ahead shows date, days left, and the readiness percent.
+  String _deadlineChipText(Deadline dl) {
+    if (dl.daysLeft < 0) return '🎯 was due ${dl.date}';
+    final total = dl.total == 0 ? 1 : dl.total;
+    return '🎯 ${dl.date} · ${dl.daysLeft}d · ${(100 * dl.ready / total).round()}%';
+  }
+
+  /// Urgency tint, the web's tiers: dim while far, accent inside the last
+  /// week, warn once past.
+  Color _deadlineTint(Deadline dl, AlixTokens tokens) {
+    if (dl.daysLeft < 0) return tokens.warn;
+    return dl.daysLeft <= 7 ? tokens.bolt : tokens.dim;
+  }
+
+  /// The drill-in's fuller readout under the lede, the web's long form.
+  Widget _deadlineLede(BuildContext context, Deadline dl) {
+    final when = dl.daysLeft < 0 ? 'was due ${dl.date}' : dl.date;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(2, 0, 2, 16),
+      child: Text(
+        '🎯 $when · ${dl.ready}/${dl.total} mastered',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontFamily: 'IBM Plex Mono',
+          fontSize: 12,
+          color: _deadlineTint(dl, Theme.of(context).alix),
+        ),
+      ),
+    );
+  }
+
+  String _ymd(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}'
+      '-${d.month.toString().padLeft(2, '0')}'
+      '-${d.day.toString().padLeft(2, '0')}';
+
+  /// The long-press sheet on a workspace row: set or move the "ready by"
+  /// date, or clear it. Writes the workspace's own alix.local.toml (the same
+  /// file the desktop edits), then refreshes the listing.
+  Future<void> _deadlineSheet(DeckEntry entry) async {
+    final current = entry.deadline;
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const SizedBox(width: 22, child: Text('🎯')),
+              title: const Text('Ready by…'),
+              subtitle: Text(
+                current == null
+                    ? 'set a target date for this workspace'
+                    : 'currently ${current.date}',
+              ),
+              onTap: () => Navigator.of(context).pop('pick'),
+            ),
+            if (current != null)
+              ListTile(
+                leading: const SizedBox(width: 22),
+                title: const Text('Clear deadline'),
+                onTap: () => Navigator.of(context).pop('clear'),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (action == 'clear') {
+      setWorkspaceDeadline(dir: entry.path, date: null);
+      setState(_load);
+      return;
+    }
+    if (action != 'pick') return;
+    final today = DateTime.now();
+    // A past current date would fall outside the picker's range; open on
+    // today instead (moving a missed deadline forward is the whole point).
+    final currentDate = current == null
+        ? null
+        : DateTime.tryParse(current.date);
+    final initial = (currentDate == null || currentDate.isBefore(today))
+        ? today
+        : currentDate;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: today,
+      lastDate: today.add(const Duration(days: 5 * 365)),
+    );
+    if (picked == null || !mounted) return;
+    setWorkspaceDeadline(dir: entry.path, date: _ymd(picked));
+    setState(_load);
   }
 
   @override
@@ -283,11 +387,15 @@ class _PickerScreenState extends State<PickerScreen> {
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
               children: [
                 // The Mastered window's own eyebrow, else a drilled-into
-                // workspace's name, matching the web picker's lede.
+                // workspace's name, matching the web picker's lede — with the
+                // workspace's "ready by" readout under it when one is set
+                // (the web's .lede-deadline placement).
                 if (_isMasteredView)
                   _lede(context, 'Mastered 🎉')
-                else if (!isRoot && widget.title != null)
+                else if (!isRoot && widget.title != null) ...[
                   _lede(context, widget.title!),
+                  if (_deadline case final dl?) _deadlineLede(context, dl),
+                ],
                 if (_entries.isEmpty)
                   _emptyHint(context)
                 else ...[
@@ -350,7 +458,11 @@ class _PickerScreenState extends State<PickerScreen> {
                 : entry.isTrace
                 ? _openWalk(entry)
                 : _openDeck(entry),
-            onLongPress: canRePick ? () => _rePickDepth(entry) : null,
+            onLongPress: canRePick
+                ? () => _rePickDepth(entry)
+                : entry.isWorkspace
+                ? () => _deadlineSheet(entry)
+                : null,
             child: Container(
               constraints: const BoxConstraints(minHeight: 54),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -365,13 +477,32 @@ class _PickerScreenState extends State<PickerScreen> {
                     const SizedBox(width: 10),
                   ],
                   Expanded(
-                    child: Text(
-                      entry.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          entry.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        // The workspace's quiet "ready by" chip, mirroring the
+                        // web row's (dim; accent inside the last week; warn
+                        // once past). Truncates, never wraps.
+                        if (entry.deadline case final dl?)
+                          Text(
+                            _deadlineChipText(dl),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: 'IBM Plex Mono',
+                              fontSize: 11,
+                              color: _deadlineTint(dl, tokens),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                   ..._trailingMarker(theme, entry),

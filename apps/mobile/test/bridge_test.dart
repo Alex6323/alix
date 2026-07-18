@@ -149,6 +149,87 @@ void main() {
     expect(find.text('m'), findsOneWidget);
   });
 
+  group('workspace deadlines ({#deadlines} on the phone)', () {
+    String ymd(DateTime d) =>
+        '${d.year.toString().padLeft(4, '0')}'
+        '-${d.month.toString().padLeft(2, '0')}'
+        '-${d.day.toString().padLeft(2, '0')}';
+
+    testWidgets('a set deadline shows as the row chip and the drill-in lede', (
+      tester,
+    ) async {
+      final root = makeRoot();
+      addTearDown(() => root.deleteSync(recursive: true));
+      // The picker lists at wall-clock time, so the fixture's date is
+      // wall-clock relative too; assertions avoid the exact day count.
+      final date = ymd(DateTime.now().add(const Duration(days: 5)));
+      File(
+        '${root.path}/ws/alix.local.toml',
+      ).writeAsStringSync('[review]\ndeadline = "$date"\n');
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: alixDark(),
+          home: PickerScreen(root: root.path),
+        ),
+      );
+      expect(
+        find.textContaining('🎯 $date'),
+        findsOneWidget,
+        reason: 'the workspace row carries the quiet chip',
+      );
+
+      await tester.tap(find.text('Ws'));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('mastered'),
+        findsOneWidget,
+        reason: 'the drill-in lede shows the fuller readout',
+      );
+    });
+
+    testWidgets('long-press sets a deadline and Clear removes it', (
+      tester,
+    ) async {
+      final root = makeRoot();
+      addTearDown(() => root.deleteSync(recursive: true));
+      final manifest = File('${root.path}/ws/alix.local.toml');
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: alixDark(),
+          home: PickerScreen(root: root.path),
+        ),
+      );
+      expect(find.textContaining('🎯'), findsNothing);
+
+      // Set: long-press the workspace row, "Ready by…", accept the date
+      // picker's default (today — inside the allowed range).
+      await tester.longPress(find.text('Ws'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Ready by…'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+      final today = ymd(DateTime.now());
+      expect(manifest.readAsStringSync(), contains('deadline = "$today"'));
+      expect(
+        find.textContaining('🎯'),
+        findsOneWidget,
+        reason: 'the chip appears without a relist from the caller',
+      );
+
+      // Clear: the sheet now offers it; the file and the chip both drop it.
+      await tester.longPress(find.text('Ws'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('currently $today'), findsOneWidget);
+      await tester.tap(find.text('Clear deadline'));
+      await tester.pumpAndSettle();
+      expect(manifest.readAsStringSync(), isNot(contains('deadline')));
+      expect(find.textContaining('🎯'), findsNothing);
+    });
+  });
+
   testWidgets('choosing a shared folder swaps the picker root live', (
     tester,
   ) async {

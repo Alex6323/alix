@@ -101,6 +101,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   CrumbState dco_decode_box_autoadd_crumb_state(dynamic raw);
 
   @protected
+  Deadline dco_decode_box_autoadd_deadline(dynamic raw);
+
+  @protected
   Depth dco_decode_box_autoadd_depth(dynamic raw);
 
   @protected
@@ -131,6 +134,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   CrumbState dco_decode_crumb_state(dynamic raw);
 
   @protected
+  Deadline dco_decode_deadline(dynamic raw);
+
+  @protected
   DeckEntry dco_decode_deck_entry(dynamic raw);
 
   @protected
@@ -147,6 +153,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   int dco_decode_i_32(dynamic raw);
+
+  @protected
+  PlatformInt64 dco_decode_i_64(dynamic raw);
 
   @protected
   Input dco_decode_input(dynamic raw);
@@ -198,6 +207,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   CrumbState? dco_decode_opt_box_autoadd_crumb_state(dynamic raw);
+
+  @protected
+  Deadline? dco_decode_opt_box_autoadd_deadline(dynamic raw);
 
   @protected
   Depth? dco_decode_opt_box_autoadd_depth(dynamic raw);
@@ -336,6 +348,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   CrumbState sse_decode_box_autoadd_crumb_state(SseDeserializer deserializer);
 
   @protected
+  Deadline sse_decode_box_autoadd_deadline(SseDeserializer deserializer);
+
+  @protected
   Depth sse_decode_box_autoadd_depth(SseDeserializer deserializer);
 
   @protected
@@ -368,6 +383,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   CrumbState sse_decode_crumb_state(SseDeserializer deserializer);
 
   @protected
+  Deadline sse_decode_deadline(SseDeserializer deserializer);
+
+  @protected
   DeckEntry sse_decode_deck_entry(SseDeserializer deserializer);
 
   @protected
@@ -384,6 +402,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   int sse_decode_i_32(SseDeserializer deserializer);
+
+  @protected
+  PlatformInt64 sse_decode_i_64(SseDeserializer deserializer);
 
   @protected
   Input sse_decode_input(SseDeserializer deserializer);
@@ -443,6 +464,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   CrumbState? sse_decode_opt_box_autoadd_crumb_state(
     SseDeserializer deserializer,
   );
+
+  @protected
+  Deadline? sse_decode_opt_box_autoadd_deadline(SseDeserializer deserializer);
 
   @protected
   Depth? sse_decode_opt_box_autoadd_depth(SseDeserializer deserializer);
@@ -608,6 +632,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_deadline(Deadline self, SseSerializer serializer);
+
+  @protected
   void sse_encode_box_autoadd_depth(Depth self, SseSerializer serializer);
 
   @protected
@@ -653,6 +680,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_crumb_state(CrumbState self, SseSerializer serializer);
 
   @protected
+  void sse_encode_deadline(Deadline self, SseSerializer serializer);
+
+  @protected
   void sse_encode_deck_entry(DeckEntry self, SseSerializer serializer);
 
   @protected
@@ -669,6 +699,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_i_32(int self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer);
 
   @protected
   void sse_encode_input(Input self, SseSerializer serializer);
@@ -748,6 +781,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_crumb_state(
     CrumbState? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_deadline(
+    Deadline? self,
     SseSerializer serializer,
   );
 

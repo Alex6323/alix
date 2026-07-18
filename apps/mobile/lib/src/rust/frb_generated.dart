@@ -69,7 +69,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 683990424;
+  int get rustContentHash => 1328582285;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -220,7 +220,15 @@ abstract class RustLibApi extends BaseApi {
     required String rootDir,
   });
 
+  void crateApiListingSetWorkspaceDeadline({required String dir, String? date});
+
   List<String> crateApiListingSyncConflicts({required String root});
+
+  Deadline? crateApiListingWorkspaceDeadline({
+    required String root,
+    required String dir,
+    BigInt? nowMs,
+  });
 
   RustArcIncrementStrongCountFnType
   get rust_arc_increment_strong_count_ReviewSession;
@@ -1175,13 +1183,43 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  void crateApiListingSetWorkspaceDeadline({
+    required String dir,
+    String? date,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(dir, serializer);
+          sse_encode_opt_String(date, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 30)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiListingSetWorkspaceDeadlineConstMeta,
+        argValues: [dir, date],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiListingSetWorkspaceDeadlineConstMeta =>
+      const TaskConstMeta(
+        debugName: "set_workspace_deadline",
+        argNames: ["dir", "date"],
+      );
+
+  @override
   List<String> crateApiListingSyncConflicts({required String root}) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(root, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 30)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 31)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_String,
@@ -1196,6 +1234,38 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiListingSyncConflictsConstMeta =>
       const TaskConstMeta(debugName: "sync_conflicts", argNames: ["root"]);
+
+  @override
+  Deadline? crateApiListingWorkspaceDeadline({
+    required String root,
+    required String dir,
+    BigInt? nowMs,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(root, serializer);
+          sse_encode_String(dir, serializer);
+          sse_encode_opt_box_autoadd_u_64(nowMs, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 32)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_opt_box_autoadd_deadline,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiListingWorkspaceDeadlineConstMeta,
+        argValues: [root, dir, nowMs],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiListingWorkspaceDeadlineConstMeta =>
+      const TaskConstMeta(
+        debugName: "workspace_deadline",
+        argNames: ["root", "dir", "nowMs"],
+      );
 
   RustArcIncrementStrongCountFnType
   get rust_arc_increment_strong_count_ReviewSession => wire
@@ -1328,6 +1398,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  Deadline dco_decode_box_autoadd_deadline(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_deadline(raw);
+  }
+
+  @protected
   Depth dco_decode_box_autoadd_depth(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_depth(raw);
@@ -1420,11 +1496,25 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  Deadline dco_decode_deadline(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return Deadline(
+      date: dco_decode_String(arr[0]),
+      daysLeft: dco_decode_i_64(arr[1]),
+      ready: dco_decode_u_32(arr[2]),
+      total: dco_decode_u_32(arr[3]),
+    );
+  }
+
+  @protected
   DeckEntry dco_decode_deck_entry(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 14)
-      throw Exception('unexpected arr length: expect 14 but see ${arr.length}');
+    if (arr.length != 15)
+      throw Exception('unexpected arr length: expect 15 but see ${arr.length}');
     return DeckEntry(
       title: dco_decode_String(arr[0]),
       path: dco_decode_String(arr[1]),
@@ -1440,6 +1530,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       icon: dco_decode_opt_String(arr[11]),
       indent: dco_decode_u_32(arr[12]),
       tree: dco_decode_String(arr[13]),
+      deadline: dco_decode_opt_box_autoadd_deadline(arr[14]),
     );
   }
 
@@ -1477,6 +1568,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   int dco_decode_i_32(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as int;
+  }
+
+  @protected
+  PlatformInt64 dco_decode_i_64(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dcoDecodeI64(raw);
   }
 
   @protected
@@ -1588,6 +1685,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   CrumbState? dco_decode_opt_box_autoadd_crumb_state(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_crumb_state(raw);
+  }
+
+  @protected
+  Deadline? dco_decode_opt_box_autoadd_deadline(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_deadline(raw);
   }
 
   @protected
@@ -1937,6 +2040,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  Deadline sse_decode_box_autoadd_deadline(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_deadline(deserializer));
+  }
+
+  @protected
   Depth sse_decode_box_autoadd_depth(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_depth(deserializer));
@@ -2036,6 +2145,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  Deadline sse_decode_deadline(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_date = sse_decode_String(deserializer);
+    var var_daysLeft = sse_decode_i_64(deserializer);
+    var var_ready = sse_decode_u_32(deserializer);
+    var var_total = sse_decode_u_32(deserializer);
+    return Deadline(
+      date: var_date,
+      daysLeft: var_daysLeft,
+      ready: var_ready,
+      total: var_total,
+    );
+  }
+
+  @protected
   DeckEntry sse_decode_deck_entry(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_title = sse_decode_String(deserializer);
@@ -2052,6 +2176,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_icon = sse_decode_opt_String(deserializer);
     var var_indent = sse_decode_u_32(deserializer);
     var var_tree = sse_decode_String(deserializer);
+    var var_deadline = sse_decode_opt_box_autoadd_deadline(deserializer);
     return DeckEntry(
       title: var_title,
       path: var_path,
@@ -2067,6 +2192,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       icon: var_icon,
       indent: var_indent,
       tree: var_tree,
+      deadline: var_deadline,
     );
   }
 
@@ -2102,6 +2228,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   int sse_decode_i_32(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return deserializer.buffer.getInt32();
+  }
+
+  @protected
+  PlatformInt64 sse_decode_i_64(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return deserializer.buffer.getPlatformInt64();
   }
 
   @protected
@@ -2286,6 +2418,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
     if (sse_decode_bool(deserializer)) {
       return (sse_decode_box_autoadd_crumb_state(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  Deadline? sse_decode_opt_box_autoadd_deadline(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_deadline(deserializer));
     } else {
       return null;
     }
@@ -2723,6 +2866,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_deadline(
+    Deadline self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_deadline(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_depth(Depth self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_depth(self, serializer);
@@ -2810,6 +2962,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_deadline(Deadline self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.date, serializer);
+    sse_encode_i_64(self.daysLeft, serializer);
+    sse_encode_u_32(self.ready, serializer);
+    sse_encode_u_32(self.total, serializer);
+  }
+
+  @protected
   void sse_encode_deck_entry(DeckEntry self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.title, serializer);
@@ -2826,6 +2987,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_String(self.icon, serializer);
     sse_encode_u_32(self.indent, serializer);
     sse_encode_String(self.tree, serializer);
+    sse_encode_opt_box_autoadd_deadline(self.deadline, serializer);
   }
 
   @protected
@@ -2857,6 +3019,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_i_32(int self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     serializer.buffer.putInt32(self);
+  }
+
+  @protected
+  void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    serializer.buffer.putPlatformInt64(self);
   }
 
   @protected
@@ -3042,6 +3210,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_box_autoadd_crumb_state(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_deadline(
+    Deadline? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_deadline(self, serializer);
     }
   }
 
