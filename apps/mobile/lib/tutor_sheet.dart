@@ -28,6 +28,7 @@ class TutorSheet extends StatefulWidget {
     required this.card,
     required this.client,
     required this.mint,
+    required this.onNote,
     this.pollInterval = const Duration(milliseconds: 400),
   });
 
@@ -43,6 +44,13 @@ class TutorSheet extends StatefulWidget {
   /// itself. Throws on a rejected mint (e.g. a duplicate); the thrown
   /// message is shown verbatim.
   final Future<String> Function(String front, List<String> back) mint;
+
+  /// Applies the condensed note lines the desktop hands back to the deck (a
+  /// closure over the bridge session's `applyCardNote`); the sheet never
+  /// calls the bridge itself. Synchronous, unlike [mint]: `applyCardNote`
+  /// does not fail the way a mint can, so there is nothing to await or
+  /// catch here.
+  final void Function(List<String> notes) onNote;
 
   /// How often to poll `GET /api/remote/ask` while a turn or a draft is in
   /// flight. Tests shrink this well below the default.
@@ -67,6 +75,9 @@ class _TutorSheetState extends State<TutorSheet> {
   bool _draftPending = false;
   int? _draftElapsed;
   bool _editingDraft = false;
+
+  bool _notePending = false;
+  int? _noteElapsed;
 
   /// Fetched once per sheet open, then cached; null reads as "the backend"
   /// in the working row (a plain refusal is not worth its own error UI).
@@ -107,7 +118,7 @@ class _TutorSheetState extends State<TutorSheet> {
 
   Future<void> _send() async {
     final question = _question.text.trim();
-    if (question.isEmpty || _pendingQuestion != null || _draftPending) return;
+    if (question.isEmpty || _pendingQuestion != null || _draftPending || _notePending) return;
     final history = _historyTurns();
     setState(() {
       _pendingQuestion = question;
@@ -262,6 +273,75 @@ class _TutorSheetState extends State<TutorSheet> {
     });
   }
 
+  // ── make a note ───────────────────────────────────────────────────────
+
+  Future<void> _makeNote() async {
+    if (_transcript.isEmpty) {
+      _snack('Ask something first.');
+      return;
+    }
+    final history = _historyTurns();
+    setState(() {
+      _notePending = true;
+      _noteElapsed = null;
+    });
+
+    bool ok;
+    try {
+      ok = await widget.client.postNote(widget.card, history);
+    } on PairingExpired {
+      _pairingExpired();
+      if (mounted) setState(() => _notePending = false);
+      return;
+    }
+    if (!ok) {
+      _snack('The desktop did not answer.');
+      if (mounted) setState(() => _notePending = false);
+      return;
+    }
+    // Same guard as _send/_makeCard: no timer may start once the sheet is
+    // gone.
+    if (!mounted) return;
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(widget.pollInterval, (_) => _pollNote());
+  }
+
+  Future<void> _pollNote() async {
+    RemoteAsk? dto;
+    try {
+      dto = await widget.client.getAsk();
+    } on PairingExpired {
+      _pollTimer?.cancel();
+      _pairingExpired();
+      if (mounted) setState(() => _notePending = false);
+      return;
+    }
+    if (dto == null || !mounted) return;
+    if (dto.thinking) {
+      setState(() => _noteElapsed = dto!.elapsed);
+      return;
+    }
+    if (dto.error != null) {
+      _pollTimer?.cancel();
+      setState(() => _notePending = false);
+      _snack('The tutor call failed.');
+      return;
+    }
+    // Three states, per RemoteAsk.note's doc: null here means this settled
+    // reply is not (yet) a note outcome, so keep polling; the timer is left
+    // running and this tick is a no-op.
+    final notes = dto.note;
+    if (notes == null) return;
+    _pollTimer?.cancel();
+    setState(() => _notePending = false);
+    if (notes.isEmpty) {
+      _snack('nothing to save');
+      return;
+    }
+    widget.onNote(notes);
+    _snack('note saved');
+  }
+
   // ── shared ────────────────────────────────────────────────────────────
 
   void _pairingExpired() {
@@ -367,9 +447,12 @@ class _TutorSheetState extends State<TutorSheet> {
             IconButton(
               key: const ValueKey('tutor-send-button'),
               icon: const Icon(Icons.send),
-              // Disabled during a draft too: ask and draft share the one
-              // poll timer, so a send now would orphan the draft's row.
-              onPressed: _pendingQuestion == null && !_draftPending ? _send : null,
+              // Disabled during a draft or a note too: ask, draft, and note
+              // share the one poll timer, so a send now would orphan
+              // whichever row is in flight.
+              onPressed: _pendingQuestion == null && !_draftPending && !_notePending
+                  ? _send
+                  : null,
             ),
           ],
         ),
@@ -384,12 +467,31 @@ class _TutorSheetState extends State<TutorSheet> {
                         ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                   ),
                 )
-              : TextButton(
-                  key: const ValueKey('tutor-make-card-button'),
-                  onPressed:
-                      _pendingQuestion == null ? _makeCard : null,
-                  child: const Text('Make a card'),
-                ),
+              : _notePending
+                  ? Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        _workingLabel(_noteElapsed),
+                        style: theme.textTheme.bodySmall
+                            ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                      ),
+                    )
+                  : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextButton(
+                          key: const ValueKey('tutor-make-note-button'),
+                          onPressed: _pendingQuestion == null ? _makeNote : null,
+                          child: const Text('Make a note'),
+                        ),
+                        TextButton(
+                          key: const ValueKey('tutor-make-card-button'),
+                          onPressed:
+                              _pendingQuestion == null ? _makeCard : null,
+                          child: const Text('Make a card'),
+                        ),
+                      ],
+                    ),
         ),
       ],
     );

@@ -29,16 +29,19 @@ class FakeServerClient implements ServerClient {
     List<bool>? postAskReplies,
     List<RemoteAsk>? getAskReplies,
     List<bool>? postDraftReplies,
+    List<bool>? postNoteReplies,
     this.expireOnPostAsk = false,
     this.postAskGate,
   })  : postAskReplies = postAskReplies ?? const [true],
         getAskReplies = getAskReplies ?? const [],
-        postDraftReplies = postDraftReplies ?? const [true];
+        postDraftReplies = postDraftReplies ?? const [true],
+        postNoteReplies = postNoteReplies ?? const [true];
 
   final String? backend;
   final List<bool> postAskReplies;
   final List<RemoteAsk> getAskReplies;
   final List<bool> postDraftReplies;
+  final List<bool> postNoteReplies;
   final bool expireOnPostAsk;
 
   /// When set, postAsk parks on this until the test completes it: the
@@ -47,9 +50,11 @@ class FakeServerClient implements ServerClient {
 
   final List<List<TutorTurn>> postAskHistories = [];
   final List<List<TutorTurn>> postDraftHistories = [];
+  final List<List<TutorTurn>> postNoteHistories = [];
   int _askCall = 0;
   int _pollCall = 0;
   int _draftCall = 0;
+  int _noteCall = 0;
 
   @override
   Future<String?> backendName() async => backend;
@@ -80,7 +85,12 @@ class FakeServerClient implements ServerClient {
   }
 
   @override
-  Future<bool> postNote(TutorCardContext card, List<TutorTurn> history) async => false;
+  Future<bool> postNote(TutorCardContext card, List<TutorTurn> history) async {
+    postNoteHistories.add(history);
+    final reply = postNoteReplies[_noteCall.clamp(0, postNoteReplies.length - 1)];
+    _noteCall++;
+    return reply;
+  }
 
   @override
   Future<String?> version() async => null;
@@ -118,6 +128,7 @@ void main() {
     WidgetTester tester, {
     required ServerClient client,
     Future<String> Function(String front, List<String> back)? mint,
+    void Function(List<String> notes)? onNote,
   }) async {
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
@@ -131,6 +142,7 @@ void main() {
                   card: _card,
                   client: client,
                   mint: mint ?? (front, back) async => 'card-1',
+                  onNote: onNote ?? (_) {},
                   pollInterval: _pollInterval,
                 ),
               ),
@@ -358,5 +370,111 @@ void main() {
     // Close the sheet so dispose cancels the still-thinking draft poll.
     tester.state<NavigatorState>(find.byType(Navigator)).pop();
     await tester.pumpAndSettle();
+  });
+
+  testWidgets('an empty transcript refuses "Make a note" locally, with no postNote call', (tester) async {
+    final client = FakeServerClient();
+    await pumpSheet(tester, client: client);
+
+    await tester.tap(find.byKey(const ValueKey('tutor-make-note-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ask something first.'), findsOneWidget);
+    expect(client.postNoteHistories, isEmpty);
+  });
+
+  testWidgets('note -> lines: onNote gets the lines and the "note saved" SnackBar shows', (tester) async {
+    // Ask and note share the one poll endpoint (the server's single ask
+    // slot): the ask settles on the first getAsk() call, the note on the
+    // second, exactly like the draft flow above.
+    final client = FakeServerClient(
+      getAskReplies: const [
+        RemoteAsk(thinking: false, answer: 'first answer'),
+        RemoteAsk(thinking: false, note: ['a', 'b']),
+      ],
+    );
+    List<String>? notedLines;
+    await pumpSheet(
+      tester,
+      client: client,
+      onNote: (notes) => notedLines = notes,
+    );
+
+    await tester.enterText(find.byKey(const ValueKey('tutor-question-field')), 'first question');
+    await tester.tap(find.byKey(const ValueKey('tutor-send-button')));
+    await tester.pump();
+    await tester.pump(_pollInterval);
+    await tester.pumpAndSettle();
+    expect(find.text('first answer'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('tutor-make-note-button')));
+    await tester.pump();
+    await tester.pump(_pollInterval);
+    await tester.pumpAndSettle();
+
+    expect(notedLines, ['a', 'b']);
+    expect(find.text('note saved'), findsOneWidget);
+    expect(client.postNoteHistories, hasLength(1));
+    expect(client.postNoteHistories.single.single.q, 'first question');
+  });
+
+  testWidgets('note -> []: the "nothing to save" SnackBar shows and onNote is NOT called', (tester) async {
+    // The load-bearing three-state distinction from T4.1: an empty list is
+    // itself a settled result, not "still pending" and not an error.
+    final client = FakeServerClient(
+      getAskReplies: const [
+        RemoteAsk(thinking: false, answer: 'first answer'),
+        RemoteAsk(thinking: false, note: []),
+      ],
+    );
+    var onNoteCalled = false;
+    await pumpSheet(
+      tester,
+      client: client,
+      onNote: (_) => onNoteCalled = true,
+    );
+
+    await tester.enterText(find.byKey(const ValueKey('tutor-question-field')), 'first question');
+    await tester.tap(find.byKey(const ValueKey('tutor-send-button')));
+    await tester.pump();
+    await tester.pump(_pollInterval);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('tutor-make-note-button')));
+    await tester.pump();
+    await tester.pump(_pollInterval);
+    await tester.pumpAndSettle();
+
+    expect(find.text('nothing to save'), findsOneWidget);
+    expect(onNoteCalled, isFalse);
+  });
+
+  testWidgets('a settled error on "Make a note" shows the failed SnackBar, onNote NOT called', (tester) async {
+    final client = FakeServerClient(
+      getAskReplies: const [
+        RemoteAsk(thinking: false, answer: 'first answer'),
+        RemoteAsk(thinking: false, error: 'backend prose the user never sees'),
+      ],
+    );
+    var onNoteCalled = false;
+    await pumpSheet(
+      tester,
+      client: client,
+      onNote: (_) => onNoteCalled = true,
+    );
+
+    await tester.enterText(find.byKey(const ValueKey('tutor-question-field')), 'first question');
+    await tester.tap(find.byKey(const ValueKey('tutor-send-button')));
+    await tester.pump();
+    await tester.pump(_pollInterval);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('tutor-make-note-button')));
+    await tester.pump();
+    await tester.pump(_pollInterval);
+    await tester.pumpAndSettle();
+
+    expect(find.text('The tutor call failed.'), findsOneWidget);
+    expect(onNoteCalled, isFalse);
   });
 }

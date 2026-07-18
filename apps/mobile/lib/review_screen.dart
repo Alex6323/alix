@@ -139,8 +139,11 @@ class _ReviewScreenState extends State<ReviewScreen> {
 
   /// Opens the tutor sheet over [tutor], the current card's authored
   /// fields (never the masked [CardView] a cloze review renders). The
-  /// sheet never touches the bridge itself; this closure to
-  /// `mintTutorCard` is its only path back to it.
+  /// sheet never touches the bridge itself; these two closures, to
+  /// `mintTutorCard` and `applyCardNote`, are its only path back to it.
+  /// `applyCardNote` targets [tutor]'s own deck-file line (`tutor.line`,
+  /// a `BigInt` on the Dart side), captured by this closure the same way
+  /// `mint` captures the session.
   void _openTutor(TutorCard tutor) {
     final client = _client;
     if (client == null) return;
@@ -160,6 +163,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
           back: back,
           nowMs: BigInt.from(DateTime.now().millisecondsSinceEpoch),
         ),
+        onNote: (notes) =>
+            _session.applyCardNote(line: tutor.line.toInt(), notes: notes),
       ),
     );
   }
