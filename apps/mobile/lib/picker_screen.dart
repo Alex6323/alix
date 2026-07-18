@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -10,6 +11,7 @@ import 'package:alix_mobile/platform_access.dart';
 import 'package:alix_mobile/review_screen.dart';
 import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/theme.dart';
+import 'package:alix_mobile/src/rust/api/generate.dart';
 import 'package:alix_mobile/src/rust/api/listing.dart';
 import 'package:alix_mobile/src/rust/api/review.dart';
 import 'package:alix_mobile/src/rust/api/simple.dart';
@@ -31,6 +33,7 @@ class PickerScreen extends StatefulWidget {
     this.onSetDecksDir,
     this.supportDir,
     this.buildClient,
+    this.generatePollInterval,
   }) : masteredEntries = null;
 
   /// The Mastered window: this same screen with a fixed, pre-filtered entry
@@ -49,7 +52,8 @@ class PickerScreen extends StatefulWidget {
         access = null,
         onSetDecksDir = null,
         supportDir = null,
-        buildClient = null;
+        buildClient = null,
+        generatePollInterval = null;
 
   final String root;
   final String? dir;
@@ -75,9 +79,13 @@ class PickerScreen extends StatefulWidget {
   /// null uses the real app support dir. Tests inject a temp one.
   final Directory? supportDir;
 
-  /// Builds the probe client the pairing sheet uses; null uses
-  /// [HttpServerClient]. Tests inject a fake.
+  /// Builds the probe client the pairing sheet and the generate sheet use;
+  /// null uses [HttpServerClient]. Tests inject a fake.
   final ServerClient Function(ServerConfig)? buildClient;
+
+  /// How often the generate sheet polls the paired desktop while it is
+  /// still working; null uses the sheet's own default. Tests shrink it.
+  final Duration? generatePollInterval;
 
   /// Set only by [PickerScreen.mastered]: a fixed pre-filtered list of
   /// mastered decks, skipping the bridge listing call.
@@ -99,10 +107,22 @@ class _PickerScreenState extends State<PickerScreen> {
   /// [PickerScreen.mastered]), not the ordinary root/drill-in listing.
   bool get _isMasteredView => widget.masteredEntries != null;
 
+  /// The paired desktop, if any: gates the "Generate deck…" menu item.
+  /// Loaded once on mount and refreshed after the pairing sheet closes (a
+  /// pair/unpair while this screen is up must not leave a stale gate).
+  ServerConfig? _pairedConfig;
+
   @override
   void initState() {
     super.initState();
     _load();
+    _loadPairing();
+  }
+
+  Future<void> _loadPairing() async {
+    final support = await _support();
+    if (!mounted) return;
+    setState(() => _pairedConfig = readServer(support));
   }
 
   void _load() {
@@ -187,12 +207,18 @@ class _PickerScreenState extends State<PickerScreen> {
               onSelected: (choice) {
                 if (choice == 'folder') _folderSheet();
                 if (choice == 'pair') _pairSheet();
+                if (choice == 'generate') _generateSheet();
                 if (choice == 'about') _about();
               },
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'folder', child: Text('Decks folder…')),
-                PopupMenuItem(value: 'pair', child: Text('Pair with desktop…')),
-                PopupMenuItem(value: 'about', child: Text('About')),
+              itemBuilder: (_) => [
+                const PopupMenuItem(value: 'folder', child: Text('Decks folder…')),
+                const PopupMenuItem(value: 'pair', child: Text('Pair with desktop…')),
+                // Generate needs the paired desktop's AI; an unpaired phone
+                // has nothing to ask, so the item is absent rather than a
+                // dead button that would only fail (item T5.5).
+                if (_pairedConfig != null)
+                  const PopupMenuItem(value: 'generate', child: Text('Generate deck…')),
+                const PopupMenuItem(value: 'about', child: Text('About')),
               ],
             ),
         ],
@@ -574,7 +600,66 @@ class _PickerScreenState extends State<PickerScreen> {
         buildClient: widget.buildClient ?? HttpServerClient.new,
       ),
     );
+    if (!mounted) return;
+    // A pair/unpair here changes whether "Generate deck…" belongs in the
+    // menu; re-read it so the gate never goes stale for this open screen.
+    setState(() => _pairedConfig = readServer(support));
     if (message != null) _snack(message);
+  }
+
+  /// The generate sheet: URL + optional guidance, generated on the paired
+  /// desktop (the phone never runs the AI itself), then placed on-device.
+  /// The desktop only ever hands back text (the iron rule); this method
+  /// owns the one local, on-device decision the server can't make: where to
+  /// save it. Every exit frees the server's generation slot with
+  /// `generateClose` -- either the sheet's own `dispose` (cancelled or
+  /// failed before `done`) or this method (the dest pick was cancelled, or
+  /// the deck was placed).
+  Future<void> _generateSheet() async {
+    final support = await _support();
+    if (!mounted) return;
+    final config = readServer(support);
+    if (config == null) return; // the menu item is pairing-gated; a race here is a quiet no-op
+    final client = (widget.buildClient ?? HttpServerClient.new)(config);
+
+    final dto = await showModalBottomSheet<RemoteGenerate>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _GenerateSheet(
+        client: client,
+        pollInterval: widget.generatePollInterval ?? const Duration(milliseconds: 400),
+      ),
+    );
+
+    final deck = dto?.deck;
+    final filename = dto?.filename;
+    if (deck == null || filename == null) return; // cancelled or failed; the sheet's dispose closed the slot
+
+    if (!mounted) {
+      await client.generateClose().catchError((_) {});
+      client.close();
+      return;
+    }
+
+    // The phone (never the desktop) chooses the destination, per the iron
+    // rule; default to the current decks root, reusing the same in-app
+    // browser the folder sheet drives.
+    final dest = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => FolderBrowser(start: widget.root)),
+    );
+    if (dest == null) {
+      await client.generateClose().catchError((_) {});
+      client.close();
+      _snack('alix did not save the generated deck.');
+      return;
+    }
+
+    final written = applyGeneratedDeck(decksDir: dest, filename: filename, text: deck);
+    await client.generateClose().catchError((_) {});
+    client.close();
+    if (!mounted) return;
+    _snack('saved as $written');
+    setState(_load);
   }
 
   Future<void> _chooseShared() async {
@@ -764,6 +849,188 @@ class _PairSheetState extends State<_PairSheet> {
                 onPressed: _busy ? null : _unpair,
                 child: const Text('Unpair'),
               ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The generate sheet's body: a URL + optional guidance field, a Generate
+/// button, and (once submitted) a calm working state -- mirroring
+/// `_PairSheet`'s shape: every failure (a local URL check, a refused start,
+/// an error phase, an expired pairing, or an unreachable poll) shows one
+/// inline line and leaves the sheet open, so the user can fix the input and
+/// try again rather than getting bounced. Pops with the settled
+/// [RemoteGenerate] once `phase == "done"` (deck text and a suggested file
+/// name both present); the caller places the file. Pops with `null` when the
+/// user cancels without ever reaching `done` (back, or tapping outside).
+class _GenerateSheet extends StatefulWidget {
+  const _GenerateSheet({required this.client, this.pollInterval = const Duration(milliseconds: 400)});
+
+  /// Owned by the caller ([_PickerScreenState._generateSheet]), which keeps
+  /// it open past this sheet's own lifetime for the dest-pick step; see
+  /// [_GenerateSheetState._handedOff].
+  final ServerClient client;
+
+  /// How often to poll `GET /api/remote/generate` while the desktop is
+  /// still working. Tests shrink this well below the default.
+  final Duration pollInterval;
+
+  @override
+  State<_GenerateSheet> createState() => _GenerateSheetState();
+}
+
+class _GenerateSheetState extends State<_GenerateSheet> {
+  final _urlController = TextEditingController();
+  final _guidanceController = TextEditingController();
+  Timer? _pollTimer;
+
+  bool _busy = false;
+  String? _message;
+  int? _elapsed;
+
+  /// Set right before popping with a `done` DTO: the caller now owns
+  /// [widget.client] for the dest pick, placement, and the final
+  /// `generateClose`. Every other exit (cancel, a terminal failure the user
+  /// dismisses by leaving) is this sheet's own job to close, so `dispose`
+  /// only skips it here.
+  bool _handedOff = false;
+
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    if (!_handedOff) {
+      // Fire and forget, mirroring the exam screen's dispose: the slot is
+      // dropped either way, and a reply landing after dispose (including a
+      // thrown PairingExpired) must not surface as an unhandled error.
+      widget.client.generateClose().catchError((_) {});
+      widget.client.close();
+    }
+    _urlController.dispose();
+    _guidanceController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final url = _urlController.text.trim();
+    final scheme = Uri.tryParse(url)?.scheme;
+    if (scheme != 'http' && scheme != 'https') {
+      setState(() => _message = 'alix can only generate from an http:// or https:// URL.');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _message = null;
+      _elapsed = null;
+    });
+    final guidance = _guidanceController.text.trim();
+    bool ok;
+    try {
+      ok = await widget.client.generateStart(url, guidance: guidance.isEmpty ? null : guidance);
+    } on PairingExpired {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _message = 'Pairing expired. Pair again from the deck list menu.';
+      });
+      return;
+    }
+    if (!mounted) return;
+    if (!ok) {
+      setState(() {
+        _busy = false;
+        _message = 'The desktop refused to generate this deck.';
+      });
+      return;
+    }
+    await _poll();
+  }
+
+  Future<void> _poll() async {
+    RemoteGenerate? dto;
+    try {
+      dto = await widget.client.generateGet();
+    } on PairingExpired {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _message = 'Pairing expired. Pair again from the deck list menu.';
+      });
+      return;
+    }
+    if (!mounted) return;
+    if (dto == null) {
+      setState(() {
+        _busy = false;
+        _message = 'Lost contact with the desktop.';
+      });
+      return;
+    }
+    if (dto.phase == 'error') {
+      final error = dto.error ?? 'The desktop failed to generate this deck.';
+      setState(() {
+        _busy = false;
+        _message = error;
+      });
+      return;
+    }
+    final settled = dto;
+    if (settled.phase == 'done' && settled.deck != null && settled.filename != null) {
+      _handedOff = true;
+      Navigator.of(context).pop(settled);
+      return;
+    }
+    // Still working (an open phase vocabulary; anything but done/error
+    // counts as "keep polling", mirroring the exam screen).
+    setState(() => _elapsed = settled.elapsed);
+    _pollTimer = Timer(widget.pollInterval, () => _poll());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + MediaQuery.of(context).viewInsets.bottom),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('Generate deck', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 8),
+            if (_busy)
+              Text(
+                _elapsed != null ? 'The desktop is working… ${_elapsed}s' : 'The desktop is working…',
+                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              )
+            else ...[
+              TextField(
+                key: const ValueKey('generate-url-field'),
+                controller: _urlController,
+                decoration: const InputDecoration(labelText: 'URL', hintText: 'https://...'),
+                maxLines: 1,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                key: const ValueKey('generate-guidance-field'),
+                controller: _guidanceController,
+                decoration: const InputDecoration(labelText: 'Guidance (optional)'),
+                maxLines: 1,
+              ),
+              const SizedBox(height: 12),
+              FilledButton(
+                onPressed: _submit,
+                child: const Text('Generate'),
+              ),
+              if (_message != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  _message!,
+                  style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
+                ),
+              ],
             ],
           ],
         ),
