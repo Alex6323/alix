@@ -66,6 +66,10 @@ Release notes, so a release without its section fails loud.
 
 ### Fixed
 
+- **The `alix` wordmark stays put in the picker.** Drilling into a workspace
+  added a back arrow that shoved the wordmark to the right; the leading slot
+  is now reserved on both levels, so the wordmark sits at the same spot with
+  or without a back arrow (and lines up with the review/walk/exam screens).
 - **Leaving a trace walk mid-way now asks to confirm, like a fact review.**
   The leave-confirmation only guarded review sessions, so a stray back-swipe
   abandoned a walk silently; both screens now share one guard, so the two

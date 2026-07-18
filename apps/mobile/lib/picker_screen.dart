@@ -223,6 +223,17 @@ class _PickerScreenState extends State<PickerScreen> {
         : const <DeckEntry>[];
     return Scaffold(
       appBar: AppBar(
+        // Keep the `alix` wordmark at a fixed x whether or not a back arrow is
+        // present: reserve the leading slot even at the root (which can't pop),
+        // so drilling into a workspace doesn't shove the wordmark to the right.
+        // This also lines the root up with the always-pushed review/walk/exam
+        // screens, which already carry a back arrow.
+        automaticallyImplyLeading: false,
+        leadingWidth: 56,
+        leading: Navigator.of(context).canPop()
+            ? const BackButton()
+            : const SizedBox(width: 56),
+        titleSpacing: 0,
         title: const AlixWordmark(),
         actions: [
           if (isRoot && widget.onSetDecksDir != null)
