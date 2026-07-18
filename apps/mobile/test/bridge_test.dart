@@ -221,6 +221,36 @@ void main() {
     );
   });
 
+  testWidgets('About carries the one quiet Support line, and only About',
+      (tester) async {
+    final root = makeRoot();
+    addTearDown(() => root.deleteSync(recursive: true));
+    await tester.pumpWidget(AlixApp(
+      prepared: Prepared(root: root.path, device: 'phone-test'),
+      access: FakeAccess(),
+      persistDecksDir: (_) async {},
+      reprepare: () async => Prepared(root: root.path, device: 'phone-test'),
+    ));
+    await tester.pumpAndSettle();
+
+    // Not on the picker (a study surface) before About is opened.
+    expect(find.textContaining('sponsors/Alex6323'), findsNothing);
+
+    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('About'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('Telling someone who studies is the best support'),
+      findsOneWidget,
+    );
+    expect(
+      find.text('https://github.com/sponsors/Alex6323'),
+      findsOneWidget,
+    );
+  });
+
   group('theme picker (T6.2)', () {
     testWidgets('startup resolves the saved theme via themeById',
         (tester) async {

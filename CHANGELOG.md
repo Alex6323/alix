@@ -15,6 +15,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   "introduced" count, hiding the grade rows when nothing was graded.
 
 ### Added
+- **A quiet Support line in the About dialog, on both the web and mobile
+  clients.** Leads with the free alternative (telling someone who studies),
+  a sponsors link second; About only, never on a study surface.
 - **A paired phone can borrow the desktop's AI backend for the tutor and the
   exam, over `/api/remote/*`, including a trace deck's compression exam.**
   The client re-sends its own card, transcript, and answers with every call

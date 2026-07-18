@@ -812,6 +812,8 @@ class _PickerScreenState extends State<PickerScreen> {
   Future<void> _about() async {
     final app = await widget.access?.appVersion();
     if (!mounted) return;
+    final tokens = Theme.of(context).alix;
+    final dimStyle = Theme.of(context).textTheme.bodySmall?.copyWith(color: tokens.dim);
     showAboutDialog(
       context: context,
       applicationName: 'alix',
@@ -822,6 +824,14 @@ class _PickerScreenState extends State<PickerScreen> {
         height: 48,
       ),
       applicationLegalese: 'MIT or Apache-2.0, at your option.',
+      children: [
+        const SizedBox(height: 16),
+        Text(
+          'Free and open source. Telling someone who studies is the best support.',
+          style: dimStyle,
+        ),
+        SelectableText('https://github.com/sponsors/Alex6323', style: dimStyle),
+      ],
     );
   }
 }
