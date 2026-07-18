@@ -13,6 +13,7 @@ import 'package:alix_mobile/theme.dart';
 import 'package:alix_mobile/src/rust/api/listing.dart';
 import 'package:alix_mobile/src/rust/api/review.dart';
 import 'package:alix_mobile/src/rust/api/simple.dart';
+import 'package:alix_mobile/walk_screen.dart';
 
 /// One list screen serving both levels: the decks root, and (with [dir]) a
 /// drilled-into workspace or deck folder. The root level also owns the
@@ -138,6 +139,24 @@ class _PickerScreenState extends State<PickerScreen> {
     setState(_load);
   }
 
+  /// Opens the on-device trace walk. Mirrors `_openDeck`'s shape (push,
+  /// await the pop, refresh the due dots): a walked trace can graduate its
+  /// checkpoints or gain exam mastery, either of which changes this list.
+  Future<void> _openWalk(DeckEntry entry) async {
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => WalkScreen(
+          deckPath: entry.path,
+          rootDir: widget.root,
+          device: widget.device,
+          buildClient: widget.buildClient,
+        ),
+      ),
+    );
+    setState(_load);
+  }
+
   /// The long-press re-pick: `_pickDepth` with the deck's remembered depth
   /// highlighted, opening with whatever is chosen.
   Future<void> _rePickDepth(DeckEntry entry) async {
@@ -254,7 +273,7 @@ class _PickerScreenState extends State<PickerScreen> {
             onTap: () => entry.isWorkspace
                 ? _drillInto(entry)
                 : entry.isTrace
-                    ? _traceNotice()
+                    ? _openWalk(entry)
                     : _openDeck(entry),
             onLongPress: canRePick ? () => _rePickDepth(entry) : null,
             child: Container(
@@ -394,16 +413,6 @@ class _PickerScreenState extends State<PickerScreen> {
         fit: BoxFit.cover,
       ),
     );
-  }
-
-  /// A trace deck is a predict-and-verify walk; the phone has no walk yet,
-  /// and opening a review session on one is refused by the core. Say so
-  /// calmly instead of white-screening.
-  void _traceNotice() {
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-      content: Text('Trace decks are guided source walks; for now they '
-          'live in the web app.'),
-    ));
   }
 
   void _drillInto(DeckEntry entry) {

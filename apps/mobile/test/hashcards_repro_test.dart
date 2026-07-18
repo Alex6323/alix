@@ -1,7 +1,9 @@
 // Regression tests for the hashcards white screen (2026-07-16): a trace deck
-// (`% trace:`) has no mobile walk, so ReviewSession.open refuses it; the
-// picker used to offer the row anyway and the refusal rendered as a white
-// screen. The deck is a trimmed copy of the workspace's real 07-how-a-c.txt.
+// (`% trace:`) had no mobile walk at the time, so ReviewSession.open refused
+// it and the picker's white screen was the symptom (fixed then by routing
+// through a refusal SnackBar; T5.2 replaced that SnackBar with the real
+// on-device walk, so the first test below now asserts THAT routing instead).
+// The deck is a trimmed copy of the workspace's real 07-how-a-c.txt.
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -12,6 +14,7 @@ import 'package:alix_mobile/review_screen.dart';
 import 'package:alix_mobile/src/rust/api/review.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
 import 'package:alix_mobile/theme.dart';
+import 'package:alix_mobile/walk_screen.dart';
 
 const hashcardsTraceDeck = '''
 % trace: How a `C
@@ -38,14 +41,16 @@ Directory traceRoot() {
 void main() {
   setUpAll(() async => RustLib.init());
 
-  testWidgets('the picker marks a trace deck and never opens a review on it',
+  testWidgets('the picker marks a trace deck and opens it as an on-device walk, never a review',
       (tester) async {
     final root = traceRoot();
     addTearDown(() => root.deleteSync(recursive: true));
+    final support = Directory.systemTemp.createTempSync('alix-hashcards-support-');
+    addTearDown(() => support.deleteSync(recursive: true));
 
     await tester.pumpWidget(MaterialApp(
       theme: alixDark(),
-      home: PickerScreen(root: root.path),
+      home: PickerScreen(root: root.path, supportDir: support),
     ));
     await tester.pumpAndSettle();
 
@@ -57,8 +62,8 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.byType(ReviewScreen), findsNothing,
         reason: 'a trace deck must not open a review session');
-    expect(find.textContaining('live in the web app'), findsOneWidget,
-        reason: 'the tap explains itself instead of doing nothing');
+    expect(find.byType(WalkScreen), findsOneWidget,
+        reason: 'it walks instead of refusing');
   });
 
   testWidgets('an acquire-only first pass says new cards were met, not zeros',
