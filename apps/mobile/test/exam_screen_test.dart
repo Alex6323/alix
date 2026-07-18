@@ -13,125 +13,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:alix_mobile/exam_screen.dart';
 import 'package:alix_mobile/server_client.dart';
 
+import 'support/fake_server_client.dart';
+
 const _pollInterval = Duration(milliseconds: 10);
-
-/// The exam screen's test double: canned replies queued per call, and the
-/// sent answers captured for the order assertion.
-class FakeServerClient implements ServerClient {
-  FakeServerClient({
-    this.startReply = true,
-    this.expireOnStart = false,
-    List<RemoteExam>? getReplies,
-    this.expireOnGet = false,
-    List<bool>? gradeReplies,
-    this.expireOnGrade = false,
-    List<bool>? remediateReplies,
-    this.expireOnRemediate = false,
-    Map<int, Completer<RemoteExam?>>? getGates,
-    this.nullFirstGetCalls = 0,
-  })  : getReplies = getReplies ?? const [],
-        gradeReplies = gradeReplies ?? const [true],
-        remediateReplies = remediateReplies ?? const [true],
-        getGates = getGates ?? const {};
-
-  final bool startReply;
-  final bool expireOnStart;
-  final List<RemoteExam> getReplies;
-  final bool expireOnGet;
-  final List<bool> gradeReplies;
-  final bool expireOnGrade;
-  final List<bool> remediateReplies;
-  final bool expireOnRemediate;
-
-  /// Parks a specific (0-based) `examGet()` call on a completer instead of
-  /// answering immediately: the lever for putting two polls in flight at
-  /// once (a periodic tick firing again before the prior call's own
-  /// cancellation lands), the real-world race the exactly-once guard
-  /// protects against.
-  final Map<int, Completer<RemoteExam?>> getGates;
-
-  /// How many leading `examGet()` calls return null regardless of
-  /// [getReplies], simulating a slow sitting start (Polish 8b's
-  /// first-poll-null case) before the real replies begin.
-  final int nullFirstGetCalls;
-
-  String? startedDeck;
-  final List<List<String>> gradeAnswers = [];
-  int closeCalls = 0;
-  int _getCall = 0;
-  int _gradeCall = 0;
-  int _remediateCall = 0;
-
-  @override
-  Future<bool> examStart(String deck) async {
-    startedDeck = deck;
-    if (expireOnStart) throw const PairingExpired();
-    return startReply;
-  }
-
-  @override
-  Future<RemoteExam?> examGet() async {
-    if (expireOnGet) throw const PairingExpired();
-    final call = _getCall;
-    _getCall++;
-    final gate = getGates[call];
-    if (gate != null) return gate.future;
-    if (call < nullFirstGetCalls) return null;
-    if (getReplies.isEmpty) return null;
-    final repliesCall = call - nullFirstGetCalls;
-    return getReplies[repliesCall.clamp(0, getReplies.length - 1)];
-  }
-
-  @override
-  Future<bool> examGrade(List<String> answers) async {
-    gradeAnswers.add(answers);
-    if (expireOnGrade) throw const PairingExpired();
-    final reply = gradeReplies[_gradeCall.clamp(0, gradeReplies.length - 1)];
-    _gradeCall++;
-    return reply;
-  }
-
-  @override
-  Future<bool> examRemediate() async {
-    if (expireOnRemediate) throw const PairingExpired();
-    final reply = remediateReplies[_remediateCall.clamp(0, remediateReplies.length - 1)];
-    _remediateCall++;
-    return reply;
-  }
-
-  @override
-  Future<void> examClose() async => closeCalls++;
-
-  @override
-  Future<String?> version() async => null;
-
-  @override
-  Future<String?> backendName() async => null;
-
-  @override
-  Future<bool> postAsk(TutorCardContext card, List<TutorTurn> history, String question) async => false;
-
-  @override
-  Future<RemoteAsk?> getAsk() async => null;
-
-  @override
-  Future<bool> postDraft(TutorCardContext card, List<TutorTurn> history) async => false;
-
-  @override
-  Future<bool> postNote(TutorCardContext card, List<TutorTurn> history) async => false;
-
-  @override
-  Future<bool> generateStart(String url, {String? guidance}) async => false;
-
-  @override
-  Future<RemoteGenerate?> generateGet() async => null;
-
-  @override
-  Future<void> generateClose() async {}
-
-  @override
-  void close() {}
-}
 
 void main() {
   /// A fresh temp dir standing in for the app support dir the "Re-pair"
@@ -333,7 +217,7 @@ void main() {
   testWidgets('full pass walk: generating -> answering -> grading -> results, applyPassed exactly once',
       (tester) async {
     final client = FakeServerClient(
-      getReplies: [generating, answering2, grading, resultsPassed],
+      examGetReplies: [generating, answering2, grading, resultsPassed],
     );
     final passedCalls = <BigInt>[];
     await pumpExam(tester, client: client, passedCalls: passedCalls);
@@ -379,8 +263,8 @@ void main() {
     final gate0 = Completer<RemoteExam?>();
     final gate1 = Completer<RemoteExam?>();
     final client = FakeServerClient(
-      getReplies: const [grading],
-      getGates: {1: gate0, 2: gate1},
+      examGetReplies: const [grading],
+      examGetGates: {1: gate0, 2: gate1},
     );
     final passedCalls = <BigInt>[];
     await pumpExam(tester, client: client, passedCalls: passedCalls);
@@ -411,8 +295,8 @@ void main() {
     final gate0 = Completer<RemoteExam?>();
     final gate1 = Completer<RemoteExam?>();
     final client = FakeServerClient(
-      getReplies: const [grading],
-      getGates: {1: gate0, 2: gate1},
+      examGetReplies: const [grading],
+      examGetGates: {1: gate0, 2: gate1},
     );
     final passedCalls = <BigInt>[];
     final failedCalls = <BigInt>[];
@@ -439,7 +323,7 @@ void main() {
   });
 
   testWidgets('trace pass: applyPassed once, applyFailed never, the pass state renders', (tester) async {
-    final client = FakeServerClient(getReplies: const [traceResultsPassed]);
+    final client = FakeServerClient(examGetReplies: const [traceResultsPassed]);
     final passedCalls = <BigInt>[];
     final failedCalls = <BigInt>[];
     await pumpExam(tester, client: client, passedCalls: passedCalls, failedCalls: failedCalls);
@@ -454,7 +338,7 @@ void main() {
   testWidgets(
       'FACT-deck fail leaves the remediate path unchanged and never calls applyFailed '
       '(mutation guard: proves the trace branch cannot hijack fact decks)', (tester) async {
-    final client = FakeServerClient(getReplies: const [resultsFailed]);
+    final client = FakeServerClient(examGetReplies: const [resultsFailed]);
     // No failedCalls passed: applyFailed stays null, exactly like
     // review_screen.dart's real fact-deck wiring. If the trace-fail branch
     // ever fired here despite isTrace: false, it would call a null closure
@@ -469,8 +353,8 @@ void main() {
 
   testWidgets('first-poll-null: a slow start recovers once the sitting is ready', (tester) async {
     final client = FakeServerClient(
-      nullFirstGetCalls: 1,
-      getReplies: const [answering2],
+      nullFirstExamGetCalls: 1,
+      examGetReplies: const [answering2],
     );
     await pumpExam(tester, client: client);
     await tester.pump(); // examStart -> first examGet: null, schedules a bounded retry
@@ -486,7 +370,7 @@ void main() {
   testWidgets(
       'first-poll-null: a persistently-null server retries before falling back to the refusal path '
       '(no infinite spinner)', (tester) async {
-    final client = FakeServerClient(); // getReplies empty: examGet always resolves to null
+    final client = FakeServerClient(); // examGetReplies empty: examGet always resolves to null
     final navigatorKey = GlobalKey<NavigatorState>();
     await tester.pumpWidget(MaterialApp(
       navigatorKey: navigatorKey,
@@ -529,7 +413,7 @@ void main() {
   });
 
   testWidgets('answering navigation keeps typed text across Back/Next', (tester) async {
-    final client = FakeServerClient(getReplies: const [answering2]);
+    final client = FakeServerClient(examGetReplies: const [answering2]);
     await pumpExam(tester, client: client);
     await tester.pump();
 
@@ -558,8 +442,8 @@ void main() {
   testWidgets('fail -> remediate -> cards: applyRemediation gets the cards verbatim, SnackBar shows the count',
       (tester) async {
     final client = FakeServerClient(
-      getReplies: [resultsFailed, remediating, remediated],
-      remediateReplies: const [true],
+      examGetReplies: [resultsFailed, remediating, remediated],
+      examRemediateReplies: const [true],
     );
     final remediationCalls = <(String, BigInt)>[];
     await pumpExam(
@@ -586,7 +470,7 @@ void main() {
   });
 
   testWidgets('refused start: examStart false shows the refusal SnackBar and pops', (tester) async {
-    final client = FakeServerClient(startReply: false);
+    final client = FakeServerClient(examStartReply: false);
     final navigatorKey = GlobalKey<NavigatorState>();
     await tester.pumpWidget(MaterialApp(
       navigatorKey: navigatorKey,
@@ -620,7 +504,7 @@ void main() {
   testWidgets(
       'PairingExpired on start shows the exact re-pair SnackBar and pops; '
       'tapping Re-pair opens the pairing sheet on a live context', (tester) async {
-    final client = FakeServerClient(expireOnStart: true);
+    final client = FakeServerClient(expireOnExamStart: true);
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
         body: Builder(
@@ -675,7 +559,7 @@ void main() {
       isTrace: false,
       thinking: false,
     );
-    final client = FakeServerClient(getReplies: const [oneQuestion], gradeReplies: const [false]);
+    final client = FakeServerClient(examGetReplies: const [oneQuestion], examGradeReplies: const [false]);
     await pumpExam(tester, client: client);
     await tester.pump();
 

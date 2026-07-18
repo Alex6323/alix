@@ -19,60 +19,7 @@ import 'package:alix_mobile/src/rust/frb_generated.dart';
 import 'package:alix_mobile/theme.dart';
 import 'package:alix_mobile/walk_screen.dart';
 
-/// A minimal `ServerClient` double: only `examStart` matters (whether the
-/// "Take the exam" handoff actually pushes a working `ExamScreen`), every
-/// other call is an unreached stub, mirroring
-/// review_screen_exam_chip_test.dart's own FakeServerClient shape.
-class FakeServerClient implements ServerClient {
-  FakeServerClient({this.examStartReply = false});
-
-  final bool examStartReply;
-
-  @override
-  Future<String?> version() async => '0.6.0';
-
-  @override
-  Future<String?> backendName() async => null;
-
-  @override
-  Future<bool> postAsk(TutorCardContext card, List<TutorTurn> history, String question) async => false;
-
-  @override
-  Future<RemoteAsk?> getAsk() async => null;
-
-  @override
-  Future<bool> postDraft(TutorCardContext card, List<TutorTurn> history) async => false;
-
-  @override
-  Future<bool> postNote(TutorCardContext card, List<TutorTurn> history) async => false;
-
-  @override
-  Future<bool> examStart(String deck) async => examStartReply;
-
-  @override
-  Future<RemoteExam?> examGet() async => null;
-
-  @override
-  Future<bool> examGrade(List<String> answers) async => false;
-
-  @override
-  Future<bool> examRemediate() async => false;
-
-  @override
-  Future<void> examClose() async {}
-
-  @override
-  Future<bool> generateStart(String url, {String? guidance}) async => false;
-
-  @override
-  Future<RemoteGenerate?> generateGet() async => null;
-
-  @override
-  Future<void> generateClose() async {}
-
-  @override
-  void close() {}
-}
+import 'support/fake_server_client.dart';
 
 void main() {
   setUpAll(() async => RustLib.init());

@@ -15,59 +15,7 @@ import 'package:alix_mobile/src/rust/api/review.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
 import 'package:alix_mobile/theme.dart';
 
-/// The probe's test double: a canned `version()` reply. The exam surface
-/// itself is never exercised by these tests (the chip only needs to exist,
-/// not be tapped), so every exam/tutor method is an unreached stub.
-class FakeServerClient implements ServerClient {
-  FakeServerClient({this.versionReply});
-
-  final String? versionReply;
-
-  @override
-  Future<String?> version() async => versionReply;
-
-  @override
-  Future<String?> backendName() async => null;
-
-  @override
-  Future<bool> postAsk(TutorCardContext card, List<TutorTurn> history, String question) async => false;
-
-  @override
-  Future<RemoteAsk?> getAsk() async => null;
-
-  @override
-  Future<bool> postDraft(TutorCardContext card, List<TutorTurn> history) async => false;
-
-  @override
-  Future<bool> postNote(TutorCardContext card, List<TutorTurn> history) async => false;
-
-  @override
-  Future<bool> examStart(String deck) async => false;
-
-  @override
-  Future<RemoteExam?> examGet() async => null;
-
-  @override
-  Future<bool> examGrade(List<String> answers) async => false;
-
-  @override
-  Future<bool> examRemediate() async => false;
-
-  @override
-  Future<void> examClose() async {}
-
-  @override
-  Future<bool> generateStart(String url, {String? guidance}) async => false;
-
-  @override
-  Future<RemoteGenerate?> generateGet() async => null;
-
-  @override
-  Future<void> generateClose() async {}
-
-  @override
-  void close() {}
-}
+import 'support/fake_server_client.dart';
 
 void main() {
   setUpAll(() async => RustLib.init());
@@ -161,5 +109,44 @@ void main() {
     await finishReview(tester);
 
     expect(find.text('Take the exam'), findsNothing);
+  });
+
+  // T8.3 regression: review_screen.dart's `_deckName()` (~:210) must resolve
+  // a workspace member to `<workspace>/<member>`, the key the desktop's own
+  // catalog looks decks up by (`resolve_row`, src/serve/catalog.rs) -- never
+  // the device-absolute path, and never a bare basename (a naive
+  // `path.basename` would collapse this to `member.txt` and pass the chip's
+  // own visibility tests above without ever exercising the join).
+  testWidgets('a workspace member deck: "Take the exam" starts the sitting on "<workspace>/<member>"',
+      (tester) async {
+    final root = Directory.systemTemp.createTempSync('alix-exam-chip-ws-decks-');
+    addTearDown(() => root.deleteSync(recursive: true));
+    Directory('${root.path}/wsfolder').createSync();
+    File('${root.path}/wsfolder/alix.toml').writeAsStringSync('title = "Ws"\n');
+    File('${root.path}/wsfolder/member.txt')
+        .writeAsStringSync('% source: https://example.com\n# q?\n\ta\n');
+
+    final support = tempSupport();
+    await setServer(const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok'), support: support);
+
+    final client = FakeServerClient(versionReply: '0.6.0', examStartReply: false);
+    await tester.pumpWidget(MaterialApp(
+      theme: alixDark(),
+      home: ReviewScreen(
+        deckPath: '${root.path}/wsfolder/member.txt',
+        rootDir: root.path,
+        depth: Depth.recall,
+        supportDir: support,
+        buildClient: (_) => client,
+      ),
+    ));
+    await tester.pumpAndSettle();
+    await finishReview(tester);
+
+    expect(find.text('Take the exam'), findsOneWidget);
+    await tester.tap(find.text('Take the exam'));
+    await tester.pumpAndSettle();
+
+    expect(client.startedDeck, 'wsfolder/member.txt');
   });
 }

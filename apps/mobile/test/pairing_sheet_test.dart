@@ -14,63 +14,7 @@ import 'package:alix_mobile/picker_screen.dart';
 import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
 
-/// The pairing probe's test double: no network, a canned version() reply
-/// (or a thrown PairingExpired, modelling a stale pasted token).
-class FakeServerClient implements ServerClient {
-  FakeServerClient({this.versionReply, this.expiredOnVersion = false});
-
-  final String? versionReply;
-  final bool expiredOnVersion;
-  bool closed = false;
-
-  @override
-  Future<String?> version() async {
-    if (expiredOnVersion) throw const PairingExpired();
-    return versionReply;
-  }
-
-  @override
-  Future<String?> backendName() async => null;
-
-  @override
-  Future<bool> postAsk(TutorCardContext card, List<TutorTurn> history, String question) async => false;
-
-  @override
-  Future<RemoteAsk?> getAsk() async => null;
-
-  @override
-  Future<bool> postDraft(TutorCardContext card, List<TutorTurn> history) async => false;
-
-  @override
-  Future<bool> postNote(TutorCardContext card, List<TutorTurn> history) async => false;
-
-  @override
-  Future<bool> examStart(String deck) async => false;
-
-  @override
-  Future<RemoteExam?> examGet() async => null;
-
-  @override
-  Future<bool> examGrade(List<String> answers) async => false;
-
-  @override
-  Future<bool> examRemediate() async => false;
-
-  @override
-  Future<void> examClose() async {}
-
-  @override
-  Future<bool> generateStart(String url, {String? guidance}) async => false;
-
-  @override
-  Future<RemoteGenerate?> generateGet() async => null;
-
-  @override
-  Future<void> generateClose() async {}
-
-  @override
-  void close() => closed = true;
-}
+import 'support/fake_server_client.dart';
 
 void main() {
   setUpAll(() async => RustLib.init());
@@ -147,7 +91,7 @@ void main() {
     await openPairSheet(
       tester,
       support: support,
-      buildClient: (_) => FakeServerClient(expiredOnVersion: true),
+      buildClient: (_) => FakeServerClient(expireOnVersion: true),
     );
 
     await tester.enterText(

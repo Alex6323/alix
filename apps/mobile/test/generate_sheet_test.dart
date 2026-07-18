@@ -17,86 +17,7 @@ import 'package:alix_mobile/picker_screen.dart';
 import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
 
-/// The generate sheet's test double: canned replies for generateStart/Get,
-/// and every call recorded so the LOCKED-refusal and generateClose tests can
-/// assert on it directly.
-class FakeServerClient implements ServerClient {
-  FakeServerClient({
-    this.startReply = true,
-    this.expireOnStart = false,
-    List<RemoteGenerate>? getReplies,
-    this.expireOnGet = false,
-  }) : getReplies = getReplies ?? const [];
-
-  final bool startReply;
-  final bool expireOnStart;
-  final List<RemoteGenerate> getReplies;
-  final bool expireOnGet;
-
-  bool startCalled = false;
-  String? startedUrl;
-  String? startedGuidance;
-  int closeCalls = 0;
-  bool closed = false;
-  int _getCall = 0;
-
-  @override
-  Future<bool> generateStart(String url, {String? guidance}) async {
-    startCalled = true;
-    startedUrl = url;
-    startedGuidance = guidance;
-    if (expireOnStart) throw const PairingExpired();
-    return startReply;
-  }
-
-  @override
-  Future<RemoteGenerate?> generateGet() async {
-    if (expireOnGet) throw const PairingExpired();
-    if (getReplies.isEmpty) return null;
-    final call = _getCall;
-    _getCall++;
-    return getReplies[call.clamp(0, getReplies.length - 1)];
-  }
-
-  @override
-  Future<void> generateClose() async => closeCalls++;
-
-  @override
-  Future<String?> version() async => null;
-
-  @override
-  Future<String?> backendName() async => null;
-
-  @override
-  Future<bool> postAsk(TutorCardContext card, List<TutorTurn> history, String question) async => false;
-
-  @override
-  Future<RemoteAsk?> getAsk() async => null;
-
-  @override
-  Future<bool> postDraft(TutorCardContext card, List<TutorTurn> history) async => false;
-
-  @override
-  Future<bool> postNote(TutorCardContext card, List<TutorTurn> history) async => false;
-
-  @override
-  Future<bool> examStart(String deck) async => false;
-
-  @override
-  Future<RemoteExam?> examGet() async => null;
-
-  @override
-  Future<bool> examGrade(List<String> answers) async => false;
-
-  @override
-  Future<bool> examRemediate() async => false;
-
-  @override
-  Future<void> examClose() async {}
-
-  @override
-  void close() => closed = true;
-}
+import 'support/fake_server_client.dart';
 
 void main() {
   setUpAll(() async => RustLib.init());
@@ -174,7 +95,7 @@ void main() {
     await tester.tap(find.text('Generate'));
     await tester.pumpAndSettle();
 
-    expect(client.startCalled, isFalse);
+    expect(client.generateStartCalled, isFalse);
     expect(find.textContaining('http:// or https://'), findsOneWidget);
   });
 
@@ -186,7 +107,7 @@ void main() {
     await pair(support);
     const deckText = '# capital of testland?\n\tTestville\n';
     final client = FakeServerClient(
-      getReplies: const [
+      generateGetReplies: const [
         RemoteGenerate(phase: 'done', deck: deckText, filename: 'generated.txt', cards: 1),
       ],
     );
@@ -198,8 +119,8 @@ void main() {
     await tester.tap(find.text('Generate'));
     await tester.pumpAndSettle();
 
-    expect(client.startedUrl, 'https://example.org/article');
-    expect(client.startedGuidance, 'focus on basics');
+    expect(client.generateStartedUrl, 'https://example.org/article');
+    expect(client.generateStartedGuidance, 'focus on basics');
 
     // The dest picker (FolderBrowser) opened at the decks root; save there.
     expect(find.text('Use this folder'), findsOneWidget);
@@ -211,7 +132,7 @@ void main() {
     expect(written.readAsStringSync(), contains('Testville'));
 
     expect(find.textContaining('saved as generated.txt'), findsOneWidget);
-    expect(client.closeCalls, 1, reason: 'the server generation slot is freed once placed');
+    expect(client.generateCloseCalls, 1, reason: 'the server generation slot is freed once placed');
     expect(client.closed, isTrue);
 
     // The picker refreshed: the newly placed deck's row is now visible
@@ -226,7 +147,7 @@ void main() {
     await pair(support);
     const deckText = '# q\n\ta\n';
     final client = FakeServerClient(
-      getReplies: const [
+      generateGetReplies: const [
         RemoteGenerate(phase: 'generating', elapsed: 2),
         RemoteGenerate(phase: 'done', deck: deckText, filename: 'x.txt', cards: 1),
       ],
@@ -259,7 +180,7 @@ void main() {
     await pair(support);
     const deckText = '# q\n\ta\n';
     final client = FakeServerClient(
-      getReplies: const [RemoteGenerate(phase: 'done', deck: deckText, filename: 'x.txt', cards: 1)],
+      generateGetReplies: const [RemoteGenerate(phase: 'done', deck: deckText, filename: 'x.txt', cards: 1)],
     );
     await openPicker(tester, root: root.path, support: support, buildClient: (_) => client);
     await openGenerateSheet(tester);
@@ -273,7 +194,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(root.listSync(), isEmpty, reason: 'nothing is saved when the dest pick is cancelled');
-    expect(client.closeCalls, 1);
+    expect(client.generateCloseCalls, 1);
   });
 
   testWidgets('an error-phase DTO shows the message and places no file', (tester) async {
@@ -281,7 +202,7 @@ void main() {
     final root = temp('alix-gen-decks-');
     await pair(support);
     final client = FakeServerClient(
-      getReplies: const [RemoteGenerate(phase: 'error', error: 'the model returned no deck content')],
+      generateGetReplies: const [RemoteGenerate(phase: 'error', error: 'the model returned no deck content')],
     );
     await openPicker(tester, root: root.path, support: support, buildClient: (_) => client);
     await openGenerateSheet(tester);
@@ -298,7 +219,7 @@ void main() {
     await tester.tapAt(const Offset(20, 20));
     await tester.pumpAndSettle();
 
-    expect(client.closeCalls, 1);
+    expect(client.generateCloseCalls, 1);
   });
 
   testWidgets('generateClose is called when the sheet is dismissed before ever submitting (cancel path)',
@@ -313,7 +234,54 @@ void main() {
     await tester.tapAt(const Offset(20, 20));
     await tester.pumpAndSettle();
 
-    expect(client.startCalled, isFalse);
-    expect(client.closeCalls, 1);
+    expect(client.generateStartCalled, isFalse);
+    expect(client.generateCloseCalls, 1);
+  });
+
+  // T5.5-review Minor: the generate sheet's fake always declared
+  // expireOnGenerateStart/expireOnGenerateGet, but nothing ever set them,
+  // so this catch branch (picker_screen.dart's `_GenerateSheetState._submit`
+  // / `_poll`) went untested.
+  testWidgets('a 401 on generateStart shows the pairing-expired message, no crash', (tester) async {
+    final support = temp('alix-gen-support-');
+    final root = temp('alix-gen-decks-');
+    await pair(support);
+    final client = FakeServerClient(expireOnGenerateStart: true);
+    await openPicker(tester, root: root.path, support: support, buildClient: (_) => client);
+    await openGenerateSheet(tester);
+
+    await tester.enterText(find.byKey(const ValueKey('generate-url-field')), 'https://example.org');
+    await tester.tap(find.text('Generate'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Pairing expired. Pair again from the deck list menu.'),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+    // The sheet stays open on a failure, same idiom as every other terminal
+    // message (an error-phase DTO, above); dismissing it is what frees the
+    // slot.
+    expect(find.byKey(const ValueKey('generate-url-field')), findsOneWidget);
+  });
+
+  testWidgets('a 401 mid-poll on generateGet shows the pairing-expired message, no crash', (tester) async {
+    final support = temp('alix-gen-support-');
+    final root = temp('alix-gen-decks-');
+    await pair(support);
+    final client = FakeServerClient(expireOnGenerateGet: true);
+    await openPicker(tester, root: root.path, support: support, buildClient: (_) => client);
+    await openGenerateSheet(tester);
+
+    await tester.enterText(find.byKey(const ValueKey('generate-url-field')), 'https://example.org');
+    await tester.tap(find.text('Generate'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Pairing expired. Pair again from the deck list menu.'),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const ValueKey('generate-url-field')), findsOneWidget);
   });
 }

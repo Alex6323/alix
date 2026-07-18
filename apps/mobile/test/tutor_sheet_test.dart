@@ -13,6 +13,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/tutor_sheet.dart';
 
+import 'support/fake_server_client.dart';
+
 const _pollInterval = Duration(milliseconds: 10);
 
 const _card = TutorCardContext(
@@ -20,108 +22,6 @@ const _card = TutorCardContext(
   front: 'Why does Rust use one owner per value?',
   back: ['so drops are deterministic'],
 );
-
-/// The tutor sheet's test double: canned replies queued per call, and the
-/// sent history captured for the re-send assertion.
-class FakeServerClient implements ServerClient {
-  FakeServerClient({
-    this.backend = 'Claude',
-    List<bool>? postAskReplies,
-    List<RemoteAsk>? getAskReplies,
-    List<bool>? postDraftReplies,
-    List<bool>? postNoteReplies,
-    this.expireOnPostAsk = false,
-    this.postAskGate,
-  })  : postAskReplies = postAskReplies ?? const [true],
-        getAskReplies = getAskReplies ?? const [],
-        postDraftReplies = postDraftReplies ?? const [true],
-        postNoteReplies = postNoteReplies ?? const [true];
-
-  final String? backend;
-  final List<bool> postAskReplies;
-  final List<RemoteAsk> getAskReplies;
-  final List<bool> postDraftReplies;
-  final List<bool> postNoteReplies;
-  final bool expireOnPostAsk;
-
-  /// When set, postAsk parks on this until the test completes it: the
-  /// "request still in flight while the sheet is dismissed" lever.
-  final Completer<bool>? postAskGate;
-
-  final List<List<TutorTurn>> postAskHistories = [];
-  final List<List<TutorTurn>> postDraftHistories = [];
-  final List<List<TutorTurn>> postNoteHistories = [];
-  int _askCall = 0;
-  int _pollCall = 0;
-  int _draftCall = 0;
-  int _noteCall = 0;
-
-  @override
-  Future<String?> backendName() async => backend;
-
-  @override
-  Future<bool> postAsk(TutorCardContext card, List<TutorTurn> history, String question) async {
-    postAskHistories.add(history);
-    if (expireOnPostAsk) throw const PairingExpired();
-    if (postAskGate != null) return postAskGate!.future;
-    final reply = postAskReplies[_askCall.clamp(0, postAskReplies.length - 1)];
-    _askCall++;
-    return reply;
-  }
-
-  @override
-  Future<RemoteAsk?> getAsk() async {
-    final reply = getAskReplies[_pollCall.clamp(0, getAskReplies.length - 1)];
-    _pollCall++;
-    return reply;
-  }
-
-  @override
-  Future<bool> postDraft(TutorCardContext card, List<TutorTurn> history) async {
-    postDraftHistories.add(history);
-    final reply = postDraftReplies[_draftCall.clamp(0, postDraftReplies.length - 1)];
-    _draftCall++;
-    return reply;
-  }
-
-  @override
-  Future<bool> postNote(TutorCardContext card, List<TutorTurn> history) async {
-    postNoteHistories.add(history);
-    final reply = postNoteReplies[_noteCall.clamp(0, postNoteReplies.length - 1)];
-    _noteCall++;
-    return reply;
-  }
-
-  @override
-  Future<String?> version() async => null;
-
-  @override
-  Future<bool> examStart(String deck) async => false;
-
-  @override
-  Future<RemoteExam?> examGet() async => null;
-
-  @override
-  Future<bool> examGrade(List<String> answers) async => false;
-
-  @override
-  Future<bool> examRemediate() async => false;
-
-  @override
-  Future<void> examClose() async {}
-
-  @override
-  Future<bool> generateStart(String url, {String? guidance}) async => false;
-
-  @override
-  Future<RemoteGenerate?> generateGet() async => null;
-
-  @override
-  Future<void> generateClose() async {}
-
-  @override
-  void close() {}
-}
 
 void main() {
   Future<void> pumpSheet(
@@ -158,7 +58,7 @@ void main() {
 
   testWidgets('send: a pending working row names the backend, then the answer lands', (tester) async {
     final client = FakeServerClient(
-      backend: 'Claude',
+      backendReply: 'Claude',
       getAskReplies: const [
         RemoteAsk(thinking: true, elapsed: 1),
         RemoteAsk(thinking: false, answer: 'so drops are deterministic'),

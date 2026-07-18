@@ -16,63 +16,7 @@ import 'package:alix_mobile/src/rust/api/review.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
 import 'package:alix_mobile/theme.dart';
 
-/// The probe's test double: a canned `version()` reply, or a thrown
-/// PairingExpired (a stale token, refused by an otherwise-live server).
-class FakeServerClient implements ServerClient {
-  FakeServerClient({this.versionReply, this.expireOnVersion = false});
-
-  final String? versionReply;
-  final bool expireOnVersion;
-  bool closed = false;
-
-  @override
-  Future<String?> version() async {
-    if (expireOnVersion) throw const PairingExpired();
-    return versionReply;
-  }
-
-  @override
-  Future<String?> backendName() async => null;
-
-  @override
-  Future<bool> postAsk(TutorCardContext card, List<TutorTurn> history, String question) async => false;
-
-  @override
-  Future<RemoteAsk?> getAsk() async => null;
-
-  @override
-  Future<bool> postDraft(TutorCardContext card, List<TutorTurn> history) async => false;
-
-  @override
-  Future<bool> postNote(TutorCardContext card, List<TutorTurn> history) async => false;
-
-  @override
-  Future<bool> examStart(String deck) async => false;
-
-  @override
-  Future<RemoteExam?> examGet() async => null;
-
-  @override
-  Future<bool> examGrade(List<String> answers) async => false;
-
-  @override
-  Future<bool> examRemediate() async => false;
-
-  @override
-  Future<void> examClose() async {}
-
-  @override
-  Future<bool> generateStart(String url, {String? guidance}) async => false;
-
-  @override
-  Future<RemoteGenerate?> generateGet() async => null;
-
-  @override
-  Future<void> generateClose() async {}
-
-  @override
-  void close() => closed = true;
-}
+import 'support/fake_server_client.dart';
 
 void main() {
   setUpAll(() async => RustLib.init());
