@@ -107,16 +107,30 @@ pub fn check_for(reveal: Reveal, depth: Depth, card: &Card) -> Mode {
     }
 }
 
+/// Whether `card`'s deck supplies cached distractors that can build a full
+/// multiple-choice pick (see [`crate::choice::can_build`]). A Recognize session
+/// schedules only recognizable cards — there is no plain-flip fallback — so this
+/// is the single gate on whether a card can be drilled at Recognize at all.
+pub fn card_recognizable(card: &Card, cache: &AugmentCache) -> bool {
+    cache
+        .distractors(card.id())
+        .is_some_and(|ai| crate::choice::can_build(card, ai))
+}
+
+/// Whether any of `cards` is [`card_recognizable`] — i.e. the deck can be
+/// drilled at Recognize at all. Feeds the picker's `can_recognize` gate.
+pub fn deck_recognizable(cards: &[Card], cache: &AugmentCache) -> bool {
+    cards.iter().any(|c| card_recognizable(c, cache))
+}
+
 /// The depth a never-drilled deck should start at (`{#recognize-smart-default}`):
-/// Recognize when `cache` already has AI distractors for at least one of
-/// `cards`, else the classic Recall default. Encodes the real rule ("Recognize
-/// is right because the deck has usable distractors"), not a fixed habit: a
+/// Recognize when at least one of `cards` is [`card_recognizable`] (the deck has
+/// a usable pick), else the classic Recall default. Encodes the real rule
+/// ("Recognize is right because the deck has usable picks"), not a fixed habit: a
 /// deck with no coverage keeps today's Recall start. Only ever consulted as a
-/// fallback when the store has no remembered `last_depth` for the deck; the
-/// acquire-time bar in `choice.rs` (`recognition_question`) separately protects
-/// an unaugmented card from ever seeing a junk multiple-choice.
+/// fallback when the store has no remembered `last_depth` for the deck.
 pub fn default_depth(cards: &[Card], cache: &AugmentCache) -> Depth {
-    if cards.iter().any(|c| cache.distractors(c.id()).is_some()) {
+    if deck_recognizable(cards, cache) {
         Depth::Recognize
     } else {
         Depth::default()
@@ -134,14 +148,27 @@ mod tests {
     }
 
     #[test]
-    fn default_depth_is_recognize_when_any_card_has_cached_distractors() {
+    fn default_depth_is_recognize_when_any_card_is_recognizable() {
         let dir = tempfile::tempdir().unwrap();
         let mut cache = AugmentCache::open(dir.path().join("augment.json"));
         let covered = card("a");
         let uncovered = card("b");
-        cache.set_distractors(covered.id(), vec!["x".into(), "y".into()]);
+        // A full set (>= NUM_OPTIONS - 1 distinct) makes `covered` recognizable.
+        cache.set_distractors(covered.id(), vec!["x".into(), "y".into(), "z".into()]);
         let cards = vec![covered, uncovered];
         assert_eq!(Depth::Recognize, default_depth(&cards, &cache));
+    }
+
+    #[test]
+    fn default_depth_stays_recall_when_distractors_cannot_build_a_pick() {
+        // A partial set (fewer than NUM_OPTIONS - 1 distinct) builds no pick, so
+        // the card is not recognizable and the deck keeps the Recall default.
+        let dir = tempfile::tempdir().unwrap();
+        let mut cache = AugmentCache::open(dir.path().join("augment.json"));
+        let covered = card("a");
+        cache.set_distractors(covered.id(), vec!["x".into(), "y".into()]);
+        let cards = vec![covered];
+        assert_eq!(Depth::Recall, default_depth(&cards, &cache));
     }
 
     #[test]

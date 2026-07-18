@@ -49,25 +49,16 @@ pub fn seed_for(card_id: u64, appearance: u32) -> u64 {
     hasher.finish()
 }
 
-/// Assembles a multiple-choice question for `card` from its cached AI
-/// distractors: dedups them against the correct answer and each other, and
-/// returns `None` when fewer than [`NUM_OPTIONS`] `- 1` distinct, non-empty
-/// distractors remain. Distractors are never sampled from other cards.
-///
-/// This is the Recognize-depth entry point: it makes no assumption about the
-/// answer's shape, so a multi-line (`% reveal: line`) card is quizzed on its
-/// whole joined sequence against the AI's alternate orderings. The acquire-bar
-/// entry [`recognition_question`] adds the atomic-answer guard on top.
-pub fn build(card: &Card, seed: u64, ai_distractors: &[String]) -> Option<ChoiceQuestion> {
-    let correct_text = answer_text(card);
+/// The distinct, non-empty distractors for `card` in cache order, dropping any
+/// that equal the card's answer, capped at [`NUM_OPTIONS`] `- 1`. The single
+/// home of the "which options survive" rule, so [`build`] and [`can_build`] can
+/// never disagree on whether a card has a full pick.
+fn distinct_distractors(card: &Card, ai_distractors: &[String]) -> Vec<String> {
     let needed = NUM_OPTIONS - 1;
-    let mut rng = Rng::new(seed);
-
-    // The correct answer plus everything already chosen, so no AI option can
-    // duplicate them.
+    // The correct answer, so no AI option can duplicate it, plus each option
+    // already chosen (dedup among the distractors themselves).
     let mut seen: HashSet<String> = HashSet::new();
-    seen.insert(correct_text.clone());
-
+    seen.insert(answer_text(card));
     let mut chosen: Vec<String> = Vec::new();
     for option in ai_distractors {
         if chosen.len() == needed {
@@ -78,17 +69,39 @@ pub fn build(card: &Card, seed: u64, ai_distractors: &[String]) -> Option<Choice
             chosen.push(trimmed.to_string());
         }
     }
+    chosen
+}
 
-    if chosen.len() < needed {
+/// Assembles a multiple-choice question for `card` from its cached AI
+/// distractors ([`distinct_distractors`]), returning `None` when fewer than
+/// [`NUM_OPTIONS`] `- 1` distinct, non-empty distractors remain. Distractors are
+/// never sampled from other cards.
+///
+/// This is the Recognize-depth entry point: it makes no assumption about the
+/// answer's shape, so a multi-line (`% reveal: line`) card is quizzed on its
+/// whole joined sequence against the AI's alternate orderings. The acquire-bar
+/// entry [`recognition_question`] adds the atomic-answer guard on top.
+pub fn build(card: &Card, seed: u64, ai_distractors: &[String]) -> Option<ChoiceQuestion> {
+    let mut options = distinct_distractors(card, ai_distractors);
+    if options.len() < NUM_OPTIONS - 1 {
         return None;
     }
-
-    let mut options = chosen;
+    let correct_text = answer_text(card);
     options.push(correct_text.clone());
+    let mut rng = Rng::new(seed);
     shuffle(&mut options, &mut rng);
     let correct = options.iter().position(|t| *t == correct_text)?;
-
     Some(ChoiceQuestion { options, correct })
+}
+
+/// Whether [`build`] could assemble a full question for `card` from
+/// `ai_distractors`: at least [`NUM_OPTIONS`] `- 1` distinct, non-empty options
+/// remain after dropping any that equal the card's answer. The predicate a
+/// Recognize session gates scheduling on — a card that cannot build a pick is
+/// never served at Recognize (there is no plain-flip fallback). Shares
+/// [`distinct_distractors`] with `build`, so the two cannot disagree.
+pub fn can_build(card: &Card, ai_distractors: &[String]) -> bool {
+    distinct_distractors(card, ai_distractors).len() == NUM_OPTIONS - 1
 }
 
 /// Builds an acquire-bar recognition question under the strict bar that makes a

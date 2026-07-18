@@ -570,7 +570,8 @@ per region per card) *(presentational)*.
 | `state` | string | `new` \| `started` \| `finished` \| `examdue` for decks; `workspace` \| `folder` for groups (open set). |
 | `locked` | bool | A `% requires:` prerequisite isn't passed (exam-gating only — drilling stays allowed). |
 | `reviewable` | bool | Anything to do at any depth (or trace/exam special cases). On a **group** row this aggregates its members — it describes what's due inside, not that the group itself can be selected. |
-| `reviewable_recognize` / `reviewable_recall` / `reviewable_reconstruct` | bool | Per-depth honest due-ness — gate depth choices on these. Same group-aggregates-members caveat as `reviewable`. |
+| `reviewable_recognize` / `reviewable_recall` / `reviewable_reconstruct` | bool | Per-depth honest due-ness — gate depth choices on these. Same group-aggregates-members caveat as `reviewable`. `reviewable_recognize` is pick-only: it needs a card that is both unrecognized **and** recognizable (see `can_recognize`). |
+| `can_recognize` | bool | The deck has at least one recognizable card — cached choice distractors that build a pick (`alix deck augment --target choices`). Gate the **Recognize** depth on this: a deck without it can build no pick, so Recognize is unavailable (grey it out) even under cram. Group rows aggregate members. |
 | `mastered` | bool | Exam passed. |
 | `is_trace` | bool | Selecting it walks instead of reviewing. |
 | `examable` | bool | Its exam can be sat right now. |

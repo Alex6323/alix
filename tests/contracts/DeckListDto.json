@@ -4,6 +4,7 @@
     {
       "badge_depth": null,
       "badge_dotted": false,
+      "can_recognize": true,
       "deadline": null,
       "description": null,
       "examable": false,
@@ -35,6 +36,7 @@
     {
       "badge_depth": "recall",
       "badge_dotted": true,
+      "can_recognize": false,
       "deadline": {
         "date": "2026-09-01",
         "days_left": 23,
@@ -57,6 +59,7 @@
         {
           "badge_depth": null,
           "badge_dotted": false,
+          "can_recognize": true,
           "examable": true,
           "has_exam": true,
           "has_topology": false,

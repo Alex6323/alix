@@ -446,6 +446,7 @@ mod tests {
             locked: false,
             reviewable: false,
             reviewable_recognize: false,
+            can_recognize: false,
             reviewable_recall: false,
             reviewable_reconstruct: false,
             mastered,

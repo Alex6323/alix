@@ -49,11 +49,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Breaking: a multiple-choice pick now requires a cached AI augmentation;
   options are never sampled from other cards.** Distractors were previously
   topped up by sampling the rest of the session's answers, which produced junk
-  options (unrelated ones that gave the answer away, or near-duplicates). A
-  Recognize or acquire-bar pick now renders only from a deck's cached
-  distractors (`alix deck augment --target choices`); a card without them falls
-  back to a plain attempt-then-reveal instead of a made-up pick. Run the augment
-  to keep multiple-choice on a deck that relied on sampling.
+  options (unrelated ones that gave the answer away, or near-duplicates). A pick
+  now renders only from a deck's cached distractors (`alix deck augment --target
+  choices`); without them there is no pick. Run the augment to keep
+  multiple-choice on a deck that relied on sampling.
+- **Breaking: the Recognize depth is now pick-only.** A Recognize session
+  schedules only *recognizable* cards (ones a cached pick can be built for); an
+  un-augmented card is no longer served there as a plain flip, which had blurred
+  Recognize into Recall. A deck with no recognizable card can't be drilled at
+  Recognize at all, so the picker greys the depth out (even under cram) — run
+  `alix deck augment --target choices` to enable it. The deck-list API gains
+  `can_recognize` (per row; group rows aggregate their members) for the gate.
 - **The web app names your configured AI backend instead of assuming
   Claude.** The tutor header and the "working…" progress lines during
   augment and the exam now show the `[ask] backend` you actually use, so a

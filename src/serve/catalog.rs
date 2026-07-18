@@ -105,7 +105,7 @@ pub(super) fn deck_item_dto(
     let recent = e.last_used_ms.is_some();
     match Deck::load(&e.path) {
         Ok(deck) => {
-            let s = picker::deck_status(&deck, store, Some(decks_dir), with_lock, review);
+            let s = picker::deck_status(&deck, store, augment, Some(decks_dir), with_lock, review);
             let deck_ids: HashSet<u64> = deck.cards.iter().map(|c| c.id()).collect();
             let last_depth = depth_name(
                 store
@@ -121,6 +121,7 @@ pub(super) fn deck_item_dto(
                 locked: s.locked,
                 reviewable: s.reviewable,
                 reviewable_recognize: s.reviewable_recognize,
+                can_recognize: s.can_recognize,
                 reviewable_recall: s.reviewable_recall,
                 reviewable_reconstruct: s.reviewable_reconstruct,
                 mastered: s.mastered,
@@ -154,6 +155,7 @@ pub(super) fn deck_item_dto(
             locked: false,
             reviewable: false,
             reviewable_recognize: false,
+            can_recognize: false,
             reviewable_recall: false,
             reviewable_reconstruct: false,
             mastered: false,
@@ -214,10 +216,15 @@ pub(super) fn workspace_members(
         .iter()
         .map(|p| {
             let deck = Deck::load(p).ok();
-            let status = match (store, deck.as_ref()) {
-                (Some(st), Some(d)) => Some(picker::deck_status(
+            // `augment` is `Some` exactly when `store` is (both from the one
+            // `store.map(...)` above), so gating the status on all three keeps
+            // the same None-ness while handing `deck_status` the cache it needs
+            // to judge Recognize.
+            let status = match (store, augment.as_ref(), deck.as_ref()) {
+                (Some(st), Some(a), Some(d)) => Some(picker::deck_status(
                     d,
                     st,
+                    a,
                     Some(decks_dir),
                     with_lock,
                     review,
@@ -285,6 +292,7 @@ pub(super) fn workspace_members(
                     locked: s.locked,
                     reviewable: s.reviewable,
                     reviewable_recognize: s.reviewable_recognize,
+                    can_recognize: s.can_recognize,
                     reviewable_recall: s.reviewable_recall,
                     reviewable_reconstruct: s.reviewable_reconstruct,
                     mastered: s.mastered,
@@ -311,6 +319,7 @@ pub(super) fn workspace_members(
                     locked: false,
                     reviewable: false,
                     reviewable_recognize: false,
+                    can_recognize: false,
                     reviewable_recall: false,
                     reviewable_reconstruct: false,
                     mastered: false,
@@ -424,6 +433,7 @@ pub(super) fn deck_catalog(
             // itself (`selectable: false` below owns that).
             let reviewable = members.iter().any(|m| m.reviewable);
             let reviewable_recognize = members.iter().any(|m| m.reviewable_recognize);
+            let can_recognize = members.iter().any(|m| m.can_recognize);
             let reviewable_recall = members.iter().any(|m| m.reviewable_recall);
             let reviewable_reconstruct = members.iter().any(|m| m.reviewable_reconstruct);
             let dto = DeckItemDto {
@@ -433,6 +443,7 @@ pub(super) fn deck_catalog(
                 selectable: false,
                 reviewable,
                 reviewable_recognize,
+                can_recognize,
                 reviewable_recall,
                 reviewable_reconstruct,
                 mastered: false,

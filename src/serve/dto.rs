@@ -208,9 +208,14 @@ pub(super) struct DeckItemDto {
     pub(super) locked: bool,
     /// Launching now would have something to do; `false` → nothing due (🕒).
     pub(super) reviewable: bool,
-    /// Any card hasn't yet been correctly picked at Recognize — see
-    /// [`picker::DeckStatus::reviewable_recognize`].
+    /// A still-unrecognized card that is also recognizable is servable at
+    /// Recognize now — see [`picker::DeckStatus::reviewable_recognize`].
     pub(super) reviewable_recognize: bool,
+    /// The deck has at least one recognizable card (cached distractors build a
+    /// pick) — the client gates the Recognize depth on this, so an un-augmented
+    /// deck greys it out even under cram. See
+    /// [`picker::DeckStatus::can_recognize`].
+    pub(super) can_recognize: bool,
     /// A card is due (or fresh), or a virtual card is due, at Recall — see
     /// [`picker::DeckStatus::reviewable_recall`].
     pub(super) reviewable_recall: bool,
@@ -299,6 +304,8 @@ pub(super) struct MemberDto {
     /// Per-depth due-ness — see [`DeckItemDto::reviewable_recognize`] /
     /// [`DeckItemDto::reviewable_recall`] / [`DeckItemDto::reviewable_reconstruct`].
     pub(super) reviewable_recognize: bool,
+    /// The member has a recognizable card — see [`DeckItemDto::can_recognize`].
+    pub(super) can_recognize: bool,
     pub(super) reviewable_recall: bool,
     pub(super) reviewable_reconstruct: bool,
     pub(super) mastered: bool,

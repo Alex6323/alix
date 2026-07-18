@@ -539,6 +539,18 @@ pub fn select(
             crate::time::end_of_local_day_ms(date),
         )
     });
+    // A Recognize session is pick-only: schedule only cards that can build a
+    // multiple-choice from cached distractors, so it never degrades to a plain
+    // flip (which would blur into Recall). Un-augmented cards stay reviewable at
+    // Recall/Reconstruct; they just drop out of this Recognize roster.
+    let cards = if depth == Depth::Recognize {
+        cards
+            .into_iter()
+            .filter(|c| crate::depth::card_recognizable(c, &augment))
+            .collect()
+    } else {
+        cards
+    };
     let session = Session::new(
         cards,
         store,

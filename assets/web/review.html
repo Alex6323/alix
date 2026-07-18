@@ -2220,6 +2220,11 @@ async function renderSelect(preloaded) {
   const DEPTHS = ["recognize", "recall", "reconstruct"]; // menu/keys order — 1/2/3
   const DEPTH_FIELD = { recognize: "reviewable_recognize", recall: "reviewable_recall", reconstruct: "reviewable_reconstruct" };
   const canStartAt = (it, gated, depth) => it[DEPTH_FIELD[depth]] || !gated;
+  // Recognize is pick-only: it can only run on a deck with cached choice
+  // distractors (`can_recognize`) — an un-augmented deck greys it out even under
+  // cram (which re-serves recognized cards). Recall/Reconstruct are never gated
+  // on augmentation.
+  const canDoDepth = (it, depth) => depth !== "recognize" || !!it.can_recognize;
 
   // Rows that carry the depth split (the Learn ▾ chip and its v key): a deck —
   // not a workspace/folder — that isn't exam-primary, has a remembered depth,
@@ -2231,7 +2236,8 @@ async function renderSelect(preloaded) {
   // exam-due deck's primary is its exam (both non-depth, via `canStart`);
   // otherwise it reviews at the deck's own last-used depth.
   const canStartPrimary = (it, gated) =>
-    (it.is_trace || it.state === "examdue") ? canStart(it, gated) : canStartAt(it, gated, it.last_depth);
+    (it.is_trace || it.state === "examdue") ? canStart(it, gated)
+      : (canDoDepth(it, it.last_depth) && canStartAt(it, gated, it.last_depth));
 
   // Launch one deck/member. An exam-due deck sits its exam; a trace will walk
   // once the web hosts walks (for now it reviews its explain cards — the single
@@ -2256,6 +2262,7 @@ async function renderSelect(preloaded) {
   // drawer-scope rules as `launch`, but never routes to the exam — picking a
   // depth always means "review", gated on that depth's own due-ness.
   function launchDepth(it, wsName, gated, depth) {
+    if (!canDoDepth(it, depth)) return;
     if (!cramOn && !canStartAt(it, gated, depth)) return;
     lastWorkspace = wsName || null;
     const sel = drawerSel.deck === it.name ? drawerSel : {};
@@ -2486,7 +2493,7 @@ async function renderSelect(preloaded) {
         for (const d of DEPTHS) {
           const b = el("button", "chip" + (d === it.last_depth ? " primary" : ""), d[0].toUpperCase() + d.slice(1));
           b.appendChild(el("span", "k", label(PK[d])));
-          b.disabled = !cramOn && !canStartAt(it, f._gated, d);
+          b.disabled = !canDoDepth(it, d) || (!cramOn && !canStartAt(it, f._gated, d));
           b.addEventListener("mousedown", e => e.preventDefault());
           b.addEventListener("click", () => { depthMenuOpen = false; launchDepth(it, f._wsName, f._gated, d); });
           legend.appendChild(b);
@@ -2832,7 +2839,7 @@ async function renderSelect(preloaded) {
       if (depthMenuOpen) {
         const f = focusedEl;
         const d = DEPTHS.find(l => hit(e, PK[l]));
-        if (d && f && f._item && (cramOn || canStartAt(f._item, f._gated, d))) {
+        if (d && f && f._item && canDoDepth(f._item, d) && (cramOn || canStartAt(f._item, f._gated, d))) {
           e.preventDefault(); e.stopPropagation();
           depthMenuOpen = false;
           launchDepth(f._item, f._wsName, f._gated, d);

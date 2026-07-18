@@ -9,8 +9,10 @@
 //! build can use them — and `DeckSummary`'s own `mastered`/`exam_due`/
 //! `has_exam`/`locked`/`is_trace` are now built from those same helpers, one
 //! reconciled truth (pinned by a parity test against `deck_status`). `due`
-//! remains this module's own simpler signal via [`deck_due`], still not
-//! reconciled with `deck_status.reviewable`.
+//! remains this module's own simpler signal via [`deck_due`], not fully
+//! reconciled with `deck_status.reviewable` (it drops the trace/exam special
+//! cases the mobile client doesn't open yet), but its Recognize share now
+//! matches `reviewable_recognize`'s pick-only rule.
 use std::path::{Path, PathBuf};
 
 use crate::{
@@ -261,8 +263,11 @@ fn deck_summary(
     let title = deck.as_ref().map(|d| d.display_name()).unwrap_or_default();
     let is_trace = deck.as_ref().is_some_and(|d| d.is_trace());
     let has_exam = deck.as_ref().is_some_and(|d| d.has_exam());
-    let due = match (&deck, store) {
-        (Some(d), Some(s)) => deck_due(d, s, review, now_ms),
+    // `augment` is `Some` exactly when `store` is (both from one `*_store`),
+    // so gating on all three keeps the same None-ness while giving `deck_due`
+    // the cache it needs to judge Recognize.
+    let due = match (&deck, store, augment) {
+        (Some(d), Some(s), Some(a)) => deck_due(d, s, a, review, now_ms),
         _ => false,
     };
     let (mastered, exam_due, locked) = match (&deck, store) {
@@ -299,13 +304,40 @@ fn deck_summary(
 
 /// Anything to launch right now at any depth: the web picker's aggregate
 /// (`picker::deck_status`) minus its trace and exam special cases, which the
-/// mobile client does not open yet.
-fn deck_due(deck: &Deck, store: &Store, review: &ReviewConfig, now_ms: u64) -> bool {
+/// mobile client does not open yet. Recognize is pick-only, so its share of the
+/// OR mirrors `deck_status`'s `reviewable_recognize` — a card that is both
+/// servable at Recognize AND recognizable — never the bare unrecognized check,
+/// which would over-report an un-augmented deck as due (empty on tap).
+fn deck_due(
+    deck: &Deck,
+    store: &Store,
+    augment: &AugmentCache,
+    review: &ReviewConfig,
+    now_ms: u64,
+) -> bool {
     let scheduler = Fsrs::new(review.retention, review.acquire_cooldown_ms);
     let retire = review.retire_after_days;
-    [Depth::Recognize, Depth::Recall, Depth::Reconstruct]
-        .into_iter()
-        .any(|depth| session::has_reviewable(&deck.cards, store, &scheduler, depth, now_ms, retire))
+    let recognize_due = deck.cards.iter().any(|c| {
+        session::is_reviewable(c, store, &scheduler, Depth::Recognize, now_ms, retire)
+            && depth::card_recognizable(c, augment)
+    });
+    recognize_due
+        || session::has_reviewable(
+            &deck.cards,
+            store,
+            &scheduler,
+            Depth::Recall,
+            now_ms,
+            retire,
+        )
+        || session::has_reviewable(
+            &deck.cards,
+            store,
+            &scheduler,
+            Depth::Reconstruct,
+            now_ms,
+            retire,
+        )
         || session::has_reviewable_virtual(store, &deck.subject, &scheduler, now_ms, retire)
 }
 
@@ -334,10 +366,19 @@ pub struct DeckStatus {
     /// non-depth trace/exam-due special cases (untouched by the per-depth
     /// split) — "anything to do, at any depth".
     pub reviewable: bool,
-    /// Any deck card hasn't yet been correctly picked at Recognize
-    /// (`recognized_ms` unset) — Recognize is unscheduled, so this is a plain
-    /// not-yet-done check, not a due time.
+    /// A card that is BOTH not yet correctly picked at Recognize
+    /// (`recognized_ms` unset) AND recognizable (its deck has cached distractors
+    /// that build a pick — see [`depth::card_recognizable`]). Recognize is
+    /// unscheduled and pick-only, so this is the honest per-card conjunction, not
+    /// a due time: a card without a buildable pick is never served at Recognize.
     pub reviewable_recognize: bool,
+    /// The deck has at least one recognizable card ([`depth::deck_recognizable`])
+    /// — it can be drilled at Recognize at all, cached distractors permitting.
+    /// Distinct from [`reviewable_recognize`](Self::reviewable_recognize) (which
+    /// also requires a card still unrecognized): the picker uses this to keep the
+    /// Recognize depth selectable under **cram** (which re-serves recognized
+    /// cards too), and to grey it out entirely on an un-augmented deck.
+    pub can_recognize: bool,
     /// A card is due (or fresh) at Recall right now, or a virtual
     /// (remediation) card is due — what `reviewable` used to mean, entirely.
     pub reviewable_recall: bool,
@@ -405,6 +446,7 @@ fn badge_depth_for(subject: &str, cards: &[Card], store: &Store) -> (Option<Dept
 pub fn deck_status(
     deck: &Deck,
     store: &Store,
+    augment: &AugmentCache,
     decks_dir: Option<&Path>,
     enforce_locks: bool,
     review: ReviewConfig,
@@ -462,14 +504,21 @@ pub fn deck_status(
     // is what makes a Recall-settled deck due right now at Reconstruct too.
     let scheduler = crate::scheduler::Fsrs::new(review.retention, review.acquire_cooldown_ms);
     let now = session::now_ms();
-    let reviewable_recognize = session::has_reviewable(
-        &deck.cards,
-        store,
-        &scheduler,
-        Depth::Recognize,
-        now,
-        review.retire_after_days,
-    );
+    // Recognize is pick-only: a card counts only if it is BOTH still unrecognized
+    // AND recognizable (buildable pick). The conjunction lives per card — a deck
+    // with one unrecognized-but-unaugmented card and one recognized-and-augmented
+    // card has nothing to serve at Recognize, and must read as such.
+    let reviewable_recognize = deck.cards.iter().any(|card| {
+        session::is_reviewable(
+            card,
+            store,
+            &scheduler,
+            Depth::Recognize,
+            now,
+            review.retire_after_days,
+        ) && depth::card_recognizable(card, augment)
+    });
+    let can_recognize = depth::deck_recognizable(&deck.cards, augment);
     let reviewable_recall = session::has_reviewable(
         &deck.cards,
         store,
@@ -511,6 +560,7 @@ pub fn deck_status(
         locked,
         reviewable,
         reviewable_recognize,
+        can_recognize,
         reviewable_recall,
         reviewable_reconstruct,
         mastered,
@@ -646,6 +696,21 @@ mod tests {
 
     fn write(path: &Path, text: &str) {
         std::fs::write(path, text).unwrap();
+    }
+
+    /// An empty augment cache, for `deck_status` tests that don't exercise the
+    /// Recognize depth (no card is recognizable, so `reviewable_recognize` and
+    /// `can_recognize` are both false — which those tests never assert on).
+    fn no_augment() -> AugmentCache {
+        AugmentCache::open(Path::new("unused-augment.json"))
+    }
+
+    /// Caches a full set of choice distractors on every card, so the deck's
+    /// cards become recognizable (a Recognize pick can be built).
+    fn arm(augment: &mut AugmentCache, cards: &[Card]) {
+        for card in cards {
+            augment.set_distractors(card.id(), vec!["w1".into(), "w2".into(), "w3".into()]);
+        }
     }
 
     #[test]
@@ -868,7 +933,7 @@ mod tests {
             assert_eq!(3, rows.len());
             for row in rows {
                 let deck = Deck::load(&row.path).unwrap();
-                let status = deck_status(&deck, store, Some(root), true, review);
+                let status = deck_status(&deck, store, &no_augment(), Some(root), true, review);
                 assert_eq!(row.mastered, status.mastered, "mastered: {}", row.title);
                 assert_eq!(
                     row.exam_due,
@@ -1115,14 +1180,28 @@ mod tests {
         entry.reconstruct = Some(graduated_not_due(now));
 
         // Fully drilled, nothing due: `done ✓` and not reviewable.
-        let status = deck_status(&deck, &store, None, false, ReviewConfig::default());
+        let status = deck_status(
+            &deck,
+            &store,
+            &no_augment(),
+            None,
+            false,
+            ReviewConfig::default(),
+        );
         assert_eq!("done ✓", status.badge);
         assert!(!status.reviewable);
 
         // A due virtual card for this deck makes it reviewable even though
         // every deck card is done at every depth.
         insert_due_virtual_card(&mut store, &deck.subject);
-        let status = deck_status(&deck, &store, None, false, ReviewConfig::default());
+        let status = deck_status(
+            &deck,
+            &store,
+            &no_augment(),
+            None,
+            false,
+            ReviewConfig::default(),
+        );
         assert!(status.reviewable);
         assert_eq!("done ✓", status.badge); // unaffected by the virtual card
     }
@@ -1145,7 +1224,14 @@ mod tests {
         // Mature at Recall, nothing due there — never touched at Reconstruct.
         store.get_or_insert(card_id, now).recall = Some(mature(now, 25.0));
 
-        let status = deck_status(&deck, &store, None, false, ReviewConfig::default());
+        let status = deck_status(
+            &deck,
+            &store,
+            &no_augment(),
+            None,
+            false,
+            ReviewConfig::default(),
+        );
         assert!(!status.reviewable_recall, "nothing due at recall");
         assert!(
             status.reviewable_reconstruct,
@@ -1155,23 +1241,99 @@ mod tests {
     }
 
     #[test]
-    fn recognize_reviewability_tracks_unrecognized_cards() {
+    fn recognize_reviewability_tracks_unrecognized_recognizable_cards() {
         let dir = tempfile::tempdir().unwrap();
         let deck_path = dir.path().join("rust.txt");
         std::fs::write(&deck_path, "# q1\n\ta1\n# q2\n\ta2\n").unwrap();
         let deck = Deck::load(&deck_path).unwrap();
 
         let mut store = Store::open(dir.path().join("progress.json")).unwrap();
+        let mut augment = AugmentCache::open(dir.path().join("augment.json"));
+        arm(&mut augment, &deck.cards);
         let now = session::now_ms();
         store.get_or_insert(deck.cards[0].id(), now).recognized_ms = Some(now);
 
-        // Card 2 has never been correctly picked at Recognize.
-        let status = deck_status(&deck, &store, None, false, ReviewConfig::default());
+        // Card 2 has never been correctly picked at Recognize, and both cards
+        // are recognizable, so the deck is reviewable at Recognize.
+        let status = deck_status(
+            &deck,
+            &store,
+            &augment,
+            None,
+            false,
+            ReviewConfig::default(),
+        );
         assert!(status.reviewable_recognize);
+        assert!(status.can_recognize);
 
         store.get_or_insert(deck.cards[1].id(), now).recognized_ms = Some(now);
-        let status = deck_status(&deck, &store, None, false, ReviewConfig::default());
+        let status = deck_status(
+            &deck,
+            &store,
+            &augment,
+            None,
+            false,
+            ReviewConfig::default(),
+        );
+        assert!(
+            !status.reviewable_recognize,
+            "every recognizable card is recognized"
+        );
+        assert!(status.can_recognize, "the deck can still be crammed");
+    }
+
+    #[test]
+    fn an_unaugmented_deck_is_not_recognizable() {
+        // With no cached distractors a deck has no buildable pick, so Recognize
+        // is unavailable — reviewable_recognize is false even though its cards
+        // are unrecognized, and can_recognize (the cram/greying gate) is false.
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("rust.txt");
+        std::fs::write(&deck_path, "# q1\n\ta1\n# q2\n\ta2\n").unwrap();
+        let deck = Deck::load(&deck_path).unwrap();
+        let store = Store::open(dir.path().join("progress.json")).unwrap();
+
+        let status = deck_status(
+            &deck,
+            &store,
+            &no_augment(),
+            None,
+            false,
+            ReviewConfig::default(),
+        );
         assert!(!status.reviewable_recognize);
+        assert!(!status.can_recognize);
+    }
+
+    #[test]
+    fn deck_due_does_not_over_report_recognize_on_an_unaugmented_deck() {
+        // The mobile lister's `due` flag: a seen-but-unrecognized card whose
+        // Recall and Reconstruct schedules are settled reads as due ONLY when it
+        // is recognizable. Un-augmented, Recognize is pick-only-unavailable, so
+        // there is nothing to launch — `deck_due` must be false (before
+        // pick-only, the bare `has_reviewable(Recognize)` over-reported it).
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("rust.txt");
+        std::fs::write(&deck_path, "# q1\n\ta1\n").unwrap();
+        let deck = Deck::load(&deck_path).unwrap();
+        let mut store = Store::open(dir.path().join("progress.json")).unwrap();
+        let now = session::now_ms();
+        let entry = store.get_or_insert(deck.cards[0].id(), now);
+        entry.recall = Some(graduated_not_due(now));
+        entry.reconstruct = Some(graduated_not_due(now));
+
+        assert!(
+            !deck_due(&deck, &store, &no_augment(), &ReviewConfig::default(), now),
+            "un-augmented settled deck is not due"
+        );
+
+        // Armed, the unrecognized card is servable at Recognize, so it is due.
+        let mut augment = AugmentCache::open(dir.path().join("augment.json"));
+        arm(&mut augment, &deck.cards);
+        assert!(
+            deck_due(&deck, &store, &augment, &ReviewConfig::default(), now),
+            "an augmented unrecognized card is due at Recognize"
+        );
     }
 
     #[test]
@@ -1186,11 +1348,25 @@ mod tests {
         // One of the three cards has graduated; the other two are unseen.
         store.get_or_insert(deck.cards[0].id(), now).recall = Some(graduated_not_due(now));
 
-        let before = deck_status(&deck, &store, None, false, ReviewConfig::default());
+        let before = deck_status(
+            &deck,
+            &store,
+            &no_augment(),
+            None,
+            false,
+            ReviewConfig::default(),
+        );
         assert_eq!("1/3", before.badge);
 
         insert_due_virtual_card(&mut store, &deck.subject);
-        let after = deck_status(&deck, &store, None, false, ReviewConfig::default());
+        let after = deck_status(
+            &deck,
+            &store,
+            &no_augment(),
+            None,
+            false,
+            ReviewConfig::default(),
+        );
         assert_eq!(before.badge, after.badge);
     }
 
@@ -1223,7 +1399,14 @@ mod tests {
         entry.recall = Some(mature(now, 25.0));
         entry.reconstruct = Some(mature(now, 30.0));
 
-        let status = deck_status(&deck, &store, None, false, ReviewConfig::default());
+        let status = deck_status(
+            &deck,
+            &store,
+            &no_augment(),
+            None,
+            false,
+            ReviewConfig::default(),
+        );
         assert_eq!(Some(Depth::Reconstruct), status.badge_depth);
         assert!(!status.badge_dotted);
     }
@@ -1245,7 +1428,14 @@ mod tests {
         // solid, but the earn date persists (high-water mark).
         store.get_or_insert(card_id, now).recall = Some(mature(now, 5.0));
 
-        let status = deck_status(&deck, &store, None, false, ReviewConfig::default());
+        let status = deck_status(
+            &deck,
+            &store,
+            &no_augment(),
+            None,
+            false,
+            ReviewConfig::default(),
+        );
         assert_eq!(Some(Depth::Recall), status.badge_depth);
         assert!(status.badge_dotted);
     }
@@ -1262,7 +1452,14 @@ mod tests {
         // Card 1 has graduated; card 2 has never been touched — no store entry.
         store.get_or_insert(deck.cards[0].id(), now).recall = Some(graduated_not_due(now));
 
-        let status = deck_status(&deck, &store, None, false, ReviewConfig::default());
+        let status = deck_status(
+            &deck,
+            &store,
+            &no_augment(),
+            None,
+            false,
+            ReviewConfig::default(),
+        );
         assert!(status.new_cards);
         // Unaffected by the flag: same state/badge/badge_depth this deck would
         // have had before `new_cards` existed.

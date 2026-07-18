@@ -185,11 +185,12 @@ pub fn state(
 /// served.
 ///
 /// A pick renders only from a deck's cached AI distractors (`alix deck augment
-/// --target choices`); options are never sampled from other cards' answers, so
-/// a card without a cached augmentation falls back to a plain reveal (flip)
-/// rather than a multiple-choice of junk sibling answers. A first encounter
-/// (the acquire bar) additionally requires an atomic answer; a seen card in a
-/// Recognize session may quiz on a whole multi-line sequence.
+/// --target choices`); options are never sampled from other cards' answers. A
+/// Recognize session is pick-only — it schedules only recognizable cards, so
+/// every card it serves builds a pick (a `% reveal: line` card on its whole
+/// ordered sequence), with no flip fallback. Outside Recognize, only a first
+/// encounter shows a pick: the acquire on-ramp, which additionally requires an
+/// atomic answer.
 pub fn current_question(
     session: &Session,
     store: &Store,
@@ -198,18 +199,20 @@ pub fn current_question(
     let card = session.current()?;
     let ai = augment.distractors(card.id());
     let seed = choice::seed_for(card.id(), session.appearance(card.id()));
-    // First encounter: the acquire pick needs an atomic answer plus a full set
-    // of cached AI distractors; otherwise it is a plain recall attempt.
+    // A Recognize session is pick-only: assemble filters its roster to
+    // recognizable cards, so every card it serves builds a pick — a first
+    // encounter and a repeat alike, and a `% reveal: line` card on its whole
+    // ordered sequence. There is no plain-flip fallback here.
+    if session.depth() == Depth::Recognize {
+        return choice::build(card, seed, ai?);
+    }
+    // Outside Recognize, only a first encounter shows a pick: the acquire
+    // on-ramp, which needs an atomic answer plus a full set of cached
+    // distractors. Anything else is a plain recall/reconstruct attempt.
     if store.get(card.id()).is_none() {
         return choice::recognition_question(card, seed, ai);
     }
-    // A seen card only quizzes as a pick in a Recognize session, and only from
-    // cached AI distractors (whole-sequence orderings for a `% reveal: line`
-    // card); without them it falls back to a plain reveal.
-    if session.depth() != Depth::Recognize {
-        return None;
-    }
-    choice::build(card, seed, ai?)
+    None
 }
 
 /// Grades a pick against the same question [`state`] served. `None` when no

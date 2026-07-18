@@ -1316,6 +1316,46 @@ fn choices_keep_their_order_across_a_full_tutor_round_trip() {
 }
 
 #[test]
+fn recognize_is_unavailable_and_empty_on_an_unaugmented_deck() {
+    // Recognize is pick-only: an un-augmented deck can build no pick, so the
+    // listing greys it out (`can_recognize` false) and a Recognize session over
+    // it schedules nothing at all — no plain-flip fallback.
+    let (base, _guard) = spawn_full_server(None);
+
+    let resp = http(&base, "GET", "/api/decks", &[], &[]);
+    let decks: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    let recent = decks["recent"].as_array().expect("recent decks");
+    let find = |name: &str| {
+        recent
+            .iter()
+            .find(|d| d["name"] == name)
+            .unwrap_or_else(|| panic!("deck {name} not listed: {decks}"))
+    };
+    assert_eq!(
+        false,
+        find("choice.txt")["can_recognize"],
+        "un-augmented deck can't recognize"
+    );
+    assert_eq!(
+        true,
+        find("choice-armed.txt")["can_recognize"],
+        "the armed deck can recognize"
+    );
+
+    // Selecting Recognize on the un-augmented deck schedules nothing.
+    let resp = post_json(
+        &base,
+        "/api/select",
+        r#"{"deck":"choice.txt","depth":"recognize"}"#,
+    );
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert!(body["card"].is_null(), "no card scheduled: {body}");
+    assert_eq!("done", body["phase"], "empty recognize session: {body}");
+    assert_eq!(0, body["initial"], "nothing entered the roster: {body}");
+}
+
+#[test]
 fn cloze_choice_options_with_ai_distractors_keep_their_order_across_pulls() {
     // High-fidelity shape of the 2026-07-14 report: a two-hole cloze card whose
     // hole has AI distractors cached, served as a choice, answered, then the
