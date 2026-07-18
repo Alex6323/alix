@@ -10,15 +10,16 @@
 //! joined as **netstrings** (`<byte-len>:<bytes>,`), which is injection-proof:
 //! no field's content can imitate a field boundary. The fields, in order, are:
 //!
-//! 1. `card-id-v1` - a format-version tag, so a future algorithm revision is
-//!    distinguishable and never silently collides with a v1 id.
-//! 2. the role tag (`plain` / `cloze` / `reverse`), so e.g. a reversed card
-//!    cannot collide with a plain card that happens to share the same back text.
-//! 3. the deck id (the deck's frontmatter `id:`, the identity namespace - never
-//!    the filename).
-//! 4. the content field(s): one joined answer for plain/reversed cards, or, for
-//!    cloze, one `hash_repr` line per answer line followed by `#cloze:N` (the
-//!    0-based index of the hole this sub-card asks).
+//! 1. `card-id-v1` - a format-version tag, so a future algorithm revision is distinguishable and
+//!    never silently collides with a v1 id.
+//! 2. the role tag (`plain` / `cloze` / `reverse`), so e.g. a reversed card cannot collide with a
+//!    plain card that happens to share the same back text.
+//! 3. the deck id (the deck's frontmatter `id:`, the identity namespace - never the filename).
+//! 4. the content field(s): the front (question) then the joined answer for plain/reversed cards,
+//!    so two cards sharing an answer but asking different questions stay distinct; or, for cloze,
+//!    one fenced line per answer line followed by `#cloze:N` (the 0-based index of the hole this
+//!    sub-card asks). A cloze card has no separately-authored front - its prompt is its content -
+//!    so no front field is added to it.
 //!
 //! Every field is NFC-normalized then whitespace-collapsed over a **closed ASCII
 //! set** ([`normalize_ws`]) before framing. NFC makes the id depend on the visual
@@ -165,20 +166,32 @@ fn hash_fields(deck_id: &str, role: Role, content: &[String]) -> String {
     hex
 }
 
-/// The id of a plain (front→back) card. `answer` is its back lines joined by LF.
-pub fn plain_id_hex(deck_id: &str, answer: &str) -> Result<String, IdError> {
-    reject_controls(deck_id)?;
-    reject_controls(answer)?;
-    Ok(hash_fields(deck_id, Role::Plain, &[answer.to_string()]))
+/// The id of a plain (front→back) card. `front` is its question; `answer` is its
+/// back lines joined by LF. Both are part of the identity, so two cards that share
+/// an answer but ask different questions are distinct cards.
+pub fn plain_id_hex(deck_id: &str, front: &str, answer: &str) -> Result<String, IdError> {
+    front_back_id(deck_id, Role::Plain, front, answer)
 }
 
-/// The id of the reversed half of a `direction: both`/`reverse` card. `answer` is
-/// the reversed card's back (the original front) lines joined by LF. Tagged
-/// `reversed` so it cannot collide with a plain card sharing the same text.
-pub fn reversed_id_hex(deck_id: &str, answer: &str) -> Result<String, IdError> {
+/// The id of the reversed half of a `direction: both`/`reverse` card. `front` and
+/// `answer` are the reversed card's OWN sides (the swap of its forward sibling:
+/// front is the original answer, answer is the original front). Tagged `reverse`
+/// so it cannot collide with a plain card sharing the same two sides.
+pub fn reversed_id_hex(deck_id: &str, front: &str, answer: &str) -> Result<String, IdError> {
+    front_back_id(deck_id, Role::Reversed, front, answer)
+}
+
+/// Shared body for the two front→back roles: reject forbidden controls in every
+/// field, then hash `[front, answer]` as the content (front first).
+fn front_back_id(deck_id: &str, role: Role, front: &str, answer: &str) -> Result<String, IdError> {
     reject_controls(deck_id)?;
+    reject_controls(front)?;
     reject_controls(answer)?;
-    Ok(hash_fields(deck_id, Role::Reversed, &[answer.to_string()]))
+    Ok(hash_fields(
+        deck_id,
+        role,
+        &[front.to_string(), answer.to_string()],
+    ))
 }
 
 /// The id of a cloze sub-card, built from the parsed answer `lines` and the
@@ -223,18 +236,36 @@ pub fn cloze_id_hex(
 
 #[cfg(test)]
 mod tests {
-    use super::ClozeSegment::{Hole, Text};
-    use super::*;
+    use super::{
+        ClozeSegment::{Hole, Text},
+        *,
+    };
 
+    /// Holds the front fixed at "q" so an invariant test can vary deck/answer
+    /// alone; the golden vectors and the front-sensitivity test below pass the
+    /// front explicitly.
     fn plain(deck: &str, back: &str) -> String {
-        plain_id_hex(deck, back).unwrap()
+        plain_id_hex(deck, "q", back).unwrap()
+    }
+
+    #[test]
+    fn front_is_part_of_identity() {
+        // Same deck, same answer, different question -> different card. This is
+        // the front-inclusion decision: identity is the whole (question, answer).
+        assert_ne!(
+            plain_id_hex("deck", "When did WWII end?", "1945").unwrap(),
+            plain_id_hex("deck", "When were the atomic bombs dropped?", "1945").unwrap(),
+        );
     }
 
     #[test]
     fn id_is_32_lowercase_hex_chars() {
         let id = plain("deck", "an answer");
         assert_eq!(32, id.len());
-        assert!(id.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+        assert!(
+            id.chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+        );
     }
 
     #[test]
@@ -243,8 +274,12 @@ mod tests {
     }
 
     #[test]
-    fn a_reversed_card_never_collides_with_a_plain_card_sharing_its_back() {
-        assert_ne!(plain("deck", "x"), reversed_id_hex("deck", "x").unwrap());
+    fn a_reversed_card_never_collides_with_a_plain_card_sharing_its_sides() {
+        // Same deck, same front ("q") and back ("x"), only the role differs.
+        assert_ne!(
+            plain("deck", "x"),
+            reversed_id_hex("deck", "q", "x").unwrap()
+        );
     }
 
     #[test]
@@ -281,14 +316,29 @@ mod tests {
 
     #[test]
     fn a_raw_control_byte_in_a_plain_answer_is_rejected() {
-        assert_eq!(Err(IdError::ControlChar(0x1f)), plain_id_hex("deck", "a\u{1f}b"));
-        assert_eq!(Err(IdError::ControlChar(0x00)), plain_id_hex("deck", "a\u{0}b"));
+        assert_eq!(
+            Err(IdError::ControlChar(0x1f)),
+            plain_id_hex("deck", "q", "a\u{1f}b")
+        );
+        assert_eq!(
+            Err(IdError::ControlChar(0x00)),
+            plain_id_hex("deck", "q", "a\u{0}b")
+        );
+    }
+
+    #[test]
+    fn a_raw_control_byte_in_a_plain_front_is_rejected() {
+        // The front is a content field too, so it gets the same tripwire.
+        assert_eq!(
+            Err(IdError::ControlChar(0x1f)),
+            plain_id_hex("deck", "a\u{1f}b", "ans")
+        );
     }
 
     #[test]
     fn whitespace_controls_and_ordinary_text_are_accepted() {
-        assert!(plain_id_hex("deck", "a\tb\nc").is_ok()); // tab + LF are allowed
-        assert!(plain_id_hex("deck", "normal answer").is_ok());
+        assert!(plain_id_hex("deck", "q", "a\tb\nc").is_ok()); // tab + LF are allowed
+        assert!(plain_id_hex("deck", "q", "normal answer").is_ok());
         assert!(cloze_id_hex("deck", &[vec![Text("hat "), Hole("16")]], 0).is_ok());
     }
 
@@ -346,25 +396,42 @@ mod tests {
 
     #[test]
     fn golden_vectors_are_frozen() {
-        assert_eq!("60997fd78496e1a5a69a4560aa9d475e", plain("git-basics", "chemical energy stored in glucose"));
-        assert_eq!("91e64776024f4813b6e99503a87ec3ca", reversed_id_hex("git-basics", "7x^6").unwrap());
+        // Plain: front + answer both hashed (front-inclusion).
+        assert_eq!(
+            "604dbbb8910c77d1b01ab2fc622f94e5",
+            plain_id_hex("git-basics", "How do you stage a file?", "git add").unwrap()
+        );
+        // Reversed: the swapped sides of the same card, tagged `reverse`.
+        assert_eq!(
+            "b8d4e2ba8f85bfed448f09357d2ce1a4",
+            reversed_id_hex("git-basics", "git add", "How do you stage a file?").unwrap()
+        );
+        // Cloze: unchanged by front-inclusion (a cloze has no separate front), so
+        // this value must equal Build 1's - a regression guard on the cloze path.
         assert_eq!(
             "9beb57c5047bea9c951c9b0fed770289",
             cloze_id_hex(
                 "de-states",
-                &[vec![Text("Deutschland hat "), Hole("16"), Text(" Bundesl\u{e4}nder.")]],
+                &[vec![
+                    Text("Deutschland hat "),
+                    Hole("16"),
+                    Text(" Bundesl\u{e4}nder.")
+                ]],
                 0,
             )
             .unwrap(),
         );
         // NFC and NFD of "Übung" produce the SAME frozen id (locks NFC).
-        assert_eq!("f1a08a952b46a261c7fa9dffa1eab584", plain("\u{dc}bung", "x"));
-        assert_eq!("f1a08a952b46a261c7fa9dffa1eab584", plain("U\u{308}bung", "x"));
+        assert_eq!("5178898608db3e9d81dea6737c333140", plain("\u{dc}bung", "x"));
+        assert_eq!(
+            "5178898608db3e9d81dea6737c333140",
+            plain("U\u{308}bung", "x")
+        );
         // A whitespace-bearing vector, so a skip-collapse impl computes a
         // different value and fails (the review's "goldens never exercise
         // normalize_ws" gap).
-        assert_eq!("c041a023da99c1b859c3d014ada02e87", plain("deck", "a  b"));
-        assert_eq!("c041a023da99c1b859c3d014ada02e87", plain("deck", "a b"));
+        assert_eq!("562da7540424e3ba840eeccee26ce1c9", plain("deck", "a  b"));
+        assert_eq!("562da7540424e3ba840eeccee26ce1c9", plain("deck", "a b"));
     }
 
     #[test]
@@ -388,7 +455,10 @@ mod tests {
         let mut fields = Vec::new();
         while !bytes.is_empty() {
             let colon = bytes.iter().position(|&b| b == b':').unwrap();
-            let len: usize = std::str::from_utf8(&bytes[..colon]).unwrap().parse().unwrap();
+            let len: usize = std::str::from_utf8(&bytes[..colon])
+                .unwrap()
+                .parse()
+                .unwrap();
             let start = colon + 1;
             fields.push(bytes[start..start + len].to_vec());
             bytes = &bytes[start + len + 1..]; // skip the trailing comma
@@ -414,8 +484,9 @@ mod tests {
         /// control (the exact `reject_controls` rule), across arbitrary strings.
         #[test]
         fn id_ok_iff_no_forbidden_control(s in any::<String>()) {
+            // Front held clean ("q"), so the error tracks the answer alone.
             let forbidden = s.chars().any(|c| (c as u32) < 0x20 && !WHITESPACE.contains(&c));
-            prop_assert_eq!(plain_id_hex("deck", &s).is_err(), forbidden);
+            prop_assert_eq!(plain_id_hex("deck", "q", &s).is_err(), forbidden);
         }
 
         /// #3 normalize_ws is idempotent and leaves no collapsible whitespace.
@@ -431,8 +502,8 @@ mod tests {
         #[test]
         fn plain_and_reversed_never_collide(s in "[^\\x00-\\x1f]*") {
             prop_assert_ne!(
-                plain_id_hex("deck", &s).unwrap(),
-                reversed_id_hex("deck", &s).unwrap(),
+                plain_id_hex("deck", "q", &s).unwrap(),
+                reversed_id_hex("deck", "q", &s).unwrap(),
             );
         }
     }
