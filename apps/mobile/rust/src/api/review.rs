@@ -887,6 +887,19 @@ mod tests {
             &root.join("d.txt"),
             "# q1\n\ta1\n# q2\n\ta2\n# q3\n\ta3\n# q4\n\ta4\n",
         );
+        // Cache a full set of AI distractors so a Recognize pick can be built;
+        // options are never sampled from sibling answers.
+        let store_path = alix::workspace::root_store_path(root);
+        let mut cache =
+            alix::augment::AugmentCache::open(alix::augment::augment_path_for(&store_path));
+        for card in &alix::deck::Deck::load(&root.join("d.txt")).unwrap().cards {
+            cache.set_distractors(
+                card.id(),
+                vec!["w1".to_string(), "w2".to_string(), "w3".to_string()],
+            );
+        }
+        cache.save().unwrap();
+
         let s = opened_after_acquire(&root.join("d.txt"), root, Some(Depth::Recognize));
         let state = s.state(Some(LATER));
         assert_eq!(state.mode, Mode::Choice);

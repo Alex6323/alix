@@ -56,14 +56,16 @@ a deck, that default is Recognize if it already has AI-generated distractors
 genuine multiple-choice pick is ready to go; otherwise it's Recall.
 
 - **Recognize** — unscheduled and boolean. There's no FSRS state for it at
-  all, just a per-card *recognized* flag. Where there's enough material to
-  build one, it's a genuine multiple-choice pick (AI-generated distractors
-  plus sampling from the rest of the session — a cloze card asks you to pick
-  its gap, a line card to pick the next line); otherwise it falls back to the
+  all, just a per-card *recognized* flag. Where the deck has cached AI
+  distractors (`alix deck augment --target choices`) it's a genuine
+  multiple-choice pick — a cloze card asks you to pick its gap, a line card to
+  pick the whole sequence in the right order; otherwise it falls back to the
   same attempt-then-reveal a brand-new card gets (below), graded **Knew it** /
-  **Not yet**. A correct pick marks the card recognized; a quiet **"I
-  guessed"** link right after lets you undo that, re-queuing it. A wrong pick
-  shows which option was right, then **Continue** re-queues it too.
+  **Not yet**. Options are never sampled from other cards' answers, so a deck
+  without an augmentation simply reveals rather than showing a made-up pick. A
+  correct pick marks the card recognized; a quiet **"I guessed"** link right
+  after lets you undo that, re-queuing it. A wrong pick shows which option was
+  right, then **Continue** re-queues it too.
 - **Recall** *(the default)* — the classic flashcard: bring the answer to
   mind, reveal it, and self-grade. Its own FSRS schedule.
 - **Reconstruct** — produce the answer in full, on its **own independent FSRS

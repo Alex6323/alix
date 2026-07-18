@@ -184,9 +184,12 @@ pub fn state(
 /// it holds still while the card is up and reshuffles the next time it is
 /// served.
 ///
-/// A first encounter renders a recognition pick only under the strict bar
-/// (atomic answer plus a full set of cached AI distractors); a Recognize
-/// session picks among sibling backs; any other depth renders no pick.
+/// A pick renders only from a deck's cached AI distractors (`alix deck augment
+/// --target choices`); options are never sampled from other cards' answers, so
+/// a card without a cached augmentation falls back to a plain reveal (flip)
+/// rather than a multiple-choice of junk sibling answers. A first encounter
+/// (the acquire bar) additionally requires an atomic answer; a seen card in a
+/// Recognize session may quiz on a whole multi-line sequence.
 pub fn current_question(
     session: &Session,
     store: &Store,
@@ -195,13 +198,18 @@ pub fn current_question(
     let card = session.current()?;
     let ai = augment.distractors(card.id());
     let seed = choice::seed_for(card.id(), session.appearance(card.id()));
+    // First encounter: the acquire pick needs an atomic answer plus a full set
+    // of cached AI distractors; otherwise it is a plain recall attempt.
     if store.get(card.id()).is_none() {
-        return choice::recognition_question(card, session.cards(), seed, ai);
+        return choice::recognition_question(card, seed, ai);
     }
+    // A seen card only quizzes as a pick in a Recognize session, and only from
+    // cached AI distractors (whole-sequence orderings for a `% reveal: line`
+    // card); without them it falls back to a plain reveal.
     if session.depth() != Depth::Recognize {
         return None;
     }
-    choice::build(card, session.cards(), seed, ai)
+    choice::build(card, seed, ai?)
 }
 
 /// Grades a pick against the same question [`state`] served. `None` when no
@@ -287,18 +295,31 @@ mod tests {
         }
     }
 
+    /// Arms a full set of cached AI distractors on every card, so a Recognize /
+    /// acquire pick can be built. Distractors are never sampled from siblings,
+    /// so a pick renders only for a card whose deck has been augmented.
+    fn arm(augment: &mut AugmentCache, cards: &[Card]) {
+        for card in cards {
+            augment.set_distractors(
+                card.id(),
+                vec!["w1".to_string(), "w2".to_string(), "w3".to_string()],
+            );
+        }
+    }
+
     #[test]
     fn mode_follows_the_depth_and_reveal_matrix() {
-        let (mut store, augment, _dir) = fixtures();
+        let (mut store, mut augment, _dir) = fixtures();
         let flip = parse("# q\n\ta\n");
         let line = parse("# q\n\t% reveal: line\n\tone\n\ttwo\n");
-        // Recognize renders a Choice only when a pick can be built, so its
-        // case needs enough siblings for distractors (a lone card falls back
-        // to Flip, see `a_recognize_card_with_no_buildable_pick...`).
+        // Recognize renders a Choice only when a pick can be built, so its case
+        // needs cached AI distractors (a card without them falls back to Flip,
+        // see `a_recognize_card_with_no_buildable_pick...`).
         let many = parse(FOUR);
         seen(&mut store, &flip);
         seen(&mut store, &line);
         seen(&mut store, &many);
+        arm(&mut augment, &many);
 
         let cases = [
             (flip.clone(), Depth::Recall, Mode::Flip),
@@ -400,8 +421,7 @@ mod tests {
         assert_eq!(view.at.as_deref(), Some("src/lib.rs:10-20"));
     }
 
-    /// Four seen cards with distinct answers: enough siblings for a plain
-    /// Recognize pick with no AI distractors at all.
+    /// Four cards with distinct single-line answers.
     const FOUR: &str = "# q1\n\ta1\n# q2\n\ta2\n# q3\n\ta3\n# q4\n\ta4\n";
 
     #[test]
@@ -409,30 +429,30 @@ mod tests {
         let (mut store, mut augment, _dir) = fixtures();
         let cards = parse(FOUR);
         seen(&mut store, &cards);
+        arm(&mut augment, &cards);
 
+        // A seen card outside a Recognize session shows no pick, cached
+        // distractors or not.
         let recall = session_at(cards.clone(), &store, Depth::Recall, NOW);
         assert_eq!(state(&recall, &store, &augment, Some(NOW)).choices, None);
 
         let recognize = session_at(cards.clone(), &store, Depth::Recognize, NOW);
         let options = state(&recognize, &store, &augment, Some(NOW))
             .choices
-            .expect("a recognize pick");
+            .expect("cached distractors arm the Recognize pick");
         assert_eq!(options.len(), crate::choice::NUM_OPTIONS);
 
-        // A first encounter shows a recognition pick only under the strict
-        // bar: without a full set of cached AI distractors it stays a plain
-        // attempt-then-reveal.
+        // A first encounter (the acquire bar) shows a recognition pick only
+        // under the strict bar: without a full set of cached AI distractors it
+        // stays a plain attempt-then-reveal.
         let fresh_store = Store::open(_dir.path().join("fresh.json")).unwrap();
+        let empty_augment = AugmentCache::open(_dir.path().join("empty.json"));
         let acquire = session_at(cards.clone(), &fresh_store, Depth::Recall, NOW);
-        let bare = state(&acquire, &fresh_store, &augment, Some(NOW));
+        let bare = state(&acquire, &fresh_store, &empty_augment, Some(NOW));
         assert!(bare.acquire);
-        assert_eq!(bare.choices, None, "no distractors, no recognition pick");
+        assert_eq!(bare.choices, None, "no distractors, no acquire pick");
 
-        let id = cards[0].id();
-        augment.set_distractors(
-            id,
-            vec!["w1".to_string(), "w2".to_string(), "w3".to_string()],
-        );
+        // The same session, now reading the armed cache, arms the pick.
         let armed = state(&acquire, &fresh_store, &augment, Some(NOW));
         assert!(armed.choices.is_some(), "full distractors arm the pick");
     }
@@ -454,9 +474,10 @@ mod tests {
 
     #[test]
     fn state_options_and_choose_agree_and_hold_still() {
-        let (mut store, augment, _dir) = fixtures();
+        let (mut store, mut augment, _dir) = fixtures();
         let cards = parse(FOUR);
         seen(&mut store, &cards);
+        arm(&mut augment, &cards);
         let session = session_at(cards, &store, Depth::Recognize, NOW);
 
         let question = current_question(&session, &store, &augment).expect("a pick");

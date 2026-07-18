@@ -46,6 +46,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   The mobile app seeds the same deck into a fresh app-private folder.
 
 ### Changed
+- **Breaking: a multiple-choice pick now requires a cached AI augmentation;
+  options are never sampled from other cards.** Distractors were previously
+  topped up by sampling the rest of the session's answers, which produced junk
+  options (unrelated ones that gave the answer away, or near-duplicates). A
+  Recognize or acquire-bar pick now renders only from a deck's cached
+  distractors (`alix deck augment --target choices`); a card without them falls
+  back to a plain attempt-then-reveal instead of a made-up pick. Run the augment
+  to keep multiple-choice on a deck that relied on sampling.
 - **The web app names your configured AI backend instead of assuming
   Claude.** The tutor header and the "working…" progress lines during
   augment and the exam now show the `[ask] backend` you actually use, so a

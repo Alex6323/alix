@@ -751,16 +751,20 @@ fn explain_state_serves_the_keypoints_rubric_cached_or_fallback() {
 fn recognize_state_offers_gap_options_for_a_cloze_card() {
     let dir = tempfile::tempdir().unwrap();
     let deck = dir.path().join("d.txt");
-    // A real expanded cloze card (its sub-card's back is the bare gap text)
-    // plus sibling cards whose backs are the gap distractors.
-    let text =
-        "# where\n% reveal: cloze\n\tThe {{cat}} sat here\n# a\n\tdog\n# b\n\tfish\n# c\n\tbird\n";
+    // A real expanded cloze card: its sub-card's back is the bare gap text, an
+    // atomic answer that a Recognize pick fills from cached AI distractors.
+    let text = "# where\n% reveal: cloze\n\tThe {{cat}} sat here\n";
     std::fs::write(&deck, text).unwrap();
     let cards = crate::parser::parse_str("d.txt", text).unwrap();
     assert_eq!(vec!["cat".to_string()], cards[0].back); // gap text is the back
+    let id = cards[0].id();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
-    store.get_or_insert(cards[0].id(), 0); // seen → the Recognize MC, not the acquire on-ramp
-    let r = reviewing_at(deck, cards, &store, Depth::Recognize);
+    store.get_or_insert(id, 0); // seen → the Recognize MC, not the acquire on-ramp
+    let mut r = reviewing_at(deck, cards, &store, Depth::Recognize);
+    r.augment.set_distractors(
+        id,
+        vec!["dog".to_string(), "fish".to_string(), "bird".to_string()],
+    );
 
     let dto = review_state(Some(&r), &store);
     let opts = dto
@@ -815,10 +819,10 @@ fn recognize_state_quizzes_a_line_card_on_the_whole_sequence_not_a_single_step()
 
 #[test]
 fn recognize_state_offers_no_choices_for_a_line_card_with_no_cached_distractors() {
-    // Same card, but the augment cache holds nothing: `build` can't reach four
-    // distinct options (this is the only card in the deck, so the offline pool
-    // is empty too), so it falls back to `None` — the client's self-report
-    // chips, not a synthesized pick-one-step question.
+    // Same card, but the augment cache holds nothing: with no cached distractors
+    // `build` can't reach four options (they are never sampled from other
+    // cards), so it falls back to `None` — the client's self-report chips, not a
+    // synthesized pick-one-step question.
     let dir = tempfile::tempdir().unwrap();
     let deck = dir.path().join("d.txt");
     let text = "# steps\n% reveal: line\n\tfirst\n\tsecond\n\tthird\n";
@@ -853,8 +857,8 @@ fn recognize_state_reshuffles_choice_options_on_the_next_appearance_but_not_mid_
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
     store.get_or_insert(id, 0); // seen → the Recognize MC, not the acquire on-ramp
     let mut r = reviewing_at(deck, cards, &store, Depth::Recognize);
-    // A full set of cached AI distractors so the lone card can build a valid MC
-    // (there's no other card in the deck to sample offline distractors from).
+    // A full set of cached AI distractors so the card can build a valid MC
+    // (distractors are never sampled from other cards).
     r.augment.set_distractors(
         id,
         vec![

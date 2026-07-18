@@ -27,6 +27,7 @@ use std::{
 
 use alix::{
     assemble::{AssembleConfig, Pacing},
+    augment::{self, AugmentCache},
     config::{Audience, Config},
     parser,
     recent::RecentDecks,
@@ -275,15 +276,17 @@ fn spawn_test_server_fixture(token: Option<&str>, extra: impl FnOnce(&Path)) -> 
     )
 }
 
-/// Five single-line, all-distinct-answer cards — enough sibling pool for a
-/// real offline multiple-choice question (`src/choice.rs::build` needs
-/// `NUM_OPTIONS - 1 == 3` distinct distractors) without any AI augmentation.
+/// Five single-line, distinct-answer cards. The fixture writes this twice: as
+/// `choice.txt` (for the augment-generation tests, un-augmented) and as
+/// `choice-armed.txt` (for the choose/order tests, with cached AI distractors so
+/// a Recognize session builds a real pick). Distractors are never sampled from
+/// sibling answers, so only the armed copy renders choices. See
+/// [`spawn_full_server_fixture`].
 const CHOICE_DECK: &str =
     "# 1 + 1\n\t2\n\n# 2 + 2\n\t4\n\n# 3 + 3\n\t6\n\n# 4 + 4\n\t8\n\n# 5 + 5\n\t10\n";
 
 /// [`CHOICE_DECK`]'s authored front → back, so a test can find which option is
-/// correct without hard-coding a queue order `choice::build`'s sibling-pool
-/// sampling doesn't actually guarantee.
+/// correct without hard-coding a queue order the shuffle doesn't guarantee.
 fn choice_answer(front: &str) -> &'static str {
     match front {
         "1 + 1" => "2",
@@ -311,10 +314,11 @@ const TRACE_DECK: &str = "% trace: how it works\n\
 const TRACE_SOURCE: &str = "first\nsecond\nthird\n";
 
 /// Richer than [`spawn_test_server`]: the same open (no-token) server, but its
-/// decks dir also carries [`CHOICE_DECK`] (pre-seeded "seen" in the store, so
-/// a Recognize-depth session quizzes it via the sibling-pool multiple-choice
-/// builder instead of the AI-only acquire on-ramp — see `current_question`,
-/// `src/serve/dto.rs`) and [`TRACE_DECK`] (routed to a real `Walk` by the real
+/// decks dir also carries [`CHOICE_DECK`] twice — `choice.txt` (seen, no cached
+/// distractors, for the augment-generation tests) and `choice-armed.txt` (seen
+/// with cached AI distractors, so a Recognize-depth session quizzes it as a real
+/// multiple-choice — see `current_question`, `src/serve/dto.rs`) — and
+/// [`TRACE_DECK`] (routed to a real `Walk` by the real
 /// classifier in `assemble::select`, for the walk and trace-exam families).
 ///
 /// `ask_command`, when `Some`, points `[ask] command` at a fake CLI — see this
@@ -336,21 +340,34 @@ fn spawn_full_server_fixture(
     let dir = TempDir::new().unwrap();
     std::fs::write(dir.path().join("sample.txt"), FIXTURE_DECK).unwrap();
     std::fs::write(dir.path().join("choice.txt"), CHOICE_DECK).unwrap();
+    std::fs::write(dir.path().join("choice-armed.txt"), CHOICE_DECK).unwrap();
     std::fs::write(dir.path().join("trace.txt"), TRACE_DECK).unwrap();
     std::fs::write(dir.path().join("source.txt"), TRACE_SOURCE).unwrap();
     extra(dir.path());
     let store_path = dir.path().join("store.json");
 
-    // Pre-seed the choice deck's cards as "seen" (a store entry, no
-    // `recognized_ms`) so a Recognize session quizzes them via
-    // `choice::build`'s offline sibling-pool sampler rather than the
-    // AI-distractor-only acquire on-ramp (`choice::recognition_question`).
+    // Two copies of the choice deck, distinct filenames → distinct card ids:
+    // `choice.txt` is seen but NOT augmented, so the augment-generation tests
+    // still have `choices` warm items to build; `choice-armed.txt` is seen AND
+    // carries a full set of cached AI distractors, so the choose/order tests
+    // render a real pick. Distractors are never sampled from siblings, so the
+    // cache is the only way to arm a pick. They are non-numeric, so none
+    // collides with a card's own numeric answer and gets dropped as a duplicate.
     {
         let mut seed = Store::open(&store_path).unwrap();
+        let mut aug = AugmentCache::open(augment::augment_path_for(&store_path));
         for card in parser::parse_str("choice.txt", CHOICE_DECK).unwrap() {
             seed.get_or_insert(card.id(), 0);
         }
+        for card in parser::parse_str("choice-armed.txt", CHOICE_DECK).unwrap() {
+            seed.get_or_insert(card.id(), 0);
+            aug.set_distractors(
+                card.id(),
+                vec!["wrong a".into(), "wrong b".into(), "wrong c".into()],
+            );
+        }
         seed.save().unwrap();
+        aug.save().unwrap();
     }
 
     let store = Store::open(&store_path).unwrap();
@@ -1197,7 +1214,7 @@ fn post_api_choose_reports_the_correct_index_for_a_recognize_session() {
     let resp = post_json(
         &base,
         "/api/select",
-        r#"{"deck":"choice.txt","depth":"recognize"}"#,
+        r#"{"deck":"choice-armed.txt","depth":"recognize"}"#,
     );
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
@@ -1238,7 +1255,7 @@ fn choices_keep_their_order_across_state_pulls_while_the_card_is_on_screen() {
     let resp = post_json(
         &base,
         "/api/select",
-        r#"{"deck":"choice.txt","depth":"recognize"}"#,
+        r#"{"deck":"choice-armed.txt","depth":"recognize"}"#,
     );
     let first: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     let before = first["choices"].clone();
@@ -1270,7 +1287,7 @@ fn choices_keep_their_order_across_a_full_tutor_round_trip() {
     let resp = post_json(
         &base,
         "/api/select",
-        r#"{"deck":"choice.txt","depth":"recognize"}"#,
+        r#"{"deck":"choice-armed.txt","depth":"recognize"}"#,
     );
     let first: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     let before = first["choices"].clone();
