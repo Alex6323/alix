@@ -131,14 +131,21 @@ const _brandInk = Color(0xFF1A1206);
 /// One theme's CSS-var vocabulary (an assets/web/theme.css `[data-theme]`
 /// block), ported to Color literals. `text`/`faint`/`accentInk` are the 3
 /// of the CSS's 4 optional extras this port consumes (the 4th, --brand-text,
-/// has no Dart consumer yet - AlixWordmark's brand color is constant); when
-/// a theme omits them, the CSS's own `:root { --text: var(--ink); ... }`
-/// aliases resolve against whatever --ink/--dim/--void is cascaded for THAT
-/// theme, not literally dark's - so the fall-back here is to this same var
-/// map's own ink/dim/surface, never a hardcoded default. Public (not `_`)
-/// and `@visibleForTesting` only so theme_test.dart can construct a
-/// synthetic omitted-extras case: none of the 4 shipped themes omit any of
-/// them in the current CSS, so real data alone never exercises this path.
+/// has no Dart consumer yet - AlixWordmark's brand color is constant). When
+/// a theme omits them, the REAL cascade does NOT fall back to that theme's
+/// own ink/dim/void: `:root, [data-theme="dark"]` sets --text/--faint/
+/// --accent-ink explicitly (theme.css:156-158), and `:root`'s declarations
+/// apply to every element regardless of which `data-theme` is active, so an
+/// omitting theme's `--text` resolves to DARK's explicit `#c9cdd8`, never
+/// its own `--ink` (verified empirically in Chromium against the real CSS:
+/// github-dark/monokai, which omit the extras, render dark's
+/// #c9cdd8/#6b7085/#08131a even though their own ink/dim/void differ). The
+/// fall-back here is therefore dark's explicit extra (`_darkVars.text`/
+/// `.faint`/`.accentInk`), never this same var map's own ink/dim/surface.
+/// Public (not `_`) and `@visibleForTesting` only so theme_test.dart can
+/// construct a synthetic omitted-extras case: none of the 4 shipped themes
+/// omit any of them in the current CSS, so real data alone never exercises
+/// this path.
 @immutable
 @visibleForTesting
 class ThemeVars {
@@ -154,9 +161,9 @@ class ThemeVars {
     required this.again, // --again
     required this.noteBorder, // --note-border
     required this.noteInk, // --note-ink
-    this.text, // --text, falls back to ink
-    this.faint, // --faint, falls back to dim
-    this.accentInk, // --accent-ink, falls back to surface (--void)
+    this.text, // --text, omitted falls back to dark's explicit --text
+    this.faint, // --faint, omitted falls back to dark's explicit --faint
+    this.accentInk, // --accent-ink, omitted falls back to dark's --accent-ink
   });
 
   final Color surface;
@@ -319,8 +326,10 @@ AlixTokens _tokensFromVars(ThemeVars v) => AlixTokens(
   boltHi: v.boltHi,
   line: v.line,
   dim: v.dim,
-  faint: v.faint ?? v.dim,
-  text: v.text ?? v.ink,
+  // An omitted extra falls back to DARK's explicit value (the real CSS
+  // cascade), not this var map's own dim/ink - see ThemeVars's doc comment.
+  faint: v.faint ?? _darkVars.faint!,
+  text: v.text ?? _darkVars.text!,
   noteBorder: v.noteBorder,
   noteInk: v.noteInk,
 );
@@ -335,7 +344,9 @@ AlixTokens _tokensFromVars(ThemeVars v) => AlixTokens(
 @visibleForTesting
 ThemeData themeFromVars(ThemeVars v, Brightness mode) {
   final tokens = _tokensFromVars(v);
-  final accentInk = v.accentInk ?? v.surface;
+  // Same cascade rule as text/faint above: omitted falls back to dark's
+  // explicit --accent-ink, not this theme's own --void (surface).
+  final accentInk = v.accentInk ?? _darkVars.accentInk!;
   final onError = mode == Brightness.dark ? v.surface : const Color(0xFFFFFFFF);
   final errorContainer = Color.lerp(v.surface, v.again, 0.22)!;
   final onErrorContainer = Color.lerp(v.ink, v.again, 0.55)!;

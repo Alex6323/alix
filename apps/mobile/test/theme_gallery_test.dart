@@ -113,8 +113,18 @@ void main() {
 
       test('tokens + scheme carry the CSS-direct colors', () {
         Color core(String key) => _parseCssColor(raw![key]!);
-        Color extra(String key, String fallback) =>
-            raw!.containsKey(key) ? _parseCssColor(raw[key]!) : core(fallback);
+        // An extra omitted from this theme's own block cascades to DARK's
+        // explicit value in the real CSS (`:root, [data-theme="dark"]`
+        // sets --text/--faint/--accent-ink explicitly, and `:root` applies
+        // regardless of the active `data-theme` - verified in Chromium),
+        // never to this theme's own ink/dim/void. Reads the fall-back from
+        // the DARK block's own PARSED CSS (`cssBlocks['dark']`), not a
+        // hardcoded literal, so the guard stays CSS-authoritative: if
+        // dark's extras ever change in theme.css, this expectation moves
+        // with it and would catch a mapper still using a stale constant.
+        Color extra(String key) => raw!.containsKey(key)
+            ? _parseCssColor(raw[key]!)
+            : _parseCssColor(cssBlocks['dark']![key]!);
 
         final scheme = theme.data.colorScheme;
         final tokens = theme.data.extension<AlixTokens>()!;
@@ -126,16 +136,15 @@ void main() {
         expect(tokens.boltHi, core('bolt-hi'), reason: '--bolt-hi');
         expect(tokens.line, core('line'), reason: '--line');
         expect(tokens.dim, core('dim'), reason: '--dim');
-        expect(tokens.faint, extra('faint', 'dim'), reason: '--faint');
-        expect(tokens.text, extra('text', 'ink'), reason: '--text');
+        expect(tokens.faint, extra('faint'), reason: '--faint');
+        expect(tokens.text, extra('text'), reason: '--text');
         expect(tokens.noteBorder, core('note-border'), reason: '--note-border');
         expect(tokens.noteInk, core('note-ink'), reason: '--note-ink');
 
         expect(scheme.surface, core('void'), reason: '--void');
         expect(scheme.onSurface, core('ink'), reason: '--ink');
         expect(scheme.secondary, core('bolt'), reason: '--bolt');
-        expect(scheme.onSecondary, extra('accent-ink', 'void'),
-            reason: '--accent-ink');
+        expect(scheme.onSecondary, extra('accent-ink'), reason: '--accent-ink');
         expect(scheme.error, core('again'), reason: '--again');
         expect(scheme.outline, core('line'), reason: '--line');
         expect(scheme.onSurfaceVariant, core('dim'), reason: '--dim');

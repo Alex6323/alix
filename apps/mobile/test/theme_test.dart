@@ -50,11 +50,16 @@ void main() {
   });
 
   // themeFromVars's fall-back cascade (--text/--faint/--accent-ink inherit
-  // the SAME theme's own ink/dim/void when a theme block omits them - see
-  // ThemeVars's doc comment). None of the 4 shipped themes (dark/light/
-  // nord/solarized-light) actually omit any of the 3 in assets/web/
-  // theme.css today, so this is exercised here with a synthetic ThemeVars,
-  // not via the CSS drift guard (test/theme_gallery_test.dart).
+  // DARK's explicit CSS values when a theme block omits them - the real
+  // cascade binds `:root, [data-theme="dark"]` to set all 4 extras
+  // explicitly, and `:root` applies regardless of the active `data-theme`,
+  // so an omitting theme's --text resolves to dark's #c9cdd8, never its
+  // own --ink; verified empirically in Chromium against the real
+  // assets/web/theme.css - see ThemeVars's doc comment in theme.dart).
+  // None of the 4 shipped themes (dark/light/nord/solarized-light)
+  // actually omit any of the 3 in assets/web/theme.css today, so this is
+  // exercised here with a synthetic ThemeVars, not via the CSS drift guard
+  // (test/theme_gallery_test.dart).
   const probe = ThemeVars(
     surface: Color(0xFF112233),
     ink: Color(0xFFAABBCC),
@@ -70,13 +75,16 @@ void main() {
     // text / faint / accentInk intentionally omitted.
   );
 
-  test('an omitted extra falls back to the theme\'s own ink/dim/void', () {
+  test('an omitted extra falls back to dark\'s explicit CSS value', () {
     final data = themeFromVars(probe, Brightness.dark);
     final tokens = data.extension<AlixTokens>()!;
-    expect(tokens.text, probe.ink, reason: '--text falls back to --ink');
-    expect(tokens.faint, probe.dim, reason: '--faint falls back to --dim');
-    expect(data.colorScheme.onSecondary, probe.surface,
-        reason: '--accent-ink falls back to --void (surface)');
+    expect(tokens.text, const Color(0xFFC9CDD8),
+        reason: '--text falls back to dark\'s explicit --text, not --ink');
+    expect(tokens.faint, const Color(0xFF6B7085),
+        reason: '--faint falls back to dark\'s explicit --faint, not --dim');
+    expect(data.colorScheme.onSecondary, const Color(0xFF08131A),
+        reason:
+            '--accent-ink falls back to dark\'s explicit --accent-ink, not --void');
   });
 
   test('a present extra overrides its fall-back', () {
