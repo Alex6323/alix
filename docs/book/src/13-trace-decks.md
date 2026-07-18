@@ -100,8 +100,9 @@ choose a subject with a real sequence instead.
 
 ## Walking it
 
-Pick the trace in the [web picker](15-the-web-app.md) — a trace opens as a
-**walk**: a **path rail** you descend (nodes coloring in by Missed it / Partly /
+Pick the trace in the [web picker](15-the-web-app.md), or on the
+[phone](18-the-phone-app.md) (the walk runs fully offline there too):
+a trace opens as a **walk**: a **path rail** you descend (nodes coloring in by Missed it / Partly /
 Got it) with each checkpoint's source shown in a line-numbered excerpt. It goes
 hop by hop:
 
@@ -112,7 +113,8 @@ hop by hop:
    grades review uses). Self-judged and offline by default; set **`[trace]
    auto_grade = true`** in the [config](16-configuration.md) to have the model
    judge your typed prediction against the key points and return a verdict plus a
-   line of feedback (a model call per hop). Either way, a failed or partly hop is
+   line of feedback (a model call per hop; a desktop/web setting, since the
+   phone's walk is always self-judged). Either way, a failed or partly hop is
    a **weak edge** that resurfaces sooner — a failed one resets, a partly steps
    back one stage — while a passed hop advances and fades. Each checkpoint is an
    ordinary card underneath, so this is the normal per-card SRS.
@@ -132,7 +134,8 @@ that compression against the path's checkpoints — AI-graded, exactly like a
 
 You reach it in the browser: the **capstone** offered at the end of a walk
 (`Take the exam?`), or the picker's
-**"Take exam"** button. Like a fact deck, you can sit it **early to test
+**"Take exam"** button. A [paired phone](19-pairing.md) offers the same
+capstone from its own walk. Like a fact deck, you can sit it **early to test
 out** — gated only by `% requires:` (a trace's sourced prerequisites must be
 mastered first).
 

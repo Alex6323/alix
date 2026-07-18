@@ -4,9 +4,11 @@ you would forget it.
 
 This Android app is the mobile client of the alix project. It reviews the
 same decks as the desktop and web versions, fully offline: flip cards,
-gap-fill, line-by-line reveal, multiple choice, typed answers, and an
-explain-style key-point checklist. Progress lives next to your decks as a
-plain file.
+gap-fill, line-by-line reveal, multiple choice, typed answers, an
+explain-style key-point checklist, and a trace deck's predict/reveal/
+self-grade walk. Pick a look from an 18-theme color gallery, the same
+palettes the web app ships. Progress lives next to your decks as a plain
+file.
 
 A new install starts with a small tutorial deck that teaches the app while
 you review it. Delete it when it has nothing left to teach you; it will not
@@ -18,12 +20,15 @@ your devices. On Android 11 and newer this uses the "All files access"
 permission. It is opt-in: if you never pick a shared folder, alix keeps
 everything in its own app storage and the permission is not used.
 
-Review stays fully offline. Optionally, you can pair the app with your own
-alix desktop app on your Wi-Fi (paste the URL alix prints) and the phone
-gains the tutor and the AI exam. The phone talks only to your desktop, with
-a token, on your local network; your desktop answers using whatever AI
-backend you have configured there. The alix project runs no server and has
-no accounts. You can unpair at any time.
+Review, including a trace deck's walk, stays fully offline. Optionally, you
+can pair the app with your own alix desktop app on your Wi-Fi (paste the URL
+alix prints), and the phone borrows the desktop for the tutor, the AI exam
+(a trace's compression exam included), turning a tutor conversation into
+notes on the deck, and generating a new deck from a URL. The phone talks
+only to your desktop, with a token, on your local network; your desktop
+answers using whatever AI backend you have configured there. The alix
+project runs no server, tracks nothing, and has no accounts. You can unpair
+at any time.
 
 Status: early, pre-1.0, under active development. Expect rough edges.
 

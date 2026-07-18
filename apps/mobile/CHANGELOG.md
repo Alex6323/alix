@@ -22,6 +22,37 @@ Release notes, so a release without its section fails loud.
   button.
 - The app now declares the INTERNET permission and allows cleartext HTTP,
   both only for talking to a paired desktop on your LAN.
+- **A trace deck now opens a walk on the phone, fully offline, instead of
+  being refused.** Predict a checkpoint, reveal it against the real
+  gutter-numbered source excerpt, then self-grade: no desktop involved.
+  Once paired, the walk's done screen offers "Take the exam" for the
+  trace's compression question, graded on the desktop the same way a fact
+  deck's exam already is; a pass (or a fail, which is re-walked rather than
+  turned into remediation cards) lands in the phone's own progress store.
+- **The tutor sheet gained "Make a note" beside "Make a card".** Condenses
+  the open conversation into up to three lines on the paired desktop, then
+  appends them to the deck file on the phone; an empty result says
+  "nothing to save" instead of doing nothing silently.
+- **"Generate deck…" in the overflow menu, shown once paired.** Give it a
+  URL and optional guidance; the desktop generates the deck text the same
+  way `alix generate` does, then the phone asks where to save it and
+  writes it under a collision-free file name.
+- **A theme gallery: 18 named themes**, the alix originals plus the web
+  app's editor and slide palettes, picked live from the overflow menu's
+  "Theme…" item. The whole app re-themes without a restart.
+- **The deck picker grew:** workspace rows show their emblem and the
+  dependency tree's branch prefix, a due exam gets its own marker, mastered
+  decks tuck behind a "Mastered · N" row, and a deck now opens straight at
+  the depth you last used instead of asking every time (long-press still
+  re-picks it).
+- **A region breadcrumb above a topology-ordered review**, naming the
+  current region and coloring each region by strength, mirroring the web
+  client.
+- **A "Re-pair" action on the pairing-expired notice**, wherever the app can
+  show one: it reopens the pairing sheet directly instead of sending you
+  back to the menu.
+- About gained one quiet Support line: the free alternative first, a
+  sponsors link second.
 
 ### Fixed
 
