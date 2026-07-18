@@ -102,6 +102,15 @@ pub struct Card {
     /// When `Some`, every reveal/render path uses these instead of `back`. NOT
     /// part of the identity hash — `id()` always hashes the original `back`.
     pub display_back: Option<Vec<String>>,
+    /// The minted identity token (L1 spec §1). `None` until the deck is
+    /// stamped. Dormant: [`Card::id`] ignores it until the flip task.
+    pub token: Option<Arc<str>>,
+    /// For a cloze sub-card: this hole's 0-based document-order index.
+    /// Dormant like `token`.
+    pub hole: Option<u32>,
+    /// True for the swapped half of a `direction: both`/`reverse` card.
+    /// Dormant like `token`.
+    pub reversed: bool,
 }
 
 impl Card {
@@ -131,6 +140,9 @@ impl Card {
             origin: None,
             givens: Vec::new(),
             display_back: None,
+            token: None,
+            hole: None,
+            reversed: false,
         }
     }
 
@@ -160,6 +172,10 @@ impl Card {
         // vice versa, so a `direction: both` visual card reverses sensibly.
         card.image = self.image_back.clone();
         card.image_back = self.image.clone();
+        // The swapped half shares the forward card's token and marks itself
+        // reversed, so the token flip can compose `<token>-r` ids.
+        card.token = self.token.clone();
+        card.reversed = true;
         card
     }
 
@@ -278,6 +294,11 @@ mod tests {
         assert_eq!(fwd.line, rev.line); // same source line -> sibling group
         assert_eq!(fwd.reveal, rev.reveal);
         assert_ne!(fwd.id(), rev.id()); // distinct identity (hashes new back)
+        // The dormant identity fields: plain cards are unreversed, the swapped
+        // half is marked, and the (unset) token is carried over.
+        assert!(!fwd.reversed);
+        assert!(rev.reversed);
+        assert_eq!(fwd.token, rev.token);
     }
 
     #[test]

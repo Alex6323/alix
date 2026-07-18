@@ -208,6 +208,9 @@ pub fn expand(
             origin: None,
             givens: Vec::new(),
             display_back: None,
+            token: None,
+            hole: None,
+            reversed: false,
         });
     }
 

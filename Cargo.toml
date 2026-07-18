@@ -58,6 +58,7 @@ toml = "1"
 toml_edit = "0.25" # comment-preserving edits of alix.local.toml
 twox-hash = "2"
 unicode-normalization = "0.1" # NFC the card-id input so ids are stable across filesystems (macOS NFD vs Linux NFC)
+yaml-rust2 = "0.11" # YAML frontmatter parsing
 zip = { version = "8.6.0", default-features = false, features = ["deflate"], optional = true } # `alix share --zip` / `alix receive`
 
 [features]
