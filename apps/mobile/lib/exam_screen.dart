@@ -36,6 +36,7 @@ class ExamScreen extends StatefulWidget {
     required this.applyPassed,
     required this.applyRemediation,
     required this.nowMs,
+    this.applyFailed,
     this.pollInterval = const Duration(milliseconds: 400),
   });
 
@@ -55,6 +56,13 @@ class ExamScreen extends StatefulWidget {
   /// virtual cards (a closure over `applyRemediation`), returning how many
   /// were created or revived.
   final int Function(String cardsText, BigInt nowMs) applyRemediation;
+
+  /// Records a FAILED trace exam so a re-sit waits out the cooldown; the
+  /// phone owns this write (a closure over the walk session's
+  /// `applyExamFailed`). Null for fact-deck exams, which never call it: a
+  /// fact-deck fail remediates instead of persisting a cooldown-triggering
+  /// failure.
+  final void Function(BigInt nowMs)? applyFailed;
 
   /// The wall clock, injected so tests can fake it.
   final BigInt Function() nowMs;
@@ -83,6 +91,16 @@ class _ExamScreenState extends State<ExamScreen> {
 
   /// Same guard, for turning `remediated` cards into store entries.
   bool _remediationApplied = false;
+
+  /// Same guard, for persisting a failed trace exam (starts its cooldown).
+  bool _failedApplied = false;
+
+  /// How many consecutive null first-poll replies to tolerate before
+  /// falling back to the refusal path (Polish 8b): a slow sitting start
+  /// must not strand the screen, but a genuinely dead server must not spin
+  /// forever either.
+  static const _firstPollRetryLimit = 4;
+  int _firstPollAttempts = 0;
 
   @override
   void initState() {
@@ -130,8 +148,31 @@ class _ExamScreenState extends State<ExamScreen> {
       _expirePairingAndPop();
       return;
     }
-    if (dto == null || !mounted) return;
+    if (!mounted) return;
+    if (dto == null) {
+      _retryFirstPollOrGiveUp();
+      return;
+    }
     _applyDto(dto);
+  }
+
+  /// Polish 8b: the very first poll can return null before the sitting is
+  /// ready on the server (a slow start), which would otherwise strand the
+  /// screen on a blank state forever (no timer is running yet to retry
+  /// it). Once a real DTO has ever landed (`_exam != null`), a later null
+  /// is left to the already-running periodic timer, which retries on its
+  /// own. A bounded number of retries recovers a slow start without
+  /// turning a genuinely dead server into an infinite spinner.
+  void _retryFirstPollOrGiveUp() {
+    if (_exam != null) return;
+    _firstPollAttempts++;
+    if (_firstPollAttempts > _firstPollRetryLimit) {
+      _snackAndPop('The desktop refused the exam.');
+      return;
+    }
+    if (!mounted) return;
+    _pollTimer?.cancel();
+    _pollTimer = Timer(widget.pollInterval, () => _poll());
   }
 
   /// The one place a fresh DTO lands: applies its one-shot side effects
@@ -143,6 +184,14 @@ class _ExamScreenState extends State<ExamScreen> {
     if (dto.phase == 'results' && dto.passed == true && !_passedApplied) {
       _passedApplied = true;
       widget.applyPassed(widget.nowMs());
+    }
+    if (dto.phase == 'results' &&
+        dto.passed == false &&
+        dto.isTrace &&
+        widget.applyFailed != null &&
+        !_failedApplied) {
+      _failedApplied = true;
+      widget.applyFailed!(widget.nowMs());
     }
     if (dto.phase == 'remediated' && !_remediationApplied) {
       _remediationApplied = true;
@@ -379,6 +428,10 @@ class _ExamScreenState extends State<ExamScreen> {
             onPressed: _remediating ? null : _remediate,
             child: const Text('Turn the gaps into cards'),
           ),
+        ],
+        if (!passed && exam.isTrace) ...[
+          const SizedBox(height: 12),
+          Text('Walk the trace again before re-sitting.', style: TextStyle(color: tokens.dim)),
         ],
       ],
     );

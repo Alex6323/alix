@@ -27,6 +27,7 @@ class FakeServerClient implements ServerClient {
     List<bool>? remediateReplies,
     this.expireOnRemediate = false,
     Map<int, Completer<RemoteExam?>>? getGates,
+    this.nullFirstGetCalls = 0,
   })  : getReplies = getReplies ?? const [],
         gradeReplies = gradeReplies ?? const [true],
         remediateReplies = remediateReplies ?? const [true],
@@ -47,6 +48,11 @@ class FakeServerClient implements ServerClient {
   /// cancellation lands), the real-world race the exactly-once guard
   /// protects against.
   final Map<int, Completer<RemoteExam?>> getGates;
+
+  /// How many leading `examGet()` calls return null regardless of
+  /// [getReplies], simulating a slow sitting start (Polish 8b's
+  /// first-poll-null case) before the real replies begin.
+  final int nullFirstGetCalls;
 
   String? startedDeck;
   final List<List<String>> gradeAnswers = [];
@@ -69,8 +75,10 @@ class FakeServerClient implements ServerClient {
     _getCall++;
     final gate = getGates[call];
     if (gate != null) return gate.future;
+    if (call < nullFirstGetCalls) return null;
     if (getReplies.isEmpty) return null;
-    return getReplies[call.clamp(0, getReplies.length - 1)];
+    final repliesCall = call - nullFirstGetCalls;
+    return getReplies[repliesCall.clamp(0, getReplies.length - 1)];
   }
 
   @override
@@ -131,6 +139,10 @@ void main() {
     List<BigInt> passedCalls = const [],
     List<(String, BigInt)> remediationCalls = const [],
     int remediationCountReply = 1,
+    // Left null by default, matching review_screen.dart's real fact-deck
+    // wiring (which never passes applyFailed): pass a list here only for
+    // trace-exam tests that need to observe it fire.
+    List<BigInt>? failedCalls,
   }) async {
     await tester.pumpWidget(MaterialApp(
       home: ExamScreen(
@@ -141,6 +153,7 @@ void main() {
           remediationCalls.add((cardsText, nowMs));
           return remediationCountReply;
         },
+        applyFailed: failedCalls == null ? null : (nowMs) => failedCalls.add(nowMs),
         nowMs: () => BigInt.from(1000),
         pollInterval: _pollInterval,
       ),
@@ -227,6 +240,52 @@ void main() {
     gaps: ['ownership and the GC-free memory model'],
     canRemediate: true,
     isTrace: false,
+    thinking: false,
+  );
+
+  const traceResultsPassed = RemoteExam(
+    phase: 'results',
+    deck: 'rust.txt',
+    strictness: 'balanced',
+    questions: ['Trace the borrow checker through this function.'],
+    passed: true,
+    grades: [
+      RemoteExamGrade(
+        question: 'Trace the borrow checker through this function.',
+        points: ['identifies the move'],
+        answer: 'ownership moves into the callee',
+        verdict: 'PASS',
+        feedback: 'Right on.',
+        missed: [],
+      ),
+    ],
+    gaps: [],
+    canRemediate: false,
+    isTrace: true,
+    thinking: false,
+  );
+
+  const traceResultsFailed = RemoteExam(
+    phase: 'results',
+    deck: 'rust.txt',
+    strictness: 'balanced',
+    questions: ['Trace the borrow checker through this function.'],
+    passed: false,
+    grades: [
+      RemoteExamGrade(
+        question: 'Trace the borrow checker through this function.',
+        points: ['identifies the move'],
+        answer: 'it copies',
+        verdict: 'FAIL',
+        feedback: 'This moves ownership, it does not copy.',
+        missed: ['identifies the move'],
+      ),
+    ],
+    gaps: ['ownership transfer at the call site'],
+    // A trace exam never remediates: the server's can_remediate is always
+    // false for it (T2.3).
+    canRemediate: false,
+    isTrace: true,
     thinking: false,
   );
 
@@ -327,6 +386,130 @@ void main() {
     await tester.pump();
 
     expect(passedCalls, hasLength(1), reason: 'the second, already-in-flight poll must not double-apply');
+  });
+
+  testWidgets(
+      'trace fail: applyFailed exactly once (no double-apply on a duplicate results poll), '
+      'applyPassed never, a re-walk hint renders with no remediate affordance', (tester) async {
+    // Same double-in-flight-poll shape as the applyPassed guard test above:
+    // two ticks resolve to the same terminal trace-fail results DTO, proving
+    // this is a genuine one-shot guard, not just "it happens to poll once".
+    final gate0 = Completer<RemoteExam?>();
+    final gate1 = Completer<RemoteExam?>();
+    final client = FakeServerClient(
+      getReplies: const [grading],
+      getGates: {1: gate0, 2: gate1},
+    );
+    final passedCalls = <BigInt>[];
+    final failedCalls = <BigInt>[];
+    await pumpExam(tester, client: client, passedCalls: passedCalls, failedCalls: failedCalls);
+    await tester.pump(); // examStart -> call 0: grading (schedules the timer)
+
+    await tester.pump(_pollInterval); // tick #1 -> call 1, parked on gate0
+    await tester.pump(_pollInterval); // tick #2 -> call 2, parked on gate1
+
+    gate0.complete(traceResultsFailed);
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Not yet.'), findsOneWidget);
+    expect(find.text('Walk the trace again before re-sitting.'), findsOneWidget);
+    expect(find.text('Turn the gaps into cards'), findsNothing);
+
+    gate1.complete(traceResultsFailed);
+    await tester.pump();
+    await tester.pump();
+
+    expect(failedCalls, hasLength(1), reason: 'the second, already-in-flight poll must not double-apply');
+    expect(failedCalls.single, BigInt.from(1000));
+    expect(passedCalls, isEmpty);
+  });
+
+  testWidgets('trace pass: applyPassed once, applyFailed never, the pass state renders', (tester) async {
+    final client = FakeServerClient(getReplies: const [traceResultsPassed]);
+    final passedCalls = <BigInt>[];
+    final failedCalls = <BigInt>[];
+    await pumpExam(tester, client: client, passedCalls: passedCalls, failedCalls: failedCalls);
+    await tester.pump();
+
+    expect(find.text('Passed.'), findsOneWidget);
+    expect(find.text('Right on.'), findsOneWidget);
+    expect(passedCalls, hasLength(1));
+    expect(failedCalls, isEmpty);
+  });
+
+  testWidgets(
+      'FACT-deck fail leaves the remediate path unchanged and never calls applyFailed '
+      '(mutation guard: proves the trace branch cannot hijack fact decks)', (tester) async {
+    final client = FakeServerClient(getReplies: const [resultsFailed]);
+    // No failedCalls passed: applyFailed stays null, exactly like
+    // review_screen.dart's real fact-deck wiring. If the trace-fail branch
+    // ever fired here despite isTrace: false, it would call a null closure
+    // and this test would crash rather than merely mis-assert.
+    await pumpExam(tester, client: client);
+    await tester.pump();
+
+    expect(find.text('Not yet.'), findsOneWidget);
+    expect(find.text('Turn the gaps into cards'), findsOneWidget);
+    expect(find.text('Walk the trace again before re-sitting.'), findsNothing);
+  });
+
+  testWidgets('first-poll-null: a slow start recovers once the sitting is ready', (tester) async {
+    final client = FakeServerClient(
+      nullFirstGetCalls: 1,
+      getReplies: const [answering2],
+    );
+    await pumpExam(tester, client: client);
+    await tester.pump(); // examStart -> first examGet: null, schedules a bounded retry
+    expect(find.text('Question 1 of 2'), findsNothing, reason: 'still stranded until the retry lands');
+    expect(find.text('The desktop refused the exam.'), findsNothing,
+        reason: 'a single null must retry, not give up immediately');
+
+    await tester.pump(_pollInterval); // the retry fires -> examGet: answering2
+
+    expect(find.text('Question 1 of 2'), findsOneWidget);
+  });
+
+  testWidgets(
+      'first-poll-null: a persistently-null server retries before falling back to the refusal path '
+      '(no infinite spinner)', (tester) async {
+    final client = FakeServerClient(); // getReplies empty: examGet always resolves to null
+    final navigatorKey = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(MaterialApp(
+      navigatorKey: navigatorKey,
+      home: Scaffold(
+        body: Builder(
+          builder: (context) => ElevatedButton(
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => ExamScreen(
+                deckName: 'rust.txt',
+                client: client,
+                applyPassed: (_) {},
+                applyRemediation: (_, _) => 0,
+                nowMs: () => BigInt.from(1000),
+                pollInterval: _pollInterval,
+              ),
+            )),
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('open'));
+    await tester.pump(); // push -> examStart -> first examGet: null, schedules a retry
+
+    // One retry tick: still bounded, not yet given up.
+    await tester.pump(_pollInterval);
+    expect(find.text('The desktop refused the exam.'), findsNothing,
+        reason: 'a single null must retry, not give up immediately');
+
+    // Exhaust the bound (comfortably more ticks than the retry limit).
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(_pollInterval);
+    }
+    await tester.pumpAndSettle();
+
+    expect(find.text('The desktop refused the exam.'), findsOneWidget);
+    expect(find.byType(ExamScreen), findsNothing);
   });
 
   testWidgets('answering navigation keeps typed text across Back/Next', (tester) async {
