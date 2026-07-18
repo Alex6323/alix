@@ -482,13 +482,15 @@ class _TutorSheetState extends State<TutorSheet> {
                         TextButton(
                           key: const ValueKey('tutor-make-note-button'),
                           onPressed: _pendingQuestion == null ? _makeNote : null,
-                          child: const Text('Make a note'),
+                          // Matches the web's "Make this a note" chip wording.
+                          child: const Text('Make this a note'),
                         ),
                         TextButton(
                           key: const ValueKey('tutor-make-card-button'),
                           onPressed:
                               _pendingQuestion == null ? _makeCard : null,
-                          child: const Text('Make a card'),
+                          // Matches the web's "Make this a card" chip wording.
+                          child: const Text('Make this a card'),
                         ),
                       ],
                     ),

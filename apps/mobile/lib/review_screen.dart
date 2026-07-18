@@ -395,7 +395,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
     final crumb = _session.crumb(
       nowMs: BigInt.from(DateTime.now().millisecondsSinceEpoch),
     );
-    if (crumb == null) return const SizedBox.shrink();
+    // Mirrors the web's `.crumb-strip:empty` + `regions.length` guard: a
+    // crumb with no regions renders nothing, not an empty strip.
+    if (crumb == null || crumb.regions.isEmpty) return const SizedBox.shrink();
     return CrumbStrip(crumb: crumb);
   }
 

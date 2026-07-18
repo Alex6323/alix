@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:alix_mobile/bootstrap.dart';
 import 'package:alix_mobile/exam_screen.dart';
+import 'package:alix_mobile/pairing_sheet.dart';
 import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/src/rust/api/review.dart';
 import 'package:alix_mobile/theme.dart';
@@ -18,10 +19,13 @@ const _sans = 'IBM Plex Sans';
 /// The on-device trace walk: predict a checkpoint, reveal the real source
 /// excerpt, self-grade, repeat, then a done tally that can hand off to the
 /// trace exam. Runs entirely on-device (no server call in predict/reveal/
-/// grade); only the "Take the exam" handoff needs the paired desktop.
-/// Mirrors review_screen.dart's shape (the opaque-session hold, the
-/// Scaffold, the phase-based body, `_deckName()`, the exam handoff seam),
-/// minus the web's hop rail and live-grade: this walk is always self-graded.
+/// grade); only the "Take the exam" handoff needs the paired desktop, and
+/// only its own visibility depends on a probe -- a failed or absent probe
+/// just hides the button, it never makes the walk itself require the
+/// server. Mirrors review_screen.dart's shape (the opaque-session hold, the
+/// Scaffold, the phase-based body, `_deckName()`, the exam handoff seam,
+/// the liveness probe gating that handoff), minus the web's hop rail and
+/// live-grade: this walk is always self-graded.
 class WalkScreen extends StatefulWidget {
   const WalkScreen({
     super.key,
@@ -63,15 +67,20 @@ class _WalkScreenState extends State<WalkScreen> {
 
   final TextEditingController _predict = TextEditingController();
 
-  /// Built once a pairing config exists; null when unpaired. Unlike
-  /// ReviewScreen's Ask-chip probe, this does not check liveness: the exam
-  /// handoff itself (`ExamScreen._start`) surfaces a dead/refused pairing
-  /// when opened, so a second probe here would just duplicate that work.
+  /// Set once the probe finds a reachable, current-enough desktop: gates
+  /// "Take the exam" on the done screen, mirroring ReviewScreen's own
+  /// `_serverLive`/`_client` pair for its Ask chip. No status chrome for
+  /// the negative cases (absent pairing, dead server, too old): the button
+  /// simply does not exist. Predict/reveal/grade never touch this probe or
+  /// `_client`, so the walk itself stays fully offline regardless of the
+  /// outcome.
+  bool _serverLive = false;
   ServerClient? _client;
 
-  /// Resolved alongside [_client]; handed to [ExamScreen] so its "Re-pair"
-  /// action (on a 401 mid-exam) can reopen the pairing sheet, mirroring
-  /// review_screen.dart's `_support` cache.
+  /// Resolved once `_probeServer` finishes its async lookup, regardless of
+  /// whether pairing is present or live; handed to [ExamScreen] so its
+  /// "Re-pair" action (on a 401 mid-exam) can reopen the pairing sheet,
+  /// mirroring review_screen.dart's `_support` cache.
   Directory? _support;
 
   @override
@@ -81,7 +90,7 @@ class _WalkScreenState extends State<WalkScreen> {
     if (_openError != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _bailToCaller());
     } else {
-      _loadClient();
+      _probeServer();
     }
   }
 
@@ -92,12 +101,49 @@ class _WalkScreenState extends State<WalkScreen> {
     super.dispose();
   }
 
-  Future<void> _loadClient() async {
+  /// Probes a configured pairing once per screen open, mirroring
+  /// review_screen.dart's `_probeServer` exactly: absence (no config,
+  /// unreachable, refused, or an older server) leaves "Take the exam" out
+  /// entirely, no retry, no periodic re-probe. A 401 gets the same one-shot
+  /// re-pair SnackBar; a merely dead server stays silent. This only gates
+  /// the exam-button's visibility -- predict/reveal/grade never call it.
+  Future<void> _probeServer() async {
     final support = widget.supportDir ?? await getApplicationSupportDirectory();
     _support = support;
     final config = readServer(support);
-    if (config == null || !mounted) return;
-    setState(() => _client = (widget.buildClient ?? HttpServerClient.new)(config));
+    if (config == null) return;
+    final client = (widget.buildClient ?? HttpServerClient.new)(config);
+    String? version;
+    try {
+      version = await client.version();
+    } on PairingExpired {
+      client.close();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('Pairing expired. Pair again from the deck list menu.'),
+        action: SnackBarAction(
+          label: 'Re-pair',
+          onPressed: () {
+            if (!mounted) return;
+            showPairingSheet(
+              context,
+              support: support,
+              buildClient: widget.buildClient ?? HttpServerClient.new,
+            );
+          },
+        ),
+      ));
+      return;
+    }
+    final live = version != null && compareVersions(version, minServerVersion) >= 0;
+    if (!live || !mounted) {
+      client.close();
+      return;
+    }
+    setState(() {
+      _client = client;
+      _serverLive = true;
+    });
   }
 
   /// (Re)opens the session; also the "Walk again" action on the done screen.
@@ -157,13 +203,16 @@ class _WalkScreenState extends State<WalkScreen> {
     return parts.join('/');
   }
 
-  /// Pushes the trace exam. Mirrors `_openExam`'s seam in review_screen.dart:
-  /// the screen never touches the bridge itself, only these closures. A
-  /// trace never remediates (the server reports `canRemediate: false`), so
+  /// Pushes the trace exam. Mirrors `_openExam`'s seam in review_screen.dart
+  /// exactly, including reading `_client` (rather than taking it as a
+  /// parameter) so the null-check lives in one place: the screen never
+  /// touches the bridge itself, only these closures. A trace never
+  /// remediates (the server reports `canRemediate: false`), so
   /// `applyRemediation` is a no-op ExamScreen still requires.
-  void _openExam(ServerClient client) {
+  void _openExam() {
+    final client = _client;
     final support = _support;
-    if (support == null) return;
+    if (client == null || support == null) return;
     Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => ExamScreen(
         deckName: _deckName(),
@@ -339,8 +388,10 @@ class _WalkScreenState extends State<WalkScreen> {
         const SizedBox(height: 4),
         Text(
           prediction ?? '(no prediction)',
+          // The web's `.predicted p` dims to 80% (50% once empty); mirrored
+          // here rather than full-strength ink for either case.
           style: TextStyle(
-            color: onSurface,
+            color: onSurface.withValues(alpha: prediction == null ? 0.5 : 0.8),
             height: 1.4,
             fontStyle: prediction == null ? FontStyle.italic : FontStyle.normal,
           ),
@@ -510,7 +561,7 @@ class _WalkScreenState extends State<WalkScreen> {
     final cooldown = client == null
         ? null
         : _session.examCooldownMs(nowMs: BigInt.from(DateTime.now().millisecondsSinceEpoch));
-    final examAvailable = client != null && cooldown == null;
+    final examAvailable = _serverLive && cooldown == null;
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -537,7 +588,7 @@ class _WalkScreenState extends State<WalkScreen> {
             _summaryRow('every checkpoint landed', '✓', tokens, valueColor: tokens.good),
           const SizedBox(height: 24),
           if (examAvailable) ...[
-            _chip('Take the exam', _ChipKind.primary, () => _openExam(client)),
+            _chip('Take the exam', _ChipKind.primary, _openExam),
             const SizedBox(height: 12),
           ],
           _chip('Walk again', examAvailable ? _ChipKind.base : _ChipKind.primary, _restart),

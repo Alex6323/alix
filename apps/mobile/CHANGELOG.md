@@ -28,6 +28,14 @@ Release notes, so a release without its section fails loud.
 - The session summary no longer shows all zeros after a first pass over a
   fresh deck: it now says how many new cards were introduced, and hides
   the passed/failed rows when nothing was graded.
+- The trace walk's "Take the exam" button no longer offers itself when the
+  paired desktop is unreachable: it now probes liveness the same way
+  review's Ask chip does, hiding the button instead of surfacing "the
+  desktop refused" after a dead tap. Predict/reveal/grade stay fully
+  offline either way.
+- A region breadcrumb with no regions no longer renders an empty strip; a
+  few visual-parity fixes (tutor chip wording, exam working/result colors)
+  now match the web client.
 
 ## [0.1.1] - 2026-07-16
 

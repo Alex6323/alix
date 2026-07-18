@@ -183,7 +183,8 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('paired with no cooldown: "Take the exam" is offered and pushes the exam screen',
+    testWidgets(
+        'paired, a live probe, no cooldown: "Take the exam" is offered and pushes the exam screen',
         (tester) async {
       final root = oneHopRoot();
       final support = tempSupport();
@@ -195,7 +196,7 @@ void main() {
           deckPath: '${root.path}/t.txt',
           rootDir: root.path,
           supportDir: support,
-          buildClient: (_) => FakeServerClient(examStartReply: true),
+          buildClient: (_) => FakeServerClient(versionReply: '0.6.0', examStartReply: true),
         ),
       ));
       await tester.pumpAndSettle();
@@ -209,6 +210,87 @@ void main() {
       await tester.pump();
       await tester.pump();
       expect(find.byType(ExamScreen), findsOneWidget);
+    });
+
+    testWidgets(
+        'paired but the probe fails (unreachable): "Take the exam" does not exist even '
+        'though a config exists, and the walk itself never touched the server to get here',
+        (tester) async {
+      final root = oneHopRoot();
+      final support = tempSupport();
+      await setServer(const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok'), support: support);
+
+      await tester.pumpWidget(MaterialApp(
+        theme: alixDark(),
+        home: WalkScreen(
+          deckPath: '${root.path}/t.txt',
+          rootDir: root.path,
+          supportDir: support,
+          buildClient: (_) => FakeServerClient(versionReply: null, examStartReply: true),
+        ),
+      ));
+      await tester.pumpAndSettle();
+      await walkOneHopToDone(tester);
+
+      expect(find.text('Take the exam'), findsNothing);
+      expect(find.text('Walk again'), findsOneWidget);
+    });
+
+    testWidgets(
+        'an older paired server: "Take the exam" does not exist', (tester) async {
+      final root = oneHopRoot();
+      final support = tempSupport();
+      await setServer(const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok'), support: support);
+
+      await tester.pumpWidget(MaterialApp(
+        theme: alixDark(),
+        home: WalkScreen(
+          deckPath: '${root.path}/t.txt',
+          rootDir: root.path,
+          supportDir: support,
+          buildClient: (_) => FakeServerClient(versionReply: '0.5.0'),
+        ),
+      ));
+      await tester.pumpAndSettle();
+      await walkOneHopToDone(tester);
+
+      expect(find.text('Take the exam'), findsNothing);
+    });
+
+    testWidgets(
+        'a refused token (401 on the probe): the exact re-pair SnackBar, '
+        'and Re-pair opens the pairing sheet, matching review_screen.dart', (tester) async {
+      final root = oneHopRoot();
+      final support = tempSupport();
+      await setServer(const ServerConfig(host: '127.0.0.1', port: 7777, token: 'stale'), support: support);
+
+      await tester.pumpWidget(MaterialApp(
+        theme: alixDark(),
+        home: WalkScreen(
+          deckPath: '${root.path}/t.txt',
+          rootDir: root.path,
+          supportDir: support,
+          buildClient: (_) => FakeServerClient(expireOnVersion: true),
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      // Mirrors review_screen_ask_chip_test.dart's own 401 test: this
+      // screen never pops itself on a 401 (unlike exam_screen.dart), so its
+      // own context is still alive; the action must open the sheet on it
+      // without throwing. Stays on the predict screen (a still-showing
+      // SnackBar occupies the same footer area a reveal tap would need,
+      // matching the pre-existing review test's own scope).
+      expect(
+        find.text('Pairing expired. Pair again from the deck list menu.'),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.text('Re-pair'));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('pairing-url-field')), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('unpaired: "Take the exam" does not exist, the walk stays fully offline',
@@ -252,7 +334,7 @@ void main() {
           deckPath: '${root.path}/t.txt',
           rootDir: root.path,
           supportDir: support,
-          buildClient: (_) => FakeServerClient(),
+          buildClient: (_) => FakeServerClient(versionReply: '0.6.0'),
         ),
       ));
       await tester.pumpAndSettle();

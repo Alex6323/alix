@@ -358,7 +358,8 @@ class _ExamScreenState extends State<ExamScreen> {
     return Center(
       child: Text(
         'The server is working…$suffix',
-        style: TextStyle(color: tokens.dim),
+        // Matches the web's `.exam-wait` idiom (dim + italic).
+        style: TextStyle(color: tokens.dim, fontStyle: FontStyle.italic),
       ),
     );
   }
@@ -369,7 +370,8 @@ class _ExamScreenState extends State<ExamScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text('The exam backend failed.', style: TextStyle(color: tokens.text)),
+          // Matches the web's `.exam-error` color token (red, not neutral).
+          Text('The exam backend failed.', style: TextStyle(color: tokens.again)),
           const SizedBox(height: 16),
           OutlinedButton(
             onPressed: () => Navigator.of(context).maybePop(),
@@ -431,7 +433,11 @@ class _ExamScreenState extends State<ExamScreen> {
       children: [
         Text(
           passed ? 'Passed.' : 'Not yet.',
-          style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600, color: tokens.text),
+          // Matches the web's `.exam-pass`/`.exam-fail` color tokens.
+          style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w600,
+              color: passed ? tokens.good : tokens.again),
         ),
         const SizedBox(height: 16),
         Expanded(
