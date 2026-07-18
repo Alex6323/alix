@@ -63,11 +63,11 @@ pub enum TxtSegment {
 
 /// Splits an answer line on old-style cloze markers: `{{` opens a hole, the
 /// FIRST `}}` after it closes it, brace-agnostic (nested `{`/`}` inside a
-/// hole, even a doubled one, are just hole content — this reader never
+/// hole, even a doubled one, are just hole content. This reader never
 /// rejects a deck, unlike the strict cloze parser). A backslash before `{`,
 /// `}`, or `\` escapes it: the backslash is dropped, the escaped character is
 /// kept as literal content (in whichever buffer is open, text or hole) and
-/// never counts toward marker detection — mirrors `crate::cloze::parse_line`'s
+/// never counts toward marker detection, mirroring `crate::cloze::parse_line`'s
 /// escape handling (`src/cloze.rs:48-53`). An unclosed `{{` (no matching `}}`
 /// before the end of the line) is not a hole: its marker and everything
 /// captured since are folded back into the literal text that precedes it, as
@@ -133,6 +133,10 @@ pub fn cloze_segments(line: &str) -> Vec<TxtSegment> {
 /// state machine: they're deck-level wherever they sit in the file, even
 /// after a card front, and are never a per-card override. `title` is one of
 /// them but is split out into `TxtDeck.title` rather than joining `header`.
+/// `trace` is also first-line-wins (mirrors `parse_trace`'s `find_map`,
+/// `src/parser.rs:212-218`), but unlike `title` it still joins `header`,
+/// just once, on its first occurrence; a later `% trace:` line is dropped
+/// outright.
 const DECK_LEVEL_KEYS: [&str; 5] = ["link", "requires", "source", "title", "trace"];
 
 /// Parses a `% key: value` line (already trimmed, still carrying its leading
@@ -154,6 +158,7 @@ fn directive(line: &str) -> Option<(String, String)> {
 pub fn parse_txt(text: &str) -> Result<TxtDeck, TxtError> {
     let mut title = None;
     let mut header = Vec::new();
+    let mut trace_seen = false;
     let mut cards: Vec<TxtCard> = Vec::new();
     let mut current: Option<TxtCard> = None;
 
@@ -191,11 +196,22 @@ pub fn parse_txt(text: &str) -> Result<TxtDeck, TxtError> {
                 if key == "title" {
                     // Whole-file, first-line-wins, regardless of position
                     // (mirrors `parser::parse_title`'s `find_map` over every
-                    // line) — never joins `header` or a card's directives.
+                    // line): never joins `header` or a card's directives.
                     title = title.or(Some(value));
+                } else if key == "trace" {
+                    // Whole-file, first-line-wins, regardless of position
+                    // (mirrors `parser::parse_trace`'s `find_map` over every
+                    // line, `src/parser.rs:212-218`). Unlike `title` it still
+                    // joins `header`, just once, on its first occurrence; a
+                    // later `% trace:` line is dropped outright, never in
+                    // `header`, never a card's directives.
+                    if !trace_seen {
+                        trace_seen = true;
+                        header.push((key, value));
+                    }
                 } else if DECK_LEVEL_KEYS.contains(&key.as_str()) {
                     // Deck-level wherever it sits, even inside a card
-                    // (mirrors the dedicated whole-file collectors) — never a
+                    // (mirrors the dedicated whole-file collectors), never a
                     // per-card override.
                     header.push((key, value));
                 } else {
@@ -380,6 +396,18 @@ mod tests {
     }
 
     #[test]
+    fn an_escaped_close_brace_does_not_close_a_hole() {
+        // The backslash escapes only the first `}` right after it; that
+        // escaped `}` is ordinary hole content and can't pair with the very
+        // next (unescaped) `}` to close the hole, since the closing check
+        // looks at the CURRENT char plus its peek, not backward. The hole
+        // stays open until the real `}}` at the end. Mirrors
+        // `crate::cloze::parse_line`'s shared escape arm (`src/cloze.rs:48-53`).
+        let segments = cloze_segments("{{a\\}}b}}");
+        assert_eq!(vec![TxtSegment::Hole("a}}b".to_string())], segments);
+    }
+
+    #[test]
     fn empty_text_yields_an_empty_deck() {
         let deck = parse_txt("").unwrap();
         assert_eq!(None, deck.title);
@@ -411,5 +439,17 @@ mod tests {
         assert_eq!(Some("First".to_string()), deck.title);
         assert!(deck.cards[0].directives.is_empty());
         assert!(deck.header.iter().all(|(k, _)| k != "title"));
+    }
+
+    #[test]
+    fn a_second_trace_line_is_dropped_like_a_second_title() {
+        // `parser::parse_trace` (`src/parser.rs:212-218`) is a whole-file
+        // `find_map`, exactly like `parse_title`: the first `% trace:` line
+        // anywhere wins, position-independent. A second one (even after a
+        // card) is dropped outright, not stored anywhere.
+        let text = "% trace: First\n# front\n\tback\n% trace: Second\n";
+        let deck = parse_txt(text).unwrap();
+        assert_eq!(vec![("trace".to_string(), "First".to_string())], deck.header);
+        assert!(deck.cards[0].directives.is_empty());
     }
 }
