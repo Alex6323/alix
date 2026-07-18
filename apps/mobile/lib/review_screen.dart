@@ -328,6 +328,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
       body: SafeArea(
         child: Column(
           children: [
+            _crumbStrip(context),
             if (_foreign case final foreign?) _foreignBanner(context, foreign),
             Expanded(
               child: card == null
@@ -351,6 +352,22 @@ class _ReviewScreenState extends State<ReviewScreen> {
         ),
       ),
     );
+  }
+
+  // ── crumb strip (region breadcrumb) ──────────────────────────────────────
+
+  /// The "where am I" region breadcrumb, mirroring the web's `.crumb-strip`
+  /// (assets/web/review.html): shown only when this session is
+  /// topology-ordered and the current card sits in a region (`crumb()`
+  /// returns `null` otherwise, e.g. every plain fact deck). Hidden means
+  /// hidden: no reserved space, no divider. Recomputed on every build so
+  /// it tracks the session as it advances.
+  Widget _crumbStrip(BuildContext context) {
+    final crumb = _session.crumb(
+      nowMs: BigInt.from(DateTime.now().millisecondsSinceEpoch),
+    );
+    if (crumb == null) return const SizedBox.shrink();
+    return CrumbStrip(crumb: crumb);
   }
 
   // ── card face ──────────────────────────────────────────────────────────
@@ -1162,3 +1179,101 @@ class _ReviewScreenState extends State<ReviewScreen> {
 }
 
 enum _ChipKind { base, primary, failed, partly, passed, quiet, verdict }
+
+/// The region breadcrumb strip: each region's name over a thin per-card
+/// heatmap bar (red = weak, green = strong; the web's `hsl(120*s, 62%,
+/// (40+12*s)%)`), the current region emphasized (full ink, bold) and the
+/// rest dimmed. A fixed-height, horizontally scrolling row, so a long path
+/// or many regions never grows the header (clip, never wrap). Public, not
+/// nested in [_ReviewScreenState], so a widget test can pump it directly
+/// against a hand-built [CrumbState] without driving a live
+/// topology-ordered session.
+class CrumbStrip extends StatelessWidget {
+  const CrumbStrip({super.key, required this.crumb});
+
+  final CrumbState crumb;
+
+  static const double height = 40;
+
+  @override
+  Widget build(BuildContext context) {
+    final ink = Theme.of(context).colorScheme.onSurface;
+    return SizedBox(
+      height: height,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(20, 10, 20, 6),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final (i, name) in crumb.regions.indexed) ...[
+              if (i > 0) const SizedBox(width: 14),
+              _region(
+                name,
+                i == crumb.current,
+                i < crumb.cells.length ? crumb.cells[i] : const <double>[],
+                ink,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _region(String name, bool current, Iterable<double> cells, Color ink) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // A fixed height (rather than letting the text size the row) keeps
+        // the strip's total height constant regardless of the active
+        // font's line metrics, so a long name can never push the strip
+        // taller and overflow its SizedBox.
+        SizedBox(
+          height: 16,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 140),
+            child: Text(
+              name,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: _sans,
+                fontSize: 10.5,
+                letterSpacing: 0.3,
+                height: 1.2,
+                color: ink.withValues(alpha: current ? 1 : 0.5),
+                fontWeight: current ? FontWeight.w600 : FontWeight.w400,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 3),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final s in cells) _cell(s),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// One strength cell: the web's `hsl(120*s, 62%, (40+12*s)%)`, `s` clamped
+  /// to 0..1 in case a stale cache ever hands back a stray float.
+  Widget _cell(double s) {
+    final clamped = s.clamp(0.0, 1.0);
+    return Container(
+      width: 5,
+      height: 3,
+      margin: const EdgeInsets.only(right: 1),
+      decoration: BoxDecoration(
+        color: HSLColor.fromAHSL(1, 120 * clamped, 0.62, (40 + 12 * clamped) / 100)
+            .toColor(),
+        borderRadius: BorderRadius.circular(1),
+      ),
+    );
+  }
+}
