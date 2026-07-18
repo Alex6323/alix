@@ -23,6 +23,7 @@ class AlixApp extends StatefulWidget {
     this.access,
     this.reprepare,
     this.persistDecksDir,
+    this.persistTheme,
   });
 
   final Prepared prepared;
@@ -38,12 +39,17 @@ class AlixApp extends StatefulWidget {
   /// support dir.
   final Future<void> Function(String?)? persistDecksDir;
 
+  /// Persists the theme choice; tests inject one bound to their temp
+  /// support dir.
+  final Future<void> Function(String?)? persistTheme;
+
   @override
   State<AlixApp> createState() => _AlixAppState();
 }
 
 class _AlixAppState extends State<AlixApp> {
   late Prepared _prepared = widget.prepared;
+  late String? _themeId = widget.prepared.themeId;
 
   PlatformAccess get _access => widget.access ?? RealPlatformAccess();
 
@@ -56,17 +62,21 @@ class _AlixAppState extends State<AlixApp> {
     setState(() => _prepared = fresh);
   }
 
+  /// Persists the theme choice, then re-themes the whole app live: no
+  /// restart, no reprepare (the theme never affects the decks root).
+  Future<void> _setTheme(String? id) async {
+    await (widget.persistTheme ?? setTheme)(id);
+    setState(() => _themeId = id);
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'alix',
-      theme: alixLight(),
-      darkTheme: alixDark(),
-      // The alix identity is the dark theme (the web app's default); a
-      // light-mode phone should still open into the alix look, not a
-      // generic Material list. A theme picker (the web's gallery) is a
-      // separate future feature.
-      themeMode: ThemeMode.dark,
+      // A named gallery choice (the web app's Theme picker), not a
+      // light/dark mode toggle: ONE resolved theme; themeById falls back to
+      // the dark default for an unknown or absent saved id.
+      theme: themeById(_themeId),
       home: PickerScreen(
         // Remount the whole picker tree when the root swaps.
         key: ValueKey(_prepared.root),
@@ -76,6 +86,8 @@ class _AlixAppState extends State<AlixApp> {
         staleDecksDir: _prepared.staleDecksDir,
         access: _access,
         onSetDecksDir: _setDecksDir,
+        currentThemeId: _themeId,
+        onSetTheme: _setTheme,
       ),
     );
   }

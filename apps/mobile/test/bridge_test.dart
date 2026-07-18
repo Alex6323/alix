@@ -221,6 +221,115 @@ void main() {
     );
   });
 
+  group('theme picker (T6.2)', () {
+    testWidgets('startup resolves the saved theme via themeById',
+        (tester) async {
+      final root = makeRoot();
+      addTearDown(() => root.deleteSync(recursive: true));
+      await tester.pumpWidget(AlixApp(
+        prepared:
+            Prepared(root: root.path, device: 'phone-test', themeId: 'dracula'),
+      ));
+      await tester.pumpAndSettle();
+
+      final theme = Theme.of(tester.element(find.byType(PickerScreen)));
+      expect(theme.colorScheme.surface, themeById('dracula').colorScheme.surface);
+    });
+
+    testWidgets('no saved theme resolves to the dark default', (tester) async {
+      final root = makeRoot();
+      addTearDown(() => root.deleteSync(recursive: true));
+      await tester.pumpWidget(AlixApp(
+        prepared: Prepared(root: root.path, device: 'phone-test'),
+      ));
+      await tester.pumpAndSettle();
+
+      final theme = Theme.of(tester.element(find.byType(PickerScreen)));
+      expect(theme.colorScheme.surface, alixDark().colorScheme.surface);
+    });
+
+    testWidgets('an unknown saved theme id falls back to dark, no crash',
+        (tester) async {
+      final root = makeRoot();
+      addTearDown(() => root.deleteSync(recursive: true));
+      await tester.pumpWidget(AlixApp(
+        prepared: Prepared(
+          root: root.path,
+          device: 'phone-test',
+          themeId: 'not-a-real-theme',
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      final theme = Theme.of(tester.element(find.byType(PickerScreen)));
+      expect(theme.colorScheme.surface, alixDark().colorScheme.surface);
+    });
+
+    testWidgets(
+        'the theme sheet lists themes grouped Dark/Light with the current '
+        'one marked, and tapping a theme re-themes the app live and persists',
+        (tester) async {
+      final support = Directory.systemTemp.createTempSync('alix-support-');
+      addTearDown(() => support.deleteSync(recursive: true));
+      final root = makeRoot();
+      addTearDown(() => root.deleteSync(recursive: true));
+
+      await tester.pumpWidget(AlixApp(
+        prepared: Prepared(root: root.path, device: 'phone-test'),
+        persistTheme: (id) => setTheme(id, support: support),
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byType(PopupMenuButton<String>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Theme…'));
+      await tester.pumpAndSettle();
+
+      // Grouped under the two mode headers.
+      expect(find.text('DARK'), findsOneWidget);
+      final scrollable = find.descendant(
+        of: find.byKey(const ValueKey('theme-sheet-list')),
+        matching: find.byType(Scrollable),
+      );
+      await tester.scrollUntilVisible(find.text('LIGHT'), 300,
+          scrollable: scrollable);
+      expect(find.text('LIGHT'), findsOneWidget);
+
+      // No saved theme yet: the dark default carries the one current-marker.
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('theme-tile-dark')),
+        -300,
+        scrollable: scrollable,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('theme-tile-dark')),
+          matching: find.byIcon(Icons.check),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('theme-tile-dracula')),
+          matching: find.byIcon(Icons.check),
+        ),
+        findsNothing,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('theme-tile-dracula')));
+      await tester.pumpAndSettle();
+
+      // The sheet closed; the whole app re-themed live, with no restart.
+      expect(find.byKey(const ValueKey('theme-sheet-list')), findsNothing);
+      final theme = Theme.of(tester.element(find.byType(PickerScreen)));
+      expect(theme.colorScheme.surface, themeById('dracula').colorScheme.surface);
+
+      // Persisted via the injected seam.
+      expect(readTheme(support), 'dracula');
+    });
+  });
+
   testWidgets('the picker warns about a sync conflict file until dismissed',
       (tester) async {
     final root = makeRoot();

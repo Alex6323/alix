@@ -23,6 +23,7 @@ class Prepared {
     required this.device,
     this.sharedDir,
     this.staleDecksDir,
+    this.themeId,
   });
 
   /// The decks root to list.
@@ -39,6 +40,10 @@ class Prepared {
   /// this launch fell back to app storage, the setting was kept so a
   /// re-grant or re-mount heals it.
   final String? staleDecksDir;
+
+  /// The persisted color theme choice, if any; `null` resolves to the dark
+  /// default via `themeById`.
+  final String? themeId;
 }
 
 /// Resolves the decks root and this install's device label.
@@ -64,25 +69,33 @@ Future<Prepared> prepare({
   final device = await _ensureDevice(support, settings);
   final shared = settings['decksDir'];
   final sharedDir = shared is String && shared.isNotEmpty ? shared : null;
+  final theme = settings['theme'];
+  final themeId = theme is String ? theme : null;
 
   env ??= Platform.environment['ALIX_DECKS_DIR'];
   if (env != null && env.isNotEmpty) {
-    return Prepared(root: env, device: device, sharedDir: sharedDir);
+    return Prepared(root: env, device: device, sharedDir: sharedDir, themeId: themeId);
   }
 
   if (sharedDir != null) {
     final granted = await hasStorageAccess?.call() ?? true;
     if (granted && _listable(sharedDir)) {
-      return Prepared(root: sharedDir, device: device, sharedDir: sharedDir);
+      return Prepared(
+        root: sharedDir,
+        device: device,
+        sharedDir: sharedDir,
+        themeId: themeId,
+      );
     }
     return Prepared(
       root: await _appPrivate(support),
       device: device,
       sharedDir: sharedDir,
       staleDecksDir: sharedDir,
+      themeId: themeId,
     );
   }
-  return Prepared(root: await _appPrivate(support), device: device);
+  return Prepared(root: await _appPrivate(support), device: device, themeId: themeId);
 }
 
 /// True when the directory exists and can actually be listed (a revoked

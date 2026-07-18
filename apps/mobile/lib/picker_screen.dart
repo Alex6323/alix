@@ -31,6 +31,8 @@ class PickerScreen extends StatefulWidget {
     this.staleDecksDir,
     this.access,
     this.onSetDecksDir,
+    this.currentThemeId,
+    this.onSetTheme,
     this.supportDir,
     this.buildClient,
     this.generatePollInterval,
@@ -51,6 +53,8 @@ class PickerScreen extends StatefulWidget {
         staleDecksDir = null,
         access = null,
         onSetDecksDir = null,
+        currentThemeId = null,
+        onSetTheme = null,
         supportDir = null,
         buildClient = null,
         generatePollInterval = null;
@@ -74,6 +78,13 @@ class PickerScreen extends StatefulWidget {
 
   /// Persists a folder choice and swaps the root (null = app storage).
   final Future<void> Function(String?)? onSetDecksDir;
+
+  /// The active theme id (per `themeById`); null resolves to the dark
+  /// default. Drives the theme sheet's current-marker.
+  final String? currentThemeId;
+
+  /// Persists a theme choice and re-themes the whole app live.
+  final Future<void> Function(String?)? onSetTheme;
 
   /// The support dir the pairing sheet reads and writes settings from;
   /// null uses the real app support dir. Tests inject a temp one.
@@ -208,6 +219,7 @@ class _PickerScreenState extends State<PickerScreen> {
                 if (choice == 'folder') _folderSheet();
                 if (choice == 'pair') _pairSheet();
                 if (choice == 'generate') _generateSheet();
+                if (choice == 'theme') _themeSheet();
                 if (choice == 'about') _about();
               },
               itemBuilder: (_) => [
@@ -218,6 +230,7 @@ class _PickerScreenState extends State<PickerScreen> {
                 // dead button that would only fail (item T5.5).
                 if (_pairedConfig != null)
                   const PopupMenuItem(value: 'generate', child: Text('Generate deck…')),
+                const PopupMenuItem(value: 'theme', child: Text('Theme…')),
                 const PopupMenuItem(value: 'about', child: Text('About')),
               ],
             ),
@@ -582,6 +595,107 @@ class _PickerScreenState extends State<PickerScreen> {
       },
     );
   }
+
+  /// The theme picker sheet: `alixThemes` grouped Dark/Light, each a name
+  /// plus a [surface, bolt, good] swatch built from that theme's OWN data
+  /// (mirrors the web gallery's [bg, accent, green] preview dots). The
+  /// active theme (falling back to the dark default) carries the one
+  /// current-marker. Tapping a theme applies + persists it live and closes
+  /// the sheet.
+  Future<void> _themeSheet() async {
+    final onSetTheme = widget.onSetTheme;
+    if (onSetTheme == null) return;
+    final current = widget.currentThemeId ?? alixThemes.first.id;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheet) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.of(sheet).size.height * 0.75,
+          child: ListView(
+            key: const ValueKey('theme-sheet-list'),
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            children: [
+              for (final mode in const [Brightness.dark, Brightness.light]) ...[
+                _themeGroupLabel(sheet, mode == Brightness.dark ? 'Dark' : 'Light'),
+                for (final entry in alixThemes.where((t) => t.mode == mode))
+                  _themeTile(sheet, entry, current: current, onSetTheme: onSetTheme),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The sheet's small uppercase mono eyebrow, mirroring `_lede`.
+  Widget _themeGroupLabel(BuildContext context, String label) {
+    final tokens = Theme.of(context).alix;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: Text(
+        label.toUpperCase(),
+        style: TextStyle(
+          fontFamily: 'IBM Plex Mono',
+          color: tokens.bolt,
+          fontSize: 12,
+          letterSpacing: 2.2,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+  }
+
+  Widget _themeTile(
+    BuildContext context,
+    AlixTheme theme, {
+    required String current,
+    required Future<void> Function(String?) onSetTheme,
+  }) {
+    final tokens = Theme.of(context).alix;
+    final isCurrent = theme.id == current;
+    return ListTile(
+      key: ValueKey('theme-tile-${theme.id}'),
+      leading: _themeSwatch(theme),
+      title: Text(theme.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+      trailing: isCurrent ? Icon(Icons.check, size: 18, color: tokens.bolt) : null,
+      onTap: () {
+        onSetTheme(theme.id);
+        Navigator.of(context).pop();
+      },
+    );
+  }
+
+  /// A 3-color chip built from the theme's own data: surface + bolt + good,
+  /// the same [bg, accent, green] triple the web's swatch uses.
+  Widget _themeSwatch(AlixTheme theme) {
+    final scheme = theme.data.colorScheme;
+    final tokens = theme.data.alix;
+    return Container(
+      width: 36,
+      height: 24,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: tokens.line),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _themeDot(tokens.bolt),
+          const SizedBox(width: 4),
+          _themeDot(tokens.good),
+        ],
+      ),
+    );
+  }
+
+  Widget _themeDot(Color color) => Container(
+    width: 8,
+    height: 8,
+    decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+  );
 
   Future<Directory> _support() async => widget.supportDir ?? await getApplicationSupportDirectory();
 

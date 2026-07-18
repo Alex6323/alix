@@ -180,6 +180,20 @@ void main() {
       expect(readTheme(support), isNull);
     });
 
+    test('prepare surfaces the saved theme id', () async {
+      final support = temp('alix-support-');
+      await setTheme('dracula', support: support);
+      final prepared = await prepare(support: support, env: '');
+      expect(prepared.themeId, 'dracula');
+    });
+
+    test('prepare surfaces a null themeId when no theme was ever saved',
+        () async {
+      final support = temp('alix-support-');
+      final prepared = await prepare(support: support, env: '');
+      expect(prepared.themeId, isNull);
+    });
+
     test('setTheme(null) removes only the theme key; other keys survive',
         () async {
       final support = temp('alix-support-');
