@@ -76,6 +76,7 @@ pub mod store;
 pub mod time;
 #[cfg(feature = "full")]
 pub mod title;
+pub mod token;
 pub mod trace;
 #[cfg(feature = "full")]
 pub mod trace_ai;
