@@ -299,6 +299,9 @@ class _PickerScreenState extends State<PickerScreen> {
   /// prefix instead of an icon; a locked member dims the whole row (browse
   /// stays allowed, only the tap's dimmed to signal the gate) (item 14).
   Widget _deckRow(BuildContext context, DeckEntry entry) {
+    // A workspace member (it carries a dependency-tree prefix) renders its
+    // tree as drawn, connected guides rather than an icon.
+    if (entry.tree.isNotEmpty) return _memberRow(context, entry);
     final theme = Theme.of(context);
     final tokens = theme.alix;
     final canRePick = !entry.isWorkspace && !entry.isTrace;
@@ -329,19 +332,6 @@ class _PickerScreenState extends State<PickerScreen> {
                     _emblem(entry.icon!, tokens),
                     const SizedBox(width: 10),
                   ],
-                  if (entry.tree.isNotEmpty) ...[
-                    Text(
-                      entry.tree,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 13,
-                        color: tokens.faint,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                  ],
                   Expanded(
                     child: Text(
                       entry.title,
@@ -351,37 +341,106 @@ class _PickerScreenState extends State<PickerScreen> {
                           ?.copyWith(fontWeight: FontWeight.w600),
                     ),
                   ),
-                  if (entry.isTrace) ...[
-                    const SizedBox(width: 12),
-                    Text(
-                      'trace',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: tokens.faint,
-                        fontFamily: 'monospace',
-                        letterSpacing: 1.2,
-                      ),
-                    ),
-                  ] else if (entry.examDue) ...[
-                    // Drilled and awaiting its AI exam: the more actionable
-                    // of the two states when a deck happens to also read
-                    // due, so it wins the one trailing marker slot.
-                    const SizedBox(width: 12),
-                    Text(
-                      'exam',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: tokens.warn,
-                        fontFamily: 'monospace',
-                        letterSpacing: 1.2,
-                      ),
-                    ),
-                  ] else if (entry.due) ...[
-                    const SizedBox(width: 12),
-                    Icon(Icons.circle, size: 8, color: tokens.bolt),
-                  ],
+                  ..._trailingMarker(theme, entry),
                   if (entry.isWorkspace) ...[
                     const SizedBox(width: 8),
                     Icon(Icons.chevron_right, size: 22, color: tokens.dim),
                   ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The one trailing state marker a row carries: a `trace` label, an `exam`
+  /// (exam-due) label, or the cyan due dot, in that precedence. Shared by the
+  /// plain deck row and the workspace-member row.
+  List<Widget> _trailingMarker(ThemeData theme, DeckEntry entry) {
+    final tokens = theme.alix;
+    if (entry.isTrace) {
+      return [
+        const SizedBox(width: 12),
+        Text(
+          'trace',
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: tokens.faint,
+            fontFamily: 'monospace',
+            letterSpacing: 1.2,
+          ),
+        ),
+      ];
+    }
+    if (entry.examDue) {
+      return [
+        const SizedBox(width: 12),
+        Text(
+          'exam',
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: tokens.warn,
+            fontFamily: 'monospace',
+            letterSpacing: 1.2,
+          ),
+        ),
+      ];
+    }
+    if (entry.due) {
+      return [
+        const SizedBox(width: 12),
+        Icon(Icons.circle, size: 8, color: tokens.bolt),
+      ];
+    }
+    return const [];
+  }
+
+  /// A workspace member (item 14): the dependency-tree guides fill the full
+  /// row height as drawn, connected lines (via [TreeGuides] in a stretched
+  /// row), then the title and its state marker. A locked member dims.
+  Widget _memberRow(BuildContext context, DeckEntry entry) {
+    final theme = Theme.of(context);
+    final tokens = theme.alix;
+    final canRePick = !entry.isTrace;
+    // Members render as a borderless tree list (not individual cards) so the
+    // drawn guides run continuously from parent to child; the whole workspace
+    // drill-in reads as one tree instead of a stack of boxes.
+    return Opacity(
+      opacity: entry.locked ? 0.5 : 1,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => entry.isTrace ? _openWalk(entry) : _openDeck(entry),
+          onLongPress: canRePick ? () => _rePickDepth(entry) : null,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 46),
+            child: IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: TreeGuides(tree: entry.tree, color: tokens.dim),
+                  ),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 12, 16, 12),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              entry.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          ..._trailingMarker(theme, entry),
+                        ],
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -1043,4 +1102,66 @@ Future<Depth?> _pickDepth(BuildContext context, {Depth? selected}) {
       ),
     ),
   );
+}
+
+/// Draws a workspace member's dependency-tree guides as connected lines,
+/// replacing the box-drawing glyphs (which can't bridge the gap between
+/// rows). The [tree] string is the core's branch prefix in three-char
+/// segments: `"|  "` a continuing ancestor, `"   "` a finished one, `"|- "`
+/// this row with more siblings, `"`- "` this row as the last child. Each
+/// segment becomes one fixed-width column; the vertical lines fill the row
+/// height (via a stretched parent) so consecutive rows read as one tree.
+class TreeGuides extends StatelessWidget {
+  const TreeGuides({super.key, required this.tree, required this.color});
+
+  final String tree;
+  final Color color;
+
+  /// One column per three-char segment.
+  static const double _column = 15;
+
+  @override
+  Widget build(BuildContext context) {
+    final columns = tree.length ~/ 3;
+    return SizedBox(
+      width: columns * _column,
+      child: CustomPaint(painter: TreeGuidesPainter(tree: tree, color: color)),
+    );
+  }
+}
+
+class TreeGuidesPainter extends CustomPainter {
+  TreeGuidesPainter({required this.tree, required this.color});
+
+  final String tree;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.1
+      ..style = PaintingStyle.stroke;
+    const column = TreeGuides._column;
+    final midY = size.height / 2;
+    for (var i = 0; i * 3 + 3 <= tree.length; i++) {
+      final segment = tree[i * 3];
+      final x = i * column + column / 2;
+      // A continuing ancestor or this row's tee runs the full height; the last
+      // child's connector stops at the branch point.
+      if (segment == '│' || segment == '├') {
+        canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+      } else if (segment == '└') {
+        canvas.drawLine(Offset(x, 0), Offset(x, midY), paint);
+      }
+      // The connector (tee or last-child) reaches right toward the title.
+      if (segment == '├' || segment == '└') {
+        canvas.drawLine(Offset(x, midY), Offset(i * column + column, midY), paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(TreeGuidesPainter old) =>
+      old.tree != tree || old.color != color;
 }

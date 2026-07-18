@@ -375,19 +375,22 @@ void main() {
       expect(find.text('Other'), findsOneWidget);
 
       // Mid's own branch line, and Tip's one level deeper (its ancestor's
-      // three-space pad plus its own connector) -- the lean listing's
-      // `entry.tree` rendered as-is, per `dependency_forest` (src/listing.rs).
-      expect(find.text('└─ '), findsOneWidget);
-      expect(find.text('   └─ '), findsOneWidget);
+      // three-space pad plus its own connector): the lean listing's
+      // `entry.tree`, drawn as connected guides per `dependency_forest`.
+      final guides = tester
+          .widgetList<TreeGuides>(find.byType(TreeGuides))
+          .map((g) => g.tree)
+          .toList();
+      expect(guides, containsAll(['└─ ', '   └─ ']));
 
-      // Base and Other are roots: no tree prefix in their row.
+      // Base and Other are roots: no tree guides in their row.
       final baseRow =
           find.ancestor(of: find.text('Base'), matching: find.byType(InkWell));
       final otherRow = find.ancestor(
           of: find.text('Other'), matching: find.byType(InkWell));
-      expect(find.descendant(of: baseRow, matching: find.text('└─ ')),
+      expect(find.descendant(of: baseRow, matching: find.byType(TreeGuides)),
           findsNothing);
-      expect(find.descendant(of: otherRow, matching: find.text('└─ ')),
+      expect(find.descendant(of: otherRow, matching: find.byType(TreeGuides)),
           findsNothing);
 
       // Mid and Tip are locked behind the unmastered sourced Base: dimmed,
@@ -428,7 +431,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('ws'), findsOneWidget);
-      expect(find.text('└─ '), findsNothing);
+      expect(find.byType(TreeGuides), findsNothing);
       expect(find.text('   └─ '), findsNothing);
     });
 
