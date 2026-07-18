@@ -334,7 +334,18 @@ class _ReviewScreenState extends State<ReviewScreen> {
       return _cantOpen(context, _openError ?? '');
     }
     final card = _state.card;
-    return Scaffold(
+    return PopScope(
+      // Leaving is immediate once the session is done; while cards are still
+      // due, a back gesture or the AppBar back asks first, so a session isn't
+      // abandoned by a stray swipe.
+      canPop: _state.finished,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop || !mounted) return;
+        final navigator = Navigator.of(context);
+        final leave = await _confirmLeave(context);
+        if (leave && navigator.mounted) navigator.pop();
+      },
+      child: Scaffold(
       appBar: AppBar(
         title: const AlixWordmark(),
         actions: [
@@ -380,7 +391,34 @@ class _ReviewScreenState extends State<ReviewScreen> {
           ],
         ),
       ),
+      ),
     );
+  }
+
+  /// Confirms abandoning a session that still has due cards. Returns true to
+  /// leave, false to keep reviewing.
+  Future<bool> _confirmLeave(BuildContext context) async {
+    final n = _state.remaining;
+    final leave = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Leave the review?'),
+        content: Text(
+          '$n card${n == 1 ? '' : 's'} still due in this session.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Keep reviewing'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Leave'),
+          ),
+        ],
+      ),
+    );
+    return leave ?? false;
   }
 
   // ── crumb strip (region breadcrumb) ──────────────────────────────────────
