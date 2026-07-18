@@ -80,6 +80,10 @@ void main() {
       expect(find.text('Reconstruct'), findsNothing);
       expect(find.byType(ReviewScreen), findsOneWidget);
       expect(find.text('FLIP'), findsOneWidget);
+      // Locks the literal null depth passed on tap (not just the resulting
+      // FLIP, which Recall's fallback default would also produce if the tap
+      // path wrongly coerced to Depth.recall).
+      expect(tester.widget<ReviewScreen>(find.byType(ReviewScreen)).depth, isNull);
     });
 
     testWidgets(
@@ -264,6 +268,203 @@ void main() {
           findsOneWidget);
       expect(find.descendant(of: row, matching: find.text('exam')),
           findsNothing);
+    });
+  });
+
+  group('item 13: mastered window', () {
+    /// Two active decks plus one already mastered. There is no frb setter
+    /// for mastered progress (it is normally earned by passing the AI
+    /// exam); the store is a plain, unversioned JSON file
+    /// (`src/store.rs` `StoreFile`), so the fixture writes it directly,
+    /// keyed by the deck's subject (its file name) -- `DeckSummary.mastered`
+    /// (src/listing.rs `deck_summary`) reads `Store::deck_mastered` alone,
+    /// with no dependency on the deck's actual review state.
+    Directory mixedRoot() {
+      final root = tempRoot('alix-picker-mastered-');
+      File('${root.path}/a-active.txt')
+          .writeAsStringSync('% title: Active A\n# q\n\ta\n');
+      File('${root.path}/b-active.txt')
+          .writeAsStringSync('% title: Active B\n# q\n\ta\n');
+      File('${root.path}/z-mastered.txt')
+          .writeAsStringSync('% title: Mastered Z\n# q\n\ta\n');
+      File('${root.path}/progress.json').writeAsStringSync(
+        '{"cards": {}, "decks": {"z-mastered.txt": {"mastered_at_ms": 1}}}',
+      );
+      return root;
+    }
+
+    testWidgets(
+        'the active list tucks a mastered deck behind a Mastered affordance, '
+        'and it stays openable from the mastered view', (tester) async {
+      final root = mixedRoot();
+      await tester.pumpWidget(MaterialApp(
+        theme: alixDark(),
+        home: PickerScreen(root: root.path),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Active A'), findsOneWidget);
+      expect(find.text('Active B'), findsOneWidget);
+      expect(find.text('Mastered Z'), findsNothing);
+      expect(find.text('Mastered · 1'), findsOneWidget);
+
+      await tester.tap(find.text('Mastered · 1'));
+      await tester.pumpAndSettle();
+
+      // The mastered view: only the mastered deck, under its own eyebrow.
+      expect(find.text('Mastered Z'), findsOneWidget);
+      expect(find.text('Active A'), findsNothing);
+      expect(find.text('MASTERED 🎉'), findsOneWidget);
+
+      // Still openable, to re-review or cram.
+      await tester.tap(find.text('Mastered Z'));
+      await tester.pumpAndSettle();
+      expect(find.byType(ReviewScreen), findsOneWidget);
+    });
+
+    testWidgets('no mastered decks means no affordance', (tester) async {
+      final root = tempRoot('alix-picker-no-mastered-');
+      File('${root.path}/a.txt').writeAsStringSync('% title: A\n# q\n\ta\n');
+
+      await tester.pumpWidget(MaterialApp(
+        theme: alixDark(),
+        home: PickerScreen(root: root.path),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('A'), findsOneWidget);
+      expect(find.textContaining('Mastered'), findsNothing);
+    });
+  });
+
+  group('item 14: workspace dependency tree', () {
+    /// A requires-chain nested two deep (base -> mid -> tip) plus a loose
+    /// sibling, mirroring `list_members_orders_and_indents_a_requires_chain_
+    /// like_the_dependency_forest` (src/listing.rs). `base` is sourced (has
+    /// an exam) so `mid`/`tip` stay locked behind it until it is mastered --
+    /// a source-less chain never gates (`deck::is_locked`), so this is the
+    /// smallest fixture that also exercises the locked-dim rendering.
+    Directory requiresChainRoot() {
+      final root = tempRoot('alix-picker-tree-');
+      final ws = Directory('${root.path}/ws')..createSync();
+      File('${ws.path}/alix.toml').writeAsStringSync('');
+      File('${ws.path}/base.txt').writeAsStringSync(
+          '% title: Base\n% source: https://example.com\n# q?\n\ta\n');
+      File('${ws.path}/mid.txt')
+          .writeAsStringSync('% title: Mid\n% requires: base\n# q?\n\ta\n');
+      File('${ws.path}/tip.txt')
+          .writeAsStringSync('% title: Tip\n% requires: mid\n# q?\n\ta\n');
+      File('${ws.path}/other.txt')
+          .writeAsStringSync('% title: Other\n# q?\n\ta\n');
+      return root;
+    }
+
+    testWidgets(
+        'member rows render forest order with tree prefixes, and a locked '
+        'member is dimmed but still tappable', (tester) async {
+      final root = requiresChainRoot();
+      await tester.pumpWidget(MaterialApp(
+        theme: alixDark(),
+        home: PickerScreen(root: root.path, dir: '${root.path}/ws'),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Base'), findsOneWidget);
+      expect(find.text('Mid'), findsOneWidget);
+      expect(find.text('Tip'), findsOneWidget);
+      expect(find.text('Other'), findsOneWidget);
+
+      // Mid's own branch line, and Tip's one level deeper (its ancestor's
+      // three-space pad plus its own connector) -- the lean listing's
+      // `entry.tree` rendered as-is, per `dependency_forest` (src/listing.rs).
+      expect(find.text('└─ '), findsOneWidget);
+      expect(find.text('   └─ '), findsOneWidget);
+
+      // Base and Other are roots: no tree prefix in their row.
+      final baseRow =
+          find.ancestor(of: find.text('Base'), matching: find.byType(InkWell));
+      final otherRow = find.ancestor(
+          of: find.text('Other'), matching: find.byType(InkWell));
+      expect(find.descendant(of: baseRow, matching: find.text('└─ ')),
+          findsNothing);
+      expect(find.descendant(of: otherRow, matching: find.text('└─ ')),
+          findsNothing);
+
+      // Mid and Tip are locked behind the unmastered sourced Base: dimmed,
+      // Base itself is not.
+      expect(
+          tester
+              .widget<Opacity>(
+                  find.ancestor(of: find.text('Mid'), matching: find.byType(Opacity)))
+              .opacity,
+          0.5);
+      expect(
+          tester
+              .widget<Opacity>(
+                  find.ancestor(of: find.text('Tip'), matching: find.byType(Opacity)))
+              .opacity,
+          0.5);
+      expect(
+          tester
+              .widget<Opacity>(
+                  find.ancestor(of: find.text('Base'), matching: find.byType(Opacity)))
+              .opacity,
+          1.0);
+
+      // A locked member is still tappable: browse is allowed, the core
+      // enforces the lock at session start, not the picker.
+      await tester.tap(find.text('Mid'));
+      await tester.pumpAndSettle();
+      expect(find.byType(ReviewScreen), findsOneWidget);
+    });
+
+    testWidgets('the root list (not drilled) shows no tree prefixes',
+        (tester) async {
+      final root = requiresChainRoot();
+      await tester.pumpWidget(MaterialApp(
+        theme: alixDark(),
+        home: PickerScreen(root: root.path),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('ws'), findsOneWidget);
+      expect(find.text('└─ '), findsNothing);
+      expect(find.text('   └─ '), findsNothing);
+    });
+
+    testWidgets(
+        'a long member title at a deep indent truncates instead of wrapping',
+        (tester) async {
+      final root = tempRoot('alix-picker-tree-truncate-');
+      final ws = Directory('${root.path}/ws')..createSync();
+      File('${ws.path}/alix.toml').writeAsStringSync('');
+      File('${ws.path}/base.txt')
+          .writeAsStringSync('% title: Base\n# q?\n\ta\n');
+      File('${ws.path}/mid.txt')
+          .writeAsStringSync('% title: Mid\n% requires: base\n# q?\n\ta\n');
+      const longTitle = 'A very long member deck title that would wrap onto '
+          'more than one line if the row were not truncating it with an '
+          'ellipsis instead';
+      File('${ws.path}/deep.txt').writeAsStringSync(
+          '% title: $longTitle\n% requires: mid\n# q?\n\ta\n');
+
+      await tester.pumpWidget(MaterialApp(
+        theme: alixDark(),
+        home: PickerScreen(root: root.path, dir: ws.path),
+      ));
+      await tester.pumpAndSettle();
+
+      // No RenderFlex overflow at the deepest indent (two levels).
+      expect(tester.takeException(), isNull);
+
+      final titleWidget = tester.widget<Text>(find.text(longTitle));
+      expect(titleWidget.maxLines, 1);
+      expect(titleWidget.overflow, TextOverflow.ellipsis);
+
+      final row = find.ancestor(
+          of: find.text(longTitle), matching: find.byType(InkWell));
+      // The row's fixed minHeight (54, see `_deckRow`); unaffected by indent.
+      expect(tester.getSize(row).height, lessThan(70));
     });
   });
 }

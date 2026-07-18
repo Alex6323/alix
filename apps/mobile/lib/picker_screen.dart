@@ -30,7 +30,25 @@ class PickerScreen extends StatefulWidget {
     this.onSetDecksDir,
     this.supportDir,
     this.buildClient,
-  });
+  }) : masteredEntries = null;
+
+  /// The Mastered window: this same screen with a fixed, pre-filtered entry
+  /// list (no bridge listing call, no root chrome) so mastered decks stay
+  /// openable to re-review via the ordinary row/tap path.
+  const PickerScreen.mastered({
+    super.key,
+    required this.root,
+    required List<DeckEntry> entries,
+    this.device,
+  })  : masteredEntries = entries,
+        dir = null,
+        title = null,
+        sharedDir = null,
+        staleDecksDir = null,
+        access = null,
+        onSetDecksDir = null,
+        supportDir = null,
+        buildClient = null;
 
   final String root;
   final String? dir;
@@ -60,6 +78,10 @@ class PickerScreen extends StatefulWidget {
   /// [HttpServerClient]. Tests inject a fake.
   final ServerClient Function(ServerConfig)? buildClient;
 
+  /// Set only by [PickerScreen.mastered]: a fixed pre-filtered list of
+  /// mastered decks, skipping the bridge listing call.
+  final List<DeckEntry>? masteredEntries;
+
   @override
   State<PickerScreen> createState() => _PickerScreenState();
 }
@@ -72,6 +94,10 @@ class _PickerScreenState extends State<PickerScreen> {
   List<String> _conflicts = const [];
   bool _conflictsDismissed = false;
 
+  /// Whether this instance is the Mastered window (see
+  /// [PickerScreen.mastered]), not the ordinary root/drill-in listing.
+  bool get _isMasteredView => widget.masteredEntries != null;
+
   @override
   void initState() {
     super.initState();
@@ -79,6 +105,11 @@ class _PickerScreenState extends State<PickerScreen> {
   }
 
   void _load() {
+    final fixed = widget.masteredEntries;
+    if (fixed != null) {
+      _entries = fixed;
+      return;
+    }
     final dir = widget.dir;
     _entries = dir == null
         ? listRoot(root: widget.root)
@@ -118,6 +149,16 @@ class _PickerScreenState extends State<PickerScreen> {
   @override
   Widget build(BuildContext context) {
     final isRoot = widget.dir == null;
+    // Only the root loose-deck list tucks mastered decks away (item 13); a
+    // workspace drill-in (item 14) keeps them in their dependency tree, and
+    // the Mastered window itself is already the filtered list.
+    final splitMastered = isRoot && !_isMasteredView;
+    final active = splitMastered
+        ? _entries.where((e) => !e.mastered).toList()
+        : _entries;
+    final mastered = splitMastered
+        ? _entries.where((e) => e.mastered).toList()
+        : const <DeckEntry>[];
     return Scaffold(
       appBar: AppBar(
         title: const AlixWordmark(),
@@ -151,13 +192,18 @@ class _PickerScreenState extends State<PickerScreen> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
               children: [
-                // Drilled into a workspace: its name as the cyan eyebrow,
-                // matching the web picker's lede.
-                if (!isRoot && widget.title != null) _lede(context, widget.title!),
+                // The Mastered window's own eyebrow, else a drilled-into
+                // workspace's name, matching the web picker's lede.
+                if (_isMasteredView)
+                  _lede(context, 'Mastered 🎉')
+                else if (!isRoot && widget.title != null)
+                  _lede(context, widget.title!),
                 if (_entries.isEmpty)
                   _emptyHint(context)
-                else
-                  for (final entry in _entries) _deckRow(context, entry),
+                else ...[
+                  for (final entry in active) _deckRow(context, entry),
+                  if (mastered.isNotEmpty) _masteredAffordance(context, mastered),
+                ],
               ],
             ),
           ),
@@ -189,76 +235,135 @@ class _PickerScreenState extends State<PickerScreen> {
   /// resolved emblem leads the title (else no leading icon), a chevron
   /// marks a drillable folder, and one trailing marker (trace / exam-due /
   /// due) reports the row's state. Tap opens at the remembered depth with
-  /// no prompt; a deck row's long-press re-picks it (item 10).
+  /// no prompt; a deck row's long-press re-picks it (item 10). A workspace
+  /// member (`entry.tree` non-empty) leads with its dependency-tree branch
+  /// prefix instead of an icon; a locked member dims the whole row (browse
+  /// stays allowed, only the tap's dimmed to signal the gate) (item 14).
   Widget _deckRow(BuildContext context, DeckEntry entry) {
     final theme = Theme.of(context);
     final tokens = theme.alix;
     final canRePick = !entry.isWorkspace && !entry.isTrace;
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
+      child: Opacity(
+        opacity: entry.locked ? 0.5 : 1,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(11),
+            onTap: () => entry.isWorkspace
+                ? _drillInto(entry)
+                : entry.isTrace
+                    ? _traceNotice()
+                    : _openDeck(entry),
+            onLongPress: canRePick ? () => _rePickDepth(entry) : null,
+            child: Container(
+              constraints: const BoxConstraints(minHeight: 54),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                border: Border.all(color: tokens.line),
+                borderRadius: BorderRadius.circular(11),
+              ),
+              child: Row(
+                children: [
+                  if (entry.icon != null) ...[
+                    _emblem(entry.icon!, tokens),
+                    const SizedBox(width: 10),
+                  ],
+                  if (entry.tree.isNotEmpty) ...[
+                    Text(
+                      entry.tree,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 13,
+                        color: tokens.faint,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                  ],
+                  Expanded(
+                    child: Text(
+                      entry.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  if (entry.isTrace) ...[
+                    const SizedBox(width: 12),
+                    Text(
+                      'trace',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: tokens.faint,
+                        fontFamily: 'monospace',
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ] else if (entry.examDue) ...[
+                    // Drilled and awaiting its AI exam: the more actionable
+                    // of the two states when a deck happens to also read
+                    // due, so it wins the one trailing marker slot.
+                    const SizedBox(width: 12),
+                    Text(
+                      'exam',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: tokens.warn,
+                        fontFamily: 'monospace',
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ] else if (entry.due) ...[
+                    const SizedBox(width: 12),
+                    Icon(Icons.circle, size: 8, color: tokens.bolt),
+                  ],
+                  if (entry.isWorkspace) ...[
+                    const SizedBox(width: 8),
+                    Icon(Icons.chevron_right, size: 22, color: tokens.dim),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The one row tucking mastered decks out of the ROOT list (item 13):
+  /// styled distinctly (the good/celebration tint) with a count, opening the
+  /// Mastered window. Only rendered when at least one mastered deck exists.
+  Widget _masteredAffordance(BuildContext context, List<DeckEntry> mastered) {
+    final theme = Theme.of(context);
+    final tokens = theme.alix;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(11),
-          onTap: () => entry.isWorkspace
-              ? _drillInto(entry)
-              : entry.isTrace
-                  ? _traceNotice()
-                  : _openDeck(entry),
-          onLongPress: canRePick ? () => _rePickDepth(entry) : null,
+          onTap: () => _openMastered(mastered),
           child: Container(
             constraints: const BoxConstraints(minHeight: 54),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: BoxDecoration(
-              border: Border.all(color: tokens.line),
+              border: Border.all(color: tokens.good.withValues(alpha: 0.4)),
               borderRadius: BorderRadius.circular(11),
             ),
             child: Row(
               children: [
-                if (entry.icon != null) ...[
-                  _emblem(entry.icon!, tokens),
-                  const SizedBox(width: 10),
-                ],
                 Expanded(
                   child: Text(
-                    entry.title,
+                    'Mastered · ${mastered.length}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w600),
+                        ?.copyWith(fontWeight: FontWeight.w600, color: tokens.good),
                   ),
                 ),
-                if (entry.isTrace) ...[
-                  const SizedBox(width: 12),
-                  Text(
-                    'trace',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: tokens.faint,
-                      fontFamily: 'monospace',
-                      letterSpacing: 1.2,
-                    ),
-                  ),
-                ] else if (entry.examDue) ...[
-                  // Drilled and awaiting its AI exam: the more actionable of
-                  // the two states when a deck happens to also read due, so
-                  // it wins the one trailing marker slot.
-                  const SizedBox(width: 12),
-                  Text(
-                    'exam',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: tokens.warn,
-                      fontFamily: 'monospace',
-                      letterSpacing: 1.2,
-                    ),
-                  ),
-                ] else if (entry.due) ...[
-                  const SizedBox(width: 12),
-                  Icon(Icons.circle, size: 8, color: tokens.bolt),
-                ],
-                if (entry.isWorkspace) ...[
-                  const SizedBox(width: 8),
-                  Icon(Icons.chevron_right, size: 22, color: tokens.dim),
-                ],
+                Icon(Icons.chevron_right, size: 22, color: tokens.good),
               ],
             ),
           ),
@@ -308,6 +413,18 @@ class _PickerScreenState extends State<PickerScreen> {
           root: widget.root,
           dir: entry.path,
           title: entry.title,
+          device: widget.device,
+        ),
+      ),
+    );
+  }
+
+  void _openMastered(List<DeckEntry> mastered) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PickerScreen.mastered(
+          root: widget.root,
+          entries: mastered,
           device: widget.device,
         ),
       ),
