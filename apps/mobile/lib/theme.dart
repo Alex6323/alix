@@ -254,6 +254,228 @@ const _solarizedLightVars = ThemeVars(
   accentInk: Color(0xFFFFFFFF),
 );
 
+/// GitHub Dark, theme.css `[data-theme="github-dark"]`.
+const _githubDarkVars = ThemeVars(
+  surface: Color(0xFF0D1117),
+  ink: Color(0xFFE6EDF3),
+  dim: Color(0xFF7D8590),
+  line: Color(0xFF30363D),
+  bolt: Color(0xFF2F81F7),
+  boltHi: Color(0xFF2F81F7),
+  good: Color(0xFF3FB950),
+  warn: Color(0xFFD29922),
+  again: Color(0xFFF85149),
+  noteBorder: Color(0xFFD29922),
+  noteInk: Color(0xFFE6EDF3),
+);
+
+/// GitHub Light, theme.css `[data-theme="github-light"]`.
+const _githubLightVars = ThemeVars(
+  surface: Color(0xFFFFFFFF),
+  ink: Color(0xFF1F2328),
+  dim: Color(0xFF656D76),
+  line: Color(0x1F14141E), // rgba(20, 20, 30, .12)
+  bolt: Color(0xFF0969DA),
+  boltHi: Color(0xFF0969DA),
+  good: Color(0xFF1A7F37),
+  warn: Color(0xFF9A6700),
+  again: Color(0xFFD1242F),
+  noteBorder: Color(0xFF9A6700),
+  noteInk: Color(0xFF1F2328),
+  text: Color(0xFF3D444D),
+  faint: Color(0xFF8C959F),
+  accentInk: Color(0xFFFFFFFF),
+);
+
+/// One Dark, theme.css `[data-theme="one-dark"]`.
+const _oneDarkVars = ThemeVars(
+  surface: Color(0xFF282C34),
+  ink: Color(0xFFDCDFE4),
+  dim: Color(0xFF9AA0AB),
+  line: Color(0x1AFFFFFF), // rgba(255, 255, 255, .10)
+  bolt: Color(0xFF61AFEF),
+  boltHi: Color(0xFF61AFEF),
+  good: Color(0xFF98C379),
+  warn: Color(0xFFE5C07B),
+  again: Color(0xFFE06C75),
+  noteBorder: Color(0xFFE5C07B),
+  noteInk: Color(0xFFDCDFE4),
+  text: Color(0xFFC8CCD4),
+  faint: Color(0xFF6B727D),
+  accentInk: Color(0xFF081A2A),
+);
+
+/// Dracula, theme.css `[data-theme="dracula"]`.
+const _draculaVars = ThemeVars(
+  surface: Color(0xFF282A36),
+  ink: Color(0xFFF8F8F2),
+  dim: Color(0xFF9A9AB5),
+  line: Color(0x1AFFFFFF), // rgba(255, 255, 255, .10)
+  bolt: Color(0xFFBD93F9),
+  boltHi: Color(0xFFBD93F9),
+  good: Color(0xFF50FA7B),
+  warn: Color(0xFFF1FA8C),
+  again: Color(0xFFFF5555),
+  noteBorder: Color(0xFFF1FA8C),
+  noteInk: Color(0xFFF8F8F2),
+  text: Color(0xFFD4D4E0),
+  faint: Color(0xFF6D6D8A),
+  accentInk: Color(0xFF1C142B),
+);
+
+/// Monokai, theme.css `[data-theme="monokai"]`.
+const _monokaiVars = ThemeVars(
+  surface: Color(0xFF272822),
+  ink: Color(0xFFF8F8F2),
+  dim: Color(0xFF88846F),
+  line: Color(0xFF1E1F1C),
+  bolt: Color(0xFFF92672),
+  boltHi: Color(0xFFF92672),
+  good: Color(0xFFA6E22E),
+  warn: Color(0xFFE6DB74),
+  again: Color(0xFFF92672),
+  noteBorder: Color(0xFFE6DB74),
+  noteInk: Color(0xFFF8F8F2),
+);
+
+/// Catppuccin Mocha, theme.css `[data-theme="catppuccin-mocha"]`.
+const _catppuccinMochaVars = ThemeVars(
+  surface: Color(0xFF1E1E2E),
+  ink: Color(0xFFCDD6F4),
+  dim: Color(0xFFA6ADC8),
+  line: Color(0xFF45475A),
+  bolt: Color(0xFFCBA6F7),
+  boltHi: Color(0xFFCBA6F7),
+  good: Color(0xFFA6E3A1),
+  warn: Color(0xFFF9E2AF),
+  again: Color(0xFFF38BA8),
+  noteBorder: Color(0xFFF9E2AF),
+  noteInk: Color(0xFFCDD6F4),
+);
+
+/// Catppuccin Latte, theme.css `[data-theme="catppuccin-latte"]`.
+const _catppuccinLatteVars = ThemeVars(
+  surface: Color(0xFFEFF1F5),
+  ink: Color(0xFF4C4F69),
+  dim: Color(0xFF6C6F85),
+  line: Color(0xFFBCC0CC),
+  bolt: Color(0xFF8839EF),
+  boltHi: Color(0xFF8839EF),
+  good: Color(0xFF40A02B),
+  warn: Color(0xFFDF8E1D),
+  again: Color(0xFFD20F39),
+  noteBorder: Color(0xFFDF8E1D),
+  noteInk: Color(0xFF4C4F69),
+);
+
+/// Tokyo Night, theme.css `[data-theme="tokyo-night"]`.
+const _tokyoNightVars = ThemeVars(
+  surface: Color(0xFF1A1B26),
+  ink: Color(0xFFC0CAF5),
+  dim: Color(0xFF565F89),
+  line: Color(0xFF15161E),
+  bolt: Color(0xFF7AA2F7),
+  boltHi: Color(0xFF7AA2F7),
+  good: Color(0xFF9ECE6A),
+  warn: Color(0xFFE0AF68),
+  again: Color(0xFFF7768E),
+  noteBorder: Color(0xFFE0AF68),
+  noteInk: Color(0xFFC0CAF5),
+);
+
+/// Solarized Dark, theme.css `[data-theme="solarized-dark"]`.
+const _solarizedDarkVars = ThemeVars(
+  surface: Color(0xFF002B36),
+  ink: Color(0xFF839496),
+  dim: Color(0xFF586E75),
+  line: Color(0xFF073642),
+  bolt: Color(0xFF268BD2),
+  boltHi: Color(0xFF268BD2),
+  good: Color(0xFF859900),
+  warn: Color(0xFFB58900),
+  again: Color(0xFFDC322F),
+  noteBorder: Color(0xFFB58900),
+  noteInk: Color(0xFF839496),
+);
+
+/// Gruvbox Dark, theme.css `[data-theme="gruvbox-dark"]`.
+const _gruvboxDarkVars = ThemeVars(
+  surface: Color(0xFF282828),
+  ink: Color(0xFFFBF1C7),
+  dim: Color(0xFFA89984),
+  line: Color(0x1AFFFFFF), // rgba(255, 255, 255, .10)
+  bolt: Color(0xFFFABD2F),
+  boltHi: Color(0xFFFABD2F),
+  good: Color(0xFFB8BB26),
+  warn: Color(0xFFFABD2F),
+  again: Color(0xFFFB4934),
+  noteBorder: Color(0xFFFABD2F),
+  noteInk: Color(0xFFFBF1C7),
+  text: Color(0xFFEBDBB2),
+  faint: Color(0xFF7C6F64),
+  accentInk: Color(0xFF2A2000),
+);
+
+/// Gruvbox Light, theme.css `[data-theme="gruvbox-light"]`.
+const _gruvboxLightVars = ThemeVars(
+  surface: Color(0xFFFBF1C7),
+  ink: Color(0xFF3C3836),
+  dim: Color(0xFF7C6F64),
+  line: Color(0xFFD5C4A1),
+  bolt: Color(0xFF458588),
+  boltHi: Color(0xFF458588),
+  good: Color(0xFF98971A),
+  warn: Color(0xFFD79921),
+  again: Color(0xFFCC241D),
+  noteBorder: Color(0xFFD79921),
+  noteInk: Color(0xFF3C3836),
+);
+
+/// Ayu Dark, theme.css `[data-theme="ayu-dark"]`.
+const _ayuDarkVars = ThemeVars(
+  surface: Color(0xFF0D1017),
+  ink: Color(0xFFBFBDB6),
+  dim: Color(0xFF5C6773),
+  line: Color(0xFF1B1F29),
+  bolt: Color(0xFFE6B450),
+  boltHi: Color(0xFFE6B450),
+  good: Color(0xFFAAD94C),
+  warn: Color(0xFFFFB454),
+  again: Color(0xFFF07178),
+  noteBorder: Color(0xFFFFB454),
+  noteInk: Color(0xFFBFBDB6),
+);
+
+/// Rosé Pine, theme.css `[data-theme="rose-pine"]`.
+const _rosePineVars = ThemeVars(
+  surface: Color(0xFF191724),
+  ink: Color(0xFFE0DEF4),
+  dim: Color(0xFF6E6A86),
+  line: Color(0xFF26233A),
+  bolt: Color(0xFFC4A7E7),
+  boltHi: Color(0xFFC4A7E7),
+  good: Color(0xFF31748F),
+  warn: Color(0xFFF6C177),
+  again: Color(0xFFEB6F92),
+  noteBorder: Color(0xFFF6C177),
+  noteInk: Color(0xFFE0DEF4),
+);
+
+/// Everforest Dark, theme.css `[data-theme="everforest-dark"]`.
+const _everforestDarkVars = ThemeVars(
+  surface: Color(0xFF2D353B),
+  ink: Color(0xFFD3C6AA),
+  dim: Color(0xFF859289),
+  line: Color(0xFF3D484D),
+  bolt: Color(0xFFA7C080),
+  boltHi: Color(0xFFA7C080),
+  good: Color(0xFFA7C080),
+  warn: Color(0xFFDBBC7F),
+  again: Color(0xFFE67E80),
+  noteBorder: Color(0xFFDBBC7F),
+  noteInk: Color(0xFFD3C6AA),
+);
+
 /// A registered theme: id + display name mirror theme.js's THEMES tuple
 /// (minus the web-only kids trio); `data` is the built ThemeData.
 @immutable
@@ -273,9 +495,8 @@ class AlixTheme {
 
 /// The theme gallery. Ported from assets/web/theme.css / theme.js's
 /// non-kids THEMES entries; test/theme_gallery_test.dart parses those files
-/// at test time and asserts these hexes match. Only 4 shipped here
-/// (dark/light/nord/solarized-light) - the remaining ~14 land as data in a
-/// follow-up task, without needing any change to the mapper or the test.
+/// at test time and asserts these hexes match. All 18 non-kids ids are
+/// shipped here (order mirrors theme.js's THEMES tuple).
 final List<AlixTheme> alixThemes = [
   AlixTheme(
     id: 'dark',
@@ -290,16 +511,100 @@ final List<AlixTheme> alixThemes = [
     data: themeFromVars(_lightVars, Brightness.light),
   ),
   AlixTheme(
-    id: 'nord',
-    name: 'Nord',
+    id: 'github-dark',
+    name: 'GitHub',
     mode: Brightness.dark,
-    data: themeFromVars(_nordVars, Brightness.dark),
+    data: themeFromVars(_githubDarkVars, Brightness.dark),
+  ),
+  AlixTheme(
+    id: 'github-light',
+    name: 'GitHub Light',
+    mode: Brightness.light,
+    data: themeFromVars(_githubLightVars, Brightness.light),
+  ),
+  AlixTheme(
+    id: 'one-dark',
+    name: 'One Dark',
+    mode: Brightness.dark,
+    data: themeFromVars(_oneDarkVars, Brightness.dark),
+  ),
+  AlixTheme(
+    id: 'dracula',
+    name: 'Dracula',
+    mode: Brightness.dark,
+    data: themeFromVars(_draculaVars, Brightness.dark),
+  ),
+  AlixTheme(
+    id: 'monokai',
+    name: 'Monokai',
+    mode: Brightness.dark,
+    data: themeFromVars(_monokaiVars, Brightness.dark),
+  ),
+  AlixTheme(
+    id: 'catppuccin-mocha',
+    name: 'Catppuccin Mocha',
+    mode: Brightness.dark,
+    data: themeFromVars(_catppuccinMochaVars, Brightness.dark),
+  ),
+  AlixTheme(
+    id: 'catppuccin-latte',
+    name: 'Catppuccin Latte',
+    mode: Brightness.light,
+    data: themeFromVars(_catppuccinLatteVars, Brightness.light),
+  ),
+  AlixTheme(
+    id: 'tokyo-night',
+    name: 'Tokyo Night',
+    mode: Brightness.dark,
+    data: themeFromVars(_tokyoNightVars, Brightness.dark),
+  ),
+  AlixTheme(
+    id: 'solarized-dark',
+    name: 'Solarized',
+    mode: Brightness.dark,
+    data: themeFromVars(_solarizedDarkVars, Brightness.dark),
   ),
   AlixTheme(
     id: 'solarized-light',
     name: 'Solarized Light',
     mode: Brightness.light,
     data: themeFromVars(_solarizedLightVars, Brightness.light),
+  ),
+  AlixTheme(
+    id: 'gruvbox-dark',
+    name: 'Gruvbox',
+    mode: Brightness.dark,
+    data: themeFromVars(_gruvboxDarkVars, Brightness.dark),
+  ),
+  AlixTheme(
+    id: 'gruvbox-light',
+    name: 'Gruvbox Light',
+    mode: Brightness.light,
+    data: themeFromVars(_gruvboxLightVars, Brightness.light),
+  ),
+  AlixTheme(
+    id: 'nord',
+    name: 'Nord',
+    mode: Brightness.dark,
+    data: themeFromVars(_nordVars, Brightness.dark),
+  ),
+  AlixTheme(
+    id: 'ayu-dark',
+    name: 'Ayu',
+    mode: Brightness.dark,
+    data: themeFromVars(_ayuDarkVars, Brightness.dark),
+  ),
+  AlixTheme(
+    id: 'rose-pine',
+    name: 'Rosé Pine',
+    mode: Brightness.dark,
+    data: themeFromVars(_rosePineVars, Brightness.dark),
+  ),
+  AlixTheme(
+    id: 'everforest-dark',
+    name: 'Everforest',
+    mode: Brightness.dark,
+    data: themeFromVars(_everforestDarkVars, Brightness.dark),
   ),
 ];
 
