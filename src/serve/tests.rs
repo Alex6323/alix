@@ -207,7 +207,7 @@ fn resolve_row_resolves_a_unique_bare_deck_name() {
 
     assert_eq!(
         Resolved::One(dir.path().join("solo.md")),
-        resolve_row("solo.md", dir.path(), &recent)
+        resolve_row("solo.md", dir.path(), &recent, &mut DeckCache::default())
     );
 }
 
@@ -218,7 +218,12 @@ fn resolve_row_resolves_an_unknown_name_to_unknown() {
 
     assert_eq!(
         Resolved::Unknown,
-        resolve_row("../etc/passwd", dir.path(), &recent)
+        resolve_row(
+            "../etc/passwd",
+            dir.path(),
+            &recent,
+            &mut DeckCache::default()
+        )
     );
 }
 
@@ -237,7 +242,7 @@ fn resolve_row_resolves_a_workspace_row_to_many_with_every_member_file() {
             dir: ws.clone(),
             files: vec![ws.join("a.md"), ws.join("b.md")],
         },
-        resolve_row("english", dir.path(), &recent)
+        resolve_row("english", dir.path(), &recent, &mut DeckCache::default())
     );
 }
 
@@ -252,7 +257,7 @@ fn resolve_row_resolves_a_manifest_only_dir_with_no_members_to_unknown() {
     assert!(picker::catalog(dir.path(), &recent, &mut DeckCache::default()).is_empty());
     assert_eq!(
         Resolved::Unknown,
-        resolve_row("empty-ws", dir.path(), &recent)
+        resolve_row("empty-ws", dir.path(), &recent, &mut DeckCache::default())
     );
 }
 
@@ -267,7 +272,7 @@ fn resolve_row_rejects_a_bare_name_duplicated_across_two_containers() {
 
     assert_eq!(
         Resolved::Ambiguous,
-        resolve_row("a.md", dir.path(), &recent)
+        resolve_row("a.md", dir.path(), &recent, &mut DeckCache::default())
     );
 }
 
@@ -294,11 +299,16 @@ fn resolve_row_resolves_a_qualified_member_name_even_when_its_bare_workspace_nam
 
     assert_eq!(
         Resolved::Ambiguous,
-        resolve_row("english", dir.path(), &recent)
+        resolve_row("english", dir.path(), &recent, &mut DeckCache::default())
     );
     assert_eq!(
         Resolved::One(ws.join("a.md")),
-        resolve_row("english/a.md", dir.path(), &recent)
+        resolve_row(
+            "english/a.md",
+            dir.path(),
+            &recent,
+            &mut DeckCache::default()
+        )
     );
 }
 
@@ -327,11 +337,53 @@ fn a_qualified_member_name_duplicated_across_two_same_named_containers_is_ambigu
 
     assert_eq!(
         Resolved::Ambiguous,
-        resolve_row("english", dir.path(), &recent)
+        resolve_row("english", dir.path(), &recent, &mut DeckCache::default())
     );
     assert_eq!(
         Resolved::Ambiguous,
-        resolve_row("english/a.md", dir.path(), &recent)
+        resolve_row(
+            "english/a.md",
+            dir.path(),
+            &recent,
+            &mut DeckCache::default()
+        )
+    );
+}
+
+#[test]
+fn resolve_row_reuses_a_shared_cache_instead_of_reparsing_on_a_second_call() {
+    // A same-length, same-mtime rewrite to garbage carries no card marker
+    // (see `l1::is_deck_content`), so a fresh reparse would drop the row;
+    // resolving from the shared cache must keep the pre-rewrite answer.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("solo.md");
+    std::fs::write(&path, "## f <!-- id: s1 -->\nb\n").unwrap();
+    let recent = RecentDecks::load(dir.path().join("recent.json"));
+    let mut cache = DeckCache::default();
+
+    assert_eq!(
+        Resolved::One(path.clone()),
+        resolve_row("solo.md", dir.path(), &recent, &mut cache)
+    );
+
+    let meta = std::fs::metadata(&path).unwrap();
+    let (mtime, size) = (meta.modified().unwrap(), meta.len());
+    std::fs::write(&path, vec![b'z'; size as usize]).unwrap();
+    let file = std::fs::File::options().write(true).open(&path).unwrap();
+    file.set_modified(mtime).unwrap();
+    drop(file);
+    let meta = std::fs::metadata(&path).unwrap();
+    assert_eq!(size, meta.len(), "the garbage must keep the byte length");
+    assert_eq!(
+        mtime,
+        meta.modified().unwrap(),
+        "the original mtime must be restored exactly"
+    );
+
+    assert_eq!(
+        Resolved::One(path),
+        resolve_row("solo.md", dir.path(), &recent, &mut cache),
+        "an unchanged (mtime, size) must resolve from the shared cache, not a fresh reparse"
     );
 }
 
@@ -390,22 +442,40 @@ fn resolve_dest_falls_back_to_decks_dir_and_rejects_unknown_names() {
     let recent = RecentDecks::load(dir.path().join("recent.json"));
 
     assert_eq!(
-        resolve_dest(None, dir.path(), &recent),
+        resolve_dest(None, dir.path(), &recent, &mut DeckCache::default()),
         Some(dir.path().to_path_buf())
     );
     assert_eq!(
-        resolve_dest(Some(""), dir.path(), &recent),
+        resolve_dest(Some(""), dir.path(), &recent, &mut DeckCache::default()),
         Some(dir.path().to_path_buf())
     );
     assert_eq!(
-        resolve_dest(Some("english"), dir.path(), &recent),
+        resolve_dest(
+            Some("english"),
+            dir.path(),
+            &recent,
+            &mut DeckCache::default()
+        ),
         Some(ws.clone())
     );
     assert_eq!(
-        resolve_dest(Some("no-such-workspace"), dir.path(), &recent),
+        resolve_dest(
+            Some("no-such-workspace"),
+            dir.path(),
+            &recent,
+            &mut DeckCache::default()
+        ),
         None
     );
-    assert_eq!(resolve_dest(Some("../etc"), dir.path(), &recent), None);
+    assert_eq!(
+        resolve_dest(
+            Some("../etc"),
+            dir.path(),
+            &recent,
+            &mut DeckCache::default()
+        ),
+        None
+    );
 }
 
 #[test]
@@ -423,7 +493,15 @@ fn resolve_dest_rejects_a_dir_name_duplicated_across_two_containers() {
     let mut recent = RecentDecks::load(dir.path().join("recent.json"));
     recent.record(&[other_english], 1000);
 
-    assert_eq!(resolve_dest(Some("english"), dir.path(), &recent), None);
+    assert_eq!(
+        resolve_dest(
+            Some("english"),
+            dir.path(),
+            &recent,
+            &mut DeckCache::default()
+        ),
+        None
+    );
 }
 
 #[test]

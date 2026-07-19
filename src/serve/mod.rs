@@ -402,7 +402,7 @@ pub fn run_review(
                 }
             }
             (Method::Post, "/api/select") => {
-                match read_selection(&mut request, decks_dir, recent) {
+                match read_selection(&mut request, decks_dir, recent, &mut *cache) {
                     Some(sel) => {
                         let opts = sel.opts;
                         let paths = vec![sel.deck];
@@ -446,7 +446,7 @@ pub fn run_review(
                 }
             }
             (Method::Post, "/api/browse") => {
-                match read_selection(&mut request, decks_dir, recent) {
+                match read_selection(&mut request, decks_dir, recent, &mut *cache) {
                     Some(sel) => {
                         let paths = vec![sel.deck];
                         flush_store(store, store_dirty);
@@ -478,7 +478,7 @@ pub fn run_review(
                 }
             }
             (Method::Post, "/api/deck-topology") => {
-                let dto = match read_selection(&mut request, decks_dir, recent) {
+                let dto = match read_selection(&mut request, decks_dir, recent, &mut *cache) {
                     Some(sel) => {
                         match (
                             Deck::load(&sel.deck),
@@ -510,7 +510,7 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                let paths = match resolve_row(&body.deck, decks_dir, recent) {
+                let paths = match resolve_row(&body.deck, decks_dir, recent, &mut *cache) {
                     Resolved::One(p) => vec![p],
                     Resolved::Many { files, .. } => files,
                     Resolved::Ambiguous | Resolved::Unknown => {
@@ -580,7 +580,7 @@ pub fn run_review(
                         }
                     },
                 };
-                let dir = match resolve_row(&body.name, decks_dir, recent) {
+                let dir = match resolve_row(&body.name, decks_dir, recent, &mut *cache) {
                     Resolved::Many { dir, .. } if crate::workspace::is_workspace(&dir) => dir,
                     _ => {
                         respond_status(request, 400);
@@ -615,7 +615,8 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                let Some(dir) = resolve_dest(b.dest.as_deref(), decks_dir, recent) else {
+                let Some(dir) = resolve_dest(b.dest.as_deref(), decks_dir, recent, &mut *cache)
+                else {
                     respond_status(request, 400);
                     continue;
                 };
@@ -679,7 +680,8 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                let Some(dest) = resolve_dest(b.dest.as_deref(), decks_dir, recent) else {
+                let Some(dest) = resolve_dest(b.dest.as_deref(), decks_dir, recent, &mut *cache)
+                else {
                     respond_status(request, 400);
                     continue;
                 };
@@ -749,7 +751,7 @@ pub fn run_review(
                 let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
                 let path = match body.and_then(|b| b.deck) {
                     None => Some(decks_dir.clone()),
-                    Some(name) => resolved_path(resolve_row(&name, decks_dir, recent)),
+                    Some(name) => resolved_path(resolve_row(&name, decks_dir, recent, &mut *cache)),
                 };
                 let Some(path) = path else {
                     respond_status(request, 400);
@@ -803,7 +805,7 @@ pub fn run_review(
                 let name = query_param(request.url(), "deck");
                 let path = match &name {
                     None => Some(decks_dir.clone()),
-                    Some(n) => resolved_path(resolve_row(n, decks_dir, recent)),
+                    Some(n) => resolved_path(resolve_row(n, decks_dir, recent, &mut *cache)),
                 };
                 let Some(path) = path else {
                     respond_status(request, 400);
@@ -844,7 +846,8 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                let Some(dest) = resolve_dest(b.dest.as_deref(), decks_dir, recent) else {
+                let Some(dest) = resolve_dest(b.dest.as_deref(), decks_dir, recent, &mut *cache)
+                else {
                     respond_status(request, 400);
                     continue;
                 };
@@ -902,6 +905,7 @@ pub fn run_review(
                     query_param(request.url(), "dest").as_deref(),
                     decks_dir,
                     recent,
+                    &mut *cache,
                 ) else {
                     respond_status(request, 400);
                     continue;
@@ -1172,7 +1176,9 @@ pub fn run_review(
                 };
                 // A bare name duplicated across containers must 400, not
                 // guess: this endpoint gates progression on the result.
-                let Some(path) = resolved_path(resolve_row(&body.deck, decks_dir, recent)) else {
+                let Some(path) =
+                    resolved_path(resolve_row(&body.deck, decks_dir, recent, &mut *cache))
+                else {
                     respond_status(request, 400);
                     continue;
                 };
@@ -1313,7 +1319,8 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                let (files, workspace_dir) = match resolve_row(&body.deck, decks_dir, recent) {
+                let (files, workspace_dir) = match resolve_row(&body.deck, decks_dir, recent, &mut *cache)
+                {
                     Resolved::One(p) => (vec![p], None),
                     Resolved::Many { dir, files } => (files, Some(dir)),
                     _ => {
@@ -1631,7 +1638,9 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                let Some(path) = resolved_path(resolve_row(&body.deck, decks_dir, recent)) else {
+                let Some(path) =
+                    resolved_path(resolve_row(&body.deck, decks_dir, recent, &mut *cache))
+                else {
                     respond_status(request, 400);
                     continue;
                 };

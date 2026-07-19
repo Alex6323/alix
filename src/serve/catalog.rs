@@ -458,6 +458,7 @@ pub(super) fn read_selection(
     request: &mut Request,
     decks_dir: &Path,
     recent: &RecentDecks,
+    cache: &mut DeckCache,
 ) -> Option<Selection> {
     #[derive(Deserialize)]
     struct Body {
@@ -479,7 +480,7 @@ pub(super) fn read_selection(
     if body.deck.is_empty() {
         return None;
     }
-    let deck = resolved_path(resolve_row(&body.deck, decks_dir, recent))?;
+    let deck = resolved_path(resolve_row(&body.deck, decks_dir, recent, cache))?;
     Some(Selection {
         deck,
         opts: SelectOptions {
@@ -510,18 +511,25 @@ pub(super) enum Resolved {
     Unknown,
 }
 
-/// Name resolution stays parse-fresh: `ServeState::cache` serves the listing
-/// only, so each call here holds a throwaway one.
-fn parse_fresh_catalog(decks_dir: &Path, recent: &RecentDecks) -> Vec<picker::DeckEntry> {
-    picker::catalog(decks_dir, recent, &mut DeckCache::default())
+fn resolve_catalog(
+    decks_dir: &Path,
+    recent: &RecentDecks,
+    cache: &mut DeckCache,
+) -> Vec<picker::DeckEntry> {
+    picker::catalog(decks_dir, recent, cache)
 }
 
 /// A name seen more than once (bare row or qualified member) resolves to
 /// `Ambiguous`, never silently picking one of several same-named entries.
-pub(super) fn resolve_row(name: &str, decks_dir: &Path, recent: &RecentDecks) -> Resolved {
+pub(super) fn resolve_row(
+    name: &str,
+    decks_dir: &Path,
+    recent: &RecentDecks,
+    cache: &mut DeckCache,
+) -> Resolved {
     let mut known: HashMap<String, Resolved> = HashMap::new();
     let mut seen: HashSet<String> = HashSet::new();
-    for e in parse_fresh_catalog(decks_dir, recent) {
+    for e in resolve_catalog(decks_dir, recent, cache) {
         for m in &e.members {
             if seen.insert(m.name.clone()) {
                 known.insert(m.name.clone(), Resolved::One(m.path.clone()));
@@ -562,11 +570,12 @@ pub(super) fn resolve_dest(
     dest: Option<&str>,
     decks_dir: &Path,
     recent: &RecentDecks,
+    cache: &mut DeckCache,
 ) -> Option<PathBuf> {
     let Some(name) = dest.filter(|d| !d.is_empty()) else {
         return Some(decks_dir.to_path_buf());
     };
-    let mut matches = parse_fresh_catalog(decks_dir, recent)
+    let mut matches = resolve_catalog(decks_dir, recent, cache)
         .into_iter()
         .filter(|e| e.name == name && e.path.is_dir());
     let first = matches.next()?;
