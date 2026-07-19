@@ -189,10 +189,12 @@ pub fn seed_choice_distractors(deck_path: String, root_dir: String) -> Result<()
     let mut cache =
         alix::augment::AugmentCache::open(alix::augment::augment_path_for(store.path()));
     for card in &deck.cards {
-        cache.set_distractors(
-            card.id(),
-            vec!["one".to_string(), "two".to_string(), "three".to_string()],
-        );
+        if let Some(id) = card.id() {
+            cache.set_distractors(
+                &id,
+                vec!["one".to_string(), "two".to_string(), "three".to_string()],
+            );
+        }
     }
     cache.save()?;
     Ok(())
@@ -255,10 +257,12 @@ pub struct ReviewSession {
     /// hand-derived subject that differs even by extension or case silently
     /// yields DIFFERENT ids, so dedup stops deduping and progress forks.
     subject: String,
-    /// This deck's own card ids at open time: the dedup baseline for
-    /// remediation (mirrors `exam::Sitting::deck_card_ids`, captured the same
-    /// way, off a freshly loaded `Deck`, not the live session roster).
-    deck_card_ids: HashSet<u64>,
+    /// This deck's own cards' §7 content fingerprints at open time: the dedup
+    /// baseline for remediation (mirrors `exam::Sitting::deck_fingerprints`,
+    /// captured the same way, off a freshly loaded `Deck`, not the live session
+    /// roster). Content, not id: a fresh remediation/tutor card carries a new
+    /// random token, so it can only be recognized by content.
+    deck_fingerprints: HashSet<u64>,
     /// Whether this deck sits an AI exam (`Deck::has_exam`, lean and
     /// canonical). `ReviewSession` only ever opens a non-trace deck (a lone
     /// trace walks instead, via [`WalkSession`]), so in practice this is
@@ -290,7 +294,11 @@ impl ReviewSession {
         // fields' docs; a hand-derived subject silently forks progress).
         let loaded = alix::deck::Deck::load(&deck)?;
         let subject = loaded.subject.clone();
-        let deck_card_ids: HashSet<u64> = loaded.cards.iter().map(|c| c.id()).collect();
+        let deck_fingerprints: HashSet<u64> = loaded
+            .cards
+            .iter()
+            .map(|c| alix::l1::content_fingerprint(&c.front, &c.back))
+            .collect();
         // The lean, canonical predicate (`Deck::has_exam`, shared with the
         // server and the picker), equivalent here since this session only
         // ever opens a non-trace deck; a lone trace walks and is examined
@@ -336,7 +344,7 @@ impl ReviewSession {
             topology_name: build.topology_name,
             deck_path,
             subject,
-            deck_card_ids,
+            deck_fingerprints,
             has_exam,
         })
     }
@@ -415,7 +423,12 @@ impl ReviewSession {
             .topologies()
             .iter()
             .filter(|t| t.name == *name)
-            .find_map(|t| t.region_path(card.id()).map(|(rg, cur)| (t, rg, cur)))?;
+            .find_map(|t| {
+                card.id()
+                    .as_deref()
+                    .and_then(|id| t.region_path(id))
+                    .map(|(rg, cur)| (t, rg, cur))
+            })?;
         Some(CrumbState {
             regions: regions.into_iter().map(str::to_string).collect(),
             current: current as u32,
@@ -461,17 +474,24 @@ impl ReviewSession {
             bail!("no card is current to mint a tutor card against");
         };
         let subject = card.subject.to_string();
-        let deck_ids: HashSet<u64> = self.session.cards().iter().map(|c| c.id()).collect();
+        // Dedup by canonical content, not id: a mint carries a fresh random
+        // token, so identical content is caught by its §7 fingerprint.
+        let deck_fingerprints: HashSet<u64> = self
+            .session
+            .cards()
+            .iter()
+            .map(|c| alix::l1::content_fingerprint(&c.front, &c.back))
+            .collect();
         let id = alix::store::mint_tutor_card(
             &mut self.store,
             &subject,
             &front,
             &back,
             now_ms,
-            &deck_ids,
+            &deck_fingerprints,
         )?;
         self.store.save()?;
-        Ok(id.to_string())
+        Ok(id)
     }
 
     /// Appends condensed tutor-note `notes` as `!` lines under the card at
@@ -532,7 +552,7 @@ impl ReviewSession {
         let count = alix::store::store_remediation_cards(
             &mut self.store,
             &self.subject,
-            &self.deck_card_ids,
+            &self.deck_fingerprints,
             &cards_text,
             now_ms,
             None,
@@ -699,10 +719,10 @@ pub struct WalkSession {
     /// as `ReviewSession` does (see its own field doc): the exam-mastery and
     /// exam-failed-cooldown store calls key off this.
     subject: String,
-    /// This deck's own checkpoint card ids at open time, held for parity
-    /// with `ReviewSession`'s dedup baseline.
+    /// This deck's own checkpoints' §7 content fingerprints at open time, held
+    /// for parity with `ReviewSession`'s dedup baseline.
     #[expect(dead_code)] // no walk-side remediation flow yet to dedup against
-    deck_card_ids: HashSet<u64>,
+    deck_fingerprints: HashSet<u64>,
     /// Whether this deck sits an AI exam (always true for a trace: its exam
     /// is the graded compression). Captured at open time.
     has_exam: bool,
@@ -727,7 +747,11 @@ impl WalkSession {
         let deck = PathBuf::from(deck_path);
         let loaded = alix::deck::Deck::load(&deck)?;
         let subject = loaded.subject.clone();
-        let deck_card_ids: HashSet<u64> = loaded.cards.iter().map(|c| c.id()).collect();
+        let deck_fingerprints: HashSet<u64> = loaded
+            .cards
+            .iter()
+            .map(|c| alix::l1::content_fingerprint(&c.front, &c.back))
+            .collect();
         let has_exam = loaded.has_exam();
 
         let root_store = alix::workspace::root_store_path(Path::new(&root_dir));
@@ -765,7 +789,7 @@ impl WalkSession {
             walk: build.walk,
             store,
             subject,
-            deck_card_ids,
+            deck_fingerprints,
             has_exam,
         })
     }
