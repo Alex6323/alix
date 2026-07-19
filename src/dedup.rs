@@ -7,7 +7,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::l1;
+use crate::parser;
 
 /// A card token claimed by more than one heading; the keeper keeps its
 /// progress, each loser is re-minted at its deck's next review-open.
@@ -157,7 +157,7 @@ pub fn scan(deck_paths: &[PathBuf]) -> DuplicateMap {
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("deck.md");
-        let Ok(deck) = l1::parse_l1(subject, &text) else {
+        let Ok(deck) = parser::parse(subject, &text) else {
             continue;
         };
         let mut cards: Vec<(String, usize)> = Vec::new();

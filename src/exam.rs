@@ -1199,7 +1199,7 @@ mod tests {
     }
 
     use crate::{
-        l1 as parser,
+        parser,
         session::is_retired_id,
         store::VirtualKind,
         testutil::{ask_config, exec_lock, fake_cli, fake_reply},

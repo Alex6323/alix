@@ -29,7 +29,7 @@ use alix::{
     assemble::{AssembleConfig, Pacing},
     augment::{self, AugmentCache},
     config::{Audience, Config},
-    l1,
+    parser,
     recent::RecentDecks,
     serve::{self, PairInfo, ReviewOptions},
     store::Store,
@@ -363,10 +363,10 @@ fn spawn_full_server_fixture(
     {
         let mut seed = Store::open(&store_path).unwrap();
         let mut aug = AugmentCache::open(augment::augment_path_for(&store_path));
-        for card in l1::parse_str("choice.md", CHOICE_DECK).unwrap() {
+        for card in parser::parse_str("choice.md", CHOICE_DECK).unwrap() {
             seed.get_or_insert(&card.id().unwrap(), 0);
         }
-        for card in l1::parse_str("choice-armed.md", CHOICE_ARMED_DECK).unwrap() {
+        for card in parser::parse_str("choice-armed.md", CHOICE_ARMED_DECK).unwrap() {
             seed.get_or_insert(&card.id().unwrap(), 0);
             aug.set_distractors(
                 &card.id().unwrap(),
@@ -1460,7 +1460,7 @@ fn cloze_choice_options_with_ai_distractors_keep_their_order_across_pulls() {
     for seed_store in [true, false] {
         let (base, _guard) = spawn_full_server_fixture(None, |dir| {
             std::fs::write(dir.join("frb.md"), CLOZE_DECK).unwrap();
-            let cards = l1::parse_str("frb.md", CLOZE_DECK).unwrap();
+            let cards = parser::parse_str("frb.md", CLOZE_DECK).unwrap();
             // Real distractor sets on every sub-card, mirroring the user's
             // augment.json (the lib computes the ids — never hand-rolled).
             let mut cache = alix::augment::AugmentCache::open(dir.join("augment.json"));

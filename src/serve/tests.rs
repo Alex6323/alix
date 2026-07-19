@@ -353,7 +353,7 @@ fn a_qualified_member_name_duplicated_across_two_same_named_containers_is_ambigu
 #[test]
 fn resolve_row_reuses_a_shared_cache_instead_of_reparsing_on_a_second_call() {
     // A same-length, same-mtime rewrite to garbage carries no card marker
-    // (see `l1::is_deck_content`), so a fresh reparse would drop the row;
+    // (see `parser::is_deck_content`), so a fresh reparse would drop the row;
     // resolving from the shared cache must keep the pre-rewrite answer.
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("solo.md");
@@ -710,7 +710,7 @@ fn state_reports_the_sessions_depth_and_typeline_mode() {
     let deck = dir.path().join("d.md");
     let text = "## steps <!-- reveal: line --> <!-- id: q1 -->\nfirst\nsecond\n";
     std::fs::write(&deck, text).unwrap();
-    let cards = crate::l1::parse_str("d.md", text).unwrap();
+    let cards = crate::parser::parse_str("d.md", text).unwrap();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
     store.get_or_insert(&cards[0].id().unwrap(), 0);
     let r = reviewing_at(deck, cards, &store, Depth::Reconstruct);
@@ -732,7 +732,7 @@ fn explain_state_serves_the_keypoints_rubric_cached_or_fallback() {
     let deck = dir.path().join("d.md");
     let text = "## why <!-- id: q1 -->\nfirst fact\nsecond fact\n";
     std::fs::write(&deck, text).unwrap();
-    let cards = crate::l1::parse_str("d.md", text).unwrap();
+    let cards = crate::parser::parse_str("d.md", text).unwrap();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
     store.get_or_insert(&cards[0].id().unwrap(), 0);
     let mut r = reviewing_at(deck, cards.clone(), &store, Depth::Reconstruct);
@@ -756,7 +756,7 @@ fn recognize_state_offers_gap_options_for_a_cloze_card() {
     let deck = dir.path().join("d.md");
     let text = "## where <!-- id: q1 -->\nThe \\cloze{cat} sat here\n";
     std::fs::write(&deck, text).unwrap();
-    let cards = crate::l1::parse_str("d.md", text).unwrap();
+    let cards = crate::parser::parse_str("d.md", text).unwrap();
     assert_eq!(vec!["cat".to_string()], cards[0].back);
     let id = cards[0].id().unwrap();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
@@ -784,7 +784,7 @@ fn recognize_state_quizzes_a_line_card_on_the_whole_sequence_not_a_single_step()
     let deck = dir.path().join("d.md");
     let text = "## steps <!-- reveal: line --> <!-- id: q1 -->\nfirst\nsecond\nthird\n";
     std::fs::write(&deck, text).unwrap();
-    let cards = crate::l1::parse_str("d.md", text).unwrap();
+    let cards = crate::parser::parse_str("d.md", text).unwrap();
     let id = cards[0].id().unwrap();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
     store.get_or_insert(&id, 0);
@@ -821,7 +821,7 @@ fn recognize_state_offers_no_choices_for_a_line_card_with_no_cached_distractors(
     let deck = dir.path().join("d.md");
     let text = "## steps <!-- reveal: line --> <!-- id: q1 -->\nfirst\nsecond\nthird\n";
     std::fs::write(&deck, text).unwrap();
-    let cards = crate::l1::parse_str("d.md", text).unwrap();
+    let cards = crate::parser::parse_str("d.md", text).unwrap();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
     store.get_or_insert(&cards[0].id().unwrap(), 0);
     let r = reviewing_at(deck, cards, &store, Depth::Recognize);
@@ -839,7 +839,7 @@ fn recognize_state_reshuffles_choice_options_on_the_next_appearance_but_not_mid_
     let deck = dir.path().join("d.md");
     let text = "## q <!-- id: q1 -->\nanswer\n";
     std::fs::write(&deck, text).unwrap();
-    let cards = crate::l1::parse_str("d.md", text).unwrap();
+    let cards = crate::parser::parse_str("d.md", text).unwrap();
     let id = cards[0].id().unwrap();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
     store.get_or_insert(&id, 0);
@@ -895,7 +895,7 @@ fn an_already_recognized_card_skips_the_acquire_mc() {
     let deck = dir.path().join("d.md");
     let text = "## q <!-- id: q1 -->\nanswer\n";
     std::fs::write(&deck, text).unwrap();
-    let cards = crate::l1::parse_str("d.md", text).unwrap();
+    let cards = crate::parser::parse_str("d.md", text).unwrap();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
     let state = store.get_or_insert(&cards[0].id().unwrap(), 0);
     state.recognized_ms = Some(500);
@@ -1390,7 +1390,7 @@ fn deck_topology_dto_deck_due_includes_a_due_virtual_card() {
     assert_eq!(0, before.deck_due);
 
     let vtext = "## virtual front <!-- id: v1 -->\nvirtual back\n".to_string();
-    let vid = crate::l1::parse_str(&deck.subject, &vtext).unwrap()[0]
+    let vid = crate::parser::parse_str(&deck.subject, &vtext).unwrap()[0]
         .id()
         .unwrap();
     store.insert_virtual(crate::store::VirtualCard {

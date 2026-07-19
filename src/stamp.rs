@@ -6,7 +6,7 @@ use std::{
 
 use thiserror::Error;
 
-use crate::{l1, token};
+use crate::{parser, token};
 
 /// Mirrors the L1 parser's whitespace set exactly, so token-value spans are
 /// located the same way the parser reads them.
@@ -49,7 +49,7 @@ pub enum StampError {
     #[error("frontmatter is not a block mapping, cannot splice an `id:`")]
     UnspliceableFrontmatter,
     #[error("deck does not parse: {0}")]
-    Parse(#[from] l1::L1Error),
+    Parse(#[from] parser::ParseError),
     /// `getrandom::Error` doesn't implement `std::error::Error` without its
     /// `std` feature, so it can't be a `#[source]` here.
     #[error("cannot mint a token: {0}")]
@@ -83,7 +83,7 @@ pub fn stamp_deck(path: &Path) -> Result<StampOutcome, StampError> {
     let bom = if original.starts_with(BOM) { BOM } else { "" };
     let body = &original[bom.len()..];
 
-    let deck = l1::parse_l1(subject, body)?;
+    let deck = parser::parse(subject, body)?;
 
     if deck.cards.is_empty() && deck.frontmatter_span.is_none() {
         return Err(StampError::NotADeck {
@@ -229,13 +229,13 @@ fn block_end_line(text: &str, front_line: usize) -> usize {
         let raw = &rest[..rest.find('\n').unwrap_or(rest.len())];
 
         if let Some(ch) = fence {
-            if l1::closes_fence(raw, ch) {
+            if parser::closes_fence(raw, ch) {
                 fence = None;
             }
             last = line;
             continue;
         }
-        if let Some(ch) = l1::fence_opener(raw) {
+        if let Some(ch) = parser::fence_opener(raw) {
             fence = Some(ch);
             last = line;
             continue;
@@ -381,7 +381,7 @@ mod tests {
             stamped.starts_with(&format!("---\nid: \"{deck_tok}\"\n\n---\n")),
             "{stamped:?}"
         );
-        let parsed = l1::parse_l1("deck.md", &stamped).unwrap();
+        let parsed = parser::parse("deck.md", &stamped).unwrap();
         assert_eq!(Some(deck_tok.as_str()), parsed.deck_token.as_deref());
         assert!(parsed.cards.iter().all(|c| c.token.is_some()));
     }
@@ -415,7 +415,7 @@ mod tests {
             format!("---\nid: \"{deck_tok}\"\nsource: notes.md\n---\n"),
             stamped[..stamped.find("## q").unwrap()]
         );
-        let parsed = l1::parse_l1("deck.md", &stamped).unwrap();
+        let parsed = parser::parse("deck.md", &stamped).unwrap();
         assert_eq!(Some(deck_tok.as_str()), parsed.deck_token.as_deref());
         assert_eq!(vec!["notes.md".to_string()], parsed.frontmatter.source);
     }
@@ -652,7 +652,7 @@ mod tests {
         let reconstructed = stamped.replacen(&format!("<!-- id: {tok} -->\n"), "", 1);
         assert_eq!(original, reconstructed);
 
-        let parsed = l1::parse_l1("deck.md", &stamped).unwrap();
+        let parsed = parser::parse("deck.md", &stamped).unwrap();
         assert_eq!("Foo", parsed.cards[0].front);
         assert_eq!(Some(tok.as_str()), parsed.cards[0].token.as_deref());
     }
@@ -674,7 +674,7 @@ mod tests {
             stamped
         );
 
-        let parsed = l1::parse_l1("deck.md", &stamped).unwrap();
+        let parsed = parser::parse("deck.md", &stamped).unwrap();
         assert_eq!(1, parsed.cards.len());
         assert_eq!("Q", parsed.cards[0].front);
         assert_eq!(vec!["the answer".to_string()], parsed.cards[0].back);
@@ -699,7 +699,7 @@ mod tests {
         let reconstructed = stamped.replacen(&format!("\n<!-- id: {tok} -->\n"), "", 1);
         assert_eq!(original, reconstructed);
 
-        let parsed = l1::parse_l1("deck.md", &stamped).unwrap();
+        let parsed = parser::parse("deck.md", &stamped).unwrap();
         assert_eq!(1, parsed.cards.len());
         assert_eq!(Some(tok.as_str()), parsed.cards[0].token.as_deref());
     }
@@ -736,7 +736,7 @@ mod tests {
                 .count(),
             "{stamped:?}"
         );
-        let parsed = l1::parse_l1("deck.md", &stamped).unwrap();
+        let parsed = parser::parse("deck.md", &stamped).unwrap();
         assert!(parsed.cards.iter().all(|c| c.front == "Foo"));
         assert!(parsed.cards.iter().all(|c| c.token.is_some()));
     }

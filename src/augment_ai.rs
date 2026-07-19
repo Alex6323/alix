@@ -893,7 +893,7 @@ mod tests {
         std::fs::write(&deck_path, deck_src).unwrap();
         let before = std::fs::read(&deck_path).unwrap();
 
-        let deck = crate::l1::parse_l1("d.md", deck_src).unwrap();
+        let deck = crate::parser::parse("d.md", deck_src).unwrap();
         let items: Vec<WarmItem> = deck.cards.iter().map(WarmItem::from_card).collect();
         let cli = fake_reply(dir.path(), r#"{"0": ["w1","w2","w3"]}"#);
         let map = generate(&items, 3, None, &ask_config(&cli), None).unwrap();

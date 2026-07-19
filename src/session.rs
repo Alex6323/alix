@@ -662,7 +662,7 @@ mod tests {
             .collect::<String>()
             .to_ascii_lowercase();
         let text = format!("## virtual front <!-- id: v{slug} -->\n{back}\n");
-        let mut card = crate::l1::parse_str(parent, &text).unwrap().remove(0);
+        let mut card = crate::parser::parse_str(parent, &text).unwrap().remove(0);
         card.line = 1_000_000;
         let id = card.id().unwrap();
         store.insert_virtual(VirtualCard {

@@ -12,7 +12,7 @@ use crate::{
     config::{AskConfig, ReviewConfig},
     deck::{Deck, DeckSettings},
     depth::{Depth, default_depth},
-    l1,
+    parser,
     scheduler::Fsrs,
     session::{self, DeckInfo, Order, Session, SessionOptions},
     stamp,
@@ -157,7 +157,7 @@ pub const VIRTUAL_LINE_BASE: usize = 1_000_000;
 /// `subject` must equal `vc.parent`, or the id won't reproduce (`Card::id`
 /// hashes the subject).
 pub fn synthesize_virtual(vc: &VirtualCard, subject: &Arc<str>, line: usize) -> Option<Card> {
-    let mut card = l1::parse_str(subject, &vc.text)
+    let mut card = parser::parse_str(subject, &vc.text)
         .ok()?
         .into_iter()
         .find(|c| c.id().as_deref() == Some(vc.id.as_str()))?;
@@ -855,7 +855,7 @@ it reads line two\n\
 
     fn insert_virtual_card(store: &mut Store, subject: &str) {
         let text = "## virtual front <!-- id: vq1 -->\nvirtual back\n".to_string();
-        let id = crate::l1::parse_str(subject, &text).unwrap()[0]
+        let id = crate::parser::parse_str(subject, &text).unwrap()[0]
             .id()
             .unwrap();
         store.insert_virtual(VirtualCard {
@@ -975,7 +975,7 @@ it reads line two\n\
     fn a_format_cache_entry_applies_to_a_synthesized_virtual_card() {
         let subject: Arc<str> = Arc::from("rust.md");
         let text = "## List the parts <!-- id: vlist -->\nA, B, C\n".to_string();
-        let id = crate::l1::parse_str(&subject, &text).unwrap()[0]
+        let id = crate::parser::parse_str(&subject, &text).unwrap()[0]
             .id()
             .unwrap();
         let vc = VirtualCard {
@@ -1018,7 +1018,7 @@ it reads line two\n\
         )
         .unwrap();
         insert_virtual_card(&mut store, "rust.md");
-        let virtual_id = crate::l1::parse_str(
+        let virtual_id = crate::parser::parse_str(
             "rust.md",
             "## virtual front <!-- id: vq1 -->\nvirtual back\n",
         )

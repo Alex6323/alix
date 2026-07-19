@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use alix::{config::Config, deck::Deck, generate, l1, library};
+use alix::{config::Config, deck::Deck, generate, library, parser};
 use anyhow::{Context, Result, bail};
 
 use crate::{
@@ -19,7 +19,7 @@ pub(crate) fn generate_cmd(args: GenerateArgs) -> Result<()> {
     if src_path.is_file()
         && src_path.extension().is_some_and(|e| e == "md")
         && std::fs::read_to_string(&src_path).is_ok_and(|t| {
-            alix::l1::parse_l1("stub.md", &t).is_ok_and(|d| d.frontmatter.trace.is_some())
+            alix::parser::parse("stub.md", &t).is_ok_and(|d| d.frontmatter.trace.is_some())
         })
     {
         let deck = Deck::load(&src_path)?;
@@ -254,7 +254,7 @@ fn generate_single_deck(args: &GenerateArgs, config: &Config) -> Result<()> {
         if !text.ends_with('\n') {
             println!();
         }
-        match l1::parse_str(&name, &text) {
+        match parser::parse_str(&name, &text) {
             Ok(cards) => eprintln!("({} cards — not written; --print)", cards.len()),
             Err(e) => eprintln!("(warning: does not parse yet — {e})"),
         }
@@ -363,7 +363,7 @@ fn trace_build(
         eprintln!("warning: cannot stamp {}: {e}", deck_path.display());
     }
 
-    let n = alix::l1::parse_str(&deck.subject, &cards)
+    let n = alix::parser::parse_str(&deck.subject, &cards)
         .map(|c| c.len())
         .unwrap_or(0);
     println!(
@@ -404,12 +404,12 @@ fn generate_trace_walk(args: &GenerateArgs, config: &Config, goal: &str) -> Resu
         .unwrap_or(source.as_str());
     // Quote through the L1 quoter: a name/source with `"`/`\` or `:` would
     // otherwise break the YAML mapping.
-    let trace = l1::yaml_quote(&format!(
+    let trace = parser::yaml_quote(&format!(
         "exploring {name} — what it is, its parts, and its spine"
     ));
     let deck_text = format!(
         "---\ntrace: {trace}\nsource: {}\n\n---\n\n{checkpoints}\n",
-        l1::yaml_quote(&source)
+        parser::yaml_quote(&source)
     );
     let dir = deck_out_dir(args.workspace.as_deref(), config)?;
     let raw = PathBuf::from(args.output.clone().unwrap_or_else(|| "explore.md".into()));

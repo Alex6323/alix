@@ -130,7 +130,7 @@ pub fn deck_files(dir: &Path) -> Vec<PathBuf> {
 /// visible row rather than dropping it silently.
 pub fn file_is_deck(path: &Path) -> bool {
     match std::fs::read_to_string(path) {
-        Ok(text) => crate::l1::is_deck_content(&text),
+        Ok(text) => crate::parser::is_deck_content(&text),
         Err(_) => true,
     }
 }

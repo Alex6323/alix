@@ -1,25 +1,23 @@
-use std::{hash::Hasher, path::PathBuf, sync::Arc};
+use std::{path::PathBuf, sync::Arc};
 
 use thiserror::Error;
-use twox_hash::XxHash64;
-use yaml_rust2::{Yaml, YamlLoader};
 
 use crate::{
     answer::Input,
     card::{Card, Direction},
     depth::Reveal,
-    session::Order,
-    store::HoleFingerprint,
     token,
 };
 
-// A NUL is safe here: the parser rejects C0 controls outside the whitespace
-// set, so it can never occur in real card text.
-const HOLE_MASK: &str = "\u{0}";
+mod canonical;
+mod cloze;
+mod frontmatter;
 
-pub const BLANK: &str = "____";
-
-pub const HIDDEN: &str = "[…]";
+pub use canonical::{canonical_content, content_fingerprint};
+pub use cloze::{BLANK, HIDDEN};
+use cloze::{Seg, hash_repr, hole_fingerprints, scan_cloze, seg_text};
+pub use frontmatter::{Frontmatter, yaml_quote};
+use frontmatter::{bad_value, parse_frontmatter, parse_reveal};
 
 // Deliberately not Unicode whitespace; anything outside this set is content.
 const WHITESPACE: [char; 6] = ['\t', '\n', '\x0B', '\x0C', '\r', ' '];
@@ -29,29 +27,13 @@ const ESCAPABLE: [&str; 6] = ["##", ">", "---", "<!--", "```", "~~~"];
 pub type LineSpan = (usize, usize);
 
 #[derive(Debug)]
-pub struct L1Deck {
+pub struct ParsedDeck {
     pub deck_token: Option<String>,
     pub title: Option<String>,
     pub frontmatter: Frontmatter,
     pub cards: Vec<Card>,
     pub lints: Vec<Lint>,
     pub frontmatter_span: Option<LineSpan>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Frontmatter {
-    pub id: Option<String>,
-    pub source: Vec<String>,
-    pub requires: Vec<String>,
-    pub link: Vec<String>,
-    pub trace: Option<String>,
-    pub reveal: Option<Reveal>,
-    pub order: Option<Order>,
-    pub input: Option<Input>,
-    pub direction: Option<Direction>,
-    pub img_dir: Option<PathBuf>,
-    pub origin: Option<String>,
-    pub unspliceable: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,7 +55,7 @@ pub enum LintKind {
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
-pub enum L1Error {
+pub enum ParseError {
     #[error("line {0}: frontmatter never closes (missing the terminating `---`)")]
     UnclosedFrontmatter(usize),
     #[error("line {line}: frontmatter is not valid yaml: {message}")]
@@ -96,7 +78,7 @@ pub enum L1Error {
     EmptyHole(usize),
 }
 
-pub fn parse_l1(subject: &str, text: &str) -> Result<L1Deck, L1Error> {
+pub fn parse(subject: &str, text: &str) -> Result<ParsedDeck, ParseError> {
     let document = parse_document(text)?;
     // Zero `## ` fronts is a valid, loadable zero-card deck, not a parse error.
     let subject: Arc<str> = Arc::from(subject);
@@ -105,7 +87,7 @@ pub fn parse_l1(subject: &str, text: &str) -> Result<L1Deck, L1Error> {
     for raw in document.cards {
         build_card(&subject, raw, &mut cards, &mut lints)?;
     }
-    Ok(L1Deck {
+    Ok(ParsedDeck {
         deck_token: document.frontmatter.id.clone(),
         title: document.title,
         frontmatter: document.frontmatter,
@@ -115,13 +97,13 @@ pub fn parse_l1(subject: &str, text: &str) -> Result<L1Deck, L1Error> {
     })
 }
 
-pub fn parse_str(subject: &str, text: &str) -> Result<Vec<Card>, L1Error> {
-    Ok(parse_l1(subject, text)?.cards)
+pub fn parse_str(subject: &str, text: &str) -> Result<Vec<Card>, ParseError> {
+    Ok(parse(subject, text)?.cards)
 }
 
-pub fn card_front_lines(text: &str) -> Result<Vec<usize>, L1Error> {
+pub fn card_front_lines(text: &str) -> Result<Vec<usize>, ParseError> {
     let mut lines = Vec::new();
-    for card in parse_l1("deck.md", text)?.cards {
+    for card in parse("deck.md", text)?.cards {
         if lines.last() != Some(&card.line) {
             lines.push(card.line);
         }
@@ -129,89 +111,13 @@ pub fn card_front_lines(text: &str) -> Result<Vec<usize>, L1Error> {
     Ok(lines)
 }
 
-// A change here stales every persisted content fingerprint: deliberate, never
-// a silent refactor.
-pub fn canonical_content(front: &str, back: &[String]) -> String {
-    let mut out = collapse(front);
-    let mut fence: Option<char> = None;
-    let mut prose = String::new();
-    for line in back {
-        if let Some(ch) = fence {
-            out.push('\n');
-            out.push_str(line);
-            if closes_fence(line, ch) {
-                fence = None;
-            }
-        } else if let Some(ch) = fence_opener(line) {
-            if !prose.is_empty() {
-                out.push('\n');
-                out.push_str(&prose);
-                prose.clear();
-            }
-            out.push('\n');
-            out.push_str(line);
-            fence = Some(ch);
-        } else {
-            let collapsed = collapse(line);
-            if !collapsed.is_empty() {
-                if !prose.is_empty() {
-                    prose.push(' ');
-                }
-                prose.push_str(&collapsed);
-            }
-        }
-    }
-    if !prose.is_empty() {
-        out.push('\n');
-        out.push_str(&prose);
-    }
-    out
-}
-
-pub fn content_fingerprint(front: &str, back: &[String]) -> u64 {
-    let mut hasher = XxHash64::default();
-    hasher.write(canonical_content(front, back).as_bytes());
-    hasher.finish()
-}
-
-fn hash64(s: &str) -> u64 {
-    let mut hasher = XxHash64::default();
-    hasher.write(s.as_bytes());
-    hasher.finish()
-}
-
-fn hole_fingerprints(parsed: &[Vec<Seg>], holes: &[(usize, usize, &str)]) -> Vec<HoleFingerprint> {
-    holes
-        .iter()
-        .map(|(hole_line, hole_seg, text)| {
-            let text_fp = hash64(&collapse(text));
-            let mut line = String::new();
-            for (si, segment) in parsed[*hole_line].iter().enumerate() {
-                match segment {
-                    Seg::Text(t) => line.push_str(t),
-                    Seg::Hole(_) if si == *hole_seg => line.push_str(HOLE_MASK),
-                    Seg::Hole(h) => line.push_str(h),
-                }
-            }
-            HoleFingerprint {
-                text_fp,
-                line_fp: hash64(&collapse(&line)),
-            }
-        })
-        .collect()
-}
-
 pub fn is_deck_content(text: &str) -> bool {
-    match parse_l1("deck.md", text) {
+    match parse("deck.md", text) {
         Ok(deck) => !deck.cards.is_empty() || deck.frontmatter_span.is_some(),
         // A parse failure counts as deck content too: a broken deck should
         // surface to doctor rather than silently vanish from the listing.
         Err(_) => true,
     }
-}
-
-pub fn yaml_quote(s: &str) -> String {
-    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
 // ── Internal representation ──
@@ -250,12 +156,7 @@ struct CardDirectives {
     math: Option<String>,
 }
 
-enum Seg {
-    Text(String),
-    Hole(String),
-}
-
-fn parse_document(text: &str) -> Result<Document, L1Error> {
+fn parse_document(text: &str) -> Result<Document, ParseError> {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     let lines = prepare(text)?;
     let mut lints = Vec::new();
@@ -270,7 +171,7 @@ fn parse_document(text: &str) -> Result<Document, L1Error> {
     })
 }
 
-fn prepare(text: &str) -> Result<Vec<&str>, L1Error> {
+fn prepare(text: &str) -> Result<Vec<&str>, ParseError> {
     let mut lines = Vec::new();
     for (idx, raw) in text.split('\n').enumerate() {
         let line = raw.strip_suffix('\r').unwrap_or(raw);
@@ -278,7 +179,7 @@ fn prepare(text: &str) -> Result<Vec<&str>, L1Error> {
             .chars()
             .find(|c| (*c as u32) < 0x20 && !WHITESPACE.contains(c))
         {
-            return Err(L1Error::ControlChar {
+            return Err(ParseError::ControlChar {
                 line: idx + 1,
                 found: format!("U+{:04X}", ch as u32),
             });
@@ -315,223 +216,13 @@ pub(crate) fn closes_fence(line: &str, ch: char) -> bool {
     run >= 3 && line.chars().skip(run).all(|c| WHITESPACE.contains(&c))
 }
 
-// ── Frontmatter ──
-
-// Leading indentation doesn't match: a `---` inside a YAML block scalar can't
-// accidentally close the frontmatter.
-fn closes_frontmatter(line: &str) -> bool {
-    line.strip_prefix("---")
-        .is_some_and(|rest| rest.chars().all(|c| WHITESPACE.contains(&c)))
-}
-
-fn parse_frontmatter(
-    lines: &[&str],
-    lints: &mut Vec<Lint>,
-) -> Result<(Frontmatter, usize, Option<LineSpan>), L1Error> {
-    let Some(open) = lines.iter().position(|line| !trim_ws(line).is_empty()) else {
-        return Ok((Frontmatter::default(), lines.len(), None));
-    };
-    if lines[open] != "---" {
-        return Ok((Frontmatter::default(), 0, None));
-    }
-    let Some(close) = lines[open + 1..]
-        .iter()
-        .position(|line| closes_frontmatter(line))
-        .map(|i| open + 1 + i)
-    else {
-        return Err(L1Error::UnclosedFrontmatter(open + 1));
-    };
-    let frontmatter = load_frontmatter(&lines[open + 1..close], open + 2, lints)?;
-    Ok((frontmatter, close + 1, Some((open + 1, close + 1))))
-}
-
-fn load_frontmatter(
-    block: &[&str],
-    first_line: usize,
-    lints: &mut Vec<Lint>,
-) -> Result<Frontmatter, L1Error> {
-    let mut frontmatter = Frontmatter::default();
-    let text = block.join("\n");
-    if trim_ws(&text).is_empty() {
-        return Ok(frontmatter);
-    }
-    let docs = YamlLoader::load_from_str(&text).map_err(|e| L1Error::FrontmatterSyntax {
-        line: first_line + e.marker().line().saturating_sub(1),
-        message: e.info().to_string(),
-    })?;
-    let Some(root) = docs.into_iter().next() else {
-        return Ok(frontmatter);
-    };
-    // A null-scalar root loads but is not a block mapping; splicing an `id:`
-    // in front of a bare scalar would fail (yaml-rust2: "simple key expected").
-    if root == Yaml::Null {
-        frontmatter.unspliceable = true;
-        return Ok(frontmatter);
-    }
-    let Yaml::Hash(mapping) = root else {
-        frontmatter.unspliceable = true;
-        return Ok(frontmatter);
-    };
-    // A flow mapping loads but offers no per-key line to splice a minted
-    // `id:` into.
-    if trim_ws(&text).starts_with('{') {
-        frontmatter.unspliceable = true;
-    }
-    for (key_node, value) in &mapping {
-        let Yaml::String(key) = key_node else {
-            lints.push(Lint {
-                line: first_line,
-                kind: LintKind::UnknownKey {
-                    key: format!("{key_node:?}"),
-                },
-            });
-            continue;
-        };
-        let line = key_line(block, first_line, key);
-        match key.as_str() {
-            "id" => match value {
-                Yaml::String(s) => {
-                    if !token::is_valid(s) {
-                        return Err(L1Error::InvalidToken {
-                            line,
-                            token: s.clone(),
-                        });
-                    }
-                    frontmatter.id = Some(s.clone());
-                }
-                other => {
-                    return Err(L1Error::NonStringId {
-                        line,
-                        found: yaml_kind(other),
-                    });
-                }
-            },
-            "source" => frontmatter.source = string_list(key, value, line, lints),
-            "requires" => frontmatter.requires = string_list(key, value, line, lints),
-            "link" => frontmatter.link = string_list(key, value, line, lints),
-            "trace" => match value {
-                Yaml::String(s) => frontmatter.trace = Some(s.clone()),
-                other => lints.push(bad_value(line, key, yaml_kind(other).to_string())),
-            },
-            "reveal" => match value.as_str().and_then(parse_reveal) {
-                Some(reveal) => frontmatter.reveal = Some(reveal),
-                None => lints.push(bad_value(line, key, describe(value))),
-            },
-            "order" => match value.as_str().and_then(Order::parse) {
-                Some(order) => frontmatter.order = Some(order),
-                None => lints.push(bad_value(line, key, describe(value))),
-            },
-            "input" => match value.as_str().and_then(Input::parse) {
-                Some(input) => frontmatter.input = Some(input),
-                None => lints.push(bad_value(line, key, describe(value))),
-            },
-            "direction" => match value.as_str().and_then(Direction::parse) {
-                Some(direction) => frontmatter.direction = Some(direction),
-                None => lints.push(bad_value(line, key, describe(value))),
-            },
-            "img-dir" => match value {
-                Yaml::String(s) => frontmatter.img_dir = Some(PathBuf::from(s)),
-                other => lints.push(bad_value(line, key, yaml_kind(other).to_string())),
-            },
-            "origin" => match value {
-                Yaml::String(s) => {
-                    let v = trim_ws(s);
-                    if !v.is_empty() {
-                        frontmatter.origin = Some(v.to_string());
-                    }
-                }
-                other => lints.push(bad_value(line, key, yaml_kind(other).to_string())),
-            },
-            // Reserved for future deck metadata: ignored without a lint.
-            "tags" | "license" | "author" | "language" | "revision" | "generated-by"
-            | "generated-at" => {}
-            _ => lints.push(Lint {
-                line,
-                kind: LintKind::UnknownKey { key: key.clone() },
-            }),
-        }
-    }
-    Ok(frontmatter)
-}
-
-/// `reveal:` values in L1: `cloze` is retired (holes are the trigger).
-fn parse_reveal(value: &str) -> Option<Reveal> {
-    Reveal::parse(value).filter(|reveal| *reveal != Reveal::Cloze)
-}
-
-fn describe(value: &Yaml) -> String {
-    value
-        .as_str()
-        .map(str::to_string)
-        .unwrap_or_else(|| yaml_kind(value).to_string())
-}
-
-fn yaml_kind(node: &Yaml) -> &'static str {
-    match node {
-        Yaml::Null => "null",
-        Yaml::Boolean(_) => "a boolean",
-        Yaml::Integer(_) => "an integer",
-        Yaml::Real(_) => "a float",
-        Yaml::String(_) => "a string",
-        Yaml::Array(_) => "a sequence",
-        Yaml::Hash(_) => "a mapping",
-        _ => "an unsupported node",
-    }
-}
-
-fn string_list(key: &str, value: &Yaml, line: usize, lints: &mut Vec<Lint>) -> Vec<String> {
-    match value {
-        Yaml::String(s) => vec![s.clone()],
-        Yaml::Array(items) => {
-            let mut out = Vec::new();
-            for item in items {
-                match item {
-                    Yaml::String(s) => out.push(s.clone()),
-                    other => lints.push(bad_value(line, key, yaml_kind(other).to_string())),
-                }
-            }
-            out
-        }
-        other => {
-            lints.push(bad_value(line, key, yaml_kind(other).to_string()));
-            Vec::new()
-        }
-    }
-}
-
-fn key_line(block: &[&str], first_line: usize, key: &str) -> usize {
-    for (i, line) in block.iter().enumerate() {
-        if let Some(rest) = trim_ws(line).strip_prefix(key)
-            && rest.trim_start_matches(&WHITESPACE[..]).starts_with(':')
-        {
-            return first_line + i;
-        }
-    }
-    for (i, line) in block.iter().enumerate() {
-        if line.contains(key) {
-            return first_line + i;
-        }
-    }
-    first_line
-}
-
-fn bad_value(line: usize, key: &str, value: String) -> Lint {
-    Lint {
-        line,
-        kind: LintKind::BadValue {
-            key: key.to_string(),
-            value,
-        },
-    }
-}
-
 // ── The line scanner ──
 
 fn scan(
     lines: &[&str],
     start: usize,
     lints: &mut Vec<Lint>,
-) -> Result<(Option<String>, Vec<RawCard>), L1Error> {
+) -> Result<(Option<String>, Vec<RawCard>), ParseError> {
     let mut title: Option<String> = None;
     let mut cards: Vec<RawCard> = Vec::new();
     let mut current: Option<RawCard> = None;
@@ -567,7 +258,7 @@ fn scan(
             }
             let (front, directives) = heading(rest, lineno, lints)?;
             if front.is_empty() {
-                return Err(L1Error::EmptyFront(lineno));
+                return Err(ParseError::EmptyFront(lineno));
             }
             current = Some(RawCard {
                 line: lineno,
@@ -700,7 +391,7 @@ fn heading(
     rest: &str,
     lineno: usize,
     lints: &mut Vec<Lint>,
-) -> Result<(String, CardDirectives), L1Error> {
+) -> Result<(String, CardDirectives), ParseError> {
     let mut directives = CardDirectives::default();
     let (text, bodies) = split_trailing_comments(rest);
     for body in bodies {
@@ -775,7 +466,7 @@ fn apply_directive(
     value: String,
     line: usize,
     lints: &mut Vec<Lint>,
-) -> Result<(), L1Error> {
+) -> Result<(), ParseError> {
     if value.is_empty() && is_known_card_key(key) {
         lints.push(Lint {
             line,
@@ -788,7 +479,7 @@ fn apply_directive(
     match key {
         "id" => {
             if !token::is_valid(&value) {
-                return Err(L1Error::InvalidToken { line, token: value });
+                return Err(ParseError::InvalidToken { line, token: value });
             }
             directives.token = Some(value);
         }
@@ -844,7 +535,7 @@ fn build_card(
     raw: RawCard,
     cards: &mut Vec<Card>,
     lints: &mut Vec<Lint>,
-) -> Result<(), L1Error> {
+) -> Result<(), ParseError> {
     let RawCard {
         line,
         front: heading,
@@ -865,7 +556,7 @@ fn build_card(
         (heading, front_extra)
     };
     if answer.is_empty() {
-        return Err(L1Error::FrontWithoutAnswer(line));
+        return Err(ParseError::FrontWithoutAnswer(line));
     }
 
     let mut parsed = Vec::with_capacity(answer.len());
@@ -958,132 +649,17 @@ fn build_card(
     Ok(())
 }
 
-fn scan_cloze(line_text: &str, lineno: usize, lints: &mut Vec<Lint>) -> Result<Vec<Seg>, L1Error> {
-    let mut segments = Vec::new();
-    let mut text = String::new();
-    let mut rest = line_text;
-    while !rest.is_empty() {
-        if let Some(after) = rest.strip_prefix("\\\\cloze") {
-            text.push_str("\\cloze");
-            rest = after;
-        } else if let Some(after) = rest.strip_prefix("\\cloze") {
-            if let Some(arg) = after.strip_prefix('{') {
-                let (content, after_hole) = scan_hole(arg, lineno)?;
-                if trim_ws(&content).is_empty() {
-                    return Err(L1Error::EmptyHole(lineno));
-                }
-                if content.contains("\\cloze") {
-                    // Hole content is never re-scanned; the inner marker is
-                    // literal text.
-                    lints.push(Lint {
-                        line: lineno,
-                        kind: LintKind::ClozeInHole,
-                    });
-                }
-                if !text.is_empty() {
-                    segments.push(Seg::Text(std::mem::take(&mut text)));
-                }
-                segments.push(Seg::Hole(content));
-                rest = after_hole;
-            } else if after.starts_with('[') {
-                return Err(L1Error::ClozeBracketReserved(lineno));
-            } else {
-                text.push_str("\\cloze");
-                rest = after;
-            }
-        } else if let Some(ch) = rest.chars().next() {
-            text.push(ch);
-            rest = &rest[ch.len_utf8()..];
-        }
-    }
-    if !text.is_empty() {
-        segments.push(Seg::Text(text));
-    }
-    Ok(segments)
-}
-
-fn scan_hole(arg: &str, lineno: usize) -> Result<(String, &str), L1Error> {
-    let mut content = String::new();
-    let mut depth = 1usize;
-    let mut rest = arg;
-    while let Some(ch) = rest.chars().next() {
-        match ch {
-            '\\' => {
-                let after = &rest[1..];
-                if let Some(escaped) = after
-                    .chars()
-                    .next()
-                    .filter(|c| matches!(c, '{' | '}' | '\\'))
-                {
-                    content.push(escaped);
-                    rest = &after[escaped.len_utf8()..];
-                } else {
-                    content.push('\\');
-                    rest = after;
-                }
-            }
-            '{' => {
-                depth += 1;
-                content.push('{');
-                rest = &rest[1..];
-            }
-            '}' => {
-                depth -= 1;
-                rest = &rest[1..];
-                if depth == 0 {
-                    return Ok((content, rest));
-                }
-                content.push('}');
-            }
-            _ => {
-                content.push(ch);
-                rest = &rest[ch.len_utf8()..];
-            }
-        }
-    }
-    Err(L1Error::UnclosedHole(lineno))
-}
-
-fn seg_text(segments: &[Seg]) -> String {
-    let mut out = String::new();
-    for segment in segments {
-        match segment {
-            Seg::Text(text) => out.push_str(text),
-            Seg::Hole(hole) => {
-                out.push_str("\\cloze{");
-                out.push_str(hole);
-                out.push('}');
-            }
-        }
-    }
-    out
-}
-
-fn hash_repr(segments: &[Seg]) -> String {
-    let mut out = String::new();
-    for segment in segments {
-        match segment {
-            Seg::Text(text) => out.push_str(text),
-            Seg::Hole(hole) => {
-                out.push('\u{1f}');
-                out.push_str(hole);
-                out.push('\u{1f}');
-            }
-        }
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::session::Order;
 
-    fn parse(text: &str) -> L1Deck {
-        parse_l1("deck.md", text).unwrap()
+    fn parse(text: &str) -> ParsedDeck {
+        super::parse("deck.md", text).unwrap()
     }
 
-    fn err(text: &str) -> L1Error {
-        parse_l1("deck.md", text).unwrap_err()
+    fn err(text: &str) -> ParseError {
+        super::parse("deck.md", text).unwrap_err()
     }
 
     fn unknown(line: usize, key: &str) -> Lint {
@@ -1119,7 +695,7 @@ mod tests {
     #[test]
     fn a_missing_frontmatter_close_is_a_hard_error() {
         assert_eq!(
-            L1Error::UnclosedFrontmatter(1),
+            ParseError::UnclosedFrontmatter(1),
             err("---\nid: \"abc\"\n## q\na\n")
         );
     }
@@ -1132,7 +708,7 @@ mod tests {
         assert_eq!("q", deck.cards[0].front);
 
         assert_eq!(
-            L1Error::UnclosedFrontmatter(1),
+            ParseError::UnclosedFrontmatter(1),
             err("---\ntrace: a walk\n ---\n## q\na\n")
         );
     }
@@ -1152,7 +728,7 @@ mod tests {
     #[test]
     fn an_unquoted_numeric_id_is_a_hard_error_naming_the_line() {
         assert_eq!(
-            L1Error::NonStringId {
+            ParseError::NonStringId {
                 line: 2,
                 found: "an integer"
             },
@@ -1163,7 +739,7 @@ mod tests {
     #[test]
     fn a_bool_id_is_a_hard_error() {
         assert_eq!(
-            L1Error::NonStringId {
+            ParseError::NonStringId {
                 line: 2,
                 found: "a boolean"
             },
@@ -1219,7 +795,7 @@ mod tests {
     #[test]
     fn an_id_failing_the_charset_is_a_line_numbered_error() {
         assert_eq!(
-            L1Error::InvalidToken {
+            ParseError::InvalidToken {
                 line: 2,
                 token: "ABC".into()
             },
@@ -1239,7 +815,7 @@ mod tests {
     #[test]
     fn invalid_frontmatter_yaml_is_a_hard_error() {
         let e = err("---\nid: [unclosed\n---\n## q\na\n");
-        assert!(matches!(e, L1Error::FrontmatterSyntax { .. }), "{e:?}");
+        assert!(matches!(e, ParseError::FrontmatterSyntax { .. }), "{e:?}");
     }
 
     #[test]
@@ -1391,8 +967,8 @@ mod tests {
 
     #[test]
     fn a_card_with_no_answer_is_an_error() {
-        assert_eq!(L1Error::FrontWithoutAnswer(1), err("## q\n## r\nb\n"));
-        assert_eq!(L1Error::FrontWithoutAnswer(1), err("## q\n---\n"));
+        assert_eq!(ParseError::FrontWithoutAnswer(1), err("## q\n## r\nb\n"));
+        assert_eq!(ParseError::FrontWithoutAnswer(1), err("## q\n---\n"));
     }
 
     // ── Divider, answer, notes ──
@@ -1445,7 +1021,7 @@ mod tests {
     #[test]
     fn a_token_failing_the_charset_is_a_line_numbered_error() {
         assert_eq!(
-            L1Error::InvalidToken {
+            ParseError::InvalidToken {
                 line: 4,
                 token: "XYZ".into()
             },
@@ -1570,13 +1146,13 @@ mod tests {
     #[test]
     fn a_c0_control_outside_whitespace_is_a_line_numbered_error() {
         assert_eq!(
-            L1Error::ControlChar {
+            ParseError::ControlChar {
                 line: 3,
                 found: "U+0007".into()
             },
             err("## q\n---\na\u{7} bell\n")
         );
-        assert!(parse_l1("deck.md", "## q\n---\na\u{b}b\n").is_ok());
+        assert!(super::parse("deck.md", "## q\n---\na\u{b}b\n").is_ok());
     }
 
     #[test]
@@ -1640,7 +1216,7 @@ mod tests {
     #[test]
     fn cloze_bracket_is_a_reserved_parse_error() {
         assert_eq!(
-            L1Error::ClozeBracketReserved(3),
+            ParseError::ClozeBracketReserved(3),
             err("## q\n---\na \\cloze[x]{y} b\n")
         );
     }
@@ -1665,13 +1241,19 @@ mod tests {
 
     #[test]
     fn an_unclosed_hole_is_a_line_numbered_error() {
-        assert_eq!(L1Error::UnclosedHole(3), err("## q\n---\nw \\cloze{oops\n"));
+        assert_eq!(
+            ParseError::UnclosedHole(3),
+            err("## q\n---\nw \\cloze{oops\n")
+        );
     }
 
     #[test]
     fn an_empty_hole_is_an_error() {
-        assert_eq!(L1Error::EmptyHole(3), err("## q\n---\nw \\cloze{} z\n"));
-        assert_eq!(L1Error::EmptyHole(3), err("## q\n---\nw \\cloze{  } z\n"));
+        assert_eq!(ParseError::EmptyHole(3), err("## q\n---\nw \\cloze{} z\n"));
+        assert_eq!(
+            ParseError::EmptyHole(3),
+            err("## q\n---\nw \\cloze{  } z\n")
+        );
     }
 
     #[test]
@@ -1818,7 +1400,7 @@ the answer
         );
         assert!(document.lints.is_empty(), "{:?}", document.lints);
 
-        let deck = parse_l1("deck.md", text).unwrap();
+        let deck = super::parse("deck.md", text).unwrap();
         let card = &deck.cards[0];
         assert_eq!("The question", card.front);
         assert_eq!(vec!["the answer"], card.back);

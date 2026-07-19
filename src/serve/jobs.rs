@@ -21,7 +21,7 @@ use crate::{
     augment_ai,
     card::Card,
     config::{AiConfig, AskConfig, Audience, GenerateDeckConfig},
-    exam, generate, l1,
+    exam, generate, parser,
     session::{Session, now_ms},
     share,
     trace::{self, Delta, SourceBase, Walk},
@@ -445,7 +445,7 @@ impl RemoteGenerating {
             },
             Some(Ok(text)) => {
                 let filename = self.suggested_filename();
-                let cards = l1::parse_str(&filename, text).ok().map(|c| c.len());
+                let cards = parser::parse_str(&filename, text).ok().map(|c| c.len());
                 RemoteGenerateDto {
                     phase: "done",
                     deck: Some(text.clone()),

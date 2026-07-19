@@ -34,9 +34,9 @@ mod tests {
         let dir = tmp.path().join("decks");
         assert!(seed_new_decks_dir(&dir));
         let seeded = std::fs::read_to_string(dir.join(TUTORIAL_FILE)).unwrap();
-        let asset = crate::l1::parse_l1(TUTORIAL_FILE, TUTORIAL_DECK).unwrap();
+        let asset = crate::parser::parse(TUTORIAL_FILE, TUTORIAL_DECK).unwrap();
         assert!(asset.deck_token.is_none(), "the asset stays unstamped");
-        let deck = crate::l1::parse_l1(TUTORIAL_FILE, &seeded).unwrap();
+        let deck = crate::parser::parse(TUTORIAL_FILE, &seeded).unwrap();
         assert!(deck.deck_token.is_some(), "seeding mints a deck id");
         assert_eq!(asset.cards.len(), deck.cards.len());
         assert!(deck.cards.iter().all(|c| c.id().is_some()));

@@ -774,8 +774,8 @@ pub fn mint_tutor_card(
         text.push_str(line);
         text.push('\n');
     }
-    let cards =
-        crate::l1::parse_str(subject, &text).map_err(|e| MintError::Malformed(e.to_string()))?;
+    let cards = crate::parser::parse_str(subject, &text)
+        .map_err(|e| MintError::Malformed(e.to_string()))?;
     let [card] = cards.as_slice() else {
         return Err(MintError::Malformed(
             "expected exactly one card".to_string(),
@@ -866,12 +866,12 @@ pub fn split_card_blocks(text: &str) -> Vec<String> {
     for raw in text.lines() {
         match fence {
             Some(ch) => {
-                if crate::l1::closes_fence(raw, ch) {
+                if crate::parser::closes_fence(raw, ch) {
                     fence = None;
                 }
             }
             None => {
-                if let Some(ch) = crate::l1::fence_opener(raw) {
+                if let Some(ch) = crate::parser::fence_opener(raw) {
                     fence = Some(ch);
                 } else if raw.starts_with("## ") {
                     blocks.push(vec![raw]);
@@ -912,7 +912,7 @@ pub fn store_remediation_cards(
             crate::token::mint().map_err(|e| anyhow::anyhow!("cannot mint a token: {e}"))?;
         let block = stamp_block(block, &token);
         // A malformed block is a hard error, not a silently-dropped card.
-        let cards = crate::l1::parse_str(subject, &block)?;
+        let cards = crate::parser::parse_str(subject, &block)?;
         let Some(first) = cards.first() else {
             continue;
         };
@@ -956,7 +956,7 @@ pub fn store_remediation_cards(
 }
 
 fn virtual_fingerprint(vc: &VirtualCard) -> Option<u64> {
-    let cards = crate::l1::parse_str(&vc.parent, &vc.text).ok()?;
+    let cards = crate::parser::parse_str(&vc.parent, &vc.text).ok()?;
     let card = cards
         .iter()
         .find(|c| c.id().as_deref() == Some(vc.id.as_str()))?;
@@ -1671,7 +1671,9 @@ mod tests {
     const BORROW_TEXT: &str = "## What does the borrow checker enforce? <!-- id: vb1 -->\nExactly one mutable borrow, or many shared ones\n";
 
     fn virtual_card(parent: &str, text: &str) -> VirtualCard {
-        let id = crate::l1::parse_str(parent, text).unwrap()[0].id().unwrap();
+        let id = crate::parser::parse_str(parent, text).unwrap()[0]
+            .id()
+            .unwrap();
         VirtualCard {
             id,
             kind: VirtualKind::Remediation,
@@ -1785,7 +1787,7 @@ mod tests {
         assert!(store.get_virtual(&id).is_none());
 
         let text = std::fs::read_to_string(&deck_path).unwrap();
-        let cards = crate::l1::parse_str("rust.md", &text).unwrap();
+        let cards = crate::parser::parse_str("rust.md", &text).unwrap();
         assert_eq!(2, cards.len());
         let promoted = cards
             .iter()
@@ -1809,7 +1811,8 @@ mod tests {
             "## one <!-- id: q1 -->\n1\n\n## two <!-- id: q2 -->\n2\n",
         );
         let before =
-            crate::l1::parse_str("rust.md", &std::fs::read_to_string(&deck_path).unwrap()).unwrap();
+            crate::parser::parse_str("rust.md", &std::fs::read_to_string(&deck_path).unwrap())
+                .unwrap();
         let ids_before: Vec<String> = before.iter().map(|c| c.id().unwrap()).collect();
 
         let mut store = Store::open(dir.path().join("progress.json")).unwrap();
@@ -1820,7 +1823,8 @@ mod tests {
         promote_virtual(&mut store, &id, &deck_path).unwrap();
 
         let after =
-            crate::l1::parse_str("rust.md", &std::fs::read_to_string(&deck_path).unwrap()).unwrap();
+            crate::parser::parse_str("rust.md", &std::fs::read_to_string(&deck_path).unwrap())
+                .unwrap();
         let ids_after: Vec<String> = after.iter().take(2).map(|c| c.id().unwrap()).collect();
         assert_eq!(ids_before, ids_after);
         assert_eq!(3, after.len());
@@ -1853,7 +1857,7 @@ mod tests {
         let mut store = Store::open(&store_path).unwrap();
 
         let text = "## Complete the quote <!-- id: vcz1 -->\nTo \\cloze{be} or not to \\cloze{be}\n> Hamlet\n";
-        let cards = crate::l1::parse_str("rust.md", text).unwrap();
+        let cards = crate::parser::parse_str("rust.md", text).unwrap();
         assert_eq!(2, cards.len());
         let id0 = cards[0].id().unwrap();
         let id1 = cards[1].id().unwrap();
@@ -1880,7 +1884,7 @@ mod tests {
         assert!(store.get(&id1).is_some());
 
         let deck_text = std::fs::read_to_string(&deck_path).unwrap();
-        let deck_cards = crate::l1::parse_str("rust.md", &deck_text).unwrap();
+        let deck_cards = crate::parser::parse_str("rust.md", &deck_text).unwrap();
         assert_eq!(3, deck_cards.len());
 
         let deck_before_second = std::fs::read_to_string(&deck_path).unwrap();
@@ -1927,7 +1931,7 @@ mod tests {
         assert!(store.get_virtual(&id).is_none());
 
         let text = std::fs::read_to_string(&deck_path).unwrap();
-        let cards = crate::l1::parse_str("rust.md", &text).unwrap();
+        let cards = crate::parser::parse_str("rust.md", &text).unwrap();
         let promoted = cards
             .iter()
             .find(|c| c.front == "What does the borrow checker enforce?")
@@ -1945,7 +1949,7 @@ mod tests {
         let path = dir.path().join("progress.json");
         let mut store = Store::open(&path).unwrap();
         let text = "## capital of france <!-- id: cap1 -->\nParis\n".to_string();
-        let id = crate::l1::parse_str("geo.md", &text).unwrap()[0]
+        let id = crate::parser::parse_str("geo.md", &text).unwrap()[0]
             .id()
             .unwrap();
         store.insert_virtual(VirtualCard {
@@ -2101,7 +2105,7 @@ mod tests {
     }
 
     fn two_cards() -> Vec<crate::card::Card> {
-        crate::l1::parse_str(
+        crate::parser::parse_str(
             "t.md",
             "## a <!-- id: q1 -->\n1\n\n## b <!-- id: q2 -->\n2\n",
         )
@@ -2453,8 +2457,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
 
-        let plain =
-            crate::l1::parse_str("d.md", "## Complete the quote <!-- id: p1 -->\nbe\n").unwrap();
+        let plain = crate::parser::parse_str("d.md", "## Complete the quote <!-- id: p1 -->\nbe\n")
+            .unwrap();
         let deck_fingerprints: std::collections::HashSet<u64> =
             plain.iter().map(|c| c.content_fingerprint).collect();
 
@@ -2485,7 +2489,7 @@ mod tests {
             assert_eq!(created, virtuals.len());
 
             for vc in &virtuals {
-                let synth = crate::l1::parse_str(&vc.parent, &vc.text)
+                let synth = crate::parser::parse_str(&vc.parent, &vc.text)
                     .unwrap()
                     .into_iter()
                     .find(|c| c.id().as_deref() == Some(vc.id.as_str()))
@@ -2495,8 +2499,9 @@ mod tests {
 
             let vid = virtuals[0].id.clone();
             promote_virtual(&mut store, &vid, &deck_path).unwrap();
-            let deck = crate::l1::parse_str("d.md", &std::fs::read_to_string(&deck_path).unwrap())
-                .unwrap();
+            let deck =
+                crate::parser::parse_str("d.md", &std::fs::read_to_string(&deck_path).unwrap())
+                    .unwrap();
             assert!(
                 deck.iter().any(|c| c.id().as_deref() == Some(vid.as_str())),
                 "the appended deck card reproduces the id"
@@ -2517,7 +2522,7 @@ mod tests {
             .virtual_cards_for("d.md")
             .iter()
             .map(|vc| {
-                crate::l1::parse_str(&vc.parent, &vc.text)
+                crate::parser::parse_str(&vc.parent, &vc.text)
                     .unwrap()
                     .remove(0)
             })

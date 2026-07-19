@@ -73,7 +73,7 @@ fn escape_structure(line: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::l1::parse_str;
+    use crate::parser::parse_str;
 
     #[test]
     fn one_row_becomes_one_card() {

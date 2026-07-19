@@ -101,7 +101,7 @@ pub fn default_depth(cards: &[Card], cache: &AugmentCache) -> Depth {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{answer::Mode, l1};
+    use crate::{answer::Mode, parser};
 
     fn card(back: &str) -> crate::card::Card {
         let slug: String = back
@@ -110,7 +110,7 @@ mod tests {
             .collect::<String>()
             .to_ascii_lowercase();
         let text = format!("## q <!-- id: q{slug}x -->\n{back}\n");
-        l1::parse_str("t.md", &text).unwrap().remove(0)
+        parser::parse_str("t.md", &text).unwrap().remove(0)
     }
 
     #[test]

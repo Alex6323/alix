@@ -201,7 +201,7 @@ pub fn catalog(decks_dir: &Path, recent: &RecentDecks, cache: &mut DeckCache) ->
 
 pub(crate) fn deck_label(path: &Path) -> Option<String> {
     let text = std::fs::read_to_string(path).ok()?;
-    let deck = crate::l1::parse_l1("deck.md", &text).ok()?;
+    let deck = crate::parser::parse("deck.md", &text).ok()?;
     deck.title
         .or_else(|| deck.frontmatter.trace.map(|t| title::condense(&t)))
 }

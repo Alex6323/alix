@@ -10,7 +10,7 @@ use crate::{
     card::{Card, Direction},
     config::Strictness,
     depth::Reveal,
-    l1::{self, L1Error},
+    parser::{self, ParseError},
     session::{self, Order},
     store::Store,
 };
@@ -49,7 +49,7 @@ impl DeckSettings {
         settings
     }
 
-    pub fn from_frontmatter(frontmatter: &l1::Frontmatter) -> Self {
+    pub fn from_frontmatter(frontmatter: &parser::Frontmatter) -> Self {
         Self {
             reveal: frontmatter.reveal,
             input: frontmatter.input,
@@ -107,7 +107,7 @@ pub enum DeckError {
     Parse {
         path: PathBuf,
         #[source]
-        source: L1Error,
+        source: ParseError,
     },
     #[error("{path}: file name is not valid UTF-8")]
     InvalidFileName { path: PathBuf },
@@ -132,7 +132,7 @@ impl Deck {
             path: path.clone(),
             source,
         })?;
-        let l1deck = l1::parse_l1(&subject, &text).map_err(|source| DeckError::Parse {
+        let l1deck = parser::parse(&subject, &text).map_err(|source| DeckError::Parse {
             path: path.clone(),
             source,
         })?;
@@ -394,7 +394,7 @@ fn write_deck_text(path: &Path, text: &str) -> Result<(), DeckError> {
 
 // Parse knowledge here means a fenced "## " inside an answer is never mistaken for a card front.
 fn front_lines_of(path: &Path, text: &str) -> Result<Vec<usize>, DeckError> {
-    l1::card_front_lines(text).map_err(|source| DeckError::Parse {
+    parser::card_front_lines(text).map_err(|source| DeckError::Parse {
         path: path.to_path_buf(),
         source,
     })
@@ -489,7 +489,7 @@ pub fn set_trace_snapshot(
         source,
     };
     let existing = std::fs::read_to_string(path).map_err(io_err)?;
-    let span = l1::parse_l1("deck.md", &existing)
+    let span = parser::parse("deck.md", &existing)
         .map_err(|source| DeckError::Parse {
             path: path.to_path_buf(),
             source,
@@ -503,7 +503,7 @@ pub fn set_trace_snapshot(
 // produce one.
 fn rewrite_trace_snapshot(
     text: &str,
-    frontmatter_span: Option<crate::l1::LineSpan>,
+    frontmatter_span: Option<crate::parser::LineSpan>,
     source: &str,
     origin: Option<&str>,
     ats: &[AtRewrite],
@@ -681,7 +681,7 @@ mod tests {
     }
 
     fn fronts(text: &str) -> Vec<usize> {
-        l1::card_front_lines(text).unwrap()
+        parser::card_front_lines(text).unwrap()
     }
 
     #[test]
@@ -879,7 +879,7 @@ mod tests {
             "## one <!-- id: q1 -->\n1\n\n## two <!-- id: q2 --> <!-- reveal: line -->\nkey point\n",
             text
         );
-        let cards = l1::parse_str("d.md", &text).unwrap();
+        let cards = parser::parse_str("d.md", &text).unwrap();
         assert_eq!(2, cards.len());
         assert_eq!(Some("q1"), cards[0].token.as_deref());
     }
@@ -1038,7 +1038,7 @@ mod tests {
             "## one\nback 1\n> old note\n> new a\n> new b\n\n## two\nback 2\n",
             result
         );
-        let cards = l1::parse_str("s.md", &result).unwrap();
+        let cards = parser::parse_str("s.md", &result).unwrap();
         assert_eq!(Some("old note\nnew a\nnew b".to_string()), cards[0].note);
     }
 
@@ -1047,7 +1047,7 @@ mod tests {
         let text = "## one\nback 1\n";
         let result = insert_note_lines(text, &fronts(text), 1, &["note".to_string()]);
         assert_eq!("## one\nback 1\n> note\n", result);
-        let cards = l1::parse_str("s.md", &result).unwrap();
+        let cards = parser::parse_str("s.md", &result).unwrap();
         assert_eq!(Some("note".to_string()), cards[0].note);
     }
 
@@ -1055,7 +1055,7 @@ mod tests {
     fn insert_note_targets_the_right_card() {
         let text = "## one\nback 1\n\n## two\nback 2\n\n## three\nback 3\n";
         let result = insert_note_lines(text, &fronts(text), 4, &["mid".to_string()]);
-        let cards = l1::parse_str("s.md", &result).unwrap();
+        let cards = parser::parse_str("s.md", &result).unwrap();
         assert_eq!(None, cards[0].note);
         assert_eq!(Some("mid".to_string()), cards[1].note);
         assert_eq!(None, cards[2].note);
@@ -1193,11 +1193,11 @@ mod tests {
         let text = "---\nstrictness: strict\n---\n## f\nb\n";
         let path = write_deck(dir.path(), "d.md", text);
 
-        let l1deck = l1::parse_l1("d.md", text).unwrap();
+        let l1deck = parser::parse("d.md", text).unwrap();
         assert_eq!(
-            vec![l1::Lint {
+            vec![parser::Lint {
                 line: 2,
-                kind: l1::LintKind::UnknownKey {
+                kind: parser::LintKind::UnknownKey {
                     key: "strictness".to_string()
                 }
             }],
@@ -1211,7 +1211,7 @@ mod tests {
     #[test]
     fn workspace_defaults_strictness_still_reaches_deck_settings() {
         let text = "---\nstrictness: strict\n---\n## f\nb\n";
-        let l1deck = l1::parse_l1("d.md", text).unwrap();
+        let l1deck = parser::parse("d.md", text).unwrap();
 
         let mut settings = DeckSettings::from_frontmatter(&l1deck.frontmatter);
         settings.fill_from(&DeckSettings::from_directives(&[(
@@ -1439,7 +1439,7 @@ mod tests {
     #[test]
     fn rewrite_trace_snapshot_repoints_source_origin_and_each_at() {
         let text = "---\ntrace: how X\nsource: ..\n---\n\n## q1\np\n<!-- at: a.rs:90-98 -->\n## q2\np\n<!-- at: b.rs:1 -->\n";
-        let span = l1::parse_l1("t.md", text).unwrap().frontmatter_span;
+        let span = parser::parse("t.md", text).unwrap().frontmatter_span;
         let ats = [
             AtRewrite {
                 at: "01.rs".into(),

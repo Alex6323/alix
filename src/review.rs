@@ -181,7 +181,7 @@ mod tests {
         augment::AugmentCache,
         card::Card,
         depth::Depth,
-        l1 as parser,
+        parser,
         scheduler::{Fsrs, Grade},
         session::{Session, SessionOptions},
         store::{Store, VirtualCard, VirtualKind},

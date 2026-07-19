@@ -8,7 +8,7 @@ use anyhow::{Context, Result, bail};
 use crate::{
     augment::{self, AugmentCache},
     deck::Deck,
-    l1, stamp,
+    parser, stamp,
     store::Store,
 };
 
@@ -30,7 +30,7 @@ pub fn place_deck(dir: &Path, name: &str, text: &str) -> Result<Placed> {
     if path.exists() {
         bail!("{} already exists", path.display());
     }
-    let parsed = l1::parse_str(&file, text);
+    let parsed = parser::parse_str(&file, text);
     write_body(&path, text)?;
     Ok(match parsed {
         Ok(cards) => {
@@ -87,7 +87,7 @@ pub fn replace_deck(
     let file = format!("{stem}.md");
     let path = dir.join(&file);
 
-    if let Err(e) = l1::parse_l1(&file, text) {
+    if let Err(e) = parser::parse(&file, text) {
         let rej = dir.join(format!("{stem}.rej"));
         write_body(&rej, text)?;
         bail!(
@@ -102,7 +102,7 @@ pub fn replace_deck(
     let mut old_card_tokens: HashSet<String> = HashSet::new();
     let mut old_deck_tokens: HashSet<String> = HashSet::new();
     let old_text = std::fs::read_to_string(&path).unwrap_or_default();
-    if let Ok(old) = l1::parse_l1(&file, &old_text) {
+    if let Ok(old) = parser::parse(&file, &old_text) {
         for card in &old.cards {
             if let Some(token) = card.token.as_deref() {
                 old_card_tokens.insert(token.to_string());
@@ -199,7 +199,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let p = place_deck(dir.path(), "rust", "## q\na\n## r\nb\n").unwrap();
         let deck =
-            crate::l1::parse_l1("rust.md", &std::fs::read_to_string(&p.path).unwrap()).unwrap();
+            crate::parser::parse("rust.md", &std::fs::read_to_string(&p.path).unwrap()).unwrap();
         assert!(deck.deck_token.is_some(), "deck id minted");
         assert!(
             deck.cards.iter().all(|c| c.id().is_some()),
@@ -266,7 +266,7 @@ mod tests {
             "## front <!-- id: v{} -->\n{back}\n",
             slug.to_ascii_lowercase()
         );
-        let id = crate::l1::parse_str(parent, &text).unwrap()[0]
+        let id = crate::parser::parse_str(parent, &text).unwrap()[0]
             .id()
             .unwrap();
         crate::store::VirtualCard {
@@ -412,7 +412,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         place_deck(dir.path(), "a", "## old q\nold ans\n## old r\nold b\n").unwrap();
         let old_text = std::fs::read_to_string(dir.path().join("a.md")).unwrap();
-        let old = crate::l1::parse_l1("a.md", &old_text).unwrap();
+        let old = crate::parser::parse("a.md", &old_text).unwrap();
         let old_tokens: Vec<String> = old
             .cards
             .iter()
@@ -460,7 +460,7 @@ mod tests {
     const MARKER_FIXTURE: &str = "---\nsource: notes.md\nrequires: basics\n---\n# The Title\nintro prose\n\n## First question \nextra front line\n\n---\nthe answer\n\\--- escaped divider\n> a note\n```\nfenced\n## not a card\n```\ntail prose\n\n## Fill in the blanks\nthe \\cloze{alpha} and \\cloze{beta} here\n> cloze note\n";
 
     fn all_tokens(subject: &str, text: &str) -> Vec<String> {
-        let deck = crate::l1::parse_l1(subject, text).unwrap();
+        let deck = crate::parser::parse(subject, text).unwrap();
         let mut toks = Vec::new();
         let mut last_line = None;
         for card in &deck.cards {
@@ -491,7 +491,7 @@ mod tests {
             let dir = tempfile::tempdir().unwrap();
             place_deck(dir.path(), "d", MARKER_FIXTURE).unwrap();
             let text = std::fs::read_to_string(dir.path().join("d.md")).unwrap();
-            let deck = crate::l1::parse_l1("d.md", &text).unwrap();
+            let deck = crate::parser::parse("d.md", &text).unwrap();
             assert!(deck.cards.iter().all(|c| c.token.is_some()), "all stamped");
             assert!(text.contains("First question"), "front text kept");
             assert!(
@@ -506,7 +506,7 @@ mod tests {
             let mut store = Store::open(dir.path().join("p.json")).unwrap();
             replace_deck(dir.path(), "d", MARKER_FIXTURE, &mut store).unwrap();
             let text = std::fs::read_to_string(dir.path().join("d.md")).unwrap();
-            let deck = crate::l1::parse_l1("d.md", &text).unwrap();
+            let deck = crate::parser::parse("d.md", &text).unwrap();
             assert!(deck.cards.iter().all(|c| c.token.is_some()), "all stamped");
             assert!(text.contains("First question"));
             assert_no_duplicate_tokens("d.md", &text);
@@ -517,7 +517,7 @@ mod tests {
             std::fs::write(&path, MARKER_FIXTURE).unwrap();
             stamp::stamp_deck(&path).unwrap();
             let text = std::fs::read_to_string(&path).unwrap();
-            let deck = crate::l1::parse_l1("d.md", &text).unwrap();
+            let deck = crate::parser::parse("d.md", &text).unwrap();
             assert!(deck.cards.iter().all(|c| c.token.is_some()));
             assert!(text.contains("First question"));
             assert_no_duplicate_tokens("d.md", &text);

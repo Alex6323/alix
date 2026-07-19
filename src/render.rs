@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     card::Card,
-    l1::{BLANK, HIDDEN},
+    parser::{BLANK, HIDDEN},
 };
 
 // Struct variants (not newtype) because serde's internal tagging can't tag

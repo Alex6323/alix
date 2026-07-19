@@ -253,7 +253,7 @@ fn reset_on_a_workspace_clears_every_member_in_its_own_store() {
     let store_path = ws.join("progress.json");
     let mut store = alix::store::Store::open(&store_path).unwrap();
     for deck in [&a, &b] {
-        let cards = alix::l1::parse_str(
+        let cards = alix::parser::parse_str(
             Path::new(deck).file_name().unwrap().to_str().unwrap(),
             &std::fs::read_to_string(deck).unwrap(),
         )
@@ -323,7 +323,9 @@ fn sample_virtual_card(parent: &str) -> alix::store::VirtualCard {
             .to_ascii_lowercase()
     );
     let text = format!("## front <!-- id: {token} -->\nback\n");
-    let id = alix::l1::parse_str(parent, &text).unwrap()[0].id().unwrap();
+    let id = alix::parser::parse_str(parent, &text).unwrap()[0]
+        .id()
+        .unwrap();
     alix::store::VirtualCard {
         id,
         kind: alix::store::VirtualKind::Remediation,
@@ -697,7 +699,7 @@ fn augment_target_format_skips_an_orphaned_virtual_card_colliding_with_a_real_de
     let dir = TempDir::new().unwrap();
     let deck_text = "## List the parts <!-- id: parts1 -->\nA, B, C\n";
     let deck = write(dir.path(), "parts.md", deck_text);
-    let real_id = alix::l1::parse_str("parts.md", deck_text).unwrap()[0]
+    let real_id = alix::parser::parse_str("parts.md", deck_text).unwrap()[0]
         .id()
         .unwrap();
 
@@ -1061,7 +1063,7 @@ fn list_shows_per_depth_labels_and_recognized_mark() {
     // Card 2: recall=learning only — no reconstruct schedule, not recognized.
     let deck_text = "## Q1 <!-- id: q1 -->\nA1\n\n## Q2 <!-- id: q2 -->\nA2\n";
     let deck = write(dir.path(), "cards.md", deck_text);
-    let cards = alix::l1::parse_str("cards.md", deck_text).unwrap();
+    let cards = alix::parser::parse_str("cards.md", deck_text).unwrap();
     let (id1, id2) = (cards[0].id().unwrap(), cards[1].id().unwrap());
     let card1 = both_depths_due_card(&id1);
     let card2 = format!(
@@ -1092,7 +1094,7 @@ fn stats_shows_per_depth_due_counts() {
     let dir = TempDir::new().unwrap();
     let deck_text = "## Q1 <!-- id: q1 -->\nA1\n";
     let deck = write(dir.path(), "stats.md", deck_text);
-    let card_id = alix::l1::parse_str("stats.md", deck_text).unwrap()[0]
+    let card_id = alix::parser::parse_str("stats.md", deck_text).unwrap()[0]
         .id()
         .unwrap();
     let card = both_depths_due_card(&card_id);
@@ -2276,7 +2278,7 @@ fn reset_by_text_query_within_a_target_resets_only_matching_cards() {
     let dir = TempDir::new().unwrap();
     let deck_text = "## Capital of Japan? <!-- id: gj1 -->\nTokyo\n\n## Largest planet? <!-- id: gp1 -->\nJupiter\n";
     let deck = write(dir.path(), "geo.md", deck_text);
-    let cards = alix::l1::parse_str("geo.md", deck_text).unwrap();
+    let cards = alix::parser::parse_str("geo.md", deck_text).unwrap();
     let store_path = dir.path().join("progress.json");
     let mut store = alix::store::Store::open(&store_path).unwrap();
     for c in &cards {

@@ -1037,7 +1037,7 @@ mod tests {
 
     fn insert_due_virtual_card(store: &mut Store, subject: &str) {
         let text = "## virtual front <!-- id: vq1 -->\nvirtual back\n".to_string();
-        let id = crate::l1::parse_str(subject, &text).unwrap()[0]
+        let id = crate::parser::parse_str(subject, &text).unwrap()[0]
             .id()
             .unwrap();
         store.insert_virtual(crate::store::VirtualCard {

@@ -6,7 +6,7 @@ use alix::{
     augment_ai,
     card::Card,
     config::{self, Config},
-    generate, import, l1, library, workspace,
+    generate, import, library, parser, workspace,
 };
 use anyhow::{Context, Result, bail};
 use chrono::NaiveDate;
@@ -317,7 +317,7 @@ pub(crate) fn import_cmd(args: ImportArgs) -> Result<()> {
         if !text.ends_with('\n') {
             println!();
         }
-        match l1::parse_str(&name, &text) {
+        match parser::parse_str(&name, &text) {
             Ok(cards) => eprintln!("({} cards — not written; --print)", cards.len()),
             Err(e) => eprintln!("(warning: does not parse yet — {e})"),
         }

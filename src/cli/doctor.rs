@@ -63,10 +63,10 @@ fn deck_findings(path: &Path, strict: bool, report: &mut Report) {
             return;
         }
     };
-    let deck = match alix::l1::parse_l1(name, &text) {
+    let deck = match alix::parser::parse(name, &text) {
         Ok(deck) => deck,
         Err(e) => {
-            let charset = matches!(e, alix::l1::L1Error::InvalidToken { .. });
+            let charset = matches!(e, alix::parser::ParseError::InvalidToken { .. });
             if strict || charset {
                 report.error(format!("{}: {e}", path.display()));
             } else {
@@ -78,7 +78,7 @@ fn deck_findings(path: &Path, strict: bool, report: &mut Report) {
 
     for lint in &deck.lints {
         let msg = lint_message(path, lint);
-        if matches!(lint.kind, alix::l1::LintKind::BadValue { .. }) {
+        if matches!(lint.kind, alix::parser::LintKind::BadValue { .. }) {
             report.error(msg);
         } else {
             report.warn(msg);
@@ -197,8 +197,8 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
     }
 }
 
-fn lint_message(path: &Path, lint: &alix::l1::Lint) -> String {
-    use alix::l1::LintKind;
+fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
+    use alix::parser::LintKind;
     let detail = match &lint.kind {
         LintKind::UnknownKey { key } => format!("unknown key `{key}` (ignored)"),
         LintKind::BadValue { key, value } => format!("`{key}` has an invalid value `{value}`"),

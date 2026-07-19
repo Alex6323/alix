@@ -58,7 +58,7 @@ impl Card {
     ) -> Self {
         // The parser overrides this for cloze sub-cards with a shared block-level fingerprint; this
         // default fits every other card.
-        let content_fingerprint = crate::l1::content_fingerprint(&front, &back);
+        let content_fingerprint = crate::parser::content_fingerprint(&front, &back);
         Self {
             subject,
             front,

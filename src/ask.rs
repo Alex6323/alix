@@ -331,7 +331,7 @@ pub fn parse_drafted_card(reply: &str) -> Result<DraftCard> {
         .trim_start_matches("```")
         .trim_end_matches("```")
         .trim();
-    let cards = crate::l1::parse_str("draft", body)
+    let cards = crate::parser::parse_str("draft", body)
         .map_err(|e| anyhow::anyhow!("the tutor's reply was not a valid card: {e}"))?;
     let [card] = cards.as_slice() else {
         bail!("the tutor did not return exactly one card");

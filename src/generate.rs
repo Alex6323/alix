@@ -328,12 +328,12 @@ fn space_cards(lines: &[&str]) -> String {
     for &line in lines {
         match fence {
             Some(ch) => {
-                if crate::l1::closes_fence(line, ch) {
+                if crate::parser::closes_fence(line, ch) {
                     fence = None;
                 }
             }
             None => {
-                if let Some(ch) = crate::l1::fence_opener(line) {
+                if let Some(ch) = crate::parser::fence_opener(line) {
                     fence = Some(ch);
                 } else if line.starts_with("## ") {
                     if seen_card && out.last().is_some_and(|prev| !prev.trim().is_empty()) {
