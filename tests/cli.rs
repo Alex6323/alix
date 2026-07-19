@@ -2143,7 +2143,6 @@ fn deck_import_refuses_to_clobber_without_force_then_force_overwrites() {
     assert!(first.status.success(), "stderr: {}", stderr(&first));
     let placed = std::fs::read_to_string(ws.join("geo.md")).unwrap();
 
-    // The no-force path is a loud hard error that writes nothing.
     let second = alix(&args);
     assert!(!second.status.success());
     assert!(
@@ -2158,8 +2157,8 @@ fn deck_import_refuses_to_clobber_without_force_then_force_overwrites() {
     );
     assert!(!ws.join("geo.md.bak").exists());
 
-    // --force routes through the replace protocol: the old file is kept as a
-    // `.md.bak` (a plain overwrite would not).
+    // The kept `.md.bak` proves the replace protocol ran; a plain overwrite
+    // leaves none.
     let mut forced = args.to_vec();
     forced.push("--force");
     let third = alix(&forced);

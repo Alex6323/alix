@@ -621,11 +621,8 @@ pub fn set_trace_checkpoints(path: &Path, cards: &str) -> Result<(), DeckError> 
     write_deck_text(path, &new_text)
 }
 
-/// The full deck text after replacing `existing`'s checkpoint cards with
-/// `cards`, keeping everything before the first card front — the
-/// [`set_trace_checkpoints`] transform without the write. The rebuild flow
-/// routes this text through the replace protocol so the old checkpoints'
-/// progress is wiped.
+/// [`set_trace_checkpoints`] without the write, so a rebuild can route the
+/// text through the replace protocol.
 pub fn trace_checkpoint_text(
     path: &Path,
     existing: &str,

@@ -360,11 +360,10 @@ pub(crate) fn import_cmd(args: ImportArgs) -> Result<()> {
                 target.display()
             );
         }
-        // --force: wholesale-replace, wiping the old deck's progress.
         let mut store = store_for(std::slice::from_ref(&target), None, &config)?;
         let report = library::replace_deck(&dir, &name, &text, &mut store)?;
         println!(
-            "Replaced {} — {} cards, wiped progress for {} card(s).",
+            "Replaced {}: {} cards, wiped progress for {} card(s).",
             target.display(),
             report.minted,
             report.wiped_cards

@@ -580,10 +580,9 @@ pub struct MergeReport {
 /// Moves everything materialized in `staging` into `dest` (created if
 /// missing), one top-level entry at a time. A name that already exists in
 /// `dest` is a conflict: the existing file is kept and the new one stays
-/// in `staging` — unless `force`, which replaces it. A force-overwritten `.md`
-/// deck routes through the replace protocol ([`library::replace_deck`]), so the
-/// old member's progress in `store` is wiped rather than orphaned; other entries
-/// (assets/ directories, non-deck files) follow the plain top-level move rule.
+/// in `staging`, unless `force`, which replaces it. A forced `.md` collision
+/// routes through [`library::replace_deck`], wiping the old member's progress
+/// in `store`; other entries follow the plain top-level move rule.
 pub fn merge_built(
     staging: &Path,
     dest: &Path,
@@ -605,14 +604,12 @@ pub fn merge_built(
                 conflicts.push(name);
                 continue;
             }
-            // A `.md` deck collision is a content replacement: wipe the old
-            // member's progress by routing the new text through the replace
-            // protocol (which keeps the old file as `.md.bak`), then drop the
-            // now-consumed staging copy.
             if to.is_file() && from.is_file() && name.ends_with(".md") {
                 let text = fs::read_to_string(&from)
                     .with_context(|| format!("cannot read {}", from.display()))?;
                 library::replace_deck(dest, &name, &text, store)?;
+                // replace_deck consumed the text, so the staging copy is
+                // dropped, not moved.
                 fs::remove_file(&from)
                     .with_context(|| format!("cannot remove {}", from.display()))?;
                 moved += 1;
@@ -1069,7 +1066,6 @@ preamble ignored
     fn a_forced_md_collision_routes_through_the_replace_protocol() {
         let (staging, dest) = merge_test_dirs("md-replace");
         fs::create_dir_all(&dest).unwrap();
-        // An existing stamped member deck with progress in the store.
         fs::write(
             dest.join("01-a.md"),
             "---\nid: \"da1\"\n---\n## old <!-- id: c1 -->\nold\n",
@@ -1083,10 +1079,8 @@ preamble ignored
         let report = merge_built(&staging, &dest, true, &mut store).unwrap();
 
         assert_eq!(1, report.moved);
-        // The old member's progress was wiped and its bytes kept as `.md.bak`.
         assert!(store.get("c1").is_none());
         assert!(dest.join("01-a.md.bak").exists());
-        // The new deck is in place; staging is drained.
         assert!(
             fs::read_to_string(dest.join("01-a.md"))
                 .unwrap()

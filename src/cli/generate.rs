@@ -323,13 +323,10 @@ fn generate_single_deck(args: &GenerateArgs, config: &Config) -> Result<()> {
                 target.display()
             );
         }
-        // --force: wholesale-replace, wiping the old deck's progress. Strict
-        // unlike a fresh place: an unparseable regeneration aborts and is set
-        // aside rather than overwriting the working deck.
         let mut store = store_for(std::slice::from_ref(&target), None, config)?;
         let report = library::replace_deck(&dir, &name, &text, &mut store)?;
         println!(
-            "Replaced {} — {} cards, wiped progress for {} card(s).",
+            "Replaced {}: {} cards, wiped progress for {} card(s).",
             target.display(),
             report.minted,
             report.wiped_cards
@@ -381,9 +378,6 @@ fn trace_build(
             deck.subject
         );
     }
-    // A stub with no checkpoints yet is a fresh fill; one that already carries
-    // cards is a REBUILD — a content replacement that wipes their progress, so
-    // it needs `--force` (the no-force loud error, spec §7).
     let rebuild = !deck.cards.is_empty();
     if rebuild && !force {
         bail!(
@@ -411,7 +405,7 @@ fn trace_build(
         let mut store = store_for(std::slice::from_ref(&deck_path.to_path_buf()), None, config)?;
         let report = library::replace_deck(dir, name, &new_text, &mut store)?;
         println!(
-            "Rebuilt {} — {} checkpoints, wiped progress for {} card(s). Review them \
+            "Rebuilt {}: {} checkpoints, wiped progress for {} card(s). Review them \
              and their `at:` locators, then walk it from the picker.",
             deck_path.display(),
             report.minted,
@@ -512,18 +506,16 @@ fn generate_trace_walk(args: &GenerateArgs, config: &Config, goal: &str) -> Resu
                 out.display()
             );
         }
-        // --force: wholesale-replace, wiping the old walk's progress.
         let mut store = store_for(std::slice::from_ref(&out), None, config)?;
         let report = library::replace_deck(&out_dir, &name, &deck_text, &mut store)?;
         println!(
-            "Rebuilt the explore walk at {} — {} checkpoints, wiped progress for {} card(s).",
+            "Rebuilt the explore walk at {}: {} checkpoints, wiped progress for {} card(s).",
             out.display(),
             report.minted,
             report.wiped_cards
         );
         return Ok(());
     }
-    // place_deck writes and stamps at birth.
     let placed = library::place_deck(&out_dir, &name, &deck_text)?;
     if let Some(e) = &placed.parse_error {
         eprintln!("warning: the explore walk does not parse yet: {e}");

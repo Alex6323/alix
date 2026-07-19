@@ -1036,9 +1036,6 @@ mod tests {
 
     #[test]
     fn augment_never_touches_the_deck_file() {
-        // A4's runtime pin (spec §7): the whole warm path — parse the deck,
-        // generate via the backend, write the cache — writes only the sidecar,
-        // never the deck file.
         let _g = exec_lock();
         let dir = tempfile::tempdir().unwrap();
         let deck_path = dir.path().join("d.md");
@@ -1059,7 +1056,6 @@ mod tests {
         }
         cache.save().unwrap();
 
-        // The deck file is byte-for-byte unchanged; only the sidecar was written.
         assert_eq!(before, std::fs::read(&deck_path).unwrap());
         assert!(cache_path.exists());
     }

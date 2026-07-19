@@ -1046,13 +1046,8 @@ impl Store {
         removed
     }
 
-    /// Wipes a replaced deck's store state (spec §7): every authored card
-    /// schedule whose base token is in `tokens`, those tokens' realignment
-    /// records and reclaim-shelf entries, the deck-family entry keyed by
-    /// `subject`, and every virtual card parented to `subject` (with its own
-    /// schedule). Returns how many authored card schedules were removed.
-    /// Deliberate wholesale destruction: nothing it touches is left half-removed
-    /// to orphan later. Does not save.
+    /// The replace protocol's wipe: every store family a replaced deck owned
+    /// goes at once, so deliberate destruction leaves no orphan. Does not save.
     pub fn wipe_deck(&mut self, tokens: &HashSet<String>, subject: &str) -> usize {
         let doomed: Vec<String> = self
             .cards
@@ -1855,8 +1850,7 @@ mod tests {
         let tokens: HashSet<String> = ["doom".to_string()].into_iter().collect();
         let wiped = store.wipe_deck(&tokens, "doomed.md");
 
-        // Both the base and the hole schedule counted; every doomed family gone.
-        assert_eq!(2, wiped);
+        assert_eq!(2, wiped, "the base and the hole schedule both count");
         assert!(store.get("doom").is_none());
         assert!(store.get("doom-0").is_none());
         assert!(store.records("doom").is_none());
@@ -1864,7 +1858,6 @@ mod tests {
         assert!(!store.deck_mastered("doomed.md"));
         assert!(store.get_virtual("vdoom").is_none());
         assert!(store.get("vdoom").is_none());
-        // The bystander deck is untouched across every family.
         assert!(store.get("keep").is_some());
         assert!(store.records("keep").is_some());
         assert!(store.hole_orphans().iter().any(|o| o.token == "keep"));

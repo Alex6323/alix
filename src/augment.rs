@@ -743,12 +743,8 @@ impl AugmentCache {
         self.topologies.retain(|t| !t.belongs_to(deck_tokens));
     }
 
-    /// Removes every augmentation a replaced deck owns (spec §7): each per-card
-    /// entry whose base token is in `card_tokens`, and every topology owned by a
-    /// deck token in `deck_tokens`. Token-scoped, unlike [`clear_all`](Self::clear_all)'s
-    /// exact-id set, so a stale entry lingering under a wiped token can't survive.
-    /// Returns whether anything was removed, so the caller can skip a needless
-    /// save. Does not save.
+    /// Token-scoped, unlike [`clear_all`](Self::clear_all)'s exact ids, so a
+    /// stale entry under a wiped token goes too. Does not save.
     pub fn wipe_tokens(
         &mut self,
         card_tokens: &HashSet<String>,
