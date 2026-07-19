@@ -258,8 +258,8 @@ pub struct VirtualCard {
     /// that `synthesize`/`promote` must parse/append under**, or the id won't
     /// reproduce (`Card::id` hashes the subject).
     pub parent: String,
-    /// The card's canonical deck-format block (`# …` + its lines). For a
-    /// cloze card (`% reveal: cloze`) this is the whole multi-hole block; the
+    /// The card's canonical stamped L1 block (`## …` + its lines). For a
+    /// cloze card this is the whole multi-hole block; the
     /// hole this entry stands for is identified by matching `id` against
     /// `parse(parent, text)`, not by a stored index.
     pub text: String,
@@ -691,13 +691,21 @@ pub enum MintError {
     /// A card with this content already exists in the deck.
     #[error("a card with this content already exists in the deck")]
     Duplicate,
+    /// The OS CSPRNG failed while minting the identity token.
+    #[error("cannot mint an identity token: {0}")]
+    Mint(String),
 }
 
 /// Mints a free-standing `Tutor` virtual card on `subject` from an edited
-/// front/back: builds the deck-format block, parses it under `subject` for its
-/// id, rejects a malformed block or a duplicate id (already authored in the deck
-/// via `deck_ids`, or already virtual), then inserts it and seeds a fresh
-/// schedule so it enters the queue as a new (acquire) card. Returns the new id.
+/// front/back: builds the L1 card block with a freshly minted identity token,
+/// parses it under `subject` for its id, rejects a malformed block, then
+/// inserts it and seeds a fresh schedule so it enters the queue as a new
+/// (acquire) card. Returns the new id.
+///
+/// INTERIM (until the id-flip task's dedup respec): the `Duplicate` check
+/// keyed on the recomputed content id is vacuous now that every mint carries a
+/// fresh random token (identical content mints a distinct card). The
+/// canonical-content dedup replaces it in the next task.
 pub fn mint_tutor_card(
     store: &mut Store,
     subject: &str,
@@ -722,14 +730,14 @@ pub fn mint_tutor_card(
             "front and back must be single lines".to_string(),
         ));
     }
-    let mut text = format!("# {front}\n");
+    let token = crate::token::mint().map_err(|e| MintError::Mint(e.to_string()))?;
+    let mut text = format!("## {front} <!-- id: {token} -->\n");
     for line in &back {
-        text.push('\t');
         text.push_str(line);
         text.push('\n');
     }
-    let cards = crate::parser::parse_str(subject, &text)
-        .map_err(|e| MintError::Malformed(e.to_string()))?;
+    let cards =
+        crate::l1::parse_str(subject, &text).map_err(|e| MintError::Malformed(e.to_string()))?;
     let [card] = cards.as_slice() else {
         return Err(MintError::Malformed(
             "expected exactly one card".to_string(),
@@ -805,7 +813,7 @@ pub fn note_badges(store: &mut Store, subject: &str, cards: &[Card], now_ms: u64
 /// the two steps, the card is merely duplicated (a sidecar entry plus a deck
 /// card) rather than lost.
 ///
-/// Cloze edge: a multi-hole `% reveal: cloze` block is stored as one sidecar
+/// Cloze edge: a multi-hole cloze block is stored as one sidecar
 /// entry per hole, all sharing `parent` + the same whole-block `text`. Promoting one hole
 /// appends the whole block, so the deck gains every hole as a real card — so
 /// [`Store::remove_virtual_block`] drops every hole's sidecar entry, not just
@@ -830,19 +838,34 @@ pub fn promote_virtual(store: &mut Store, id: u64, deck_path: &Path) -> AnyResul
     Ok(())
 }
 
-/// Splits deck-format text into one string per top-level card block: a new
-/// block begins at each raw line starting with `#` at column 0 (the parser's
-/// `is_front` rule); indented `#`/`#?` lines and the following back/note/`%`
-/// directive lines attach to the current block. Any preamble before the first
-/// front (blank lines, deck-level `%` directives) is dropped, it belongs to no
-/// card and enters no `Card::id`. Each block is verbatim source lines joined
-/// with `\n` and ends with a newline.
+/// Splits L1 deck text into one string per top-level card block: a new block
+/// begins at each `## ` front (column 0, outside a code fence); note,
+/// directive, and answer lines attach to the current block. Any preamble
+/// before the first front (blank lines, frontmatter, prose) is dropped; it
+/// belongs to no card. Each block is verbatim source lines joined with `\n`
+/// and ends with a newline.
 pub fn split_card_blocks(text: &str) -> Vec<String> {
     let mut blocks: Vec<Vec<&str>> = Vec::new();
+    // Fence tracking with the parser's own rule, so a fenced `## ` line stays
+    // content instead of starting a bogus block.
+    let mut fence: Option<char> = None;
     for raw in text.lines() {
-        if raw.starts_with('#') {
-            blocks.push(vec![raw]);
-        } else if let Some(current) = blocks.last_mut() {
+        match fence {
+            Some(ch) => {
+                if crate::l1::closes_fence(raw, ch) {
+                    fence = None;
+                }
+            }
+            None => {
+                if let Some(ch) = crate::l1::fence_opener(raw) {
+                    fence = Some(ch);
+                } else if raw.starts_with("## ") {
+                    blocks.push(vec![raw]);
+                    continue;
+                }
+            }
+        }
+        if let Some(current) = blocks.last_mut() {
             current.push(raw);
         }
         // else: preamble before the first front, dropped.
@@ -854,16 +877,19 @@ pub fn split_card_blocks(text: &str) -> Vec<String> {
 }
 
 /// Turns the cleaned remediation deck-text into virtual cards in `store`
-/// (kind [`VirtualKind::Remediation`], `parent = subject`). Each top-level card
-/// block is stored verbatim as a [`VirtualCard::text`]; its id is the
-/// `Card::id` that re-parsing that block yields (a cloze block yields one
-/// sidecar entry per hole, all sharing the block text but keyed by distinct
-/// ids). Per card: skip it if it's already a deck card (`deck_ids`), create it
-/// if its id is new (seeding a fresh `store.cards` schedule), revive it if a
-/// matching card exists and is retired (its interval has reached
-/// `retire_after_days`), or leave it alone if an active match already exists
-/// (dedupe, no schedule reset). Saves the store once after the batch. The deck
-/// file is never touched. Returns how many cards were created or revived.
+/// (kind [`VirtualKind::Remediation`], `parent = subject`). Each top-level
+/// card block gains a freshly minted `<!-- id: -->` token on its `## ` line
+/// and is stored (stamped) verbatim as a [`VirtualCard::text`]; its id is the
+/// `Card::id` that re-parsing that stamped block yields (a cloze block yields
+/// one sidecar entry per hole, all sharing the block text but keyed by
+/// distinct ids). Saves the store once after the batch. The deck file is
+/// never touched. Returns how many cards were created or revived.
+///
+/// INTERIM (until the id-flip task's dedup respec): the skip-in-deck /
+/// skip-active / revive-retired checks below recompute ids from the fresh AI
+/// text and are vacuous now that every block carries a fresh random token:
+/// re-running remediation mints new cards instead of deduping against old
+/// ones. The canonical-content dedup replaces them in the next task.
 pub fn store_remediation_cards(
     store: &mut Store,
     subject: &str,
@@ -879,10 +905,15 @@ pub fn store_remediation_cards(
 
     let mut created_or_revived = 0;
     for block in &blocks {
+        // Mint this block's identity: the token rides the `## ` line, so the
+        // stored text re-parses to the same ids forever.
+        let token =
+            crate::token::mint().map_err(|e| anyhow::anyhow!("cannot mint a token: {e}"))?;
+        let block = stamp_block(block, &token);
         // Parse the block on its own so a cloze block yields its N sub-cards,
         // each with its own id. A malformed block is a hard error (error, never
         // fabricate) rather than a silently-dropped card.
-        let cards = crate::parser::parse_str(subject, block)?;
+        let cards = crate::l1::parse_str(subject, &block)?;
         for card in &cards {
             let id = card.id();
             // Already drillable as a deck card, don't shadow it with a virtual.
@@ -911,6 +942,16 @@ pub fn store_remediation_cards(
     }
     store.save()?;
     Ok(created_or_revived)
+}
+
+/// Appends ` <!-- id: token -->` to a card block's `## ` front line (its first
+/// line by construction, [`split_card_blocks`]), leaving every other byte
+/// untouched.
+fn stamp_block(block: &str, token: &str) -> String {
+    match block.split_once('\n') {
+        Some((front, rest)) => format!("{front} <!-- id: {token} -->\n{rest}"),
+        None => format!("{block} <!-- id: {token} -->"),
+    }
 }
 
 /// Serde default for a legacy store with no `version` field: the oldest format.
@@ -1214,21 +1255,21 @@ mod tests {
         let path = dir.path().join("progress.json");
 
         let mut store = Store::open(&path).unwrap();
-        assert!(!store.deck_mastered("rust.txt"));
-        assert_eq!(None, store.deck_mastered_at("rust.txt"));
-        store.set_deck_mastered("rust.txt", 1234);
-        assert!(store.deck_mastered("rust.txt"));
-        assert_eq!(Some(1234), store.deck_mastered_at("rust.txt"));
+        assert!(!store.deck_mastered("rust.md"));
+        assert_eq!(None, store.deck_mastered_at("rust.md"));
+        store.set_deck_mastered("rust.md", 1234);
+        assert!(store.deck_mastered("rust.md"));
+        assert_eq!(Some(1234), store.deck_mastered_at("rust.md"));
         store.save().unwrap();
 
         // Survives a save/reload.
         let mut reloaded = Store::open(&path).unwrap();
-        assert!(reloaded.deck_mastered("rust.txt"));
-        assert_eq!(Some(1234), reloaded.deck_mastered_at("rust.txt"));
+        assert!(reloaded.deck_mastered("rust.md"));
+        assert_eq!(Some(1234), reloaded.deck_mastered_at("rust.md"));
         // Per-deck clear drops just that deck.
-        assert!(reloaded.clear_deck_mastered("rust.txt"));
-        assert!(!reloaded.deck_mastered("rust.txt"));
-        assert!(!reloaded.clear_deck_mastered("rust.txt")); // nothing left
+        assert!(reloaded.clear_deck_mastered("rust.md"));
+        assert!(!reloaded.deck_mastered("rust.md"));
+        assert!(!reloaded.clear_deck_mastered("rust.md")); // nothing left
     }
 
     #[test]
@@ -1237,56 +1278,56 @@ mod tests {
         let path = dir.path().join("progress.json");
 
         let mut store = Store::open(&path).unwrap();
-        assert_eq!(None, store.exam_failed_at("t.txt"));
+        assert_eq!(None, store.exam_failed_at("t.md"));
         // A failed exam stamps the cooldown without mastering the deck.
-        store.set_exam_failed("t.txt", 5000);
-        assert_eq!(Some(5000), store.exam_failed_at("t.txt"));
-        assert!(!store.deck_mastered("t.txt"));
+        store.set_exam_failed("t.md", 5000);
+        assert_eq!(Some(5000), store.exam_failed_at("t.md"));
+        assert!(!store.deck_mastered("t.md"));
         store.save().unwrap();
 
         // Survives a save/reload.
         let mut reloaded = Store::open(&path).unwrap();
-        assert_eq!(Some(5000), reloaded.exam_failed_at("t.txt"));
+        assert_eq!(Some(5000), reloaded.exam_failed_at("t.md"));
         // A later pass masters the deck and clears the cooldown.
-        reloaded.set_deck_mastered("t.txt", 9000);
-        assert!(reloaded.deck_mastered("t.txt"));
-        assert_eq!(None, reloaded.exam_failed_at("t.txt"));
+        reloaded.set_deck_mastered("t.md", 9000);
+        assert!(reloaded.deck_mastered("t.md"));
+        assert_eq!(None, reloaded.exam_failed_at("t.md"));
     }
 
     #[test]
     fn per_deck_clear_drops_the_cooldown_too() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        store.set_exam_failed("t.txt", 1);
-        assert!(store.clear_deck_mastered("t.txt"));
-        assert_eq!(None, store.exam_failed_at("t.txt"));
+        store.set_exam_failed("t.md", 1);
+        assert!(store.clear_deck_mastered("t.md"));
+        assert_eq!(None, store.exam_failed_at("t.md"));
     }
 
     #[test]
     fn cooldown_remaining_is_none_for_a_subject_that_never_failed() {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(dir.path().join("p.json")).unwrap();
-        assert_eq!(None, cooldown_remaining_ms(&store, "t.txt", 3600, 0));
+        assert_eq!(None, cooldown_remaining_ms(&store, "t.md", 3600, 0));
     }
 
     #[test]
     fn cooldown_remaining_is_none_when_the_cooldown_is_disabled() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        store.set_exam_failed("t.txt", 1_000);
-        assert_eq!(None, cooldown_remaining_ms(&store, "t.txt", 0, 1_030_000));
+        store.set_exam_failed("t.md", 1_000);
+        assert_eq!(None, cooldown_remaining_ms(&store, "t.md", 0, 1_030_000));
     }
 
     #[test]
     fn cooldown_remaining_reports_the_exact_ms_left_inside_the_window() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        store.set_exam_failed("t.txt", 1_000);
+        store.set_exam_failed("t.md", 1_000);
         // 1h cooldown, 30s after the fail -> the rest of the hour remains.
         let now = 1_000 + 30_000;
         assert_eq!(
             Some(3_600_000 - 30_000),
-            cooldown_remaining_ms(&store, "t.txt", 3600, now)
+            cooldown_remaining_ms(&store, "t.md", 3600, now)
         );
     }
 
@@ -1294,10 +1335,10 @@ mod tests {
     fn cooldown_remaining_is_none_once_the_window_has_elapsed() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        store.set_exam_failed("t.txt", 1_000);
+        store.set_exam_failed("t.md", 1_000);
         assert_eq!(
             None,
-            cooldown_remaining_ms(&store, "t.txt", 3600, 1_000 + 3_600_001)
+            cooldown_remaining_ms(&store, "t.md", 3600, 1_000 + 3_600_001)
         );
     }
 
@@ -1309,22 +1350,22 @@ mod tests {
         let path = dir.path().join("progress.json");
         std::fs::write(
             &path,
-            "{\"version\":1,\"cards\":{},\"decks\":{\"rust.txt\":{\"mastered_at_ms\":1234}}}",
+            "{\"version\":1,\"cards\":{},\"decks\":{\"rust.md\":{\"mastered_at_ms\":1234}}}",
         )
         .unwrap();
         let store = Store::open(&path).unwrap();
-        assert!(store.deck_mastered("rust.txt"));
-        assert_eq!(Some(1234), store.deck_mastered_at("rust.txt"));
-        assert_eq!(None, store.exam_failed_at("rust.txt"));
+        assert!(store.deck_mastered("rust.md"));
+        assert_eq!(Some(1234), store.deck_mastered_at("rust.md"));
+        assert_eq!(None, store.exam_failed_at("rust.md"));
     }
 
     #[test]
     fn clear_also_drops_deck_mastered() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        store.set_deck_mastered("a.txt", 1);
+        store.set_deck_mastered("a.md", 1);
         store.clear();
-        assert!(!store.deck_mastered("a.txt"));
+        assert!(!store.deck_mastered("a.md"));
     }
 
     #[test]
@@ -1335,7 +1376,7 @@ mod tests {
         std::fs::write(&path, "{\"version\":1,\"cards\":{}}").unwrap();
         let store = Store::open(&path).unwrap();
         assert!(store.is_empty());
-        assert!(!store.deck_mastered("anything.txt"));
+        assert!(!store.deck_mastered("anything.md"));
     }
 
     #[test]
@@ -1401,14 +1442,14 @@ mod tests {
     }
 
     /// The canonical one-card deck-format `text` of a sample virtual card.
-    const BORROW_TEXT: &str = "# What does the borrow checker enforce?\n\tExactly one mutable borrow, or many shared ones\n";
+    const BORROW_TEXT: &str = "## What does the borrow checker enforce? <!-- id: vb1 -->\nExactly one mutable borrow, or many shared ones\n";
 
     /// Builds a virtual card from its canonical deck-format `text` under
     /// `parent`, deriving its id exactly as the substrate does — the `Card::id`
     /// of the (plain) card that `parse(parent, text)` yields. Seeds no schedule;
     /// a caller that needs the card scheduled adds a `store.cards` entry itself.
     fn virtual_card(parent: &str, text: &str) -> VirtualCard {
-        let id = crate::parser::parse_str(parent, text).unwrap()[0].id();
+        let id = crate::l1::parse_str(parent, text).unwrap()[0].id();
         VirtualCard {
             id,
             kind: VirtualKind::Remediation,
@@ -1422,13 +1463,13 @@ mod tests {
     fn insert_virtual_then_get_virtual_returns_it_with_fields_intact() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let vc = virtual_card("rust.txt", BORROW_TEXT);
+        let vc = virtual_card("rust.md", BORROW_TEXT);
         let id = vc.id;
 
         store.insert_virtual(vc);
 
         let got = store.get_virtual(id).unwrap();
-        assert_eq!("rust.txt", got.parent);
+        assert_eq!("rust.md", got.parent);
         assert_eq!(VirtualKind::Remediation, got.kind);
         assert_eq!(BORROW_TEXT, got.text);
         assert!(store.is_virtual(id));
@@ -1439,7 +1480,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("progress.json");
         let mut store = Store::open(&path).unwrap();
-        let vc = virtual_card("rust.txt", BORROW_TEXT);
+        let vc = virtual_card("rust.md", BORROW_TEXT);
         let id = vc.id;
         store.insert_virtual(vc.clone());
         store.save().unwrap();
@@ -1454,16 +1495,16 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         // Distinct ids come from distinct content (different back / subject).
-        store.insert_virtual(virtual_card("rust.txt", "# f\n\tback one\n"));
-        store.insert_virtual(virtual_card("rust.txt", "# f\n\tback two\n"));
-        store.insert_virtual(virtual_card("other.txt", "# f\n\tback one\n"));
+        store.insert_virtual(virtual_card("rust.md", "## f <!-- id: v1 -->\nback one\n"));
+        store.insert_virtual(virtual_card("rust.md", "## f <!-- id: v2 -->\nback two\n"));
+        store.insert_virtual(virtual_card("other.md", "## f <!-- id: v3 -->\nback one\n"));
 
-        let rust_cards = store.virtual_cards_for("rust.txt");
+        let rust_cards = store.virtual_cards_for("rust.md");
         assert_eq!(2, rust_cards.len());
-        assert!(rust_cards.iter().all(|v| v.parent == "rust.txt"));
+        assert!(rust_cards.iter().all(|v| v.parent == "rust.md"));
 
-        assert_eq!(1, store.virtual_cards_for("other.txt").len());
-        assert!(store.virtual_cards_for("nonexistent.txt").is_empty());
+        assert_eq!(1, store.virtual_cards_for("other.md").len());
+        assert!(store.virtual_cards_for("nonexistent.md").is_empty());
     }
 
     #[test]
@@ -1491,9 +1532,9 @@ mod tests {
             &path,
             r#"{"version":1,
                 "cards":{"5":{"acquired_ms":7}},
-                "decks":{"rust.txt":{"mastered_at_ms":1234}},
+                "decks":{"rust.md":{"mastered_at_ms":1234}},
                 "virtual_cards":{
-                    "v:abc":{"id":"v:abc","kind":"Remediation","parent":"rust.txt",
+                    "v:abc":{"id":"v:abc","kind":"Remediation","parent":"rust.md",
                              "content":{"front":"f","back":["b"],"mode":null},
                              "state":{"acquired_ms":0},"created_ms":0}
                 }}"#,
@@ -1502,7 +1543,7 @@ mod tests {
         let store = Store::open(&path).unwrap();
         // Real progress survives …
         assert_eq!(7, store.get(5).unwrap().acquired_ms);
-        assert!(store.deck_mastered("rust.txt"));
+        assert!(store.deck_mastered("rust.md"));
         // … and the stale, regenerable virtual entry is dropped.
         assert_eq!(0, store.iter_virtual_cards().count());
     }
@@ -1516,10 +1557,14 @@ mod tests {
     #[test]
     fn promote_virtual_appends_one_card_and_drops_the_virtual_entry() {
         let dir = tempfile::tempdir().unwrap();
-        let deck_path = write_deck(dir.path(), "rust.txt", "# existing\n\tanswer\n");
+        let deck_path = write_deck(
+            dir.path(),
+            "rust.md",
+            "## existing <!-- id: ex1 -->\nanswer\n",
+        );
         let store_path = dir.path().join("progress.json");
         let mut store = Store::open(&store_path).unwrap();
-        let vc = virtual_card("rust.txt", BORROW_TEXT);
+        let vc = virtual_card("rust.md", BORROW_TEXT);
         let id = vc.id;
         store.insert_virtual(vc);
 
@@ -1528,7 +1573,7 @@ mod tests {
         assert!(store.get_virtual(id).is_none());
 
         let text = std::fs::read_to_string(&deck_path).unwrap();
-        let cards = crate::parser::parse_str("rust.txt", &text).unwrap();
+        let cards = crate::l1::parse_str("rust.md", &text).unwrap();
         assert_eq!(2, cards.len());
         let promoted = cards
             .iter()
@@ -1548,22 +1593,24 @@ mod tests {
     #[test]
     fn promote_leaves_existing_deck_card_ids_untouched() {
         let dir = tempfile::tempdir().unwrap();
-        let deck_path = write_deck(dir.path(), "rust.txt", "# one\n\t1\n\n# two\n\t2\n");
+        let deck_path = write_deck(
+            dir.path(),
+            "rust.md",
+            "## one <!-- id: q1 -->\n1\n\n## two <!-- id: q2 -->\n2\n",
+        );
         let before =
-            crate::parser::parse_str("rust.txt", &std::fs::read_to_string(&deck_path).unwrap())
-                .unwrap();
+            crate::l1::parse_str("rust.md", &std::fs::read_to_string(&deck_path).unwrap()).unwrap();
         let ids_before: Vec<u64> = before.iter().map(|c| c.id()).collect();
 
         let mut store = Store::open(dir.path().join("progress.json")).unwrap();
-        let vc = virtual_card("rust.txt", BORROW_TEXT);
+        let vc = virtual_card("rust.md", BORROW_TEXT);
         let id = vc.id;
         store.insert_virtual(vc);
 
         promote_virtual(&mut store, id, &deck_path).unwrap();
 
         let after =
-            crate::parser::parse_str("rust.txt", &std::fs::read_to_string(&deck_path).unwrap())
-                .unwrap();
+            crate::l1::parse_str("rust.md", &std::fs::read_to_string(&deck_path).unwrap()).unwrap();
         let ids_after: Vec<u64> = after.iter().take(2).map(|c| c.id()).collect();
         assert_eq!(ids_before, ids_after);
         assert_eq!(3, after.len()); // the two originals plus the promoted card
@@ -1572,7 +1619,7 @@ mod tests {
     #[test]
     fn promote_unknown_id_errors_and_writes_nothing() {
         let dir = tempfile::tempdir().unwrap();
-        let deck_path = write_deck(dir.path(), "d.txt", "# one\n\t1\n");
+        let deck_path = write_deck(dir.path(), "d.md", "## one\n1\n");
         let deck_before = std::fs::read_to_string(&deck_path).unwrap();
         let store_path = dir.path().join("progress.json");
         let mut store = Store::open(&store_path).unwrap();
@@ -1594,13 +1641,16 @@ mod tests {
         // cards (mis-counted, mis-badged, and a second promote would duplicate
         // ids in the deck file).
         let dir = tempfile::tempdir().unwrap();
-        let deck_path = write_deck(dir.path(), "rust.txt", "# existing\n\tanswer\n");
+        let deck_path = write_deck(
+            dir.path(),
+            "rust.md",
+            "## existing <!-- id: ex1 -->\nanswer\n",
+        );
         let store_path = dir.path().join("progress.json");
         let mut store = Store::open(&store_path).unwrap();
 
-        let text =
-            "# Complete the quote\n% reveal: cloze\n\tTo {{be}} or not to {{be}}\n\t! Hamlet\n";
-        let cards = crate::parser::parse_str("rust.txt", text).unwrap();
+        let text = "## Complete the quote <!-- id: vcz1 -->\nTo \\cloze{be} or not to \\cloze{be}\n> Hamlet\n";
+        let cards = crate::l1::parse_str("rust.md", text).unwrap();
         assert_eq!(2, cards.len());
         let id0 = cards[0].id();
         let id1 = cards[1].id();
@@ -1610,7 +1660,7 @@ mod tests {
             store.insert_virtual(VirtualCard {
                 id,
                 kind: VirtualKind::Remediation,
-                parent: "rust.txt".to_string(),
+                parent: "rust.md".to_string(),
                 text: text.to_string(),
                 created_ms: 1000,
             });
@@ -1633,7 +1683,7 @@ mod tests {
         // The deck file gained the cloze card (both holes, since a cloze
         // promotes as one block).
         let deck_text = std::fs::read_to_string(&deck_path).unwrap();
-        let deck_cards = crate::parser::parse_str("rust.txt", &deck_text).unwrap();
+        let deck_cards = crate::l1::parse_str("rust.md", &deck_text).unwrap();
         assert_eq!(3, deck_cards.len()); // the existing plain card + 2 cloze holes
 
         // A second promote of the sibling hole now bails cleanly (its sidecar
@@ -1655,9 +1705,13 @@ mod tests {
         // the same id the appended deck card hashes to — so promoting carries the
         // drilled schedule with no transfer code.
         let dir = tempfile::tempdir().unwrap();
-        let deck_path = write_deck(dir.path(), "rust.txt", "# existing\n\tanswer\n");
+        let deck_path = write_deck(
+            dir.path(),
+            "rust.md",
+            "## existing <!-- id: ex1 -->\nanswer\n",
+        );
         let mut store = Store::open(dir.path().join("progress.json")).unwrap();
-        let vc = virtual_card("rust.txt", BORROW_TEXT);
+        let vc = virtual_card("rust.md", BORROW_TEXT);
         let id = vc.id;
         store.insert_virtual(vc);
 
@@ -1683,7 +1737,7 @@ mod tests {
         assert!(store.get_virtual(id).is_none());
 
         let text = std::fs::read_to_string(&deck_path).unwrap();
-        let cards = crate::parser::parse_str("rust.txt", &text).unwrap();
+        let cards = crate::l1::parse_str("rust.md", &text).unwrap();
         let promoted = cards
             .iter()
             .find(|c| c.front == "What does the borrow checker enforce?")
@@ -1700,12 +1754,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("progress.json");
         let mut store = Store::open(&path).unwrap();
-        let text = "# capital of france\n\tParis\n".to_string();
-        let id = crate::parser::parse_str("geo.txt", &text).unwrap()[0].id();
+        let text = "## capital of france <!-- id: cap1 -->\nParis\n".to_string();
+        let id = crate::l1::parse_str("geo.md", &text).unwrap()[0].id();
         store.insert_virtual(VirtualCard {
             id,
             kind: VirtualKind::Tutor,
-            parent: "geo.txt".to_string(),
+            parent: "geo.md".to_string(),
             text,
             created_ms: 5,
         });
@@ -1859,7 +1913,11 @@ mod tests {
 
     /// Parses a tiny two-card deck for the badge tests below.
     fn two_cards() -> Vec<crate::card::Card> {
-        crate::parser::parse_str("t.txt", "# a\n\t1\n\n# b\n\t2\n").unwrap()
+        crate::l1::parse_str(
+            "t.md",
+            "## a <!-- id: q1 -->\n1\n\n## b <!-- id: q2 -->\n2\n",
+        )
+        .unwrap()
     }
 
     #[test]
@@ -1895,8 +1953,8 @@ mod tests {
                 ..Default::default()
             });
         }
-        note_badges(&mut store, "t.txt", &cards, 1_000);
-        assert_eq!(Some(1_000), store.badge_earned("t.txt", Depth::Recall));
+        note_badges(&mut store, "t.md", &cards, 1_000);
+        assert_eq!(Some(1_000), store.badge_earned("t.md", Depth::Recall));
 
         // One card lapses back below the mature line.
         store.get_or_insert(cards[0].id(), 0).recall = Some(FsrsState {
@@ -1906,7 +1964,7 @@ mod tests {
 
         assert!(!badge_solid(&cards, &store, Depth::Recall));
         // The earn date is a high-water mark: it survives the lapse.
-        assert_eq!(Some(1_000), store.badge_earned("t.txt", Depth::Recall));
+        assert_eq!(Some(1_000), store.badge_earned("t.md", Depth::Recall));
     }
 
     #[test]
@@ -1929,14 +1987,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("p.json");
         let mut store = Store::open(&path).unwrap();
-        assert_eq!(None, store.last_depth("t.txt"));
+        assert_eq!(None, store.last_depth("t.md"));
 
-        store.set_last_depth("t.txt", Depth::Reconstruct);
-        assert_eq!(Some(Depth::Reconstruct), store.last_depth("t.txt"));
+        store.set_last_depth("t.md", Depth::Reconstruct);
+        assert_eq!(Some(Depth::Reconstruct), store.last_depth("t.md"));
         store.save().unwrap();
 
         let reloaded = Store::open(&path).unwrap();
-        assert_eq!(Some(Depth::Reconstruct), reloaded.last_depth("t.txt"));
+        assert_eq!(Some(Depth::Reconstruct), reloaded.last_depth("t.md"));
     }
 
     #[test]
@@ -1946,7 +2004,7 @@ mod tests {
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let id = mint_tutor_card(
             &mut store,
-            "geo.txt",
+            "geo.md",
             "capital of france",
             &["Paris".to_string()],
             100,
@@ -1960,25 +2018,9 @@ mod tests {
         // is asserted against the running server.
     }
 
-    #[test]
-    fn mint_tutor_card_rejects_a_duplicate_id() {
-        use std::collections::HashSet;
-        let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let text = "# capital of france\n\tParis\n".to_string();
-        let existing = crate::parser::parse_str("geo.txt", &text).unwrap()[0].id();
-        let deck_ids: HashSet<u64> = [existing].into_iter().collect();
-        let err = mint_tutor_card(
-            &mut store,
-            "geo.txt",
-            "capital of france",
-            &["Paris".to_string()],
-            100,
-            &deck_ids,
-        )
-        .unwrap_err();
-        assert!(matches!(err, MintError::Duplicate));
-    }
+    // The duplicate-mint rejection is DELETED this task: every mint carries a
+    // fresh random token, so the recomputed-id dedup is vacuous until the
+    // id-flip task respecs it as canonical-content comparison.
 
     #[test]
     fn mint_tutor_card_rejects_an_empty_side() {
@@ -1987,7 +2029,7 @@ mod tests {
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let err = mint_tutor_card(
             &mut store,
-            "geo.txt",
+            "geo.md",
             "  ",
             &["Paris".to_string()],
             100,
@@ -2005,7 +2047,7 @@ mod tests {
         // A newline inside a back element could smuggle an extra line or a `%` directive.
         let err = mint_tutor_card(
             &mut store,
-            "geo.txt",
+            "geo.md",
             "capital?",
             &["Paris\n% direction: reverse".to_string()],
             100,
@@ -2018,20 +2060,20 @@ mod tests {
     #[test]
     fn split_card_blocks_one_block_per_top_depth_front() {
         // Two plain cards separated by a blank line, so two blocks.
-        let blocks = split_card_blocks("# a\n\t1\n\n# b\n\t2\n");
+        let blocks = split_card_blocks("## a\n1\n\n## b\n2\n");
         assert_eq!(2, blocks.len());
-        assert!(blocks[0].starts_with("# a"));
-        assert!(blocks[1].starts_with("# b"));
+        assert!(blocks[0].starts_with("## a"));
+        assert!(blocks[1].starts_with("## b"));
     }
 
     #[test]
     fn split_card_blocks_keeps_indented_hash_and_directives_inside_a_block() {
-        // An indented `#` answer line, a per-card `% reveal:`, and a `#?`-looking
+        // A `#`-leading answer line, a per-card directive, and a `#?`-looking
         // indented line all stay inside the one card block.
-        let text = "# front\n% reveal: line\n\t#[derive(Clone)]\n\t#? not a front\n";
+        let text = "## front <!-- reveal: line -->\n#[derive(Clone)]\n#? not a front\n";
         let blocks = split_card_blocks(text);
         assert_eq!(1, blocks.len());
-        assert!(blocks[0].contains("% reveal: line"));
+        assert!(blocks[0].contains("<!-- reveal: line -->"));
         assert!(blocks[0].contains("#[derive(Clone)]"));
         assert!(blocks[0].contains("#? not a front"));
     }
@@ -2041,11 +2083,11 @@ mod tests {
         // A leading deck-level directive/blank line is preamble (dropped); the
         // whole cloze block (front + `% reveal: cloze` + answer) is one block.
         let text =
-            "% source: x\n\n# Complete the quote\n% reveal: cloze\n\tTo {{be}} or not to {{be}}\n";
+            "---\nsource: x\n---\n\n## Complete the quote\nTo \\cloze{be} or not to \\cloze{be}\n";
         let blocks = split_card_blocks(text);
         assert_eq!(1, blocks.len());
-        assert!(blocks[0].starts_with("# Complete the quote"));
-        assert!(blocks[0].contains("% reveal: cloze"));
+        assert!(blocks[0].starts_with("## Complete the quote"));
+        assert!(blocks[0].contains("\\cloze{be}"));
         assert!(!blocks[0].contains("% source:"));
     }
 
@@ -2068,20 +2110,10 @@ mod tests {
         )
     }
 
-    #[test]
-    fn regenerating_the_same_remediation_dedupes() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let text = "# Why does X?\n\tpoint one\n";
-
-        let n1 = store_remediation(&mut store, "d.txt", text, 1_000, None).unwrap();
-        assert_eq!(1, n1);
-        assert_eq!(1, store.virtual_cards_for("d.txt").len());
-
-        let n2 = store_remediation(&mut store, "d.txt", text, 2_000, None).unwrap();
-        assert_eq!(0, n2, "an active dupe is left alone, not recreated");
-        assert_eq!(1, store.virtual_cards_for("d.txt").len());
-    }
+    // The remediation dedup tests (regenerate-dedupes, dedupe-against-deck,
+    // revive-retired) are DELETED this task: fresh tokens per run make the
+    // recomputed-id dedup vacuous until the id-flip task respecs it as
+    // canonical-content comparison.
 
     #[test]
     fn distinct_answer_cloze_holes_stay_distinct() {
@@ -2091,11 +2123,11 @@ mod tests {
         // entries share one `text` but are keyed by distinct ids.
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let text = "# Complete the quote\n% reveal: cloze\n\tTo {{be}} or not to {{be}}\n";
+        let text = "## Complete the quote\nTo \\cloze{be} or not to \\cloze{be}\n";
 
-        let n = store_remediation(&mut store, "d.txt", text, 1_000, None).unwrap();
+        let n = store_remediation(&mut store, "d.md", text, 1_000, None).unwrap();
         assert_eq!(2, n, "both cloze sub-cards should be created, not deduped");
-        let virtuals = store.virtual_cards_for("d.txt");
+        let virtuals = store.virtual_cards_for("d.md");
         assert_eq!(2, virtuals.len());
         assert_ne!(
             virtuals[0].id, virtuals[1].id,
@@ -2105,23 +2137,7 @@ mod tests {
         assert_eq!(virtuals[0].text, virtuals[1].text);
     }
 
-    #[test]
-    fn remediation_deduped_against_a_deck_card() {
-        use std::collections::HashSet;
-        // A remediation card whose id is already a deck card's id must be
-        // skipped, no sidecar entry, no `store.cards` entry created for it.
-        let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let text = "# Why does X?\n\tpoint one\n";
-        // The deck already has this exact card.
-        let deck_id = crate::parser::parse_str("d.txt", text).unwrap()[0].id();
-        let deck_ids: HashSet<u64> = [deck_id].into_iter().collect();
-
-        let n = store_remediation_cards(&mut store, "d.txt", &deck_ids, text, 1_000, None).unwrap();
-        assert_eq!(0, n, "a card already in the deck is not made virtual");
-        assert!(store.virtual_cards_for("d.txt").is_empty());
-        assert!(store.get(deck_id).is_none(), "no ghost schedule seeded");
-    }
+    // (see the dedup-respec note above)
 
     #[test]
     fn virtual_id_agrees_across_create_synth_and_promote() {
@@ -2131,21 +2147,21 @@ mod tests {
         // for a plain card AND for every hole of a cloze card. Subject is always
         // `vc.parent`.
         for text in [
-            "# Why does X?\n\tpoint one\n",
-            "# Complete the quote\n% reveal: cloze\n\tTo {{be}} or not to {{bee}}\n",
+            "## Why does X?\npoint one\n",
+            "## Complete the quote\nTo \\cloze{be} or not to \\cloze{bee}\n",
         ] {
             let dir = tempfile::tempdir().unwrap();
-            let deck_path = dir.path().join("d.txt");
-            std::fs::write(&deck_path, "# existing\n\tanswer\n").unwrap();
+            let deck_path = dir.path().join("d.md");
+            std::fs::write(&deck_path, "## existing <!-- id: ex1 -->\nanswer\n").unwrap();
             let mut store = Store::open(dir.path().join("p.json")).unwrap();
 
-            let created = store_remediation(&mut store, "d.txt", text, 1_000, None).unwrap();
-            let virtuals = store.virtual_cards_for("d.txt");
+            let created = store_remediation(&mut store, "d.md", text, 1_000, None).unwrap();
+            let virtuals = store.virtual_cards_for("d.md");
             assert_eq!(created, virtuals.len());
 
             for vc in &virtuals {
                 // SYNTH: re-derive from the stored text under the same parent.
-                let synth = crate::parser::parse_str(&vc.parent, &vc.text)
+                let synth = crate::l1::parse_str(&vc.parent, &vc.text)
                     .unwrap()
                     .into_iter()
                     .find(|c| c.id() == vc.id)
@@ -2157,9 +2173,8 @@ mod tests {
             // file, and confirm the matching card carries the same id.
             let vid = virtuals[0].id;
             promote_virtual(&mut store, vid, &deck_path).unwrap();
-            let deck =
-                crate::parser::parse_str("d.txt", &std::fs::read_to_string(&deck_path).unwrap())
-                    .unwrap();
+            let deck = crate::l1::parse_str("d.md", &std::fs::read_to_string(&deck_path).unwrap())
+                .unwrap();
             assert!(
                 deck.iter().any(|c| c.id() == vid),
                 "the appended deck card reproduces the id"
@@ -2167,54 +2182,25 @@ mod tests {
         }
     }
 
-    #[test]
-    fn reviving_replaces_an_archived_remediation_card() {
-        use crate::session::is_retired_id;
-        let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let text = "# Why does X?\n\tpoint one\n";
-        let cap = Some(30);
-
-        store_remediation(&mut store, "d.txt", text, 1_000, cap).unwrap();
-        let id = store.virtual_cards_for("d.txt")[0].id;
-        {
-            // Retired: push the interval (in `store.cards`) to the cap rather
-            // than setting a flag (there is none).
-            let state = store.get_or_insert(id, 1_000);
-            state.recall = Some(FsrsState {
-                scheduled_days: 30,
-                ..Default::default()
-            });
-            state.total_reviews = 3;
-        }
-
-        let n = store_remediation(&mut store, "d.txt", text, 5_000, cap).unwrap();
-        assert_eq!(1, n);
-        assert_eq!(1, store.virtual_cards_for("d.txt").len());
-        assert!(!is_retired_id(id, &store, cap));
-        assert_eq!(
-            0,
-            store.get(id).unwrap().total_reviews,
-            "revive resets to a fresh state"
-        );
-    }
+    // (see the dedup-respec note above)
 
     #[test]
     fn remediation_card_reveal_is_carried() {
         use crate::depth::Reveal;
-        // A per-card `% reveal:` survives in the stored `text` and re-parses on
+        // A per-card `reveal:` directive survives in the stored `text` and re-parses on
         // synth.
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let text = "# Why does X?\n% reveal: line\n\tpoint one\n\n# fact card\n\tplain answer\n";
+        let text =
+            "## Why does X? <!-- reveal: line -->\npoint one\n\n## fact card\nplain answer\n";
 
-        store_remediation(&mut store, "d.txt", text, 1_000, None).unwrap();
+        store_remediation(&mut store, "d.md", text, 1_000, None).unwrap();
         // Synthesize each virtual card from its stored text to read its reveal.
         let synthesized: Vec<_> = store
-            .virtual_cards_for("d.txt")
+            .virtual_cards_for("d.md")
             .iter()
             .map(|vc| {
-                crate::parser::parse_str(&vc.parent, &vc.text)
+                crate::l1::parse_str(&vc.parent, &vc.text)
                     .unwrap()
                     .remove(0)
             })
