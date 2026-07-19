@@ -128,12 +128,11 @@ pub fn bind(addr: SocketAddr) -> Result<Server> {
 }
 
 // Connection workers pull parsed requests off tiny_http's queue in parallel,
-// so an idle kept-alive socket can't starve the rest (the old single loop did).
+// so an idle kept-alive socket can't starve the rest.
 const WORKERS: usize = 16;
 
-// Handler state, mutable across requests. One lock guards the whole struct:
-// workers receive connections in parallel, but each handler runs while holding
-// the lock, so behavior matches the old single-threaded loop.
+// One lock guards the whole struct: workers receive connections in parallel,
+// but each handler runs while holding the lock, so handlers never interleave.
 struct ServeState {
     store: Store,
     recent: RecentDecks,

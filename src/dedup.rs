@@ -312,7 +312,6 @@ mod tests {
         path
     }
 
-
     #[test]
     fn the_fast_scan_matches_the_full_scan_across_placements_and_fences() {
         let dir = tempfile::tempdir().unwrap();
