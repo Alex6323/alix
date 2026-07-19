@@ -44,7 +44,10 @@ pub fn is_canonical(token: &str) -> bool {
 /// Compose a full card id from its parts. `hole` and `reversed` are mutually
 /// exclusive by construction upstream (cloze cards never reverse).
 pub fn card_id(token: &str, hole: Option<u32>, reversed: bool) -> String {
-    debug_assert!(hole.is_none() || !reversed, "a cloze sub-card never reverses");
+    debug_assert!(
+        hole.is_none() || !reversed,
+        "a cloze sub-card never reverses"
+    );
     if let Some(n) = hole {
         format!("{token}-{n}")
     } else if reversed {

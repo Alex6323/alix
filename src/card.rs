@@ -228,6 +228,13 @@ impl Card {
 }
 
 impl Eq for Card {}
+// INTERIM (dies with the id-flip task): equality is `Card::id()`, the u64 hash
+// of the string id. Every UNSTAMPED card hashes to the id-0 sentinel, so all
+// unstamped cards currently compare EQUAL to each other regardless of content.
+// This is harmless only because the session/store boundary excludes tokenless
+// cards before any equality-keyed step; the flip to a real `String` id (which
+// makes unstamped identity absent rather than a shared sentinel) removes the
+// footgun.
 impl PartialEq for Card {
     fn eq(&self, other: &Self) -> bool {
         self.id() == other.id()

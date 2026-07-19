@@ -449,7 +449,10 @@ mod tests {
         // card) is dropped outright, not stored anywhere.
         let text = "% trace: First\n# front\n\tback\n% trace: Second\n";
         let deck = parse_txt(text).unwrap();
-        assert_eq!(vec![("trace".to_string(), "First".to_string())], deck.header);
+        assert_eq!(
+            vec![("trace".to_string(), "First".to_string())],
+            deck.header
+        );
         assert!(deck.cards[0].directives.is_empty());
     }
 }

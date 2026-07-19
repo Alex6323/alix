@@ -22,6 +22,7 @@ use crate::{
     backend::ensure_source_reachable,
     config::{AskConfig, TraceConfig},
     deck::{Deck, is_url},
+    l1::yaml_quote,
     share, title,
     trace::{self, resolve_source},
     trace_ai::{self, build_run_config, clean_to_cards},
@@ -721,12 +722,6 @@ fn rewrite_scope(scope: &str, root: Option<&Path>) -> String {
 /// Escapes a string for a double-quoted TOML value.
 fn toml_escape(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
-}
-
-/// A string as a double-quoted YAML scalar, so a title or path with a colon
-/// (or quotes) can never derail the frontmatter mapping.
-fn yaml_quote(s: &str) -> String {
-    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
 #[cfg(test)]

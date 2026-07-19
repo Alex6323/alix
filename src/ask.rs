@@ -888,6 +888,25 @@ mod tests {
     }
 
     #[test]
+    fn draft_card_prompt_asks_for_l1_shape_and_no_old_syntax() {
+        let transcript = vec![("q".to_string(), "a".to_string())];
+        let p = draft_card_prompt(&card(), &transcript);
+        // It asks for a bare L1 card: a `## ` front at column 0 with plain
+        // answer lines, and it grounds in the card under review + transcript.
+        assert!(p.contains("## <the question>"));
+        assert!(p.contains("column 0"));
+        assert!(p.contains("## Why?"));
+        assert!(p.contains("Q: q\nA: a"));
+        // The L1 pin: no retired old-format syntax may sneak back in — the
+        // trainer no longer parses `# ` fronts, tab-indented answers, `! `
+        // notes, `%` directives, or `{{ }}` clozes.
+        assert!(!p.contains("{{"));
+        assert!(!p.contains("% reveal"));
+        assert!(!p.contains("tab-indent"));
+        assert!(!p.contains("! note"));
+    }
+
+    #[test]
     fn extract_note_lines_cleans_and_caps() {
         let text = "- first insight\n\n* second insight\n! third\nfourth\n";
         assert_eq!(

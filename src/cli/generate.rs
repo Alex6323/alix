@@ -429,9 +429,15 @@ fn generate_trace_walk(args: &GenerateArgs, config: &Config, goal: &str) -> Resu
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or(source.as_str());
+    // Both values are hand-authored frontmatter scalars; quote them through the
+    // shared L1 quoter so a `name` or `source` path bearing a `"`/`\` (or a
+    // colon) can never derail the YAML mapping.
+    let trace = l1::yaml_quote(&format!(
+        "exploring {name} — what it is, its parts, and its spine"
+    ));
     let deck_text = format!(
-        "---\ntrace: \"exploring {name} — what it is, its parts, and its spine\"\n\
-         source: \"{source}\"\n---\n\n{checkpoints}\n"
+        "---\ntrace: {trace}\nsource: {}\n---\n\n{checkpoints}\n",
+        l1::yaml_quote(&source)
     );
     let out = PathBuf::from(args.output.clone().unwrap_or_else(|| "explore.md".into()));
     if out.exists() && !args.force {

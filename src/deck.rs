@@ -1159,6 +1159,20 @@ mod tests {
     }
 
     #[test]
+    fn replace_after_header_is_not_fooled_by_a_fenced_heading() {
+        // The header's prose holds a fenced `## `: it is content, not the first
+        // card front, so the parsed `fronts` list points past it and the whole
+        // fence is kept as header. A naive `starts_with("## ")` scan would
+        // truncate the header at the fenced line and drop everything below it.
+        let text = "# Preamble\n```\n## not a card\n```\ntail\n\n## real\nold\n";
+        let out = replace_after_header(text, &fronts(text), "## new\nfresh\n");
+        assert_eq!(
+            "# Preamble\n```\n## not a card\n```\ntail\n\n## new\nfresh\n",
+            out
+        );
+    }
+
+    #[test]
     fn empty_deck_is_not_started() {
         let dir = tempfile::tempdir().unwrap();
         // Prose only, zero `## ` fronts: a valid zero-card deck.
