@@ -501,14 +501,14 @@ fn a_group_row_aggregates_member_reviewability_instead_of_hardcoding_true() {
     let now = now_ms();
     for name in ["one.md", "two.md"] {
         let deck = Deck::load(ws.join(name)).unwrap();
-        let id = deck.cards[0].id();
+        let id = deck.cards[0].id().unwrap();
         let future = crate::store::FsrsState {
             state: 2,
             scheduled_days: 30,
             due_ms: now + 30 * 86_400_000,
             ..Default::default()
         };
-        let entry = ws_store.get_or_insert(id, now);
+        let entry = ws_store.get_or_insert(&id, now);
         entry.recognized_ms = Some(now);
         entry.recall = Some(future);
         entry.reconstruct = Some(future);
@@ -561,7 +561,7 @@ fn a_plain_folders_member_badge_reads_the_served_instance_store_not_the_global_d
 
     let mut instance_store = Store::open(dir.path().join("instance.json")).unwrap();
     let deck = Deck::load(folder.join("a.md")).unwrap();
-    let id = deck.cards[0].id();
+    let id = deck.cards[0].id().unwrap();
     let now = now_ms();
     let future = crate::store::FsrsState {
         state: 2,
@@ -569,7 +569,7 @@ fn a_plain_folders_member_badge_reads_the_served_instance_store_not_the_global_d
         due_ms: now + 30 * 86_400_000,
         ..Default::default()
     };
-    let entry = instance_store.get_or_insert(id, now);
+    let entry = instance_store.get_or_insert(&id, now);
     entry.recognized_ms = Some(now);
     entry.recall = Some(future);
     entry.reconstruct = Some(future);
@@ -703,7 +703,7 @@ fn state_reports_the_sessions_depth_and_typeline_mode() {
     std::fs::write(&deck, text).unwrap();
     let cards = crate::l1::parse_str("d.md", text).unwrap();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
-    store.get_or_insert(cards[0].id(), 0); // seen, so it's a quiz not an acquire
+    store.get_or_insert(&cards[0].id().unwrap(), 0); // seen, so it's a quiz not an acquire
     let r = reviewing_at(deck, cards, &store, Depth::Reconstruct);
 
     let dto = review_state(Some(&r), &store);
@@ -725,7 +725,7 @@ fn explain_state_serves_the_keypoints_rubric_cached_or_fallback() {
     std::fs::write(&deck, text).unwrap();
     let cards = crate::l1::parse_str("d.md", text).unwrap();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
-    store.get_or_insert(cards[0].id(), 0); // seen, so it's a quiz not an acquire
+    store.get_or_insert(&cards[0].id().unwrap(), 0); // seen, so it's a quiz not an acquire
     let mut r = reviewing_at(deck, cards.clone(), &store, Depth::Reconstruct);
 
     // No cached keypoints: the rubric falls back to the authored back lines.
@@ -738,7 +738,7 @@ fn explain_state_serves_the_keypoints_rubric_cached_or_fallback() {
 
     // Cached keypoints win over the fallback.
     r.augment
-        .set_keypoints(cards[0].id(), vec!["one claim".to_string()]);
+        .set_keypoints(&cards[0].id().unwrap(), vec!["one claim".to_string()]);
     let cached = review_state(Some(&r), &store);
     assert_eq!(cached.keypoints, Some(vec!["one claim".to_string()]));
 }
@@ -753,12 +753,12 @@ fn recognize_state_offers_gap_options_for_a_cloze_card() {
     std::fs::write(&deck, text).unwrap();
     let cards = crate::l1::parse_str("d.md", text).unwrap();
     assert_eq!(vec!["cat".to_string()], cards[0].back); // gap text is the back
-    let id = cards[0].id();
+    let id = cards[0].id().unwrap();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
-    store.get_or_insert(id, 0); // seen → the Recognize MC, not the acquire on-ramp
+    store.get_or_insert(&id, 0); // seen → the Recognize MC, not the acquire on-ramp
     let mut r = reviewing_at(deck, cards, &store, Depth::Recognize);
     r.augment.set_distractors(
-        id,
+        &id,
         vec!["dog".to_string(), "fish".to_string(), "bird".to_string()],
     );
 
@@ -783,12 +783,12 @@ fn recognize_state_quizzes_a_line_card_on_the_whole_sequence_not_a_single_step()
     let text = "## steps <!-- reveal: line --> <!-- id: q1 -->\nfirst\nsecond\nthird\n";
     std::fs::write(&deck, text).unwrap();
     let cards = crate::l1::parse_str("d.md", text).unwrap();
-    let id = cards[0].id();
+    let id = cards[0].id().unwrap();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
-    store.get_or_insert(id, 0); // seen → the Recognize MC, not the acquire on-ramp
+    store.get_or_insert(&id, 0); // seen → the Recognize MC, not the acquire on-ramp
     let mut r = reviewing_at(deck, cards, &store, Depth::Recognize);
     r.augment.set_distractors(
-        id,
+        &id,
         vec![
             "second\nfirst\nthird".to_string(),
             "third\nsecond\nfirst".to_string(),
@@ -825,7 +825,7 @@ fn recognize_state_offers_no_choices_for_a_line_card_with_no_cached_distractors(
     std::fs::write(&deck, text).unwrap();
     let cards = crate::l1::parse_str("d.md", text).unwrap();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
-    store.get_or_insert(cards[0].id(), 0); // seen → the Recognize MC, not the acquire on-ramp
+    store.get_or_insert(&cards[0].id().unwrap(), 0); // seen → the Recognize MC, not the acquire on-ramp
     let r = reviewing_at(deck, cards, &store, Depth::Recognize);
 
     let dto = review_state(Some(&r), &store);
@@ -849,14 +849,14 @@ fn recognize_state_reshuffles_choice_options_on_the_next_appearance_but_not_mid_
     let text = "## q <!-- id: q1 -->\nanswer\n";
     std::fs::write(&deck, text).unwrap();
     let cards = crate::l1::parse_str("d.md", text).unwrap();
-    let id = cards[0].id();
+    let id = cards[0].id().unwrap();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
-    store.get_or_insert(id, 0); // seen → the Recognize MC, not the acquire on-ramp
+    store.get_or_insert(&id, 0); // seen → the Recognize MC, not the acquire on-ramp
     let mut r = reviewing_at(deck, cards, &store, Depth::Recognize);
     // A full set of cached AI distractors so the card can build a valid MC
     // (distractors are never sampled from other cards).
     r.augment.set_distractors(
-        id,
+        &id,
         vec![
             "wrong one".to_string(),
             "wrong two".to_string(),
@@ -889,8 +889,8 @@ fn recognize_state_reshuffles_choice_options_on_the_next_appearance_but_not_mid_
         now += crate::scheduler::DEFAULT_ACQUIRE_COOLDOWN_MS;
         r.session.poll(&store, now);
         assert_eq!(
-            Some(id),
-            r.session.current().map(|c| c.id()),
+            Some(id.clone()),
+            r.session.current().and_then(|c| c.id()),
             "past the floor, the card returns"
         );
         let later = review_state(Some(&r), &store)
@@ -917,7 +917,7 @@ fn an_already_recognized_card_skips_the_acquire_mc() {
     std::fs::write(&deck, text).unwrap();
     let cards = crate::l1::parse_str("d.md", text).unwrap();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
-    let state = store.get_or_insert(cards[0].id(), 0);
+    let state = store.get_or_insert(&cards[0].id().unwrap(), 0);
     state.recognized_ms = Some(500); // recognized, but no Recall schedule yet
     let r = reviewing_at(deck, cards, &store, Depth::Recall);
 
@@ -1017,7 +1017,7 @@ fn ask_transcript_resets_when_the_card_changes() {
     r.ask
         .transcript
         .push(("old q".to_string(), "old a".to_string()));
-    r.ask.subject = Some(card.id().wrapping_add(1)); // a different card
+    r.ask.subject = Some("a-different-card-id".to_string()); // a different card
     r.ask.cli.started = true;
 
     r.align_transcript();
@@ -1025,7 +1025,7 @@ fn ask_transcript_resets_when_the_card_changes() {
     // The current card differs from the transcript's card, so the display is
     // cleared and re-tagged — but Claude's conversation context survives.
     assert!(r.ask.transcript.is_empty());
-    assert_eq!(Some(card.id()), r.ask.subject);
+    assert_eq!(card.id(), r.ask.subject);
     assert!(r.ask.cli.started);
 }
 
@@ -1084,6 +1084,9 @@ fn a_frozen_card_with_no_resolvable_source_root_answers_immediately_without_spaw
         "---\nsource: 29.rs\n---\n## q\na\n<!-- at: 29.rs:1 from src/caching.rs:46-66 -->\n",
     )
     .unwrap();
+    // Stamped at open in production, so the card carries a token (an unstamped
+    // card is never servable, so the session would have no current card).
+    crate::stamp::stamp_deck(&deck_path).unwrap();
     let deck = crate::deck::Deck::load(&deck_path).unwrap();
     let card = deck.cards[0].clone();
     assert!(card.at_origin.is_some(), "the card is frozen");
@@ -1311,11 +1314,17 @@ fn augmenting_reports_coverage_and_removal_persists() {
 
     // Seed the on-disk cache: one card has distractors, the other a note.
     let mut seed = AugmentCache::open(&cache_path);
-    seed.set_distractors(cards[0].id(), vec!["x".into()]);
-    seed.set_note(cards[1].id(), "n".into());
+    seed.set_distractors(&cards[0].id().unwrap(), vec!["x".into()]);
+    seed.set_note(&cards[1].id().unwrap(), "n".into());
     seed.save().unwrap();
 
-    let mut aug = Augmenting::open("d.md".into(), cards.clone(), cache_path.clone(), None);
+    let mut aug = Augmenting::open(
+        "d.md".into(),
+        cards.clone(),
+        vec![],
+        cache_path.clone(),
+        None,
+    );
     let dto = aug.dto();
     assert_eq!(2, dto.cards);
     assert!(dto.busy.is_none());
@@ -1336,8 +1345,8 @@ fn augmenting_reports_coverage_and_removal_persists() {
             .covered
     );
     let reloaded = AugmentCache::open(&cache_path);
-    assert_eq!(None, reloaded.distractors(cards[0].id()));
-    assert_eq!(Some("n"), reloaded.note(cards[1].id()));
+    assert_eq!(None, reloaded.distractors(&cards[0].id().unwrap()));
+    assert_eq!(Some("n"), reloaded.note(&cards[1].id().unwrap()));
 
     assert!(!aug.remove("bogus", None)); // unknown target → no-op
 }
@@ -1349,10 +1358,10 @@ fn augmenting_generate_is_a_noop_when_a_target_is_fully_covered() {
     let cards = vec![aug_card("Q", "a")];
 
     let mut seed = AugmentCache::open(&cache_path);
-    seed.set_distractors(cards[0].id(), vec!["x".into()]);
+    seed.set_distractors(&cards[0].id().unwrap(), vec!["x".into()]);
     seed.save().unwrap();
 
-    let mut aug = Augmenting::open("d.md".into(), cards, cache_path, None);
+    let mut aug = Augmenting::open("d.md".into(), cards, vec![], cache_path, None);
     // Fully covered → no gap → no costed call is started.
     let started = aug.generate_batch(
         vec![("choices".into(), None)],
@@ -1375,7 +1384,7 @@ fn generate_batch_runs_every_target_even_after_one_fails() {
     let cache_path = dir.path().join("augment.json");
     // A fresh card has both a missing note and missing choices.
     let cards = vec![aug_card("Q", "a")];
-    let mut aug = Augmenting::open("d.md".into(), cards, cache_path, None);
+    let mut aug = Augmenting::open("d.md".into(), cards, vec![], cache_path, None);
 
     let ai = AiConfig::default();
     // Notes parses `{"index": "text"}`; choices parses `{"index": ["a", ...]}`.
@@ -1427,7 +1436,9 @@ fn deck_topology_dto_deck_due_includes_a_due_virtual_card() {
     let mut store = Store::open(dir.path().join("progress.json")).unwrap();
     let now = now_ms();
     // The one deck card has graduated and isn't due — no deck contribution.
-    store.get_or_insert(deck.cards[0].id(), now).recall = Some(crate::store::FsrsState {
+    store
+        .get_or_insert(&deck.cards[0].id().unwrap(), now)
+        .recall = Some(crate::store::FsrsState {
         state: 2,
         scheduled_days: 30,
         due_ms: now + 30 * 86_400_000,
@@ -1441,15 +1452,17 @@ fn deck_topology_dto_deck_due_includes_a_due_virtual_card() {
     // A due virtual card for this deck adds to the whole-deck due count —
     // sidecar content keyed by its `Card::id`, plus a fresh schedule at t=0.
     let vtext = "## virtual front <!-- id: v1 -->\nvirtual back\n".to_string();
-    let vid = crate::l1::parse_str(&deck.subject, &vtext).unwrap()[0].id();
+    let vid = crate::l1::parse_str(&deck.subject, &vtext).unwrap()[0]
+        .id()
+        .unwrap();
     store.insert_virtual(crate::store::VirtualCard {
-        id: vid,
+        id: vid.clone(),
         kind: crate::store::VirtualKind::Remediation,
         parent: deck.subject.clone(),
         text: vtext,
         created_ms: 0,
     });
-    store.get_or_insert(vid, 0);
+    store.get_or_insert(&vid, 0);
 
     let after = deck_topology_dto(&augment, &store, &deck, ReviewConfig::default());
     assert_eq!(1, after.deck_due);

@@ -1116,7 +1116,9 @@ pub fn run_review(
                     let subject = first.subject.to_string();
                     let line = first.line;
                     for card in &dropped {
-                        store.remove(card.id());
+                        if let Some(id) = card.id() {
+                            store.remove(&id);
+                        }
                     }
                     let _ = store.save();
                     r.files.remove_block(&subject, line);
@@ -1151,7 +1153,7 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                if store::promote_virtual(&mut store, id, &path).is_err() {
+                if store::promote_virtual(&mut store, &id, &path).is_err() {
                     respond_status(request, 400);
                     continue;
                 }
@@ -1233,11 +1235,23 @@ pub fn run_review(
                     continue;
                 };
                 let subject = card.subject.to_string();
-                let deck_ids: std::collections::HashSet<u64> =
-                    r.session.cards().iter().map(|c| c.id()).collect();
+                // Dedup by canonical content: a mint carries a fresh random
+                // token, so identical content is caught by its §7 fingerprint,
+                // never by a recomputed id.
+                let deck_fingerprints: std::collections::HashSet<u64> = r
+                    .session
+                    .cards()
+                    .iter()
+                    .map(|c| crate::l1::content_fingerprint(&c.front, &c.back))
+                    .collect();
                 let now = now_ms();
                 match store::mint_tutor_card(
-                    &mut store, &subject, &req.front, &req.back, now, &deck_ids,
+                    &mut store,
+                    &subject,
+                    &req.front,
+                    &req.back,
+                    now,
+                    &deck_fingerprints,
                 ) {
                     Ok(id) => {
                         if let Err(e) = store.save() {
@@ -1247,7 +1261,7 @@ pub fn run_review(
                         // `respond_json`, always 200, and `respond_status`, no
                         // body): 200 here, not the 201 a "created" response
                         // would ideally carry. Documented as such in API.md.
-                        respond_json(request, &CreateCardResp { id: id.to_string() });
+                        respond_json(request, &CreateCardResp { id });
                     }
                     Err(store::MintError::Duplicate | store::MintError::Malformed(_)) => {
                         respond_status(request, 422);
@@ -1476,9 +1490,19 @@ pub fn run_review(
                 // so a broken deck never half-opens the screen.
                 match assemble::stamp_and_load_cards(&files) {
                     Ok(cards) => {
+                        // The owner token of each selected (now-stamped) deck, so
+                        // the screen scopes topologies to just these decks in a
+                        // shared cache.
+                        let deck_tokens: Vec<String> = files
+                            .iter()
+                            .filter_map(|p| {
+                                crate::deck::Deck::load(p).ok().and_then(|d| d.deck_token)
+                            })
+                            .collect();
                         let aug = Augmenting::open(
                             name,
                             cards,
+                            deck_tokens,
                             augment::augment_path_for(store.path()),
                             workspace_dir,
                         );

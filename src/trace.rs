@@ -97,8 +97,8 @@ pub struct Checkpoint {
     /// The frozen `% at:`'s ` from <file>:<lines>` origin provenance, if any —
     /// drives display relabeling and tutor grounding.
     pub at_origin: Option<String>,
-    /// The card's identity hash — the key its per-checkpoint SRS hangs off.
-    pub card_id: u64,
+    /// The card's identity token — the key its per-checkpoint SRS hangs off.
+    pub card_id: String,
     /// The 1-based line of the checkpoint's front in the deck file, so an
     /// ask-Claude "save note" can append a `!` line to the right checkpoint.
     pub line: usize,
@@ -144,18 +144,22 @@ impl Trace {
         if deck.cards.is_empty() {
             bail!("the trace `{}` has no checkpoints", deck.subject);
         }
+        // A checkpoint needs a stable id (the deck is stamped at open); an
+        // unstamped card carries none and is skipped defensively.
         let checkpoints = deck
             .cards
             .iter()
-            .map(|c| Checkpoint {
-                prompt: c.front.clone(),
-                points: c.back.clone(),
-                givens: c.givens.clone(),
-                note: c.note.clone(),
-                locator: c.at.clone(),
-                at_origin: c.at_origin.clone(),
-                card_id: c.id(),
-                line: c.line,
+            .filter_map(|c| {
+                Some(Checkpoint {
+                    prompt: c.front.clone(),
+                    points: c.back.clone(),
+                    givens: c.givens.clone(),
+                    note: c.note.clone(),
+                    locator: c.at.clone(),
+                    at_origin: c.at_origin.clone(),
+                    card_id: c.id()?,
+                    line: c.line,
+                })
             })
             .collect();
         let source = deck.sources.first().cloned();
@@ -380,7 +384,7 @@ impl Walk {
             return;
         }
         if let Some(checkpoint) = self.trace.checkpoints.get(self.current) {
-            let state = store.get_or_insert(checkpoint.card_id, now_ms);
+            let state = store.get_or_insert(&checkpoint.card_id, now_ms);
             Fsrs::default().apply(state, Depth::Recall, delta.grade(), now_ms, false);
         }
         self.deltas[self.current] = Some(delta);
@@ -945,6 +949,12 @@ mod tests {
     fn write(dir: &Path, name: &str, body: &str) -> PathBuf {
         let path = dir.join(name);
         std::fs::write(&path, body).unwrap();
+        // A trace deck is stamped at open in production (its per-checkpoint SRS
+        // keys on the card token), so mirror that for any `.md` deck fixture.
+        // Source files (`.txt`, `.rs`) are left untouched.
+        if name.ends_with(".md") {
+            let _ = crate::stamp::stamp_deck(&path);
+        }
         path
     }
 
@@ -1190,6 +1200,8 @@ mod tests {
             ),
         )
         .unwrap();
+        // Stamped at open in production, so the checkpoint carries a token id.
+        crate::stamp::stamp_deck(&deck_path).unwrap();
         let deck = crate::deck::Deck::load(&deck_path).unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
 
@@ -1198,12 +1210,14 @@ mod tests {
 
         // Walk the single checkpoint, then graduate it (FSRS `Review`) so the deck's
         // unlock gate — every card graduated — is met.
-        let card0 = Trace::from_deck(&deck).unwrap().checkpoints[0].card_id;
+        let card0 = Trace::from_deck(&deck).unwrap().checkpoints[0]
+            .card_id
+            .clone();
         let mut walk = Walk::new(Trace::from_deck(&deck).unwrap());
         walk.predict("p".to_string());
         walk.grade(&mut store, Delta::Passed, 1);
         assert_eq!(Phase::Done, walk.phase()); // no compress step
-        if let Some(f) = store.get_or_insert(card0, 0).recall.as_mut() {
+        if let Some(f) = store.get_or_insert(&card0, 0).recall.as_mut() {
             f.state = 2; // Review — graduated
         }
 
@@ -1469,7 +1483,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let deck = trace_deck(dir.path());
         let trace = Trace::from_deck(&deck).unwrap();
-        let card0 = trace.checkpoints[0].card_id;
+        let card0 = trace.checkpoints[0].card_id.clone();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let mut walk = Walk::new(trace);
 
@@ -1483,15 +1497,15 @@ mod tests {
         walk.grade(&mut store, Delta::Passed, 1000);
         assert_eq!(Phase::Predict, walk.phase());
         assert_eq!(1, walk.current_index());
-        assert!(store.get(card0).unwrap().recall.is_some()); // Passed -> FSRS review recorded
+        assert!(store.get(&card0).unwrap().recall.is_some()); // Passed -> FSRS review recorded
 
         // Hop 2 (last): a Failed records a lapse and finishes the walk (no compress
         // step — verification is the separate trace exam).
-        let card1 = walk.checkpoint().unwrap().card_id;
+        let card1 = walk.checkpoint().unwrap().card_id.clone();
         walk.predict(String::new());
         walk.grade(&mut store, Delta::Failed, 1001);
         assert_eq!(Phase::Done, walk.phase());
-        assert_eq!(0, store.get(card1).unwrap().streak); // Failed -> streak reset
+        assert_eq!(0, store.get(&card1).unwrap().streak); // Failed -> streak reset
 
         let summary = walk.summary();
         assert_eq!(1, summary.passed);
@@ -1506,11 +1520,11 @@ mod tests {
         let trace = Trace::from_deck(&deck).unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let mut walk = Walk::new(trace);
-        let card0 = walk.checkpoint().unwrap().card_id;
+        let card0 = walk.checkpoint().unwrap().card_id.clone();
         walk.predict("guess".to_string());
         walk.grade(&mut store, Delta::Partial, 1000);
         // Partly is a weak success under FSRS: it schedules the card and counts as a pass.
-        let state = store.get(card0).unwrap();
+        let state = store.get(&card0).unwrap();
         assert!(state.recall.is_some());
         assert_eq!(1, state.total_passes);
         assert_eq!(1, walk.summary().partly);

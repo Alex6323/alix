@@ -77,7 +77,7 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
             let map =
                 augment_ai::generate(&items, config.ai.distractor_count, guidance, &ask_cfg, None)?;
             for (id, distractors) in &map {
-                cache.set_distractors(*id, distractors.clone());
+                cache.set_distractors(id, distractors.clone());
             }
             (map.len(), total, "distractors")
         }
@@ -89,7 +89,7 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
             let total = items.len();
             let map = augment_ai::generate_notes(&items, guidance, &ask_cfg, None)?;
             for (id, note) in &map {
-                cache.set_note(*id, note.clone());
+                cache.set_note(id, note.clone());
             }
             (map.len(), total, "notes")
         }
@@ -115,7 +115,7 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
                 None,
             )?;
             for (id, variants) in &map {
-                cache.set_variants(*id, variants.clone());
+                cache.set_variants(id, variants.clone());
             }
             (map.len(), total, "question variants")
         }
@@ -133,7 +133,7 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
                 None,
             )?;
             for (id, keypoints) in &map {
-                cache.set_keypoints(*id, keypoints.clone());
+                cache.set_keypoints(id, keypoints.clone());
             }
             (map.len(), total, "key points")
         }
@@ -143,15 +143,17 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
                 bail!("the deck has no cards to build a topology over");
             }
             let total = items.len();
-            let topo = augment_ai::generate_topology(&items, guidance, &ask_cfg, None)?;
+            let deck_token = deck.deck_token.clone().unwrap_or_default();
+            let topo =
+                augment_ai::generate_topology(&items, guidance, &deck_token, &ask_cfg, None)?;
             print_topology(&topo, &deck.cards);
             let walked = topo.walk.len();
             cache.add_topology(topo);
             // Count only this deck's topologies — the cache may be shared with
             // other decks that share a store.
-            let deck_ids: std::collections::HashSet<u64> =
-                deck.cards.iter().map(|c| c.id()).collect();
-            let n = cache.topologies_for(&deck_ids).len();
+            let deck_tokens: std::collections::HashSet<String> =
+                deck.deck_token.iter().cloned().collect();
+            let n = cache.topologies_for(&deck_tokens).len();
             println!(
                 "({n} topolog{} stored for this deck)",
                 if n == 1 { "y" } else { "ies" }
@@ -170,8 +172,8 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
             // whose id collides with a real deck card, and a retired card is
             // resting — neither should be warmed a second time or at all.
             let subject: Arc<str> = Arc::from(deck.subject.as_str());
-            let deck_ids: std::collections::HashSet<u64> =
-                deck.cards.iter().map(Card::id).collect();
+            let deck_ids: std::collections::HashSet<String> =
+                deck.cards.iter().filter_map(Card::id).collect();
             let retire_after_days = config
                 .review
                 .for_workspace(deck.path.parent().unwrap_or_else(|| Path::new("")))
@@ -186,7 +188,7 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
                 .virtual_cards_for(&deck.subject)
                 .into_iter()
                 .filter(|v| !deck_ids.contains(&v.id))
-                .filter(|v| !alix::session::is_retired_id(v.id, &store, retire_after_days))
+                .filter(|v| !alix::session::is_retired_id(&v.id, &store, retire_after_days))
                 .enumerate()
             {
                 if let Some(card) = synthesize_virtual(vc, &subject, VIRTUAL_LINE_BASE + k)
@@ -202,7 +204,7 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
             let total = items.len();
             let map = augment_ai::generate_format(&items, guidance, &ask_cfg, None)?;
             for (id, fmt) in &map {
-                cache.set_format(*id, fmt.clone());
+                cache.set_format(id, fmt.clone());
             }
             (map.len(), total, "card formats")
         }
@@ -225,9 +227,9 @@ fn warm_items(cards: &[Card]) -> Vec<augment::WarmItem> {
 /// it follows the previous one — so a person can judge whether the order reads as
 /// "good follow-up" rather than random. The eyeball test for the topology probe.
 fn print_topology(topo: &augment::Topology, cards: &[Card]) {
-    let fronts: std::collections::HashMap<u64, String> = cards
+    let fronts: std::collections::HashMap<String, String> = cards
         .iter()
-        .map(|c| (c.id(), truncate(&one_line(&c.front), 72)))
+        .filter_map(|c| Some((c.id()?, truncate(&one_line(&c.front), 72))))
         .collect();
     let unknown = "<card not in deck>".to_string();
 
@@ -238,7 +240,7 @@ fn print_topology(topo: &augment::Topology, cards: &[Card]) {
         topo.walk.len(),
         topo.edges.len()
     );
-    let mut prev: Option<u64> = None;
+    let mut prev: Option<&str> = None;
     for (i, id) in topo.walk.iter().enumerate() {
         let front = fronts.get(id).unwrap_or(&unknown);
         match prev {
@@ -247,13 +249,13 @@ fn print_topology(topo: &augment::Topology, cards: &[Card]) {
                 let why = topo
                     .edges
                     .iter()
-                    .find(|e| e.from == p && e.to == *id)
+                    .find(|e| e.from == p && e.to.as_str() == id.as_str())
                     .map(|e| e.label.as_str())
-                    .unwrap_or("—");
+                    .unwrap_or("-");
                 println!("{:>3}. ↳ [{why}]  {front}", i + 1);
             }
         }
-        prev = Some(*id);
+        prev = Some(id.as_str());
     }
     println!();
 }

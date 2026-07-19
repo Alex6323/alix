@@ -367,7 +367,8 @@ pub(super) struct CreateCardReq {
 /// The newly minted virtual card's id.
 #[derive(Debug, Serialize)]
 pub(super) struct CreateCardResp {
-    /// Decimal string (ids are `u64`), matching how the store keys ids.
+    /// The card's identity token: its full `Card::id` (a `token`, or a suffixed
+    /// `token-N` / `token-r`), verbatim — the same string the store keys it by.
     pub(super) id: String,
 }
 
@@ -1198,7 +1199,12 @@ pub(super) fn review_state(reviewing: Option<&Reviewing>, store: &Store) -> Stat
                 .topologies()
                 .iter()
                 .filter(|t| t.name == *name)
-                .find_map(|t| t.region_path(c.id()).map(|(rg, cur)| (t, rg, cur)))
+                .find_map(|t| {
+                    c.id()
+                        .as_deref()
+                        .and_then(|id| t.region_path(id))
+                        .map(|(rg, cur)| (t, rg, cur))
+                })
         {
             dto.crumb = Some(CrumbDto {
                 regions: regions.into_iter().map(str::to_string).collect(),
@@ -1279,15 +1285,19 @@ pub(super) fn deck_topology_dto(
     // A workspace member's due counts honor its `alix.local.toml` pacing override.
     let parent = deck.path.parent().unwrap_or_else(|| Path::new(""));
     let review = review.for_workspace(parent);
-    let by_id: HashMap<u64, &Card> = deck.cards.iter().map(|c| (c.id(), c)).collect();
-    let deck_ids: HashSet<u64> = by_id.keys().copied().collect();
+    let by_id: HashMap<String, &Card> = deck
+        .cards
+        .iter()
+        .filter_map(|c| Some((c.id()?, c)))
+        .collect();
+    let deck_tokens: HashSet<String> = deck.deck_token.iter().cloned().collect();
     let scheduler = Fsrs::new(review.retention, review.acquire_cooldown_ms);
     let now = now_ms();
     // Cards in a region resolved back to the deck (ids absent from the deck —
     // e.g. a topology built before an edit — are skipped).
     // Pinned to Recall, like `card_strengths`/`retrievability` above — the
     // focus drawer is a deck-wide signal (spec §4.5), not a per-session one.
-    let due_of = |ids: &[u64]| {
+    let due_of = |ids: &[String]| {
         let cards: Vec<&Card> = ids.iter().filter_map(|id| by_id.get(id).copied()).collect();
         crate::session::count_reviewable(
             &cards,
@@ -1322,7 +1332,7 @@ pub(super) fn deck_topology_dto(
             review.retire_after_days,
         );
     let topologies = augment
-        .topologies_for(&deck_ids)
+        .topologies_for(&deck_tokens)
         .into_iter()
         .map(|t| TopologyInfoDto {
             name: t.name.clone(),

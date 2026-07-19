@@ -258,7 +258,7 @@ fn reset_on_a_workspace_clears_every_member_in_its_own_store() {
             &std::fs::read_to_string(deck).unwrap(),
         )
         .unwrap();
-        store.get_or_insert(cards[0].id(), 0);
+        store.get_or_insert(&cards[0].id().unwrap(), 0);
     }
     store.set_deck_mastered("a.md", 0);
     store.save().unwrap();
@@ -323,7 +323,7 @@ fn sample_virtual_card(parent: &str) -> alix::store::VirtualCard {
             .to_ascii_lowercase()
     );
     let text = format!("## front <!-- id: {token} -->\nback\n");
-    let id = alix::l1::parse_str(parent, &text).unwrap()[0].id();
+    let id = alix::l1::parse_str(parent, &text).unwrap()[0].id().unwrap();
     alix::store::VirtualCard {
         id,
         kind: alix::store::VirtualKind::Remediation,
@@ -342,9 +342,9 @@ fn reset_all_clears_virtual_cards() {
     let store_path = dir.path().join("progress.json");
     let mut store = alix::store::Store::open(&store_path).unwrap();
     let vc = sample_virtual_card("math.md");
-    let id = vc.id;
+    let id = vc.id.clone();
     store.insert_virtual(vc);
-    store.get_or_insert(id, 0); // the virtual card's schedule lives in store.cards
+    store.get_or_insert(&id, 0); // the virtual card's schedule lives in store.cards
     store.save().unwrap();
 
     let out = alix(&[
@@ -373,10 +373,10 @@ fn deck_reset_drops_that_decks_virtual_cards() {
 
     let mut store = alix::store::Store::open(&store_path).unwrap();
     let math_vc = sample_virtual_card("math.md");
-    let math_id = math_vc.id;
+    let math_id = math_vc.id.clone();
     store.insert_virtual(math_vc);
     let other_vc = sample_virtual_card("other.md");
-    let other_id = other_vc.id;
+    let other_id = other_vc.id.clone();
     store.insert_virtual(other_vc);
     store.save().unwrap();
 
@@ -391,11 +391,11 @@ fn deck_reset_drops_that_decks_virtual_cards() {
 
     let reloaded = alix::store::Store::open(&store_path).unwrap();
     assert!(
-        reloaded.get_virtual(math_id).is_none(),
+        reloaded.get_virtual(&math_id).is_none(),
         "the reset deck's own virtual card should be dropped"
     );
     assert!(
-        reloaded.get_virtual(other_id).is_some(),
+        reloaded.get_virtual(&other_id).is_some(),
         "another deck's virtual card should survive"
     );
 }
@@ -409,9 +409,11 @@ fn deck_reset_without_yes_leaves_store_unchanged() {
     let deck = write(dir.path(), "math.md", VALID_DECK);
     let store_path = dir.path().join("progress.json");
 
-    let card_id = alix::deck::Deck::load(&deck).unwrap().cards[0].id();
+    let card_id = alix::deck::Deck::load(&deck).unwrap().cards[0]
+        .id()
+        .unwrap();
     let mut store = alix::store::Store::open(&store_path).unwrap();
-    store.get_or_insert(card_id, 0);
+    store.get_or_insert(&card_id, 0);
     store.set_deck_mastered("math.md", 0);
     store.insert_virtual(sample_virtual_card("math.md"));
     store.save().unwrap();
@@ -431,7 +433,7 @@ fn deck_reset_without_yes_leaves_store_unchanged() {
     );
     let reloaded = alix::store::Store::open(&store_path).unwrap();
     assert!(reloaded.deck_mastered("math.md"), "mastered flag wiped");
-    assert!(reloaded.get(card_id).is_some(), "authored progress wiped");
+    assert!(reloaded.get(&card_id).is_some(), "authored progress wiped");
     assert_eq!(
         1,
         reloaded.virtual_cards_for("math.md").len(),
@@ -588,7 +590,7 @@ fn augment_target_format_also_covers_a_decks_virtual_card() {
     let store_path = dir.path().join("p.json");
     let mut store = alix::store::Store::open(&store_path).unwrap();
     let vc = sample_virtual_card("parts.md");
-    let virtual_id = vc.id;
+    let virtual_id = vc.id.clone();
     store.insert_virtual(vc);
     store.save().unwrap();
 
@@ -615,7 +617,7 @@ fn augment_target_format_also_covers_a_decks_virtual_card() {
 
     let cached = std::fs::read_to_string(dir.path().join("augment.json")).unwrap();
     assert!(
-        cached.contains(&virtual_id.to_string()),
+        cached.contains(virtual_id.as_str()),
         "augment.json should key a format entry by the virtual card's id: {cached}"
     );
     assert!(cached.contains("\"X\""), "augment.json: {cached}");
@@ -630,12 +632,14 @@ fn augment_target_format_skips_an_orphaned_virtual_card_colliding_with_a_real_de
     let dir = TempDir::new().unwrap();
     let deck_text = "## List the parts <!-- id: parts1 -->\nA, B, C\n";
     let deck = write(dir.path(), "parts.md", deck_text);
-    let real_id = alix::l1::parse_str("parts.md", deck_text).unwrap()[0].id();
+    let real_id = alix::l1::parse_str("parts.md", deck_text).unwrap()[0]
+        .id()
+        .unwrap();
 
     let store_path = dir.path().join("p.json");
     let mut store = alix::store::Store::open(&store_path).unwrap();
     store.insert_virtual(alix::store::VirtualCard {
-        id: real_id, // collides with the real deck card's id — simulates an orphan
+        id: real_id.clone(), // collides with the real deck card's id — simulates an orphan
         kind: alix::store::VirtualKind::Remediation,
         parent: "parts.md".to_string(),
         // Must reproduce `real_id` when parsed (`synthesize_virtual` matches by
@@ -979,7 +983,7 @@ fn doctor_all_backends_probes_each() {
 /// A store JSON fragment for one card: a Recall schedule in FSRS state 2
 /// (`review`) due in the past, a Reconstruct schedule in state 1 (`learning`)
 /// also past-due, and a set `recognized_ms`.
-fn both_depths_due_card(card_id: u64) -> String {
+fn both_depths_due_card(card_id: &str) -> String {
     format!(
         r#""{card_id}":{{"acquired_ms":1000,"recall":{{"stability":10.0,"difficulty":5.0,"reps":5,"lapses":0,"state":2,"scheduled_days":20,"last_review_ms":1000,"due_ms":2000,"learning_goods":2}},"reconstruct":{{"stability":8.0,"difficulty":5.0,"reps":3,"lapses":0,"state":1,"scheduled_days":10,"last_review_ms":1000,"due_ms":2000,"learning_goods":1}},"recognized_ms":1000,"total_reviews":5,"total_passes":5}}"#
     )
@@ -993,8 +997,8 @@ fn list_shows_per_depth_labels_and_recognized_mark() {
     let deck_text = "## Q1 <!-- id: q1 -->\nA1\n\n## Q2 <!-- id: q2 -->\nA2\n";
     let deck = write(dir.path(), "cards.md", deck_text);
     let cards = alix::l1::parse_str("cards.md", deck_text).unwrap();
-    let (id1, id2) = (cards[0].id(), cards[1].id());
-    let card1 = both_depths_due_card(id1);
+    let (id1, id2) = (cards[0].id().unwrap(), cards[1].id().unwrap());
+    let card1 = both_depths_due_card(&id1);
     let card2 = format!(
         r#""{id2}":{{"acquired_ms":1000,"recall":{{"stability":1.0,"difficulty":5.0,"reps":1,"lapses":0,"state":1,"scheduled_days":0,"last_review_ms":1000,"due_ms":2000,"learning_goods":1}},"total_reviews":1,"total_passes":1}}"#
     );
@@ -1023,8 +1027,10 @@ fn stats_shows_per_depth_due_counts() {
     let dir = TempDir::new().unwrap();
     let deck_text = "## Q1 <!-- id: q1 -->\nA1\n";
     let deck = write(dir.path(), "stats.md", deck_text);
-    let card_id = alix::l1::parse_str("stats.md", deck_text).unwrap()[0].id();
-    let card = both_depths_due_card(card_id);
+    let card_id = alix::l1::parse_str("stats.md", deck_text).unwrap()[0]
+        .id()
+        .unwrap();
+    let card = both_depths_due_card(&card_id);
     let store = write(
         dir.path(),
         "store.json",
@@ -2142,15 +2148,17 @@ fn reset_by_numeric_card_id_without_a_target() {
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.md", VALID_DECK);
     let store_path = dir.path().join("progress.json");
-    let card_id = alix::deck::Deck::load(&deck).unwrap().cards[0].id();
+    let card_id = alix::deck::Deck::load(&deck).unwrap().cards[0]
+        .id()
+        .unwrap();
     let mut store = alix::store::Store::open(&store_path).unwrap();
-    store.get_or_insert(card_id, 0);
+    store.get_or_insert(&card_id, 0);
     store.save().unwrap();
 
     let out = alix(&[
         "reset",
         "--card",
-        &card_id.to_string(),
+        &card_id,
         "--yes",
         "--store",
         store_path.to_str().unwrap(),
@@ -2172,7 +2180,7 @@ fn reset_by_text_query_within_a_target_resets_only_matching_cards() {
     let store_path = dir.path().join("progress.json");
     let mut store = alix::store::Store::open(&store_path).unwrap();
     for c in &cards {
-        store.get_or_insert(c.id(), 0);
+        store.get_or_insert(&c.id().unwrap(), 0);
     }
     store.save().unwrap();
 
@@ -2194,11 +2202,11 @@ fn reset_by_text_query_within_a_target_resets_only_matching_cards() {
 
     let reloaded = alix::store::Store::open(&store_path).unwrap();
     assert!(
-        reloaded.get(cards[0].id()).is_none(),
+        reloaded.get(&cards[0].id().unwrap()).is_none(),
         "the matched card should be cleared"
     );
     assert!(
-        reloaded.get(cards[1].id()).is_some(),
+        reloaded.get(&cards[1].id().unwrap()).is_some(),
         "the other card should survive"
     );
 }

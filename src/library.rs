@@ -77,19 +77,19 @@ pub fn reset_decks<'a>(
     let mut n = 0;
     for deck in decks {
         store.clear_deck_mastered(&deck.subject);
-        let virtual_ids: Vec<u64> = store
+        let virtual_ids: Vec<String> = store
             .virtual_cards_for(&deck.subject)
             .iter()
-            .map(|vc| vc.id)
+            .map(|vc| vc.id.clone())
             .collect();
         for id in virtual_ids {
-            store.remove_virtual(id); // drop sidecar content …
-            store.remove(id); // … and the schedule in `store.cards`
+            store.remove_virtual(&id); // drop sidecar content …
+            store.remove(&id); // … and the schedule in `store.cards`
         }
         for card in &deck.cards {
-            let id = card.id();
-            if store.get(id).is_some() {
-                store.remove(id);
+            let Some(id) = card.id() else { continue };
+            if store.get(&id).is_some() {
+                store.remove(&id);
                 n += 1;
             }
         }
@@ -122,7 +122,7 @@ mod tests {
             crate::l1::parse_l1("rust.md", &std::fs::read_to_string(&p.path).unwrap()).unwrap();
         assert!(deck.deck_token.is_some(), "deck id minted");
         assert!(
-            deck.cards.iter().all(|c| c.id_string().is_some()),
+            deck.cards.iter().all(|c| c.id().is_some()),
             "every card stamped"
         );
     }
@@ -166,18 +166,18 @@ mod tests {
         let deck_b = Deck::load(dir.path().join("b.md")).unwrap();
 
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        store.get_or_insert(deck_a.cards[0].id(), 0);
-        store.get_or_insert(deck_b.cards[0].id(), 0);
+        store.get_or_insert(&deck_a.cards[0].id().unwrap(), 0);
+        store.get_or_insert(&deck_b.cards[0].id().unwrap(), 0);
         store.set_deck_mastered(&deck_a.subject, 0);
 
         let n = reset_decks(&mut store, [&deck_a]).unwrap();
         assert_eq!(1, n);
         assert!(
-            store.get(deck_a.cards[0].id()).is_none(),
+            store.get(&deck_a.cards[0].id().unwrap()).is_none(),
             "a's schedule wiped"
         );
         assert!(
-            store.get(deck_b.cards[0].id()).is_some(),
+            store.get(&deck_b.cards[0].id().unwrap()).is_some(),
             "b's schedule intact"
         );
         assert!(!store.deck_mastered(&deck_a.subject));
@@ -192,7 +192,9 @@ mod tests {
             "## front <!-- id: v{} -->\n{back}\n",
             slug.to_ascii_lowercase()
         );
-        let id = crate::l1::parse_str(parent, &text).unwrap()[0].id();
+        let id = crate::l1::parse_str(parent, &text).unwrap()[0]
+            .id()
+            .unwrap();
         crate::store::VirtualCard {
             id,
             kind: crate::store::VirtualKind::Remediation,
@@ -211,21 +213,21 @@ mod tests {
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let vc_a = virtual_card("a.md", "vc-a");
         let vc_other = virtual_card("other.md", "vc-other");
-        let (id_a, id_other) = (vc_a.id, vc_other.id);
+        let (id_a, id_other) = (vc_a.id.clone(), vc_other.id.clone());
         store.insert_virtual(vc_a);
         store.insert_virtual(vc_other);
-        store.get_or_insert(id_a, 0);
-        store.get_or_insert(id_other, 0);
+        store.get_or_insert(&id_a, 0);
+        store.get_or_insert(&id_other, 0);
 
         let n = reset_decks(&mut store, [&deck_a]).unwrap();
         assert_eq!(0, n, "no authored cards had progress");
         assert!(
-            store.get_virtual(id_a).is_none(),
+            store.get_virtual(&id_a).is_none(),
             "a's virtual card dropped"
         );
-        assert!(store.get(id_a).is_none(), "a's virtual schedule dropped");
+        assert!(store.get(&id_a).is_none(), "a's virtual schedule dropped");
         assert!(
-            store.get_virtual(id_other).is_some(),
+            store.get_virtual(&id_other).is_some(),
             "another deck's virtual card survives"
         );
     }

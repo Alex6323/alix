@@ -38,6 +38,9 @@ use crate::{
 pub struct DeckInfo {
     /// The deck file, for saving notes from the ask view.
     pub path: PathBuf,
+    /// The deck's identity token (frontmatter `id:`), for scoping which of a
+    /// shared augment cache's topologies belong to it. `None` until stamped.
+    pub deck_token: Option<String>,
     /// Reference links (`% link:` lines) offered to Claude as background.
     pub links: Vec<String>,
     /// The deck's `% source:` project root, for the grounded ask-tutor
@@ -147,7 +150,7 @@ pub struct Session {
     /// Cards the session recently moved off, by id → transition time. A card
     /// can't be re-served before `transition + DEFAULT_ACQUIRE_COOLDOWN_MS`; entries
     /// self-prune once expired. Session-local — never persisted.
-    floors: HashMap<u64, u64>,
+    floors: HashMap<String, u64>,
     /// How many times each card (indexed as in `cards`) has become the current
     /// card this session — 0 until first served, then 1, 2, ... Feeds the
     /// multiple-choice option shuffle seed (`choice::seed_for`) so a re-served
@@ -235,7 +238,8 @@ impl Session {
         }
         self.cards
             .iter()
-            .filter_map(|c| store.get(c.id()))
+            .filter_map(|c| c.id())
+            .filter_map(|id| store.get(&id))
             .map(|state| self.scheduler.due_at(state, self.options.depth))
             .min()
     }
@@ -260,15 +264,17 @@ impl Session {
 
     /// The `Card::id` of the current card, if one is up (else `None`). Lets a
     /// frontend act on the card being reviewed right now (e.g. promote it).
-    pub fn current_id(&self) -> Option<u64> {
-        self.current_idx.map(|i| self.cards[i].id())
+    pub fn current_id(&self) -> Option<String> {
+        self.current_idx.and_then(|i| self.cards[i].id())
     }
 
     /// Whether the current card is a virtual (remediation) one — membership in
     /// the store's content sidecar. `false` for an authored deck card, or when
     /// nothing is current. Lets a frontend offer to promote it.
     pub fn current_is_virtual(&self, store: &Store) -> bool {
-        self.current().is_some_and(|c| store.is_virtual(c.id()))
+        self.current()
+            .and_then(Card::id)
+            .is_some_and(|id| store.is_virtual(&id))
     }
 
     /// Whether the current card has never been seen (no stored progress). Such a
@@ -277,8 +283,9 @@ impl Session {
     /// created already-scheduled), so this is never true for one — it skips
     /// the attempt-first acquire screen entirely.
     pub fn current_unseen(&self, store: &Store) -> bool {
-        self.current_idx
-            .is_some_and(|i| store.get(self.cards[i].id()).is_none())
+        self.current()
+            .and_then(Card::id)
+            .is_some_and(|id| store.get(&id).is_none())
     }
 
     /// All cards of this session's decks (e.g. as the distractor pool for
@@ -307,10 +314,10 @@ impl Session {
     /// frontend-facing query (e.g. the multiple-choice option seed) tell "still
     /// the same showing" from "served again" without exposing `floors` or
     /// `current_idx` directly.
-    pub fn appearance(&self, id: u64) -> u32 {
+    pub fn appearance(&self, id: &str) -> u32 {
         self.cards
             .iter()
-            .position(|c| c.id() == id)
+            .position(|c| c.id().as_deref() == Some(id))
             .map(|i| self.appearances[i])
             .unwrap_or(0)
     }
@@ -327,11 +334,16 @@ impl Session {
             return;
         };
         // Uniform: a virtual card's schedule is an ordinary `store.cards` entry
-        // keyed by its `Card::id`, so it grades exactly like a deck card.
-        let id = self.cards[index].id();
+        // keyed by its `Card::id`, so it grades exactly like a deck card. An
+        // unstamped card has no id (the boundary excludes such cards) — nothing
+        // to grade.
+        let Some(id) = self.cards[index].id() else {
+            self.advance(store, now_ms);
+            return;
+        };
         let depth = self.options.depth;
 
-        let state = store.get_or_insert(id, now_ms);
+        let state = store.get_or_insert(&id, now_ms);
         // Recognized cascade (transitive): any full pass — at any depth, cram
         // included, since the flag has no schedule to distort — proves the card
         // is at least recognizable, so it marks the card recognized if it isn't
@@ -349,13 +361,14 @@ impl Session {
             // credit, nothing to schedule.
             state.record_review(now_ms, grade, Depth::Recognize, false);
             if grade == Grade::Pass {
-                self.roster.retain(|&i| self.cards[i].id() != id);
+                self.roster
+                    .retain(|&i| self.cards[i].id().as_deref() != Some(id.as_str()));
             }
             // Recognize now participates in the same-card transition floor too
             // (reverses an earlier deliberate exclusion): a wrong pick re-queues
             // but can't resurface before `DEFAULT_ACQUIRE_COOLDOWN_MS` has passed — see
             // `servable` ({#seen-interleaves-too-early}).
-            self.floor(id, now_ms);
+            self.floor(&id, now_ms);
             self.advance(store, now_ms);
             return;
         }
@@ -419,7 +432,7 @@ impl Session {
         }
         // The floor anchors at this transition, not at grade time — see
         // `floors` ({#seen-interleaves-too-early}).
-        self.floor(id, now_ms);
+        self.floor(&id, now_ms);
         self.advance(store, now_ms);
     }
 
@@ -438,11 +451,15 @@ impl Session {
         // first real quiz once the gap elapses, in this same session. A virtual
         // card always has state (created already-scheduled), so `current_unseen`
         // is never true for one and this is only ever reached by a deck card.
-        store.get_or_insert(self.cards[index].id(), now_ms);
+        let Some(id) = self.cards[index].id() else {
+            self.advance(store, now_ms);
+            return;
+        };
+        store.get_or_insert(&id, now_ms);
         self.stats.acquired += 1;
         // The floor anchors at this transition, not at acquire time — see
         // `floors` ({#seen-interleaves-too-early}).
-        self.floor(self.cards[index].id(), now_ms);
+        self.floor(&id, now_ms);
         self.advance(store, now_ms);
     }
 
@@ -518,16 +535,18 @@ impl Session {
         if is_retired(card, store, self.options.retire_after_days) {
             return false;
         }
+        // An unstamped card is never servable — the boundary excludes such cards
+        // before a session is built, so this is a defensive guard.
+        let Some(id) = card.id() else {
+            return false;
+        };
         let depth = self.options.depth;
         let due = if depth == Depth::Recognize {
             // Cram serves every card — a badged deck's Recognize session would
             // otherwise be empty (the repeatable-quiz use).
-            self.options.cram
-                || store
-                    .get(card.id())
-                    .is_none_or(|s| s.recognized_ms.is_none())
+            self.options.cram || store.get(&id).is_none_or(|s| s.recognized_ms.is_none())
         } else {
-            match store.get(card.id()) {
+            match store.get(&id) {
                 // Cram serves everything; otherwise the scheduler decides (its
                 // `due_at` owns the cross-depth immediacy rule — see `Fsrs::due_at`).
                 Some(state) => self.options.cram || self.scheduler.is_due(state, depth, now_ms),
@@ -537,7 +556,7 @@ impl Session {
         if !due {
             return false;
         }
-        match self.floors.get(&card.id()) {
+        match self.floors.get(&id) {
             Some(&transition_ms) => {
                 now_ms >= transition_ms.saturating_add(self.scheduler.acquire_cooldown_ms())
             }
@@ -548,11 +567,11 @@ impl Session {
     /// Floors card `id`'s re-serve clock at `now_ms` (see `floors`), and
     /// prunes any entries whose cooldown has already elapsed so the map never
     /// grows past the cards actually cooling right now.
-    fn floor(&mut self, id: u64, now_ms: u64) {
+    fn floor(&mut self, id: &str, now_ms: u64) {
         let cooldown_ms = self.scheduler.acquire_cooldown_ms();
         self.floors
             .retain(|_, &mut t| now_ms < t.saturating_add(cooldown_ms));
-        self.floors.insert(id, now_ms);
+        self.floors.insert(id.to_string(), now_ms);
     }
 
     /// Re-points the cursor to the first servable roster card (session order) and
@@ -610,8 +629,9 @@ fn build_queue(
                 // Cram serves every card (the repeatable quiz); a normal
                 // Recognize session serves only the not-yet-recognized.
                 options.cram
-                    || store
-                        .get(cards[i].id())
+                    || cards[i]
+                        .id()
+                        .and_then(|id| store.get(&id))
                         .is_none_or(|s| s.recognized_ms.is_none())
             })
             .collect();
@@ -626,7 +646,7 @@ fn build_queue(
     let mut fresh: Vec<usize> = Vec::new();
 
     for (i, card) in cards.iter().enumerate() {
-        match store.get(card.id()) {
+        match card.id().and_then(|id| store.get(&id)) {
             // A retired card rests until its interval drops below the cap —
             // never scheduled, not even under cram.
             Some(_) if is_retired(card, store, options.retire_after_days) => {}
@@ -643,8 +663,9 @@ fn build_queue(
 
     // Order due cards by their FSRS due time, earliest first.
     due.sort_by_key(|&i| {
-        store
-            .get(cards[i].id())
+        cards[i]
+            .id()
+            .and_then(|id| store.get(&id))
             .map_or(u64::MAX, |s| scheduler.due_at(s, depth))
     });
 
@@ -656,7 +677,13 @@ fn build_queue(
     // favors what's due. The stable sort leaves cards absent from the walk (rank
     // `None` → `usize::MAX`) in their existing scheduler order within each group.
     if let Some(topo) = &options.topology {
-        let rank = |&i: &usize| topo.rank_of(cards[i].id()).unwrap_or(usize::MAX);
+        let rank = |&i: &usize| {
+            cards[i]
+                .id()
+                .as_deref()
+                .and_then(|id| topo.rank_of(id))
+                .unwrap_or(usize::MAX)
+        };
         due.sort_by_key(rank);
         fresh.sort_by_key(rank);
     }
@@ -732,13 +759,14 @@ pub const DEFAULT_RETIRE_AFTER_DAYS: u32 = 365;
 /// can push the interval past the cap. Pinned to the Recall schedule regardless of
 /// session depth — retirement is a deck-lifecycle concept (spec §4.5), not per-depth.
 pub fn is_retired(card: &Card, store: &Store, retire_after_days: Option<u32>) -> bool {
-    is_retired_id(card.id(), store, retire_after_days)
+    card.id()
+        .is_some_and(|id| is_retired_id(&id, store, retire_after_days))
 }
 
 /// Id-only variant of [`is_retired`], so callers that hold an id but not the
 /// [`Card`] (e.g. a trace checkpoint) share the one retirement rule. Also pinned
 /// to Recall (see [`is_retired`]).
-pub fn is_retired_id(card_id: u64, store: &Store, retire_after_days: Option<u32>) -> bool {
+pub fn is_retired_id(card_id: &str, store: &Store, retire_after_days: Option<u32>) -> bool {
     let Some(cap) = retire_after_days else {
         return false;
     };
@@ -760,9 +788,9 @@ pub fn is_virtual_reviewable(
     now_ms: u64,
     retire_after_days: Option<u32>,
 ) -> bool {
-    !is_retired_id(vc.id, store, retire_after_days)
+    !is_retired_id(&vc.id, store, retire_after_days)
         && store
-            .get(vc.id)
+            .get(&vc.id)
             .is_some_and(|s| scheduler.is_due(s, Depth::Recall, now_ms))
 }
 
@@ -815,9 +843,9 @@ pub fn count_due_soon_virtual(
     store
         .virtual_cards_for(subject)
         .into_iter()
-        .filter(|vc| !is_retired_id(vc.id, store, retire_after_days))
+        .filter(|vc| !is_retired_id(&vc.id, store, retire_after_days))
         .filter(|vc| {
-            store.get(vc.id).is_some_and(|s| {
+            store.get(&vc.id).is_some_and(|s| {
                 let due = scheduler.due_at(s, Depth::Recall);
                 due > now_ms && due <= now_ms + window_ms
             })
@@ -830,8 +858,8 @@ pub fn count_due_soon_virtual(
 /// `New`/`Learning`, or with no FSRS state yet, has not graduated. Pinned to the
 /// Recall schedule — lifecycle stays on Recall regardless of depth (spec §4.5).
 pub fn has_graduated(card: &Card, store: &Store) -> bool {
-    store
-        .get(card.id())
+    card.id()
+        .and_then(|id| store.get(&id))
         .and_then(|s| s.schedule(Depth::Recall))
         .is_some_and(|f| f.graduated())
 }
@@ -844,10 +872,10 @@ pub fn has_graduated(card: &Card, store: &Store) -> bool {
 /// callers stay testable. Reads the Recall schedule regardless of session
 /// depth — this is a picker-facing, deck-wide signal (spec §4.5), not a
 /// per-session one.
-pub fn card_strengths(card_ids: &[u64], store: &Store, now_ms: u64) -> Vec<f32> {
+pub fn card_strengths(card_ids: &[String], store: &Store, now_ms: u64) -> Vec<f32> {
     card_ids
         .iter()
-        .map(|&id| retrievability(store, id, now_ms))
+        .map(|id| retrievability(store, id, now_ms))
         .collect()
 }
 
@@ -857,7 +885,7 @@ pub fn card_strengths(card_ids: &[u64], store: &Store, now_ms: u64) -> Vec<f32> 
 /// `rs_fsrs::Card`'s `DateTime`-based fields — see [`crate::store::FsrsState`]).
 /// A card not yet under FSRS, or with non-positive stability, has no
 /// meaningful curve — `0.0`.
-fn retrievability(store: &Store, card_id: u64, now_ms: u64) -> f32 {
+fn retrievability(store: &Store, card_id: &str, now_ms: u64) -> f32 {
     let Some(f) = store.get(card_id).and_then(|s| s.schedule(Depth::Recall)) else {
         return 0.0;
     };
@@ -888,12 +916,13 @@ pub fn is_reviewable(
     if is_retired(card, store, retire_after_days) {
         return false;
     }
+    let Some(id) = card.id() else {
+        return false;
+    };
     if depth == Depth::Recognize {
-        return store
-            .get(card.id())
-            .is_none_or(|s| s.recognized_ms.is_none());
+        return store.get(&id).is_none_or(|s| s.recognized_ms.is_none());
     }
-    match store.get(card.id()) {
+    match store.get(&id) {
         Some(state) => scheduler.is_due(state, depth, now_ms),
         None => true,
     }
@@ -993,15 +1022,15 @@ mod tests {
         let text = format!("## virtual front <!-- id: v{slug} -->\n{back}\n");
         let mut card = crate::l1::parse_str(parent, &text).unwrap().remove(0);
         card.line = 1_000_000;
-        let id = card.id();
+        let id = card.id().unwrap();
         store.insert_virtual(VirtualCard {
-            id,
+            id: id.clone(),
             kind: crate::store::VirtualKind::Remediation,
             parent: parent.to_string(),
             text,
             created_ms,
         });
-        store.get_or_insert(id, created_ms);
+        store.get_or_insert(&id, created_ms);
         card
     }
 
@@ -1112,13 +1141,13 @@ mod tests {
     fn acquire_current_records_the_card_unscheduled_without_a_review() {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
-        let id = all[0].id();
+        let id = all[0].id().unwrap();
         let mut session = Session::new(all, &store, sched(), SessionOptions::default(), 1000);
         assert!(session.current_unseen(&store)); // a fresh card is acquired, not quizzed
 
         session.acquire_current(&mut store, 1000);
 
-        let state = store.get(id).expect("acquired card is recorded");
+        let state = store.get(&id).expect("acquired card is recorded");
         assert!(
             state.recall.is_none(),
             "acquiring does not schedule under FSRS"
@@ -1163,7 +1192,7 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let all = cards(2);
         for c in &all {
-            store.get_or_insert(c.id(), 0);
+            store.get_or_insert(&c.id().unwrap(), 0);
         }
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000; // past the acquire cooldown: both due
         let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
@@ -1181,7 +1210,7 @@ mod tests {
         let all = cards(2);
         let first_id = all[0].id();
         for c in &all {
-            store.get_or_insert(c.id(), 0);
+            store.get_or_insert(&c.id().unwrap(), 0);
         }
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
         let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
@@ -1205,18 +1234,18 @@ mod tests {
         // ({#seen-interleaves-too-early}).
         let (mut store, _dir) = empty_store();
         let all = cards(2);
-        let a_id = all[0].id();
-        let b_id = all[1].id();
+        let a_id = all[0].id().unwrap();
+        let b_id = all[1].id().unwrap();
         for c in &all {
-            store.get_or_insert(c.id(), 0);
+            store.get_or_insert(&c.id().unwrap(), 0);
         }
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000; // past the acquire cooldown: both due
         let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
-        assert_eq!(a_id, session.current().unwrap().id());
+        assert_eq!(Some(a_id.clone()), session.current().unwrap().id());
 
         session.grade(&mut store, Grade::Fail, now);
         assert_eq!(
-            b_id,
+            Some(b_id.clone()),
             session.current().unwrap().id(),
             "the other due card takes over right after the miss"
         );
@@ -1224,7 +1253,7 @@ mod tests {
         // Force A's own schedule to already look due, isolating the transition
         // floor (not A's FSRS interval) as what's still supposed to gate it.
         store
-            .get_or_insert(a_id, now)
+            .get_or_insert(&a_id, now)
             .recall
             .as_mut()
             .unwrap()
@@ -1234,14 +1263,14 @@ mod tests {
         // floor (anchored at the move to B) has not passed yet.
         session.poll(&store, now + 30_000);
         assert_eq!(
-            b_id,
+            Some(b_id.clone()),
             session.current().unwrap().id(),
             "the floor keeps A from immediately following itself"
         );
 
         // Past the floor: A may finally return (still nothing else due).
         session.poll(&store, now + DEFAULT_ACQUIRE_COOLDOWN_MS);
-        assert_eq!(a_id, session.current().unwrap().id());
+        assert_eq!(Some(a_id.clone()), session.current().unwrap().id());
     }
 
     #[test]
@@ -1251,8 +1280,8 @@ mod tests {
         // starves.
         let (mut store, _dir) = empty_store();
         let all = cards(1);
-        let id = all[0].id();
-        store.get_or_insert(id, 0);
+        let id = all[0].id().unwrap();
+        store.get_or_insert(&id, 0);
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
         let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
 
@@ -1264,7 +1293,12 @@ mod tests {
 
         // Force its own schedule to look due almost immediately, isolating the
         // floor (not the FSRS interval) as what's still gating it.
-        store.get_or_insert(id, now).recall.as_mut().unwrap().due_ms = now + 1_000;
+        store
+            .get_or_insert(&id, now)
+            .recall
+            .as_mut()
+            .unwrap()
+            .due_ms = now + 1_000;
 
         // Its own schedule says due, but the transition floor hasn't passed.
         session.poll(&store, now + DEFAULT_ACQUIRE_COOLDOWN_MS - 1);
@@ -1272,7 +1306,7 @@ mod tests {
 
         // The floor has passed: the only card may repeat — delayed, not starved.
         session.poll(&store, now + DEFAULT_ACQUIRE_COOLDOWN_MS);
-        assert_eq!(Some(id), session.current().map(|c| c.id()));
+        assert_eq!(Some(id), session.current().and_then(|c| c.id()));
     }
 
     #[test]
@@ -1282,8 +1316,8 @@ mod tests {
         // miss, which the default floor would still block.
         let (mut store, _dir) = empty_store();
         let all = cards(1);
-        let id = all[0].id();
-        store.get_or_insert(id, 0);
+        let id = all[0].id().unwrap();
+        store.get_or_insert(&id, 0);
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
         let mut session = Session::new(
             all,
@@ -1294,9 +1328,14 @@ mod tests {
         );
         session.grade(&mut store, Grade::Fail, now);
         // Force its schedule due almost immediately so only the floor gates.
-        store.get_or_insert(id, now).recall.as_mut().unwrap().due_ms = now + 500;
+        store
+            .get_or_insert(&id, now)
+            .recall
+            .as_mut()
+            .unwrap()
+            .due_ms = now + 500;
         session.poll(&store, now + 1_000);
-        assert_eq!(Some(id), session.current().map(|c| c.id()));
+        assert_eq!(Some(id), session.current().and_then(|c| c.id()));
     }
 
     #[test]
@@ -1308,46 +1347,50 @@ mod tests {
         // after cycling out counts as a new appearance.
         let (mut store, _dir) = empty_store();
         let all = cards(2);
-        let a_id = all[0].id();
-        let b_id = all[1].id();
+        let a_id = all[0].id().unwrap();
+        let b_id = all[1].id().unwrap();
         for c in &all {
-            store.get_or_insert(c.id(), 0);
+            store.get_or_insert(&c.id().unwrap(), 0);
         }
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
         let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
-        assert_eq!(a_id, session.current().unwrap().id());
+        assert_eq!(Some(a_id.clone()), session.current().unwrap().id());
         assert_eq!(
             1,
-            session.appearance(a_id),
+            session.appearance(&a_id),
             "first showing counts as appearance 1"
         );
 
         session.poll(&store, now + 1_000);
         session.poll(&store, now + 2_000);
-        assert_eq!(1, session.appearance(a_id), "still the same appearance");
+        assert_eq!(1, session.appearance(&a_id), "still the same appearance");
 
         session.grade(&mut store, Grade::Fail, now); // A cools, B takes over
-        assert_eq!(b_id, session.current().unwrap().id());
+        assert_eq!(Some(b_id.clone()), session.current().unwrap().id());
         assert_eq!(
             1,
-            session.appearance(a_id),
+            session.appearance(&a_id),
             "moving off doesn't bump — only being re-served does"
         );
 
         // Force A due again, past the transition floor, with B cleared out so A
         // is the only thing left to serve.
         store
-            .get_or_insert(a_id, now)
+            .get_or_insert(&a_id, now)
             .recall
             .as_mut()
             .unwrap()
             .due_ms = now + DEFAULT_ACQUIRE_COOLDOWN_MS;
         session.grade(&mut store, Grade::Pass, now + 1_000); // B passes, leaves
         session.poll(&store, now + DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000);
-        assert_eq!(a_id, session.current().unwrap().id(), "A is due again");
+        assert_eq!(
+            Some(a_id.clone()),
+            session.current().unwrap().id(),
+            "A is due again"
+        );
         assert_eq!(
             2,
-            session.appearance(a_id),
+            session.appearance(&a_id),
             "a new appearance bumps the count"
         );
     }
@@ -1358,15 +1401,15 @@ mod tests {
         // so a fresh card cannot jump to FSRS Review off a sub-step re-drill.
         let (mut store, _dir) = empty_store();
         let all = cards(1);
-        let id = all[0].id();
-        store.get_or_insert(id, 0);
+        let id = all[0].id().unwrap();
+        store.get_or_insert(&id, 0);
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
         let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
 
         session.grade(&mut store, Grade::Fail, now);
         // Nothing else is due, so no further grade lands this appearance.
         assert!(session.current().is_none());
-        let f = store.get(id).unwrap().recall.unwrap();
+        let f = store.get(&id).unwrap().recall.unwrap();
         assert_ne!(
             2, f.state,
             "not graduated to Review off an immediate re-drill"
@@ -1377,7 +1420,7 @@ mod tests {
     fn only_cooling_cards_left_finishes_the_session() {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
-        store.get_or_insert(all[0].id(), 0);
+        store.get_or_insert(&all[0].id().unwrap(), 0);
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
         let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
         session.grade(&mut store, Grade::Fail, now);
@@ -1393,7 +1436,7 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let all = cards(2);
         for c in &all {
-            store.get_or_insert(c.id(), 0);
+            store.get_or_insert(&c.id().unwrap(), 0);
         }
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
         let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
@@ -1431,7 +1474,7 @@ mod tests {
         // Cards 7, 8, 9 were seen at t=0 and are due once the 5-min stage-1
         // cooldown has passed.
         for c in &all[7..] {
-            store.get_or_insert(c.id(), 0);
+            store.get_or_insert(&c.id().unwrap(), 0);
         }
         let session = Session::new(
             all.clone(),
@@ -1460,8 +1503,8 @@ mod tests {
         // Two seen-but-unreviewed cards whose fallback due times differ by their
         // stage cooldown: card 0 (stage 2, ~1h) comes due before card 1 (stage 5,
         // ~1w). Card 2 is new. FSRS orders the due set by due time, earliest first.
-        store.get_or_insert(all[0].id(), 0);
-        store.get_or_insert(all[1].id(), 0);
+        store.get_or_insert(&all[0].id().unwrap(), 0);
+        store.get_or_insert(&all[1].id().unwrap(), 0);
 
         let now = 2 * 604_800_000; // two weeks later, everything is due
         let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
@@ -1478,8 +1521,8 @@ mod tests {
         let all = cards(3);
         // By due time card 0 (s2) leads, then card 1 (s5), then the new card 2.
         // Sequential ignores that and follows deck/file order.
-        store.get_or_insert(all[0].id(), 0);
-        store.get_or_insert(all[1].id(), 0);
+        store.get_or_insert(&all[0].id().unwrap(), 0);
+        store.get_or_insert(&all[1].id().unwrap(), 0);
 
         let now = 2 * 604_800_000;
         let mut session = Session::new(
@@ -1506,7 +1549,7 @@ mod tests {
         let all = cards(1);
         // Stage 2 entered "now": cooldown 1h, not due.
         let now = 5_000_000;
-        store.get_or_insert(all[0].id(), now);
+        store.get_or_insert(&all[0].id().unwrap(), now);
 
         let session = Session::new(
             all.clone(),
@@ -1544,7 +1587,7 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let all = cards(2);
         for c in &all {
-            store.get_or_insert(c.id(), 0);
+            store.get_or_insert(&c.id().unwrap(), 0);
         }
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000;
         let mut session = Session::new(all, &store, sched(), SessionOptions::default(), now);
@@ -1562,12 +1605,12 @@ mod tests {
     fn grading_records_fsrs_state() {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
-        let id = all[0].id();
+        let id = all[0].id().unwrap();
         let mut session = Session::new(all, &store, sched(), SessionOptions::default(), 1000);
 
         session.grade(&mut store, Grade::Pass, 1000);
         // A graded card gains FSRS state and a recorded review (stage is frozen).
-        let state = store.get(id).unwrap();
+        let state = store.get(&id).unwrap();
         assert!(state.recall.is_some());
         assert_eq!(1, state.total_reviews);
     }
@@ -1751,17 +1794,17 @@ mod tests {
 
         assert!(!is_retired(&c, &store, Some(DEFAULT_RETIRE_AFTER_DAYS))); // unseen — never retired
         // An FSRS interval at/past the cap rests.
-        store.get_or_insert(c.id(), 0).recall = Some(retired_fsrs());
+        store.get_or_insert(&c.id().unwrap(), 0).recall = Some(retired_fsrs());
         assert!(is_retired(&c, &store, Some(DEFAULT_RETIRE_AFTER_DAYS)));
         // Just below the cap: still in rotation.
-        store.get_or_insert(c.id(), 0).recall = Some(crate::store::FsrsState {
+        store.get_or_insert(&c.id().unwrap(), 0).recall = Some(crate::store::FsrsState {
             scheduled_days: DEFAULT_RETIRE_AFTER_DAYS - 1,
             ..Default::default()
         });
         assert!(!is_retired(&c, &store, Some(DEFAULT_RETIRE_AFTER_DAYS)));
         // A legacy card at the top pre-FSRS stage but with no FSRS state is no longer
         // retired — retirement now needs a grown FSRS interval, not a stage.
-        let s = store.get_or_insert(c.id(), 0);
+        let s = store.get_or_insert(&c.id().unwrap(), 0);
         s.recall = None;
         s.streak = 1;
         assert!(!is_retired(&c, &store, Some(DEFAULT_RETIRE_AFTER_DAYS)));
@@ -1786,7 +1829,7 @@ mod tests {
         // A card just passed to stage 2 at `now` is on cooldown (due in 1h):
         // not reviewable now, reviewable once its due time arrives.
         let c = card("deck.md", 0);
-        let s = store.get_or_insert(c.id(), now);
+        let s = store.get_or_insert(&c.id().unwrap(), now);
         s.streak = 1;
         s.acquired_ms = now;
         let one = std::slice::from_ref(&c);
@@ -1809,7 +1852,7 @@ mod tests {
         ));
 
         // A retired card (FSRS interval past the cap) never counts, even past due.
-        store.get_or_insert(c.id(), now).recall = Some(retired_fsrs());
+        store.get_or_insert(&c.id().unwrap(), now).recall = Some(retired_fsrs());
         assert!(!has_reviewable(
             std::slice::from_ref(&c),
             &store,
@@ -1824,7 +1867,7 @@ mod tests {
     fn retired_card_excluded_even_under_cram() {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
-        store.get_or_insert(all[0].id(), 0).recall = Some(retired_fsrs()); // retired
+        store.get_or_insert(&all[0].id().unwrap(), 0).recall = Some(retired_fsrs()); // retired
 
         let session = Session::new(
             all,
@@ -1851,7 +1894,7 @@ mod tests {
         // grades with the real scheduler — full credit, recorded.
         let (mut store, _dir) = empty_store();
         let all = cards(1);
-        store.get_or_insert(all[0].id(), 0).recall = Some(mature_fsrs(1000)); // long due
+        store.get_or_insert(&all[0].id().unwrap(), 0).recall = Some(mature_fsrs(1000)); // long due
         let now = 40 * 86_400_000;
 
         let mut session = Session::new(
@@ -1866,7 +1909,7 @@ mod tests {
         );
         session.grade(&mut store, Grade::Pass, now);
 
-        let after = store.get(all[0].id()).unwrap();
+        let after = store.get(&all[0].id().unwrap()).unwrap();
         assert_eq!(1, after.history.len(), "a due cram pass is a real review");
         let f = after.recall.unwrap();
         assert!(f.stability > 30.0, "full credit, not a re-anchor");
@@ -1880,8 +1923,8 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
         let now = 10 * 86_400_000;
-        store.get_or_insert(all[0].id(), 0).recall = Some(mature_fsrs(40 * 86_400_000));
-        let before = store.get(all[0].id()).unwrap().recall.unwrap();
+        store.get_or_insert(&all[0].id().unwrap(), 0).recall = Some(mature_fsrs(40 * 86_400_000));
+        let before = store.get(&all[0].id().unwrap()).unwrap().recall.unwrap();
 
         let mut session = Session::new(
             all.clone(),
@@ -1895,7 +1938,7 @@ mod tests {
         );
         session.grade(&mut store, Grade::Pass, now);
 
-        let after = store.get(all[0].id()).unwrap();
+        let after = store.get(&all[0].id().unwrap()).unwrap();
         let f = after.recall.unwrap();
         assert_eq!(before.stability, f.stability); // no reward
         assert_eq!(before.scheduled_days, f.scheduled_days); // interval kept
@@ -1907,7 +1950,7 @@ mod tests {
     fn cram_miss_lapses_normally() {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
-        store.get_or_insert(all[0].id(), 0).recall = Some(crate::store::FsrsState {
+        store.get_or_insert(&all[0].id().unwrap(), 0).recall = Some(crate::store::FsrsState {
             stability: 30.0,
             difficulty: 5.0,
             scheduled_days: 30,
@@ -1928,7 +1971,7 @@ mod tests {
         session.grade(&mut store, Grade::Fail, 10_000);
 
         // A miss is a real lapse: the scheduler ran (recorded, stability dropped).
-        let after = store.get(all[0].id()).unwrap();
+        let after = store.get(&all[0].id().unwrap()).unwrap();
         assert_eq!(1, after.history.len());
         assert!(after.recall.unwrap().stability < 30.0);
     }
@@ -1937,9 +1980,9 @@ mod tests {
     fn cram_serves_each_card_once() {
         let (mut store, _dir) = empty_store();
         let all = cards(2);
-        let id_a = all[0].id();
+        let id_a = all[0].id().unwrap();
         for c in &all {
-            store.get_or_insert(c.id(), 0).recall = Some(crate::store::FsrsState {
+            store.get_or_insert(&c.id().unwrap(), 0).recall = Some(crate::store::FsrsState {
                 stability: 30.0,
                 difficulty: 5.0,
                 scheduled_days: 30,
@@ -1965,11 +2008,11 @@ mod tests {
             "cram is a single pass over the roster"
         );
         // The missed crammed card recorded exactly one review (no in-session re-drill).
-        assert_eq!(1, store.get(id_a).unwrap().history.len());
+        assert_eq!(1, store.get(&id_a).unwrap().history.len());
     }
 
     fn topology_order(walk: &[&Card]) -> TopologyOrder {
-        let ids: Vec<u64> = walk.iter().map(|c| c.id()).collect();
+        let ids: Vec<String> = walk.iter().filter_map(|c| c.id()).collect();
         TopologyOrder::from_walk(&ids)
     }
 
@@ -1980,7 +2023,7 @@ mod tests {
         // All three seen at t=0 and due once the 5-min stage-1 cooldown passes;
         // scheduler order is 0,1,2.
         for c in &all {
-            store.get_or_insert(c.id(), 0);
+            store.get_or_insert(&c.id().unwrap(), 0);
         }
         // A topology that reverses that order takes over.
         let topo = topology_order(&[&all[2], &all[1], &all[0]]);
@@ -2007,8 +2050,8 @@ mod tests {
         let all = cards(2);
         let now = 5_000_000;
         // Card 0 is due; card 1 is on cooldown (stage 2 entered now, 1h cooldown).
-        store.get_or_insert(all[0].id(), 0);
-        store.get_or_insert(all[1].id(), now);
+        store.get_or_insert(&all[0].id().unwrap(), 0);
+        store.get_or_insert(&all[1].id().unwrap(), now);
         // A topology listing the not-due card first must NOT pull it in.
         let topo = topology_order(&[&all[1], &all[0]]);
         let session = Session::new(
@@ -2031,7 +2074,7 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let all = cards(3);
         for c in &all {
-            store.get_or_insert(c.id(), 0);
+            store.get_or_insert(&c.id().unwrap(), 0);
         }
         // The walk lists only the middle card; the other two keep scheduler order.
         let topo = topology_order(&[&all[1]]);
@@ -2056,7 +2099,7 @@ mod tests {
     fn retired_card_excluded_even_with_a_topology() {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
-        store.get_or_insert(all[0].id(), 0).recall = Some(retired_fsrs()); // retired
+        store.get_or_insert(&all[0].id().unwrap(), 0).recall = Some(retired_fsrs()); // retired
         // A topology listing the retired card cannot resurrect it — the filter
         // runs before the topology sort.
         let topo = topology_order(&[&all[0]]);
@@ -2100,7 +2143,7 @@ mod tests {
         let other = card("d.md", 3);
         let all = vec![sib_a.clone(), sib_b.clone(), other.clone()];
         for c in &all {
-            store.get_or_insert(c.id(), 0);
+            store.get_or_insert(&c.id().unwrap(), 0);
         }
         let topo = topology_order(&[&sib_a, &sib_b, &other]);
         let mut session = Session::new(
@@ -2126,8 +2169,8 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let all = cards(4);
         // Cards 0,1 are due; 2,3 are new.
-        store.get_or_insert(all[0].id(), 0);
-        store.get_or_insert(all[1].id(), 0);
+        store.get_or_insert(&all[0].id().unwrap(), 0);
+        store.get_or_insert(&all[1].id().unwrap(), 0);
         // A walk that ranks a NEW card (3) ahead of the due cards must not let it
         // jump past them: due-priority holds, the topology only orders within a
         // group, so the limit keeps the two due cards (ordered 1 before 0).
@@ -2152,14 +2195,14 @@ mod tests {
     fn card_strength_is_full_right_after_review_and_decays() {
         let (mut store, _dir) = empty_store();
         let id = 42;
-        store.get_or_insert(id, 0).recall = Some(FsrsState {
+        store.get_or_insert(&id.to_string(), 0).recall = Some(FsrsState {
             stability: 10.0,
             state: 2,
             ..Default::default()
         });
         let ten_days_ms = 10 * 86_400_000;
-        let fresh = card_strengths(&[id], &store, 0);
-        let later = card_strengths(&[id], &store, ten_days_ms);
+        let fresh = card_strengths(&[id.to_string()], &store, 0);
+        let later = card_strengths(&[id.to_string()], &store, ten_days_ms);
         assert!(fresh[0] > 0.99, "R≈1 right after review, got {}", fresh[0]);
         assert!(
             later[0] < fresh[0] && later[0] > 0.0,
@@ -2172,7 +2215,7 @@ mod tests {
     #[test]
     fn card_with_no_fsrs_has_zero_strength() {
         let (store, _dir) = empty_store();
-        assert_eq!(vec![0.0], card_strengths(&[7], &store, 0));
+        assert_eq!(vec![0.0], card_strengths(&[7.to_string()], &store, 0));
         assert!(card_strengths(&[], &store, 0).is_empty());
     }
 
@@ -2191,7 +2234,7 @@ mod tests {
     fn grading_a_virtual_card_updates_store_cards() {
         let (mut store, _dir) = empty_store();
         let synth = insert_virtual(&mut store, "deck.md", "virtual back", 0);
-        let id = synth.id();
+        let id = synth.id().unwrap();
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
         let mut session =
             Session::new(vec![synth], &store, sched(), SessionOptions::default(), now);
@@ -2200,11 +2243,11 @@ mod tests {
 
         // A virtual card's schedule now lives in `store.cards`, keyed by its
         // own `Card::id` — the same entry a deck card would use.
-        let state = store.get(id).expect("virtual schedule in store.cards");
+        let state = store.get(&id).expect("virtual schedule in store.cards");
         assert!(state.recall.is_some());
         assert_eq!(1, state.total_reviews);
         // Still virtual (sidecar membership), not promoted.
-        assert!(store.is_virtual(id));
+        assert!(store.is_virtual(&id));
     }
 
     #[test]
@@ -2222,7 +2265,7 @@ mod tests {
         let synth = insert_virtual(&mut store, "deck.md", "virtual back", 0);
         let synth_id = synth.id();
         let deck_card = card("deck.md", 0);
-        store.get_or_insert(deck_card.id(), 0);
+        store.get_or_insert(&deck_card.id().unwrap(), 0);
 
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 60_000; // both due (past the acquire cooldown)
         let mut session = Session::new(
@@ -2256,7 +2299,7 @@ mod tests {
         // Archived: its interval already sits at the cap, so it's excluded —
         // derived from `store.cards`, no stored flag.
         let archived = insert_virtual(&mut store, "deck.md", "gap-archived", 0);
-        store.get_or_insert(archived.id(), 0).recall = Some(retired_fsrs());
+        store.get_or_insert(&archived.id().unwrap(), 0).recall = Some(retired_fsrs());
 
         assert_eq!(
             1,
@@ -2294,7 +2337,7 @@ mod tests {
     fn virtual_card_is_retired_when_interval_reaches_cap() {
         let (mut store, _dir) = empty_store();
         let synth = insert_virtual(&mut store, "deck.md", "virtual back", 0);
-        let id = synth.id();
+        let id = synth.id().unwrap();
         let options = SessionOptions {
             retire_after_days: Some(4),
             ..SessionOptions::default()
@@ -2305,7 +2348,7 @@ mod tests {
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
         let mut session = Session::new(vec![synth.clone()], &store, sched(), options.clone(), now);
         session.grade(&mut store, Grade::Pass, now);
-        assert!(!is_retired_id(id, &store, options.retire_after_days));
+        assert!(!is_retired_id(&id, &store, options.retire_after_days));
 
         // Second review, once due: graduates to `Review` with a 4-day interval —
         // right at the cap. No stored flag anywhere — retirement is read fresh
@@ -2314,11 +2357,11 @@ mod tests {
         let mut session = Session::new(vec![synth.clone()], &store, sched(), options.clone(), now);
         session.grade(&mut store, Grade::Pass, now);
 
-        assert!(is_retired_id(id, &store, options.retire_after_days));
-        let state = store.get(id).expect("schedule kept, not deleted");
+        assert!(is_retired_id(&id, &store, options.retire_after_days));
+        let state = store.get(&id).expect("schedule kept, not deleted");
         assert_eq!(4, state.recall.as_ref().unwrap().scheduled_days);
         assert_eq!(2, state.total_reviews);
-        assert!(store.is_virtual(id)); // sidecar kept
+        assert!(store.is_virtual(&id)); // sidecar kept
 
         // Excluded from the queue and from due counts, same as a deck card.
         let session = Session::new(vec![synth], &store, sched(), options.clone(), now);
@@ -2342,13 +2385,13 @@ mod tests {
         // like a deck card. No stickiness from a stored flag.
         let (mut store, _dir) = empty_store();
         let synth = insert_virtual(&mut store, "deck.md", "virtual back", 0);
-        let id = synth.id();
-        store.get_or_insert(id, 0).recall = Some(crate::store::FsrsState {
+        let id = synth.id().unwrap();
+        store.get_or_insert(&id, 0).recall = Some(crate::store::FsrsState {
             scheduled_days: 10,
             ..Default::default()
         });
-        assert!(is_retired_id(id, &store, Some(10)));
-        assert!(!is_retired_id(id, &store, Some(20)));
+        assert!(is_retired_id(&id, &store, Some(10)));
+        assert!(!is_retired_id(&id, &store, Some(20)));
 
         // Confirmed through the exclusion path too: the same card is excluded
         // from due counts at the lower cap, and counted at the raised one.
@@ -2368,8 +2411,8 @@ mod tests {
     fn retired_virtual_card_is_excluded_from_queue_and_counts() {
         let (mut store, _dir) = empty_store();
         let synth = insert_virtual(&mut store, "deck.md", "virtual back", 0);
-        let id = synth.id();
-        store.get_or_insert(id, 0).recall = Some(retired_fsrs());
+        let id = synth.id().unwrap();
+        store.get_or_insert(&id, 0).recall = Some(retired_fsrs());
 
         // Otherwise past its stage-1 cooldown: would be due if not archived.
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
@@ -2382,29 +2425,29 @@ mod tests {
             count_reviewable_virtual(&store, "deck.md", sched().as_ref(), now, cap)
         );
         // The sidecar entry itself survives — archived, not deleted.
-        assert!(store.is_virtual(id));
+        assert!(store.is_virtual(&id));
     }
 
     #[test]
     fn retire_only_at_cap_not_below() {
         let (mut store, _dir) = empty_store();
         let synth = insert_virtual(&mut store, "deck.md", "virtual back", 0);
-        let id = synth.id();
+        let id = synth.id().unwrap();
 
         let now = DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000; // past the acquire cooldown
         let mut session =
             Session::new(vec![synth], &store, sched(), SessionOptions::default(), now);
         session.grade(&mut store, Grade::Pass, now);
 
-        assert!(!is_retired_id(id, &store, Some(DEFAULT_RETIRE_AFTER_DAYS)));
+        assert!(!is_retired_id(&id, &store, Some(DEFAULT_RETIRE_AFTER_DAYS)));
     }
 
     #[test]
     fn a_reconstruct_grade_never_touches_the_recall_schedule() {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
-        let id = all[0].id();
-        store.get_or_insert(id, 0).recall = Some(FsrsState {
+        let id = all[0].id().unwrap();
+        store.get_or_insert(&id, 0).recall = Some(FsrsState {
             stability: 30.0,
             state: 2,
             ..Default::default()
@@ -2420,7 +2463,7 @@ mod tests {
             0,
         );
         s.grade(&mut store, Grade::Fail, 1_000);
-        let st = store.get(id).unwrap();
+        let st = store.get(&id).unwrap();
         assert_eq!(
             30.0,
             st.recall.unwrap().stability,
@@ -2436,7 +2479,7 @@ mod tests {
     fn a_recall_drilled_deck_is_immediately_due_at_reconstruct() {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
-        store.get_or_insert(all[0].id(), 0).recall = Some(FsrsState {
+        store.get_or_insert(&all[0].id().unwrap(), 0).recall = Some(FsrsState {
             stability: 30.0,
             state: 2,
             due_ms: u64::MAX,
@@ -2463,7 +2506,7 @@ mod tests {
         // instant boomerang at "one card left" is what this closes.
         let (mut store, _dir) = empty_store();
         let all = cards(2);
-        let (a, b) = (all[0].id(), all[1].id());
+        let (a, b) = (all[0].id().unwrap(), all[1].id().unwrap());
         let mut s = Session::new(
             all,
             &store,
@@ -2476,10 +2519,10 @@ mod tests {
         );
         s.grade(&mut store, Grade::Pass, 1_000); // correct pick → recognized, leaves
         s.grade(&mut store, Grade::Fail, 2_000); // wrong pick (or "I guessed") → stays, floored
-        assert!(store.get(a).unwrap().recognized_ms.is_some());
-        assert!(store.get(b).is_none_or(|st| st.recognized_ms.is_none()));
+        assert!(store.get(&a).unwrap().recognized_ms.is_some());
+        assert!(store.get(&b).is_none_or(|st| st.recognized_ms.is_none()));
         assert!(
-            store.get(a).unwrap().recall.is_none(),
+            store.get(&a).unwrap().recall.is_none(),
             "recognize never schedules"
         );
         assert_eq!(
@@ -2541,7 +2584,7 @@ mod tests {
         // resurfacing it instantly — delayed, never starved.
         let (mut store, _dir) = empty_store();
         let all = cards(1);
-        let id = all[0].id();
+        let id = all[0].id().unwrap();
         let mut s = Session::new(
             all,
             &store,
@@ -2565,7 +2608,7 @@ mod tests {
         s.poll(&store, 1_000 + DEFAULT_ACQUIRE_COOLDOWN_MS);
         assert_eq!(
             Some(id),
-            s.current().map(|c| c.id()),
+            s.current().and_then(|c| c.id()),
             "the floor passed: delayed, not starved"
         );
     }
@@ -2574,7 +2617,7 @@ mod tests {
     fn recognize_queue_holds_only_unrecognized_cards() {
         let (mut store, _dir) = empty_store();
         let all = cards(2);
-        store.get_or_insert(all[0].id(), 0).recognized_ms = Some(5);
+        store.get_or_insert(&all[0].id().unwrap(), 0).recognized_ms = Some(5);
         let s = Session::new(
             all,
             &store,
@@ -2620,14 +2663,14 @@ mod tests {
     fn a_full_reconstruct_pass_on_a_recall_due_card_credits_recall_marked() {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
-        let id = all[0].id();
-        store.get_or_insert(id, 0).recall = Some(mature_fsrs(500)); // long past due
+        let id = all[0].id().unwrap();
+        store.get_or_insert(&id, 0).recall = Some(mature_fsrs(500)); // long past due
         let now = 40 * 86_400_000; // 40 days on — well past the 30-day interval
 
         let mut s = reconstruct_session(all, &store, false, now);
         s.grade(&mut store, Grade::Pass, now);
 
-        let st = store.get(id).unwrap();
+        let st = store.get(&id).unwrap();
         let recall = st.recall.unwrap();
         assert!(recall.due_ms > now, "the due recall schedule advanced");
         assert!(recall.stability > 30.0, "full credit, not just a re-anchor");
@@ -2645,14 +2688,14 @@ mod tests {
     fn a_reconstruct_pass_on_a_not_yet_due_recall_reanchors_without_reward() {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
-        let id = all[0].id();
+        let id = all[0].id().unwrap();
         let now = 1_000_000;
-        store.get_or_insert(id, 0).recall = Some(mature_fsrs(2_000_000)); // not due yet
+        store.get_or_insert(&id, 0).recall = Some(mature_fsrs(2_000_000)); // not due yet
 
         let mut s = reconstruct_session(all, &store, false, now);
         s.grade(&mut store, Grade::Pass, now);
 
-        let st = store.get(id).unwrap();
+        let st = store.get(&id).unwrap();
         let recall = st.recall.unwrap();
         assert_eq!(30.0, recall.stability, "memory untouched — no reward");
         assert_eq!(30, recall.scheduled_days, "interval kept");
@@ -2672,16 +2715,16 @@ mod tests {
     fn no_propagation_without_a_recall_schedule() {
         let (mut store, _dir) = empty_store();
         let all = cards(1);
-        let id = all[0].id();
+        let id = all[0].id().unwrap();
         let now = 1_000_000;
         // Drilled only at Reconstruct: no recall schedule to credit — and none
         // may be created.
-        store.get_or_insert(id, 0).reconstruct = Some(mature_fsrs(500));
+        store.get_or_insert(&id, 0).reconstruct = Some(mature_fsrs(500));
 
         let mut s = reconstruct_session(all, &store, false, now);
         s.grade(&mut store, Grade::Pass, now);
 
-        let st = store.get(id).unwrap();
+        let st = store.get(&id).unwrap();
         assert!(st.recall.is_none(), "propagation never creates a schedule");
         assert_eq!(1, st.history.len());
         assert_eq!(Depth::Reconstruct, st.history[0].depth);
@@ -2693,7 +2736,7 @@ mod tests {
         let all = cards(2);
         let now = 1_000_000;
         for c in &all {
-            store.get_or_insert(c.id(), 0).recall = Some(mature_fsrs(500)); // due
+            store.get_or_insert(&c.id().unwrap(), 0).recall = Some(mature_fsrs(500)); // due
         }
 
         let mut s = reconstruct_session(all.clone(), &store, false, now);
@@ -2701,7 +2744,7 @@ mod tests {
         s.grade(&mut store, Grade::Fail, now);
 
         for c in &all {
-            let st = store.get(c.id()).unwrap();
+            let st = store.get(&c.id().unwrap()).unwrap();
             assert_eq!(
                 mature_fsrs(500),
                 st.recall.unwrap(),
@@ -2718,16 +2761,16 @@ mod tests {
         // propagation: the due recall schedule takes the marked full credit.
         let (mut store, _dir) = empty_store();
         let all = cards(1);
-        let id = all[0].id();
+        let id = all[0].id().unwrap();
         let now = 40 * 86_400_000;
-        let state = store.get_or_insert(id, 0);
+        let state = store.get_or_insert(&id, 0);
         state.recall = Some(mature_fsrs(500)); // due
         state.reconstruct = Some(mature_fsrs(500)); // due
 
         let mut s = reconstruct_session(all, &store, true, now);
         s.grade(&mut store, Grade::Pass, now);
 
-        let st = store.get(id).unwrap();
+        let st = store.get(&id).unwrap();
         assert!(
             st.reconstruct.unwrap().stability > 30.0,
             "the due reconstruct pass took full credit"
@@ -2747,17 +2790,17 @@ mod tests {
         // untouched entirely and nothing is recorded.
         let (mut store, _dir) = empty_store();
         let all = cards(1);
-        let id = all[0].id();
+        let id = all[0].id().unwrap();
         let now = 10 * 86_400_000;
         let future = 40 * 86_400_000;
-        let state = store.get_or_insert(id, 0);
+        let state = store.get_or_insert(&id, 0);
         state.recall = Some(mature_fsrs(future));
         state.reconstruct = Some(mature_fsrs(future));
 
         let mut s = reconstruct_session(all, &store, true, now);
         s.grade(&mut store, Grade::Pass, now);
 
-        let st = store.get(id).unwrap();
+        let st = store.get(&id).unwrap();
         assert_eq!(
             mature_fsrs(future),
             st.recall.unwrap(),
@@ -2780,7 +2823,7 @@ mod tests {
         let all = cards(2);
         let now = 1_000_000;
         for card in &all {
-            store.get_or_insert(card.id(), 0).recognized_ms = Some(1);
+            store.get_or_insert(&card.id().unwrap(), 0).recognized_ms = Some(1);
         }
 
         let normal = Session::new(
@@ -2825,7 +2868,7 @@ mod tests {
         recall.grade(&mut store, Grade::Pass, now);
         assert_eq!(
             Some(now),
-            store.get(all[0].id()).unwrap().recognized_ms,
+            store.get(&all[0].id().unwrap()).unwrap().recognized_ms,
             "a recall pass marks recognized"
         );
 
@@ -2833,7 +2876,7 @@ mod tests {
         reconstruct.grade(&mut store, Grade::Pass, now);
         assert_eq!(
             Some(now),
-            store.get(all[1].id()).unwrap().recognized_ms,
+            store.get(&all[1].id().unwrap()).unwrap().recognized_ms,
             "a reconstruct pass marks recognized"
         );
 
@@ -2846,7 +2889,11 @@ mod tests {
         );
         partial.grade(&mut store, Grade::Partial, now);
         assert!(
-            store.get(all[2].id()).unwrap().recognized_ms.is_none(),
+            store
+                .get(&all[2].id().unwrap())
+                .unwrap()
+                .recognized_ms
+                .is_none(),
             "a partial never marks recognized"
         );
     }

@@ -249,9 +249,9 @@ pub enum VirtualKind {
 /// the id its `CardState` is keyed under in `store.cards`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct VirtualCard {
-    /// The card's identity hash — a plain deck-card `Card::id` (via
+    /// The card's identity token — a plain deck-card `Card::id` (via
     /// `parse(parent, text)`), also this entry's key in `virtual_cards`.
-    pub id: u64,
+    pub id: String,
     /// Which trigger produced this card.
     pub kind: VirtualKind,
     /// The deck subject (file name) this card belongs to. **Also the subject
@@ -287,18 +287,17 @@ struct StoreFile {
     /// [`CURRENT_VERSION`] for why there is no version check pre-1.0.
     #[serde(default = "default_version")]
     version: u32,
-    /// Card states keyed by the decimal string of the card's identity hash
-    /// (JSON object keys must be strings).
+    /// Card states keyed by the card's identity token (its `Card::id`).
     cards: HashMap<String, CardState>,
     /// Deck-level progress keyed by subject. Optional: a store written before
     /// this field existed (or with no mastered decks) simply has no `decks`
     /// key.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     decks: HashMap<String, DeckProgress>,
-    /// Virtual cards keyed by the decimal string of their `u64` id. Loaded
-    /// **leniently** (see [`Store::open`]): the raw JSON value is kept so a
-    /// stale/old-shape entry can be dropped without failing the whole file.
-    /// Absent in a store with no virtual cards.
+    /// Virtual cards keyed by their identity token. Loaded **leniently** (see
+    /// [`Store::open`]): the raw JSON value is kept so a stale/old-shape entry
+    /// can be dropped without failing the whole file. Absent in a store with no
+    /// virtual cards.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     virtual_cards: HashMap<String, serde_json::Value>,
     /// Who wrote this file last. Absent in stores from before the field or
@@ -310,9 +309,9 @@ struct StoreFile {
 /// The progress store for all decks.
 pub struct Store {
     path: PathBuf,
-    cards: HashMap<u64, CardState>,
+    cards: HashMap<String, CardState>,
     decks: HashMap<String, DeckProgress>,
-    virtual_cards: HashMap<u64, VirtualCard>,
+    virtual_cards: HashMap<String, VirtualCard>,
     /// This device's label, stamped into the file on every save. `None` (the
     /// default) leaves the file's existing marker untouched, so tests and
     /// one-off tools do not masquerade as a device.
@@ -363,31 +362,20 @@ impl Store {
             path: path.clone(),
             source,
         })?;
-        // The authored `cards` load stays strict: a bad card key is real
-        // corruption, not a regenerable sidecar entry.
-        let mut cards = HashMap::with_capacity(file.cards.len());
-        for (key, state) in file.cards {
-            let hash = key.parse::<u64>().map_err(|e| StoreError::Format {
-                path: path.clone(),
-                source: serde_json::Error::io(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    format!("bad card key {key:?}: {e}"),
-                )),
-            })?;
-            cards.insert(hash, state);
-        }
+        // Card keys are identity tokens (strings): they pass through verbatim.
+        // A key of an unexpected charset is kept rather than rejected — it
+        // becomes doctor material, not a load failure that would refuse a user's
+        // real progress.
+        let cards = file.cards;
         // Virtual cards load leniently: a store from before this rework has
-        // `v:`-prefixed keys and old-shape values, and a virtual card is a
-        // personal, local, *regenerable* sidecar — so a stale entry is dropped
-        // rather than failing the whole file (which would refuse a user's real
-        // card progress). Keep only well-formed new-shape entries.
+        // old-shape values (a numeric `id`), and a virtual card is a personal,
+        // local, *regenerable* sidecar — so a stale entry is dropped rather than
+        // failing the whole file (which would refuse a user's real card
+        // progress). Keep only well-formed new-shape entries.
         let mut virtual_cards = HashMap::new();
         for (key, val) in file.virtual_cards {
-            if let (Ok(id), Ok(vc)) = (
-                key.parse::<u64>(),
-                serde_json::from_value::<VirtualCard>(val),
-            ) {
-                virtual_cards.insert(id, vc);
+            if let Ok(vc) = serde_json::from_value::<VirtualCard>(val) {
+                virtual_cards.insert(key, vc);
             }
         }
         Ok(Self {
@@ -411,24 +399,20 @@ impl Store {
             std::fs::create_dir_all(dir).map_err(io_err)?;
         }
 
-        // Emit the sidecar with decimal-`u64` keys and the real `VirtualCard`
-        // shape (the lenient `Value` field is only for tolerant loading).
+        // Emit the sidecar with token keys and the real `VirtualCard` shape (the
+        // lenient `Value` field is only for tolerant loading).
         let mut virtual_cards = HashMap::with_capacity(self.virtual_cards.len());
         for (id, vc) in &self.virtual_cards {
             let value = serde_json::to_value(vc).map_err(|source| StoreError::Format {
                 path: self.path.clone(),
                 source,
             })?;
-            virtual_cards.insert(id.to_string(), value);
+            virtual_cards.insert(id.clone(), value);
         }
 
         let file = StoreFile {
             version: CURRENT_VERSION,
-            cards: self
-                .cards
-                .iter()
-                .map(|(hash, state)| (hash.to_string(), state.clone()))
-                .collect(),
+            cards: self.cards.clone(),
             decks: self.decks.clone(),
             virtual_cards,
             // An unnamed consumer preserves the marker on disk rather than
@@ -474,8 +458,8 @@ impl Store {
     }
 
     /// Returns the state of a card, if it has been seen before.
-    pub fn get(&self, card_id: u64) -> Option<&CardState> {
-        self.cards.get(&card_id)
+    pub fn get(&self, card_id: &str) -> Option<&CardState> {
+        self.cards.get(card_id)
     }
 
     /// The most recent review timestamp across all cards (Unix ms), if any —
@@ -490,43 +474,43 @@ impl Store {
 
     /// Returns a mutable reference to the state of a card, inserting a freshly
     /// acquired state (no FSRS schedule yet) if the card is new.
-    pub fn get_or_insert(&mut self, card_id: u64, now_ms: u64) -> &mut CardState {
+    pub fn get_or_insert(&mut self, card_id: &str, now_ms: u64) -> &mut CardState {
         self.cards
-            .entry(card_id)
+            .entry(card_id.to_string())
             .or_insert_with(|| CardState::new(now_ms))
     }
 
     /// Drops a card's stored state, e.g. when the card is deleted from its
     /// deck. Returns whether an entry was present. Does not save.
-    pub fn remove(&mut self, card_id: u64) -> bool {
-        self.cards.remove(&card_id).is_some()
+    pub fn remove(&mut self, card_id: &str) -> bool {
+        self.cards.remove(card_id).is_some()
     }
 
-    /// Returns a virtual card by its `u64` id, if one exists.
-    pub fn get_virtual(&self, id: u64) -> Option<&VirtualCard> {
-        self.virtual_cards.get(&id)
+    /// Returns a virtual card by its id, if one exists.
+    pub fn get_virtual(&self, id: &str) -> Option<&VirtualCard> {
+        self.virtual_cards.get(id)
     }
 
     /// Whether this id is a virtual card (remediation or tutor-minted), i.e. it
     /// lives in the content sidecar rather than any deck file. This membership
     /// is the sole definition of "virtual"; its schedule is an ordinary
     /// `store.cards` entry.
-    pub fn is_virtual(&self, id: u64) -> bool {
-        self.virtual_cards.contains_key(&id)
+    pub fn is_virtual(&self, id: &str) -> bool {
+        self.virtual_cards.contains_key(id)
     }
 
     /// Inserts or replaces a virtual card, keyed by its own `id`. The caller
     /// must uphold `card.id == its Card::id` (the map key). Does not save.
     pub fn insert_virtual(&mut self, card: VirtualCard) {
-        self.virtual_cards.insert(card.id, card);
+        self.virtual_cards.insert(card.id.clone(), card);
     }
 
     /// Drops a virtual card's content entry, e.g. once [`promote_virtual`] has
     /// graduated it into a real deck card. The card's schedule in `store.cards`
     /// (keyed by the same id) is left in place. Returns whether an entry was
     /// present. Does not save.
-    pub fn remove_virtual(&mut self, id: u64) -> bool {
-        self.virtual_cards.remove(&id).is_some()
+    pub fn remove_virtual(&mut self, id: &str) -> bool {
+        self.virtual_cards.remove(id).is_some()
     }
 
     /// Drops every sidecar `virtual_cards` entry that belongs to the same
@@ -553,6 +537,19 @@ impl Store {
     /// match on the deck's file name. Includes derived-retired (archived)
     /// entries — callers filter those themselves for scheduling/counts (see
     /// [`crate::session::is_virtual_reviewable`]).
+    /// The ids of the virtual cards on `subject` whose canonical content (§7)
+    /// matches `fingerprint`. Empty when none do. This is the content-identity
+    /// dedup key for remediation/tutor mint: a freshly minted card carries a new
+    /// random token, so it can never dedup by id against an earlier mint of the
+    /// same content — only by fingerprint.
+    pub fn virtual_ids_with_content(&self, subject: &str, fingerprint: u64) -> Vec<String> {
+        self.virtual_cards
+            .values()
+            .filter(|vc| vc.parent == subject && virtual_fingerprint(vc) == Some(fingerprint))
+            .map(|vc| vc.id.clone())
+            .collect()
+    }
+
     pub fn virtual_cards_for(&self, subject: &str) -> Vec<&VirtualCard> {
         self.virtual_cards
             .values()
@@ -702,18 +699,19 @@ pub enum MintError {
 /// inserts it and seeds a fresh schedule so it enters the queue as a new
 /// (acquire) card. Returns the new id.
 ///
-/// INTERIM (until the id-flip task's dedup respec): the `Duplicate` check
-/// keyed on the recomputed content id is vacuous now that every mint carries a
-/// fresh random token (identical content mints a distinct card). The
-/// canonical-content dedup replaces it in the next task.
+/// `deck_fingerprints` are the §7 canonical-content fingerprints of the deck's
+/// authored cards ([`crate::l1::content_fingerprint`]). The `Duplicate` check
+/// is by content, not id: every mint carries a fresh random token, so identical
+/// content would otherwise mint a distinct card. A card whose content already
+/// exists in the deck or in a virtual card on this subject is rejected.
 pub fn mint_tutor_card(
     store: &mut Store,
     subject: &str,
     front: &str,
     back: &[String],
     now_ms: u64,
-    deck_ids: &std::collections::HashSet<u64>,
-) -> Result<u64, MintError> {
+    deck_fingerprints: &std::collections::HashSet<u64>,
+) -> Result<String, MintError> {
     let front = front.trim();
     let back: Vec<String> = back
         .iter()
@@ -743,18 +741,27 @@ pub fn mint_tutor_card(
             "expected exactly one card".to_string(),
         ));
     };
-    let id = card.id();
-    if deck_ids.contains(&id) || store.is_virtual(id) {
+    let id = card
+        .id()
+        .ok_or_else(|| MintError::Malformed("the minted card has no identity token".to_string()))?;
+    // Canonical-content dedup: reject if this exact content is already drillable
+    // (a deck card) or already stored as a virtual card on this subject.
+    let fingerprint = crate::l1::content_fingerprint(&card.front, &card.back);
+    if deck_fingerprints.contains(&fingerprint)
+        || !store
+            .virtual_ids_with_content(subject, fingerprint)
+            .is_empty()
+    {
         return Err(MintError::Duplicate);
     }
     store.insert_virtual(VirtualCard {
-        id,
+        id: id.clone(),
         kind: VirtualKind::Tutor,
         parent: subject.to_string(),
         text,
         created_ms: now_ms,
     });
-    store.get_or_insert(id, now_ms);
+    store.get_or_insert(&id, now_ms);
     Ok(id)
 }
 
@@ -769,7 +776,7 @@ pub fn badge_solid(cards: &[Card], store: &Store, depth: Depth) -> bool {
         return false;
     }
     cards.iter().all(|card| {
-        let Some(state) = store.get(card.id()) else {
+        let Some(state) = card.id().and_then(|id| store.get(&id)) else {
             return false;
         };
         match depth {
@@ -819,7 +826,7 @@ pub fn note_badges(store: &mut Store, subject: &str, cards: &[Card], now_ms: u64
 /// [`Store::remove_virtual_block`] drops every hole's sidecar entry, not just
 /// the promoted one, leaving no orphans behind. Each hole's schedule carries
 /// (its id matches its new deck sub-card).
-pub fn promote_virtual(store: &mut Store, id: u64, deck_path: &Path) -> AnyResult<()> {
+pub fn promote_virtual(store: &mut Store, id: &str, deck_path: &Path) -> AnyResult<()> {
     let Some(vc) = store.get_virtual(id) else {
         bail!("no virtual card with id {id} to promote");
     };
@@ -885,15 +892,17 @@ pub fn split_card_blocks(text: &str) -> Vec<String> {
 /// distinct ids). Saves the store once after the batch. The deck file is
 /// never touched. Returns how many cards were created or revived.
 ///
-/// INTERIM (until the id-flip task's dedup respec): the skip-in-deck /
-/// skip-active / revive-retired checks below recompute ids from the fresh AI
-/// text and are vacuous now that every block carries a fresh random token:
-/// re-running remediation mints new cards instead of deduping against old
-/// ones. The canonical-content dedup replaces them in the next task.
+/// `deck_fingerprints` are the §7 canonical-content fingerprints of the deck's
+/// authored cards ([`crate::l1::content_fingerprint`]). Dedup is by content,
+/// not id: every block carries a fresh random token, so re-running remediation
+/// on the same gap must recognize it by canonical content, not by a recomputed
+/// id (which is always new). A block whose content already exists as a deck
+/// card is skipped; one that matches only fully-retired virtual cards revives
+/// them; one that matches an active virtual card is left as-is.
 pub fn store_remediation_cards(
     store: &mut Store,
     subject: &str,
-    deck_ids: &std::collections::HashSet<u64>,
+    deck_fingerprints: &std::collections::HashSet<u64>,
     cards_text: &str,
     now_ms: u64,
     retire_after_days: Option<u32>,
@@ -914,34 +923,63 @@ pub fn store_remediation_cards(
         // each with its own id. A malformed block is a hard error (error, never
         // fabricate) rather than a silently-dropped card.
         let cards = crate::l1::parse_str(subject, &block)?;
-        for card in &cards {
-            let id = card.id();
-            // Already drillable as a deck card, don't shadow it with a virtual.
-            if deck_ids.contains(&id) {
-                continue;
-            }
-            if !store.is_virtual(id) {
-                // New: store the block text and seed a fresh schedule.
+        let Some(first) = cards.first() else {
+            continue;
+        };
+        // Every sub-card of a block shares the same canonical content (a cloze
+        // block's holes hold identical front + back), so one fingerprint stands
+        // for the whole block.
+        let fingerprint = crate::l1::content_fingerprint(&first.front, &first.back);
+        // Already drillable as a deck card: don't shadow it with a virtual.
+        if deck_fingerprints.contains(&fingerprint) {
+            continue;
+        }
+        let existing = store.virtual_ids_with_content(subject, fingerprint);
+        if existing.is_empty() {
+            // New content: store every sub-card (a cloze block yields one entry
+            // per hole, each with its own id) and seed a fresh schedule.
+            for card in &cards {
+                let Some(id) = card.id() else {
+                    continue;
+                };
                 store.insert_virtual(VirtualCard {
-                    id,
+                    id: id.clone(),
                     kind: VirtualKind::Remediation,
                     parent: subject.to_string(),
                     text: block.clone(),
                     created_ms: now_ms,
                 });
-                store.get_or_insert(id, now_ms);
+                store.get_or_insert(&id, now_ms);
                 created_or_revived += 1;
-            } else if crate::session::is_retired_id(id, store, retire_after_days) {
-                // Retired dupe: revive it, reset the schedule below the cap.
-                // The sidecar text is unchanged (same content), so leave it.
+            }
+        } else if existing
+            .iter()
+            .all(|id| crate::session::is_retired_id(id, store, retire_after_days))
+        {
+            // A fully-retired dupe of this content: revive every matching entry
+            // (reset its schedule below the cap). The sidecar text is unchanged.
+            for id in &existing {
                 *store.get_or_insert(id, now_ms) = CardState::new(now_ms);
                 created_or_revived += 1;
             }
-            // Else an active dupe, leave it, no schedule reset.
         }
+        // Else at least one matching entry is still active: leave it, no reset.
     }
     store.save()?;
     Ok(created_or_revived)
+}
+
+/// The §7 canonical-content fingerprint of a stored virtual card: parse its
+/// block under its `parent`, find the sub-card this entry stands for, and
+/// fingerprint its canonical content. `None` if the stored text no longer
+/// re-parses to a card carrying this entry's id (a corrupt or superseded
+/// sidecar entry).
+fn virtual_fingerprint(vc: &VirtualCard) -> Option<u64> {
+    let cards = crate::l1::parse_str(&vc.parent, &vc.text).ok()?;
+    let card = cards
+        .iter()
+        .find(|c| c.id().as_deref() == Some(vc.id.as_str()))?;
+    Some(crate::l1::content_fingerprint(&card.front, &card.back))
 }
 
 /// Appends ` <!-- id: token -->` to a card block's `## ` front line (its first
@@ -1165,17 +1203,20 @@ mod tests {
     }
 
     #[test]
-    fn open_rejects_a_non_numeric_card_key() {
+    fn open_keeps_a_card_key_of_any_charset() {
+        // Card keys are identity tokens now, so a key that isn't the canonical
+        // token charset passes through verbatim (it becomes doctor material)
+        // rather than failing the whole load, which would refuse a user's real
+        // progress.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("progress.json");
-        // A valid StoreFile shape, but a card key that isn't a u64 hash.
         std::fs::write(
             &path,
-            r#"{"version":1,"cards":{"not-a-number":{"acquired_ms":0}}}"#,
+            r#"{"version":1,"cards":{"not-a-token":{"acquired_ms":0}}}"#,
         )
         .unwrap();
-        let err = Store::open(&path).err().unwrap();
-        assert!(format!("{err}").contains("bad card key"));
+        let store = Store::open(&path).unwrap();
+        assert!(store.get("not-a-token").is_some());
     }
 
     #[test]
@@ -1185,10 +1226,10 @@ mod tests {
         let mut store = Store::open(&path).unwrap();
         assert_eq!(None, store.last_review_ms());
         store
-            .get_or_insert(1, 0)
+            .get_or_insert("1", 0)
             .record_review(100, Grade::Pass, Depth::Recall, false);
         store
-            .get_or_insert(2, 0)
+            .get_or_insert("2", 0)
             .record_review(300, Grade::Pass, Depth::Recall, false);
         assert_eq!(Some(300), store.last_review_ms());
     }
@@ -1207,13 +1248,13 @@ mod tests {
         let path = dir.path().join("progress.json");
 
         let mut store = Store::open(&path).unwrap();
-        let state = store.get_or_insert(42, 1000);
+        let state = store.get_or_insert("42", 1000);
         state.record_review(1000, Grade::Pass, Depth::Recall, false);
         store.save().unwrap();
 
         let reloaded = Store::open(&path).unwrap();
         assert_eq!(1, reloaded.len());
-        let state = reloaded.get(42).unwrap();
+        let state = reloaded.get("42").unwrap();
         assert_eq!(1, state.total_reviews);
         assert_eq!(
             vec![Review {
@@ -1232,7 +1273,7 @@ mod tests {
         let path = dir.path().join("progress.json");
 
         let mut store = Store::open(&path).unwrap();
-        let state = store.get_or_insert(42, 1000);
+        let state = store.get_or_insert("42", 1000);
         state.record_review(1000, Grade::Pass, Depth::Reconstruct, false);
         state.record_review(1000, Grade::Pass, Depth::Recall, true);
         store.save().unwrap();
@@ -1243,7 +1284,7 @@ mod tests {
         assert_eq!(1, json.matches("propagated").count());
 
         let reloaded = Store::open(&path).unwrap();
-        let history = &reloaded.get(42).unwrap().history;
+        let history = &reloaded.get("42").unwrap().history;
         assert!(!history[0].propagated);
         assert!(history[1].propagated);
         assert_eq!(Depth::Recall, history[1].depth);
@@ -1402,7 +1443,7 @@ mod tests {
         )
         .unwrap();
         let store = Store::open(&path).unwrap();
-        let state = store.get(5).unwrap();
+        let state = store.get("5").unwrap();
         assert_eq!(7, state.acquired_ms); // scheduling state survives
         assert_eq!(100, state.history[0].ts_ms);
         assert_eq!(Grade::Pass, state.history[0].grade); // old `passed` dropped → default
@@ -1413,7 +1454,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("progress.json");
         let mut store = Store::open(&path).unwrap();
-        store.get_or_insert(1, 0);
+        store.get_or_insert("1", 0);
         store.save().unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(text.contains(&format!("\"version\": {CURRENT_VERSION}")));
@@ -1423,19 +1464,19 @@ mod tests {
     fn remove_drops_the_entry() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        store.get_or_insert(42, 1000);
-        assert!(store.remove(42));
-        assert!(store.get(42).is_none());
+        store.get_or_insert("42", 1000);
+        assert!(store.remove("42"));
+        assert!(store.get("42").is_none());
         // Removing again reports nothing was there.
-        assert!(!store.remove(42));
+        assert!(!store.remove("42"));
     }
 
     #[test]
     fn clear_empties_and_counts() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        store.get_or_insert(1, 0);
-        store.get_or_insert(2, 0);
+        store.get_or_insert("1", 0);
+        store.get_or_insert("2", 0);
         assert_eq!(2, store.clear());
         assert!(store.is_empty());
         assert_eq!(0, store.clear()); // already empty
@@ -1449,7 +1490,7 @@ mod tests {
     /// of the (plain) card that `parse(parent, text)` yields. Seeds no schedule;
     /// a caller that needs the card scheduled adds a `store.cards` entry itself.
     fn virtual_card(parent: &str, text: &str) -> VirtualCard {
-        let id = crate::l1::parse_str(parent, text).unwrap()[0].id();
+        let id = crate::l1::parse_str(parent, text).unwrap()[0].id().unwrap();
         VirtualCard {
             id,
             kind: VirtualKind::Remediation,
@@ -1464,15 +1505,15 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let vc = virtual_card("rust.md", BORROW_TEXT);
-        let id = vc.id;
+        let id = vc.id.clone();
 
         store.insert_virtual(vc);
 
-        let got = store.get_virtual(id).unwrap();
+        let got = store.get_virtual(&id).unwrap();
         assert_eq!("rust.md", got.parent);
         assert_eq!(VirtualKind::Remediation, got.kind);
         assert_eq!(BORROW_TEXT, got.text);
-        assert!(store.is_virtual(id));
+        assert!(store.is_virtual(&id));
     }
 
     #[test]
@@ -1481,12 +1522,12 @@ mod tests {
         let path = dir.path().join("progress.json");
         let mut store = Store::open(&path).unwrap();
         let vc = virtual_card("rust.md", BORROW_TEXT);
-        let id = vc.id;
+        let id = vc.id.clone();
         store.insert_virtual(vc.clone());
         store.save().unwrap();
 
         let reloaded = Store::open(&path).unwrap();
-        let got = reloaded.get_virtual(id).unwrap();
+        let got = reloaded.get_virtual(&id).unwrap();
         assert_eq!(&vc, got);
     }
 
@@ -1516,7 +1557,7 @@ mod tests {
         std::fs::write(&path, "{\"version\":1,\"cards\":{}}").unwrap();
         let store = Store::open(&path).unwrap();
         assert!(store.is_empty());
-        assert!(store.get_virtual(123).is_none());
+        assert!(store.get_virtual("123").is_none());
     }
 
     #[test]
@@ -1542,7 +1583,7 @@ mod tests {
         .unwrap();
         let store = Store::open(&path).unwrap();
         // Real progress survives …
-        assert_eq!(7, store.get(5).unwrap().acquired_ms);
+        assert_eq!(7, store.get("5").unwrap().acquired_ms);
         assert!(store.deck_mastered("rust.md"));
         // … and the stale, regenerable virtual entry is dropped.
         assert_eq!(0, store.iter_virtual_cards().count());
@@ -1565,12 +1606,12 @@ mod tests {
         let store_path = dir.path().join("progress.json");
         let mut store = Store::open(&store_path).unwrap();
         let vc = virtual_card("rust.md", BORROW_TEXT);
-        let id = vc.id;
+        let id = vc.id.clone();
         store.insert_virtual(vc);
 
-        promote_virtual(&mut store, id, &deck_path).unwrap();
+        promote_virtual(&mut store, &id, &deck_path).unwrap();
 
-        assert!(store.get_virtual(id).is_none());
+        assert!(store.get_virtual(&id).is_none());
 
         let text = std::fs::read_to_string(&deck_path).unwrap();
         let cards = crate::l1::parse_str("rust.md", &text).unwrap();
@@ -1587,7 +1628,7 @@ mod tests {
         // The store was saved: reloading it from disk still shows the
         // virtual entry gone.
         let reloaded = Store::open(&store_path).unwrap();
-        assert!(reloaded.get_virtual(id).is_none());
+        assert!(reloaded.get_virtual(&id).is_none());
     }
 
     #[test]
@@ -1600,18 +1641,18 @@ mod tests {
         );
         let before =
             crate::l1::parse_str("rust.md", &std::fs::read_to_string(&deck_path).unwrap()).unwrap();
-        let ids_before: Vec<u64> = before.iter().map(|c| c.id()).collect();
+        let ids_before: Vec<String> = before.iter().map(|c| c.id().unwrap()).collect();
 
         let mut store = Store::open(dir.path().join("progress.json")).unwrap();
         let vc = virtual_card("rust.md", BORROW_TEXT);
-        let id = vc.id;
+        let id = vc.id.clone();
         store.insert_virtual(vc);
 
-        promote_virtual(&mut store, id, &deck_path).unwrap();
+        promote_virtual(&mut store, &id, &deck_path).unwrap();
 
         let after =
             crate::l1::parse_str("rust.md", &std::fs::read_to_string(&deck_path).unwrap()).unwrap();
-        let ids_after: Vec<u64> = after.iter().take(2).map(|c| c.id()).collect();
+        let ids_after: Vec<String> = after.iter().take(2).map(|c| c.id().unwrap()).collect();
         assert_eq!(ids_before, ids_after);
         assert_eq!(3, after.len()); // the two originals plus the promoted card
     }
@@ -1624,7 +1665,7 @@ mod tests {
         let store_path = dir.path().join("progress.json");
         let mut store = Store::open(&store_path).unwrap();
 
-        let result = promote_virtual(&mut store, 999, &deck_path);
+        let result = promote_virtual(&mut store, "999", &deck_path);
 
         assert!(result.is_err());
         assert_eq!(deck_before, std::fs::read_to_string(&deck_path).unwrap());
@@ -1652,13 +1693,13 @@ mod tests {
         let text = "## Complete the quote <!-- id: vcz1 -->\nTo \\cloze{be} or not to \\cloze{be}\n> Hamlet\n";
         let cards = crate::l1::parse_str("rust.md", text).unwrap();
         assert_eq!(2, cards.len());
-        let id0 = cards[0].id();
-        let id1 = cards[1].id();
+        let id0 = cards[0].id().unwrap();
+        let id1 = cards[1].id().unwrap();
         assert_ne!(id0, id1, "the two holes must have distinct ids");
 
-        for id in [id0, id1] {
+        for id in [id0.clone(), id1.clone()] {
             store.insert_virtual(VirtualCard {
-                id,
+                id: id.clone(),
                 kind: VirtualKind::Remediation,
                 parent: "rust.md".to_string(),
                 text: text.to_string(),
@@ -1666,19 +1707,19 @@ mod tests {
             });
             // Seed a drilled schedule for each hole — promote must preserve these.
             store
-                .get_or_insert(id, 1000)
+                .get_or_insert(&id, 1000)
                 .record_review(1000, Grade::Pass, Depth::Recall, false);
         }
 
-        promote_virtual(&mut store, id0, &deck_path).unwrap();
+        promote_virtual(&mut store, &id0, &deck_path).unwrap();
 
         // Both sidecar entries are gone — no orphan left for the sibling hole.
-        assert!(store.get_virtual(id0).is_none());
-        assert!(store.get_virtual(id1).is_none());
+        assert!(store.get_virtual(&id0).is_none());
+        assert!(store.get_virtual(&id1).is_none());
         // Both schedules survive: the promoted deck cards inherit their drilled
         // history for free.
-        assert!(store.get(id0).is_some());
-        assert!(store.get(id1).is_some());
+        assert!(store.get(&id0).is_some());
+        assert!(store.get(&id1).is_some());
 
         // The deck file gained the cloze card (both holes, since a cloze
         // promotes as one block).
@@ -1690,7 +1731,7 @@ mod tests {
         // entry is already gone) instead of re-appending the block and
         // duplicating ids in the deck file.
         let deck_before_second = std::fs::read_to_string(&deck_path).unwrap();
-        let second = promote_virtual(&mut store, id1, &deck_path);
+        let second = promote_virtual(&mut store, &id1, &deck_path);
         assert!(second.is_err());
         assert_eq!(
             deck_before_second,
@@ -1712,7 +1753,7 @@ mod tests {
         );
         let mut store = Store::open(dir.path().join("progress.json")).unwrap();
         let vc = virtual_card("rust.md", BORROW_TEXT);
-        let id = vc.id;
+        let id = vc.id.clone();
         store.insert_virtual(vc);
 
         // Drill the schedule in `store.cards`, not on the virtual entry.
@@ -1730,11 +1771,11 @@ mod tests {
             due_ms: 900_000,
             learning_goods: 2,
         });
-        *store.get_or_insert(id, 1000) = state.clone();
+        *store.get_or_insert(&id, 1000) = state.clone();
 
-        promote_virtual(&mut store, id, &deck_path).unwrap();
+        promote_virtual(&mut store, &id, &deck_path).unwrap();
 
-        assert!(store.get_virtual(id).is_none());
+        assert!(store.get_virtual(&id).is_none());
 
         let text = std::fs::read_to_string(&deck_path).unwrap();
         let cards = crate::l1::parse_str("rust.md", &text).unwrap();
@@ -1744,8 +1785,10 @@ mod tests {
             .expect("promoted card present");
         // The id was unified at the source: the appended deck card hashes to the
         // very id the schedule was already keyed under.
-        assert_eq!(id, promoted.id());
-        let carried = store.get(promoted.id()).expect("schedule carried over");
+        assert_eq!(Some(id), promoted.id());
+        let carried = store
+            .get(&promoted.id().unwrap())
+            .expect("schedule carried over");
         assert_eq!(&state, carried);
     }
 
@@ -1755,9 +1798,11 @@ mod tests {
         let path = dir.path().join("progress.json");
         let mut store = Store::open(&path).unwrap();
         let text = "## capital of france <!-- id: cap1 -->\nParis\n".to_string();
-        let id = crate::l1::parse_str("geo.md", &text).unwrap()[0].id();
+        let id = crate::l1::parse_str("geo.md", &text).unwrap()[0]
+            .id()
+            .unwrap();
         store.insert_virtual(VirtualCard {
-            id,
+            id: id.clone(),
             kind: VirtualKind::Tutor,
             parent: "geo.md".to_string(),
             text,
@@ -1766,7 +1811,7 @@ mod tests {
         store.save().unwrap();
 
         let reopened = Store::open(&path).unwrap();
-        let vc = reopened.get_virtual(id).expect("tutor card should load");
+        let vc = reopened.get_virtual(&id).expect("tutor card should load");
         assert_eq!(vc.kind, VirtualKind::Tutor);
     }
 
@@ -1825,7 +1870,7 @@ mod tests {
     fn per_depth_schedules_and_recognized_flag_survive_save_reload() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("store.json")).unwrap();
-        let st = store.get_or_insert(7, 1_000);
+        let st = store.get_or_insert("7", 1_000);
         *st.schedule_slot(Depth::Reconstruct).unwrap() = Some(FsrsState {
             stability: 4.5,
             ..Default::default()
@@ -1834,7 +1879,7 @@ mod tests {
         st.record_review(2_000, Grade::Pass, Depth::Reconstruct, false);
         store.save().unwrap();
         let reloaded = Store::open(dir.path().join("store.json")).unwrap();
-        let st = reloaded.get(7).unwrap();
+        let st = reloaded.get("7").unwrap();
         assert_eq!(
             Some(4.5),
             st.schedule(Depth::Reconstruct).map(|f| f.stability)
@@ -1851,7 +1896,7 @@ mod tests {
         let path = dir.path().join("store.json");
         std::fs::write(&path, json).unwrap();
         let store = Store::open(&path).unwrap();
-        let st = store.get(7).unwrap();
+        let st = store.get("7").unwrap();
         assert_eq!(5, st.acquired_ms, "known fields still load");
         assert!(
             st.schedule(Depth::Recall).is_none(),
@@ -1877,13 +1922,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("progress.json");
         let mut store = Store::open(&path).unwrap();
-        let st = store.get_or_insert(7, 0);
+        let st = store.get_or_insert("7", 0);
         st.record_review(100, Grade::Partial, Depth::Recall, false);
         st.record_review(200, Grade::Fail, Depth::Recall, false);
         store.save().unwrap();
 
         let reloaded = Store::open(&path).unwrap();
-        let history = &reloaded.get(7).unwrap().history;
+        let history = &reloaded.get("7").unwrap().history;
         assert_eq!(Grade::Partial, history[0].grade);
         assert_eq!(Grade::Fail, history[1].grade);
     }
@@ -1893,7 +1938,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("progress.json");
         let mut store = Store::open(&path).unwrap();
-        store.get_or_insert(9, 0).recall = Some(FsrsState {
+        store.get_or_insert("9", 0).recall = Some(FsrsState {
             stability: 12.5,
             difficulty: 6.0,
             reps: 3,
@@ -1906,7 +1951,7 @@ mod tests {
         });
         store.save().unwrap();
         let reloaded = Store::open(&path).unwrap();
-        let f = reloaded.get(9).unwrap().recall.unwrap();
+        let f = reloaded.get("9").unwrap().recall.unwrap();
         assert_eq!(2000, f.due_ms);
         assert_eq!(1, f.learning_goods);
     }
@@ -1926,7 +1971,7 @@ mod tests {
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let cards = two_cards();
         for card in &cards {
-            store.get_or_insert(card.id(), 0).recall = Some(FsrsState {
+            store.get_or_insert(&card.id().unwrap(), 0).recall = Some(FsrsState {
                 stability: 30.0,
                 ..Default::default()
             });
@@ -1948,7 +1993,7 @@ mod tests {
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let cards = two_cards();
         for card in &cards {
-            store.get_or_insert(card.id(), 0).recall = Some(FsrsState {
+            store.get_or_insert(&card.id().unwrap(), 0).recall = Some(FsrsState {
                 stability: 30.0,
                 ..Default::default()
             });
@@ -1957,7 +2002,7 @@ mod tests {
         assert_eq!(Some(1_000), store.badge_earned("t.md", Depth::Recall));
 
         // One card lapses back below the mature line.
-        store.get_or_insert(cards[0].id(), 0).recall = Some(FsrsState {
+        store.get_or_insert(&cards[0].id().unwrap(), 0).recall = Some(FsrsState {
             stability: 3.0,
             ..Default::default()
         });
@@ -1972,13 +2017,17 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let cards = two_cards();
-        store.get_or_insert(cards[0].id(), 0).recognized_ms = Some(500);
+        store
+            .get_or_insert(&cards[0].id().unwrap(), 0)
+            .recognized_ms = Some(500);
         assert!(
             !badge_solid(&cards, &store, Depth::Recognize),
             "second card not yet recognized"
         );
 
-        store.get_or_insert(cards[1].id(), 0).recognized_ms = Some(600);
+        store
+            .get_or_insert(&cards[1].id().unwrap(), 0)
+            .recognized_ms = Some(600);
         assert!(badge_solid(&cards, &store, Depth::Recognize));
     }
 
@@ -2011,16 +2060,42 @@ mod tests {
             &HashSet::new(),
         )
         .unwrap();
-        assert!(store.is_virtual(id));
-        assert!(store.get_virtual(id).is_some());
+        assert!(store.is_virtual(&id));
+        assert!(store.get_virtual(&id).is_some());
         // The seeded schedule (so it enters the queue as a new card) is exercised
         // end-to-end by the tests/api.rs round-trip in Task 9, where drillability
         // is asserted against the running server.
     }
 
-    // The duplicate-mint rejection is DELETED this task: every mint carries a
-    // fresh random token, so the recomputed-id dedup is vacuous until the
-    // id-flip task respecs it as canonical-content comparison.
+    #[test]
+    fn a_double_tutor_mint_reports_duplicate() {
+        // The dedup is by canonical content (§7), not id: a mint carries a fresh
+        // random token, so minting the same card twice is caught by its content
+        // fingerprint, not a recomputed id.
+        use std::collections::HashSet;
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let empty = HashSet::new();
+        mint_tutor_card(
+            &mut store,
+            "geo.md",
+            "capital of spain?",
+            &["Madrid".to_string()],
+            100,
+            &empty,
+        )
+        .unwrap();
+        let err = mint_tutor_card(
+            &mut store,
+            "geo.md",
+            "capital of spain?",
+            &["Madrid".to_string()],
+            200,
+            &empty,
+        )
+        .unwrap_err();
+        assert!(matches!(err, MintError::Duplicate));
+    }
 
     #[test]
     fn mint_tutor_card_rejects_an_empty_side() {
@@ -2110,10 +2185,24 @@ mod tests {
         )
     }
 
-    // The remediation dedup tests (regenerate-dedupes, dedupe-against-deck,
-    // revive-retired) are DELETED this task: fresh tokens per run make the
-    // recomputed-id dedup vacuous until the id-flip task respecs it as
-    // canonical-content comparison.
+    #[test]
+    fn failing_the_same_exam_twice_yields_zero_duplicate_gap_cards() {
+        // Remediation dedups by canonical content (§7): re-running the same gap
+        // text (a fresh random token each time) is recognized as already stored,
+        // so nothing new is created the second time.
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let text = "## Why does X happen?\nbecause of Y\n";
+
+        let first = store_remediation(&mut store, "d.md", text, 1_000, None).unwrap();
+        assert_eq!(1, first, "the first failure creates the gap card");
+        let second = store_remediation(&mut store, "d.md", text, 2_000, None).unwrap();
+        assert_eq!(
+            0, second,
+            "the same gap again is a content dupe, not a new card"
+        );
+        assert_eq!(1, store.virtual_cards_for("d.md").len());
+    }
 
     #[test]
     fn distinct_answer_cloze_holes_stay_distinct() {
@@ -2164,19 +2253,19 @@ mod tests {
                 let synth = crate::l1::parse_str(&vc.parent, &vc.text)
                     .unwrap()
                     .into_iter()
-                    .find(|c| c.id() == vc.id)
+                    .find(|c| c.id().as_deref() == Some(vc.id.as_str()))
                     .expect("synth reproduces the same id");
-                assert_eq!(vc.id, synth.id());
+                assert_eq!(vc.id, synth.id().unwrap());
             }
 
             // PROMOTE one card: append its block to the deck, re-parse the whole
             // file, and confirm the matching card carries the same id.
-            let vid = virtuals[0].id;
-            promote_virtual(&mut store, vid, &deck_path).unwrap();
+            let vid = virtuals[0].id.clone();
+            promote_virtual(&mut store, &vid, &deck_path).unwrap();
             let deck = crate::l1::parse_str("d.md", &std::fs::read_to_string(&deck_path).unwrap())
                 .unwrap();
             assert!(
-                deck.iter().any(|c| c.id() == vid),
+                deck.iter().any(|c| c.id().as_deref() == Some(vid.as_str())),
                 "the appended deck card reproduces the id"
             );
         }

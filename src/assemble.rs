@@ -238,7 +238,7 @@ pub fn synthesize_virtual(vc: &VirtualCard, subject: &Arc<str>, line: usize) -> 
     let mut card = l1::parse_str(subject, &vc.text)
         .ok()?
         .into_iter()
-        .find(|c| c.id() == vc.id)?;
+        .find(|c| c.id().as_deref() == Some(vc.id.as_str()))?;
     card.line = line;
     Some(card)
 }
@@ -279,6 +279,7 @@ pub fn load_decks(
             deck.subject.clone(),
             DeckInfo {
                 path: deck.path.clone(),
+                deck_token: deck.deck_token.clone(),
                 // Ask-Claude references include the deck's `% link:`s and any
                 // URL `% source:` (a source doubles as a reference).
                 links: deck.reference_links(),
@@ -303,11 +304,11 @@ pub fn load_decks(
 fn resolve_topology<'a>(
     name: Option<&str>,
     augment: &'a AugmentCache,
-    deck_ids: &std::collections::HashSet<u64>,
+    deck_tokens: &std::collections::HashSet<String>,
 ) -> Result<Option<&'a Topology>> {
     // Only this deck's topologies — a shared cache (decks sharing a store) holds
     // others', which must not be auto-applied or named here.
-    let mine = augment.topologies_for(deck_ids);
+    let mine = augment.topologies_for(deck_tokens);
     match name {
         Some(name) => match mine.into_iter().find(|t| t.name == name) {
             Some(topology) => Ok(Some(topology)),
@@ -400,7 +401,7 @@ pub fn exclude_unstamped(cards: Vec<Card>, label: &str) -> Vec<Card> {
     let before = cards.len();
     let kept: Vec<Card> = cards
         .into_iter()
-        .filter(|card| card.id_string().is_some())
+        .filter(|card| card.id().is_some())
         .collect();
     let dropped = before - kept.len();
     if dropped > 0 {
@@ -490,9 +491,17 @@ pub fn select(
     // One deck per session, so the label is the deck's own subject.
     let label = deck_label;
 
-    // Every card id in this deck — used to pick out *this* deck's topologies from
-    // a cache that may be shared with other decks (one store).
-    let deck_ids: std::collections::HashSet<u64> = cards.iter().map(|c| c.id()).collect();
+    // The tokens of the decks in this selection — used to pick out *their*
+    // topologies from a cache that may be shared with other decks (one store).
+    let deck_tokens: std::collections::HashSet<String> = decks
+        .values()
+        .filter_map(|d| d.deck_token.clone())
+        .collect();
+    // This deck's authored-card ids, to keep an injected virtual card from
+    // shadowing a real card it collides with (a post-promote belt-and-suspenders
+    // guard). Computed before the virtual injection below adds to `cards`.
+    let deck_card_ids: std::collections::HashSet<String> =
+        cards.iter().filter_map(Card::id).collect();
 
     // Merge in any AI-generated notes from the sidecar cache (`alix deck augment
     // --target notes`) — shown with the card's own deck note on reveal. (Question
@@ -503,8 +512,12 @@ pub fn select(
         // Reshape first (re-renders the deck note, front, answer, mode) …
         augment.apply_format(card);
         // … then stack the notes-target trivia on top of the reshaped note.
-        if let Some(note) = augment.note(card.id()) {
-            card.append_note(&[note.to_string()]);
+        if let Some(note) = card
+            .id()
+            .and_then(|id| augment.note(&id))
+            .map(str::to_string)
+        {
+            card.append_note(&[note]);
         }
     }
 
@@ -512,7 +525,7 @@ pub fn select(
     // a session-ready order. The resolved name travels on `SessionBuild` so the
     // web frontend can show the "why this card follows the last" cue from the
     // same topology.
-    let topology = resolve_topology(topology_sel, &augment, &deck_ids)?;
+    let topology = resolve_topology(topology_sel, &augment, &deck_tokens)?;
     let topology_name = topology.map(|t| t.name.clone());
     let topology_order = topology.map(|t| TopologyOrder::from_walk(&t.walk));
 
@@ -528,8 +541,8 @@ pub fn select(
                 topology.name
             );
         };
-        let ids: std::collections::HashSet<u64> = region_ids.iter().copied().collect();
-        cards.retain(|c| ids.contains(&c.id()));
+        let ids: std::collections::HashSet<String> = region_ids.iter().cloned().collect();
+        cards.retain(|c| c.id().is_some_and(|id| ids.contains(&id)));
     }
 
     // A workspace member drills under that workspace's `alix.local.toml` pacing
@@ -555,8 +568,8 @@ pub fn select(
         for (k, vc) in store
             .virtual_cards_for(subject.as_ref())
             .into_iter()
-            .filter(|v| !session::is_retired_id(v.id, store, review.retire_after_days))
-            .filter(|v| !deck_ids.contains(&v.id)) // collision belt-and-suspenders
+            .filter(|v| !session::is_retired_id(&v.id, store, review.retire_after_days))
+            .filter(|v| !deck_card_ids.contains(&v.id)) // collision belt-and-suspenders
             .enumerate()
         {
             if let Some(mut card) = synthesize_virtual(vc, &subject, VIRTUAL_LINE_BASE + k) {
@@ -564,8 +577,12 @@ pub fn select(
                 // (§8.1) — this loop runs after that one, so it must repeat the
                 // same two steps rather than widening the earlier loop's range.
                 augment.apply_format(&mut card);
-                if let Some(note) = augment.note(card.id()) {
-                    card.append_note(&[note.to_string()]);
+                if let Some(note) = card
+                    .id()
+                    .and_then(|id| augment.note(&id))
+                    .map(str::to_string)
+                {
+                    card.append_note(&[note]);
                 }
                 cards.push(card);
             }
@@ -708,8 +725,12 @@ pub fn browse(paths: Vec<PathBuf>) -> Result<CardsBuild> {
         // Reshape first (re-renders the deck note, front, answer, mode) …
         augment.apply_format(card);
         // … then stack the notes-target trivia on top of the reshaped note.
-        if let Some(note) = augment.note(card.id()) {
-            card.append_note(&[note.to_string()]);
+        if let Some(note) = card
+            .id()
+            .and_then(|id| augment.note(&id))
+            .map(str::to_string)
+        {
+            card.append_note(&[note]);
         }
     }
 
@@ -758,7 +779,7 @@ mod tests {
 
         assert_eq!(2, cards.len(), "both cards survive with real ids");
         assert!(
-            cards.iter().all(|c| c.id_string().is_some() && c.id() != 0),
+            cards.iter().all(|c| c.id().is_some()),
             "every returned card carries a minted token"
         );
 
@@ -936,15 +957,17 @@ it reads line two\n\
     /// fresh schedule seeded at `t=0` (so it's due, not treated as unseen).
     fn insert_virtual_card(store: &mut Store, subject: &str) {
         let text = "## virtual front <!-- id: vq1 -->\nvirtual back\n".to_string();
-        let id = crate::l1::parse_str(subject, &text).unwrap()[0].id();
+        let id = crate::l1::parse_str(subject, &text).unwrap()[0]
+            .id()
+            .unwrap();
         store.insert_virtual(VirtualCard {
-            id,
+            id: id.clone(),
             kind: VirtualKind::Remediation,
             parent: subject.to_string(),
             text,
             created_ms: 0,
         });
-        store.get_or_insert(id, 0);
+        store.get_or_insert(&id, 0);
     }
 
     #[test]
@@ -1005,7 +1028,9 @@ it reads line two\n\
     fn region_focus_excludes_virtual_cards() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("rust.md");
-        std::fs::write(&path, "## q1 <!-- id: q1 -->\na1\n").unwrap();
+        // A frontmatter `id:` gives the deck a stable token, which the topology
+        // is now bound to (topologies scope by owner token, not card overlap).
+        std::fs::write(&path, "---\nid: dtok1\n---\n## q1 <!-- id: q1 -->\na1\n").unwrap();
         // Not a workspace, so pass an explicit `--store`-style override — a
         // bare `None` here would fall through to the real global data dir.
         let mut store = store_for(
@@ -1015,19 +1040,21 @@ it reads line two\n\
         .unwrap();
 
         let deck = Deck::load(&path).unwrap();
-        let card_id = deck.cards[0].id();
+        let card_id = deck.cards[0].id().unwrap();
+        let deck_token = deck.deck_token.clone().unwrap();
 
-        // Cache a one-region topology covering this deck's one card.
+        // Cache a one-region topology owned by this deck (matched by its token).
         let mut cache = AugmentCache::open(augment::augment_path_for(store.path()));
         cache.add_topology(Topology {
             name: "auto".to_string(),
             principle: "test".to_string(),
             edges: vec![],
-            walk: vec![card_id],
+            walk: vec![card_id.clone()],
             regions: vec![augment::TopologyRegion {
                 name: "r1".to_string(),
                 cards: vec![card_id],
             }],
+            deck_token,
         });
         cache.save().unwrap();
 
@@ -1058,9 +1085,11 @@ it reads line two\n\
         // `apply_format` itself — the "free" half of augment-for-virtuals (§8.1).
         let subject: Arc<str> = Arc::from("rust.md");
         let text = "## List the parts <!-- id: vlist -->\nA, B, C\n".to_string();
-        let id = crate::l1::parse_str(&subject, &text).unwrap()[0].id();
+        let id = crate::l1::parse_str(&subject, &text).unwrap()[0]
+            .id()
+            .unwrap();
         let vc = VirtualCard {
-            id,
+            id: id.clone(),
             kind: VirtualKind::Remediation,
             parent: subject.to_string(),
             text,
@@ -1071,7 +1100,7 @@ it reads line two\n\
         let mut cache =
             AugmentCache::open(std::env::temp_dir().join("nonexistent-augment-virtual.json"));
         cache.set_format(
-            id,
+            &id,
             augment::Format {
                 front: Some("Name the parts".to_string()),
                 back: vec!["A".to_string(), "B".to_string(), "C".to_string()],
@@ -1083,7 +1112,7 @@ it reads line two\n\
 
         assert_eq!("Name the parts", synth.front);
         assert_eq!(["A", "B", "C"], *synth.back_for_display());
-        assert_eq!(id, synth.id(), "reshaping must not change identity");
+        assert_eq!(Some(id), synth.id(), "reshaping must not change identity");
     }
 
     #[test]
@@ -1107,11 +1136,12 @@ it reads line two\n\
             "## virtual front <!-- id: vq1 -->\nvirtual back\n",
         )
         .unwrap()[0]
-            .id();
+            .id()
+            .unwrap();
 
         let mut cache = AugmentCache::open(augment::augment_path_for(store.path()));
         cache.set_format(
-            virtual_id,
+            &virtual_id,
             augment::Format {
                 front: Some("Reshaped virtual front".to_string()),
                 back: vec!["Reshaped virtual back".to_string()],
@@ -1135,7 +1165,7 @@ it reads line two\n\
             .session
             .cards()
             .iter()
-            .find(|c| c.id() == virtual_id)
+            .find(|c| c.id().as_deref() == Some(virtual_id.as_str()))
             .expect("the injected virtual card should be in the session");
         assert_eq!("Reshaped virtual front", synth.front);
         assert_eq!(["Reshaped virtual back"], *synth.back_for_display());
@@ -1183,9 +1213,9 @@ it reads line two\n\
 
         // Seed the augment cache with a distractor set for this deck's one
         // card — the real id, read from the loaded deck, never hand-computed.
-        let card_id = Deck::load(&deck_path).unwrap().cards[0].id();
+        let card_id = Deck::load(&deck_path).unwrap().cards[0].id().unwrap();
         let mut cache = AugmentCache::open(augment::augment_path_for(&store_path));
-        cache.set_distractors(card_id, vec!["w1".into(), "w2".into(), "w3".into()]);
+        cache.set_distractors(&card_id, vec!["w1".into(), "w2".into(), "w3".into()]);
         cache.save().unwrap();
 
         // No explicit depth and no prior session: `{#recognize-smart-default}`
@@ -1256,7 +1286,7 @@ it reads line two\n\
 
         // Without a cached format, browse shows the raw deck answer.
         let raw = browse(vec![path.clone()]).unwrap();
-        let id = raw.cards[0].id();
+        let id = raw.cards[0].id().unwrap();
         assert_eq!(raw.cards[0].back_for_display(), ["A, B, C"]);
 
         // Cache a format reshape (and a notes-target trivia) for that card in the
@@ -1264,7 +1294,7 @@ it reads line two\n\
         let store = store_for(std::slice::from_ref(&path), None).unwrap();
         let mut cache = AugmentCache::open(augment::augment_path_for(store.path()));
         cache.set_format(
-            id,
+            &id,
             augment::Format {
                 front: Some("Name the parts".to_string()),
                 back: vec!["A".to_string(), "B".to_string(), "C".to_string()],
@@ -1272,7 +1302,7 @@ it reads line two\n\
                 mode: None,
             },
         );
-        cache.set_note(id, "the parts are well known".to_string());
+        cache.set_note(&id, "the parts are well known".to_string());
         cache.save().unwrap();
 
         // Browsing now shows the reshaped front/answer and the trivia note.
@@ -1302,9 +1332,11 @@ it reads line two\n\
         let store_path = dir.path().join("p.json");
         let mut store = open_store(Some(store_path.clone())).unwrap();
         // Seed the sidecar select will open, next to the store.
-        let id = crate::deck::Deck::load(&deck).unwrap().cards[0].id();
+        let id = crate::deck::Deck::load(&deck).unwrap().cards[0]
+            .id()
+            .unwrap();
         let mut cache = AugmentCache::open(augment::augment_path_for(&store_path));
-        cache.set_note(id, "seeded".to_string());
+        cache.set_note(&id, "seeded".to_string());
         cache.save().unwrap();
 
         match select(
@@ -1315,7 +1347,7 @@ it reads line two\n\
         )
         .unwrap()
         {
-            Selected::Review(build) => assert_eq!(build.augment.note(id), Some("seeded")),
+            Selected::Review(build) => assert_eq!(build.augment.note(&id), Some("seeded")),
             Selected::Walk(_) => panic!("a fact deck must review"),
         }
     }
@@ -1329,9 +1361,11 @@ it reads line two\n\
         let deck = dir.path().join("f.md");
         std::fs::write(&deck, "## q <!-- id: q1 -->\na\n").unwrap();
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
-        let id = crate::deck::Deck::load(&deck).unwrap().cards[0].id();
+        let id = crate::deck::Deck::load(&deck).unwrap().cards[0]
+            .id()
+            .unwrap();
         let t0 = 1_000_000;
-        store.get_or_insert(id, t0);
+        store.get_or_insert(&id, t0);
 
         let mut config = test_config();
         config.review.acquire_cooldown_ms = 1_000;
@@ -1357,9 +1391,11 @@ it reads line two\n\
         // Acquire the card at t0: it cools until t0 + DEFAULT_ACQUIRE_COOLDOWN_MS,
         // so which side of that line the injected clock falls on decides
         // whether select finds anything to serve.
-        let id = crate::deck::Deck::load(&deck).unwrap().cards[0].id();
+        let id = crate::deck::Deck::load(&deck).unwrap().cards[0]
+            .id()
+            .unwrap();
         let t0 = 1_000_000;
-        store.get_or_insert(id, t0);
+        store.get_or_insert(&id, t0);
 
         let early = SelectOptions {
             now_ms: Some(t0 + 30_000),
@@ -1397,11 +1433,13 @@ it reads line two\n\
         let deck = dir.path().join("m.md");
         std::fs::write(&deck, "## q <!-- id: q1 -->\na\n").unwrap();
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
-        let id = crate::deck::Deck::load(&deck).unwrap().cards[0].id();
+        let id = crate::deck::Deck::load(&deck).unwrap().cards[0]
+            .id()
+            .unwrap();
 
         // A mature Review-state card that would schedule ~months uncapped.
         let now = crate::time::now_ms();
-        store.get_or_insert(id, now).recall = Some(crate::store::FsrsState {
+        store.get_or_insert(&id, now).recall = Some(crate::store::FsrsState {
             stability: 200.0,
             difficulty: 5.0,
             state: 2,
@@ -1434,7 +1472,7 @@ it reads line two\n\
             .grade(&mut store, crate::scheduler::Grade::Pass, now);
 
         let ceiling = crate::time::end_of_local_day_ms(deadline);
-        let due = store.get(id).unwrap().recall.unwrap().due_ms;
+        let due = store.get(&id).unwrap().recall.unwrap().due_ms;
         assert!(
             due <= ceiling,
             "due {due} must respect the deadline ceiling {ceiling}"
@@ -1461,13 +1499,7 @@ it reads line two\n\
         let text = std::fs::read_to_string(&deck).unwrap();
         assert_eq!(2, text.matches("<!-- id: ").count(), "{text}");
         assert!(!build.session.cards().is_empty());
-        assert!(
-            build
-                .session
-                .cards()
-                .iter()
-                .all(|c| c.id_string().is_some() && c.id() != 0)
-        );
+        assert!(build.session.cards().iter().all(|c| c.id().is_some()));
     }
 
     #[test]
@@ -1496,6 +1528,6 @@ it reads line two\n\
         };
         let cards = build.session.cards();
         assert_eq!(1, cards.len(), "the tokenless card must be excluded");
-        assert_eq!(Some("q1".to_string()), cards[0].id_string());
+        assert_eq!(Some("q1".to_string()), cards[0].id());
     }
 }

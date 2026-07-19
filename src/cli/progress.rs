@@ -56,7 +56,7 @@ pub(crate) fn stats(args: DeckArgs) -> Result<()> {
         let mut reviews = 0u32;
         let mut passes = 0u32;
         for card in &deck.cards {
-            if let Some(state) = store.get(card.id()) {
+            if let Some(state) = card.id().and_then(|id| store.get(&id)) {
                 // Retired cards are resting, so they don't count as due (they
                 // still count toward the review totals below).
                 if !alix::session::is_retired(card, &store, review.retire_after_days) {
@@ -133,31 +133,33 @@ pub(crate) fn list(args: DeckArgs) -> Result<()> {
         let scheduler = Fsrs::new(review.retention, review.acquire_cooldown_ms);
         println!("{}", deck.display_name());
         for card in &deck.cards {
-            let (recall_label, recon_label, recognized_mark, due) = match store.get(card.id()) {
-                Some(state) => {
-                    // Retired cards rest until `alix reset`; their due time is
-                    // moot, so say so instead of showing a misleading interval.
-                    let due = if alix::session::is_retired(card, &store, review.retire_after_days) {
-                        "resting".to_string()
-                    } else {
-                        let due = scheduler.due_at(state, Depth::Recall);
-                        if due <= now {
-                            "due now".to_string()
+            let (recall_label, recon_label, recognized_mark, due) =
+                match card.id().and_then(|id| store.get(&id)) {
+                    Some(state) => {
+                        // Retired cards rest until `alix reset`; their due time is
+                        // moot, so say so instead of showing a misleading interval.
+                        let due =
+                            if alix::session::is_retired(card, &store, review.retire_after_days) {
+                                "resting".to_string()
+                            } else {
+                                let due = scheduler.due_at(state, Depth::Recall);
+                                if due <= now {
+                                    "due now".to_string()
+                                } else {
+                                    format!("due in {}", humanize_ms(due - now))
+                                }
+                            };
+                        let recall_label = state_label(state.recall.as_ref().map(|f| f.state));
+                        let recon_label = state_label(state.reconstruct.as_ref().map(|f| f.state));
+                        let recognized_mark = if state.recognized_ms.is_some() {
+                            "✓"
                         } else {
-                            format!("due in {}", humanize_ms(due - now))
-                        }
-                    };
-                    let recall_label = state_label(state.recall.as_ref().map(|f| f.state));
-                    let recon_label = state_label(state.reconstruct.as_ref().map(|f| f.state));
-                    let recognized_mark = if state.recognized_ms.is_some() {
-                        "✓"
-                    } else {
-                        " "
-                    };
-                    (recall_label, recon_label, recognized_mark, due)
-                }
-                None => (state_label(None), state_label(None), " ", "-".to_string()),
-            };
+                            " "
+                        };
+                        (recall_label, recon_label, recognized_mark, due)
+                    }
+                    None => (state_label(None), state_label(None), " ", "-".to_string()),
+                };
             let front: String = card.front.chars().take(60).collect();
             println!("  [{recall_label:>10}|{recon_label:>10}]{recognized_mark} {front:<60} {due}");
         }
@@ -166,21 +168,26 @@ pub(crate) fn list(args: DeckArgs) -> Result<()> {
 }
 
 /// `(id, front)` pairs to reset from `cards`: all of them when `card` is
-/// `None`, otherwise only the matches. A numeric `card` matches by
-/// `Card::id()`; any other text matches cards whose front contains it
-/// (case-insensitive) — a cloze card's holes share a front, so that resets the
-/// whole card.
-fn select_reset_ids(cards: &[Card], card: Option<&str>) -> Vec<(u64, String)> {
-    let by_id = card.and_then(|c| c.parse::<u64>().ok());
-    let needle = card.map(str::to_lowercase);
-    cards
-        .iter()
-        .filter(|c| match (by_id, &needle) {
-            (Some(id), _) => c.id() == id,
+/// `None`, otherwise only the matches. A `card` argument that **exactly** equals
+/// one of these cards' ids resets that card; any other text matches cards whose
+/// front contains it (case-insensitive) — a cloze card's holes share a front, so
+/// that resets the whole card. (A card's id is its token now, not a number, so
+/// there is no numeric shortcut.)
+fn select_reset_ids(cards: &[Card], card: Option<&str>) -> Vec<(String, String)> {
+    let stamped: Vec<(String, &Card)> = cards.iter().filter_map(|c| Some((c.id()?, c))).collect();
+    // An exact id match takes priority; it only fires when some card actually
+    // carries that id, so an ordinary front-substring can never be mistaken for
+    // an id.
+    let exact = card.filter(|q| stamped.iter().any(|(id, _)| id == q));
+    let needle = card.filter(|_| exact.is_none()).map(str::to_lowercase);
+    stamped
+        .into_iter()
+        .filter(|(id, c)| match (exact, &needle) {
+            (Some(want), _) => id.as_str() == want,
             (None, Some(text)) => c.front.to_lowercase().contains(text),
             (None, None) => true,
         })
-        .map(|c| (c.id(), c.front.clone()))
+        .map(|(id, c)| (id, c.front.clone()))
         .collect()
 }
 
@@ -216,12 +223,17 @@ pub(crate) fn reset(args: ResetArgs) -> Result<()> {
         return Ok(());
     }
 
-    // A numeric `--card` with no target can be removed without loading anything.
-    let numeric_id = args.card.as_deref().and_then(|c| c.parse::<u64>().ok());
-    if let Some(id) = numeric_id.filter(|_| args.target.is_none()) {
+    // A `--card <id>` with no target can be removed without loading anything: a
+    // token-shaped id (valid charset, optional `-N`/`-r` suffix) is treated as an
+    // exact card id. Anything else needs a target deck to front-match against.
+    let exact_id = args.card.as_deref().filter(|c| {
+        alix::token::parse_card_id(c).is_some_and(|(token, _, _)| alix::token::is_valid(token))
+    });
+    if let Some(id) = exact_id.filter(|_| args.target.is_none()) {
+        let id = id.to_string();
         return reset_ids(
             &mut store,
-            vec![(id, String::new())],
+            vec![(id.clone(), String::new())],
             format!("card {id}"),
             args.card.as_deref(),
             false,
@@ -266,21 +278,22 @@ pub(crate) fn reset(args: ResetArgs) -> Result<()> {
             .map(Deck::load)
             .collect::<Result<Vec<_>, _>>()?;
 
-        let present: Vec<(u64, String)> = decks_full
+        let present: Vec<(String, String)> = decks_full
             .iter()
             .flat_map(|deck| &deck.cards)
-            .filter(|c| store.get(c.id()).is_some())
-            .map(|c| (c.id(), c.front.clone()))
+            .filter_map(|c| Some((c.id()?, c)))
+            .filter(|(id, _)| store.get(id).is_some())
+            .map(|(id, c)| (id, c.front.clone()))
             .collect();
         let mastered = decks_full
             .iter()
             .any(|deck| store.deck_mastered(&deck.subject));
         // A virtual card's content is in the sidecar and its schedule in
         // `store.cards` (both keyed by the same id) — a reset drops both.
-        let virtual_ids: Vec<u64> = decks_full
+        let virtual_ids: Vec<String> = decks_full
             .iter()
             .flat_map(|deck| store.virtual_cards_for(&deck.subject))
-            .map(|vc| vc.id)
+            .map(|vc| vc.id.clone())
             .collect();
 
         if present.is_empty() && !mastered && virtual_ids.is_empty() {
@@ -320,15 +333,15 @@ pub(crate) fn reset(args: ResetArgs) -> Result<()> {
 /// or `yes`. Saves and reports the count.
 fn reset_ids(
     store: &mut Store,
-    targets: Vec<(u64, String)>,
+    targets: Vec<(String, String)>,
     scope: String,
     card_query: Option<&str>,
     from_picker: bool,
     yes: bool,
 ) -> Result<()> {
-    let present: Vec<(u64, String)> = targets
+    let present: Vec<(String, String)> = targets
         .into_iter()
-        .filter(|(id, _)| store.get(*id).is_some())
+        .filter(|(id, _)| store.get(id).is_some())
         .collect();
     if present.is_empty() {
         match card_query {
@@ -361,7 +374,7 @@ fn reset_ids(
     }
 
     for (id, _) in &present {
-        store.remove(*id);
+        store.remove(id);
     }
     store.save()?;
     println!("Reset {n} card(s).");
@@ -405,12 +418,12 @@ mod tests {
     }
 
     #[test]
-    fn reset_matches_a_numeric_id_exactly() {
+    fn reset_matches_a_card_id_exactly() {
         let cards = vec![card("A", "1"), card("B", "2")];
-        let id = cards[1].id();
+        let id = cards[1].id().unwrap();
         assert_eq!(
-            vec![(id, "B".to_string())],
-            select_reset_ids(&cards, Some(&id.to_string()))
+            vec![(id.clone(), "B".to_string())],
+            select_reset_ids(&cards, Some(&id))
         );
     }
 

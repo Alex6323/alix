@@ -688,7 +688,10 @@ pub fn deck_status(
         || reviewable_recall
         || reviewable_reconstruct;
     let (badge_depth, badge_dotted) = badge_depth_for(&deck.subject, &deck.cards, store);
-    let new_cards = deck.cards.iter().any(|card| store.get(card.id()).is_none());
+    let new_cards = deck
+        .cards
+        .iter()
+        .any(|card| card.id().and_then(|id| store.get(&id)).is_none());
     DeckStatus {
         state,
         badge,
@@ -844,7 +847,10 @@ mod tests {
     /// cards become recognizable (a Recognize pick can be built).
     fn arm(augment: &mut AugmentCache, cards: &[Card]) {
         for card in cards {
-            augment.set_distractors(card.id(), vec!["w1".into(), "w2".into(), "w3".into()]);
+            augment.set_distractors(
+                &card.id().unwrap(),
+                vec!["w1".into(), "w2".into(), "w3".into()],
+            );
         }
     }
 
@@ -875,7 +881,7 @@ mod tests {
         let deck = Deck::load(deck_path).unwrap();
         let scheduler = Fsrs::default();
         for card in &deck.cards {
-            let state = store.get_or_insert(card.id(), T0);
+            let state = store.get_or_insert(&card.id().unwrap(), T0);
             state.recognized_ms = Some(T0);
             scheduler.apply(state, Depth::Recall, Grade::Pass, T0, false);
             scheduler.apply(state, Depth::Reconstruct, Grade::Pass, T0, false);
@@ -1070,9 +1076,11 @@ mod tests {
         // Graduate base's one card (Recall reaches FSRS Review) without a
         // real drill session, so `deck.state` reads `ExamDue`.
         let store_path = workspace::store_path(&ws);
-        let base_id = Deck::load(ws.join("base.md")).unwrap().cards[0].id();
+        let base_id = Deck::load(ws.join("base.md")).unwrap().cards[0]
+            .id()
+            .unwrap();
         let mut store = Store::open(&store_path).unwrap();
-        store.get_or_insert(base_id, T0).recall = Some(graduated_not_due(T0));
+        store.get_or_insert(&base_id, T0).recall = Some(graduated_not_due(T0));
         store.save().unwrap();
         let review = ReviewConfig::default();
 
@@ -1215,9 +1223,11 @@ mod tests {
         // `ExamDue` — the case the web treats as startable but the old
         // `locked || !due` key sorted as blocked.
         let store_path = workspace::store_path(&ws);
-        let examdue_id = Deck::load(ws.join("zzz-examdue.md")).unwrap().cards[0].id();
+        let examdue_id = Deck::load(ws.join("zzz-examdue.md")).unwrap().cards[0]
+            .id()
+            .unwrap();
         let mut store = Store::open(&store_path).unwrap();
-        let entry = store.get_or_insert(examdue_id, T0);
+        let entry = store.get_or_insert(&examdue_id, T0);
         entry.recognized_ms = Some(T0);
         entry.recall = Some(graduated_not_due(T0));
         entry.reconstruct = Some(graduated_not_due(T0));
@@ -1310,15 +1320,17 @@ mod tests {
     /// cooldown).
     fn insert_due_virtual_card(store: &mut Store, subject: &str) {
         let text = "## virtual front <!-- id: vq1 -->\nvirtual back\n".to_string();
-        let id = crate::l1::parse_str(subject, &text).unwrap()[0].id();
+        let id = crate::l1::parse_str(subject, &text).unwrap()[0]
+            .id()
+            .unwrap();
         store.insert_virtual(crate::store::VirtualCard {
-            id,
+            id: id.clone(),
             kind: crate::store::VirtualKind::Remediation,
             parent: subject.to_string(),
             text,
             created_ms: 0,
         });
-        store.get_or_insert(id, 0);
+        store.get_or_insert(&id, 0);
     }
 
     #[test]
@@ -1330,12 +1342,12 @@ mod tests {
 
         let mut store = Store::open(dir.path().join("progress.json")).unwrap();
         let now = session::now_ms();
-        let card_id = deck.cards[0].id();
+        let card_id = deck.cards[0].id().unwrap();
         // Fully done at *every* depth — recognized, and graduated-not-due at
         // both Recall and Reconstruct (a real Reconstruct schedule, so the
         // cross-depth immediacy rule doesn't fire) — so only a virtual card
         // can make this deck reviewable.
-        let entry = store.get_or_insert(card_id, now);
+        let entry = store.get_or_insert(&card_id, now);
         entry.recognized_ms = Some(now);
         entry.recall = Some(graduated_not_due(now));
         entry.reconstruct = Some(graduated_not_due(now));
@@ -1381,9 +1393,9 @@ mod tests {
 
         let mut store = Store::open(dir.path().join("progress.json")).unwrap();
         let now = session::now_ms();
-        let card_id = deck.cards[0].id();
+        let card_id = deck.cards[0].id().unwrap();
         // Mature at Recall, nothing due there — never touched at Reconstruct.
-        store.get_or_insert(card_id, now).recall = Some(mature(now, 25.0));
+        store.get_or_insert(&card_id, now).recall = Some(mature(now, 25.0));
 
         let status = deck_status(
             &deck,
@@ -1416,7 +1428,9 @@ mod tests {
         let mut augment = AugmentCache::open(dir.path().join("augment.json"));
         arm(&mut augment, &deck.cards);
         let now = session::now_ms();
-        store.get_or_insert(deck.cards[0].id(), now).recognized_ms = Some(now);
+        store
+            .get_or_insert(&deck.cards[0].id().unwrap(), now)
+            .recognized_ms = Some(now);
 
         // Card 2 has never been correctly picked at Recognize, and both cards
         // are recognizable, so the deck is reviewable at Recognize.
@@ -1431,7 +1445,9 @@ mod tests {
         assert!(status.reviewable_recognize);
         assert!(status.can_recognize);
 
-        store.get_or_insert(deck.cards[1].id(), now).recognized_ms = Some(now);
+        store
+            .get_or_insert(&deck.cards[1].id().unwrap(), now)
+            .recognized_ms = Some(now);
         let status = deck_status(
             &deck,
             &store,
@@ -1490,9 +1506,11 @@ mod tests {
             &ws.join("alix.local.toml"),
             &format!("[review]\ndeadline = \"{}\"\n", date.format("%Y-%m-%d")),
         );
-        let done_id = Deck::load(ws.join("done.md")).unwrap().cards[0].id();
+        let done_id = Deck::load(ws.join("done.md")).unwrap().cards[0]
+            .id()
+            .unwrap();
         let mut store = Store::open(workspace::store_path(&ws)).unwrap();
-        store.get_or_insert(done_id, T0).recall = Some(graduated_not_due(T0));
+        store.get_or_insert(&done_id, T0).recall = Some(graduated_not_due(T0));
         store.save().unwrap();
 
         let review = ReviewConfig::default();
@@ -1573,7 +1591,7 @@ mod tests {
         let deck = Deck::load(&deck_path).unwrap();
         let mut store = Store::open(dir.path().join("progress.json")).unwrap();
         let now = session::now_ms();
-        let entry = store.get_or_insert(deck.cards[0].id(), now);
+        let entry = store.get_or_insert(&deck.cards[0].id().unwrap(), now);
         entry.recall = Some(graduated_not_due(now));
         entry.reconstruct = Some(graduated_not_due(now));
 
@@ -1605,7 +1623,9 @@ mod tests {
         let mut store = Store::open(dir.path().join("progress.json")).unwrap();
         let now = session::now_ms();
         // One of the three cards has graduated; the other two are unseen.
-        store.get_or_insert(deck.cards[0].id(), now).recall = Some(graduated_not_due(now));
+        store
+            .get_or_insert(&deck.cards[0].id().unwrap(), now)
+            .recall = Some(graduated_not_due(now));
 
         let before = deck_status(
             &deck,
@@ -1651,10 +1671,10 @@ mod tests {
 
         let mut store = Store::open(dir.path().join("progress.json")).unwrap();
         let now = session::now_ms();
-        let card_id = deck.cards[0].id();
+        let card_id = deck.cards[0].id().unwrap();
         // Both Recall and Reconstruct are currently solid — the higher one
         // (Reconstruct) must win, not Recall.
-        let entry = store.get_or_insert(card_id, now);
+        let entry = store.get_or_insert(&card_id, now);
         entry.recall = Some(mature(now, 25.0));
         entry.reconstruct = Some(mature(now, 30.0));
 
@@ -1679,13 +1699,13 @@ mod tests {
 
         let mut store = Store::open(dir.path().join("progress.json")).unwrap();
         let now = session::now_ms();
-        let card_id = deck.cards[0].id();
-        store.get_or_insert(card_id, now).recall = Some(mature(now, 25.0));
+        let card_id = deck.cards[0].id().unwrap();
+        store.get_or_insert(&card_id, now).recall = Some(mature(now, 25.0));
         crate::store::note_badges(&mut store, &deck.subject, &deck.cards, now);
 
         // The card's stability lapses back under the mature line — no longer
         // solid, but the earn date persists (high-water mark).
-        store.get_or_insert(card_id, now).recall = Some(mature(now, 5.0));
+        store.get_or_insert(&card_id, now).recall = Some(mature(now, 5.0));
 
         let status = deck_status(
             &deck,
@@ -1713,7 +1733,9 @@ mod tests {
         let mut store = Store::open(dir.path().join("progress.json")).unwrap();
         let now = session::now_ms();
         // Card 1 has graduated; card 2 has never been touched — no store entry.
-        store.get_or_insert(deck.cards[0].id(), now).recall = Some(graduated_not_due(now));
+        store
+            .get_or_insert(&deck.cards[0].id().unwrap(), now)
+            .recall = Some(graduated_not_due(now));
 
         let status = deck_status(
             &deck,

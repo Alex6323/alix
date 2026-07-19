@@ -106,7 +106,7 @@ pub(super) fn deck_item_dto(
     match Deck::load(&e.path) {
         Ok(deck) => {
             let s = picker::deck_status(&deck, store, augment, Some(decks_dir), with_lock, review);
-            let deck_ids: HashSet<u64> = deck.cards.iter().map(|c| c.id()).collect();
+            let deck_tokens: HashSet<String> = deck.deck_token.iter().cloned().collect();
             let last_depth = depth_name(
                 store
                     .last_depth(&deck.subject)
@@ -135,7 +135,7 @@ pub(super) fn deck_item_dto(
                 path: e.path_hint.clone(),
                 icon: None,
                 icon_svg: false,
-                has_topology: augment.has_topology_for(&deck_ids),
+                has_topology: augment.has_topology_for(&deck_tokens),
                 badge_depth: s.badge_depth.map(depth_name),
                 badge_dotted: s.badge_dotted,
                 new_cards: s.new_cards,
@@ -233,8 +233,8 @@ pub(super) fn workspace_members(
             };
             let has_topology = match (augment.as_ref(), deck.as_ref()) {
                 (Some(a), Some(d)) => {
-                    let ids: HashSet<u64> = d.cards.iter().map(|c| c.id()).collect();
-                    a.has_topology_for(&ids)
+                    let tokens: HashSet<String> = d.deck_token.iter().cloned().collect();
+                    a.has_topology_for(&tokens)
                 }
                 _ => false,
             };

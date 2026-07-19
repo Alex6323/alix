@@ -56,7 +56,7 @@ mod tests {
         let deck = crate::l1::parse_l1(TUTORIAL_FILE, &seeded).unwrap();
         assert!(deck.deck_token.is_some(), "seeding mints a deck id");
         assert_eq!(asset.cards.len(), deck.cards.len());
-        assert!(deck.cards.iter().all(|c| c.id_string().is_some()));
+        assert!(deck.cards.iter().all(|c| c.id().is_some()));
     }
 
     #[test]

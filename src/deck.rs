@@ -118,8 +118,12 @@ pub enum DeckState {
 pub struct Deck {
     /// The path the deck was loaded from.
     pub path: PathBuf,
-    /// The subject (= file name), part of every card's identity hash.
+    /// The subject (= file name).
     pub subject: String,
+    /// The deck's identity token (the frontmatter `id:`), minted at the first
+    /// stamp. `None` until the deck has been stamped. Identifies which of a
+    /// shared augment cache's topologies belong to this deck.
+    pub deck_token: Option<String>,
     /// The cards, in file order.
     pub cards: Vec<Card>,
     /// Deck-level reference links (`% link: <url>` lines).
@@ -198,6 +202,7 @@ impl Deck {
         let sources = l1deck.frontmatter.source.clone();
         let title = l1deck.title.clone();
         let trace = l1deck.frontmatter.trace.clone();
+        let deck_token = l1deck.deck_token.clone();
         let mut settings = DeckSettings::from_frontmatter(&l1deck.frontmatter);
         let mut cards = l1deck.cards;
         // Fold the workspace's shared directives in below the deck's own.
@@ -246,6 +251,7 @@ impl Deck {
         Ok(Self {
             path,
             subject,
+            deck_token,
             cards,
             links,
             requires,
@@ -319,7 +325,11 @@ impl Deck {
             } else {
                 DeckState::Finished
             }
-        } else if self.cards.iter().all(|c| store.get(c.id()).is_none()) {
+        } else if self
+            .cards
+            .iter()
+            .all(|c| c.id().and_then(|id| store.get(&id)).is_none())
+        {
             DeckState::NotStarted
         } else {
             DeckState::Started
@@ -877,7 +887,7 @@ mod tests {
     }
 
     /// Marks a card graduated: FSRS `Review`.
-    fn graduate(store: &mut Store, id: u64) {
+    fn graduate(store: &mut Store, id: &str) {
         store.get_or_insert(id, 0).recall = Some(crate::store::FsrsState {
             state: 2, // Review
             ..Default::default()
@@ -885,7 +895,7 @@ mod tests {
     }
 
     /// Marks a card seen but still in a learning step (not yet graduated).
-    fn learning(store: &mut Store, id: u64) {
+    fn learning(store: &mut Store, id: &str) {
         store.get_or_insert(id, 0).recall = Some(crate::store::FsrsState {
             state: 1, // Learning
             ..Default::default()
@@ -893,7 +903,7 @@ mod tests {
     }
 
     /// Drives a card to retirement: a year-out FSRS interval (also graduated).
-    fn retire(store: &mut Store, id: u64) {
+    fn retire(store: &mut Store, id: &str) {
         store.get_or_insert(id, 0).recall = Some(crate::store::FsrsState {
             state: 2,                // Review — a year-out card has graduated
             scheduled_days: 100_000, // well past the retirement cap
@@ -920,12 +930,12 @@ mod tests {
         assert_eq!(DeckState::NotStarted, deck.state(&store));
 
         // One card seen but still learning (not graduated) -> started.
-        learning(&mut store, deck.cards[0].id());
+        learning(&mut store, &deck.cards[0].id().unwrap());
         assert_eq!(DeckState::Started, deck.state(&store));
 
         // Every card graduated -> finished (source-less, so no exam).
         for card in &deck.cards {
-            graduate(&mut store, card.id());
+            graduate(&mut store, &card.id().unwrap());
         }
         assert_eq!(DeckState::Finished, deck.state(&store));
     }
@@ -942,7 +952,7 @@ mod tests {
         let (mut store, _s) = empty_store();
 
         // Drilled to retirement, but a sourced deck waits on its exam.
-        retire(&mut store, deck.cards[0].id());
+        retire(&mut store, &deck.cards[0].id().unwrap());
         assert_eq!(DeckState::ExamDue, deck.state(&store));
 
         // Passing the exam (mastered) flips it to Finished.
@@ -962,12 +972,12 @@ mod tests {
         let (mut store, _s) = empty_store();
 
         // One card graduated, one still learning — the gate isn't met yet.
-        graduate(&mut store, deck.cards[0].id());
-        learning(&mut store, deck.cards[1].id());
+        graduate(&mut store, &deck.cards[0].id().unwrap());
+        learning(&mut store, &deck.cards[1].id().unwrap());
         assert_eq!(DeckState::Started, deck.state(&store));
 
         // Both graduated (reached Review), well before retirement — the exam opens.
-        graduate(&mut store, deck.cards[1].id());
+        graduate(&mut store, &deck.cards[1].id().unwrap());
         assert_eq!(DeckState::ExamDue, deck.state(&store));
     }
 
@@ -979,7 +989,7 @@ mod tests {
         let (mut store, _s) = empty_store();
 
         // No `source:`, so graduating every card finishes it (unlocks deps).
-        graduate(&mut store, deck.cards[0].id());
+        graduate(&mut store, &deck.cards[0].id().unwrap());
         assert_eq!(DeckState::Finished, deck.state(&store));
     }
 
@@ -990,7 +1000,7 @@ mod tests {
         let deck = Deck::load(&path).unwrap();
         let (mut store, _s) = empty_store();
         // Seen but still in a learning step (not graduated) — only `Started`.
-        learning(&mut store, deck.cards[0].id());
+        learning(&mut store, &deck.cards[0].id().unwrap());
         assert_eq!(DeckState::Started, deck.state(&store));
     }
 
@@ -1050,7 +1060,7 @@ mod tests {
         let path = write_deck(dir.path(), "d.md", "## a <!-- id: q1 -->\n1\n");
         let deck = Deck::load(&path).unwrap();
         let (mut store, _s) = empty_store();
-        retire(&mut store, deck.cards[0].id());
+        retire(&mut store, &deck.cards[0].id().unwrap());
         // No `source:` -> no exam -> Finished as soon as it's fully drilled.
         assert_eq!(DeckState::Finished, deck.state(&store));
     }
@@ -1074,7 +1084,7 @@ mod tests {
         let dd = Some(dir.path());
 
         // Drilling basics is not enough: it's only ExamDue, not Finished.
-        retire(&mut store, basics.cards[0].id());
+        retire(&mut store, &basics.cards[0].id().unwrap());
         assert_eq!(DeckState::ExamDue, basics.state(&store));
         assert!(is_locked(&advanced, dd, &store));
 
@@ -1227,7 +1237,7 @@ mod tests {
         // a's exam not passed -> c locked (through the transparent b).
         assert!(is_locked(&c, dd, &store));
         // Drilling/finishing the source-less b changes nothing.
-        retire(&mut store, b.cards[0].id());
+        retire(&mut store, &b.cards[0].id().unwrap());
         assert!(is_locked(&c, dd, &store));
         // Mastering a (its exam passed) unlocks c.
         store.set_deck_mastered(&a.subject, 1);
@@ -1561,8 +1571,8 @@ mod tests {
         assert_eq!(vec!["purported"], deck.cards[1].back);
         assert_eq!(deck.cards[0].line, deck.cards[1].line); // sibling group
         // Distinct identities: `q1` forward, `q1-r` reversed.
-        assert_eq!(Some("q1".to_string()), deck.cards[0].id_string());
-        assert_eq!(Some("q1-r".to_string()), deck.cards[1].id_string());
+        assert_eq!(Some("q1".to_string()), deck.cards[0].id());
+        assert_eq!(Some("q1-r".to_string()), deck.cards[1].id());
         assert_ne!(deck.cards[0].id(), deck.cards[1].id());
     }
 

@@ -42,7 +42,7 @@ fn answer_text(card: &Card) -> String {
 /// `Session::advance`), never on an idle poll. That makes it stable *within*
 /// one appearance and different (barring rare permutation collisions) on the
 /// *next* one — deliberately not wall-clock, which would drift mid-poll.
-pub fn seed_for(card_id: u64, appearance: u32) -> u64 {
+pub fn seed_for(card_id: &str, appearance: u32) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     card_id.hash(&mut hasher);
     appearance.hash(&mut hasher);
@@ -273,7 +273,7 @@ mod tests {
         // solving a retry by position memory ({#reorder-mc-on-each-appearance}).
         let c = card(1, "alpha");
         let d = ai(&["beta", "gamma", "delta"]);
-        let id = 42;
+        let id = "q42";
 
         let first = build(&c, seed_for(id, 1), &d).unwrap();
         let first_again = build(&c, seed_for(id, 1), &d).unwrap();

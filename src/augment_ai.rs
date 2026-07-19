@@ -40,7 +40,7 @@ pub struct BatchConversation {
     /// The batch's card roster, index-stable for the whole conversation.
     roster: Arc<Vec<WarmItem>>,
     /// Card id to roster index, for referencing a call's subset.
-    index_of: Arc<HashMap<u64, usize>>,
+    index_of: Arc<HashMap<String, usize>>,
 }
 
 impl BatchConversation {
@@ -57,7 +57,7 @@ impl BatchConversation {
         let index_of = roster
             .iter()
             .enumerate()
-            .map(|(index, item)| (item.id, index))
+            .map(|(index, item)| (item.id.clone(), index))
             .collect();
         Some(Self {
             session: ask::CliSession::new(),
@@ -173,7 +173,7 @@ pub fn generate(
     guidance: Option<&str>,
     ask_cfg: &AskConfig,
     conversation: Option<&BatchConversation>,
-) -> Result<HashMap<u64, Vec<String>>> {
+) -> Result<HashMap<String, Vec<String>>> {
     if items.is_empty() {
         return Ok(HashMap::new());
     }
@@ -195,7 +195,7 @@ pub fn generate(
         };
         let cleaned = clean_distractors(raw_options, &item.answer, count);
         if !cleaned.is_empty() {
-            out.insert(item.id, cleaned);
+            out.insert(item.id.clone(), cleaned);
         }
     }
     Ok(out)
@@ -209,7 +209,7 @@ pub fn generate_notes(
     guidance: Option<&str>,
     ask_cfg: &AskConfig,
     conversation: Option<&BatchConversation>,
-) -> Result<HashMap<u64, String>> {
+) -> Result<HashMap<String, String>> {
     if items.is_empty() {
         return Ok(HashMap::new());
     }
@@ -229,7 +229,7 @@ pub fn generate_notes(
         if let Some(note) = parsed.get(key) {
             let note = note.trim();
             if !note.is_empty() {
-                out.insert(item.id, note.to_string());
+                out.insert(item.id.clone(), note.to_string());
             }
         }
     }
@@ -248,7 +248,7 @@ pub fn generate_keypoints(
     guidance: Option<&str>,
     ask_cfg: &AskConfig,
     conversation: Option<&BatchConversation>,
-) -> Result<HashMap<u64, Vec<String>>> {
+) -> Result<HashMap<String, Vec<String>>> {
     if items.is_empty() {
         return Ok(HashMap::new());
     }
@@ -272,7 +272,7 @@ pub fn generate_keypoints(
         // An atomic answer yields fewer than two checkable claims — nothing to
         // tick off — so omit it; the card keeps its plain self-graded reveal.
         if cleaned.len() >= 2 {
-            out.insert(item.id, cleaned);
+            out.insert(item.id.clone(), cleaned);
         }
     }
     Ok(out)
@@ -288,7 +288,7 @@ pub fn generate_variants(
     guidance: Option<&str>,
     ask_cfg: &AskConfig,
     conversation: Option<&BatchConversation>,
-) -> Result<HashMap<u64, Vec<String>>> {
+) -> Result<HashMap<String, Vec<String>>> {
     if items.is_empty() {
         return Ok(HashMap::new());
     }
@@ -310,7 +310,7 @@ pub fn generate_variants(
         };
         let cleaned = clean_variants(raw_variants, &item.question, count);
         if !cleaned.is_empty() {
-            out.insert(item.id, cleaned);
+            out.insert(item.id.clone(), cleaned);
         }
     }
     Ok(out)
@@ -355,6 +355,7 @@ struct RawRegion {
 pub fn generate_topology(
     items: &[WarmItem],
     guidance: Option<&str>,
+    deck_token: &str,
     ask_cfg: &AskConfig,
     conversation: Option<&BatchConversation>,
 ) -> Result<Topology> {
@@ -373,10 +374,14 @@ pub fn generate_topology(
     // The indices embedded in the reply (edges, walk, regions) are the same
     // ones the cards were listed under: positions stateless, roster indices in
     // a conversation. The keys give exactly that mapping per item.
-    let key_ids: HashMap<usize, u64> = keys
+    let key_ids: HashMap<usize, String> = keys
         .iter()
         .zip(items)
-        .filter_map(|(key, item)| key.parse::<usize>().ok().map(|index| (index, item.id)))
+        .filter_map(|(key, item)| {
+            key.parse::<usize>()
+                .ok()
+                .map(|index| (index, item.id.clone()))
+        })
         .collect();
     let mut topology = to_topology(parsed, &key_ids);
     topology.name = guidance
@@ -384,14 +389,17 @@ pub fn generate_topology(
         .filter(|g| !g.is_empty())
         .unwrap_or("pedagogical order")
         .to_string();
+    // Bind the topology to the deck it was built over, so a shared cache never
+    // leaks it onto another deck (and a moved card never drags it along).
+    topology.deck_token = deck_token.to_string();
     Ok(topology)
 }
 
 /// Maps a [`RawTopology`]'s card indices back to identity hashes via `ids`
 /// (index under which a card was listed, to its id), dropping any unknown
 /// index and any card repeated in the walk.
-fn to_topology(raw: RawTopology, ids: &HashMap<usize, u64>) -> Topology {
-    let id_of = |idx: usize| ids.get(&idx).copied();
+fn to_topology(raw: RawTopology, ids: &HashMap<usize, String>) -> Topology {
+    let id_of = |idx: usize| ids.get(&idx).cloned();
     let edges = raw
         .edges
         .into_iter()
@@ -408,7 +416,7 @@ fn to_topology(raw: RawTopology, ids: &HashMap<usize, u64>) -> Topology {
         .walk
         .into_iter()
         .filter_map(id_of)
-        .filter(|id| seen.insert(*id))
+        .filter(|id| seen.insert(id.clone()))
         .collect();
     let regions = raw
         .regions
@@ -426,6 +434,8 @@ fn to_topology(raw: RawTopology, ids: &HashMap<usize, u64>) -> Topology {
         edges,
         walk,
         regions,
+        // The owner deck token is stamped by the caller (`generate_topology`).
+        deck_token: String::new(),
     }
 }
 
@@ -547,7 +557,7 @@ pub fn generate_format(
     guidance: Option<&str>,
     ask_cfg: &AskConfig,
     conversation: Option<&BatchConversation>,
-) -> Result<HashMap<u64, Format>> {
+) -> Result<HashMap<String, Format>> {
     if items.is_empty() {
         return Ok(HashMap::new());
     }
@@ -575,7 +585,7 @@ pub fn generate_format(
             .get(key)
             .and_then(|raw_fmt| clean_format(item, raw_fmt))
             .unwrap_or_default();
-        out.insert(item.id, fmt);
+        out.insert(item.id.clone(), fmt);
     }
     Ok(out)
 }
@@ -648,6 +658,9 @@ pub enum Job {
     },
     Topology {
         items: Vec<WarmItem>,
+        /// The owner deck's identity token, stamped onto the generated topology
+        /// so a shared cache keeps each deck's topologies apart.
+        deck_token: String,
     },
     Format {
         items: Vec<WarmItem>,
@@ -662,12 +675,12 @@ pub enum Job {
 /// The result of a [`Job`], shaped per target so the caller can apply it to the
 /// cache (`set_distractors` / `set_note` / … or `add_topology`).
 pub enum Outcome {
-    Choices(HashMap<u64, Vec<String>>),
-    Notes(HashMap<u64, String>),
-    Questions(HashMap<u64, Vec<String>>),
-    Keypoints(HashMap<u64, Vec<String>>),
+    Choices(HashMap<String, Vec<String>>),
+    Notes(HashMap<String, String>),
+    Questions(HashMap<String, Vec<String>>),
+    Keypoints(HashMap<String, Vec<String>>),
     Topology(Topology),
-    Format(HashMap<u64, Format>),
+    Format(HashMap<String, Format>),
     /// The freshly written workspace icon. Nothing to cache — the file on
     /// disk is the result.
     Icon(std::path::PathBuf),
@@ -721,9 +734,13 @@ fn run_job(
             ask_cfg,
             conversation,
         )?),
-        Job::Topology { items } => {
-            Outcome::Topology(generate_topology(&items, guidance, ask_cfg, conversation)?)
-        }
+        Job::Topology { items, deck_token } => Outcome::Topology(generate_topology(
+            &items,
+            guidance,
+            &deck_token,
+            ask_cfg,
+            conversation,
+        )?),
         Job::Format { items } => {
             Outcome::Format(generate_format(&items, guidance, ask_cfg, conversation)?)
         }
@@ -993,7 +1010,7 @@ mod tests {
 
     fn item(id: u64, question: &str, answer: &str) -> WarmItem {
         WarmItem {
-            id,
+            id: id.to_string(),
             question: question.into(),
             answer: answer.into(),
             note: None,
@@ -1013,8 +1030,8 @@ mod tests {
             item(20, "2+2?", "4"),
         ];
         let out = generate(&items, 3, None, &ask_config(&cli), None).unwrap();
-        assert_eq!(vec!["w1", "w2", "w3"], out[&10]);
-        assert_eq!(vec!["x1", "x2", "x3"], out[&20]);
+        assert_eq!(vec!["w1", "w2", "w3"], out["10"]);
+        assert_eq!(vec!["x1", "x2", "x3"], out["20"]);
     }
 
     #[test]
@@ -1024,7 +1041,7 @@ mod tests {
         let cli = fake_reply(dir.path(), r#"{"0": ["it moves a", "use_it owns a"]}"#);
         let items = vec![item(10, "What happens to a?", "a is moved into use_it")];
         let out = generate_keypoints(&items, 5, None, &ask_config(&cli), None).unwrap();
-        assert_eq!(vec!["it moves a", "use_it owns a"], out[&10]);
+        assert_eq!(vec!["it moves a", "use_it owns a"], out["10"]);
     }
 
     #[test]
@@ -1039,8 +1056,8 @@ mod tests {
             item(20, "How does X work?", "first A, then B"),
         ];
         let out = generate_keypoints(&items, 5, None, &ask_config(&cli), None).unwrap();
-        assert!(!out.contains_key(&10)); // atomic → omitted
-        assert_eq!(vec!["claim a", "claim b"], out[&20]);
+        assert!(!out.contains_key("10")); // atomic → omitted
+        assert_eq!(vec!["claim a", "claim b"], out["20"]);
     }
 
     #[test]
@@ -1080,7 +1097,7 @@ mod tests {
             None,
         )
         .unwrap();
-        assert_eq!(vec!["Lyon", "Nice"], out[&1]);
+        assert_eq!(vec!["Lyon", "Nice"], out["1"]);
     }
 
     #[test]
@@ -1089,7 +1106,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cli = fake_reply(dir.path(), r#"{"0": ["a","b","c","d","e"]}"#);
         let out = generate(&[item(1, "q", "z")], 3, None, &ask_config(&cli), None).unwrap();
-        assert_eq!(3, out[&1].len());
+        assert_eq!(3, out["1"].len());
     }
 
     #[test]
@@ -1106,8 +1123,8 @@ mod tests {
             None,
         )
         .unwrap();
-        assert!(!out.contains_key(&1));
-        assert_eq!(vec!["x1"], out[&2]);
+        assert!(!out.contains_key("1"));
+        assert_eq!(vec!["x1"], out["2"]);
     }
 
     #[test]
@@ -1133,8 +1150,8 @@ mod tests {
         let cli = fake_reply(dir.path(), r#"{"0": "note a", "1": "note b"}"#);
         let items = vec![item(10, "q1", "a1"), item(20, "q2", "a2")];
         let out = generate_notes(&items, None, &ask_config(&cli), None).unwrap();
-        assert_eq!("note a", out[&10]);
-        assert_eq!("note b", out[&20]);
+        assert_eq!("note a", out["10"]);
+        assert_eq!("note b", out["20"]);
     }
 
     #[test]
@@ -1144,8 +1161,8 @@ mod tests {
         let cli = fake_reply(dir.path(), r#"{"0": "   ", "1": "real note"}"#);
         let items = vec![item(1, "q", "a"), item(2, "q", "a")];
         let out = generate_notes(&items, None, &ask_config(&cli), None).unwrap();
-        assert!(!out.contains_key(&1));
-        assert_eq!("real note", out[&2]);
+        assert!(!out.contains_key("1"));
+        assert_eq!("real note", out["2"]);
     }
 
     #[test]
@@ -1165,7 +1182,7 @@ mod tests {
             None,
         )
         .unwrap();
-        assert_eq!(vec!["In which year?", "Which year was it?"], out[&1]);
+        assert_eq!(vec!["In which year?", "Which year was it?"], out["1"]);
     }
 
     // ── topology ──
@@ -1179,12 +1196,12 @@ mod tests {
             r#"{"principle":"by topic","edges":[{"from":0,"to":1,"label":"leads to"}],"walk":[0,1]}"#,
         );
         let items = vec![item(10, "q0", "a0"), item(20, "q1", "a1")];
-        let topo = generate_topology(&items, None, &ask_config(&cli), None).unwrap();
+        let topo = generate_topology(&items, None, "dtok", &ask_config(&cli), None).unwrap();
         assert_eq!("by topic", topo.principle);
-        assert_eq!(vec![10, 20], topo.walk);
+        assert_eq!(topo.walk, ["10", "20"]);
         assert_eq!(1, topo.edges.len());
-        assert_eq!(10, topo.edges[0].from);
-        assert_eq!(20, topo.edges[0].to);
+        assert_eq!(topo.edges[0].from, "10");
+        assert_eq!(topo.edges[0].to, "20");
         assert_eq!("leads to", topo.edges[0].label);
     }
 
@@ -1199,8 +1216,8 @@ mod tests {
             r#"{"principle":"p","edges":[{"from":0,"to":5,"label":"l"}],"walk":[0,5,1]}"#,
         );
         let items = vec![item(10, "q", "a"), item(20, "q", "a")];
-        let topo = generate_topology(&items, None, &ask_config(&cli), None).unwrap();
-        assert_eq!(vec![10, 20], topo.walk);
+        let topo = generate_topology(&items, None, "dtok", &ask_config(&cli), None).unwrap();
+        assert_eq!(topo.walk, ["10", "20"]);
         assert!(topo.edges.is_empty());
     }
 
@@ -1210,7 +1227,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cli = fake_reply(dir.path(), r#"{"principle":"p","edges":[],"walk":[0]}"#);
         let unguided =
-            generate_topology(&[item(10, "q", "a")], None, &ask_config(&cli), None).unwrap();
+            generate_topology(&[item(10, "q", "a")], None, "dtok", &ask_config(&cli), None)
+                .unwrap();
         assert_eq!("pedagogical order", unguided.name);
     }
 
@@ -1238,11 +1256,11 @@ mod tests {
             r#"{"principle":"p","edges":[],"walk":[0,1],"regions":[{"name":"Start","cards":[0]},{"name":"End","cards":[1]}]}"#,
         );
         let items = vec![item(10, "q0", "a0"), item(20, "q1", "a1")];
-        let topo = generate_topology(&items, None, &ask_config(&cli), None).unwrap();
+        let topo = generate_topology(&items, None, "dtok", &ask_config(&cli), None).unwrap();
         assert_eq!(2, topo.regions.len());
         assert_eq!("Start", topo.regions[0].name);
-        assert_eq!(vec![10], topo.regions[0].cards);
-        assert_eq!(vec![20], topo.regions[1].cards);
+        assert_eq!(topo.regions[0].cards, ["10"]);
+        assert_eq!(topo.regions[1].cards, ["20"]);
     }
 
     #[test]
@@ -1269,11 +1287,11 @@ mod tests {
             item(20, "q20", "a20"),
             item(30, "q30", "a30"),
         ];
-        let topo = generate_topology(&items, None, &cfg, Some(&conversation)).unwrap();
+        let topo = generate_topology(&items, None, "dtok", &cfg, Some(&conversation)).unwrap();
         // Roster indices 0,1,2 are cards 30,10,20 — not the input order 10,20,30.
-        assert_eq!(vec![30, 10, 20], topo.walk);
-        assert_eq!(30, topo.edges[0].from);
-        assert_eq!(10, topo.edges[0].to);
+        assert_eq!(topo.walk, ["30", "10", "20"]);
+        assert_eq!(topo.edges[0].from, "30");
+        assert_eq!(topo.edges[0].to, "10");
     }
 
     #[test]
@@ -1317,7 +1335,7 @@ mod tests {
         };
         let rx = spawn(job, None, ask_config(&cli), None);
         match rx.recv().unwrap() {
-            Ok(Outcome::Choices(map)) => assert_eq!(vec!["w1", "w2", "w3"], map[&10]),
+            Ok(Outcome::Choices(map)) => assert_eq!(vec!["w1", "w2", "w3"], map["10"]),
             Ok(_) => panic!("expected a Choices outcome"),
             Err(e) => panic!("generation failed: {e}"),
         }
@@ -1362,13 +1380,13 @@ mod tests {
 
         // First target: choices for card 0 only (a subset) primes the roster.
         let out = generate(&roster[..1], 3, None, &cfg, Some(&conversation)).unwrap();
-        assert_eq!(vec!["w1", "w2", "w3"], out[&10]);
+        assert_eq!(vec!["w1", "w2", "w3"], out["10"]);
         // what the batch owner does after a successful call
         conversation.session.started = true;
 
         // Second target: notes for card 1; the reply is keyed by ROSTER index.
         let out = generate_notes(&roster[1..], None, &cfg, Some(&conversation)).unwrap();
-        assert_eq!("a note", out[&20]);
+        assert_eq!("a note", out["20"]);
 
         let args = std::fs::read_to_string(dir.path().join("args.log")).unwrap();
         let calls: Vec<&str> = args.lines().collect();
@@ -1411,9 +1429,9 @@ mod tests {
         // those cards, not on positions 0/1 of the subset.
         let items = vec![item(10, "q0", "a0"), item(30, "q2", "a2")];
         let out = generate(&items, 3, None, &cfg, Some(&conversation)).unwrap();
-        assert_eq!(vec!["x1"], out[&10]);
-        assert_eq!(vec!["z1"], out[&30]);
-        assert!(!out.contains_key(&20));
+        assert_eq!(vec!["x1"], out["10"]);
+        assert_eq!(vec!["z1"], out["30"]);
+        assert!(!out.contains_key("20"));
     }
 
     #[test]
@@ -1436,7 +1454,7 @@ mod tests {
         // session flags (and position keys apply again).
         let items = vec![item(99, "Rogue?", "yes")];
         let out = generate(&items, 3, None, &cfg, Some(&conversation)).unwrap();
-        assert_eq!(vec!["x1"], out[&99]);
+        assert_eq!(vec!["x1"], out["99"]);
         let args = std::fs::read_to_string(dir.path().join("args.log")).unwrap();
         assert!(
             !args.contains("--session-id") && !args.contains("--resume"),
@@ -1451,7 +1469,7 @@ mod tests {
     #[test]
     fn clean_format_keeps_a_real_reshape_and_validates_mode() {
         let item = WarmItem {
-            id: 1,
+            id: "1".to_string(),
             question: "List the parts".to_string(),
             answer: "A, B, C".to_string(),
             note: None,
@@ -1470,7 +1488,7 @@ mod tests {
     #[test]
     fn clean_format_drops_noop_and_bad_mode() {
         let item = WarmItem {
-            id: 1,
+            id: "1".to_string(),
             question: "Q".to_string(),
             answer: "A, B, C".to_string(),
             note: None,
@@ -1491,7 +1509,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cli = fake_reply(dir.path(), "sorry, I can't do that");
         let items = vec![WarmItem {
-            id: 1,
+            id: "1".to_string(),
             question: "List the parts".to_string(),
             answer: "A, B, C".to_string(),
             note: None,
@@ -1508,24 +1526,24 @@ mod tests {
         let cli = fake_reply(dir.path(), r#"{"0": {"back": ["A", "B"]}}"#);
         let items = vec![
             WarmItem {
-                id: 1,
+                id: "1".to_string(),
                 question: "List".into(),
                 answer: "A, B".into(),
                 note: None,
             },
             WarmItem {
-                id: 2,
+                id: "2".to_string(),
                 question: "Atomic".into(),
                 answer: "one thing".into(),
                 note: None,
             },
         ];
         let map = generate_format(&items, None, &ask_config(&cli), None).unwrap();
-        assert_eq!(map[&1].back, ["A", "B"]);
+        assert_eq!(map["1"].back, ["A", "B"]);
         // The declined card gets an all-empty no-op so it counts as covered
         // instead of lingering as an eternal gap the user re-runs for nothing.
-        assert!(map.contains_key(&2), "declined card missing");
-        assert_eq!(map[&2], Format::default());
+        assert!(map.contains_key("2"), "declined card missing");
+        assert_eq!(map["2"], Format::default());
     }
 
     #[test]
@@ -1534,13 +1552,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cli = fake_reply(dir.path(), r#"{"0": {"back": ["A", "B"], "mode": "line"}}"#);
         let items = vec![WarmItem {
-            id: 7,
+            id: "7".to_string(),
             question: "List".to_string(),
             answer: "A, B".to_string(),
             note: None,
         }];
         let map = generate_format(&items, None, &ask_config(&cli), None).unwrap();
-        let fmt = map.get(&7).expect("a format for card 7");
+        let fmt = map.get("7").expect("a format for card 7");
         assert_eq!(fmt.back, ["A", "B"]);
         assert_eq!(fmt.mode, Some(Mode::LineByLine));
     }

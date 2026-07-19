@@ -1,8 +1,6 @@
 //! The flashcard model and its identity.
 
-use std::{hash::Hasher, path::PathBuf, sync::Arc};
-
-use twox_hash::XxHash64;
+use std::{path::PathBuf, sync::Arc};
 
 use crate::{answer::Input, depth::Reveal, token};
 
@@ -156,8 +154,8 @@ impl Card {
     /// answer and the answer becomes the old front. It keeps the same source
     /// `line`, so it shares the forward card's sibling group (the session keeps
     /// them apart and removes them together). Its identity differs naturally
-    /// because `id()` hashes the new back (the old front). Only meaningful for
-    /// plain cards.
+    /// because it carries the same token with the `-r` suffix. Only meaningful
+    /// for plain cards.
     pub fn reversed(&self) -> Card {
         let mut card = Card::plain(
             Arc::clone(&self.subject),
@@ -179,34 +177,17 @@ impl Card {
         card
     }
 
-    /// The card's string identity: its minted token, with a suffix for a cloze
-    /// hole (`token-N`, 0-based document order) or the reversed half of a
-    /// dual-direction card (`token-r`). `None` until the deck is stamped (no
-    /// token yet). This is the token-based identity the whole tree moves onto in
-    /// the id-flip task; today only [`Card::id`] reads it.
-    pub fn id_string(&self) -> Option<String> {
+    /// The card's identity for the progress store: its minted token, verbatim,
+    /// with a suffix for a cloze hole (`token-N`, 0-based document order) or the
+    /// reversed half of a dual-direction card (`token-r`). A card's id **is** its
+    /// token — editing the front, note, or answer never changes it, while
+    /// re-stamping (a new token) does. `None` until the deck is stamped (no token
+    /// yet): the session/store boundary ([`crate::assemble::exclude_unstamped`])
+    /// drops such cards before they can key any progress.
+    pub fn id(&self) -> Option<String> {
         self.token
             .as_deref()
             .map(|token| token::card_id(token, self.hole, self.reversed))
-    }
-
-    /// The identity key of this card for the progress store.
-    ///
-    /// INTERIM (dies in the id-flip task): a `u64` hash of the string id
-    /// ([`Card::id_string`]), so `u64` consumers keep compiling while identity is
-    /// already token-based. An UNSTAMPED card has no token, so no string id and
-    /// no stable identity: it hashes to `0`, and the session/store boundary
-    /// excludes such cards (loudly) before they can key real progress, so the
-    /// sentinel never collides with a real card's schedule.
-    pub fn id(&self) -> u64 {
-        match self.id_string() {
-            Some(id) => {
-                let mut hasher = XxHash64::default();
-                hasher.write(id.as_bytes());
-                hasher.finish()
-            }
-            None => 0,
-        }
     }
 
     /// Appends freshly-saved note lines to this card's in-memory `note`, joined
@@ -228,16 +209,14 @@ impl Card {
 }
 
 impl Eq for Card {}
-// INTERIM (dies with the id-flip task): equality is `Card::id()`, the u64 hash
-// of the string id. Every UNSTAMPED card hashes to the id-0 sentinel, so all
-// unstamped cards currently compare EQUAL to each other regardless of content.
-// This is harmless only because the session/store boundary excludes tokenless
-// cards before any equality-keyed step; the flip to a real `String` id (which
-// makes unstamped identity absent rather than a shared sentinel) removes the
-// footgun.
+// Identity is the token triple `(token, hole, reversed)`, exactly what `id()`
+// composes — content (front/back/note) is deliberately not part of it. Two
+// UNSTAMPED cards (both `token: None`) compare equal when their hole/reversed
+// match; that is harmless because the session/store boundary excludes tokenless
+// cards before any equality-keyed step reaches them.
 impl PartialEq for Card {
     fn eq(&self, other: &Self) -> bool {
-        self.id() == other.id()
+        self.token == other.token && self.hole == other.hole && self.reversed == other.reversed
     }
 }
 
@@ -264,29 +243,37 @@ mod tests {
     }
 
     #[test]
-    fn id_string_is_none_and_id_is_zero_until_stamped() {
-        // Identity is the token, so an unstamped card has neither a string id
-        // nor a stable u64; the session/store boundary excludes it before it
-        // keys any progress.
+    fn an_unstamped_cards_id_is_none() {
+        // Identity is the token, so an unstamped card has no id at all; the
+        // session/store boundary excludes it before it keys any progress.
         let c = card("subject1", "hello", &["world"], None);
-        assert_eq!(None, c.id_string());
-        assert_eq!(0, c.id());
+        assert_eq!(None, c.id());
     }
 
     #[test]
-    fn id_string_composes_token_hole_and_reversed() {
-        let mut plain = stamped("s", "f", &["b"], None, "q1");
-        assert_eq!(Some("q1".to_string()), plain.id_string());
-        plain.hole = Some(2);
-        assert_eq!(Some("q1-2".to_string()), plain.id_string());
-        plain.hole = None;
-        plain.reversed = true;
-        assert_eq!(Some("q1-r".to_string()), plain.id_string());
+    fn a_stamped_cards_id_is_its_token_verbatim() {
+        // A plain stamped card's id IS its token, byte for byte — no hashing,
+        // no suffix.
+        let c = stamped("s", "f", &["b"], None, "9w2c7xkq");
+        assert_eq!(Some("9w2c7xkq".to_string()), c.id());
     }
 
     #[test]
-    fn id_hashes_the_string_id_so_distinct_ids_differ() {
-        // Different tokens hash apart; the same token hashes together.
+    fn sub_ids_carry_hole_and_reversed_suffixes() {
+        // A cloze hole appends `-N` (0-based document order); the reversed half
+        // of a dual-direction card appends `-r`.
+        let mut c = stamped("s", "f", &["b"], None, "q1");
+        c.hole = Some(2);
+        assert_eq!(Some("q1-2".to_string()), c.id());
+        c.hole = None;
+        c.reversed = true;
+        assert_eq!(Some("q1-r".to_string()), c.id());
+    }
+
+    #[test]
+    fn distinct_tokens_yield_distinct_ids() {
+        // Different tokens are different ids; the same token is the same id
+        // regardless of content.
         let a = stamped("s", "f", &["b"], None, "q1");
         let b = stamped("s", "f", &["b"], None, "q2");
         let a2 = stamped("s", "different front", &["different back"], None, "q1");
@@ -343,8 +330,8 @@ mod tests {
         // Distinct identity: the reversed half carries the same token but the
         // `-r` suffix (`q1` vs `q1-r`).
         assert_ne!(fwd.id(), rev.id());
-        assert_eq!(Some("q1".to_string()), fwd.id_string());
-        assert_eq!(Some("q1-r".to_string()), rev.id_string());
+        assert_eq!(Some("q1".to_string()), fwd.id());
+        assert_eq!(Some("q1-r".to_string()), rev.id());
         // Plain cards are unreversed, the swapped half is marked, and the token
         // is carried over.
         assert!(!fwd.reversed);

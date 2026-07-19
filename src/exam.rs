@@ -398,10 +398,13 @@ pub enum SittingKind {
 pub struct Sitting {
     kind: SittingKind,
     subject: String,
-    /// The deck's own card ids at exam time — the dedup baseline so a
-    /// remediation card equal to a deck card isn't created as a virtual (it's
-    /// already drillable). Empty for a trace sitting (traces never remediate).
-    deck_card_ids: HashSet<u64>,
+    /// The §7 canonical-content fingerprints of the deck's own cards at exam
+    /// time — the dedup baseline so a remediation card whose content equals a
+    /// deck card's isn't created as a virtual (it's already drillable). Content,
+    /// not id: a fresh remediation card carries a new random token, so it can
+    /// only be recognized by content. Empty for a trace sitting (traces never
+    /// remediate).
+    deck_fingerprints: HashSet<u64>,
     strictness: Strictness,
     cfg: ExamConfig,
     ask_cfg: AskConfig,
@@ -436,7 +439,11 @@ impl Sitting {
         Self {
             kind: SittingKind::Source,
             subject: deck.subject.clone(),
-            deck_card_ids: deck.cards.iter().map(|c| c.id()).collect(),
+            deck_fingerprints: deck
+                .cards
+                .iter()
+                .map(|c| crate::l1::content_fingerprint(&c.front, &c.back))
+                .collect(),
             strictness,
             cfg,
             ask_cfg,
@@ -473,7 +480,7 @@ impl Sitting {
         Self {
             kind: SittingKind::Trace,
             subject,
-            deck_card_ids: HashSet::new(),
+            deck_fingerprints: HashSet::new(),
             strictness,
             cfg,
             ask_cfg,
@@ -765,7 +772,7 @@ impl Sitting {
                 match crate::store::store_remediation_cards(
                     store,
                     &self.subject,
-                    &self.deck_card_ids,
+                    &self.deck_fingerprints,
                     &cards,
                     now_ms,
                     retire_after_days,
@@ -1211,6 +1218,7 @@ mod tests {
         Deck {
             path: std::path::PathBuf::from("/tmp/d.md"),
             subject: "d.md".to_string(),
+            deck_token: None,
             cards: Vec::new(),
             links: Vec::new(),
             requires: Vec::new(),
@@ -1690,6 +1698,7 @@ mod tests {
         let deck = Deck {
             path: dir.join("d.md"),
             subject: "d.md".to_string(),
+            deck_token: None,
             cards: Vec::new(),
             links: Vec::new(),
             requires: Vec::new(),
@@ -1987,7 +1996,7 @@ mod tests {
         for vc in store.virtual_cards_for("d.md") {
             assert!(
                 !is_retired_id(
-                    vc.id,
+                    &vc.id,
                     &store,
                     Some(crate::session::DEFAULT_RETIRE_AFTER_DAYS)
                 ),

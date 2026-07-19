@@ -654,6 +654,13 @@ mod tests {
     fn write(dir: &Path, name: &str, body: &str) -> PathBuf {
         let path = dir.join(name);
         std::fs::write(&path, body).unwrap();
+        // A trace deck is stamped at open in production; mirror that for any
+        // `.md` deck fixture so its checkpoints carry token ids. A non-deck
+        // `.md` (e.g. a `notes.md` source) is refused by `stamp_deck` and left
+        // untouched.
+        if name.ends_with(".md") {
+            let _ = crate::stamp::stamp_deck(&path);
+        }
         path
     }
 

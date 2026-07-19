@@ -364,12 +364,12 @@ fn spawn_full_server_fixture(
         let mut seed = Store::open(&store_path).unwrap();
         let mut aug = AugmentCache::open(augment::augment_path_for(&store_path));
         for card in l1::parse_str("choice.md", CHOICE_DECK).unwrap() {
-            seed.get_or_insert(card.id(), 0);
+            seed.get_or_insert(&card.id().unwrap(), 0);
         }
         for card in l1::parse_str("choice-armed.md", CHOICE_ARMED_DECK).unwrap() {
-            seed.get_or_insert(card.id(), 0);
+            seed.get_or_insert(&card.id().unwrap(), 0);
             aug.set_distractors(
-                card.id(),
+                &card.id().unwrap(),
                 vec!["wrong a".into(), "wrong b".into(), "wrong c".into()],
             );
         }
@@ -1379,7 +1379,7 @@ fn cloze_choice_options_with_ai_distractors_keep_their_order_across_pulls() {
             let mut cache = alix::augment::AugmentCache::open(dir.join("augment.json"));
             for c in &cards {
                 cache.set_distractors(
-                    c.id(),
+                    &c.id().unwrap(),
                     vec!["IPC".into(), "RPC".into(), "a REST API".into()],
                 );
             }
@@ -1387,7 +1387,7 @@ fn cloze_choice_options_with_ai_distractors_keep_their_order_across_pulls() {
             if seed_store {
                 let mut store = Store::open(dir.join("store.json")).unwrap();
                 for c in &cards {
-                    store.get_or_insert(c.id(), 0);
+                    store.get_or_insert(&c.id().unwrap(), 0);
                 }
                 store.save().unwrap();
             }

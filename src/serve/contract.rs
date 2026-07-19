@@ -802,10 +802,12 @@ fn askdto_with_draft_wire_shape() {
 
 #[test]
 fn createcardresp_wire_shape() {
+    // The id is the card's identity token verbatim (a `token`, or a suffixed
+    // `token-N` / `token-r`), no longer a decimal `u64` string.
     let dto = CreateCardResp {
-        id: "12345".to_string(),
+        id: "9w2c7xkq4m".to_string(),
     };
-    pin("CreateCardResp", &dto, json!({"id": "12345"}));
+    pin("CreateCardResp", &dto, json!({"id": "9w2c7xkq4m"}));
 }
 
 #[test]

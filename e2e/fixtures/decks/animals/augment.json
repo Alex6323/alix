@@ -1,14 +1,14 @@
 {
   "version": 1,
   "cards": {
-    "11637527830970212896": {
+    "wild1": {
       "distractors": [
         "African elephant",
         "Ostrich",
         "Moose"
       ]
     },
-    "6997674846466546150": {
+    "wild2": {
       "distractors": [
         "Pronghorn antelope",
         "Lion",

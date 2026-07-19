@@ -46,6 +46,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   The mobile app seeds the same deck into a fresh app-private folder.
 
 ### Changed
+- **Breaking: decks are now the L1 Markdown format (`.md`), and a card's
+  identity is a minted token, not a content hash.** A card front is `## `, its
+  answer lines follow plainly, a note is `> `, deck metadata (`source:`,
+  `requires:`, `link:`, `trace:`, `reveal:`, `direction:`, …) lives in a `---`
+  YAML frontmatter block, and a cloze gap is `\cloze{…}`. The old `.txt` format
+  (`# ` fronts, tab-indented answers, `! ` notes, `% key:` directives, `{{…}}`
+  clozes) is **removed** — `.txt` files no longer enumerate or parse. Every
+  card and deck carries a minted identity token, written into the file the first
+  time it is opened (a per-card `<!-- id: … -->`, a deck `id:` in frontmatter);
+  a card's id **is** that token verbatim (`token`, `token-N` for cloze hole *N*,
+  `token-r` for the reversed half), so editing a card's front, note, or answer
+  no longer changes its id — only re-stamping does. On the wire an id stays a
+  JSON string (it always was); its value is now the token, never a decimal
+  number, so clients must treat it as opaque (`docs/API.md`). Consequences:
+  progress stores and the `augment.json` cache reset (pre-1.0, no migration —
+  old files are dropped and regenerated); the internal `% requires:` rewriter
+  (`set_requires`) is gone; and a lone whole-answer cloze (`\cloze{…}` with no
+  surrounding text) now parses, where the old format errored. Convert existing
+  decks with the bundled converter before opening them.
 - **Breaking: a multiple-choice pick now requires a cached AI augmentation;
   options are never sampled from other cards.** Distractors were previously
   topped up by sampling the rest of the session's answers, which produced junk

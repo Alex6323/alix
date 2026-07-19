@@ -149,9 +149,8 @@ pub fn state(
     // acquiring just reveals the answer.
     let keypoints = if !acquire && mode == Mode::Explain {
         card.map(|c| {
-            augment
-                .keypoints(c.id())
-                .map(<[String]>::to_vec)
+            c.id()
+                .and_then(|id| augment.keypoints(&id).map(<[String]>::to_vec))
                 .unwrap_or_else(|| c.back.clone())
         })
     } else {
@@ -197,8 +196,9 @@ pub fn current_question(
     augment: &AugmentCache,
 ) -> Option<ChoiceQuestion> {
     let card = session.current()?;
-    let ai = augment.distractors(card.id());
-    let seed = choice::seed_for(card.id(), session.appearance(card.id()));
+    let id = card.id()?;
+    let ai = augment.distractors(&id);
+    let seed = choice::seed_for(&id, session.appearance(&id));
     // A Recognize session is pick-only: assemble filters its roster to
     // recognizable cards, so every card it serves builds a pick — a first
     // encounter and a repeat alike, and a `% reveal: line` card on its whole
@@ -209,7 +209,7 @@ pub fn current_question(
     // Outside Recognize, only a first encounter shows a pick: the acquire
     // on-ramp, which needs an atomic answer plus a full set of cached
     // distractors. Anything else is a plain recall/reconstruct attempt.
-    if store.get(card.id()).is_none() {
+    if store.get(&id).is_none() {
         return choice::recognition_question(card, seed, ai);
     }
     None
@@ -307,7 +307,7 @@ mod tests {
 
     fn seen(store: &mut Store, cards: &[Card]) {
         for card in cards {
-            store.get_or_insert(card.id(), T0);
+            store.get_or_insert(&card.id().unwrap(), T0);
         }
     }
 
@@ -317,7 +317,7 @@ mod tests {
     fn arm(augment: &mut AugmentCache, cards: &[Card]) {
         for card in cards {
             augment.set_distractors(
-                card.id(),
+                &card.id().unwrap(),
                 vec!["w1".to_string(), "w2".to_string(), "w3".to_string()],
             );
         }
@@ -553,7 +553,7 @@ mod tests {
         );
 
         // Cached keypoints win over the fallback.
-        augment.set_keypoints(cards[0].id(), vec!["one claim".to_string()]);
+        augment.set_keypoints(&cards[0].id().unwrap(), vec!["one claim".to_string()]);
         let cached = state(&session, &store, &augment, Some(NOW));
         assert_eq!(cached.keypoints, Some(vec!["one claim".to_string()]));
 
@@ -607,13 +607,13 @@ mod tests {
         let mut synth = parser::parse_str("deck.md", text).unwrap().remove(0);
         synth.line = 1_000_000;
         store.insert_virtual(VirtualCard {
-            id: synth.id(),
+            id: synth.id().unwrap(),
             kind: VirtualKind::Remediation,
             parent: "deck.md".to_string(),
             text: text.to_string(),
             created_ms: T0,
         });
-        store.get_or_insert(synth.id(), T0);
+        store.get_or_insert(&synth.id().unwrap(), T0);
         let session = session_at(vec![synth], &store, Depth::Recall, NOW);
         assert!(state(&session, &store, &augment, Some(NOW)).promotable);
 

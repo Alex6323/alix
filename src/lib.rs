@@ -35,7 +35,6 @@ pub mod backend;
 #[cfg(feature = "full")]
 pub mod calibrate;
 pub mod card;
-pub mod cardid;
 pub mod choice;
 pub mod config;
 pub mod deck;

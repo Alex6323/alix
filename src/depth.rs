@@ -112,8 +112,8 @@ pub fn check_for(reveal: Reveal, depth: Depth, card: &Card) -> Mode {
 /// schedules only recognizable cards — there is no plain-flip fallback — so this
 /// is the single gate on whether a card can be drilled at Recognize at all.
 pub fn card_recognizable(card: &Card, cache: &AugmentCache) -> bool {
-    cache
-        .distractors(card.id())
+    card.id()
+        .and_then(|id| cache.distractors(&id))
         .is_some_and(|ai| crate::choice::can_build(card, ai))
 }
 
@@ -162,7 +162,10 @@ mod tests {
         let covered = card("a");
         let uncovered = card("b");
         // A full set (>= NUM_OPTIONS - 1 distinct) makes `covered` recognizable.
-        cache.set_distractors(covered.id(), vec!["x".into(), "y".into(), "z".into()]);
+        cache.set_distractors(
+            &covered.id().unwrap(),
+            vec!["x".into(), "y".into(), "z".into()],
+        );
         let cards = vec![covered, uncovered];
         assert_eq!(Depth::Recognize, default_depth(&cards, &cache));
     }
@@ -174,7 +177,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut cache = AugmentCache::open(dir.path().join("augment.json"));
         let covered = card("a");
-        cache.set_distractors(covered.id(), vec!["x".into(), "y".into()]);
+        cache.set_distractors(&covered.id().unwrap(), vec!["x".into(), "y".into()]);
         let cards = vec![covered];
         assert_eq!(Depth::Recall, default_depth(&cards, &cache));
     }

@@ -60,7 +60,7 @@ pub(super) struct Reviewing {
     pub(super) present_seq: u64,
     /// The authored front of each card we've rotated a variant into, so the
     /// original phrasing stays in the rotation (generated variants drop it).
-    pub(super) original_fronts: HashMap<u64, String>,
+    pub(super) original_fronts: HashMap<String, String>,
     /// The resolved topology name when this session is topology-ordered (used to
     /// fetch the topology from `augment` for the orientation breadcrumb); `None`
     /// otherwise.
@@ -108,7 +108,7 @@ pub(super) struct Ask {
     /// The subject id the displayed transcript belongs to; cleared when the
     /// subject changes (the CLI conversation itself still spans the whole
     /// session, so Claude keeps the full context).
-    pub(super) subject: Option<u64>,
+    pub(super) subject: Option<String>,
     pub(super) pending: Option<Pending>,
     /// The last card drafted from the conversation (`AskAction::DraftCard`),
     /// surfaced on the ask DTO until the subject changes.
@@ -128,7 +128,7 @@ impl Ask {
 
     /// Drops the displayed transcript when the subject (card/checkpoint) changes,
     /// so the ask view shows only the current subject's exchanges.
-    fn align(&mut self, subject: Option<u64>) {
+    fn align(&mut self, subject: Option<String>) {
         if self.subject != subject {
             self.transcript.clear();
             self.draft = None;
@@ -176,7 +176,7 @@ impl Ask {
         }
         // A new subject starts a fresh visible transcript (and a subject-scoped
         // condense/draft), even though the CLI conversation continues.
-        self.align(Some(card.id()));
+        self.align(card.id());
         // nothing to condense or draft without a transcript
         if matches!(action, AskAction::Condense | AskAction::DraftCard)
             && self.transcript.is_empty()
@@ -248,7 +248,7 @@ impl Ask {
         if self.pending.is_some() {
             return false;
         }
-        self.align(Some(card.id()));
+        self.align(card.id());
         // `self.cli` is deliberately untouched: no real turn happened, so a
         // later question must still start/resume the CLI session correctly.
         self.transcript.push((question, answer));
@@ -624,10 +624,10 @@ impl Reviewing {
     /// phrasing each time a card is presented. The answer is unchanged, so
     /// identity (which ignores the front) is untouched. Called on card advance.
     pub(super) fn rotate_variant(&mut self) {
-        let Some(id) = self.session.current().map(|c| c.id()) else {
+        let Some(id) = self.session.current().and_then(|c| c.id()) else {
             return;
         };
-        if self.augment.variants(id).is_none() {
+        if self.augment.variants(&id).is_none() {
             return;
         }
         // Capture the authored front the first time, before we overwrite it, so
@@ -635,12 +635,12 @@ impl Reviewing {
         if !self.original_fronts.contains_key(&id)
             && let Some(card) = self.session.current()
         {
-            self.original_fronts.insert(id, card.front.clone());
+            self.original_fronts.insert(id.clone(), card.front.clone());
         }
         let original = self.original_fronts.get(&id).cloned().unwrap_or_default();
         let seed = self.present_seq;
         self.present_seq = self.present_seq.wrapping_add(1);
-        if let Some(chosen) = self.augment.pick_front(id, &original, seed)
+        if let Some(chosen) = self.augment.pick_front(&id, &original, seed)
             && let Some(card) = self.session.current_mut()
         {
             card.front = chosen;
@@ -651,7 +651,7 @@ impl Reviewing {
     /// view shows only this card's exchanges. The CLI session (`cli`) is
     /// untouched, so Claude still has the whole conversation as context.
     pub(super) fn align_transcript(&mut self) {
-        self.ask.align(self.session.current().map(|c| c.id()));
+        self.ask.align(self.session.current().and_then(|c| c.id()));
     }
 
     /// The ask-view payload, with an optional one-shot status/error.
@@ -846,8 +846,15 @@ pub(super) struct Augmenting {
     /// Display name (a workspace member's qualified `<ws>/<file>`, or a deck file).
     pub(super) deck: String,
     pub(super) cards: Vec<Card>,
-    /// This deck's card ids, for scoping removals against the shared cache.
-    pub(super) deck_ids: HashSet<u64>,
+    /// This deck's card ids, for scoping per-card removals against the shared cache.
+    pub(super) deck_ids: HashSet<String>,
+    /// The owner tokens of the decks on this screen (one for a plain deck, each
+    /// member's for a workspace), for scoping topology removals.
+    deck_tokens: HashSet<String>,
+    /// The token a newly generated topology is tagged with (the sole deck's, or
+    /// the first member's for a workspace) so the shared cache keeps decks' paths
+    /// apart.
+    primary_token: String,
     pub(super) cache: AugmentCache,
     /// `Some(dir)` when this screen was opened on a workspace: targets run
     /// across the union of member cards, and workspace-specific targets (the
@@ -926,14 +933,21 @@ impl Augmenting {
     pub(super) fn open(
         deck: String,
         cards: Vec<Card>,
+        deck_tokens: Vec<String>,
         cache_path: PathBuf,
         workspace_dir: Option<PathBuf>,
     ) -> Self {
-        let deck_ids = cards.iter().map(Card::id).collect();
+        let deck_ids = cards.iter().filter_map(Card::id).collect();
+        // A new topology is tagged with the first member's token (the sole deck's
+        // for a plain screen); the whole set scopes removals.
+        let primary_token = deck_tokens.first().cloned().unwrap_or_default();
+        let deck_tokens = deck_tokens.into_iter().collect();
         Self {
             deck,
             cards,
             deck_ids,
+            deck_tokens,
+            primary_token,
             cache: AugmentCache::open(cache_path),
             workspace_dir,
             conversation: None,
@@ -947,7 +961,7 @@ impl Augmenting {
 
     /// Builds the screen payload from the current cache coverage + any in-flight job.
     pub(super) fn dto(&self) -> AugmentDto {
-        let s = self.cache.summarize(&self.cards);
+        let s = self.cache.summarize(&self.cards, &self.deck_tokens);
         let busy = self.pending.as_ref().map(|p| p.target);
         let card_row =
             |kind: &'static str, label: &'static str, c: augment::Coverage| AugmentRowDto {
@@ -1044,7 +1058,7 @@ impl Augmenting {
             let roster: Vec<augment::WarmItem> = gap_sets
                 .into_iter()
                 .flatten()
-                .filter(|item| seen.insert(item.id))
+                .filter(|item| seen.insert(item.id.clone()))
                 .collect();
             let cfg = augment_ai::run_config(ai, ask);
             self.conversation = augment_ai::BatchConversation::new(&cfg, roster);
@@ -1126,6 +1140,7 @@ impl Augmenting {
                             .iter()
                             .map(augment::WarmItem::from_card)
                             .collect(),
+                        deck_token: self.primary_token.clone(),
                     },
                     "topology",
                 ),
@@ -1204,28 +1219,28 @@ impl Augmenting {
         match outcome {
             augment_ai::Outcome::Choices(map) => {
                 for (id, v) in map {
-                    self.cache.set_distractors(id, v);
+                    self.cache.set_distractors(&id, v);
                 }
             }
             augment_ai::Outcome::Notes(map) => {
                 for (id, v) in map {
-                    self.cache.set_note(id, v);
+                    self.cache.set_note(&id, v);
                 }
             }
             augment_ai::Outcome::Questions(map) => {
                 for (id, v) in map {
-                    self.cache.set_variants(id, v);
+                    self.cache.set_variants(&id, v);
                 }
             }
             augment_ai::Outcome::Keypoints(map) => {
                 for (id, v) in map {
-                    self.cache.set_keypoints(id, v);
+                    self.cache.set_keypoints(&id, v);
                 }
             }
             augment_ai::Outcome::Topology(t) => self.cache.add_topology(t),
             augment_ai::Outcome::Format(map) => {
                 for (id, v) in map {
-                    self.cache.set_format(id, v);
+                    self.cache.set_format(&id, v);
                 }
             }
             // Nothing to cache: icon::generate already wrote assets/icon.svg,
@@ -1248,9 +1263,9 @@ impl Augmenting {
                 let Some(name) = topology else {
                     return false;
                 };
-                self.cache.remove_topology(name, &self.deck_ids);
+                self.cache.remove_topology(name, &self.deck_tokens);
             }
-            "all" => self.cache.clear_all(&self.deck_ids),
+            "all" => self.cache.clear_all(&self.deck_ids, &self.deck_tokens),
             _ => return false,
         }
         self.error = None;
@@ -1578,7 +1593,8 @@ impl Walking {
     /// Drains a finished ask reply; a "save note" condense appends a `!` line to
     /// the current checkpoint in the trace deck file.
     pub(super) fn poll_ask(&mut self) -> (Option<String>, Option<String>) {
-        self.ask.align(self.walk.checkpoint().map(|c| c.card_id));
+        self.ask
+            .align(self.walk.checkpoint().map(|c| c.card_id.clone()));
         let deck_path = self.walk.trace().deck_path.clone();
         self.ask.poll(|card, notes| {
             crate::deck::append_note(&deck_path, card.line, notes).map_err(|e| e.to_string())

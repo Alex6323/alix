@@ -178,11 +178,11 @@ deck; synchronous, no polling. Both endpoints are adult-only (`403` when
 `[serve] audience = "kids"`) and both require an active review (`409`);
 `/api/ask/card/create` further `409`s when the review has no current card,
 and rejects an unparseable body with `400`. Success is `200` with `{"id":
-"<decimal string>"}` (`CreateCardResp`), not `201`: alix's JSON responder
+"<token>"}` (`CreateCardResp`), not `201`: alix's JSON responder
 always answers `200` on success, so "created" is expressed by the DTO shape,
-not the status line. A duplicate (the card's id already exists in the deck,
-authored or virtual) or malformed front/back (empty after trimming, or not
-exactly one well-formed card) is `422`.
+not the status line. A duplicate (the card's canonical content already exists
+in the deck, authored or virtual) or malformed front/back (empty after
+trimming, or not exactly one well-formed card) is `422`.
 
 ### 4.6 Import
 
@@ -638,8 +638,15 @@ clients use it to name who is answering), `model: string`, `effort: string`
 `front: string`, `back: [string]`, the learner's edited draft. It derives
 `Deserialize` only, so it is documented here but not snapshot-pinned (§8's
 "request bodies aren't snapshot-tested" note). `CreateCardResp`: `id: string`
-(decimal, the newly minted virtual card's id, matching how the store keys
-ids).
+— the newly minted virtual card's identity token, matching how the store keys
+ids.
+
+**Card id format.** A card id is always a JSON **string** on the wire (it has
+always been, since JSON object keys are strings). Its *value* is the card's
+identity **token** verbatim: a bare `token` for a plain card, `token-N` for
+cloze hole *N* (0-based document order), or `token-r` for the reversed half of
+a dual-direction card. It is no longer a decimal `u64`. Clients must treat an
+id as an opaque string and never parse it as a number.
 
 ### VersionDto
 
