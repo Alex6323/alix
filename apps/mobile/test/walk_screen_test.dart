@@ -46,15 +46,18 @@ void main() {
   Directory twoHopRoot() {
     final root = tempRoot('alix-walk-2hop-');
     File('${root.path}/source.txt').writeAsStringSync('first\nsecond\nthird\n');
-    File('${root.path}/t.txt').writeAsStringSync(
-      '% trace: how it works\n'
-      '% source: source.txt\n'
-      '# Predict the first hop\n'
-      '\tit reads the first line\n'
-      '\t% at: 1\n'
-      '# Predict the second hop\n'
-      '\tit reads lines two and three\n'
-      '\t% at: 2-3\n',
+    File('${root.path}/t.md').writeAsStringSync(
+      '---\n'
+      'trace: how it works\n'
+      'source: source.txt\n'
+      '---\n'
+      '## Predict the first hop\n'
+      'it reads the first line\n'
+      '<!-- at: 1 -->\n'
+      '\n'
+      '## Predict the second hop\n'
+      'it reads lines two and three\n'
+      '<!-- at: 2-3 -->\n',
     );
     return root;
   }
@@ -64,12 +67,14 @@ void main() {
   Directory oneHopRoot() {
     final root = tempRoot('alix-walk-1hop-');
     File('${root.path}/source.txt').writeAsStringSync('first\nsecond\n');
-    File('${root.path}/t.txt').writeAsStringSync(
-      '% trace: a short path\n'
-      '% source: source.txt\n'
-      '# Predict the hop\n'
-      '\tit reads the first line\n'
-      '\t% at: 1\n',
+    File('${root.path}/t.md').writeAsStringSync(
+      '---\n'
+      'trace: a short path\n'
+      'source: source.txt\n'
+      '---\n'
+      '## Predict the hop\n'
+      'it reads the first line\n'
+      '<!-- at: 1 -->\n',
     );
     return root;
   }
@@ -78,11 +83,13 @@ void main() {
   /// `% source:` at all): the excerpt-error fallback path.
   Directory noSourceRoot() {
     final root = tempRoot('alix-walk-nosource-');
-    File('${root.path}/t.txt').writeAsStringSync(
-      '% trace: a path with no source\n'
-      '# Predict something\n'
-      '\tthe answer\n'
-      '\t% at: 1\n',
+    File('${root.path}/t.md').writeAsStringSync(
+      '---\n'
+      'trace: a path with no source\n'
+      '---\n'
+      '## Predict something\n'
+      'the answer\n'
+      '<!-- at: 1 -->\n',
     );
     return root;
   }
@@ -97,7 +104,7 @@ void main() {
           MaterialApp(
             theme: alixDark(),
             home: WalkScreen(
-              deckPath: '${root.path}/t.txt',
+              deckPath: '${root.path}/t.md',
               rootDir: root.path,
               supportDir: tempSupport(),
             ),
@@ -161,7 +168,7 @@ void main() {
           MaterialApp(
             theme: alixDark(),
             home: WalkScreen(
-              deckPath: '${root.path}/t.txt',
+              deckPath: '${root.path}/t.md',
               rootDir: root.path,
               supportDir: tempSupport(),
             ),
@@ -206,7 +213,7 @@ void main() {
           MaterialApp(
             theme: alixDark(),
             home: WalkScreen(
-              deckPath: '${root.path}/t.txt',
+              deckPath: '${root.path}/t.md',
               rootDir: root.path,
               supportDir: support,
               buildClient: (_) =>
@@ -243,7 +250,7 @@ void main() {
           MaterialApp(
             theme: alixDark(),
             home: WalkScreen(
-              deckPath: '${root.path}/t.txt',
+              deckPath: '${root.path}/t.md',
               rootDir: root.path,
               supportDir: support,
               buildClient: (_) =>
@@ -273,7 +280,7 @@ void main() {
         MaterialApp(
           theme: alixDark(),
           home: WalkScreen(
-            deckPath: '${root.path}/t.txt',
+            deckPath: '${root.path}/t.md',
             rootDir: root.path,
             supportDir: support,
             buildClient: (_) => FakeServerClient(versionReply: '0.5.0'),
@@ -301,7 +308,7 @@ void main() {
           MaterialApp(
             theme: alixDark(),
             home: WalkScreen(
-              deckPath: '${root.path}/t.txt',
+              deckPath: '${root.path}/t.md',
               rootDir: root.path,
               supportDir: support,
               buildClient: (_) => FakeServerClient(expireOnVersion: true),
@@ -339,7 +346,7 @@ void main() {
           MaterialApp(
             theme: alixDark(),
             home: WalkScreen(
-              deckPath: '${root.path}/t.txt',
+              deckPath: '${root.path}/t.md',
               rootDir: root.path,
               supportDir: support,
             ),
@@ -372,7 +379,7 @@ void main() {
           DateTime.now().millisecondsSinceEpoch - 500,
         );
         WalkSession.open(
-          deckPath: '${root.path}/t.txt',
+          deckPath: '${root.path}/t.md',
           rootDir: root.path,
         ).applyExamFailed(nowMs: justNow);
 
@@ -380,7 +387,7 @@ void main() {
           MaterialApp(
             theme: alixDark(),
             home: WalkScreen(
-              deckPath: '${root.path}/t.txt',
+              deckPath: '${root.path}/t.md',
               rootDir: root.path,
               supportDir: support,
               buildClient: (_) => FakeServerClient(versionReply: '0.6.0'),
@@ -403,13 +410,16 @@ void main() {
       (tester) async {
         final root = tempRoot('alix-picker-walk-');
         File('${root.path}/source.txt').writeAsStringSync('alpha\nbeta\n');
-        File('${root.path}/t.txt').writeAsStringSync(
-          '% title: T\n'
-          '% trace: a picker-launched walk\n'
-          '% source: source.txt\n'
-          '# Predict\n'
-          '\tit reads line one\n'
-          '\t% at: 1\n',
+        File('${root.path}/t.md').writeAsStringSync(
+          '---\n'
+          'trace: a picker-launched walk\n'
+          'source: source.txt\n'
+          '---\n'
+          '# T\n'
+          '\n'
+          '## Predict\n'
+          'it reads line one\n'
+          '<!-- at: 1 -->\n',
         );
 
         await tester.pumpWidget(
@@ -445,7 +455,7 @@ void main() {
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => WalkScreen(
-              deckPath: '${root.path}/t.txt',
+              deckPath: '${root.path}/t.md',
               rootDir: root.path,
               supportDir: tempSupport(),
             ),

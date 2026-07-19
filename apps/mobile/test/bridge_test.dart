@@ -47,16 +47,21 @@ class FakeAccess implements PlatformAccess {
 final t0 = BigInt.from(1000000);
 final later = BigInt.from(1000000 + 301000);
 
-/// A decks root with one loose deck and one workspace member deck.
+/// A decks root with one loose deck and one workspace member deck. Cards
+/// carry explicit ids: `listRoot`/`listMembers` are read-only and never
+/// stamp, so an unstamped card would never count as due.
 Directory makeRoot() {
   final root = Directory.systemTemp.createTempSync('alix-decks-');
-  File(
-    '${root.path}/loose.txt',
-  ).writeAsStringSync('% title: Loose\n# capital of france?\n    Paris\n');
+  File('${root.path}/loose.md').writeAsStringSync(
+    '# Loose\n\n## capital of france? <!-- id: capital -->\nParis\n',
+  );
   Directory('${root.path}/ws').createSync();
   File('${root.path}/ws/alix.toml').writeAsStringSync('title = "Ws"\n');
-  File('${root.path}/ws/m.txt').writeAsStringSync(
-    '# q1\n    a1\n# q2\n    a2\n# q3\n    a3\n# q4\n    a4\n',
+  File('${root.path}/ws/m.md').writeAsStringSync(
+    '## q1 <!-- id: q1 -->\na1\n\n'
+    '## q2 <!-- id: q2 -->\na2\n\n'
+    '## q3 <!-- id: q3 -->\na3\n\n'
+    '## q4 <!-- id: q4 -->\na4\n',
   );
   return root;
 }
@@ -94,7 +99,7 @@ void main() {
   test('a grade persists into the workspace store, on injected time', () {
     final root = makeRoot();
     addTearDown(() => root.deleteSync(recursive: true));
-    final deck = '${root.path}/ws/m.txt';
+    final deck = '${root.path}/ws/m.md';
     acquireAll(deck, root.path);
 
     final s = ReviewSession.open(
@@ -119,7 +124,7 @@ void main() {
   test('choice options and feedback stay in lockstep', () {
     final root = makeRoot();
     addTearDown(() => root.deleteSync(recursive: true));
-    final deck = '${root.path}/ws/m.txt';
+    final deck = '${root.path}/ws/m.md';
     acquireAll(deck, root.path);
     // Recognize is pick-only: arm the deck's cached distractors so it renders a
     // real pick (on a phone these arrive by syncing the desktop's augmentation).
@@ -240,8 +245,8 @@ void main() {
     final rootB = Directory.systemTemp.createTempSync('alix-shared-');
     addTearDown(() => rootB.deleteSync(recursive: true));
     File(
-      '${rootB.path}/shared.txt',
-    ).writeAsStringSync('% title: Shared Deck\n# q\n    a\n');
+      '${rootB.path}/shared.md',
+    ).writeAsStringSync('# Shared Deck\n\n## q\na\n');
 
     await tester.pumpWidget(
       AlixApp(
@@ -498,7 +503,7 @@ void main() {
   ) async {
     final root = makeRoot();
     addTearDown(() => root.deleteSync(recursive: true));
-    final deck = '${root.path}/loose.txt';
+    final deck = '${root.path}/loose.md';
     final backdated = BigInt.from(
       DateTime.now().millisecondsSinceEpoch - 600000,
     );
@@ -560,11 +565,11 @@ void main() {
     addTearDown(() => root.deleteSync(recursive: true));
     // A seen multi-line flip card at Reconstruct renders as Explain; with no
     // cached keypoints the rubric falls back to the authored back lines.
-    final deck = '${root.path}/why.txt';
+    final deck = '${root.path}/why.md';
     File(deck).writeAsStringSync(
-      '# why does spacing work?\n'
-      '    recall strengthens the memory\n'
-      '    stronger memories fade more slowly\n',
+      '## why does spacing work? <!-- id: why -->\n'
+      'recall strengthens the memory\n'
+      'stronger memories fade more slowly\n',
     );
     final backdated = BigInt.from(
       DateTime.now().millisecondsSinceEpoch - 600000,
@@ -622,7 +627,7 @@ void main() {
   ) async {
     final root = makeRoot();
     addTearDown(() => root.deleteSync(recursive: true));
-    final deck = '${root.path}/loose.txt';
+    final deck = '${root.path}/loose.md';
     // Backdate the acquire far enough that the real clock is past the
     // cooldown (5 min default): the UI (which always uses the wall clock)
     // then serves the first quiz immediately.
@@ -676,7 +681,7 @@ void main() {
       // no plain-flip fallback, and no dead-end.
       final root = makeRoot();
       addTearDown(() => root.deleteSync(recursive: true));
-      final deck = '${root.path}/loose.txt';
+      final deck = '${root.path}/loose.md';
 
       await tester.pumpWidget(
         MaterialApp(
@@ -702,7 +707,7 @@ void main() {
   testWidgets('a choice pick washes the correct option green', (tester) async {
     final root = makeRoot();
     addTearDown(() => root.deleteSync(recursive: true));
-    final deck = '${root.path}/ws/m.txt';
+    final deck = '${root.path}/ws/m.md';
     acquireAll(deck, root.path);
     // Recognize is pick-only: arm the deck's cached distractors so it renders a
     // real pick (on a phone these arrive by syncing the desktop's augmentation).

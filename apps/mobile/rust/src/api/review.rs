@@ -898,14 +898,14 @@ mod tests {
     fn grades_route_to_the_workspace_and_root_stores() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        write(&root.join("loose.txt"), "# 2 plus 2?\n\t4\n");
+        write(&root.join("loose.md"), "## 2 plus 2?\n4\n");
         std::fs::create_dir(root.join("ws")).unwrap();
         write(&root.join("ws/alix.toml"), "");
-        write(&root.join("ws/member.txt"), "# capital of france?\n\tParis\n");
+        write(&root.join("ws/member.md"), "## capital of france?\nParis\n");
 
         for (deck, store_file) in [
-            (root.join("loose.txt"), root.join("progress.json")),
-            (root.join("ws/member.txt"), root.join("ws/progress.json")),
+            (root.join("loose.md"), root.join("progress.json")),
+            (root.join("ws/member.md"), root.join("ws/progress.json")),
         ] {
             let mut s = opened_after_acquire(&deck, root, None);
             assert!(
@@ -939,7 +939,7 @@ mod tests {
         let ws = root.join("ws");
         std::fs::create_dir(&ws).unwrap();
         write(&ws.join("alix.toml"), "title = \"W\"\n");
-        write(&ws.join("m.txt"), "# q\n\ta\n");
+        write(&ws.join("m.md"), "## q <!-- id: q1 -->\na\n");
         let deadline = alix::time::local_date(T0) + chrono::Days::new(3);
         write(
             &ws.join("alix.local.toml"),
@@ -947,9 +947,11 @@ mod tests {
         );
 
         // A mature Review-state card that would schedule ~months uncapped.
-        let id = alix::deck::Deck::load(ws.join("m.txt")).unwrap().cards[0].id();
+        let id = alix::deck::Deck::load(ws.join("m.md")).unwrap().cards[0]
+            .id()
+            .expect("the fixture stamps its own id");
         let mut store = alix::store::Store::open(alix::workspace::store_path(&ws)).unwrap();
-        store.get_or_insert(id, T0).recall = Some(alix::store::FsrsState {
+        store.get_or_insert(&id, T0).recall = Some(alix::store::FsrsState {
             stability: 200.0,
             difficulty: 5.0,
             state: 2,
@@ -962,7 +964,7 @@ mod tests {
         store.save().unwrap();
 
         let mut s = ReviewSession::open(
-            ws.join("m.txt").to_string_lossy().into_owned(),
+            ws.join("m.md").to_string_lossy().into_owned(),
             root.to_string_lossy().into_owned(),
             None,
             Some(T0),
@@ -973,7 +975,7 @@ mod tests {
 
         let ceiling = alix::time::end_of_local_day_ms(deadline);
         let store = alix::store::Store::open(alix::workspace::store_path(&ws)).unwrap();
-        let due = store.get(id).unwrap().recall.unwrap().due_ms;
+        let due = store.get(&id).unwrap().recall.unwrap().due_ms;
         assert!(
             due <= ceiling,
             "due {due} must respect the deadline ceiling {ceiling}"
@@ -985,23 +987,26 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         write(
-            &root.join("d.txt"),
-            "# q1\n\ta1\n# q2\n\ta2\n# q3\n\ta3\n# q4\n\ta4\n",
+            &root.join("d.md"),
+            "## q1 <!-- id: q1 -->\na1\n\n\
+             ## q2 <!-- id: q2 -->\na2\n\n\
+             ## q3 <!-- id: q3 -->\na3\n\n\
+             ## q4 <!-- id: q4 -->\na4\n",
         );
         // Cache a full set of AI distractors so a Recognize pick can be built;
         // options are never sampled from sibling answers.
         let store_path = alix::workspace::root_store_path(root);
         let mut cache =
             alix::augment::AugmentCache::open(alix::augment::augment_path_for(&store_path));
-        for card in &alix::deck::Deck::load(&root.join("d.txt")).unwrap().cards {
+        for card in &alix::deck::Deck::load(root.join("d.md")).unwrap().cards {
             cache.set_distractors(
-                card.id(),
+                &card.id().expect("the fixture stamps its own id"),
                 vec!["w1".to_string(), "w2".to_string(), "w3".to_string()],
             );
         }
         cache.save().unwrap();
 
-        let s = opened_after_acquire(&root.join("d.txt"), root, Some(Depth::Recognize));
+        let s = opened_after_acquire(&root.join("d.md"), root, Some(Depth::Recognize));
         let state = s.state(Some(LATER));
         assert_eq!(state.mode, Mode::Choice);
         let options = state.choices.expect("a recognize pick");
@@ -1026,8 +1031,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         // A multi-line back at Reconstruct renders as Explain.
-        write(&root.join("d.txt"), "# why\n\tfirst fact\n\tsecond fact\n");
-        let s = opened_after_acquire(&root.join("d.txt"), root, Some(Depth::Reconstruct));
+        write(
+            &root.join("d.md"),
+            "## why <!-- id: q1 -->\nfirst fact\nsecond fact\n",
+        );
+        let s = opened_after_acquire(&root.join("d.md"), root, Some(Depth::Reconstruct));
         let state = s.state(Some(LATER));
         assert_eq!(state.mode, Mode::Explain);
         assert_eq!(
@@ -1040,11 +1048,14 @@ mod tests {
         let store_path = alix::workspace::root_store_path(root);
         let mut cache =
             alix::augment::AugmentCache::open(alix::augment::augment_path_for(&store_path));
-        let deck = alix::deck::Deck::load(&root.join("d.txt")).unwrap();
-        cache.set_keypoints(deck.cards[0].id(), vec!["one claim".to_string()]);
+        let deck = alix::deck::Deck::load(root.join("d.md")).unwrap();
+        cache.set_keypoints(
+            &deck.cards[0].id().expect("the fixture stamps its own id"),
+            vec!["one claim".to_string()],
+        );
         cache.save().unwrap();
         let s = ReviewSession::open(
-            root.join("d.txt").to_string_lossy().into_owned(),
+            root.join("d.md").to_string_lossy().into_owned(),
             root.to_string_lossy().into_owned(),
             Some(Depth::Reconstruct),
             Some(LATER),
@@ -1061,10 +1072,10 @@ mod tests {
     fn foreign_writer_warns_the_other_device_and_never_the_writer() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        write(&root.join("d.txt"), "# q\n\ta\n");
+        write(&root.join("d.md"), "## q\na\n");
         let open_as = |device: &str| {
             ReviewSession::open(
-                root.join("d.txt").to_string_lossy().into_owned(),
+                root.join("d.md").to_string_lossy().into_owned(),
                 root.to_string_lossy().into_owned(),
                 None,
                 Some(T0),
@@ -1095,8 +1106,8 @@ mod tests {
     fn check_reports_per_line_evidence() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        write(&root.join("d.txt"), "# q\n\tParis\n");
-        let s = opened_after_acquire(&root.join("d.txt"), root, None);
+        write(&root.join("d.md"), "## q\nParis\n");
+        let s = opened_after_acquire(&root.join("d.md"), root, None);
         let feedback = s.check(vec!["paris".to_string()]).expect("feedback");
         assert!(feedback.passed, "normalized match");
         let wrong = s.check(vec!["london".to_string()]).expect("feedback");
@@ -1109,16 +1120,16 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         write(
-            &root.join("d.txt"),
-            "# capital?\n% reveal: cloze\n\tParis is the capital of {{France}}\n",
+            &root.join("d.md"),
+            "## capital?\nParis is the capital of \\cloze{France}\n",
         );
         // The authored back, read independently of the session under test,
         // never a hand-typed guess at what the cloze parse produces.
-        let authored = alix::deck::Deck::load(root.join("d.txt")).unwrap();
+        let authored = alix::deck::Deck::load(root.join("d.md")).unwrap();
         let authored_back = authored.cards[0].back.clone();
 
         let s = ReviewSession::open(
-            root.join("d.txt").to_string_lossy().into_owned(),
+            root.join("d.md").to_string_lossy().into_owned(),
             root.to_string_lossy().into_owned(),
             None,
             Some(T0),
@@ -1127,7 +1138,7 @@ mod tests {
         .unwrap();
 
         let tutor = s.tutor_card().expect("a card is current");
-        assert_eq!(tutor.subject, "d.txt");
+        assert_eq!(tutor.subject, "d.md");
         assert_eq!(tutor.back, authored_back);
 
         let view = s.state(Some(T0)).card.expect("a rendered card");
@@ -1143,17 +1154,17 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         write(
-            &root.join("d.txt"),
-            "# capital of france?\n\tParis\n# capital of germany?\n\tBerlin\n",
+            &root.join("d.md"),
+            "## capital of france?\nParis\n\n## capital of germany?\nBerlin\n",
         );
-        let mut s = opened_after_acquire(&root.join("d.txt"), root, None);
+        let mut s = opened_after_acquire(&root.join("d.md"), root, None);
         let store_path = alix::workspace::root_store_path(root);
 
-        // Same back as an existing deck card (front may differ; id hashes
-        // only subject + back, matching the web handler's own dedup): the
-        // web handler rejects this as a duplicate, never minting it.
+        // Identical canonical content (front + back) to an existing deck
+        // card: the dedup is by content fingerprint, not id (every mint
+        // carries a fresh random token), so this is rejected as a duplicate.
         let dup = s.mint_tutor_card(
-            "what is the capital of france?".to_string(),
+            "capital of france?".to_string(),
             vec!["Paris".to_string()],
             LATER,
         );
@@ -1165,13 +1176,12 @@ mod tests {
         assert_eq!(reopened.virtual_len(), 0, "the duplicate never reached disk");
 
         // Fresh content: mints a new Tutor virtual, retrievable from disk.
-        let id_str = s
+        let id = s
             .mint_tutor_card("capital of spain?".to_string(), vec!["Madrid".to_string()], LATER)
             .expect("fresh content mints");
-        let id: u64 = id_str.parse().expect("the id renders as a string");
         let reopened = alix::store::Store::open(&store_path).unwrap();
         let vc = reopened
-            .get_virtual(id)
+            .get_virtual(&id)
             .expect("the fresh mint is retrievable from disk");
         assert_eq!(vc.kind, alix::store::VirtualKind::Tutor);
     }
@@ -1181,13 +1191,18 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         // A header directive shifts the front off line 1, so a hardcoded `1`
-        // would not pass this test by accident.
-        write(&root.join("d.txt"), "% link: https://x\n# q\n\ta\n");
-        let authored = alix::deck::Deck::load(root.join("d.txt")).unwrap();
+        // would not pass this test by accident. Both the deck and the card
+        // are already stamped, so opening the session (spec §2.1) never
+        // mutates the file and shifts the line out from under this read.
+        write(
+            &root.join("d.md"),
+            "---\nid: \"d1\"\nlink: https://x\n---\n## q <!-- id: q1 -->\na\n",
+        );
+        let authored = alix::deck::Deck::load(root.join("d.md")).unwrap();
         let authored_line = authored.cards[0].line;
 
         let s = ReviewSession::open(
-            root.join("d.txt").to_string_lossy().into_owned(),
+            root.join("d.md").to_string_lossy().into_owned(),
             root.to_string_lossy().into_owned(),
             None,
             Some(T0),
@@ -1202,18 +1217,18 @@ mod tests {
     fn apply_card_note_writes_note_lines_and_preserves_the_card_id() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        write(&root.join("d.txt"), "# q\n\ta\n");
+        write(&root.join("d.md"), "## q <!-- id: q1 -->\na\n");
 
-        let before = alix::deck::Deck::load(root.join("d.txt")).unwrap();
-        let id_before = before.cards[0].id();
+        let before = alix::deck::Deck::load(root.join("d.md")).unwrap();
+        let id_before = before.cards[0].id().expect("the fixture stamps its own id");
         let line = before.cards[0].line;
 
         let store_path = alix::workspace::root_store_path(root);
-        let mut s = opened_after_acquire(&root.join("d.txt"), root, None);
+        let mut s = opened_after_acquire(&root.join("d.md"), root, None);
         s.grade(Grade::Pass, Some(LATER)).unwrap();
         let schedule_before = alix::store::Store::open(&store_path)
             .unwrap()
-            .get(id_before)
+            .get(&id_before)
             .and_then(|cs| cs.recall);
         assert!(
             schedule_before.is_some(),
@@ -1223,15 +1238,15 @@ mod tests {
         s.apply_card_note(line as u32, vec!["first".to_string(), "second".to_string()])
             .unwrap();
 
-        let text = std::fs::read_to_string(root.join("d.txt")).unwrap();
-        assert!(text.contains("! first"), "{text}");
-        assert!(text.contains("! second"), "{text}");
+        let text = std::fs::read_to_string(root.join("d.md")).unwrap();
+        assert!(text.contains("> first"), "{text}");
+        assert!(text.contains("> second"), "{text}");
 
         // The load-bearing assertion: reload the deck via the lib and
         // recompute the id independently. A note append must not reshuffle
         // it, or a learner's review history would silently reset.
-        let after = alix::deck::Deck::load(root.join("d.txt")).unwrap();
-        let id_after = after.cards[0].id();
+        let after = alix::deck::Deck::load(root.join("d.md")).unwrap();
+        let id_after = after.cards[0].id().expect("the fixture stamps its own id");
         assert_eq!(
             id_before, id_after,
             "appending a note must not change the card's id"
@@ -1241,7 +1256,7 @@ mod tests {
         // the append: progress survived.
         let reopened = alix::store::Store::open(&store_path).unwrap();
         assert_eq!(
-            reopened.get(id_after).and_then(|cs| cs.recall),
+            reopened.get(&id_after).and_then(|cs| cs.recall),
             schedule_before,
             "the id-keyed schedule survives the note append"
         );
@@ -1251,13 +1266,20 @@ mod tests {
     fn apply_card_note_with_empty_notes_writes_nothing() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        write(&root.join("d.txt"), "# q\n\ta\n");
-        let before_bytes = std::fs::read(root.join("d.txt")).unwrap();
+        // Both the deck and its one card are already stamped, so opening the
+        // session (which stamps any unstamped identity, spec §2.1) is itself
+        // a byte no-op — the only thing this test wants to attribute to
+        // `apply_card_note`.
+        write(
+            &root.join("d.md"),
+            "---\nid: \"d1\"\n---\n## q <!-- id: q1 -->\na\n",
+        );
+        let before_bytes = std::fs::read(root.join("d.md")).unwrap();
 
-        let mut s = opened_after_acquire(&root.join("d.txt"), root, None);
+        let mut s = opened_after_acquire(&root.join("d.md"), root, None);
         s.apply_card_note(1, Vec::new()).unwrap();
 
-        let after_bytes = std::fs::read(root.join("d.txt")).unwrap();
+        let after_bytes = std::fs::read(root.join("d.md")).unwrap();
         assert_eq!(
             before_bytes, after_bytes,
             "an empty notes vec is a no-op: not one byte changes"
@@ -1268,8 +1290,8 @@ mod tests {
     fn apply_card_note_mirrors_onto_the_live_session_without_reopening() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        write(&root.join("d.txt"), "# q\n\ta\n");
-        let mut s = opened_after_acquire(&root.join("d.txt"), root, None);
+        write(&root.join("d.md"), "## q\na\n");
+        let mut s = opened_after_acquire(&root.join("d.md"), root, None);
         let line = s.tutor_card().expect("a card is current").line;
 
         assert!(
@@ -1301,12 +1323,12 @@ mod tests {
     fn apply_card_note_mirror_is_guarded_by_the_anchor_line() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        write(&root.join("d.txt"), "# q1\n\ta1\n# q2\n\ta2\n");
-        let loaded = alix::deck::Deck::load(root.join("d.txt")).unwrap();
+        write(&root.join("d.md"), "## q1\na1\n\n## q2\na2\n");
+        let loaded = alix::deck::Deck::load(root.join("d.md")).unwrap();
         let line1 = loaded.cards[0].line;
         let line2 = loaded.cards[1].line;
 
-        let mut s = opened_after_acquire(&root.join("d.txt"), root, None);
+        let mut s = opened_after_acquire(&root.join("d.md"), root, None);
         let current_line = s.tutor_card().expect("a card is current").line;
         let other_line = if current_line == line1 { line2 } else { line1 };
 
@@ -1322,9 +1344,9 @@ mod tests {
             "a note anchored to a different card's line must not mirror onto \
              the current card"
         );
-        let text = std::fs::read_to_string(root.join("d.txt")).unwrap();
+        let text = std::fs::read_to_string(root.join("d.md")).unwrap();
         assert!(
-            text.contains("! stale"),
+            text.contains("> stale"),
             "the file append is unconditional (line-keyed): {text}"
         );
     }
@@ -1333,33 +1355,33 @@ mod tests {
     fn apply_exam_passed_marks_the_phone_store_mastered() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        write(&root.join("d.txt"), "# q\n\ta\n");
+        write(&root.join("d.md"), "## q\na\n");
         let store_path = alix::workspace::root_store_path(root);
-        let mut s = opened_after_acquire(&root.join("d.txt"), root, None);
+        let mut s = opened_after_acquire(&root.join("d.md"), root, None);
         assert!(
             !alix::store::Store::open(&store_path)
                 .unwrap()
-                .deck_mastered("d.txt"),
+                .deck_mastered("d.md"),
             "fresh store: not mastered"
         );
 
         s.apply_exam_passed(LATER).unwrap();
 
         let reopened = alix::store::Store::open(&store_path).unwrap();
-        assert!(reopened.deck_mastered("d.txt"));
-        assert_eq!(reopened.deck_mastered_at("d.txt"), Some(LATER));
+        assert!(reopened.deck_mastered("d.md"));
+        assert_eq!(reopened.deck_mastered_at("d.md"), Some(LATER));
     }
 
     #[test]
     fn apply_remediation_creates_virtuals_and_dedups_and_counts() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        write(&root.join("d.txt"), "# capital of france?\n\tParis\n");
-        let mut s = opened_after_acquire(&root.join("d.txt"), root, None);
+        write(&root.join("d.md"), "## capital of france?\nParis\n");
+        let mut s = opened_after_acquire(&root.join("d.md"), root, None);
         let store_path = alix::workspace::root_store_path(root);
 
         let remediation =
-            "# capital of france?\n\tParis\n# capital of germany?\n\tBerlin\n".to_string();
+            "## capital of france?\nParis\n\n## capital of germany?\nBerlin\n".to_string();
         let created = s.apply_remediation(remediation.clone(), LATER).unwrap();
         assert_eq!(created, 1, "the Paris block already matches a deck card");
 
@@ -1369,11 +1391,15 @@ mod tests {
             1,
             "only the new Berlin block became a virtual"
         );
-        let berlin_id = alix::parser::parse_str("d.txt", "# capital of germany?\n\tBerlin\n")
-            .unwrap()[0]
-            .id();
+        // Every mint carries a fresh random token (never a content hash), so
+        // the berlin virtual's id is looked up the same way production dedup
+        // does: by canonical-content fingerprint, not by re-deriving an id.
+        let fingerprint =
+            alix::l1::content_fingerprint("capital of germany?", &["Berlin".to_string()]);
+        let berlin_ids = reopened.virtual_ids_with_content("d.md", fingerprint);
+        assert_eq!(berlin_ids.len(), 1, "the berlin block minted one virtual");
         let vc = reopened
-            .get_virtual(berlin_id)
+            .get_virtual(&berlin_ids[0])
             .expect("the berlin block is stored as a virtual");
         assert_eq!(vc.kind, alix::store::VirtualKind::Remediation);
 
@@ -1391,8 +1417,8 @@ mod tests {
     fn crumb_is_none_for_a_plain_non_topology_deck() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        write(&root.join("d.txt"), "# q\n\ta\n");
-        let s = opened_after_acquire(&root.join("d.txt"), root, None);
+        write(&root.join("d.md"), "## q\na\n");
+        let s = opened_after_acquire(&root.join("d.md"), root, None);
         assert!(
             s.crumb(Some(LATER)).is_none(),
             "no topology cached, so no crumb"
@@ -1405,8 +1431,15 @@ mod tests {
     /// cached topology needs no explicit `--topology` selection). `walk`
     /// controls which card the scheduler serves first among two equally-due
     /// cards (`session.rs` sorts the due set by topology rank), so tests can
-    /// pin the "current" card by choosing `walk`'s order.
-    fn cache_two_region_topology(root: &Path, walk: Vec<u64>, regions: Vec<(&str, Vec<u64>)>) {
+    /// pin the "current" card by choosing `walk`'s order. `deck_token` must
+    /// match the loaded deck's own frontmatter `id:` (`Topology::belongs_to`
+    /// scopes a shared cache's topologies by owner token).
+    fn cache_two_region_topology(
+        root: &Path,
+        deck_token: &str,
+        walk: Vec<String>,
+        regions: Vec<(&str, Vec<String>)>,
+    ) {
         let store_path = alix::workspace::root_store_path(root);
         let mut cache =
             alix::augment::AugmentCache::open(alix::augment::augment_path_for(&store_path));
@@ -1414,6 +1447,7 @@ mod tests {
             name: "auto".to_string(),
             principle: "test order".to_string(),
             walk,
+            deck_token: deck_token.to_string(),
             regions: regions
                 .into_iter()
                 .map(|(name, cards)| alix::augment::TopologyRegion {
@@ -1430,16 +1464,20 @@ mod tests {
     fn crumb_reports_the_current_cards_region_in_a_topology_session() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        let deck = root.join("d.txt");
-        write(&deck, "# q1\n\ta1\n# q2\n\ta2\n");
+        let deck = root.join("d.md");
+        write(
+            &deck,
+            "---\nid: \"d1\"\n---\n## q1 <!-- id: q1 -->\na1\n\n## q2 <!-- id: q2 -->\na2\n",
+        );
         let loaded = alix::deck::Deck::load(&deck).unwrap();
-        let id1 = loaded.cards[0].id();
-        let id2 = loaded.cards[1].id();
+        let id1 = loaded.cards[0].id().expect("the fixture stamps its own id");
+        let id2 = loaded.cards[1].id().expect("the fixture stamps its own id");
 
         cache_two_region_topology(
             root,
-            vec![id1, id2],
-            vec![("Intro", vec![id1]), ("Body", vec![id2])],
+            "d1",
+            vec![id1.clone(), id2.clone()],
+            vec![("Intro", vec![id1.clone()]), ("Body", vec![id2.clone()])],
         );
 
         let s = opened_after_acquire(&deck, root, None);
@@ -1460,16 +1498,24 @@ mod tests {
     fn crumb_is_none_when_the_current_card_has_no_region() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        let deck = root.join("d.txt");
-        write(&deck, "# q1\n\ta1\n# q2\n\ta2\n");
+        let deck = root.join("d.md");
+        write(
+            &deck,
+            "---\nid: \"d1\"\n---\n## q1 <!-- id: q1 -->\na1\n\n## q2 <!-- id: q2 -->\na2\n",
+        );
         let loaded = alix::deck::Deck::load(&deck).unwrap();
-        let id1 = loaded.cards[0].id();
-        let id2 = loaded.cards[1].id();
+        let id1 = loaded.cards[0].id().expect("the fixture stamps its own id");
+        let id2 = loaded.cards[1].id().expect("the fixture stamps its own id");
 
         // id2 ranks first (so it's served first among two equally-due
         // cards), but only id1 has a region: the current card (id2) sits in
         // no region, so no crumb, no panic.
-        cache_two_region_topology(root, vec![id2, id1], vec![("Intro", vec![id1])]);
+        cache_two_region_topology(
+            root,
+            "d1",
+            vec![id2.clone(), id1.clone()],
+            vec![("Intro", vec![id1.clone()])],
+        );
 
         let s = opened_after_acquire(&deck, root, None);
         let current_front = s.state(Some(LATER)).card.expect("a card is current").front;
@@ -1483,20 +1529,23 @@ mod tests {
         );
     }
 
-    /// A two-hop trace over a real in-folder source file, subject `t.txt`.
+    /// A two-hop trace over a real in-folder source file, subject `t.md`.
     fn trace_fixture(root: &Path) -> PathBuf {
         write(&root.join("source.txt"), "first\nsecond\nthird\n");
-        let path = root.join("t.txt");
+        let path = root.join("t.md");
         write(
             &path,
-            "% trace: how it works\n\
-             % source: source.txt\n\
-             # Predict the first hop\n\
-             \tit reads the first line\n\
-             \t% at: 1\n\
-             # Predict the second hop\n\
-             \tit reads lines two and three\n\
-             \t% at: 2-3\n",
+            "---\n\
+             trace: how it works\n\
+             source: source.txt\n\
+             ---\n\
+             ## Predict the first hop\n\
+             it reads the first line\n\
+             <!-- at: 1 -->\n\
+             \n\
+             ## Predict the second hop\n\
+             it reads lines two and three\n\
+             <!-- at: 2-3 -->\n",
         );
         path
     }
@@ -1584,16 +1633,18 @@ mod tests {
         write(&ws.join("alix.toml"), "title = \"Box\"\n");
         write(&ws.join("source.txt"), "alpha\nbeta\ngamma\n");
         write(
-            &ws.join("t.txt"),
-            "% trace: a member walk\n\
-             % source: source.txt\n\
-             # Predict\n\
-             \tit reads line two\n\
-             \t% at: 2\n",
+            &ws.join("t.md"),
+            "---\n\
+             trace: a member walk\n\
+             source: source.txt\n\
+             ---\n\
+             ## Predict\n\
+             it reads line two\n\
+             <!-- at: 2 -->\n",
         );
 
         let mut s = WalkSession::open(
-            ws.join("t.txt").to_string_lossy().into_owned(),
+            ws.join("t.md").to_string_lossy().into_owned(),
             root.to_string_lossy().into_owned(),
             Some(T0),
             None,
@@ -1621,13 +1672,15 @@ mod tests {
 
         // No `% source:` at all: a bare line-number locator has no file to
         // resolve against.
-        let no_source = root.join("no-source.txt");
+        let no_source = root.join("no-source.md");
         write(
             &no_source,
-            "% trace: a path with no source\n\
-             # Predict something\n\
-             \tthe answer\n\
-             \t% at: 1\n",
+            "---\n\
+             trace: a path with no source\n\
+             ---\n\
+             ## Predict something\n\
+             the answer\n\
+             <!-- at: 1 -->\n",
         );
         let mut s = WalkSession::open(
             no_source.to_string_lossy().into_owned(),
@@ -1643,14 +1696,16 @@ mod tests {
         assert!(state.excerpt_error.is_some());
 
         // A URL `% source:` has no local line ranges either.
-        let url_source = root.join("url-source.txt");
+        let url_source = root.join("url-source.md");
         write(
             &url_source,
-            "% trace: a path with a URL source\n\
-             % source: https://example.com/readme.md\n\
-             # Predict something\n\
-             \tthe answer\n\
-             \t% at: 1\n",
+            "---\n\
+             trace: a path with a URL source\n\
+             source: https://example.com/readme.md\n\
+             ---\n\
+             ## Predict something\n\
+             the answer\n\
+             <!-- at: 1 -->\n",
         );
         let mut s = WalkSession::open(
             url_source.to_string_lossy().into_owned(),
@@ -1694,7 +1749,7 @@ mod tests {
         assert!(
             !alix::store::Store::open(&store_path)
                 .unwrap()
-                .deck_mastered("t.txt"),
+                .deck_mastered("t.md"),
             "fresh: not yet mastered"
         );
         s.apply_exam_passed(T0 + cooldown_ms + 1).unwrap();
@@ -1703,9 +1758,9 @@ mod tests {
             "the flag is captured at open, not derived from the store"
         );
         let reopened = alix::store::Store::open(&store_path).unwrap();
-        assert!(reopened.deck_mastered("t.txt"));
+        assert!(reopened.deck_mastered("t.md"));
         assert_eq!(
-            reopened.deck_mastered_at("t.txt"),
+            reopened.deck_mastered_at("t.md"),
             Some(T0 + cooldown_ms + 1)
         );
     }
@@ -1715,8 +1770,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let trace = trace_fixture(root);
-        let facts = root.join("facts.txt");
-        write(&facts, "# q\n\ta\n");
+        let facts = root.join("facts.md");
+        write(&facts, "## q\na\n");
 
         // `.err()` (not `.unwrap_err()`): the opaque session handles carry no
         // `Debug` impl, which `unwrap_err`'s panic message would require.

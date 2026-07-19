@@ -42,7 +42,7 @@ void main() {
   }) async {
     await tester.pumpWidget(MaterialApp(
       home: ExamScreen(
-        deckName: 'rust.txt',
+        deckName: 'rust.md',
         client: client,
         support: tempSupport(),
         buildClient: (_) => client,
@@ -61,7 +61,7 @@ void main() {
 
   const answering2 = RemoteExam(
     phase: 'answering',
-    deck: 'rust.txt',
+    deck: 'rust.md',
     strictness: 'balanced',
     questions: ['Why ownership?', 'What is borrowing?'],
     grades: [],
@@ -73,7 +73,7 @@ void main() {
 
   const generating = RemoteExam(
     phase: 'generating',
-    deck: 'rust.txt',
+    deck: 'rust.md',
     strictness: 'balanced',
     questions: [],
     grades: [],
@@ -86,7 +86,7 @@ void main() {
 
   const grading = RemoteExam(
     phase: 'grading',
-    deck: 'rust.txt',
+    deck: 'rust.md',
     strictness: 'balanced',
     questions: ['Why ownership?', 'What is borrowing?'],
     grades: [],
@@ -99,7 +99,7 @@ void main() {
 
   const resultsPassed = RemoteExam(
     phase: 'results',
-    deck: 'rust.txt',
+    deck: 'rust.md',
     strictness: 'balanced',
     questions: ['Why ownership?', 'What is borrowing?'],
     passed: true,
@@ -121,7 +121,7 @@ void main() {
 
   const resultsFailed = RemoteExam(
     phase: 'results',
-    deck: 'rust.txt',
+    deck: 'rust.md',
     strictness: 'balanced',
     questions: ['Why ownership?'],
     passed: false,
@@ -143,7 +143,7 @@ void main() {
 
   const traceResultsPassed = RemoteExam(
     phase: 'results',
-    deck: 'rust.txt',
+    deck: 'rust.md',
     strictness: 'balanced',
     questions: ['Trace the borrow checker through this function.'],
     passed: true,
@@ -165,7 +165,7 @@ void main() {
 
   const traceResultsFailed = RemoteExam(
     phase: 'results',
-    deck: 'rust.txt',
+    deck: 'rust.md',
     strictness: 'balanced',
     questions: ['Trace the borrow checker through this function.'],
     passed: false,
@@ -189,7 +189,7 @@ void main() {
 
   const remediating = RemoteExam(
     phase: 'remediating',
-    deck: 'rust.txt',
+    deck: 'rust.md',
     strictness: 'balanced',
     questions: ['Why ownership?'],
     passed: false,
@@ -202,14 +202,14 @@ void main() {
 
   const remediated = RemoteExam(
     phase: 'remediated',
-    deck: 'rust.txt',
+    deck: 'rust.md',
     strictness: 'balanced',
     questions: ['Why ownership?'],
     passed: false,
     grades: [],
     gaps: ['ownership and the GC-free memory model'],
     canRemediate: false,
-    cards: '# q?\n\ta\n',
+    cards: '## q?\na\n',
     isTrace: false,
     thinking: false,
   );
@@ -379,7 +379,7 @@ void main() {
           builder: (context) => ElevatedButton(
             onPressed: () => Navigator.of(context).push(MaterialPageRoute(
               builder: (_) => ExamScreen(
-                deckName: 'rust.txt',
+                deckName: 'rust.md',
                 client: client,
                 support: tempSupport(),
                 buildClient: (_) => client,
@@ -465,7 +465,7 @@ void main() {
     expect(find.text('Done.'), findsOneWidget);
 
     expect(remediationCalls, hasLength(1));
-    expect(remediationCalls.single.$1, '# q?\n\ta\n');
+    expect(remediationCalls.single.$1, '## q?\na\n');
     expect(find.text('3 new cards to drill.'), findsOneWidget);
   });
 
@@ -479,7 +479,7 @@ void main() {
           builder: (context) => ElevatedButton(
             onPressed: () => Navigator.of(context).push(MaterialPageRoute(
               builder: (_) => ExamScreen(
-                deckName: 'rust.txt',
+                deckName: 'rust.md',
                 client: client,
                 support: tempSupport(),
                 buildClient: (_) => client,
@@ -511,7 +511,7 @@ void main() {
           builder: (context) => ElevatedButton(
             onPressed: () => Navigator.of(context).push(MaterialPageRoute(
               builder: (_) => ExamScreen(
-                deckName: 'rust.txt',
+                deckName: 'rust.md',
                 client: client,
                 support: tempSupport(),
                 buildClient: (_) => client,
@@ -550,7 +550,7 @@ void main() {
       (tester) async {
     const oneQuestion = RemoteExam(
       phase: 'answering',
-      deck: 'rust.txt',
+      deck: 'rust.md',
       strictness: 'balanced',
       questions: ['Why ownership?'],
       grades: [],

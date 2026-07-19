@@ -35,9 +35,9 @@ void main() {
   Directory deckRoot({required bool examinable}) {
     final root = Directory.systemTemp.createTempSync('alix-exam-chip-decks-');
     final text = examinable
-        ? '% source: https://example.com\n# q?\n\ta\n'
-        : '# q?\n\ta\n';
-    File('${root.path}/facts.txt').writeAsStringSync(text);
+        ? '---\nsource: https://example.com\n---\n## q?\na\n'
+        : '## q?\na\n';
+    File('${root.path}/facts.md').writeAsStringSync(text);
     addTearDown(() => root.deleteSync(recursive: true));
     return root;
   }
@@ -52,7 +52,7 @@ void main() {
     await tester.pumpWidget(MaterialApp(
       theme: alixDark(),
       home: ReviewScreen(
-        deckPath: '${root.path}/facts.txt',
+        deckPath: '${root.path}/facts.md',
         rootDir: root.path,
         depth: Depth.recall,
         supportDir: support,
@@ -115,7 +115,7 @@ void main() {
   // a workspace member to `<workspace>/<member>`, the key the desktop's own
   // catalog looks decks up by (`resolve_row`, src/serve/catalog.rs) -- never
   // the device-absolute path, and never a bare basename (a naive
-  // `path.basename` would collapse this to `member.txt` and pass the chip's
+  // `path.basename` would collapse this to `member.md` and pass the chip's
   // own visibility tests above without ever exercising the join).
   testWidgets('a workspace member deck: "Take the exam" starts the sitting on "<workspace>/<member>"',
       (tester) async {
@@ -123,8 +123,8 @@ void main() {
     addTearDown(() => root.deleteSync(recursive: true));
     Directory('${root.path}/wsfolder').createSync();
     File('${root.path}/wsfolder/alix.toml').writeAsStringSync('title = "Ws"\n');
-    File('${root.path}/wsfolder/member.txt')
-        .writeAsStringSync('% source: https://example.com\n# q?\n\ta\n');
+    File('${root.path}/wsfolder/member.md')
+        .writeAsStringSync('---\nsource: https://example.com\n---\n## q?\na\n');
 
     final support = tempSupport();
     await setServer(const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok'), support: support);
@@ -133,7 +133,7 @@ void main() {
     await tester.pumpWidget(MaterialApp(
       theme: alixDark(),
       home: ReviewScreen(
-        deckPath: '${root.path}/wsfolder/member.txt',
+        deckPath: '${root.path}/wsfolder/member.md',
         rootDir: root.path,
         depth: Depth.recall,
         supportDir: support,
@@ -147,6 +147,6 @@ void main() {
     await tester.tap(find.text('Take the exam'));
     await tester.pumpAndSettle();
 
-    expect(client.startedDeck, 'wsfolder/member.txt');
+    expect(client.startedDeck, 'wsfolder/member.md');
   });
 }

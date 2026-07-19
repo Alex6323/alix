@@ -31,7 +31,7 @@ void main() {
 
   Directory deckRoot() {
     final root = Directory.systemTemp.createTempSync('alix-ask-chip-decks-');
-    File('${root.path}/facts.txt').writeAsStringSync('% title: Facts\n# q?\n\ta\n');
+    File('${root.path}/facts.md').writeAsStringSync('# Facts\n\n## q?\na\n');
     addTearDown(() => root.deleteSync(recursive: true));
     return root;
   }
@@ -45,7 +45,7 @@ void main() {
     await tester.pumpWidget(MaterialApp(
       theme: alixDark(),
       home: ReviewScreen(
-        deckPath: '${root.path}/facts.txt',
+        deckPath: '${root.path}/facts.md',
         rootDir: root.path,
         depth: Depth.recall,
         supportDir: support,

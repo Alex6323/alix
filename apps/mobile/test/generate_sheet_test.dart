@@ -105,10 +105,10 @@ void main() {
     final support = temp('alix-gen-support-');
     final root = temp('alix-gen-decks-');
     await pair(support);
-    const deckText = '# capital of testland?\n\tTestville\n';
+    const deckText = '## capital of testland?\nTestville\n';
     final client = FakeServerClient(
       generateGetReplies: const [
-        RemoteGenerate(phase: 'done', deck: deckText, filename: 'generated.txt', cards: 1),
+        RemoteGenerate(phase: 'done', deck: deckText, filename: 'generated.md', cards: 1),
       ],
     );
     await openPicker(tester, root: root.path, support: support, buildClient: (_) => client);
@@ -127,16 +127,16 @@ void main() {
     await tester.tap(find.text('Use this folder'));
     await tester.pumpAndSettle();
 
-    final written = File('${root.path}/generated.txt');
+    final written = File('${root.path}/generated.md');
     expect(written.existsSync(), isTrue, reason: 'the phone, not the desktop, places the file');
     expect(written.readAsStringSync(), contains('Testville'));
 
-    expect(find.textContaining('saved as generated.txt'), findsOneWidget);
+    expect(find.textContaining('saved as generated.md'), findsOneWidget);
     expect(client.generateCloseCalls, 1, reason: 'the server generation slot is freed once placed');
     expect(client.closed, isTrue);
 
     // The picker refreshed: the newly placed deck's row is now visible
-    // (its title defaults to the file stem, no `% title:` in the fixture).
+    // (its title defaults to the file stem, no `# ` H1 in the fixture).
     expect(find.text('generated'), findsOneWidget);
   });
 
@@ -145,11 +145,11 @@ void main() {
     final support = temp('alix-gen-support-');
     final root = temp('alix-gen-decks-');
     await pair(support);
-    const deckText = '# q\n\ta\n';
+    const deckText = '## q\na\n';
     final client = FakeServerClient(
       generateGetReplies: const [
         RemoteGenerate(phase: 'generating', elapsed: 2),
-        RemoteGenerate(phase: 'done', deck: deckText, filename: 'x.txt', cards: 1),
+        RemoteGenerate(phase: 'done', deck: deckText, filename: 'x.md', cards: 1),
       ],
     );
     await openPicker(tester, root: root.path, support: support, buildClient: (_) => client);
@@ -178,9 +178,9 @@ void main() {
     final support = temp('alix-gen-support-');
     final root = temp('alix-gen-decks-');
     await pair(support);
-    const deckText = '# q\n\ta\n';
+    const deckText = '## q\na\n';
     final client = FakeServerClient(
-      generateGetReplies: const [RemoteGenerate(phase: 'done', deck: deckText, filename: 'x.txt', cards: 1)],
+      generateGetReplies: const [RemoteGenerate(phase: 'done', deck: deckText, filename: 'x.md', cards: 1)],
     );
     await openPicker(tester, root: root.path, support: support, buildClient: (_) => client);
     await openGenerateSheet(tester);

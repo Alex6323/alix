@@ -218,7 +218,7 @@ void main() {
       final exam = await client.examGet();
       expect(exam, isNotNull);
       expect(exam!.phase, 'remediated');
-      expect(exam.deck, 'rust.txt');
+      expect(exam.deck, 'rust.md');
       expect(exam.cards, contains('Why does Rust use ownership?'));
       expect(exam.grades, hasLength(1));
       expect(exam.grades.single.verdict, 'FAIL');
@@ -362,8 +362,8 @@ void main() {
       final doneResult = await fetch(done);
       expect(doneResult, isNotNull);
       expect(doneResult!.phase, 'done');
-      expect(doneResult.deck, contains('% link: https://example.org'));
-      expect(doneResult.filename, 'example-org.txt');
+      expect(doneResult.deck, contains('link: https://example.org'));
+      expect(doneResult.filename, 'example-org.md');
       expect(doneResult.cards, 1);
 
       final generatingResult = await fetch(generating);

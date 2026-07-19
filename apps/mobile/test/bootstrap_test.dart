@@ -26,7 +26,7 @@ void main() {
     final support = temp('alix-support-');
     final prepared = await prepare(support: support, env: '');
     expect(prepared.root, '${support.path}/decks');
-    expect(File('${support.path}/decks/basics.txt').existsSync(), isTrue,
+    expect(File('${support.path}/decks/basics.md').existsSync(), isTrue,
         reason: 'samples seed the fresh dir');
     expect(prepared.sharedDir, isNull);
     expect(prepared.staleDecksDir, isNull);
@@ -39,7 +39,7 @@ void main() {
   test('a fresh install seeds the tutorial deck', () async {
     final support = temp('alix-support-');
     await prepare(support: support, env: '');
-    final tutorial = File('${support.path}/decks/tutorial.txt');
+    final tutorial = File('${support.path}/decks/tutorial.md');
     expect(tutorial.existsSync(), isTrue);
     expect(tutorial.readAsStringSync(), contains('The alix tutorial'));
   });
@@ -47,7 +47,7 @@ void main() {
   test('a deleted tutorial stays deleted on the next launch', () async {
     final support = temp('alix-support-');
     await prepare(support: support, env: '');
-    final tutorial = File('${support.path}/decks/tutorial.txt');
+    final tutorial = File('${support.path}/decks/tutorial.md');
     tutorial.deleteSync();
     await prepare(support: support, env: '');
     expect(tutorial.existsSync(), isFalse,

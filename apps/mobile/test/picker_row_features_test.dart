@@ -52,9 +52,9 @@ void main() {
     /// through (a new card looks the same at any depth).
     Directory dueDeckRoot() {
       final root = tempRoot('alix-picker-depth-');
-      final deck = '${root.path}/d.txt';
+      final deck = '${root.path}/d.md';
       File(deck)
-          .writeAsStringSync('% title: D\n# capital of testland?\n\tTestville\n');
+          .writeAsStringSync('# D\n\n## capital of testland?\nTestville\n');
       final backdated =
           BigInt.from(DateTime.now().millisecondsSinceEpoch - 600000);
       ReviewSession.open(deckPath: deck, rootDir: root.path, nowMs: backdated)
@@ -134,21 +134,20 @@ void main() {
       File('${root.path}/wsSvg/alix.toml').writeAsStringSync('title = "WsSvg"\n');
       Directory('${root.path}/wsSvg/assets').createSync();
       File('${root.path}/wsSvg/assets/icon.svg').writeAsStringSync(_svgIcon);
-      File('${root.path}/wsSvg/m.txt').writeAsStringSync('# q\n\ta\n');
+      File('${root.path}/wsSvg/m.md').writeAsStringSync('## q\na\n');
 
       Directory('${root.path}/wsPng').createSync();
       File('${root.path}/wsPng/alix.toml').writeAsStringSync('title = "WsPng"\n');
       Directory('${root.path}/wsPng/assets').createSync();
       File('${root.path}/wsPng/assets/icon.png').writeAsBytesSync(_pngIcon);
-      File('${root.path}/wsPng/m.txt').writeAsStringSync('# q\n\ta\n');
+      File('${root.path}/wsPng/m.md').writeAsStringSync('## q\na\n');
 
       Directory('${root.path}/wsNone').createSync();
       File('${root.path}/wsNone/alix.toml')
           .writeAsStringSync('title = "WsNone"\n');
-      File('${root.path}/wsNone/m.txt').writeAsStringSync('# q\n\ta\n');
+      File('${root.path}/wsNone/m.md').writeAsStringSync('## q\na\n');
 
-      File('${root.path}/loose.txt')
-          .writeAsStringSync('% title: Loose\n# q\n\ta\n');
+      File('${root.path}/loose.md').writeAsStringSync('# Loose\n\n## q\na\n');
       return root;
     }
 
@@ -218,9 +217,9 @@ void main() {
     /// days out) instead of overdue-since-1970.
     Directory examDueRoot() {
       final root = tempRoot('alix-picker-examdue-');
-      final deck = '${root.path}/base.txt';
+      final deck = '${root.path}/base.md';
       File(deck).writeAsStringSync(
-          '% title: Base\n% source: https://example.com\n# q?\n\ta\n');
+          '---\nsource: https://example.com\n---\n# Base\n\n## q?\na\n');
       final t0 = DateTime.now().millisecondsSinceEpoch - 902000;
       ReviewSession.open(deckPath: deck, rootDir: root.path, nowMs: BigInt.from(t0))
           .acquire(nowMs: BigInt.from(t0));
@@ -253,8 +252,10 @@ void main() {
     testWidgets('a plain due deck shows the due dot, not the exam marker',
         (tester) async {
       final root = tempRoot('alix-picker-due-');
-      File('${root.path}/plain.txt')
-          .writeAsStringSync('% title: Plain\n# q\n\ta\n');
+      // The picker's listing is read-only and never stamps, so the card
+      // needs an explicit id to count as due.
+      File('${root.path}/plain.md')
+          .writeAsStringSync('# Plain\n\n## q <!-- id: q1 -->\na\n');
 
       await tester.pumpWidget(MaterialApp(
         theme: alixDark(),
@@ -281,14 +282,14 @@ void main() {
     /// with no dependency on the deck's actual review state.
     Directory mixedRoot() {
       final root = tempRoot('alix-picker-mastered-');
-      File('${root.path}/a-active.txt')
-          .writeAsStringSync('% title: Active A\n# q\n\ta\n');
-      File('${root.path}/b-active.txt')
-          .writeAsStringSync('% title: Active B\n# q\n\ta\n');
-      File('${root.path}/z-mastered.txt')
-          .writeAsStringSync('% title: Mastered Z\n# q\n\ta\n');
+      File('${root.path}/a-active.md')
+          .writeAsStringSync('# Active A\n\n## q\na\n');
+      File('${root.path}/b-active.md')
+          .writeAsStringSync('# Active B\n\n## q\na\n');
+      File('${root.path}/z-mastered.md')
+          .writeAsStringSync('# Mastered Z\n\n## q\na\n');
       File('${root.path}/progress.json').writeAsStringSync(
-        '{"cards": {}, "decks": {"z-mastered.txt": {"mastered_at_ms": 1}}}',
+        '{"cards": {}, "decks": {"z-mastered.md": {"mastered_at_ms": 1}}}',
       );
       return root;
     }
@@ -324,7 +325,7 @@ void main() {
 
     testWidgets('no mastered decks means no affordance', (tester) async {
       final root = tempRoot('alix-picker-no-mastered-');
-      File('${root.path}/a.txt').writeAsStringSync('% title: A\n# q\n\ta\n');
+      File('${root.path}/a.md').writeAsStringSync('# A\n\n## q\na\n');
 
       await tester.pumpWidget(MaterialApp(
         theme: alixDark(),
@@ -348,14 +349,13 @@ void main() {
       final root = tempRoot('alix-picker-tree-');
       final ws = Directory('${root.path}/ws')..createSync();
       File('${ws.path}/alix.toml').writeAsStringSync('');
-      File('${ws.path}/base.txt').writeAsStringSync(
-          '% title: Base\n% source: https://example.com\n# q?\n\ta\n');
-      File('${ws.path}/mid.txt')
-          .writeAsStringSync('% title: Mid\n% requires: base\n# q?\n\ta\n');
-      File('${ws.path}/tip.txt')
-          .writeAsStringSync('% title: Tip\n% requires: mid\n# q?\n\ta\n');
-      File('${ws.path}/other.txt')
-          .writeAsStringSync('% title: Other\n# q?\n\ta\n');
+      File('${ws.path}/base.md').writeAsStringSync(
+          '---\nsource: https://example.com\n---\n# Base\n\n## q?\na\n');
+      File('${ws.path}/mid.md')
+          .writeAsStringSync('---\nrequires: base\n---\n# Mid\n\n## q?\na\n');
+      File('${ws.path}/tip.md')
+          .writeAsStringSync('---\nrequires: mid\n---\n# Tip\n\n## q?\na\n');
+      File('${ws.path}/other.md').writeAsStringSync('# Other\n\n## q?\na\n');
       return root;
     }
 
@@ -441,15 +441,14 @@ void main() {
       final root = tempRoot('alix-picker-tree-truncate-');
       final ws = Directory('${root.path}/ws')..createSync();
       File('${ws.path}/alix.toml').writeAsStringSync('');
-      File('${ws.path}/base.txt')
-          .writeAsStringSync('% title: Base\n# q?\n\ta\n');
-      File('${ws.path}/mid.txt')
-          .writeAsStringSync('% title: Mid\n% requires: base\n# q?\n\ta\n');
+      File('${ws.path}/base.md').writeAsStringSync('# Base\n\n## q?\na\n');
+      File('${ws.path}/mid.md')
+          .writeAsStringSync('---\nrequires: base\n---\n# Mid\n\n## q?\na\n');
       const longTitle = 'A very long member deck title that would wrap onto '
           'more than one line if the row were not truncating it with an '
           'ellipsis instead';
-      File('${ws.path}/deep.txt').writeAsStringSync(
-          '% title: $longTitle\n% requires: mid\n# q?\n\ta\n');
+      File('${ws.path}/deep.md').writeAsStringSync(
+          '---\nrequires: mid\n---\n# $longTitle\n\n## q?\na\n');
 
       await tester.pumpWidget(MaterialApp(
         theme: alixDark(),

@@ -61,28 +61,42 @@ mod tests {
     #[test]
     fn apply_generated_deck_writes_the_stem_and_parses_the_expected_card_count() {
         let dir = tempfile::tempdir().unwrap();
-        let text = "# q1\n\ta1\n# q2\n\ta2\n";
+        let text = "## q1\na1\n\n## q2\na2\n";
         let name =
             apply_generated_deck(dir_str(&dir), "topic.txt".to_string(), text.to_string()).unwrap();
 
-        assert_eq!(name, "topic.txt");
-        let deck = alix::deck::Deck::load(dir.path().join("topic.txt")).unwrap();
+        // `place_deck` (the shared writer this delegates to) always normalizes
+        // to `.md`, regardless of the suggested name's own suffix.
+        assert_eq!(name, "topic.md");
+        let deck = alix::deck::Deck::load(dir.path().join("topic.md")).unwrap();
         assert_eq!(deck.cards.len(), 2);
     }
 
+    // KNOWN BUG (not fixed here — production code, out of this task's scope):
+    // this function's own collision loop probes `<candidate>.txt` for an
+    // existing file (line 39), but the writer it delegates to
+    // (`alix::library::place_deck`) always writes `.md` (src/library.rs:35).
+    // Since every real deck on disk is `.md` today, the probe never sees a
+    // real collision; `place_deck`'s own `path.exists()` guard then hard-errors
+    // instead of the intended `-2`/`-3` fallback. The first collision below
+    // still resolves by accident (the pre-existing file is written directly
+    // as `foo.txt`, which the stale probe does see), but the second one hits
+    // the freshly-written `foo-2.md` and errors, so this test still fails
+    // after fixing only its fixture content/expectations. Left failing
+    // (not weakened) so it keeps pointing at the real gap.
     #[test]
     fn a_colliding_filename_stems_to_dash_2_leaving_the_original_untouched() {
         let dir = tempfile::tempdir().unwrap();
-        let original = "% title: Original\n# q\n\ta\n";
+        let original = "# Original\n\n## q\na\n";
         std::fs::write(dir.path().join("foo.txt"), original).unwrap();
 
         let name = apply_generated_deck(
             dir_str(&dir),
             "foo.txt".to_string(),
-            "# new\n\tb\n".to_string(),
+            "## new\nb\n".to_string(),
         )
         .unwrap();
-        assert_eq!(name, "foo-2.txt");
+        assert_eq!(name, "foo-2.md");
         assert_eq!(
             std::fs::read(dir.path().join("foo.txt")).unwrap(),
             original.as_bytes(),
@@ -92,19 +106,19 @@ mod tests {
         let name = apply_generated_deck(
             dir_str(&dir),
             "foo.txt".to_string(),
-            "# newer\n\tc\n".to_string(),
+            "## newer\nc\n".to_string(),
         )
         .unwrap();
-        assert_eq!(name, "foo-3.txt");
+        assert_eq!(name, "foo-3.md");
     }
 
     #[test]
-    fn a_filename_without_the_txt_suffix_still_lands_on_stem_txt() {
+    fn a_filename_without_the_txt_suffix_still_lands_on_stem_md() {
         let dir = tempfile::tempdir().unwrap();
         let name =
-            apply_generated_deck(dir_str(&dir), "topic".to_string(), "# q\n\ta\n".to_string())
+            apply_generated_deck(dir_str(&dir), "topic".to_string(), "## q\na\n".to_string())
                 .unwrap();
-        assert_eq!(name, "topic.txt");
+        assert_eq!(name, "topic.md");
     }
 
     #[test]
@@ -113,10 +127,10 @@ mod tests {
         let name = apply_generated_deck(
             dir_str(&dir),
             "v2.1.txt".to_string(),
-            "# q\n\ta\n".to_string(),
+            "## q\na\n".to_string(),
         )
         .unwrap();
-        assert_eq!(name, "v2.1.txt");
+        assert_eq!(name, "v2.1.md");
     }
 
     #[test]
@@ -125,7 +139,7 @@ mod tests {
         let name = apply_generated_deck(
             dir_str(&dir),
             "nolf.txt".to_string(),
-            "# q\n\ta".to_string(),
+            "## q\na".to_string(),
         )
         .unwrap();
         let written = std::fs::read_to_string(dir.path().join(&name)).unwrap();

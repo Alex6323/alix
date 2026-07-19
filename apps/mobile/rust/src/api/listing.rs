@@ -170,10 +170,16 @@ mod tests {
     fn lists_a_root_with_a_workspace_and_a_loose_deck() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        std::fs::write(root.join("loose.txt"), "% title: Loose\n# q\n\ta\n").unwrap();
+        // `list_root`/`list_members` are read-only and never stamp (spec
+        // §2.1), so a card needs an explicit id to count as reviewable/due.
+        std::fs::write(
+            root.join("loose.md"),
+            "# Loose\n\n## q <!-- id: q1 -->\na\n",
+        )
+        .unwrap();
         std::fs::create_dir(root.join("ws")).unwrap();
         std::fs::write(root.join("ws/alix.toml"), "title = \"Ws\"\n").unwrap();
-        std::fs::write(root.join("ws/m.txt"), "# q\n\ta\n").unwrap();
+        std::fs::write(root.join("ws/m.md"), "## q <!-- id: q1 -->\na\n").unwrap();
 
         let rows = list_root(root.to_string_lossy().into_owned(), Some(1_000_000));
         let titles: Vec<(&str, bool, bool)> = rows
@@ -195,7 +201,7 @@ mod tests {
     fn sync_conflicts_surfaces_a_conflict_copy_and_is_quiet_without_one() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        std::fs::write(root.join("loose.txt"), "# q\n\ta\n").unwrap();
+        std::fs::write(root.join("loose.md"), "## q\na\n").unwrap();
         assert!(sync_conflicts(root.to_string_lossy().into_owned()).is_empty());
 
         let conflict = root.join("progress.sync-conflict-20260714-101112-ABCDEF7.json");
@@ -228,14 +234,19 @@ mod tests {
     fn mastered_and_exam_due_cross_the_boundary_for_a_sourced_deck() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        write(&root.join("base.txt"), "% source: https://x\n# q\n\ta\n");
-        write(&root.join("fresh.txt"), "# q\n\ta\n");
+        write(
+            &root.join("base.md"),
+            "---\nsource: \"https://x\"\n---\n## q <!-- id: q1 -->\na\n",
+        );
+        write(&root.join("fresh.md"), "## q\na\n");
 
-        let base_subject = alix::deck::Deck::load(root.join("base.txt")).unwrap().subject;
-        let base_id = alix::deck::Deck::load(root.join("base.txt")).unwrap().cards[0].id();
+        let base_subject = alix::deck::Deck::load(root.join("base.md")).unwrap().subject;
+        let base_id = alix::deck::Deck::load(root.join("base.md")).unwrap().cards[0]
+            .id()
+            .expect("the fixture stamps its own id");
         let store_path = alix::workspace::root_store_path(root);
         let mut store = alix::store::Store::open(&store_path).unwrap();
-        store.get_or_insert(base_id, T0).recall = Some(graduated_not_due(T0));
+        store.get_or_insert(&base_id, T0).recall = Some(graduated_not_due(T0));
         store.save().unwrap();
 
         let rows = list_root(root.to_string_lossy().into_owned(), Some(T0 + 1_000));
@@ -260,12 +271,12 @@ mod tests {
     fn locked_and_unlocked_members_cross_the_boundary() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        write(&root.join("gate.txt"), "% source: https://x\n# q\n\ta\n");
+        write(&root.join("gate.md"), "---\nsource: \"https://x\"\n---\n## q\na\n");
         let ws = root.join("ws");
         std::fs::create_dir(&ws).unwrap();
         write(&ws.join("alix.toml"), "");
-        write(&ws.join("child.txt"), "% requires: gate.txt\n# q2\n\tb\n");
-        write(&ws.join("other.txt"), "# q\n\ta\n");
+        write(&ws.join("child.md"), "---\nrequires: gate\n---\n## q2\nb\n");
+        write(&ws.join("other.md"), "## q\na\n");
 
         let rows = list_members(
             root.to_string_lossy().into_owned(),
@@ -273,7 +284,7 @@ mod tests {
             Some(T0),
         );
         let child = rows.iter().find(|r| r.title == "child").unwrap();
-        assert!(child.locked, "gated by the unmastered gate.txt");
+        assert!(child.locked, "gated by the unmastered gate.md");
         let other = rows.iter().find(|r| r.title == "other").unwrap();
         assert!(!other.locked);
     }
@@ -286,8 +297,8 @@ mod tests {
         write(&root.join("ws/alix.toml"), "");
         std::fs::create_dir_all(root.join("ws/assets")).unwrap();
         write(&root.join("ws/assets/icon.svg"), "<svg/>");
-        write(&root.join("ws/m.txt"), "# q\n\ta\n");
-        write(&root.join("loose.txt"), "# q\n\ta\n");
+        write(&root.join("ws/m.md"), "## q\na\n");
+        write(&root.join("loose.md"), "## q\na\n");
 
         let rows = list_root(root.to_string_lossy().into_owned(), Some(T0));
         let ws_row = rows.iter().find(|r| r.is_workspace).expect("listed");
@@ -310,10 +321,10 @@ mod tests {
         let ws = root.join("ws");
         std::fs::create_dir(&ws).unwrap();
         write(&ws.join("alix.toml"), "");
-        write(&ws.join("base.txt"), "# q\n\ta\n");
-        write(&ws.join("mid.txt"), "% requires: base\n# q\n\ta\n");
-        write(&ws.join("tip.txt"), "% requires: mid\n# q\n\ta\n");
-        write(&ws.join("other.txt"), "# q\n\ta\n");
+        write(&ws.join("base.md"), "## q\na\n");
+        write(&ws.join("mid.md"), "---\nrequires: base\n---\n## q\na\n");
+        write(&ws.join("tip.md"), "---\nrequires: mid\n---\n## q\na\n");
+        write(&ws.join("other.md"), "## q\na\n");
 
         let rows = list_members(
             root.to_string_lossy().into_owned(),
@@ -342,7 +353,7 @@ mod tests {
         let ws = root.join("ws");
         std::fs::create_dir(&ws).unwrap();
         write(&ws.join("alix.toml"), "title = \"Ws\"\n");
-        write(&ws.join("m.txt"), "# q\n\ta\n");
+        write(&ws.join("m.md"), "## q\na\n");
         let ws_s = ws.to_string_lossy().into_owned();
         let root_s = root.to_string_lossy().into_owned();
 
@@ -350,7 +361,7 @@ mod tests {
         assert!(workspace_deadline(root_s.clone(), ws_s.clone(), Some(T0)).is_none());
 
         // Set: the local manifest gains the key, and both the fetch and the
-        // root listing carry it with live readiness (0/1 — m.txt is fresh).
+        // root listing carry it with live readiness (0/1 — m.md is fresh).
         let date = alix::time::local_date(T0) + chrono::Days::new(5);
         let date_s = date.format("%Y-%m-%d").to_string();
         set_workspace_deadline(ws_s.clone(), Some(date_s.clone())).unwrap();
@@ -383,7 +394,7 @@ mod tests {
     fn last_depth_crosses_the_boundary_remembered_then_falls_back_to_default() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        write(&root.join("d.txt"), "# q\n\ta\n");
+        write(&root.join("d.md"), "## q\na\n");
 
         let rows = list_root(root.to_string_lossy().into_owned(), Some(T0));
         let row = rows.iter().find(|r| r.title == "d").expect("listed");
@@ -391,7 +402,7 @@ mod tests {
 
         let store_path = alix::workspace::root_store_path(root);
         let mut store = alix::store::Store::open(&store_path).unwrap();
-        store.set_last_depth("d.txt", alix::depth::Depth::Reconstruct);
+        store.set_last_depth("d.md", alix::depth::Depth::Reconstruct);
         store.save().unwrap();
 
         let rows = list_root(root.to_string_lossy().into_owned(), Some(T0));

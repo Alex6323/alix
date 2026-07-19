@@ -17,24 +17,24 @@ import 'package:alix_mobile/theme.dart';
 import 'package:alix_mobile/walk_screen.dart';
 
 const hashcardsTraceDeck = '''
-% trace: How a `C
-% source: assets
-% origin: /home/me/dev/developer/eudoxia0/hashcards
+---
+trace: How a `C
+source: assets
+origin: /home/me/dev/developer/eudoxia0/hashcards
+---
+## A `ReadingCloze` block just ended. What is handed to `parse_cloze_cards`?
+The accumulated cloze `text` plus the block's start and end line numbers.
+<!-- at: 55.rs from src/parser.rs:406-447 -->
 
-# A `ReadingCloze` block just ended. What is handed to `parse_cloze_cards`?
-	The accumulated cloze `text` plus the block's start and end line numbers.
-	% at: 55.rs from src/parser.rs:406-447
-
-# Why does this scan use bytes rather than chars?
-	Cloze `start`/`end` are byte positions, so counting must be in bytes.
-	% at: 57.rs from src/parser.rs:470-529
+## Why does this scan use bytes rather than chars?
+Cloze `start`/`end` are byte positions, so counting must be in bytes.
+<!-- at: 57.rs from src/parser.rs:470-529 -->
 ''';
 
 Directory traceRoot() {
   final root = Directory.systemTemp.createTempSync('alix-hashcards-');
-  File('${root.path}/07-how-a-c.txt').writeAsStringSync(hashcardsTraceDeck);
-  File('${root.path}/facts.txt')
-      .writeAsStringSync('% title: Facts\n# q?\n\ta\n');
+  File('${root.path}/07-how-a-c.md').writeAsStringSync(hashcardsTraceDeck);
+  File('${root.path}/facts.md').writeAsStringSync('# Facts\n\n## q?\na\n');
   return root;
 }
 
@@ -74,7 +74,7 @@ void main() {
     await tester.pumpWidget(MaterialApp(
       theme: alixDark(),
       home: ReviewScreen(
-        deckPath: '${root.path}/facts.txt',
+        deckPath: '${root.path}/facts.md',
         rootDir: root.path,
         depth: Depth.recall,
       ),
@@ -105,7 +105,7 @@ void main() {
     await tester.pumpWidget(MaterialApp(
       theme: alixDark(),
       home: ReviewScreen(
-        deckPath: '${root.path}/07-how-a-c.txt',
+        deckPath: '${root.path}/07-how-a-c.md',
         rootDir: root.path,
         depth: Depth.recall,
       ),
