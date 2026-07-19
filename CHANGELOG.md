@@ -90,9 +90,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   whole-answer cloze (`\cloze{…}` with no surrounding text) now parses, where the
   old format errored. There is no bundled converter: existing decks must be
   regenerated or hand-converted before opening. When alix writes an id it now
-  goes on its own line below the front (below the `---` for a divided front),
-  and every frontmatter block alix emits carries a blank line before its closing
-  `---`; the old inline id and blank-less closer stay valid input.
+  goes on its own line at the end of the card's block (after its last answer
+  or note line, before the next card or end of file), and every frontmatter
+  block alix emits carries a blank line before its closing `---`; the old
+  inline id, below-the-front id, and blank-less closer all stay valid input.
 - **A copied deck no longer silently shares one card's progress across two
   files.** When two decks in a folder claim the same identity token (a copied
   file, or a card copied with its `<!-- id: … -->` comment), the undecorated
