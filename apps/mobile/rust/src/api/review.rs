@@ -1157,7 +1157,7 @@ mod tests {
             "only the new Berlin block became a virtual"
         );
         let fingerprint =
-            alix::l1::content_fingerprint("capital of germany?", &["Berlin".to_string()]);
+            alix::parser::content_fingerprint("capital of germany?", &["Berlin".to_string()]);
         let berlin_ids = reopened.virtual_ids_with_content("d.md", fingerprint);
         assert_eq!(berlin_ids.len(), 1, "the berlin block minted one virtual");
         let vc = reopened

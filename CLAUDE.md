@@ -64,7 +64,7 @@ them probably shouldn't be built:
   *without* adding scope the NOT-list rules out, and never let "it'll bring
   users" substitute for clearing this gate — almost anything can claim that.
 - **Conceptual surface area is the real cost, not lines of code.** Prefer
-  extending an existing concept (a `%` directive, a mode) over adding a
+  extending an existing concept (a directive, a mode) over adding a
   subsystem the user must learn. A new concept must beat *merging into* or
   *replacing* an existing one.
 - **Subtraction test, both directions.** Would removing it make `alix`
@@ -112,7 +112,7 @@ a study surface. If a sentence reads like an ask for money, cut it.
 | `make ci` | **Full CI parity** — `fmt-check` + `check` under `-Dwarnings` + `coverage`, exactly as `.github/workflows/ci.yml` runs them. A green `make ci` predicts a green CI; run it before a push/release. |
 | `make coverage` | Coverage report via `cargo-llvm-cov` (HTML). |
 | `make calibrate` | Real-Claude grader calibration (`tests/calibrate.rs`, costed): before touching `grade_*`. |
-| `make run ARGS="stats mydeck.txt"` | Run the binary with args. |
+| `make run ARGS="stats mydeck.md"` | Run the binary with args. |
 | `make web ARGS="~/decks-test"` | Web frontend; no ARGS → the picker over the configured decks dir. |
 | `make web-debug` | `web` + per-request stderr logging (the `{#server-subresource-stall}` net). |
 | `make phone` / `make tablet` / `make desktop` | Run the alix mobile app on the phone/tablet emulator (boots the AVD if needed) or as a native Linux window (fastest loop). |
@@ -159,7 +159,7 @@ to this codebase. When in doubt, mirror the surrounding code.
   expose a `thiserror` enum for typed failures; workflow code (`exam`, `ask`,
   `generate`) returns `anyhow::Result` and uses `bail!` + `.context(...)` at call
   boundaries. Message style is **lowercase, no trailing period**, e.g.
-  ``bail!("the deck declares no `% source:` to examine against")``. Add
+  ``bail!("the deck declares no `source:` to examine against")``. Add
   `.context(...)` where it helps the user locate the failure, not at every `?`.
 
 - **No `unwrap` / `expect` / `panic!` in library paths.** Reach for `?`, `.or(…)`,
@@ -246,7 +246,7 @@ to this codebase. When in doubt, mirror the surrounding code.
   Formatting is run deliberately with `make fmt`, not enforced as a gate.
 - Don't commit unless asked; never push without permission.
 - **Two docs, two jobs; keep both in sync.** `docs/book/` (mdBook; `make book`)
-  is the **reference and manual**: the deck format, every `%`/card directive,
+  is the **reference and manual**: the deck format, every frontmatter key and card directive,
   every flag, all features, chapter by chapter. It is updated on **every**
   user-facing change. `README.md` is the **landing page** for both GitHub *and
   crates.io* (pitch, install, quickstart, a small inline deck example, a
