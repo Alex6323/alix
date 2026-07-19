@@ -1609,6 +1609,28 @@ fn generate_builds_checkpoints_into_an_existing_trace_stub() {
 }
 
 #[test]
+fn generate_refuses_to_rebuild_trace_checkpoints_without_force() {
+    let dir = TempDir::new().unwrap();
+    let stub = write(
+        dir.path(),
+        "t.md",
+        "---\ntrace: how it works\nsource: .\n---\n## old checkpoint <!-- id: c1 -->\nold point\n<!-- at: 1 -->\n",
+    );
+    let original = std::fs::read_to_string(&stub).unwrap();
+
+    let out = alix(&["generate", &stub]);
+
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("already has checkpoints"),
+        "stderr: {}",
+        stderr(&out)
+    );
+    assert_eq!(original, std::fs::read_to_string(&stub).unwrap());
+    assert!(!dir.path().join("t.md.bak").exists());
+}
+
+#[test]
 fn generate_trace_plan_prints_the_suggestion_menu() {
     let dir = TempDir::new().unwrap();
     write(dir.path(), "notes.md", "some source material\n");

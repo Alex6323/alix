@@ -432,6 +432,29 @@ mod tests {
         assert!(old_tokens.iter().all(|t| bak.contains(t.as_str())));
     }
 
+    #[test]
+    fn a_second_replace_overwrites_the_prior_bak() {
+        let dir = tempfile::tempdir().unwrap();
+        write_deck(dir.path(), "a.md", "da1", "c1");
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+
+        replace_deck(dir.path(), "a", "## first q\nfirst ans\n", &mut store).unwrap();
+        let first = std::fs::read_to_string(dir.path().join("a.md")).unwrap();
+
+        replace_deck(dir.path(), "a", "## second q\nsecond ans\n", &mut store).unwrap();
+
+        let baks: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".bak"))
+            .collect();
+        assert_eq!(1, baks.len(), "{baks:?}");
+        assert_eq!(
+            first,
+            std::fs::read_to_string(dir.path().join("a.md.bak")).unwrap()
+        );
+    }
+
     /// One fixture: frontmatter without `id:`, a divided card (fence + note +
     /// escaped divider + trailing-space front), and a two-hole cloze card.
     const MARKER_FIXTURE: &str = "---\nsource: notes.md\nrequires: basics\n---\n# The Title\nintro prose\n\n## First question \nextra front line\n\n---\nthe answer\n\\--- escaped divider\n> a note\n```\nfenced\n## not a card\n```\ntail prose\n\n## Fill in the blanks\nthe \\cloze{alpha} and \\cloze{beta} here\n> cloze note\n";
