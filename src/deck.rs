@@ -56,7 +56,10 @@ impl DeckSettings {
             order: frontmatter.order,
             direction: frontmatter.direction,
             img_dir: frontmatter.img_dir.clone(),
-            exam_strictness: frontmatter.strictness,
+            // Grading strictness is a learner setting; a deck can never ship
+            // its own grading rigor (only workspace `[defaults]` or global
+            // config feed `exam_strictness`, via `from_directives`).
+            exam_strictness: None,
             origin: frontmatter.origin.clone(),
         }
     }
@@ -1187,22 +1190,34 @@ mod tests {
     }
 
     #[test]
-    fn strictness_directive_parses() {
+    fn a_deck_level_strictness_key_is_an_unknown_key_lint() {
         let dir = tempfile::tempdir().unwrap();
-        let path = write_deck(
-            dir.path(),
-            "d.md",
-            "---\nstrictness: strict\n---\n## f\nb\n",
+        let text = "---\nstrictness: strict\n---\n## f\nb\n";
+        let path = write_deck(dir.path(), "d.md", text);
+
+        // Grading strictness is a learner setting; a deck can't ship it, so the
+        // key is just an ordinary unknown-key lint, not a recognized directive.
+        let l1deck = l1::parse_l1("d.md", text).unwrap();
+        assert_eq!(
+            vec![l1::Lint {
+                line: 2,
+                kind: l1::LintKind::UnknownKey {
+                    key: "strictness".to_string()
+                }
+            }],
+            l1deck.lints
         );
+
         let deck = Deck::load(&path).unwrap();
-        assert_eq!(Some(Strictness::Strict), deck.settings.exam_strictness);
+        assert_eq!(None, deck.settings.exam_strictness);
 
-        let bare = write_deck(dir.path(), "e.md", "## f\nb\n");
-        assert_eq!(None, Deck::load(&bare).unwrap().settings.exam_strictness);
-
-        // An unparseable value is linted, not an error.
-        let bad = write_deck(dir.path(), "g.md", "---\nstrictness: harsh\n---\n## f\nb\n");
-        assert_eq!(None, Deck::load(&bad).unwrap().settings.exam_strictness);
+        // Workspace `[defaults]` strictness still reaches the deck's settings.
+        let mut settings = DeckSettings::from_frontmatter(&l1deck.frontmatter);
+        settings.fill_from(&DeckSettings::from_directives(&[(
+            "strictness".to_string(),
+            "strict".to_string(),
+        )]));
+        assert_eq!(Some(Strictness::Strict), settings.exam_strictness);
     }
 
     #[test]

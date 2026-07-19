@@ -63,6 +63,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   The mobile app seeds the same deck into a fresh app-private folder.
 
 ### Changed
+- **Breaking: deck-level `strictness` removed: grading strictness is a learner
+  setting (config or workspace defaults); a deck cannot ship grading rigor.**
+  A `strictness:` key in a deck's frontmatter is now an ordinary unknown-key
+  lint, not a recognized directive; only the global config default and a
+  workspace `alix.toml`'s `[defaults]` feed `exam_strictness`.
 - **Breaking: decks are now the L1 Markdown format (`.md`), and a card's
   identity is a minted token, not a content hash.** A card front is `## `, its
   answer lines follow plainly, a note is `> `, deck metadata (`source:`,

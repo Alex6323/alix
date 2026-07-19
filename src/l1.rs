@@ -7,7 +7,6 @@ use yaml_rust2::{Yaml, YamlLoader};
 use crate::{
     answer::Input,
     card::{Card, Direction},
-    config::Strictness,
     depth::Reveal,
     session::Order,
     store::HoleFingerprint,
@@ -51,7 +50,6 @@ pub struct Frontmatter {
     pub input: Option<Input>,
     pub direction: Option<Direction>,
     pub img_dir: Option<PathBuf>,
-    pub strictness: Option<Strictness>,
     pub origin: Option<String>,
     pub unspliceable: bool,
 }
@@ -434,10 +432,6 @@ fn load_frontmatter(
             "img-dir" => match value {
                 Yaml::String(s) => frontmatter.img_dir = Some(PathBuf::from(s)),
                 other => lints.push(bad_value(line, key, yaml_kind(other).to_string())),
-            },
-            "strictness" => match value.as_str().and_then(Strictness::parse) {
-                Some(strictness) => frontmatter.strictness = Some(strictness),
-                None => lints.push(bad_value(line, key, describe(value))),
             },
             "origin" => match value {
                 Yaml::String(s) => {
@@ -1481,11 +1475,7 @@ mod tests {
     }
 
     #[test]
-    fn img_dir_strictness_and_origin_follow_the_leniency_model_of_comparable_keys() {
-        let deck = parse("---\nstrictness: extreme\n---\n## q\na\n");
-        assert_eq!(None, deck.frontmatter.strictness);
-        assert_eq!(vec![bad(2, "strictness", "extreme")], deck.lints);
-
+    fn img_dir_and_origin_follow_the_leniency_model_of_comparable_keys() {
         let deck = parse("---\nimg-dir: [a, b]\n---\n## q\na\n");
         assert_eq!(None, deck.frontmatter.img_dir);
         assert_eq!(vec![bad(2, "img-dir", "a sequence")], deck.lints);
@@ -1712,7 +1702,6 @@ order: sequential
 input: draw
 direction: both
 img-dir: assets
-strictness: strict
 origin: /crate
 tags: [a, b]
 license: MIT
@@ -1756,7 +1745,6 @@ the answer
                 input: Some(Input::Draw),
                 direction: Some(Direction::Both),
                 img_dir: Some(PathBuf::from("assets")),
-                strictness: Some(Strictness::Strict),
                 origin: Some("/crate".into()),
                 unspliceable: false,
             },
@@ -1768,7 +1756,7 @@ the answer
             CardDirectives {
                 token: Some("4jkya9q3m8z0tw5v9y2b4n6d8f".into()),
                 reveal: Some(Reveal::Flip),
-                reveal_line: Some(32),
+                reveal_line: Some(31),
                 input: Some(Input::Type),
                 direction: Some(Direction::Reverse),
                 img: Some("moon.png".into()),
