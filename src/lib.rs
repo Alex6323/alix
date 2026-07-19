@@ -73,6 +73,7 @@ pub mod serve;
 pub mod session;
 #[cfg(feature = "full")]
 pub mod share;
+pub mod stamp;
 pub mod store;
 pub mod time;
 #[cfg(feature = "full")]

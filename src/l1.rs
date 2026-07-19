@@ -40,6 +40,10 @@ const WHITESPACE: [char; 6] = ['\t', '\n', '\x0B', '\x0C', '\r', ' '];
 /// heading, note, divider, directive comment, and the two fence openers.
 const ESCAPABLE: [&str; 6] = ["##", ">", "---", "<!--", "```", "~~~"];
 
+/// A 1-based inclusive `(open, close)` line span (e.g. the two frontmatter
+/// `---` fences).
+pub type LineSpan = (usize, usize);
+
 /// A parsed L1 deck: identity, display metadata, cards, and soft findings.
 #[derive(Debug)]
 pub struct L1Deck {
@@ -54,6 +58,11 @@ pub struct L1Deck {
     pub cards: Vec<Card>,
     /// Soft findings for doctor: unknown keys, retired values, indented `##`.
     pub lints: Vec<Lint>,
+    /// The 1-based line span `(open, close)` of the frontmatter's two `---`
+    /// fences, or `None` when the deck has no frontmatter. The stamp writer
+    /// needs it to tell an absent block (prepend a canonical one) from a
+    /// present one (splice a minted `id:` after its opener), spec §2.3.
+    pub frontmatter_span: Option<LineSpan>,
 }
 
 /// The §3.6 closed frontmatter key set as typed fields. Unknown keys lint;
@@ -193,6 +202,7 @@ pub fn parse_l1(subject: &str, text: &str) -> Result<L1Deck, L1Error> {
         frontmatter: document.frontmatter,
         cards,
         lints,
+        frontmatter_span: document.frontmatter_span,
     })
 }
 
@@ -254,6 +264,9 @@ struct Document {
     title: Option<String>,
     cards: Vec<RawCard>,
     lints: Vec<Lint>,
+    /// The 1-based `(open, close)` line span of the frontmatter fences, or
+    /// `None` when there is no frontmatter (see [`L1Deck::frontmatter_span`]).
+    frontmatter_span: Option<LineSpan>,
 }
 
 /// One card as scanned: heading, routed body lines, note, directives.
@@ -316,13 +329,14 @@ fn parse_document(text: &str) -> Result<Document, L1Error> {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     let lines = prepare(text)?;
     let mut lints = Vec::new();
-    let (frontmatter, body_start) = parse_frontmatter(&lines, &mut lints)?;
+    let (frontmatter, body_start, frontmatter_span) = parse_frontmatter(&lines, &mut lints)?;
     let (title, cards) = scan(&lines, body_start, &mut lints)?;
     Ok(Document {
         frontmatter,
         title,
         cards,
         lints,
+        frontmatter_span,
     })
 }
 
@@ -390,17 +404,18 @@ fn closes_frontmatter(line: &str) -> bool {
 
 /// Locates and loads the optional frontmatter (spec §3.1): it opens only if
 /// the file's first content line is exactly `---`, and a missing close is a
-/// hard error. Returns the frontmatter and the 0-based index scanning
-/// resumes at.
+/// hard error. Returns the frontmatter, the 0-based index scanning resumes
+/// at, and the frontmatter's 1-based `(open, close)` fence-line span (`None`
+/// when there is no frontmatter) for the stamp writer.
 fn parse_frontmatter(
     lines: &[&str],
     lints: &mut Vec<Lint>,
-) -> Result<(Frontmatter, usize), L1Error> {
+) -> Result<(Frontmatter, usize, Option<LineSpan>), L1Error> {
     let Some(open) = lines.iter().position(|line| !trim_ws(line).is_empty()) else {
-        return Ok((Frontmatter::default(), lines.len()));
+        return Ok((Frontmatter::default(), lines.len(), None));
     };
     if lines[open] != "---" {
-        return Ok((Frontmatter::default(), 0));
+        return Ok((Frontmatter::default(), 0, None));
     }
     let Some(close) = lines[open + 1..]
         .iter()
@@ -410,7 +425,7 @@ fn parse_frontmatter(
         return Err(L1Error::UnclosedFrontmatter(open + 1));
     };
     let frontmatter = load_frontmatter(&lines[open + 1..close], open + 2, lints)?;
-    Ok((frontmatter, close + 1))
+    Ok((frontmatter, close + 1, Some((open + 1, close + 1))))
 }
 
 /// Hands the frontmatter block to the YAML parser and types the §3.6 closed
@@ -1318,6 +1333,26 @@ mod tests {
     }
 
     #[test]
+    fn the_frontmatter_span_locates_the_fences_or_is_none() {
+        // No frontmatter: no span (the stamp writer prepends a canonical one).
+        assert_eq!(None, parse("## q\na\n").frontmatter_span);
+        // A block mapping: the two `---` fence lines, 1-based.
+        assert_eq!(
+            Some((1, 3)),
+            parse("---\nsource: x\n---\n## q\na\n").frontmatter_span
+        );
+        // Leading blank lines push the opener (and closer) down.
+        assert_eq!(
+            Some((2, 4)),
+            parse("\n---\nsource: x\n---\n## q\na\n").frontmatter_span
+        );
+        // A flow mapping is present (has a span) but unspliceable.
+        let deck = parse("---\n{source: [a]}\n---\n## q\nb\n");
+        assert_eq!(Some((1, 3)), deck.frontmatter_span);
+        assert!(deck.frontmatter.unspliceable);
+    }
+
+    #[test]
     fn an_id_failing_the_charset_is_a_line_numbered_error() {
         assert_eq!(
             L1Error::InvalidToken {
@@ -1917,10 +1952,7 @@ the answer
         assert_eq!(Some("src/caching.rs:46-66".to_string()), card.at_origin);
         assert_eq!(Some("/crate".to_string()), card.origin);
         assert_eq!(2, card.givens.len());
-        assert_eq!(
-            Some("4jkya9q3m8z0tw5v9y2b4n6d8f"),
-            card.token.as_deref()
-        );
+        assert_eq!(Some("4jkya9q3m8z0tw5v9y2b4n6d8f"), card.token.as_deref());
     }
 
     // ── Canonical content ──
