@@ -168,9 +168,13 @@ to this codebase. When in doubt, mirror the surrounding code.
   `child.stdin.take().expect("stdin was piped")`). In `#[cfg(test)]` code,
   `.unwrap()` on tempfiles and fixtures is fine.
 
-- **Doc comments are prose, not signatures.** Every module opens with a `//!`
-  summary; public items get a `///` sentence or two on *intent* (the why), not a
-  restatement of the type. Keep field docs to a line.
+- **Comments default to NO** (user rule, 2026-07-19; replaces the old prose-doc style).
+  Add a comment only when absolutely necessary because the code cannot express it: a frozen
+  literal's provenance, a deliberate exclusion that would otherwise read as a bug, a lint
+  suppression's one-line reason. Never narrate what the code does, never document history,
+  never restate a requirement, never cite external or gitignored documents ("spec X" and
+  section numbers are forbidden in code). Stale prose misleads future readers; the code is
+  the truth. Reviewers flag unnecessary comments, never missing docs.
 
 - **Tests live inline; integration tests in `tests/`.** Unit tests go in a
   `#[cfg(test)] mod tests` at the bottom of the module they cover. `tests/` holds
