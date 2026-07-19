@@ -67,6 +67,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   The mobile app seeds the same deck into a fresh app-private folder.
 
 ### Changed
+- Grading no longer rewrites the progress store on every answer: in-session
+  progress stays in memory and is written once, when the session ends
+  (leaving the deck, switching decks, or opening an exam or the augmenter).
+  Administrative actions (reset, deadlines) still write immediately. If the
+  server process dies mid-session, that session's unwritten grades are lost.
 - **Breaking: deck-level `strictness` removed: grading strictness is a learner
   setting (config or workspace defaults); a deck cannot ship grading rigor.**
   A `strictness:` key in a deck's frontmatter is now an ordinary unknown-key

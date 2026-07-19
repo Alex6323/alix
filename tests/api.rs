@@ -1645,6 +1645,121 @@ fn post_api_deselect_returns_to_the_picker_state_dto() {
     assert!(body["card"].is_null(), "body: {body}");
 }
 
+// ── Session-batched store flush ─────────────────────────────────────────
+
+#[test]
+fn a_grade_does_not_rewrite_the_store_mid_session() {
+    let (base, guard) = spawn_test_server();
+    select_fixture(&base);
+
+    let resp = post_json(&base, "/api/grade", r#"{"grade":"passed"}"#);
+    assert_eq!(200, resp.status);
+
+    let on_disk = Store::open(guard.dir().join("store.json")).unwrap();
+    assert_eq!(
+        None,
+        on_disk.last_review_ms(),
+        "the grade must stay in memory while the session is active"
+    );
+
+    let resp = post_json(&base, "/api/deselect", "{}");
+    assert_eq!(200, resp.status);
+    let on_disk = Store::open(guard.dir().join("store.json")).unwrap();
+    assert!(
+        on_disk.last_review_ms().is_some(),
+        "deselect must flush the graded card to disk"
+    );
+}
+
+#[test]
+fn ending_a_session_flushes_every_session_mutation_kind() {
+    let (base, guard) = spawn_test_server();
+    select_fixture(&base);
+    let resp = post_json(&base, "/api/grade", r#"{"grade":"passed"}"#);
+    assert_eq!(200, resp.status);
+    let resp = post_json(&base, "/api/acquire", "{}");
+    assert_eq!(200, resp.status);
+
+    let resp = post_json(&base, "/api/deselect", "{}");
+    assert_eq!(200, resp.status);
+
+    let on_disk = Store::open(guard.dir().join("store.json")).unwrap();
+    assert_eq!(
+        2,
+        on_disk.len(),
+        "both the graded and the acquired card must land on disk"
+    );
+    assert!(
+        on_disk.last_review_ms().is_some(),
+        "the graded card's review history must land on disk"
+    );
+}
+
+#[test]
+fn selecting_the_next_deck_flushes_the_previous_session() {
+    let (base, guard) = spawn_test_server_fixture(None, |dir| {
+        std::fs::write(dir.join("other.md"), "## 7 + 7 <!-- id: o1 -->\n14\n").unwrap();
+    });
+    select_fixture(&base);
+    let resp = post_json(&base, "/api/grade", r#"{"grade":"passed"}"#);
+    assert_eq!(200, resp.status);
+
+    let resp = post_json(&base, "/api/select", r#"{"deck":"other.md"}"#);
+    assert_eq!(200, resp.status);
+
+    let on_disk = Store::open(guard.dir().join("store.json")).unwrap();
+    assert!(
+        on_disk.last_review_ms().is_some(),
+        "switching decks without deselecting must flush the previous session's grade"
+    );
+}
+
+#[test]
+fn an_administrative_mutation_still_writes_immediately() {
+    let (base, guard) = spawn_test_server();
+    select_fixture(&base);
+    post_json(&base, "/api/grade", r#"{"grade":"passed"}"#);
+    post_json(&base, "/api/deselect", "{}");
+
+    let resp = post_json(&base, "/api/reset", r#"{"deck":"sample.md"}"#);
+
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!(1, body["cards_cleared"], "body: {body}");
+    let on_disk = Store::open(guard.dir().join("store.json")).unwrap();
+    assert_eq!(
+        None,
+        on_disk.last_review_ms(),
+        "reset must reach disk right after its response, without a session boundary"
+    );
+}
+
+#[test]
+fn resetting_mid_session_does_not_resurrect_the_cleared_grade() {
+    let (base, guard) = spawn_test_server();
+    select_fixture(&base);
+    let resp = post_json(&base, "/api/grade", r#"{"grade":"passed"}"#);
+    assert_eq!(200, resp.status);
+
+    let resp = post_json(&base, "/api/reset", r#"{"deck":"sample.md"}"#);
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!(
+        1, body["cards_cleared"],
+        "reset must see the in-flight grade: {body}"
+    );
+
+    let resp = post_json(&base, "/api/deselect", "{}");
+    assert_eq!(200, resp.status);
+
+    let on_disk = Store::open(guard.dir().join("store.json")).unwrap();
+    assert_eq!(
+        None,
+        on_disk.last_review_ms(),
+        "ending the session must not write the cleared grade back to disk"
+    );
+}
+
 // ── Augment (open / remove / close — no AI on this path) ─────────────────
 
 #[test]

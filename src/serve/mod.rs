@@ -136,6 +136,7 @@ const WORKERS: usize = 16;
 // but each handler runs while holding the lock, so handlers never interleave.
 struct ServeState {
     store: Store,
+    store_dirty: bool,
     recent: RecentDecks,
     decks_dir: PathBuf,
     cache: DeckCache,
@@ -154,6 +155,19 @@ struct ServeState {
     remote_ask: Option<RemoteAsk>,
     remote_exam: Option<RemoteExamining>,
     remote_generate: Option<RemoteGenerating>,
+}
+
+// Must run before every `*store =` replacement and before any handler opens
+// a store fresh from disk for a mutating operation (reset): a deferred dirty
+// store that is replaced or shadowed unflushed silently loses the session.
+fn flush_store(store: &Store, dirty: &mut bool) {
+    if !*dirty {
+        return;
+    }
+    match store.save() {
+        Ok(()) => *dirty = false,
+        Err(e) => eprintln!("warning: could not save progress: {e}"),
+    }
 }
 
 pub fn run_review(
@@ -187,6 +201,7 @@ pub fn run_review(
 
     let state = Mutex::new(ServeState {
         store,
+        store_dirty: false,
         recent,
         decks_dir,
         cache: DeckCache::default(),
@@ -219,6 +234,7 @@ pub fn run_review(
                 let mut guard = state.lock().unwrap_or_else(|e| e.into_inner());
                 let ServeState {
                     store,
+                    store_dirty,
                     recent,
                     decks_dir,
                     cache,
@@ -356,6 +372,7 @@ pub fn run_review(
                     Some(sel) => {
                         let opts = sel.opts;
                         let paths = vec![sel.deck];
+                        flush_store(store, store_dirty);
                         if let Err(e) = assemble::store_for(&paths, cfg.instance_store.as_deref())
                             .map(|s| *store = s)
                         {
@@ -398,6 +415,7 @@ pub fn run_review(
                 match read_selection(&mut request, decks_dir, recent) {
                     Some(sel) => {
                         let paths = vec![sel.deck];
+                        flush_store(store, store_dirty);
                         if let Err(e) = assemble::store_for(&paths, cfg.instance_store.as_deref())
                             .map(|s| *store = s)
                         {
@@ -448,6 +466,7 @@ pub fn run_review(
                 respond_json(request, &dto);
             }
             (Method::Post, "/api/reset") => {
+                flush_store(store, store_dirty);
                 #[derive(Deserialize)]
                 struct Body {
                     deck: String,
@@ -885,6 +904,7 @@ pub fn run_review(
                 *reviewing = None;
                 *walking = None;
                 *browsing = None;
+                flush_store(store, store_dirty);
                 if let Ok(s) = assemble::store_for(&[], cfg.instance_store.as_deref()) {
                     *store = s;
                 }
@@ -902,9 +922,7 @@ pub fn run_review(
                         if let Some(subject) = r.files.paths.keys().next() {
                             store::note_badges(&mut *store, subject, r.session.cards(), now);
                         }
-                        if let Err(e) = store.save() {
-                            eprintln!("warning: could not save progress: {e}");
-                        }
+                        *store_dirty = true;
                         r.rotate_variant();
                         respond_json(request, &review_state(reviewing.as_ref(), store));
                     }
@@ -926,9 +944,7 @@ pub fn run_review(
                     continue;
                 };
                 r.session.acquire_current(&mut *store, now_ms());
-                if let Err(e) = store.save() {
-                    eprintln!("warning: could not save progress: {e}");
-                }
+                *store_dirty = true;
                 r.rotate_variant();
                 respond_json(request, &review_state(reviewing.as_ref(), store));
             }
@@ -974,7 +990,7 @@ pub fn run_review(
                             store.remove(&id);
                         }
                     }
-                    let _ = store.save();
+                    *store_dirty = true;
                     r.files.remove_block(&subject, line);
                 }
                 respond_json(request, &review_state(reviewing.as_ref(), store));
@@ -1004,6 +1020,7 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 }
+                *store_dirty = true;
                 r.session.poll(store, now_ms());
                 respond_json(request, &review_state(reviewing.as_ref(), store));
             }
@@ -1090,9 +1107,7 @@ pub fn run_review(
                     &deck_fingerprints,
                 ) {
                     Ok(id) => {
-                        if let Err(e) = store.save() {
-                            eprintln!("warning: could not save progress: {e}");
-                        }
+                        *store_dirty = true;
                         respond_json(request, &CreateCardResp { id });
                     }
                     Err(store::MintError::Duplicate | store::MintError::Malformed(_)) => {
@@ -1127,6 +1142,7 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
+                flush_store(store, store_dirty);
                 if let Ok(s) =
                     assemble::store_for(std::slice::from_ref(&path), cfg.instance_store.as_deref())
                 {
@@ -1247,6 +1263,7 @@ pub fn run_review(
             }
             (Method::Post, "/api/exam/close") => {
                 *examining = None;
+                flush_store(store, store_dirty);
                 if let Ok(s) = assemble::store_for(&[], cfg.instance_store.as_deref()) {
                     *store = s;
                 }
@@ -1271,6 +1288,7 @@ pub fn run_review(
                     }
                 };
                 let name = body.deck;
+                flush_store(store, store_dirty);
                 if let Ok(s) = assemble::store_for(&files, cfg.instance_store.as_deref()) {
                     *store = s;
                 }
@@ -1355,6 +1373,7 @@ pub fn run_review(
             }
             (Method::Post, "/api/augment/close") => {
                 *augmenting = None;
+                flush_store(store, store_dirty);
                 if let Ok(s) = assemble::store_for(&[], cfg.instance_store.as_deref()) {
                     *store = s;
                 }
@@ -1394,9 +1413,7 @@ pub fn run_review(
                 match delta {
                     Some(delta) => {
                         w.walk.grade(&mut *store, delta, now_ms());
-                        if let Err(e) = store.save() {
-                            eprintln!("warning: could not save progress: {e}");
-                        }
+                        *store_dirty = true;
                         w.clear_grade();
                         respond_json(request, &walk_dto(w));
                     }
@@ -1447,6 +1464,7 @@ pub fn run_review(
             }
             (Method::Post, "/api/walk/leave") => {
                 *walking = None;
+                flush_store(store, store_dirty);
                 if let Ok(s) = assemble::store_for(&[], cfg.instance_store.as_deref()) {
                     *store = s;
                 }
