@@ -1,22 +1,3 @@
-//! The AI exam — frontend-agnostic engine.
-//!
-//! A deck's mechanical drill *loads* its material; this exam *verifies
-//! understanding* and gates progression. It grades against the deck's declared
-//! `% source:` (a URL Claude reads with WebFetch, or a local file embedded in
-//! the prompt) — never the cards, which avoids circularity. Three Claude calls,
-//! each through the same CLI runner [`crate::ask::run`] that `generate` uses:
-//!
-//! 1. [`generate_questions`] — fresh open understanding questions from the source, each with the
-//!    key points a correct answer must contain.
-//! 2. [`grade_answers`] — a strict examiner grades the typed answers against those points and
-//!    returns an overall pass/fail by threshold.
-//! 3. [`remediation_cards`] — on a fail, turns the missed concepts into cards (cloze/plain for
-//!    facts, plain understanding cards for concepts), as deck-format text ready to append.
-//!
-//! The engine is pure: it builds prompts, calls the CLI and parses JSON. A CLI
-//! consumer (`alix exam`) drives the terminal Q&A; a web exam surface can
-//! reuse the same three functions.
-
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
@@ -33,33 +14,23 @@ use crate::{
     store::Store,
 };
 
-/// Largest embedded local source file, in bytes. Larger files are truncated
-/// (with a marker) so the prompt stays within the model's context.
 const MAX_SOURCE_BYTES: usize = 100_000;
 
-/// One open exam question with the key points a correct answer must cover.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct ExamQuestion {
-    /// The question shown to the student.
     pub prompt: String,
-    /// The points a full answer must demonstrate (the grading rubric).
     pub points: Vec<String>,
 }
 
-/// How well one answer did.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Verdict {
-    /// Covered the key points.
     Pass,
-    /// Partially correct — some points missed.
     Partial,
-    /// Did not demonstrate understanding.
     Fail,
 }
 
 impl Verdict {
-    /// The label shown to the student.
     pub fn label(self) -> &'static str {
         match self {
             Verdict::Pass => "PASS",
@@ -69,29 +40,21 @@ impl Verdict {
     }
 }
 
-/// The grade for one answer.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct AnswerGrade {
     pub verdict: Verdict,
-    /// One or two sentences explaining the verdict.
     pub feedback: String,
-    /// The specific points the answer missed (empty on a clean pass).
     #[serde(default)]
     pub missed: Vec<String>,
 }
 
-/// The outcome of a sitting.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExamResult {
-    /// Whether the sitting passed (enough full passes to clear the threshold).
     pub passed: bool,
-    /// Per-question grades, in question order.
     pub grades: Vec<AnswerGrade>,
 }
 
 impl ExamResult {
-    /// The concepts to remediate: every missed point from non-passing answers,
-    /// de-duplicated in first-seen order.
     pub fn gaps(&self) -> Vec<String> {
         let mut gaps = Vec::new();
         for grade in &self.grades {
@@ -109,8 +72,6 @@ impl ExamResult {
     }
 }
 
-/// Generates `cfg.num_questions` open understanding questions from the deck's
-/// `% source:`. Blocks until the CLI replies or times out.
 pub fn generate_questions(
     deck: &Deck,
     cfg: &ExamConfig,
@@ -119,20 +80,9 @@ pub fn generate_questions(
     if deck.sources.is_empty() {
         bail!("the deck declares no `source:` to examine against");
     }
-    // The capability gate is enforced inside `generate_questions_from`, which
-    // every caller (this fn, `spawn_questions`) routes through. The web
-    // exam-start handler's `ensure_backend_can_examine` pre-flight (fired
-    // before `Sitting::start`, so before any UI shows a generating state) is
-    // belt-and-braces on top of it.
     generate_questions_from(&deck.sources, deck.path.parent(), cfg, ask_cfg)
 }
 
-/// Checks the configured backend can reach every `% source:` this exam grades
-/// against, before any question is generated or side effect taken. A URL source
-/// needs a fetch-capable backend; a local source a file-reading one. Called by
-/// the web exam-start handler (`POST /api/exam/start`) right before starting a
-/// fact-deck sitting, so a capability gap is a clean refusal at launch, not an
-/// error surfaced mid-exam through the background job's poll.
 pub fn ensure_backend_can_examine(deck: &Deck, ask_cfg: &AskConfig) -> Result<()> {
     for source in &deck.sources {
         crate::backend::ensure_source_reachable(ask_cfg, deck::is_url(source))?;
@@ -140,23 +90,12 @@ pub fn ensure_backend_can_examine(deck: &Deck, ask_cfg: &AskConfig) -> Result<()
     Ok(())
 }
 
-/// Owned-input core of [`generate_questions`]: takes the source list and the
-/// base directory directly (not a `&Deck`), so the background
-/// [`spawn_questions`] can run it on a thread without borrowing a deck.
-///
-/// This is the single choke point for all exam question generation (CLI and
-/// web), so the capability gate lives here: a URL source needs a fetch-capable
-/// backend; a local source needs one that can read files. Both callers
-/// (`generate_questions` and `spawn_questions`) inherit the check, so neither
-/// path can bypass it.
 fn generate_questions_from(
     sources: &[String],
     base: Option<&Path>,
     cfg: &ExamConfig,
     ask_cfg: &AskConfig,
 ) -> Result<Vec<ExamQuestion>> {
-    // Belt-and-braces gate: also checked at CLI/web launch sites (before the
-    // UI opens), but enforcing here means the web path can never bypass it.
     for source in sources {
         crate::backend::ensure_source_reachable(ask_cfg, deck::is_url(source))?;
     }
@@ -174,10 +113,6 @@ fn generate_questions_from(
     Ok(parsed.questions)
 }
 
-/// Grades the typed `answers` (one per question, same order) against each
-/// question's points, at the given `strictness`, and returns the overall
-/// result. A question "passes" when its verdict is [`Verdict::Pass`]; the
-/// sitting passes when the fraction of passes is at least `cfg.pass_threshold`.
 pub fn grade_answers(
     questions: &[ExamQuestion],
     answers: &[String],
@@ -208,13 +143,6 @@ pub fn grade_answers(
     })
 }
 
-/// Grades a learner's **compression** of a trace — their from-memory retrace of
-/// the whole path (`description`) — against the path's key `points` (the
-/// checkpoints' rubric, in order). Unlike [`grade_answers`], this is ONE
-/// holistic judgment of whether the compression re-derives the path's causal
-/// chain, not a per-point checklist (a two-sentence gist can't tick every
-/// point). Tool-free — the points already paraphrase the source. Blocks until
-/// the CLI replies or times out.
 pub fn grade_compression(
     description: &str,
     points: &[String],
@@ -234,37 +162,21 @@ pub fn grade_compression(
     })
 }
 
-/// Turns the missed `gaps` into cards — a cloze/plain card for a missed fact, a
-/// plain understanding card (open prompt + key points) for a missed concept —
-/// and returns the cleaned deck-format text, ready to append to the deck file.
 pub fn remediation_cards(gaps: &[String], cfg: &ExamConfig, ask_cfg: &AskConfig) -> Result<String> {
     if gaps.is_empty() {
         bail!("no gaps to remediate");
     }
     let prompt = remediation_prompt(gaps);
-    // Remediation turns the gap list into cards; it needs no web access. Drop the
-    // tutor's WebFetch/WebSearch tools so it's a plain text-generation call —
-    // faster, and it won't wander off researching the gaps.
     let mut cfg_run = run_config(cfg, ask_cfg);
-    cfg_run.allowed_tools.clear();
+    cfg_run.allowed_tools.clear(); // no web access needed, so it can't wander off
     let raw = ask::run(&cfg_run, &prompt, &[])?;
     let cards = clean_deck_output(&raw);
-    // Every card front starts with `## `; if the reply has none, the model
-    // answered in prose instead of emitting cards — treat it as a failure rather
-    // than appending the prose to the deck as a bogus "card".
     if !cards.lines().any(|l| l.starts_with("## ")) {
         bail!("the model replied without any cards — try remediating again");
     }
     Ok(cards)
 }
 
-// ── Background runners (for the web frontend) ─────────────────────────────────
-//
-// The three engine calls above are synchronous. The single-threaded web server
-// runs them on a background thread and polls a channel, exactly like
-// [`ask::spawn`]. Inputs are owned so the thread is `'static`.
-
-/// Background variant of [`generate_questions`].
 pub fn spawn_questions(
     sources: Vec<String>,
     base: Option<PathBuf>,
@@ -280,7 +192,6 @@ pub fn spawn_questions(
     rx
 }
 
-/// Background variant of [`grade_answers`].
 pub fn spawn_grade(
     questions: Vec<ExamQuestion>,
     answers: Vec<String>,
@@ -297,7 +208,6 @@ pub fn spawn_grade(
     rx
 }
 
-/// Background variant of [`grade_compression`] (the trace exam).
 pub fn spawn_grade_compression(
     description: String,
     points: Vec<String>,
@@ -322,7 +232,6 @@ pub fn spawn_grade_compression(
     rx
 }
 
-/// Background variant of [`remediation_cards`].
 pub fn spawn_remediation(
     gaps: Vec<String>,
     cfg: ExamConfig,
@@ -336,74 +245,38 @@ pub fn spawn_remediation(
     rx
 }
 
-/// The phase of an exam [`Sitting`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Phase {
-    /// Generating questions from the source (background call in flight).
     Generating,
-    /// The student is working through the questions one at a time.
     Answering,
-    /// Grading the submitted answers (background call in flight).
     Grading,
-    /// Showing the graded result; `result().passed` says pass or fail.
     Results,
-    /// Generating remediation cards (background call in flight).
     Remediating,
-    /// Remediation cards were stored as virtual cards — re-drill and re-sit.
     Remediated,
 }
 
-/// A store outcome [`Sitting::advance`] hands back as data instead of
-/// performing, so a storeless caller (the M6 remote exam handler) can apply it
-/// itself; [`Sitting::poll`] is the store-writing wrapper that applies these
-/// for the existing store-backed callers.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Effect {
-    /// The sitting passed: persist "mastered" for the subject.
     Passed,
-    /// A trace sitting failed: start the re-sit cooldown for the subject.
     TraceFailed,
-    /// Remediation produced this deck-format card text: store it as virtual
-    /// cards for the subject.
     RemediationCards(String),
 }
 
-/// The in-flight background call for a [`Sitting`].
 enum Pending {
     Questions(Receiver<Result<Vec<ExamQuestion>, String>>),
     Grade(Receiver<Result<ExamResult, String>>),
     Remediation(Receiver<Result<String, String>>),
 }
 
-/// What a [`Sitting`] is examining, which selects the grader and a few rules.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SittingKind {
-    /// A fact deck: questions are generated from the `% source:` and graded
-    /// against per-question rubrics; a fail can be remediated into cards.
     Source,
-    /// A trace: one fixed question (the `% trace:`), answered by retracing the
-    /// path in a couple of sentences and graded holistically against the path's
-    /// key points. No question generation, no remediation; a fail starts the
-    /// re-sit cooldown.
     Trace,
 }
 
-/// One in-progress exam sitting — a frontend-agnostic state machine driving
-/// the web server's exam handlers (`serve.rs`). It owns the exam state and the
-/// in-flight background call, spawns each engine step, and on
-/// [`poll`](Sitting::poll) transitions and applies the side effects (persist
-/// "mastered" on a pass, create remediation virtual cards in the store on
-/// confirm). The frontend drives entry/navigation/submit/remediate, calls
-/// `poll` each tick, and renders off `phase()`.
 pub struct Sitting {
     kind: SittingKind,
     subject: String,
-    /// The §7 canonical-content fingerprints of the deck's own cards at exam
-    /// time — the dedup baseline so a remediation card whose content equals a
-    /// deck card's isn't created as a virtual (it's already drillable). Content,
-    /// not id: a fresh remediation card carries a new random token, so it can
-    /// only be recognized by content. Empty for a trace sitting (traces never
-    /// remediate).
     deck_fingerprints: HashSet<u64>,
     strictness: Strictness,
     cfg: ExamConfig,
@@ -415,20 +288,11 @@ pub struct Sitting {
     result: Option<ExamResult>,
     pending: Option<Pending>,
     error: Option<String>,
-    /// When the in-flight background call started (ms), for an elapsed-time
-    /// progress indicator; `None` when idle.
     pending_since: Option<u64>,
-    /// How many remediation cards the last successful remediation created or
-    /// revived ([`crate::store::store_remediation_cards`]'s return value), so
-    /// both frontends can tell the learner what the failure produced. `None`
-    /// until a remediation completes.
     remediated_count: Option<usize>,
 }
 
 impl Sitting {
-    /// Starts a sitting for `deck` and spawns question generation. The deck
-    /// must declare at least one `% source:` (the caller also checks it is
-    /// drilled).
     pub fn start(deck: &Deck, strictness: Strictness, cfg: ExamConfig, ask_cfg: AskConfig) -> Self {
         let pending = Pending::Questions(spawn_questions(
             deck.sources.clone(),
@@ -455,12 +319,6 @@ impl Sitting {
         }
     }
 
-    /// Starts a **trace** exam: one fixed question (the `% trace:`
-    /// `description`), graded by retracing the path against its `rubric` (the
-    /// checkpoints' key points). There is no question generation, so it opens
-    /// straight in [`Phase::Answering`] with nothing in flight. `subject` keys
-    /// mastery in the store. The caller enforces the re-sit cooldown
-    /// ([`crate::store::Store::exam_failed_at`]) before starting.
     pub fn start_trace(
         description: String,
         rubric: Vec<String>,
@@ -492,7 +350,6 @@ impl Sitting {
         }
     }
 
-    /// What this sitting is examining (a fact deck's source, or a trace).
     pub fn kind(&self) -> SittingKind {
         self.kind
     }
@@ -506,16 +363,12 @@ impl Sitting {
     pub fn strictness(&self) -> Strictness {
         self.strictness
     }
-    /// A transient error from the last background call, if any.
     pub fn error(&self) -> Option<&str> {
         self.error.as_deref()
     }
-    /// Whether a background call is in flight.
     pub fn thinking(&self) -> bool {
         self.pending.is_some()
     }
-    /// Seconds the in-flight background call has been running, for a progress
-    /// indicator; `None` when idle.
     pub fn elapsed_secs(&self) -> Option<u64> {
         self.pending_since
             .map(|since| crate::time::now_ms().saturating_sub(since) / 1000)
@@ -535,24 +388,19 @@ impl Sitting {
     pub fn result(&self) -> Option<&ExamResult> {
         self.result.as_ref()
     }
-    /// The current question (in [`Phase::Answering`]).
     pub fn question(&self) -> Option<&ExamQuestion> {
         self.questions.get(self.current)
     }
-    /// The answer typed for the current question so far.
     pub fn answer(&self) -> &str {
         self.answers
             .get(self.current)
             .map(String::as_str)
             .unwrap_or("")
     }
-    /// `true` if the current question is the last one.
     pub fn on_last(&self) -> bool {
         !self.questions.is_empty() && self.current + 1 == self.questions.len()
     }
 
-    /// Replaces the current question's answer (no-op outside
-    /// [`Phase::Answering`]).
     pub fn set_answer(&mut self, text: String) {
         if self.phase == Phase::Answering
             && let Some(slot) = self.answers.get_mut(self.current)
@@ -561,12 +409,6 @@ impl Sitting {
         }
     }
 
-    /// Stores a full batch of answers at once, in [`Phase::Answering`] and
-    /// only when `answers` has exactly one entry per question; otherwise a
-    /// no-op. Unlike [`set_answer`](Sitting::set_answer)'s per-question edits
-    /// for the web's page-at-a-time UI, this is for a remote client that
-    /// answers locally and submits everything in one call. Returns whether
-    /// they were stored.
     pub fn set_answers(&mut self, answers: Vec<String>) -> bool {
         if self.phase == Phase::Answering && answers.len() == self.questions.len() {
             self.answers = answers;
@@ -589,10 +431,6 @@ impl Sitting {
         }
     }
 
-    /// Submits all answers for grading ([`Phase::Answering`] →
-    /// [`Phase::Grading`]). A `Source` exam grades each answer against its
-    /// rubric; a `Trace` exam grades the single compression holistically against
-    /// the path.
     pub fn submit(&mut self) {
         if self.phase != Phase::Answering {
             return;
@@ -623,7 +461,6 @@ impl Sitting {
         self.phase = Phase::Grading;
     }
 
-    /// The missed gaps from the result (empty until graded).
     pub fn gaps(&self) -> Vec<String> {
         self.result
             .as_ref()
@@ -631,9 +468,6 @@ impl Sitting {
             .unwrap_or_default()
     }
 
-    /// Whether remediation is offerable (failed result with gaps to fix). Never
-    /// for a `Trace` exam: a trace deck is a path of checkpoints, not a card
-    /// pile — a failed compression is re-walked, not remediated into cards.
     pub fn can_remediate(&self) -> bool {
         self.kind == SittingKind::Source
             && self.phase == Phase::Results
@@ -641,14 +475,10 @@ impl Sitting {
             && !self.gaps().is_empty()
     }
 
-    /// How many remediation cards the last successful remediation created or
-    /// revived; `None` until one completes ([`Phase::Remediated`]).
     pub fn remediated_count(&self) -> Option<usize> {
         self.remediated_count
     }
 
-    /// Generates remediation cards for the gaps and stores them as virtual cards
-    /// ([`Phase::Results`] → [`Phase::Remediating`]). No-op if nothing to fix.
     pub fn remediate(&mut self) {
         if !self.can_remediate() {
             return;
@@ -663,16 +493,6 @@ impl Sitting {
         self.phase = Phase::Remediating;
     }
 
-    /// Drains a finished background call and advances the phase. Performs NO
-    /// store access (a storeless caller, like the M6 remote exam handler,
-    /// drives a sitting through this alone); returns the store outcome the
-    /// caller should apply as data ([`Effect`]), or `None` when nothing landed
-    /// or the landed reply carries no store outcome (a failed non-trace
-    /// grade just gets resubmitted or remediated, not stored).
-    /// [`poll`](Sitting::poll) is the store-writing wrapper over this for the
-    /// existing store-backed callers. `now_ms` is unused here (advance itself
-    /// never touches the clock) but kept so the remote contract can pass it
-    /// explicitly.
     pub fn advance(&mut self, _now_ms: u64) -> Option<Effect> {
         let reply = match &self.pending {
             None => return None,
@@ -702,8 +522,6 @@ impl Sitting {
                 self.phase = Phase::Answering;
                 None
             }
-            // Generation failed before any questions: stays Generating, but with
-            // an error and nothing in flight; the frontend offers to close.
             Reply::Questions(Err(e)) => {
                 self.error = Some(e);
                 None
@@ -712,9 +530,6 @@ impl Sitting {
                 let effect = if result.passed {
                     Some(Effect::Passed)
                 } else if self.kind == SittingKind::Trace {
-                    // A failed trace exam starts the re-sit cooldown, so the
-                    // graded feedback can't be pasted straight back into the one
-                    // fixed question.
                     Some(Effect::TraceFailed)
                 } else {
                     None
@@ -723,7 +538,6 @@ impl Sitting {
                 self.phase = Phase::Results;
                 effect
             }
-            // Grading failed: back to answering so the student can resubmit.
             Reply::Grade(Err(e)) => {
                 self.error = Some(e);
                 self.phase = Phase::Answering;
@@ -741,16 +555,6 @@ impl Sitting {
         }
     }
 
-    /// The store-writing wrapper over [`advance`](Sitting::advance): drains a
-    /// finished background call, advances the phase, and applies the store
-    /// side effect the reply carries (persist "mastered" on a pass, start the
-    /// re-sit cooldown on a failed trace exam, create/dedupe/revive
-    /// remediation virtual cards in `store` on remediation; the deck file is
-    /// never touched). `retire_after_days` is the caller's resolved `[review]
-    /// retire_after` cap (per-workspace), needed to tell an active remediation
-    /// dupe from a derived-retired one to revive, see
-    /// [`crate::store::store_remediation_cards`]. Returns `true` when the phase
-    /// advanced.
     pub fn poll(&mut self, store: &mut Store, now_ms: u64, retire_after_days: Option<u32>) -> bool {
         let was_pending = self.pending.is_some();
         let effect = self.advance(now_ms);
@@ -786,7 +590,6 @@ impl Sitting {
     }
 }
 
-/// A drained background reply, used inside [`Sitting::advance`].
 enum Reply {
     Questions(Result<Vec<ExamQuestion>, String>),
     Grade(Result<ExamResult, String>),
@@ -797,15 +600,8 @@ fn thread_gone() -> String {
     "the exam helper exited unexpectedly".to_string()
 }
 
-/// Milliseconds left on a failed trace exam's re-sit cooldown, or `None` if it
-/// can be sat now: it never failed, the cooldown has elapsed, or the cooldown
-/// is disabled (`cooldown_secs == 0`). The launch sites (the web `Take exam`
-/// among them) gate on this so the graded feedback can't be pasted straight
-/// back into the one fixed trace question. Lives in `store` (lean core) so
-/// non-`full` builds can call it too; re-exported here for existing callers.
 pub use crate::store::cooldown_remaining_ms;
 
-/// `true` when the fraction of full passes meets the threshold.
 fn passed(grades: &[AnswerGrade], threshold: f64) -> bool {
     if grades.is_empty() {
         return false;
@@ -814,8 +610,6 @@ fn passed(grades: &[AnswerGrade], threshold: f64) -> bool {
     (passes as f64) / (grades.len() as f64) >= threshold
 }
 
-/// The CLI runner config for the exam: the ask command/permission/tools with
-/// the exam's own model and (longer) timeout.
 fn run_config(cfg: &ExamConfig, ask_cfg: &AskConfig) -> AskConfig {
     AskConfig {
         model: cfg.model.clone().or_else(|| ask_cfg.model.clone()),
@@ -826,9 +620,6 @@ fn run_config(cfg: &ExamConfig, ask_cfg: &AskConfig) -> AskConfig {
     }
 }
 
-/// Renders the deck's sources into a prompt section: URLs become WebFetch
-/// instructions, local files are read and embedded (bounded). Relative file
-/// paths resolve against the deck file's folder.
 fn source_section(sources: &[String], base: Option<&Path>) -> Result<String> {
     let mut urls = Vec::new();
     let mut files = Vec::new();
@@ -837,9 +628,8 @@ fn source_section(sources: &[String], base: Option<&Path>) -> Result<String> {
             urls.push(src.clone());
             continue;
         }
-        // A value may name several files joined with " + " (a shorthand the
-        // generator sometimes emits, e.g. `README.md + src/lib.rs`); read each
-        // resolved path, skipping any that don't exist rather than failing.
+        // A value may join several files with " + "; skip any that can't be read rather than
+        // failing.
         for path in crate::trace::source_paths(src, base) {
             match std::fs::read_to_string(&path) {
                 Ok(text) => {
@@ -888,9 +678,6 @@ fn source_section(sources: &[String], base: Option<&Path>) -> Result<String> {
     Ok(out)
 }
 
-/// Truncates source text to [`MAX_SOURCE_BYTES`] on a char boundary, appending
-/// a marker when it had to cut. Returns the (possibly truncated) text and a
-/// flag indicating whether truncation occurred.
 fn truncate(text: &str) -> (String, bool) {
     if text.len() <= MAX_SOURCE_BYTES {
         return (text.to_string(), false);
@@ -905,7 +692,6 @@ fn truncate(text: &str) -> (String, bool) {
     )
 }
 
-/// Builds the question-generation prompt from the deck's sources.
 fn questions_prompt(sources: &[String], base: Option<&Path>, cfg: &ExamConfig) -> Result<String> {
     let sources = source_section(sources, base)?;
     let mut prompt = format!(
@@ -936,9 +722,6 @@ fn questions_prompt(sources: &[String], base: Option<&Path>, cfg: &ExamConfig) -
     Ok(prompt)
 }
 
-/// The grading criteria for a strictness level — the part of the grade prompt
-/// that decides how generously a typed answer is judged against the rubric and
-/// what counts as a `missed` point (which drives remediation).
 fn strictness_criteria(strictness: Strictness) -> &'static str {
     match strictness {
         Strictness::Strict => {
@@ -978,8 +761,6 @@ clearly wrong about it or the question was essentially not answered.\n\
     }
 }
 
-/// Builds the grading prompt: the strictness criteria, then each question, its
-/// rubric points and the student's answer.
 fn grade_prompt(questions: &[ExamQuestion], answers: &[String], strictness: Strictness) -> String {
     let mut prompt = String::from(
         "You are an examiner grading an understanding exam. For each question you \
@@ -1018,10 +799,6 @@ fn grade_prompt(questions: &[ExamQuestion], answers: &[String], strictness: Stri
     prompt
 }
 
-/// The grading criteria for the trace **compression** at a strictness level —
-/// the holistic counterpart of [`strictness_criteria`]. The compression is one
-/// short retrace of the whole path, so it's judged on re-deriving the causal
-/// chain, not on ticking every rubric point.
 fn compression_strictness_criteria(strictness: Strictness) -> &'static str {
     match strictness {
         Strictness::Strict => {
@@ -1056,9 +833,6 @@ only a retrace that is clearly wrong or essentially absent.\n\
     }
 }
 
-/// Builds the trace-exam grading prompt: the path question, its key points (the
-/// ground-truth rubric, in order) and the learner's compression — asking for one
-/// holistic `pass|partial|fail` on whether the retrace re-derives the path.
 fn grade_compression_prompt(
     description: &str,
     points: &[String],
@@ -1103,9 +877,6 @@ fn grade_compression_prompt(
     prompt
 }
 
-/// Builds the remediation prompt: turn missed concepts into cards, choosing the
-/// type per gap — a cloze/plain card for a missed fact or term, a plain
-/// understanding card (open prompt + key points) for a missed concept or connection.
 fn remediation_prompt(gaps: &[String]) -> String {
     let mut prompt = String::from(
         "A student failed an understanding exam on the concepts below. Turn them \
@@ -1159,9 +930,6 @@ fn remediation_prompt(gaps: &[String]) -> String {
     prompt
 }
 
-/// Extracts the JSON object from a model reply that may be wrapped in code
-/// fences or surrounded by prose: the substring from the first `{` to the last
-/// `}`. Falls back to the trimmed input.
 fn extract_json(raw: &str) -> &str {
     match (raw.find('{'), raw.rfind('}')) {
         (Some(start), Some(end)) if end > start => &raw[start..=end],
@@ -1169,16 +937,12 @@ fn extract_json(raw: &str) -> &str {
     }
 }
 
-/// Parses `raw` (possibly fenced/with preamble) into `T`.
 fn parse_json<T: for<'de> Deserialize<'de>>(raw: &str) -> Result<T> {
     let json = extract_json(raw);
     serde_json::from_str(json)
         .with_context(|| format!("the model did not return valid JSON:\n{json}"))
 }
 
-/// Strips code fences / leading commentary from generated deck text, like
-/// [`crate::generate`] does: remediation cards start at the first `## ` card
-/// front, and trailing blank/fence lines are dropped.
 fn clean_deck_output(raw: &str) -> String {
     let lines: Vec<&str> = raw.lines().collect();
     let Some(start) = lines.iter().position(|l| l.starts_with("## ")) else {
@@ -1290,16 +1054,11 @@ mod tests {
         let strict = grade_prompt(&qs, &a, Strictness::Strict);
         let balanced = grade_prompt(&qs, &a, Strictness::Balanced);
         let lenient = grade_prompt(&qs, &a, Strictness::Lenient);
-        // Strict demands completeness; balanced judges understanding; lenient is
-        // generous. Each carries language the others don't.
         assert!(strict.contains("COMPLETENESS"));
         assert!(strict.contains("EVERY key point"));
         assert!(balanced.contains("UNDERSTANDING, not completeness"));
         assert!(!balanced.contains("COMPLETENESS — treat the rubric"));
         assert!(lenient.contains("benefit of the doubt"));
-        // Lenient must spell out that incompleteness alone never downgrades a
-        // correct answer — models otherwise read "partial" as "some points
-        // covered" (calibration drift caught 2026-07-13).
         assert!(lenient.contains("incompleteness alone is never"));
         assert!(!strict.contains("incompleteness alone is never"));
         assert!(!balanced.contains("incompleteness alone is never"));
@@ -1316,13 +1075,10 @@ mod tests {
     #[test]
     fn remediation_prompt_picks_card_type_per_gap() {
         let p = remediation_prompt(&["x".to_string()]);
-        // Facts get a cheap recall card (cloze/plain); concepts get an
-        // understanding card (plain prompt + key points).
         assert!(p.contains("missed FACT or TERM"));
         assert!(p.contains("missed CONCEPT"));
-        assert!(p.contains("\\cloze{...}")); // the cloze marker for facts
-        assert!(p.contains("understanding card")); // for concepts
-        // The L1 pin: no retired old-format syntax may sneak back in.
+        assert!(p.contains("\\cloze{...}"));
+        assert!(p.contains("understanding card"));
         assert!(!p.contains("% reveal"));
         assert!(!p.contains("{{"));
         assert!(!p.contains("indented answer"));
@@ -1335,7 +1091,6 @@ mod tests {
             "String stores a pointer, length and capacity on the stack".to_string(),
             "A String keeps its bytes on the heap and a pointer on the stack".to_string(),
         ]);
-        // Both near-duplicate gaps still appear, but the model is told to merge.
         assert!(p.contains("String stores a pointer"));
         assert!(p.contains("keeps its bytes on the heap"));
         assert!(p.contains("MERGE overlapping concepts"));
@@ -1409,7 +1164,6 @@ mod tests {
             },
         ];
         assert!(!passed(&grades, 1.0));
-        // A looser threshold (half) would let it through.
         assert!(passed(&grades, 0.5));
     }
 
@@ -1470,27 +1224,16 @@ mod tests {
         assert!(format!("{err:#}").contains("no `source:`"));
     }
 
-    /// The web exam path calls `spawn_questions` → `generate_questions_from`
-    /// directly, bypassing `generate_questions` and the CLI pre-flight. This
-    /// test verifies the gate inside `generate_questions_from` fires for a
-    /// codex-backed URL-source exam, so both paths get the clean capability
-    /// message rather than a raw CLI failure.
     #[test]
     fn generate_questions_from_rejects_url_source_on_fetch_incapable_backend() {
         use crate::config::BackendKind;
-        // Codex is a read-only backend (can_fetch_web() == false); a URL
-        // source with codex must refuse cleanly before any CLI call is made.
         let ask_cfg = AskConfig {
             backend: BackendKind::Codex,
-            // The command points at nothing — the gate must fire before it's
-            // invoked, so an unreachable command is fine.
             command: "/dev/null".to_string(),
             timeout_secs: 5,
             ..AskConfig::default()
         };
-        // Drive the shared private path via `spawn_questions` (as the web
-        // server does) and drain the receiver — no exec_lock needed because
-        // the gate fires before any subprocess is forked.
+        // No exec_lock: the gate fires before any subprocess is forked.
         let rx = spawn_questions(
             vec!["https://example.org/doc".to_string()],
             None,
@@ -1498,17 +1241,12 @@ mod tests {
             ask_cfg,
         );
         let err = rx.recv().unwrap().unwrap_err();
-        // The message must name the backend and point to the fix, not surface
-        // a raw CLI invocation failure.
         assert!(
             err.contains("codex") && err.contains("can't fetch a url"),
             "expected capability-refusal message, got: {err}"
         );
     }
 
-    /// The web launch site (`POST /api/exam/start`) calls this before
-    /// `Sitting::start`, so a capability gap is a clean refusal at launch
-    /// instead of surfacing mid-exam via the background job's error field.
     #[test]
     fn ensure_backend_can_examine_rejects_url_source_on_fetch_incapable_backend() {
         use crate::config::BackendKind;
@@ -1577,7 +1315,6 @@ mod tests {
     fn grade_answers_rejects_a_wrong_grade_count() {
         let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
-        // One grade for two questions.
         let cli = fake_reply(
             dir.path(),
             "{\"grades\":[{\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]}]}",
@@ -1658,7 +1395,6 @@ mod tests {
     fn remediation_cards_end_to_end() {
         let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
-        // A fenced deck; clean_deck_output must strip the fences.
         let cli = fake_reply(dir.path(), "```text\n## Why?\npoint\n```\n");
         let cards = remediation_cards(
             &["the gap".to_string()],
@@ -1673,8 +1409,6 @@ mod tests {
     fn remediation_cards_rejects_a_reply_without_cards() {
         let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
-        // The model answered in prose (no `## ` card front) instead of
-        // emitting cards: a failure, not a silently-appended bogus "card".
         let cli = fake_reply(dir.path(), "Sure, here is some advice on those concepts.");
         let err = remediation_cards(
             &["the gap".to_string()],
@@ -1709,9 +1443,6 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    /// Polls a sitting until its in-flight background call lands (or times
-    /// out). Uses the default retirement cap — none of these tests drive a
-    /// virtual card's interval to it.
     fn drain(s: &mut Sitting, store: &mut Store) {
         for _ in 0..500 {
             if s.poll(store, 0, Some(crate::session::DEFAULT_RETIRE_AFTER_DAYS)) {
@@ -1722,11 +1453,6 @@ mod tests {
         panic!("exam background call did not complete");
     }
 
-    /// Calls `advance` (storeless) until the in-flight background call lands
-    /// (or times out), returning the landed effect. That effect may itself be
-    /// `None` (e.g. a failed non-trace grade has no store outcome) even though
-    /// a reply did land, so callers that need to tell "landed with no effect"
-    /// from "still pending" should check `s.thinking()` too.
     fn advance_until_idle(s: &mut Sitting) -> Option<Effect> {
         for _ in 0..500 {
             let effect = s.advance(0);
@@ -1738,9 +1464,6 @@ mod tests {
         panic!("exam background call did not complete");
     }
 
-    /// A fake CLI that answers the three exam calls by branching on the
-    /// prompt's JSON-shape marker (`"grades"` / `"questions"`), else emits
-    /// a deck.
     fn branching_cli(dir: &std::path::Path, grades: &str) -> std::path::PathBuf {
         let body = format!(
             "input=$(cat)\n\
@@ -1767,7 +1490,6 @@ mod tests {
     fn sitting_drives_generate_answer_grade_remediate_on_fail() {
         let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
-        // One fail, one pass -> overall fail (default threshold = all pass).
         let cli = branching_cli(
             dir.path(),
             "{\"grades\":[{\"verdict\":\"fail\",\"feedback\":\"no\",\"missed\":[\"the move rule\"]},\
@@ -1787,7 +1509,6 @@ mod tests {
         assert_eq!(&Phase::Answering, s.phase());
         assert_eq!(2, s.total());
 
-        // Navigation + per-question answers.
         assert!(!s.on_last());
         s.set_answer("a1".to_string());
         s.next();
@@ -1803,7 +1524,7 @@ mod tests {
         assert_eq!(&Phase::Results, s.phase());
         assert!(!s.result().unwrap().passed);
         assert_eq!(vec!["the move rule"], s.gaps());
-        assert!(!store.deck_mastered("d.md")); // failed -> not mastered
+        assert!(!store.deck_mastered("d.md"));
 
         assert!(s.can_remediate());
         let snapshot = std::fs::read(dir.path().join("d.md")).unwrap();
@@ -1811,13 +1532,10 @@ mod tests {
         assert_eq!(&Phase::Remediating, s.phase());
         drain(&mut s, &mut store);
         assert_eq!(&Phase::Remediated, s.phase());
-        // The remediation card became a virtual card in the store — the deck
-        // file itself stays byte-unchanged.
         assert_eq!(snapshot, std::fs::read(dir.path().join("d.md")).unwrap());
         let virtuals = store.virtual_cards_for("d.md");
         assert_eq!(1, virtuals.len());
         assert_eq!(VirtualKind::Remediation, virtuals[0].kind);
-        // Content lives as the stored deck-format `text`; re-parse it to check.
         let synth = parser::parse_str("d.md", &virtuals[0].text).unwrap();
         assert_eq!("Why does X?", synth[0].front);
         assert_eq!(vec!["point one".to_string()], synth[0].back);
@@ -1848,15 +1566,12 @@ mod tests {
         s.submit();
         drain(&mut s, &mut store);
         assert!(s.can_remediate());
-        // No remediation has run yet.
         assert_eq!(None, s.remediated_count());
 
         s.remediate();
         drain(&mut s, &mut store);
         assert_eq!(&Phase::Remediated, s.phase());
 
-        // The count the Sitting carries matches the remediation virtual cards
-        // this failure actually produced for the subject.
         let virtuals = store.virtual_cards_for("d.md");
         assert_eq!(1, virtuals.len());
         assert_eq!(Some(virtuals.len()), s.remediated_count());
@@ -1888,11 +1603,9 @@ mod tests {
         drain(&mut s, &mut store);
         assert_eq!(&Phase::Results, s.phase());
         assert!(s.result().unwrap().passed);
-        assert!(store.deck_mastered("d.md")); // pass -> mastered + saved
+        assert!(store.deck_mastered("d.md"));
         assert!(!s.can_remediate());
     }
-
-    // ── Remediation writes virtual cards (B.3) ──────────────────────────────
 
     #[test]
     fn a_failed_exam_creates_virtual_cards_and_leaves_the_deck_file_unchanged() {
@@ -1948,7 +1661,6 @@ mod tests {
         let deck = sourced_deck(dir.path());
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
 
-        // Fail then remediate: the batch exists.
         let mut s = Sitting::start(
             &deck,
             Strictness::Balanced,
@@ -1967,7 +1679,6 @@ mod tests {
         assert_eq!(&Phase::Remediated, s.phase());
         assert!(!store.virtual_cards_for("d.md").is_empty());
 
-        // Re-sit and pass this time.
         let cli_dir2 = tempfile::tempdir().unwrap();
         let cli2 = branching_cli(
             cli_dir2.path(),
@@ -2001,8 +1712,6 @@ mod tests {
         }
     }
 
-    // ── advance()/set_answers() (storeless split, M6) ───────────────────────
-
     #[test]
     fn advance_surfaces_remediation_text_without_a_store() {
         let _lock = exec_lock();
@@ -2015,8 +1724,6 @@ mod tests {
         let deck = sourced_deck(dir.path());
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
 
-        // Drive to Remediating with poll+store, exactly like the existing
-        // sitting tests.
         let mut s = Sitting::start(
             &deck,
             Strictness::Balanced,
@@ -2033,7 +1740,6 @@ mod tests {
         s.remediate();
         assert_eq!(&Phase::Remediating, s.phase());
 
-        // No Store from here on: advance alone drains the remediation reply.
         let effect = advance_until_idle(&mut s);
         let Some(Effect::RemediationCards(text)) = effect else {
             panic!("expected Some(Effect::RemediationCards(_)), got {effect:?}");
@@ -2042,7 +1748,7 @@ mod tests {
         assert_eq!("Why does X?", synth[0].front);
         assert_eq!(vec!["point one".to_string()], synth[0].back);
         assert_eq!(&Phase::Remediated, s.phase());
-        assert_eq!(None, s.remediated_count()); // a store outcome, not advance's job
+        assert_eq!(None, s.remediated_count());
     }
 
     #[test]
@@ -2056,8 +1762,6 @@ mod tests {
         );
         let deck = sourced_deck(dir.path());
 
-        // No Store anywhere: advance alone drives generation through to a
-        // graded failure.
         let mut s = Sitting::start(
             &deck,
             Strictness::Balanced,
@@ -2072,7 +1776,7 @@ mod tests {
         s.submit();
 
         let effect = advance_until_idle(&mut s);
-        assert_eq!(None, effect); // a failed non-trace grade has no store outcome
+        assert_eq!(None, effect);
         assert_eq!(&Phase::Results, s.phase());
         assert!(!s.result().unwrap().passed);
     }
@@ -2094,7 +1798,6 @@ mod tests {
             ExamConfig::default(),
             ask_config(&cli),
         );
-        // Right arity (0 questions while still Generating) but the wrong phase.
         assert_eq!(&Phase::Generating, s.phase());
         assert!(!s.set_answers(Vec::new()));
         assert!(s.answers().is_empty());
@@ -2103,16 +1806,12 @@ mod tests {
         assert_eq!(&Phase::Answering, s.phase());
         assert_eq!(2, s.total());
 
-        // Wrong arity in Answering: rejected, answers untouched.
         assert!(!s.set_answers(vec!["only one".to_string()]));
         assert_eq!(vec!["".to_string(), "".to_string()], s.answers());
 
-        // Right arity in Answering: stored.
         assert!(s.set_answers(vec!["a1".to_string(), "a2".to_string()]));
         assert_eq!(vec!["a1".to_string(), "a2".to_string()], s.answers());
     }
-
-    // ── Trace exam (the compression) ────────────────────────────────────────
 
     #[test]
     fn grade_compression_prompt_carries_path_points_and_answer() {
@@ -2189,7 +1888,7 @@ mod tests {
 
         let mut s = trace_sitting(&cli);
         assert_eq!(SittingKind::Trace, s.kind());
-        assert_eq!(&Phase::Answering, s.phase()); // no generation step
+        assert_eq!(&Phase::Answering, s.phase());
         assert_eq!(1, s.total());
         s.set_answer("my retrace of the path".to_string());
         s.submit();
@@ -2197,8 +1896,8 @@ mod tests {
         drain(&mut s, &mut store);
         assert_eq!(&Phase::Results, s.phase());
         assert!(s.result().unwrap().passed);
-        assert!(store.deck_mastered("t.txt")); // pass -> mastered
-        assert!(!s.can_remediate()); // never for a trace
+        assert!(store.deck_mastered("t.txt"));
+        assert!(!s.can_remediate());
     }
 
     #[test]
@@ -2218,7 +1917,7 @@ mod tests {
         assert_eq!(&Phase::Results, s.phase());
         assert!(!s.result().unwrap().passed);
         assert!(!store.deck_mastered("t.txt"));
-        assert!(store.exam_failed_at("t.txt").is_some()); // re-sit cooldown started
+        assert!(store.exam_failed_at("t.txt").is_some());
         assert!(!s.can_remediate());
     }
 }

@@ -1,13 +1,7 @@
-//! The Claude Code CLI backend (`claude -p`). Reproduces alix's original,
-//! only invocation verbatim: the same fixed `-p --output-format text` prefix,
-//! the same `--allowedTools`/`--permission-mode`/`--model`/`--effort` flags,
-//! prompt on stdin, answer trimmed off stdout.
-
 use anyhow::Result;
 
 use super::{Access, Backend, PromptDelivery, RunOpts};
 
-/// The Claude Code CLI backend.
 pub struct ClaudeBackend;
 
 impl Backend for ClaudeBackend {
@@ -22,8 +16,7 @@ impl Backend for ClaudeBackend {
             "text".to_string(),
         ];
 
-        // Render the abstract grant into Claude's tool names in a fixed
-        // canonical order, so equivalent grants always produce identical argv.
+        // Fixed canonical order: equivalent grants always produce identical argv.
         let mut tools: Vec<&str> = Vec::new();
         if let Access::ReadOnly {
             files,
@@ -89,9 +82,8 @@ impl Backend for ClaudeBackend {
     }
 
     fn default_trace_model(&self) -> Option<&'static str> {
-        // Trace building is agentic and correctness-critical; Opus is the strong
-        // model, so Claude defaults trace to it (other backends inherit the CLI
-        // default).
+        // Trace building is agentic and correctness-critical, so Claude
+        // defaults it to the strong model (other backends inherit the CLI default).
         Some("opus")
     }
 }
@@ -147,7 +139,6 @@ mod tests {
 
     #[test]
     fn claude_fetch_without_search() {
-        // The trace case: source files + fetch a known URL, but no web search.
         let argv = ClaudeBackend.build_argv(&opts(
             Access::ReadOnly {
                 files: true,
@@ -174,7 +165,6 @@ mod tests {
 
     #[test]
     fn claude_emits_permission_mode_independent_of_grant() {
-        // dontAsk with no tool grant — e.g. a grading call with the config default set.
         let argv = ClaudeBackend.build_argv(&RunOpts {
             model: None,
             effort: None,
@@ -186,7 +176,6 @@ mod tests {
         assert!(argv.iter().any(|a| a == "--permission-mode"));
         assert!(argv.iter().any(|a| a == "dontAsk"));
 
-        // bypassPermissions with a ReadOnly grant — both flags present.
         let argv = ClaudeBackend.build_argv(&RunOpts {
             model: None,
             effort: None,
@@ -202,7 +191,6 @@ mod tests {
         let pm_pos = argv.iter().position(|a| a == "--permission-mode").unwrap();
         assert_eq!(argv[pm_pos + 1], "bypassPermissions");
 
-        // No permission_mode set — flag absent.
         let argv = ClaudeBackend.build_argv(&RunOpts {
             model: None,
             effort: None,

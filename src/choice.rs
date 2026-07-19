@@ -1,12 +1,3 @@
-//! Multiple-choice questions (`--mode choice` / the Recognize depth).
-//!
-//! The wrong options (distractors) come only from a card's cached AI
-//! augmentation (`alix deck augment --target choices`). Distractors are never
-//! sampled from other cards' answers: an offline-guessed multiple-choice reads
-//! as junk (unrelated options that give the answer away, or near-duplicates),
-//! which is worse than an honest reveal. A card without a full set of cached AI
-//! distractors renders no pick, and the frontend falls back to a plain flip.
-
 use std::{
     collections::HashSet,
     hash::{Hash, Hasher},
@@ -14,34 +5,21 @@ use std::{
 
 use crate::card::Card;
 
-/// Total number of options shown (one correct + three distractors).
+// One correct option plus three distractors.
 pub const NUM_OPTIONS: usize = 4;
 
-/// A built multiple-choice question.
 #[derive(Debug)]
 pub struct ChoiceQuestion {
-    /// The options in display order.
     pub options: Vec<String>,
-    /// Index of the correct option.
     pub correct: usize,
 }
 
-/// The text of a card's answer as a single option.
 fn answer_text(card: &Card) -> String {
     card.back.join("\n")
 }
 
-/// Combines a card id with how many times it has appeared this session
-/// ([`crate::session::Session::appearance`]) into the shuffle seed for
-/// [`build`]/[`recognition_question`]. The client polls `GET /api/state` every
-/// ~3s while a card is on screen, and both that endpoint and `/api/choose`
-/// rebuild the question from scratch (no server-side caching) — so the seed
-/// must depend only on things that don't change while the card sits on
-/// screen: the card id and the appearance count are exactly that, and the
-/// appearance count only advances on a genuine re-serve (see
-/// `Session::advance`), never on an idle poll. That makes it stable *within*
-/// one appearance and different (barring rare permutation collisions) on the
-/// *next* one — deliberately not wall-clock, which would drift mid-poll.
+// Seeded by appearance, not wall-clock: appearance only advances on a
+// genuine re-serve, so this is stable across polls of one appearance.
 pub fn seed_for(card_id: &str, appearance: u32) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     card_id.hash(&mut hasher);
@@ -49,14 +27,9 @@ pub fn seed_for(card_id: &str, appearance: u32) -> u64 {
     hasher.finish()
 }
 
-/// The distinct, non-empty distractors for `card` in cache order, dropping any
-/// that equal the card's answer, capped at [`NUM_OPTIONS`] `- 1`. The single
-/// home of the "which options survive" rule, so [`build`] and [`can_build`] can
-/// never disagree on whether a card has a full pick.
 fn distinct_distractors(card: &Card, ai_distractors: &[String]) -> Vec<String> {
     let needed = NUM_OPTIONS - 1;
-    // The correct answer, so no AI option can duplicate it, plus each option
-    // already chosen (dedup among the distractors themselves).
+    // Seed with the answer so no AI distractor can duplicate it.
     let mut seen: HashSet<String> = HashSet::new();
     seen.insert(answer_text(card));
     let mut chosen: Vec<String> = Vec::new();
@@ -72,15 +45,6 @@ fn distinct_distractors(card: &Card, ai_distractors: &[String]) -> Vec<String> {
     chosen
 }
 
-/// Assembles a multiple-choice question for `card` from its cached AI
-/// distractors ([`distinct_distractors`]), returning `None` when fewer than
-/// [`NUM_OPTIONS`] `- 1` distinct, non-empty distractors remain. Distractors are
-/// never sampled from other cards.
-///
-/// This is the Recognize-depth entry point: it makes no assumption about the
-/// answer's shape, so a multi-line (`% reveal: line`) card is quizzed on its
-/// whole joined sequence against the AI's alternate orderings. The acquire-bar
-/// entry [`recognition_question`] adds the atomic-answer guard on top.
 pub fn build(card: &Card, seed: u64, ai_distractors: &[String]) -> Option<ChoiceQuestion> {
     let mut options = distinct_distractors(card, ai_distractors);
     if options.len() < NUM_OPTIONS - 1 {
@@ -94,23 +58,10 @@ pub fn build(card: &Card, seed: u64, ai_distractors: &[String]) -> Option<Choice
     Some(ChoiceQuestion { options, correct })
 }
 
-/// Whether [`build`] could assemble a full question for `card` from
-/// `ai_distractors`: at least [`NUM_OPTIONS`] `- 1` distinct, non-empty options
-/// remain after dropping any that equal the card's answer. The predicate a
-/// Recognize session gates scheduling on — a card that cannot build a pick is
-/// never served at Recognize (there is no plain-flip fallback). Shares
-/// [`distinct_distractors`] with `build`, so the two cannot disagree.
 pub fn can_build(card: &Card, ai_distractors: &[String]) -> bool {
     distinct_distractors(card, ai_distractors).len() == NUM_OPTIONS - 1
 }
 
-/// Builds an acquire-bar recognition question under the strict bar that makes a
-/// first-encounter guess worth the trouble: an **atomic** card (a single-line
-/// answer) whose deck supplies a full set of *AI* distractors (`alix deck
-/// augment --target choices`). A card without a cached augmentation (or with a
-/// multi-line answer) returns `None`, and the frontend shows a plain reveal
-/// (flip) instead of a junk pick. A seen card in a Recognize session goes
-/// through [`build`] instead, which drops the atomic guard.
 pub fn recognition_question(
     card: &Card,
     seed: u64,
@@ -123,8 +74,7 @@ pub fn recognition_question(
     build(card, seed, ai)
 }
 
-/// A small SplitMix64 PRNG; good enough for shuffling options and avoids a
-/// dependency.
+// SplitMix64: good enough for shuffling options, and avoids a dependency.
 struct Rng(u64);
 
 impl Rng {
@@ -145,7 +95,6 @@ impl Rng {
     }
 }
 
-/// Fisher-Yates shuffle.
 fn shuffle<T>(items: &mut [T], rng: &mut Rng) {
     for i in (1..items.len()).rev() {
         items.swap(i, rng.below(i + 1));
@@ -184,23 +133,18 @@ mod tests {
 
     #[test]
     fn fewer_than_three_distractors_yields_none() {
-        // A full set is NUM_OPTIONS - 1 distinct distractors; two can't build a
-        // question, and there is no offline pool to top it up.
         let c = card(1, "alpha");
         assert!(build(&c, 42, &ai(&["beta", "gamma"])).is_none());
     }
 
     #[test]
     fn duplicate_distractors_count_once() {
-        // Duplicates of each other, or of the answer, must not pad the set.
         let c = card(1, "alpha");
         assert!(build(&c, 42, &ai(&["beta", "beta", "alpha"])).is_none());
     }
 
     #[test]
     fn an_ai_distractor_equal_to_the_answer_is_dropped() {
-        // "alpha" is the correct answer and must never appear as a distractor;
-        // the fourth option keeps the set full after it is dropped.
         let c = card(1, "alpha");
         let d = ai(&["alpha", "beta", "gamma", "delta"]);
         for seed in 0..10 {
@@ -248,9 +192,6 @@ mod tests {
 
     #[test]
     fn recognition_question_rejects_too_few_ai_distractors() {
-        // A short AI set (or none at all) falls back to recall-acquire (None); it
-        // is never rescued by offline sampling, since a junk pick is worse than
-        // an honest reveal.
         let c = card(1, "alpha");
         assert!(recognition_question(&c, 1, Some(&ai(&["w1", "w2"]))).is_none());
         assert!(recognition_question(&c, 1, None).is_none());
@@ -258,7 +199,6 @@ mod tests {
 
     #[test]
     fn recognition_question_rejects_multi_line_answers() {
-        // An open / multi-line answer can't be a meaningful pick-one.
         let c = card(1, "line a\nline b");
         let d = ai(&["w1", "w2", "w3"]);
         assert!(recognition_question(&c, 1, Some(&d)).is_none());
@@ -266,11 +206,6 @@ mod tests {
 
     #[test]
     fn same_appearance_seed_is_stable_but_later_appearances_vary_the_order() {
-        // The client polls `GET /api/state` every ~3s while a card is on screen;
-        // `seed_for` must rebuild the identical question for repeated polls of
-        // the SAME appearance, but a card served again after cycling out (a
-        // later appearance) must eventually land on a different order — no more
-        // solving a retry by position memory ({#reorder-mc-on-each-appearance}).
         let c = card(1, "alpha");
         let d = ai(&["beta", "gamma", "delta"]);
         let id = "q42";

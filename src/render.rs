@@ -1,17 +1,3 @@
-//! Rendering model for the web frontend.
-//!
-//! Turns a [`Card`]'s free-text note into display structure — prose split into
-//! sentences, fenced code blocks kept verbatim — without committing to a
-//! particular layout. There are no colors here, no width-based wrapping: just
-//! the structural decisions the frontend would otherwise have to reimplement.
-//! The web page paints this model as HTML.
-//!
-//! A card's front, context, and back lines need no structuring — they are read
-//! straight off the [`Card`]. Only notes carry markup worth interpreting once
-//! and sharing. Width-dependent wrapping (CSS on the web) is left to the
-//! frontend, as is anything reveal-state-dependent (typing progress,
-//! line-by-line, cloze holes), which belongs with the interactive layer.
-
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -19,32 +5,15 @@ use crate::{
     l1::{BLANK, HIDDEN},
 };
 
-/// A note decomposed into ordered display units.
-///
-/// Units appear in document order. The frontend separates consecutive units
-/// from one another and applies its own wrapping and styling. Serializes as
-/// the documented client wire shape (`{"kind": "sentence", "text": …}`, see
-/// docs/API.md): struct variants, because serde's internal tagging cannot
-/// tag newtype variants.
+// Struct variants (not newtype) because serde's internal tagging can't tag
+// newtype variants; wire shape is `{"kind": ..., "text": ...}` (docs/API.md).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum NoteUnit {
-    /// One sentence of prose, trimmed, with its terminating period attached.
-    /// Hard-wrapped `!` lines are joined before splitting, so a sentence is a
-    /// real sentence rather than a source line.
     Sentence { text: String },
-    /// A fenced code block: its lines verbatim, indentation preserved. Never
-    /// sentence-split or wrapped — code reads as written.
     Code { lines: Vec<String> },
 }
 
-/// Decomposes a card's note into ordered [`NoteUnit`]s. Returns an empty list
-/// when the card has no note (or only a blank one).
-///
-/// Consecutive prose lines are joined into one buffer and then split into
-/// sentences, so a note hard-wrapped across several `!` lines does not turn
-/// each source line into its own "sentence". A ```` ``` ```` fence toggles a
-/// verbatim code block.
 pub fn note_units(card: &Card) -> Vec<NoteUnit> {
     let Some(note) = &card.note else {
         return Vec::new();
@@ -57,8 +26,7 @@ pub fn note_units(card: &Card) -> Vec<NoteUnit> {
 
     for logical in note.lines() {
         if logical.trim_start().starts_with("```") {
-            // Fence delimiter: toggle code mode; the ``` line itself is
-            // dropped. Empty blocks produce no unit.
+            // Empty code blocks produce no unit.
             if in_code {
                 let block = std::mem::take(&mut code);
                 if !block.is_empty() {
@@ -93,8 +61,6 @@ pub fn note_units(card: &Card) -> Vec<NoteUnit> {
     units
 }
 
-/// Splits the accumulated prose into one [`NoteUnit::Sentence`] per sentence
-/// and clears the buffer.
 fn flush_prose(prose: &mut String, units: &mut Vec<NoteUnit>) {
     for sentence in split_sentences(prose) {
         if !sentence.is_empty() {
@@ -104,10 +70,6 @@ fn flush_prose(prose: &mut String, units: &mut Vec<NoteUnit>) {
     prose.clear();
 }
 
-/// Splits text into sentences, breaking after a period that is followed by
-/// whitespace or the end of the text. A period followed by a non-space (as in
-/// "2.1") does not split, so numbers stay intact. The terminating period stays
-/// attached to its sentence.
 pub fn split_sentences(text: &str) -> Vec<String> {
     let chars: Vec<char> = text.chars().collect();
     let mut sentences = Vec::new();
@@ -131,25 +93,17 @@ pub fn split_sentences(text: &str) -> Vec<String> {
     sentences
 }
 
-/// A piece of a cloze context line, so frontends can highlight the hole the
-/// sub-card is asking and dim the hidden sibling holes.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ContextSpan {
-    /// Ordinary surrounding text.
     Text(String),
-    /// The active hole — the blank this sub-card is asking for ([`BLANK`]).
     Blank(String),
-    /// A hidden sibling hole, masked so it doesn't spoil itself ([`HIDDEN`]).
     Hidden(String),
 }
 
-/// Splits a cloze context line into [`ContextSpan`]s by its hole markers. A
-/// line with no markers yields a single [`ContextSpan::Text`].
 pub fn context_spans(line: &str) -> Vec<ContextSpan> {
     let mut spans = Vec::new();
     let mut rest = line;
     while !rest.is_empty() {
-        // The earliest of the two markers wins this iteration.
         let blank = rest.find(BLANK);
         let hidden = rest.find(HIDDEN);
         let (pos, marker, is_blank) = match (blank, hidden) {
@@ -216,7 +170,6 @@ mod tests {
 
     #[test]
     fn hard_wrapped_prose_joins_before_splitting() {
-        // Two source lines, one sentence: they must join, not become two.
         let units = note_units(&card_with_note("A sentence spread\nacross two lines."));
         assert_eq!(
             units,
@@ -284,8 +237,6 @@ mod tests {
 
     #[test]
     fn note_units_serialize_as_the_documented_wire_shape() {
-        // The client contract (docs/API.md, pinned by the serve snapshot
-        // tests): internally tagged with `kind`, lowercase variant names.
         let units = vec![
             NoteUnit::Sentence {
                 text: "One owner.".into(),
@@ -316,7 +267,6 @@ mod tests {
                 Hidden("[…]".into()),
             ]
         );
-        // A hole at the very start, no leading text.
         assert_eq!(
             context_spans("____ here"),
             vec![Blank("____".into()), Text(" here".into())]

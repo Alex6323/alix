@@ -1,30 +1,9 @@
-//! Placing a remotely generated deck on-device: the phone half of remote
-//! generate. The server half (T2.1) returns deck text plus a suggested file
-//! name and never places a file itself (the iron rule for that endpoint) --
-//! placement is always a local, on-device decision. This module makes that
-//! decision: it reuses the lean `alix::library::place_deck` writer (the same
-//! tail `alix generate`, `alix deck import`, and the web equivalents share)
-//! so a generated deck lands exactly like a locally authored one, and it
-//! contributes the one thing the server can't do for it -- stemming the
-//! suggested name against whatever is already in the phone's decks folder so
-//! a generated deck never silently overwrites an existing file.
-
 use std::path::Path;
 
 use anyhow::Result;
 
-/// Writes `text` into `decks_dir`, choosing a collision-free name from
-/// `filename`: strip a trailing `.txt` to get the base stem, then try
-/// `<stem>`, `<stem>-2`, `<stem>-3`, ... until neither a `.md` nor a `.txt`
-/// file exists for that stem. A single-user phone has no concurrent writer,
-/// so an exists-check loop followed by one `place_deck` call is enough;
-/// `place_deck` re-checks and still bails on a genuine TOCTOU race, which is
-/// left to propagate as an error rather than retried. Returns the actual
-/// written file name (never the pre-checked candidate) so Dart can show
-/// "saved as <name>" and refresh the picker. A freshly generated deck that
-/// fails to parse is still saved by `place_deck` (lenient by design, fixable
-/// by hand) -- this function does not fail or otherwise surface that case,
-/// matching the spec's plain `String` return.
+/// A name counts as taken if either a `.md` or a pre-migration `.txt` file
+/// exists for the candidate stem.
 #[flutter_rust_bridge::frb(sync)]
 pub fn apply_generated_deck(decks_dir: String, filename: String, text: String) -> Result<String> {
     let dir = Path::new(&decks_dir);
@@ -34,13 +13,6 @@ pub fn apply_generated_deck(decks_dir: String, filename: String, text: String) -
         .unwrap_or("deck");
     let stem = raw.strip_suffix(".txt").unwrap_or(raw);
 
-    // `place_deck` always writes `.md`, regardless of the suggested name's
-    // own suffix, but a phone's decks folder can still hold pre-migration
-    // `.txt` decks alongside post-migration `.md` ones -- so a name counts
-    // as taken if either extension exists for the candidate stem. Probing
-    // only `.md` (matching just the writer) would miss a same-named `.txt`
-    // deck and silently shadow it; probing only `.txt` (the old bug) misses
-    // every `.md` deck `place_deck` itself produced.
     let mut candidate = stem.to_string();
     let mut n = 2;
     while dir.join(format!("{candidate}.md")).exists()
@@ -74,8 +46,6 @@ mod tests {
         let name =
             apply_generated_deck(dir_str(&dir), "topic.txt".to_string(), text.to_string()).unwrap();
 
-        // `place_deck` (the shared writer this delegates to) always normalizes
-        // to `.md`, regardless of the suggested name's own suffix.
         assert_eq!(name, "topic.md");
         let deck = alix::deck::Deck::load(dir.path().join("topic.md")).unwrap();
         assert_eq!(deck.cards.len(), 2);

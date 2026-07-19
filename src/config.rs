@@ -1,16 +1,3 @@
-//! User configuration, loaded from a TOML file
-//! (`~/.config/alix/config.toml` on Linux).
-//!
-//! Currently this configures key bindings. Every action takes a list of
-//! keys; the first one is shown in the web review page's footer. A key is written
-//! as a single character (`"j"`), a special key name (`"space"`, `"enter"`,
-//! `"tab"`, `"esc"`, `"backspace"`), or either with a `ctrl-` prefix
-//! (`"ctrl-s"`).
-//!
-//! Plain-character bindings are ignored while you are typing an answer
-//! (typing and typeline mode), so they cannot shadow text input; use `ctrl-` or
-//! special keys for actions that must be reachable there (hint, skip, quit).
-
 use std::{
     fmt,
     path::{Path, PathBuf},
@@ -19,7 +6,6 @@ use std::{
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
-/// A key without modifiers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Key {
     Char(char),
@@ -29,7 +15,6 @@ pub enum Key {
     Backspace,
 }
 
-/// A key plus the Ctrl modifier flag; what a binding matches against.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct KeyPattern {
     pub key: Key,
@@ -37,7 +22,6 @@ pub struct KeyPattern {
 }
 
 impl KeyPattern {
-    /// `true` if this pattern would swallow plain text input.
     pub fn is_plain_char(&self) -> bool {
         matches!(self.key, Key::Char(_)) && !self.ctrl
     }
@@ -61,7 +45,6 @@ impl fmt::Display for KeyPattern {
     }
 }
 
-/// Parses a key description like `"j"`, `"space"` or `"ctrl-s"`.
 pub fn parse_key(s: &str) -> Result<KeyPattern> {
     let lower = s.trim().to_lowercase();
     let (ctrl, name) = match lower.strip_prefix("ctrl-") {
@@ -88,48 +71,24 @@ pub fn parse_key(s: &str) -> Result<KeyPattern> {
     Ok(KeyPattern { key, ctrl })
 }
 
-/// All rebindable actions.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Bindings {
-    /// Self-graded modes: grade as failed (FSRS `Again` — resets learning progress).
     pub failed: Vec<KeyPattern>,
-    /// Self-graded modes: grade as partly (FSRS `Hard` — a weak pass, still drilling).
     pub partly: Vec<KeyPattern>,
-    /// Self-graded modes: grade as passed (FSRS `Good` — advances toward graduation).
     pub passed: Vec<KeyPattern>,
-    /// Recognition (multiple-choice) and key-point review: move the focus up or
-    /// down the list of choices or points. The arrow keys always work too.
     pub up: Vec<KeyPattern>,
     pub down: Vec<KeyPattern>,
-    /// Flip mode: reveal the answer.
     pub reveal: Vec<KeyPattern>,
-    /// Typing mode: reveal a hint (fails the card).
     pub hint: Vec<KeyPattern>,
-    /// TypeLine mode: submit the current line.
     pub submit: Vec<KeyPattern>,
-    /// Put the current card at the end of the queue without grading.
     pub skip: Vec<KeyPattern>,
-    /// Mark the current card for removal from its deck file (applied when the
-    /// session ends).
     pub remove: Vec<KeyPattern>,
-    /// Promote the current virtual (remediation) card into its deck file,
-    /// dropping the virtual copy — the new deck card carries over its review
-    /// schedule rather than starting fresh. Offered only while reviewing a
-    /// virtual card.
     pub promote: Vec<KeyPattern>,
-    /// Leave the feedback screen.
     pub cont: Vec<KeyPattern>,
-    /// Start a new session from the summary screen.
     pub restart: Vec<KeyPattern>,
-    /// Open the ask-Claude view on an answered card.
     pub ask: Vec<KeyPattern>,
-    /// Ask view: condense the conversation into a note on the card
-    /// ("Make this a note").
     pub make_note: Vec<KeyPattern>,
-    /// Ask view: distill the conversation into a draft card ("Make this a
-    /// card"; adult review only).
     pub make_card: Vec<KeyPattern>,
-    /// Quit the session.
     pub quit: Vec<KeyPattern>,
 }
 
@@ -159,7 +118,6 @@ impl Default for Bindings {
 }
 
 impl Bindings {
-    /// The key shown in the footer for an action (its first binding).
     pub fn label(list: &[KeyPattern]) -> String {
         list.first()
             .map(|p| p.to_string())
@@ -167,33 +125,18 @@ impl Bindings {
     }
 }
 
-/// Rebindable navigation keys for the deck picker, configured in the
-/// `[keys.picker]` section. Vim-style by default. The arrow keys, `Enter` (open)
-/// and `Esc` (back) always work regardless of these; jumping to the first/last
-/// row stays fixed at `g`/`G`/Home/End (letter bindings are case-insensitive, so
-/// `g` and `G` can't be told apart — same as the `[keys.browse]` pager).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PickerKeys {
-    /// Move up / down the list.
     pub up: Vec<KeyPattern>,
     pub down: Vec<KeyPattern>,
-    /// Open the focused row (a deck reviews, a workspace drills in).
     pub open: Vec<KeyPattern>,
-    /// Step back / cancel.
     pub back: Vec<KeyPattern>,
-    /// Enter filter mode.
     pub filter: Vec<KeyPattern>,
-    /// Open the Mastered window.
     pub mastered: Vec<KeyPattern>,
-    /// Open (or close) the focused deck's depth menu — the split Learn
-    /// button's ▾. `Esc` always closes it too.
     pub depth: Vec<KeyPattern>,
-    /// Start the focused deck at a depth while its menu is open. `Enter`
-    /// always starts the highlighted (last-used) depth.
     pub recognize: Vec<KeyPattern>,
     pub recall: Vec<KeyPattern>,
     pub reconstruct: Vec<KeyPattern>,
-    /// Toggle the depth menu's cram tick-box (include cards that aren't due).
     pub cram: Vec<KeyPattern>,
 }
 
@@ -216,19 +159,11 @@ impl Default for PickerKeys {
     }
 }
 
-/// Key bindings for the read-only Browse overlay, configured in the
-/// `[keys.browse]` section. Jumping to the first/last card stays fixed at
-/// `g`/`G`/Home/End — letter bindings are case-insensitive, so `g` and `G`
-/// cannot be told apart — and the arrow keys always work for next/previous.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BrowseBindings {
-    /// Move to the next card.
     pub next: Vec<KeyPattern>,
-    /// Move to the previous card.
     pub prev: Vec<KeyPattern>,
-    /// Mark the current card for removal from its deck file (applied on quit).
     pub remove: Vec<KeyPattern>,
-    /// Leave the browser.
     pub quit: Vec<KeyPattern>,
 }
 
@@ -244,26 +179,16 @@ impl Default for BrowseBindings {
     }
 }
 
-/// Which AI CLI backend to use for assistant calls.
-///
-/// All four variants are wired; `backend_for` returns `Ok` for each.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum BackendKind {
-    /// The Claude Code CLI (`claude -p`). The default.
     #[default]
     Claude,
-    /// Google Gemini CLI (`gemini -p`, headless).
     Gemini,
-    /// OpenAI Codex CLI (`codex exec`, headless).
     Codex,
-    /// GitHub Copilot CLI (`copilot -p`, headless).
     Copilot,
 }
 
 impl BackendKind {
-    /// The backend's canonical lowercase name — the same word the config
-    /// file's `[ask] backend` accepts, and what the web client shows in its
-    /// "who is answering" surfaces (the tutor header, progress lines).
     pub fn name(self) -> &'static str {
         match self {
             BackendKind::Claude => "claude",
@@ -274,45 +199,17 @@ impl BackendKind {
     }
 }
 
-/// Settings for the ask-Claude integration (`[ask]` in the config file).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AskConfig {
-    /// Which AI CLI backend to use.
     pub backend: BackendKind,
-    /// The CLI executable to run.
     pub command: String,
-    /// Model passed as `--model`; `None` uses the CLI's own default.
     pub model: Option<String>,
-    /// `--effort` level (`low`/`medium`/`high`/`xhigh`/`max`); `None` omits the
-    /// flag and uses the CLI's default. Trace operations default this to
-    /// `high`.
     pub effort: Option<String>,
-    /// How long to wait for an answer before giving up.
     pub timeout_secs: u64,
-    /// `--permission-mode` for the headless CLI. The default `"dontAsk"`
-    /// silently denies any tool not in `allowed_tools` instead of waiting
-    /// for an interactive approval that `-p` mode cannot provide (which
-    /// would hang). An empty string omits the flag.
     pub permission_mode: String,
-    /// Tools the assistant may use (`--allowedTools`). Combined with
-    /// `dontAsk`, this is an exclusive allowlist: everything else is denied,
-    /// so a malicious deck-link page cannot make the tutor run commands.
     pub allowed_tools: Vec<String>,
-    /// Working directory for the CLI process (`current_dir`). `None` inherits
-    /// the caller's. Not a user setting: trace building sets it to the
-    /// `% source:` root so Claude explores the source with relative paths.
     pub cwd: Option<PathBuf>,
-    /// Opt-in: let the ask-Claude tutor **read the card's source** to verify its
-    /// answer (Read/Glob/Grep, working directory at the deck's `% source:`
-    /// project root) instead of answering from memory. Off by default because it
-    /// grants the served tutor file-read access — only enable it on a machine and
-    /// network you trust (especially with `alix --lan`).
     pub source_access: bool,
-    /// Source-tree byte threshold for the pre-flight size guard. When a local
-    /// source tree (for `alix generate` in all its forms)
-    /// exceeds this many bytes, `alix` warns and asks for confirmation before
-    /// spending a potentially large model call. Default is 5 MB (5_000_000 bytes).
-    /// Set to 0 to disable the guard (always proceed without confirming).
     pub preflight_threshold: u64,
 }
 
@@ -333,25 +230,13 @@ impl Default for AskConfig {
     }
 }
 
-/// Settings for AI deck generation (`alix deck`, the `[generate]` section).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GenerateDeckConfig {
-    /// Model passed as `--model`; `None` falls back to the `[ask]` model, then
-    /// the CLI's own default.
     pub model: Option<String>,
-    /// How long to wait for the deck before giving up (generation is a bigger
-    /// call than a single question, so this is larger than the ask timeout).
     pub timeout_secs: u64,
-    /// Upper bound on the number of cards to generate.
     pub max_cards: usize,
-    /// Extra guidance appended to the instruction prompt (the common way to
-    /// tweak generation, e.g. "focus on the public API").
     pub extra: Option<String>,
-    /// A full replacement for the built-in instruction prompt. May use the
-    /// `{url}` and `{max_cards}` placeholders.
     pub prompt: Option<String>,
-    /// Run a second Claude pass that reviews the draft and removes redundant
-    /// cards. `--review` forces it on for a single run.
     pub review: bool,
 }
 
@@ -368,30 +253,16 @@ impl Default for GenerateDeckConfig {
     }
 }
 
-/// How strictly the AI exam grades a typed answer against a question's rubric
-/// points. This is a per-deck choice (set with `% strictness:`, the `[exam]`
-/// default, or `alix exam --strictness`) because some material demands
-/// recalling everything while other material is about grasping the idea.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "full", derive(clap::ValueEnum))]
 pub enum Strictness {
-    /// Completeness required: every rubric point must be present, so omitting
-    /// one is a gap. For procedures, exact syntax, security — where knowing
-    /// most of it isn't enough.
     Strict,
-    /// Judge understanding, not phrasing: a point is covered if the answer
-    /// shows the student grasps it (even briefly, in their own words); only
-    /// a wrong or genuinely-absent idea is a gap.
     #[default]
     Balanced,
-    /// Benefit of the doubt: only clearly wrong or unanswered points are gaps.
-    /// For breadth or casual learning.
     Lenient,
 }
 
 impl Strictness {
-    /// Parses the config value name (case-insensitive), mirroring the clap
-    /// value names; the gated parity test keeps the two in step.
     pub fn parse(value: &str) -> Option<Self> {
         match value.to_ascii_lowercase().as_str() {
             "strict" => Some(Self::Strict),
@@ -402,32 +273,14 @@ impl Strictness {
     }
 }
 
-/// Settings for the AI exam (`alix exam`, the `[exam]` section). Like
-/// generate, it reuses the `[ask]` command, permission mode and tool allowlist
-/// (WebFetch reads a `% source:` URL). The exam grades open understanding
-/// questions generated from the deck's `% source:`, never the cards.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ExamConfig {
-    /// Model passed as `--model`; `None` falls back to the `[ask]` model, then
-    /// the CLI's own default.
     pub model: Option<String>,
-    /// How long to wait for each exam call (question generation, grading and
-    /// remediation are bigger calls than a single question, like generate).
     pub timeout_secs: u64,
-    /// How many questions a sitting asks.
     pub num_questions: usize,
-    /// Fraction of questions that must be a full Pass for the exam to pass
-    /// (1.0 = every question, the v1 default).
     pub pass_threshold: f64,
-    /// How strictly each typed answer is graded against the rubric.
     pub strictness: Strictness,
-    /// How long (seconds) a *failed* trace exam blocks a re-sit, so the graded
-    /// feedback can't be pasted straight back into the one fixed question.
-    /// `0` disables the cooldown. Trace exams only (a fact exam regenerates
-    /// fresh questions each sitting).
     pub retry_cooldown_secs: u64,
-    /// Extra guidance appended to the question-generation prompt (e.g. "focus
-    /// on the borrow checker").
     pub extra: Option<String>,
 }
 
@@ -445,43 +298,18 @@ impl Default for ExamConfig {
     }
 }
 
-/// Settings for trace building and exploration (the `[trace]` section).
-/// Building explores the deck's `% source:` to discover the path, so — unlike
-/// the other AI calls — it runs the CLI with **read-only** file tools (`Read`,
-/// `Glob`, `Grep`, plus `WebFetch` for a URL source) and the source root as the
-/// working directory. No write or shell tool is ever granted.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TraceConfig {
-    /// Model passed as `--model`. Left unset by default so each backend picks
-    /// its own strong model for trace ([`Backend::default_trace_model`] — Claude
-    /// → `opus`); an explicit value here or in `[ask]` overrides it. Trace
-    /// building is agentic, correctness-critical and one-shot, so it wants the
-    /// strong model rather than the CLI's cheap default.
-    ///
-    /// [`Backend::default_trace_model`]: crate::backend::Backend::default_trace_model
     pub model: Option<String>,
-    /// `--effort` level; defaults to `"high"` for the same reason. `None` omits
-    /// the flag. Shared by `--build`, `--suggest` and `--grade`.
     pub effort: Option<String>,
-    /// How long to wait for the build before giving up. Exploring a source and
-    /// tracing a path is the biggest call, so this is larger than the others.
     pub timeout_secs: u64,
-    /// Extra guidance appended to the build prompt (e.g. "trace the read path,
-    /// not the write path").
     pub extra: Option<String>,
-    /// Have the AI grade each walk prediction against the checkpoint's key
-    /// points instead of self-grading (a model call per hop — opt-in).
     pub auto_grade: bool,
 }
 
 impl Default for TraceConfig {
     fn default() -> Self {
         Self {
-            // Trace building is one-shot, amortized over many reviews, and a weak
-            // model fails silently (a parseable but loose chain), so it wants a
-            // strong model + high effort. The *model* is left unset here so each
-            // backend picks its own strong model (`Backend::default_trace_model`);
-            // effort still defaults high across backends.
             model: None,
             effort: Some("high".to_string()),
             timeout_secs: 600,
@@ -491,25 +319,12 @@ impl Default for TraceConfig {
     }
 }
 
-/// Settings for `alix deck augment` (the `[ai]` section). Augmentation is a
-/// deliberate command — it generates distractors (and, later, notes) into the
-/// sidecar cache — so there is no on/off switch; these just tune the calls.
-/// Generation reuses the `[ask]` command but runs tool-free, so no allowlist
-/// applies.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AiConfig {
-    /// Model passed as `--model`; `None` falls back to the `[ask]` model, then
-    /// the CLI's own default.
     pub model: Option<String>,
-    /// How many distractors to request per choice card.
     pub distractor_count: usize,
-    /// How many reworded question variants to request per card.
     pub variant_count: usize,
-    /// The most key points to request when decomposing a card's answer (the
-    /// Explain-mode checklist rubric).
     pub keypoint_count: usize,
-    /// How long to wait for a generation call before giving up. A whole-deck
-    /// batch is a big call (like `[generate]`/`[exam]`), so this is generous.
     pub timeout_secs: u64,
 }
 
@@ -525,10 +340,6 @@ impl Default for AiConfig {
     }
 }
 
-/// Which served frontend `/` returns: the adult app (`review.html`) or the
-/// kid-facing one. Also selects the ask-tutor's system preamble — kid-safe
-/// wording for `Kids`, the existing dev-facing wording for `Adult`
-/// (`ask::question_prompt`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Audience {
@@ -537,15 +348,10 @@ pub enum Audience {
     Kids,
 }
 
-/// Settings for the web server bare `alix` starts (the `[serve]` section).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ServeConfig {
-    /// Default port to listen on (overridden by `--port`).
     pub port: u16,
-    /// Optional pairing token. When set (or auto-generated for `--lan`), the web
-    /// server requires it on `/api/*` — see `alix --lan`.
     pub token: Option<String>,
-    /// Which frontend `/` serves.
     pub audience: Audience,
 }
 
@@ -559,31 +365,15 @@ impl Default for ServeConfig {
     }
 }
 
-/// The whole user configuration.
-// Not `Eq`: `ExamConfig::pass_threshold` is an `f64`.
-/// Personal review pacing (`[review]` in the config): the FSRS retention target and
-/// the interval past which a card retires. A workspace can override these in its own
-/// `alix.local.toml` (never shared).
+// Not `Eq`: `retention` is an `f64`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ReviewConfig {
-    /// FSRS target retrievability `r` (0.70–0.99). Higher → shorter intervals.
     pub retention: f64,
-    /// A card retires once its scheduled interval reaches this many days; `None`
-    /// disables retirement (drill forever).
     pub retire_after_days: Option<u32>,
-    /// Settle gap (ms) between acquiring a card and its first quiz; also the
-    /// session's same-card re-serve floor. `0` disables both gaps.
     pub acquire_cooldown_ms: u64,
-    /// Max new (never-seen) cards a session introduces. `None` = unset here —
-    /// the launcher resolves `--new` > this > its built-in default.
     pub max_new: Option<usize>,
-    /// Session size cap. `None` = unset (no cap unless `--limit` says so).
     pub limit: Option<usize>,
-    /// A personal per-workspace target date ("ready by <date>", inclusive),
-    /// set ONLY via a workspace's `alix.local.toml`; never global.
     pub deadline: Option<chrono::NaiveDate>,
-    /// How many days before the deadline the retention ramp starts
-    /// (`deadline_ramp`); 0 = interval cap only. Meaningless without `deadline`.
     pub deadline_ramp_days: u32,
 }
 
@@ -601,14 +391,9 @@ impl Default for ReviewConfig {
     }
 }
 
-/// A workspace's personal, unshared pacing override (sibling of `alix.toml`).
 pub const LOCAL_MANIFEST: &str = "alix.local.toml";
 
 impl ReviewConfig {
-    /// Overlays a workspace's `alix.local.toml` `[review]` overrides onto this
-    /// (global) config: only the keys present in the local file win. A missing or
-    /// malformed file leaves the config unchanged. This file is personal and is
-    /// never shared — deliberately separate from the shared `alix.toml`.
     pub fn for_workspace(self, workspace_dir: &Path) -> Self {
         let Ok(text) = std::fs::read_to_string(workspace_dir.join(LOCAL_MANIFEST)) else {
             return self;
@@ -636,13 +421,8 @@ impl ReviewConfig {
         if let Some(n) = raw.review.limit {
             review.limit = Some(n);
         }
-        // The deadline overlay applies only inside a real workspace (manifest
-        // present): outside one, a deadline has no chip, no web action, and no
-        // doctor lint to explain why retention is quietly ramping — a trap, not a
-        // feature. Pacing knobs above have no such visible product surface, so they
-        // stay folder-friendly. Checked once here (not per key) against the same
-        // `is_workspace` definition the picker/serve/doctor use, so the config
-        // layer can't drift from them.
+        // Deadline/ramp apply only inside a real workspace: a bare folder has no
+        // chip or lint to explain a ramping retention.
         if crate::workspace::is_workspace(workspace_dir) {
             if let Some(date) = raw.review.deadline
                 && let Ok(d) = chrono::NaiveDate::parse_from_str(&date, "%Y-%m-%d")
@@ -662,30 +442,19 @@ impl ReviewConfig {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Config {
     pub keys: Bindings,
-    /// Navigation keys for the deck picker.
     pub picker: PickerKeys,
-    /// Key bindings for the Browse overlay.
     pub browse: BrowseBindings,
     pub ask: AskConfig,
-    /// AI deck generation settings.
     pub generate: GenerateDeckConfig,
-    /// AI exam settings.
     pub exam: ExamConfig,
-    /// Trace building settings.
     pub trace: TraceConfig,
-    /// Opt-in AI question-augmentation settings (choice-mode distractors).
     pub ai: AiConfig,
-    /// Local web frontend settings.
     pub serve: ServeConfig,
-    /// Personal review pacing (FSRS retention + retirement interval).
     pub review: ReviewConfig,
-    /// Directory the startup picker lists decks from, and resolves bare deck
-    /// names against. `None` uses [`default_decks_dir`].
     pub decks_dir: Option<PathBuf>,
 }
 
 impl Config {
-    /// The decks directory to use (config value or the default `~/decks`).
     pub fn decks_dir(&self) -> Option<PathBuf> {
         self.decks_dir.clone().or_else(default_decks_dir)
     }
@@ -713,7 +482,6 @@ struct RawConfig {
     decks_dir: Option<String>,
 }
 
-/// The `[review]` section: personal pacing (FSRS retention, when a card retires).
 #[derive(Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 struct RawReviewConfig {
@@ -724,9 +492,6 @@ struct RawReviewConfig {
     limit: Option<usize>,
 }
 
-/// The `alix.local.toml` `[review]` section: everything the global section
-/// accepts, plus the per-workspace deadline keys that are meaningless
-/// globally.
 #[derive(Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 struct RawLocalReviewConfig {
@@ -739,8 +504,6 @@ struct RawLocalReviewConfig {
     deadline_ramp: Option<String>,
 }
 
-/// The `alix.local.toml` schema: personal per-workspace overrides. Currently just
-/// `[review]`; lenient (unknown top-level tables are ignored) so it can grow.
 #[derive(Deserialize, Default)]
 struct RawLocalConfig {
     #[serde(default)]
@@ -837,8 +600,6 @@ struct RawAsk {
     preflight_threshold: Option<u64>,
 }
 
-/// The `[keys]` table: one subtable per surface (`[keys.review]`,
-/// `[keys.picker]`, `[keys.browse]`), so every keybinding lives under `keys`.
 #[derive(Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 struct RawKeys {
@@ -873,8 +634,6 @@ struct RawReview {
 }
 
 impl Config {
-    /// Parses a configuration from TOML text. Actions that are not mentioned
-    /// keep their default bindings; an empty list disables an action.
     pub fn from_toml(text: &str) -> Result<Self> {
         let raw: RawConfig = toml::from_str(text).context("invalid config file")?;
         let mut keys = Bindings::default();
@@ -955,7 +714,6 @@ impl Config {
         if let Some(command) = raw.ask.command {
             ask.command = command;
         }
-        // An empty model string means "use the CLI default", like absence.
         if let Some(model) = raw.ask.model.filter(|m| !m.trim().is_empty()) {
             ask.model = Some(model);
         }
@@ -1093,11 +851,6 @@ impl Config {
         })
     }
 
-    /// Loads the configuration.
-    ///
-    /// With an explicit `path` the file must exist. Without one, the default
-    /// location is used if present, otherwise the default configuration is
-    /// returned.
     pub fn load(path: Option<&Path>) -> Result<Self> {
         let path = match path {
             Some(path) => path.to_path_buf(),
@@ -1112,18 +865,14 @@ impl Config {
     }
 }
 
-/// The default location of the config file
-/// (`~/.config/alix/config.toml` on Linux).
 pub fn default_config_path() -> Option<PathBuf> {
     directories::ProjectDirs::from("", "", "alix").map(|dirs| dirs.config_dir().join("config.toml"))
 }
 
-/// The default decks directory (`~/decks`).
 pub fn default_decks_dir() -> Option<PathBuf> {
     directories::BaseDirs::new().map(|dirs| dirs.home_dir().join("decks"))
 }
 
-/// Expands a leading `~` to the home directory.
 fn expand_tilde(path: &str) -> PathBuf {
     if let Some(rest) = path.strip_prefix("~/")
         && let Some(dirs) = directories::BaseDirs::new()
@@ -1133,13 +882,10 @@ fn expand_tilde(path: &str) -> PathBuf {
     PathBuf::from(path)
 }
 
-/// Retention is clamped to a sane FSRS band — outside it the schedule degenerates.
+/// Retention is clamped to a sane FSRS band; outside it the schedule degenerates.
 const MIN_RETENTION: f64 = 0.70;
 const MAX_RETENTION: f64 = 0.99;
 
-/// Parses a `retire_after` value: `"never"` → `None` (retirement disabled), or
-/// `<n><unit>` with unit `d`/`w`/`m`/`y` (days/weeks/months/years; a bare number is
-/// days) → `Some(days)`. Weeks ×7, months ×30, years ×365.
 fn parse_retire_after(s: &str) -> Result<Option<u32>> {
     let s = s.trim();
     if s.eq_ignore_ascii_case("never") {
@@ -1162,9 +908,6 @@ fn parse_retire_after(s: &str) -> Result<Option<u32>> {
     Ok(Some(days))
 }
 
-/// Parses an `acquire_cooldown` value: `<n><unit>` with unit `s`/`m`/`h`
-/// (seconds/minutes/hours; a bare number is minutes) → milliseconds. `"0"`
-/// disables the cooldown (and with it the same-card re-serve floor).
 fn parse_acquire_cooldown(s: &str) -> Result<u64> {
     let s = s.trim();
     let split = s.find(|c: char| c.is_ascii_alphabetic()).unwrap_or(s.len());
@@ -1183,8 +926,6 @@ fn parse_acquire_cooldown(s: &str) -> Result<u64> {
     Ok(ms)
 }
 
-/// Parses a `deadline_ramp` value: `<n><unit>` with unit `d`/`w` (a bare
-/// number is days) → days. `0` disables the retention ramp (cap only).
 fn parse_ramp_days(s: &str) -> Result<u32> {
     let s = s.trim();
     let split = s.find(|c: char| c.is_ascii_alphabetic()).unwrap_or(s.len());
@@ -1199,10 +940,6 @@ fn parse_ramp_days(s: &str) -> Result<u32> {
     }
 }
 
-/// Lint for malformed deadline keys in a workspace's `alix.local.toml`.
-/// Returns a vector of human-readable complaints (empty when the file is absent,
-/// unparseable as TOML, or both keys are fine). The rule lives in the lib so the
-/// lenient overlay and the lint cannot drift.
 pub fn local_review_lint(dir: &Path) -> Vec<String> {
     let path = dir.join(LOCAL_MANIFEST);
     let text = match std::fs::read_to_string(&path) {
@@ -1233,11 +970,6 @@ pub fn local_review_lint(dir: &Path) -> Vec<String> {
     complaints
 }
 
-/// A self-documenting template for `config --init`: every option is shown
-/// commented out at its default value, so the emitted file overrides nothing
-/// (uncomment a line to change it; defaults you leave commented still track
-/// future versions). Section headers stay active so a single line can be
-/// uncommented beneath one.
 pub fn default_config_toml() -> &'static str {
     r#"# alix configuration.
 #
@@ -1473,7 +1205,6 @@ mod tests {
         .unwrap();
         let resolved = ReviewConfig::default().for_workspace(dir.path());
         assert_eq!(90_000, resolved.acquire_cooldown_ms);
-        // Other keys keep their base values.
         assert_eq!(0.9, resolved.retention);
     }
 
@@ -1492,7 +1223,7 @@ mod tests {
         };
         let resolved = base.for_workspace(dir.path());
         assert_eq!(0.85, resolved.retention);
-        assert_eq!(Some(30), resolved.retire_after_days); // unset key → base kept
+        assert_eq!(Some(30), resolved.retire_after_days);
     }
 
     #[test]
@@ -1500,7 +1231,6 @@ mod tests {
         let config = Config::from_toml("[review]\nmax_new = 5\nlimit = 40\n").unwrap();
         assert_eq!(Some(5), config.review.max_new);
         assert_eq!(Some(40), config.review.limit);
-        // Absent keys stay unset — the launcher falls back to its built-ins.
         let bare = Config::from_toml("").unwrap();
         assert_eq!(None, bare.review.max_new);
         assert_eq!(None, bare.review.limit);
@@ -1508,7 +1238,6 @@ mod tests {
 
     #[test]
     fn a_review_depth_key_is_now_rejected() {
-        // deny_unknown_fields: the removed dial errors loudly, not silently (pre-1.0 break).
         assert!(Config::from_toml("[review]\ndepth = 2\n").is_err());
     }
 
@@ -1549,9 +1278,6 @@ mod tests {
 
     #[test]
     fn for_workspace_ignores_a_malformed_deadline_but_keeps_other_keys() {
-        // The overlay is lenient key-by-key: a bad date must not eat the file. A real
-        // workspace fixture (manifest + a deck) keeps this test about leniency, not
-        // about the workspace gate (covered separately).
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("alix.toml"), "title = \"W\"\n").unwrap();
         std::fs::write(dir.path().join("a.md"), "## q\na\n").unwrap();
@@ -1567,12 +1293,6 @@ mod tests {
 
     #[test]
     fn a_plain_folder_gets_no_deadline_overlay() {
-        // DECISION 2026-07-15: deadline/deadline_ramp apply only inside a real
-        // workspace (manifest present). A bare decks folder has no chip, no web
-        // action, and no doctor lint for a deadline — applying it there would
-        // silently ramp retention with nothing to explain why. Pacing keys
-        // (retention, retire_after, acquire_cooldown, max_new, limit) have no such
-        // product surface gap, so they keep working in plain folders as before.
         let dir = tempfile::tempdir().unwrap();
         // Deliberately no alix.toml manifest: a bare tempdir is not a workspace.
         std::fs::write(
@@ -1679,9 +1399,7 @@ mod tests {
 
     #[test]
     fn defaults_are_consistent_and_an_empty_file_loads() {
-        // Hermetic: never reads the user's real config dir (`Config::load(None)`
-        // would). Defaults must be self-consistent, and a present-but-empty config
-        // file loads as all-defaults.
+        // Hermetic: a tempdir, never the user's real config dir (`Config::load(None)`).
         assert_eq!(Bindings::default(), Config::default().keys);
         let dir = tempfile::tempdir().unwrap();
         let cfg = dir.path().join("config.toml");
@@ -1698,7 +1416,6 @@ mod tests {
         assert_eq!(vec![parse_key("j").unwrap()], config.keys.failed);
         assert_eq!(vec![parse_key("k").unwrap()], config.keys.partly);
         assert_eq!(vec![parse_key("l").unwrap()], config.keys.passed);
-        // Unmentioned actions keep their defaults.
         assert_eq!(Bindings::default().quit, config.keys.quit);
     }
 
@@ -1710,8 +1427,6 @@ mod tests {
 
     #[test]
     fn review_nav_keys_default_to_k_j_and_can_be_rebound() {
-        // The MC-choice / key-point up-and-down nav defaults to Vim k (up) and
-        // j (down), and is rebindable under [keys.review] like any other action.
         assert_eq!(vec![parse_key("k").unwrap()], Bindings::default().up);
         assert_eq!(vec![parse_key("j").unwrap()], Bindings::default().down);
         let config = Config::from_toml("[keys.review]\nup = [\"w\"]\ndown = [\"s\"]\n").unwrap();
@@ -1721,8 +1436,6 @@ mod tests {
 
     #[test]
     fn tutor_distill_keys_default_and_can_be_rebound() {
-        // Make this a note (ctrl-n) and Make this a card (ctrl-d) are both
-        // rebindable [keys.review] actions like any other.
         assert_eq!(
             vec![parse_key("ctrl-n").unwrap()],
             Bindings::default().make_note
@@ -1744,7 +1457,6 @@ mod tests {
         let config = Config::from_toml("[keys.picker]\ndown = [\"n\"]\nopen = [\"o\"]\n").unwrap();
         assert_eq!(vec![parse_key("n").unwrap()], config.picker.down);
         assert_eq!(vec![parse_key("o").unwrap()], config.picker.open);
-        // Unmentioned picker keys keep their Vim defaults.
         assert_eq!(PickerKeys::default().up, config.picker.up);
         assert_eq!(PickerKeys::default().mastered, config.picker.mastered);
     }
@@ -1759,7 +1471,6 @@ mod tests {
             vec![parse_key("3").unwrap(), parse_key("e").unwrap()],
             config.picker.reconstruct
         );
-        // Unmentioned depth keys keep their digit defaults.
         assert_eq!(vec![parse_key("1").unwrap()], config.picker.recognize);
         assert_eq!(vec![parse_key("2").unwrap()], config.picker.recall);
     }
@@ -1776,9 +1487,6 @@ mod tests {
 
     #[test]
     fn pre_nesting_key_sections_are_rejected() {
-        // The old top-level [picker]/[browse] tables moved under [keys]; the old
-        // spelling now errors loudly (no compat shim, pre-1.0), pointing the user
-        // at the rename.
         assert!(Config::from_toml("[picker]\ndown = [\"n\"]\n").is_err());
         assert!(Config::from_toml("[browse]\nnext = [\"n\"]\n").is_err());
     }
@@ -1791,19 +1499,12 @@ mod tests {
 
     #[test]
     fn template_parses_to_defaults() {
-        // As written (all settings commented out), the template overrides
-        // nothing.
         let config = Config::from_toml(default_config_toml()).unwrap();
         assert_eq!(Config::default(), config);
     }
 
     #[test]
     fn template_commented_values_equal_defaults() {
-        // Uncomment every `# key = ...` setting line and confirm the result is
-        // still exactly the defaults — so the documented example values are
-        // correct and valid TOML, not just inert (possibly rotted) comments.
-        // `decks_dir` is excluded: its example "~/decks" is the *effective*
-        // default but the struct default is `None` ("use ~/decks").
         let uncommented = default_config_toml()
             .lines()
             .map(|line| match line.trim_start().strip_prefix("# ") {
@@ -1816,11 +1517,8 @@ mod tests {
         assert_eq!(Config::default(), config);
     }
 
-    /// `true` if `s` looks like a `key = ...` assignment for a rebindable
-    /// setting (lower-case/underscore key) — except the keys whose template
-    /// value is the *effective* default while the struct default is `None`
-    /// ("unset, resolved elsewhere"): `decks_dir` (~/decks), `max_new` (the
-    /// launcher's 10), and `limit` (an example; unset = no cap).
+    // Excludes decks_dir/max_new/limit: their template values are effective
+    // defaults, not the struct's actual `None`.
     fn is_setting_line(s: &str) -> bool {
         let Some((key, _)) = s.split_once('=') else {
             return false;
@@ -1840,18 +1538,12 @@ mod tests {
         assert_eq!("my-claude", config.ask.command);
         assert_eq!(Some("haiku".to_string()), config.ask.model);
         assert_eq!(30, config.ask.timeout_secs);
-        // Unmentioned fields keep their safe defaults.
         assert_eq!("dontAsk", config.ask.permission_mode);
         assert_eq!(vec!["WebFetch", "WebSearch"], config.ask.allowed_tools);
     }
 
     #[test]
     fn trace_defaults_to_high_effort_and_backend_chosen_model() {
-        // Trace still breaks the inherit-the-CLI-default pattern on effort
-        // (correctness-critical, fails silently), but the *model* is now left
-        // unset here so each backend picks its own strong model
-        // (`Backend::default_trace_model`); the effective model is resolved in
-        // `trace_ai::build_run_config`.
         let trace = Config::default().trace;
         assert_eq!(None, trace.model);
         assert_eq!(Some("high".to_string()), trace.effort);
@@ -1940,7 +1632,6 @@ mod tests {
         assert_eq!(Strictness::Balanced, Config::default().exam.strictness);
         let config = Config::from_toml("[exam]\nstrictness = \"strict\"\n").unwrap();
         assert_eq!(Strictness::Strict, config.exam.strictness);
-        // Case-insensitive, and other [exam] fields keep their defaults.
         let config = Config::from_toml("[exam]\nstrictness = \"LENIENT\"\n").unwrap();
         assert_eq!(Strictness::Lenient, config.exam.strictness);
         assert_eq!(5, config.exam.num_questions);
@@ -1954,7 +1645,6 @@ mod tests {
 
     #[test]
     fn browse_keys_default_to_vim_and_are_rebindable() {
-        // Defaults: l/n/space next, h/p prev.
         let defaults = BrowseBindings::default();
         assert_eq!(parse_key("l").unwrap(), defaults.next[0]);
         assert_eq!(parse_key("h").unwrap(), defaults.prev[0]);
@@ -1962,7 +1652,6 @@ mod tests {
         let config = Config::from_toml("[keys.browse]\nnext = [\"j\"]\nprev = [\"k\"]\n").unwrap();
         assert_eq!(vec![parse_key("j").unwrap()], config.browse.next);
         assert_eq!(vec![parse_key("k").unwrap()], config.browse.prev);
-        // Unmentioned browse actions keep their defaults.
         assert_eq!(defaults.quit, config.browse.quit);
     }
 
@@ -1974,7 +1663,6 @@ mod tests {
     #[test]
     fn backend_defaults_to_claude() {
         assert_eq!(BackendKind::Claude, Config::default().ask.backend);
-        // An empty config file also yields the default.
         let config = Config::from_toml("").unwrap();
         assert_eq!(BackendKind::Claude, config.ask.backend);
     }
@@ -1983,7 +1671,6 @@ mod tests {
     fn backend_gemini_parses() {
         let config = Config::from_toml("[ask]\nbackend = \"gemini\"\n").unwrap();
         assert_eq!(BackendKind::Gemini, config.ask.backend);
-        // Other [ask] fields keep their defaults.
         assert_eq!("claude", config.ask.command);
     }
 
@@ -2053,8 +1740,6 @@ mod clap_parity {
 
     use super::*;
 
-    /// The hand-written `parse` and the clap value names must agree on every
-    /// variant, or a `%` directive would parse differently from the CLI flag.
     #[test]
     fn parse_matches_the_clap_value_names() {
         for variant in Strictness::value_variants() {

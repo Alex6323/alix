@@ -1,7 +1,3 @@
-//! `alix stats` / `list` / `reset`: per-deck progress reporting and clearing
-//! stored review state. Each command resolves its target (deck, folder, or
-//! workspace) to member decks and the store they actually use.
-
 use std::{
     collections::{HashMap, HashSet},
     path::Path,
@@ -25,8 +21,6 @@ use crate::{
     common::{confirm, expand_target},
 };
 
-/// The `list` label for one depth's schedule: the FSRS state name when the
-/// card has a schedule at that depth, `-` when it has none.
 fn state_label(fsrs_state: Option<u8>) -> &'static str {
     match fsrs_state {
         Some(1) => "learning",
@@ -43,11 +37,8 @@ pub(crate) fn stats(args: DeckArgs) -> Result<()> {
 
     let target = expand_target(&args.target, &config)?;
     for path in &target.decks {
-        // Each deck reads its own store — a workspace deck's progress lives in the
-        // workspace, not the global store.
         let store = target.store_for_deck(path, args.store.as_deref())?;
         let deck = Deck::load(path)?;
-        // …and its own pacing: a workspace deck honors its `alix.local.toml`.
         let review = config
             .review
             .for_workspace(path.parent().unwrap_or_else(|| Path::new("")));
@@ -60,8 +51,8 @@ pub(crate) fn stats(args: DeckArgs) -> Result<()> {
         let mut passes = 0u32;
         for card in &deck.cards {
             if let Some(state) = card.id().and_then(|id| store.get(&id)) {
-                // Retired cards are resting, so they don't count as due (they
-                // still count toward the review totals below).
+                // Retired cards don't count as due, but still count toward
+                // the review totals below.
                 if !alix::session::is_retired(card, &store, review.retire_after_days) {
                     let due = scheduler.due_at(state, Depth::Recall);
                     if due <= now {
@@ -78,7 +69,7 @@ pub(crate) fn stats(args: DeckArgs) -> Result<()> {
             }
         }
         // Virtual (remediation) cards count toward "due" (now and within
-        // 24h), never toward the card count below — they aren't deck content.
+        // 24h), never toward the card count below: they aren't deck content.
         due_now += alix::session::count_reviewable_virtual(
             &store,
             &deck.subject,
@@ -86,8 +77,7 @@ pub(crate) fn stats(args: DeckArgs) -> Result<()> {
             now,
             review.retire_after_days,
         );
-        // Virtual cards are Recall-only, so the recall figure IS the due-now
-        // aggregate — derived, not re-counted, so the two lines can't diverge.
+        // Derived, not independently counted, so the two figures can't diverge.
         let due_now_recall = due_now;
         due_24h += alix::session::count_due_soon_virtual(
             &store,
@@ -126,10 +116,8 @@ pub(crate) fn list(args: DeckArgs) -> Result<()> {
 
     let target = expand_target(&args.target, &config)?;
     for path in &target.decks {
-        // Each deck reads its own store (workspace store for a workspace deck).
         let store = target.store_for_deck(path, args.store.as_deref())?;
         let deck = Deck::load(path)?;
-        // …and its own pacing (workspace `alix.local.toml` override).
         let review = config
             .review
             .for_workspace(path.parent().unwrap_or_else(|| Path::new("")));
@@ -139,8 +127,7 @@ pub(crate) fn list(args: DeckArgs) -> Result<()> {
             let (recall_label, recon_label, recognized_mark, due) =
                 match card.id().and_then(|id| store.get(&id)) {
                     Some(state) => {
-                        // Retired cards rest until `alix reset`; their due time is
-                        // moot, so say so instead of showing a misleading interval.
+                        // A retired card's due time is moot until `alix reset`.
                         let due =
                             if alix::session::is_retired(card, &store, review.retire_after_days) {
                                 "resting".to_string()
@@ -170,17 +157,10 @@ pub(crate) fn list(args: DeckArgs) -> Result<()> {
     Ok(())
 }
 
-/// `(id, front)` pairs to reset from `cards`: all of them when `card` is
-/// `None`, otherwise only the matches. A `card` argument that **exactly** equals
-/// one of these cards' ids resets that card; any other text matches cards whose
-/// front contains it (case-insensitive) — a cloze card's holes share a front, so
-/// that resets the whole card. (A card's id is its token now, not a number, so
-/// there is no numeric shortcut.)
 fn select_reset_ids(cards: &[Card], card: Option<&str>) -> Vec<(String, String)> {
     let stamped: Vec<(String, &Card)> = cards.iter().filter_map(|c| Some((c.id()?, c))).collect();
-    // An exact id match takes priority; it only fires when some card actually
-    // carries that id, so an ordinary front-substring can never be mistaken for
-    // an id.
+    // Exact id match only fires when some card actually carries that id, so
+    // an ordinary front-substring is never mistaken for an id.
     let exact = card.filter(|q| stamped.iter().any(|(id, _)| id == q));
     let needle = card.filter(|_| exact.is_none()).map(str::to_lowercase);
     stamped
@@ -197,27 +177,19 @@ fn select_reset_ids(cards: &[Card], card: Option<&str>) -> Vec<(String, String)>
 pub(crate) fn reset(args: ResetArgs) -> Result<()> {
     let config = Config::load(args.config.as_deref())?;
 
-    // `--orphans`: clear only the store keys matching no card or deck in the
-    // scanned decks. Never part of the auto-prune-free normal reset; its own
-    // explicit opt-in (spec §5). Scopes to a named folder/workspace's store and
-    // decks, else the decks-dir root store and its loose decks.
+    // `--orphans` is explicit opt-in only, never folded into a plain reset.
     if args.orphans {
         return reset_orphans(&args, &config);
     }
 
-    // `--all` / a numeric `--card` with no target operate on the decks-dir
-    // root store (or `--store`) — the same store bare `alix` writes to; a
-    // deck-scoped reset re-resolves to the deck's own root/workspace store
-    // below.
     let mut store = open_store(
         args.store
             .clone()
             .or_else(|| config.decks_dir().map(|d| workspace::root_store_path(&d))),
     )?;
 
-    // `--all`: wipe everything; no decks needed, count up front for the prompt.
-    // `store.len()` now counts virtual schedules too (they live in `store.cards`),
-    // so a store holding only virtual cards still reports something to reset.
+    // `store.len()` counts virtual schedules too, so a store holding only
+    // virtual cards still reports something to reset.
     if args.all {
         let n = store.len();
         if n == 0 {
@@ -234,9 +206,6 @@ pub(crate) fn reset(args: ResetArgs) -> Result<()> {
         return Ok(());
     }
 
-    // A `--card <id>` with no target can be removed without loading anything: a
-    // token-shaped id (valid charset, optional `-N`/`-r` suffix) is treated as an
-    // exact card id. Anything else needs a target deck to front-match against.
     let exact_id = args.card.as_deref().filter(|c| {
         alix::token::parse_card_id(c).is_some_and(|(token, _, _)| alix::token::is_valid(token))
     });
@@ -252,18 +221,14 @@ pub(crate) fn reset(args: ResetArgs) -> Result<()> {
         );
     }
 
-    // Otherwise a reset needs an explicit target — there is no interactive
-    // deck picker. Name a deck/folder/workspace (optionally with `--card`),
-    // or pass `--all`.
     let Some(target_path) = &args.target else {
         bail!("name a deck, folder, or workspace to reset, or pass `--card <id>` or `--all`");
     };
     let target = expand_target(target_path, &config)?;
     let deck_paths = target.decks.clone();
 
-    // Reset against the target's store: `--store` > the members' shared
-    // workspace store > a scoped folder's own store > the global default —
-    // the launcher's rule, so the reset hits the progress that serving uses.
+    // Mirrors the launcher's store precedence, so reset hits the same
+    // progress that serving uses.
     let mut store = open_store(
         args.store
             .clone()
@@ -273,16 +238,13 @@ pub(crate) fn reset(args: ResetArgs) -> Result<()> {
 
     let (cards, label, _, _) = load_decks(&deck_paths, &HashMap::new())?;
 
-    // A full-deck reset (no `--card` subset) resets authored-card progress, the
-    // decks' "mastered" exam flag, and their virtual (remediation) cards
-    // together, atomically under one confirmation — a declined/failed prompt
-    // must leave the store on disk untouched by any of it (not just the
-    // authored-card part).
+    // A full-deck reset (no `--card` subset) resets authored-card progress,
+    // the "mastered" exam flag, and virtual cards together atomically: a
+    // declined/failed prompt must leave the store untouched by all of it.
     if args.card.is_none() {
-        // Load the decks once, up front, and use that same load for both the
-        // confirm-prompt count and the wipe below — counting from one load and
-        // wiping from a later, separate one let a deck edited on disk while the
-        // prompt waits silently diverge (a renamed back line changes
+        // Load the decks once, up front, for both the confirm-prompt count
+        // and the wipe below: loading twice would let a deck edited on disk
+        // in between silently diverge (a renamed back line changes
         // `Card::id()`, orphaning the old schedule).
         let decks_full: Vec<Deck> = deck_paths
             .iter()
@@ -299,8 +261,6 @@ pub(crate) fn reset(args: ResetArgs) -> Result<()> {
         let mastered = decks_full
             .iter()
             .any(|deck| store.deck_mastered(&deck.subject));
-        // A virtual card's content is in the sidecar and its schedule in
-        // `store.cards` (both keyed by the same id) — a reset drops both.
         let virtual_ids: Vec<String> = decks_full
             .iter()
             .flat_map(|deck| store.virtual_cards_for(&deck.subject))
@@ -326,8 +286,6 @@ pub(crate) fn reset(args: ResetArgs) -> Result<()> {
         return Ok(());
     }
 
-    // A `--card` subset over the named decks: match by numeric id or front text
-    // (a full-deck reset is handled above).
     let targets = select_reset_ids(&cards, args.card.as_deref());
     reset_ids(
         &mut store,
@@ -339,10 +297,6 @@ pub(crate) fn reset(args: ResetArgs) -> Result<()> {
     )
 }
 
-/// Clears the store's orphaned keys (spec §5): card/deck-family keys matching
-/// no card or deck in the scanned decks. Resolves the store + the "known" deck
-/// set the same way the rest of `reset` does: a named folder/workspace, else
-/// the decks-dir root store and its loose decks.
 fn reset_orphans(args: &ResetArgs, config: &Config) -> Result<()> {
     let (deck_paths, store_path) = match &args.target {
         Some(target) => {
@@ -364,8 +318,8 @@ fn reset_orphans(args: &ResetArgs, config: &Config) -> Result<()> {
         }
     };
 
-    // The live ids/subjects the store keys are matched against: an unstamped
-    // card has no id (and no store entry), so it is neither known nor an orphan.
+    // An unstamped card has no id and no store entry, so it's neither known
+    // nor an orphan.
     let mut known_cards: HashSet<String> = HashSet::new();
     let mut known_subjects: HashSet<String> = HashSet::new();
     for path in &deck_paths {
@@ -395,9 +349,6 @@ fn reset_orphans(args: &ResetArgs, config: &Config) -> Result<()> {
     Ok(())
 }
 
-/// Removes the `(id, front)` targets that have stored progress, after a `y/N`
-/// confirmation — unless `from_picker` (the picker's Enter already confirmed)
-/// or `yes`. Saves and reports the count.
 fn reset_ids(
     store: &mut Store,
     targets: Vec<(String, String)>,
@@ -454,8 +405,6 @@ mod tests {
 
     use super::*;
 
-    /// A stamped test card whose token derives from `back`, so distinct
-    /// backs give distinct ids (cards sharing a front stay tellable apart).
     fn card(front: &str, back: &str) -> Card {
         let mut c = Card::plain(Arc::from("d.md"), front.into(), vec![back.into()], None, 1);
         let slug: String = back
@@ -496,7 +445,6 @@ mod tests {
 
     #[test]
     fn reset_front_match_resets_all_cards_sharing_it() {
-        // Cloze holes share a front but have distinct ids; one match clears all.
         let cards = vec![
             card("verb forms", "a"),
             card("verb forms", "b"),

@@ -1,7 +1,3 @@
-//! Per-workspace icons: an abstract emblem the picker shows next to a workspace,
-//! drawn by the model at `--build` or supplied by the user. Generation is
-//! best-effort — a failure never blocks a build.
-
 use std::{
     fs, io,
     path::{Path, PathBuf},
@@ -11,10 +7,6 @@ use anyhow::{Context, Result, anyhow};
 
 use crate::{ask, config::AskConfig, deck::Deck, workspace::Workspace};
 
-/// Draw an abstract monochrome SVG emblem for the workspace at `dir`, grounded
-/// in its title, description, and member topics (plus an optional user steer,
-/// e.g. "a compass rose, flat colors"), and write it to `assets/icon.svg`.
-/// Returns the path written.
 pub fn generate(dir: &Path, guidance: Option<&str>, ask_cfg: &AskConfig) -> Result<PathBuf> {
     let ws = Workspace::load(dir).context("loading the workspace to ground its icon")?;
     let topics = member_topics(&ws);
@@ -25,8 +17,6 @@ pub fn generate(dir: &Path, guidance: Option<&str>, ask_cfg: &AskConfig) -> Resu
         guidance,
     );
     let run_cfg = icon_run_config(ask_cfg);
-    // Drawing an SVG is latency-variable and the whole step is best-effort, so one
-    // retry turns a lone slow or empty response into a drawn icon.
     let svg = draw(&run_cfg, &prompt).or_else(|_| draw(&run_cfg, &prompt))?;
     let out = dir.join("assets").join("icon.svg");
     clear_existing_icons(dir);
@@ -34,9 +24,6 @@ pub fn generate(dir: &Path, guidance: Option<&str>, ask_cfg: &AskConfig) -> Resu
     Ok(out)
 }
 
-/// Install a user-supplied icon file into the workspace's `assets/` as
-/// `assets/icon.<ext>` so the convention resolves it. SVGs are sanitized; raster
-/// images are copied as-is.
 pub fn install(dir: &Path, src: &Path) -> Result<PathBuf> {
     let ext = src
         .extension()
@@ -57,8 +44,6 @@ pub fn install(dir: &Path, src: &Path) -> Result<PathBuf> {
     Ok(out)
 }
 
-/// Member deck topics (a trace's description, else the deck's subject) — the
-/// grounding for an abstract emblem.
 fn member_topics(ws: &Workspace) -> Vec<String> {
     ws.members
         .iter()
@@ -67,8 +52,6 @@ fn member_topics(ws: &Workspace) -> Vec<String> {
         .collect()
 }
 
-/// The icon-generation prompt: an abstract, monochrome, self-contained SVG,
-/// optionally steered by the user's `guidance`.
 fn build_prompt(
     title: &str,
     description: &str,
@@ -104,15 +87,11 @@ fn build_prompt(
     )
 }
 
-/// One draw attempt: run the model and sanitize its reply into usable SVG.
 fn draw(run_cfg: &AskConfig, prompt: &str) -> Result<String> {
     let raw = ask::run(run_cfg, prompt, &[])?;
     sanitize_svg(&raw).ok_or_else(|| anyhow!("the model returned no usable svg"))
 }
 
-/// A no-tools, no-source run config for the one-shot icon prompt. The prompt keeps
-/// the emblem to a few compact primitives, so the draw stays well within the normal
-/// `[ask]` timeout — no special extension needed.
 fn icon_run_config(ask_cfg: &AskConfig) -> AskConfig {
     AskConfig {
         allowed_tools: Vec::new(),
@@ -121,8 +100,6 @@ fn icon_run_config(ask_cfg: &AskConfig) -> AskConfig {
     }
 }
 
-/// Remove any existing `assets/icon.*`, so a freshly written icon of a different
-/// extension resolves (the convention prefers `.svg`).
 fn clear_existing_icons(dir: &Path) {
     if let Ok(entries) = fs::read_dir(dir.join("assets")) {
         for entry in entries.flatten() {
@@ -144,12 +121,8 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
     Ok(())
 }
 
-/// Sanitize an SVG: remove `<script>`/`<foreignObject>` blocks, `on*`/`href`/
-/// `xlink:href` attributes, and trim to the `<svg>…</svg>` span. Returns `None`
-/// when the input has no `<svg` root.
-///
-/// This is defense in depth only — icons render in a non-executing context (a
-/// CSS mask or an `<img>`), which is what actually prevents script execution.
+/// Defense in depth only: icons render in a non-executing context (a CSS
+/// mask or an `<img>`), which is what actually prevents script execution.
 pub fn sanitize_svg(raw: &str) -> Option<String> {
     if !raw.to_ascii_lowercase().contains("<svg") {
         return None;
@@ -164,7 +137,6 @@ pub fn sanitize_svg(raw: &str) -> Option<String> {
     Some(cleaned[start..end].trim().to_string())
 }
 
-/// Remove every `<tag …>…</tag>` block (case-insensitive). `tag` is ASCII.
 fn remove_blocks(s: &str, tag: &str) -> String {
     let lower = s.to_ascii_lowercase();
     let tag = tag.to_ascii_lowercase();
@@ -179,7 +151,7 @@ fn remove_blocks(s: &str, tag: &str) -> String {
                     i += rel + close.len();
                     continue;
                 }
-                None => break, // unterminated block — drop the remainder
+                None => break, // unterminated block: drop the remainder
             }
         }
         let ch = match s[i..].chars().next() {
@@ -192,10 +164,6 @@ fn remove_blocks(s: &str, tag: &str) -> String {
     out
 }
 
-/// Remove `on*`, `href`, and `xlink:href` attributes (with their quoted values)
-/// from `s`. Conservative and approximate: it only fires at an attribute
-/// boundary (after whitespace), which is enough since the real guard is the
-/// render context.
 fn strip_attrs(s: &str) -> String {
     let lower = s.to_ascii_lowercase();
     let bytes = s.as_bytes();
@@ -219,7 +187,7 @@ fn strip_attrs(s: &str) -> String {
                         j += 1;
                     }
                     if j < s.len() {
-                        j += 1; // consume the closing quote
+                        j += 1;
                     }
                 }
                 i = j;
@@ -315,8 +283,6 @@ mod tests {
             &["moves".to_string()],
             None,
         );
-        // The emblem is capped and steered to compact primitives so the model
-        // can't emit long <path> coordinate data — the slow, timeout-prone part.
         assert!(p.contains("at most 6 shapes"));
         assert!(p.contains("PREFER primitives"));
     }
@@ -335,7 +301,6 @@ mod tests {
         let ws = tempfile::tempdir().unwrap();
         write_workspace(ws.path());
         let cli_dir = tempfile::tempdir().unwrap();
-        // A stateful fake CLI: fail the first call (exit 1), draw on the second.
         // Drains stdin first to avoid the broken-pipe race.
         let c = cli_dir.path().join("n");
         let cli = fake_cli(
@@ -374,7 +339,6 @@ mod tests {
         let body = std::fs::read_to_string(&out).unwrap();
         assert!(body.contains("<rect"));
         assert!(!body.to_ascii_lowercase().contains("<script"));
-        // The earlier raster icon was cleared so the new .svg resolves.
         assert!(!ws.path().join("assets").join("icon.png").exists());
     }
 }

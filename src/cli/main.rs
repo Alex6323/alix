@@ -1,6 +1,5 @@
-// Enables `#[coverage(off)]` under `cargo +nightly llvm-cov` (this is a
-// separate bin crate from the lib, so it needs its own crate-root attr — see
-// `src/lib.rs` for the matching one and why it's used sparingly).
+// A separate bin crate from the lib needs its own crate-root attr for
+// `#[coverage(off)]` under nightly llvm-cov (see src/lib.rs for the lib's).
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 
 mod common;
@@ -532,7 +531,6 @@ fn config_cmd(init: bool) -> Result<()> {
             path.display()
         );
     }
-    // Loading validates the file (or yields the defaults if there is none).
     let config = Config::load(None)?;
     let keys = &config.keys;
     let show = |action: &str, list: &[config::KeyPattern]| {

@@ -1,7 +1,3 @@
-//! Backend health probe: sends a trivial tool-free prompt to the configured
-//! backend (or to all four) so a user can confirm that a backend is installed,
-//! signed in, and responding before running a longer AI operation.
-
 use anyhow::Result;
 
 use crate::{
@@ -10,17 +6,10 @@ use crate::{
     config::{AskConfig, BackendKind},
 };
 
-/// Probes the configured backend by default, or all four [`BackendKind`]s when
-/// `all` is `true`. For each backend a trivial tool-free prompt is sent; the
-/// result is classified and printed as a status line. Returns `Ok(())` when
-/// every probed backend replied successfully, or an error when at least one
-/// failed.
 pub fn check(cfg: &AskConfig, all: bool) -> Result<()> {
     if all { check_all(cfg) } else { check_one(cfg) }
 }
 
-/// Probes the single backend named in `cfg`, printing one status line and
-/// returning `Ok(())` on a successful reply.
 fn check_one(cfg: &AskConfig) -> Result<()> {
     let backend = backend_for(cfg)?;
     let name = backend.name();
@@ -37,9 +26,6 @@ fn check_one(cfg: &AskConfig) -> Result<()> {
     }
 }
 
-/// Probes all four backends and prints a status line per backend. Returns
-/// `Ok(())` when every backend succeeded, or an error summary when at least
-/// one failed.
 fn check_all(cfg: &AskConfig) -> Result<()> {
     let kinds = [
         BackendKind::Claude,
@@ -48,7 +34,6 @@ fn check_all(cfg: &AskConfig) -> Result<()> {
         BackendKind::Copilot,
     ];
 
-    // Collect each backend's command name so the table can be pre-aligned.
     let mut rows: Vec<(BackendKind, String, String)> = Vec::with_capacity(kinds.len());
     for kind in kinds {
         let per_kind = AskConfig {
@@ -86,16 +71,13 @@ fn check_all(cfg: &AskConfig) -> Result<()> {
     }
 }
 
-/// Sends a trivial tool-free prompt to the backend described by `cfg` and
-/// returns the reply on success, or the mapped failure message on error.
-/// The `ask::run` plumbing already applies `map_run_failure` (Task 7) before
-/// returning the error, so the message here is already user-facing.
+// ask::run already maps the failure to a user-facing message, so don't
+// reformat it here.
 fn probe(cfg: &AskConfig) -> Result<String> {
     let probe_cfg = AskConfig {
-        // No tools — pure reasoning, so the call works regardless of the
-        // backend's tool capabilities and completes quickly.
+        // No tools: pure reasoning works across every backend's capabilities
+        // and completes quickly.
         allowed_tools: vec![],
-        // Use a short timeout: this is a health check, not a real query.
         timeout_secs: cfg.timeout_secs.min(15),
         ..cfg.clone()
     };

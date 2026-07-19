@@ -1,8 +1,3 @@
-//! `alix deck augment`/`import` and `alix workspace init`: deck and workspace
-//! file curation. Augmenting calls Claude for a deliberate, cached addition
-//! (distractors, notes, key points, topology, or format); import and
-//! workspace-init write new files without touching a store.
-
 use std::{path::Path, sync::Arc};
 
 use alix::{
@@ -21,22 +16,15 @@ use crate::{
     common::{deck_out_dir, one_line, store_for, truncate},
 };
 
-/// `alix deck augment`: deliberately generate AI augmentations for a deck into
-/// the sidecar cache (`augment.json`), which review then reads. Foreground, so
-/// any Claude error surfaces here rather than mid-review.
+/// Foreground: any Claude error surfaces here, not mid-review.
 pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
     let config = Config::load(args.config.as_deref())?;
-    // Augment is an enumerated §2.1 stamp site: mint identity tokens (and drop
-    // any the stamp fails to write) before the paid cache below is keyed by
-    // `Card::id`. Without this an unstamped deck's cards all hash to id 0, the
-    // cache collapses to a single key, and the spend orphans at the first real
-    // stamp.
+    // Must stamp before the cache is keyed by `Card::id`: unstamped cards all
+    // hash to id 0, collapsing the cache and orphaning the spend.
     let deck = assemble::stamp_and_load_deck(&args.deck)?;
     let ask_cfg = augment_ai::run_config(&config.ai, &config.ask);
     let guidance = args.with.as_deref();
 
-    // The cache sits beside whatever store the deck reviews against, so a
-    // workspace deck's augmentations live with the workspace.
     let store = store_for(
         std::slice::from_ref(&args.deck),
         args.store.clone(),
@@ -45,8 +33,6 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
     let cache_path = augment::augment_path_for(store.path());
     let mut cache = AugmentCache::open(&cache_path);
 
-    // The Claude call below is one batched, foreground request that can take a
-    // while, so say what's happening rather than hang silently.
     let what = match args.target {
         AugmentTarget::Choices => "multiple-choice distractors",
         AugmentTarget::Notes => "trivia / mnemonic notes",
@@ -94,8 +80,8 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
             (map.len(), total, "notes")
         }
         AugmentTarget::Questions => {
-            // Morphing the front only makes sense for plain cards — a cloze
-            // card's front is its title, with the fill-in-the-blank in the body.
+            // Cloze cards are excluded: their front is the title, not a
+            // question to reword.
             let plain: Vec<Card> = deck
                 .cards
                 .iter()
@@ -149,8 +135,7 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
             print_topology(&topo, &deck.cards);
             let walked = topo.walk.len();
             cache.add_topology(topo);
-            // Count only this deck's topologies — the cache may be shared with
-            // other decks that share a store.
+            // Scoped to this deck: the cache may be shared with other decks.
             let deck_tokens: std::collections::HashSet<String> =
                 deck.deck_token.iter().cloned().collect();
             let n = cache.topologies_for(&deck_tokens).len();
@@ -161,16 +146,9 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
             (walked, total, "a topology")
         }
         AugmentTarget::Format => {
-            // Reshaping is for plain cards — a cloze card's masked body must not
-            // be restructured. Include this deck's synthesized virtual
-            // (remediation) cards alongside its authored ones: `set_format` keys
-            // by the synth card's real `Card::id`, so the cached entry is exactly
-            // what `apply_format` finds at review time (§8.2).
-            //
-            // Mirror `assemble::select`'s injection filters: a partial cloze promote
-            // (see `store::promote_virtual`) can leave an orphaned sidecar entry
-            // whose id collides with a real deck card, and a retired card is
-            // resting — neither should be warmed a second time or at all.
+            // Cloze, promoted, and retired cards are excluded (mirrors the
+            // review's injection filters), so a card is never formatted twice
+            // or after resting.
             let subject: Arc<str> = Arc::from(deck.subject.as_str());
             let deck_ids: std::collections::HashSet<String> =
                 deck.cards.iter().filter_map(Card::id).collect();
@@ -223,9 +201,6 @@ fn warm_items(cards: &[Card]) -> Vec<augment::WarmItem> {
     cards.iter().map(augment::WarmItem::from_card).collect()
 }
 
-/// Prints a generated topology as its suggested walk — each card with the reason
-/// it follows the previous one — so a person can judge whether the order reads as
-/// "good follow-up" rather than random. The eyeball test for the topology probe.
 fn print_topology(topo: &augment::Topology, cards: &[Card]) {
     let fronts: std::collections::HashMap<String, String> = cards
         .iter()
@@ -275,10 +250,8 @@ pub(crate) fn workspace_init_cmd(args: WorkspaceInitArgs) -> Result<()> {
             .unwrap_or("workspace")
             .to_string(),
     };
-    // Both files are written fully commented (except what must be set), so
-    // they document their own keys — the section headers stay UNcommented
-    // because both parse leniently: a key uncommented outside its table would
-    // be silently ignored.
+    // Section headers stay uncommented: a key uncommented outside its table
+    // would silently be ignored by the lenient parser.
     let manifest = format!(
         "# This workspace's shared manifest — it travels when the folder is shared.\n\
          \n\
@@ -392,9 +365,9 @@ pub(crate) fn import_cmd(args: ImportArgs) -> Result<()> {
 
 pub(crate) fn workspace_deadline_cmd(args: WorkspaceDeadlineArgs) -> Result<()> {
     let dir = &args.dir;
-    // A deadline only has a product surface (chip, web action, doctor lint) inside
-    // a real workspace — a plain decks folder never gets it, so point at the
-    // upgrade path rather than silently accepting a folder that would ignore it.
+    // A deadline only has a product surface inside a real workspace, so a
+    // plain folder errors here rather than silently accepting a setting it'd
+    // ignore.
     if !workspace::is_workspace(dir) {
         bail!(
             "{} is not a workspace; make it one first: alix workspace init {}",

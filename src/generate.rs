@@ -1,12 +1,3 @@
-//! AI-assisted deck generation.
-//!
-//! Turns a web page into a flashcard deck by handing its URL and a detailed
-//! instruction prompt to the Claude Code CLI (the same runner the ask feature
-//! uses). Claude reads the page with the WebFetch tool — already on the ask
-//! allowlist — and emits the deck as plain text on stdout; the caller
-//! validates and writes it. Claude is never given a write or shell tool, so
-//! the safe `dontAsk` + WebFetch/WebSearch permission story is unchanged.
-
 use std::{path::PathBuf, sync::mpsc::Receiver};
 
 use anyhow::{Result, bail};
@@ -19,7 +10,6 @@ use crate::{
     trace::resolve_source,
 };
 
-/// The built-in instruction prompt. `{url}` and `{max_cards}` are substituted.
 const DEFAULT_PROMPT: &str = "\
 You are an expert at creating spaced-repetition flashcards. Read the web page \
 at {url} — use the WebFetch tool to fetch it (once) — and turn its content \
@@ -108,10 +98,6 @@ duplicates.
 Output ONLY the final, deduplicated deck text — no markdown code fences, no \
 preamble, no closing remarks.";
 
-/// The instruction prompt for a **local source** (a file or directory).
-/// `{source}` and `{max_cards}` are substituted. Mirrors [`DEFAULT_PROMPT`] but
-/// explores the source with read-only file tools and ties the deck to it with a
-/// `% source:` line (so `alix exam` can grade against it).
 const DEFAULT_SOURCE_PROMPT: &str = "\
 You are an expert at creating spaced-repetition flashcards. Explore the source at \
 {source} — your working directory is its root; use the Read, Glob and Grep tools \
@@ -191,7 +177,6 @@ that overlap or test the same idea, so every remaining card is distinct.
 Output ONLY the final, deduplicated deck text — no markdown code fences, no \
 preamble, no closing remarks.";
 
-/// The second-pass review prompt; the draft deck is appended to it.
 const REVIEW_PROMPT: &str = "\
 You are reviewing a spaced-repetition flashcard deck for quality, then \
 returning the improved deck.
@@ -220,19 +205,12 @@ The deck to review:
 
 ";
 
-/// Generates a deck from `source` (a web page URL **or** a local file/directory
-/// path) and returns the cleaned deck text (not yet validated or written). A URL
-/// is fetched with WebFetch; a local source is explored read-only at its root.
-/// Blocks until the CLI replies or times out.
 pub fn generate_deck(
     source: &str,
     cfg: &GenerateDeckConfig,
     ask_cfg: &AskConfig,
 ) -> Result<String> {
     let url = is_url(source);
-    // Gate on the backend's capability before building a prompt or resolving the
-    // source: a read-only backend can't fetch a URL, and a future non-file
-    // backend can't read a local path.
     ensure_source_reachable(ask_cfg, url)?;
     let cwd = if url {
         None
@@ -249,8 +227,6 @@ pub fn generate_deck(
     Ok(deck)
 }
 
-/// Spawns [`generate_deck`] on a worker thread — the serve loop polls the
-/// returned channel (the `ask::spawn` shape; the frontend never blocks).
 pub fn spawn(
     source: String,
     cfg: GenerateDeckConfig,
@@ -263,9 +239,6 @@ pub fn spawn(
     rx
 }
 
-/// Runs a separate review pass over a draft `deck` and returns the cleaned,
-/// improved deck. A fresh CLI call (no shared session) so the reviewer reads
-/// the whole deck with fresh eyes.
 pub fn review_deck(deck: &str, cfg: &GenerateDeckConfig, ask_cfg: &AskConfig) -> Result<String> {
     let prompt = build_review_prompt(deck);
     // The reviewer only rewrites the supplied text; no source access needed.
@@ -277,10 +250,6 @@ pub fn review_deck(deck: &str, cfg: &GenerateDeckConfig, ask_cfg: &AskConfig) ->
     Ok(reviewed)
 }
 
-/// The CLI runner config for generation: the ask command/permission with
-/// generation's own model and (longer) timeout. A web page keeps the ask
-/// allowlist (WebFetch); a local source gets read-only `Read`/`Glob`/`Grep` at
-/// its root (`cwd`).
 fn run_config(
     cfg: &GenerateDeckConfig,
     ask_cfg: &AskConfig,
@@ -302,15 +271,10 @@ fn run_config(
     }
 }
 
-/// Builds the review-pass prompt: the instructions followed by the draft deck.
 fn build_review_prompt(deck: &str) -> String {
     format!("{REVIEW_PROMPT}{deck}")
 }
 
-/// Fills the prompt template and appends any extra guidance. Picks the web-page
-/// template for a URL and the local-source template otherwise; a configured
-/// `prompt` override wins for either (`{url}`/`{source}` both resolve to the
-/// source).
 fn build_prompt(source: &str, url: bool, cfg: &GenerateDeckConfig) -> String {
     let template = cfg.prompt.as_deref().unwrap_or(if url {
         DEFAULT_PROMPT
@@ -333,12 +297,8 @@ fn build_prompt(source: &str, url: bool, cfg: &GenerateDeckConfig) -> String {
     prompt
 }
 
-/// Strips anything around the deck itself: leading commentary or an opening
-/// code fence before the first deck line (a deck starts with its `---`
-/// frontmatter fence, a `# ` title, or a `## ` card front), and trailing
-/// blank or fence lines. Trailing prose can't be told apart from a card's
-/// answer line, so the prompt asks for none; what this reliably removes is
-/// markdown wrapping and lead-in text.
+/// Trailing prose isn't stripped: it can't be told apart from a card's
+/// answer line.
 fn clean_output(raw: &str) -> String {
     let lines: Vec<&str> = raw.lines().collect();
     let Some(start) = lines
@@ -359,11 +319,6 @@ fn clean_output(raw: &str) -> String {
     space_cards(&lines[start..end])
 }
 
-/// Inserts a blank line before each card front (`## ` at column 0, outside a
-/// code fence) *after the first*, so a generated deck's cards are visually
-/// separated. The first card stays attached to any frontmatter/title above
-/// it, and a card already preceded by a blank line is left untouched (no
-/// double blanks).
 fn space_cards(lines: &[&str]) -> String {
     let mut out: Vec<&str> = Vec::with_capacity(lines.len());
     let mut seen_card = false;
@@ -391,9 +346,6 @@ fn space_cards(lines: &[&str]) -> String {
     out.join("\n")
 }
 
-/// Derives a deck file stem from a URL: the last meaningful path segment
-/// (minus query, fragment and extension), slugified; falls back to the host,
-/// then `"deck"`.
 pub fn slug_from_url(url: &str) -> String {
     let without_scheme = url.split_once("://").map(|(_, r)| r).unwrap_or(url);
     let (host, path) = match without_scheme.split_once('/') {
@@ -407,8 +359,8 @@ pub fn slug_from_url(url: &str) -> String {
         .trim_end_matches('/')
         .rsplit('/')
         .find(|s| !s.is_empty());
-    // For a real path segment, drop a file extension; for the host fallback
-    // keep it as-is (the dot is part of the domain, not an extension).
+    // Only a real path segment loses its extension; the host fallback keeps
+    // its dot (it's part of the domain, not an extension).
     let base = match last_segment {
         Some(seg) => seg.rsplit_once('.').map(|(b, _)| b).unwrap_or(seg),
         None => host,
@@ -417,8 +369,6 @@ pub fn slug_from_url(url: &str) -> String {
     slugify(base)
 }
 
-/// The default deck file stem for a source: from the URL for a web page, from
-/// the path for a local file/directory.
 pub fn deck_name(source: &str) -> String {
     if is_url(source) {
         slug_from_url(source)
@@ -427,8 +377,6 @@ pub fn deck_name(source: &str) -> String {
     }
 }
 
-/// Derives a deck file stem from a local source path: the file stem (or, for a
-/// directory, its name), slugified; falls back to `"deck"`.
 pub fn slug_from_path(source: &str) -> String {
     let p = std::path::Path::new(source);
     let base = p
@@ -439,8 +387,6 @@ pub fn slug_from_path(source: &str) -> String {
     slugify(base)
 }
 
-/// Slugify: lower-case alphanumerics; runs of anything else become a single dash
-/// inserted only before the next kept character (so no edge dashes). Empty → `"deck"`.
 fn slugify(base: &str) -> String {
     let mut slug = String::new();
     let mut pending_dash = false;
@@ -479,31 +425,20 @@ mod tests {
         assert!(p.contains("https://example.org/page"));
         assert!(p.contains("AT MOST 12 cards"));
         assert!(p.contains("link: https://example.org/page"));
-        // It teaches the L1 format and the four layers.
         assert!(p.contains("## "));
         assert!(p.contains("four layers"));
         assert!(!p.contains("{url}"));
         assert!(!p.contains("{max_cards}"));
-        // Cloze guidance must use the `\cloze{...}` marker and keep the blank
-        // in the answer, not on the front (the bug that broke real
-        // generations).
         assert!(p.contains("\\cloze{...}"));
         assert!(p.contains("\\cloze{dropped}"));
         assert!(p.contains("NEVER on the front"));
         assert!(p.contains("never write a front with no answer"));
-        // Notes must be actively requested, not just described as optional.
         assert!(p.contains("Add a note to most cards"));
         assert!(p.contains("Give most cards a `> ` note"));
-        // Always-on self-review against redundancy.
         assert!(p.contains("NO TWO CARDS MAY TEST THE SAME FACT"));
         assert!(p.contains("REVISE before finishing"));
-        // The answer must not over-answer the front (scope match).
         assert!(p.contains("cover exactly what the front asks"));
-        // A mapping of pairs becomes one cloze card, never a recall-the-table
-        // card (the "match each Android ABI" bug, 2026-07-14).
         assert!(p.contains("drilled on its own"));
-        // The L1 pin: no stray old-format syntax may sneak back into the
-        // template — the trainer no longer parses it.
         assert!(!p.contains("% reveal"));
         assert!(!p.contains("% link"));
         assert!(!p.contains("{{"));
@@ -517,11 +452,8 @@ mod tests {
         assert!(p.contains("MERGE cards that test the same fact"));
         assert!(p.contains("Output ONLY the improved deck"));
         assert!(p.contains("must ask and tell the same thing"));
-        // The review pass also converts recall-the-whole-mapping cards to cloze.
         assert!(p.contains("one line per pair"));
         assert!(p.ends_with("---\nlink: u\n---\n\n## Q\nA\n"));
-        // The L1 pin: the format-keeping instruction describes L1, not the
-        // retired `%`-directive format.
         assert!(p.contains("`---` frontmatter block"));
         assert!(!p.contains("% reveal"));
         assert!(!p.contains("{{"));
@@ -548,17 +480,14 @@ mod tests {
     fn source_prompt_explores_locally_and_ties_to_source() {
         let p = build_prompt("src/scheduler.rs", false, &cfg(8));
         assert!(p.contains("src/scheduler.rs"));
-        assert!(p.contains("Read, Glob and Grep")); // read-only file tools
-        assert!(p.contains("source: src/scheduler.rs")); // ties to source for exam
+        assert!(p.contains("Read, Glob and Grep"));
+        assert!(p.contains("source: src/scheduler.rs"));
         assert!(p.contains("AT MOST 8 cards"));
-        assert!(!p.contains("WebFetch")); // a local source, not a web page
+        assert!(!p.contains("WebFetch"));
         assert!(!p.contains("{source}"));
-        // It asks for per-card `at:` source citations (read the real lines).
         assert!(p.contains("<!-- at: file:start-end -->"));
         assert!(p.contains("never guess"));
-        // The mapping-to-cloze rule holds in the local-source template too.
         assert!(p.contains("drilled on its own"));
-        // The L1 pin: no stray old-format syntax in the local-source template.
         assert!(!p.contains("% reveal"));
         assert!(!p.contains("% source"));
         assert!(!p.contains("% at:"));
@@ -568,8 +497,6 @@ mod tests {
 
     #[test]
     fn url_prompt_does_not_ask_for_line_citations() {
-        // A web page has no line numbers, so the URL prompt must not request
-        // `at:` citations.
         let p = build_prompt("https://example.org/page", true, &cfg(8));
         assert!(!p.contains("<!-- at:"));
     }
@@ -594,8 +521,6 @@ mod tests {
 
     #[test]
     fn clean_strips_commentary_and_fence_together() {
-        // The realistic case: lead-in line, opening ```text fence, deck, and a
-        // closing ``` fence — all of the wrapping must go.
         let raw = "Here is your deck:\n```text\n---\nlink: u\n---\n## Q\nA\n```";
         assert_eq!("---\nlink: u\n---\n## Q\nA", clean_output(raw));
     }
@@ -620,8 +545,6 @@ mod tests {
 
     #[test]
     fn clean_keeps_the_header_attached_to_the_first_card() {
-        // The frontmatter stays with card 1; only the *second* card gets a
-        // blank.
         let raw = "---\nlink: u\n---\n## Q1\nA1\n## Q2\nA2";
         assert_eq!(
             "---\nlink: u\n---\n## Q1\nA1\n\n## Q2\nA2",
@@ -631,8 +554,6 @@ mod tests {
 
     #[test]
     fn clean_never_splits_a_fenced_h2_out_of_its_card() {
-        // A `## ` inside a code fence is content: no blank line may be pushed
-        // into the fence (that would alter the card's verbatim answer).
         let raw = "## Q1\n```\n## not a card\n```\n## Q2\nA2";
         assert_eq!(
             "## Q1\n```\n## not a card\n```\n\n## Q2\nA2",

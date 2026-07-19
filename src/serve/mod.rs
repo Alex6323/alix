@@ -1,19 +1,3 @@
-//! A local web frontend.
-//!
-//! Bare `alix` starts a small synchronous HTTP server (one request at a
-//! time — correct for a single user) that serves an embedded web page and a
-//! JSON API — the sole interactive frontend. The [`Session`]/[`Store`] drive
-//! review, and cards are sent to the browser as a DTO built from
-//! [`render::note_units`], so the note structuring lives in one place. Grades
-//! persist to the same progress store the rest of the CLI (`deck`, `trace`,
-//! `generate`, …) reads and writes, so studying in the browser and running
-//! those commands share one history.
-//!
-//! It is deliberately local-only: no accounts, no database. By default it
-//! binds to `127.0.0.1`; `--lan` binds all interfaces so a phone or tablet on
-//! the same network can reach it (there is no authentication, so that is
-//! opt-in).
-
 mod catalog;
 mod dto;
 mod jobs;
@@ -35,8 +19,6 @@ use respond::*;
 use serde::Deserialize;
 use tiny_http::{Method, Server};
 
-/// `SelectOptions` lives in `assemble` (the lib owns its own input type);
-/// re-exported here so `serve::SelectOptions` keeps working for callers.
 pub use crate::assemble::SelectOptions;
 use crate::{
     assemble::{self, CardsBuild, SessionBuild},
@@ -62,14 +44,8 @@ const ALIX_LOGO_JS: &str = include_str!("../../assets/web/alix-logo.js");
 const HEAD_HTML: &str = include_str!("../../assets/web/_head.html");
 const BRAND_HTML: &str = include_str!("../../assets/web/_brand.html");
 
-/// Body-size cap for a paired phone's `/api/remote/*` POSTs (card context,
-/// history, exam answers): the same defensive idiom `read_capped` gives the
-/// zip upload, sized for a chat transcript rather than a file.
 const MAX_REMOTE_BODY: usize = 256 * 1024;
 
-// Self-hosted IBM Plex webfonts (Latin + Latin-Ext subset; see
-// `assets/web/fonts/OFL.txt`), embedded so the app works fully offline —
-// served by name at `GET /fonts/<name>.woff2` (see `font_bytes`).
 const PLEX_SANS_400: &[u8] = include_bytes!("../../assets/web/fonts/ibm-plex-sans-400.woff2");
 const PLEX_SANS_500: &[u8] = include_bytes!("../../assets/web/fonts/ibm-plex-sans-500.woff2");
 const PLEX_SANS_600: &[u8] = include_bytes!("../../assets/web/fonts/ibm-plex-sans-600.woff2");
@@ -79,18 +55,12 @@ const PLEX_MONO_500: &[u8] = include_bytes!("../../assets/web/fonts/ibm-plex-mon
 const PLEX_MONO_600: &[u8] = include_bytes!("../../assets/web/fonts/ibm-plex-mono-600.woff2");
 const PLEX_MONO_700: &[u8] = include_bytes!("../../assets/web/fonts/ibm-plex-mono-700.woff2");
 
-// Self-hosted Baloo 2 webfonts (Latin subset; see `assets/web/kids/fonts/OFL.txt`),
-// embedded so the app works fully offline — served by name at `GET /fonts/<name>.woff2`.
 const BALOO2_400: &[u8] = include_bytes!("../../assets/web/kids/fonts/baloo2-400.woff2");
 const BALOO2_500: &[u8] = include_bytes!("../../assets/web/kids/fonts/baloo2-500.woff2");
 const BALOO2_600: &[u8] = include_bytes!("../../assets/web/kids/fonts/baloo2-600.woff2");
 const BALOO2_700: &[u8] = include_bytes!("../../assets/web/kids/fonts/baloo2-700.woff2");
 const BALOO2_800: &[u8] = include_bytes!("../../assets/web/kids/fonts/baloo2-800.woff2");
 
-/// Maps a requested `/fonts/<name>` file name to its embedded bytes, or
-/// `None` for anything not vendored (→ 404). The name map is the one place
-/// that has to stay in sync with the font consts and the files in
-/// `assets/web/fonts/` and `assets/web/kids/fonts/`.
 fn font_bytes(name: &str) -> Option<&'static [u8]> {
     match name {
         "ibm-plex-sans-400.woff2" => Some(PLEX_SANS_400),
@@ -110,25 +80,17 @@ fn font_bytes(name: &str) -> Option<&'static [u8]> {
     }
 }
 
-/// The review page with its shared-chrome placeholders filled once, so the head
-/// boilerplate (`<!--%head%-->`) and brand mark (`<!--%brand%-->`) live in one place.
 static REVIEW_PAGE: std::sync::LazyLock<String> =
     std::sync::LazyLock::new(|| compose_page(REVIEW_HTML));
 
-/// The kid-facing frontend, composed the same way as [`REVIEW_PAGE`]. A
-/// placeholder for now — fleshed out in later tasks.
 static KIDS_PAGE: std::sync::LazyLock<String> =
     std::sync::LazyLock::new(|| compose_page(KIDS_HTML));
 
-/// Fill the shared-chrome placeholders in a served page.
 fn compose_page(html: &str) -> String {
     html.replace("<!--%head%-->", HEAD_HTML)
         .replace("<!--%brand%-->", BRAND_HTML)
 }
 
-/// Which single-page app `/` returns, keyed by `[serve] audience`. Small
-/// lookup-by-key helper (mirrors [`font_bytes`]) so route dispatch and its
-/// test can share one function.
 fn app_page(audience: Audience) -> &'static str {
     match audience {
         Audience::Adult => &REVIEW_PAGE,
@@ -136,56 +98,26 @@ fn app_page(audience: Audience) -> &'static str {
     }
 }
 
-/// Global options for a served review, independent of which decks are chosen
-/// (the per-session label and deck paths come from [`SessionBuild`]).
 pub struct ReviewOptions {
     pub keys: Bindings,
-    /// Deck-picker navigation keys (the `[picker]` section), bound on the
-    /// selection screen.
     pub picker: PickerKeys,
-    /// Browse-mode keys (the `[browse]` section), bound on the `/browse` page
-    /// this server also hosts.
     pub browse: BrowseBindings,
-    /// AI-exam settings (model, question count, default strictness, …).
     pub exam: ExamConfig,
-    /// AI augmentation settings (model, per-target counts), for generating
-    /// augmentations from the picker's Augment screen.
     pub ai: AiConfig,
-    /// AI deck-generation settings (model, timeout, max cards, guidance, …),
-    /// for `POST /api/generate`.
     pub generate: GenerateDeckConfig,
-    /// Which frontend `/` serves (`[serve] audience`); also selects the
-    /// ask-tutor's kid-safe vs. adult preamble (`start_ask`).
     pub audience: Audience,
-    /// Pairing token required on `/api/*` when set (auto-generated for `--lan`);
-    /// `None` leaves the server open (the localhost default).
     pub auth: Option<String>,
-    /// The `--config` path the launcher loaded config from (`None` → the
-    /// platform default), passed through so `/api/doctor` checks the same file.
     pub config_path: Option<PathBuf>,
-    /// How this instance is reached, for `/api/pair`'s pairing sheet.
     pub pair: PairInfo,
-    /// `true` for a scoped `alix <dir>` launch — its decks dir is pinned to
-    /// that folder forever. `false` for the config-derived launch (bare
-    /// `alix`), whose `/api/decks` re-resolves the configured dir on every
-    /// fetch so a `decks_dir` edit takes effect without a restart.
     pub scoped: bool,
-    /// Everything [`assemble::select`] needs to turn a deck-selection into a
-    /// review session or a trace walk (review/ask config, trace auto-grade,
-    /// pacing, this instance's store).
     pub cfg: assemble::AssembleConfig,
 }
 
-/// How this instance is reached, for the pairing sheet. Built by the
-/// launcher, which is the only place that knows bind + token + LAN IP.
 pub struct PairInfo {
     pub url: String,
     pub lan: bool,
 }
 
-/// Binds the server socket — separated from [`run_review`] so a port clash
-/// errors before the caller announces a URL, and with the multi-instance
-/// remedy in the message.
 pub fn bind(addr: SocketAddr) -> Result<Server> {
     Server::http(addr).map_err(|e| {
         anyhow!(
@@ -194,21 +126,6 @@ pub fn bind(addr: SocketAddr) -> Result<Server> {
     })
 }
 
-/// Serves review on the already-bound `server` until the process is stopped
-/// (binding happens at the call site, *before* the URL is announced — so a
-/// port clash errors before any success-looking output), opening on the
-/// in-browser deck-selection screen; picking decks (`POST /api/select`) calls
-/// [`assemble::select`] to construct a session (or a trace walk) in place,
-/// using `opts.cfg`.
-///
-/// `server` is shared (`Arc`) so a caller can stop the loop from outside it:
-/// call `.unblock()` on a clone of the same `Arc<Server>` to end
-/// `incoming_requests()` — tiny_http queues that as a one-shot stop signal
-/// rather than polling a flag, so it is race-free even if the loop is mid-request
-/// when called. Production (`launch.rs`) never calls it — the process just
-/// exits on Ctrl-C — but `tests/api.rs`'s round-trip harness uses it to run this
-/// real loop against a temp store + fixture deck and tear it down deterministically
-/// after each test.
 pub fn run_review(
     mut store: Store,
     mut recent: RecentDecks,
@@ -230,54 +147,26 @@ pub fn run_review(
         scoped,
         cfg,
     } = opts;
-    // `review`/`ask` used to also live at the top level of `ReviewOptions`,
-    // kept in sync with `cfg` by hand at every construction site — `cfg` is
-    // now their one source.
     let ask_cfg = cfg.ask.clone();
     let review_cfg = cfg.review;
     let keys = ReviewKeys::from(&bindings);
     let picker_keys = PickerKeysDto::from(&picker_keys);
-    // The `/browse` page this server also hosts needs its own next/prev/remove
-    // keys, distinct from the review grade keys served at `/api/keys`.
     let browse_keys = BrowseKeys::from(&browse_bindings);
     let ask_info = AskInfoDto::from(&ask_cfg);
-    // The server always opens on the picker; review/browse states are entered
-    // from it (`/api/select`, `/api/browse`) — browse is a native mode of the
-    // review server, not a separate page.
     let (mut reviewing, mut browsing): (Option<Reviewing>, Option<Browsing>) = (None, None);
     let mut examining: Option<Examining> = None;
-    // The picker's "Augment" action opens a deck's augmentation screen here.
     let mut augmenting: Option<Augmenting> = None;
-    // The add-sheet's "Generate from URL" action; one deck generation at a time.
     let mut generating: Option<Generating> = None;
-    // The picker's "Share" action; one wormhole send in flight at a time. An
-    // abandoned/replaced job always drops through `Sharing`/`ShareJob` (never
-    // leaked), so its child process is cancelled even without a close call.
     let mut sharing: Option<Sharing> = None;
-    // The picker's "Receive" action; one wormhole receive in flight at a time.
-    // Same drop-cancels invariant as `sharing` — an abandoned/replaced job
-    // always drops through `ShareJob`, cancelling its wormhole child.
     let mut receiving: Option<Receiving> = None;
-    // A trace picked from the selection screen walks in-page inside review.html
-    // (no navigation to a separate `/walk` page — the walk is an in-page mode).
     let mut walking: Option<Walking> = None;
-    // `browsing` (seeded above for a `--serve` browse launch) is also entered
-    // from the picker's "Browse" action (POST /api/browse) — in-page, no page nav.
-    // Workspace icons resolved while building the picker, served via `/img/` at
-    // launcher time (when no review/browse session owns the registry).
     let mut launcher_icons: HashMap<String, PathBuf> = HashMap::new();
-    // A paired phone's tutor turn and exam sitting (`/api/remote/*`), kept
-    // SEPARATE from `reviewing`/`examining` so a phone can never see or kill a
-    // browser session, and vice versa. Neither ever touches `store`: the phone
-    // owns its own state and only reads these as computed answers.
+    // Kept separate from `reviewing`/`examining` so a phone can never see or
+    // kill a browser session, and vice versa; nothing under `/api/remote/*`
+    // touches `store` (the phone owns its own state).
     let mut remote_ask: Option<RemoteAsk> = None;
     let mut remote_exam: Option<RemoteExamining> = None;
     let mut remote_generate: Option<RemoteGenerating> = None;
-    // Diagnostic net for {#server-subresource-stall}: with ALIX_HTTP_LOG set,
-    // one stderr line as each request is POPPED off tiny_http's queue. On the
-    // next stall the pattern is decisive: a wedged request that never prints
-    // never left tiny_http's connection reader; one that prints but is
-    // followed by nothing hung in a handler (this loop is single-threaded).
     let http_log = std::env::var_os("ALIX_HTTP_LOG").is_some();
     for mut request in server.incoming_requests() {
         let method = request.method().clone();
@@ -327,9 +216,6 @@ pub fn run_review(
                     cfg,
                     doctor::check_store(Some(store.path().to_path_buf())),
                     doctor::check_decks(&decks_dir),
-                    // Mirrors `main.rs::doctor_cmd`'s binary lines verbatim
-                    // (names, purposes, remedies) — the web report must match
-                    // the CLI's, minus the costed `--backends` probe.
                     doctor::check_binary(
                         "backend",
                         &ask_cfg.command,
@@ -378,7 +264,6 @@ pub fn run_review(
                 );
                 respond_json(request, &catalog)
             }
-            // Image cards: served from whichever session is live (review or browse).
             (Method::Get, key) if key.starts_with("/img/") => {
                 let name = &key["/img/".len()..];
                 if let Some(r) = &reviewing {
@@ -390,15 +275,9 @@ pub fn run_review(
                 }
             }
             (Method::Get, "/api/state") => {
-                // Browse is an in-page mode: when a browse list is live (a
-                // `--serve` browse launch), the page gets the browse payload here
-                // and opens the browse overlay instead of a review session.
                 if let Some(b) = &browsing {
                     respond_json(request, &browse_payload(Some(b)))
                 } else {
-                    // A missed card may have cooled back into due-ness since the
-                    // last fetch; re-check so it re-enters review on this poll
-                    // (stats preserved), no manual restart needed.
                     if let Some(r) = reviewing.as_mut() {
                         r.session.poll(&store, now_ms());
                     }
@@ -410,9 +289,6 @@ pub fn run_review(
                     Some(sel) => {
                         let opts = sel.opts;
                         let paths = vec![sel.deck];
-                        // Write to the deck's own store — a workspace's `progress.json`
-                        // when they share one, else the global store — the same store
-                        // the picker's badges are read from.
                         if let Err(e) = assemble::store_for(&paths, cfg.instance_store.as_deref())
                             .map(|s| store = s)
                         {
@@ -420,9 +296,6 @@ pub fn run_review(
                             respond_status(request, 400);
                             continue;
                         }
-                        // `select` reborrows `paths` for its own walk-vs-review
-                        // classification, so keep a copy for the recent-decks
-                        // record below (only taken on an unfinished review).
                         let recorded_paths = paths.clone();
                         match assemble::select(paths, &mut store, &cfg, &opts) {
                             Ok(assemble::Selected::Walk(wb)) => {
@@ -434,10 +307,6 @@ pub fn run_review(
                                 respond_json(request, &dto);
                             }
                             Ok(assemble::Selected::Review(b)) => {
-                                // Remember these decks for next time's picker — but
-                                // only when there is actually something to review, so
-                                // merely opening a deck with nothing due doesn't bump
-                                // it to the top of the recent list.
                                 if !b.session.is_finished() {
                                     recent.record(&recorded_paths, now_ms());
                                     let _ = recent.save();
@@ -458,8 +327,6 @@ pub fn run_review(
                     None => respond_status(request, 400),
                 }
             }
-            // The picker's "Browse" action: build a read-only card list and return
-            // it, so the page opens the browse overlay in place (no page nav).
             (Method::Post, "/api/browse") => {
                 match read_selection(&mut request, &decks_dir, &recent) {
                     Some(sel) => {
@@ -471,14 +338,9 @@ pub fn run_review(
                             respond_status(request, 400);
                             continue;
                         }
-                        // `browse` takes `paths` by value, so keep a copy for the
-                        // recent-decks record below.
                         let recorded_paths = paths.clone();
                         match assemble::browse(paths) {
                             Ok(b) => {
-                                // Browse always remembers its deck for next time's
-                                // picker (unlike a review, which only records when
-                                // there is something to review).
                                 recent.record(&recorded_paths, now_ms());
                                 let _ = recent.save();
                                 browsing = Some(Browsing::new(b));
@@ -496,9 +358,6 @@ pub fn run_review(
                     None => respond_status(request, 400),
                 }
             }
-            // The focus drawer asks for a deck's stored topologies + region
-            // heatmaps when it's selected. Read-only: open the deck's own store
-            // transiently, never disturbing the active session store.
             (Method::Post, "/api/deck-topology") => {
                 let dto = match read_selection(&mut request, &decks_dir, &recent) {
                     Some(sel) => {
@@ -521,8 +380,6 @@ pub fn run_review(
                 };
                 respond_json(request, &dto);
             }
-            // Wipe a row's review progress (the sheet's typed-name gate is
-            // client UX; a token holder is trusted — same class as grading).
             (Method::Post, "/api/reset") => {
                 #[derive(Deserialize)]
                 struct Body {
@@ -533,8 +390,6 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                // Rows resolve to their deck files: a workspace/folder row to
-                // its members, a deck row to itself.
                 let paths = match resolve_row(&body.deck, &decks_dir, &recent) {
                     Resolved::One(p) => vec![p],
                     Resolved::Many { files, .. } => files,
@@ -555,7 +410,6 @@ pub fn run_review(
                     .and_then(|mut s| crate::library::reset_decks(&mut s, decks.iter()));
                 match cleared {
                     Ok(n) => {
-                        // The in-memory global store may now be stale — reload.
                         if let Ok(s) = assemble::store_for(&[], cfg.instance_store.as_deref()) {
                             store = s;
                         }
@@ -570,19 +424,9 @@ pub fn run_review(
                     Err(_) => respond_status(request, 400),
                 }
             }
-            // Set, move, or clear (`date: null`) a workspace's "ready by"
-            // deadline in its `alix.local.toml` ({#deadlines}). Responds with
-            // the refreshed decks payload so the picker re-renders the
-            // readout in one round trip, matching `/api/reset`'s pattern of
-            // returning caller-relevant state rather than a bare 200.
             (Method::Post, "/api/workspace/deadline") => {
-                // `date` is required. A missing key is a 400 (a client bug
-                // must never be read as "clear"); an explicit JSON `null` is
-                // the real clear signal. Serde's "double option" idiom tells
-                // them apart: `#[serde(default)]` supplies the outer `None`
-                // only when the key is absent, and `deserialize_some` fires
-                // when the key IS present, wrapping whatever it parses to
-                // (including `null`) in `Some`.
+                // A missing `date` key is a 400; an explicit JSON `null` is
+                // the clear signal (serde's "double option" idiom).
                 fn deserialize_some<'de, D>(
                     deserializer: D,
                 ) -> Result<Option<Option<String>>, D::Error>
@@ -616,10 +460,6 @@ pub fn run_review(
                         }
                     },
                 };
-                // Only a workspace row (an `alix.toml` manifest, not just a
-                // plain folder of decks) has a deadline concept, see
-                // `workspace::is_workspace`; the catalog only ever computes a
-                // `deadline` readout for one.
                 let dir = match resolve_row(&body.name, &decks_dir, &recent) {
                     Resolved::Many { dir, .. } if crate::workspace::is_workspace(&dir) => dir,
                     _ => {
@@ -643,10 +483,6 @@ pub fn run_review(
                 );
                 respond_json(request, &catalog);
             }
-            // Land an uploaded `.tsv`/`.md` file via `place_deck`. Strict
-            // unlike `generate`'s lenient save: an invalid upload is 400 and
-            // no file remains — the upload still exists on the user's
-            // device, so nothing is lost by refusing to keep a broken copy.
             (Method::Post, "/api/import") => {
                 #[derive(Deserialize)]
                 struct Body {
@@ -662,9 +498,6 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                // `.tsv` converts (Anki export); `.md` is a deck as-is. Case
-                // folded so `FILE.TSV` matches — the browser's file picker
-                // accept filter offers upper-case extensions too.
                 let lower_name = b.name.to_ascii_lowercase();
                 let text = if lower_name.ends_with(".tsv") {
                     match import::tsv_to_deck(&b.text) {
@@ -711,32 +544,26 @@ pub fn run_review(
                     guidance: Option<String>,
                     dest: Option<String>,
                 }
-                // A worker may have finished while nobody polled (the page
-                // went away) — drain it first, so "finished" means finished
-                // even without a GET, and only a live worker 409s.
                 if let Some(g) = generating.as_mut() {
                     g.poll();
                 }
                 if generating.as_ref().is_some_and(|g| g.outcome.is_none()) {
-                    respond_status(request, 409); // one costed job at a time
+                    respond_status(request, 409);
                     continue;
                 }
                 let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
                 let Some(b) =
                     body.filter(|b| b.url.starts_with("http://") || b.url.starts_with("https://"))
                 else {
-                    respond_status(request, 400); // the web generates from URLs only
+                    respond_status(request, 400);
                     continue;
                 };
                 let Some(dest) = resolve_dest(b.dest.as_deref(), &decks_dir, &recent) else {
                     respond_status(request, 400);
                     continue;
                 };
-                // A collision discovered only after the (costed) model call
-                // would throw away paid work for nothing — check before
-                // spawning, mirroring `library::place_deck`'s stem/extension
-                // logic (stage-then-merge: fail fast on what's already
-                // knowable, same principle as the CLI's destination guard).
+                // Check for a name collision before spawning the (costed)
+                // model call, so a collision never throws away paid work.
                 let name = generate::deck_name(&b.url);
                 let stem = name.strip_suffix(".md").unwrap_or(&name);
                 let file = format!("{stem}.md");
@@ -783,7 +610,7 @@ pub fn run_review(
                 respond_json(request, &g.dto());
             }
             (Method::Post, "/api/generate/close") => {
-                generating = None; // a running worker finishes and is discarded
+                generating = None;
                 respond_status(request, 200);
             }
             (Method::Post, "/api/share") => {
@@ -791,14 +618,11 @@ pub fn run_review(
                 struct Body {
                     deck: Option<String>,
                 }
-                // Drain a finished-but-unpolled job first, so a completed send is
-                // replaced by the next POST even without an intervening GET —
-                // mirroring the `/api/generate` fix (only a *live* job 409s).
                 if let Some(s) = sharing.as_mut() {
                     s.poll();
                 }
                 if sharing.as_ref().is_some_and(|s| s.outcome.is_none()) {
-                    respond_status(request, 409); // one share at a time
+                    respond_status(request, 409);
                     continue;
                 }
                 let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
@@ -829,8 +653,6 @@ pub fn run_review(
                         sharing = Some(s);
                         respond_json(request, &dto);
                     }
-                    // Spawn failures (missing binary) surface as an error-phase
-                    // job so the sheet shows the install hint, not a bare 400.
                     Err(e) => respond_json(
                         request,
                         &ShareDto {
@@ -851,17 +673,12 @@ pub fn run_review(
                 respond_json(request, &s.dto());
             }
             (Method::Post, "/api/share/close") => {
-                // Dropping the (former) job cancels its wormhole child — see
-                // `ShareJob`'s `Drop`; `cancel()` here is just for clarity.
                 if let Some(s) = sharing.take() {
                     s.job.cancel();
                 }
                 respond_status(request, 200);
             }
             (Method::Get, "/api/share/zip") => {
-                // `request_path` (used for dispatch) already strips the query
-                // string, so the plain literal above matches regardless of
-                // `?deck=...` — read the param back off the full URL here.
                 let name = query_param(request.url(), "deck");
                 let path = match &name {
                     None => Some(decks_dir.clone()),
@@ -894,13 +711,11 @@ pub fn run_review(
                     code: String,
                     dest: Option<String>,
                 }
-                // Drain a finished-but-unpolled job first — same fix as
-                // generate/share: only a *live* job 409s.
                 if let Some(r) = receiving.as_mut() {
                     r.poll();
                 }
                 if receiving.as_ref().is_some_and(|r| r.outcome.is_none()) {
-                    respond_status(request, 409); // one receive at a time
+                    respond_status(request, 409);
                     continue;
                 }
                 let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
@@ -930,8 +745,6 @@ pub fn run_review(
                         receiving = Some(r);
                         respond_json(request, &dto);
                     }
-                    // Spawn failures (missing binary) surface as an error-phase
-                    // job so the sheet shows the install hint, not a bare 400.
                     Err(e) => respond_json(
                         request,
                         &ReceiveDto {
@@ -953,18 +766,12 @@ pub fn run_review(
                 respond_json(request, &r.dto());
             }
             (Method::Post, "/api/receive/close") => {
-                // Dropping the (former) job cancels its wormhole child — see
-                // `ShareJob`'s `Drop`; `cancel()` here is just for clarity.
                 if let Some(r) = receiving.take() {
                     r.job.cancel();
                 }
                 respond_status(request, 200);
             }
             (Method::Post, "/api/receive/zip") => {
-                // `request_path` (used for dispatch) already strips the query
-                // string (Task 10 confirmed), so the plain literal above
-                // matches regardless of `?dest=...` — read the param back off
-                // the full URL here, same as `/api/share/zip`.
                 const MAX_ZIP: usize = 50 * 1024 * 1024;
                 if request.body_length().is_some_and(|l| l > MAX_ZIP) {
                     respond_status(request, 400);
@@ -978,15 +785,12 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                // `body_length` can lie or be absent, so `read_capped` also
-                // bounds the actual read, not just the declared length.
                 let Some(bytes) = read_capped(request.as_reader(), MAX_ZIP) else {
                     respond_status(request, 400);
                     continue;
                 };
-                // `land_received`'s collision check is check-then-act; safe
-                // only because this server loop is single-threaded — do not
-                // introduce threads here (see `Receiving::poll`'s note).
+                // `land_received`'s collision check is check-then-act: safe
+                // only because this server loop is single-threaded.
                 let landed = tempfile::tempdir().ok().and_then(|tmp| {
                     let zip_path = tmp.path().join("got.zip");
                     std::fs::write(&zip_path, &bytes).ok()?;
@@ -1013,8 +817,6 @@ pub fn run_review(
                 reviewing = None;
                 walking = None;
                 browsing = None;
-                // Back at the picker: read the global store again (loose-deck
-                // badges live there, not in any workspace's store).
                 if let Ok(s) = assemble::store_for(&[], cfg.instance_store.as_deref()) {
                     store = s;
                 }
@@ -1029,17 +831,13 @@ pub fn run_review(
                     Some(grade) => {
                         let now = now_ms();
                         r.session.grade(&mut store, grade, now);
-                        // Refresh the deck's per-depth badge earn dates from this
-                        // session's cards (high-water first-earn marks; badges gate
-                        // nothing). Keyed by deck subject, like the rest of the
-                        // deck-level store (exam mastery, last depth).
                         if let Some(subject) = r.files.paths.keys().next() {
                             store::note_badges(&mut store, subject, r.session.cards(), now);
                         }
                         if let Err(e) = store.save() {
                             eprintln!("warning: could not save progress: {e}");
                         }
-                        r.rotate_variant(); // a fresh phrasing for the next card
+                        r.rotate_variant();
                         respond_json(request, &review_state(reviewing.as_ref(), &store));
                     }
                     None => respond_status(request, 400),
@@ -1051,12 +849,10 @@ pub fn run_review(
                     continue;
                 };
                 r.session.skip(&store, now_ms());
-                r.rotate_variant(); // a fresh phrasing for the next card
+                r.rotate_variant();
                 respond_json(request, &review_state(reviewing.as_ref(), &store));
             }
             (Method::Post, "/api/acquire") => {
-                // Acknowledge a never-seen card: record it as acquired (no grade)
-                // and move on. Its first quiz comes back ~1 min later, this session.
                 let Some(r) = reviewing.as_mut() else {
                     respond_status(request, 409);
                     continue;
@@ -1065,7 +861,7 @@ pub fn run_review(
                 if let Err(e) = store.save() {
                     eprintln!("warning: could not save progress: {e}");
                 }
-                r.rotate_variant(); // a fresh phrasing for the next card
+                r.rotate_variant();
                 respond_json(request, &review_state(reviewing.as_ref(), &store));
             }
             (Method::Post, "/api/check") => {
@@ -1073,11 +869,6 @@ pub fn run_review(
                     respond_status(request, 409);
                     continue;
                 };
-                // Check the typed lines against the current card: pure evidence,
-                // like choose (the learner-final grade is applied separately on
-                // Continue via `/api/grade`). Orderedness derives from the card's
-                // mode in core (TypeLine pairs line-by-position, everything else
-                // matches any order); the client sends only its lines.
                 #[derive(Deserialize)]
                 struct Body {
                     lines: Vec<String>,
@@ -1094,11 +885,6 @@ pub fn run_review(
                     respond_status(request, 409);
                     continue;
                 };
-                // Just reports which option is correct: core `review::choose`
-                // rebuilds the question from the same seed `review_state` served
-                // it with, so the pick and the state can never diverge. The grade
-                // is applied later via /api/grade on Continue, so the session
-                // stays on this card during the result (Remove still works on it).
                 let picked = read_index(&mut request)
                     .and_then(|chosen| review::choose(&r.session, &store, &r.augment, chosen));
                 match picked {
@@ -1125,13 +911,6 @@ pub fn run_review(
                 }
                 respond_json(request, &review_state(reviewing.as_ref(), &store));
             }
-            // Promotes the current virtual (remediation) card into its deck
-            // file (`store::promote_virtual` does the append-then-drop; the
-            // schedule needs no transfer, since it already lives in
-            // `store.cards` under the id the appended deck card hashes to, so
-            // the promoted card keeps its earned schedule for free). A clean
-            // 400 — never a panic — when the current card isn't virtual or
-            // its deck file isn't known.
             (Method::Post, "/api/promote") => {
                 let Some(r) = reviewing.as_mut() else {
                     respond_status(request, 409);
@@ -1166,12 +945,9 @@ pub fn run_review(
                     continue;
                 };
                 r.session.restart(&store, now_ms());
-                r.rotate_variant(); // a fresh phrasing for the new session's first card
+                r.rotate_variant();
                 respond_json(request, &review_state(reviewing.as_ref(), &store));
             }
-            // Ask Claude about the current card — runs the CLI on a background
-            // thread (ask::spawn) and returns immediately; the page polls
-            // `GET /api/ask` for the answer so the server loop never blocks.
             (Method::Post, "/api/ask") => {
                 #[derive(Deserialize)]
                 struct Body {
@@ -1188,7 +964,6 @@ pub fn run_review(
                 }
                 respond_json(request, &r.ask_dto(None, None));
             }
-            // Condense the conversation into note lines appended to the deck.
             (Method::Post, "/api/ask/note") => {
                 let Some(r) = reviewing.as_mut() else {
                     respond_status(request, 409);
@@ -1197,7 +972,6 @@ pub fn run_review(
                 r.start_ask(&ask_cfg, audience, AskAction::Condense);
                 respond_json(request, &r.ask_dto(None, None));
             }
-            // Distill the conversation into one draft card, surfaced on the ask DTO.
             (Method::Post, "/api/ask/card/draft") => {
                 if audience == Audience::Kids {
                     respond_status(request, 403);
@@ -1210,11 +984,6 @@ pub fn run_review(
                 r.start_ask(&ask_cfg, audience, AskAction::DraftCard);
                 respond_json(request, &r.ask_dto(None, None));
             }
-            // Land an edited draft as a free-standing Tutor virtual card on the
-            // current deck. Minting logic lives in `store::mint_tutor_card`; this
-            // handler only reads the body, gathers session context (the current
-            // card's deck subject and its authored ids, for dedup), and maps the
-            // result to a status code.
             (Method::Post, "/api/ask/card/create") => {
                 if audience == Audience::Kids {
                     respond_status(request, 403);
@@ -1235,9 +1004,8 @@ pub fn run_review(
                     continue;
                 };
                 let subject = card.subject.to_string();
-                // Dedup by canonical content: a mint carries a fresh random
-                // token, so identical content is caught by its §7 fingerprint,
-                // never by a recomputed id.
+                // Dedup by content fingerprint, not id: a mint carries a
+                // fresh random token, so identical content still collides.
                 let deck_fingerprints: std::collections::HashSet<u64> = r
                     .session
                     .cards()
@@ -1257,24 +1025,16 @@ pub fn run_review(
                         if let Err(e) = store.save() {
                             eprintln!("warning: could not save progress: {e}");
                         }
-                        // No status-carrying JSON responder exists yet (only
-                        // `respond_json`, always 200, and `respond_status`, no
-                        // body): 200 here, not the 201 a "created" response
-                        // would ideally carry. Documented as such in API.md.
                         respond_json(request, &CreateCardResp { id });
                     }
                     Err(store::MintError::Duplicate | store::MintError::Malformed(_)) => {
                         respond_status(request, 422);
                     }
-                    // A CSPRNG failure minting the identity token: a server-side
-                    // fault, not a bad request.
                     Err(store::MintError::Mint(_)) => {
                         respond_status(request, 500);
                     }
                 }
             }
-            // Poll for a pending reply; the page calls this every ~400ms while
-            // `thinking`.
             (Method::Get, "/api/ask") => {
                 let Some(r) = reviewing.as_mut() else {
                     respond_status(request, 409);
@@ -1283,10 +1043,6 @@ pub fn run_review(
                 let (status, error) = r.poll_ask();
                 respond_json(request, &r.ask_dto(status, error));
             }
-            // ── AI exam ───────────────────────────────────────────────────
-            // Start an exam for one `% source:` deck: validate the name and
-            // drill state, then spawn question generation on a background
-            // thread; the page polls `GET /api/exam`.
             (Method::Post, "/api/exam/start") => {
                 #[derive(Deserialize)]
                 struct Body {
@@ -1297,38 +1053,24 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                // Include workspace members (by their qualified `<ws>/<file>`
-                // name) so an exam can be started on a deck inside a workspace,
-                // not just a top-level deck — mirroring `/api/select`. Resolved
-                // through the shared catalog lookup, so a bare name duplicated
-                // across containers is rejected here too, instead of silently
-                // writing mastery to whichever container's row won a last-wins
-                // map (this endpoint gates progression, so ambiguity must 400,
-                // not guess).
+                // A bare name duplicated across containers must 400, not
+                // guess: this endpoint gates progression on the result.
                 let Some(path) = resolved_path(resolve_row(&body.deck, &decks_dir, &recent)) else {
                     respond_status(request, 400);
                     continue;
                 };
-                // The exam reads drill state and writes mastery/unlocks to the
-                // deck's own store (a workspace's, or the global one).
                 if let Ok(s) =
                     assemble::store_for(std::slice::from_ref(&path), cfg.instance_store.as_deref())
                 {
                     store = s;
                 }
                 match Deck::load(&path) {
-                    // Examable when it has an exam (a `% source:` fact deck, or a
-                    // trace) and its `% requires:` are satisfied — drilled or not
-                    // (you may test out early).
                     Ok(deck)
                         if deck.has_exam()
                             && !deck::is_locked(&deck, Some(decks_dir.as_path()), &store) =>
                     {
                         let strictness =
                             deck.settings.exam_strictness.unwrap_or(exam_cfg.strictness);
-                        // A trace's exam is the graded compression (one fixed
-                        // question), gated by the re-sit cooldown after a fail; a
-                        // fact deck's exam generates questions from its source.
                         let sitting = if deck.is_trace() {
                             match trace::Trace::from_deck(&deck) {
                                 Ok(t) => {
@@ -1338,9 +1080,8 @@ pub fn run_review(
                                         exam_cfg.retry_cooldown_secs,
                                         now_ms(),
                                     ) {
-                                        // One shape per endpoint: the cooldown is an
-                                        // ExamDto in its own phase, not an untagged
-                                        // {cooldown_ms} the client must key-sniff.
+                                        // One response shape per endpoint: the
+                                        // cooldown is an ExamDto phase, not untagged.
                                         respond_json(request, &cooldown_dto(&deck.subject, ms));
                                         continue;
                                     }
@@ -1359,11 +1100,8 @@ pub fn run_review(
                                 }
                             }
                         } else {
-                            // Fact-deck pre-flight: confirm the configured
-                            // backend can reach every `% source:` before
-                            // starting the sitting, so a capability gap is a
-                            // clean refusal at launch, not an error surfaced
-                            // mid-exam through the background job's poll.
+                            // Check backend capability before starting, so a
+                            // gap is a clean refusal, not a mid-exam poll error.
                             if exam::ensure_backend_can_examine(&deck, &ask_cfg).is_err() {
                                 respond_status(request, 409);
                                 continue;
@@ -1386,20 +1124,16 @@ pub fn run_review(
                     _ => respond_status(request, 409),
                 }
             }
-            // Poll the exam: advance any finished background call, return state.
             (Method::Get, "/api/exam") => {
                 let Some(ex) = examining.as_mut() else {
                     respond_status(request, 409);
                     continue;
                 };
-                // A workspace member's exam remediation honors its own
-                // `alix.local.toml` retirement cap, same as its review session.
                 let parent = ex.deck_path.parent().unwrap_or_else(|| Path::new(""));
                 let retire_after_days = review_cfg.for_workspace(parent).retire_after_days;
                 ex.sitting.poll(&mut store, now_ms(), retire_after_days);
                 respond_json(request, &exam_dto(ex, &decks_dir));
             }
-            // Save the current answer and (optionally) navigate to another question.
             (Method::Post, "/api/exam/answer") => {
                 #[derive(Deserialize)]
                 struct Body {
@@ -1419,7 +1153,6 @@ pub fn run_review(
                 }
                 respond_json(request, &exam_dto(ex, &decks_dir));
             }
-            // Save the last answer and submit everything for grading.
             (Method::Post, "/api/exam/grade") => {
                 #[derive(Deserialize)]
                 struct Body {
@@ -1436,7 +1169,6 @@ pub fn run_review(
                 ex.sitting.submit();
                 respond_json(request, &exam_dto(ex, &decks_dir));
             }
-            // On a fail, generate remediation cards into the store as virtual cards.
             (Method::Post, "/api/exam/remediate") => {
                 let Some(ex) = examining.as_mut() else {
                     respond_status(request, 409);
@@ -1445,7 +1177,6 @@ pub fn run_review(
                 ex.sitting.remediate();
                 respond_json(request, &exam_dto(ex, &decks_dir));
             }
-            // Leave the exam, back to the deck list / summary.
             (Method::Post, "/api/exam/close") => {
                 examining = None;
                 if let Ok(s) = assemble::store_for(&[], cfg.instance_store.as_deref()) {
@@ -1453,11 +1184,6 @@ pub fn run_review(
                 }
                 respond_json(request, &review_state(reviewing.as_ref(), &store));
             }
-            // ── Deck augmentation (the picker's "Augment" action, decks only) ──
-            // Open the Augment screen and report what its cache holds. Resolves
-            // the name through the catalog (incl. workspace members) like the
-            // exam; a workspace name opens the screen over the UNION of its
-            // members' cards, which also unlocks the icon target.
             (Method::Post, "/api/augment/open") => {
                 #[derive(Deserialize)]
                 struct Body {
@@ -1477,22 +1203,13 @@ pub fn run_review(
                     }
                 };
                 let name = body.deck;
-                // The cache lives beside the selection's own store (a workspace's,
-                // or the global one), mirroring how review reads it.
                 if let Ok(s) = assemble::store_for(&files, cfg.instance_store.as_deref()) {
                     store = s;
                 }
-                // Augment open is an enumerated §2.1 stamp site: mint identity
-                // tokens into each selected deck before the paid cache is keyed
-                // by card id (unstamped ids collapse the cache to key 0 and
-                // orphan the spend at the first real stamp). A plain deck is a
-                // one-member union; any member failing to load fails the open,
-                // so a broken deck never half-opens the screen.
+                // Stamp before loading: unstamped ids collapse the cache to
+                // key 0, orphaning the spend at the first real stamp.
                 match assemble::stamp_and_load_cards(&files) {
                     Ok(cards) => {
-                        // The owner token of each selected (now-stamped) deck, so
-                        // the screen scopes topologies to just these decks in a
-                        // shared cache.
                         let deck_tokens: Vec<String> = files
                             .iter()
                             .filter_map(|p| {
@@ -1513,8 +1230,6 @@ pub fn run_review(
                     Err(_) => respond_status(request, 409),
                 }
             }
-            // Start fill-the-gaps generation for one target (a costed background
-            // call); the page polls `GET /api/augment`.
             (Method::Post, "/api/augment/generate") => {
                 #[derive(Deserialize)]
                 struct TargetBody {
@@ -1546,7 +1261,6 @@ pub fn run_review(
                 }
                 respond_json(request, &aug.dto());
             }
-            // Poll the in-flight generation: apply a finished outcome, return state.
             (Method::Get, "/api/augment") => {
                 let Some(aug) = augmenting.as_mut() else {
                     respond_status(request, 409);
@@ -1555,7 +1269,6 @@ pub fn run_review(
                 aug.poll(&ai_cfg, &ask_cfg);
                 respond_json(request, &aug.dto());
             }
-            // Remove a target's augmentations (or `all`) for this deck.
             (Method::Post, "/api/augment/remove") => {
                 #[derive(Deserialize)]
                 struct Body {
@@ -1572,7 +1285,6 @@ pub fn run_review(
                 }
                 respond_json(request, &aug.dto());
             }
-            // Leave the Augment screen, back to the picker (reset to the global store).
             (Method::Post, "/api/augment/close") => {
                 augmenting = None;
                 if let Ok(s) = assemble::store_for(&[], cfg.instance_store.as_deref()) {
@@ -1580,8 +1292,6 @@ pub fn run_review(
                 }
                 respond_json(request, &review_state(reviewing.as_ref(), &store));
             }
-            // ── Trace walk (a single trace picked from the selection screen) ──
-            // The web trace-walk flow (predict → reveal → grade), guarded on `walking`.
             (Method::Get, "/api/walk") => {
                 let Some(w) = walking.as_mut() else {
                     respond_status(request, 409);
@@ -1635,9 +1345,6 @@ pub fn run_review(
                 *w = Walking::new(fresh, grade);
                 respond_json(request, &walk_dto(w));
             }
-            // Ask-Claude about the current checkpoint — the same tutor a review
-            // uses (its subject is the checkpoint). Runs on a background thread;
-            // the page polls `GET /api/walk/ask`.
             (Method::Post, "/api/walk/ask") => {
                 #[derive(Deserialize)]
                 struct Body {
@@ -1654,7 +1361,6 @@ pub fn run_review(
                 }
                 respond_json(request, &w.ask_dto(None, None));
             }
-            // Condense the conversation into a `!` note on the checkpoint.
             (Method::Post, "/api/walk/ask/note") => {
                 let Some(w) = walking.as_mut() else {
                     respond_status(request, 409);
@@ -1671,23 +1377,13 @@ pub fn run_review(
                 let (status, error) = w.poll_ask();
                 respond_json(request, &w.ask_dto(status, error));
             }
-            // Back to decks: abandon the walk and return to the picker (global store).
             (Method::Post, "/api/walk/leave") => {
                 walking = None;
                 if let Ok(s) = assemble::store_for(&[], cfg.instance_store.as_deref()) {
                     store = s;
                 }
-                // Every closer returns the picker StateDto — one teardown rule.
                 respond_json(request, &review_state(reviewing.as_ref(), &store));
             }
-            // ── Remote (a paired phone's tutor + exam) ──────────────────────
-            // The desktop plays model backend for a phone's tutor and exam; the
-            // phone owns all state (transcript, mastery, cards) and resends it
-            // every call. THE IRON RULE: nothing under `/api/remote/*` touches
-            // `store`. These handlers only compute and reply.
-            //
-            // Ask a remote tutor question. Single-flight in `remote_ask`,
-            // separate from the browser's `reviewing.ask` slot.
             (Method::Post, "/api/remote/ask") => {
                 if let Some(a) = remote_ask.as_mut() {
                     a.poll();
@@ -1709,7 +1405,6 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                // No card context at all: nothing for the tutor to ground on.
                 if question.trim().is_empty()
                     || (card.front.trim().is_empty()
                         && card.back.iter().all(|l| l.trim().is_empty()))
@@ -1722,8 +1417,6 @@ pub fn run_review(
                 remote_ask = Some(job);
                 respond_json(request, &dto);
             }
-            // Poll a remote tutor call; the settled reply stays readable until
-            // the next POST replaces the slot.
             (Method::Get, "/api/remote/ask") => {
                 let dto = match remote_ask.as_mut() {
                     Some(a) => {
@@ -1741,8 +1434,6 @@ pub fn run_review(
                 };
                 respond_json(request, &dto);
             }
-            // Draft a card from the phone's own tutor history (adult-only,
-            // same gate as the web draft handler).
             (Method::Post, "/api/remote/ask/draft") => {
                 if audience == Audience::Kids {
                     respond_status(request, 403);
@@ -1766,7 +1457,7 @@ pub fn run_review(
                     continue;
                 };
                 if history.is_empty() {
-                    respond_status(request, 400); // nothing to draft from
+                    respond_status(request, 400);
                     continue;
                 }
                 let job = RemoteAsk::draft(&ask_cfg, &card, history);
@@ -1774,12 +1465,6 @@ pub fn run_review(
                 remote_ask = Some(job);
                 respond_json(request, &dto);
             }
-            // Condense the phone's own tutor history into note lines
-            // (ungated, mirroring the web's own `/api/ask/note`, which has
-            // no kids gate either). Shares `remote_ask` with ask/draft. THE
-            // IRON RULE applies in full here: the server only returns the
-            // condensed lines, it never calls `deck::append_note` or
-            // touches any deck/store path: the phone appends locally.
             (Method::Post, "/api/remote/ask/note") => {
                 if let Some(a) = remote_ask.as_mut() {
                     a.poll();
@@ -1799,7 +1484,7 @@ pub fn run_review(
                     continue;
                 };
                 if history.is_empty() {
-                    respond_status(request, 400); // nothing to condense
+                    respond_status(request, 400);
                     continue;
                 }
                 let job = RemoteAsk::note(&ask_cfg, &card, history);
@@ -1807,12 +1492,8 @@ pub fn run_review(
                 remote_ask = Some(job);
                 respond_json(request, &dto);
             }
-            // Start a remote exam sitting. A trace deck starts a compression
-            // sitting straight into `answering` (mirrors the browser's own
-            // trace-exam start); a non-trace, source-less deck still 409s
-            // (nothing to examine). The store-side `% requires:` lock and the
-            // trace re-sit cooldown are the browser's own truth, not the
-            // phone's, so both are skipped here.
+            // The requires-lock and the trace re-sit cooldown are the
+            // browser's own truth; both are deliberately skipped here.
             (Method::Post, "/api/remote/exam/start") => {
                 if remote_exam.is_some() {
                     respond_status(request, 409);
@@ -1831,7 +1512,7 @@ pub fn run_review(
                     continue;
                 };
                 let Some(path) = resolved_path(resolve_row(&body.deck, &decks_dir, &recent)) else {
-                    respond_status(request, 400); // unknown or ambiguous deck name
+                    respond_status(request, 400);
                     continue;
                 };
                 let Ok(deck) = Deck::load(&path) else {
@@ -1873,9 +1554,8 @@ pub fn run_review(
                 remote_exam = Some(ex);
                 respond_json(request, &dto);
             }
-            // Poll the remote sitting: `advance` only, never `poll` (which
-            // writes the store). A passed/failed verdict is read off
-            // `result()`/`gaps()` and left for the phone to apply.
+            // advance() only, never poll(): poll() writes the store, which
+            // remote handlers must never touch.
             (Method::Get, "/api/remote/exam") => {
                 let dto = match remote_exam.as_mut() {
                     Some(ex) => {
@@ -1886,9 +1566,6 @@ pub fn run_review(
                 };
                 respond_json(request, &dto);
             }
-            // Submit a full batch of answers for grading (unlike the browser's
-            // page-at-a-time `/api/exam/answer`, a remote client answers
-            // locally and sends everything at once).
             (Method::Post, "/api/remote/exam/grade") => {
                 #[derive(Deserialize)]
                 struct Body {
@@ -1922,8 +1599,6 @@ pub fn run_review(
                 ex.sitting.submit();
                 respond_json(request, &ex.dto());
             }
-            // Generate remediation cards for a failed fact-deck result; the
-            // phone stores them (`RemoteExamDto.cards`), never this server.
             (Method::Post, "/api/remote/exam/remediate") => {
                 let Some(ex) = remote_exam.as_mut() else {
                     respond_status(request, 409);
@@ -1936,18 +1611,14 @@ pub fn run_review(
                 ex.sitting.remediate();
                 respond_json(request, &ex.dto());
             }
-            // Leave the remote exam: drop the slot (a thread still in flight
-            // just finds its receiver gone, its send fails harmlessly, same
-            // as the browser's exam close). The next GET reports idle.
+            // Drop the slot; an in-flight thread just finds its receiver
+            // gone and its send fails harmlessly.
             (Method::Post, "/api/remote/exam/close") => {
                 remote_exam = None;
                 respond_status(request, 200);
             }
-            // Generate a deck from a URL, mirroring the web's
-            // `POST /api/generate` (:706) under the iron rule: the server
-            // returns the full deck text, it never places a file. No
-            // `dest`, no destination collision pre-check (both are the
-            // phone's job).
+            // No dest, no destination-collision check: this returns the
+            // deck text, it never places a file (both are the phone's job).
             (Method::Post, "/api/remote/generate") => {
                 if let Some(g) = remote_generate.as_mut() {
                     g.poll();
@@ -1973,7 +1644,7 @@ pub fn run_review(
                     continue;
                 };
                 if !(body.url.starts_with("http://") || body.url.starts_with("https://")) {
-                    respond_status(request, 400); // remote generation is URLs only, same as the web
+                    respond_status(request, 400);
                     continue;
                 }
                 let mut cfg = generate_cfg.clone();
@@ -1989,8 +1660,6 @@ pub fn run_review(
                 remote_generate = Some(job);
                 respond_json(request, &dto);
             }
-            // Poll a remote generation; the finished deck text stays
-            // readable until close or the next POST replaces the slot.
             (Method::Get, "/api/remote/generate") => {
                 let Some(g) = remote_generate.as_mut() else {
                     respond_status(request, 409);
@@ -1999,9 +1668,6 @@ pub fn run_review(
                 g.poll();
                 respond_json(request, &g.dto());
             }
-            // Leave remote generation: drop the slot (a worker still
-            // running just finds its receiver gone, same as the browser's
-            // `/api/generate/close`). The next GET reports 409 (no job).
             (Method::Post, "/api/remote/generate/close") => {
                 remote_generate = None;
                 respond_status(request, 200);
@@ -2012,13 +1678,6 @@ pub fn run_review(
     Ok(())
 }
 
-/// Builds the decks-catalog payload `GET /api/decks` returns: first
-/// re-resolving the served decks dir for an unscoped instance (a `decks_dir`
-/// edit takes effect on the next reload/focus without a restart,
-/// `{#page-reload-refetches-decks}`), then the catalog itself (review
-/// enforces locking; the picker won't start a locked deck). Shared with any
-/// mutation that wants the picker to re-render in one round trip instead of
-/// a second `GET /api/decks` (e.g. `POST /api/workspace/deadline`).
 fn decks_list_dto(
     scoped: bool,
     config_path: Option<&Path>,

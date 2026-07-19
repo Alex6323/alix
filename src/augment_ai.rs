@@ -1,7 +1,3 @@
-//! The AI generators for the augment cache: distractors, notes, key points,
-//! variants, topology, format. Split out of `augment` so the cache/read side
-//! compiles without the AI backend.
-
 use std::{
     collections::{HashMap, HashSet},
     sync::{
@@ -21,32 +17,14 @@ use crate::{
     config::{AiConfig, AskConfig},
 };
 
-// ── Batch conversations ──────────────────────────────────────────────────────
-//
-// A batch of augmentations re-reads the same cards once per target when every
-// call is a stateless one-shot. On a backend that keeps sessions (Claude), the
-// batch instead primes ONE conversation with the card roster and runs each
-// target as a `--resume` follow-up referencing cards by roster index, so the
-// cards travel once.
-
-/// One CLI conversation spanning a batch of augmentations: the session plus
-/// the card roster its first call sends. Plain cloneable data: the batch owner
-/// keeps it across polls, hands a snapshot into each spawned job, and flips
-/// `session.started` (or [`reset`](Self::reset)s) when the job reports back.
 #[derive(Clone)]
 pub struct BatchConversation {
-    /// The CLI session; `started` decides between priming and resuming.
     pub session: ask::CliSession,
-    /// The batch's card roster, index-stable for the whole conversation.
     roster: Arc<Vec<WarmItem>>,
-    /// Card id to roster index, for referencing a call's subset.
     index_of: Arc<HashMap<String, usize>>,
 }
 
 impl BatchConversation {
-    /// A conversation over `roster`, or `None` when the configured backend
-    /// keeps no sessions (only Claude does); callers then pass `None` through
-    /// and every call stays a stateless one-shot, exactly as before.
     pub fn new(cfg: &AskConfig, roster: Vec<WarmItem>) -> Option<Self> {
         let keeps_session = crate::backend::backend_for(cfg)
             .map(|b| b.supports_session())
@@ -66,15 +44,12 @@ impl BatchConversation {
         })
     }
 
-    /// Forgets the CLI session after a failed call (never `--resume` a session
-    /// in an unknown state, mirroring the tutor's error arm). The roster stays,
-    /// so the next call primes a fresh conversation with it.
+    // never resume a session in an unknown state after a failed call; the
+    // roster stays for a fresh prime
     pub fn reset(&mut self) {
         self.session = ask::CliSession::new();
     }
 
-    /// The roster indices of `items`, or `None` if any item is missing from
-    /// the roster (that call then degrades to a stateless one-shot).
     fn indices_of(&self, items: &[WarmItem]) -> Option<Vec<usize>> {
         items
             .iter()
@@ -83,8 +58,6 @@ impl BatchConversation {
     }
 }
 
-/// The primer a conversation's first call sends: the whole roster, numbered,
-/// in a shape every target's follow-up can reference.
 fn roster_block(roster: &[WarmItem]) -> String {
     let mut s = String::from(
         "You will perform a series of augmentation tasks over one shared set \
@@ -97,8 +70,6 @@ fn roster_block(roster: &[WarmItem]) -> String {
     s
 }
 
-/// The card block for a call inside a conversation: reference the primed
-/// roster by index instead of re-listing the cards.
 fn reference_block(indices: &[usize], roster_len: usize) -> String {
     let mut s = String::from(
         "\nWork on the numbered flashcards already provided in this \
@@ -119,13 +90,6 @@ fn reference_block(indices: &[usize], roster_len: usize) -> String {
     s
 }
 
-/// Runs one generation call for `items` and returns the raw reply plus the
-/// JSON key each item's answer arrives under. Stateless (no conversation, or
-/// an item outside the roster): the prompt carries `listing` and keys are the
-/// items' positions. In a conversation: the first turn is prefixed with the
-/// roster primer, the card block references roster indices, and keys are those
-/// indices. The tool allowlist is cleared either way (generation is a pure
-/// text call, like exam remediation).
 fn call_for_items(
     items: &[WarmItem],
     listing: &str,
@@ -145,8 +109,8 @@ fn call_for_items(
             &indices,
             conversation.roster.len(),
         )));
-        // `run_config` never sets a cwd, so every call in a batch shares this
-        // process's directory and a plain `args()` resume finds the session.
+        // run_config never sets a cwd, so a plain args() resume finds the
+        // right session
         let raw = ask::run(&cfg, &prompt, &conversation.session.args())?;
         let keys = indices.iter().map(usize::to_string).collect();
         return Ok((raw, keys));
@@ -155,18 +119,6 @@ fn call_for_items(
     Ok((raw, (0..items.len()).map(|i| i.to_string()).collect()))
 }
 
-// ── Generation ───────────────────────────────────────────────────────────────
-//
-// Distractors come from one batched, tool-free Claude call over the cards that
-// still need them, mirroring the exam's generate/grade shape: a synchronous core
-// ([`generate`]) the interactive frontends run on a thread via [`spawn`]. The
-// call is pure text transformation — no web or file tools — so its allowlist is
-// cleared like exam remediation.
-
-/// Generates up to `count` distractors per card in `items` with one batched,
-/// tool-free call, optionally steered by `guidance` (the `--with` text). Returns
-/// a map from card id to its validated distractors; cards the model produced
-/// nothing usable for are omitted, so review falls back to offline sampling.
 pub fn generate(
     items: &[WarmItem],
     count: usize,
@@ -201,9 +153,6 @@ pub fn generate(
     Ok(out)
 }
 
-/// Generates one short note (trivia, context, or a mnemonic) per card in `items`,
-/// optionally steered by `guidance`. Returns card id → note, omitting any the
-/// model left blank.
 pub fn generate_notes(
     items: &[WarmItem],
     guidance: Option<&str>,
@@ -236,12 +185,6 @@ pub fn generate_notes(
     Ok(out)
 }
 
-/// Decomposes each card's answer into the few load-bearing, independently
-/// checkable claims (the Explain-mode checklist rubric), up to `count`, optionally
-/// steered by `guidance`. Returns card id → its key points, **omitting a card
-/// whose answer is atomic** — fewer than two claims means there's nothing to check
-/// off one by one, so the card keeps its plain self-graded reveal (just as choice
-/// mode omits cards with no usable distractor).
 pub fn generate_keypoints(
     items: &[WarmItem],
     count: usize,
@@ -269,8 +212,7 @@ pub fn generate_keypoints(
             continue;
         };
         let cleaned = clean_keypoints(raw_points, count);
-        // An atomic answer yields fewer than two checkable claims — nothing to
-        // tick off — so omit it; the card keeps its plain self-graded reveal.
+        // fewer than two points means nothing to check off; keep the plain reveal
         if cleaned.len() >= 2 {
             out.insert(item.id.clone(), cleaned);
         }
@@ -278,10 +220,6 @@ pub fn generate_keypoints(
     Ok(out)
 }
 
-/// Generates up to `count` reworded phrasings of each card's question, steered
-/// by `guidance`, each keeping the **exact same answer**. Returns card id → a
-/// pool of variants (rotated at review time); cards the model produced nothing
-/// usable for are omitted.
 pub fn generate_variants(
     items: &[WarmItem],
     count: usize,
@@ -316,8 +254,6 @@ pub fn generate_variants(
     Ok(out)
 }
 
-/// The model's raw topology before card indices are mapped back to identity
-/// hashes.
 #[derive(Deserialize)]
 struct RawTopology {
     #[serde(default)]
@@ -330,7 +266,6 @@ struct RawTopology {
     regions: Vec<RawRegion>,
 }
 
-/// A raw edge addressed by the cards' positions in the prompt listing.
 #[derive(Deserialize)]
 struct RawEdge {
     from: usize,
@@ -339,7 +274,6 @@ struct RawEdge {
     label: String,
 }
 
-/// A raw region: a name plus the cards' positions in the prompt listing.
 #[derive(Deserialize)]
 struct RawRegion {
     #[serde(default)]
@@ -348,10 +282,6 @@ struct RawRegion {
     cards: Vec<usize>,
 }
 
-/// Derives a single deck-level [`Topology`] over `items` in one batched,
-/// tool-free call, steered by `guidance` (the favored organizing principle).
-/// Indices the model returns are mapped back to card identity hashes; any out of
-/// range are dropped rather than failing the whole call.
 pub fn generate_topology(
     items: &[WarmItem],
     guidance: Option<&str>,
@@ -371,9 +301,6 @@ pub fn generate_topology(
         ask_cfg,
     )?;
     let parsed: RawTopology = parse_json(&raw).context("parsing the generated topology")?;
-    // The indices embedded in the reply (edges, walk, regions) are the same
-    // ones the cards were listed under: positions stateless, roster indices in
-    // a conversation. The keys give exactly that mapping per item.
     let key_ids: HashMap<usize, String> = keys
         .iter()
         .zip(items)
@@ -389,15 +316,10 @@ pub fn generate_topology(
         .filter(|g| !g.is_empty())
         .unwrap_or("pedagogical order")
         .to_string();
-    // Bind the topology to the deck it was built over, so a shared cache never
-    // leaks it onto another deck (and a moved card never drags it along).
     topology.deck_token = deck_token.to_string();
     Ok(topology)
 }
 
-/// Maps a [`RawTopology`]'s card indices back to identity hashes via `ids`
-/// (index under which a card was listed, to its id), dropping any unknown
-/// index and any card repeated in the walk.
 fn to_topology(raw: RawTopology, ids: &HashMap<usize, String>) -> Topology {
     let id_of = |idx: usize| ids.get(&idx).cloned();
     let edges = raw
@@ -428,20 +350,17 @@ fn to_topology(raw: RawTopology, ids: &HashMap<usize, String>) -> Topology {
         .filter(|r| !r.name.is_empty() && !r.cards.is_empty())
         .collect();
     Topology {
-        // Filled in by the caller from the `--with` guidance.
+        // filled in by the caller from the `--with` guidance
         name: String::new(),
         principle: raw.principle.trim().to_string(),
         edges,
         walk,
         regions,
-        // The owner deck token is stamped by the caller (`generate_topology`).
+        // stamped by the caller (generate_topology)
         deck_token: String::new(),
     }
 }
 
-/// Builds the topology prompt: the instructions, then `cards_block` (a listing
-/// or a conversation reference), asking for an organizing principle, a labeled
-/// edge set, and a walk that visits every card so consecutive ones relate.
 fn topology_prompt(cards_block: &str, guidance: Option<&str>) -> String {
     let mut s = String::from(
         "You are organizing a set of flashcards into a TOPOLOGY: a graph of how \
@@ -483,9 +402,6 @@ fn topology_prompt(cards_block: &str, guidance: Option<&str>) -> String {
     s
 }
 
-/// The model's raw reshape for one card (mode is a string here; validated into a
-/// `Mode` by `clean_format`). All fields optional — the model omits a field it
-/// leaves unchanged, and omits the whole entry for an already-clean card.
 #[derive(Deserialize)]
 struct RawFormat {
     #[serde(default)]
@@ -498,11 +414,6 @@ struct RawFormat {
     mode: Option<String>,
 }
 
-/// Validates one raw reshape against the card it came from, returning a `Format`
-/// only if it is a real, usable improvement. Trims fields and drops empty ones;
-/// accepts a suggested mode only if it parses and is a self-graded/reveal mode
-/// (`flip`/`line`) — never an exact-match mode that the reshaped lines
-/// would break; requires the reshape to actually differ from the original.
 fn clean_format(item: &WarmItem, raw: &RawFormat) -> Option<Format> {
     let front = raw
         .front
@@ -516,7 +427,6 @@ fn clean_format(item: &WarmItem, raw: &RawFormat) -> Option<Format> {
         .map(|l| l.trim().to_string())
         .filter(|l| !l.is_empty())
         .collect();
-    // Keep the reshaped answer only if it differs from the original lines.
     let original_lines: Vec<&str> = item.answer.lines().map(str::trim).collect();
     let back = if !back.is_empty() && back.iter().map(String::as_str).ne(original_lines) {
         back
@@ -549,9 +459,6 @@ fn clean_format(item: &WarmItem, raw: &RawFormat) -> Option<Format> {
     })
 }
 
-/// Reshapes badly-shaped cards with one batched, tool-free call: returns a map
-/// from card id to its validated `Format`. Cards the model judged already clean
-/// (or returned nothing usable for) are omitted.
 pub fn generate_format(
     items: &[WarmItem],
     guidance: Option<&str>,
@@ -577,10 +484,8 @@ pub fn generate_format(
 
     let mut out = HashMap::new();
     for (key, item) in keys.iter().zip(items) {
-        // A card the model reshapes gets its tidied Format; one it declines
-        // (already clean, so omitted from the reply) gets an all-empty no-op
-        // Format. The no-op still counts as covered, so a well-shaped card is
-        // marked done instead of lingering as a gap that re-runs to no effect.
+        // a declined card gets an all-empty no-op Format so it counts as
+        // covered instead of an eternal gap
         let fmt = parsed
             .get(key)
             .and_then(|raw_fmt| clean_format(item, raw_fmt))
@@ -629,17 +534,6 @@ fn format_prompt(cards_block: &str, guidance: Option<&str>) -> String {
     s
 }
 
-// ── Background generation ──────────────────────────────────────────────────────
-//
-// The web server can't block its request loop on a costed Claude call, so it
-// runs generation on a thread and polls the returned channel — the same shape
-// as `ask::spawn` and `trace_ai::spawn_grade`. The worker only *generates*; the
-// caller applies the [`Outcome`] to the cache and saves, keeping cache writes
-// single-threaded.
-
-/// A generation request for one target. Per-card targets carry the gap items the
-/// caller computed (e.g. via [`AugmentCache::missing_choices`]); topology is
-/// whole-deck.
 pub enum Job {
     Choices {
         items: Vec<WarmItem>,
@@ -658,22 +552,16 @@ pub enum Job {
     },
     Topology {
         items: Vec<WarmItem>,
-        /// The owner deck's identity token, stamped onto the generated topology
-        /// so a shared cache keeps each deck's topologies apart.
         deck_token: String,
     },
     Format {
         items: Vec<WarmItem>,
     },
-    /// Draw the workspace emblem at `dir` (the workspace augment screen's
-    /// icon target); `guidance` steers the style.
     Icon {
         dir: std::path::PathBuf,
     },
 }
 
-/// The result of a [`Job`], shaped per target so the caller can apply it to the
-/// cache (`set_distractors` / `set_note` / … or `add_topology`).
 pub enum Outcome {
     Choices(HashMap<String, Vec<String>>),
     Notes(HashMap<String, String>),
@@ -681,15 +569,10 @@ pub enum Outcome {
     Keypoints(HashMap<String, Vec<String>>),
     Topology(Topology),
     Format(HashMap<String, Format>),
-    /// The freshly written workspace icon. Nothing to cache — the file on
-    /// disk is the result.
+    // nothing to cache: the file on disk is the result
     Icon(std::path::PathBuf),
 }
 
-/// Runs a generation [`Job`] on a background thread; the [`Outcome`] (or an error
-/// message) arrives on the returned channel, which the caller polls with
-/// `try_recv`. `guidance` is the `--with` steer; `conversation` is the batch's
-/// shared conversation snapshot (None: a stateless one-shot).
 pub fn spawn(
     job: Job,
     guidance: Option<String>,
@@ -700,13 +583,12 @@ pub fn spawn(
     std::thread::spawn(move || {
         let reply = run_job(job, guidance.as_deref(), &ask_cfg, conversation.as_ref())
             .map_err(|e| format!("{e:#}"));
-        // The receiver may be gone if the user left the Augment screen.
+        // the receiver may be gone if the user left the Augment screen
         let _ = tx.send(reply);
     });
     rx
 }
 
-/// The synchronous core of [`spawn`]: dispatches to the matching `generate_*`.
 fn run_job(
     job: Job,
     guidance: Option<&str>,
@@ -744,24 +626,17 @@ fn run_job(
         Job::Format { items } => {
             Outcome::Format(generate_format(&items, guidance, ask_cfg, conversation)?)
         }
-        // Card-free and prompt-owning: an icon draw never rides (or disturbs)
-        // the batch conversation.
+        // icon draws are card-free and never ride the batch conversation
         Job::Icon { dir } => Outcome::Icon(crate::icon::generate(&dir, guidance, ask_cfg)?),
     })
 }
 
-/// A copy of `ask` with the tool allowlist cleared — generation is a pure text
-/// call that needs no web or file access (like exam remediation).
 fn tool_free(ask: &AskConfig) -> AskConfig {
     let mut cfg = ask.clone();
     cfg.allowed_tools.clear();
     cfg
 }
 
-/// Builds the [`AskConfig`] for a generation call from the base `[ask]` config
-/// plus the `[ai]` overrides: the AI model (falling back to `[ask]`'s), the AI
-/// timeout, and a cleared tool allowlist (generation is a pure text call that
-/// needs no web or file access).
 pub fn run_config(ai: &AiConfig, ask: &AskConfig) -> AskConfig {
     let mut cfg = ask.clone();
     if ai.model.is_some() {
@@ -772,9 +647,6 @@ pub fn run_config(ai: &AiConfig, ask: &AskConfig) -> AskConfig {
     cfg
 }
 
-/// Builds the batched distractor prompt: the instructions, then `cards_block`
-/// (a listing or a conversation reference), then a strict JSON output shape
-/// keyed by card index.
 fn distractors_prompt(cards_block: &str, count: usize, guidance: Option<&str>) -> String {
     let mut s = format!(
         "You are writing distractors — plausible but incorrect options — for \
@@ -800,7 +672,6 @@ fn distractors_prompt(cards_block: &str, count: usize, guidance: Option<&str>) -
     s
 }
 
-/// Builds the batched notes prompt: one short note per card, keyed by index.
 fn notes_prompt(cards_block: &str, guidance: Option<&str>) -> String {
     let mut s = String::from(
         "You are adding a short note to each flashcard — one or two sentences of \
@@ -819,9 +690,6 @@ fn notes_prompt(cards_block: &str, guidance: Option<&str>) -> String {
     s
 }
 
-/// Builds the batched key-points prompt: decompose each answer into its
-/// load-bearing claims, keyed by index. Atomic answers return an empty list so
-/// they aren't forced into a meaningless single "point".
 fn keypoints_prompt(cards_block: &str, count: usize, guidance: Option<&str>) -> String {
     let mut s = format!(
         "Break each flashcard's ANSWER into its load-bearing claims — a checklist \
@@ -859,7 +727,6 @@ fn keypoints_prompt(cards_block: &str, count: usize, guidance: Option<&str>) -> 
     s
 }
 
-/// Builds the batched variants prompt: rephrase each question, keep the answer.
 fn variants_prompt(cards_block: &str, count: usize, guidance: Option<&str>) -> String {
     let mut s = format!(
         "You are rephrasing flashcard questions. For each card, give {count} \
@@ -881,9 +748,6 @@ fn variants_prompt(cards_block: &str, count: usize, guidance: Option<&str>) -> S
     s
 }
 
-/// Trims, drops empties, drops a rephrasing identical to the original question
-/// (whitespace- and case-insensitively) or to one already kept, and caps at
-/// `count`.
 fn clean_variants(raw: &[String], original: &str, count: usize) -> Vec<String> {
     let norm = |s: &str| one_line(s).to_lowercase();
     let mut seen = HashSet::new();
@@ -904,7 +768,6 @@ fn clean_variants(raw: &[String], original: &str, count: usize) -> Vec<String> {
     out
 }
 
-/// Trims, drops empties, dedups (case-insensitively), and caps at `count`.
 fn clean_keypoints(raw: &[String], count: usize) -> Vec<String> {
     let mut seen = HashSet::new();
     let mut out = Vec::new();
@@ -923,14 +786,10 @@ fn clean_keypoints(raw: &[String], count: usize) -> Vec<String> {
     out
 }
 
-/// Collapses runs of whitespace (incl. newlines) so a multi-line front or back
-/// stays on one line in the prompt listing.
 fn one_line(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// The stateless question/answer card listing under `heading` (each target
-/// keeps its own heading wording).
 fn question_answer_listing(items: &[WarmItem], heading: &str) -> String {
     let mut s = format!("\nCards ({heading}):\n");
     for (i, item) in items.iter().enumerate() {
@@ -943,8 +802,6 @@ fn question_answer_listing(items: &[WarmItem], heading: &str) -> String {
     s
 }
 
-/// One `index. FRONT / ANSWER / NOTE` line per card, shared by the format
-/// target's listing and the conversation primer.
 fn front_answer_note_lines(items: &[WarmItem]) -> String {
     let mut s = String::new();
     for (i, item) in items.iter().enumerate() {
@@ -958,8 +815,6 @@ fn front_answer_note_lines(items: &[WarmItem]) -> String {
     s
 }
 
-/// Trims, drops empties, drops anything equal (case-insensitively) to the
-/// correct answer or to an already-kept option, and caps the result at `count`.
 fn clean_distractors(raw: &[String], answer: &str, count: usize) -> Vec<String> {
     let norm = |s: &str| s.trim().to_lowercase();
     let mut seen = HashSet::new();
@@ -980,8 +835,6 @@ fn clean_distractors(raw: &[String], answer: &str, count: usize) -> Vec<String> 
     out
 }
 
-/// The substring from the first `{` to the last `}`, so a JSON object survives
-/// code fences or surrounding prose (mirrors the exam parser).
 fn extract_json(raw: &str) -> &str {
     match (raw.find('{'), raw.rfind('}')) {
         (Some(a), Some(b)) if b > a => &raw[a..=b],
@@ -989,7 +842,6 @@ fn extract_json(raw: &str) -> &str {
     }
 }
 
-/// Parses `raw` (possibly fenced / wrapped in prose) into `T`.
 fn parse_json<T: for<'de> Deserialize<'de>>(raw: &str) -> Result<T> {
     let json = extract_json(raw);
     serde_json::from_str(json)
@@ -1005,8 +857,6 @@ mod tests {
         config::BackendKind,
         testutil::{ask_config, exec_lock, fake_cli, fake_reply},
     };
-
-    // ── generation ──
 
     fn item(id: u64, question: &str, answer: &str) -> WarmItem {
         WarmItem {
@@ -1074,15 +924,13 @@ mod tests {
     fn generate_keypoints_omits_an_atomic_card() {
         let _g = exec_lock();
         let dir = tempfile::tempdir().unwrap();
-        // The model returns an empty list for the atomic card and a real
-        // decomposition for the conceptual one — only the latter is kept.
         let cli = fake_reply(dir.path(), r#"{"0": [], "1": ["claim a", "claim b"]}"#);
         let items = vec![
             item(10, "Capital of France?", "Paris"),
             item(20, "How does X work?", "first A, then B"),
         ];
         let out = generate_keypoints(&items, 5, None, &ask_config(&cli), None).unwrap();
-        assert!(!out.contains_key("10")); // atomic → omitted
+        assert!(!out.contains_key("10"));
         assert_eq!(vec!["claim a", "claim b"], out["20"]);
     }
 
@@ -1090,7 +938,6 @@ mod tests {
     fn generate_keypoints_omits_a_single_point_as_atomic() {
         let _g = exec_lock();
         let dir = tempfile::tempdir().unwrap();
-        // One lone point isn't a checklist — treated as atomic and dropped.
         let cli = fake_reply(dir.path(), r#"{"0": ["the only claim"]}"#);
         let items = vec![item(10, "Q?", "a single fact")];
         let out = generate_keypoints(&items, 5, None, &ask_config(&cli), None).unwrap();
@@ -1110,7 +957,6 @@ mod tests {
     fn generate_drops_options_equal_to_the_answer_and_dedups() {
         let _g = exec_lock();
         let dir = tempfile::tempdir().unwrap();
-        // "paris"/"Paris" equal the answer (case-insensitively); "Lyon" repeats.
         let cli = fake_reply(
             dir.path(),
             r#"{"0": ["paris","Lyon","Lyon","Nice","Paris"]}"#,
@@ -1139,7 +985,6 @@ mod tests {
     fn generate_omits_a_card_with_no_usable_distractor() {
         let _g = exec_lock();
         let dir = tempfile::tempdir().unwrap();
-        // Card 0's options all equal the answer -> nothing usable -> omitted.
         let cli = fake_reply(dir.path(), r#"{"0": ["4","4"], "1": ["x1"]}"#);
         let out = generate(
             &[item(1, "2+2", "4"), item(2, "q", "y")],
@@ -1164,7 +1009,6 @@ mod tests {
 
     #[test]
     fn generate_with_no_items_makes_no_call() {
-        // No real CLI: empty input must short-circuit to an empty map.
         let cfg = ask_config(Path::new("/nonexistent/claude"));
         assert!(generate(&[], 3, None, &cfg, None).unwrap().is_empty());
     }
@@ -1195,7 +1039,6 @@ mod tests {
     fn generate_variants_drops_the_original_phrasing() {
         let _g = exec_lock();
         let dir = tempfile::tempdir().unwrap();
-        // The model echoes the original wording plus two genuine rewordings.
         let cli = fake_reply(
             dir.path(),
             r#"{"0": ["What year?", "In which year?", "Which year was it?"]}"#,
@@ -1210,8 +1053,6 @@ mod tests {
         .unwrap();
         assert_eq!(vec!["In which year?", "Which year was it?"], out["1"]);
     }
-
-    // ── topology ──
 
     #[test]
     fn generate_topology_parses_graph_and_walk() {
@@ -1235,8 +1076,6 @@ mod tests {
     fn generate_topology_drops_out_of_range_indices() {
         let _g = exec_lock();
         let dir = tempfile::tempdir().unwrap();
-        // Index 5 doesn't exist (only 0 and 1), so it's dropped from the edge and
-        // from the walk rather than failing the whole call.
         let cli = fake_reply(
             dir.path(),
             r#"{"principle":"p","edges":[{"from":0,"to":5,"label":"l"}],"walk":[0,5,1]}"#,
@@ -1293,10 +1132,6 @@ mod tests {
     fn topology_in_a_conversation_remaps_embedded_indices_through_the_roster() {
         let _g = exec_lock();
         let dir = tempfile::tempdir().unwrap();
-        // The model's reply addresses cards by ROSTER index (what the primer
-        // showed), not by their position in `items` below — the roster is
-        // deliberately ordered differently from `items` so a positional
-        // (rather than roster-lookup) remapping would silently misattribute.
         let cli = fake_reply(
             dir.path(),
             r#"{"principle":"p","edges":[{"from":0,"to":1,"label":"l"}],"walk":[0,1,2]}"#,
@@ -1314,7 +1149,6 @@ mod tests {
             item(30, "q30", "a30"),
         ];
         let topo = generate_topology(&items, None, "dtok", &cfg, Some(&conversation)).unwrap();
-        // Roster indices 0,1,2 are cards 30,10,20 — not the input order 10,20,30.
         assert_eq!(topo.walk, ["30", "10", "20"]);
         assert_eq!(topo.edges[0].from, "30");
         assert_eq!(topo.edges[0].to, "10");
@@ -1367,10 +1201,6 @@ mod tests {
         }
     }
 
-    // ── batch conversations ──
-
-    /// A fake CLI for multi-call conversations: appends each call's argv and
-    /// prompt to numbered logs, then replies with the matching canned reply.
     fn fake_conversation(dir: &Path, replies: &[&str]) -> PathBuf {
         for (i, reply) in replies.iter().enumerate() {
             std::fs::write(dir.join(format!("reply-{i}")), reply).unwrap();
@@ -1404,13 +1234,10 @@ mod tests {
         let mut conversation =
             BatchConversation::new(&cfg, roster.clone()).expect("claude keeps sessions");
 
-        // First target: choices for card 0 only (a subset) primes the roster.
         let out = generate(&roster[..1], 3, None, &cfg, Some(&conversation)).unwrap();
         assert_eq!(vec!["w1", "w2", "w3"], out["10"]);
-        // what the batch owner does after a successful call
         conversation.session.started = true;
 
-        // Second target: notes for card 1; the reply is keyed by ROSTER index.
         let out = generate_notes(&roster[1..], None, &cfg, Some(&conversation)).unwrap();
         assert_eq!("a note", out["20"]);
 
@@ -1451,8 +1278,6 @@ mod tests {
             item(30, "q2", "a2"),
         ];
         let conversation = BatchConversation::new(&cfg, roster).unwrap();
-        // The call covers roster cards 0 and 2; keys "0"/"2" must land on
-        // those cards, not on positions 0/1 of the subset.
         let items = vec![item(10, "q0", "a0"), item(30, "q2", "a2")];
         let out = generate(&items, 3, None, &cfg, Some(&conversation)).unwrap();
         assert_eq!(vec!["x1"], out["10"]);
@@ -1476,8 +1301,6 @@ mod tests {
         let cli = fake_conversation(dir.path(), &[r#"{"0": ["x1"]}"#]);
         let cfg = ask_config(&cli);
         let conversation = BatchConversation::new(&cfg, vec![item(10, "q0", "a0")]).unwrap();
-        // Card 99 is not in the roster: the call must re-list it and carry no
-        // session flags (and position keys apply again).
         let items = vec![item(99, "Rogue?", "yes")];
         let out = generate(&items, 3, None, &cfg, Some(&conversation)).unwrap();
         assert_eq!(vec!["x1"], out["99"]);
@@ -1489,8 +1312,6 @@ mod tests {
         let prompt = std::fs::read_to_string(dir.path().join("prompt-0.log")).unwrap();
         assert!(prompt.contains("Rogue?"), "{prompt}");
     }
-
-    // ── format generation ──
 
     #[test]
     fn clean_format_keeps_a_real_reshape_and_validates_mode() {
@@ -1519,7 +1340,6 @@ mod tests {
             answer: "A, B, C".to_string(),
             note: None,
         };
-        // Same lines as the original answer, and an exact-match mode -> nothing usable.
         let raw = RawFormat {
             front: None,
             back: vec!["A, B, C".to_string()],
@@ -1548,7 +1368,6 @@ mod tests {
     fn generate_format_marks_a_declined_card_with_a_noop_so_it_stays_covered() {
         let _guard = exec_lock();
         let dir = tempfile::tempdir().unwrap();
-        // The model reshapes card 0 and omits card 1 as already clean.
         let cli = fake_reply(dir.path(), r#"{"0": {"back": ["A", "B"]}}"#);
         let items = vec![
             WarmItem {
@@ -1566,8 +1385,6 @@ mod tests {
         ];
         let map = generate_format(&items, None, &ask_config(&cli), None).unwrap();
         assert_eq!(map["1"].back, ["A", "B"]);
-        // The declined card gets an all-empty no-op so it counts as covered
-        // instead of lingering as an eternal gap the user re-runs for nothing.
         assert!(map.contains_key("2"), "declined card missing");
         assert_eq!(map["2"], Format::default());
     }

@@ -1,26 +1,14 @@
-//! Pre-flight size guard for agentic commands.
-//!
-//! Measures the file count and byte size of a local source tree (recursively,
-//! skipping `.git`, `target`, and `node_modules`) and exposes a simple
-//! threshold check. The measurement is best-effort: unreadable entries are
-//! silently skipped rather than failing the whole walk.
-//!
-//! **The lib only measures.** Interactive confirm lives at the CLI boundary in
-//! `main.rs`; this module never touches stdin.
+// This module only measures; the interactive confirm prompt lives at the CLI boundary in main.rs.
 
 use std::path::Path;
 
-/// The result of measuring a local source tree.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TreeSize {
-    /// Number of regular files found (excluding skipped dirs).
     pub files: usize,
-    /// Total byte length of those files as reported by metadata.
     pub bytes: u64,
 }
 
 impl TreeSize {
-    /// A human-readable size string, e.g. `"4.2 MB"`.
     pub fn human_bytes(&self) -> String {
         let b = self.bytes;
         if b < 1_024 {
@@ -33,11 +21,8 @@ impl TreeSize {
     }
 }
 
-/// Directory names that are always skipped during the tree walk.
 const SKIP_DIRS: &[&str] = &[".git", "target", "node_modules"];
 
-/// Recursively measures `root`, skipping [`SKIP_DIRS`] and any entries that
-/// cannot be read. Returns [`TreeSize`] with the file count and total bytes.
 pub fn tree_size(root: &Path) -> TreeSize {
     let mut files: usize = 0;
     let mut bytes: u64 = 0;
@@ -66,8 +51,6 @@ fn walk(dir: &Path, files: &mut usize, bytes: &mut u64) {
     }
 }
 
-/// Returns `true` when `bytes` exceeds `threshold` (the configured limit in
-/// bytes).
 pub fn is_oversized(bytes: u64, threshold: u64) -> bool {
     bytes > threshold
 }
@@ -109,10 +92,8 @@ mod tests {
     #[test]
     fn tree_size_skips_git_target_node_modules() {
         let dir = TempDir::new().unwrap();
-        // Regular file at root
         make_file(dir.path(), "real.txt", 10);
 
-        // Files inside skipped dirs should not be counted
         for skip in [".git", "target", "node_modules"] {
             let d = dir.path().join(skip);
             fs::create_dir(&d).unwrap();

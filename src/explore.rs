@@ -1,14 +1,3 @@
-//! Goal-driven exploration of a source (`alix generate <dir>`'s planning half).
-//!
-//! Where [`crate::trace_ai::suggest`] is the flat recon menu of candidate *traces*,
-//! `explore` is goal-driven exploration: given a source and a learning **goal**,
-//! it manufactures the ordered set of **means** — fact *decks* and *traces* —
-//! that, worked through, would reach the goal. The means are chosen by the shape
-//! of the knowledge (edges → traces, nodes → decks), sized to the goal by
-//! saturation, and ordered by prerequisite. It **prints the plan**, and with
-//! `--into <dir>` also **materializes** it into a workspace folder — a
-//! `alix.toml` plus one stub deck/trace file per item, wired by `% requires:`.
-
 use std::{
     collections::HashMap,
     fs,
@@ -31,14 +20,9 @@ use crate::{
     workspace,
 };
 
-/// Explore a source toward `goal` and return an ordered learning plan — the
-/// decks and traces worth authoring, each tagged and dependency-ordered. One
-/// read-only exploration pass (the same tools and cwd as [`crate::trace_ai::build`]);
-/// discovers nothing in depth and writes nothing. `source` is a scope directly
-/// (a repo `.`, a directory, a file, or a URL), not a deck.
+/// `source` is a scope directly (a directory, file, or URL), not a deck.
 pub fn explore(source: &str, goal: &str, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<String> {
     let url = is_url(source);
-    // Gate on backend capability before resolving or exploring the source.
     ensure_source_reachable(ask_cfg, url)?;
     let cwd = if url {
         None
@@ -56,10 +40,6 @@ pub fn explore(source: &str, goal: &str, cfg: &TraceConfig, ask_cfg: &AskConfig)
     Ok(plan)
 }
 
-/// Builds the exploration prompt: explore the source and emit an ordered,
-/// prerequisite-sorted plan of means (decks + traces) sized to the goal by
-/// saturation. The counterpart to [`crate::trace_ai::suggest`]'s recon prompt, one
-/// tier up.
 fn explore_prompt(source: &str, goal: &str, url: bool, cfg: &TraceConfig) -> String {
     let explore = if url {
         format!("Read the source page at {source} with the WebFetch tool (fetch it once).")
@@ -143,14 +123,8 @@ fn explore_prompt(source: &str, goal: &str, url: bool, cfg: &TraceConfig) -> Str
     p
 }
 
-/// Generate the explore walk: a short predict-verify trace over a source's
-/// SHAPE — what it is → its parts → its entry → its spine → what to trace first —
-/// each hop citing real structural evidence. Returns the checkpoint cards
-/// (header-less); the caller wraps them in a `% trace:`/`% source:` deck. Reuses
-/// the same read-only exploration as [`explore`].
 pub fn walk(source: &str, goal: &str, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<String> {
     let url = is_url(source);
-    // Gate on backend capability before resolving or exploring the source.
     ensure_source_reachable(ask_cfg, url)?;
     let cwd = if url {
         None
@@ -168,9 +142,6 @@ pub fn walk(source: &str, goal: &str, cfg: &TraceConfig, ask_cfg: &AskConfig) ->
     Ok(cards)
 }
 
-/// Builds the explore-walk prompt: produce trace checkpoints about the
-/// source's *shape* (manifest → nouns → entry → spine → what to trace), each
-/// citing real structural evidence, in the standard trace checkpoint format.
 fn walk_prompt(source: &str, goal: &str, url: bool, cfg: &TraceConfig) -> String {
     let explore = if url {
         format!("Read the source page at {source} with the WebFetch tool (fetch it once).")
@@ -230,15 +201,10 @@ fn walk_prompt(source: &str, goal: &str, url: bool, cfg: &TraceConfig) -> String
     p
 }
 
-/// Explore a source once (one CLI session), then RESUME that session to fill
-/// every plan item with real content using the understanding just built —
-/// checkpoints for each `[trace]`, fact cards for each `[deck]`. Returns the plan
-/// and a map from item number to its filled body. Exploring once (not per item)
-/// keeps the items coherent (each aware of the others) and amortizes the read.
-// Only reachable via `generate`'s multi-item workspace build (`build_workspace`),
-// itself untested (two real AI calls + materialize/merge, judged too
-// contorted for the deterministic fake-backend approach); its `url == true`
-// branch is additionally dead — the one CLI call site is dir-gated.
+/// Resumes one session rather than exploring per item, so items stay
+/// coherent and the read is amortized.
+// Untested: two real AI calls plus a merge step; its `url == true` branch is
+// dead (the one CLI call site is dir-gated).
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn explore_and_fill(
     source: &str,
@@ -247,7 +213,6 @@ pub fn explore_and_fill(
     ask_cfg: &AskConfig,
 ) -> Result<(String, HashMap<usize, String>)> {
     let url = is_url(source);
-    // Gate on backend capability before resolving or exploring the source.
     ensure_source_reachable(ask_cfg, url)?;
     let cwd = if url {
         None
@@ -258,7 +223,6 @@ pub fn explore_and_fill(
     let run_cfg = build_run_config(cfg, ask_cfg, cwd, url);
     let mut session = ask::CliSession::new();
 
-    // 1. Explore — establishes the session and its understanding of the source.
     let plan = ask::run(
         &run_cfg,
         &explore_prompt(source, goal, url, cfg),
@@ -275,14 +239,10 @@ pub fn explore_and_fill(
         bail!("the plan has no items to fill");
     }
 
-    // 2. Resume — fill every item from what the session already learned.
     let filled = ask::run(&run_cfg, &fill_prompt(&items), &session.args())?;
     Ok((plan, parse_filled(&filled)))
 }
 
-/// Builds the fill prompt for the RESUMED explore session: write the full content
-/// for every plan item, keyed by `=== item N ===` delimiters, reusing the
-/// understanding from the exploration just done.
 fn fill_prompt(items: &[Item]) -> String {
     let mut list = String::new();
     for item in items {
@@ -328,9 +288,8 @@ fn fill_prompt(items: &[Item]) -> String {
     )
 }
 
-/// Splits the fill response into per-item bodies on `=== item N ===` delimiters.
-/// Lenient: text before the first delimiter is dropped; an item with no body is
-/// omitted (so it stays a stub).
+/// Lenient: text before the first delimiter is dropped; an item with no
+/// body is omitted (stays a stub).
 pub(crate) fn parse_filled(raw: &str) -> HashMap<usize, String> {
     let mut out: HashMap<usize, String> = HashMap::new();
     let mut current: Option<usize> = None;
@@ -359,7 +318,6 @@ pub(crate) fn parse_filled(raw: &str) -> HashMap<usize, String> {
     out
 }
 
-/// Matches a `=== item N ===` delimiter line, returning N.
 fn parse_item_delimiter(line: &str) -> Option<usize> {
     line.trim()
         .strip_prefix("=== item")?
@@ -370,7 +328,6 @@ fn parse_item_delimiter(line: &str) -> Option<usize> {
         .ok()
 }
 
-/// One item of an exploration plan: a facts deck or a trace to author.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Item {
     pub num: usize,
@@ -380,26 +337,19 @@ pub struct Item {
     pub source: String,
 }
 
-/// Whether a plan item is a trace (an edge) or a facts deck (nodes).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     Trace,
     Deck,
 }
 
-/// What [`materialize`] wrote.
 pub struct Materialized {
     pub dir: PathBuf,
     pub traces: usize,
     pub decks: usize,
-    /// How many items were written with real content (vs. left as stubs).
     pub filled: usize,
 }
 
-/// Parses the printed plan back into items (lenient — unrecognized lines, the
-/// header, and prose are skipped). An item starts at a `N. [trace|deck] <title>`
-/// line and absorbs the following `requires:` and `% source:` lines. Public so
-/// the CLI can count a plan's items before deciding deck-vs-workspace.
 pub fn parse_plan(plan: &str) -> Vec<Item> {
     let mut items: Vec<Item> = Vec::new();
     for line in plan.lines() {
@@ -426,8 +376,6 @@ pub fn parse_plan(plan: &str) -> Vec<Item> {
     items
 }
 
-/// Matches a `N. [trace|deck] <title>` header line, returning its number, kind
-/// and title; `None` for any other line.
 fn parse_item_header(t: &str) -> Option<(usize, Kind, String)> {
     let dot = t.find('.')?;
     let num: usize = t[..dot].trim().parse().ok()?;
@@ -442,15 +390,8 @@ fn parse_item_header(t: &str) -> Option<(usize, Kind, String)> {
     (!title.is_empty()).then_some((num, kind, title))
 }
 
-/// Scaffolds the plan into a workspace folder `dir`: an `alix.toml` (the goal +
-/// an empty `[defaults]`) and one stub file per item — a `% trace:` deck for a
-/// trace, a `% title:` facts deck for a deck — wired by `% requires:` (item
-/// numbers mapped to the member file names), with each `% source:` rewritten
-/// absolute against the source root. `dir` is created if missing; materialize
-/// itself takes no view on a populated `dir` — callers that write straight
-/// into a real destination decide that (`alix generate` instead stages into a
-/// scratch dir and [`merge_built`]s the result, so a populated destination
-/// never blocks it).
+/// A populated `dir` is deliberately not refused: callers that write straight
+/// into a real destination decide that.
 pub fn materialize(
     plan: &str,
     dir: &Path,
@@ -492,9 +433,8 @@ pub fn materialize(
         "description = \"{}\"\n\n[defaults]\n",
         toml_escape(goal)
     ));
-    // The live source root the frozen `% at:` provenance resolves against — the
-    // tutor grounds here for context, and drift detection reads it. Cascades into
-    // every member deck (`% origin:`), overridable per deck/card.
+    // The source root the tutor grounds against and drift detection reads;
+    // cascades into each member deck's `origin`, overridable per deck/card.
     if let Some(root) = &root {
         manifest.push_str(&format!(
             "origin = \"{}\"\n",
@@ -507,8 +447,6 @@ pub fn materialize(
     let mut decks = 0;
     let mut filled_count = 0;
     for (item, name) in items.iter().zip(&names) {
-        // The L1 header: frontmatter (trace/source/requires), then, for a
-        // facts deck, the `# H1` display title.
         let mut body = String::from("---\n");
         match item.kind {
             Kind::Trace => {
@@ -542,14 +480,12 @@ pub fn materialize(
             .map(|s| s.trim())
             .filter(|s| !s.is_empty())
         {
-            // `--build` filled this item with real checkpoints / cards.
             Some(content) => {
                 filled_count += 1;
                 body.push_str(content);
                 body.push('\n');
             }
-            // A stub: header only, to be filled later. Preamble prose, which
-            // the parser ignores.
+            // A stub: header only; the parser ignores the preamble prose.
             None => body.push_str(match item.kind {
                 Kind::Trace => {
                     "Stub from `alix generate`. Build the path:  alix generate <this file>\n"
@@ -570,19 +506,14 @@ pub fn materialize(
     })
 }
 
-/// What a merge did: how many files moved in, and the conflicts that
-/// kept the user's originals (the new files stay in `staging`).
+/// A conflict keeps the user's original; the new file stays in `staging`.
 pub struct MergeReport {
     pub moved: usize,
     pub conflicts: Vec<String>,
 }
 
-/// Moves everything materialized in `staging` into `dest` (created if
-/// missing), one top-level entry at a time. A name that already exists in
-/// `dest` is a conflict: the existing file is kept and the new one stays
-/// in `staging`, unless `force`, which replaces it. A forced `.md` collision
-/// routes through [`library::replace_deck`], wiping the old member's progress
-/// in `store`; other entries follow the plain top-level move rule.
+/// A forced `.md` collision routes through [`library::replace_deck`] so the
+/// old member's progress is wiped, not orphaned.
 pub fn merge_built(
     staging: &Path,
     dest: &Path,
@@ -608,8 +539,6 @@ pub fn merge_built(
                 let text = fs::read_to_string(&from)
                     .with_context(|| format!("cannot read {}", from.display()))?;
                 library::replace_deck(dest, &name, &text, store)?;
-                // replace_deck consumed the text, so the staging copy is
-                // dropped, not moved.
                 fs::remove_file(&from)
                     .with_context(|| format!("cannot remove {}", from.display()))?;
                 moved += 1;
@@ -628,25 +557,17 @@ pub fn merge_built(
     Ok(MergeReport { moved, conflicts })
 }
 
-/// Outcome of freezing a workspace: how many decks and files were frozen, plus
-/// any *cited* decks that froze nothing. A cited deck that can't be frozen is
-/// almost always a broken or stale `% source:` — surfaced here so the caller can
-/// warn instead of leaving the user with a silently empty `assets/`.
+/// A cited deck that can't be frozen almost always has a broken or stale
+/// `source:`, reported here rather than left as a silently empty `assets/`.
 #[derive(Debug, Default)]
 pub struct SnapshotSummary {
     pub decks: usize,
     pub files: usize,
-    /// `"<member>: <reason>"` for each cited deck whose excerpts couldn't be read.
     pub failed: Vec<String>,
 }
 
-/// Freezes each cited deck's source excerpts into the workspace's `assets/` — the
-/// default final step of a workspace `alix generate`, so the workspace is
-/// self-contained and its line-number locators never drift. A cited deck is a
-/// trace (its checkpoints) or a fact deck whose cards carry `% at:`. A deck with
-/// no citations (a plain fact deck, a URL source) is skipped; a deck that DOES
-/// cite local excerpts but whose source can't be read is recorded in
-/// [`SnapshotSummary::failed`], never silently dropped.
+/// Skips a deck with no citations; one that cites but can't be read is
+/// recorded in [`SnapshotSummary::failed`], never silently dropped.
 pub fn snapshot_workspace(dir: &Path) -> Result<SnapshotSummary> {
     let mut summary = SnapshotSummary::default();
     let ws = workspace::Workspace::load(dir)?;
@@ -673,21 +594,18 @@ pub fn snapshot_workspace(dir: &Path) -> Result<SnapshotSummary> {
                     );
                 }
             }
-            // The deck cites local excerpts but none could be frozen — almost
-            // always a broken/stale `% source:`. Record it; don't swallow it.
+            // The deck cites local excerpts but none could be frozen (almost
+            // always a broken/stale `source:`); record it, don't swallow it.
             Err(e) => summary.failed.push(format!("{}: {e:#}", member.display())),
         }
     }
     Ok(summary)
 }
 
-/// The member file name for an item: `NN-<slug>.md`, the zero-padded number
-/// (preserving plan order) plus a slug of the title.
 fn file_name(item: &Item) -> String {
     format!("{:02}-{}.md", item.num, slug(&item.title))
 }
 
-/// A short kebab slug from a title: up to the first six alphanumeric words.
 fn slug(title: &str) -> String {
     let words: Vec<String> = title
         .split(|c: char| !c.is_ascii_alphanumeric())
@@ -702,17 +620,8 @@ fn slug(title: &str) -> String {
     }
 }
 
-/// Rewrites a plan `% source:` scope to point at the real source: absolute under
-/// the source root for a local path (`.` → the root itself), left as-is for a
-/// URL or when there is no local root.
-///
-/// The model sometimes writes the scope relative to the PROJECT ROOT *above* the
-/// `--source` (e.g. `crates/x/src/lib.rs` while `root` already IS `…/crates/x`).
-/// A plain `root.join(scope)` would double the overlap into a path that doesn't
-/// exist (`…/crates/x/crates/x/src/lib.rs`) — which silently broke both freezing
-/// and citation reads. So the first ` + ` part is anchored overlap-aware via
-/// [`trace::resolve_under_base`] (the write-time twin of how `% at:` locators
-/// resolve on read), and any further ` + ` parts stay relative to it.
+/// Anchors overlap-aware via [`trace::resolve_under_base`]: a plain
+/// `root.join(scope)` can double an already-rooted scope into a dead path.
 fn rewrite_scope(scope: &str, root: Option<&Path>) -> String {
     let scope = scope.trim();
     let Some(root) = root else {
@@ -738,7 +647,6 @@ fn rewrite_scope(scope: &str, root: Option<&Path>) -> String {
     }
 }
 
-/// Escapes a string for a double-quoted TOML value.
 fn toml_escape(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
@@ -755,17 +663,17 @@ mod tests {
             false,
             &TraceConfig::default(),
         );
-        assert!(p.contains("understand the alix repo")); // the goal is echoed
-        assert!(p.contains("SET OF MEANS")); // decks + traces, not just traces
-        assert!(p.contains("[trace]")); // both kinds tagged
+        assert!(p.contains("understand the alix repo"));
+        assert!(p.contains("SET OF MEANS"));
+        assert!(p.contains("[trace]"));
         assert!(p.contains("[deck]"));
-        assert!(p.contains("SHAPE")); // chosen by edge-vs-node shape
-        assert!(p.contains("SATURATION")); // stop rule, not a count
-        assert!(p.contains("requires:")); // prerequisite edges
-        assert!(p.contains("TOPOLOGICAL order")); // dependency-ordered
-        assert!(p.contains("no cards, no checkpoints")); // a plan, not built items
-        assert!(p.contains("Read, Glob")); // read-only local exploration
-        assert!(!p.contains("WebFetch")); // local source needs no web tool
+        assert!(p.contains("SHAPE"));
+        assert!(p.contains("SATURATION"));
+        assert!(p.contains("requires:"));
+        assert!(p.contains("TOPOLOGICAL order"));
+        assert!(p.contains("no cards, no checkpoints"));
+        assert!(p.contains("Read, Glob"));
+        assert!(!p.contains("WebFetch"));
     }
 
     #[test]
@@ -777,7 +685,7 @@ mod tests {
             &TraceConfig::default(),
         );
         assert!(p.contains("WebFetch"));
-        assert!(!p.contains("Glob")); // no local file tools for a URL source
+        assert!(!p.contains("Glob"));
     }
 
     #[test]
@@ -800,18 +708,13 @@ mod tests {
         ];
         let p = fill_prompt(&items);
         assert!(p.contains("FACT cards"));
-        // Fact cards get an `at:` citation so the card can show its source.
         assert!(p.contains("<!-- at: file:start-end -->"));
         // The L1 pin: no retired old-format syntax in the fill prompt.
         assert!(!p.contains("% at:"));
         assert!(!p.contains("% trace"));
         assert!(!p.contains("TAB-indented"));
         assert!(p.contains("show its source on reveal"));
-        // Every `% at:` path is pinned to one consistent root, so freezing resolves.
         assert!(p.contains("relative to the SAME root"));
-        // A compound answer must be split / shaped, not crammed into one prose
-        // line (mirrors the `generate` source prompt) — otherwise an explore-built
-        // deck shows enumerations as a wall of text.
         assert!(p.contains("enumeration"));
         assert!(p.contains("split it"));
     }
@@ -819,15 +722,15 @@ mod tests {
     #[test]
     fn walk_prompt_predicts_shape_with_evidence() {
         let p = walk_prompt(".", "understand the repo", false, &TraceConfig::default());
-        assert!(p.contains("EXPLORE walk")); // a predict-verify walk, not a plan dump
-        assert!(p.contains("PREDICT its")); // the learner predicts the shape
-        assert!(p.contains("DOMAIN NOUNS")); // nouns hop
-        assert!(p.contains("SPINE")); // spine hop
-        assert!(p.contains("CITE REAL STRUCTURAL EVIDENCE")); // grounded reveals
-        assert!(p.contains("candidate traces")); // last hop lands on the menu
-        assert!(p.contains("<!-- at:")); // standard trace locator format
+        assert!(p.contains("EXPLORE walk"));
+        assert!(p.contains("PREDICT its"));
+        assert!(p.contains("DOMAIN NOUNS"));
+        assert!(p.contains("SPINE"));
+        assert!(p.contains("CITE REAL STRUCTURAL EVIDENCE"));
+        assert!(p.contains("candidate traces"));
+        assert!(p.contains("<!-- at:"));
         assert!(!p.contains("% at:")); // the L1 pin: no retired syntax
-        assert!(p.contains("Read, Glob")); // read-only local exploration
+        assert!(p.contains("Read, Glob"));
         assert!(!p.contains("WebFetch"));
     }
 
@@ -850,15 +753,15 @@ Spine   a -> b
     #[test]
     fn parse_plan_extracts_items_kinds_requires_and_source() {
         let items = parse_plan(SAMPLE_PLAN);
-        assert_eq!(3, items.len()); // header lines are skipped
+        assert_eq!(3, items.len());
         assert_eq!(Kind::Deck, items[0].kind);
         assert_eq!(1, items[0].num);
         assert!(items[0].title.starts_with("The deck format"));
-        assert!(items[0].requires.is_empty()); // "none" → no deps
+        assert!(items[0].requires.is_empty());
         assert_eq!("README.md", items[0].source);
         assert_eq!(Kind::Trace, items[1].kind);
         assert_eq!(vec![1], items[1].requires);
-        assert_eq!(10, items[2].num); // two-digit number parsed
+        assert_eq!(10, items[2].num);
         assert_eq!(vec![1, 2], items[2].requires);
     }
 
@@ -871,21 +774,19 @@ Spine   a -> b
             materialize(SAMPLE_PLAN, &dir, "understand the repo", None, ".", None).unwrap();
         assert_eq!(2, report.traces);
         assert_eq!(1, report.decks);
-        assert_eq!(0, report.filled); // no fill map → all stubs
+        assert_eq!(0, report.filled);
 
         let manifest = fs::read_to_string(dir.join("alix.toml")).unwrap();
-        // The goal becomes the description; with no --title, the folder names it.
         assert!(manifest.contains("description = \"understand the repo\""));
         assert!(!manifest.contains("title ="));
         assert!(manifest.contains("[defaults]"));
 
         let deck = fs::read_to_string(dir.join("01-the-deck-format.md")).unwrap();
-        assert!(deck.contains("# The Deck Format")); // condensed + title-cased H1
-        assert!(deck.contains("source: ")); // rewritten absolute, in frontmatter
+        assert!(deck.contains("# The Deck Format"));
+        assert!(deck.contains("source: "));
 
         let trace = fs::read_to_string(dir.join("02-how-text-becomes-cards.md")).unwrap();
         assert!(trace.contains("trace: \"How Text Becomes Cards\""));
-        // requires 1 → the first item's file name
         assert!(trace.contains("- \"01-the-deck-format.md\""));
 
         let _ = fs::remove_dir_all(&dir);
@@ -893,10 +794,6 @@ Spine   a -> b
 
     #[test]
     fn materialize_writes_into_a_pre_existing_populated_dir_without_refusing() {
-        // materialize itself takes no view on a populated `dir` — callers that
-        // write straight into a real destination (none in production anymore;
-        // `alix generate` stages fresh and merges) would decide that, but
-        // materialize just writes alongside whatever's already there.
         let dir = std::env::temp_dir().join(format!("alix-explore-ne-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
@@ -948,7 +845,7 @@ preamble ignored
 === item 3 ===
 ";
         let filled = parse_filled(raw);
-        assert_eq!(2, filled.len()); // item 3 has no body → omitted
+        assert_eq!(2, filled.len());
         assert!(filled[&1].contains("# front a"));
         assert!(filled[&2].contains("% at: src/x.rs:1-3"));
         assert!(!filled.contains_key(&3));
@@ -966,22 +863,18 @@ preamble ignored
         );
 
         let report = materialize(SAMPLE_PLAN, &dir, "g", None, ".", Some(&filled)).unwrap();
-        assert_eq!(1, report.filled); // only item 2 was filled
+        assert_eq!(1, report.filled);
 
-        // item 2 (a trace) keeps its header AND carries the filled checkpoint
         let trace = fs::read_to_string(dir.join("02-how-text-becomes-cards.md")).unwrap();
         assert!(trace.contains("trace: \"How Text Becomes Cards\""));
         assert!(trace.contains("## how does text become Cards?"));
         assert!(trace.contains("<!-- at: src/parser.rs:1-9 -->"));
-        // item 1 had no fill → still a stub
         let deck = fs::read_to_string(dir.join("01-the-deck-format.md")).unwrap();
         assert!(deck.contains("Stub from `alix generate`"));
 
         let _ = fs::remove_dir_all(&dir);
     }
 
-    /// Fresh staging + dest dirs under a per-test scratch root; both wiped on
-    /// entry (and left for the caller to clean up).
     fn merge_test_dirs(label: &str) -> (PathBuf, PathBuf) {
         let root = std::env::temp_dir().join(format!("alix-merge-{label}-{}", std::process::id()));
         let staging = root.join("staging");
@@ -1010,7 +903,6 @@ preamble ignored
             "deck a\n",
             fs::read_to_string(dest.join("01-a.txt")).unwrap()
         );
-        // staging is drained — every entry landed in dest
         assert_eq!(0, fs::read_dir(&staging).unwrap().count());
 
         let _ = fs::remove_dir_all(staging.parent().unwrap());
@@ -1028,12 +920,10 @@ preamble ignored
 
         assert_eq!(0, report.moved);
         assert_eq!(vec!["01-a.txt".to_string()], report.conflicts);
-        // the original is untouched...
         assert_eq!(
             "the user's own deck\n",
             fs::read_to_string(dest.join("01-a.txt")).unwrap()
         );
-        // ...and the new version is still sitting in staging, not lost
         assert_eq!(
             "the freshly generated deck\n",
             fs::read_to_string(staging.join("01-a.txt")).unwrap()
@@ -1097,7 +987,6 @@ preamble ignored
         fs::create_dir_all(staging.join("assets")).unwrap();
         fs::write(staging.join("assets/img.svg"), "new\n").unwrap();
 
-        // clean merge: the whole `assets/` dir moves in as one entry
         let mut store = Store::open(dest.join("progress.json")).unwrap();
         let report = merge_built(&staging, &dest, false, &mut store).unwrap();
         assert_eq!(1, report.moved);
@@ -1107,14 +996,13 @@ preamble ignored
             fs::read_to_string(dest.join("assets/img.svg")).unwrap()
         );
 
-        // a second build's `assets/` collides with the whole dir, not its contents
         fs::create_dir_all(staging.join("assets")).unwrap();
         fs::write(staging.join("assets/img.svg"), "newer\n").unwrap();
         let report = merge_built(&staging, &dest, false, &mut store).unwrap();
         assert_eq!(0, report.moved);
         assert_eq!(vec!["assets".to_string()], report.conflicts);
         assert_eq!(
-            "new\n", // the original dir's content survives untouched
+            "new\n",
             fs::read_to_string(dest.join("assets/img.svg")).unwrap()
         );
 
@@ -1129,7 +1017,6 @@ preamble ignored
         fs::write(dir.join("src/a.rs"), "x\ny\nz\n").unwrap();
         fs::write(dir.join("alix.toml"), "[defaults]\n").unwrap();
         let src = dir.join("src");
-        // a built trace citing src/a.rs (source = the dir)
         fs::write(
             dir.join("01-t.md"),
             format!(
@@ -1138,7 +1025,6 @@ preamble ignored
             ),
         )
         .unwrap();
-        // a fact deck citing the same source with an `at:` — also frozen
         fs::write(
             dir.join("02-d.md"),
             format!(
@@ -1147,18 +1033,14 @@ preamble ignored
             ),
         )
         .unwrap();
-        // a fact deck with no citations — skipped
         fs::write(dir.join("03-plain.md"), "# d\n## q\na\n").unwrap();
 
         let summary = snapshot_workspace(&dir).unwrap();
-        assert_eq!((2, 2), (summary.decks, summary.files)); // trace + cited fact, one snippet each
+        assert_eq!((2, 2), (summary.decks, summary.files));
         assert!(summary.failed.is_empty(), "{:?}", summary.failed);
-        // Two unique snippet names in the shared assets/ (the offset prevents a
-        // collision), and the whole file is never copied.
         assert!(dir.join("assets/01.rs").is_file());
         assert!(dir.join("assets/02.rs").is_file());
         assert!(!dir.join("assets/a.rs").exists());
-        // the fact deck was repointed off its live locator onto a frozen snippet
         let fact = fs::read_to_string(dir.join("02-d.md")).unwrap();
         assert!(fact.contains("source: assets\n"), "{fact}");
         assert!(!fact.contains("<!-- at: a.rs:3 -->"), "{fact}");
@@ -1169,9 +1051,6 @@ preamble ignored
 
     #[test]
     fn snapshot_workspace_surfaces_a_deck_whose_source_cannot_be_frozen() {
-        // A cited deck whose `% source:` points nowhere must be REPORTED, not
-        // silently swallowed (the bug that left a freshly built workspace with no
-        // `assets/` and no warning).
         let dir = std::env::temp_dir().join(format!("alix-snap-fail-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
@@ -1186,46 +1065,38 @@ preamble ignored
         .unwrap();
 
         let summary = snapshot_workspace(&dir).unwrap();
-        assert_eq!(0, summary.decks); // nothing frozen
+        assert_eq!(0, summary.decks);
         assert_eq!(1, summary.failed.len(), "{:?}", summary.failed);
         assert!(
             summary.failed[0].contains("01-broken.md"),
             "{:?}",
             summary.failed
         );
-        assert!(!dir.join("assets").exists()); // no empty assets dir left behind
+        assert!(!dir.join("assets").exists());
 
         let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn rewrite_scope_anchors_a_repo_relative_scope_without_doubling() {
-        // The `--source` is a subdir (a crate), but the model writes its source
-        // scope relative to the project root *above* it. The written `% source:`
-        // must be the real file, never `…/mycrate/crates/mycrate/…` (the doubling
-        // that silently broke freezing and citation reads).
         let root = std::env::temp_dir().join(format!("alix-scope-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         let crate_src = root.join("crates/mycrate/src");
         fs::create_dir_all(&crate_src).unwrap();
         fs::write(crate_src.join("lib.rs"), "fn main() {}\n").unwrap();
         let lib = crate_src.join("lib.rs").display().to_string();
-        let source = root.join("crates/mycrate"); // the `--source`
+        let source = root.join("crates/mycrate");
 
-        // repo-root-relative scope → resolved overlap-aware to the real file
         assert_eq!(
             lib,
             rewrite_scope("crates/mycrate/src/lib.rs", Some(&source))
         );
-        // a clean crate-relative scope still resolves directly
         assert_eq!(lib, rewrite_scope("src/lib.rs", Some(&source)));
-        // `.` → the source root itself; an absolute path is left untouched
         assert_eq!(
             source.display().to_string(),
             rewrite_scope(".", Some(&source))
         );
         assert_eq!(lib, rewrite_scope(&lib, Some(&source)));
-        // multi-source: only the first ` + ` part is re-anchored, the rest stays
         assert_eq!(
             format!("{lib} + other.rs"),
             rewrite_scope("crates/mycrate/src/lib.rs + other.rs", Some(&source))

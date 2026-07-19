@@ -1,10 +1,3 @@
-//! The presentation-agnostic view of a review session: the ONE review
-//! contract every client renders. The embedded mobile client consumes these
-//! types directly over FFI; the gated web `StateDto` is a thin wire envelope
-//! derived from [`state`] (naming, phase, serve-held context), never a
-//! re-derivation. The builders live here as free functions over a
-//! [`Session`] plus its [`Store`] and [`AugmentCache`]; nothing in this
-//! module is transport- or markup-flavored.
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -18,26 +11,15 @@ use crate::{
     store::Store,
 };
 
-/// One card as a client renders it, independent of any transport. Image
-/// fields carry plain paths: an embedded client reads the files directly.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CardView {
     pub front: String,
-    /// Cloze context: the answer lines with the hole blanked; empty for
-    /// non-cloze cards.
     pub context: Vec<String>,
     pub back: Vec<String>,
-    /// True when `back` is a reshaped answer (a `format` augment's
-    /// `display_back`), never for the card's own authored lines.
     pub reshaped: bool,
-    /// The note (`!` lines plus any augment-merged trivia) decomposed into
-    /// display units, shown after the reveal.
     pub note: Vec<NoteUnit>,
     pub image: Option<String>,
     pub image_back: Option<String>,
-    /// The raw authored `% at:` source locator. Resolving it to an excerpt
-    /// (and any display relabeling) is the consumer's business: it takes a
-    /// source base and a filesystem read.
     pub at: Option<String>,
 }
 
@@ -56,51 +38,30 @@ impl From<&Card> for CardView {
     }
 }
 
-/// The current position in a review session: the card to show (or none when
-/// finished), how it is checked, and what the client needs to run that check.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ReviewState {
     pub card: Option<CardView>,
-    /// The concrete check, derived from the session's depth and the card's
-    /// authored `% reveal:` (never stored on the card).
     pub mode: Mode,
     pub depth: Depth,
-    /// A first encounter: the card is acquired (shown, acknowledged), not
-    /// quizzed cold or graded.
     pub acquire: bool,
-    /// Multiple-choice options when the card renders as a pick (a Recognize
-    /// session, or the acquire recognition on-ramp). The correct index is
-    /// deliberately NOT here: it only travels in [`ChoiceFeedback`], so a
-    /// state payload can never leak the answer.
+    /// The correct index is deliberately absent here: it only travels in
+    /// [`ChoiceFeedback`], so this payload can never leak the answer.
     pub choices: Option<Vec<String>>,
-    /// The Explain checklist rubric: the cached keypoints augment when
-    /// present, else the card's authored back lines. Only for an Explain
-    /// check past acquire; `None` everywhere else.
     pub keypoints: Option<Vec<String>>,
-    /// How the learner answers (`% input:`): typed (default) or drawn.
     pub input: Input,
     pub finished: bool,
     pub remaining: u32,
-    /// Distinct cards that entered the roster at session start.
     pub initial: u32,
-    /// Grades given this session (a re-served card counts again).
     pub reviews: u32,
     pub passed: u32,
     pub failed: u32,
-    /// Never-seen cards introduced (acquired) this session. A first pass over
-    /// a fresh deck is acquire-only, so without this the summary reads
-    /// "reviewed 0 / nothing due" right after the learner met every card.
+    // Distinguishes an acquire-only sitting: without it, a first pass over a
+    // fresh deck reads as "reviewed 0".
     pub acquired: u32,
-    /// Whether a restart right now would find due (or new) cards, so a
-    /// summary screen can offer another round.
     pub can_restart: bool,
-    /// The current card is a virtual (remediation) card the client may offer
-    /// to promote into the deck.
     pub promotable: bool,
 }
 
-/// What a pick revealed: which option was chosen, which was right, and
-/// whether they agree. The grade is still the client's separate call.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ChoiceFeedback {
     pub chosen: usize,
@@ -108,16 +69,12 @@ pub struct ChoiceFeedback {
     pub passed: bool,
 }
 
-/// The evidence from checking typed lines: per-line results plus whether
-/// every line matched. The learner-final grade stays a separate call.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct CheckFeedback {
     pub results: Vec<answer::TypedResult>,
     pub passed: bool,
 }
 
-/// Builds the state a client renders right now. `now_ms` feeds the
-/// restartability check and defaults to the wall clock; tests inject it.
 pub fn state(
     session: &Session,
     store: &Store,
@@ -132,21 +89,15 @@ pub fn state(
         .unwrap_or_default();
     let acquire = session.current_unseen(store);
     let choices = current_question(session, store, augment).map(|q| q.options);
-    // A Recognize card renders as a pick only when a question can be built;
-    // a deck too small for distractors (or lacking cached ones) has no
-    // options, so the mode falls back to a plain reveal rather than claiming
-    // a choice with nothing to choose (which would strand the card with no
-    // way forward). Keeps the reported mode honest for every client.
+    // Falls back to Flip when no pick can be built (no distractors): claiming
+    // a choice with nothing to choose would strand the card.
     let mode = if base_mode == Mode::Choice && choices.is_none() {
         Mode::Flip
     } else {
         base_mode
     };
-    // Explain reveals the key points as a tick-each-line checklist whose
-    // coverage derives the grade: the cached keypoints when present, else the
-    // card's AUTHORED back lines (never a reshaped display back). Any other
-    // check keeps the plain reveal; never on a first encounter, where
-    // acquiring just reveals the answer.
+    // Falls back to the card's AUTHORED back lines, never the reshaped
+    // display_back, so the checklist rubric stays truthful.
     let keypoints = if !acquire && mode == Mode::Explain {
         card.map(|c| {
             c.id()
@@ -176,20 +127,8 @@ pub fn state(
     }
 }
 
-/// The multiple-choice question for the current card, or `None` when it does
-/// not render as a pick. The one place the question is built, so the options
-/// [`state`] serves and the correct index [`choose`] grades stay in lockstep:
-/// the seed combines the card id with its appearance count this session, so
-/// it holds still while the card is up and reshuffles the next time it is
-/// served.
-///
-/// A pick renders only from a deck's cached AI distractors (`alix deck augment
-/// --target choices`); options are never sampled from other cards' answers. A
-/// Recognize session is pick-only — it schedules only recognizable cards, so
-/// every card it serves builds a pick (a `% reveal: line` card on its whole
-/// ordered sequence), with no flip fallback. Outside Recognize, only a first
-/// encounter shows a pick: the acquire on-ramp, which additionally requires an
-/// atomic answer.
+// The single place a question is built: `state`'s options and `choose`'s
+// correct index must both come from here, or they drift out of lockstep.
 pub fn current_question(
     session: &Session,
     store: &Store,
@@ -199,24 +138,15 @@ pub fn current_question(
     let id = card.id()?;
     let ai = augment.distractors(&id);
     let seed = choice::seed_for(&id, session.appearance(&id));
-    // A Recognize session is pick-only: assemble filters its roster to
-    // recognizable cards, so every card it serves builds a pick — a first
-    // encounter and a repeat alike, and a `% reveal: line` card on its whole
-    // ordered sequence. There is no plain-flip fallback here.
     if session.depth() == Depth::Recognize {
         return choice::build(card, seed, ai?);
     }
-    // Outside Recognize, only a first encounter shows a pick: the acquire
-    // on-ramp, which needs an atomic answer plus a full set of cached
-    // distractors. Anything else is a plain recall/reconstruct attempt.
     if store.get(&id).is_none() {
         return choice::recognition_question(card, seed, ai);
     }
     None
 }
 
-/// Grades a pick against the same question [`state`] served. `None` when no
-/// pick is up (no card, or the card does not render as a choice).
 pub fn choose(
     session: &Session,
     store: &Store,
@@ -231,12 +161,6 @@ pub fn choose(
     })
 }
 
-/// Checks typed lines against the current card's authored back: normalized,
-/// compared exactly, no edit-distance tolerance. Pure evidence, like the
-/// web's check endpoint; the learner-final grade is applied separately.
-/// Orderedness derives from the mode in core: TypeLine (the line-reveal
-/// reconstruct) pairs line-by-position, everything else matches each input
-/// to its closest expected line.
 pub fn check_typed(session: &Session, lines: &[String]) -> Option<CheckFeedback> {
     let card = session.current()?;
     let mode = depth::check_for(card.reveal.unwrap_or_default(), session.depth(), card);
@@ -263,14 +187,13 @@ mod tests {
         store::{Store, VirtualCard, VirtualKind},
     };
 
-    /// Cards were acquired at T0 and the session runs at NOW, past the
-    /// acquire cooldown, so seen cards are servable.
+    // NOW must stay past T0 + the acquire cooldown, or seen cards won't be
+    // servable.
     const T0: u64 = 1_000_000;
     const NOW: u64 = T0 + crate::scheduler::DEFAULT_ACQUIRE_COOLDOWN_MS + 1_000;
 
-    /// Parses an L1 fixture and stamps each file card with a distinct
-    /// literal token (cloze sub-cards share their card's token, as a stamped
-    /// file would), so the store/augment lookups below key on real ids.
+    // Stamps each card with a distinct token (cloze sub-cards share their
+    // card's token) so store/augment lookups below key on real ids.
     fn parse(text: &str) -> Vec<Card> {
         let mut cards = parser::parse_str("deck.md", text).unwrap();
         let mut n = 0;
@@ -311,9 +234,6 @@ mod tests {
         }
     }
 
-    /// Arms a full set of cached AI distractors on every card, so a Recognize /
-    /// acquire pick can be built. Distractors are never sampled from siblings,
-    /// so a pick renders only for a card whose deck has been augmented.
     fn arm(augment: &mut AugmentCache, cards: &[Card]) {
         for card in cards {
             augment.set_distractors(
@@ -328,9 +248,6 @@ mod tests {
         let (mut store, mut augment, _dir) = fixtures();
         let flip = parse("## q\na\n");
         let line = parse("## q <!-- reveal: line -->\none\ntwo\n");
-        // Recognize renders a Choice only when a pick can be built, so its case
-        // needs cached AI distractors (a card without them falls back to Flip,
-        // see `a_recognize_card_with_no_buildable_pick...`).
         let many = parse(FOUR);
         seen(&mut store, &flip);
         seen(&mut store, &line);
@@ -435,7 +352,6 @@ mod tests {
         assert_eq!(view.at.as_deref(), Some("src/lib.rs:10-20"));
     }
 
-    /// Four cards with distinct single-line answers.
     const FOUR: &str = "## q1\na1\n## q2\na2\n## q3\na3\n## q4\na4\n";
 
     #[test]
@@ -445,8 +361,6 @@ mod tests {
         seen(&mut store, &cards);
         arm(&mut augment, &cards);
 
-        // A seen card outside a Recognize session shows no pick, cached
-        // distractors or not.
         let recall = session_at(cards.clone(), &store, Depth::Recall, NOW);
         assert_eq!(state(&recall, &store, &augment, Some(NOW)).choices, None);
 
@@ -456,9 +370,6 @@ mod tests {
             .expect("cached distractors arm the Recognize pick");
         assert_eq!(options.len(), crate::choice::NUM_OPTIONS);
 
-        // A first encounter (the acquire bar) shows a recognition pick only
-        // under the strict bar: without a full set of cached AI distractors it
-        // stays a plain attempt-then-reveal.
         let fresh_store = Store::open(_dir.path().join("fresh.json")).unwrap();
         let empty_augment = AugmentCache::open(_dir.path().join("empty.json"));
         let acquire = session_at(cards.clone(), &fresh_store, Depth::Recall, NOW);
@@ -466,17 +377,12 @@ mod tests {
         assert!(bare.acquire);
         assert_eq!(bare.choices, None, "no distractors, no acquire pick");
 
-        // The same session, now reading the armed cache, arms the pick.
         let armed = state(&acquire, &fresh_store, &augment, Some(NOW));
         assert!(armed.choices.is_some(), "full distractors arm the pick");
     }
 
     #[test]
     fn a_recognize_card_with_no_buildable_pick_falls_back_to_flip() {
-        // One seen card: too few siblings for distractors and no cached AI
-        // ones, so Recognize can build no question. The mode must not stay
-        // Choice (a pick with no options strands the card); it falls back to
-        // a plain reveal, and every client renders an answerable card.
         let (mut store, augment, _dir) = fixtures();
         let cards = parse("## lone q\nlone a\n");
         seen(&mut store, &cards);
@@ -499,7 +405,6 @@ mod tests {
             .choices
             .expect("options");
         assert_eq!(shown, question.options, "state serves the same options");
-        // Stable across repeated builds while the same card is up.
         assert_eq!(
             state(&session, &store, &augment, Some(NOW)).choices,
             Some(question.options.clone())
@@ -517,7 +422,6 @@ mod tests {
     #[test]
     fn check_typed_orders_only_for_typeline() {
         let (mut store, _augment, _dir) = fixtures();
-        // Reconstruct + line reveal = TypeLine: position matters.
         let line = parse("## q <!-- reveal: line -->\none\ntwo\n");
         seen(&mut store, &line);
         let typeline = session_at(line, &store, Depth::Reconstruct, NOW);
@@ -525,7 +429,6 @@ mod tests {
         let ordered = check_typed(&typeline, &swapped).expect("feedback");
         assert!(!ordered.passed, "typeline is position-sensitive");
 
-        // Reconstruct + a multi-line flip card checks unordered.
         let multi = parse("## q\none\ntwo\n");
         seen(&mut store, &multi);
         let unordered_session = session_at(multi, &store, Depth::Reconstruct, NOW);
@@ -537,12 +440,9 @@ mod tests {
     #[test]
     fn keypoints_appear_only_for_an_explain_check_past_acquire() {
         let (mut store, mut augment, _dir) = fixtures();
-        // A seen multi-line flip card at Reconstruct renders as Explain.
         let mut cards = parse("## q\nfirst fact\nsecond fact\n");
         seen(&mut store, &cards);
 
-        // Uncached: the rubric falls back to the AUTHORED back lines. The
-        // reshaped display back must not leak into the checklist.
         cards[0].display_back = Some(vec!["a reshaped answer".into()]);
         let session = session_at(cards.clone(), &store, Depth::Reconstruct, NOW);
         let fallback = state(&session, &store, &augment, Some(NOW));
@@ -552,16 +452,13 @@ mod tests {
             Some(vec!["first fact".to_string(), "second fact".to_string()])
         );
 
-        // Cached keypoints win over the fallback.
         augment.set_keypoints(&cards[0].id().unwrap(), vec!["one claim".to_string()]);
         let cached = state(&session, &store, &augment, Some(NOW));
         assert_eq!(cached.keypoints, Some(vec!["one claim".to_string()]));
 
-        // Any other check keeps the plain reveal.
         let recall = session_at(cards.clone(), &store, Depth::Recall, NOW);
         assert_eq!(state(&recall, &store, &augment, Some(NOW)).keypoints, None);
 
-        // A first encounter acquires: no checklist even at Reconstruct.
         let fresh = Store::open(_dir.path().join("fresh.json")).unwrap();
         let acquire = session_at(cards, &fresh, Depth::Reconstruct, NOW);
         let acquired = state(&acquire, &fresh, &augment, Some(NOW));

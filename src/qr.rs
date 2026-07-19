@@ -1,8 +1,3 @@
-//! QR rendering shared by the terminal pairing printout and `GET /api/pair`:
-//! one place owns the qrcodegen dependency; callers pick blocks or SVG.
-
-/// `text` as a unicode half-block QR (two module rows per line, 2-module
-/// quiet zone), or `None` when it is too long to encode.
 pub fn terminal_blocks(text: &str) -> Option<String> {
     let qr = qrcodegen::QrCode::encode_text(text, qrcodegen::QrCodeEcc::Low).ok()?;
     let quiet = 2i32;
@@ -27,8 +22,6 @@ pub fn terminal_blocks(text: &str) -> Option<String> {
     Some(out)
 }
 
-/// `text` as a compact self-contained SVG — fixed black-on-white so it scans
-/// under either page theme; 4-module quiet zone. `None` when too long.
 pub fn svg(text: &str) -> Option<String> {
     let qr = qrcodegen::QrCode::encode_text(text, qrcodegen::QrCodeEcc::Low).ok()?;
     let border = 4i32;

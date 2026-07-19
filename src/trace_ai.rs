@@ -1,6 +1,5 @@
-//! The AI passes over a trace: building a trace deck from a source, the flat
-//! recon menu (`suggest`), and model-graded predictions. Split out of `trace`
-//! so the core (the walk, citation resolution) compiles without the AI backend.
+//! Split out of `trace` so the core (the walk, citation resolution) compiles
+//! without the AI backend.
 
 use std::{
     path::{Path, PathBuf},
@@ -17,17 +16,6 @@ use crate::{
     trace::{Checkpoint, Delta, Excerpt, SNAPSHOT_DIR, SourceBase, resolve_source},
 };
 
-// ── Building (`alix generate <trace-stub>`) ──────────────────────────────────
-//
-// Discovering the path is a separate, heavier step from walking it: Claude
-// explores the `% source:` (read-only file tools, cwd at the source root) and
-// emits the checkpoint cards, which the CLI writes back into the deck. Mirrors
-// `crate::generate`: build a prompt, run the CLI, clean the output.
-
-/// Explores the deck's `% source:` and returns the discovered checkpoint cards
-/// as deck-format text (ready to write back with
-/// [`crate::deck::set_trace_checkpoints`]). Blocks until the CLI replies or
-/// times out. Errors if the deck declares no `% trace:` or `% source:`.
 pub fn build(deck: &Deck, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<String> {
     let description = deck
         .trace
@@ -38,7 +26,6 @@ pub fn build(deck: &Deck, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<Stri
         .first()
         .ok_or_else(|| anyhow!("{} declares no `source:` scope to trace", deck.subject))?;
     let url = is_url(source);
-    // Gate on backend capability before resolving the source or exploring it.
     ensure_source_reachable(ask_cfg, url)?;
     let cwd = if url {
         None
@@ -56,38 +43,12 @@ pub fn build(deck: &Deck, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<Stri
     Ok(cards)
 }
 
-// ── Snapshotting the source ──────────────────────────────────────────────────
-//
-// Line-number locators read the live source, so editing a traced file silently
-// shifts every excerpt. Snapshotting freezes just the cited excerpts into the
-// workspace's `assets/` (one small file per checkpoint) and repoints `% source:`
-// + each `% at:` at them: the excerpts then never drift, and the workspace is
-// self-contained — without copying whole (possibly huge) source files. The
-// re-based excerpt loses its original line numbers, which don't matter once the
-// span is frozen. It's the default last step of a workspace `alix generate`;
-// a loose trace over a live path is left untouched. The source is any text file.
-
-/// What [`snapshot`] froze.
 #[derive(Debug)]
 pub(crate) struct SnapshotReport {
-    /// The excerpt snippet files written into `assets/`.
     pub copied: Vec<String>,
-    /// Locators whose excerpt couldn't be read and were left as-is.
     pub missing: Vec<String>,
 }
 
-/// Freezes a deck's cited **excerpts** into `<workspace>/assets/` — one small
-/// snippet file per `% at:` citation, holding just the lines it reveals — and
-/// repoints `% source:` + every `% at:` at them. The locators then never drift
-/// when the upstream source is edited, and nothing huge is copied. The frozen
-/// excerpt is re-based to line 1 (the original line numbers are lost, which is
-/// fine for a frozen span). Works for a trace (its checkpoints) or a fact deck
-/// (its cited cards); `start` is how many snippets earlier decks in the same
-/// workspace already wrote, so names stay unique in the shared `assets/`.
-///
-/// Requires a deck whose `% source:` is local (not a URL) and whose folder is a
-/// workspace. The freeze is one-way — there is no "un-snapshot"; the workspace is
-/// either long-lived stable material or a throwaway.
 pub(crate) fn snapshot(
     deck: &Deck,
     start: usize,
@@ -109,10 +70,6 @@ pub(crate) fn snapshot(
         bail!("`{source}` is a URL — there are no local excerpts to snapshot");
     }
 
-    // The live crate this deck froze from — its `% at:` provenance is recorded
-    // relative to it so the tutor + drift can find the files. The deck's own
-    // resolved source root is the authority; a deck-level `% origin:` is written
-    // only when it diverges from the workspace `[defaults] origin`.
     let origin_root = deck.source_root();
     let deck_origin = match (&origin_root, workspace_origin) {
         (Some(o), Some(ws)) if same_path(o, ws) => None, // workspace default covers it
@@ -120,16 +77,10 @@ pub(crate) fn snapshot(
         (None, _) => None,
     };
 
-    // Resolve `% at:` locators exactly as the review path does — including a
-    // ` + `-joined multi-file `% source:`, which must be split, not treated as one
-    // literal path. Sharing `SourceBase` keeps freeze and review in lock-step.
     let source_base = SourceBase::for_deck(deck);
     let assets_dir = deck_dir.join(SNAPSHOT_DIR);
     let mut copied = Vec::new();
     let mut missing = Vec::new();
-    // The rewrite for each `% at:` line, in file order. Both a trace's
-    // checkpoints and a fact deck's cards cite via `% at:`, so iterating the
-    // deck's cards freezes either.
     let mut ats: Vec<crate::deck::AtRewrite> = Vec::new();
 
     for card in &deck.cards {
@@ -138,9 +89,6 @@ pub(crate) fn snapshot(
         };
         match source_base.excerpt(locator) {
             Ok(excerpt) => {
-                // `NN.<ext>` — the cited file's extension keeps the snippet
-                // readable; `start` keeps the number unique across the shared
-                // workspace `assets/` when several decks snapshot into it.
                 let n = start + copied.len() + 1;
                 let ext = excerpt_ext(&excerpt);
                 let name = format!("{n:02}.{ext}");
@@ -148,8 +96,6 @@ pub(crate) fn snapshot(
                 copied.push(name.clone());
                 ats.push(crate::deck::AtRewrite {
                     at: name,
-                    // The origin-relative `file:lines` rides the `% at:` line as
-                    // ` from …`, so the live source stays locatable.
                     origin: excerpt_provenance(&excerpt, origin_root.as_deref()),
                 });
             }
@@ -175,8 +121,6 @@ pub(crate) fn snapshot(
     Ok(SnapshotReport { copied, missing })
 }
 
-/// The extension to give a snippet — the cited file's (so `01.rs` stays
-/// recognizable), or `txt` when it has none.
 fn excerpt_ext(excerpt: &Excerpt) -> String {
     excerpt
         .path
@@ -186,11 +130,6 @@ fn excerpt_ext(excerpt: &Excerpt) -> String {
         .to_string()
 }
 
-/// The original `file:lines` of an excerpt for the ` from …` provenance, as a
-/// path **relative to `origin_root`** (`src/caching.rs:46-66`) so the tutor and
-/// drift detection can locate the live file. Falls back to the basename when the
-/// excerpt isn't under the origin. Always emitted now (unlike the old basename
-/// note) — the origin path matters even when the line numbers didn't shift.
 fn excerpt_provenance(excerpt: &Excerpt, origin_root: Option<&Path>) -> Option<String> {
     let first = excerpt.lines.first()?.0;
     let last = excerpt.lines.last()?.0;
@@ -210,8 +149,6 @@ fn excerpt_provenance(excerpt: &Excerpt, origin_root: Option<&Path>) -> Option<S
     })
 }
 
-/// `path` expressed relative to `root`, canonicalizing both (the files exist at
-/// freeze time) so `./` segments and symlinks don't defeat the prefix match.
 fn path_relative_to(path: &Path, root: &Path) -> Option<String> {
     let path = path.canonicalize().ok()?;
     let root = root.canonicalize().ok()?;
@@ -220,8 +157,6 @@ fn path_relative_to(path: &Path, root: &Path) -> Option<String> {
         .map(|p| p.to_string_lossy().into_owned())
 }
 
-/// Whether two paths point at the same location, canonicalizing when possible so
-/// `./` and symlink differences don't read as divergence.
 fn same_path(a: &Path, b: &Path) -> bool {
     match (a.canonicalize(), b.canonicalize()) {
         (Ok(a), Ok(b)) => a == b,
@@ -229,8 +164,6 @@ fn same_path(a: &Path, b: &Path) -> bool {
     }
 }
 
-/// Writes an excerpt's lines (content only, re-based to line 1) to a snippet
-/// file, creating `assets/` if needed.
 fn write_snippet(dest: &Path, excerpt: &Excerpt) -> Result<()> {
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent)
@@ -247,16 +180,8 @@ fn write_snippet(dest: &Path, excerpt: &Excerpt) -> Result<()> {
     Ok(())
 }
 
-/// Recon a source and return a ranked menu of candidate traces to author — each
-/// a path description, a one-line spine sketch, and a suggested `% source:`
-/// scope. Unlike [`build`], it discovers nothing in depth and writes nothing: it
-/// surveys the scope once (the same read-only tools and cwd) and proposes
-/// *what* is worth tracing, leaving the expensive path discovery to a later
-/// `--build` of whichever the learner picks. `source` is a scope directly (a
-/// repo `.`, a directory, a file, or a URL), not a deck.
 pub fn suggest(source: &str, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<String> {
     let url = is_url(source);
-    // Gate on backend capability before resolving the source or surveying it.
     ensure_source_reachable(ask_cfg, url)?;
     let cwd = if url {
         None
@@ -274,9 +199,6 @@ pub fn suggest(source: &str, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<S
     Ok(menu)
 }
 
-/// The CLI runner config for a build: the ask command/permission with trace's
-/// own model and (longer) timeout, **read-only** exploration tools, and the
-/// source root as the working directory.
 pub(crate) fn build_run_config(
     cfg: &TraceConfig,
     ask_cfg: &AskConfig,
@@ -287,9 +209,6 @@ pub(crate) fn build_run_config(
     if url {
         allowed_tools.push("WebFetch".to_string());
     }
-    // Model precedence: an explicit `[trace] model`, then the `[ask]` model,
-    // then the backend's own strong trace model (Claude → opus; others fall back
-    // to the CLI default via `None`).
     let model = cfg
         .model
         .clone()
@@ -310,8 +229,6 @@ pub(crate) fn build_run_config(
     }
 }
 
-/// Builds the path-discovery prompt: the goal, the scope, how to explore it,
-/// the checkpoint format, and the chain-not-a-set rules.
 fn build_prompt(description: &str, source: &str, url: bool, cfg: &TraceConfig) -> String {
     let explore = if url {
         format!("Read the source page at {source} with the WebFetch tool (fetch it once).")
@@ -451,9 +368,6 @@ fn build_prompt(description: &str, source: &str, url: bool, cfg: &TraceConfig) -
     p
 }
 
-/// Builds the recon prompt for `--suggest`: survey the scope and propose a
-/// ranked menu of candidate traces (path + spine sketch + scope) WITHOUT tracing
-/// any of them in depth. The cheap counterpart to [`build_prompt`].
 fn suggest_prompt(source: &str, url: bool, cfg: &TraceConfig) -> String {
     let explore = if url {
         format!("Read the source page at {source} with the WebFetch tool (fetch it once).")
@@ -536,10 +450,6 @@ fn suggest_prompt(source: &str, url: bool, cfg: &TraceConfig) -> String {
     p
 }
 
-/// Strips anything around the generated checkpoint cards: a leading code
-/// fence, commentary, or a stray header before the first `## ` card front, and
-/// trailing blank/fence lines. Unlike a full deck, a built trace's output is
-/// only the cards, so everything before the first column-0 `## ` is dropped.
 pub(crate) fn clean_to_cards(raw: &str) -> String {
     let lines: Vec<&str> = raw.lines().collect();
     let Some(start) = lines.iter().position(|l| l.starts_with("## ")) else {
@@ -557,12 +467,6 @@ pub(crate) fn clean_to_cards(raw: &str) -> String {
     lines[start..end].join("\n")
 }
 
-/// Grades a learner's prediction at a checkpoint with Claude (`[trace]
-/// --grade`): compares it to the checkpoint's key points and returns the
-/// [`Delta`] plus one line of feedback. Pure reasoning over the supplied text —
-/// no tools. Unlike the one-shot `--build`/`--suggest`, this is a light,
-/// interactive, per-hop judgment, so it runs at the tutor tier — the `[ask]`
-/// model, effort and timeout — not trace's heavy opus + high-effort defaults.
 pub fn grade_prediction(
     checkpoint: &Checkpoint,
     prediction: &str,
@@ -577,10 +481,6 @@ pub fn grade_prediction(
     parse_grade(&raw)
 }
 
-/// Background variant of [`grade_prediction`]: runs the grade on a thread and
-/// delivers `(Delta, feedback)` (or an error string) on the returned channel.
-/// The web walk server polls it while the reveal shows "grading…", exactly like
-/// [`crate::exam::spawn_grade`]; inputs are owned so the thread is `'static`.
 pub fn spawn_grade(
     checkpoint: Checkpoint,
     prediction: String,
@@ -595,8 +495,6 @@ pub fn spawn_grade(
     rx
 }
 
-/// Builds the grading prompt: the question, the key points (the rubric), and the
-/// learner's prediction — asking for a one-line `VERDICT — feedback`.
 fn grade_prompt(checkpoint: &Checkpoint, prediction: &str) -> String {
     let points = checkpoint.points.join("\n- ");
     format!(
@@ -620,12 +518,8 @@ fn grade_prompt(checkpoint: &Checkpoint, prediction: &str) -> String {
     )
 }
 
-/// Parses a `VERDICT — feedback` grading reply into a [`Delta`] and the feedback
-/// text. The verdict must be one of `PASSED` / `PARTLY` / `FAILED` (what the
-/// prompt asks for); any other reply is an **error** — a grader that ignores the
-/// instruction (a weak local model, say) must not be papered over with a
-/// fabricated grade, so the caller aborts the AI grade rather than scoring a hop
-/// the model never actually judged.
+/// Errors on anything other than PASSED/PARTLY/FAILED: never fabricates a
+/// grade the model didn't actually give.
 fn parse_grade(raw: &str) -> Result<(Delta, String)> {
     let line = raw.trim().lines().next().unwrap_or("").trim();
     let upper = line.to_ascii_uppercase();
@@ -654,10 +548,6 @@ mod tests {
     fn write(dir: &Path, name: &str, body: &str) -> PathBuf {
         let path = dir.join(name);
         std::fs::write(&path, body).unwrap();
-        // A trace deck is stamped at open in production; mirror that for any
-        // `.md` deck fixture so its checkpoints carry token ids. A non-deck
-        // `.md` (e.g. a `notes.md` source) is refused by `stamp_deck` and left
-        // untouched.
         if name.ends_with(".md") {
             let _ = crate::stamp::stamp_deck(&path);
         }
@@ -679,9 +569,6 @@ mod tests {
 
     #[test]
     fn parse_grade_errors_on_an_unrecognized_verdict() {
-        // A grader that ignores the PASSED/PARTLY/FAILED instruction (e.g. a weak
-        // local model) must surface an error — never a fabricated grade the model
-        // didn't give. The caller then aborts the AI grade (and self-grades).
         assert!(parse_grade("hmm not sure").is_err());
         assert!(parse_grade("").is_err());
     }
@@ -691,54 +578,50 @@ mod tests {
         let p = build_prompt("how X becomes Y", ".", false, &TraceConfig::default());
         assert!(p.contains("how X becomes Y"));
         assert!(p.contains("Source (the scope): ."));
-        assert!(p.contains("Read, Glob")); // local exploration tools
-        assert!(p.contains("file:start-end")); // single-range local locator form
-        assert!(p.contains("ONE CONTIGUOUS RANGE")); // no stitched multi-range excerpts
-        assert!(p.contains("## <the question")); // the checkpoint format
+        assert!(p.contains("Read, Glob"));
+        assert!(p.contains("file:start-end"));
+        assert!(p.contains("ONE CONTIGUOUS RANGE"));
+        assert!(p.contains("## <the question"));
         assert!(p.contains("<!-- at:"));
-        assert!(p.contains("black-box hop")); // big function = one black-box hop
-        assert!(p.contains("free variable")); // gloss free variables as givens
-        assert!(p.contains("<!-- given:")); // givens emitted as a directive, not crammed
-        // The L1 pin: no retired old-format syntax in the build prompt.
+        assert!(p.contains("black-box hop"));
+        assert!(p.contains("free variable"));
+        assert!(p.contains("<!-- given:"));
         assert!(!p.contains("% at:"));
         assert!(!p.contains("% given:"));
         assert!(!p.contains("% trace:"));
-        assert!(p.contains("MUST be COMPLETE")); // every off-screen symbol glossed
-        assert!(p.contains("does NOT BIND")); // a given is used-but-not-bound (free)
-        assert!(p.contains("KEY POINTS MUST BE GROUNDED")); // no claims beyond the excerpt
+        assert!(p.contains("MUST be COMPLETE"));
+        assert!(p.contains("does NOT BIND"));
+        assert!(p.contains("KEY POINTS MUST BE GROUNDED"));
         assert!(p.contains("One path, not a set"));
         assert!(p.contains("Carry the STATE"));
         assert!(p.contains("Do NOT prefix fronts with \"Predict\""));
         assert!(p.contains("Dives must return"));
-        assert!(p.contains("must TEACH")); // no vacuous delegation answers
-        assert!(p.contains("stay on the SPINE")); // trace the common path, nest branches
-        assert!(p.contains("EVERY instance travels")); // side-branches aren't spine hops
-        assert!(p.contains("self-documenting")); // gloss only non-derivable givens
-        assert!(!p.contains("WebFetch")); // a local source needs no web tool
+        assert!(p.contains("must TEACH"));
+        assert!(p.contains("stay on the SPINE"));
+        assert!(p.contains("EVERY instance travels"));
+        assert!(p.contains("self-documenting"));
+        assert!(!p.contains("WebFetch"));
     }
 
     #[test]
     fn suggest_prompt_recons_for_a_menu_without_tracing() {
         let p = suggest_prompt(".", false, &TraceConfig::default());
-        assert!(p.contains("RECON")); // recon, not a full trace
-        assert!(p.contains("Do NOT trace any path in depth")); // no deep tracing
-        assert!(p.contains("ranked MENU")); // a menu of candidates
-        assert!(p.contains("path-QUESTION")); // each suggestion is a path, not a topic
-        assert!(p.contains("COVERAGE, NOT A COUNT")); // count is emergent, not capped
-        assert!(p.contains("per major subsystem")); // stop rule: cover each subsystem once
-        assert!(p.contains("EDGES vs NODES")); // trace edges, deck nodes
-        assert!(p.contains("Skipped (node-shaped")); // name the fact-shaped skips
-        assert!(!p.contains("5–8")); // the old arbitrary cap is gone
-        assert!(p.contains("by centrality")); // ranked spine-first
-        assert!(p.contains("spine:")); // sketch labels, ...
-        assert!(p.contains("NOT cited checkpoints")); // ... not full checkpoints
-        assert!(p.contains("a \"goal\"")); // distinguish a trace from a future goal/curriculum
-        assert!(p.contains("Read, Glob")); // same read-only exploration
-        assert!(!p.contains("WebFetch")); // local source needs no web tool
-        // The L1 pin: no retired old-format syntax in the recon prompt. No
-        // `%` directives (locators, givens, or the deck-level trace key) and no
-        // `{{ }}` clozes; the trainer no longer parses any of them.
-        assert!(!p.contains("% at:")); // recon never emits locators
+        assert!(p.contains("RECON"));
+        assert!(p.contains("Do NOT trace any path in depth"));
+        assert!(p.contains("ranked MENU"));
+        assert!(p.contains("path-QUESTION"));
+        assert!(p.contains("COVERAGE, NOT A COUNT"));
+        assert!(p.contains("per major subsystem"));
+        assert!(p.contains("EDGES vs NODES"));
+        assert!(p.contains("Skipped (node-shaped"));
+        assert!(!p.contains("5–8"));
+        assert!(p.contains("by centrality"));
+        assert!(p.contains("spine:"));
+        assert!(p.contains("NOT cited checkpoints"));
+        assert!(p.contains("a \"goal\""));
+        assert!(p.contains("Read, Glob"));
+        assert!(!p.contains("WebFetch"));
+        assert!(!p.contains("% at:"));
         assert!(!p.contains("% given:"));
         assert!(!p.contains("% trace:"));
         assert!(!p.contains("{{"));
@@ -748,7 +631,7 @@ mod tests {
     fn suggest_prompt_url_uses_webfetch() {
         let p = suggest_prompt("https://x", true, &TraceConfig::default());
         assert!(p.contains("WebFetch"));
-        assert!(!p.contains("Glob")); // no local file tools for a URL source
+        assert!(!p.contains("Glob"));
     }
 
     #[test]
@@ -756,7 +639,7 @@ mod tests {
         let p = build_prompt("how X", "https://x", true, &TraceConfig::default());
         assert!(p.contains("WebFetch"));
         assert!(p.contains("quoted span"));
-        assert!(!p.contains("Glob")); // no local file tools for a URL source
+        assert!(!p.contains("Glob"));
     }
 
     #[test]
@@ -781,20 +664,16 @@ mod tests {
         );
         assert_eq!(vec!["Read", "Glob", "Grep"], cfg.allowed_tools);
         assert_eq!(Some(cwd), cfg.cwd);
-        assert_eq!(600, cfg.timeout_secs); // the trace timeout, not ask's 120
+        assert_eq!(600, cfg.timeout_secs);
     }
 
     #[test]
     fn trace_defaults_to_opus_on_claude_none_elsewhere() {
         use crate::config::BackendKind;
 
-        // Claude backend with an unset trace/ask model → the backend's strong
-        // trace model (opus).
         let claude = build_run_config(&TraceConfig::default(), &AskConfig::default(), None, false);
         assert_eq!(Some("opus".to_string()), claude.model);
 
-        // Gemini backend has no strong trace model, so it inherits the CLI
-        // default (None) when nothing is configured.
         let gemini_ask = AskConfig {
             backend: BackendKind::Gemini,
             ..AskConfig::default()
@@ -802,7 +681,6 @@ mod tests {
         let gemini = build_run_config(&TraceConfig::default(), &gemini_ask, None, false);
         assert_eq!(None, gemini.model);
 
-        // An explicit [trace] model wins over the backend default on any backend.
         let pinned = TraceConfig {
             model: Some("sonnet".to_string()),
             ..TraceConfig::default()
@@ -810,8 +688,6 @@ mod tests {
         let cfg = build_run_config(&pinned, &AskConfig::default(), None, false);
         assert_eq!(Some("sonnet".to_string()), cfg.model);
 
-        // An [ask] model is used when [trace] is unset, ahead of the backend
-        // default.
         let ask = AskConfig {
             model: Some("haiku".to_string()),
             ..AskConfig::default()
@@ -836,7 +712,6 @@ mod tests {
             dir.path(),
             "## Q1\np1\n<!-- at: 1 -->\n## Q2\np2\n<!-- at: 2 -->\n",
         );
-        // A trace deck with a `source: .` (cwd resolves to the temp dir).
         let path = write(
             dir.path(),
             "t.md",
@@ -849,10 +724,6 @@ mod tests {
         assert!(cards.contains("<!-- at: 2 -->"));
     }
 
-    // ── snapshotting ────────────────────────────────────────────────────
-
-    /// A workspace (`alix.toml` + deck) at `root/ws` whose trace cites files in
-    /// a sibling source tree at `root/src`.
     fn snapshot_workspace(root: &Path) -> PathBuf {
         std::fs::create_dir_all(root.join("src")).unwrap();
         write(&root.join("src"), "a.rs", "alpha\nbeta\ngamma\n");
@@ -882,11 +753,9 @@ mod tests {
         let report = snapshot(&deck, 0, None).unwrap();
         assert_eq!(2, report.copied.len());
         assert!(report.missing.is_empty());
-        // one small snippet per checkpoint — NOT the whole files
         assert!(root.join("ws/assets/01.rs").is_file());
         assert!(root.join("ws/assets/02.rs").is_file());
         assert!(!root.join("ws/assets/a.rs").exists());
-        // the snippet holds only the cited span (a.rs:2-3 → beta, gamma)
         assert_eq!(
             "beta\ngamma\n",
             std::fs::read_to_string(root.join("ws/assets/01.rs")).unwrap()
@@ -894,8 +763,7 @@ mod tests {
 
         let text = std::fs::read_to_string(&deck_path).unwrap();
         assert!(text.contains("source: assets\n"), "{text}");
-        assert!(text.contains("origin: "), "{text}"); // the live source root is recorded
-        // The provenance rides the `at:` directive, never a note.
+        assert!(text.contains("origin: "), "{text}");
         assert!(
             text.contains("<!-- at: 01.rs from a.rs:2-3 -->\n"),
             "{text}"
@@ -903,7 +771,6 @@ mod tests {
         assert!(text.contains("<!-- at: 02.rs from b.rs:1 -->\n"), "{text}");
         assert!(!text.contains("> from"), "{text}");
 
-        // the reloaded trace reads the re-based excerpt from the snippet
         let frozen = Deck::load(&deck_path).unwrap();
         let trace = Trace::from_deck(&frozen).unwrap();
         let ex = trace.excerpt(&trace.checkpoints[0]).unwrap();
@@ -919,7 +786,6 @@ mod tests {
         let root = dir.path();
         let deck_path = snapshot_workspace(root);
         snapshot(&Deck::load(&deck_path).unwrap(), 0, None).unwrap();
-        // Edit the upstream source — even delete it: the frozen snippet is intact.
         std::fs::write(root.join("src/a.rs"), "TOTALLY\nDIFFERENT\n").unwrap();
         let trace = Trace::from_deck(&Deck::load(&deck_path).unwrap()).unwrap();
         let ex = trace.excerpt(&trace.checkpoints[0]).unwrap();
@@ -960,9 +826,6 @@ mod tests {
 
     #[test]
     fn snapshot_freezes_a_multi_file_plus_joined_source() {
-        // A `% source:` joining several files with ` + ` (the generator's format)
-        // must freeze every cited file — snapshot has to split it the same way the
-        // review path does, not treat the whole line as one literal path.
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         std::fs::create_dir_all(root.join("src")).unwrap();
@@ -988,7 +851,6 @@ mod tests {
     fn snapshot_refuses_non_workspace_and_url() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        // not in a workspace (no alix.toml)
         let loose = write(
             root,
             "t.md",
@@ -997,7 +859,6 @@ mod tests {
         let err = snapshot(&Deck::load(&loose).unwrap(), 0, None).unwrap_err();
         assert!(format!("{err:#}").contains("not in a workspace"), "{err:#}");
 
-        // URL source, in a workspace
         std::fs::create_dir_all(root.join("ws")).unwrap();
         write(&root.join("ws"), "alix.toml", "[defaults]\n");
         let url = write(

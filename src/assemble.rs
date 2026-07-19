@@ -1,13 +1,3 @@
-//! Session assembly: turn deck paths into something reviewable.
-//!
-//! The one place that knows how a selection becomes a session, a walk, or a
-//! browse — workspace expansion, augment overlays, topology and region focus,
-//! virtual cards, pacing, depth. The server and the CLI both consume it; no
-//! policy that changes an `/api/*` response may live outside this module,
-//! except the two spec-sanctioned exceptions: recent-recording (the serve
-//! arms, conditioned on lib state) and group-row `reviewable*` aggregation
-//! (the catalog, folded from member values).
-
 use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
@@ -32,25 +22,16 @@ use crate::{
     workspace,
 };
 
-/// Opens the progress store (creating an empty one on first use).
 pub fn open_store(path: Option<PathBuf>) -> Result<Store> {
     let path = match path {
         Some(path) => path,
         None => default_store_path().context("cannot determine the data directory")?,
     };
     let mut store = Store::open(&path).context("cannot open the progress store")?;
-    // Saves from this machine stamp the store's last-writer marker, so a
-    // device sharing the folder can warn about a likely concurrent session.
     store.device = crate::store::device_label();
     Ok(store)
 }
 
-/// Which progress store a set of decks should use: the `--store` override, else
-/// the single workspace they all share (a deck is "in" a workspace when its
-/// parent folder has an `alix.toml`), else the global default (`None`). Loose
-/// decks, a plain folder, or decks spanning different workspaces all fall back
-/// to the global store — so a workspace's progress lives with the workspace,
-/// while everything else shares the one global store.
 pub fn store_path_for(decks: &[PathBuf], cli_override: Option<&Path>) -> Option<PathBuf> {
     if let Some(path) = cli_override {
         return Some(path.to_path_buf());
@@ -66,27 +47,16 @@ pub fn store_path_for(decks: &[PathBuf], cli_override: Option<&Path>) -> Option<
     }
 }
 
-/// Opens the store for `paths`: their shared workspace store when they have
-/// one, else `instance`'s store (a served folder's own file), else the global
-/// default. The fallback a served instance (`alix <dir>` or bare `alix`)
-/// applies once no workspace claims the selection.
 pub fn store_for(paths: &[PathBuf], instance: Option<&Path>) -> Result<Store> {
     open_store(store_path_for(paths, None).or_else(|| instance.map(Path::to_path_buf)))
 }
 
-/// The per-session pacing an instance applies to every session it builds:
-/// CLI flag > `[review]` config key > built-in default.
 #[derive(Clone, Copy)]
 pub struct Pacing {
     pub max_new: usize,
     pub limit: Option<usize>,
 }
 
-/// Everything [`select`] needs beyond the picked deck paths and the picker's
-/// per-launch choices ([`SelectOptions`]): the instance's review/ask config,
-/// whether a trace walk auto-grades, its session pacing, and its instance
-/// store path (the served folder's own file, when this deck selection turns
-/// out to belong to no workspace).
 pub struct AssembleConfig {
     pub review: ReviewConfig,
     pub ask: AskConfig,
@@ -95,9 +65,6 @@ pub struct AssembleConfig {
     pub instance_store: Option<PathBuf>,
 }
 
-/// The per-launch choices a selection carries beyond which deck: the picker's
-/// depth pick, focus-drawer topology/region scope, the cram tick-box, and
-/// optional pacing overrides (absent → the instance's CLI/config values).
 #[derive(Default)]
 pub struct SelectOptions {
     pub topology: Option<String>,
@@ -106,55 +73,30 @@ pub struct SelectOptions {
     pub cram: bool,
     pub max_new: Option<usize>,
     pub limit: Option<usize>,
-    /// The session clock (Unix ms); `None` means the wall clock. Select was
-    /// the one core path that hardcoded `now_ms()` (everything else threads
-    /// time as a parameter), so embedders (the frb bridge, tests) inject here.
     pub now_ms: Option<u64>,
 }
 
-/// A review session ready to serve: the session, its header label, the
-/// subject → deck file path map used for card removal, and the subject → deck
-/// reference links (`% link:`) offered to ask-Claude. Produced by [`select`]
-/// when decks are chosen (on the CLI or in the browser picker).
 pub struct SessionBuild {
     pub session: Session,
     pub label: String,
     pub decks: HashMap<String, PathBuf>,
     pub links: HashMap<String, Vec<String>>,
-    /// Subject → its deck's `% source:` project root, for the grounded ask-tutor
-    /// (`[ask] source_access`). Only decks with a local source appear.
     pub source_roots: HashMap<String, PathBuf>,
-    /// Subject → its deck's source base, for resolving a card's `% at:` citation
-    /// excerpt on reveal.
     pub source_bases: HashMap<String, SourceBase>,
-    /// The resolved topology name when this session is topology-ordered, so the
-    /// server can show the connective cue from that topology. `None` otherwise.
     pub topology_name: Option<String>,
-    /// The decks' augment sidecar (distractors, keypoints, notes), already
-    /// opened by [`select`] for its format/note overlays and handed on so a
-    /// consumer (the frb bridge) can build choice questions from the same
-    /// cache instead of re-opening it.
     pub augment: AugmentCache,
 }
 
-/// A trace walk ready to serve, built when a single trace deck is picked from the
-/// review server's deck-selection screen. The walk is self-graded (no live
-/// `--grade`), matching the terminal picker's trace → walk.
 pub struct WalkBuild {
     pub walk: Walk,
-    /// AI-grades each prediction when set (`[trace] auto_grade` + the ask
-    /// config); `None` = self-graded.
     pub grade: Option<AskConfig>,
 }
 
-/// What a deck selection resolves to: most selections review; a lone trace
-/// deck walks (predict → verify) instead of flattening into a card review.
 pub enum Selected {
     Review(SessionBuild),
     Walk(WalkBuild),
 }
 
-/// A browse card list ready to serve, with its label and deck paths.
 #[derive(Debug)]
 pub struct CardsBuild {
     pub cards: Vec<Card>,
@@ -162,23 +104,15 @@ pub struct CardsBuild {
     pub decks: HashMap<String, PathBuf>,
 }
 
-/// The result of [`expand_workspaces`]: the deck file(s) to load and the per-deck
-/// workspace directive defaults (keyed by file name).
 pub struct Expanded {
     pub decks: Vec<PathBuf>,
     pub defaults: HashMap<String, DeckSettings>,
 }
 
-/// Resolves each deck file's workspace context: a member file whose parent folder
-/// is a workspace inherits that workspace's shared directive defaults (keyed by
-/// file name); plain files pass through untagged. A review/browse target is a
-/// single deck *file* (whole-workspace review was removed), so this no longer
-/// expands a folder — it just tags the file with its workspace's directives.
 pub fn expand_workspaces(deck_paths: &[PathBuf]) -> Result<Expanded> {
     let mut decks = Vec::new();
     let mut defaults: HashMap<String, DeckSettings> = HashMap::new();
     for path in deck_paths {
-        // A deck file inside a workspace folder inherits its shared directives.
         if let Some(parent) = path.parent()
             && parent.join(workspace::MANIFEST).is_file()
             && let Ok(ws) = workspace::Workspace::load(parent)
@@ -191,10 +125,6 @@ pub fn expand_workspaces(deck_paths: &[PathBuf]) -> Result<Expanded> {
     Ok(Expanded { decks, defaults })
 }
 
-/// Resolves a per-run setting from three sources, most specific first: an
-/// explicit CLI flag, then a value declared by the loaded decks (used when
-/// they agree), then the built-in default. Decks that disagree fall back to
-/// the default with a warning.
 fn resolve<T: Copy + PartialEq>(
     name: &str,
     cli: Option<T>,
@@ -220,20 +150,12 @@ fn resolve<T: Copy + PartialEq>(
     }
 }
 
-/// Base line number for a synthesized virtual card ([`synthesize_virtual`]) —
-/// far past any real deck's line count, so a virtual card's `line` never
-/// collides with (and so never shares a sibling group with) a real card's
-/// front line.
+/// Far past any real deck's line count, so a virtual card's `line` never
+/// collides with a real card's.
 pub const VIRTUAL_LINE_BASE: usize = 1_000_000;
 
-/// Synthesizes a virtual card's stored deck-format `text` into the real `Card`
-/// it stands for — the one in `parse(vc.parent, vc.text)` whose `Card::id`
-/// matches `vc.id` (a cloze block yields several sub-cards; the id picks the
-/// right hole). `subject` MUST equal `vc.parent`, or the id won't reproduce
-/// (`Card::id` hashes the subject). `line` places it far past any real deck
-/// line so it never shares a sibling group with a deck card — id-neutral, since
-/// `Card::id` ignores `line`. Returns `None` if the text can't be parsed or no
-/// card matches (defensive — impossible in practice, but no `unwrap` here).
+/// `subject` must equal `vc.parent`, or the id won't reproduce (`Card::id`
+/// hashes the subject).
 pub fn synthesize_virtual(vc: &VirtualCard, subject: &Arc<str>, line: usize) -> Option<Card> {
     let mut card = l1::parse_str(subject, &vc.text)
         .ok()?
@@ -243,8 +165,6 @@ pub fn synthesize_virtual(vc: &VirtualCard, subject: &Arc<str>, line: usize) -> 
     Some(card)
 }
 
-/// The cards of all loaded decks, a header label, the per-subject deck info
-/// for the web session, and the per-deck `% key: value` settings.
 pub type LoadedDecks = (
     Vec<Card>,
     String,
@@ -252,9 +172,6 @@ pub type LoadedDecks = (
     Vec<DeckSettings>,
 );
 
-/// Loads all decks and returns their cards, a label for the header, the
-/// per-subject deck info (file path and reference links) for the web session,
-/// and the per-deck `% key: value` settings.
 pub fn load_decks(
     paths: &[PathBuf],
     defaults: &HashMap<String, DeckSettings>,
@@ -264,8 +181,6 @@ pub fn load_decks(
     let mut decks = HashMap::new();
     let mut settings = Vec::new();
     for path in paths {
-        // A deck that belongs to a workspace inherits the workspace's shared
-        // directives (keyed by file name); others load with no defaults.
         let deck = match path
             .file_name()
             .and_then(|n| n.to_str())
@@ -280,14 +195,9 @@ pub fn load_decks(
             DeckInfo {
                 path: deck.path.clone(),
                 deck_token: deck.deck_token.clone(),
-                // Ask-Claude references include the deck's `% link:`s and any
-                // URL `% source:` (a source doubles as a reference).
                 links: deck.reference_links(),
-                // Where the grounded tutor reads this deck's source (opt-in).
                 source_root: deck.source_root(),
-                // Resolved against the global config in `select`.
                 source_access: false,
-                // For resolving a card's `% at:` citation excerpt on reveal.
                 source_base: SourceBase::for_deck(&deck),
             },
         );
@@ -297,17 +207,13 @@ pub fn load_decks(
     Ok((cards, names.join(", "), decks, settings))
 }
 
-/// Resolves which stored topology, if any, reorders this session: an explicit
-/// `--topology <name>` must name a cached topology (else an error), no flag with
-/// exactly one cached topology auto-uses it, and zero-or-several without a name
-/// leaves ordering to the scheduler.
 fn resolve_topology<'a>(
     name: Option<&str>,
     augment: &'a AugmentCache,
     deck_tokens: &std::collections::HashSet<String>,
 ) -> Result<Option<&'a Topology>> {
-    // Only this deck's topologies — a shared cache (decks sharing a store) holds
-    // others', which must not be auto-applied or named here.
+    // Only this deck's topologies: a shared cache (decks sharing a store) may
+    // hold others', which must not be auto-applied or named here.
     let mine = augment.topologies_for(deck_tokens);
     match name {
         Some(name) => match mine.into_iter().find(|t| t.name == name) {
@@ -323,8 +229,6 @@ fn resolve_topology<'a>(
     }
 }
 
-/// If a single trace deck was picked, returns its loaded deck — the signal to
-/// walk it (predict → verify) rather than flatten it into a card review.
 fn single_trace_to_walk(deck_paths: &[PathBuf]) -> Option<Deck> {
     match deck_paths {
         [path] => Deck::load(path).ok().filter(|deck| deck.is_trace()),
@@ -332,7 +236,6 @@ fn single_trace_to_walk(deck_paths: &[PathBuf]) -> Option<Deck> {
     }
 }
 
-/// Subject → deck file path, for the web frontend's card removal.
 fn subject_paths(decks: HashMap<String, DeckInfo>) -> HashMap<String, PathBuf> {
     decks
         .into_iter()
@@ -340,31 +243,16 @@ fn subject_paths(decks: HashMap<String, DeckInfo>) -> HashMap<String, PathBuf> {
         .collect()
 }
 
-/// Whether `path` is structurally selectable — the same rule [`select`] bails
-/// on for a folder, extracted so the picker catalog can source its
-/// `selectable` field from the identical check: `true` for a deck file
-/// (including one that fails to parse — that's a load *failure*, not a
-/// structural rejection), `false` for a folder that contains decks (a
-/// workspace or a plain folder). This is a STRUCTURAL predicate ("is `path`
-/// the kind of thing `/api/select` accepts"), not a state one — `reviewable`
-/// answers "is there anything due right now", which this never does.
+/// A deck file that fails to parse is still selectable: that's a load
+/// failure, not a structural rejection.
 pub fn selectable(path: &Path) -> bool {
     !workspace::has_decks(path)
 }
 
-/// Stamps `path` (mints identity tokens into any unstamped cards) at an
-/// enumerated write site (spec §2.1: review/session open AND augment open; the
-/// listing/doctor/stats scans are read-only and never call this). A failure is
-/// loud but non-fatal: the deck still loads, and [`exclude_unstamped`] drops
-/// the cards the failed write left tokenless.
 pub fn stamp_for_session(path: &Path) {
     stamp_for_session_reclaiming(path, &HashMap::new());
 }
 
-/// [`stamp_for_session`], but passing a §1.7 reclaim map (content fingerprint →
-/// orphaned token) so a card that lost its `<!-- id: -->` comment re-adopts the
-/// token its progress still hangs off, instead of minting fresh. Review-open
-/// only (augment-open never reclaims); [`reclaim_map`] builds the map.
 pub fn stamp_for_session_reclaiming(path: &Path, reclaim: &HashMap<u64, String>) {
     if let Err(e) = stamp::stamp_deck_reclaiming(path, reclaim) {
         eprintln!(
@@ -374,13 +262,6 @@ pub fn stamp_for_session_reclaiming(path: &Path, reclaim: &HashMap<u64, String>)
     }
 }
 
-/// The §1.7 lost-comment reclaim map for review-open (content fingerprint →
-/// orphaned token). Empty unless the deck has unstamped cards whose §7 content
-/// matches an ORPHANED token's records: a token still carrying a schedule that
-/// no live card in the deck's WORKSPACE claims (so a token a sibling deck still
-/// holds is never stolen). Read-only: the actual re-adoption is the reclaiming
-/// stamp write. The workspace scan runs only when unstamped cards exist (the
-/// uncommon case: a freshly generated deck, or a comment-stripped one).
 pub fn reclaim_map(store: &Store, path: &Path) -> HashMap<u64, String> {
     let Ok(deck) = Deck::load(path) else {
         return HashMap::new();
@@ -409,19 +290,6 @@ pub fn reclaim_map(store: &Store, path: &Path) -> HashMap<u64, String> {
     store.reclaim_candidates(&live, &wanted)
 }
 
-/// Resolve any card-token collision the deck at `path` is the LOSER of, at the
-/// session-open write site (spec §2.4): the ONLY place this write happens.
-/// Recomputes the duplicate map for the containing folder (read-only) and, for
-/// each collision this file loses, swaps its token for a fresh mint via
-/// [`stamp::replace_card_token`]. The keeper deck is untouched and keeps the
-/// earned progress; this file's colliding card forks into a new, unreviewed
-/// card. Non-fatal: a scan or replace failure warns and leaves the file as-is.
-/// A standalone single-deck folder has no siblings to collide with, so this is
-/// a no-op there (dedup-blind by design, spec §2.4). A failed
-/// `replace_card_token` write (the loud warning above) leaves the loser still
-/// sharing the token with the keeper, by design, until a write succeeds — a
-/// later open just retries the same resolution; a review in between would
-/// still touch the keeper's store entry.
 pub fn resolve_duplicates_at_open(path: &Path) {
     let Some(dir) = path.parent() else {
         return;
@@ -439,15 +307,6 @@ pub fn resolve_duplicates_at_open(path: &Path) {
     }
 }
 
-/// Uphold the §6 records invariant for every deck card at review-open and
-/// realign each cloze card's hole schedules to its current file holes (spec
-/// §3.4). For a plain card, writes/refreshes its [`crate::store::CardRecords`].
-/// For a cloze card, runs the cascade (which rekeys `token-N` schedules, evicts
-/// orphaned holes to the shelf, and MOVES the matching augment-cache entries)
-/// and refreshes its records. Returns whether any cascade actually moved
-/// schedules, so the caller can persist both stores at once (a re-open then sees
-/// agreeing holes and does not re-run). Processes each base token once (a cloze
-/// block's sub-cards share their `block_holes` + `content_fingerprint`).
 fn realign_and_record(store: &mut Store, augment: &mut AugmentCache, cards: &[Card]) -> bool {
     let mut cascaded = false;
     let mut seen: HashSet<&str> = HashSet::new();
@@ -470,20 +329,6 @@ fn realign_and_record(store: &mut Store, augment: &mut AugmentCache, cards: &[Ca
     cascaded
 }
 
-/// Stamp one deck file (an enumerated §2.1 write site), load it, and drop any
-/// cards the stamp left tokenless (loudly). Shared by review-open ([`select`])
-/// and augment-open (`/api/augment/open`, `alix deck augment`): both key the
-/// store / paid augment cache by card id, so an unstamped card (interim id 0)
-/// must never reach them: it would collapse the cache to a single key-0 entry
-/// and orphan the spend at the first real stamp. A load failure propagates (a
-/// broken deck must not half-open); a stamp failure is non-fatal and only its
-/// own cards drop. Unlike review-open ([`select`]), this does NOT call
-/// [`resolve_duplicates_at_open`] — duplicate-card-token resolution is a
-/// review-open act only, so a duplicate-loser deck opened here for augment
-/// keeps sharing its token. Any augment spend cached under that
-/// soon-to-be-replaced token becomes stale once a review-open later resolves
-/// it (the loser forks a fresh token); the cache simply regenerates against
-/// the new id on next augment.
 pub fn stamp_and_load_deck(path: &Path) -> Result<Deck> {
     stamp_for_session(path);
     let mut deck = Deck::load(path)?;
@@ -492,10 +337,6 @@ pub fn stamp_and_load_deck(path: &Path) -> Result<Deck> {
     Ok(deck)
 }
 
-/// Stamp and load every file in a selection, returning the union of their kept
-/// cards ([`stamp_and_load_deck`] per file). The augment-open shape: a plain
-/// deck is a one-member union, a workspace name unions its members' cards, and
-/// any member failing to load fails the whole open.
 pub fn stamp_and_load_cards(files: &[PathBuf]) -> Result<Vec<Card>> {
     let mut cards = Vec::new();
     for path in files {
@@ -504,9 +345,6 @@ pub fn stamp_and_load_cards(files: &[PathBuf]) -> Result<Vec<Card>> {
     Ok(cards)
 }
 
-/// The session/store boundary filter: drops cards with no identity token (a
-/// failed stamp write) with a loud warning, so an unstamped card can never
-/// key the progress store through the interim id-0 sentinel.
 pub fn exclude_unstamped(cards: Vec<Card>, label: &str) -> Vec<Card> {
     let before = cards.len();
     let kept: Vec<Card> = cards
@@ -523,46 +361,25 @@ pub fn exclude_unstamped(cards: Vec<Card>, label: &str) -> Vec<Card> {
     kept
 }
 
-/// Turns a deck selection into something reviewable: most selections resolve
-/// to a review session; a lone trace deck resolves to a walk (predict →
-/// verify) instead. `% requires:` prerequisites are NOT pulled in — the
-/// dependency graph gates exams, not what a review session contains.
-///
-/// On a review, this also persists the resolved depth (`store.set_last_depth`)
-/// so a plain Learn next time reopens at it — even when the built session
-/// turns out to have nothing due, matching a restart's expectation.
 pub fn select(
     paths: Vec<PathBuf>,
     store: &mut Store,
     cfg: &AssembleConfig,
     opts: &SelectOptions,
 ) -> Result<Selected> {
-    // Review/session open is an enumerated stamping site (spec §2.1): mint
-    // identity tokens into the selected deck file before anything is built
-    // over it, so its cards carry stable ids when they first touch the store.
     if let [path] = paths.as_slice()
         && path.is_file()
     {
         let reclaim = reclaim_map(store, path);
         stamp_for_session_reclaiming(path, &reclaim);
-        // Resolve any duplicate card token this deck loses (spec §2.4): the
-        // session-open write site, and the only place resolution writes. The
-        // keeper deck keeps the earned progress; this file's colliding card
-        // forks fresh before it is loaded below.
         resolve_duplicates_at_open(path);
     }
 
-    // A single trace picked from the picker walks (predict → verify) rather
-    // than flattening to a card review — mirrors the terminal picker's
-    // trace → walk.
     if let Some(mut deck) = single_trace_to_walk(&paths) {
-        // The boundary filter: a walk grades into the store by card id, so
-        // tokenless checkpoints (a failed stamp) must not enter it.
         deck.cards = exclude_unstamped(deck.cards, &deck.subject);
         let trace = Trace::from_deck(&deck)?;
         return Ok(Selected::Walk(WalkBuild {
             walk: Walk::new(trace),
-            // Opt-in AI grading of predictions (`[trace] auto_grade`).
             grade: cfg.trace_auto_grade.then(|| cfg.ask.clone()),
         }));
     }
@@ -571,10 +388,6 @@ pub fn select(
     let topology_sel = opts.topology.as_deref();
     let region_sel = opts.region.as_deref();
     let depth_sel = opts.depth;
-    // A session is exactly one deck file's cards — no merging of several loose
-    // decks, and no reviewing a whole workspace at once. Workspaces are an
-    // organizing layer: review their members one at a time (the picker drills in;
-    // `alix workspace <dir>` opens that picker).
     let [deck] = deck_paths.as_slice() else {
         bail!("review one deck at a time (merging decks was removed)");
     };
@@ -585,17 +398,9 @@ pub fn select(
             deck.display()
         );
     }
-    // Resolve the deck's workspace context (a member file inherits its workspace's
-    // shared directives). `% requires:` prerequisites are NOT pulled in — the
-    // dependency graph gates exams, not what a review session contains.
     let expanded = expand_workspaces(&deck_paths)?;
     let (cards, deck_label, mut decks, settings) = load_decks(&expanded.decks, &expanded.defaults)?;
-    // The session/store boundary filter: cards a failed stamp left tokenless
-    // are excluded (loudly) before any store-keyed step sees them.
     let mut cards = exclude_unstamped(cards, &deck_label);
-    // Resolve each deck's effective ask-tutor source access: a deck in a
-    // workspace takes that workspace's `source_access` override if it sets one,
-    // else the global `[ask] source_access`.
     for info in decks.values_mut() {
         let workspace_override = info
             .path
@@ -604,25 +409,17 @@ pub fn select(
             .and_then(workspace::manifest_source_access);
         info.source_access = workspace_override.unwrap_or(cfg.ask.source_access);
     }
-    // One deck per session, so the label is the deck's own subject.
     let label = deck_label;
 
-    // The tokens of the decks in this selection — used to pick out *their*
-    // topologies from a cache that may be shared with other decks (one store).
     let deck_tokens: std::collections::HashSet<String> = decks
         .values()
         .filter_map(|d| d.deck_token.clone())
         .collect();
-    // This deck's authored-card ids, to keep an injected virtual card from
-    // shadowing a real card it collides with (a post-promote belt-and-suspenders
-    // guard). Computed before the virtual injection below adds to `cards`.
+    // Computed before virtual injection adds to `cards`, so it only holds
+    // authored ids.
     let deck_card_ids: std::collections::HashSet<String> =
         cards.iter().filter_map(Card::id).collect();
 
-    // Merge in any AI-generated notes from the sidecar cache (`alix deck augment
-    // --target notes`) — shown with the card's own deck note on reveal. (Question
-    // variants are rotated in per-presentation by the frontends, and distractors
-    // are read when a choice question is built.)
     let mut augment = AugmentCache::open(augment::augment_path_for(store.path()));
     // Records must land before the session build reaches any `get_or_insert`.
     if realign_and_record(store, &mut augment, &cards) {
@@ -634,9 +431,7 @@ pub fn select(
         }
     }
     for card in &mut cards {
-        // Reshape first (re-renders the deck note, front, answer, mode) …
         augment.apply_format(card);
-        // … then stack the notes-target trivia on top of the reshaped note.
         if let Some(note) = card
             .id()
             .and_then(|id| augment.note(&id))
@@ -646,16 +441,10 @@ pub fn select(
         }
     }
 
-    // Resolve the topology that reorders this session (if any) and project it to
-    // a session-ready order. The resolved name travels on `SessionBuild` so the
-    // web frontend can show the "why this card follows the last" cue from the
-    // same topology.
     let topology = resolve_topology(topology_sel, &augment, &deck_tokens)?;
     let topology_name = topology.map(|t| t.name.clone());
     let topology_order = topology.map(|t| TopologyOrder::from_walk(&t.walk));
 
-    // `--region` focuses the session on one region of the topology — drill a
-    // weak area. SRS still picks what's due *within* that region.
     if let Some(region_name) = region_sel {
         let Some(topology) = topology else {
             bail!("--region needs a topology — pass --topology, or augment one for this deck");
@@ -670,25 +459,17 @@ pub fn select(
         cards.retain(|c| c.id().is_some_and(|id| ids.contains(&id)));
     }
 
-    // A workspace member drills under that workspace's `alix.local.toml` pacing
-    // override (retention + retirement), else the global `[review]` config.
     let review = cfg
         .review
         .for_workspace(deck.parent().unwrap_or_else(|| Path::new("")));
 
-    // Inject this deck's virtual (remediation) cards alongside its authored
-    // ones, so both are drilled by the same FSRS-due queue — but not under a
-    // `--region` focus: a region is a deck-topology drill, and virtual cards
-    // aren't part of any topology. `decks` has exactly this one deck's entry
-    // (one deck per session), keyed by its subject — the same string a
-    // virtual card's `parent` is set to.
     let subject: Arc<str> = decks
         .keys()
         .next()
         .map(|s| Arc::from(s.as_str()))
         .unwrap_or_else(|| Arc::from(label.as_str()));
-    // Quirk: a `--region` focus always excludes virtual cards — they belong to
-    // no topology, so a region drill never injects them.
+    // Quirk: a `--region` focus always excludes virtual cards (they belong to
+    // no topology).
     if region_sel.is_none() {
         for (k, vc) in store
             .virtual_cards_for(subject.as_ref())
@@ -698,9 +479,9 @@ pub fn select(
             .enumerate()
         {
             if let Some(mut card) = synthesize_virtual(vc, &subject, VIRTUAL_LINE_BASE + k) {
-                // Reshape/note a synth card exactly as deck cards are above
-                // (§8.1) — this loop runs after that one, so it must repeat the
-                // same two steps rather than widening the earlier loop's range.
+                // Repeats the deck-card reshape/note steps: this loop runs
+                // after virtual cards are added, so it can't merge into the
+                // earlier one.
                 augment.apply_format(&mut card);
                 if let Some(note) = card
                     .id()
@@ -714,9 +495,8 @@ pub fn select(
         }
     }
 
-    // Directives (order) come from the session's decks — the `% order:`
-    // directive, else the scheduled default (the CLI override is gone; order
-    // is authored, not launched).
+    // Order comes from the deck's own setting, not a CLI flag: ordering is
+    // authored, not launched.
     let target_settings: Vec<&DeckSettings> = settings.iter().collect();
     let order = resolve(
         "order",
@@ -725,16 +505,9 @@ pub fn select(
         Order::default(),
     );
 
-    // The session depth: an explicit `--depth` / picker choice, else the deck's
-    // last-used depth (keyed by deck subject, like the rest of the deck store),
-    // else `{#recognize-smart-default}` (Recognize when the deck already has AI
-    // distractor coverage, else Recall). The persisted value below lets a plain
-    // Learn reopen at it.
     let depth = depth_sel
         .or_else(|| store.last_depth(subject.as_ref()))
         .unwrap_or_else(|| default_depth(&cards, &augment));
-    // Pacing: the launch's own overrides win over the instance's flag/config
-    // values; cram is purely a per-launch choice (the ▾ menu tick-box).
     let options = SessionOptions {
         max_new: opts.max_new.unwrap_or(cfg.pacing.max_new),
         limit: opts.limit.or(cfg.pacing.limit),
@@ -745,9 +518,6 @@ pub fn select(
         depth,
     };
     let now = opts.now_ms.unwrap_or_else(now_ms);
-    // A workspace deadline bends the scheduler toward the date: interval cap +
-    // windowed retention ramp + due ceiling ({#deadlines} spec). Past the date
-    // the tuning is None and the base parameters hold.
     let tuning = review.deadline.and_then(|date| {
         crate::scheduler::deadline_tuning(
             date,
@@ -757,10 +527,9 @@ pub fn select(
             crate::time::end_of_local_day_ms(date),
         )
     });
-    // A Recognize session is pick-only: schedule only cards that can build a
-    // multiple-choice from cached distractors, so it never degrades to a plain
-    // flip (which would blur into Recall). Un-augmented cards stay reviewable at
-    // Recall/Reconstruct; they just drop out of this Recognize roster.
+    // Recognize schedules only cards with cached distractors, so it never
+    // degrades to a plain flip; un-augmented cards stay reviewable at other
+    // depths.
     let cards = if depth == Depth::Recognize {
         cards
             .into_iter()
@@ -781,10 +550,8 @@ pub fn select(
         now,
     );
 
-    // Remember the resolved depth for this deck so a plain Learn next time
-    // reopens at it (keyed by deck subject, like the rest of the deck store).
-    // Quirk: this write always fires, even when the session just built above
-    // has nothing due — a restart still reopens at the last-chosen depth.
+    // Quirk: this write always fires even when the built session has nothing
+    // due, so a restart still reopens at the last-chosen depth.
     let resolved_depth = session.depth();
     store.set_last_depth(subject.as_ref(), resolved_depth);
     if let Err(e) = store.save() {
@@ -795,14 +562,11 @@ pub fn select(
         .iter()
         .map(|(subject, info)| (subject.clone(), info.links.clone()))
         .collect();
-    // Subject → `% source:` project root, but only for decks whose effective
-    // source access is on — so the web tutor grounds exactly those.
     let source_roots = decks
         .iter()
         .filter(|(_, info)| info.source_access)
         .filter_map(|(subject, info)| info.source_root.clone().map(|root| (subject.clone(), root)))
         .collect();
-    // Subject → source base, so the web can resolve a card's `% at:` citation.
     let source_bases = decks
         .iter()
         .map(|(subject, info)| (subject.clone(), info.source_base.clone()))
@@ -820,11 +584,7 @@ pub fn select(
     }))
 }
 
-/// Builds the browse card list from explicit `paths` (no picker). Mirrors
-/// [`select`]'s review path for the read-only browse view: loads decks, but
-/// builds no scheduler session.
 pub fn browse(paths: Vec<PathBuf>) -> Result<CardsBuild> {
-    // One deck file per browse — no merging loose decks or whole workspaces.
     let [deck] = paths.as_slice() else {
         bail!("browse one deck at a time (merging decks was removed)");
     };
@@ -838,18 +598,12 @@ pub fn browse(paths: Vec<PathBuf>) -> Result<CardsBuild> {
     let (mut cards, deck_label, decks, _) = load_decks(&expanded.decks, &expanded.defaults)?;
     let label = deck_label;
 
-    // Merge in the display augmentations review shows, from the decks' own store
-    // (a workspace's when they share one) — so browse renders the same view, not
-    // the raw deck. The raw card stays in the deck file; this is display-only.
-    // Quirk: no instance-store fallback (`None`) — browse only ever resolves a
-    // workspace's own store, else the global default; the store here locates
-    // the augment sidecar (`.path()`) only, nothing is read from or written to it.
+    // Quirk: no instance-store fallback here (browse only resolves a
+    // workspace's own store, else the global default).
     let store = store_for(&expanded.decks, None)?;
     let augment = AugmentCache::open(augment::augment_path_for(store.path()));
     for card in &mut cards {
-        // Reshape first (re-renders the deck note, front, answer, mode) …
         augment.apply_format(card);
-        // … then stack the notes-target trivia on top of the reshaped note.
         if let Some(note) = card
             .id()
             .and_then(|id| augment.note(&id))
@@ -889,13 +643,6 @@ mod tests {
 
     #[test]
     fn augment_open_stamps_an_unstamped_deck() {
-        // The augment-open path (`stamp_and_load_cards`) mints identity tokens
-        // before the paid cache is keyed by card id, mirroring review-open. On a
-        // never-opened deck every card id is the interim 0 sentinel; after the
-        // open the file carries real tokens and every returned card has a
-        // derived (nonzero) id. Mutation sentinel: drop the stamp call in
-        // `stamp_and_load_deck` and the deck stays unstamped, so every card is
-        // excluded and the returned union is empty; this asserts otherwise.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("d.md");
         std::fs::write(&path, "## q1\na1\n## q2\na2\n").unwrap();
@@ -908,7 +655,6 @@ mod tests {
             "every returned card carries a minted token"
         );
 
-        // The deck file gained a frontmatter deck id and a per-card token.
         let stamped = std::fs::read_to_string(&path).unwrap();
         assert!(stamped.contains("id: \""), "{stamped:?}");
         assert_eq!(2, stamped.matches("<!-- id: ").count(), "{stamped:?}");
@@ -917,27 +663,21 @@ mod tests {
     #[test]
     fn store_for_prefers_workspace_then_instance_then_global() {
         let dir = tempfile::tempdir().unwrap();
-        // workspace: a dir with alix.toml + a member deck
         let ws = dir.path().join("box");
         std::fs::create_dir(&ws).unwrap();
         std::fs::write(ws.join("alix.toml"), "title = \"Box\"\n").unwrap();
         let member = ws.join("a.md");
         std::fs::write(&member, "## q <!-- id: q1 -->\na\n").unwrap();
-        // a loose deck outside any workspace
         let loose = dir.path().join("loose.md");
         std::fs::write(&loose, "## q <!-- id: q2 -->\na\n").unwrap();
         let instance = dir.path().join("instance-progress.json");
 
-        // workspace member -> the workspace's store
         let p = store_path_for(std::slice::from_ref(&member), None).expect("workspace store");
         assert_eq!(p, ws.join("progress.json"));
-        // workspace member through store_for: the workspace store wins over the instance fallback
         let s = store_for(std::slice::from_ref(&member), Some(&instance)).unwrap();
         assert_eq!(s.path(), ws.join("progress.json").as_path());
-        // loose deck + instance fallback -> the instance store (via store_for)
         let s = store_for(std::slice::from_ref(&loose), Some(&instance)).unwrap();
         assert_eq!(s.path(), instance.as_path());
-        // loose deck, no instance -> the global default (assert it is NOT under our tempdir)
         let g = store_for(std::slice::from_ref(&loose), None).unwrap();
         assert!(!g.path().starts_with(dir.path()));
     }
@@ -959,7 +699,6 @@ mod tests {
         let loose = dir.path().join("loose.md");
         std::fs::write(&loose, "## c <!-- id: qc -->\n1\n").unwrap();
 
-        // a deck (or several) in one workspace → that workspace's store
         assert_eq!(
             Some(ws_store.clone()),
             store_path_for(&[ws.join("a.md")], None)
@@ -968,7 +707,6 @@ mod tests {
             Some(ws_store.clone()),
             store_path_for(&[ws.join("a.md"), ws.join("b.md")], None)
         );
-        // loose, mixed loose+workspace, and cross-workspace all → global (None)
         assert_eq!(None, store_path_for(std::slice::from_ref(&loose), None));
         assert_eq!(
             None,
@@ -979,7 +717,6 @@ mod tests {
             store_path_for(&[ws.join("a.md"), ws2.join("a.md")], None)
         );
         assert_eq!(None, store_path_for(&[], None));
-        // --store wins over everything
         let over = dir.path().join("x.json");
         assert_eq!(
             Some(over.clone()),
@@ -987,12 +724,6 @@ mod tests {
         );
     }
 
-    /// A minimal two-hop trace deck, mirroring `tests/api.rs`'s `TRACE_DECK`
-    /// fixture — enough to classify as a trace (`% trace:` + `% source:`),
-    /// not enough to need a real source file for classification itself
-    /// (`Trace::from_deck` reads the source lazily, past the point `select`
-    /// only needs to know it's a trace at all for this test's fact-deck arm;
-    /// the trace arm below supplies a real source file).
     const TRACE_DECK: &str = "---\ntrace: how it works\nsource: source.txt\n---\n\
 ## Predict the first hop <!-- id: qhop1 -->\n\
 it reads the first line\n\
@@ -1001,8 +732,6 @@ it reads the first line\n\
 it reads line two\n\
 <!-- at: 2 -->\n";
 
-    /// The default per-session pacing/config for a `select` test: built-in
-    /// `max_new`, no session cap, default review/ask config.
     fn test_config() -> AssembleConfig {
         AssembleConfig {
             review: ReviewConfig::default(),
@@ -1018,9 +747,6 @@ it reads line two\n\
 
     #[test]
     fn review_open_records_every_deck_card_including_cloze_holes() {
-        // The §6 invariant at review-open: every deck card gets records before
-        // the session build, a plain card with no holes and a cloze card with
-        // one hole fingerprint per hole under its base token.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("d.md");
         std::fs::write(
@@ -1047,9 +773,6 @@ it reads line two\n\
 
     #[test]
     fn reordering_cloze_holes_in_the_file_moves_schedules_through_review_open() {
-        // End-to-end (spec §3.4): a first open records the card's holes; after
-        // the two gaps are swapped in the file, a second open's cascade moves
-        // each gap's schedule to follow its word, not its position.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("d.md");
         std::fs::write(
@@ -1059,7 +782,6 @@ it reads line two\n\
         .unwrap();
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
 
-        // First open records holes [alpha, beta]; then seed distinct schedules.
         select(
             vec![path.clone()],
             &mut store,
@@ -1067,10 +789,9 @@ it reads line two\n\
             &SelectOptions::default(),
         )
         .unwrap();
-        store.get_or_insert("fillcard-0", 0).total_reviews = 1; // alpha
-        store.get_or_insert("fillcard-1", 0).total_reviews = 2; // beta
+        store.get_or_insert("fillcard-0", 0).total_reviews = 1;
+        store.get_or_insert("fillcard-1", 0).total_reviews = 2;
 
-        // Swap the two gaps in the file, then re-open.
         std::fs::write(
             &path,
             "---\nid: \"deck1\"\n---\n## Fill <!-- id: fillcard -->\n\\cloze{beta} then \\cloze{alpha}\n",
@@ -1084,8 +805,6 @@ it reads line two\n\
         )
         .unwrap();
 
-        // alpha (was hole 0) is now hole 1; beta (was hole 1) is now hole 0.
-        // Each schedule followed its word.
         assert_eq!(1, store.get("fillcard-1").unwrap().total_reviews, "alpha");
         assert_eq!(2, store.get("fillcard-0").unwrap().total_reviews, "beta");
         assert!(
@@ -1096,10 +815,6 @@ it reads line two\n\
 
     #[test]
     fn an_unstamped_card_matching_an_orphans_content_fingerprint_readopts_the_token() {
-        // §1.7 reclaim: a card whose `<!-- id: -->` comment was stripped, whose
-        // §7 content still matches an orphaned token's records, re-adopts that
-        // token at review-open instead of minting fresh (its earned schedule is
-        // preserved, not orphaned).
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("geo.md");
         std::fs::write(
@@ -1109,8 +824,6 @@ it reads line two\n\
         .unwrap();
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
 
-        // Seed the orphan: a token carrying a schedule + records whose content
-        // fingerprint equals the deck card's, but no live card claims it.
         let content_fp =
             crate::l1::content_fingerprint("Capital of France?", &["Paris".to_string()]);
         let orphan = "orphantoken0000000000000000";
@@ -1125,25 +838,16 @@ it reads line two\n\
         )
         .unwrap();
 
-        // The card re-adopted the orphan's token in the file…
         let stamped = std::fs::read_to_string(&path).unwrap();
         assert!(
             stamped.contains(&format!("<!-- id: {orphan} -->")),
             "expected the reclaimed token in the file: {stamped}"
         );
-        // …and its earned schedule survived (no fresh mint + empty new entry).
         assert_eq!(5, store.get(orphan).unwrap().total_reviews);
     }
 
     #[test]
     fn a_reverse_only_card_reclaims_its_orphaned_token() {
-        // §1.7 reclaim across `direction: reverse`: records, reclaim_map, and the
-        // reclaiming stamp all key on ONE fingerprint (the authored/forward
-        // card's, shared by its swapped twin), so a comment-stripped reverse card
-        // re-adopts the token its schedule hangs off instead of minting fresh.
-        // Before the fix the swapped twin recomputed a fingerprint over its
-        // swapped sides while the stamp keyed on the raw (forward) one, and the
-        // lookup missed.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("vocab.md");
         let token = "revtok00000000000000000000";
@@ -1154,8 +858,6 @@ it reads line two\n\
         .unwrap();
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
 
-        // First open records the reverse card under its base token; then seed a
-        // schedule on the reversed key so there is earned progress to preserve.
         select(
             vec![path.clone()],
             &mut store,
@@ -1165,8 +867,6 @@ it reads line two\n\
         .unwrap();
         store.get_or_insert(&format!("{token}-r"), 0).total_reviews = 5;
 
-        // Strip the card's id comment: its token becomes an orphan (no live card
-        // claims it), the exact lost-comment case.
         std::fs::write(
             &path,
             "---\nid: \"deck1\"\ndirection: reverse\n---\n## Word\nAntwort\n",
@@ -1186,16 +886,11 @@ it reads line two\n\
             stamped.contains(&format!("<!-- id: {token} -->")),
             "the reverse-only card should re-adopt its orphaned token: {stamped}"
         );
-        // Its earned schedule survived under the reversed key.
         assert_eq!(5, store.get(&format!("{token}-r")).unwrap().total_reviews);
     }
 
     #[test]
     fn a_both_direction_card_reclaims_its_orphaned_token() {
-        // The `direction: both` control: the forward half records the base
-        // token, so a comment-stripped card still re-adopts it. Guards that
-        // aligning the swapped twin's fingerprint onto the forward one did not
-        // regress the both case.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("vocab.md");
         let token = "bothtok0000000000000000000";
@@ -1241,8 +936,6 @@ it reads line two\n\
 
     #[test]
     fn read_only_scans_never_write_records() {
-        // Listing a workspace opens the store read-only and must never write it
-        // (no records added on a mere scan): records are a review-open act.
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
             dir.path().join("d.md"),
@@ -1299,11 +992,8 @@ it reads line two\n\
         let fact = dir.path().join("f.md");
         std::fs::write(&fact, "## q <!-- id: qf -->\na\n").unwrap();
 
-        // A lone trace → walk it.
         assert!(single_trace_to_walk(std::slice::from_ref(&trace)).is_some());
-        // A lone facts deck → review, not walk.
         assert!(single_trace_to_walk(std::slice::from_ref(&fact)).is_none());
-        // A trace alongside other decks isn't a lone trace → review/merge.
         assert!(single_trace_to_walk(&[trace, fact]).is_none());
     }
 
@@ -1315,8 +1005,6 @@ it reads line two\n\
         std::fs::write(ws.join("a.md"), "## a <!-- id: qa -->\nb\n").unwrap();
         std::fs::write(ws.join("alix.toml"), "[defaults]\ndirection = \"both\"\n").unwrap();
 
-        // A member picked as a bare file (a subset selection) still inherits the
-        // workspace's directives.
         let exp = expand_workspaces(&[ws.join("a.md")]).unwrap();
         assert_eq!(1, exp.decks.len());
         assert_eq!(
@@ -1325,9 +1013,6 @@ it reads line two\n\
         );
     }
 
-    /// Inserts a virtual (remediation) card for deck `subject` into `store` the
-    /// way the substrate does — sidecar content keyed by its `Card::id`, plus a
-    /// fresh schedule seeded at `t=0` (so it's due, not treated as unseen).
     fn insert_virtual_card(store: &mut Store, subject: &str) {
         let text = "## virtual front <!-- id: vq1 -->\nvirtual back\n".to_string();
         let id = crate::l1::parse_str(subject, &text).unwrap()[0]
@@ -1350,7 +1035,7 @@ it reads line two\n\
         std::fs::create_dir(&ws).unwrap();
         let member = ws.join("m.md");
         std::fs::write(&member, "## q <!-- id: qm -->\na\n").unwrap();
-        // Pin the store explicitly — a bare `None` would fall through to the
+        // Pin the store explicitly: a bare `None` would fall through to the
         // real global data dir.
         let mut store = store_for(
             std::slice::from_ref(&member),
@@ -1375,7 +1060,7 @@ it reads line two\n\
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("rust.md");
         std::fs::write(&path, "## q1 <!-- id: q1 -->\na1\n").unwrap();
-        // Not a workspace, so pass an explicit `--store`-style override — a
+        // Not a workspace, so pass an explicit `--store`-style override: a
         // bare `None` here would fall through to the real global data dir.
         let mut store = store_for(
             std::slice::from_ref(&path),
@@ -1393,7 +1078,6 @@ it reads line two\n\
         .unwrap() else {
             panic!("a fact deck must review");
         };
-        // The deck's one (new) card, plus the injected due virtual card.
         assert_eq!(2, build.session.initial_size);
     }
 
@@ -1401,10 +1085,10 @@ it reads line two\n\
     fn region_focus_excludes_virtual_cards() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("rust.md");
-        // A frontmatter `id:` gives the deck a stable token, which the topology
-        // is now bound to (topologies scope by owner token, not card overlap).
+        // A frontmatter `id:` gives the deck a stable token, which topology
+        // matching is bound to (not card overlap).
         std::fs::write(&path, "---\nid: dtok1\n---\n## q1 <!-- id: q1 -->\na1\n").unwrap();
-        // Not a workspace, so pass an explicit `--store`-style override — a
+        // Not a workspace, so pass an explicit `--store`-style override: a
         // bare `None` here would fall through to the real global data dir.
         let mut store = store_for(
             std::slice::from_ref(&path),
@@ -1416,7 +1100,6 @@ it reads line two\n\
         let card_id = deck.cards[0].id().unwrap();
         let deck_token = deck.deck_token.clone().unwrap();
 
-        // Cache a one-region topology owned by this deck (matched by its token).
         let mut cache = AugmentCache::open(augment::augment_path_for(store.path()));
         cache.add_topology(Topology {
             name: "auto".to_string(),
@@ -1431,7 +1114,6 @@ it reads line two\n\
         });
         cache.save().unwrap();
 
-        // A matching virtual card for this deck.
         insert_virtual_card(&mut store, "rust.md");
 
         let Selected::Review(build) = select(
@@ -1446,16 +1128,11 @@ it reads line two\n\
         .unwrap() else {
             panic!("a fact deck must review");
         };
-        // Only the region's one real card — a `--region` focus is a
-        // deck-topology drill, and virtual cards aren't part of any topology.
         assert_eq!(1, build.session.initial_size);
     }
 
     #[test]
     fn a_format_cache_entry_applies_to_a_synthesized_virtual_card() {
-        // A synthesized virtual card has a real `Card::id`, so an existing
-        // format-cache entry for that id applies with no change to
-        // `apply_format` itself — the "free" half of augment-for-virtuals (§8.1).
         let subject: Arc<str> = Arc::from("rust.md");
         let text = "## List the parts <!-- id: vlist -->\nA, B, C\n".to_string();
         let id = crate::l1::parse_str(&subject, &text).unwrap()[0]
@@ -1490,13 +1167,10 @@ it reads line two\n\
 
     #[test]
     fn select_applies_a_cached_format_to_an_injected_virtual_card() {
-        // The display half of augment-for-virtuals (§8.1): `select`'s review
-        // arm must reshape an injected synth card the same way it reshapes
-        // deck cards.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("rust.md");
         std::fs::write(&path, "## q1 <!-- id: q1 -->\na1\n").unwrap();
-        // Not a workspace, so pass an explicit `--store`-style override — a
+        // Not a workspace, so pass an explicit `--store`-style override: a
         // bare `None` here would fall through to the real global data dir.
         let mut store = store_for(
             std::slice::from_ref(&path),
@@ -1554,8 +1228,6 @@ it reads line two\n\
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
         let cfg = test_config();
 
-        // An explicit depth resolves the first session AND persists — assert the
-        // persisted value directly (not just the session it produced).
         let explicit = SelectOptions {
             depth: Some(Depth::Recognize),
             ..Default::default()
@@ -1563,8 +1235,6 @@ it reads line two\n\
         select(vec![deck.clone()], &mut store, &cfg, &explicit).unwrap();
         assert_eq!(Some(Depth::Recognize), store.last_depth("d.md"));
 
-        // No explicit depth this time — falls back to the stored last depth
-        // (not the built-in default, Recall).
         let Selected::Review(build) =
             select(vec![deck], &mut store, &cfg, &SelectOptions::default()).unwrap()
         else {
@@ -1584,15 +1254,13 @@ it reads line two\n\
         let mut store = open_store(Some(store_path.clone())).unwrap();
         let cfg = test_config();
 
-        // Seed the augment cache with a distractor set for this deck's one
-        // card — the real id, read from the loaded deck, never hand-computed.
+        // Distractor set keyed by the real id, read from the loaded deck
+        // (never hand-computed).
         let card_id = Deck::load(&deck_path).unwrap().cards[0].id().unwrap();
         let mut cache = AugmentCache::open(augment::augment_path_for(&store_path));
         cache.set_distractors(&card_id, vec!["w1".into(), "w2".into(), "w3".into()]);
         cache.save().unwrap();
 
-        // No explicit depth and no prior session: `{#recognize-smart-default}`
-        // must resolve Recognize, not the plain Recall default.
         let Selected::Review(build) =
             select(vec![deck_path], &mut store, &cfg, &SelectOptions::default()).unwrap()
         else {
@@ -1611,7 +1279,6 @@ it reads line two\n\
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
         let cfg = test_config();
 
-        // No augment coverage at all: the classic Recall default still holds.
         let Selected::Review(build) =
             select(vec![deck_path], &mut store, &cfg, &SelectOptions::default()).unwrap()
         else {
@@ -1635,7 +1302,6 @@ it reads line two\n\
     fn browse_loads_from_explicit_paths_including_image_cards() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("d.md");
-        // A normal card and an image card — both render in the web frontend.
         std::fs::write(
             &path,
             "---\nimg-dir: /imgs\n---\n## plain\nanswer\n## pic <!-- img: a.png -->\nphoto\n",
@@ -1648,8 +1314,6 @@ it reads line two\n\
 
     #[test]
     fn browse_applies_a_cached_format_reshape() {
-        // A deck in a workspace, so `browse` resolves the workspace's own
-        // store (a deterministic temp path) rather than the global store.
         let dir = tempfile::tempdir().unwrap();
         let ws = dir.path().join("eng");
         std::fs::create_dir(&ws).unwrap();
@@ -1657,13 +1321,10 @@ it reads line two\n\
         let path = ws.join("d.md");
         std::fs::write(&path, "## List the parts <!-- id: qlist -->\nA, B, C\n").unwrap();
 
-        // Without a cached format, browse shows the raw deck answer.
         let raw = browse(vec![path.clone()]).unwrap();
         let id = raw.cards[0].id().unwrap();
         assert_eq!(raw.cards[0].back_for_display(), ["A, B, C"]);
 
-        // Cache a format reshape (and a notes-target trivia) for that card in the
-        // workspace's augment sidecar.
         let store = store_for(std::slice::from_ref(&path), None).unwrap();
         let mut cache = AugmentCache::open(augment::augment_path_for(store.path()));
         cache.set_format(
@@ -1678,7 +1339,6 @@ it reads line two\n\
         cache.set_note(&id, "the parts are well known".to_string());
         cache.save().unwrap();
 
-        // Browsing now shows the reshaped front/answer and the trivia note.
         let merged = browse(vec![path]).unwrap();
         assert_eq!(merged.cards[0].front, "Name the parts");
         assert_eq!(merged.cards[0].back_for_display(), ["A", "B", "C"]);
@@ -1704,7 +1364,6 @@ it reads line two\n\
         std::fs::write(&deck, "## q <!-- id: q1 -->\na\n").unwrap();
         let store_path = dir.path().join("p.json");
         let mut store = open_store(Some(store_path.clone())).unwrap();
-        // Seed the sidecar select will open, next to the store.
         let id = crate::deck::Deck::load(&deck).unwrap().cards[0]
             .id()
             .unwrap();
@@ -1727,9 +1386,6 @@ it reads line two\n\
 
     #[test]
     fn a_configured_acquire_cooldown_reaches_the_session() {
-        // The `[review] acquire_cooldown` knob must actually arrive at the
-        // scheduler `select` builds: with a 1s cooldown a just-acquired card
-        // is servable 2s later, which the default cooldown would still block.
         let dir = tempfile::tempdir().unwrap();
         let deck = dir.path().join("f.md");
         std::fs::write(&deck, "## q <!-- id: q1 -->\na\n").unwrap();
@@ -1761,9 +1417,6 @@ it reads line two\n\
         let deck = dir.path().join("f.md");
         std::fs::write(&deck, "## q <!-- id: q1 -->\na\n").unwrap();
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
-        // Acquire the card at t0: it cools until t0 + DEFAULT_ACQUIRE_COOLDOWN_MS,
-        // so which side of that line the injected clock falls on decides
-        // whether select finds anything to serve.
         let id = crate::deck::Deck::load(&deck).unwrap().cards[0]
             .id()
             .unwrap();
@@ -1797,9 +1450,6 @@ it reads line two\n\
 
     #[test]
     fn a_workspace_deadline_ceilings_what_a_session_schedules() {
-        // Spec assumption A2, closed by execution: the alix.local.toml deadline
-        // reaches the scheduler a real select() builds. A mature card graded
-        // Pass three days before the deadline must come due before it.
         let dir = tempfile::tempdir().unwrap();
         // The deadline overlay only fires inside a real workspace (manifest present).
         std::fs::write(dir.path().join("alix.toml"), "title = \"W\"\n").unwrap();
@@ -1810,7 +1460,6 @@ it reads line two\n\
             .id()
             .unwrap();
 
-        // A mature Review-state card that would schedule ~months uncapped.
         let now = crate::time::now_ms();
         store.get_or_insert(&id, now).recall = Some(crate::store::FsrsState {
             stability: 200.0,
@@ -1823,7 +1472,6 @@ it reads line two\n\
             ..Default::default()
         });
 
-        // Deadline three days from today, written the way a user would.
         let deadline = crate::time::local_date(now) + chrono::Days::new(3);
         std::fs::write(
             dir.path().join("alix.local.toml"),
@@ -1853,9 +1501,6 @@ it reads line two\n\
     }
     #[test]
     fn review_open_stamps_the_deck_and_serves_it() {
-        // Spec §2.1: review/session open is a stamping site. An unstamped
-        // deck file gains its identity tokens at open, and every served card
-        // carries one.
         let dir = tempfile::tempdir().unwrap();
         let deck = dir.path().join("fresh.md");
         std::fs::write(&deck, "## q1\na\n\n## q2\nb\n").unwrap();
@@ -1877,13 +1522,9 @@ it reads line two\n\
 
     #[test]
     fn duplicate_card_tokens_are_detected_read_only_and_resolved_at_review_open() {
-        // Two DISTINCT decks in one folder share a card token `cshared` (a card
-        // copied WITH its id comment). Detection is read-only: `dedup::scan_dir`
-        // names the keeper and loser without writing. Opening the LOSER re-mints
-        // its token; the keeper keeps the earned progress.
         let dir = tempfile::tempdir().unwrap();
-        // `notes.md` is the undecorated base -> the keeper; `notes copy.md`
-        // is the decorated copy -> the loser.
+        // The dedup tie-break picks the undecorated name as keeper, so
+        // `notes.md` keeps `cshared` and `notes copy.md` loses it.
         let keeper = dir.path().join("notes.md");
         std::fs::write(
             &keeper,
@@ -1897,7 +1538,6 @@ it reads line two\n\
         )
         .unwrap();
 
-        // Read-only detection: the scan names both, writes nothing.
         let before = std::fs::read_to_string(&loser).unwrap();
         let map = crate::dedup::scan_dir(dir.path());
         assert_eq!(before, std::fs::read_to_string(&loser).unwrap());
@@ -1905,7 +1545,6 @@ it reads line two\n\
         assert_eq!("cshared", map.card_dupes[0].token);
         assert_eq!(keeper.clone(), map.card_dupes[0].keeper.0);
 
-        // Seed progress under `cshared`, then open the LOSER.
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
         store.get_or_insert("cshared", 1_000);
         store.save().unwrap();
@@ -1920,7 +1559,6 @@ it reads line two\n\
             panic!("a fact deck must review");
         };
 
-        // The loser's token was replaced; the keeper still carries `cshared`.
         assert!(
             !std::fs::read_to_string(&loser).unwrap().contains("cshared"),
             "the loser deck's token must be re-minted"
@@ -1930,7 +1568,6 @@ it reads line two\n\
                 .unwrap()
                 .contains("cshared")
         );
-        // The keeper keeps the earned progress; the loser's forked card is new.
         assert!(store.get("cshared").is_some());
         let served = build.session.cards()[0].id().unwrap();
         assert_ne!(
@@ -1943,9 +1580,6 @@ it reads line two\n\
     #[cfg(unix)]
     fn a_stamp_failure_excludes_unstamped_cards_loudly() {
         use std::os::unix::fs::PermissionsExt;
-        // A read-only decks folder makes the stamp write fail; the session
-        // must then serve only the cards that already carry tokens, never a
-        // tokenless card keyed on the id-0 sentinel.
         let dir = tempfile::tempdir().unwrap();
         let decks = dir.path().join("decks");
         std::fs::create_dir(&decks).unwrap();

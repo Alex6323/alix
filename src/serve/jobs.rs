@@ -1,11 +1,3 @@
-//! The stateful screens/jobs a connection can own: review, ask-Claude, the AI
-//! exam, deck augmentation, deck generation, a wormhole send/receive, a trace
-//! walk, and browse — one `Option<…>` local each in the server's dispatch
-//! loop, built when its screen opens and dropped when it closes.
-//! Each type only polls a background worker's channel for a finished result;
-//! the thread itself is spawned by the lib crate it calls (`ask::spawn`,
-//! `augment_ai::spawn`, …), never by these types.
-
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     path::{Path, PathBuf},
@@ -36,82 +28,44 @@ use crate::{
     trace_ai,
 };
 
-/// The server's live review state once decks are chosen. Its absence (`None`)
-/// means the page is in the deck-selection phase.
 pub(super) struct Reviewing {
     pub(super) session: Session,
     pub(super) label: String,
     pub(super) files: DeckFiles,
     pub(super) images: HashMap<String, PathBuf>,
-    /// Ask-Claude tutor (the CLI conversation, transcript and in-flight call),
-    /// shared with the trace walk; the per-subject `% link:` links and source
-    /// roots that ground it stay here (they're keyed by deck subject).
     pub(super) ask: Ask,
     pub(super) links: HashMap<String, Vec<String>>,
-    /// Subject → `% source:` project root, for the grounded tutor (opt-in).
     pub(super) source_roots: HashMap<String, PathBuf>,
-    /// Subject → source base, for resolving a card's `% at:` citation excerpt.
     pub(super) source_bases: HashMap<String, SourceBase>,
-    /// AI distractors for choice cards, read when building a choice question
-    /// (generated ahead of time by `alix deck augment`; empty → offline).
     pub(super) augment: AugmentCache,
-    /// A per-presentation counter (seeded from the clock) that rotates a reworded
-    /// question variant in each time a card is shown (`--target questions`).
     pub(super) present_seq: u64,
-    /// The authored front of each card we've rotated a variant into, so the
-    /// original phrasing stays in the rotation (generated variants drop it).
     pub(super) original_fronts: HashMap<String, String>,
-    /// The resolved topology name when this session is topology-ordered (used to
-    /// fetch the topology from `augment` for the orientation breadcrumb); `None`
-    /// otherwise.
     pub(super) topology_name: Option<String>,
 }
 
-/// An in-flight ask-Claude call: the channel the background thread answers on,
-/// what it is for, and the card it is about (snapshotted so a late reply still
-/// refers to the right card).
 pub(super) struct Pending {
     pub(super) rx: Receiver<Reply>,
     pub(super) purpose: Purpose,
     pub(super) card: Card,
 }
 
-/// What a pending CLI call will do with its answer.
 pub(super) enum Purpose {
-    /// A question; holds the text to record in the transcript on success.
     Question(String),
-    /// Condense the conversation into note lines appended to the deck file.
     Condense,
-    /// Distill the conversation into one draft card, surfaced on the ask DTO.
     DraftCard,
 }
 
-/// What a review-tutor call should do with its turn.
 pub(super) enum AskAction {
-    /// Answer a question; the text is recorded in the transcript on success.
     Question(String),
-    /// Condense the conversation into note lines appended to the deck.
     Condense,
-    /// Distill the conversation into one draft card, surfaced on the ask DTO.
     DraftCard,
 }
 
-/// The ask-Claude tutor's state, shared by a review session and a trace walk: the
-/// CLI conversation spanning the session, the running transcript shown for the
-/// current subject (a review card or a walk checkpoint), and any in-flight call.
-/// It is agnostic to *what* is being studied — the consumer supplies the subject
-/// [`Card`], its `% link:` links and source root per call, and (on a "save note"
-/// condense) writes the resulting note where the subject lives.
 pub(super) struct Ask {
     pub(super) cli: CliSession,
     pub(super) transcript: Vec<Exchange>,
-    /// The subject id the displayed transcript belongs to; cleared when the
-    /// subject changes (the CLI conversation itself still spans the whole
-    /// session, so Claude keeps the full context).
     pub(super) subject: Option<String>,
     pub(super) pending: Option<Pending>,
-    /// The last card drafted from the conversation (`AskAction::DraftCard`),
-    /// surfaced on the ask DTO until the subject changes.
     pub(super) draft: Option<ask::DraftCard>,
 }
 
@@ -126,8 +80,6 @@ impl Ask {
         }
     }
 
-    /// Drops the displayed transcript when the subject (card/checkpoint) changes,
-    /// so the ask view shows only the current subject's exchanges.
     fn align(&mut self, subject: Option<String>) {
         if self.subject != subject {
             self.transcript.clear();
@@ -156,10 +108,6 @@ impl Ask {
         }
     }
 
-    /// Starts a call about `card`: a question, a condense-into-note, or a
-    /// draft-a-card distillation (`action`). `links`/`root` ground the tutor
-    /// exactly as a review does. Returns `false` (no-op) if a call is already
-    /// pending, or a condense/draft has nothing to work from.
     #[expect(clippy::too_many_arguments)] // each is a distinct, named tutor input
     fn start(
         &mut self,
@@ -174,10 +122,7 @@ impl Ask {
         if self.pending.is_some() {
             return false;
         }
-        // A new subject starts a fresh visible transcript (and a subject-scoped
-        // condense/draft), even though the CLI conversation continues.
         self.align(card.id());
-        // nothing to condense or draft without a transcript
         if matches!(action, AskAction::Condense | AskAction::DraftCard)
             && self.transcript.is_empty()
         {
@@ -187,13 +132,7 @@ impl Ask {
             Some(r) => ask::with_source_root(cfg, r),
             None => cfg.clone(),
         };
-        // Reconcile the session with this call's cwd *before* building the prompt:
-        // a cwd change starts a fresh conversation, so `started` then reports this
-        // as a first message (full subject context).
         let args = self.cli.args_in(run_cfg.cwd.as_deref());
-        // Claude keeps the running conversation via `--resume`, so its follow-up
-        // prompt stays short. A backend without a session (Task 7) runs each turn
-        // statelessly, so re-inline the prior transcript to restore memory.
         let keeps_session = crate::backend::backend_for(&run_cfg)
             .map(|b| b.supports_session())
             .unwrap_or(false);
@@ -232,33 +171,16 @@ impl Ask {
         true
     }
 
-    /// Completes a question with `answer` right away, without spawning the
-    /// backend or ever creating a [`Pending`] — used when serve already knows,
-    /// at prompt-build time, that the model would only be asked to echo
-    /// [`ask::SOURCE_NOT_FOUND`] verbatim (`{#source-not-found-reply}`: a frozen
-    /// card whose live source root can't be resolved). Applies the same
-    /// subject-alignment and transcript push as [`Ask::poll`]'s
-    /// `(Reply::Answer, Purpose::Question)` arm, so the resulting `AskDto` is
-    /// indistinguishable from a real reply — except it's already there,
-    /// `thinking: false`, on the very next read. Unlike `poll`, it leaves
-    /// `self.cli` untouched: no real turn happened, so a later real question
-    /// still starts/resumes the CLI session correctly. Returns `false` (no-op)
-    /// if a call is already pending.
     fn answer_immediately(&mut self, card: &Card, question: String, answer: String) -> bool {
         if self.pending.is_some() {
             return false;
         }
         self.align(card.id());
-        // `self.cli` is deliberately untouched: no real turn happened, so a
-        // later question must still start/resume the CLI session correctly.
+        // self.cli is deliberately left untouched: no real turn happened.
         self.transcript.push((question, answer));
         true
     }
 
-    /// Drains a finished reply: a question lands in the transcript; a condense's
-    /// note lines are handed to `save` (the consumer writes them where the subject
-    /// lives — a deck card, or a trace checkpoint). Returns a one-shot
-    /// `(status, error)` to show once.
     fn poll(
         &mut self,
         save: impl FnOnce(&Card, &[String]) -> Result<(), String>,
@@ -276,7 +198,7 @@ impl Ask {
         let pending = self.pending.take().expect("pending was present");
         match (reply, pending.purpose) {
             (Reply::Answer(answer), Purpose::Question(question)) => {
-                self.cli.started = true; // later calls --resume this conversation
+                self.cli.started = true;
                 self.transcript.push((question, answer));
                 (None, None)
             }
@@ -301,8 +223,7 @@ impl Ask {
                     Err(e) => (None, Some(e.to_string())),
                 }
             }
-            // Don't resume a session in an unknown state; the next question starts
-            // a fresh one.
+            // never resume a session in an unknown state; start fresh next time
             (Reply::Error(e), _) => {
                 self.cli = CliSession::new();
                 (None, Some(e))
@@ -311,11 +232,6 @@ impl Ask {
     }
 }
 
-/// Builds a tutor-ready [`Card`] from a paired phone's card context
-/// ([`RemoteCard`]): the server holds no card of its own for a remote call,
-/// so the phone sends everything needed to reconstruct one. `line` is
-/// meaningless off a deck file, so it's `0`; `at` carries through for
-/// completeness even though v1's ungrounded prompt never reads it.
 fn remote_card(c: &RemoteCard) -> Card {
     let mut card = Card::plain(
         Arc::from(c.subject.as_str()),
@@ -328,32 +244,20 @@ fn remote_card(c: &RemoteCard) -> Card {
     card
 }
 
-/// What a remote tutor call will do with its reply: a question's answer
-/// lands as-is; a draft is parsed into a card the same way the web draft
-/// handler does; a note is condensed into note lines the same way the web
-/// note-save does.
 enum RemoteAskPurpose {
     Question,
     Draft,
     Note,
 }
 
-/// The settled outcome of a finished remote tutor call, kept until the next
-/// POST replaces the slot ([`RemoteAsk::poll`]'s one-shot drain, held rather
-/// than consumed).
 enum RemoteAskOutcome {
     Answer(String),
     Draft(ask::DraftCard),
-    /// Condensed note lines (at most three). An empty vec is a settled
-    /// success, not an error: nothing in the exchange was worth saving.
+    // an empty vec is a settled success, not an error
     Note(Vec<String>),
     Error(String),
 }
 
-/// A paired phone's in-flight or just-settled tutor turn. Unlike [`Ask`], the
-/// server keeps no transcript or CLI session across calls here: the phone
-/// resends its own history every time, so this only tracks the one backend
-/// call in flight, or its settled result.
 pub(super) struct RemoteAsk {
     rx: Receiver<Reply>,
     purpose: RemoteAskPurpose,
@@ -362,10 +266,6 @@ pub(super) struct RemoteAsk {
 }
 
 impl RemoteAsk {
-    /// Starts a remote tutor question: builds the prompt from the client's
-    /// card and re-sent history (no session, no links, no source grounding:
-    /// v1 sends none) and spawns it on the same background helper the web
-    /// tutor uses.
     pub(super) fn ask(
         cfg: &AskConfig,
         card: &RemoteCard,
@@ -386,7 +286,6 @@ impl RemoteAsk {
         Self::spawn(cfg, prompt, RemoteAskPurpose::Question)
     }
 
-    /// Starts a remote draft-a-card call from the client's re-sent history.
     pub(super) fn draft(cfg: &AskConfig, card: &RemoteCard, history: Vec<RemoteTurn>) -> Self {
         let card = remote_card(card);
         let prior: Vec<Exchange> = history.into_iter().map(|t| (t.q, t.a)).collect();
@@ -394,11 +293,6 @@ impl RemoteAsk {
         Self::spawn(cfg, prompt, RemoteAskPurpose::Draft)
     }
 
-    /// Starts a remote note-condense call: condenses the client's re-sent
-    /// history into at most three note lines the same way the web's
-    /// `Purpose::Condense` does (`Ask::poll`), except the server only
-    /// returns the lines; it never appends them to a deck, that's the
-    /// client's job (the iron rule).
     pub(super) fn note(cfg: &AskConfig, card: &RemoteCard, history: Vec<RemoteTurn>) -> Self {
         let card = remote_card(card);
         let prior: Vec<Exchange> = history.into_iter().map(|t| (t.q, t.a)).collect();
@@ -407,9 +301,6 @@ impl RemoteAsk {
     }
 
     fn spawn(cfg: &AskConfig, prompt: String, purpose: RemoteAskPurpose) -> Self {
-        // No CliSession, no `--session-id`/`--resume`: every remote call is a
-        // fresh, stateless backend run, the phone re-sends its transcript
-        // each turn instead.
         let rx = ask::spawn(cfg.clone(), prompt, Vec::new());
         Self {
             rx,
@@ -419,13 +310,10 @@ impl RemoteAsk {
         }
     }
 
-    /// Whether a call is in flight (drain with `poll` first).
     pub(super) fn thinking(&self) -> bool {
         self.outcome.is_none()
     }
 
-    /// Drains a finished reply into the settled outcome; a no-op once already
-    /// settled or while the channel is still empty.
     pub(super) fn poll(&mut self) {
         if self.outcome.is_some() {
             return;
@@ -501,11 +389,6 @@ impl RemoteAsk {
     }
 }
 
-/// A paired phone's in-flight or just-settled remote deck generation. Unlike
-/// the browser's [`Generating`], the server places nothing: `poll` only
-/// drains the worker's channel, it never calls `library::place_deck` or
-/// otherwise touches the decks dir. The phone owns the destination and any
-/// collision handling.
 pub(super) struct RemoteGenerating {
     rx: Receiver<Result<String, String>>,
     url: String,
@@ -514,8 +397,6 @@ pub(super) struct RemoteGenerating {
 }
 
 impl RemoteGenerating {
-    /// Starts a remote deck generation on the same background worker the
-    /// browser's own `Generating` uses (`generate::spawn`).
     pub(super) fn start(url: String, cfg: GenerateDeckConfig, ask_cfg: AskConfig) -> Self {
         let rx = generate::spawn(url.clone(), cfg, ask_cfg);
         Self {
@@ -526,13 +407,10 @@ impl RemoteGenerating {
         }
     }
 
-    /// Whether a call is in flight (drain with `poll` first).
     pub(super) fn thinking(&self) -> bool {
         self.outcome.is_none()
     }
 
-    /// Drains a finished worker into the settled outcome; a no-op once
-    /// already settled or while the channel is still empty.
     pub(super) fn poll(&mut self) {
         if self.outcome.is_some() {
             return;
@@ -547,10 +425,8 @@ impl RemoteGenerating {
         self.outcome = Some(result);
     }
 
-    /// The suggested file name a placed deck would get: [`generate::deck_name`]
-    /// normalized to a `.md` stem, exactly like `library::place_deck`'s own
-    /// normalization (mirrored here, never called, since the server must not
-    /// place the file itself).
+    // Mirrors `library::place_deck`'s normalization; never calls it, since
+    // the server must not place files here.
     fn suggested_filename(&self) -> String {
         let name = generate::deck_name(&self.url);
         let stem = name.strip_suffix(".md").unwrap_or(&name);
@@ -603,8 +479,7 @@ impl Reviewing {
             links: build.links,
             source_roots: build.source_roots,
             source_bases: build.source_bases,
-            // The real cache is opened by `open_augment` once the active store
-            // path is known; until then an empty cache (offline only).
+            // placeholder until `open_augment` sets the real store path
             augment: AugmentCache::open(Path::new("")),
             present_seq: now_ms(),
             original_fronts: HashMap::new(),
@@ -612,17 +487,10 @@ impl Reviewing {
         }
     }
 
-    /// Opens the distractor cache co-located with the active `store_path` (the
-    /// active store changes per selection). Distractors are generated ahead of
-    /// time by `alix deck augment`; review only reads them.
     pub(super) fn open_augment(&mut self, store_path: &Path) {
         self.augment = AugmentCache::open(augment::augment_path_for(store_path));
     }
 
-    /// Rotates the current card's question through the pool of its authored front
-    /// plus any cached variants (`alix deck augment --target questions`), a fresh
-    /// phrasing each time a card is presented. The answer is unchanged, so
-    /// identity (which ignores the front) is untouched. Called on card advance.
     pub(super) fn rotate_variant(&mut self) {
         let Some(id) = self.session.current().and_then(|c| c.id()) else {
             return;
@@ -630,8 +498,6 @@ impl Reviewing {
         if self.augment.variants(&id).is_none() {
             return;
         }
-        // Capture the authored front the first time, before we overwrite it, so
-        // it stays in the rotation alongside the generated variants.
         if !self.original_fronts.contains_key(&id)
             && let Some(card) = self.session.current()
         {
@@ -647,23 +513,14 @@ impl Reviewing {
         }
     }
 
-    /// Drops the displayed transcript when the current card changed, so the ask
-    /// view shows only this card's exchanges. The CLI session (`cli`) is
-    /// untouched, so Claude still has the whole conversation as context.
     pub(super) fn align_transcript(&mut self) {
         self.ask.align(self.session.current().and_then(|c| c.id()));
     }
 
-    /// The ask-view payload, with an optional one-shot status/error.
     pub(super) fn ask_dto(&self, status: Option<String>, error: Option<String>) -> AskDto {
         self.ask.dto(status, error)
     }
 
-    /// Starts an ask-Claude call about the current card: a question, a
-    /// condense-into-note, or a draft-a-card distillation (`action`). Returns
-    /// `false` (no-op) if a call is already pending, nothing is reviewable, or
-    /// there is nothing to condense/draft. Grounds the tutor in the card's deck
-    /// source when that deck opted into `[ask] source_access` (`source_roots`).
     pub(super) fn start_ask(
         &mut self,
         cfg: &AskConfig,
@@ -674,28 +531,20 @@ impl Reviewing {
             return false;
         };
         let links = self.links.get(&*card.subject).cloned().unwrap_or_default();
-        // The grounded source root (opt-in via `source_access`): a per-card
-        // `% origin:` override, else the deck/workspace root.
         let root = self.source_roots.get(&*card.subject).map(|deck_root| {
             card.origin
                 .as_deref()
                 .map(PathBuf::from)
                 .unwrap_or_else(|| deck_root.clone())
         });
-        // A frozen card inlines its snapshot excerpt as the anchor; the live
-        // source is read for context. A recorded-but-missing source → the canned
-        // "couldn't find" reply (no cwd handed to the subprocess).
         let frozen = root.as_ref().and_then(|_| {
             let at = card.at.as_deref()?;
             let base = self.source_bases.get(&*card.subject)?;
             trace::frozen_excerpt_block(at, card.at_origin.as_deref(), base)
         });
         let live_root = root.as_deref().filter(|r| r.exists());
-        // `{#source-not-found-reply}`: this is exactly the condition under which
-        // `ask::question_context`'s `(Some(excerpt), None)` arm would tell the
-        // model to reply `SOURCE_NOT_FOUND` verbatim — a round trip that spends
-        // real latency (and a chance of the model paraphrasing) to echo a
-        // constant. Answer it here instead: deterministic wording, zero cost.
+        // answering here avoids a round trip that would just have the model
+        // echo SOURCE_NOT_FOUND verbatim
         if let AskAction::Question(q) = &action
             && frozen.is_some()
             && live_root.is_none()
@@ -717,14 +566,8 @@ impl Reviewing {
         )
     }
 
-    /// Drains a finished CLI reply into the transcript (a question) or the deck
-    /// file (a "save note" condense). Returns a transient `(status, error)`.
     pub(super) fn poll_ask(&mut self) -> (Option<String>, Option<String>) {
-        // Opening the ask view on a new card (the page polls `/api/ask`) drops
-        // the previous card's exchanges from the display.
         self.align_transcript();
-        // Field-split the borrow so the save closure can touch `files`/`session`
-        // while `ask` drives the poll.
         let Self {
             ask,
             files,
@@ -733,8 +576,6 @@ impl Reviewing {
         } = self;
         ask.poll(|card, notes| {
             files.append_note(&card.subject, card.line, notes)?;
-            // Mirror the note onto the in-memory card so returning to it shows the
-            // note at once, without re-reading the deck.
             if let Some(cur) = session.current_mut()
                 && cur.id() == card.id()
             {
@@ -745,29 +586,17 @@ impl Reviewing {
     }
 }
 
-/// The server's live AI-exam state: one in-progress [`exam::Sitting`] plus the
-/// path of the deck under exam (to resolve what a pass unlocks).
 pub(super) struct Examining {
     pub(super) sitting: exam::Sitting,
     pub(super) deck_path: PathBuf,
 }
 
-/// A paired phone's exam sitting: no deck path, no store, no unlocks. The
-/// server computes questions/grading, the phone owns the rest (mastery,
-/// remediation cards, what a pass unlocks). `cards` holds the last
-/// remediation's deck-format text, surfaced on the DTO until the phone closes
-/// or starts another remediation; the server itself never stores it.
 pub(super) struct RemoteExamining {
     pub(super) sitting: exam::Sitting,
     pub(super) cards: Option<String>,
 }
 
 impl RemoteExamining {
-    /// Drains a finished background call ([`exam::Sitting::advance`] only,
-    /// never `poll`, which writes the store). `Passed`/`TraceFailed` are
-    /// dropped: the verdict already sits in `sitting.result()`, and the phone
-    /// applies it to its own store. `RemediationCards` is surfaced onto
-    /// `cards` for the next DTO.
     pub(super) fn advance(&mut self) {
         match self.sitting.advance(now_ms()) {
             Some(exam::Effect::RemediationCards(text)) => self.cards = Some(text),
@@ -799,8 +628,8 @@ impl RemoteExamining {
             phase: exam_phase_name(s.phase()),
             deck: s.subject().to_string(),
             strictness: strictness_name(s.strictness()),
-            // Prompts only: the rubric (`ExamQuestion::points`) never leaves
-            // the server outside a graded result.
+            // prompts only: the rubric never leaves the server outside a
+            // graded result
             questions: s.questions().iter().map(|q| q.prompt.clone()).collect(),
             passed: result.map(|r| r.passed),
             grades,
@@ -815,9 +644,6 @@ impl RemoteExamining {
     }
 }
 
-/// The `phase:"idle"` [`RemoteExamDto`] for `GET /api/remote/exam` with no
-/// sitting in flight: every field at its baseline, matching the pinned wire
-/// shape (`contract.rs`'s `remoteexamdto_idle_wire_shape`).
 pub(super) fn remote_exam_idle_dto() -> RemoteExamDto {
     RemoteExamDto {
         phase: "idle",
@@ -836,59 +662,29 @@ pub(super) fn remote_exam_idle_dto() -> RemoteExamDto {
     }
 }
 
-/// The server's live deck-augmentation state: one deck's augmentation cache and
-/// any in-flight generation. Opened from the picker's Augment screen
-/// (`/api/augment/open`), it reports coverage, fills gaps, and removes — all
-/// scoped to this deck, since the cache may be shared by other decks on the same
-/// store. The single in-flight `Job` runs on a background thread (`augment_ai::spawn`)
-/// while the page polls `GET /api/augment`.
 pub(super) struct Augmenting {
-    /// Display name (a workspace member's qualified `<ws>/<file>`, or a deck file).
     pub(super) deck: String,
     pub(super) cards: Vec<Card>,
-    /// This deck's card ids, for scoping per-card removals against the shared cache.
     pub(super) deck_ids: HashSet<String>,
-    /// The owner tokens of the decks on this screen (one for a plain deck, each
-    /// member's for a workspace), for scoping topology removals.
     deck_tokens: HashSet<String>,
-    /// The token a newly generated topology is tagged with (the sole deck's, or
-    /// the first member's for a workspace) so the shared cache keeps decks' paths
-    /// apart.
     primary_token: String,
     pub(super) cache: AugmentCache,
-    /// `Some(dir)` when this screen was opened on a workspace: targets run
-    /// across the union of member cards, and workspace-specific targets (the
-    /// icon) become available. `None` for a plain deck.
     pub(super) workspace_dir: Option<PathBuf>,
-    /// One Claude conversation spanning the current batch (`None`: a
-    /// sessionless backend, or a batch too small to profit); rebuilt per batch.
     conversation: Option<augment_ai::BatchConversation>,
     pub(super) pending: Option<AugmentPending>,
-    /// The last generation/save error, shown until the next action clears it.
     pub(super) error: Option<String>,
-    /// Targets still to start in the current batch, in request order, each
-    /// paired with its own `--with` steer.
     pub(super) queue: VecDeque<(String, Option<String>)>,
-    /// Targets the current batch has finished successfully.
     pub(super) done: Vec<&'static str>,
-    /// Targets the current batch attempted and failed, with their error.
     pub(super) failed: Vec<(&'static str, String)>,
 }
 
-/// An augmentation generation in flight: the channel the worker delivers on, the
-/// target it's filling (for the "busy" row), and when it started (for elapsed).
 pub(super) struct AugmentPending {
     pub(super) rx: Receiver<Result<augment_ai::Outcome, String>>,
     pub(super) target: &'static str,
     pub(super) started: Instant,
-    /// Whether the job rode the batch conversation, so its outcome should
-    /// advance (or, on failure, reset) the session.
     sessionful: bool,
 }
 
-/// Maps a queued target string to its canonical `&'static str` token, so the
-/// DTO's `queued` list carries the same static tokens as `rows`/`done`/`failed`
-/// rather than the owned `String`s the queue holds.
 fn target_label(target: &str) -> Option<&'static str> {
     match target {
         "choices" => Some("choices"),
@@ -902,16 +698,10 @@ fn target_label(target: &str) -> Option<&'static str> {
     }
 }
 
-/// Whether the workspace at `dir` has a resolved icon (a manifest `icon` or
-/// the conventional `assets/icon.*`) — the icon row's 0/1 coverage.
 fn has_icon(dir: &Path) -> bool {
     crate::workspace::Workspace::load(dir).is_ok_and(|ws| ws.icon.is_some())
 }
 
-/// The cards a batch target would generate for: its cache gap (topology: the
-/// whole deck), or `None` for a target with no card gap (icon, unknown). Gap
-/// sets are independent across targets (each outcome only fills its own kind),
-/// so a batch can compute them all up front.
 fn gap_items(target: &str, cards: &[Card], cache: &AugmentCache) -> Option<Vec<augment::WarmItem>> {
     match target {
         "choices" => Some(cache.missing_choices(cards)),
@@ -925,11 +715,6 @@ fn gap_items(target: &str, cards: &[Card], cache: &AugmentCache) -> Option<Vec<a
 }
 
 impl Augmenting {
-    /// Opens the Augment screen: for a deck, `cards` are its own and
-    /// `workspace_dir` is `None`; for a workspace, `cards` are the union of
-    /// every member's and `workspace_dir` names its root (which also unlocks
-    /// the icon target). The augmentation cache lives beside the store either
-    /// way.
     pub(super) fn open(
         deck: String,
         cards: Vec<Card>,
@@ -938,11 +723,8 @@ impl Augmenting {
         workspace_dir: Option<PathBuf>,
     ) -> Self {
         let deck_ids = cards.iter().filter_map(Card::id).collect();
-        // Decision: a workspace-union topology is owner-tagged with the FIRST
-        // member deck's token (for a single-deck screen that is simply its own
-        // token). Deliberate and inherited by future catalog/topology work; the
-        // whole `deck_tokens` set scopes removals, so only the owner tag is a
-        // choice and first-member keeps it stable.
+        // deliberate: a workspace topology is owner-tagged with the FIRST
+        // member's token for stability
         let primary_token = deck_tokens.first().cloned().unwrap_or_default();
         let deck_tokens = deck_tokens.into_iter().collect();
         Self {
@@ -962,7 +744,6 @@ impl Augmenting {
         }
     }
 
-    /// Builds the screen payload from the current cache coverage + any in-flight job.
     pub(super) fn dto(&self) -> AugmentDto {
         let s = self.cache.summarize(&self.cards, &self.deck_tokens);
         let busy = self.pending.as_ref().map(|p| p.target);
@@ -990,8 +771,6 @@ impl Augmenting {
                 busy: busy == Some("topology"),
             },
         ];
-        // Workspace mode only: the icon target, 0/1-covered by whether a
-        // conventional assets/icon.* exists.
         if let Some(dir) = &self.workspace_dir {
             rows.push(AugmentRowDto {
                 kind: "icon",
@@ -1026,11 +805,6 @@ impl Augmenting {
         }
     }
 
-    /// Starts a batch: `targets` run one at a time in order, each carrying its
-    /// own `--with` steer, a per-target failure recorded in `failed` without
-    /// aborting the rest. No-op (returns `false`) while a generation is
-    /// already in flight. Returns whether a job started (a batch of only
-    /// no-gap/unknown targets drains without starting one).
     pub(super) fn generate_batch(
         &mut self,
         targets: Vec<(String, Option<String>)>,
@@ -1044,11 +818,6 @@ impl Augmenting {
         self.done.clear();
         self.failed.clear();
         self.queue = targets.into_iter().collect();
-        // One Claude conversation for the whole batch when at least two targets
-        // have cards to generate for: the roster (the union of their gaps) is
-        // sent once and each target references it by index. A single-call batch
-        // stays a stateless one-shot; its subset-only prompt is smaller than
-        // priming a roster.
         self.conversation = None;
         let gap_sets: Vec<Vec<augment::WarmItem>> = self
             .queue
@@ -1069,9 +838,6 @@ impl Augmenting {
         self.start_next(ai, ask)
     }
 
-    /// Pops targets off the queue until one spawns a job. A target with no gap
-    /// to fill (or an unrecognized one) is recorded as done in passing and
-    /// skipped, without spawning anything. Returns whether a job started.
     fn start_next(&mut self, ai: &AiConfig, ask: &AskConfig) -> bool {
         while let Some((target, guidance)) = self.queue.pop_front() {
             let (job, tgt): (augment_ai::Job, &'static str) = match target.as_str() {
@@ -1147,16 +913,14 @@ impl Augmenting {
                     },
                     "topology",
                 ),
-                // The icon regenerates unconditionally (a fresh draw replaces the
-                // old emblem); only a workspace has one to draw.
+                // icon regenerates unconditionally: a fresh draw replaces the old emblem
                 "icon" => match &self.workspace_dir {
                     Some(dir) => (augment_ai::Job::Icon { dir: dir.clone() }, "icon"),
                     None => continue,
                 },
-                // Unknown target: nothing to record, try the next queued one.
                 _ => continue,
             };
-            // The icon draw never rides the batch conversation (card-free).
+            // the icon draw never rides the batch conversation (card-free)
             let sessionful = tgt != "icon" && self.conversation.is_some();
             let conversation = if sessionful {
                 self.conversation.clone()
@@ -1176,10 +940,6 @@ impl Augmenting {
         false
     }
 
-    /// Drains a finished generation: applies its [`Outcome`](augment_ai::Outcome) to
-    /// the cache and saves it as done, or records the error in `failed` (a
-    /// per-target failure never aborts the batch). Then advances the queue.
-    /// A no-op while still running.
     pub(super) fn poll(&mut self, ai: &AiConfig, ask: &AskConfig) {
         let Some(p) = self.pending.as_ref() else {
             return;
@@ -1196,8 +956,6 @@ impl Augmenting {
         self.pending = None;
         match outcome {
             Ok(o) => {
-                // The call succeeded, so the conversation (if this job rode
-                // one) now exists CLI-side: later targets resume it.
                 if sessionful && let Some(conversation) = self.conversation.as_mut() {
                     conversation.session.started = true;
                 }
@@ -1206,8 +964,8 @@ impl Augmenting {
                 self.done.push(target);
             }
             Err(e) => {
-                // Never resume a session in an unknown state: the next
-                // sessionful target starts fresh and re-primes the roster.
+                // never resume a session in an unknown state: start fresh
+                // and re-prime the roster
                 if sessionful && let Some(conversation) = self.conversation.as_mut() {
                     conversation.reset();
                 }
@@ -1217,7 +975,7 @@ impl Augmenting {
         self.start_next(ai, ask);
     }
 
-    /// Writes a finished outcome into the cache (does not save).
+    // writes to the cache; does not save
     fn apply(&mut self, outcome: augment_ai::Outcome) {
         match outcome {
             augment_ai::Outcome::Choices(map) => {
@@ -1246,15 +1004,11 @@ impl Augmenting {
                     self.cache.set_format(&id, v);
                 }
             }
-            // Nothing to cache: icon::generate already wrote assets/icon.svg,
-            // and the dto's coverage reads the file system.
+            // nothing to cache: the file on disk is the result
             augment_ai::Outcome::Icon(_) => {}
         }
     }
 
-    /// Removes a target's augmentations for this deck, then saves. `topology`
-    /// names the one to drop when `target` is `"topology"`; `"all"` clears
-    /// everything this deck owns. Returns whether the request was understood.
     pub(super) fn remove(&mut self, target: &str, topology: Option<&str>) -> bool {
         match target {
             "choices" => self.cache.clear_distractors(&self.deck_ids),
@@ -1276,7 +1030,6 @@ impl Augmenting {
         true
     }
 
-    /// Persists the cache, recording any I/O error for the page to surface.
     fn save(&mut self) {
         if let Err(e) = self.cache.save() {
             self.error = Some(format!("could not save augmentations: {e}"));
@@ -1284,8 +1037,6 @@ impl Augmenting {
     }
 }
 
-/// A deck generation in flight (or just finished): the worker channel, what
-/// was asked, where the deck lands, and the outcome once placed.
 pub(super) struct Generating {
     pub(super) rx: Receiver<Result<String, String>>,
     pub(super) url: String,
@@ -1321,8 +1072,8 @@ impl Generating {
         }
     }
 
-    /// Drains a finished worker and places the deck (lenient, like the CLI:
-    /// a parse problem still saves the file and is reported as the error).
+    // lenient like the CLI: a parse problem still saves the file, reported
+    // as the error
     pub(super) fn poll(&mut self) {
         if self.outcome.is_some() {
             return;
@@ -1355,8 +1106,6 @@ impl Generating {
     }
 }
 
-/// A wormhole send in flight: the staged copy (kept alive for the whole
-/// transfer), the job, and what it has reported so far.
 pub(super) struct Sharing {
     pub(super) job: share::ShareJob,
     pub(super) _stage: tempfile::TempDir,
@@ -1407,9 +1156,6 @@ impl Sharing {
     }
 }
 
-/// Stages a row for sharing into `tmp`: a deck file travels as-is (its
-/// augmentations live in the store-side cache and stay home); a folder is
-/// copied minus personal state. Returns what to hand to wormhole/zip.
 pub(super) fn stage_for_share(path: &Path, tmp: &tempfile::TempDir) -> Result<PathBuf> {
     if path.is_file() {
         return Ok(path.to_path_buf());
@@ -1426,8 +1172,6 @@ pub(super) fn stage_for_share(path: &Path, tmp: &tempfile::TempDir) -> Result<Pa
     Ok(stage)
 }
 
-/// A wormhole receive in flight: the scratch dir it lands in, where it goes
-/// afterwards, and the landing outcome.
 pub(super) struct Receiving {
     pub(super) job: share::ShareJob,
     pub(super) tmp: tempfile::TempDir,
@@ -1445,10 +1189,8 @@ impl Receiving {
             match ev {
                 share::ShareEvent::Code(_) => {} // receive never emits one
                 share::ShareEvent::Done => {
-                    // `land_received`'s collision check is check-then-act;
-                    // safe only because this server loop is single-threaded
-                    // (one request handled at a time, and `poll()` only ever
-                    // runs from inside that loop) — introduce no threads here.
+                    // check-then-act is safe only because this server loop is
+                    // single-threaded; never add threads here
                     self.outcome = Some(
                         share::land_received(self.tmp.path(), &self.dest)
                             .map_err(|e| format!("{e:#}")),
@@ -1487,31 +1229,12 @@ impl Receiving {
     }
 }
 
-// ── Trace walks (in-page, from the picker) ──────────────────────────────────
-//
-// A single walk of one trace deck: predict → reveal a live excerpt → grade →
-// compress. There is no deck-selection screen (one deck, one walk). The
-// frontend-agnostic `Walk` state machine carries the logic; this is a thin web
-// reader over it. Live Claude grading (`--grade`) is the only async step, so it
-// runs on a background thread and the page polls `GET /api/walk` while
-// `thinking`, like the exam.
-
-/// The server's live trace-walk state. Holds the [`Walk`], the (optional) live
-/// grading config, and the in-flight/just-finished Claude grade for the current
-/// reveal.
 pub(super) struct Walking {
     pub(super) walk: Walk,
-    /// `Some` in `--grade` mode: the `[ask]` config a background grade uses
-    /// (grading runs at the tutor tier, not trace's heavy build defaults).
     pub(super) grade: Option<AskConfig>,
-    /// A background Claude grade in flight for the current reveal.
     pub(super) pending: Option<Receiver<Result<(Delta, String), String>>>,
-    /// The resolved Claude grade for the current reveal (verdict + feedback).
     pub(super) grade_result: Option<(Delta, String)>,
-    /// A failed Claude grade — the reveal falls back to self-grading.
     pub(super) grade_error: Option<String>,
-    /// Ask-Claude tutor for the current checkpoint — the same machinery a review
-    /// uses, its subject the checkpoint instead of a card.
     pub(super) ask: Ask,
 }
 
@@ -1527,10 +1250,6 @@ impl Walking {
         }
     }
 
-    /// The current checkpoint as a tutor [`Card`]: front = the predict prompt,
-    /// back = the key points, note = the live source excerpt + the connecting
-    /// insight. Its `id()` matches the checkpoint's `card_id` (both hash subject +
-    /// back), so the transcript aligns per checkpoint.
     pub(super) fn checkpoint_card(&self) -> Option<Card> {
         let trace = self.walk.trace();
         let cp = self.walk.checkpoint()?;
@@ -1556,8 +1275,6 @@ impl Walking {
         ))
     }
 
-    /// Starts an ask-Claude call about the current checkpoint (or condenses into a
-    /// note with `question: None`). No-op off a checkpoint (the done screen).
     pub(super) fn start_ask(
         &mut self,
         cfg: &AskConfig,
@@ -1567,8 +1284,6 @@ impl Walking {
         let Some(card) = self.checkpoint_card() else {
             return false;
         };
-        // Ground the walk tutor in the trace's live source (opt-in), with the
-        // current checkpoint's frozen excerpt as the anchor.
         let root = cfg
             .source_access
             .then(|| self.walk.trace().origin.clone())
@@ -1593,8 +1308,6 @@ impl Walking {
         )
     }
 
-    /// Drains a finished ask reply; a "save note" condense appends a `!` line to
-    /// the current checkpoint in the trace deck file.
     pub(super) fn poll_ask(&mut self) -> (Option<String>, Option<String>) {
         self.ask
             .align(self.walk.checkpoint().map(|c| c.card_id.clone()));
@@ -1608,8 +1321,6 @@ impl Walking {
         self.ask.dto(status, error)
     }
 
-    /// After a prediction, kick off a background Claude grade — a no-op outside
-    /// `--grade` mode. Clears any prior grade state for the fresh reveal.
     pub(super) fn start_grade(&mut self) {
         self.clear_grade();
         let Some(ask_cfg) = self.grade.as_ref() else {
@@ -1627,7 +1338,6 @@ impl Walking {
         self.pending = Some(rx);
     }
 
-    /// Drains a finished background grade into `grade_result`/`grade_error`.
     pub(super) fn poll(&mut self) {
         let Some(rx) = &self.pending else { return };
         match rx.try_recv() {
@@ -1647,7 +1357,6 @@ impl Walking {
         }
     }
 
-    /// Clears all grade state when leaving a reveal.
     pub(super) fn clear_grade(&mut self) {
         self.pending = None;
         self.grade_result = None;
@@ -1655,8 +1364,6 @@ impl Walking {
     }
 }
 
-/// The server's live browse state once decks are chosen. Its absence (`None`)
-/// means the deck-selection phase.
 pub(super) struct Browsing {
     pub(super) cards: Vec<Card>,
     pub(super) label: String,

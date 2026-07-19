@@ -1,25 +1,15 @@
-//! Tracks recently reviewed decks, so the startup picker can list them first.
-//!
-//! Stored as a small JSON file (`recent.json`) next to the progress store.
-//! Loading is tolerant: a missing or corrupt file yields an empty list.
-
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-/// How many recent decks to remember.
 const CAP: usize = 50;
 
-/// One remembered deck.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RecentEntry {
-    /// The deck file path.
     pub path: PathBuf,
-    /// When it was last reviewed (Unix ms).
     pub last_used_ms: u64,
 }
 
-/// The recent-decks list, most-recent first.
 #[derive(Default)]
 pub struct RecentDecks {
     path: PathBuf,
@@ -27,8 +17,6 @@ pub struct RecentDecks {
 }
 
 impl RecentDecks {
-    /// Loads the list, returning an empty one if the file is absent or
-    /// unreadable.
     pub fn load(path: impl Into<PathBuf>) -> Self {
         let path = path.into();
         let entries = std::fs::read_to_string(&path)
@@ -38,13 +26,10 @@ impl RecentDecks {
         Self { path, entries }
     }
 
-    /// The remembered decks, most-recent first.
     pub fn entries(&self) -> &[RecentEntry] {
         &self.entries
     }
 
-    /// Records that `paths` were just reviewed at `now_ms`, moving them to
-    /// the front and capping the list.
     pub fn record(&mut self, paths: &[PathBuf], now_ms: u64) {
         // Insert in reverse so the first given path ends up frontmost.
         for path in paths.iter().rev() {
@@ -60,7 +45,6 @@ impl RecentDecks {
         self.entries.truncate(CAP);
     }
 
-    /// Saves the list atomically (temp file + rename).
     pub fn save(&self) -> std::io::Result<()> {
         if let Some(dir) = self.path.parent() {
             std::fs::create_dir_all(dir)?;
@@ -72,8 +56,6 @@ impl RecentDecks {
     }
 }
 
-/// The default location of the recent-decks file
-/// (`~/.local/share/alix/recent.json` on Linux).
 pub fn default_recent_path() -> Option<PathBuf> {
     directories::ProjectDirs::from("", "", "alix").map(|dirs| dirs.data_dir().join("recent.json"))
 }
@@ -112,7 +94,6 @@ mod tests {
             r.record(&[PathBuf::from(format!("{i}.txt"))], i as u64);
         }
         assert_eq!(CAP, r.entries().len());
-        // The most recent (highest i) is at the front.
         assert_eq!(
             PathBuf::from(format!("{}.txt", CAP + 9)),
             r.entries()[0].path

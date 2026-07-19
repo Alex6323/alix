@@ -1,19 +1,8 @@
-//! The JSON-API contract snapshot suite (docs/API.md): every wire-facing
-//! DTO gets its entire serialized shape pinned by full-object equality, so
-//! any field add/remove/rename/retype fails here with a pointer at the
-//! doc. Each pin also emits its expected JSON to `tests/contracts/` — the
-//! machine-readable corpus for thin-client codegen. The page-private
-//! keybinding DTOs (`KeyDto`, `ReviewKeys`, `PickerKeysDto`, `BrowseKeys`)
-//! are deliberately out of contract and unpinned.
-
 use serde_json::json;
 
 use super::*;
 use crate::{answer::TypedResult, render::NoteUnit};
 
-/// Pins a DTO's exact wire shape and emits it to the codegen corpus.
-/// A failure means the JSON contract moved: update docs/API.md's field
-/// table + example for this anchor AND add a CHANGELOG entry.
 fn pin<T: serde::Serialize>(anchor: &str, dto: &T, expected: serde_json::Value) {
     let actual = serde_json::to_value(dto).unwrap();
     assert_eq!(
@@ -684,10 +673,8 @@ fn browsedto_wire_shape() {
     );
 }
 
-// The choose/check feedback wire shapes are the core `review` types
-// serialized directly (the handlers delegate to `review::choose` /
-// `review::check_typed`); the anchors keep their historic DTO names so the
-// corpus filenames and docs/API.md sections stay stable.
+// Delegates to the core `review::choose`/`check_typed` types directly; the
+// anchor names are kept so docs/API.md sections and corpus filenames stay stable.
 #[test]
 fn choosefeedbackdto_wire_shape() {
     let feedback = crate::review::ChoiceFeedback {
@@ -802,8 +789,8 @@ fn askdto_with_draft_wire_shape() {
 
 #[test]
 fn createcardresp_wire_shape() {
-    // The id is the card's identity token verbatim (a `token`, or a suffixed
-    // `token-N` / `token-r`), no longer a decimal `u64` string.
+    // A card's wire id is its identity token verbatim, or a suffixed
+    // `token-N` / `token-r` for a cloze hole / reversed twin.
     let dto = CreateCardResp {
         id: "9w2c7xkq4m".to_string(),
     };

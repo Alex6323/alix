@@ -1,20 +1,3 @@
-//! The L1 Markdown deck parser (spec §3). Built aside; wired as THE parser in
-//! the flip task.
-//!
-//! An L1 deck is a Markdown file: optional YAML frontmatter between `---`
-//! fences, an optional `# H1` title plus preamble prose, then one card per
-//! `## ` heading (column 0, outside a code fence). Inside a card, the first
-//! `---` line preceded by a blank line or the heading divides a multi-line
-//! front from the answer, `> ` lines form the note, `<!-- key: value -->`
-//! comments are directives (including the identity token), and `\cloze{...}`
-//! holes make the card cloze. ``` and `~~~` fences shield their content from
-//! all structure except the `\cloze` marker, which is active everywhere.
-//!
-//! Hard failures (bad token charset, a non-string `id:`, cloze grammar
-//! errors) are line-numbered [`L1Error`]s; soft findings (unknown keys,
-//! retired values, indented `##`) collect in [`L1Deck::lints`] for doctor to
-//! render, never printed here.
-
 use std::{hash::Hasher, path::PathBuf, sync::Arc};
 
 use thiserror::Error;
@@ -31,146 +14,66 @@ use crate::{
     token,
 };
 
-/// The internal, non-frozen mask a cloze hole's own span is replaced with when
-/// fingerprinting its answer line for realignment (spec §3.4). A NUL is safe: the
-/// parser rejects C0 controls outside the whitespace set, so it never occurs in
-/// canonical card text and can't collide with real content. Store-internal, so
-/// changing it is a declared `FP_VERSION` bump, never a frozen-format change.
+// A NUL is safe here: the parser rejects C0 controls outside the whitespace
+// set, so it can never occur in real card text.
 const HOLE_MASK: &str = "\u{0}";
 
-/// What a cloze hole is replaced with when it is the one being asked.
 pub const BLANK: &str = "____";
 
-/// What the other (sibling) holes are replaced with. Their content is never
-/// shown while answering, otherwise reviewing one sub-card would reveal the
-/// answers of its siblings.
 pub const HIDDEN: &str = "[…]";
 
-/// The closed six-char ASCII whitespace set prose is trimmed and collapsed
-/// over (spec §3.5): tab, LF, VT, FF, CR, space. Deliberately not Unicode
-/// whitespace; anything outside this set is content.
+// Deliberately not Unicode whitespace; anything outside this set is content.
 const WHITESPACE: [char; 6] = ['\t', '\n', '\x0B', '\x0C', '\r', ' '];
 
-/// Line-leading markers a backslash escape renders literal (spec §3.5):
-/// heading, note, divider, directive comment, and the two fence openers.
 const ESCAPABLE: [&str; 6] = ["##", ">", "---", "<!--", "```", "~~~"];
 
-/// A 1-based inclusive `(open, close)` line span (e.g. the two frontmatter
-/// `---` fences).
 pub type LineSpan = (usize, usize);
 
-/// A parsed L1 deck: identity, display metadata, cards, and soft findings.
 #[derive(Debug)]
 pub struct L1Deck {
-    /// The deck's identity token from frontmatter `id:`, charset-validated.
-    /// `None` for an unstamped deck (always loadable, spec §3.6).
     pub deck_token: Option<String>,
-    /// The `# H1` display title from the preamble, if present.
     pub title: Option<String>,
-    /// The typed frontmatter (the §3.6 closed key set).
     pub frontmatter: Frontmatter,
-    /// The cards in file order, cloze cards expanded into per-hole sub-cards.
     pub cards: Vec<Card>,
-    /// Soft findings for doctor: unknown keys, retired values, indented `##`.
     pub lints: Vec<Lint>,
-    /// The 1-based line span `(open, close)` of the frontmatter's two `---`
-    /// fences, or `None` when the deck has no frontmatter. The stamp writer
-    /// needs it to tell an absent block (prepend a canonical one) from a
-    /// present one (splice a minted `id:` after its opener), spec §2.3.
     pub frontmatter_span: Option<LineSpan>,
 }
 
-/// The §3.6 closed frontmatter key set as typed fields. Unknown keys lint;
-/// the reserved set (`tags`, `license`, `author`, `language`, `revision`,
-/// `generated-by`, `generated-at`) is ignored without a lint.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Frontmatter {
-    /// The deck token (`id:`), which must be a quoted YAML string.
     pub id: Option<String>,
-    /// Exam ground-truth sources (`source:`), a scalar or list.
     pub source: Vec<String>,
-    /// Prerequisite decks (`requires:`), a scalar or list.
     pub requires: Vec<String>,
-    /// Reference links for the tutor (`link:`), a scalar or list.
     pub link: Vec<String>,
-    /// What a trace deck walks (`trace:`); marks the deck as a trace.
     pub trace: Option<String>,
-    /// Deck-default reveal method (`reveal:`); `cloze` is retired here.
     pub reveal: Option<Reveal>,
-    /// Deck-default card order (`order:`).
     pub order: Option<Order>,
-    /// Deck-default input method (`input:`).
     pub input: Option<Input>,
-    /// Deck-default review direction (`direction:`).
     pub direction: Option<Direction>,
-    /// Directory that card `img:` / `img-back:` filenames resolve against
-    /// (`img-dir:`). Absolute, or relative to the deck file's folder.
     pub img_dir: Option<PathBuf>,
-    /// How strictly this deck's AI exam grades answers (`strictness:`). `None`
-    /// uses the `[exam]` config default.
     pub strictness: Option<Strictness>,
-    /// The live source root a frozen deck's `at:` snapshots came from
-    /// (`origin:`). Cascades workspace `[defaults]` → deck → card; the tutor
-    /// grounds in it for context and drift detection reads it. `None` for a
-    /// non-frozen deck.
     pub origin: Option<String>,
-    /// True when frontmatter exists but is not a YAML block mapping (e.g. a
-    /// flow mapping `{source: [a]}`): still loadable, but the stamp writer
-    /// can never splice an `id:` line in and must exclude the deck loudly
-    /// (spec §2.3). Absent frontmatter stays spliceable (a canonical block is
-    /// prepended instead).
     pub unspliceable: bool,
 }
 
-/// A soft, non-fatal finding surfaced through [`L1Deck::lints`] for doctor.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Lint {
-    /// The 1-based line the finding points at.
     pub line: usize,
-    /// What was found.
     pub kind: LintKind,
 }
 
-/// What a [`Lint`] found. Doctor renders these; `BadValue` is the one doctor
-/// reports as an error (a known key whose value did not parse, spec §3.7).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LintKind {
-    /// A frontmatter or directive key outside the closed sets.
-    UnknownKey {
-        /// The unrecognized key, lowercased.
-        key: String,
-    },
-    /// A known key whose value did not parse (includes the retired
-    /// `reveal: cloze`). Doctor reports this as an error.
-    BadValue {
-        /// The key whose value failed.
-        key: String,
-        /// The offending value (or its YAML node kind).
-        value: String,
-    },
-    /// A known per-card directive key given an empty value (e.g.
-    /// `<!-- id: -->`): consumed silently otherwise, so a half-typed token
-    /// would vanish with no signal.
-    EmptyValue {
-        /// The key with the empty value.
-        key: String,
-    },
-    /// A `reveal:` directive on a card with cloze holes: linted, not obeyed
-    /// (the holes are the trigger, spec §3.4).
+    UnknownKey { key: String },
+    BadValue { key: String, value: String },
+    EmptyValue { key: String },
     RevealOnCloze,
-    /// An indented `##` line: content, but probably a mistyped card front.
     IndentedH2,
-    /// A literal `\cloze` inside a hole: hole content is never re-scanned.
     ClozeInHole,
-    /// A `<!--` line that does not close with `-->`: directives are single
-    /// line; the line stays content.
     UnclosedComment,
-    /// A fence opened but never closed by EOF: everything after it, cards
-    /// included, was swallowed as its verbatim content (spec §3.5).
     UnclosedFence,
 }
 
-/// A hard parse failure, pointing at the offending line of the deck file.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum L1Error {
     #[error("line {0}: frontmatter never closes (missing the terminating `---`)")]
@@ -195,15 +98,9 @@ pub enum L1Error {
     EmptyHole(usize),
 }
 
-/// Parses L1 deck text into cards. `subject` is the deck's file name; it
-/// becomes each card's display subject (and, until the flip task, still
-/// feeds the legacy identity hash).
 pub fn parse_l1(subject: &str, text: &str) -> Result<L1Deck, L1Error> {
     let document = parse_document(text)?;
-    // Zero `## ` fronts is a VALID zero-card deck, not an error: a header-only
-    // trace stub (frontmatter, no cards yet) and a comment-only file must stay
-    // loadable; "not a deck" is an enumeration/doctor judgement, never a load
-    // failure.
+    // Zero `## ` fronts is a valid, loadable zero-card deck, not a parse error.
     let subject: Arc<str> = Arc::from(subject);
     let mut lints = document.lints;
     let mut cards = Vec::new();
@@ -220,19 +117,10 @@ pub fn parse_l1(subject: &str, text: &str) -> Result<L1Deck, L1Error> {
     })
 }
 
-/// Parses L1 deck text into cards, discarding the frontmatter, title, and
-/// lints. The thin adapter the tree calls where it only needs a deck's cards
-/// (the old `parser::parse_str` shape); [`parse_l1`] is the full entry point.
-/// `subject` is the deck's file name.
 pub fn parse_str(subject: &str, text: &str) -> Result<Vec<Card>, L1Error> {
     Ok(parse_l1(subject, text)?.cards)
 }
 
-/// The 1-based line numbers of the file's `## ` card fronts, in document
-/// order, one per file card (a cloze card's sub-cards share one heading).
-/// Read-only parse knowledge for text surgery (note insertion, card-block
-/// removal): a fenced `## ` is content and never appears here, so a naive
-/// line scan can't be fooled by code blocks.
 pub fn card_front_lines(text: &str) -> Result<Vec<usize>, L1Error> {
     let mut lines = Vec::new();
     for card in parse_l1("deck.md", text)?.cards {
@@ -243,11 +131,8 @@ pub fn card_front_lines(text: &str) -> Result<Vec<usize>, L1Error> {
     Ok(lines)
 }
 
-/// The §7 canonical content of a card: front + answer, prose collapsed over
-/// the closed 6-char ASCII whitespace set, fenced content verbatim, cloze
-/// markers as literal text. Changes to this function are deliberate behavior
-/// changes: they stale every persisted fingerprint (the store version byte
-/// owns that), never silent refactors.
+// A change here stales every persisted content fingerprint: deliberate, never
+// a silent refactor.
 pub fn canonical_content(front: &str, back: &[String]) -> String {
     let mut out = collapse(front);
     let mut fence: Option<char> = None;
@@ -285,26 +170,18 @@ pub fn canonical_content(front: &str, back: &[String]) -> String {
     out
 }
 
-/// 64-bit fingerprint of canonical content (twox-hash XxHash64).
 pub fn content_fingerprint(front: &str, back: &[String]) -> u64 {
     let mut hasher = XxHash64::default();
     hasher.write(canonical_content(front, back).as_bytes());
     hasher.finish()
 }
 
-/// XxHash64 of a canonicalized string: one component of a hole fingerprint.
 fn hash64(s: &str) -> u64 {
     let mut hasher = XxHash64::default();
     hasher.write(s.as_bytes());
     hasher.finish()
 }
 
-/// Every hole's realignment fingerprint for a card's scanned answer lines,
-/// in document order (spec §3.4). `text_fp` hashes the canonicalized hidden
-/// text; `line_fp` hashes the hole's answer line canonicalized with THIS hole's
-/// span replaced by [`HOLE_MASK`] and its siblings rendered as their hidden text,
-/// so a rewritten context changes `line_fp` (falling to the text-only pass)
-/// while the hole keeps its position marker among its siblings.
 fn hole_fingerprints(parsed: &[Vec<Seg>], holes: &[(usize, usize, &str)]) -> Vec<HoleFingerprint> {
     holes
         .iter()
@@ -326,102 +203,60 @@ fn hole_fingerprints(parsed: &[Vec<Seg>], holes: &[(usize, usize, &str)]) -> Vec
         .collect()
 }
 
-/// Whether `.md` file content enumerates as a deck (spec §3.1.3): it has at
-/// least one `## ` card front OR frontmatter. A prose `.md` with neither never
-/// lists as a deck (and so is never stamped: a user's notes file cannot gain a
-/// frontmatter block on session open). A header-only stub (frontmatter, zero
-/// cards, e.g. a trace stub) still enumerates through the frontmatter arm.
-///
-/// Content that fails to parse is treated as a deck: it is deck-shaped enough
-/// to trip the L1 parser's hard errors (a pure-prose file does not), and
-/// enumerating it lets a broken deck surface to doctor or a degraded listing
-/// row rather than vanish silently.
 pub fn is_deck_content(text: &str) -> bool {
     match parse_l1("deck.md", text) {
         Ok(deck) => !deck.cards.is_empty() || deck.frontmatter_span.is_some(),
+        // A parse failure counts as deck content too: a broken deck should
+        // surface to doctor rather than silently vanish from the listing.
         Err(_) => true,
     }
 }
 
-/// A string as a double-quoted YAML scalar for an L1 frontmatter value, so a
-/// title or path with a colon (or embedded quotes/backslashes) can never derail
-/// the mapping. The writer-side counterpart to the frontmatter parsing above;
-/// shared by every producer that emits an L1 `trace:`/`source:` line (the
-/// explore-walk builder and the CLI trace-walk writer).
 pub fn yaml_quote(s: &str) -> String {
     format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
 // ── Internal representation ──
 
-/// The scanned document before cards are built: what the directives
-/// snapshot test pins.
 struct Document {
     frontmatter: Frontmatter,
     title: Option<String>,
     cards: Vec<RawCard>,
     lints: Vec<Lint>,
-    /// The 1-based `(open, close)` line span of the frontmatter fences, or
-    /// `None` when there is no frontmatter (see [`L1Deck::frontmatter_span`]).
     frontmatter_span: Option<LineSpan>,
 }
 
-/// One card as scanned: heading, routed body lines, note, directives.
 struct RawCard {
-    /// The heading's 1-based line number.
     line: usize,
-    /// The heading text, trailing directives and hash run stripped.
     front: String,
-    /// Content lines before the divider (the extra front lines when a
-    /// divider exists; the whole answer when none does).
     front_extra: Vec<(usize, String)>,
-    /// Content lines after the divider.
     back: Vec<(usize, String)>,
-    /// Whether the divider has been seen.
     divided: bool,
-    /// The concatenated `> ` note lines.
     note: Option<String>,
-    /// The card's parsed §3.7 directive set.
     directives: CardDirectives,
 }
 
-/// The §3.7 per-card directive closed set, fully typed. The snapshot test
-/// asserts this structure literally so silent key loss cannot hide.
 #[derive(Debug, Default, PartialEq)]
 struct CardDirectives {
-    /// The identity token (`id:`), charset-validated at parse.
     token: Option<String>,
-    /// `reveal:`; `cloze` is retired (holes are the trigger).
     reveal: Option<Reveal>,
-    /// The line the `reveal:` directive sits on, for the cloze lint.
     reveal_line: Option<usize>,
-    /// `input:` override.
     input: Option<Input>,
-    /// `direction:` declaration (expanded at deck load, not here).
     direction: Option<Direction>,
-    /// `img:` question-side image, raw value.
     img: Option<String>,
-    /// `img-back:` answer-side image, raw value.
     img_back: Option<String>,
-    /// `at:` trace locator, the `<asset>` part.
     at: Option<String>,
-    /// The ` from <origin>` provenance split off a frozen `at:`.
     at_origin: Option<String>,
-    /// `origin:` override.
     origin: Option<String>,
-    /// `given:` lines, repeatable, in order.
     givens: Vec<String>,
-    /// `math:` render hint, parsed but consumed nowhere until Arc B.
     math: Option<String>,
 }
 
-/// A piece of a cloze-scanned answer line: literal text or a hole.
 enum Seg {
     Text(String),
     Hole(String),
 }
 
-/// Byte prep + frontmatter + line scan, stopping short of card building.
 fn parse_document(text: &str) -> Result<Document, L1Error> {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     let lines = prepare(text)?;
@@ -437,8 +272,6 @@ fn parse_document(text: &str) -> Result<Document, L1Error> {
     })
 }
 
-/// Splits into lines, dropping one trailing CR per line (CRLF input) and
-/// rejecting C0 controls outside the closed whitespace set.
 fn prepare(text: &str) -> Result<Vec<&str>, L1Error> {
     let mut lines = Vec::new();
     for (idx, raw) in text.split('\n').enumerate() {
@@ -462,7 +295,6 @@ fn trim_ws(s: &str) -> &str {
     s.trim_matches(&WHITESPACE[..])
 }
 
-/// Collapses every whitespace run (the closed set) to one space and trims.
 fn collapse(s: &str) -> String {
     s.split(&WHITESPACE[..])
         .filter(|word| !word.is_empty())
@@ -470,9 +302,6 @@ fn collapse(s: &str) -> String {
         .join(" ")
 }
 
-/// The fence a column-0 line opens (``` or ~~~), if any. Crate-shared: the
-/// deck-text splitters (remediation blocks, generate's card spacing) track
-/// fences with the same rule the parser applies.
 pub(crate) fn fence_opener(line: &str) -> Option<char> {
     if line.starts_with("```") {
         Some('`')
@@ -483,9 +312,6 @@ pub(crate) fn fence_opener(line: &str) -> Option<char> {
     }
 }
 
-/// Whether a column-0 line closes the open fence: a run of three or more of
-/// its character with only whitespace after. Crate-shared like
-/// [`fence_opener`].
 pub(crate) fn closes_fence(line: &str, ch: char) -> bool {
     let run = line.chars().take_while(|c| *c == ch).count();
     run >= 3 && line.chars().skip(run).all(|c| WHITESPACE.contains(&c))
@@ -493,20 +319,13 @@ pub(crate) fn closes_fence(line: &str, ch: char) -> bool {
 
 // ── Frontmatter ──
 
-/// Whether a line closes the frontmatter block (spec §3.1, amended): the
-/// exact `---` run, followed only by closed-set whitespace. A line with
-/// leading indentation (` ---`) does not match: content, not a closer, so a
-/// `---` inside a YAML block scalar can't accidentally end the frontmatter.
+// Leading indentation doesn't match: a `---` inside a YAML block scalar can't
+// accidentally close the frontmatter.
 fn closes_frontmatter(line: &str) -> bool {
     line.strip_prefix("---")
         .is_some_and(|rest| rest.chars().all(|c| WHITESPACE.contains(&c)))
 }
 
-/// Locates and loads the optional frontmatter (spec §3.1): it opens only if
-/// the file's first content line is exactly `---`, and a missing close is a
-/// hard error. Returns the frontmatter, the 0-based index scanning resumes
-/// at, and the frontmatter's 1-based `(open, close)` fence-line span (`None`
-/// when there is no frontmatter) for the stamp writer.
 fn parse_frontmatter(
     lines: &[&str],
     lints: &mut Vec<Lint>,
@@ -528,8 +347,6 @@ fn parse_frontmatter(
     Ok((frontmatter, close + 1, Some((open + 1, close + 1))))
 }
 
-/// Hands the frontmatter block to the YAML parser and types the §3.6 closed
-/// key set. `first_line` is the block's first 1-based line number.
 fn load_frontmatter(
     block: &[&str],
     first_line: usize,
@@ -547,10 +364,8 @@ fn load_frontmatter(
     let Some(root) = docs.into_iter().next() else {
         return Ok(frontmatter);
     };
-    // A null-scalar root (`null` or `~`) loads, but is not a block mapping: a
-    // spliced `id:` line would land in front of the bare scalar, which
-    // yaml-rust2 hard-rejects ("simple key expected"). Exclude it from
-    // splicing the same way a flow mapping or non-mapping root is (spec §2.3).
+    // A null-scalar root loads but is not a block mapping; splicing an `id:`
+    // in front of a bare scalar would fail (yaml-rust2: "simple key expected").
     if root == Yaml::Null {
         frontmatter.unspliceable = true;
         return Ok(frontmatter);
@@ -559,8 +374,8 @@ fn load_frontmatter(
         frontmatter.unspliceable = true;
         return Ok(frontmatter);
     };
-    // A flow mapping (`{key: value}`) loads, but offers no per-key line for
-    // the stamp writer to splice a minted `id:` into (spec §2.3).
+    // A flow mapping loads but offers no per-key line to splice a minted
+    // `id:` into.
     if trim_ws(&text).starts_with('{') {
         frontmatter.unspliceable = true;
     }
@@ -650,7 +465,6 @@ fn parse_reveal(value: &str) -> Option<Reveal> {
     Reveal::parse(value).filter(|reveal| *reveal != Reveal::Cloze)
 }
 
-/// A scalar's text for a lint message, or its node kind when it has none.
 fn describe(value: &Yaml) -> String {
     value
         .as_str()
@@ -658,7 +472,6 @@ fn describe(value: &Yaml) -> String {
         .unwrap_or_else(|| yaml_kind(value).to_string())
 }
 
-/// The kind of a YAML node, phrased for an error message.
 fn yaml_kind(node: &Yaml) -> &'static str {
     match node {
         Yaml::Null => "null",
@@ -672,7 +485,6 @@ fn yaml_kind(node: &Yaml) -> &'static str {
     }
 }
 
-/// A `source:`/`requires:`/`link:` value: a scalar string or a list of them.
 fn string_list(key: &str, value: &Yaml, line: usize, lints: &mut Vec<Lint>) -> Vec<String> {
     match value {
         Yaml::String(s) => vec![s.clone()],
@@ -693,9 +505,6 @@ fn string_list(key: &str, value: &Yaml, line: usize, lints: &mut Vec<Lint>) -> V
     }
 }
 
-/// Best-effort line locator for a frontmatter key: the block-mapping line
-/// starting with `key:`, else any line containing the key (flow mappings),
-/// else the block's first line.
 fn key_line(block: &[&str], first_line: usize, key: &str) -> usize {
     for (i, line) in block.iter().enumerate() {
         if let Some(rest) = trim_ws(line).strip_prefix(key)
@@ -712,7 +521,6 @@ fn key_line(block: &[&str], first_line: usize, key: &str) -> usize {
     first_line
 }
 
-/// A `BadValue` lint (doctor reports these as errors).
 fn bad_value(line: usize, key: &str, value: String) -> Lint {
     Lint {
         line,
@@ -725,9 +533,6 @@ fn bad_value(line: usize, key: &str, value: String) -> Lint {
 
 // ── The line scanner ──
 
-/// Walks the body lines with fence state, producing the title and the raw
-/// cards. Structure is decided per line: headings and fences at column 0,
-/// divider/note/directive lines by their trimmed text.
 fn scan(
     lines: &[&str],
     start: usize,
@@ -736,11 +541,7 @@ fn scan(
     let mut title: Option<String> = None;
     let mut cards: Vec<RawCard> = Vec::new();
     let mut current: Option<RawCard> = None;
-    // The fence character plus the opener's line number, so an EOF lint can
-    // name where a still-open fence began.
     let mut fence: Option<(char, usize)> = None;
-    // The divider rule looks at the physically previous line: blank, or the
-    // card's heading.
     let mut prev_blank = false;
     let mut prev_heading = false;
 
@@ -748,8 +549,6 @@ fn scan(
         let lineno = idx + 1;
         let raw = *raw;
 
-        // Inside a fence everything is verbatim content; only the matching
-        // closer (column 0) ends it.
         if let Some((ch, _)) = fence {
             if closes_fence(raw, ch) {
                 fence = None;
@@ -760,7 +559,6 @@ fn scan(
             continue;
         }
 
-        // A fence opener (column 0) starts verbatim mode.
         if let Some(ch) = fence_opener(raw) {
             fence = Some((ch, lineno));
             push_content(&mut current, lineno, raw.to_string());
@@ -769,7 +567,6 @@ fn scan(
             continue;
         }
 
-        // A card front: `## ` at column 0.
         if let Some(rest) = raw.strip_prefix("## ") {
             if let Some(card) = current.take() {
                 cards.push(card);
@@ -800,8 +597,6 @@ fn scan(
             continue;
         }
 
-        // An escaped structural marker: drop the backslash, keep the line as
-        // plain content. Any other backslash is literal and falls through.
         if let Some(rest) = t.strip_prefix('\\')
             && ESCAPABLE.iter().any(|marker| rest.starts_with(marker))
         {
@@ -811,9 +606,6 @@ fn scan(
             continue;
         }
 
-        // The divider (spec §3.3): the first `---` in a card, outside a
-        // fence, preceded by a blank line or the heading. Every other `---`
-        // is content; in the preamble it is prose.
         if t == "---" {
             let divides =
                 current.as_ref().is_some_and(|card| !card.divided) && (prev_blank || prev_heading);
@@ -827,7 +619,6 @@ fn scan(
             continue;
         }
 
-        // A `>` note line; consecutive lines concatenate.
         if let Some(rest) = t.strip_prefix('>') {
             if let Some(card) = current.as_mut() {
                 let text = rest.strip_prefix(' ').unwrap_or(rest);
@@ -838,9 +629,6 @@ fn scan(
             continue;
         }
 
-        // A `<!-- key: value -->` directive line (single line). A comment
-        // that is no directive is consumed silently; preamble directives are
-        // ignored (deck configuration lives in frontmatter).
         if t.starts_with("<!--") {
             if let Some(body) = t.strip_prefix("<!--").and_then(|s| s.strip_suffix("-->")) {
                 if let Some((key, value)) = directive(body)
@@ -859,7 +647,6 @@ fn scan(
             // The line stays content.
         }
 
-        // An indented `##` is content, but likely a mistyped front.
         if t.starts_with("## ") {
             lints.push(Lint {
                 line: lineno,
@@ -868,8 +655,6 @@ fn scan(
         }
 
         if current.is_none() {
-            // The preamble: the first `# H1` becomes the title, everything
-            // else is prose and stays unparsed.
             if title.is_none()
                 && let Some(rest) = raw.strip_prefix("# ")
             {
@@ -885,9 +670,6 @@ fn scan(
         prev_heading = false;
     }
 
-    // A fence still open at EOF swallowed everything after it, including any
-    // later `## ` headings, as its content: surface that instead of letting
-    // cards vanish silently.
     if let Some((_, open_line)) = fence {
         lints.push(Lint {
             line: open_line,
@@ -900,8 +682,6 @@ fn scan(
     Ok((title, cards))
 }
 
-/// Routes a content line into the current card (front or answer side of the
-/// divider); preamble content has no card and is dropped.
 fn push_content(current: &mut Option<RawCard>, lineno: usize, text: String) {
     if let Some(card) = current.as_mut() {
         if card.divided {
@@ -912,7 +692,6 @@ fn push_content(current: &mut Option<RawCard>, lineno: usize, text: String) {
     }
 }
 
-/// Appends one note line, joining consecutive lines with newlines.
 fn append_note(card: &mut RawCard, text: &str) {
     match &mut card.note {
         Some(note) => {
@@ -923,8 +702,6 @@ fn append_note(card: &mut RawCard, text: &str) {
     }
 }
 
-/// Parses a `## ` heading's text: trailing directive comments are extracted
-/// and applied, then a trailing hash run is stripped.
 fn heading(
     rest: &str,
     lineno: usize,
@@ -941,9 +718,6 @@ fn heading(
     Ok((front, directives))
 }
 
-/// Splits trailing `<!-- ... -->` comments off a heading's text, returning
-/// the remaining text and the comment bodies in document order. This is
-/// where the stamped `<!-- id: ... -->` placement (spec §1.1) is read.
 fn split_trailing_comments(text: &str) -> (String, Vec<String>) {
     let mut text = trim_ws(text);
     let mut bodies = Vec::new();
@@ -965,8 +739,6 @@ fn split_trailing_comments(text: &str) -> (String, Vec<String>) {
     (text.to_string(), bodies)
 }
 
-/// Strips a CommonMark closing hash run (`## Foo ##` renders "Foo"): only
-/// when the run is preceded by whitespace or is the whole text.
 fn strip_trailing_hashes(text: &str) -> &str {
     let stripped = text.trim_end_matches('#');
     if stripped.len() == text.len() {
@@ -978,11 +750,6 @@ fn strip_trailing_hashes(text: &str) -> &str {
     }
 }
 
-/// Parses a comment body as a `key: value` directive: lowercased key,
-/// trimmed value (which may come back empty: the caller decides whether an
-/// empty value on a known key warrants a lint). `None` for anything without
-/// a `key:` shape at all (a prose comment), which is consumed as a plain
-/// comment.
 fn directive(body: &str) -> Option<(String, String)> {
     let (key, value) = trim_ws(body).split_once(':')?;
     let key = trim_ws(key).to_ascii_lowercase();
@@ -992,8 +759,6 @@ fn directive(body: &str) -> Option<(String, String)> {
     Some((key, trim_ws(value).to_string()))
 }
 
-/// The §3.7 per-card directive keys that lint on an empty value, i.e. every
-/// match arm in [`apply_directive`] except the reserved and unknown keys.
 fn is_known_card_key(key: &str) -> bool {
     matches!(
         key,
@@ -1009,10 +774,6 @@ fn is_known_card_key(key: &str) -> bool {
     )
 }
 
-/// Applies one directive to the card's set: the §3.7 closed keys, the
-/// reserved keys silently, anything else linted, and an empty value on a
-/// known key linted rather than dropped without a trace. A bad token is the
-/// one hard error here.
 fn apply_directive(
     directives: &mut CardDirectives,
     key: &str,
@@ -1073,9 +834,7 @@ fn apply_directive(
     Ok(())
 }
 
-/// Splits an `at:` value into its asset locator and the optional ` from
-/// <origin>` provenance (`29.rs from src/caching.rs:46-66`). The separator
-/// is spaced, so a path like `from_x.rs` stays intact.
+// The separator is spaced (" from ") so a path like `from_x.rs` stays intact.
 fn split_at_origin(value: &str) -> (String, Option<String>) {
     match value.split_once(" from ") {
         Some((at, origin)) => (trim_ws(at).to_string(), Some(trim_ws(origin).to_string())),
@@ -1085,7 +844,6 @@ fn split_at_origin(value: &str) -> (String, Option<String>) {
 
 // ── Card building and cloze ──
 
-/// Builds one scanned card into `cards`: plain, or expanded per cloze hole.
 fn build_card(
     subject: &Arc<str>,
     raw: RawCard,
@@ -1109,16 +867,12 @@ fn build_card(
         }
         (front, back)
     } else {
-        // No divider: the heading is the whole front, everything else is
-        // the answer (spec §3.3).
         (heading, front_extra)
     };
     if answer.is_empty() {
         return Err(L1Error::FrontWithoutAnswer(line));
     }
 
-    // Scan every answer line for cloze holes. Text segments also apply the
-    // `\\cloze` escape, so plain cards pass through the same scanner.
     let mut parsed = Vec::with_capacity(answer.len());
     for (lineno, text) in &answer {
         parsed.push(scan_cloze(text, *lineno, lints)?);
@@ -1163,15 +917,10 @@ fn build_card(
     }
     let token: Option<Arc<str>> = directives.token.as_deref().map(Arc::from);
     let structure: Vec<String> = parsed.iter().map(|segments| hash_repr(segments)).collect();
-    // The block-level §7 fingerprint: front + the RAW answer lines, so the
-    // `\cloze{...}` markers count as literal text. Every hole of this block shares
-    // it, so the remediation/tutor dedup treats the block as one content unit (and
-    // a plain card repeating a hole's hidden text, which lacks the markers, does
-    // not collide).
+    // Raw (unmasked) answer lines, so `\cloze{...}` markers count as literal
+    // text and this can't collide with a plain card repeating the hidden text.
     let raw_answer: Vec<String> = answer.iter().map(|(_, text)| text.clone()).collect();
     let block_fingerprint = content_fingerprint(&front, &raw_answer);
-    // Every hole's realignment fingerprint, in document order, shared by all
-    // sub-cards of this block so any one can rebuild the card's store records.
     let block_holes = hole_fingerprints(&parsed, &holes);
     for (n, (hole_line, hole_seg, answer_text)) in holes.iter().enumerate() {
         let context: Vec<String> = parsed
@@ -1205,20 +954,15 @@ fn build_card(
         card.token = token.clone();
         card.hole = Some(n as u32);
         card.block_holes = block_holes.clone();
-        // Override the per-sub-card default (front + this hole's hidden text) with
-        // the block fingerprint so all holes of the block dedup as a unit.
         card.content_fingerprint = block_fingerprint;
-        // A cloze sub-card never reverses and keeps no direction; the
-        // per-card `input:` still applies to how each hole is answered.
+        // A cloze sub-card never reverses and keeps no direction: only the
+        // per-card `input:` still applies here.
         card.input = directives.input;
         cards.push(card);
     }
     Ok(())
 }
 
-/// Scans one answer line for `\cloze{...}` holes (spec §3.4). The marker is
-/// active everywhere, fenced lines included; `\\cloze` renders a literal
-/// `\cloze`; `\cloze[` is reserved.
 fn scan_cloze(line_text: &str, lineno: usize, lints: &mut Vec<Lint>) -> Result<Vec<Seg>, L1Error> {
     let mut segments = Vec::new();
     let mut text = String::new();
@@ -1263,10 +1007,6 @@ fn scan_cloze(line_text: &str, lineno: usize, lints: &mut Vec<Lint>) -> Result<V
     Ok(segments)
 }
 
-/// Scans a hole's argument after the opening brace: brace-balanced, with
-/// `\{`/`\}`/`\\` stripped (escaped braces do not count toward depth), any
-/// other backslash literal, single line. Returns the content and the rest
-/// of the line after the closing brace.
 fn scan_hole(arg: &str, lineno: usize) -> Result<(String, &str), L1Error> {
     let mut content = String::new();
     let mut depth = 1usize;
@@ -1309,8 +1049,6 @@ fn scan_hole(arg: &str, lineno: usize) -> Result<(String, &str), L1Error> {
     Err(L1Error::UnclosedHole(lineno))
 }
 
-/// Reassembles a scanned line's text segments (a plain line has no holes;
-/// a hole is rendered back as a marker defensively).
 fn seg_text(segments: &[Seg]) -> String {
     let mut out = String::new();
     for segment in segments {
@@ -1326,9 +1064,6 @@ fn seg_text(segments: &[Seg]) -> String {
     out
 }
 
-/// The delimiter-free representation of a scanned line for the legacy
-/// identity hash, mirroring [`crate::cloze`]: text runs verbatim, hole
-/// content fenced by a unit-separator byte that cannot occur in deck input.
 fn hash_repr(segments: &[Seg]) -> String {
     let mut out = String::new();
     for segment in segments {
@@ -1377,12 +1112,10 @@ mod tests {
 
     #[test]
     fn frontmatter_opens_only_as_the_first_content_line() {
-        // Leading blank lines are skipped: the first content line opens it.
         let deck = parse("\n---\ntrace: a walk\n---\n## q\n---\na\n");
         assert_eq!(Some("a walk".to_string()), deck.frontmatter.trace);
         assert_eq!(1, deck.cards.len());
 
-        // After any content, a `---` is never frontmatter.
         let deck = parse("intro prose\n---\nid: nope\n---\n## q\na\n");
         assert_eq!(Frontmatter::default(), deck.frontmatter);
         assert_eq!(None, deck.deck_token);
@@ -1403,8 +1136,6 @@ mod tests {
         assert_eq!(1, deck.cards.len());
         assert_eq!("q", deck.cards[0].front);
 
-        // Leading indentation stays content (it protects a `---` inside a
-        // YAML block scalar), so this frontmatter never closes.
         assert_eq!(
             L1Error::UnclosedFrontmatter(1),
             err("---\ntrace: a walk\n ---\n## q\na\n")
@@ -1453,13 +1184,10 @@ mod tests {
 
     #[test]
     fn a_null_scalar_frontmatter_is_unspliceable() {
-        // A hand-authored `null` scalar loads (an empty frontmatter, in
-        // effect), but is not a block mapping a stamp splice can key into.
         let deck = parse("---\nnull\n---\n## q\na\n");
         assert_eq!(None, deck.frontmatter.id);
         assert!(deck.frontmatter.unspliceable);
 
-        // `~` is the other YAML null spelling; same outcome.
         let deck = parse("---\n~\n---\n## q\na\n");
         assert_eq!(None, deck.frontmatter.id);
         assert!(deck.frontmatter.unspliceable);
@@ -1467,19 +1195,15 @@ mod tests {
 
     #[test]
     fn the_frontmatter_span_locates_the_fences_or_is_none() {
-        // No frontmatter: no span (the stamp writer prepends a canonical one).
         assert_eq!(None, parse("## q\na\n").frontmatter_span);
-        // A block mapping: the two `---` fence lines, 1-based.
         assert_eq!(
             Some((1, 3)),
             parse("---\nsource: x\n---\n## q\na\n").frontmatter_span
         );
-        // Leading blank lines push the opener (and closer) down.
         assert_eq!(
             Some((2, 4)),
             parse("\n---\nsource: x\n---\n## q\na\n").frontmatter_span
         );
-        // A flow mapping is present (has a span) but unspliceable.
         let deck = parse("---\n{source: [a]}\n---\n## q\nb\n");
         assert_eq!(Some((1, 3)), deck.frontmatter_span);
         assert!(deck.frontmatter.unspliceable);
@@ -1529,8 +1253,6 @@ mod tests {
 
     #[test]
     fn a_file_with_no_h2_fronts_is_a_zero_card_deck() {
-        // Loadable, empty: a header-only stub or prose file parses to no cards
-        // (whether it lists as a deck is the enumeration layer's call).
         let deck = parse("# Title\njust prose\n");
         assert!(deck.cards.is_empty());
         assert_eq!(Some("Title"), deck.title.as_deref());
@@ -1538,22 +1260,14 @@ mod tests {
 
     #[test]
     fn is_deck_content_requires_a_card_or_frontmatter() {
-        // A prose `.md` with neither a `## ` card nor frontmatter is not a deck.
         assert!(!is_deck_content("# Notes\n\njust some prose here\n"));
-        // A `## ` heading buried inside a code fence is content, not a front.
-        // A naive line scan would be fooled, the fence-aware parser is not.
         assert!(!is_deck_content("# Notes\n\n```\n## not a card\n```\n"));
-        // A real card front makes it a deck.
         assert!(is_deck_content("## q\na\n"));
     }
 
     #[test]
     fn a_header_only_stub_is_deck_content() {
-        // A trace stub (frontmatter, zero cards) MUST still enumerate: the
-        // frontmatter arm, not the card arm, carries it. This is the mutation
-        // sentinel: drop `|| deck.frontmatter_span.is_some()` and it fails.
         assert!(is_deck_content("---\ntrace: a walk\n---\n"));
-        // An empty frontmatter block alone counts too.
         assert!(is_deck_content("---\nsource: notes.md\n---\n"));
     }
 
@@ -1587,8 +1301,6 @@ mod tests {
 
     #[test]
     fn an_unclosed_fence_at_eof_is_linted() {
-        // The trailing empty line from the final `\n` is itself inside the
-        // still-open fence, so it is swallowed as content too.
         let deck = parse("## q\n---\na\n```\nb\n");
         assert_eq!(vec!["a", "```", "b", ""], deck.cards[0].back);
         assert_eq!(
@@ -1656,12 +1368,10 @@ mod tests {
 
     #[test]
     fn a_divider_needs_a_blank_line_or_the_heading_before_it() {
-        // Directly after a content line the `---` is content, not a divider.
         let deck = parse("## Q\ntext\n---\nanswer\n");
         assert_eq!("Q", deck.cards[0].front);
         assert_eq!(vec!["text", "---", "answer"], deck.cards[0].back);
 
-        // Directly after the heading it divides.
         let deck = parse("## Q\n---\nanswer\n");
         assert_eq!(vec!["answer"], deck.cards[0].back);
     }
@@ -1682,7 +1392,6 @@ mod tests {
 
     #[test]
     fn an_id_directive_yields_the_card_token() {
-        // Trailing on the heading (the stamped placement) and on its own line.
         let deck = parse(
             "## q <!-- id: 4jkya9q3m8z0tw5v9y2b4n6d8f -->\n---\na\n## r\n---\nb\n\
              <!-- id: 0m5v2 -->\n",
@@ -1727,7 +1436,6 @@ mod tests {
             deck.cards[0].at_origin
         );
 
-        // Without the spaced ` from ` separator the locator stays whole.
         let deck = parse("## q\n---\na\n<!-- at: src/from_x.rs:1-3 -->\n");
         assert_eq!(Some("src/from_x.rs:1-3".to_string()), deck.cards[0].at);
         assert_eq!(None, deck.cards[0].at_origin);
@@ -1774,19 +1482,14 @@ mod tests {
 
     #[test]
     fn img_dir_strictness_and_origin_follow_the_leniency_model_of_comparable_keys() {
-        // `strictness`, like `reveal`/`order`/`input`/`direction`, lints a
-        // value that fails to parse and leaves the field unset.
         let deck = parse("---\nstrictness: extreme\n---\n## q\na\n");
         assert_eq!(None, deck.frontmatter.strictness);
         assert_eq!(vec![bad(2, "strictness", "extreme")], deck.lints);
 
-        // `img-dir`, like `trace`, lints a non-string value.
         let deck = parse("---\nimg-dir: [a, b]\n---\n## q\na\n");
         assert_eq!(None, deck.frontmatter.img_dir);
         assert_eq!(vec![bad(2, "img-dir", "a sequence")], deck.lints);
 
-        // `origin` mirrors deck.rs's trim-and-ignore-empty: a blank value is
-        // silently ignored (no lint), but a non-string value still lints.
         let deck = parse("---\norigin: \"   \"\n---\n## q\na\n");
         assert_eq!(None, deck.frontmatter.origin);
         assert!(deck.lints.is_empty(), "{:?}", deck.lints);
@@ -1805,7 +1508,6 @@ mod tests {
             vec!["## x", "> y", "---", "<!-- z -->", "```"],
             deck.cards[0].back
         );
-        // The escaped fence opener opened nothing: the `>` line is a note.
         assert_eq!(Some("real note".to_string()), deck.cards[0].note);
     }
 
@@ -1821,8 +1523,6 @@ mod tests {
         assert_eq!(1, deck.cards.len());
         assert_eq!("q", deck.cards[0].front);
 
-        // Only one: a second BOM keeps the heading off column 0, so no card
-        // opens (the line is preamble prose).
         assert!(parse("\u{feff}\u{feff}## q\n---\na\n").cards.is_empty());
     }
 
@@ -1842,7 +1542,6 @@ mod tests {
             },
             err("## q\n---\na\u{7} bell\n")
         );
-        // VT and FF are inside the closed whitespace set: no error.
         assert!(parse_l1("deck.md", "## q\n---\na\u{b}b\n").is_ok());
     }
 
@@ -1919,8 +1618,6 @@ mod tests {
         assert_eq!(vec!["a {b} c"], deck.cards[0].back);
         assert_eq!(vec!["w ____ z"], deck.cards[0].context);
 
-        // Unbalanced proof that escapes add no depth: the escaped `{` does
-        // not open a level, so the next bare `}` closes the hole.
         let deck = parse("## q\n---\nw \\cloze{a \\{b} c\n");
         assert_eq!(vec!["a {b"], deck.cards[0].back);
         assert_eq!(vec!["w ____ c"], deck.cards[0].context);
@@ -1978,8 +1675,6 @@ mod tests {
 
     #[test]
     fn cloze_cards_never_produce_a_reversed_twin() {
-        // A deck-wide `direction: both` and a per-card one: the hole sub-card
-        // still comes out single, unreversed, and direction-free.
         let deck = parse(
             "---\ndirection: both\n---\n## q\n---\na \\cloze{b} c\n<!-- direction: both -->\n",
         );
@@ -1992,8 +1687,6 @@ mod tests {
 
     #[test]
     fn a_plain_cards_direction_is_recorded_not_expanded() {
-        // Direction expansion stays a deck-load concern; the parser only
-        // records the declaration.
         let deck = parse("---\ndirection: both\n---\n## q\n---\na\n<!-- direction: both -->\n");
         assert_eq!(1, deck.cards.len());
         assert_eq!(Some(Direction::Both), deck.cards[0].direction);
@@ -2002,9 +1695,6 @@ mod tests {
 
     // ── The directives snapshot ──
 
-    /// The guard against silent key loss: one fixture exercising every §3.6
-    /// and §3.7 key, asserted as a literal expected structure (id-based tests
-    /// are blind to a dropped key).
     #[test]
     fn a_full_directive_fixture_parses_to_exactly_this_snapshot() {
         let text = r#"---
@@ -2094,10 +1784,8 @@ the answer
             },
             document.cards[0].directives
         );
-        // Every key above is known or reserved: nothing may lint.
         assert!(document.lints.is_empty(), "{:?}", document.lints);
 
-        // And the built card carries the directive set through.
         let deck = parse_l1("deck.md", text).unwrap();
         let card = &deck.cards[0];
         assert_eq!("The question", card.front);

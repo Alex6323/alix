@@ -1,8 +1,5 @@
-//! The picker's deck/workspace catalog — the DTO builders behind `/api/decks`
-//! and `/api/browse` — plus [`resolve_row`], the single name-resolution path
-//! every name-taking endpoint (`select`, `browse`, `reset`, `augment`, `share`,
-//! …) shares so no client-supplied name is ever turned into a filesystem path
-//! except through this lookup.
+//! Every name-taking endpoint resolves through [`resolve_row`], so no
+//! client-supplied name is ever turned into a filesystem path except here.
 
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
@@ -27,16 +24,11 @@ use crate::{
     store::Store,
 };
 
-/// Per-deck data the server needs to apply a removal: the file path, plus the
-/// file's original text so removals can be re-derived from a fixed snapshot
-/// (see [`deck::rewrite_without_cards`]).
 pub(super) struct DeckFiles {
-    /// Subject → file path.
     pub(super) paths: HashMap<String, PathBuf>,
-    /// Subject → original file text (decks whose text could not be read are
-    /// absent, and simply cannot have cards removed).
+    /// Absent for a deck whose text couldn't be read (it can't have cards
+    /// removed then).
     snapshots: HashMap<String, String>,
-    /// Subject → the 1-based front lines removed so far this run.
     removed: HashMap<String, BTreeSet<usize>>,
 }
 
@@ -57,9 +49,8 @@ impl DeckFiles {
         }
     }
 
-    /// Appends condensed note lines to the card block at `line` of `subject`,
-    /// then refreshes the snapshot so a later card removal keeps the new note
-    /// (removals rewrite from the snapshot). Returns a message on failure.
+    /// Refreshes the snapshot after appending, so a later removal keeps the
+    /// new note.
     pub(super) fn append_note(
         &mut self,
         subject: &str,
@@ -77,8 +68,7 @@ impl DeckFiles {
         Ok(())
     }
 
-    /// Records that the card block at `line` of `subject` was removed and
-    /// rewrites the deck file from its snapshot. Best-effort.
+    /// Best-effort: a rewrite failure only warns, never propagates.
     pub(super) fn remove_block(&mut self, subject: &str, line: usize) {
         let lines = self.removed.entry(subject.to_string()).or_default();
         lines.insert(line);
@@ -92,8 +82,6 @@ impl DeckFiles {
     }
 }
 
-/// A single loose deck as a selection row, its badge/lock/gating from the
-/// shared [`picker::deck_status`].
 pub(super) fn deck_item_dto(
     e: &picker::DeckEntry,
     store: &Store,
@@ -143,9 +131,9 @@ pub(super) fn deck_item_dto(
                 deadline: None, // a deadline is a workspace-level setting, not a deck's
             }
         }
-        // A deck that fails to load stays launchable so the error surfaces —
-        // structurally it's still a deck file (`selectable`), but there's
-        // nothing honest to report as due (`reviewable*` all false).
+        // A deck that fails to load stays selectable (so opening it surfaces
+        // the real error), but nothing is honestly reviewable, so those
+        // fields are false.
         Err(_) => DeckItemDto {
             name: e.name.clone(),
             selectable: true,
@@ -179,15 +167,8 @@ pub(super) fn deck_item_dto(
     }
 }
 
-/// A workspace/folder's members as an unlock dependency tree (the drill-in
-/// list): each member nests under the `% requires:` that gates it, siblings
-/// startable-first, carrying an `indent` for the tree nesting. Badges/locks come
-/// from the workspace's own store (a real workspace) or the served instance's
-/// root store (a plain folder) — the same store its top-level loose-deck
-/// badges use — matching what a session will write.
-///
-/// Also returns the [`picker::WorkspaceReadiness`] computed from the same
-/// statuses, for a caller building a deadline readout.
+/// Each member nests under the `requires:` that gates it; badges come from
+/// the workspace's own store (or the served root store for a plain folder).
 pub(super) fn workspace_members(
     e: &picker::DeckEntry,
     decks_dir: &Path,
@@ -195,7 +176,6 @@ pub(super) fn workspace_members(
     review: ReviewConfig,
     instance_store: &Store,
 ) -> (Vec<MemberDto>, picker::WorkspaceReadiness) {
-    // Member badges reflect this workspace's personal pacing override, if any.
     let review = review.for_workspace(&e.path);
     let is_ws = crate::workspace::is_workspace(&e.path);
     let own_workspace_store = is_ws
@@ -207,8 +187,6 @@ pub(super) fn workspace_members(
         Some(instance_store)
     };
     let paths: Vec<PathBuf> = e.members.iter().map(|m| m.path.clone()).collect();
-    // The workspace's own sidecar tells each member whether it has a focus
-    // drawer (topology); opened once, alongside the status pass.
     let augment = store.map(|s| AugmentCache::open(augment::augment_path_for(s.path())));
     // Load each member deck once, deriving its status, whether it has a
     // topology, and its last-used session depth from the same parse.
@@ -216,10 +194,8 @@ pub(super) fn workspace_members(
         .iter()
         .map(|p| {
             let deck = Deck::load(p).ok();
-            // `augment` is `Some` exactly when `store` is (both from the one
-            // `store.map(...)` above), so gating the status on all three keeps
-            // the same None-ness while handing `deck_status` the cache it needs
-            // to judge Recognize.
+            // `augment` is `Some` exactly when `store` is, so gating on all
+            // three keeps that pairing intact.
             let status = match (store, augment.as_ref(), deck.as_ref()) {
                 (Some(st), Some(a), Some(d)) => Some(picker::deck_status(
                     d,
@@ -238,10 +214,6 @@ pub(super) fn workspace_members(
                 }
                 _ => false,
             };
-            // Subject-keyed like `deck_item_dto`, from the workspace's own store.
-            // `augment` is `Some` exactly when `store` is (both come from the
-            // same `store.map(...)` above), so the three-way match never needs
-            // to unwrap that pairing.
             let last_depth = match (store, augment.as_ref(), deck.as_ref()) {
                 (Some(st), Some(ag), Some(d)) => st
                     .last_depth(&d.subject)
@@ -251,16 +223,13 @@ pub(super) fn workspace_members(
             (status, has_topology, depth_name(last_depth))
         })
         .collect();
-    // The readiness RULE lives in `picker::workspace_readiness`; this only
-    // gathers the statuses it needs (a member whose deck failed to load
-    // contributes to neither `ready` nor `total`).
+    // A member whose deck failed to load counts toward neither `ready` nor
+    // `total` (the rule itself lives in `picker::workspace_readiness`).
     let member_statuses: Vec<picker::DeckStatus> = loaded
         .iter()
         .filter_map(|(status, _, _)| status.clone())
         .collect();
     let readiness = picker::workspace_readiness(&member_statuses);
-    // Order siblings startable-first (blocked = locked, or — when gating —
-    // nothing to review), then by label.
     let parent = picker::member_parents(&paths, decks_dir);
     let key: Vec<(bool, String)> = e
         .members
@@ -307,9 +276,8 @@ pub(super) fn workspace_members(
                     new_cards: s.new_cards,
                     last_depth,
                 },
-                // A member that failed to load: the same neutral defaults as
-                // `deck_item_dto`'s failed-load fallback (structurally still
-                // selectable; nothing honest to report as reviewable).
+                // Mirrors deck_item_dto's failed-load fallback: still
+                // selectable, nothing reviewable.
                 None => MemberDto {
                     name: m.name.clone(),
                     selectable: true,
@@ -340,9 +308,6 @@ pub(super) fn workspace_members(
     (members, readiness)
 }
 
-/// The picker icon URL for a resolved icon path, registering it in the launcher
-/// image map so `/img/<key>` can serve it. Returns the URL and whether it is an
-/// SVG (a mask) or a raster (`<img>`).
 pub(super) fn icon_field(
     icon: Option<&Path>,
     icons: &mut HashMap<String, PathBuf>,
@@ -360,12 +325,8 @@ pub(super) fn icon_field(
     }
 }
 
-/// The decks dir this catalog fetch should serve. A scoped instance
-/// (`alix <dir>`) is pinned to its root forever; a config-derived instance
-/// follows a live `decks_dir` edit on the next reload (the ⟳ button and the
-/// focus-refresh both re-fetch /api/decks). A config that no longer parses
-/// keeps the current dir — the picker must never go down over a typo; the
-/// doctor sheet is where the parse error surfaces.
+/// A config that fails to parse keeps the current dir (the picker must never
+/// go down over a typo).
 pub(super) fn effective_decks_dir(
     scoped: bool,
     config_path: Option<&Path>,
@@ -380,10 +341,8 @@ pub(super) fn effective_decks_dir(
         .unwrap_or_else(|| current.to_path_buf())
 }
 
-/// Builds the deck-selection catalog's three sections — workspaces (each with
-/// its last-progress time), recent loose decks, and plain folders — each
-/// deck's badge/lock from `store`. `with_lock` is false for the browse
-/// screen: locking gates *review* only, so any deck is browsable.
+/// `with_lock` is false for the browse screen: locking gates review only, so
+/// any deck stays browsable.
 pub(super) fn deck_catalog(
     decks_dir: &Path,
     recent: &RecentDecks,
@@ -395,13 +354,8 @@ pub(super) fn deck_catalog(
     let mut workspaces = Vec::new();
     let mut recent_decks = Vec::new();
     let mut folders = Vec::new();
-    // Opened once for the whole catalog: the served instance's store's sidecar
-    // tells each loose deck whether it has a focus drawer (topology).
     let augment = AugmentCache::open(augment::augment_path_for(store.path()));
     for e in picker::catalog(decks_dir, recent) {
-        // A workspace/folder row: its members open on click; it has no state of
-        // its own. A folder with an `alix.toml` is a workspace (shown with its
-        // last-progress time); without one it's a plain folder.
         if e.is_workspace {
             let is_ws = crate::workspace::is_workspace(&e.path);
             let (members, readiness) = workspace_members(&e, decks_dir, with_lock, review, store);
@@ -428,9 +382,8 @@ pub(super) fn deck_catalog(
                 format!("{} decks", members.len())
             };
             let (icon, icon_svg) = icon_field(e.icon.as_deref(), icons);
-            // A group row has no due-ness of its own — it's the aggregate of
-            // what its members report, not an invitation to select the group
-            // itself (`selectable: false` below owns that).
+            // A group row's `reviewable` is the aggregate of its members (it
+            // stays unselectable itself; `selectable: false` below owns that).
             let reviewable = members.iter().any(|m| m.reviewable);
             let reviewable_recognize = members.iter().any(|m| m.reviewable_recognize);
             let can_recognize = members.iter().any(|m| m.can_recognize);
@@ -473,8 +426,8 @@ pub(super) fn deck_catalog(
             }
             continue;
         }
-        // A loose deck inside a workspace belongs to it — reached by opening the
-        // workspace, so it isn't listed loose in Recent.
+        // A loose deck inside a workspace belongs to it (reached by opening
+        // the workspace), so it's excluded from Recent.
         if e.path.parent().is_some_and(crate::workspace::is_workspace) {
             continue;
         }
@@ -489,18 +442,13 @@ pub(super) fn deck_catalog(
     }
 }
 
-/// A deck chosen from the picker, optionally scoped by the focus drawer to one
-/// topology and/or region, and at a chosen session `depth` (absent = the deck's
-/// last-used depth, defaulting to Recall).
 pub(super) struct Selection {
     pub(super) deck: PathBuf,
     pub(super) opts: SelectOptions,
 }
 
-/// Parses a `{"decks":[name,…]}` selection and resolves each name to its deck
-/// path via the live catalog. Returns `None` (→ 400) for an empty or malformed
-/// body, or any name not in the catalog — so no filesystem path is ever built
-/// from request input, keeping selection safe under `--lan`.
+/// `None` (→ 400) for any name not in the catalog: no filesystem path is
+/// ever built from request input.
 pub(super) fn read_selection(
     request: &mut Request,
     decks_dir: &Path,
@@ -526,12 +474,6 @@ pub(super) fn read_selection(
     if body.deck.is_empty() {
         return None;
     }
-    // Covers top-level decks/workspaces and every workspace's members (by
-    // their qualified `<workspace>/<file>` key), so a member selection from
-    // inside a workspace resolves safely too. Unknown, crafted, and ambiguous
-    // (duplicated bare) names all resolve to nothing here — `/api/select`
-    // and `/api/browse` already answer 400 on `None`; `/api/deck-topology`
-    // falls back to an empty DTO.
     let deck = resolved_path(resolve_row(&body.deck, decks_dir, recent))?;
     Some(Selection {
         deck,
@@ -548,16 +490,13 @@ pub(super) fn read_selection(
     })
 }
 
-/// One resolution map for every name-taking endpoint. Bare names that occur
-/// more than once (two containers holding decks with the same file name)
-/// resolve to `Ambiguous` — callers answer 400 and the client uses the
-/// qualified `<workspace>/<file>` key instead; silently picking one of two
-/// same-named decks was wrong everywhere and dangerous behind `/api/reset`.
+/// A name matching more than one container/member resolves to `Ambiguous`
+/// (silently picking one was dangerous behind `/api/reset`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Resolved {
     One(PathBuf),
-    /// A container row (workspace/folder): its own directory and its member
-    /// deck files — so no caller ever has to reconstruct one from the other.
+    /// A container row: its directory and member files, so a caller never
+    /// reconstructs one from the other.
     Many {
         dir: PathBuf,
         files: Vec<PathBuf>,
@@ -566,15 +505,8 @@ pub(super) enum Resolved {
     Unknown,
 }
 
-/// Resolves a requested name against the live catalog — the one lookup every
-/// name-taking endpoint shares. Qualified member keys (`<workspace>/<file>`)
-/// and bare top-level row keys never collide with *each other* (a filename
-/// can't contain `/`) — but two same-named containers (e.g. one reached via
-/// `decks_dir`, the other only via `recent`) can each hold a same-named
-/// member, so both key spaces get the same duplicate tombstoning: any name —
-/// bare row or qualified member — seen more than once flips to `Ambiguous`
-/// for the rest of this call. No name ever silently picks one of several
-/// same-named rows *or* same-named members.
+/// A name seen more than once (bare row or qualified member) resolves to
+/// `Ambiguous`, never silently picking one of several same-named entries.
 pub(super) fn resolve_row(name: &str, decks_dir: &Path, recent: &RecentDecks) -> Resolved {
     let mut known: HashMap<String, Resolved> = HashMap::new();
     let mut seen: HashSet<String> = HashSet::new();
@@ -603,12 +535,8 @@ pub(super) fn resolve_row(name: &str, decks_dir: &Path, recent: &RecentDecks) ->
     known.get(name).cloned().unwrap_or(Resolved::Unknown)
 }
 
-/// Collapses a [`Resolved`] to the single path `read_selection`/augment/share/
-/// share-zip need: a plain deck's own file, or — for a workspace/folder row —
-/// its directory, matching what these call sites did before `resolve_row`
-/// existed (they used the row's own path rather than expanding to members;
-/// `/api/reset` is the one caller that wants the member list, so it matches on
-/// `Resolved` directly instead of going through this).
+/// A workspace/folder row collapses to its directory; `/api/reset` instead
+/// matches on `Resolved` directly since it wants the member list.
 pub(super) fn resolved_path(resolved: Resolved) -> Option<PathBuf> {
     match resolved {
         Resolved::One(p) => Some(p),
@@ -617,13 +545,8 @@ pub(super) fn resolved_path(resolved: Resolved) -> Option<PathBuf> {
     }
 }
 
-/// Resolves an add-sheet destination: absent/empty → the served root; a name
-/// → a workspace/folder row's directory, looked up through the same catalog
-/// `/api/select` uses (never a client-crafted path). `None` = unknown name, or
-/// a name duplicated across containers (same rejection `resolve_row` applies
-/// to bare names — dest names are top-level-only, so `catalog` can surface the
-/// same duplication) — the caller rejects with 400. Tasks 9 and 11 (`generate`,
-/// `receive`) reuse this.
+/// `None` for an unknown name or one duplicated across containers (the
+/// caller then rejects with 400); never a client-crafted path.
 pub(super) fn resolve_dest(
     dest: Option<&str>,
     decks_dir: &Path,
@@ -642,18 +565,14 @@ pub(super) fn resolve_dest(
     Some(first.path)
 }
 
-/// A stable, opaque URL key for a resolved image path: the hex `XxHash64` of
-/// the path. The card DTO and the image registry derive it the same way, so
-/// only paths a deck actually references resolve — no user input is joined to a
-/// path, which keeps `/img/` safe from traversal even under `--lan`.
+/// The hex `XxHash64` of the path. Keeps `/img/` safe from traversal, since no
+/// user input is ever joined to a path.
 pub(super) fn img_key(path: &Path) -> String {
     let mut hasher = XxHash64::default();
     hasher.write(path.to_string_lossy().as_bytes());
     format!("{:016x}", hasher.finish())
 }
 
-/// Builds the `key → absolute path` registry the `/img/` route serves from, by
-/// scanning every card's resolved image sides.
 pub(super) fn collect_images(cards: &[Card]) -> HashMap<String, PathBuf> {
     let mut images = HashMap::new();
     for card in cards {

@@ -1,7 +1,3 @@
-//! HTTP plumbing: request auth/parsing helpers and response writers. The only
-//! file in `serve` that touches `tiny_http` response construction, so every
-//! route builds its reply through one of these instead of the crate directly.
-
 use std::{
     collections::HashMap,
     io::Read,
@@ -16,7 +12,6 @@ use crate::{
     trace::Delta,
 };
 
-/// Parses a `{"delta": "g"|"p"|"m"}` self-grade POST body.
 pub(super) fn read_delta(request: &mut Request) -> Option<Delta> {
     #[derive(Deserialize)]
     struct Body {
@@ -26,14 +21,12 @@ pub(super) fn read_delta(request: &mut Request) -> Option<Delta> {
     Delta::from_key(body.delta.chars().next()?)
 }
 
-/// The path part of a request URL, without any `?query`.
 pub(super) fn request_path(request: &Request) -> String {
     request.url().split('?').next().unwrap_or("").to_string()
 }
 
-/// Whether a request may proceed. Only `/api/*` is guarded; the HTML shell,
-/// theme assets, and images stay open so the browser can bootstrap its token
-/// from the `?token=` URL. No token configured (the localhost default) → open.
+// Only /api/* is guarded: the HTML shell/assets/images stay open so the
+// browser can bootstrap its token from the URL.
 pub(super) fn is_authorized(
     path: &str,
     auth_header: Option<&str>,
@@ -50,8 +43,8 @@ pub(super) fn is_authorized(
     presented.is_some_and(|p| ct_eq(p.as_bytes(), token.as_bytes()))
 }
 
-/// Constant-time byte comparison, so checking the pairing token doesn't leak it
-/// through timing. Length is not secret — a length mismatch returns early.
+// Constant-time so checking the pairing token doesn't leak it through
+// timing. Length is not secret, so an early mismatch return is safe.
 pub(super) fn ct_eq(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
         return false;
@@ -59,7 +52,6 @@ pub(super) fn ct_eq(a: &[u8], b: &[u8]) -> bool {
     a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
-/// A request header's value by name (case-insensitive), if present.
 pub(super) fn header_value<'a>(request: &'a Request, name: &'static str) -> Option<&'a str> {
     request
         .headers()
@@ -68,7 +60,6 @@ pub(super) fn header_value<'a>(request: &'a Request, name: &'static str) -> Opti
         .map(|h| h.value.as_str())
 }
 
-/// A query parameter's value from a full request URL (`/path?k=v&…`).
 pub(super) fn query_param(url: &str, key: &str) -> Option<String> {
     let (_, query) = url.split_once('?')?;
     query.split('&').find_map(|pair| {
@@ -77,8 +68,6 @@ pub(super) fn query_param(url: &str, key: &str) -> Option<String> {
     })
 }
 
-/// The MIME type to serve a card image with, by file extension. Unknown
-/// extensions fall back to a generic binary type (the browser still sniffs it).
 pub(super) fn content_type(path: &Path) -> &'static str {
     match path
         .extension()
@@ -95,9 +84,6 @@ pub(super) fn content_type(path: &Path) -> &'static str {
     }
 }
 
-/// Parses a grade POST body into a [`Grade`]: either an explicit
-/// `{"grade":"failed|partly|passed"}`, or `{"covered":n,"total":m}` from the
-/// Explain key-point checklist (derived once, in the lib, via `keypoint_grade`).
 pub(super) fn read_grade(request: &mut Request) -> Option<Grade> {
     #[derive(Deserialize)]
     struct Body {
@@ -120,7 +106,6 @@ pub(super) fn read_grade(request: &mut Request) -> Option<Grade> {
     }
 }
 
-/// Parses a `{"index": n}` POST body (the browse card to remove).
 pub(super) fn read_index(request: &mut Request) -> Option<usize> {
     #[derive(Deserialize)]
     struct Body {
@@ -130,11 +115,8 @@ pub(super) fn read_index(request: &mut Request) -> Option<usize> {
     Some(body.index)
 }
 
-/// Reads `reader` to end, capped at `cap` bytes: `None` if the read errors or
-/// the body exceeds the cap. `take(cap + 1)` lets an oversized body read one
-/// byte past the cap, which the length check below catches — so a reader
-/// whose declared length lies (or has none) is still bounded by the actual
-/// bytes read, not by what it claims.
+// `take(cap + 1)` lets an oversized body read one byte past the cap, so an
+// unbounded/lying reader is still capped by bytes actually read.
 pub(super) fn read_capped(reader: impl Read, cap: usize) -> Option<Vec<u8>> {
     let mut bytes = Vec::new();
     if reader.take(cap as u64 + 1).read_to_end(&mut bytes).is_err() || bytes.len() > cap {
@@ -144,11 +126,8 @@ pub(super) fn read_capped(reader: impl Read, cap: usize) -> Option<Vec<u8>> {
     }
 }
 
-/// The app shell and its assets must never be served stale: alix ships no
-/// version in its URLs, so after an upgrade a heuristically-cached page keeps
-/// showing the OLD web app (seen in the wild: a week-old review.html surviving
-/// a `make install`). `no-cache` forces revalidation on every load — cheap on
-/// localhost — and `no-store` keeps live JSON state out of the cache entirely.
+// no-cache forces revalidation (alix ships no version in its URLs, so a
+// stale cache could show an old app after an upgrade); no-store excludes JSON.
 pub(super) fn cache_header(policy: &'static [u8]) -> Header {
     Header::from_bytes(&b"Cache-Control"[..], policy).unwrap()
 }
@@ -177,8 +156,6 @@ pub(super) fn respond_html(request: Request, html: &str) {
     );
 }
 
-/// Serves a static text asset (the shared `theme.css` / `theme.js`) with the
-/// given content type.
 pub(super) fn respond_asset(request: Request, body: &str, content_type: &str) {
     let header = Header::from_bytes(&b"Content-Type"[..], content_type.as_bytes()).unwrap();
     let _ = request.respond(
@@ -188,10 +165,8 @@ pub(super) fn respond_asset(request: Request, body: &str, content_type: &str) {
     );
 }
 
-/// Serves a self-hosted webfont file. Unlike `respond_bytes`, the file is
-/// vendored (not user content) and never changes shape at a given URL, so it
-/// gets a far-future, immutable cache policy — the point of self-hosting is
-/// to fetch each font once, ever.
+// Unlike respond_bytes: vendored fonts never change shape at a URL, so they
+// get a far-future immutable cache (fetched once, ever).
 pub(super) fn respond_font(request: Request, bytes: &'static [u8]) {
     let header = Header::from_bytes(&b"Content-Type"[..], &b"font/woff2"[..]).unwrap();
     let _ = request.respond(
@@ -210,13 +185,8 @@ pub(super) fn respond_bytes(request: Request, bytes: Vec<u8>, content_type: &str
     let _ = request.respond(Response::from_data(bytes).with_header(header));
 }
 
-/// A Content-Disposition-safe file name: ASCII only (tiny_http header
-/// values must be), quotes/backslashes/control characters dropped, and
-/// never empty — a fully non-ASCII name falls back to a generic one.
-///
-/// The alphanumeric check looks only at the stem (before the last `.`):
-/// an extension alone (e.g. a non-ASCII name filtered down to `.zip`) is
-/// not a real file name, so it also falls back.
+// ASCII only (tiny_http header values must be); the alphanumeric check looks
+// only at the stem, so a name filtered down to just an extension also falls back.
 pub(super) fn download_filename(name: &str) -> String {
     let safe: String = name
         .chars()
@@ -233,13 +203,8 @@ pub(super) fn download_filename(name: &str) -> String {
     }
 }
 
-/// Normalizes an uploaded name's `.md` extension to lower case before it
-/// reaches [`crate::library::place_deck`], whose suffix-strip is
-/// case-sensitive (a locked contract) — without this, `FILE.MD` would save
-/// as `FILE.MD.md`. `lower_name` is the already-lowercased name, used only
-/// to test the ending; slicing 3 bytes off `name` is safe because a matched
-/// `.md` ending means the last 3 bytes are that same ASCII extension
-/// (lowercasing never changes a string's byte length).
+// place_deck's suffix-strip is case-sensitive (else FILE.MD saves as FILE.MD.md);
+// slicing 3 bytes off `name` is safe since lowercasing preserves ASCII byte length.
 pub(super) fn normalize_md_extension(name: &str, lower_name: &str) -> String {
     if lower_name.ends_with(".md") {
         format!("{}.md", &name[..name.len() - 3])
@@ -248,9 +213,8 @@ pub(super) fn normalize_md_extension(name: &str, lower_name: &str) -> String {
     }
 }
 
-/// Like [`respond_bytes`], but marks the response as a file to save rather
-/// than render inline — the zip export is the one non-JSON API response, and
-/// a browser only offers "save as" with `Content-Disposition: attachment`.
+// Unlike respond_bytes: Content-Disposition: attachment is what makes a
+// browser offer save-as, needed for the zip export.
 pub(super) fn respond_download(
     request: Request,
     bytes: Vec<u8>,
@@ -267,8 +231,6 @@ pub(super) fn respond_download(
     };
 }
 
-/// Serves the registered image for `key`, or 404 for an unknown key /
-/// unreadable file. Shared by the review and browse routes.
 pub(super) fn serve_image(request: Request, images: &HashMap<String, PathBuf>, key: &str) {
     match images.get(key) {
         Some(path) => match std::fs::read(path) {

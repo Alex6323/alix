@@ -1,13 +1,3 @@
-//! Ask-Claude integration: send questions about the current card to the
-//! Claude Code CLI (`claude -p`) and get explanations back, without leaving
-//! the review session.
-//!
-//! The CLI is run in a background thread; the web server polls the returned
-//! channel so its request loop stays responsive. One CLI session (see
-//! [`CliSession`]) spans the whole review run: the first call creates it with
-//! `--session-id`, later calls `--resume` it, so Claude remembers earlier
-//! cards, questions, and any deck links it fetched.
-
 use std::{
     io::{Read, Write},
     path::{Path, PathBuf},
@@ -24,31 +14,21 @@ use crate::{
     config::{AskConfig, Audience},
 };
 
-/// One question/answer exchange.
 pub type Exchange = (String, String);
 
-/// What the background thread eventually delivers.
 pub enum Reply {
     Answer(String),
     Error(String),
 }
 
-/// The CLI conversation spanning one review run (or one augment batch, where
-/// the batch owner keeps it across polls and hands clones into worker threads).
 #[derive(Clone)]
 pub struct CliSession {
     id: String,
-    /// Whether the session has been created on the CLI side (a first call
-    /// succeeded).
     pub started: bool,
-    /// The working directory the conversation was created in. Claude scopes
-    /// conversation history per directory, so `--resume` only finds it when run
-    /// in the same `cwd` as the `--session-id` that created it.
     cwd: Option<PathBuf>,
 }
 
 impl CliSession {
-    /// Creates a session with a fresh random ID.
     pub fn new() -> Self {
         Self {
             id: random_uuid(),
@@ -57,7 +37,6 @@ impl CliSession {
         }
     }
 
-    /// The CLI arguments that create or resume this session.
     pub fn args(&self) -> Vec<String> {
         if self.started {
             vec!["--resume".to_string(), self.id.clone()]
@@ -66,15 +45,8 @@ impl CliSession {
         }
     }
 
-    /// Like [`args`](Self::args), but for a call that will run in `cwd`. Because
-    /// Claude stores conversation history per working directory, a `--resume`
-    /// only finds the conversation when run in the directory that created it. If
-    /// `cwd` differs from where this session started — e.g. moving to a card
-    /// grounded in a different `% source:` root, or from a grounded question to
-    /// an ungrounded one — the old conversation is unreachable, so start a fresh
-    /// session in the new directory instead of emitting a doomed `--resume`.
-    /// Callers read [`started`](Self::started) *after* this to decide whether the
-    /// prompt is a first message (it is, once a cwd change resets the session).
+    // A cwd change resets the session: Claude can't --resume a conversation from a different
+    // working directory.
     pub fn args_in(&mut self, cwd: Option<&Path>) -> Vec<String> {
         if self.started && self.cwd.as_deref() != cwd {
             *self = Self::new();
@@ -90,9 +62,6 @@ impl Default for CliSession {
     }
 }
 
-/// A random version-4 UUID, generated without extra dependencies
-/// (SplitMix64 over wall clock, process id, and a per-process counter so
-/// two ids created in the same millisecond still differ).
 fn random_uuid() -> String {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -135,17 +104,6 @@ fn random_uuid() -> String {
     )
 }
 
-/// Builds the prompt for a question about `card`.
-///
-/// The first message of a session carries the tutoring instructions and the
-/// deck's reference links; follow-ups only need the (possibly new) card and
-/// the question, because the CLI session remembers the rest. When `source_root`
-/// is `Some` (the `[ask] source_access` opt-in), every message reminds Claude it
-/// can read the card's source there and must verify against it — the current
-/// card's root, so it stays right even as the conversation moves between decks.
-/// The reply a frozen card's tutor gives when its source can't be found — the
-/// learner can then remove or update the card. Kept verbatim so the frontends and
-/// tests agree on the exact wording.
 pub const SOURCE_NOT_FOUND: &str =
     "I couldn't find the source material of this card to provide a grounded answer.";
 
@@ -164,14 +122,8 @@ pub fn question_prompt(
     p
 }
 
-/// The stateless equivalent of Claude's `--resume` follow-up: for backends
-/// without a session ([`Backend::supports_session`](crate::backend::Backend::supports_session)
-/// is false), each tutor turn is a fresh process, so cross-turn memory is
-/// restored by re-inlining the whole conversation. This builds the same
-/// first-turn card context as [`question_prompt`] (instructions, links, source
-/// grounding), then replays each `prior` `(question, answer)` exchange in order,
-/// and finally poses the new `question`. An empty `prior` reduces to exactly the
-/// first-turn [`question_prompt`], so a first turn is identical on every backend.
+// Backends without a session replay the whole history each turn: there's no server-side memory to
+// resume.
 pub fn question_prompt_with_history(
     card: &Card,
     audience: Audience,
@@ -181,8 +133,6 @@ pub fn question_prompt_with_history(
     source_root: Option<&Path>,
     frozen: Option<&str>,
 ) -> String {
-    // Every re-inlined turn is a "first" message: the process has no memory, so
-    // it needs the full instructions, links, and card context each time.
     let mut p = question_context(card, audience, links, true, source_root, frozen);
     for (q, a) in prior {
         p.push_str("\nThe user's question: ");
@@ -196,18 +146,13 @@ pub fn question_prompt_with_history(
     p
 }
 
-/// The first-turn tutoring instructions for the adult (default) app: a
-/// developer-facing voice, terse and unadorned. Kept verbatim — the `Adult`
-/// prompt must stay byte-for-byte what it always was.
+// Kept byte-for-byte: tests and callers depend on this exact wording.
 const ADULT_PREAMBLE: &str = "You are a concise tutor inside a terminal flashcard application. \
      The user reviews flashcards and asks you questions about them; \
      this conversation continues across several cards. Always answer \
      in plain text without any markdown formatting, in at most six \
      short sentences, specific to the card at hand.\n";
 
-/// The first-turn tutoring instructions for the kids app: a warm, simple voice
-/// for a learner around 10 years old, scoped tightly to the current card and
-/// steering (without lecturing) away from anything off-topic or unsafe.
 const KIDS_PREAMBLE: &str = "You are a kind helper for a kid around 10 years old who is using a flashcard \
      app to learn. Use simple words and short sentences, and sound warm and \
      encouraging. Only talk about the flashcard they're looking at right now — \
@@ -218,7 +163,6 @@ const KIDS_PREAMBLE: &str = "You are a kind helper for a kid around 10 years old
      inappropriate, kindly say you can't help with that and bring them back to \
      the flashcard, without lecturing or going into detail about why.\n";
 
-/// Picks the first-turn tutoring instructions for `audience`.
 fn preamble(audience: Audience) -> &'static str {
     match audience {
         Audience::Adult => ADULT_PREAMBLE,
@@ -226,10 +170,6 @@ fn preamble(audience: Audience) -> &'static str {
     }
 }
 
-/// The shared card context up to (but not including) the trailing question: the
-/// first-turn instructions and deck links (when `first`), the card itself, and
-/// any `source_root`/`frozen` grounding. Both [`question_prompt`] and
-/// [`question_prompt_with_history`] append their question(s) after this.
 fn question_context(
     card: &Card,
     audience: Audience,
@@ -257,8 +197,6 @@ fn question_context(
     p.push_str("The card being reviewed:\n\n");
     push_card(&mut p, card);
     match (frozen, source_root) {
-        // A frozen card: the snapshot excerpt is the ground truth (it's what the
-        // learner sees); the live crate is read only for surrounding context.
         (Some(excerpt), root) => {
             p.push_str(
                 "\nThe exact code this card is about, frozen when the card was made \
@@ -276,18 +214,14 @@ fn question_context(
                     root.display()
                 ));
             } else {
-                // The review tutor (`serve.rs`'s `start_ask`) already knows this
-                // condition at prompt-build time and answers `SOURCE_NOT_FOUND`
-                // synchronously without ever reaching this prompt — this arm is
-                // the lib-level fallback for other callers (e.g. the trace-walk
-                // tutor) that still round-trip through the model to get it.
+                // serve.rs's start_ask already short-circuits this case; this arm is the lib-level
+                // fallback for other callers (e.g. the trace-walk tutor).
                 p.push_str(&format!(
                     "\nThe live source this came from is unavailable, so reply \
                      exactly: \"{SOURCE_NOT_FOUND}\"\n"
                 ));
             }
         }
-        // A live (non-frozen) source: read it directly and verify.
         (None, Some(root)) => {
             p.push_str(&format!(
                 "\nThis card was generated from the source code at {} — your working \
@@ -302,10 +236,6 @@ fn question_context(
     p
 }
 
-/// A copy of `cfg` that lets the tutor read the source at `root`: the working
-/// directory points there, and the read-only `Read`/`Glob`/`Grep` tools are
-/// added to the allowlist. Used when `[ask] source_access` is on, so the web
-/// tutor can verify against the real source.
 pub fn with_source_root(cfg: &AskConfig, root: &Path) -> AskConfig {
     let mut grounded = cfg.clone();
     grounded.cwd = Some(root.to_path_buf());
@@ -317,8 +247,6 @@ pub fn with_source_root(cfg: &AskConfig, root: &Path) -> AskConfig {
     grounded
 }
 
-/// Builds the prompt that condenses a conversation into note lines for the
-/// deck file.
 pub fn condense_prompt(card: &Card, transcript: &[Exchange]) -> String {
     let mut p = String::from(
         "Below is a flashcard and a conversation the learner had about it. \
@@ -355,8 +283,6 @@ fn push_card(p: &mut String, card: &Card) {
     }
 }
 
-/// Cleans the condense response into note lines: trims, strips accidental
-/// bullets/markup, drops empties, keeps at most three.
 pub fn extract_note_lines(text: &str) -> Vec<String> {
     text.lines()
         .map(|l| {
@@ -370,17 +296,12 @@ pub fn extract_note_lines(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// A card the tutor drafted from an exchange, before the learner edits it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DraftCard {
     pub front: String,
     pub back: Vec<String>,
 }
 
-/// Asks the model to distill the whole exchange into ONE focused card, returned
-/// as a bare deck-format block and nothing else, so `parse_drafted_card` can read
-/// it. Mirrors `condense_prompt`'s grounding (the card under review + the running
-/// transcript), but targets a drilled Q/A rather than a note.
 pub fn draft_card_prompt(card: &Card, transcript: &[Exchange]) -> String {
     let mut p = String::new();
     p.push_str(
@@ -403,9 +324,6 @@ pub fn draft_card_prompt(card: &Card, transcript: &[Exchange]) -> String {
     p
 }
 
-/// Reads the model's reply into a `DraftCard`. Strips a surrounding markdown
-/// fence, parses the block with the deck parser, and requires exactly one card
-/// with a non-empty front and back. Errors (never fabricates) on anything else.
 pub fn parse_drafted_card(reply: &str) -> Result<DraftCard> {
     let body = reply
         .trim()
@@ -433,9 +351,6 @@ pub fn parse_drafted_card(reply: &str) -> Result<DraftCard> {
     })
 }
 
-/// Runs the CLI in a background thread; the reply arrives on the returned
-/// channel. The caller polls it with `try_recv`. `extra_args` carries the
-/// session arguments (`--session-id`/`--resume`).
 pub fn spawn(config: AskConfig, prompt: String, extra_args: Vec<String>) -> Receiver<Reply> {
     let (tx, rx) = channel();
     std::thread::spawn(move || {
@@ -449,20 +364,12 @@ pub fn spawn(config: AskConfig, prompt: String, extra_args: Vec<String>) -> Rece
     rx
 }
 
-/// Runs the assistant CLI with a timeout, delegating the CLI-specific argv,
-/// prompt delivery, and answer extraction to the [`Backend`] for `config`;
-/// the spawn/drain/timeout plumbing lives here. The tool allowlist becomes an
-/// abstract [`Access`] grant the backend renders back into its flags — for
-/// Claude, the default `[WebFetch, WebSearch]` under `dontAsk` lets it consult
-/// deck links without ever blocking on an (unanswerable) permission prompt,
-/// while denying every other tool.
+// The default WebFetch/WebSearch allowlist under dontAsk lets Claude consult deck links without
+// blocking on an unanswerable permission prompt.
 pub(crate) fn run(config: &AskConfig, prompt: &str, extra_args: &[String]) -> Result<String> {
     let backend = backend_for(config)?;
-    // Session flags (Claude's `--session-id`/`--resume`) are Claude-specific;
-    // forwarding them to a backend without a session mechanism would error on an
-    // unknown flag. Drop them there so the tutor runs statelessly. Prior-turn
-    // memory is restored by the frontends re-inlining the transcript into the
-    // prompt (`question_prompt_with_history`) for these backends.
+    // Session flags are Claude-specific; forwarding them to a backend without a session mechanism
+    // would error on an unknown flag.
     let session_args: &[String] = if backend.supports_session() {
         extra_args
     } else {
@@ -480,9 +387,8 @@ pub(crate) fn run(config: &AskConfig, prompt: &str, extra_args: &[String]) -> Re
         session_args,
     };
     let mut argv = backend.build_argv(&opts);
-    // Arg-delivery backends (Codex `exec`) take the prompt as the final
-    // positional argument rather than on stdin; append it here so the backend's
-    // `build_argv` stays prompt-free.
+    // Arg-delivery backends take the prompt as a positional arg, not stdin, so it's appended here
+    // instead of in build_argv.
     if matches!(
         backend.prompt_delivery(),
         PromptDelivery::Arg | PromptDelivery::ExecArg
@@ -492,8 +398,8 @@ pub(crate) fn run(config: &AskConfig, prompt: &str, extra_args: &[String]) -> Re
 
     let mut cmd = Command::new(&config.command);
     cmd.args(&argv);
-    // Trace building runs in the `% source:` root so Claude explores it with
-    // relative paths; other callers inherit this process's directory.
+    // Trace building runs in the source root so Claude explores it with relative paths; other
+    // callers inherit this process's directory.
     if let Some(dir) = &config.cwd {
         cmd.current_dir(dir);
     }
@@ -504,7 +410,6 @@ pub(crate) fn run(config: &AskConfig, prompt: &str, extra_args: &[String]) -> Re
         .spawn()
         .with_context(|| format!("cannot run '{}' — is it installed?", config.command))?;
 
-    // Feed the prompt and close stdin so the CLI starts processing.
     let stdin = child.stdin.take().expect("stdin was piped");
     match backend.prompt_delivery() {
         PromptDelivery::Stdin => {
@@ -513,13 +418,13 @@ pub(crate) fn run(config: &AskConfig, prompt: &str, extra_args: &[String]) -> Re
                 .write_all(prompt.as_bytes())
                 .context("cannot write the prompt")?;
         }
-        // Backends that take the prompt as an argument carry it in `build_argv`;
-        // stdin is closed immediately so the CLI stops waiting on it.
+        // stdin is closed immediately here so the CLI (which takes the prompt as an arg) doesn't
+        // hang waiting on it.
         PromptDelivery::Arg | PromptDelivery::ExecArg => drop(stdin),
     }
 
-    // Drain output on reader threads so the child never blocks on a full
-    // pipe while this thread watches the deadline.
+    // Reader threads drain output so the child never deadlocks on a full pipe while this thread
+    // watches the deadline.
     let mut stdout = child.stdout.take().expect("stdout was piped");
     let mut stderr = child.stderr.take().expect("stderr was piped");
     let out = std::thread::spawn(move || {
@@ -575,12 +480,6 @@ fn truncate(s: &str, max: usize) -> &str {
     }
 }
 
-/// Turns a failed CLI's stderr/stdout `detail` into a clearer message, leading
-/// with actionable guidance for the two failures a raw dump hides worst —
-/// exhausted quota and a signed-out CLI — while keeping the raw detail appended.
-/// Any other failure passes through as `'<command>' failed: <detail>`. The
-/// detail is matched case-insensitively; the mapping never turns an error into a
-/// success — it only reframes it.
 fn map_run_failure(command: &str, detail: &str) -> String {
     let detail = truncate(detail, 300);
     let lower = detail.to_ascii_lowercase();
@@ -641,7 +540,7 @@ mod tests {
             None,
         );
         assert!(p.contains("concise tutor"));
-        assert!(!p.contains("working directory")); // no source access by default
+        assert!(!p.contains("working directory"));
         assert!(p.contains("https://docs.rs/tokio"));
         assert!(p.contains("Deck: deck.txt"));
         assert!(p.contains("Front: Why?"));
@@ -662,10 +561,8 @@ mod tests {
             None,
             None,
         );
-        // The session already knows the instructions and the links.
         assert!(!p.contains("concise tutor"));
         assert!(!p.contains("docs.rs"));
-        // But the card may have changed, so it is always included.
         assert!(p.contains("Front: Why?"));
         assert!(p.ends_with("The user's question: next q"));
     }
@@ -688,10 +585,8 @@ mod tests {
             None,
             None,
         );
-        // The card context is present, exactly as the first-turn prompt.
         assert!(p.contains("concise tutor"), "{p}");
         assert!(p.contains("Front: Why?"), "{p}");
-        // Each prior question AND its answer appear, in order, before the new one.
         let q1 = p.find("what is ownership?").expect("first question");
         let a1 = p.find("who frees the value").expect("first answer");
         let q2 = p.find("and borrowing?").expect("second question");
@@ -701,10 +596,8 @@ mod tests {
             q1 < a1 && a1 < q2 && q2 < a2 && a2 < new_q,
             "out of order: {p}"
         );
-        // The new question is the last thing the model reads.
         assert!(p.ends_with("The user's question: and lifetimes?"), "{p}");
 
-        // An empty history reduces to the same content as the first-turn prompt.
         let links = vec!["https://docs.rs/tokio".to_string()];
         let first = question_prompt(
             &card(),
@@ -732,18 +625,12 @@ mod tests {
 
     #[test]
     fn an_empty_history_prompt_is_exactly_the_first_turn_prompt() {
-        // The M6 remote tutor is stateless per turn: the phone re-sends the
-        // whole transcript, and the first turn sends an empty one. The server
-        // can skip per-client session state only if an empty history builds
-        // byte-for-byte the first-turn prompt (the `first = true` arm).
         let links = vec!["https://docs.rs/tokio".to_string()];
         let first = question_prompt(&card(), Audience::Adult, &links, "why?", true, None, None);
         let empty =
             question_prompt_with_history(&card(), Audience::Adult, &links, &[], "why?", None, None);
         assert_eq!(first, empty, "empty history must equal the first turn");
 
-        // The reduction must survive grounding too: a source root and a frozen
-        // excerpt flow through both paths unchanged.
         let root = Some(Path::new("/repo/x"));
         let frozen = Some("src/caching.rs:46-66\n46\tfn get_object() {}\n");
         let first = question_prompt(&card(), Audience::Adult, &[], "why?", true, root, frozen);
@@ -757,7 +644,6 @@ mod tests {
 
     #[test]
     fn source_access_grounds_every_prompt_in_the_crate_root() {
-        // Even a follow-up reminds Claude it can read the source and must verify.
         let p = question_prompt(
             &card(),
             Audience::Adult,
@@ -774,8 +660,6 @@ mod tests {
 
     #[test]
     fn frozen_prompt_inlines_the_excerpt_and_grounds_for_context() {
-        // A frozen card: the snapshot excerpt is the anchor, the live crate is
-        // read only for context, and a missing source yields the canned reply.
         let block = "src/caching.rs:46-66\n46\tfn get_object() {}\n";
         let p = question_prompt(
             &card(),
@@ -790,7 +674,6 @@ mod tests {
         assert!(p.contains("src/caching.rs:46-66"), "{p}");
         assert!(p.contains("/crate"), "{p}");
         assert!(p.contains("surrounding source"), "{p}");
-        // No live source → the canned "couldn't find" instruction instead.
         let gone = question_prompt(
             &card(),
             Audience::Adult,
@@ -813,13 +696,9 @@ mod tests {
     fn kids_audience_uses_the_kid_safe_preamble() {
         let adult = question_prompt(&card(), Audience::Adult, &[], "why?", true, None, None);
         let kids = question_prompt(&card(), Audience::Kids, &[], "why?", true, None, None);
-        // The adult (default) prompt is unchanged — still the dev-facing marker.
         assert!(adult.contains("concise tutor"), "{adult}");
-        // The kids prompt never uses the dev-facing wording…
         assert!(!kids.contains("concise tutor"), "{kids}");
-        // …and reads as a kid-safe preamble instead.
         assert!(kids.to_lowercase().contains("kid"), "{kids}");
-        // Both still carry the actual card content.
         assert!(kids.contains("Front: Why?"), "{kids}");
         assert!(kids.ends_with("The user's question: why?"), "{kids}");
     }
@@ -832,7 +711,6 @@ mod tests {
         session.started = true;
         let resume = session.args();
         assert_eq!("--resume", resume[0]);
-        // Same conversation in both calls.
         assert_eq!(create[1], resume[1]);
     }
 
@@ -841,18 +719,14 @@ mod tests {
         let a = Path::new("/crate/a");
         let b = Path::new("/crate/b");
         let mut session = CliSession::new();
-        // First call in cwd a: creates the session there.
         let create = session.args_in(Some(a));
         assert_eq!("--session-id", create[0]);
         let id = create[1].clone();
-        session.started = true; // a successful reply marks it started
+        session.started = true;
 
-        // Same cwd: resumes the same conversation.
         let resume = session.args_in(Some(a));
         assert_eq!(["--resume", &id], resume.as_slice());
 
-        // A different cwd can't resume that conversation -> fresh session, and
-        // `started` is cleared so the next prompt is a first message.
         let switched = session.args_in(Some(b));
         assert_eq!("--session-id", switched[0]);
         assert_ne!(id, switched[1]);
@@ -891,15 +765,10 @@ mod tests {
     fn draft_card_prompt_asks_for_l1_shape_and_no_old_syntax() {
         let transcript = vec![("q".to_string(), "a".to_string())];
         let p = draft_card_prompt(&card(), &transcript);
-        // It asks for a bare L1 card: a `## ` front at column 0 with plain
-        // answer lines, and it grounds in the card under review + transcript.
         assert!(p.contains("## <the question>"));
         assert!(p.contains("column 0"));
         assert!(p.contains("## Why?"));
         assert!(p.contains("Q: q\nA: a"));
-        // The L1 pin: no retired old-format syntax may sneak back in. The
-        // trainer no longer parses `# ` fronts, tab-indented answers, `! `
-        // notes, `%` directives, or `{{ }}` clozes.
         assert!(!p.contains("{{"));
         assert!(!p.contains("% reveal"));
         assert!(!p.contains("tab-indent"));
@@ -931,7 +800,6 @@ mod tests {
     fn run_returns_stdout_of_the_cli() {
         let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
-        // Echo the prompt back (reads stdin like the real CLI).
         let cli = fake_cli(dir.path(), "cat");
         let answer = run(&config(&cli, 10), "hello there", &[]).unwrap();
         assert_eq!("hello there", answer);
@@ -941,14 +809,13 @@ mod tests {
     fn run_passes_session_args_to_the_cli() {
         let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
-        // Echo the received arguments instead of the prompt.
         let cli = fake_cli(dir.path(), "echo \"$@\"; cat > /dev/null");
         let extra = vec!["--resume".to_string(), "abc".to_string()];
         let answer = run(&config(&cli, 10), "x", &extra).unwrap();
         assert!(answer.contains("--resume abc"), "args were: {answer}");
         assert!(answer.contains("--allowedTools WebFetch WebSearch"));
-        // The permission mode must be passed, or the real CLI hangs in -p
-        // mode waiting for an approval it cannot receive.
+        // Missing --permission-mode would hang the real CLI waiting for an approval it can't
+        // receive.
         assert!(
             answer.contains("--permission-mode dontAsk"),
             "args were: {answer}"
@@ -1016,7 +883,6 @@ mod tests {
         use crate::config::BackendKind;
         let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
-        // An arg-delivery fake that ignores stdin and replies with fixed text.
         let cli = fake_arg_reply(dir.path(), "the codex answer");
         let config = AskConfig {
             backend: BackendKind::Codex,
@@ -1033,7 +899,6 @@ mod tests {
         use crate::config::BackendKind;
         let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
-        // Echo the received arguments; arg delivery must append the prompt last.
         let cli = fake_cli(dir.path(), "echo \"$@\"");
         let config = AskConfig {
             backend: BackendKind::Codex,
@@ -1042,7 +907,6 @@ mod tests {
             ..AskConfig::default()
         };
         let answer = run(&config, "the-prompt-text", &[]).unwrap();
-        // The Codex invocation, with the prompt as the final positional arg.
         assert!(answer.contains("exec"), "args were: {answer}");
         assert!(
             answer.contains("--sandbox read-only"),
@@ -1059,7 +923,6 @@ mod tests {
         let msg = map_run_failure("claude", "Error: 429 rate limit exceeded, retry later");
         assert!(msg.contains("hit its usage limit"), "{msg}");
         assert!(msg.contains("switch [ask] backend"), "{msg}");
-        // The raw detail is kept for the user.
         assert!(msg.contains("429"), "{msg}");
     }
 
@@ -1082,7 +945,6 @@ mod tests {
         let msg = map_run_failure("claude", "segmentation fault");
         assert!(msg.contains("'claude' failed"), "{msg}");
         assert!(msg.contains("segmentation fault"), "{msg}");
-        // Not misclassified as quota or auth.
         assert!(!msg.contains("usage limit"), "{msg}");
         assert!(!msg.contains("signed in"), "{msg}");
     }
@@ -1092,8 +954,6 @@ mod tests {
         use crate::config::BackendKind;
         let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
-        // Echo the received arguments; the prompt is an arg for Codex, so the
-        // session flags — if forwarded — would appear before it.
         let cli = fake_cli(dir.path(), "echo \"$@\"");
         let config = AskConfig {
             backend: BackendKind::Codex,
@@ -1103,7 +963,6 @@ mod tests {
         };
         let extra = vec!["--resume".to_string(), "sess-123".to_string()];
         let answer = run(&config, "x", &extra).unwrap();
-        // Codex has no session mechanism, so the flags are dropped, not passed on.
         assert!(
             !answer.contains("--resume") && !answer.contains("sess-123"),
             "session args must be dropped for codex: {answer}"
@@ -1117,7 +976,6 @@ mod tests {
         let cli = fake_cli(dir.path(), "echo \"$@\"; cat > /dev/null");
         let extra = vec!["--resume".to_string(), "sess-123".to_string()];
         let answer = run(&config(&cli, 10), "x", &extra).unwrap();
-        // Claude supports sessions, so the flags are forwarded.
         assert!(
             answer.contains("--resume sess-123"),
             "session args must reach claude: {answer}"
@@ -1138,10 +996,6 @@ mod tests {
 
     #[test]
     fn kids_audience_ask_runs_through_spawn_and_returns_the_reply() {
-        // Builds the prompt exactly as the serve call site does for a kids
-        // session, then drives it through the real spawn/background-thread/
-        // channel plumbing (not just `question_prompt` in isolation) — proving
-        // the audience-threaded path actually runs end-to-end.
         let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
         let cli = fake_reply(dir.path(), "sure, let's look at this card together!");

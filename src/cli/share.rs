@@ -1,7 +1,3 @@
-//! `alix share`/`receive`: send or receive a deck, folder, or workspace over
-//! magic-wormhole (or a `.zip` fallback), staging out personal state so only
-//! deck content travels.
-
 use std::path::{Path, PathBuf};
 
 use alix::{config::Config, workspace};
@@ -9,8 +5,6 @@ use anyhow::{Context, Result, bail};
 
 use crate::{ReceiveArgs, ShareArgs, common::deck_out_dir};
 
-/// `alix share`: stage a personal-state-free copy and hand it to wormhole.
-/// The wormhole binary prints the code mnemonic and the progress itself.
 pub(crate) fn share_cmd(args: ShareArgs) -> Result<()> {
     let path = &args.path;
     let name = path
@@ -19,9 +13,8 @@ pub(crate) fn share_cmd(args: ShareArgs) -> Result<()> {
         .unwrap_or("shared-decks")
         .to_string();
 
-    // A single deck has no personal state and travels as-is (its augmentations
-    // live in a shared per-store cache and stay home). A folder is staged
-    // first, so progress and personal config never leave.
+    // A single deck file has no personal state and travels as-is; only a
+    // folder needs staging, so its progress and personal config stay home.
     let tmp = tempfile::tempdir().context("cannot create a staging directory")?;
     let (to_send, staged) = if path.is_file() {
         (path.clone(), 1)
@@ -37,7 +30,6 @@ pub(crate) fn share_cmd(args: ShareArgs) -> Result<()> {
         (stage, staged)
     };
 
-    // `--zip`: the offline fallback — write an archive instead of sending.
     if args.zip {
         let stem = name.strip_suffix(".md").unwrap_or(&name);
         let out = match &args.output {
@@ -60,12 +52,9 @@ pub(crate) fn share_cmd(args: ShareArgs) -> Result<()> {
     alix::share::wormhole(&["send", &to_send.to_string_lossy()], None)
 }
 
-/// `alix receive`: run wormhole in a scratch dir, strip any leaked personal
-/// files, and move the result where it belongs.
 pub(crate) fn receive_cmd(args: ReceiveArgs) -> Result<()> {
     let config = Config::load(None)?;
     let tmp = tempfile::tempdir().context("cannot create a receiving directory")?;
-    // A `.zip` path skips the wormhole entirely — same staging, same landing.
     let zip_path = Path::new(&args.code);
     if args.code.ends_with(".zip") && zip_path.is_file() {
         alix::share::unzip_to(zip_path, tmp.path())?;
@@ -73,7 +62,6 @@ pub(crate) fn receive_cmd(args: ReceiveArgs) -> Result<()> {
         alix::share::wormhole(&["receive", "--accept-file", &args.code], Some(tmp.path()))?;
     }
 
-    // Whatever arrived is the single new entry in the scratch dir.
     let mut entries: Vec<PathBuf> = std::fs::read_dir(tmp.path())?
         .flatten()
         .map(|e| e.path())

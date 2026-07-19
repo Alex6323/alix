@@ -1,23 +1,15 @@
-//! Tool-minted identity tokens (spec §1). The constants here are frozen forever.
-
-/// Crockford-style lowercase base32 alphabet (excludes i, l, o, u to avoid
-/// visual confusion). Frozen forever: every existing token's meaning depends
-/// on this exact 32-byte literal never changing.
+/// User-ratified Crockford base32, lowercase, excluding i/l/o/u. Frozen
+/// forever: every existing token's meaning depends on this exact alphabet.
 pub const TOKEN_ALPHABET: &[u8; 32] = b"0123456789abcdefghjkmnpqrstvwxyz";
 
-/// Canonical token length in chars. Frozen forever: 128 bits of entropy at
-/// 5 bits/char, sized for the end-state so it never needs to grow.
+/// 26 chars carrying 128 bits of entropy. Frozen forever.
 pub const TOKEN_LEN: usize = 26;
 
-/// Mint a fresh 128-bit random token, rendered as 26 base32-lowercase chars.
-///
-/// Draws 16 bytes from the OS CSPRNG (`getrandom`) and renders them 5 bits at
-/// a time, most significant first. Propagates the CSPRNG error rather than
-/// unwrapping it: a caller with no meaningful fallback should hear about it.
 pub fn mint() -> Result<String, getrandom::Error> {
     let mut buf = [0u8; 16];
     getrandom::getrandom(&mut buf)?;
     let n = u128::from_be_bytes(buf);
+    // Emits 5-bit groups most-significant-first, 26 chars for 128 bits.
     let token: String = (0..26)
         .rev()
         .map(|i| TOKEN_ALPHABET[((n >> (5 * i)) & 31) as usize] as char)
@@ -25,9 +17,8 @@ pub fn mint() -> Result<String, getrandom::Error> {
     Ok(token)
 }
 
-/// Accepted charset at parse time: `^[0-9a-z]+$` (spec §1.8). Uniqueness
-/// matters, shape does not: a hand-typed or third-party-minted token need not
-/// be canonical (26 chars, `TOKEN_ALPHABET` only) to be accepted.
+// Any lowercase-alnum token is accepted, not just canonical shape (hand-typed
+// or third-party tokens).
 pub fn is_valid(token: &str) -> bool {
     !token.is_empty()
         && token
@@ -35,14 +26,10 @@ pub fn is_valid(token: &str) -> bool {
             .all(|b| b.is_ascii_digit() || b.is_ascii_lowercase())
 }
 
-/// Canonical shape (doctor warning when false on a valid token): 26 chars,
-/// all in `TOKEN_ALPHABET`.
 pub fn is_canonical(token: &str) -> bool {
     token.len() == TOKEN_LEN && token.bytes().all(|b| TOKEN_ALPHABET.contains(&b))
 }
 
-/// Compose a full card id from its parts. `hole` and `reversed` are mutually
-/// exclusive by construction upstream (cloze cards never reverse).
 pub fn card_id(token: &str, hole: Option<u32>, reversed: bool) -> String {
     debug_assert!(
         hole.is_none() || !reversed,
@@ -57,16 +44,6 @@ pub fn card_id(token: &str, hole: Option<u32>, reversed: bool) -> String {
     }
 }
 
-/// Split a full card id back into `(token, hole, reversed)`. `-` cannot occur
-/// inside a token, so the first `-` is always the suffix boundary. `None` if
-/// the shape is invalid.
-///
-/// A numeric hole suffix is accepted only in canonical decimal: exactly
-/// `"0"`, or a first digit `1`-`9` followed by digits. A leading zero
-/// (`"01"`) is rejected as a second spelling of `"1"`.
-///
-/// This validates only the id's shape; it does not check the token's
-/// charset (that's `is_valid`'s job at the parse site).
 pub fn parse_card_id(id: &str) -> Option<(&str, Option<u32>, bool)> {
     match id.split_once('-') {
         None => Some((id, None, false)),
@@ -85,8 +62,6 @@ pub fn parse_card_id(id: &str) -> Option<(&str, Option<u32>, bool)> {
     }
 }
 
-/// True if `s` is `"0"`, or a nonzero digit followed by digits: a canonical
-/// decimal integer with no leading zero.
 fn is_canonical_decimal(s: &str) -> bool {
     match s.as_bytes() {
         [b'0'] => true,

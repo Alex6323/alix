@@ -1,17 +1,3 @@
-//! A workspace: a folder that groups decks, sharing directives and a title.
-//!
-//! Workspaces let related decks (e.g. all the English-vocab decks) live in one
-//! folder, be reviewed together, and inherit a common set of directives without
-//! repeating them in every file. Membership is **folder-implicit**: a workspace
-//! is any folder containing `*.md` decks. An optional [`MANIFEST`]
-//! (`alix.toml`) sets a `title` and a `[defaults]` table of shared directives,
-//! mirroring the local [`Config`](crate::config::Config) (`config.toml`) but
-//! scoped to the folder. The `[defaults]` keys are the deck directive names,
-//! fed through the same interpreter ([`DeckSettings::from_directives`]), then
-//! folded below each member deck's own directives (see
-//! [`crate::deck::Deck::load_with_defaults`]) — precedence card > deck >
-//! workspace > default.
-
 use std::{
     collections::BTreeMap,
     io,
@@ -22,66 +8,32 @@ use serde::Deserialize;
 
 use crate::deck::DeckSettings;
 
-/// The reserved manifest file in a workspace folder. Its `.toml` extension
-/// keeps it out of the member scan automatically.
 pub const MANIFEST: &str = "alix.toml";
 
-/// The progress store a workspace uses when its manifest declares no `store`
-/// override: `progress.json` inside the workspace folder, so progress travels
-/// with the workspace.
 pub const STORE_FILE: &str = "progress.json";
 
-/// The `alix.toml` manifest: a display `title`, a one-line `description` (e.g.
-/// the learning goal the workspace generation was given), an optional `store` path (where
-/// this workspace's progress lives), and a `[defaults]` table of shared
-/// directives (keyed by directive name). Unknown keys/sections are ignored, so
-/// the format stays forgiving and forward-compatible.
 #[derive(Deserialize, Default)]
 struct Manifest {
     title: Option<String>,
-    /// A short description of what the workspace is for (its learning goal).
     description: Option<String>,
-    /// An optional icon for this workspace, shown in the picker. A path relative
-    /// to the workspace (or absolute). Unset → a conventional `assets/icon.*` is
-    /// used if present.
     icon: Option<String>,
-    /// Where this workspace keeps its progress (relative to the workspace, or
-    /// absolute). `None` → `<workspace>/progress.json`.
     store: Option<String>,
-    /// Per-workspace override of the global `[ask] source_access`: when set, it
-    /// decides whether the grounded ask-tutor may read this workspace's decks'
-    /// source. `None` → inherit the global config.
     source_access: Option<bool>,
     #[serde(default)]
     defaults: BTreeMap<String, toml::Value>,
 }
 
-/// A folder of decks reviewed as a unit, with shared directive defaults.
 #[derive(Debug, Clone)]
 pub struct Workspace {
-    /// The workspace folder.
     pub path: PathBuf,
-    /// Display title (manifest `title`), or `None` to use the folder name.
     pub title: Option<String>,
-    /// A one-line description of the workspace (manifest `description`), or
-    /// `None`. A workspace `alix generate` writes the learning goal here.
     pub description: Option<String>,
-    /// Shared directive defaults from the manifest, folded below each member
-    /// deck's own directives.
     pub settings: DeckSettings,
-    /// Member deck paths: the folder's `*.md` files, sorted by name.
     pub members: Vec<PathBuf>,
-    /// The resolved icon file shown in the picker (manifest `icon`, else a
-    /// conventional `assets/icon.*`), or `None` for the chevron fallback.
     pub icon: Option<PathBuf>,
 }
 
 impl Workspace {
-    /// Loads the workspace rooted at `dir`: its `*.md` members and, if
-    /// present, the `alix.toml` manifest (title + shared directives). A
-    /// folder without a manifest — or with a malformed one — is still a
-    /// workspace, with default settings, so a bad manifest never stops it
-    /// from loading.
     pub fn load(dir: impl AsRef<Path>) -> io::Result<Workspace> {
         let path = dir.as_ref().to_path_buf();
         let members = members(&path)?;
@@ -97,8 +49,6 @@ impl Workspace {
         })
     }
 
-    /// The workspace's display name: its manifest `title` if set, else the
-    /// folder name.
     pub fn display_name(&self) -> String {
         self.title.clone().unwrap_or_else(|| {
             self.path
@@ -109,11 +59,8 @@ impl Workspace {
     }
 }
 
-/// Reads the manifest's title, description, and shared directive defaults. A
-/// missing or malformed file yields no title/description and default settings.
-/// The `[defaults]` table is interpreted by [`DeckSettings::from_directives`],
-/// so its keys mean exactly what the matching `% key: value` deck directives
-/// mean.
+/// A missing or malformed manifest yields no title/description and default
+/// settings, never an error.
 fn read_manifest(path: &Path) -> (Option<String>, Option<String>, DeckSettings, Option<String>) {
     let Ok(text) = std::fs::read_to_string(path) else {
         return (None, None, DeckSettings::default(), None);
@@ -134,9 +81,6 @@ fn read_manifest(path: &Path) -> (Option<String>, Option<String>, DeckSettings, 
     )
 }
 
-/// Resolve a workspace's picker icon: the manifest `icon = "…"` file if it
-/// exists, else a conventional `assets/icon.{svg,png,jpg,jpeg,webp}` (first
-/// match), else `None`.
 pub fn resolve_icon(dir: &Path, manifest_icon: Option<&str>) -> Option<PathBuf> {
     if let Some(rel) = manifest_icon {
         let p = dir.join(rel);
@@ -153,8 +97,6 @@ pub fn resolve_icon(dir: &Path, manifest_icon: Option<&str>) -> Option<PathBuf> 
     None
 }
 
-/// A TOML value as the plain string the directive interpreter expects
-/// (`"both"` → `both`, `3` → `3`).
 fn value_to_string(value: &toml::Value) -> String {
     value
         .as_str()
@@ -162,28 +104,13 @@ fn value_to_string(value: &toml::Value) -> String {
         .unwrap_or_else(|| value.to_string())
 }
 
-/// `true` for conventional non-deck file names a repo-adjacent decks folder
-/// carries (`README.md`, `LICENSE.md`, any-case, any extension): excluded from
-/// deck enumeration so a project readme never lists (or gets stamped) as a
-/// deck.
 pub fn is_conventional_non_deck(name: &str) -> bool {
     let stem = name.split('.').next().unwrap_or(name);
     stem.eq_ignore_ascii_case("readme") || stem.eq_ignore_ascii_case("license")
 }
 
-/// A name a file-syncing or backup tool produces for a conflicted/backup copy
-/// (spec §2.4), never a real deck: excluded from every deck scan (checked
-/// before the content predicate, cheaper, so a conflict copy never lists,
-/// stamps, or errors). A CLOSED list: Syncthing's `.sync-conflict-`, the
-/// `(Conflict` parenthetical of Nextcloud/ownCloud, any name containing
-/// `conflicted copy` (Dropbox interposes the syncing device's account name,
-/// e.g. `file (Alex's conflicted copy 2026-07-19).md` — a fixed `(conflicted
-/// copy` prefix misses that shape, so the match has to be substring-only),
-/// and the `.bak` / `.orig` / `~` backup suffixes. The load-bearing entries
-/// still end in `.md` (`deck.sync-conflict-x.md`); the bare backup suffixes
-/// are already dropped by the `.md`-extension filter and sit here as
-/// documentation-by-code, so the one closed list answers "is this a conflict
-/// copy?" for both the scans and doctor.
+/// A closed list of sync/backup name patterns. Dropbox's "conflicted copy"
+/// embeds the device name, so the match is substring, not a fixed prefix.
 pub fn is_conflict_name(name: &str) -> bool {
     name.contains(".sync-conflict-")
         || name.contains("conflicted copy")
@@ -193,22 +120,12 @@ pub fn is_conflict_name(name: &str) -> bool {
         || name.ends_with('~')
 }
 
-/// The `.md` deck files directly in `dir` (one level), the shared enumeration
-/// behind the pickers, dedup, and doctor: `*.md`, sorted by name, with
-/// conventional non-deck names, conflict/backup copies, and prose files (no
-/// card, no frontmatter) excluded. An unreadable directory yields an empty
-/// list.
 pub fn deck_files(dir: &Path) -> Vec<PathBuf> {
     members(dir).unwrap_or_default()
 }
 
-/// Whether the `.md` file at `path` enumerates as a deck (spec §3.1.3): a
-/// shared, content-aware predicate over the three deck-scan sites (this
-/// module's [`members`], the picker's `dir_candidates`, the listing's
-/// `list_root`). It reads and cheaply parses the file, so a prose `.md` with
-/// neither a `## ` card nor frontmatter never lists (nor gets stamped). A
-/// file it cannot read is treated as a deck, so a listing degrades a broken
-/// deck into a visible row rather than dropping it silently.
+/// Unreadable is treated as a deck: a listing degrades a broken deck into a
+/// visible row rather than dropping it silently.
 pub fn file_is_deck(path: &Path) -> bool {
     match std::fs::read_to_string(path) {
         Ok(text) => crate::l1::is_deck_content(&text),
@@ -216,9 +133,6 @@ pub fn file_is_deck(path: &Path) -> bool {
     }
 }
 
-/// The `*.md` decks directly inside `dir`, sorted by name (one level deep).
-/// Conventional non-deck names (`README.*`, `LICENSE.*`) and prose `.md` files
-/// (no card, no frontmatter) are excluded.
 fn members(dir: &Path) -> io::Result<Vec<PathBuf>> {
     let mut paths: Vec<PathBuf> = std::fs::read_dir(dir)?
         .filter_map(|r| r.ok().map(|e| e.path()))
@@ -234,24 +148,16 @@ fn members(dir: &Path) -> io::Result<Vec<PathBuf>> {
     Ok(paths)
 }
 
-/// `true` if `path` is an **explicit workspace**: a directory with an `alix.toml`
-/// manifest *and* at least one `*.md` deck. A folder of decks without a manifest
-/// is a plain "folder" (see [`has_decks`]) — reviewable, but not a workspace.
 pub fn is_workspace(path: &Path) -> bool {
     has_decks(path) && path.join(MANIFEST).is_file()
 }
 
-/// `true` if `path` is a directory holding at least one `*.md` deck — a
-/// drillable folder in the pickers, whether or not it is a workspace.
 pub fn has_decks(path: &Path) -> bool {
     path.is_dir() && members(path).map(|m| !m.is_empty()).unwrap_or(false)
 }
 
-/// Where the workspace at `dir` keeps its progress: the manifest's `store` path
-/// (relative to `dir`, or absolute), else `<dir>/progress.json`. So an
-/// encapsulated workspace's progress travels with the folder, and a deck inside
-/// it is tracked separately from the global store. (Callers use this only for
-/// directories that are workspaces.)
+/// Assumes `dir` is already a workspace; callers must check first (see
+/// [`root_store_path`]).
 pub fn store_path(dir: &Path) -> PathBuf {
     match manifest_store(dir) {
         Some(store) if Path::new(&store).is_absolute() => PathBuf::from(store),
@@ -260,9 +166,6 @@ pub fn store_path(dir: &Path) -> PathBuf {
     }
 }
 
-/// The progress store for a **served root folder**: a workspace keeps its own
-/// (manifest `store =` respected), a plain folder uses `<dir>/progress.json`.
-/// One place for the resolution the launcher and `doctor` both apply to a root.
 pub fn root_store_path(dir: &Path) -> PathBuf {
     if is_workspace(dir) {
         store_path(dir)
@@ -271,30 +174,21 @@ pub fn root_store_path(dir: &Path) -> PathBuf {
     }
 }
 
-/// The raw `store = "..."` value from the workspace's manifest, if any.
 fn manifest_store(dir: &Path) -> Option<String> {
     let text = std::fs::read_to_string(dir.join(MANIFEST)).ok()?;
     toml::from_str::<Manifest>(&text).ok()?.store
 }
 
-/// The workspace manifest's `source_access` override, if it sets one — a
-/// per-workspace `Some(true)`/`Some(false)` that beats the global `[ask]
-/// source_access`. `None` (no manifest, malformed, or unset) → inherit global.
 pub fn manifest_source_access(dir: &Path) -> Option<bool> {
     let text = std::fs::read_to_string(dir.join(MANIFEST)).ok()?;
     toml::from_str::<Manifest>(&text).ok()?.source_access
 }
 
-/// The raw `icon = "..."` value from the workspace's manifest, if any.
 pub fn manifest_icon(dir: &Path) -> Option<String> {
     let text = std::fs::read_to_string(dir.join(MANIFEST)).ok()?;
     toml::from_str::<Manifest>(&text).ok()?.icon
 }
 
-/// Sets, moves, or clears (`None`) the workspace's personal `deadline` in its
-/// `alix.local.toml`, preserving everything else in the file byte-for-byte
-/// (toml_edit). Creates the file when setting into a bare workspace; clearing
-/// leaves an existing file in place. Atomic write (tmp + rename).
 pub fn set_deadline(dir: &Path, date: Option<chrono::NaiveDate>) -> anyhow::Result<()> {
     use anyhow::{Context, bail};
     let path = dir.join(crate::config::LOCAL_MANIFEST);
@@ -317,16 +211,14 @@ pub fn set_deadline(dir: &Path, date: Option<chrono::NaiveDate>) -> anyhow::Resu
             {
                 bail!("[review] in {} is not a table", path.display());
             }
-            // Ensure we have a proper [review] section, not an inline table.
             if !doc.contains_key("review") {
                 doc["review"] = toml_edit::table();
             }
             doc["review"]["deadline"] = toml_edit::value(d.format("%Y-%m-%d").to_string());
         }
         None => {
-            // Handle both inline tables and proper tables safely. A non-table
-            // `review` (e.g. `review = 5`) has no deadline key to remove, so
-            // this is a silent no-op rather than an error.
+            // A non-table `review` (e.g. `review = 5`) has no deadline key to
+            // remove: a silent no-op here, unlike the error above.
             if let Some(review) = doc.get_mut("review") {
                 if let Some(table) = review.as_table_mut() {
                     table.remove("deadline");
@@ -342,9 +234,6 @@ pub fn set_deadline(dir: &Path, date: Option<chrono::NaiveDate>) -> anyhow::Resu
         .with_context(|| format!("cannot write {}", path.display()))
 }
 
-/// [`set_deadline`] taking the wire's `YYYY-MM-DD` form (or `None` to clear),
-/// so a thin client (the frb bridge) hands the string through and the parse —
-/// and its error — stays in the lib.
 pub fn set_deadline_str(dir: &Path, date: Option<&str>) -> anyhow::Result<()> {
     use anyhow::Context;
     let parsed = date
@@ -380,7 +269,6 @@ mod tests {
         assert_eq!(Some("everyday vocab".to_string()), ws.description);
         assert_eq!("English", ws.display_name());
         assert_eq!(Some(Reveal::Line), ws.settings.reveal);
-        // The manifest is not a `.md`, so it is never a member.
         let names: Vec<_> = ws
             .members
             .iter()
@@ -408,7 +296,6 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         write(&dir.path().join("a.md"), "## a\n1\n");
         write(&dir.path().join(MANIFEST), "this is not = = valid toml\n");
-        // A bad manifest doesn't stop the folder from being a workspace.
         let ws = Workspace::load(dir.path()).unwrap();
         assert_eq!(None, ws.title);
         assert!(ws.settings.reveal.is_none());
@@ -420,16 +307,15 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let empty = dir.path().join("empty");
         std::fs::create_dir(&empty).unwrap();
-        assert!(!is_workspace(&empty)); // no decks
+        assert!(!is_workspace(&empty));
 
         write(&empty.join("a.md"), "## a\n1\n");
-        assert!(has_decks(&empty)); // a drillable folder...
-        assert!(!is_workspace(&empty)); // ...but not a workspace without a manifest
+        assert!(has_decks(&empty));
+        assert!(!is_workspace(&empty));
 
         write(&empty.join(MANIFEST), "title = \"x\"\n");
-        assert!(is_workspace(&empty)); // manifest present → an explicit workspace
+        assert!(is_workspace(&empty));
 
-        // A plain file is neither.
         let file = dir.path().join("loose.md");
         write(&file, "## a\n1\n");
         assert!(!is_workspace(&file));
@@ -448,7 +334,6 @@ mod tests {
             .iter()
             .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
             .collect();
-        // The prose file is excluded; the real deck and the trace stub stay.
         assert_eq!(vec!["deck.md".to_string(), "stub.md".to_string()], names);
     }
 
@@ -461,7 +346,6 @@ mod tests {
             &folder.join("notes.md"),
             "# Notes\n\njust prose, no cards\n",
         );
-        // No `## ` card and no frontmatter anywhere: not a drillable folder.
         assert!(!has_decks(&folder));
     }
 
@@ -470,7 +354,6 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         write(&dir.path().join(MANIFEST), "title = \"W\"\n");
         assert_eq!(dir.path().join("progress.json"), store_path(dir.path()));
-        // No manifest at all → still the in-folder default.
         let bare = dir.path().join("bare");
         std::fs::create_dir(&bare).unwrap();
         assert_eq!(bare.join("progress.json"), store_path(&bare));
@@ -494,11 +377,9 @@ mod tests {
     #[test]
     fn manifest_source_access_override() {
         let dir = tempfile::tempdir().unwrap();
-        // Unset (or no manifest) → None, i.e. inherit the global `[ask]` setting.
         assert_eq!(None, manifest_source_access(dir.path()));
         write(&dir.path().join(MANIFEST), "title = \"W\"\n");
         assert_eq!(None, manifest_source_access(dir.path()));
-        // Explicit overrides win.
         write(&dir.path().join(MANIFEST), "source_access = true\n");
         assert_eq!(Some(true), manifest_source_access(dir.path()));
         write(&dir.path().join(MANIFEST), "source_access = false\n");
@@ -517,14 +398,12 @@ mod tests {
     #[test]
     fn root_store_path_honors_a_workspace_store_override() {
         let dir = tempfile::tempdir().unwrap();
-        // A workspace is a manifest *and* at least one deck, so write both.
         std::fs::write(dir.path().join("d.md"), "## Q\nA\n").unwrap();
         std::fs::write(
             dir.path().join("alix.toml"),
             "title = \"W\"\nstore = \"custom.json\"\n",
         )
         .unwrap();
-        // A workspace routes through store_path, so a manifest `store =` wins.
         assert_eq!(root_store_path(dir.path()), dir.path().join("custom.json"));
         assert_eq!(root_store_path(dir.path()), store_path(dir.path()));
     }
@@ -535,24 +414,20 @@ mod tests {
         let assets = dir.path().join("assets");
         std::fs::create_dir_all(&assets).unwrap();
 
-        // Nothing present → None.
         assert_eq!(resolve_icon(dir.path(), None), None);
 
-        // Convention file present → resolves it.
         std::fs::write(assets.join("icon.svg"), "<svg/>").unwrap();
         assert_eq!(
             resolve_icon(dir.path(), None),
             Some(assets.join("icon.svg"))
         );
 
-        // Manifest key pointing at a real file wins over the convention.
         std::fs::write(assets.join("logo.png"), b"x").unwrap();
         assert_eq!(
             resolve_icon(dir.path(), Some("assets/logo.png")),
             Some(assets.join("logo.png"))
         );
 
-        // Manifest key pointing at a missing file falls back to the convention.
         assert_eq!(
             resolve_icon(dir.path(), Some("assets/nope.png")),
             Some(assets.join("icon.svg"))
@@ -579,8 +454,6 @@ mod tests {
 
     #[test]
     fn set_deadline_preserves_comments_and_other_keys_byte_for_byte() {
-        // The workspace-init scaffold ships commented docs; editing the deadline
-        // must not reformat or eat them (spec A3; the reason toml_edit exists).
         let dir = tempfile::tempdir().unwrap();
         let scaffold = "# Personal pacing for THIS workspace\n\n[review]\n\n# retention = 0.9              # FSRS target\nretention = 0.85\n";
         std::fs::write(dir.path().join(crate::config::LOCAL_MANIFEST), scaffold).unwrap();
@@ -637,17 +510,8 @@ mod tests {
     }
     #[test]
     fn sync_conflict_names_are_never_decks() {
-        // A file-syncing or backup tool drops conflicted/backup copies next to
-        // real decks. The closed name-pattern list keeps them out of every
-        // scan: they never list, never stamp, never error. The load-bearing
-        // entries still end in `.md` (a `.sync-conflict-` deck, a
-        // `(conflicted copy)` / `(Conflict)` deck); the bare `.bak`/`.orig`/`~`
-        // suffixes are already dropped by the extension filter.
         assert!(is_conflict_name("deck.sync-conflict-20260101-abcdef.md"));
         assert!(is_conflict_name("deck (conflicted copy 2026-01-01).md"));
-        // Dropbox's real shape interposes the syncing account's name between
-        // the `(` and `conflicted copy` — a fixed `(conflicted copy` prefix
-        // would miss this.
         assert!(is_conflict_name(
             "deck (Alex's conflicted copy 2026-07-19).md"
         ));
@@ -680,9 +544,6 @@ mod tests {
 
     #[test]
     fn readme_and_license_are_not_decks() {
-        // A repo-adjacent decks folder carries conventional `.md` files that
-        // are not decks; the member scan must never list (or later stamp)
-        // them, any case.
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("real.md"), "## q\na\n").unwrap();
         std::fs::write(dir.path().join("README.md"), "about this folder\n").unwrap();

@@ -1,19 +1,3 @@
-//! The GitHub Copilot CLI backend (`copilot -p`, headless). Prompt is passed
-//! as the argument to `-p` (delivery [`Arg`](PromptDelivery::Arg) — put `-p`
-//! last in argv so `ask::run` appends the prompt text immediately after it).
-//! Tool access uses `--deny-tool` to block destructive capabilities and
-//! `--available-tools` to restrict to the read/fetch subset.
-//!
-//! Flags and tool names verified against the GitHub Copilot CLI docs on
-//! 2026-07-02:
-//! - headless `-p PROMPT`, `-s` (silent/clean output), `--model`: <https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference>
-//! - tool names (`shell`, `write`, `read`, `url`, `memory`) and
-//!   `--deny-tool`/`--allow-tool`/`--available-tools`/`--excluded-tools`:
-//!   <https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-programmatic-reference>
-//! - read-only via `--deny-tool='shell,write'` (permits `read` + `url`): <https://docs.github.com/en/copilot/how-tos/copilot-cli/automate-copilot-cli/run-cli-programmatically>
-//!
-//! These names drift; a nightly `--help` check lands in Task 9.
-
 use anyhow::Result;
 
 use super::{Access, Backend, PromptDelivery, RunOpts};
@@ -27,21 +11,14 @@ impl Backend for CopilotBackend {
     }
 
     fn build_argv(&self, opts: &RunOpts) -> Vec<String> {
-        // `-s` suppresses session statistics and decoration so stdout carries
-        // only the agent's response — required for programmatic extraction.
+        // `-s` suppresses decoration so stdout is just the response text.
         let mut argv = vec!["-s".to_string()];
 
-        // Deny shell and write in every call — nothing destructive runs
-        // headless. This applies even when Access::None: the deny list stops
-        // Copilot from accidentally running shell or file-write tools if the
-        // model decides to try them despite a text-only prompt.
+        // Always denies shell/write, even for Access::None, so the model can't
+        // run a destructive tool despite a text-only prompt.
         argv.push("--deny-tool".to_string());
         argv.push("shell,write".to_string());
 
-        // When the grant requests read-only access, restrict available tools
-        // to the read/fetch/search subset using `--available-tools`. Without
-        // this flag all non-denied tools remain available; with it only the
-        // listed ones are offered to the model.
         if let Access::ReadOnly {
             files,
             fetch,
@@ -53,17 +30,18 @@ impl Backend for CopilotBackend {
                 available.push("read");
             }
             if fetch || search {
-                // `url` covers both URL fetching and web search in Copilot's
-                // tool model — there is no separate search tool name.
+                // `url` covers both fetch and search; Copilot has no separate search tool.
                 available.push("url");
             }
             if !available.is_empty() {
+                // Omitting `--available-tools` leaves every non-denied tool
+                // available, so this is only pushed when the read-only grant
+                // actually restricts.
                 argv.push("--available-tools".to_string());
                 argv.push(available.join(","));
             }
         }
 
-        // `--model=MODEL` is supported (docs: "Specify the AI model").
         if let Some(model) = opts.model {
             argv.push(format!("--model={model}"));
         }
@@ -76,8 +54,6 @@ impl Backend for CopilotBackend {
     }
 
     fn prompt_delivery(&self) -> PromptDelivery {
-        // `-p PROMPT` — the prompt is the value of the `-p` flag; `ask::run`
-        // appends the prompt string after build_argv, which ends with `-p`.
         PromptDelivery::Arg
     }
 
@@ -114,7 +90,6 @@ mod tests {
         }
     }
 
-    /// Returns the value that immediately follows `flag` in `argv`, or panics.
     fn flag_value<'a>(argv: &'a [String], flag: &str) -> &'a str {
         let at = argv
             .iter()
@@ -126,9 +101,6 @@ mod tests {
 
     #[test]
     fn copilot_grant_allows_read_denies_shell() {
-        // Full read-only grant: files + fetch + search.
-        // argv must contain `-p` (headless), `--deny-tool` with shell+write,
-        // and `--available-tools` restricting to read+url.
         let argv = CopilotBackend.build_argv(&opts(
             Access::ReadOnly {
                 files: true,
@@ -138,11 +110,9 @@ mod tests {
             &[],
         ));
 
-        // Headless flag present and last (so ask::run appends prompt after it).
         assert!(argv.iter().any(|a| a == "-p"), "must contain -p: {argv:?}");
         assert_eq!(argv.last().unwrap(), "-p", "-p must be last: {argv:?}");
 
-        // Destructive tools are always denied.
         let denied = flag_value(&argv, "--deny-tool");
         assert!(
             denied.contains("shell"),
@@ -153,7 +123,6 @@ mod tests {
             "--deny-tool must include write: {denied}"
         );
 
-        // Available tools are restricted to the read/url subset.
         let available = flag_value(&argv, "--available-tools");
         assert!(
             available.contains("read"),
@@ -164,7 +133,6 @@ mod tests {
             "--available-tools must include url for fetch+search: {available}"
         );
 
-        // No auto-approval flags that could bypass the deny list.
         assert!(
             !argv.iter().any(|a| a == "--allow-all-tools"),
             "must not use --allow-all-tools: {argv:?}"
@@ -173,7 +141,6 @@ mod tests {
 
     #[test]
     fn copilot_files_only_grant_omits_url() {
-        // files=true, fetch=false, search=false → available=read only.
         let argv = CopilotBackend.build_argv(&opts(
             Access::ReadOnly {
                 files: true,
@@ -192,7 +159,6 @@ mod tests {
 
     #[test]
     fn copilot_fetch_without_files_includes_url() {
-        // fetch=true, files=false → url is in available, read is not.
         let argv = CopilotBackend.build_argv(&opts(
             Access::ReadOnly {
                 files: false,
@@ -211,7 +177,6 @@ mod tests {
 
     #[test]
     fn copilot_no_grant_omits_available_tools() {
-        // Access::None → no --available-tools, but shell+write still denied.
         let argv = CopilotBackend.build_argv(&opts(Access::None, &[]));
         assert!(
             !argv.iter().any(|a| a == "--available-tools"),
@@ -220,7 +185,6 @@ mod tests {
         let denied = flag_value(&argv, "--deny-tool");
         assert!(denied.contains("shell"));
         assert!(denied.contains("write"));
-        // Still ends with -p.
         assert_eq!(argv.last().unwrap(), "-p");
     }
 
@@ -228,8 +192,8 @@ mod tests {
     fn copilot_model_flag_uses_equals_form() {
         let argv = CopilotBackend.build_argv(&RunOpts {
             model: Some("claude-sonnet-4-6"),
-            effort: Some("high"), // no Copilot equivalent — must be dropped
-            permission_mode: Some("x"), // Claude-only — must be dropped
+            effort: Some("high"),
+            permission_mode: Some("x"),
             access: Access::None,
             session_args: &[],
         });
@@ -237,7 +201,6 @@ mod tests {
             argv.iter().any(|a| a == "--model=claude-sonnet-4-6"),
             "--model= form must be present: {argv:?}"
         );
-        // Effort and permission-mode have no Copilot flag.
         assert!(!argv.iter().any(|a| a == "--effort" || a == "high"));
         assert!(!argv.iter().any(|a| a == "--permission-mode" || a == "x"));
     }
@@ -271,7 +234,6 @@ mod tests {
 
     #[test]
     fn copilot_silent_flag_is_always_present() {
-        // `-s` suppresses decoration; must appear for all grant levels.
         for access in [
             Access::None,
             Access::ReadOnly {

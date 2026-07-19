@@ -1,28 +1,11 @@
-//! The Gemini CLI backend (`gemini -p`, headless). Prompt on stdin like Claude,
-//! model via `-m`, and read-only tool control via an `--allowed-tools`
-//! allowlist: only the read tools are listed, so in non-interactive mode any
-//! write/shell tool errors out instead of running (or hanging on a prompt that
-//! never comes).
-//!
-//! Flag/tool names verified against the Gemini CLI docs on 2026-07-02:
-//! - headless `-p/--prompt`, `-m/--model`: <https://google-gemini.github.io/gemini-cli/docs/cli/headless.html>
-//! - tool identifiers (`read_file`, `read_many_files`, `list_directory`,
-//!   `glob`, `search_file_content`, `web_fetch`, `google_web_search`):
-//!   <https://google-gemini.github.io/gemini-cli/docs/tools/index.html> +
-//!   <https://google-gemini.github.io/gemini-cli/docs/tools/file-system.html>
-//! - `--allowed-tools` in non-interactive mode: allowed tools run without
-//!   confirmation, disallowed ones error immediately (per PR
-//!   <https://github.com/google-gemini/gemini-cli/pull/9114>) — so an
-//!   allowlist of only read tools yields read-only behaviour headless.
-//!
-//! These names drift; a nightly `--help` check lands in Task 9.
+//! The Gemini CLI backend (`gemini -p`, headless). Only read tools are
+//! allowlisted, so a write/shell tool errors instead of hanging on a
+//! confirmation prompt that never comes.
 
 use anyhow::Result;
 
 use super::{Access, Backend, PromptDelivery, RunOpts};
 
-/// Gemini's read-only file tools (read a file, read many, list a directory,
-/// glob, and grep-equivalent), rendered when the grant opts into `files`.
 const FILE_TOOLS: &[&str] = &[
     "read_file",
     "read_many_files",
@@ -31,7 +14,6 @@ const FILE_TOOLS: &[&str] = &[
     "search_file_content",
 ];
 
-/// The Google Gemini CLI backend.
 pub struct GeminiBackend;
 
 impl Backend for GeminiBackend {
@@ -40,13 +22,8 @@ impl Backend for GeminiBackend {
     }
 
     fn build_argv(&self, opts: &RunOpts) -> Vec<String> {
-        // Headless: `-p` reads the prompt from stdin (delivery is Stdin).
         let mut argv = vec!["-p".to_string()];
 
-        // Render the abstract grant into Gemini's tool names. Each allowed tool
-        // is passed as its own `--allowed-tools <name>` (the documented
-        // repeatable form); listing only read tools makes disallowed write/shell
-        // tools error in non-interactive mode, so no `--yolo`/auto-approve.
         let mut tools: Vec<&str> = Vec::new();
         if let Access::ReadOnly {
             files,
@@ -115,8 +92,6 @@ mod tests {
 
     #[test]
     fn gemini_read_only_grant_flags() {
-        // Full read-only grant: files + fetch + search → all read tools, plus
-        // web_fetch and google_web_search. No --yolo / write approval.
         let argv = GeminiBackend.build_argv(&opts(
             Access::ReadOnly {
                 files: true,
@@ -135,14 +110,12 @@ mod tests {
         assert!(argv.iter().any(|a| a == "web_fetch"));
         assert!(argv.iter().any(|a| a == "google_web_search"));
         assert!(argv.iter().any(|a| a == "--allowed-tools"));
-        // Never auto-approve writes headless.
         assert!(!argv.iter().any(|a| a == "--yolo" || a == "-y"));
         assert!(!argv.iter().any(|a| a == "--approval-mode"));
     }
 
     #[test]
     fn gemini_fetch_without_search_omits_web_search() {
-        // The trace case: source files + fetch a URL, but no web search.
         let argv = GeminiBackend.build_argv(&opts(
             Access::ReadOnly {
                 files: true,
@@ -168,8 +141,8 @@ mod tests {
     fn gemini_model_flag() {
         let argv = GeminiBackend.build_argv(&RunOpts {
             model: Some("gemini-2.5-pro"),
-            effort: Some("high"), // no Gemini equivalent — must be dropped
-            permission_mode: Some("dontAsk"), // Claude-only — must be dropped
+            effort: Some("high"),
+            permission_mode: Some("dontAsk"),
             access: Access::None,
             session_args: &[],
         });
@@ -178,7 +151,6 @@ mod tests {
             .position(|a| a == "--model")
             .expect("model flag present");
         assert_eq!(argv[model_at + 1], "gemini-2.5-pro");
-        // Effort and permission-mode have no Gemini flag.
         assert!(!argv.iter().any(|a| a == "--effort" || a == "high"));
         assert!(
             !argv

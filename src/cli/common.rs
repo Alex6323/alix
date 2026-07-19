@@ -1,8 +1,3 @@
-//! Helpers every CLI command shares: confirmation prompts, source-tree
-//! preflight, target expansion (deck/folder/workspace → member decks), and
-//! progress-store resolution. Nothing command-specific lives here — a new
-//! addition must argue its way in.
-
 use std::{
     io::{IsTerminal, Write},
     path::{Path, PathBuf},
@@ -17,22 +12,12 @@ use alix::{
 };
 use anyhow::{Context, Result, bail};
 
-/// A stats/list/reset target expanded to deck files, plus the store fallback
-/// for decks that belong to no workspace: the served root's store (a plain
-/// folder's own `progress.json`, or the configured decks dir's for a loose
-/// deck file) — the same resolution the launcher applies, so every command
-/// agrees with what `alix`/`alix <dir>` write. `None` only when that root
-/// can't be determined (e.g. no home dir), falling through to the global store.
 pub(crate) struct Target {
     pub(crate) decks: Vec<PathBuf>,
     pub(crate) default_store: Option<PathBuf>,
 }
 
 impl Target {
-    /// The store for one member deck: `--store` > its workspace's store > the
-    /// target's root store (decks-dir root, or the folder itself) > the global
-    /// default — the same rule the launcher serves by, so every command sees
-    /// the same progress.
     pub(crate) fn store_for_deck(&self, deck: &Path, cli_override: Option<&Path>) -> Result<Store> {
         let path = cli_override
             .map(Path::to_path_buf)
@@ -42,15 +27,12 @@ impl Target {
     }
 }
 
-/// Expands a command target — a deck file, a workspace, or a plain folder —
-/// into its member decks (sorted by name for stable output).
 pub(crate) fn expand_target(path: &Path, config: &Config) -> Result<Target> {
     if path.is_file() {
         return Ok(Target {
             decks: vec![path.to_path_buf()],
-            // A loose deck belongs to the default (bare-`alix`) root; if it's
-            // actually inside a workspace, `store_for_deck`'s `store_path_for`
-            // call overrides this with the workspace's own store first.
+            // A loose deck defaults to the bare-`alix` root store;
+            // `store_for_deck`'s workspace lookup may override this.
             default_store: config.decks_dir().map(|d| workspace::root_store_path(&d)),
         });
     }
@@ -69,7 +51,6 @@ pub(crate) fn expand_target(path: &Path, config: &Config) -> Result<Target> {
     let default_store = if workspace::is_workspace(path) {
         None // members resolve to the workspace's own store anyway
     } else {
-        // The folder itself IS the served root, matching `alix <folder>`.
         Some(workspace::root_store_path(path))
     };
     Ok(Target {
@@ -78,11 +59,6 @@ pub(crate) fn expand_target(path: &Path, config: &Config) -> Result<Target> {
     })
 }
 
-/// Opens the progress store for `decks`, honoring `--store` > a workspace
-/// member's own store > the configured decks dir's root store > the global
-/// default — the same precedence [`Target::store_for_deck`] applies, so a
-/// loose deck's cache (e.g. `alix deck augment`'s `augment.json`) lands beside
-/// the `progress.json` review actually reads.
 pub(crate) fn store_for(
     decks: &[PathBuf],
     cli_override: Option<PathBuf>,
@@ -108,15 +84,10 @@ pub(crate) fn confirm(prompt: &str, yes: bool) -> Result<bool> {
     Ok(answer == "y" || answer == "yes")
 }
 
-/// Returns `true` if `source` looks like an HTTP/HTTPS URL.
 fn is_url(source: &str) -> bool {
     source.starts_with("http://") || source.starts_with("https://")
 }
 
-/// Runs the pre-flight size guard for agentic commands that hand a local
-/// source tree to the model. If the tree is oversized and `yes` is false,
-/// either asks for interactive confirmation (when a TTY is available) or bails
-/// (no TTY). Does nothing when the source is a URL or when the threshold is 0.
 pub(crate) fn preflight_source(source: &str, threshold: u64, yes: bool) -> Result<()> {
     // URLs are measured server-side (WebFetch); only local paths need a guard.
     if is_url(source) || threshold == 0 {
@@ -157,9 +128,6 @@ pub(crate) fn preflight_source(source: &str, threshold: u64, yes: bool) -> Resul
     Ok(())
 }
 
-/// Where a single generated/imported deck lands: the `--workspace <dir>` when
-/// given (it must exist — `alix workspace init` creates one), else the decks
-/// directory.
 pub(crate) fn deck_out_dir(workspace: Option<&Path>, config: &Config) -> Result<PathBuf> {
     match workspace {
         Some(dir) => {
@@ -178,12 +146,10 @@ pub(crate) fn deck_out_dir(workspace: Option<&Path>, config: &Config) -> Result<
     }
 }
 
-/// Collapses whitespace runs (incl. newlines) onto one line.
 pub(crate) fn one_line(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// Truncates `s` to at most `max` chars, appending an ellipsis when it was cut.
 pub(crate) fn truncate(s: &str, max: usize) -> String {
     if s.chars().count() <= max {
         return s.to_string();
@@ -240,7 +206,6 @@ mod tests {
         std::fs::write(ws.join("alix.toml"), "title = \"Box\"\n").unwrap();
         let member = ws.join("a.md");
         std::fs::write(&member, "## q\na\n").unwrap();
-        // decks_dir points elsewhere — the workspace store must still win.
         let config = Config {
             decks_dir: Some(dir.path().to_path_buf()),
             ..Default::default()

@@ -1,26 +1,10 @@
-//! A learning tool built for understanding, not just remembering.
-//!
-//! Decks are plain-text files. On top of the flashcard basics it offers a
-//! local web frontend, the FSRS
-//! scheduler (via `rs-fsrs`), several answer modes (flip, typing, typeline,
-//! multiple choice, line-by-line, explain), cloze and dual-direction cards,
-//! deck dependencies, and per-card review statistics. The configured model CLI
-//! is woven in: a tutor on any card, AI deck generation, and an AI exam
-//! (`alix exam`) that gates progression on verified understanding.
-
-// Enables `#[coverage(off)]` under `cargo +nightly llvm-cov`, which sets
-// `cfg(coverage_nightly)`. Used sparingly on a handful of functions a
-// deterministic test can't meaningfully drive (a live OS route lookup,
-// print-only QR output, a two-call AI workspace build) — see each site's
-// one-line reason.
+// Enables `#[coverage(off)]` under nightly coverage builds, used on a
+// handful of functions a deterministic test can't meaningfully drive.
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
-// The contract suite's widest `json!` snapshot (`decklistdto_wire_shape`,
-// nesting a many-keyed `DeckItemDto` inside a `DeckListDto`) exceeds the
-// default macro recursion limit once a row carries this many fields.
+// Raised for the contract suite's widest `json!` snapshot (a `DeckListDto`
+// nesting many-keyed `DeckItemDto` rows), which exceeds the default limit.
 #![recursion_limit = "256"]
 
-/// The library's own version, for surfaces that display it (the mobile
-/// About screen; the web contract's version stamp).
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub mod answer;
@@ -84,8 +68,7 @@ pub mod tutorial;
 pub mod txt_compat;
 pub mod workspace;
 
-// Only the AI-facing modules (ask, exam, generate, ...) use these fake-CLI
-// helpers, and all of those are gated behind `full`, so the module itself
-// only needs to exist for a `full` test build.
+// Only the AI-facing modules use these fake-CLI helpers, and they're all
+// gated behind `full`.
 #[cfg(all(test, feature = "full"))]
 mod testutil;

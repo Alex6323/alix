@@ -1,25 +1,5 @@
 //! Grader-calibration probes: the single source for the hand-labeled answers
 //! that spot-check whether a grading model is trustworthy.
-//!
-//! Two consumers share these fixtures. `tests/calibrate.rs` (`make calibrate`)
-//! runs them one at a time against the maintainer's backend before a
-//! `grade_*` prompt ships, and `alix doctor --grading` runs them batched
-//! against the *user's* configured backend, so someone on a different CLI or
-//! a cheaper model can see whether their exam grades can be trusted.
-//!
-//! Probes come in two kinds, and the split is the point. A [`Safety`] probe is
-//! an answer that must NOT pass: if it does, the model grades leniently and
-//! "mastered" lies — the one failure that matters. A [`Fairness`] probe is a
-//! correct answer that should pass: failing it means the model is harsher
-//! than intended — annoying, but the grades stay honest. Consumers report the
-//! two with different severity. These probes are a spot check, not a
-//! certification; keep the fixtures clear-cut, never borderline. They span
-//! prose understanding and math derivations — the latter guard that the grader
-//! catches a wrong algebraic step and the correct-answer-wrong-method case,
-//! not just fluent text.
-//!
-//! [`Safety`]: ProbeKind::Safety
-//! [`Fairness`]: ProbeKind::Fairness
 
 use anyhow::Result;
 
@@ -28,20 +8,12 @@ use crate::{
     exam::{self, ExamQuestion, Verdict},
 };
 
-/// What a probe's expected outcome means for the grader.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProbeKind {
-    /// The answer must NOT pass; a pass means the grader is lenient and exam
-    /// results overstate understanding.
     Safety,
-    /// The answer should pass; a miss means the grader is stricter than
-    /// calibrated, which frustrates but never lies.
     Fairness,
 }
 
-/// One hand-labeled grading case: a question, its rubric, an answer, and the
-/// strictness it is graded at. Whether a `Pass` is required follows from
-/// [`kind`](Self::kind).
 pub struct Probe {
     pub name: &'static str,
     pub kind: ProbeKind,
@@ -72,9 +44,6 @@ const BORROW_POINTS: &[&str] = &[
 const BORROW_HALF: &str = "You can have either many immutable references or a single \
                            mutable one, but never both at the same time.";
 
-// Math probes: grading a DERIVATION exercises the grader on a domain plain
-// prose doesn't — it must catch a wrong algebraic step and refuse a correct
-// final answer reached the wrong way, not just reward fluent-sounding text.
 const SQRT2_Q: &str = "Prove that the square root of 2 is irrational.";
 const SQRT2_POINTS: &[&str] = &[
     "assume for contradiction that sqrt(2) is rational, written as a fraction a/b in lowest terms",
@@ -92,18 +61,12 @@ const DERIV_POINTS: &[&str] = &[
     "take the limit as h -> 0 to get f'(x) = 2x",
 ];
 
-/// The probes. Safety (must not pass): a wrong, empty, off-topic, or
-/// strictly-incomplete answer, plus the two math failures (a wrong algebraic
-/// step, and a correct answer reached by the wrong method) and a hollow proof.
-/// Fairness (should pass): a terse and an incomplete-but-correct answer at the
-/// right strictness, plus a complete correct proof and derivation.
 pub const PROBES: &[Probe] = &[
     Probe {
         name: "confident_but_wrong",
         kind: ProbeKind::Safety,
         question: MOVE_Q,
         points: MOVE_POINTS,
-        // Fluent, confident, and the exact opposite of the truth.
         answer: "Rust deep-copies the value on assignment, so both bindings own \
                  independent data and remain usable afterward.",
         strictness: Strictness::Balanced,
@@ -151,7 +114,6 @@ pub const PROBES: &[Probe] = &[
         answer: BORROW_HALF,
         strictness: Strictness::Lenient,
     },
-    // A complete, correct proof must pass (math fairness, number theory).
     Probe {
         name: "math_proof_full",
         kind: ProbeKind::Fairness,
@@ -164,7 +126,6 @@ pub const PROBES: &[Probe] = &[
                  even, sharing a factor of 2, contradicting lowest terms. So sqrt(2) is irrational.",
         strictness: Strictness::Balanced,
     },
-    // A complete, correct derivation must pass (math fairness, calculus).
     Probe {
         name: "math_derivation_full",
         kind: ProbeKind::Fairness,
@@ -176,8 +137,8 @@ pub const PROBES: &[Probe] = &[
                  So f'(x) = 2x.",
         strictness: Strictness::Balanced,
     },
-    // A real algebraic error (dropping the 2xh cross term) yields the wrong
-    // answer, 0 — a lenient grader that only checks the setup would pass it.
+    // Drops the 2xh cross term, yielding 0: a lenient grader checking only
+    // the setup would pass it.
     Probe {
         name: "math_wrong_algebra",
         kind: ProbeKind::Safety,
@@ -187,9 +148,8 @@ pub const PROBES: &[Probe] = &[
                  is h^2, and h^2/h = h, which goes to 0. So f'(x) = 0.",
         strictness: Strictness::Balanced,
     },
-    // The correct final answer (2x) reached by the wrong method: the power rule
-    // when first principles was asked. Grading the answer instead of the
-    // reasoning would pass it; the exam checks the method.
+    // Correct final answer (2x) via the wrong method (power rule, not first
+    // principles): grading the answer alone would wrongly pass it.
     Probe {
         name: "math_answer_without_method",
         kind: ProbeKind::Safety,
@@ -199,8 +159,8 @@ pub const PROBES: &[Probe] = &[
                  the 2 and subtract 1 from the exponent, giving 2*x^1 = 2x.",
         strictness: Strictness::Balanced,
     },
-    // Names the technique with zero mechanism: fluent, hollow, no evidence of
-    // understanding. Must not pass.
+    // Names the technique with zero mechanism: fluent and hollow, no
+    // evidence of understanding.
     Probe {
         name: "math_hollow_proof",
         kind: ProbeKind::Safety,
@@ -213,20 +173,13 @@ pub const PROBES: &[Probe] = &[
     },
 ];
 
-/// One probe's outcome against a live grader.
 pub struct ProbeResult {
     pub name: &'static str,
     pub kind: ProbeKind,
     pub verdict: Verdict,
-    /// Whether the grader behaved as calibrated for this probe's kind.
     pub ok: bool,
 }
 
-/// Runs every probe against the configured grader, batching the probes that
-/// share a strictness into one [`exam::grade_answers`] call (one call per
-/// distinct strictness level, so three today). Batching mirrors production: a
-/// real exam grades all its questions in one prompt. Results come back grouped
-/// by strictness, in first-appearance order.
 pub fn run(exam_cfg: &ExamConfig, ask_cfg: &AskConfig) -> Result<Vec<ProbeResult>> {
     let mut order: Vec<Strictness> = Vec::new();
     for p in PROBES {
@@ -281,10 +234,6 @@ mod tests {
         assert!(PROBES.iter().any(|p| p.kind == ProbeKind::Fairness));
     }
 
-    /// A fake grader that counts its invocations in `<dir>/calls.log` and
-    /// answers every question in the batch with `verdict` — it reads the
-    /// prompt and emits one grade per "Question N:" line, so one script
-    /// serves batches of any size.
     fn fake_grader(dir: &std::path::Path, verdict: &str) -> std::path::PathBuf {
         let log = dir.join("calls.log");
         let body = format!(
@@ -312,8 +261,6 @@ printf ']}}'"#,
     fn run_maps_verdicts_to_ok_by_kind() {
         let _g = exec_lock();
         let dir = tempfile::tempdir().unwrap();
-        // A grader that passes EVERYTHING is maximally lenient: every safety
-        // probe must report not-ok, every fairness probe ok.
         let cli = fake_grader(dir.path(), "pass");
         let results = run(&ExamConfig::default(), &ask_config(&cli)).unwrap();
         assert_eq!(PROBES.len(), results.len());
@@ -324,7 +271,6 @@ printf ']}}'"#,
             }
         }
 
-        // And a grader that never passes flips both kinds.
         let dir = tempfile::tempdir().unwrap();
         let cli = fake_grader(dir.path(), "partial");
         let results = run(&ExamConfig::default(), &ask_config(&cli)).unwrap();

@@ -1,8 +1,3 @@
-//! Placing new decks into the library — the shared write tail of `alix
-//! generate`, `alix deck import`, and the web equivalents. Validation is
-//! lenient on purpose: a generated deck that does not parse yet is still
-//! saved (fixable by hand) and the problem is reported, not swallowed.
-
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
@@ -17,8 +12,6 @@ use crate::{
     store::Store,
 };
 
-/// What [`place_deck`] wrote: where it landed, how many cards parsed, and the
-/// parse problem when the text is not a valid deck yet.
 #[derive(Debug)]
 pub struct Placed {
     pub path: PathBuf,
@@ -26,14 +19,6 @@ pub struct Placed {
     pub parse_error: Option<String>,
 }
 
-/// Writes `text` into `dir` as `<name>.md` (atomically: `.tmp` + rename),
-/// then stamps it: creation paths mint identity tokens at birth (spec §2.1),
-/// so every placed deck lands with its cards' `<!-- id: -->` tokens written.
-/// Only `name`'s file-name component is used, so an uploaded name can't
-/// traverse; a collision is an error — the caller decides about overwriting.
-/// Unparseable text is still saved (fixable by hand) and reported, not
-/// stamped; a stamp write failure is loud but leaves the placement in place
-/// (review-open stamps again).
 pub fn place_deck(dir: &Path, name: &str, text: &str) -> Result<Placed> {
     let stem = Path::new(name)
         .file_name()
@@ -88,9 +73,6 @@ pub struct ReplaceReport {
     pub wiped_cards: usize,
 }
 
-/// Reached only from `--force` flows; the no-force collision error stays at the
-/// call sites. The `.rej` and `.md.bak` aside names are non-`.md`, so neither
-/// ever enumerates as a deck. Saves the store.
 pub fn replace_deck(
     dir: &Path,
     name: &str,
@@ -170,10 +152,6 @@ pub fn replace_deck(
     })
 }
 
-/// Wipes all review progress for the given decks from `store` — authored-card
-/// schedules, virtual (remediation) cards, and the decks' mastered flags —
-/// then saves. Returns how many authored cards had progress. The caller owns
-/// any confirmation; nothing here prompts.
 pub fn reset_decks<'a>(
     store: &mut Store,
     decks: impl IntoIterator<Item = &'a Deck>,
@@ -187,8 +165,8 @@ pub fn reset_decks<'a>(
             .map(|vc| vc.id.clone())
             .collect();
         for id in virtual_ids {
-            store.remove_virtual(&id); // drop sidecar content …
-            store.remove(&id); // … and the schedule in `store.cards`
+            store.remove_virtual(&id);
+            store.remove(&id);
         }
         for card in &deck.cards {
             let Some(id) = card.id() else { continue };
@@ -218,8 +196,6 @@ mod tests {
 
     #[test]
     fn placed_decks_land_stamped() {
-        // Creation paths mint at birth: the file on disk carries its tokens
-        // (deck id in frontmatter, one `<!-- id: -->` per card).
         let dir = tempfile::tempdir().unwrap();
         let p = place_deck(dir.path(), "rust", "## q\na\n## r\nb\n").unwrap();
         let deck =
@@ -234,7 +210,6 @@ mod tests {
     #[test]
     fn a_parse_problem_still_writes_the_deck_and_reports_it() {
         let dir = tempfile::tempdir().unwrap();
-        // A front with no answer line is invalid but must not be discarded.
         let p = place_deck(dir.path(), "broken.md", "## q with no answer\n").unwrap();
         assert!(p.path.exists());
         assert!(p.parse_error.is_some());
@@ -261,8 +236,6 @@ mod tests {
 
     #[test]
     fn resetting_a_deck_clears_only_that_decks_progress() {
-        // Arrange: two decks sharing one store; give each one graded card
-        // (mirror the setup helpers in session.rs tests), then:
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("a.md"), "## qa <!-- id: qa -->\nans-a\n").unwrap();
         std::fs::write(dir.path().join("b.md"), "## qb <!-- id: qb -->\nans-b\n").unwrap();
@@ -287,9 +260,6 @@ mod tests {
         assert!(!store.deck_mastered(&deck_a.subject));
     }
 
-    /// A minimal virtual card belonging to `parent`, mirroring
-    /// `tests/cli.rs`'s `sample_virtual_card`: its id is the `Card::id` of the
-    /// card `parse(parent, text)` yields, identical to a deck card's.
     fn virtual_card(parent: &str, back: &str) -> crate::store::VirtualCard {
         let slug: String = back.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
         let text = format!(
@@ -308,9 +278,6 @@ mod tests {
         }
     }
 
-    // --- replace_deck ---
-
-    /// A deck file with a controlled deck token and one manually-tokened card.
     fn write_deck(dir: &Path, name: &str, deck_token: &str, card_token: &str) {
         std::fs::write(
             dir.join(name),
@@ -328,7 +295,6 @@ mod tests {
         store.get_or_insert("c1", 0);
         store.save().unwrap();
 
-        // A `## ` front with no answer line does not parse.
         let err =
             replace_deck(dir.path(), "a", "## broken with no answer\n", &mut store).unwrap_err();
 
@@ -444,7 +410,6 @@ mod tests {
     #[test]
     fn every_replacement_mints_fresh_tokens() {
         let dir = tempfile::tempdir().unwrap();
-        // Place first, so the old deck carries real (canonical) minted tokens.
         place_deck(dir.path(), "a", "## old q\nold ans\n## old r\nold b\n").unwrap();
         let old_text = std::fs::read_to_string(dir.path().join("a.md")).unwrap();
         let old = crate::l1::parse_l1("a.md", &old_text).unwrap();
@@ -463,17 +428,14 @@ mod tests {
         for tok in &old_tokens {
             assert!(!now.contains(tok.as_str()), "old token {tok} reappeared");
         }
-        // Sanity on the fixture: the `.bak` really does hold the old tokens.
         let bak = std::fs::read_to_string(dir.path().join("a.md.bak")).unwrap();
         assert!(old_tokens.iter().all(|t| bak.contains(t.as_str())));
     }
 
-    /// Every L1 marker in one deck (mirrors stamp.rs's fixture): block-mapping
-    /// frontmatter without an `id:`, a divided card with a fence + note + escape
-    /// + trailing-space front, and a two-hole cloze card.
+    /// One fixture: frontmatter without `id:`, a divided card (fence + note +
+    /// escaped divider + trailing-space front), and a two-hole cloze card.
     const MARKER_FIXTURE: &str = "---\nsource: notes.md\nrequires: basics\n---\n# The Title\nintro prose\n\n## First question \nextra front line\n\n---\nthe answer\n\\--- escaped divider\n> a note\n```\nfenced\n## not a card\n```\ntail prose\n\n## Fill in the blanks\nthe \\cloze{alpha} and \\cloze{beta} here\n> cloze note\n";
 
-    /// Base tokens of the file cards (one per `## ` line) plus the deck token.
     fn all_tokens(subject: &str, text: &str) -> Vec<String> {
         let deck = crate::l1::parse_l1(subject, text).unwrap();
         let mut toks = Vec::new();
@@ -500,12 +462,8 @@ mod tests {
         );
     }
 
-    /// Every sanctioned deck-file writer leaves each card carrying its token,
-    /// its front text intact, and no two file cards (or the deck) sharing a
-    /// token.
     #[test]
     fn every_writer_preserves_tokens_and_text_and_never_duplicates() {
-        // place_deck
         {
             let dir = tempfile::tempdir().unwrap();
             place_deck(dir.path(), "d", MARKER_FIXTURE).unwrap();
@@ -519,7 +477,6 @@ mod tests {
             );
             assert_no_duplicate_tokens("d.md", &text);
         }
-        // replace_deck
         {
             let dir = tempfile::tempdir().unwrap();
             place_deck(dir.path(), "d", "## x\ny\n").unwrap();
@@ -531,7 +488,6 @@ mod tests {
             assert!(text.contains("First question"));
             assert_no_duplicate_tokens("d.md", &text);
         }
-        // stamp_deck
         {
             let dir = tempfile::tempdir().unwrap();
             let path = dir.path().join("d.md");
@@ -543,7 +499,6 @@ mod tests {
             assert!(text.contains("First question"));
             assert_no_duplicate_tokens("d.md", &text);
         }
-        // append_cards
         {
             let dir = tempfile::tempdir().unwrap();
             let placed = place_deck(dir.path(), "d", "## base\nb\n").unwrap();
@@ -557,7 +512,6 @@ mod tests {
             assert!(text.contains(added), "appended token preserved");
             assert_no_duplicate_tokens("d.md", &text);
         }
-        // promote_virtual
         {
             let dir = tempfile::tempdir().unwrap();
             let placed = place_deck(dir.path(), "d", "## base\nb\n").unwrap();

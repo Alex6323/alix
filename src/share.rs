@@ -1,9 +1,3 @@
-//! Sharing decks and workspaces over magic-wormhole (`alix share` /
-//! `alix receive`): stage a copy free of personal state, shell out to the
-//! `wormhole` binary for the transfer, and integrate what arrives. The
-//! transfer, the code mnemonic, and the progress output are wormhole's job —
-//! alix only decides what travels and where it lands.
-
 use std::{
     io::BufRead,
     path::{Path, PathBuf},
@@ -13,13 +7,10 @@ use std::{
 
 use anyhow::{Context, Result, bail};
 
-/// Personal state that must never travel: progress, the recent list, and the
-/// private pacing overrides. Excluded from staging AND stripped defensively
-/// from anything received (the sender may not have used `alix share`).
+/// Excluded from staging AND stripped defensively from anything received:
+/// the sender may not have used `alix share`.
 pub const PERSONAL: [&str; 3] = ["progress.json", "recent.json", "alix.local.toml"];
 
-/// `true` for entries that stay home when sharing: personal state, hidden
-/// files, and backup files from one-off rewrites (`*.bak`, `*-bak`).
 fn stays_home(name: &str) -> bool {
     PERSONAL.contains(&name)
         || name.starts_with('.')
@@ -27,9 +18,6 @@ fn stays_home(name: &str) -> bool {
         || name.ends_with("-bak")
 }
 
-/// Copies `dir`'s shareable content into `stage` (created fresh): decks,
-/// `alix.toml`, `assets/`, and the precomputed `augment.json` — everything
-/// except what [`stays_home`]. Returns how many files were staged.
 pub fn stage_dir(dir: &Path, stage: &Path) -> Result<usize> {
     std::fs::create_dir_all(stage).with_context(|| format!("cannot create {}", stage.display()))?;
     let mut staged = 0;
@@ -51,8 +39,6 @@ pub fn stage_dir(dir: &Path, stage: &Path) -> Result<usize> {
     Ok(staged)
 }
 
-/// Removes any personal files that leaked into a received folder, at any
-/// depth. Returns the (relative) names removed, for reporting.
 pub fn sanitize_received(dir: &Path) -> Result<Vec<String>> {
     let mut removed = Vec::new();
     for entry in std::fs::read_dir(dir)? {
@@ -73,8 +59,6 @@ pub fn sanitize_received(dir: &Path) -> Result<Vec<String>> {
     Ok(removed)
 }
 
-/// Moves `from` to `to`, falling back to copy+delete when a plain rename
-/// crosses filesystems (a temp dir usually does).
 pub fn move_into(from: &Path, to: &Path) -> Result<()> {
     if std::fs::rename(from, to).is_ok() {
         return Ok(());
@@ -104,9 +88,6 @@ fn copy_tree(from: &Path, to: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Writes `path` (a staged folder or a single deck file) as a ZIP archive at
-/// `out` — the offline fallback when wormhole isn't available. Returns the
-/// number of entries written.
 pub fn zip_to(path: &Path, out: &Path) -> Result<usize> {
     use std::io::Write;
     let file =
@@ -155,7 +136,6 @@ fn zip_walk(
     Ok(())
 }
 
-/// Extracts a `.zip` (made by `alix share --zip`, or compatible) into `dest`.
 /// The zip crate's extract handles hostile paths (zip-slip) itself.
 pub fn unzip_to(zip_path: &Path, dest: &Path) -> Result<()> {
     let file = std::fs::File::open(zip_path)
@@ -168,8 +148,6 @@ pub fn unzip_to(zip_path: &Path, dest: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Runs the wormhole binary with inherited stdio — the code mnemonic and the
-/// transfer progress print straight to the terminal — and waits for it.
 pub fn wormhole(args: &[&str], cwd: Option<&Path>) -> Result<()> {
     wormhole_with("wormhole", args, cwd)
 }
@@ -192,8 +170,6 @@ fn wormhole_with(cmd: &str, args: &[&str], cwd: Option<&Path>) -> Result<()> {
     Ok(())
 }
 
-/// Events a UI transfer reports as it progresses. The code arrives long
-/// before the transfer finishes — show it and keep polling.
 #[derive(Debug)]
 pub enum ShareEvent {
     Code(String),
@@ -201,17 +177,14 @@ pub enum ShareEvent {
     Error(String),
 }
 
-/// One UI-driven wormhole transfer: events stream on `events`; `cancel`
-/// kills the child (a sender waits indefinitely for its receiver, so the
-/// UI must be able to stop it).
+/// A sender waits indefinitely for its receiver, so `cancel` must be able to
+/// kill the child.
 pub struct ShareJob {
     pub events: Receiver<ShareEvent>,
     child: Arc<Mutex<Child>>,
 }
 
 impl ShareJob {
-    /// Kills the transfer; the waiter then reports an error event, which the
-    /// caller discards along with the job.
     pub fn cancel(&self) {
         if let Ok(mut c) = self.child.lock() {
             c.kill().ok();
@@ -220,19 +193,16 @@ impl ShareJob {
 }
 
 impl Drop for ShareJob {
-    /// An abandoned job must not leave a wormhole process running — dropping
-    /// cancels. Killing an already-exited child is a harmless no-op.
+    /// An abandoned job must not leave a wormhole process running.
     fn drop(&mut self) {
         self.cancel();
     }
 }
 
-/// Spawns `wormhole send <path>` for a UI, scanning its output for the code.
 pub fn send_spawn(path: &Path) -> Result<ShareJob> {
     spawn_job("wormhole", &["send", &path.to_string_lossy()], None)
 }
 
-/// Spawns `wormhole receive --accept-file <code>` into `dest` for a UI.
 pub fn receive_spawn(code: &str, dest: &Path) -> Result<ShareJob> {
     spawn_job("wormhole", &["receive", "--accept-file", code], Some(dest))
 }
@@ -288,10 +258,9 @@ fn spawn_job(cmd: &str, args: &[&str], cwd: Option<&Path>) -> Result<ShareJob> {
                 .ok()
                 .and_then(|mut c| c.try_wait().ok().flatten());
             if let Some(status) = status {
-                // Drain the pipe readers before the terminal event: a
-                // fast-exiting process could otherwise have Done overtake its
-                // own Code line (a scheduling race a slow CI runner caught;
-                // exit closes the pipes, so these joins are bounded by EOF).
+                // Drains before the terminal event: a fast-exiting process
+                // could otherwise have Done overtake its own Code line.
+                // Bounded by EOF, since exit closes the pipes.
                 for reader in readers.drain(..) {
                     let _ = reader.join();
                 }
@@ -308,9 +277,6 @@ fn spawn_job(cmd: &str, args: &[&str], cwd: Option<&Path>) -> Result<ShareJob> {
     Ok(ShareJob { events: rx, child })
 }
 
-/// Lands whatever a receive left in `tmp`: expects exactly one entry, strips
-/// leaked personal files, and moves it under `dest_dir` — never overwriting.
-/// Returns the landed name and the stripped (relative) file names.
 pub fn land_received(tmp: &Path, dest_dir: &Path) -> Result<(String, Vec<String>)> {
     let mut entries: Vec<PathBuf> = std::fs::read_dir(tmp)?
         .flatten()

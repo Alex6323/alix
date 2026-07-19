@@ -1,39 +1,16 @@
-//! Condensing a long, model-written or hand-written phrase into a short,
-//! title-cased label.
-//!
-//! Two callers share this one rule. [`crate::explore`] condenses each plan
-//! item's title at *creation* (the plan prompt asks for brevity, but the model
-//! ignores it and appends the contents after a colon). The [`crate::picker`]
-//! condenses a trace's `% trace:` path-question at *display*, so the picker can
-//! label a trace by its description instead of its filename slug — an `explore`
-//! trace is already short, but a `--build` or hand-written one can be a whole
-//! sentence. Keeping the logic in one place means both surfaces shorten alike.
-
-/// The minor words a title keeps lowercase (unless first or last) — articles and
-/// short coordinating conjunctions / prepositions. Forms of "to be" and pronouns
-/// are intentionally absent, so `Is`/`Its` stay capitalized.
+// "To be" and pronouns are intentionally absent: `Is`/`Its` stay capitalized.
 const MINOR_WORDS: &[&str] = &[
     "a", "an", "the", "and", "but", "or", "nor", "for", "of", "to", "in", "on", "at", "by", "as",
     "per", "via", "with", "from", "into", "onto", "vs",
 ];
 
-/// The hard ceiling on a condensed title's word count — the backstop that bounds
-/// a long title written with no separator to cut at.
 const MAX_TITLE_WORDS: usize = 12;
 
-/// Condenses a long title into a short, capitalized one — deterministically: cut
-/// the enumeration (everything from the first `:`/`;`/dash, plus a trailing
-/// parenthetical), hard-cap the word count as a backstop when no such separator
-/// exists, then apply title case that leaves code spans (backticked,
-/// `snake_case`, `CamelCase`, `ACRONYM`) intact.
 pub fn condense(raw: &str) -> String {
     let mut s = raw.trim();
-    // Cut at the first enumeration separator if there is one — but never depend
-    // on one: the word cap below bounds a title that has none.
     if let Some(i) = s.find([':', ';', '—', '–']) {
         s = s[..i].trim_end();
     }
-    // Drop a trailing parenthetical aside ("… (foo, bar)").
     if let Some(i) = s.find(" (") {
         s = s[..i].trim_end();
     }
@@ -57,9 +34,6 @@ pub fn condense(raw: &str) -> String {
     out
 }
 
-/// Title-cases one word: code tokens pass through verbatim, minor words stay
-/// lowercase unless they're forced (first/last word), everything else is
-/// capitalized per hyphen/slash segment.
 fn title_word(w: &str, force_cap: bool) -> String {
     if is_code_token(w) {
         return w.to_string();
@@ -73,17 +47,14 @@ fn title_word(w: &str, force_cap: bool) -> String {
         .collect()
 }
 
-/// Whether a word is a code identifier to leave exactly as written: a backticked
-/// span, `snake_case`, a call (`foo()`), or any token with an internal capital
-/// (`CamelCase`, `VM`, `gRPC`).
 fn is_code_token(w: &str) -> bool {
     w.contains('`')
         || w.contains('_')
         || w.contains('(')
+        // skip(1): a leading capital doesn't count, only one after the first char does.
         || w.chars().skip(1).any(|c| c.is_ascii_uppercase())
 }
 
-/// Uppercases the first character of a segment, leaving the rest untouched.
 fn capitalize_first(seg: &str) -> String {
     let mut chars = seg.chars();
     match chars.next() {
@@ -98,8 +69,6 @@ mod tests {
 
     #[test]
     fn cuts_the_enumeration_and_title_cases() {
-        // The model's signature shape: a good short head, a colon, then the
-        // enumeration the prompt forbids. Cut at the colon, title-case the head.
         assert_eq!(
             "What the Crate Is and Its Public Surface",
             condense(
@@ -115,8 +84,6 @@ mod tests {
 
     #[test]
     fn leaves_code_spans_untouched() {
-        // Backticked / snake_case / CamelCase / acronym tokens must survive title
-        // casing verbatim — never `Grpc`, `Execute_signed`, `Vm`.
         assert_eq!(
             "How a `TransactionData` Becomes an `ExecutionResult`",
             condense("how a `TransactionData` becomes an `ExecutionResult`: the spine")
@@ -133,7 +100,6 @@ mod tests {
 
     #[test]
     fn word_caps_when_there_is_no_separator() {
-        // No colon to cut at: the word cap is the guarantee, so brevity holds.
         let raw = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi";
         let out = condense(raw);
         assert!(out.ends_with('…'), "{out}");

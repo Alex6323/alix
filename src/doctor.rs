@@ -1,6 +1,4 @@
-//! Environment health checks (`alix doctor`): is this setup able to do its
-//! job — config, progress store, decks, and the optional external CLIs — with
-//! a one-line remedy per finding. Report-only: doctor never fixes anything.
+//! `alix doctor`: report-only, never fixes anything.
 
 use std::{
     path::{Path, PathBuf},
@@ -9,8 +7,6 @@ use std::{
 
 use crate::{config::Config, deck::Deck, store::Store, workspace};
 
-/// How much a finding matters: `Fail` breaks the core loop; `Warn` only limits
-/// an optional feature (an AI backend, sharing) — the core still works.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Status {
     Ok,
@@ -18,15 +14,11 @@ pub enum Status {
     Fail,
 }
 
-/// One line of the doctor's report.
 #[derive(Debug)]
 pub struct Finding {
-    /// What was checked (short, e.g. "config").
     pub name: &'static str,
     pub status: Status,
-    /// What was found, one line.
     pub detail: String,
-    /// The fix, shown under a non-Ok finding.
     pub remedy: Option<String>,
 }
 
@@ -55,8 +47,8 @@ impl Finding {
     }
 }
 
-/// Loads the config, reporting a parse/validation failure instead of dying —
-/// the one check that must not assume what every other alix command assumes.
+/// The one check that must not assume the config loads (unlike every other
+/// alix command).
 pub fn check_config(path: Option<&Path>) -> (Finding, Config) {
     match Config::load(path) {
         Ok(config) => (Finding::ok("config", "loads fine"), config),
@@ -72,8 +64,6 @@ pub fn check_config(path: Option<&Path>) -> (Finding, Config) {
     }
 }
 
-/// Opens the progress store at `path` (`None` → the platform default) and
-/// reports whether it parses, with its entry count.
 pub fn check_store(path: Option<PathBuf>) -> Finding {
     let path = match path.or_else(crate::store::default_store_path) {
         Some(p) => p,
@@ -104,13 +94,10 @@ pub fn check_store(path: Option<PathBuf>) -> Finding {
     }
 }
 
-/// Scans the decks root: top-level decks plus one level of folder/workspace
-/// members (the picker's reach), parsing each. Broken decks only break
-/// themselves, so they warn — with a pointer at `alix deck check`.
+/// A broken deck only warns, it breaks itself, not the whole setup.
 pub fn check_decks(decks_dir: &Path) -> Finding {
     if !decks_dir.is_dir() {
-        // The expected state of a fresh install — a warn with the fix, not a
-        // failure (nothing is broken; there is just nothing to drill yet).
+        // A fresh install: warn with a fix, not a failure (nothing is broken yet).
         return Finding::bad(
             "decks",
             Status::Warn,
@@ -168,9 +155,7 @@ pub fn check_decks(decks_dir: &Path) -> Finding {
     }
 }
 
-/// Reports whether an external CLI is on the PATH by spawning
-/// `<cmd> --version` (output discarded; no network, no cost). `purpose` says
-/// which alix feature needs it — a missing binary only warns.
+/// Spawns `<cmd> --version` only (no network, no cost).
 pub fn check_binary(name: &'static str, cmd: &str, purpose: &str, remedy: &str) -> Finding {
     let found = Command::new(cmd)
         .arg("--version")
@@ -245,7 +230,6 @@ mod tests {
 
     #[test]
     fn a_missing_decks_dir_warns_with_the_fix() {
-        // The expected state of a fresh install — nothing is broken yet.
         let dir = tempfile::tempdir().unwrap();
         let finding = check_decks(&dir.path().join("absent"));
         assert_eq!(Status::Warn, finding.status);

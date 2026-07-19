@@ -1,9 +1,5 @@
-//! Small time helpers. All timestamps in this crate are Unix time in
-//! milliseconds (`u64`).
-
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Returns the current Unix time in milliseconds.
 pub fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -11,8 +7,6 @@ pub fn now_ms() -> u64 {
         .as_millis() as u64
 }
 
-/// Formats a duration given in milliseconds as a short human-readable string,
-/// e.g. "42s", "5m", "3h", "2d", "1w".
 pub fn humanize_ms(ms: u64) -> String {
     let secs = ms / 1000;
     match secs {
@@ -24,8 +18,6 @@ pub fn humanize_ms(ms: u64) -> String {
     }
 }
 
-/// The local calendar date of a Unix-ms instant (deadlines are lived in
-/// local time; spec: the deadline day itself is inclusive).
 pub fn local_date(now_ms: u64) -> chrono::NaiveDate {
     chrono::DateTime::from_timestamp_millis(now_ms as i64)
         .unwrap_or_default()
@@ -33,9 +25,8 @@ pub fn local_date(now_ms: u64) -> chrono::NaiveDate {
         .date_naive()
 }
 
-/// The last millisecond of a local calendar day, as Unix ms: the deadline
-/// due-ceiling. Falls back to the naive UTC end on an unmappable local time
-/// (DST edges), which errs by at most hours, never days.
+/// Falls back to the naive UTC end on an unmappable local time (DST edge);
+/// errs by at most hours, never days.
 pub fn end_of_local_day_ms(date: chrono::NaiveDate) -> u64 {
     use chrono::TimeZone;
     let end = date.and_hms_milli_opt(23, 59, 59, 999).unwrap_or_default();
@@ -67,8 +58,6 @@ mod tests {
 
     #[test]
     fn local_date_and_end_of_day_are_consistent() {
-        // Deterministic invariants, not timezone assertions: the end-of-day ms of
-        // today's local date is after now, and at most 24h after the day's start.
         let now = crate::time::now_ms();
         let today = local_date(now);
         let end = end_of_local_day_ms(today);

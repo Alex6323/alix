@@ -1,67 +1,29 @@
-//! The mobile deck picker's data: thin field-maps over the core lister
-//! (`alix::listing`), which owns the scan rules, titles, and the due-now
-//! semantics shared with the web picker.
-
 use std::path::Path;
 
 use anyhow::Result;
 
-/// One row of a folder listing, as the picker screen renders it.
 pub struct DeckEntry {
     pub title: String,
     pub path: String,
-    /// Drillable: list its members with [`list_members`].
     pub is_workspace: bool,
-    /// Anything to do right now, against the store this entry reviews into.
     pub due: bool,
-    /// The deck has at least one recognizable card (cached distractors that
-    /// build a pick). Recognize is pick-only, so the picker greys the Recognize
-    /// depth out for a deck without it. Deck rows only; group rows aggregate.
     pub can_recognize: bool,
-    /// A trace deck (`% trace:`): opens a walk (`WalkSession`), not a card
-    /// review; the flag lets the picker route the row to the walk screen
-    /// instead of a review session.
     pub is_trace: bool,
-    /// The session depth remembered for this deck, else its fresh-session
-    /// default. Deck rows only.
     pub last_depth: alix::depth::Depth,
-    /// Finished and exam-passed, mirroring the web picker's mastered badge.
-    /// Deck rows only.
     pub mastered: bool,
-    /// Drilled and awaiting its AI exam. Deck rows only.
     pub exam_due: bool,
-    /// The deck has an AI exam at all (a sourced fact deck, or a trace).
-    /// Deck rows only.
     pub has_exam: bool,
-    /// A `% requires:` prerequisite isn't finished, mirroring the web
-    /// picker's lock icon. Deck rows only.
     pub locked: bool,
-    /// The workspace's resolved picker icon file, mirroring the web
-    /// picker's emblem. Workspace/folder rows only; `None` otherwise.
     pub icon: Option<String>,
-    /// Nesting depth in the workspace's dependency tree. Member rows only;
-    /// `0` otherwise.
     pub indent: u32,
-    /// The branch-line prefix (`├─`/`└─`/`│`) for this row in the
-    /// workspace's dependency tree. Member rows only; empty otherwise.
     pub tree: String,
-    /// The workspace's "ready by" target with live readiness, mirroring the
-    /// web picker's deadline chip. Real-workspace rows with a set deadline
-    /// only; `None` otherwise.
     pub deadline: Option<Deadline>,
 }
 
-/// A workspace's "ready by" target as the picker renders it — the bridge
-/// mirror of `alix::listing::DeckDeadline`, with the date in its wire
-/// `YYYY-MM-DD` form.
 pub struct Deadline {
-    /// The target date, `YYYY-MM-DD`.
     pub date: String,
-    /// Whole days until the date in local time; negative once it has passed.
     pub days_left: i64,
-    /// Member decks currently ready (mastered, or finished with no exam).
     pub ready: u32,
-    /// Member decks counted.
     pub total: u32,
 }
 
@@ -98,9 +60,6 @@ impl From<alix::listing::DeckSummary> for DeckEntry {
     }
 }
 
-/// The workspace's "ready by" readout, fetched on its own so the drilled-in
-/// picker can refresh it after a review changes mastery, without re-listing
-/// the root. `None` for a plain folder or when no deadline is set.
 #[flutter_rust_bridge::frb(sync)]
 pub fn workspace_deadline(root: String, dir: String, now_ms: Option<u64>) -> Option<Deadline> {
     let now = now_ms.unwrap_or_else(alix::time::now_ms);
@@ -113,16 +72,11 @@ pub fn workspace_deadline(root: String, dir: String, now_ms: Option<u64>) -> Opt
     .map(Deadline::from)
 }
 
-/// Sets, moves, or clears (`None`) the workspace's "ready by" date in its
-/// `alix.local.toml` — the same file the desktop edits, so a synced folder
-/// carries the change both ways. The date parse (and its error) lives in the
-/// lib (`workspace::set_deadline_str`).
 #[flutter_rust_bridge::frb(sync)]
 pub fn set_workspace_deadline(dir: String, date: Option<String>) -> Result<()> {
     alix::workspace::set_deadline_str(Path::new(&dir), date.as_deref())
 }
 
-/// Lists the decks root. `now_ms` injects the clock (tests); `None` is now.
 #[flutter_rust_bridge::frb(sync)]
 pub fn list_root(root: String, now_ms: Option<u64>) -> Vec<DeckEntry> {
     let now = now_ms.unwrap_or_else(alix::time::now_ms);
@@ -136,9 +90,6 @@ pub fn list_root(root: String, now_ms: Option<u64>) -> Vec<DeckEntry> {
     .collect()
 }
 
-/// Syncthing conflict copies next to any store under `root`: non-empty
-/// means two devices wrote concurrently and the picker should warn before
-/// the user reviews on top of a fork.
 #[flutter_rust_bridge::frb(sync)]
 pub fn sync_conflicts(root: String) -> Vec<String> {
     alix::listing::sync_conflicts_under(Path::new(&root))
@@ -147,7 +98,6 @@ pub fn sync_conflicts(root: String) -> Vec<String> {
         .collect()
 }
 
-/// Lists one drillable folder of the root.
 #[flutter_rust_bridge::frb(sync)]
 pub fn list_members(root: String, dir: String, now_ms: Option<u64>) -> Vec<DeckEntry> {
     let now = now_ms.unwrap_or_else(alix::time::now_ms);
@@ -170,8 +120,6 @@ mod tests {
     fn lists_a_root_with_a_workspace_and_a_loose_deck() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        // `list_root`/`list_members` are read-only and never stamp (spec
-        // §2.1), so a card needs an explicit id to count as reviewable/due.
         std::fs::write(
             root.join("loose.md"),
             "# Loose\n\n## q <!-- id: q1 -->\na\n",
@@ -218,12 +166,9 @@ mod tests {
         std::fs::write(path, text).unwrap();
     }
 
-    /// A graduated-and-not-due `FsrsState`: the card reaches FSRS Review
-    /// without a real drill session, so `exam_due`/`has_exam` compute
-    /// without waiting out a real schedule (mirrors the lean listing fixture).
     fn graduated_not_due(now: u64) -> alix::store::FsrsState {
         alix::store::FsrsState {
-            state: 2, // Review
+            state: 2,
             scheduled_days: 30,
             due_ms: now + 30 * 86_400_000,
             ..Default::default()
@@ -357,11 +302,8 @@ mod tests {
         let ws_s = ws.to_string_lossy().into_owned();
         let root_s = root.to_string_lossy().into_owned();
 
-        // Unset: nothing to fetch, and the row lists without one.
         assert!(workspace_deadline(root_s.clone(), ws_s.clone(), Some(T0)).is_none());
 
-        // Set: the local manifest gains the key, and both the fetch and the
-        // root listing carry it with live readiness (0/1 — m.md is fresh).
         let date = alix::time::local_date(T0) + chrono::Days::new(5);
         let date_s = date.format("%Y-%m-%d").to_string();
         set_workspace_deadline(ws_s.clone(), Some(date_s.clone())).unwrap();
@@ -378,10 +320,8 @@ mod tests {
         let row = rows.iter().find(|r| r.is_workspace).unwrap();
         assert_eq!(Some(date_s.as_str()), row.deadline.as_ref().map(|d| d.date.as_str()));
 
-        // A bad date errors in the lib rather than writing junk.
         assert!(set_workspace_deadline(ws_s.clone(), Some("someday".into())).is_err());
 
-        // Clear: gone from the file, the fetch, and the listing.
         set_workspace_deadline(ws_s.clone(), None).unwrap();
         let text = std::fs::read_to_string(ws.join("alix.local.toml")).unwrap();
         assert!(!text.contains("deadline"));

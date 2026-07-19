@@ -24,15 +24,12 @@ fn unconfigured_token_leaves_everything_open() {
 #[test]
 fn token_guards_only_the_api() {
     let t = Some("secret");
-    // open surfaces stay open even with a token set
     assert!(is_authorized("/", None, None, t));
     assert!(is_authorized("/img/deadbeef", None, None, t));
     assert!(is_authorized("/theme.css", None, None, t));
-    // /api/* requires the token
     assert!(!is_authorized("/api/decks", None, None, t));
     assert!(!is_authorized("/api/decks", Some("Bearer wrong"), None, t));
     assert!(is_authorized("/api/decks", Some("Bearer secret"), None, t));
-    // ?token= query is accepted as a fallback
     assert!(is_authorized("/api/decks", None, Some("secret"), t));
 }
 
@@ -134,8 +131,6 @@ fn card_dto_exposes_image_urls_and_registry_matches() {
     assert!(img.starts_with("/img/"));
     assert!(img_back.starts_with("/img/") && img_back != img);
 
-    // The registry keys the DTO's URLs derive from, so a request for either
-    // URL resolves to the right file.
     let images = collect_images(std::slice::from_ref(&card));
     assert_eq!(
         images.get(img.strip_prefix("/img/").unwrap()),
@@ -172,12 +167,8 @@ fn content_type_by_extension() {
 
 #[test]
 fn fonts_route_serves_woff2() {
-    // `font_bytes` is what the `GET /fonts/<name>` route arm dispatches on
-    // (a known name → 200 + the embedded bytes via `respond_font`; an unknown
-    // name → 404 via `respond_status`). Like `content_type_by_extension`
-    // above, this file has no harness for asserting on a real dispatched HTTP
-    // response (tiny_http's `TestRequest` writes to `io::sink()`), so the
-    // route's lookup logic is exercised directly.
+    // No live-HTTP harness here (tiny_http's TestRequest writes to io::sink()),
+    // so the route's lookup logic is exercised directly.
     for name in [
         "ibm-plex-sans-400.woff2",
         "ibm-plex-sans-500.woff2",
@@ -195,18 +186,14 @@ fn fonts_route_serves_woff2() {
     ] {
         let bytes = font_bytes(name).unwrap_or_else(|| panic!("{name} should resolve"));
         assert!(!bytes.is_empty());
-        // the woff2 magic number ("wOF2"), so a swapped/empty const fails loudly
         assert_eq!(&bytes[0..4], b"wOF2", "{name} is not a woff2 file");
     }
     assert!(font_bytes("nope.woff2").is_none());
-    assert!(font_bytes("ibm-plex-sans-400.woff").is_none()); // wrong extension
+    assert!(font_bytes("ibm-plex-sans-400.woff").is_none());
 }
 
 #[test]
 fn app_page_dispatches_the_kids_page_for_kids_and_review_for_adult() {
-    // `app_page` is what the `GET /` route arm dispatches on. Like
-    // `fonts_route_serves_woff2`, there is no live-HTTP harness here, so the
-    // route's lookup logic is exercised directly.
     assert_ne!(app_page(Audience::Adult), app_page(Audience::Kids));
     assert!(app_page(Audience::Adult).contains("<title>alix</title>"));
     assert!(app_page(Audience::Kids).contains("alix kids"));
@@ -256,11 +243,6 @@ fn resolve_row_resolves_a_workspace_row_to_many_with_every_member_file() {
 
 #[test]
 fn resolve_row_resolves_a_manifest_only_dir_with_no_members_to_unknown() {
-    // A folder with an `alix.toml` manifest but zero `*.md` decks:
-    // `workspace::has_decks` requires at least one member, so
-    // `picker::catalog` never surfaces this row at all — it can't reach
-    // the old `vec![e.path]`/`One` fallback because it never becomes a
-    // catalog entry in the first place.
     let dir = tempfile::tempdir().unwrap();
     let ws = dir.path().join("empty-ws");
     std::fs::create_dir(&ws).unwrap();
@@ -276,9 +258,6 @@ fn resolve_row_resolves_a_manifest_only_dir_with_no_members_to_unknown() {
 
 #[test]
 fn resolve_row_rejects_a_bare_name_duplicated_across_two_containers() {
-    // Two real `a.md` decks that share a bare name but live in different
-    // containers: one under `decks_dir`, the other reached only via
-    // `recent` (so the catalog surfaces both under the same key "a.md").
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("a.md"), "## f\nb\n").unwrap();
     let elsewhere = tempfile::tempdir().unwrap();
@@ -294,10 +273,6 @@ fn resolve_row_rejects_a_bare_name_duplicated_across_two_containers() {
 
 #[test]
 fn resolve_row_resolves_a_qualified_member_name_even_when_its_bare_workspace_name_is_duplicated() {
-    // "english" collides across two containers (ambiguous bare name), but
-    // the qualified member key "english/a.md" is unaffected — qualified
-    // and bare names are disjoint namespaces (a filename can't contain
-    // `/`), so the collision on one never bleeds into the other.
     let dir = tempfile::tempdir().unwrap();
     let ws = dir.path().join("english");
     std::fs::create_dir(&ws).unwrap();
@@ -329,13 +304,8 @@ fn resolve_row_resolves_a_qualified_member_name_even_when_its_bare_workspace_nam
 
 #[test]
 fn a_qualified_member_name_duplicated_across_two_same_named_containers_is_ambiguous() {
-    // Same setup as the test above (two "english" containers, one reached
-    // only via `recent`), but this time both containers hold a member
-    // file with the *same* name too ("a.md"), so the qualified key
-    // "english/a.md" itself collides — the documented always-works
-    // escape hatch must reject this, not last-wins onto whichever
-    // container the catalog visited last (dangerous behind /api/reset,
-    // which writes progress/deletes by this resolved path).
+    // Both qualified keys collide too: must reject, not last-wins (dangerous
+    // behind /api/reset's delete-by-path).
     let dir = tempfile::tempdir().unwrap();
     let ws = dir.path().join("english");
     std::fs::create_dir(&ws).unwrap();
@@ -365,26 +335,11 @@ fn a_qualified_member_name_duplicated_across_two_same_named_containers_is_ambigu
     );
 }
 
-// Note: the workspace-row-to-`Many{dir,files}` case the roadmap's
-// reset-specific test asked for (every member file, `dir` == row path) is
-// already asserted in full by
-// `resolve_row_resolves_a_workspace_row_to_many_with_every_member_file`
-// above (extended to cover `dir` in the 0b1b859 review follow-up) —
-// no new assertion here would add coverage, so none is added.
-
 #[test]
 fn a_drained_job_ignores_further_messages_without_replacing() {
-    // Tests the guard at the top of `poll()`: if `self.outcome.is_some()`,
-    // return immediately without draining — the drain-once law. All three
-    // job POSTs rely on this: a repeat poll must never re-place the deck or
-    // re-run the outcome, else a second message would clobber the first.
-    // Mutation test: without the guard, poll #2 would drain the second
-    // message, call place_deck again (placing a second file), and asserts 2
-    // and 3 would fail.
     let dest = tempfile::tempdir().unwrap();
     let (tx, rx) = std::sync::mpsc::channel();
 
-    // First message: place a deck.
     tx.send(Ok("## f\nb\n".to_string())).unwrap();
     let mut g = Generating {
         rx,
@@ -394,24 +349,19 @@ fn a_drained_job_ignores_further_messages_without_replacing() {
         outcome: None,
     };
 
-    // Poll #1: outcome set, one deck placed.
     g.poll();
     assert!(g.outcome.is_some());
     let files_after_poll_1: Vec<_> = std::fs::read_dir(dest.path()).unwrap().collect();
     assert_eq!(1, files_after_poll_1.len());
 
-    // Send a second, distinguishable message (would place a different deck
-    // if poll #2 tried to drain it).
     tx.send(Ok("## other\nanswer\n".to_string())).unwrap();
 
-    // Poll #2: guard should short-circuit, leaving the second message queued.
     let first_outcome = g.outcome.clone();
     g.poll();
     assert_eq!(first_outcome, g.outcome, "outcome must stay unchanged");
     let files_after_poll_2: Vec<_> = std::fs::read_dir(dest.path()).unwrap().collect();
     assert_eq!(1, files_after_poll_2.len(), "still only one placed file");
 
-    // The second message is still queued (guard never called try_recv).
     assert!(
         g.rx.try_recv().is_ok(),
         "guard short-circuited before draining the second message"
@@ -426,10 +376,8 @@ fn the_zip_upload_cap_accepts_the_boundary_and_rejects_one_past_it() {
 
     assert!(read_capped(&[7u8; CAP + 1][..], CAP).is_none());
 
-    // No fixed length at all (a body whose declared length lies, or is
-    // absent) is still bounded by the `take()` ceiling: `read_capped`
-    // never reads more than `cap + 1` bytes before rejecting, so an
-    // endless reader is caught rather than read to exhaustion.
+    // An endless/lying-length reader is still capped at `cap + 1` bytes by
+    // `take()`, never read to exhaustion.
     assert!(read_capped(std::io::repeat(7), CAP).is_none());
 }
 
@@ -441,7 +389,6 @@ fn resolve_dest_falls_back_to_decks_dir_and_rejects_unknown_names() {
     std::fs::write(ws.join("a.md"), "## a\nb\n").unwrap();
     let recent = RecentDecks::load(dir.path().join("recent.json"));
 
-    // Absent/empty → the served root, without touching the catalog.
     assert_eq!(
         resolve_dest(None, dir.path(), &recent),
         Some(dir.path().to_path_buf())
@@ -450,12 +397,10 @@ fn resolve_dest_falls_back_to_decks_dir_and_rejects_unknown_names() {
         resolve_dest(Some(""), dir.path(), &recent),
         Some(dir.path().to_path_buf())
     );
-    // A known workspace name → its directory.
     assert_eq!(
         resolve_dest(Some("english"), dir.path(), &recent),
         Some(ws.clone())
     );
-    // An unknown name (or a crafted path) resolves to nothing.
     assert_eq!(
         resolve_dest(Some("no-such-workspace"), dir.path(), &recent),
         None
@@ -465,11 +410,8 @@ fn resolve_dest_falls_back_to_decks_dir_and_rejects_unknown_names() {
 
 #[test]
 fn resolve_dest_rejects_a_dir_name_duplicated_across_two_containers() {
-    // Same class of collision `resolve_row` rejects for bare deck names:
-    // `resolve_dest` also scans top-level catalog rows, so a workspace
-    // reached via `recent` can share a name with one physically inside
-    // `decks_dir` — silently picking either would be the same class of
-    // bug this task closes for names.
+    // Same collision class as resolve_row: picking either container silently
+    // would be the same bug.
     let dir = tempfile::tempdir().unwrap();
     let ws = dir.path().join("english");
     std::fs::create_dir(&ws).unwrap();
@@ -486,10 +428,6 @@ fn resolve_dest_rejects_a_dir_name_duplicated_across_two_containers() {
 
 #[test]
 fn a_group_row_aggregates_member_reviewability_instead_of_hardcoding_true() {
-    // A workspace whose two member decks are both fully settled — recognized,
-    // and scheduled well out at Recall and Reconstruct — so nothing is due at
-    // any depth on either member. The group row must reflect that (not the
-    // old hardcoded `true`), while staying unselectable itself.
     let dir = tempfile::tempdir().unwrap();
     let ws = dir.path().join("animals");
     std::fs::create_dir(&ws).unwrap();
@@ -516,8 +454,8 @@ fn a_group_row_aggregates_member_reviewability_instead_of_hardcoding_true() {
     ws_store.save().unwrap();
 
     let recent = RecentDecks::load(dir.path().join("recent.json"));
-    // Irrelevant to a workspace group row — `workspace_members` always reads
-    // the workspace's own store from disk, never this one.
+    // Irrelevant to a workspace group row: workspace_members always reads the
+    // workspace's own store from disk, never this one.
     let global_store = Store::open(dir.path().join("global.json")).unwrap();
     let mut icons = HashMap::new();
     let dto = deck_catalog(
@@ -547,13 +485,6 @@ fn a_group_row_aggregates_member_reviewability_instead_of_hardcoding_true() {
 
 #[test]
 fn a_plain_folders_member_badge_reads_the_served_instance_store_not_the_global_default() {
-    // A plain (non-workspace) subfolder has no store of its own, so its
-    // member badges must read the SAME store the top-level loose-deck
-    // badges do (the served instance/root store `deck_catalog` is called
-    // with) — never the abandoned global platform-data store. Proven by
-    // seeding the card as fully settled (recognized, scheduled well out at
-    // both depths) in the instance store passed to `deck_catalog`: an
-    // unrelated (fresh, empty) store would report it as new and reviewable.
     let dir = tempfile::tempdir().unwrap();
     let folder = dir.path().join("letters");
     std::fs::create_dir(&folder).unwrap();
@@ -603,7 +534,7 @@ fn a_plain_folders_member_badge_reads_the_served_instance_store_not_the_global_d
 #[test]
 fn a_deck_that_fails_to_load_reports_nothing_reviewable_but_stays_selectable() {
     let dir = tempfile::tempdir().unwrap();
-    // An unclosed cloze hole fails to parse — `Deck::load` errors.
+    // An unclosed cloze hole fails to parse: `Deck::load` errors.
     std::fs::write(dir.path().join("broken.md"), "## front\nbad \\cloze{oops\n").unwrap();
     let recent = RecentDecks::load(dir.path().join("recent.json"));
     let entry = picker::catalog(dir.path(), &recent)
@@ -648,8 +579,8 @@ fn review_state_select_phase_has_no_card() {
     assert_eq!(dto.phase, "select");
     assert_eq!(dto.kind, "review");
     assert!(dto.card.is_none());
-    // The session-end signal is the `done` phase now, not a `finished` flag:
-    // the field is gone from the wire contract entirely.
+    // `done` is the session-end signal; `finished` is deliberately absent
+    // from the wire contract.
     let json = serde_json::to_value(&dto).unwrap();
     assert!(json.get("finished").is_none());
 }
@@ -659,7 +590,6 @@ fn finished_review_uses_the_done_phase_not_a_finished_flag() {
     let dir = tempfile::tempdir().unwrap();
     let (mut r, _card, _deck) = one_card_reviewing(dir.path());
     let mut store = Store::open(dir.path().join("graded.json")).unwrap();
-    // Pass the only card → the queue empties → the session is finished.
     r.session.grade(&mut store, Grade::Pass, now_ms());
     assert!(r.session.is_finished());
     let dto = review_state(Some(&r), &store);
@@ -667,8 +597,6 @@ fn finished_review_uses_the_done_phase_not_a_finished_flag() {
     assert_eq!(dto.kind, "review");
 }
 
-/// Builds a `Reviewing` over a parsed deck at a chosen depth, sharing `store`
-/// (seed it before calling so the session sees the seeded state).
 fn reviewing_at(deck: PathBuf, cards: Vec<Card>, store: &Store, depth: Depth) -> Reviewing {
     let session = Session::new(
         cards,
@@ -703,7 +631,7 @@ fn state_reports_the_sessions_depth_and_typeline_mode() {
     std::fs::write(&deck, text).unwrap();
     let cards = crate::l1::parse_str("d.md", text).unwrap();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
-    store.get_or_insert(&cards[0].id().unwrap(), 0); // seen, so it's a quiz not an acquire
+    store.get_or_insert(&cards[0].id().unwrap(), 0);
     let r = reviewing_at(deck, cards, &store, Depth::Reconstruct);
 
     let dto = review_state(Some(&r), &store);
@@ -725,10 +653,9 @@ fn explain_state_serves_the_keypoints_rubric_cached_or_fallback() {
     std::fs::write(&deck, text).unwrap();
     let cards = crate::l1::parse_str("d.md", text).unwrap();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
-    store.get_or_insert(&cards[0].id().unwrap(), 0); // seen, so it's a quiz not an acquire
+    store.get_or_insert(&cards[0].id().unwrap(), 0);
     let mut r = reviewing_at(deck, cards.clone(), &store, Depth::Reconstruct);
 
-    // No cached keypoints: the rubric falls back to the authored back lines.
     let fallback = review_state(Some(&r), &store);
     assert_eq!(fallback.mode, "explain");
     assert_eq!(
@@ -736,7 +663,6 @@ fn explain_state_serves_the_keypoints_rubric_cached_or_fallback() {
         Some(vec!["first fact".to_string(), "second fact".to_string()])
     );
 
-    // Cached keypoints win over the fallback.
     r.augment
         .set_keypoints(&cards[0].id().unwrap(), vec!["one claim".to_string()]);
     let cached = review_state(Some(&r), &store);
@@ -747,15 +673,13 @@ fn explain_state_serves_the_keypoints_rubric_cached_or_fallback() {
 fn recognize_state_offers_gap_options_for_a_cloze_card() {
     let dir = tempfile::tempdir().unwrap();
     let deck = dir.path().join("d.md");
-    // A real expanded cloze card: its sub-card's back is the bare gap text, an
-    // atomic answer that a Recognize pick fills from cached AI distractors.
     let text = "## where <!-- id: q1 -->\nThe \\cloze{cat} sat here\n";
     std::fs::write(&deck, text).unwrap();
     let cards = crate::l1::parse_str("d.md", text).unwrap();
-    assert_eq!(vec!["cat".to_string()], cards[0].back); // gap text is the back
+    assert_eq!(vec!["cat".to_string()], cards[0].back);
     let id = cards[0].id().unwrap();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
-    store.get_or_insert(&id, 0); // seen → the Recognize MC, not the acquire on-ramp
+    store.get_or_insert(&id, 0);
     let mut r = reviewing_at(deck, cards, &store, Depth::Recognize);
     r.augment.set_distractors(
         &id,
@@ -775,9 +699,6 @@ fn recognize_state_offers_gap_options_for_a_cloze_card() {
 
 #[test]
 fn recognize_state_quizzes_a_line_card_on_the_whole_sequence_not_a_single_step() {
-    // A `reveal: line` card (ordered multi-line back) at Recognize must offer
-    // whole-sequence options — the real ordering vs the AI's alternate wrong
-    // orderings — never a pick-one-step built from the card's own lines.
     let dir = tempfile::tempdir().unwrap();
     let deck = dir.path().join("d.md");
     let text = "## steps <!-- reveal: line --> <!-- id: q1 -->\nfirst\nsecond\nthird\n";
@@ -785,7 +706,7 @@ fn recognize_state_quizzes_a_line_card_on_the_whole_sequence_not_a_single_step()
     let cards = crate::l1::parse_str("d.md", text).unwrap();
     let id = cards[0].id().unwrap();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
-    store.get_or_insert(&id, 0); // seen → the Recognize MC, not the acquire on-ramp
+    store.get_or_insert(&id, 0);
     let mut r = reviewing_at(deck, cards, &store, Depth::Recognize);
     r.augment.set_distractors(
         &id,
@@ -815,17 +736,13 @@ fn recognize_state_quizzes_a_line_card_on_the_whole_sequence_not_a_single_step()
 
 #[test]
 fn recognize_state_offers_no_choices_for_a_line_card_with_no_cached_distractors() {
-    // Same card, but the augment cache holds nothing: with no cached distractors
-    // `build` can't reach four options (they are never sampled from other
-    // cards), so it falls back to `None` — the client's self-report chips, not a
-    // synthesized pick-one-step question.
     let dir = tempfile::tempdir().unwrap();
     let deck = dir.path().join("d.md");
     let text = "## steps <!-- reveal: line --> <!-- id: q1 -->\nfirst\nsecond\nthird\n";
     std::fs::write(&deck, text).unwrap();
     let cards = crate::l1::parse_str("d.md", text).unwrap();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
-    store.get_or_insert(&cards[0].id().unwrap(), 0); // seen → the Recognize MC, not the acquire on-ramp
+    store.get_or_insert(&cards[0].id().unwrap(), 0);
     let r = reviewing_at(deck, cards, &store, Depth::Recognize);
 
     let dto = review_state(Some(&r), &store);
@@ -837,13 +754,6 @@ fn recognize_state_offers_no_choices_for_a_line_card_with_no_cached_distractors(
 
 #[test]
 fn recognize_state_reshuffles_choice_options_on_the_next_appearance_but_not_mid_poll() {
-    // End-to-end through `review_state`/`current_question`: the client polls
-    // `GET /api/state` every ~3s while a card is on screen, and a poll that
-    // doesn't move the session off the card must rebuild identical options
-    // (`Session::appearance` only bumps on a genuine re-serve); a wrong pick now
-    // floors instead of resurfacing instantly (the same-card transition floor
-    // now covers Recognize too), and once the floor passes and the card is
-    // served again, the options reshuffle ({#reorder-mc-on-each-appearance}).
     let dir = tempfile::tempdir().unwrap();
     let deck = dir.path().join("d.md");
     let text = "## q <!-- id: q1 -->\nanswer\n";
@@ -851,10 +761,8 @@ fn recognize_state_reshuffles_choice_options_on_the_next_appearance_but_not_mid_
     let cards = crate::l1::parse_str("d.md", text).unwrap();
     let id = cards[0].id().unwrap();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
-    store.get_or_insert(&id, 0); // seen → the Recognize MC, not the acquire on-ramp
+    store.get_or_insert(&id, 0);
     let mut r = reviewing_at(deck, cards, &store, Depth::Recognize);
-    // A full set of cached AI distractors so the card can build a valid MC
-    // (distractors are never sampled from other cards).
     r.augment.set_distractors(
         &id,
         vec![
@@ -867,17 +775,11 @@ fn recognize_state_reshuffles_choice_options_on_the_next_appearance_but_not_mid_
     let first = review_state(Some(&r), &store)
         .choices
         .expect("a valid MC from the 3 cached AI distractors");
-    // A second poll of the same appearance (no session mutation in between)
-    // must rebuild the identical options.
     let second = review_state(Some(&r), &store)
         .choices
         .expect("still the same appearance");
     assert_eq!(first, second, "an idle poll must not reshuffle mid-answer");
 
-    // A wrong pick floors the card (Part 1) instead of resurfacing it instantly.
-    // Cycle it a handful of times — tolerating the rare same-permutation
-    // collision across any single pair of appearances — and require at least
-    // one later appearance to land on a different order.
     let mut now = now_ms();
     let mut saw_a_different_order = false;
     for _ in 0..5 {
@@ -908,9 +810,6 @@ fn recognize_state_reshuffles_choice_options_on_the_next_appearance_but_not_mid_
 
 #[test]
 fn an_already_recognized_card_skips_the_acquire_mc() {
-    // A card recognized in a prior Recognize session carries `recognized_ms`
-    // and a store entry, so a later Recall session quizzes it directly — never
-    // through the recognition-MC acquire on-ramp (spec §4.6).
     let dir = tempfile::tempdir().unwrap();
     let deck = dir.path().join("d.md");
     let text = "## q <!-- id: q1 -->\nanswer\n";
@@ -918,7 +817,7 @@ fn an_already_recognized_card_skips_the_acquire_mc() {
     let cards = crate::l1::parse_str("d.md", text).unwrap();
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
     let state = store.get_or_insert(&cards[0].id().unwrap(), 0);
-    state.recognized_ms = Some(500); // recognized, but no Recall schedule yet
+    state.recognized_ms = Some(500);
     let r = reviewing_at(deck, cards, &store, Depth::Recall);
 
     let dto = review_state(Some(&r), &store);
@@ -932,7 +831,6 @@ fn an_already_recognized_card_skips_the_acquire_mc() {
 
 #[test]
 fn grade_names_map_to_grades() {
-    // A guard so the JSON contract and the Grade enum stay in sync.
     assert!(matches!(Grade::Fail, Grade::Fail));
     assert_eq!(mode_name(Mode::LineByLine), "line");
     assert_eq!(mode_name(Mode::Flip), "flip");
@@ -944,11 +842,6 @@ fn input_name_matches_clap_value_names() {
     assert_eq!(input_name(Input::Type), "type");
     assert_eq!(input_name(Input::Draw), "draw");
 }
-
-// ---- ask-Claude server state machine -------------------------------
-//
-// These drive `poll_ask` through a channel we control, so the actual CLI
-// execution (covered by `ask.rs`'s own tests) isn't involved.
 
 fn one_card_reviewing(dir: &Path) -> (Reviewing, Card, PathBuf) {
     let deck = dir.join("d.md");
@@ -994,7 +887,6 @@ fn poll_ask_records_answer_in_transcript() {
         purpose: Purpose::Question("why is s1 invalid?".to_string()),
         card,
     });
-    // Nothing delivered yet: still thinking, no-op poll.
     assert_eq!((None, None), r.poll_ask());
     assert!(r.ask_dto(None, None).thinking);
 
@@ -1012,18 +904,16 @@ fn poll_ask_records_answer_in_transcript() {
 fn ask_transcript_resets_when_the_card_changes() {
     let dir = tempfile::tempdir().unwrap();
     let (mut r, card, _deck) = one_card_reviewing(dir.path());
-    // A previous card's discussion is on display, and the conversation has
-    // begun (the CLI session is live).
     r.ask
         .transcript
         .push(("old q".to_string(), "old a".to_string()));
-    r.ask.subject = Some("a-different-card-id".to_string()); // a different card
+    r.ask.subject = Some("a-different-card-id".to_string());
     r.ask.cli.started = true;
 
     r.align_transcript();
 
-    // The current card differs from the transcript's card, so the display is
-    // cleared and re-tagged — but Claude's conversation context survives.
+    // Cleared and re-tagged, but the underlying Claude session (cli.started)
+    // survives.
     assert!(r.ask.transcript.is_empty());
     assert_eq!(card.id(), r.ask.subject);
     assert!(r.ask.cli.started);
@@ -1071,11 +961,8 @@ fn poll_ask_error_resets_session() {
 
 #[test]
 fn a_frozen_card_with_no_resolvable_source_root_answers_immediately_without_spawning() {
-    // Same condition as ask.rs's `(Some(excerpt), None)` prompt arm (the
-    // card is frozen, but its live `% origin:`/deck root doesn't exist on
-    // disk) — serve should answer with `SOURCE_NOT_FOUND` synchronously
-    // instead of asking the model to echo it. Point the ask config at a
-    // nonexistent binary: if the short-circuit works, it's never touched.
+    // Points at a nonexistent CLI binary: if the source-not-found short-circuit
+    // works, it's never touched.
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("29.rs"), "fn real() {}\n").unwrap();
     let deck_path = dir.path().join("d.md");
@@ -1084,8 +971,8 @@ fn a_frozen_card_with_no_resolvable_source_root_answers_immediately_without_spaw
         "---\nsource: 29.rs\n---\n## q\na\n<!-- at: 29.rs:1 from src/caching.rs:46-66 -->\n",
     )
     .unwrap();
-    // Stamped at open in production, so the card carries a token (an unstamped
-    // card is never servable, so the session would have no current card).
+    // Stamped as in production: an unstamped card has no token and is never
+    // servable.
     crate::stamp::stamp_deck(&deck_path).unwrap();
     let deck = crate::deck::Deck::load(&deck_path).unwrap();
     let card = deck.cards[0].clone();
@@ -1124,9 +1011,8 @@ fn a_frozen_card_with_no_resolvable_source_root_answers_immediately_without_spaw
         AskAction::Question("why?".to_string())
     ));
 
-    // Answered synchronously: no thread/channel, so nothing is pending, and
-    // the reply is already in the transcript on the very next read — the
-    // page's first poll (`GET /api/ask`) sees it immediately.
+    // Answered synchronously (no thread/channel): the reply is already in the
+    // transcript on the very next read.
     assert!(r.ask.pending.is_none(), "the backend was never spawned");
     assert_eq!(1, r.ask.transcript.len());
     assert_eq!("why?", r.ask.transcript[0].0);
@@ -1162,9 +1048,6 @@ fn poll_ask_draft_surfaces_a_parsed_card() {
     assert_eq!(vec!["definition".to_string()], draft.back);
 }
 
-// ── trace walk ──────────────────────────────────────────────────────
-
-/// A two-checkpoint trace over a single source file, in `dir`.
 fn walk_deck(dir: &Path) -> crate::trace::Trace {
     std::fs::write(dir.join("source.txt"), "first\nsecond\nthird\n").unwrap();
     let path = dir.join("t.md");
@@ -1191,7 +1074,6 @@ fn walk_dto_tracks_phase_excerpt_and_rail() {
     let walk = Walk::new(trace);
     let mut w = Walking::new(walk, None);
 
-    // Predict: prompt + givens, no excerpt yet, the first node is current.
     let d = walk_dto(&w);
     assert_eq!("walk", d.kind);
     assert_eq!("predict", d.phase);
@@ -1203,7 +1085,6 @@ fn walk_dto_tracks_phase_excerpt_and_rail() {
     assert!(!d.auto_grade);
     assert!(d.path[0].current && d.path[0].delta.is_none());
 
-    // Reveal: the live excerpt is read, the prediction is recalled.
     w.walk.predict("my guess".to_string());
     let d = walk_dto(&w);
     assert_eq!("reveal", d.phase);
@@ -1218,7 +1099,6 @@ fn walk_dto_tracks_phase_excerpt_and_rail() {
     );
     assert_eq!(vec!["it reads the first line".to_string()], d.points);
 
-    // Grade Got: the rail colors the walked node and advances to hop 2.
     w.walk.grade(&mut store, Delta::Passed, 1000);
     let d = walk_dto(&w);
     assert_eq!("predict", d.phase);
@@ -1226,8 +1106,6 @@ fn walk_dto_tracks_phase_excerpt_and_rail() {
     assert_eq!(Some("passed"), d.path[0].delta);
     assert!(d.path[1].current);
 
-    // Walk the last hop → done with a summary (the drill; verification is the
-    // separate trace exam, not an in-walk compression).
     w.walk.predict(String::new());
     w.walk.grade(&mut store, Delta::Failed, 1001);
     let d = walk_dto(&w);
@@ -1245,7 +1123,6 @@ fn walk_dto_surfaces_a_live_grade_and_clears_it() {
     let mut w = Walking::new(walk, Some(AskConfig::default()));
 
     w.walk.predict("g".to_string());
-    // Simulate the background grade resolving (no real CLI call in the test).
     w.grade_result = Some((Delta::Partial, "right idea, missed a detail".to_string()));
     let d = walk_dto(&w);
     assert!(d.auto_grade);
@@ -1264,10 +1141,8 @@ fn walk_ask_condense_appends_a_note_to_the_checkpoint() {
     let deck_path = trace.deck_path.clone();
     let walk = Walk::new(trace);
     let mut w = Walking::new(walk, None);
-    w.walk.predict("guess".to_string()); // reveal hop 1 (a current checkpoint)
+    w.walk.predict("guess".to_string());
 
-    // A condense reply is in flight (no real CLI call), about the synthesized
-    // checkpoint card — its line points at the checkpoint in the deck file.
     let card = w.checkpoint_card().expect("a checkpoint card");
     let (tx, rx) = std::sync::mpsc::channel();
     w.ask.pending = Some(Pending {
@@ -1290,8 +1165,6 @@ fn walk_ask_condense_appends_a_note_to_the_checkpoint() {
     );
 }
 
-// ── Augment screen (the picker's "Augment" action) ──
-
 fn aug_card(front: &str, back: &str) -> Card {
     let mut card = Card::plain(
         Arc::from("d.md"),
@@ -1300,8 +1173,6 @@ fn aug_card(front: &str, back: &str) -> Card {
         None,
         1,
     );
-    // The token is the identity now; derive a readable one from the front so
-    // two fixture cards never share an id.
     card.token = Some(Arc::from(front.to_ascii_lowercase()));
     card
 }
@@ -1312,7 +1183,6 @@ fn augmenting_reports_coverage_and_removal_persists() {
     let cache_path = dir.path().join("augment.json");
     let cards = vec![aug_card("Q1", "a"), aug_card("Q2", "b")];
 
-    // Seed the on-disk cache: one card has distractors, the other a note.
     let mut seed = AugmentCache::open(&cache_path);
     seed.set_distractors(&cards[0].id().unwrap(), vec!["x".into()]);
     seed.set_note(&cards[1].id().unwrap(), "n".into());
@@ -1333,7 +1203,6 @@ fn augmenting_reports_coverage_and_removal_persists() {
     let topo = dto.rows.iter().find(|r| r.kind == "topology").unwrap();
     assert!(topo.items.is_empty());
 
-    // Removing a target writes through to disk; other targets are untouched.
     assert!(aug.remove("choices", None));
     assert_eq!(
         0,
@@ -1348,7 +1217,7 @@ fn augmenting_reports_coverage_and_removal_persists() {
     assert_eq!(None, reloaded.distractors(&cards[0].id().unwrap()));
     assert_eq!(Some("n"), reloaded.note(&cards[1].id().unwrap()));
 
-    assert!(!aug.remove("bogus", None)); // unknown target → no-op
+    assert!(!aug.remove("bogus", None));
 }
 
 #[test]
@@ -1362,7 +1231,6 @@ fn augmenting_generate_is_a_noop_when_a_target_is_fully_covered() {
     seed.save().unwrap();
 
     let mut aug = Augmenting::open("d.md".into(), cards, vec![], cache_path, None);
-    // Fully covered → no gap → no costed call is started.
     let started = aug.generate_batch(
         vec![("choices".into(), None)],
         &AiConfig::default(),
@@ -1382,18 +1250,10 @@ fn generate_batch_runs_every_target_even_after_one_fails() {
     let _g = crate::testutil::exec_lock();
     let dir = tempfile::tempdir().unwrap();
     let cache_path = dir.path().join("augment.json");
-    // A fresh card has both a missing note and missing choices.
     let cards = vec![aug_card("Q", "a")];
     let mut aug = Augmenting::open("d.md".into(), cards, vec![], cache_path, None);
 
     let ai = AiConfig::default();
-    // Notes parses `{"index": "text"}`; choices parses `{"index": ["a", ...]}`.
-    // The same fixed reply is a valid note but the wrong shape for choices, so
-    // one fake-CLI reply gives a genuine success/failure split across the batch.
-    // The failing target ("choices") is queued *first* so the assertion can
-    // only pass if the queue keeps advancing past a failure: if `poll` stopped
-    // draining after an error, "notes" would never run and the batch would
-    // never empty.
     let cli = crate::testutil::fake_reply(dir.path(), r#"{"0": "a note"}"#);
     let ask = crate::testutil::ask_config(&cli);
 
@@ -1435,7 +1295,6 @@ fn deck_topology_dto_deck_due_includes_a_due_virtual_card() {
 
     let mut store = Store::open(dir.path().join("progress.json")).unwrap();
     let now = now_ms();
-    // The one deck card has graduated and isn't due — no deck contribution.
     store
         .get_or_insert(&deck.cards[0].id().unwrap(), now)
         .recall = Some(crate::store::FsrsState {
@@ -1449,8 +1308,6 @@ fn deck_topology_dto_deck_due_includes_a_due_virtual_card() {
     let before = deck_topology_dto(&augment, &store, &deck, ReviewConfig::default());
     assert_eq!(0, before.deck_due);
 
-    // A due virtual card for this deck adds to the whole-deck due count —
-    // sidecar content keyed by its `Card::id`, plus a fresh schedule at t=0.
     let vtext = "## virtual front <!-- id: v1 -->\nvirtual back\n".to_string();
     let vid = crate::l1::parse_str(&deck.subject, &vtext).unwrap()[0]
         .id()
@@ -1470,8 +1327,6 @@ fn deck_topology_dto_deck_due_includes_a_due_virtual_card() {
 
 #[test]
 fn a_lan_pairing_reply_carries_a_qr_svg() {
-    // Mirrors the `/api/pair` handler's own construction: an SVG only
-    // when the pairing info is reachable off-device.
     let pair = PairInfo {
         url: "http://192.168.1.2:7777/?token=ab".to_string(),
         lan: true,

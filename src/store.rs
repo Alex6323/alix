@@ -1,8 +1,3 @@
-//! The progress store.
-//!
-//! Progress is kept in a single JSON file (by default
-//! `~/.local/share/alix/progress.json`), created on first save.
-
 use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
@@ -14,126 +9,82 @@ use thiserror::Error;
 
 use crate::{card::Card, deck, depth::Depth, scheduler::Grade};
 
-/// How many of the most recent reviews are kept per card.
 const HISTORY_CAP: usize = 50;
 
-/// The on-disk store-format version. **Pinned at 1 pre-1.0** — per the project
-/// convention we do not bump it or migrate: the shape changes freely and old data
-/// is loaded best-effort via `#[serde(default)]` (surviving progress is a bonus, not
-/// a guarantee). Versioning + migrations are a post-1.0 concern; the field is kept so
-/// that door stays open.
+// Pinned at 1 on purpose: pre-1.0 the shape changes freely and old data loads
+// best-effort via `#[serde(default)]`, never gated on this field.
 const CURRENT_VERSION: u32 = 1;
 
-/// How recent a foreign write must be to warrant a warning: an older one is
-/// ordinary roaming (yesterday's desktop session), not a likely concurrent
-/// device. The rule lives here so every client warns the same way.
+// Below this age a foreign write is ordinary roaming, not a live conflict.
 pub const FOREIGN_WRITE_WARN_WINDOW_MS: u64 = 60 * 60 * 1000;
 
-/// One recorded review of a card.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Review {
-    /// When the review happened (Unix ms).
     pub ts_ms: u64,
-    /// The grade the card was answered with. Pre-grade stores logged only a pass/fail
-    /// bool; those entries load with a default grade (a deliberate pre-1.0 break —
-    /// scheduling state is unaffected).
     #[serde(default = "default_review_grade")]
     pub grade: Grade,
-    /// The depth this review was graded at. Pre-depth stores logged no depth at
-    /// all (there was only ever one schedule) — those entries default to `Recall`.
     #[serde(default)]
     pub depth: Depth,
-    /// Whether this review was credited downward from a pass at a higher depth
-    /// (a full Reconstruct pass crediting a due Recall schedule) rather than
-    /// answered directly. Directly-answered reviews don't serialize the field.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub propagated: bool,
 }
 
-/// Serde default for a `Review` from a pre-grade store (which had only a `passed`
-/// bool, no `grade`): assume a pass. History is cosmetic (stats + `last_review_ms`),
-/// so a wrong default here cannot corrupt scheduling.
+// Defaults pre-grade history to Pass: history is cosmetic, so this can't corrupt scheduling.
 fn default_review_grade() -> Grade {
     Grade::Pass
 }
 
-/// FSRS memory state for a card — our own representation (all primitives + `u64`
-/// times), kept decoupled from `rs-fsrs`'s `Card` so the store stays all-`u64` and
-/// isn't tied to the crate's type. Present once the card has an FSRS review.
+// Our own representation (all-u64 times), decoupled from rs-fsrs's `Card` so
+// the store format doesn't depend on the crate's type.
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct FsrsState {
-    /// Days for retrievability to fall from 100% to 90%.
     pub stability: f64,
-    /// Intrinsic difficulty (1..=10).
     pub difficulty: f64,
-    /// Successful-review count (rs-fsrs bookkeeping).
     pub reps: u32,
-    /// Lapse count.
     pub lapses: u32,
-    /// rs-fsrs learning state (0 = New, 1 = Learning, 2 = Review, 3 = Relearning).
+    // rs-fsrs state: 0 New, 1 Learning, 2 Review, 3 Relearning (mirrors the crate's
+    // discriminants).
     pub state: u8,
-    /// The interval this card was last scheduled for, in days — drives retirement.
     pub scheduled_days: u32,
-    /// When the card was last reviewed (Unix ms).
     pub last_review_ms: u64,
-    /// When the card is due next (Unix ms).
     pub due_ms: u64,
-    /// Full `Good` grades accumulated in the initial acquisition phase (reset by a
-    /// `Fail`; a `Partial` is neutral). Graduation to `Review` waits for two, so a
-    /// fail can't fast-track a card past `Good → Good`. `serde(default)` so
-    /// pre-existing stores read as 0 (no Goods yet).
+    // serde(default): a pre-existing store with no Goods yet reads as 0.
     #[serde(default)]
     pub learning_goods: u8,
 }
 
 impl FsrsState {
-    /// Whether the card has *graduated* the initial learning steps — reached FSRS
-    /// `Review` (state 2) or beyond. A later lapse to `Relearning` (3) still counts;
-    /// only `New`/`Learning` cards have not graduated.
+    // >= 2 also covers Relearning (3): a lapsed card still counts as graduated.
     pub fn graduated(&self) -> bool {
         self.state >= 2
     }
 }
 
-/// The stored state of a single card, keyed by its identity hash.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct CardState {
-    /// When the card was first acquired (Unix ms); the acquire-cooldown anchor for a
-    /// not-yet-scheduled card.
     #[serde(default)]
     pub acquired_ms: u64,
-    /// Recall-depth FSRS state; present once the card has been reviewed at
-    /// Recall, absent for a not-yet-reviewed (or freshly acquired) card. Was
-    /// `fsrs` — a clean pre-1.0 rename, no alias: a store carrying an old
-    /// `fsrs` key simply loads this as `None`.
+    // Renamed from `fsrs` with no alias: a stored old `fsrs` key simply loads as `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recall: Option<FsrsState>,
-    /// Reconstruct-depth FSRS state, independent of `recall` (stationarity: one
-    /// schedule, one task, forever — no cross-crediting between depths).
-    /// Lazily created on the card's first Reconstruct review.
+    // Independent of `recall` on purpose: no cross-crediting between depths.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reconstruct: Option<FsrsState>,
-    /// When the card was first correctly picked at the Recognize depth (Unix
-    /// ms); `None` until then. Recognize is unscheduled and boolean — this
-    /// flag, not an `FsrsState`, is its only stored progress.
+    // Recognize is unscheduled: this flag, not an FsrsState, is its only progress.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recognized_ms: Option<u64>,
-    /// Total number of reviews.
     #[serde(default)]
     pub total_reviews: u32,
-    /// Total number of passed reviews.
     #[serde(default)]
     pub total_passes: u32,
-    /// Current streak of consecutive passes.
     #[serde(default)]
     pub streak: u32,
-    /// The most recent reviews, oldest first (capped).
+    // Capped to HISTORY_CAP; oldest entries drop first.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub history: Vec<Review>,
 }
 
 impl CardState {
-    /// State for a card entering the system now.
     pub fn new(now_ms: u64) -> Self {
         Self {
             acquired_ms: now_ms,
@@ -147,8 +98,7 @@ impl CardState {
         }
     }
 
-    /// The card's FSRS schedule at `depth`. `Recognize` is never scheduled
-    /// (unscheduled + boolean) and always answers `None`.
+    // Recognize is never scheduled: always answers None.
     pub fn schedule(&self, depth: Depth) -> Option<&FsrsState> {
         match depth {
             Depth::Recognize => None,
@@ -157,8 +107,7 @@ impl CardState {
         }
     }
 
-    /// A mutable handle to the schedule slot at `depth`, for a scheduler to
-    /// read/replace. `Recognize` has no slot to hand back.
+    // Recognize has no slot to hand back.
     pub fn schedule_slot(&mut self, depth: Depth) -> Option<&mut Option<FsrsState>> {
         match depth {
             Depth::Recognize => None,
@@ -167,9 +116,6 @@ impl CardState {
         }
     }
 
-    /// Appends a review to the bounded history and updates the counters.
-    /// `propagated` marks a review the learner never answered directly — credit
-    /// that flowed down from a pass at a higher depth (see `Session::grade`).
     pub fn record_review(&mut self, ts_ms: u64, grade: Grade, depth: Depth, propagated: bool) {
         self.total_reviews += 1;
         if grade.passed() {
@@ -191,175 +137,85 @@ impl CardState {
     }
 }
 
-/// Deck-level progress, keyed by deck subject (= file name): whether the deck's
-/// AI exam has been passed ("mastered"), when it was last *failed* (for the
-/// re-sit cooldown), the learner's last-used session depth, and each badge's
-/// first-earn date. A deck appears here once any of these is set; an entry
-/// with nothing set is meaningless and is never written.
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DeckProgress {
-    /// When the exam was last passed (Unix ms); `None` until it is.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mastered_at_ms: Option<u64>,
-    /// When the exam was last failed (Unix ms), gating an immediate re-sit;
-    /// `None` if it has never failed (or a later pass cleared it).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exam_failed_at_ms: Option<u64>,
-    /// The session depth the learner last chose for this deck — the
-    /// plain-Learn button's memory across sessions. `None` until a depth has
-    /// ever been recorded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_depth: Option<Depth>,
-    /// When the Recognize badge was first earned (Unix ms); a high-water
-    /// mark — see [`note_badges`]. `None` until earned.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recognized_at_ms: Option<u64>,
-    /// When the Recall badge was first earned (Unix ms); see
-    /// [`note_badges`]. `None` until earned.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recalled_at_ms: Option<u64>,
-    /// When the Reconstruct badge was first earned (Unix ms); see
-    /// [`note_badges`]. `None` until earned.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reconstructed_at_ms: Option<u64>,
 }
 
-/// The community "mature" line (days of stability), in days — the badge
-/// threshold for the Recall/Reconstruct FSRS schedules (`FsrsState::stability`
-/// is already in days). See [`badge_solid`].
+// 21 days: the FSRS-community convention for a "mature" card.
 pub const MATURE_STABILITY_DAYS: f64 = 21.0;
 
-/// Which trigger produced a virtual card (see the virtual-cards spec, §2).
-/// Each variant represents a different source: generated from exam failures,
-/// distilled from tutor exchanges, etc.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VirtualKind {
-    /// Generated from a failed exam's gap, to drill the specific miss.
     Remediation,
-    /// Distilled by the tutor from a review exchange (a "make this a card" action).
     Tutor,
 }
 
-/// A personally-scheduled card that lives in no deck file. Content is its
-/// canonical one-card deck-format `text`; its schedule/history is a normal
-/// `CardState` in `store.cards`, keyed by `id` (identical to a deck card).
-/// Membership in `virtual_cards` is what makes a card "virtual".
-///
-/// Invariant: `id` == a `Card::id` in `parse(parent, text)` == the map key ==
-/// the id its `CardState` is keyed under in `store.cards`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct VirtualCard {
-    /// The card's identity token — a plain deck-card `Card::id` (via
-    /// `parse(parent, text)`), also this entry's key in `virtual_cards`.
     pub id: String,
-    /// Which trigger produced this card.
     pub kind: VirtualKind,
-    /// The deck subject (file name) this card belongs to. **Also the subject
-    /// that `synthesize`/`promote` must parse/append under**, so the block
-    /// re-parses to the same sub-card ids (its content-identity fingerprint is
-    /// computed under this parent).
     pub parent: String,
-    /// The card's canonical stamped L1 block (`## …` + its lines). For a
-    /// cloze card this is the whole multi-hole block; the
-    /// hole this entry stands for is identified by matching `id` against
-    /// `parse(parent, text)`, not by a stored index.
     pub text: String,
-    /// When this virtual card was created (Unix ms).
     pub created_ms: u64,
 }
 
-/// The last-writer marker: which device wrote the store, and when. The
-/// multi-device discipline is one device at a time; this marker turns a
-/// silent violation into a visible warning (see
-/// [`Store::recent_foreign_writer`]).
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Writer {
-    /// The writing device's label (see [`device_label`]).
     pub device: String,
-    /// When that device last saved (Unix ms).
     pub at_ms: u64,
 }
 
-/// The fingerprint-records format version (spec §6). A one-byte tag on every
-/// [`CardRecords`]: bumping it declares a store-data invalidation, so a change
-/// to the §7 canonical form can't silently wipe hole schedules on unchanged
-/// cards: stale-versioned records are ignored and rewritten, never mismatched.
-/// Store-internal and freely changeable (never card identity).
+// Store-internal, never card identity: freely bumpable; a stale version is
+// ignored and rewritten, not mismatched.
 pub const FP_VERSION: u8 = 1;
 
-/// The two 64-bit fingerprints that let a cloze hole's schedule FOLLOW THE WORD
-/// across edits (spec §3.4). Store-internal, non-frozen matcher data: `text_fp`
-/// hashes the hole's hidden text, `line_fp` hashes its masked answer line
-/// (both canonicalized in [`crate::l1`]). The matcher only tests equality, so
-/// ~16 bytes/hole suffices (the raw strings are never stored).
+// Store-internal matcher data, not card identity: freely changeable.
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct HoleFingerprint {
-    /// XxHash64 of the canonicalized hidden text.
     pub text_fp: u64,
-    /// XxHash64 of the canonicalized answer line with this hole's span masked.
     pub line_fp: u64,
 }
 
-/// A card's realignment/reclaim records (spec §6), keyed in the store by the
-/// card's base token. Store-internal, never identity, a serde-default soft add.
+// Keyed by the card's base token; store-internal, never part of card identity.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CardRecords {
-    /// [`FP_VERSION`] at write time; a stale value is ignored and rewritten.
+    // FP_VERSION at write time; a stale value is ignored and rewritten, not mismatched.
     pub version: u8,
-    /// The block-level §7 content fingerprint
-    /// ([`crate::l1::content_fingerprint`]): powers the §1.7 lost-comment
-    /// reclaim and the precise doctor tell.
     pub content_fp: u64,
-    /// Each hole's fingerprint in recorded (document) order; empty for a plain
-    /// card. The cascade compares the file's current holes against these.
     pub holes: Vec<HoleFingerprint>,
 }
 
-/// A hole schedule evicted from a live `token-N` key when its word vanished
-/// from a card (spec §3.4): the reclaim shelf. Never left squatting on a live
-/// key where a new word could inherit the old word's schedule; un-pruned and
-/// reclaim-eligible per §5, cleared only by an explicit reset.
+// Evicted here, not left on a live key, so a new word can never inherit an old schedule.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct OrphanedHole {
-    /// The base token the evicted hole belonged to.
     pub token: String,
-    /// The evicted hole's fingerprint (the matcher key if it ever returns).
     pub fp: HoleFingerprint,
-    /// The schedule/history the hole carried when it was evicted.
     pub state: CardState,
 }
 
-/// The outcome of realigning one card's holes ([`realign_holes`]): a pure
-/// function over fingerprints, so it speaks in hole indices; the store
-/// application composes the full `token-N` ids from the card's token.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct CascadeOutcome {
-    /// Stored hole index → new file hole index for each matched hole. The
-    /// schedule under `token-<old>` moves to `token-<new>`.
     pub remap: Vec<(u32, u32)>,
-    /// Stored hole indices with no match: their schedules orphan to the shelf.
     pub orphaned: Vec<u32>,
-    /// File hole indices with no history: fresh holes, no schedule yet.
     pub fresh: Vec<u32>,
 }
 
-/// Re-attach stored hole schedules to a card's current file holes so a hole's
-/// progress FOLLOWS THE WORD, not the position (spec §3.4). Two passes, each
-/// walking file holes in document order and consuming the FIRST unconsumed
-/// stored record (in recorded order) that matches:
-///
-/// 1. exact `(text_fp, line_fp)` pairs anchor first (context intact);
-/// 2. leftovers match by `text_fp` alone (a rewritten context, or an identical-word twin).
-///
-/// Leftover stored records orphan; leftover file holes are fresh. The
-/// document-order tie-break makes identical twins pair index-for-index (a swap
-/// is observationally a no-op), and keeps the result deterministic.
 pub fn realign_holes(stored: &[HoleFingerprint], file: &[HoleFingerprint]) -> CascadeOutcome {
     let mut consumed = vec![false; stored.len()];
-    // For each file hole, the stored record it matched (if any).
     let mut matched: Vec<Option<usize>> = vec![None; file.len()];
 
-    // Pass 1: exact text + context.
     for (fi, fh) in file.iter().enumerate() {
         for (si, sh) in stored.iter().enumerate() {
             if !consumed[si] && sh.text_fp == fh.text_fp && sh.line_fp == fh.line_fp {
@@ -369,7 +225,6 @@ pub fn realign_holes(stored: &[HoleFingerprint], file: &[HoleFingerprint]) -> Ca
             }
         }
     }
-    // Pass 2: text alone, for the file holes pass 1 left unmatched.
     for (fi, fh) in file.iter().enumerate() {
         if matched[fi].is_some() {
             continue;
@@ -403,60 +258,37 @@ pub fn realign_holes(stored: &[HoleFingerprint], file: &[HoleFingerprint]) -> Ca
     }
 }
 
-/// On-disk representation of the store.
 #[derive(Serialize, Deserialize)]
 struct StoreFile {
-    /// Format version. Defaults to 1 for a file written before the field was
-    /// required, so a legacy store still loads. Read but not gated on — see
-    /// [`CURRENT_VERSION`] for why there is no version check pre-1.0.
     #[serde(default = "default_version")]
     version: u32,
-    /// Card states keyed by the card's identity token (its `Card::id`).
     cards: HashMap<String, CardState>,
-    /// Per-card realignment/reclaim records keyed by base token (spec §6). A
-    /// serde-default soft add: a store from before this field loads with none.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     records: HashMap<String, CardRecords>,
-    /// The reclaim shelf: hole schedules evicted from live keys (spec §3.4).
-    /// A serde-default soft add.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     hole_orphans: Vec<OrphanedHole>,
-    /// Deck-level progress keyed by subject. Optional: a store written before
-    /// this field existed (or with no mastered decks) simply has no `decks`
-    /// key.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     decks: HashMap<String, DeckProgress>,
-    /// Virtual cards keyed by their identity token. Loaded **leniently** (see
-    /// [`Store::open`]): the raw JSON value is kept so a stale/old-shape entry
-    /// can be dropped without failing the whole file. Absent in a store with no
-    /// virtual cards.
+    // Raw JSON so a stale/old-shape entry can be dropped without failing the whole load.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     virtual_cards: HashMap<String, serde_json::Value>,
-    /// Who wrote this file last. Absent in stores from before the field or
-    /// written by an unnamed consumer; loaded leniently via the default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     writer: Option<Writer>,
 }
 
-/// The progress store for all decks.
 pub struct Store {
     path: PathBuf,
     cards: HashMap<String, CardState>,
     decks: HashMap<String, DeckProgress>,
     virtual_cards: HashMap<String, VirtualCard>,
-    /// Per-card realignment/reclaim records, keyed by base token (spec §6).
     records: HashMap<String, CardRecords>,
-    /// The reclaim shelf: hole schedules evicted from live keys (spec §3.4).
     hole_orphans: Vec<OrphanedHole>,
-    /// This device's label, stamped into the file on every save. `None` (the
-    /// default) leaves the file's existing marker untouched, so tests and
-    /// one-off tools do not masquerade as a device.
+    // None leaves the existing on-disk writer marker untouched (tests/tools
+    // don't masquerade as a device).
     pub device: Option<String>,
-    /// The marker loaded from disk: the device that wrote this store last.
     last_writer: Option<Writer>,
 }
 
-/// An error loading or saving the store.
 #[derive(Debug, Error)]
 pub enum StoreError {
     #[error("{path}: {source}")]
@@ -474,8 +306,6 @@ pub enum StoreError {
 }
 
 impl Store {
-    /// Opens the store at `path`, creating an empty in-memory one if the file
-    /// does not exist yet (it is written on the first [`save`](Self::save)).
     pub fn open(path: impl AsRef<Path>) -> Result<Self, StoreError> {
         let path = path.as_ref().to_path_buf();
 
@@ -500,16 +330,11 @@ impl Store {
             path: path.clone(),
             source,
         })?;
-        // Card keys are identity tokens (strings): they pass through verbatim.
-        // A key of an unexpected charset is kept rather than rejected — it
-        // becomes doctor material, not a load failure that would refuse a user's
-        // real progress.
+        // A key of an unexpected charset is kept, not rejected: doctor material, not a load
+        // failure.
         let cards = file.cards;
-        // Virtual cards load leniently: a store from before this rework has
-        // old-shape values (a numeric `id`), and a virtual card is a personal,
-        // local, *regenerable* sidecar — so a stale entry is dropped rather than
-        // failing the whole file (which would refuse a user's real card
-        // progress). Keep only well-formed new-shape entries.
+        // A stale/old-shape entry (pre-rework numeric id) is dropped, not a load
+        // failure: regenerable content, not real progress.
         let mut virtual_cards = HashMap::new();
         for (key, val) in file.virtual_cards {
             if let Ok(vc) = serde_json::from_value::<VirtualCard>(val) {
@@ -528,7 +353,6 @@ impl Store {
         })
     }
 
-    /// Saves the store atomically (write to a temp file, then rename).
     pub fn save(&self) -> Result<(), StoreError> {
         let io_err = |source| StoreError::Io {
             path: self.path.clone(),
@@ -539,8 +363,7 @@ impl Store {
             std::fs::create_dir_all(dir).map_err(io_err)?;
         }
 
-        // Emit the sidecar with token keys and the real `VirtualCard` shape (the
-        // lenient `Value` field is only for tolerant loading).
+        // Write side uses the real VirtualCard shape; only loading is lenient.
         let mut virtual_cards = HashMap::with_capacity(self.virtual_cards.len());
         for (id, vc) in &self.virtual_cards {
             let value = serde_json::to_value(vc).map_err(|source| StoreError::Format {
@@ -557,8 +380,7 @@ impl Store {
             hole_orphans: self.hole_orphans.clone(),
             decks: self.decks.clone(),
             virtual_cards,
-            // An unnamed consumer preserves the marker on disk rather than
-            // erasing what the last real device wrote.
+            // No device set: keep the existing marker instead of erasing it.
             writer: self
                 .device
                 .clone()
@@ -579,9 +401,6 @@ impl Store {
         Ok(())
     }
 
-    /// The device that last wrote this store when it was not `my_device`:
-    /// `(device, age_ms)` relative to `now_ms`. `None` when the store is
-    /// unmarked or this device wrote it itself.
     pub fn foreign_writer(&self, my_device: &str, now_ms: u64) -> Option<(String, u64)> {
         let writer = self.last_writer.as_ref()?;
         if writer.device == my_device {
@@ -590,23 +409,16 @@ impl Store {
         Some((writer.device.clone(), now_ms.saturating_sub(writer.at_ms)))
     }
 
-    /// [`foreign_writer`](Self::foreign_writer) filtered to
-    /// [`FOREIGN_WRITE_WARN_WINDOW_MS`]: the "another device wrote this
-    /// moments ago" case a client surfaces before the user reviews on top
-    /// of a likely fork.
     pub fn recent_foreign_writer(&self, my_device: &str, now_ms: u64) -> Option<(String, u64)> {
         self.foreign_writer(my_device, now_ms)
             .filter(|(_, age_ms)| *age_ms < FOREIGN_WRITE_WARN_WINDOW_MS)
     }
 
-    /// Returns the state of a card, if it has been seen before.
     pub fn get(&self, card_id: &str) -> Option<&CardState> {
         self.cards.get(card_id)
     }
 
-    /// The most recent review timestamp across all cards (Unix ms), if any —
-    /// when progress was last made in this store. Reflects actual reviews, not
-    /// merely opening a deck.
+    // Reflects actual reviews, not merely opening the deck.
     pub fn last_review_ms(&self) -> Option<u64> {
         self.cards
             .values()
@@ -614,36 +426,24 @@ impl Store {
             .max()
     }
 
-    /// Returns a mutable reference to the state of a card, inserting a freshly
-    /// acquired state (no FSRS schedule yet) if the card is new.
     pub fn get_or_insert(&mut self, card_id: &str, now_ms: u64) -> &mut CardState {
         self.cards
             .entry(card_id.to_string())
             .or_insert_with(|| CardState::new(now_ms))
     }
 
-    /// Drops a card's stored state, e.g. when the card is deleted from its
-    /// deck. Returns whether an entry was present. Does not save.
     pub fn remove(&mut self, card_id: &str) -> bool {
         self.cards.remove(card_id).is_some()
     }
 
-    /// The realignment/reclaim records for a base token, if any (spec §6).
     pub fn records(&self, token: &str) -> Option<&CardRecords> {
         self.records.get(token)
     }
 
-    /// The reclaim shelf: hole schedules evicted from live keys (spec §3.4).
     pub fn hole_orphans(&self) -> &[OrphanedHole] {
         &self.hole_orphans
     }
 
-    /// Content-fingerprint → orphaned token, for the §1.7 lost-comment reclaim:
-    /// for each `wanted` content fingerprint, an ORPHANED base token (not in
-    /// `live`, but still carrying a stored schedule) whose records hold that
-    /// fingerprint: the token an unstamped card of that content re-adopts. At
-    /// most one token per fingerprint (lowest token breaks a tie, for
-    /// determinism); empty when nothing matches. Read-only.
     pub fn reclaim_candidates(
         &self,
         live: &HashSet<String>,
@@ -655,9 +455,6 @@ impl Store {
             if !wanted.contains(&rec.content_fp) || live.contains(token) {
                 continue;
             }
-            // A genuine orphan still has a schedule to preserve: under the base
-            // token (plain) or a `token-N` sub-key (cloze). The `-` delimiter is
-            // outside the token alphabet, so the prefix test can't cross tokens.
             let prefix = format!("{token}-");
             let has_schedule = self
                 .cards
@@ -671,6 +468,7 @@ impl Store {
                     v.insert(token.clone());
                 }
                 Entry::Occupied(mut o) => {
+                    // Lower token wins a tie, for a deterministic pick.
                     if token < o.get() {
                         o.insert(token.clone());
                     }
@@ -680,21 +478,14 @@ impl Store {
         best
     }
 
-    /// Write (or refresh) a card's [`CardRecords`] under its base token: the
-    /// §6 invariant that no store entry exists without its records. Called at
-    /// every entry-creation site (review-open, the tutor/remediation mints, the
-    /// trace-walk grade). A no-op for an unstamped card (no token to key on).
-    /// Does NOT run the hole cascade (that is [`realign_card_holes`], which
-    /// reads the OLD records before this overwrites them). Does not save.
+    // Does not run the hole cascade: callers must read old records via
+    // realign_card_holes before this overwrites them.
     pub fn ensure_records(&mut self, card: &Card) {
         if let Some(token) = card.token.as_deref() {
             self.ensure_records_raw(token, card.content_fingerprint, &card.block_holes);
         }
     }
 
-    /// [`ensure_records`] for a caller that has an id + fingerprints but no
-    /// `Card` (the trace-walk grade path, whose checkpoints carry only an id).
-    /// `token` is the base token; a plain card's id already is its token.
     pub fn ensure_records_raw(&mut self, token: &str, content_fp: u64, holes: &[HoleFingerprint]) {
         self.records.insert(
             token.to_string(),
@@ -706,19 +497,6 @@ impl Store {
         );
     }
 
-    /// Re-attach a cloze card's stored hole schedules to its current file holes
-    /// (spec §3.4), then refresh its records to the current version + file
-    /// holes. Returns the [`CascadeOutcome`] when a realignment actually MOVED
-    /// schedules (the card had current-version records whose holes disagreed
-    /// with the file) so the caller can move the matching augment entries; `None`
-    /// when nothing moved: no prior records, a stale [`FP_VERSION`] (ignored and
-    /// rewritten, never mismatched: a canon tweak must not wipe schedules on
-    /// unchanged cards), or the holes already agree. Does not save.
-    ///
-    /// The cascade REBUILDS this token's `token-N` entries into a fresh map:
-    /// fingerprinted moves win contested keys, a fresh hole wins its live key
-    /// (it simply has no entry until reviewed), and unmatched (orphaned) records
-    /// are evicted to the shelf.
     pub fn realign_card_holes(
         &mut self,
         token: &str,
@@ -726,37 +504,26 @@ impl Store {
         content_fp: u64,
     ) -> Option<CascadeOutcome> {
         let outcome = match self.records.get(token) {
-            // Current-version records whose holes disagree: run the cascade.
             Some(rec) if rec.version == FP_VERSION && rec.holes != file_holes => {
                 let stored = rec.holes.clone();
                 let outcome = realign_holes(&stored, file_holes);
                 self.apply_hole_cascade(token, &stored, &outcome);
                 Some(outcome)
             }
-            // No records, a stale version, or holes already agree: no cascade.
-            // Schedules stay positionally as they are; records are refreshed
-            // below to the current version + file holes.
             _ => None,
         };
         self.ensure_records_raw(token, content_fp, file_holes);
         outcome
     }
 
-    /// Rebuild `token`'s `token-N` schedule entries per a [`CascadeOutcome`]:
-    /// matched holes move to their new index, and every unmapped survivor (a
-    /// named orphan or a stray out-of-range entry) evicts to the shelf; fresh
-    /// indices are left with no entry. `stored_holes` are the pre-cascade records
-    /// (for the evicted fingerprints). Does not save.
     fn apply_hole_cascade(
         &mut self,
         token: &str,
         stored_holes: &[HoleFingerprint],
         outcome: &CascadeOutcome,
     ) {
-        // Pull EVERY `token-N` hole entry into a fresh map keyed by old hole
-        // index, not just `0..stored_holes.len()`: a stray entry above the range
-        // must be pulled too, so it can't survive to be inherited by a future
-        // fresh hole.
+        // Pulls every token-N entry, not just 0..stored_holes.len(): a stray
+        // above the range must not survive to be inherited later.
         let prefix = format!("{token}-");
         let hole_keys: Vec<(u32, String)> = self
             .cards
@@ -779,13 +546,11 @@ impl Store {
                 self.cards.insert(key, state);
             }
         }
-        // Every unmapped survivor evicts to the shelf: the cascade's named
-        // orphans and any stray high-index entry alike. An in-range index carries
-        // its stored fingerprint; a stray (no record) carries the default.
         let mut leftover: Vec<u32> = old.keys().copied().collect();
         leftover.sort_unstable();
         for orphan in leftover {
             if let Some(state) = old.remove(&orphan) {
+                // A stray (no stored record) carries a default fingerprint here.
                 let fp = stored_holes
                     .get(orphan as usize)
                     .copied()
@@ -799,40 +564,26 @@ impl Store {
         }
     }
 
-    /// Returns a virtual card by its id, if one exists.
     pub fn get_virtual(&self, id: &str) -> Option<&VirtualCard> {
         self.virtual_cards.get(id)
     }
 
-    /// Whether this id is a virtual card (remediation or tutor-minted), i.e. it
-    /// lives in the content sidecar rather than any deck file. This membership
-    /// is the sole definition of "virtual"; its schedule is an ordinary
-    /// `store.cards` entry.
+    // Sidecar membership is the sole definition of "virtual"; the schedule
+    // itself is an ordinary store.cards entry.
     pub fn is_virtual(&self, id: &str) -> bool {
         self.virtual_cards.contains_key(id)
     }
 
-    /// Inserts or replaces a virtual card, keyed by its own `id`. The caller
-    /// must uphold `card.id == its Card::id` (the map key). Does not save.
     pub fn insert_virtual(&mut self, card: VirtualCard) {
         self.virtual_cards.insert(card.id.clone(), card);
     }
 
-    /// Drops a virtual card's content entry, e.g. once [`promote_virtual`] has
-    /// graduated it into a real deck card. The card's schedule in `store.cards`
-    /// (keyed by the same id) is left in place. Returns whether an entry was
-    /// present. Does not save.
     pub fn remove_virtual(&mut self, id: &str) -> bool {
         self.virtual_cards.remove(id).is_some()
     }
 
-    /// Drops every sidecar `virtual_cards` entry that belongs to the same
-    /// content block as `parent`/`text` — for a multi-hole cloze remediation
-    /// card this is every hole's entry, not just one. Used by
-    /// [`promote_virtual`] so promoting any one hole cleanly removes the whole
-    /// block, leaving no orphaned sibling entries. Each entry's `store.cards`
-    /// schedule is left in place. Returns how many entries were removed. Does
-    /// not save.
+    // A cloze block shares one sidecar entry per hole; drop them ALL here or
+    // promoting one hole orphans the rest with colliding ids.
     pub fn remove_virtual_block(&mut self, parent: &str, text: &str) -> usize {
         let before = self.virtual_cards.len();
         self.virtual_cards
@@ -840,19 +591,10 @@ impl Store {
         before - self.virtual_cards.len()
     }
 
-    /// Every virtual card in the store, unfiltered — the raw building block
-    /// behind [`virtual_cards_for`](Self::virtual_cards_for).
     pub fn iter_virtual_cards(&self) -> impl Iterator<Item = &VirtualCard> {
         self.virtual_cards.values()
     }
 
-    /// The ids of the virtual cards on `subject` whose canonical content (§7)
-    /// matches `fingerprint`. Empty when none do. This is the content-identity
-    /// dedup key for remediation/tutor mint: a freshly minted card carries a new
-    /// random token, so it can never dedup by id against an earlier mint of the
-    /// same content, only by fingerprint. A multi-hole cloze block's holes all
-    /// share the block fingerprint, so this returns every hole's id for a matched
-    /// block, letting the caller revive or dedup the block as a unit.
     pub fn virtual_ids_with_content(&self, subject: &str, fingerprint: u64) -> Vec<String> {
         self.virtual_cards
             .values()
@@ -861,10 +603,6 @@ impl Store {
             .collect()
     }
 
-    /// Every virtual card belonging to deck `subject` (its `parent`), an exact
-    /// match on the deck's file name. Includes derived-retired (archived)
-    /// entries: callers filter those themselves for scheduling/counts (see
-    /// [`crate::session::is_virtual_reviewable`]).
     pub fn virtual_cards_for(&self, subject: &str) -> Vec<&VirtualCard> {
         self.virtual_cards
             .values()
@@ -872,33 +610,25 @@ impl Store {
             .collect()
     }
 
-    /// Whether the given deck has passed its AI exam ("mastered").
     pub fn deck_mastered(&self, subject: &str) -> bool {
         self.deck_mastered_at(subject).is_some()
     }
 
-    /// When the deck was mastered (epoch ms), if it has been.
     pub fn deck_mastered_at(&self, subject: &str) -> Option<u64> {
         self.decks.get(subject).and_then(|d| d.mastered_at_ms)
     }
 
-    /// Records that the deck passed its exam at `now_ms`, clearing any failed-exam
-    /// cooldown (a pass supersedes a prior fail). Does not save.
+    // A pass clears any prior failed-exam cooldown.
     pub fn set_deck_mastered(&mut self, subject: &str, now_ms: u64) {
         let entry = self.decks.entry(subject.to_string()).or_default();
         entry.mastered_at_ms = Some(now_ms);
         entry.exam_failed_at_ms = None;
     }
 
-    /// When the deck's exam was last failed (epoch ms), if recently — drives the
-    /// re-sit cooldown so a failed exam can't be immediately re-sat with the
-    /// graded feedback pasted back in.
     pub fn exam_failed_at(&self, subject: &str) -> Option<u64> {
         self.decks.get(subject).and_then(|d| d.exam_failed_at_ms)
     }
 
-    /// Records that the deck's exam was failed at `now_ms` (for the re-sit
-    /// cooldown). Does not save.
     pub fn set_exam_failed(&mut self, subject: &str, now_ms: u64) {
         self.decks
             .entry(subject.to_string())
@@ -906,22 +636,14 @@ impl Store {
             .exam_failed_at_ms = Some(now_ms);
     }
 
-    /// Drops a deck's exam progress — both mastery and the failed-exam cooldown
-    /// (e.g. on per-deck reset). Returns whether an entry was present. Does not
-    /// save.
     pub fn clear_deck_mastered(&mut self, subject: &str) -> bool {
         self.decks.remove(subject).is_some()
     }
 
-    /// The session depth the learner last used for `subject` — the
-    /// plain-Learn button's memory across sessions. `None` until a depth has
-    /// ever been recorded for this deck.
     pub fn last_depth(&self, subject: &str) -> Option<Depth> {
         self.decks.get(subject).and_then(|d| d.last_depth)
     }
 
-    /// Records `depth` as the last-used session depth for `subject`. Does not
-    /// save.
     pub fn set_last_depth(&mut self, subject: &str, depth: Depth) {
         self.decks
             .entry(subject.to_string())
@@ -929,9 +651,6 @@ impl Store {
             .last_depth = Some(depth);
     }
 
-    /// When the badge at `depth` was first earned for `subject` (Unix ms), if
-    /// ever — the high-water mark [`note_badges`] maintains. `None` if it has
-    /// never been earned.
     pub fn badge_earned(&self, subject: &str, depth: Depth) -> Option<u64> {
         let deck = self.decks.get(subject)?;
         match depth {
@@ -941,10 +660,7 @@ impl Store {
         }
     }
 
-    /// Clears all stored progress, returning how many cards were removed (e.g.
-    /// for `alix reset --all`). Also drops all deck-mastered state and every
-    /// virtual card — a reset must not leave orphaned virtual cards behind to
-    /// keep drilling. Does not save.
+    // Also drops virtual cards: a reset must not leave them behind to keep drilling.
     pub fn clear(&mut self) -> usize {
         let n = self.cards.len();
         self.cards.clear();
@@ -955,35 +671,24 @@ impl Store {
         n
     }
 
-    /// The number of cards tracked by this store.
     pub fn len(&self) -> usize {
         self.cards.len()
     }
 
-    /// Returns `true` if no cards are tracked.
     pub fn is_empty(&self) -> bool {
         self.cards.is_empty()
     }
 
-    /// The number of virtual cards tracked by this store.
     pub fn virtual_len(&self) -> usize {
         self.virtual_cards.len()
     }
 
-    /// The path of the store file.
     pub fn path(&self) -> &Path {
         &self.path
     }
 
-    /// The store keys with no matching id in the live workspace (spec §5): the
-    /// orphaned-key check. A card-family key is an orphan when no enumerated
-    /// deck card claims it AND it is not a virtual card's own schedule (those
-    /// are legitimate local cards with no deck file). A deck-family key
-    /// (subject) is an orphan when no enumerated deck carries that file name.
-    /// Both are sorted for a stable report. Orphans are evidence (a stripped
-    /// comment, a hand-deleted deck, a same-machine double-mint) and the reclaim
-    /// pool. This never removes them; [`prune_orphans`](Self::prune_orphans)
-    /// does, only under an explicit `alix reset --orphans`.
+    // A virtual card's own schedule key is never an orphan: it's a legitimate
+    // local card with no deck file.
     pub fn orphans(
         &self,
         known_card_ids: &HashSet<String>,
@@ -1006,8 +711,6 @@ impl Store {
         Orphans { cards, decks }
     }
 
-    /// Removes exactly the orphaned keys in `orphans` (the `alix reset
-    /// --orphans` action), returning how many keys were dropped. Does not save.
     pub fn prune_orphans(&mut self, orphans: &Orphans) -> usize {
         let mut removed = 0;
         for id in &orphans.cards {
@@ -1020,12 +723,8 @@ impl Store {
                 removed += 1;
             }
         }
-        // Once a pruned token has no schedule left, its records and shelf entries
-        // can never be reclaimed (reclaim needs a schedule to preserve), so they
-        // are dead weight and go with it. They are not counted: they are internal
-        // bookkeeping, not keys the user was shown. A shelf entry whose token is
-        // still LIVE stays (evidence for a future per-hole reclaim, bounded by
-        // real edits), not garbage.
+        // A pruned token's now-scheduleless records/shelf entries are dead weight and
+        // drop too (uncounted); a still-live token's shelf entry stays as reclaim evidence.
         let pruned_tokens: HashSet<&str> = orphans
             .cards
             .iter()
@@ -1046,8 +745,8 @@ impl Store {
         removed
     }
 
-    /// The replace protocol's wipe: every store family a replaced deck owned
-    /// goes at once, so deliberate destruction leaves no orphan. Does not save.
+    // Wipes every family the deck owned at once, so deliberate destruction
+    // leaves no orphan.
     pub fn wipe_deck(&mut self, tokens: &HashSet<String>, subject: &str) -> usize {
         let doomed: Vec<String> = self
             .cards
@@ -1083,34 +782,23 @@ impl Store {
     }
 }
 
-/// The store keys matching no known card/deck in the scanned workspace (spec
-/// §5): never auto-pruned (they are evidence and the reclaim pool), cleared
-/// only by an explicit `alix reset --orphans`.
+// Never auto-pruned: cleared only by an explicit `alix reset --orphans`.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Orphans {
-    /// Orphaned card-family keys (card ids), sorted.
     pub cards: Vec<String>,
-    /// Orphaned deck-family keys (subjects), sorted.
     pub decks: Vec<String>,
 }
 
 impl Orphans {
-    /// Whether there are no orphaned keys at all.
     pub fn is_empty(&self) -> bool {
         self.cards.is_empty() && self.decks.is_empty()
     }
 
-    /// Total orphaned keys across both families.
     pub fn len(&self) -> usize {
         self.cards.len() + self.decks.len()
     }
 }
 
-/// Milliseconds left on a failed trace exam's re-sit cooldown, or `None` if it
-/// can be sat now: it never failed, the cooldown has elapsed, or the cooldown
-/// is disabled (`cooldown_secs == 0`). The launch sites (the web `Take exam`
-/// among them) gate on this so the graded feedback can't be pasted straight
-/// back into the one fixed trace question.
 pub fn cooldown_remaining_ms(
     store: &Store,
     subject: &str,
@@ -1126,31 +814,18 @@ pub fn cooldown_remaining_ms(
     (until > now_ms).then(|| until - now_ms)
 }
 
-/// Why a tutor-minted card could not be added.
 #[derive(Debug, thiserror::Error)]
 pub enum MintError {
-    /// The front/back did not form exactly one well-formed card.
     #[error("the drafted card is malformed: {0}")]
     Malformed(String),
-    /// A card with this content already exists in the deck.
     #[error("a card with this content already exists in the deck")]
     Duplicate,
-    /// The OS CSPRNG failed while minting the identity token.
     #[error("cannot mint an identity token: {0}")]
     Mint(String),
 }
 
-/// Mints a free-standing `Tutor` virtual card on `subject` from an edited
-/// front/back: builds the L1 card block with a freshly minted identity token,
-/// parses it under `subject` for its id, rejects a malformed block, then
-/// inserts it and seeds a fresh schedule so it enters the queue as a new
-/// (acquire) card. Returns the new id.
-///
-/// `deck_fingerprints` are the §7 canonical-content fingerprints of the deck's
-/// authored cards ([`crate::l1::content_fingerprint`]). The `Duplicate` check
-/// is by content, not id: every mint carries a fresh random token, so identical
-/// content would otherwise mint a distinct card. A card whose content already
-/// exists in the deck or in a virtual card on this subject is rejected.
+// Dedup is by content, not id: every mint gets a fresh random token, so
+// identical content would otherwise mint a duplicate.
 pub fn mint_tutor_card(
     store: &mut Store,
     subject: &str,
@@ -1191,8 +866,6 @@ pub fn mint_tutor_card(
     let id = card
         .id()
         .ok_or_else(|| MintError::Malformed("the minted card has no identity token".to_string()))?;
-    // Canonical-content dedup: reject if this exact content is already drillable
-    // (a deck card) or already stored as a virtual card on this subject.
     let fingerprint = card.content_fingerprint;
     if deck_fingerprints.contains(&fingerprint)
         || !store
@@ -1208,19 +881,14 @@ pub fn mint_tutor_card(
         text,
         created_ms: now_ms,
     });
-    // Invariant (§6): records exist before the schedule entry does.
+    // Records must exist before the schedule entry: keep this order.
     store.ensure_records(card);
     store.get_or_insert(&id, now_ms);
     Ok(id)
 }
 
-/// Live badge check: whether every card in `cards` is currently solid at
-/// `depth` — Recognize needs every card's `recognized_ms` set; Recall and
-/// Reconstruct need every card's `schedule(depth)` present with stability at
-/// or past the mature line ([`MATURE_STABILITY_DAYS`]). An empty deck is
-/// never solid. Pure — this only answers the live question; earning a badge
-/// (persisting its first-earn date) is [`note_badges`].
 pub fn badge_solid(cards: &[Card], store: &Store, depth: Depth) -> bool {
+    // An empty deck is never solid (not vacuously true).
     if cards.is_empty() {
         return false;
     }
@@ -1237,11 +905,8 @@ pub fn badge_solid(cards: &[Card], store: &Store, depth: Depth) -> bool {
     })
 }
 
-/// Persists the first-earn date for any depth of `subject` that is currently
-/// solid, per [`badge_solid`]. High-water: a depth already earned keeps its
-/// original date even if it later drops below the mature line. Badges gate
-/// nothing — this is bookkeeping only, never a lifecycle interaction. Does
-/// not save.
+// High-water: an already-earned date survives a later drop below the mature line.
+// Badges gate nothing here, bookkeeping only, never a lifecycle interaction.
 pub fn note_badges(store: &mut Store, subject: &str, cards: &[Card], now_ms: u64) {
     for depth in [Depth::Recognize, Depth::Recall, Depth::Reconstruct] {
         if store.badge_earned(subject, depth).is_some() || !badge_solid(cards, store, depth) {
@@ -1256,25 +921,8 @@ pub fn note_badges(store: &mut Store, subject: &str, cards: &[Card], now_ms: u64
     }
 }
 
-/// Graduates a virtual card into a real deck card: appends its stored
-/// deck-format `text` to the deck file at `deck_path`, then drops the sidecar
-/// content entry (or entries — see the cloze edge below) and saves the store.
-///
-/// The schedule needs no transfer: a virtual card's `CardState` already lives
-/// in `store.cards` under the same id the appended deck card hashes to (the id
-/// was unified at creation, not here), so the promoted card keeps its earned
-/// schedule for free.
-///
-/// Appends **before** removing the sidecar entry: if the process dies between
-/// the two steps, the card is merely duplicated (a sidecar entry plus a deck
-/// card) rather than lost.
-///
-/// Cloze edge: a multi-hole cloze block is stored as one sidecar
-/// entry per hole, all sharing `parent` + the same whole-block `text`. Promoting one hole
-/// appends the whole block, so the deck gains every hole as a real card — so
-/// [`Store::remove_virtual_block`] drops every hole's sidecar entry, not just
-/// the promoted one, leaving no orphans behind. Each hole's schedule carries
-/// (its id matches its new deck sub-card).
+/// No schedule transfer needed: the id was unified at mint time. Appends
+/// before removing the sidecar, so a crash duplicates, never loses, the card.
 pub fn promote_virtual(store: &mut Store, id: &str, deck_path: &Path) -> AnyResult<()> {
     let Some(vc) = store.get_virtual(id) else {
         bail!("no virtual card with id {id} to promote");
@@ -1285,8 +933,6 @@ pub fn promote_virtual(store: &mut Store, id: &str, deck_path: &Path) -> AnyResu
     deck::append_cards(deck_path, &text)
         .with_context(|| format!("appending the promoted card to {}", deck_path.display()))?;
 
-    // Drop the whole block's sidecar entries (all holes, for a cloze card);
-    // the schedules stay in store.cards keyed by the same ids.
     store.remove_virtual_block(&parent, &text);
     store
         .save()
@@ -1294,16 +940,10 @@ pub fn promote_virtual(store: &mut Store, id: &str, deck_path: &Path) -> AnyResu
     Ok(())
 }
 
-/// Splits L1 deck text into one string per top-level card block: a new block
-/// begins at each `## ` front (column 0, outside a code fence); note,
-/// directive, and answer lines attach to the current block. Any preamble
-/// before the first front (blank lines, frontmatter, prose) is dropped; it
-/// belongs to no card. Each block is verbatim source lines joined with `\n`
-/// and ends with a newline.
+// Preamble before the first `## ` front (frontmatter, prose) is dropped: it belongs to no card.
 pub fn split_card_blocks(text: &str) -> Vec<String> {
     let mut blocks: Vec<Vec<&str>> = Vec::new();
-    // Fence tracking with the parser's own rule, so a fenced `## ` line stays
-    // content instead of starting a bogus block.
+    // Tracks fences so a `## ` line inside a code fence doesn't start a bogus block.
     let mut fence: Option<char> = None;
     for raw in text.lines() {
         match fence {
@@ -1332,22 +972,8 @@ pub fn split_card_blocks(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// Turns the cleaned remediation deck-text into virtual cards in `store`
-/// (kind [`VirtualKind::Remediation`], `parent = subject`). Each top-level
-/// card block gains a freshly minted `<!-- id: -->` token on its `## ` line
-/// and is stored (stamped) verbatim as a [`VirtualCard::text`]; its id is the
-/// `Card::id` that re-parsing that stamped block yields (a cloze block yields
-/// one sidecar entry per hole, all sharing the block text but keyed by
-/// distinct ids). Saves the store once after the batch. The deck file is
-/// never touched. Returns how many cards were created or revived.
-///
-/// `deck_fingerprints` are the §7 canonical-content fingerprints of the deck's
-/// authored cards ([`crate::l1::content_fingerprint`]). Dedup is by content,
-/// not id: every block carries a fresh random token, so re-running remediation
-/// on the same gap must recognize it by canonical content, not by a recomputed
-/// id (which is always new). A block whose content already exists as a deck
-/// card is skipped; one that matches only fully-retired virtual cards revives
-/// them; one that matches an active virtual card is left as-is.
+/// The deck file is never touched. Dedup is by content, not id: each block
+/// gets a fresh random token, so a rerun must match by canonical content.
 pub fn store_remediation_cards(
     store: &mut Store,
     subject: &str,
@@ -1363,32 +989,23 @@ pub fn store_remediation_cards(
 
     let mut created_or_revived = 0;
     for block in &blocks {
-        // Mint this block's identity: the token rides the `## ` line, so the
-        // stored text re-parses to the same ids forever.
+        // The token rides the `## ` line so the stored text re-parses to the same id forever.
         let token =
             crate::token::mint().map_err(|e| anyhow::anyhow!("cannot mint a token: {e}"))?;
         let block = stamp_block(block, &token);
-        // Parse the block on its own so a cloze block yields its N sub-cards,
-        // each with its own id. A malformed block is a hard error (error, never
-        // fabricate) rather than a silently-dropped card.
+        // A malformed block is a hard error, not a silently-dropped card.
         let cards = crate::l1::parse_str(subject, &block)?;
         let Some(first) = cards.first() else {
             continue;
         };
-        // Dedup at BLOCK granularity: the parser stamps every sub-card of a block
-        // with the block's §7 fingerprint (front + raw answer, `\cloze{...}`
-        // markers literal), so all holes share one value. This makes the block
-        // dedup and revive as a unit, and keeps a plain card that merely repeats a
-        // hole's hidden text (its answer has no markers) from colliding with it.
+        // Fingerprint includes the literal `\cloze{}` markers, so a plain card
+        // repeating a hole's hidden text can't collide with it.
         let fingerprint = first.content_fingerprint;
-        // Already drillable as a deck card: don't shadow it with a virtual.
         if deck_fingerprints.contains(&fingerprint) {
             continue;
         }
         let existing = store.virtual_ids_with_content(subject, fingerprint);
         if existing.is_empty() {
-            // New content: store every sub-card (a cloze block yields one entry
-            // per hole, each with its own id) and seed a fresh schedule.
             for card in &cards {
                 let Some(id) = card.id() else {
                     continue;
@@ -1400,7 +1017,7 @@ pub fn store_remediation_cards(
                     text: block.clone(),
                     created_ms: now_ms,
                 });
-                // Invariant (§6): records exist before the schedule entry does.
+                // Records must exist before the schedule entry: keep this order.
                 store.ensure_records(card);
                 store.get_or_insert(&id, now_ms);
                 created_or_revived += 1;
@@ -1409,8 +1026,6 @@ pub fn store_remediation_cards(
             .iter()
             .all(|id| crate::session::is_retired_id(id, store, retire_after_days))
         {
-            // A fully-retired dupe of this content: revive every matching entry
-            // (reset its schedule below the cap). The sidecar text is unchanged.
             for id in &existing {
                 *store.get_or_insert(id, now_ms) = CardState::new(now_ms);
                 created_or_revived += 1;
@@ -1422,24 +1037,15 @@ pub fn store_remediation_cards(
     Ok(created_or_revived)
 }
 
-/// The §7 canonical-content fingerprint of a stored virtual card: parse its
-/// block under its `parent`, find the sub-card this entry stands for, and
-/// fingerprint its canonical content. `None` if the stored text no longer
-/// re-parses to a card carrying this entry's id (a corrupt or superseded
-/// sidecar entry).
 fn virtual_fingerprint(vc: &VirtualCard) -> Option<u64> {
     let cards = crate::l1::parse_str(&vc.parent, &vc.text).ok()?;
     let card = cards
         .iter()
         .find(|c| c.id().as_deref() == Some(vc.id.as_str()))?;
-    // The parser carries the block-level fingerprint on every sub-card, so this is
-    // the same value the candidate side compares against.
+    // Every sub-card of a block carries the same block-level fingerprint.
     Some(card.content_fingerprint)
 }
 
-/// Appends ` <!-- id: token -->` to a card block's `## ` front line (its first
-/// line by construction, [`split_card_blocks`]), leaving every other byte
-/// untouched.
 fn stamp_block(block: &str, token: &str) -> String {
     match block.split_once('\n') {
         Some((front, rest)) => format!("{front} <!-- id: {token} -->\n{rest}"),
@@ -1447,21 +1053,15 @@ fn stamp_block(block: &str, token: &str) -> String {
     }
 }
 
-/// Serde default for a legacy store with no `version` field: the oldest format.
 fn default_version() -> u32 {
     1
 }
 
-/// The default location of the store file
-/// (`~/.local/share/alix/progress.json` on Linux).
 pub fn default_store_path() -> Option<PathBuf> {
     directories::ProjectDirs::from("", "", "alix").map(|dirs| dirs.data_dir().join("progress.json"))
 }
 
-/// Syncthing conflict copies sitting next to `store_path`
-/// (`<stem>.sync-conflict-*.<ext>`): evidence that two devices wrote the
-/// store concurrently. Sorted for stable output; a missing directory is
-/// simply no conflicts.
+// Syncthing's own naming convention for conflict copies: `<stem>.sync-conflict-*.<ext>`.
 pub fn sync_conflicts(store_path: &Path) -> Vec<PathBuf> {
     let Some(dir) = store_path.parent() else {
         return Vec::new();
@@ -1489,10 +1089,7 @@ pub fn sync_conflicts(store_path: &Path) -> Vec<PathBuf> {
     out
 }
 
-/// The label this machine stamps into stores it writes (see
-/// [`Store::device`]): the trimmed content of the `device` file in `dir`,
-/// created as `alix-<4 hex>` on first use. Plaintext on purpose: name your
-/// machine by editing the file (e.g. to `desktop`).
+// Plaintext on purpose: rename a machine by editing the file directly.
 pub fn device_label_in(dir: &Path) -> Option<String> {
     let path = dir.join("device");
     if let Ok(text) = std::fs::read_to_string(&path) {
@@ -1507,15 +1104,12 @@ pub fn device_label_in(dir: &Path) -> Option<String> {
     Some(label)
 }
 
-/// [`device_label_in`] against the default alix data dir
-/// (`~/.local/share/alix` on Linux).
 pub fn device_label() -> Option<String> {
     let dirs = directories::ProjectDirs::from("", "", "alix")?;
     device_label_in(dirs.data_dir())
 }
 
-/// `alix-<4 hex>`: unique enough to tell one user's devices apart, from
-/// std-only randomness (a randomly keyed hasher).
+// A keyed hasher stands in for an RNG here: good enough for a device label, no new dependency.
 fn generate_device_label() -> String {
     use std::hash::{BuildHasher, Hasher};
     let r = std::collections::hash_map::RandomState::new()
@@ -1536,9 +1130,8 @@ mod tests {
         assert!(store.is_empty());
     }
 
-    /// A hole fingerprint from a `word` key and a `context` key. The realign
-    /// matcher only tests equality, so distinct integers stand in for distinct
-    /// hidden texts and masked lines.
+    // Arbitrary ints stand in for distinct hidden-text/context hashes (equality is all that
+    // matters).
     fn hf(word: u64, context: u64) -> HoleFingerprint {
         HoleFingerprint {
             text_fp: word,
@@ -1548,12 +1141,10 @@ mod tests {
 
     #[test]
     fn inserting_a_hole_shifts_neighbors_without_losing_schedules() {
-        // Holes A, B; a new hole is inserted at the front.
         let a = hf(1, 10);
         let b = hf(2, 20);
         let fresh_word = hf(9, 90);
         let outcome = realign_holes(&[a, b], &[fresh_word, a, b]);
-        // A (stored 0) → file 1, B (stored 1) → file 2; file 0 is fresh.
         assert_eq!(vec![(0, 1), (1, 2)], outcome.remap);
         assert_eq!(vec![0], outcome.fresh);
         assert!(outcome.orphaned.is_empty());
@@ -1561,7 +1152,6 @@ mod tests {
 
     #[test]
     fn deleting_a_hole_orphans_exactly_that_record() {
-        // Holes A, B, C; the middle one (B) is deleted.
         let a = hf(1, 10);
         let b = hf(2, 20);
         let c = hf(3, 30);
@@ -1573,12 +1163,9 @@ mod tests {
 
     #[test]
     fn reordering_holes_follows_the_words() {
-        // A and B swap document positions (each keeps its own text + context,
-        // e.g. two holes on different lines that trade order).
         let a = hf(1, 10);
         let b = hf(2, 20);
         let outcome = realign_holes(&[a, b], &[b, a]);
-        // A's schedule (stored 0) follows to file 1; B's (stored 1) to file 0.
         assert_eq!(vec![(0, 1), (1, 0)], outcome.remap);
         assert!(outcome.orphaned.is_empty());
         assert!(outcome.fresh.is_empty());
@@ -1586,11 +1173,9 @@ mod tests {
 
     #[test]
     fn a_context_rewrite_still_matches_by_text_alone() {
-        // Same hidden word, rewritten surrounding context (line_fp differs).
         let stored = hf(1, 10);
         let rewritten = hf(1, 99);
         let outcome = realign_holes(&[stored], &[rewritten]);
-        // Pass 1 (exact) misses; pass 2 (text alone) anchors it.
         assert_eq!(vec![(0, 0)], outcome.remap);
         assert!(outcome.orphaned.is_empty());
         assert!(outcome.fresh.is_empty());
@@ -1598,11 +1183,8 @@ mod tests {
 
     #[test]
     fn identical_twins_pair_in_document_order_on_both_sides() {
-        // Two indistinguishable holes (same word AND context) on each side.
         let twin = hf(5, 50);
         let outcome = realign_holes(&[twin, twin], &[twin, twin]);
-        // Document order on both sides: stored 0 → file 0, stored 1 → file 1.
-        // (A swap would be observationally a no-op, but the tie-break pins this.)
         assert_eq!(vec![(0, 0), (1, 1)], outcome.remap);
         assert!(outcome.orphaned.is_empty());
         assert!(outcome.fresh.is_empty());
@@ -1610,7 +1192,6 @@ mod tests {
 
     #[test]
     fn word_and_context_both_changed_is_a_fresh_hole() {
-        // Neither text nor context survives: no match at all.
         let stored = hf(1, 10);
         let changed = hf(7, 70);
         let outcome = realign_holes(&[stored], &[changed]);
@@ -1621,9 +1202,6 @@ mod tests {
 
     #[test]
     fn a_fresh_hole_always_wins_the_live_key_and_the_orphan_goes_to_the_shelf() {
-        // A new word replaces the old one at the same position: the file hole
-        // is fresh (it will own the live token-0 key) and the stored record
-        // orphans (its schedule is evicted, never inherited by the new word).
         let stored = hf(1, 10);
         let replacement = hf(8, 80);
         let outcome = realign_holes(&[stored], &[replacement]);
@@ -1640,54 +1218,41 @@ mod tests {
         let a = hf(1, 10);
         let b = hf(2, 20);
         store.ensure_records_raw(token, 100, &[a, b]);
-        store.get_or_insert("tok-0", 0).total_reviews = 1; // hole A's schedule
-        store.get_or_insert("tok-1", 0).total_reviews = 2; // hole B's schedule
+        store.get_or_insert("tok-0", 0).total_reviews = 1;
+        store.get_or_insert("tok-1", 0).total_reviews = 2;
 
-        // Hole 0's word is replaced (Z); hole 1 (B) is unchanged.
         let z = hf(8, 80);
         let outcome = store.realign_card_holes(token, &[z, b], 100).unwrap();
         assert_eq!(vec![(1, 1)], outcome.remap);
         assert_eq!(vec![0], outcome.orphaned);
         assert_eq!(vec![0], outcome.fresh);
 
-        // B's schedule stays put (a fingerprinted move wins its key)…
         assert_eq!(2, store.get("tok-1").unwrap().total_reviews);
-        // …the fresh word Z owns the live token-0 key with NO inherited
-        // schedule (it will get a fresh one when first reviewed)…
         assert!(store.get("tok-0").is_none());
-        // …and A's orphaned schedule sits on the shelf, never under a live key.
         assert_eq!(1, store.hole_orphans().len());
         assert_eq!("tok", store.hole_orphans()[0].token);
         assert_eq!(a, store.hole_orphans()[0].fp);
         assert_eq!(1, store.hole_orphans()[0].state.total_reviews);
-        // Records are refreshed to the current file holes.
         assert_eq!(vec![z, b], store.records(token).unwrap().holes);
     }
 
     #[test]
     fn a_stray_high_index_hole_entry_is_pulled_by_the_cascade_not_left_to_squat() {
-        // A `token-N` entry above the stored-hole range (unreachable today, but
-        // structurally possible) must not survive the rebuild where a future
-        // fresh hole could inherit it: the cascade pulls the whole `-N` family,
-        // so a stray orphans to the shelf like any other unmapped record.
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let token = "tok";
         let a = hf(1, 10);
         let b = hf(2, 20);
         store.ensure_records_raw(token, 100, &[a, b]);
-        store.get_or_insert("tok-0", 0).total_reviews = 1; // hole a
-        store.get_or_insert("tok-1", 0).total_reviews = 2; // hole b
-        store.get_or_insert("tok-5", 0).total_reviews = 9; // a stray, out of range
+        store.get_or_insert("tok-0", 0).total_reviews = 1;
+        store.get_or_insert("tok-1", 0).total_reviews = 2;
+        store.get_or_insert("tok-5", 0).total_reviews = 9;
 
-        // Reorder the two live holes; nothing orphans in the pure cascade.
         let outcome = store.realign_card_holes(token, &[b, a], 100).unwrap();
         assert_eq!(vec![(0, 1), (1, 0)], outcome.remap);
 
-        // The two live schedules followed their words…
         assert_eq!(2, store.get("tok-0").unwrap().total_reviews, "b -> hole 0");
         assert_eq!(1, store.get("tok-1").unwrap().total_reviews, "a -> hole 1");
-        // …and the stray is gone from every live key, evicted to the shelf.
         assert!(
             store.get("tok-5").is_none(),
             "the stray must not survive under a live key"
@@ -1708,8 +1273,6 @@ mod tests {
         let token = "tok";
         let a = hf(1, 10);
         let b = hf(2, 20);
-        // Records written under a superseded FP_VERSION, with holes that would
-        // orphan tok-0 if a cascade ran.
         store.records.insert(
             token.to_string(),
             CardRecords {
@@ -1720,14 +1283,10 @@ mod tests {
         );
         store.get_or_insert("tok-0", 0).total_reviews = 7;
 
-        // A stale version must be ignored (never mismatched into a cascade that
-        // would wipe schedules on an unchanged card), and simply rewritten.
         let outcome = store.realign_card_holes(token, &[a, b], 100);
         assert!(outcome.is_none());
-        // The positional schedule is untouched; nothing was evicted.
         assert_eq!(7, store.get("tok-0").unwrap().total_reviews);
         assert!(store.hole_orphans().is_empty());
-        // Records are rewritten at the current version + current file holes.
         let rec = store.records(token).unwrap();
         assert_eq!(FP_VERSION, rec.version);
         assert_eq!(vec![a, b], rec.holes);
@@ -1737,8 +1296,6 @@ mod tests {
     fn orphans_are_the_keys_with_no_live_card_or_deck_and_prune_clears_them() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        // Live card + orphaned card key; a virtual card's schedule key is NOT
-        // an orphan (it is a legitimate local card with no deck file).
         store.get_or_insert("live", 0);
         store.get_or_insert("gone", 0);
         store.insert_virtual(VirtualCard {
@@ -1748,8 +1305,7 @@ mod tests {
             text: "## v <!-- id: vq -->\nb\n".to_string(),
             created_ms: 0,
         });
-        store.get_or_insert("vq", 0); // the virtual card's own schedule
-        // Live deck subject + an orphaned one (a renamed/deleted deck file).
+        store.get_or_insert("vq", 0);
         store.set_last_depth("rust.md", Depth::Recall);
         store.set_last_depth("deleted.md", Depth::Recall);
 
@@ -1760,8 +1316,6 @@ mod tests {
         assert_eq!(vec!["deleted.md".to_string()], orphans.decks);
         assert_eq!(2, orphans.len());
 
-        // Pruning drops exactly the orphaned keys, leaving the live ones and
-        // the virtual schedule untouched.
         assert_eq!(2, store.prune_orphans(&orphans));
         assert!(store.get("live").is_some());
         assert!(store.get("vq").is_some());
@@ -1776,8 +1330,6 @@ mod tests {
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let a = hf(1, 10);
 
-        // An orphan token carrying all three families (schedule, records, a shelf
-        // entry), claimed by no live card.
         store.get_or_insert("gonetoken", 0).total_reviews = 3;
         store.ensure_records_raw("gonetoken", 100, &[a]);
         store.hole_orphans.push(OrphanedHole {
@@ -1785,7 +1337,6 @@ mod tests {
             fp: a,
             state: CardState::new(0),
         });
-        // A live token carrying the same three families, claimed by a live card.
         store.get_or_insert("livetoken", 0).total_reviews = 7;
         store.ensure_records_raw("livetoken", 200, &[a]);
         store.hole_orphans.push(OrphanedHole {
@@ -1800,13 +1351,9 @@ mod tests {
 
         store.prune_orphans(&orphans);
 
-        // The pruned token's schedule, records, and shelf entry are all gone: with
-        // no schedule left, its records and shelf entry are unreclaimable dead weight.
         assert!(store.get("gonetoken").is_none());
         assert!(store.records("gonetoken").is_none());
         assert!(store.hole_orphans().iter().all(|o| o.token != "gonetoken"));
-        // The live token keeps all three: its shelf entry stays as evidence for a
-        // future per-hole reclaim.
         assert!(store.get("livetoken").is_some());
         assert!(store.records("livetoken").is_some());
         assert!(store.hole_orphans().iter().any(|o| o.token == "livetoken"));
@@ -1818,8 +1365,6 @@ mod tests {
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let a = hf(1, 10);
 
-        // The doomed deck's token: a plain schedule, a hole schedule, records, a
-        // shelf entry, its deck-family mastery, and a virtual card parented to it.
         store.get_or_insert("doom", 0);
         store.get_or_insert("doom-0", 0);
         store.ensure_records_raw("doom", 100, &[a]);
@@ -1837,7 +1382,6 @@ mod tests {
             created_ms: 0,
         });
         store.get_or_insert("vdoom", 0);
-        // A bystander token with the same families, under another deck.
         store.get_or_insert("keep", 0);
         store.ensure_records_raw("keep", 200, &[a]);
         store.hole_orphans.push(OrphanedHole {
@@ -1893,8 +1437,6 @@ mod tests {
         store.device = Some("desk-1".into());
         store.save().unwrap();
 
-        // A consumer with no device (a test, a one-off tool) saves without
-        // erasing who really wrote last.
         let unnamed = Store::open(&path).unwrap();
         unnamed.save().unwrap();
         let reopened = Store::open(&path).unwrap();
@@ -1987,10 +1529,6 @@ mod tests {
 
     #[test]
     fn open_keeps_a_card_key_of_any_charset() {
-        // Card keys are identity tokens now, so a key that isn't the canonical
-        // token charset passes through verbatim (it becomes doctor material)
-        // rather than failing the whole load, which would refuse a user's real
-        // progress.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("progress.json");
         std::fs::write(
@@ -2061,8 +1599,6 @@ mod tests {
         state.record_review(1000, Grade::Pass, Depth::Recall, true);
         store.save().unwrap();
 
-        // The marker round-trips; the unmarked review doesn't serialize the key
-        // at all (no store bloat for the common case).
         let json = std::fs::read_to_string(&path).unwrap();
         assert_eq!(1, json.matches("propagated").count());
 
@@ -2086,14 +1622,12 @@ mod tests {
         assert_eq!(Some(1234), store.deck_mastered_at("rust.md"));
         store.save().unwrap();
 
-        // Survives a save/reload.
         let mut reloaded = Store::open(&path).unwrap();
         assert!(reloaded.deck_mastered("rust.md"));
         assert_eq!(Some(1234), reloaded.deck_mastered_at("rust.md"));
-        // Per-deck clear drops just that deck.
         assert!(reloaded.clear_deck_mastered("rust.md"));
         assert!(!reloaded.deck_mastered("rust.md"));
-        assert!(!reloaded.clear_deck_mastered("rust.md")); // nothing left
+        assert!(!reloaded.clear_deck_mastered("rust.md"));
     }
 
     #[test]
@@ -2103,16 +1637,13 @@ mod tests {
 
         let mut store = Store::open(&path).unwrap();
         assert_eq!(None, store.exam_failed_at("t.md"));
-        // A failed exam stamps the cooldown without mastering the deck.
         store.set_exam_failed("t.md", 5000);
         assert_eq!(Some(5000), store.exam_failed_at("t.md"));
         assert!(!store.deck_mastered("t.md"));
         store.save().unwrap();
 
-        // Survives a save/reload.
         let mut reloaded = Store::open(&path).unwrap();
         assert_eq!(Some(5000), reloaded.exam_failed_at("t.md"));
-        // A later pass masters the deck and clears the cooldown.
         reloaded.set_deck_mastered("t.md", 9000);
         assert!(reloaded.deck_mastered("t.md"));
         assert_eq!(None, reloaded.exam_failed_at("t.md"));
@@ -2147,7 +1678,6 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         store.set_exam_failed("t.md", 1_000);
-        // 1h cooldown, 30s after the fail -> the rest of the hour remains.
         let now = 1_000 + 30_000;
         assert_eq!(
             Some(3_600_000 - 30_000),
@@ -2168,8 +1698,6 @@ mod tests {
 
     #[test]
     fn loads_a_v1_deck_record_with_a_bare_mastered_timestamp() {
-        // Pre-v2 stores wrote `mastered_at_ms` as a bare number (not optional);
-        // it must still load as a mastered deck.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("progress.json");
         std::fs::write(
@@ -2194,7 +1722,6 @@ mod tests {
 
     #[test]
     fn loads_store_file_without_decks_field() {
-        // A store written before the `decks` field existed must still load.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("progress.json");
         std::fs::write(&path, "{\"version\":1,\"cards\":{}}").unwrap();
@@ -2205,7 +1732,6 @@ mod tests {
 
     #[test]
     fn loads_a_store_file_without_a_version_field() {
-        // A file predating the `version` field defaults to v1 and still loads.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("progress.json");
         std::fs::write(&path, "{\"cards\":{}}").unwrap();
@@ -2215,9 +1741,6 @@ mod tests {
 
     #[test]
     fn loads_any_version_and_defaults_pre_grade_history() {
-        // Pre-1.0 there is no version fence: any store loads best-effort. A store
-        // whose history entries carried only a `passed` bool (no `grade`) still loads
-        // — the scheduling state survives and the old entries get a default grade.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("progress.json");
         std::fs::write(
@@ -2227,9 +1750,9 @@ mod tests {
         .unwrap();
         let store = Store::open(&path).unwrap();
         let state = store.get("5").unwrap();
-        assert_eq!(7, state.acquired_ms); // scheduling state survives
+        assert_eq!(7, state.acquired_ms);
         assert_eq!(100, state.history[0].ts_ms);
-        assert_eq!(Grade::Pass, state.history[0].grade); // old `passed` dropped → default
+        assert_eq!(Grade::Pass, state.history[0].grade);
     }
 
     #[test]
@@ -2250,7 +1773,6 @@ mod tests {
         store.get_or_insert("42", 1000);
         assert!(store.remove("42"));
         assert!(store.get("42").is_none());
-        // Removing again reports nothing was there.
         assert!(!store.remove("42"));
     }
 
@@ -2262,16 +1784,11 @@ mod tests {
         store.get_or_insert("2", 0);
         assert_eq!(2, store.clear());
         assert!(store.is_empty());
-        assert_eq!(0, store.clear()); // already empty
+        assert_eq!(0, store.clear());
     }
 
-    /// The canonical one-card deck-format `text` of a sample virtual card.
     const BORROW_TEXT: &str = "## What does the borrow checker enforce? <!-- id: vb1 -->\nExactly one mutable borrow, or many shared ones\n";
 
-    /// Builds a virtual card from its canonical deck-format `text` under
-    /// `parent`, deriving its id exactly as the substrate does — the `Card::id`
-    /// of the (plain) card that `parse(parent, text)` yields. Seeds no schedule;
-    /// a caller that needs the card scheduled adds a `store.cards` entry itself.
     fn virtual_card(parent: &str, text: &str) -> VirtualCard {
         let id = crate::l1::parse_str(parent, text).unwrap()[0].id().unwrap();
         VirtualCard {
@@ -2318,7 +1835,6 @@ mod tests {
     fn virtual_cards_for_matches_on_parent_subject() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        // Distinct ids come from distinct content (different back / subject).
         store.insert_virtual(virtual_card("rust.md", "## f <!-- id: v1 -->\nback one\n"));
         store.insert_virtual(virtual_card("rust.md", "## f <!-- id: v2 -->\nback two\n"));
         store.insert_virtual(virtual_card("other.md", "## f <!-- id: v3 -->\nback one\n"));
@@ -2333,8 +1849,6 @@ mod tests {
 
     #[test]
     fn loads_store_file_without_virtual_cards_field() {
-        // A store written before this field existed must still load — the
-        // additive `#[serde(default)]` soft break, no version bump.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("progress.json");
         std::fs::write(&path, "{\"version\":1,\"cards\":{}}").unwrap();
@@ -2345,11 +1859,6 @@ mod tests {
 
     #[test]
     fn an_old_shape_virtual_cards_object_loads_leniently_dropping_stale_entries() {
-        // A store from before this rework carries `v:`-prefixed keys AND old-shape
-        // values (`state` + `content`, no `text`). Both make an entry unparseable
-        // as the new `VirtualCard`; loading must drop them yet keep `cards`/`decks`
-        // intact — refusing the whole file over a regenerable sidecar would lose a
-        // user's real progress.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("progress.json");
         std::fs::write(
@@ -2365,10 +1874,8 @@ mod tests {
         )
         .unwrap();
         let store = Store::open(&path).unwrap();
-        // Real progress survives …
         assert_eq!(7, store.get("5").unwrap().acquired_ms);
         assert!(store.deck_mastered("rust.md"));
-        // … and the stale, regenerable virtual entry is dropped.
         assert_eq!(0, store.iter_virtual_cards().count());
     }
 
@@ -2408,8 +1915,6 @@ mod tests {
             promoted.back
         );
 
-        // The store was saved: reloading it from disk still shows the
-        // virtual entry gone.
         let reloaded = Store::open(&store_path).unwrap();
         assert!(reloaded.get_virtual(&id).is_none());
     }
@@ -2437,7 +1942,7 @@ mod tests {
             crate::l1::parse_str("rust.md", &std::fs::read_to_string(&deck_path).unwrap()).unwrap();
         let ids_after: Vec<String> = after.iter().take(2).map(|c| c.id().unwrap()).collect();
         assert_eq!(ids_before, ids_after);
-        assert_eq!(3, after.len()); // the two originals plus the promoted card
+        assert_eq!(3, after.len());
     }
 
     #[test]
@@ -2452,18 +1957,11 @@ mod tests {
 
         assert!(result.is_err());
         assert_eq!(deck_before, std::fs::read_to_string(&deck_path).unwrap());
-        assert!(!store_path.exists()); // save() was never reached
+        assert!(!store_path.exists());
     }
 
     #[test]
     fn promoting_one_hole_of_a_multi_hole_cloze_removes_every_holes_sidecar_entry() {
-        // A multi-hole cloze remediation card is stored as N sidecar entries (one
-        // per hole), all sharing `parent` + the whole-block `text`, keyed by their
-        // N distinct `Card::id`s. Promoting any one hole must clear the whole
-        // block from the sidecar — not just the promoted hole's entry — or the
-        // sibling holes become orphans whose ids collide with the now-real deck
-        // cards (mis-counted, mis-badged, and a second promote would duplicate
-        // ids in the deck file).
         let dir = tempfile::tempdir().unwrap();
         let deck_path = write_deck(
             dir.path(),
@@ -2488,7 +1986,6 @@ mod tests {
                 text: text.to_string(),
                 created_ms: 1000,
             });
-            // Seed a drilled schedule for each hole — promote must preserve these.
             store
                 .get_or_insert(&id, 1000)
                 .record_review(1000, Grade::Pass, Depth::Recall, false);
@@ -2496,23 +1993,15 @@ mod tests {
 
         promote_virtual(&mut store, &id0, &deck_path).unwrap();
 
-        // Both sidecar entries are gone — no orphan left for the sibling hole.
         assert!(store.get_virtual(&id0).is_none());
         assert!(store.get_virtual(&id1).is_none());
-        // Both schedules survive: the promoted deck cards inherit their drilled
-        // history for free.
         assert!(store.get(&id0).is_some());
         assert!(store.get(&id1).is_some());
 
-        // The deck file gained the cloze card (both holes, since a cloze
-        // promotes as one block).
         let deck_text = std::fs::read_to_string(&deck_path).unwrap();
         let deck_cards = crate::l1::parse_str("rust.md", &deck_text).unwrap();
-        assert_eq!(3, deck_cards.len()); // the existing plain card + 2 cloze holes
+        assert_eq!(3, deck_cards.len());
 
-        // A second promote of the sibling hole now bails cleanly (its sidecar
-        // entry is already gone) instead of re-appending the block and
-        // duplicating ids in the deck file.
         let deck_before_second = std::fs::read_to_string(&deck_path).unwrap();
         let second = promote_virtual(&mut store, &id1, &deck_path);
         assert!(second.is_err());
@@ -2525,9 +2014,6 @@ mod tests {
 
     #[test]
     fn promote_preserves_the_schedule_for_free() {
-        // The schedule lives in `store.cards[id]` (not on the sidecar), keyed by
-        // the same id the appended deck card hashes to — so promoting carries the
-        // drilled schedule with no transfer code.
         let dir = tempfile::tempdir().unwrap();
         let deck_path = write_deck(
             dir.path(),
@@ -2539,7 +2025,6 @@ mod tests {
         let id = vc.id.clone();
         store.insert_virtual(vc);
 
-        // Drill the schedule in `store.cards`, not on the virtual entry.
         let mut state = CardState::new(1000);
         state.record_review(1000, Grade::Pass, Depth::Recall, false);
         state.record_review(2000, Grade::Pass, Depth::Recall, false);
@@ -2566,8 +2051,6 @@ mod tests {
             .iter()
             .find(|c| c.front == "What does the borrow checker enforce?")
             .expect("promoted card present");
-        // The id was unified at the source: the appended deck card hashes to the
-        // very id the schedule was already keyed under.
         assert_eq!(Some(id), promoted.id());
         let carried = store
             .get(&promoted.id().unwrap())
@@ -2627,7 +2110,7 @@ mod tests {
         state.record_review(10, Grade::Partial, Depth::Recall, false);
         assert_eq!(Grade::Partial, state.history.last().unwrap().grade);
         assert_eq!(1, state.total_reviews);
-        assert_eq!(1, state.total_passes); // Partial (a weak success) counts as a pass
+        assert_eq!(1, state.total_passes);
         assert_eq!(1, state.streak);
     }
 
@@ -2673,7 +2156,6 @@ mod tests {
 
     #[test]
     fn a_pre_depth_store_loads_with_empty_schedules() {
-        // Clean break: the old `fsrs` key is ignored, not aliased.
         let json = r#"{"version":1,"cards":{"7":{"acquired_ms":5,"fsrs":{"stability":9.0,"difficulty":5.0,"reps":3,"lapses":0,"state":2,"scheduled_days":9,"last_review_ms":1,"due_ms":2},"total_reviews":3}}}"#;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("store.json");
@@ -2689,12 +2171,10 @@ mod tests {
 
     #[test]
     fn card_state_round_trips_without_a_stage_field() {
-        // The new shape carries no `stage`; `acquired_ms` defaults when absent.
         let json = r#"{"acquired_ms":1234,"fsrs":null}"#;
         let s: CardState = serde_json::from_str(json).unwrap();
         assert_eq!(s.acquired_ms, 1234);
         assert!(s.recall.is_none());
-        // A legacy store carrying a stray `stage` key still loads (serde ignores it).
         let legacy = r#"{"stage":3,"acquired_ms":5}"#;
         let s2: CardState = serde_json::from_str(legacy).unwrap();
         assert_eq!(s2.acquired_ms, 5);
@@ -2739,7 +2219,6 @@ mod tests {
         assert_eq!(1, f.learning_goods);
     }
 
-    /// Parses a tiny two-card deck for the badge tests below.
     fn two_cards() -> Vec<crate::card::Card> {
         crate::l1::parse_str(
             "t.md",
@@ -2784,14 +2263,12 @@ mod tests {
         note_badges(&mut store, "t.md", &cards, 1_000);
         assert_eq!(Some(1_000), store.badge_earned("t.md", Depth::Recall));
 
-        // One card lapses back below the mature line.
         store.get_or_insert(&cards[0].id().unwrap(), 0).recall = Some(FsrsState {
             stability: 3.0,
             ..Default::default()
         });
 
         assert!(!badge_solid(&cards, &store, Depth::Recall));
-        // The earn date is a high-water mark: it survives the lapse.
         assert_eq!(Some(1_000), store.badge_earned("t.md", Depth::Recall));
     }
 
@@ -2845,18 +2322,10 @@ mod tests {
         .unwrap();
         assert!(store.is_virtual(&id));
         assert!(store.get_virtual(&id).is_some());
-        // The seeded schedule (so it enters the queue as a new card) is exercised
-        // end-to-end by the tests/api.rs round-trip in Task 9, where drillability
-        // is asserted against the running server.
     }
 
     #[test]
     fn records_exist_whenever_an_entry_is_created() {
-        // The §6 invariant, at the two store-side entry-creation paths: a tutor
-        // mint and a remediation mint both write records alongside the schedule,
-        // so no store entry is ever token→schedule with no content to reclaim
-        // against. (The trace-walk grade path and review-open are covered by
-        // their own tests in trace.rs / assemble.rs.)
         use std::collections::HashSet;
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
@@ -2890,7 +2359,6 @@ mod tests {
             "a remediation mint writes records too"
         );
 
-        // A cloze remediation block records every hole under its base token.
         store_remediation(
             &mut store,
             "d.md",
@@ -2916,9 +2384,6 @@ mod tests {
 
     #[test]
     fn a_double_tutor_mint_reports_duplicate() {
-        // The dedup is by canonical content (§7), not id: a mint carries a fresh
-        // random token, so minting the same card twice is caught by its content
-        // fingerprint, not a recomputed id.
         use std::collections::HashSet;
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
@@ -2966,7 +2431,6 @@ mod tests {
         use std::collections::HashSet;
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        // A newline inside a back element could smuggle an extra line or a `%` directive.
         let err = mint_tutor_card(
             &mut store,
             "geo.md",
@@ -2981,7 +2445,6 @@ mod tests {
 
     #[test]
     fn split_card_blocks_one_block_per_top_depth_front() {
-        // Two plain cards separated by a blank line, so two blocks.
         let blocks = split_card_blocks("## a\n1\n\n## b\n2\n");
         assert_eq!(2, blocks.len());
         assert!(blocks[0].starts_with("## a"));
@@ -2990,8 +2453,6 @@ mod tests {
 
     #[test]
     fn split_card_blocks_keeps_indented_hash_and_directives_inside_a_block() {
-        // A `#`-leading answer line, a per-card directive, and a `#?`-looking
-        // indented line all stay inside the one card block.
         let text = "## front <!-- reveal: line -->\n#[derive(Clone)]\n#? not a front\n";
         let blocks = split_card_blocks(text);
         assert_eq!(1, blocks.len());
@@ -3002,8 +2463,6 @@ mod tests {
 
     #[test]
     fn split_card_blocks_is_one_block_for_a_cloze_and_drops_preamble() {
-        // A leading deck-level directive/blank line is preamble (dropped); the
-        // whole cloze block (front + `% reveal: cloze` + answer) is one block.
         let text =
             "---\nsource: x\n---\n\n## Complete the quote\nTo \\cloze{be} or not to \\cloze{be}\n";
         let blocks = split_card_blocks(text);
@@ -3013,8 +2472,6 @@ mod tests {
         assert!(!blocks[0].contains("% source:"));
     }
 
-    /// `store_remediation_cards` with no deck-id dedup baseline (the common
-    /// test case, the deck has no card equal to the remediation output).
     fn store_remediation(
         store: &mut Store,
         subject: &str,
@@ -3034,9 +2491,6 @@ mod tests {
 
     #[test]
     fn failing_the_same_exam_twice_yields_zero_duplicate_gap_cards() {
-        // Remediation dedups by canonical content (§7): re-running the same gap
-        // text (a fresh random token each time) is recognized as already stored,
-        // so nothing new is created the second time.
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let text = "## Why does X happen?\nbecause of Y\n";
@@ -3053,10 +2507,6 @@ mod tests {
 
     #[test]
     fn distinct_answer_cloze_holes_stay_distinct() {
-        // Both holes hold the same token ("be"), so the sub-cards share the
-        // sentence, but their ids differ by the `#cloze:k` hole index, so the
-        // substrate keeps BOTH (no discriminator, no merge). Two sidecar
-        // entries share one `text` but are keyed by distinct ids.
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let text = "## Complete the quote\nTo \\cloze{be} or not to \\cloze{be}\n";
@@ -3069,17 +2519,11 @@ mod tests {
             virtuals[0].id, virtuals[1].id,
             "distinct ids for the two holes"
         );
-        // They share the same stored block text.
         assert_eq!(virtuals[0].text, virtuals[1].text);
     }
 
     #[test]
     fn a_retired_multi_hole_block_revives_every_hole() {
-        // A multi-hole cloze block dedups and revives as ONE unit: when every
-        // hole's schedule has retired, re-running the same gap resets EVERY hole,
-        // not just hole 0, because all sub-cards carry the block fingerprint.
-        // (Mutation guard: fingerprinting each hole's hidden text instead lets
-        // only hole 0 match, so hole 1 stays retired and this fails.)
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let text = "## Complete the quote\nTo \\cloze{be} or not to \\cloze{bee}\n";
@@ -3094,7 +2538,6 @@ mod tests {
             .collect();
         assert_eq!(2, ids.len());
 
-        // Retire BOTH holes: give each a Recall schedule at/over the cap.
         for id in &ids {
             store.get_or_insert(id, 1_000).recall = Some(FsrsState {
                 scheduled_days: 90,
@@ -3108,7 +2551,6 @@ mod tests {
             );
         }
 
-        // Re-run the same gap: every retired hole revives (schedule reset).
         let revived = store_remediation(&mut store, "d.md", text, 2_000, cap).unwrap();
         assert_eq!(2, revived, "every retired hole revives, not just hole 0");
         for id in &ids {
@@ -3122,27 +2564,19 @@ mod tests {
                 "the hole's schedule was reset"
             );
         }
-        // No new sidecar entries were minted.
         assert_eq!(2, store.virtual_cards_for("d.md").len());
     }
 
     #[test]
     fn a_plain_card_matching_a_holes_hidden_text_does_not_suppress_remediation() {
-        // A plain deck card whose answer equals a cloze hole's hidden text must
-        // NOT suppress a cloze remediation block: the block fingerprint includes
-        // the literal `\cloze{...}` markers, which the plain answer lacks, so the
-        // two differ. (Mutation guard: fingerprinting the hole's hidden text makes
-        // them collide, the block is skipped, and this fails.)
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
 
-        // The deck already drills a PLAIN card whose answer is a bare "be".
         let plain =
             crate::l1::parse_str("d.md", "## Complete the quote <!-- id: p1 -->\nbe\n").unwrap();
         let deck_fingerprints: std::collections::HashSet<u64> =
             plain.iter().map(|c| c.content_fingerprint).collect();
 
-        // Remediation emits a CLOZE block hiding "be" under the same heading.
         let cloze = "## Complete the quote\nTo \\cloze{be} or not to \\cloze{bee}\n";
         let created =
             store_remediation_cards(&mut store, "d.md", &deck_fingerprints, cloze, 1_000, None)
@@ -3156,11 +2590,6 @@ mod tests {
 
     #[test]
     fn virtual_id_agrees_across_create_synth_and_promote() {
-        // The load-bearing invariant: the id derived at CREATE
-        // (`store_remediation_cards`), at SYNTH (`parse(parent, text).find`) and
-        // at PROMOTE (append the block, re-parse the whole deck) must all agree,
-        // for a plain card AND for every hole of a cloze card. Subject is always
-        // `vc.parent`.
         for text in [
             "## Why does X?\npoint one\n",
             "## Complete the quote\nTo \\cloze{be} or not to \\cloze{bee}\n",
@@ -3175,7 +2604,6 @@ mod tests {
             assert_eq!(created, virtuals.len());
 
             for vc in &virtuals {
-                // SYNTH: re-derive from the stored text under the same parent.
                 let synth = crate::l1::parse_str(&vc.parent, &vc.text)
                     .unwrap()
                     .into_iter()
@@ -3184,8 +2612,6 @@ mod tests {
                 assert_eq!(vc.id, synth.id().unwrap());
             }
 
-            // PROMOTE one card: append its block to the deck, re-parse the whole
-            // file, and confirm the matching card carries the same id.
             let vid = virtuals[0].id.clone();
             promote_virtual(&mut store, &vid, &deck_path).unwrap();
             let deck = crate::l1::parse_str("d.md", &std::fs::read_to_string(&deck_path).unwrap())
@@ -3200,15 +2626,12 @@ mod tests {
     #[test]
     fn remediation_card_reveal_is_carried() {
         use crate::depth::Reveal;
-        // A per-card `reveal:` directive survives in the stored `text` and re-parses on
-        // synth.
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let text =
             "## Why does X? <!-- reveal: line -->\npoint one\n\n## fact card\nplain answer\n";
 
         store_remediation(&mut store, "d.md", text, 1_000, None).unwrap();
-        // Synthesize each virtual card from its stored text to read its reveal.
         let synthesized: Vec<_> = store
             .virtual_cards_for("d.md")
             .iter()

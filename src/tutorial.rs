@@ -1,25 +1,12 @@
-//! The bundled tutorial deck and its one seeding rule. A brand-new decks
-//! folder gets "The alix tutorial" (a deck that teaches alix while being
-//! reviewed); an existing folder is never touched, and a deleted tutorial
-//! never comes back — deleting it is the graduation.
-
 use std::path::Path;
 
-/// The tutorial deck's file name inside a decks folder. The mobile app seeds
-/// its own bundled copy under the same name.
 pub const TUTORIAL_FILE: &str = "tutorial.md";
 
-/// The tutorial deck, embedded verbatim from `assets/decks/tutorial.md`. The
-/// repo asset is deliberately UNSTAMPED; seeding stamps it, so every install
-/// mints its own fresh identity tokens.
+// Deliberately unstamped: seeding mints each install's own identity tokens.
 pub const TUTORIAL_DECK: &str = include_str!("../assets/decks/tutorial.md");
 
-/// Seeds the tutorial into `dir` **only when `dir` itself does not exist
-/// yet** — the one moment we know this is a first run. An existing folder
-/// (even an empty one) is left alone: seeding into it could surprise a user
-/// who made the folder deliberately, and re-seeding after a delete would
-/// undo the tutorial's own "delete me" graduation. Best-effort: any error is
-/// reported as `false`, never a crash — the picker simply starts empty.
+// An existing folder (even empty) is left alone: re-seeding would undo the
+// tutorial's own delete-to-graduate design.
 pub fn seed_new_decks_dir(dir: &Path) -> bool {
     if dir.exists() {
         return false;
@@ -31,10 +18,8 @@ pub fn seed_new_decks_dir(dir: &Path) -> bool {
     if std::fs::write(&path, TUTORIAL_DECK).is_err() {
         return false;
     }
-    // Creation paths stamp at birth (spec §2.1): mint this install's own
-    // tokens into the fresh copy. Best-effort like the write above; a failed
-    // stamp leaves an unstamped (still loadable) tutorial that review-open
-    // stamps later.
+    // Best-effort: a failed stamp leaves an unstamped but still-loadable
+    // tutorial; review-open stamps it later.
     let _ = crate::stamp::stamp_deck(&path);
     true
 }
@@ -49,8 +34,6 @@ mod tests {
         let dir = tmp.path().join("decks");
         assert!(seed_new_decks_dir(&dir));
         let seeded = std::fs::read_to_string(dir.join(TUTORIAL_FILE)).unwrap();
-        // The repo asset is deliberately unstamped; the seeded copy is the
-        // asset plus this install's freshly minted identity text.
         let asset = crate::l1::parse_l1(TUTORIAL_FILE, TUTORIAL_DECK).unwrap();
         assert!(asset.deck_token.is_none(), "the asset stays unstamped");
         let deck = crate::l1::parse_l1(TUTORIAL_FILE, &seeded).unwrap();
@@ -91,10 +74,8 @@ mod tests {
         );
     }
 
-    /// The mobile app bundles its own copy (Flutter assets cannot reach
-    /// outside the app package); this pins the two files together. Skipped
-    /// when the mobile tree is absent (the published crate ships src/ and
-    /// assets/ only), stated loudly so the skip is never mistaken for a pass.
+    // Skipped without apps/mobile (published crate ships src/+assets/ only);
+    // stated loudly so a skip is never mistaken for a pass.
     #[test]
     fn the_mobile_copy_matches_the_canonical_deck() {
         let mobile_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("apps/mobile");
@@ -102,8 +83,6 @@ mod tests {
             eprintln!("skipping: no apps/mobile tree here (published crate)");
             return;
         }
-        // The guard keys its skip on the TREE, not the deck file, so a
-        // renamed-away copy can never silently skip this test.
         let copy = std::fs::read_to_string(mobile_dir.join("assets/decks/tutorial.md")).unwrap();
         assert_eq!(
             TUTORIAL_DECK, copy,
