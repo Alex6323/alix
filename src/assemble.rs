@@ -376,7 +376,7 @@ pub fn stamp_for_session_reclaiming(path: &Path, reclaim: &HashMap<u64, String>)
 
 /// The §1.7 lost-comment reclaim map for review-open (content fingerprint →
 /// orphaned token). Empty unless the deck has unstamped cards whose §7 content
-/// matches an ORPHANED token's records — a token still carrying a schedule that
+/// matches an ORPHANED token's records: a token still carrying a schedule that
 /// no live card in the deck's WORKSPACE claims (so a token a sibling deck still
 /// holds is never stolen). Read-only: the actual re-adoption is the reclaiming
 /// stamp write. The workspace scan runs only when unstamped cards exist (the
@@ -394,8 +394,6 @@ pub fn reclaim_map(store: &Store, path: &Path) -> HashMap<u64, String> {
     if wanted.is_empty() {
         return HashMap::new();
     }
-    // Every stamped card token across the deck's containing folder is live, so
-    // an orphan is genuinely unclaimed workspace-wide before it is reclaimed.
     let mut live: HashSet<String> = HashSet::new();
     if let Some(dir) = path.parent() {
         for file in workspace::deck_files(dir) {
@@ -545,9 +543,6 @@ pub fn select(
     if let [path] = paths.as_slice()
         && path.is_file()
     {
-        // §1.7 reclaim: a card that lost its `<!-- id: -->` comment re-adopts
-        // the orphaned token its progress hangs off, rather than minting fresh.
-        // Computed before stamping, from the store's orphans (workspace-scoped).
         let reclaim = reclaim_map(store, path);
         stamp_for_session_reclaiming(path, &reclaim);
         // Resolve any duplicate card token this deck loses (spec §2.4): the
@@ -629,11 +624,7 @@ pub fn select(
     // variants are rotated in per-presentation by the frontends, and distractors
     // are read when a choice question is built.)
     let mut augment = AugmentCache::open(augment::augment_path_for(store.path()));
-    // Uphold the §6 records invariant for every deck card (before the session
-    // build reaches any `get_or_insert`), and realign a cloze card's hole
-    // schedules to its current file holes (spec §3.4) — a cascade that also
-    // MOVES the matching augment-cache entries. Persist both stores at this
-    // enumerated write site when a realignment moved anything.
+    // Records must land before the session build reaches any `get_or_insert`.
     if realign_and_record(store, &mut augment, &cards) {
         if let Err(e) = augment.save() {
             eprintln!("warning: could not save the augment cache: {e}");
@@ -1107,8 +1098,8 @@ it reads line two\n\
     fn an_unstamped_card_matching_an_orphans_content_fingerprint_readopts_the_token() {
         // §1.7 reclaim: a card whose `<!-- id: -->` comment was stripped, whose
         // §7 content still matches an orphaned token's records, re-adopts that
-        // token at review-open instead of minting fresh — its earned schedule is
-        // preserved, not orphaned.
+        // token at review-open instead of minting fresh (its earned schedule is
+        // preserved, not orphaned).
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("geo.md");
         std::fs::write(
@@ -1145,9 +1136,113 @@ it reads line two\n\
     }
 
     #[test]
+    fn a_reverse_only_card_reclaims_its_orphaned_token() {
+        // §1.7 reclaim across `direction: reverse`: records, reclaim_map, and the
+        // reclaiming stamp all key on ONE fingerprint (the authored/forward
+        // card's, shared by its swapped twin), so a comment-stripped reverse card
+        // re-adopts the token its schedule hangs off instead of minting fresh.
+        // Before the fix the swapped twin recomputed a fingerprint over its
+        // swapped sides while the stamp keyed on the raw (forward) one, and the
+        // lookup missed.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("vocab.md");
+        let token = "revtok00000000000000000000";
+        std::fs::write(
+            &path,
+            format!("---\nid: \"deck1\"\ndirection: reverse\n---\n## Word <!-- id: {token} -->\nAntwort\n"),
+        )
+        .unwrap();
+        let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
+
+        // First open records the reverse card under its base token; then seed a
+        // schedule on the reversed key so there is earned progress to preserve.
+        select(
+            vec![path.clone()],
+            &mut store,
+            &test_config(),
+            &SelectOptions::default(),
+        )
+        .unwrap();
+        store.get_or_insert(&format!("{token}-r"), 0).total_reviews = 5;
+
+        // Strip the card's id comment: its token becomes an orphan (no live card
+        // claims it), the exact lost-comment case.
+        std::fs::write(
+            &path,
+            "---\nid: \"deck1\"\ndirection: reverse\n---\n## Word\nAntwort\n",
+        )
+        .unwrap();
+
+        select(
+            vec![path.clone()],
+            &mut store,
+            &test_config(),
+            &SelectOptions::default(),
+        )
+        .unwrap();
+
+        let stamped = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            stamped.contains(&format!("<!-- id: {token} -->")),
+            "the reverse-only card should re-adopt its orphaned token: {stamped}"
+        );
+        // Its earned schedule survived under the reversed key.
+        assert_eq!(5, store.get(&format!("{token}-r")).unwrap().total_reviews);
+    }
+
+    #[test]
+    fn a_both_direction_card_reclaims_its_orphaned_token() {
+        // The `direction: both` control: the forward half records the base
+        // token, so a comment-stripped card still re-adopts it. Guards that
+        // aligning the swapped twin's fingerprint onto the forward one did not
+        // regress the both case.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("vocab.md");
+        let token = "bothtok0000000000000000000";
+        std::fs::write(
+            &path,
+            format!(
+                "---\nid: \"deck1\"\ndirection: both\n---\n## Word <!-- id: {token} -->\nAntwort\n"
+            ),
+        )
+        .unwrap();
+        let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
+
+        select(
+            vec![path.clone()],
+            &mut store,
+            &test_config(),
+            &SelectOptions::default(),
+        )
+        .unwrap();
+        store.get_or_insert(token, 0).total_reviews = 4;
+
+        std::fs::write(
+            &path,
+            "---\nid: \"deck1\"\ndirection: both\n---\n## Word\nAntwort\n",
+        )
+        .unwrap();
+
+        select(
+            vec![path.clone()],
+            &mut store,
+            &test_config(),
+            &SelectOptions::default(),
+        )
+        .unwrap();
+
+        let stamped = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            stamped.contains(&format!("<!-- id: {token} -->")),
+            "the both-direction card should re-adopt its orphaned token: {stamped}"
+        );
+        assert_eq!(4, store.get(token).unwrap().total_reviews);
+    }
+
+    #[test]
     fn read_only_scans_never_write_records() {
         // Listing a workspace opens the store read-only and must never write it
-        // (no records added on a mere scan) — records are a review-open act.
+        // (no records added on a mere scan): records are a review-open act.
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
             dir.path().join("d.md"),

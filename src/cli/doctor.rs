@@ -349,7 +349,7 @@ fn workspace_findings(dir: &Path) -> Report {
         // matches a freshly-minted card, a stripped comment is the likely cause
         // and the progress is RECLAIMABLE (a review-open re-adopts the token);
         // when nothing matches, the non-reclaim is stated, not silent (a reformat
-        // that also changed content stales the fingerprint — §1.7).
+        // that also changed content stales the fingerprint, §1.7).
         if !orphans.cards.is_empty() && !fresh_fps.is_empty() {
             let reclaimable = orphans.cards.iter().any(|key| {
                 let base = alix::token::parse_card_id(key).map_or(key.as_str(), |(t, _, _)| t);
@@ -360,7 +360,7 @@ fn workspace_findings(dir: &Path) -> Report {
             if reclaimable {
                 report.warn(
                     "a card lost its `<!-- id: -->` comment (e.g. a formatter stripped it): its \
-                     old progress can be reclaimed — re-open the deck for review to re-adopt the \
+                     old progress can be reclaimed. Re-open the deck for review to re-adopt the \
                      token, or `alix reset --orphans` to discard it"
                         .to_string(),
                 );

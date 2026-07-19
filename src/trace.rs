@@ -390,7 +390,7 @@ impl Walk {
         }
         if let Some(checkpoint) = self.trace.checkpoints.get(self.current) {
             // Invariant (§6): the walk grades with no Session, so it is itself
-            // an entry-creation site — write records before the schedule entry.
+            // an entry-creation site: write records before the schedule entry.
             store.ensure_records_raw(&checkpoint.card_id, checkpoint.content_fp, &[]);
             let state = store.get_or_insert(&checkpoint.card_id, now_ms);
             Fsrs::default().apply(state, Depth::Recall, delta.grade(), now_ms, false);
@@ -1525,7 +1525,7 @@ mod tests {
     fn a_trace_walk_grade_creates_an_entry_with_records() {
         // The §6 invariant at the trace-walk grade path (review finding F1): the
         // walk grades with no Session, so it is itself an entry-creation site and
-        // must write records before the schedule entry — else the entry is
+        // must write records before the schedule entry, else the entry is
         // token→schedule with no content fingerprint to ever reclaim against.
         let dir = tempfile::tempdir().unwrap();
         let deck = trace_deck(dir.path());

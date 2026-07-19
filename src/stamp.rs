@@ -126,9 +126,9 @@ pub fn stamp_deck(path: &Path) -> Result<StampOutcome, StampError> {
 }
 
 /// [`stamp_deck`], but an unstamped card whose §7 content fingerprint is a key
-/// in `reclaim` is stamped with that pre-existing token instead of a fresh mint
-/// — the §1.7 lost-comment RECLAIM: a card that lost its `<!-- id: -->` comment
-/// re-adopts the orphaned token its progress still hangs off. Each reclaim
+/// in `reclaim` is stamped with that pre-existing token instead of a fresh mint:
+/// the §1.7 lost-comment RECLAIM, where a card that lost its `<!-- id: -->`
+/// comment re-adopts the orphaned token its progress still hangs off. Each reclaim
 /// token is used at most once (a second card of identical content mints fresh),
 /// so no reclaim can mint a duplicate. An empty map is exactly [`stamp_deck`].
 pub fn stamp_deck_reclaiming(
@@ -194,8 +194,7 @@ pub fn stamp_deck_reclaiming(
         DeckAction::None => None,
         _ => Some(mint()?),
     };
-    // A card line's §7 content fingerprint (a cloze block's sub-cards share it),
-    // so a lost-comment reclaim can re-adopt the orphaned token by content.
+    // A card line's §7 content fingerprint (a cloze block's sub-cards share it).
     let fp_by_line: HashMap<usize, u64> = deck
         .cards
         .iter()

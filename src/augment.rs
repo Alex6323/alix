@@ -462,7 +462,7 @@ impl AugmentCache {
     }
 
     /// MOVE a cloze card's hole-keyed cache entries to follow the realignment
-    /// cascade (spec §3.4, the D2 cross-family rule: MOVE, never invalidate — a
+    /// cascade (spec §3.4, the D2 cross-family rule: MOVE, never invalidate; a
     /// displaced hole must never inherit another word's distractors, and a live
     /// hole must never lose its cached choices to a re-index). Per the
     /// [`CascadeOutcome`], each matched hole's `token-<old>` augmentation and any
@@ -479,8 +479,8 @@ impl AugmentCache {
         let moves: HashMap<u32, u32> = outcome.remap.iter().copied().collect();
 
         // Per-card augmentations: pull every stored hole's entry (matched or
-        // orphaned), then re-insert only the matched ones at their new index —
-        // a fresh rebuild, so a fresh hole's key is left empty and an orphaned
+        // orphaned), then re-insert only the matched ones at their new index.
+        // A fresh rebuild, so a fresh hole's key is left empty and an orphaned
         // hole's entry drops.
         let stored: Vec<u32> = moves
             .keys()

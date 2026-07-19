@@ -107,7 +107,7 @@ pub struct Card {
     /// Dormant like `token`.
     pub hole: Option<u32>,
     /// For a cloze card: EVERY hole's realignment fingerprint, in document
-    /// order — the same block-level vector on every sub-card of the block (the
+    /// order, the same block-level vector on every sub-card of the block (the
     /// parser fills it), so any one sub-card can rebuild the whole card's
     /// [`crate::store::CardRecords`]. Empty for a plain card. Store-internal,
     /// never part of the identity hash.
@@ -197,6 +197,12 @@ impl Card {
         // reversed, so the token flip can compose `<token>-r` ids.
         card.token = self.token.clone();
         card.reversed = true;
+        // Carry the forward card's content fingerprint rather than recomputing
+        // over the swapped sides (the cloze block-fingerprint override in
+        // `plain` is the same precedent): one authored card is one §7 content
+        // unit, so records, the reclaim wanted-set, and the reclaiming stamp all
+        // key on a single value.
+        card.content_fingerprint = self.content_fingerprint;
         card
     }
 

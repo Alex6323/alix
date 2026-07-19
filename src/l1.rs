@@ -292,7 +292,7 @@ pub fn content_fingerprint(front: &str, back: &[String]) -> u64 {
     hasher.finish()
 }
 
-/// XxHash64 of a canonicalized string — one component of a hole fingerprint.
+/// XxHash64 of a canonicalized string: one component of a hole fingerprint.
 fn hash64(s: &str) -> u64 {
     let mut hasher = XxHash64::default();
     hasher.write(s.as_bytes());
@@ -302,8 +302,8 @@ fn hash64(s: &str) -> u64 {
 /// Every hole's realignment fingerprint for a card's scanned answer lines,
 /// in document order (spec §3.4). `text_fp` hashes the canonicalized hidden
 /// text; `line_fp` hashes the hole's answer line canonicalized with THIS hole's
-/// span replaced by [`HOLE_MASK`] and its siblings rendered as their hidden text
-/// — so a rewritten context changes `line_fp` (falling to the text-only pass)
+/// span replaced by [`HOLE_MASK`] and its siblings rendered as their hidden text,
+/// so a rewritten context changes `line_fp` (falling to the text-only pass)
 /// while the hole keeps its position marker among its siblings.
 fn hole_fingerprints(parsed: &[Vec<Seg>], holes: &[(usize, usize, &str)]) -> Vec<HoleFingerprint> {
     holes
@@ -1170,7 +1170,7 @@ fn build_card(
     // not collide).
     let raw_answer: Vec<String> = answer.iter().map(|(_, text)| text.clone()).collect();
     let block_fingerprint = content_fingerprint(&front, &raw_answer);
-    // Every hole's realignment fingerprint, in document order — shared by all
+    // Every hole's realignment fingerprint, in document order, shared by all
     // sub-cards of this block so any one can rebuild the card's store records.
     let block_holes = hole_fingerprints(&parsed, &holes);
     for (n, (hole_line, hole_seg, answer_text)) in holes.iter().enumerate() {

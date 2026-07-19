@@ -283,7 +283,7 @@ pub struct Writer {
 /// The fingerprint-records format version (spec §6). A one-byte tag on every
 /// [`CardRecords`]: bumping it declares a store-data invalidation, so a change
 /// to the §7 canonical form can't silently wipe hole schedules on unchanged
-/// cards — stale-versioned records are ignored and rewritten, never mismatched.
+/// cards: stale-versioned records are ignored and rewritten, never mismatched.
 /// Store-internal and freely changeable (never card identity).
 pub const FP_VERSION: u8 = 1;
 
@@ -291,7 +291,7 @@ pub const FP_VERSION: u8 = 1;
 /// across edits (spec §3.4). Store-internal, non-frozen matcher data: `text_fp`
 /// hashes the hole's hidden text, `line_fp` hashes its masked answer line
 /// (both canonicalized in [`crate::l1`]). The matcher only tests equality, so
-/// ~16 bytes/hole suffices — the raw strings are never stored.
+/// ~16 bytes/hole suffices (the raw strings are never stored).
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct HoleFingerprint {
     /// XxHash64 of the canonicalized hidden text.
@@ -307,7 +307,7 @@ pub struct CardRecords {
     /// [`FP_VERSION`] at write time; a stale value is ignored and rewritten.
     pub version: u8,
     /// The block-level §7 content fingerprint
-    /// ([`crate::l1::content_fingerprint`]) — powers the §1.7 lost-comment
+    /// ([`crate::l1::content_fingerprint`]): powers the §1.7 lost-comment
     /// reclaim and the precise doctor tell.
     pub content_fp: u64,
     /// Each hole's fingerprint in recorded (document) order; empty for a plain
@@ -346,7 +346,7 @@ pub struct CascadeOutcome {
 /// Re-attach stored hole schedules to a card's current file holes so a hole's
 /// progress FOLLOWS THE WORD, not the position (spec §3.4). Two passes, each
 /// walking file holes in document order and consuming the FIRST unconsumed
-/// stored record — in recorded order — that matches:
+/// stored record (in recorded order) that matches:
 ///
 /// 1. exact `(text_fp, line_fp)` pairs anchor first (context intact);
 /// 2. leftovers match by `text_fp` alone (a rewritten context, or an identical-word twin).
@@ -641,7 +641,7 @@ impl Store {
     /// Content-fingerprint → orphaned token, for the §1.7 lost-comment reclaim:
     /// for each `wanted` content fingerprint, an ORPHANED base token (not in
     /// `live`, but still carrying a stored schedule) whose records hold that
-    /// fingerprint — the token an unstamped card of that content re-adopts. At
+    /// fingerprint: the token an unstamped card of that content re-adopts. At
     /// most one token per fingerprint (lowest token breaks a tie, for
     /// determinism); empty when nothing matches. Read-only.
     pub fn reclaim_candidates(
@@ -655,7 +655,7 @@ impl Store {
             if !wanted.contains(&rec.content_fp) || live.contains(token) {
                 continue;
             }
-            // A genuine orphan still has a schedule to preserve — under the base
+            // A genuine orphan still has a schedule to preserve: under the base
             // token (plain) or a `token-N` sub-key (cloze). The `-` delimiter is
             // outside the token alphabet, so the prefix test can't cross tokens.
             let prefix = format!("{token}-");
@@ -680,12 +680,12 @@ impl Store {
         best
     }
 
-    /// Write (or refresh) a card's [`CardRecords`] under its base token — the
+    /// Write (or refresh) a card's [`CardRecords`] under its base token: the
     /// §6 invariant that no store entry exists without its records. Called at
     /// every entry-creation site (review-open, the tutor/remediation mints, the
     /// trace-walk grade). A no-op for an unstamped card (no token to key on).
-    /// Does NOT run the hole cascade — that is [`realign_card_holes`], which
-    /// reads the OLD records before this overwrites them. Does not save.
+    /// Does NOT run the hole cascade (that is [`realign_card_holes`], which
+    /// reads the OLD records before this overwrites them). Does not save.
     pub fn ensure_records(&mut self, card: &Card) {
         if let Some(token) = card.token.as_deref() {
             self.ensure_records_raw(token, card.content_fingerprint, &card.block_holes);
@@ -711,15 +711,14 @@ impl Store {
     /// holes. Returns the [`CascadeOutcome`] when a realignment actually MOVED
     /// schedules (the card had current-version records whose holes disagreed
     /// with the file) so the caller can move the matching augment entries; `None`
-    /// when nothing moved — no prior records, a stale [`FP_VERSION`] (ignored and
+    /// when nothing moved: no prior records, a stale [`FP_VERSION`] (ignored and
     /// rewritten, never mismatched: a canon tweak must not wipe schedules on
     /// unchanged cards), or the holes already agree. Does not save.
     ///
     /// The cascade REBUILDS this token's `token-N` entries into a fresh map:
     /// fingerprinted moves win contested keys, a fresh hole wins its live key
     /// (it simply has no entry until reviewed), and unmatched (orphaned) records
-    /// are EVICTED to the shelf — never left squatting where a new word would
-    /// inherit the old word's schedule.
+    /// are evicted to the shelf.
     pub fn realign_card_holes(
         &mut self,
         token: &str,
@@ -744,38 +743,51 @@ impl Store {
     }
 
     /// Rebuild `token`'s `token-N` schedule entries per a [`CascadeOutcome`]:
-    /// matched holes move to their new index, orphaned holes are evicted to the
-    /// shelf with their stored fingerprint, and fresh indices are left with no
-    /// entry. `stored_holes` are the pre-cascade records (for the evicted
-    /// fingerprints). Does not save.
+    /// matched holes move to their new index, and every unmapped survivor (a
+    /// named orphan or a stray out-of-range entry) evicts to the shelf; fresh
+    /// indices are left with no entry. `stored_holes` are the pre-cascade records
+    /// (for the evicted fingerprints). Does not save.
     fn apply_hole_cascade(
         &mut self,
         token: &str,
         stored_holes: &[HoleFingerprint],
         outcome: &CascadeOutcome,
     ) {
-        // Pull every current `token-N` entry out into a fresh map keyed by old
-        // hole index, so the rebuild can't leave a stale entry under a live key.
+        // Pull EVERY `token-N` hole entry into a fresh map keyed by old hole
+        // index, not just `0..stored_holes.len()`: a stray entry above the range
+        // must be pulled too, so it can't survive to be inherited by a future
+        // fresh hole.
+        let prefix = format!("{token}-");
+        let hole_keys: Vec<(u32, String)> = self
+            .cards
+            .keys()
+            .filter(|key| key.starts_with(&prefix))
+            .filter_map(|key| match crate::token::parse_card_id(key) {
+                Some((_, Some(n), false)) => Some((n, key.clone())),
+                _ => None,
+            })
+            .collect();
         let mut old: HashMap<u32, CardState> = HashMap::new();
-        for n in 0..stored_holes.len() as u32 {
-            let key = crate::token::card_id(token, Some(n), false);
+        for (n, key) in hole_keys {
             if let Some(state) = self.cards.remove(&key) {
                 old.insert(n, state);
             }
         }
-        // Matched holes move to their new index.
         for (from, to) in &outcome.remap {
             if let Some(state) = old.remove(from) {
                 let key = crate::token::card_id(token, Some(*to), false);
                 self.cards.insert(key, state);
             }
         }
-        // Orphaned holes: evict any surviving schedule to the shelf. A hole with
-        // no schedule (never reviewed) leaves nothing behind.
-        for orphan in &outcome.orphaned {
-            if let Some(state) = old.remove(orphan) {
+        // Every unmapped survivor evicts to the shelf: the cascade's named
+        // orphans and any stray high-index entry alike. An in-range index carries
+        // its stored fingerprint; a stray (no record) carries the default.
+        let mut leftover: Vec<u32> = old.keys().copied().collect();
+        leftover.sort_unstable();
+        for orphan in leftover {
+            if let Some(state) = old.remove(&orphan) {
                 let fp = stored_holes
-                    .get(*orphan as usize)
+                    .get(orphan as usize)
                     .copied()
                     .unwrap_or_default();
                 self.hole_orphans.push(OrphanedHole {
@@ -1007,6 +1019,29 @@ impl Store {
             if self.decks.remove(subject).is_some() {
                 removed += 1;
             }
+        }
+        // Once a pruned token has no schedule left, its records and shelf entries
+        // can never be reclaimed (reclaim needs a schedule to preserve), so they
+        // are dead weight and go with it. They are not counted: they are internal
+        // bookkeeping, not keys the user was shown. A shelf entry whose token is
+        // still LIVE stays (evidence for a future per-hole reclaim, bounded by
+        // real edits), not garbage.
+        let pruned_tokens: HashSet<&str> = orphans
+            .cards
+            .iter()
+            .filter_map(|id| crate::token::parse_card_id(id).map(|(token, _, _)| token))
+            .collect();
+        for token in pruned_tokens {
+            let prefix = format!("{token}-");
+            let still_scheduled = self
+                .cards
+                .keys()
+                .any(|key| key == token || key.starts_with(&prefix));
+            if still_scheduled {
+                continue;
+            }
+            self.records.remove(token);
+            self.hole_orphans.retain(|orphan| orphan.token != token);
         }
         removed
     }
@@ -1594,6 +1629,43 @@ mod tests {
     }
 
     #[test]
+    fn a_stray_high_index_hole_entry_is_pulled_by_the_cascade_not_left_to_squat() {
+        // A `token-N` entry above the stored-hole range (unreachable today, but
+        // structurally possible) must not survive the rebuild where a future
+        // fresh hole could inherit it: the cascade pulls the whole `-N` family,
+        // so a stray orphans to the shelf like any other unmapped record.
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let token = "tok";
+        let a = hf(1, 10);
+        let b = hf(2, 20);
+        store.ensure_records_raw(token, 100, &[a, b]);
+        store.get_or_insert("tok-0", 0).total_reviews = 1; // hole a
+        store.get_or_insert("tok-1", 0).total_reviews = 2; // hole b
+        store.get_or_insert("tok-5", 0).total_reviews = 9; // a stray, out of range
+
+        // Reorder the two live holes; nothing orphans in the pure cascade.
+        let outcome = store.realign_card_holes(token, &[b, a], 100).unwrap();
+        assert_eq!(vec![(0, 1), (1, 0)], outcome.remap);
+
+        // The two live schedules followed their words…
+        assert_eq!(2, store.get("tok-0").unwrap().total_reviews, "b -> hole 0");
+        assert_eq!(1, store.get("tok-1").unwrap().total_reviews, "a -> hole 1");
+        // …and the stray is gone from every live key, evicted to the shelf.
+        assert!(
+            store.get("tok-5").is_none(),
+            "the stray must not survive under a live key"
+        );
+        assert!(
+            store
+                .hole_orphans()
+                .iter()
+                .any(|o| o.token == token && o.state.total_reviews == 9),
+            "the stray's schedule should sit on the shelf"
+        );
+    }
+
+    #[test]
     fn a_stale_fingerprint_version_is_ignored_and_rewritten_never_mismatched() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
@@ -1660,6 +1732,48 @@ mod tests {
         assert_eq!(Some(Depth::Recall), store.last_depth("rust.md"));
         assert!(store.get("gone").is_none());
         assert_eq!(None, store.last_depth("deleted.md"));
+    }
+
+    #[test]
+    fn reset_orphans_clears_shelf_entries_and_records_of_pruned_tokens() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let a = hf(1, 10);
+
+        // An orphan token carrying all three families (schedule, records, a shelf
+        // entry), claimed by no live card.
+        store.get_or_insert("gonetoken", 0).total_reviews = 3;
+        store.ensure_records_raw("gonetoken", 100, &[a]);
+        store.hole_orphans.push(OrphanedHole {
+            token: "gonetoken".to_string(),
+            fp: a,
+            state: CardState::new(0),
+        });
+        // A live token carrying the same three families, claimed by a live card.
+        store.get_or_insert("livetoken", 0).total_reviews = 7;
+        store.ensure_records_raw("livetoken", 200, &[a]);
+        store.hole_orphans.push(OrphanedHole {
+            token: "livetoken".to_string(),
+            fp: a,
+            state: CardState::new(0),
+        });
+
+        let known_cards: HashSet<String> = ["livetoken".to_string()].into_iter().collect();
+        let orphans = store.orphans(&known_cards, &HashSet::new());
+        assert_eq!(vec!["gonetoken".to_string()], orphans.cards);
+
+        store.prune_orphans(&orphans);
+
+        // The pruned token's schedule, records, and shelf entry are all gone: with
+        // no schedule left, its records and shelf entry are unreclaimable dead weight.
+        assert!(store.get("gonetoken").is_none());
+        assert!(store.records("gonetoken").is_none());
+        assert!(store.hole_orphans().iter().all(|o| o.token != "gonetoken"));
+        // The live token keeps all three: its shelf entry stays as evidence for a
+        // future per-hole reclaim.
+        assert!(store.get("livetoken").is_some());
+        assert!(store.records("livetoken").is_some());
+        assert!(store.hole_orphans().iter().any(|o| o.token == "livetoken"));
     }
 
     #[test]
