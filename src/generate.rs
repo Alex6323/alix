@@ -25,44 +25,45 @@ You are an expert at creating spaced-repetition flashcards. Read the web page \
 at {url} — use the WebFetch tool to fetch it (once) — and turn its content \
 into a flashcard deck.
 
-OUTPUT FORMAT — a plain-text deck, one card after another:
-- A card starts with `# ` at column 0, followed by the question/front on the \
-same line.
-- The lines BELOW it, indented (a tab or spaces), are the answer/back. EVERY \
-card MUST have at least one indented answer line — never write a front with no \
+OUTPUT FORMAT — a Markdown deck, one card after another:
+- A card starts with `## ` at column 0, followed by the question/front on the \
+same line. Never indent a card front.
+- The plain lines BELOW it (no indentation, no bullet) are the answer/back. \
+EVERY card MUST have at least one answer line — never write a front with no \
 answer. Keep answers short — one fact or a few words; several lines are allowed.
-- An indented `! ` line adds a note shown AFTER answering. Add a note to most \
-cards: a brief elaboration, a concrete example, a mnemonic, or why it matters \
-— one or two short lines, never just restating the answer. Put each note line \
-on its own `! ` line, after the answer lines.
-- A fill-in-the-blank (cloze) card is a plain `# ` card with a `% reveal: cloze` \
-line right below the front. The front is a short instruction; the INDENTED \
-answer line(s) below hold the full sentence, with each hidden span wrapped in \
-{{double curly braces}}. A lone single brace is literal, so code with `{}` is \
-fine in a cloze answer. The blanks live in the answer line, NEVER on the front \
-or the `% reveal: cloze` line. Use `% reveal: cloze` only when there is a \
-natural word to blank out; otherwise use a plain `#` card. Example of one plain \
-card followed by one cloze card:
-      # What guarantee does ownership give each value in Rust?
-          Exactly one owner at a time.
-          ! This is what lets Rust free memory deterministically, with no
-          ! garbage collector.
-      # Fill in the ownership rule about scope.
-      % reveal: cloze
-          When the owner goes out of scope, the value is {{dropped}}.
-          ! \"Dropped\" means its destructor runs and its memory is freed.
-- `% ` lines are comments, ignored by the trainer.
-- To begin an answer line with a literal #, %, or !, escape it with a \
-backslash: \\#.
+- A `> ` line adds a note shown AFTER answering. Add a note to most cards: a \
+brief elaboration, a concrete example, a mnemonic, or why it matters — one or \
+two short lines, never just restating the answer. Put each note line on its \
+own `> ` line, after the answer lines.
+- A fill-in-the-blank (cloze) card hides spans of its answer: wrap each hidden \
+span as `\\cloze{...}` inside the answer line. The front is a short \
+instruction; the answer line(s) hold the full sentence with the hidden spans \
+wrapped. Braces outside a `\\cloze{...}` marker are literal, so code with `{}` \
+is fine. The blanks live in the answer lines, NEVER on the front. Use \
+`\\cloze{...}` only when there is a natural word to blank out; otherwise write \
+a plain question-and-answer card. Example of one plain card followed by one \
+cloze card:
 
-Begin the file with exactly these two comment lines:
-  % Generated from {url}
-  % link: {url}
-The `% link:` line lets the learner ask follow-up questions against the source.
+## What guarantee does ownership give each value in Rust?
+Exactly one owner at a time.
+> This is what lets Rust free memory deterministically, with no garbage collector.
+
+## Fill in the ownership rule about scope.
+When the owner goes out of scope, the value is \\cloze{dropped}.
+> \"Dropped\" means its destructor runs and its memory is freed.
+
+- To start an answer line with a literal `## `, `> `, `---`, `<!--`, or a \
+code-fence marker, escape it with a leading backslash (e.g. `\\## `).
+
+Begin the file with exactly this frontmatter block:
+---
+link: {url}
+---
+The `link:` key lets the learner ask follow-up questions against the source.
 
 PEDAGOGY — produce a balanced deck of AT MOST {max_cards} cards spread across \
 four layers of understanding:
-  1. Facts & terminology — definitions and key terms. Prefer cloze (% reveal: cloze) here.
+  1. Facts & terminology — definitions and key terms. Prefer cloze (`\\cloze{...}` holes) here.
   2. Concepts & mechanisms — \"why\" and \"how\" questions (plain cards).
   3. Application — \"given X, what happens / what would you do?\" (plain cards).
   4. Connections — how ideas relate, contrast, or build on each other.
@@ -72,17 +73,17 @@ CARD QUALITY:
 - The answer must cover exactly what the front asks, no more. If it includes a \
 fact the question did not ask for, either narrow the answer to the question, \
 widen the question to cover the whole answer, or split into separate cards. \
-Extra context goes in the `! ` note, not the answer.
+Extra context goes in the `> ` note, not the answer.
 - Do not cram an enumeration into one prose answer. If the answer is a list of \
 several items, split it into several one-idea cards instead — one card per item \
 or group. Only when the ordered list ITSELF is the thing to learn (steps, a \
-sequence) keep it as one card with `% reveal: line` and one item per indented \
-answer line.
+sequence) keep it as one card with a `<!-- reveal: line -->` line right below \
+its front and one item per answer line.
 - A MAPPING of pairs (each X with its Y: ABIs to target triples, terms to \
 meanings) is not an ordered sequence. Never author a \"match each X to its Y\" \
-card that recalls the whole table at once, and never use `% reveal: line` for \
-one; make it ONE cloze card, one line per pair with the recalled half in \
-{{...}}, so every pair is drilled on its own.
+card that recalls the whole table at once, and never use `<!-- reveal: line -->` \
+for one; make it ONE cloze card, one line per pair with the recalled half in \
+`\\cloze{...}`, so every pair is drilled on its own.
 - Give answers and notes clean structure when the content has it (short lines, \
 one point per line — do NOT prefix items with a bullet or dash; bullets are added \
 later by `alix deck augment --target format`); keep an atomic answer atomic — \
@@ -95,7 +96,7 @@ same question.
 - Fronts must be unambiguous and answerable from memory; avoid yes/no questions.
 - Write original questions and answers in your own words; do not copy long \
 passages verbatim.
-- Give most cards a `! ` note that adds something beyond the answer (context, \
+- Give most cards a `> ` note that adds something beyond the answer (context, \
 an example, a caveat, or a memory hook).
 - Order cards from foundational to advanced.
 
@@ -117,39 +118,40 @@ You are an expert at creating spaced-repetition flashcards. Explore the source a
 (read-only, no write or shell access) — and turn its key facts into a flashcard \
 deck.
 
-OUTPUT FORMAT — a plain-text deck, one card after another:
-- A card starts with `# ` at column 0, followed by the question/front on the \
-same line.
-- The lines BELOW it, indented (a tab or spaces), are the answer/back. EVERY \
-card MUST have at least one indented answer line — never write a front with no \
+OUTPUT FORMAT — a Markdown deck, one card after another:
+- A card starts with `## ` at column 0, followed by the question/front on the \
+same line. Never indent a card front.
+- The plain lines BELOW it (no indentation, no bullet) are the answer/back. \
+EVERY card MUST have at least one answer line — never write a front with no \
 answer. Keep answers short — one fact or a few words; several lines are allowed.
-- An indented `! ` line adds a note shown AFTER answering. Add a note to most \
-cards: a brief elaboration, a concrete example, a mnemonic, or why it matters \
-— one or two short lines, never just restating the answer.
-- A fill-in-the-blank (cloze) card is a plain `# ` card with a `% reveal: cloze` \
-line right below the front. The front is a short instruction; the INDENTED \
-answer line(s) below hold the full sentence, with each hidden span wrapped in \
-{{double curly braces}} — the blanks live in the answer line, NEVER on the front \
-or the `% reveal: cloze` line. Use `% reveal: cloze` only when there is a \
-natural word to blank out.
-- A `% at: file:start-end` line indented under a card cites where its answer \
-lives in the source (e.g. `% at: src/string.rs:120-128`; the path is relative to \
-the source root — your working directory). Add one to every card whose answer \
-maps to a specific, contiguous range of lines — read the real lines, never guess \
-the numbers — so the learner can flip the card to its source on reveal. Omit it \
-for a card that synthesizes across several places.
-- `% ` lines are comments, ignored by the trainer. To begin an answer line with \
-a literal #, %, or !, escape it with a backslash: \\#.
+- A `> ` line adds a note shown AFTER answering. Add a note to most cards: a \
+brief elaboration, a concrete example, a mnemonic, or why it matters — one or \
+two short lines, never just restating the answer.
+- A fill-in-the-blank (cloze) card hides spans of its answer: wrap each hidden \
+span as `\\cloze{...}` inside the answer line. The front is a short \
+instruction; the answer line(s) hold the full sentence with the hidden spans \
+wrapped — the blanks live in the answer lines, NEVER on the front. Braces \
+outside a `\\cloze{...}` marker are literal, so code with `{}` is fine. Use \
+`\\cloze{...}` only when there is a natural word to blank out.
+- A `<!-- at: file:start-end -->` line under a card cites where its answer \
+lives in the source (e.g. `<!-- at: src/string.rs:120-128 -->`; the path is \
+relative to the source root — your working directory). Add one to every card \
+whose answer maps to a specific, contiguous range of lines — read the real \
+lines, never guess the numbers — so the learner can flip the card to its \
+source on reveal. Omit it for a card that synthesizes across several places.
+- To start an answer line with a literal `## `, `> `, `---`, `<!--`, or a \
+code-fence marker, escape it with a leading backslash (e.g. `\\## `).
 
-Begin the file with exactly these two comment lines:
-  % Generated from {source}
-  % source: {source}
-The `% source:` line ties the deck to its source, so `alix exam` can later grade \
+Begin the file with exactly this frontmatter block:
+---
+source: {source}
+---
+The `source:` key ties the deck to its source, so `alix exam` can later grade \
 your understanding against it.
 
 PEDAGOGY — produce a balanced deck of AT MOST {max_cards} cards spread across \
 four layers of understanding:
-  1. Facts & terminology — definitions and key terms. Prefer cloze (% reveal: cloze) here.
+  1. Facts & terminology — definitions and key terms. Prefer cloze (`\\cloze{...}` holes) here.
   2. Concepts & mechanisms — \"why\" and \"how\" questions (plain cards).
   3. Application — \"given X, what happens / what would you do?\" (plain cards).
   4. Connections — how the pieces relate, contrast, or build on each other.
@@ -159,17 +161,17 @@ CARD QUALITY:
 - The answer must cover exactly what the front asks, no more. If it includes a \
 fact the question did not ask for, either narrow the answer to the question, \
 widen the question to cover the whole answer, or split into separate cards. \
-Extra context goes in the `! ` note, not the answer.
+Extra context goes in the `> ` note, not the answer.
 - Do not cram an enumeration into one prose answer. If the answer is a list of \
 several items, split it into several one-idea cards instead — one card per item \
 or group. Only when the ordered list ITSELF is the thing to learn (steps, a \
-sequence) keep it as one card with `% reveal: line` and one item per indented \
-answer line.
+sequence) keep it as one card with a `<!-- reveal: line -->` line right below \
+its front and one item per answer line.
 - A MAPPING of pairs (each X with its Y: ABIs to target triples, terms to \
 meanings) is not an ordered sequence. Never author a \"match each X to its Y\" \
-card that recalls the whole table at once, and never use `% reveal: line` for \
-one; make it ONE cloze card, one line per pair with the recalled half in \
-{{...}}, so every pair is drilled on its own.
+card that recalls the whole table at once, and never use `<!-- reveal: line -->` \
+for one; make it ONE cloze card, one line per pair with the recalled half in \
+`\\cloze{...}`, so every pair is drilled on its own.
 - Give answers and notes clean structure when the content has it (short lines, \
 one point per line — do NOT prefix items with a bullet or dash; bullets are added \
 later by `alix deck augment --target format`); keep an atomic answer atomic — \
@@ -180,7 +182,7 @@ never pad a one-word answer into a list.
 rephrasing the same question.
 - Ground every card in what the source actually shows; do not invent details \
 it doesn't contain. Fronts must be answerable from memory; avoid yes/no questions.
-- Give most cards a `! ` note that adds something beyond the answer.
+- Give most cards a `> ` note that adds something beyond the answer.
 - Order cards from foundational to advanced.
 
 REVISE before finishing: re-read the whole draft and merge or delete any cards \
@@ -197,19 +199,19 @@ returning the improved deck.
 Apply these edits:
 - Remove or MERGE cards that test the same fact or overlap heavily — every \
 card must test something distinct. This is the most important fix.
-- Drop cards that are ambiguous or trivial, or whose `! ` note merely restates \
+- Drop cards that are ambiguous or trivial, or whose `> ` note merely restates \
 the answer.
 - Tighten any card whose answer covers more than its front asks: narrow the \
-answer to the question, move the extra fact to the `! ` note, or split it into \
+answer to the question, move the extra fact to the `> ` note, or split it into \
 distinct cards. A front and its answer must ask and tell the same thing.
 - Rewrite any card that recalls a whole mapping or table of pairs at once \
 (\"match each X to its Y\") as one cloze card: one line per pair, the recalled \
-half in {{...}}. Ordered steps may stay a `% reveal: line` card; unordered \
-pairs never.
-- Keep the EXACT same file format: the leading `%` comment lines, `# ` card \
-fronts at column 0, indented answer lines, and indented `! ` notes. A cloze \
-card carries a `% reveal: cloze` line below its front and keeps its blanks \
-({{like this}}) in its indented answer line.
+half in `\\cloze{...}`. Ordered steps may stay a `<!-- reveal: line -->` card; \
+unordered pairs never.
+- Keep the EXACT same file format: the leading `---` frontmatter block, `## ` \
+card fronts at column 0, plain answer lines below each front, `> ` notes, and \
+any `<!-- key: value -->` directive lines. A cloze card keeps its \
+`\\cloze{...}` holes in its answer lines.
 - Preserve the good cards and their order; do not invent filler to hit a count.
 
 Output ONLY the improved deck — no commentary, no markdown code fences.
@@ -332,16 +334,17 @@ fn build_prompt(source: &str, url: bool, cfg: &GenerateDeckConfig) -> String {
 }
 
 /// Strips anything around the deck itself: leading commentary or an opening
-/// code fence before the first deck line (a deck always starts with a `%`
-/// comment or a `#` card front), and trailing blank or fence lines. Trailing
-/// prose can't be told apart from a card's answer line, so the prompt asks for
-/// none; what this reliably removes is markdown wrapping and lead-in text.
+/// code fence before the first deck line (a deck starts with its `---`
+/// frontmatter fence, a `# ` title, or a `## ` card front), and trailing
+/// blank or fence lines. Trailing prose can't be told apart from a card's
+/// answer line, so the prompt asks for none; what this reliably removes is
+/// markdown wrapping and lead-in text.
 fn clean_output(raw: &str) -> String {
     let lines: Vec<&str> = raw.lines().collect();
-    let Some(start) = lines.iter().position(|l| {
-        let t = l.trim_start();
-        t.starts_with('%') || t.starts_with('#')
-    }) else {
+    let Some(start) = lines
+        .iter()
+        .position(|l| *l == "---" || l.starts_with("# ") || l.starts_with("## "))
+    else {
         return raw.trim().to_string();
     };
     let mut end = lines.len();
@@ -356,19 +359,32 @@ fn clean_output(raw: &str) -> String {
     space_cards(&lines[start..end])
 }
 
-/// Inserts a blank line before each card front (a `#` at column 0) *after the
-/// first*, so a generated deck's cards are visually separated. The first card
-/// stays attached to any `%` header above it, and a card already preceded by a
-/// blank line is left untouched (no double blanks).
+/// Inserts a blank line before each card front (`## ` at column 0, outside a
+/// code fence) *after the first*, so a generated deck's cards are visually
+/// separated. The first card stays attached to any frontmatter/title above
+/// it, and a card already preceded by a blank line is left untouched (no
+/// double blanks).
 fn space_cards(lines: &[&str]) -> String {
     let mut out: Vec<&str> = Vec::with_capacity(lines.len());
     let mut seen_card = false;
+    let mut fence: Option<char> = None;
     for &line in lines {
-        if line.starts_with('#') {
-            if seen_card && out.last().is_some_and(|prev| !prev.trim().is_empty()) {
-                out.push("");
+        match fence {
+            Some(ch) => {
+                if crate::l1::closes_fence(line, ch) {
+                    fence = None;
+                }
             }
-            seen_card = true;
+            None => {
+                if let Some(ch) = crate::l1::fence_opener(line) {
+                    fence = Some(ch);
+                } else if line.starts_with("## ") {
+                    if seen_card && out.last().is_some_and(|prev| !prev.trim().is_empty()) {
+                        out.push("");
+                    }
+                    seen_card = true;
+                }
+            }
         }
         out.push(line);
     }
@@ -462,21 +478,22 @@ mod tests {
         let p = build_prompt("https://example.org/page", true, &cfg(12));
         assert!(p.contains("https://example.org/page"));
         assert!(p.contains("AT MOST 12 cards"));
-        assert!(p.contains("% link: https://example.org/page"));
-        // It teaches the format and the four layers.
-        assert!(p.contains("% reveal: cloze"));
+        assert!(p.contains("link: https://example.org/page"));
+        // It teaches the L1 format and the four layers.
+        assert!(p.contains("## "));
         assert!(p.contains("four layers"));
         assert!(!p.contains("{url}"));
         assert!(!p.contains("{max_cards}"));
-        // Cloze guidance must use double braces and keep the blank in the
-        // answer, not on the front (the bug that broke real generations).
-        assert!(p.contains("{{double curly braces}}"));
-        assert!(p.contains("{{dropped}}"));
+        // Cloze guidance must use the `\cloze{...}` marker and keep the blank
+        // in the answer, not on the front (the bug that broke real
+        // generations).
+        assert!(p.contains("\\cloze{...}"));
+        assert!(p.contains("\\cloze{dropped}"));
         assert!(p.contains("NEVER on the front"));
         assert!(p.contains("never write a front with no answer"));
         // Notes must be actively requested, not just described as optional.
         assert!(p.contains("Add a note to most cards"));
-        assert!(p.contains("Give most cards a `! ` note"));
+        assert!(p.contains("Give most cards a `> ` note"));
         // Always-on self-review against redundancy.
         assert!(p.contains("NO TWO CARDS MAY TEST THE SAME FACT"));
         assert!(p.contains("REVISE before finishing"));
@@ -485,18 +502,29 @@ mod tests {
         // A mapping of pairs becomes one cloze card, never a recall-the-table
         // card (the "match each Android ABI" bug, 2026-07-14).
         assert!(p.contains("drilled on its own"));
+        // The L1 pin: no stray old-format syntax may sneak back into the
+        // template — the trainer no longer parses it.
+        assert!(!p.contains("% reveal"));
+        assert!(!p.contains("% link"));
+        assert!(!p.contains("{{"));
+        assert!(!p.contains("indented answer"));
     }
 
     #[test]
     fn review_prompt_embeds_the_deck_and_asks_to_dedupe() {
-        let p = build_review_prompt("% link: u\n# Q\n\tA\n");
-        assert!(p.contains("# Q"));
+        let p = build_review_prompt("---\nlink: u\n---\n\n## Q\nA\n");
+        assert!(p.contains("## Q"));
         assert!(p.contains("MERGE cards that test the same fact"));
         assert!(p.contains("Output ONLY the improved deck"));
         assert!(p.contains("must ask and tell the same thing"));
         // The review pass also converts recall-the-whole-mapping cards to cloze.
         assert!(p.contains("one line per pair"));
-        assert!(p.ends_with("% link: u\n# Q\n\tA\n"));
+        assert!(p.ends_with("---\nlink: u\n---\n\n## Q\nA\n"));
+        // The L1 pin: the format-keeping instruction describes L1, not the
+        // retired `%`-directive format.
+        assert!(p.contains("`---` frontmatter block"));
+        assert!(!p.contains("% reveal"));
+        assert!(!p.contains("{{"));
     }
 
     #[test]
@@ -521,22 +549,29 @@ mod tests {
         let p = build_prompt("src/scheduler.rs", false, &cfg(8));
         assert!(p.contains("src/scheduler.rs"));
         assert!(p.contains("Read, Glob and Grep")); // read-only file tools
-        assert!(p.contains("% source: src/scheduler.rs")); // ties to source for exam
+        assert!(p.contains("source: src/scheduler.rs")); // ties to source for exam
         assert!(p.contains("AT MOST 8 cards"));
         assert!(!p.contains("WebFetch")); // a local source, not a web page
         assert!(!p.contains("{source}"));
-        // It asks for per-card `% at:` source citations (read the real lines).
-        assert!(p.contains("% at: file:start-end"));
+        // It asks for per-card `at:` source citations (read the real lines).
+        assert!(p.contains("<!-- at: file:start-end -->"));
         assert!(p.contains("never guess"));
         // The mapping-to-cloze rule holds in the local-source template too.
         assert!(p.contains("drilled on its own"));
+        // The L1 pin: no stray old-format syntax in the local-source template.
+        assert!(!p.contains("% reveal"));
+        assert!(!p.contains("% source"));
+        assert!(!p.contains("% at:"));
+        assert!(!p.contains("{{"));
+        assert!(!p.contains("indented answer"));
     }
 
     #[test]
     fn url_prompt_does_not_ask_for_line_citations() {
-        // A web page has no line numbers, so the URL prompt must not request `% at:`.
+        // A web page has no line numbers, so the URL prompt must not request
+        // `at:` citations.
         let p = build_prompt("https://example.org/page", true, &cfg(8));
-        assert!(!p.contains("% at:"));
+        assert!(!p.contains("<!-- at:"));
     }
 
     #[test]
@@ -547,47 +582,62 @@ mod tests {
 
     #[test]
     fn clean_strips_code_fence() {
-        let raw = "```text\n% link: u\n# Q\n\tA\n```";
-        assert_eq!("% link: u\n# Q\n\tA", clean_output(raw));
+        let raw = "```text\n---\nlink: u\n---\n## Q\nA\n```";
+        assert_eq!("---\nlink: u\n---\n## Q\nA", clean_output(raw));
     }
 
     #[test]
     fn clean_strips_leading_commentary() {
-        let raw = "Here is your deck:\n\n% link: u\n# Q\n\tA\n";
-        assert_eq!("% link: u\n# Q\n\tA", clean_output(raw));
+        let raw = "Here is your deck:\n\n---\nlink: u\n---\n## Q\nA\n";
+        assert_eq!("---\nlink: u\n---\n## Q\nA", clean_output(raw));
     }
 
     #[test]
     fn clean_strips_commentary_and_fence_together() {
         // The realistic case: lead-in line, opening ```text fence, deck, and a
         // closing ``` fence — all of the wrapping must go.
-        let raw = "Here is your deck:\n```text\n% link: u\n# Q\n\tA\n```";
-        assert_eq!("% link: u\n# Q\n\tA", clean_output(raw));
+        let raw = "Here is your deck:\n```text\n---\nlink: u\n---\n## Q\nA\n```";
+        assert_eq!("---\nlink: u\n---\n## Q\nA", clean_output(raw));
     }
 
     #[test]
     fn clean_keeps_a_clean_deck_unchanged() {
-        let raw = "# Q\n\tA";
-        assert_eq!("# Q\n\tA", clean_output(raw));
+        let raw = "## Q\nA";
+        assert_eq!("## Q\nA", clean_output(raw));
     }
 
     #[test]
     fn clean_puts_a_blank_line_between_cards() {
-        let raw = "# Q1\n\tA1\n# Q2\n\tA2";
-        assert_eq!("# Q1\n\tA1\n\n# Q2\n\tA2", clean_output(raw));
+        let raw = "## Q1\nA1\n## Q2\nA2";
+        assert_eq!("## Q1\nA1\n\n## Q2\nA2", clean_output(raw));
     }
 
     #[test]
     fn clean_does_not_double_the_blank_between_cards() {
-        let raw = "# Q1\n\tA1\n\n# Q2\n\tA2";
-        assert_eq!("# Q1\n\tA1\n\n# Q2\n\tA2", clean_output(raw));
+        let raw = "## Q1\nA1\n\n## Q2\nA2";
+        assert_eq!("## Q1\nA1\n\n## Q2\nA2", clean_output(raw));
     }
 
     #[test]
     fn clean_keeps_the_header_attached_to_the_first_card() {
-        // The header stays with card 1; only the *second* card gets a blank.
-        let raw = "% link: u\n# Q1\n\tA1\n# Q2\n\tA2";
-        assert_eq!("% link: u\n# Q1\n\tA1\n\n# Q2\n\tA2", clean_output(raw));
+        // The frontmatter stays with card 1; only the *second* card gets a
+        // blank.
+        let raw = "---\nlink: u\n---\n## Q1\nA1\n## Q2\nA2";
+        assert_eq!(
+            "---\nlink: u\n---\n## Q1\nA1\n\n## Q2\nA2",
+            clean_output(raw)
+        );
+    }
+
+    #[test]
+    fn clean_never_splits_a_fenced_h2_out_of_its_card() {
+        // A `## ` inside a code fence is content: no blank line may be pushed
+        // into the fence (that would alter the card's verbatim answer).
+        let raw = "## Q1\n```\n## not a card\n```\n## Q2\nA2";
+        assert_eq!(
+            "## Q1\n```\n## not a card\n```\n\n## Q2\nA2",
+            clean_output(raw)
+        );
     }
 
     #[test]
@@ -610,10 +660,10 @@ mod tests {
 
         let _g = exec_lock();
         let dir = tempfile::tempdir().unwrap();
-        let cli = fake_reply(dir.path(), "% link: https://example.org\n# Q\n\tA\n");
+        let cli = fake_reply(dir.path(), "---\nlink: https://example.org\n---\n## Q\nA\n");
         let rx = spawn("https://example.org".to_string(), cfg(10), ask_config(&cli));
         match rx.recv().unwrap() {
-            Ok(text) => assert!(text.contains("# Q")),
+            Ok(text) => assert!(text.contains("## Q")),
             Err(e) => panic!("generate failed: {e}"),
         }
     }

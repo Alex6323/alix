@@ -140,7 +140,7 @@ impl Trace {
         let description = deck
             .trace
             .clone()
-            .ok_or_else(|| anyhow!("{} is not a trace: it declares no `% trace:`", deck.subject))?;
+            .ok_or_else(|| anyhow!("{} is not a trace: it declares no `trace:`", deck.subject))?;
         if deck.cards.is_empty() {
             bail!("the trace `{}` has no checkpoints", deck.subject);
         }
@@ -186,14 +186,14 @@ impl Trace {
     }
 
     /// Reads the live excerpt for a checkpoint's locator from the source.
-    /// Errors when the checkpoint has no `% at:`, the locator can't be
+    /// Errors when the checkpoint has no `at:`, the locator can't be
     /// resolved to a file (e.g. a URL source, or a line-only locator
     /// without a single source file), or the file can't be read.
     pub fn excerpt(&self, checkpoint: &Checkpoint) -> Result<Excerpt> {
         let locator = checkpoint
             .locator
             .as_deref()
-            .ok_or_else(|| anyhow!("this checkpoint has no `% at:` locator to reveal"))?;
+            .ok_or_else(|| anyhow!("this checkpoint has no `at:` locator to reveal"))?;
         excerpt_at(&self.base_dir, self.source_file.as_deref(), locator)
     }
 
@@ -221,7 +221,7 @@ impl Trace {
             let Some(locator) = cp.locator.as_deref() else {
                 issues.push(LocatorIssue {
                     checkpoint: i,
-                    message: "no `% at:` locator — a walk can't reveal its source".to_string(),
+                    message: "no `at:` locator — a walk can't reveal its source".to_string(),
                 });
                 continue;
             };
@@ -235,7 +235,7 @@ impl Trace {
                 issues.push(LocatorIssue {
                     checkpoint: i,
                     message: format!(
-                        "locator `{locator}` gives only line numbers, but `% source:` \
+                        "locator `{locator}` gives only line numbers, but `source:` \
                          is not a single file — write it as `file:lines`"
                     ),
                 });
@@ -887,14 +887,14 @@ fn excerpt_at(base_dir: &Path, source_file: Option<&Path>, locator: &str) -> Res
         source_file.is_none() && file.as_deref().is_some_and(|f| !Path::new(f).is_absolute());
     if joins_onto_base && !base_dir.is_dir() {
         bail!(
-            "the `% source:` base `{}` does not exist — the deck's source path is \
+            "the `source:` base `{}` does not exist — the deck's source path is \
              likely stale or wrong",
             base_dir.display()
         );
     }
     let path = locator_path(base_dir, source_file, file.as_deref()).ok_or_else(|| {
         anyhow!(
-            "locator `{locator}` gives only line numbers, but `% source:` \
+            "locator `{locator}` gives only line numbers, but `source:` \
              is not a single file — write it as `file:lines`"
         )
     })?;
@@ -1103,11 +1103,11 @@ mod tests {
     fn source_base_reads_a_fact_cards_citation() {
         let dir = tempfile::tempdir().unwrap();
         write(dir.path(), "notes.md", "one\ntwo\nthree\nfour\n");
-        let deck_path = dir.path().join("facts.txt");
+        let deck_path = dir.path().join("facts.md");
         // A plain fact deck (no `% trace:`) whose card carries a `% at:`.
         std::fs::write(
             &deck_path,
-            "% source: notes.md\n# q\n\ta\n\t% at: notes.md:2-3\n",
+            "---\nsource: notes.md\n---\n## q\na\n<!-- at: notes.md:2-3 -->\n",
         )
         .unwrap();
         let deck = crate::deck::Deck::load(&deck_path).unwrap();
@@ -1134,13 +1134,13 @@ mod tests {
         std::fs::create_dir(dir.path().join("src")).unwrap();
         write(dir.path(), "src/lib.rs", "l1\nl2\nl3\nl4\n");
         let readme = dir.path().join("README.md");
-        let deck_path = dir.path().join("facts.txt");
+        let deck_path = dir.path().join("facts.md");
         std::fs::write(
             &deck_path,
             format!(
-                "% source: {} + src/lib.rs\n\
-                 # q1\n\ta1\n\t% at: README.md:1-2\n\
-                 # q2\n\ta2\n\t% at: src/lib.rs:3-4\n",
+                "---\nsource: {} + src/lib.rs\n---\n\
+                 ## q1\na1\n<!-- at: README.md:1-2 -->\n\
+                 ## q2\na2\n<!-- at: src/lib.rs:3-4 -->\n",
                 readme.display()
             ),
         )
@@ -1181,11 +1181,11 @@ mod tests {
         use crate::{deck::DeckState, store::Store};
         let dir = tempfile::tempdir().unwrap();
         write(dir.path(), "src.rs", "a\nb\nc\n");
-        let deck_path = dir.path().join("t.txt");
+        let deck_path = dir.path().join("t.md");
         std::fs::write(
             &deck_path,
             format!(
-                "% trace: how a moves\n% source: {}\n# what happens?\n\tit advances\n\t% at: 1-2\n",
+                "---\ntrace: how a moves\nsource: {}\n---\n## what happens?\nit advances\n<!-- at: 1-2 -->\n",
                 dir.path().join("src.rs").display()
             ),
         )
@@ -1300,17 +1300,17 @@ mod tests {
         write(dir, "source.txt", "first\nsecond\nthird\nfourth\n");
         let path = write(
             dir,
-            "t.txt",
-            "% trace: how it works\n\
-             % source: source.txt\n\
-             # Predict the first hop\n\
-             \t% given: line — the current input line\n\
-             \tit reads the first line\n\
-             \t% at: 1\n\
-             \t! the entry point\n\
-             # Predict the second hop\n\
-             \tit reads lines two and three\n\
-             \t% at: 2-3\n",
+            "t.md",
+            "---\ntrace: how it works\n\
+             source: source.txt\n---\n\
+             ## Predict the first hop\n\
+             <!-- given: line — the current input line -->\n\
+             it reads the first line\n\
+             <!-- at: 1 -->\n\
+             > the entry point\n\
+             ## Predict the second hop\n\
+             it reads lines two and three\n\
+             <!-- at: 2-3 -->\n",
         );
         Deck::load(&path).unwrap()
     }
@@ -1335,7 +1335,7 @@ mod tests {
         );
 
         // A plain deck (no `% trace:`) is not a trace.
-        let plain = write(dir.path(), "p.txt", "# q\n\ta\n");
+        let plain = write(dir.path(), "p.md", "## q\na\n");
         let err = Trace::from_deck(&Deck::load(&plain).unwrap()).unwrap_err();
         assert!(format!("{err:#}").contains("not a trace"));
     }
@@ -1361,8 +1361,8 @@ mod tests {
         // `% source:` is a directory, so a bare `% at: 1` cannot resolve.
         let path = write(
             dir.path(),
-            "t.txt",
-            "% trace: g\n% source: .\n# q\n\ta\n\t% at: 1\n",
+            "t.md",
+            "---\ntrace: g\nsource: .\n---\n## q\na\n<!-- at: 1 -->\n",
         );
         let trace = Trace::from_deck(&Deck::load(&path).unwrap()).unwrap();
         let err = trace.excerpt(&trace.checkpoints[0]).unwrap_err();
@@ -1376,8 +1376,8 @@ mod tests {
         write(dir.path(), "src.txt", "one\ntwo\nthree\nfour\nfive\n");
         let path = write(
             dir.path(),
-            "t.txt",
-            "% trace: g\n% source: src.txt\n# q\n\ta\n\t% at: 2-3\n",
+            "t.md",
+            "---\ntrace: g\nsource: src.txt\n---\n## q\na\n<!-- at: 2-3 -->\n",
         );
         let trace = Trace::from_deck(&Deck::load(&path).unwrap()).unwrap();
         assert!(trace.lint_locators().is_empty());
@@ -1390,8 +1390,8 @@ mod tests {
         write(dir.path(), "src.txt", "one\ntwo\nthree\n");
         let path = write(
             dir.path(),
-            "t.txt",
-            "% trace: g\n% source: src.txt\n# q\n\ta\n\t% at: 5-6\n",
+            "t.md",
+            "---\ntrace: g\nsource: src.txt\n---\n## q\na\n<!-- at: 5-6 -->\n",
         );
         let trace = Trace::from_deck(&Deck::load(&path).unwrap()).unwrap();
         let issues = trace.lint_locators();
@@ -1408,8 +1408,8 @@ mod tests {
         write(dir.path(), "src.txt", "one\ntwo\nthree\n");
         let path = write(
             dir.path(),
-            "t.txt",
-            "% trace: g\n% source: src.txt\n# q\n\ta\n\t% at: 2-9\n",
+            "t.md",
+            "---\ntrace: g\nsource: src.txt\n---\n## q\na\n<!-- at: 2-9 -->\n",
         );
         let trace = Trace::from_deck(&Deck::load(&path).unwrap()).unwrap();
         let issues = trace.lint_locators();
@@ -1423,8 +1423,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = write(
             dir.path(),
-            "t.txt",
-            "% trace: g\n% source: .\n# q\n\ta\n\t% at: nope.rs:1-2\n",
+            "t.md",
+            "---\ntrace: g\nsource: .\n---\n## q\na\n<!-- at: nope.rs:1-2 -->\n",
         );
         let trace = Trace::from_deck(&Deck::load(&path).unwrap()).unwrap();
         let issues = trace.lint_locators();
@@ -1432,7 +1432,7 @@ mod tests {
         assert!(issues[0].message.contains("not found"));
     }
 
-    /// A checkpoint with no `% at:` line at all is flagged (a walk can't reveal
+    /// A checkpoint with no `at:` directive at all is flagged (a walk can't reveal
     /// its source).
     #[test]
     fn lint_locators_flags_a_missing_locator() {
@@ -1440,13 +1440,13 @@ mod tests {
         write(dir.path(), "src.txt", "one\ntwo\n");
         let path = write(
             dir.path(),
-            "t.txt",
-            "% trace: g\n% source: src.txt\n# q\n\ta\n",
+            "t.md",
+            "---\ntrace: g\nsource: src.txt\n---\n## q\na\n",
         );
         let trace = Trace::from_deck(&Deck::load(&path).unwrap()).unwrap();
         let issues = trace.lint_locators();
         assert_eq!(1, issues.len());
-        assert!(issues[0].message.contains("no `% at:`"));
+        assert!(issues[0].message.contains("no `at:`"));
     }
 
     /// A bare line-only locator with a directory source can't resolve — flagged.
@@ -1455,8 +1455,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = write(
             dir.path(),
-            "t.txt",
-            "% trace: g\n% source: .\n# q\n\ta\n\t% at: 1\n",
+            "t.md",
+            "---\ntrace: g\nsource: .\n---\n## q\na\n<!-- at: 1 -->\n",
         );
         let trace = Trace::from_deck(&Deck::load(&path).unwrap()).unwrap();
         let issues = trace.lint_locators();
@@ -1598,11 +1598,11 @@ mod tests {
         );
         write(
             &root.join("ws"),
-            "t.txt",
-            "% trace: how it works\n\
-             % source: ../src\n\
-             # hop 1\n\tit reads a\n\t% at: a.rs:2-3\n\
-             # hop 2\n\tit reads b\n\t% at: b.rs:1\n",
+            "t.md",
+            "---\ntrace: how it works\n\
+             source: ../src\n---\n\
+             ## hop 1\nit reads a\n<!-- at: a.rs:2-3 -->\n\
+             ## hop 2\nit reads b\n<!-- at: b.rs:1 -->\n",
         )
     }
 

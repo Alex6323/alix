@@ -194,18 +194,20 @@ fn walk_prompt(source: &str, goal: &str, url: bool, cfg: &TraceConfig) -> String
          4. from the most central file — what is the SPINE (the main path data takes)?\n\
          5. (last) given that shape, what are the first PATHS worth tracing next? — \
          name 2-4 concrete candidate traces (the menu).\n\n\
-         Each hop must CITE REAL STRUCTURAL EVIDENCE as its `% at:` locator — the \
+         Each hop must CITE REAL STRUCTURAL EVIDENCE as its `at:` locator — the \
          actual lines the answer rests on (the manifest's dependency list, the \
          module-declaration lines, the entry enum, the central function's signature). \
          The reveal is the real text; the source is the oracle, never invented. Every \
          hop has a locator.\n\n\
-         FORMAT — output ONLY the checkpoint cards: no header, no `% trace:`/`% source:`, \
-         no preamble, no code fences. Each checkpoint (key-point and directive lines \
-         are indented with a TAB):\n\n    \
-         # <the shape question, asked plainly>\n\t<a key point a correct answer \
-         hits>\n\t<another key point>\n\t% at: <locator>\n\t! <one connecting \
-         insight>\n\n\
-         where `% at:` is {locator}.\n\n\
+         FORMAT — output ONLY the checkpoint cards: no frontmatter, no `trace:`/\
+         `source:` key, no preamble, no code fences. Each checkpoint:\n\n\
+         ## <the shape question, asked plainly>\n\
+         <a key point a correct answer hits>\n\
+         <another key point>\n\
+         <!-- at: <locator> -->\n\
+         > <one connecting insight>\n\n\
+         The `## ` front is at column 0, never indented; the key points are plain \
+         unindented lines below it; where the `at:` locator is {locator}.\n\n\
          RULES: each question reasons FORWARD from the previous reveal (hop 1 has no \
          prior); carry the STATE, never \"checkpoint N\"; ask plainly — do NOT prefix \
          with \"Predict\"; keep the answer out of the question; every key point must be \
@@ -296,26 +298,27 @@ fn fill_prompt(items: &[Item]) -> String {
          and don't overlap.\n\n\
          For each item, emit a delimiter line exactly `=== item <N> ===` (its plan \
          number) followed by its content:\n\
-         - a [trace] → the predict-verify CHECKPOINT cards: each is a `# ` question \
-         at column 0, then TAB-indented key points, a `% at: file:start-end` locator \
-         citing the REAL lines, and an optional `! ` note. Each hop opens on the \
-         previous reveal, predicts forward, and its key points are grounded in the \
-         cited lines.\n\
-         - a [deck] → FACT cards: each is a `# ` front at column 0, then TAB-indented \
-         back line(s), plus a `% at: file:start-end` locator citing the REAL lines \
-         whenever the fact maps to a specific range (so the card can show its source \
-         on reveal; omit it when the fact synthesizes across several places). One \
-         fact per card, concise and recall-oriented. Do NOT cram an enumeration \
-         into one prose answer: if the answer is a list of several items, split it \
-         into several one-idea cards (one card per item or group), or give it clean \
-         structure with one point per indented line (no bullet or dash prefix — \
-         bullets come later from the format augment); keep an atomic answer atomic.\n\n\
-         Every `% at:` `file` part MUST be written relative to the SAME root — the \
+         - a [trace] → the predict-verify CHECKPOINT cards: each is a `## ` question \
+         at column 0 (never indented), then its key points as plain unindented \
+         lines, an `<!-- at: file:start-end -->` locator line citing the REAL \
+         lines, and an optional `> ` note. Each hop opens on the previous reveal, \
+         predicts forward, and its key points are grounded in the cited lines.\n\
+         - a [deck] → FACT cards: each is a `## ` front at column 0, then its back \
+         line(s) as plain unindented lines, plus an `<!-- at: file:start-end -->` \
+         locator line citing the REAL lines whenever the fact maps to a specific \
+         range (so the card can show its source on reveal; omit it when the fact \
+         synthesizes across several places). One fact per card, concise and \
+         recall-oriented. Do NOT cram an enumeration into one prose answer: if the \
+         answer is a list of several items, split it into several one-idea cards \
+         (one card per item or group), or give it clean structure with one point \
+         per line (no bullet or dash prefix — bullets come later from the format \
+         augment); keep an atomic answer atomic.\n\n\
+         Every `at:` `file` part MUST be written relative to the SAME root — the \
          source root you explored (your working directory) — as ONE consistent path \
          per file across ALL items; never drop or add a leading directory (always \
          `src/foo.rs`, never sometimes `foo.rs`), so the frozen citations all resolve.\n\n\
-         Do NOT repeat any header directive (`% trace:`, `% title:`, `% source:`, \
-         `% requires:`) — those are already written; output only the `# ` cards. \
+         Do NOT emit any frontmatter (`trace:`, `source:`, `requires:` keys) or a \
+         `# ` title — those are already written; output only the `## ` cards. \
          Output ONLY the delimited item bodies: no preamble, no code fences, nothing \
          between the last card of one item and the next `=== item ===` line.\n\n\
          The plan:\n{list}"
@@ -501,25 +504,34 @@ pub fn materialize(
     let mut decks = 0;
     let mut filled_count = 0;
     for (item, name) in items.iter().zip(&names) {
-        let mut body = String::new();
+        // The L1 header: frontmatter (trace/source/requires), then, for a
+        // facts deck, the `# H1` display title.
+        let mut body = String::from("---\n");
         match item.kind {
             Kind::Trace => {
                 traces += 1;
-                body.push_str(&format!("% trace: {}\n", item.title));
+                body.push_str(&format!("trace: {}\n", yaml_quote(&item.title)));
             }
-            Kind::Deck => {
-                decks += 1;
-                body.push_str(&format!("% title: {}\n", item.title));
-            }
+            Kind::Deck => decks += 1,
         }
         body.push_str(&format!(
-            "% source: {}\n",
-            rewrite_scope(&item.source, root.as_deref())
+            "source: {}\n",
+            yaml_quote(&rewrite_scope(&item.source, root.as_deref()))
         ));
-        for req in &item.requires {
-            if let Some(dep) = by_num.get(req) {
-                body.push_str(&format!("% requires: {dep}\n"));
+        let deps: Vec<&&String> = item
+            .requires
+            .iter()
+            .filter_map(|req| by_num.get(req))
+            .collect();
+        if !deps.is_empty() {
+            body.push_str("requires:\n");
+            for dep in deps {
+                body.push_str(&format!("  - {}\n", yaml_quote(dep)));
             }
+        }
+        body.push_str("---\n");
+        if item.kind == Kind::Deck {
+            body.push_str(&format!("# {}\n", item.title));
         }
         body.push('\n');
         match filled
@@ -533,13 +545,14 @@ pub fn materialize(
                 body.push_str(content);
                 body.push('\n');
             }
-            // A stub: header only, to be filled later.
+            // A stub: header only, to be filled later. Preamble prose, which
+            // the parser ignores.
             None => body.push_str(match item.kind {
                 Kind::Trace => {
-                    "% Stub from `alix generate`. Build the path:  alix generate <this file>\n"
+                    "Stub from `alix generate`. Build the path:  alix generate <this file>\n"
                 }
                 Kind::Deck => {
-                    "% Stub from `alix generate`. Author cards here, or `alix generate` from the source.\n"
+                    "Stub from `alix generate`. Author cards here, or `alix generate` from the source.\n"
                 }
             }),
         }
@@ -648,10 +661,10 @@ pub fn snapshot_workspace(dir: &Path) -> Result<SnapshotSummary> {
     Ok(summary)
 }
 
-/// The member file name for an item: `NN-<slug>.txt`, the zero-padded number
+/// The member file name for an item: `NN-<slug>.md`, the zero-padded number
 /// (preserving plan order) plus a slug of the title.
 fn file_name(item: &Item) -> String {
-    format!("{:02}-{}.txt", item.num, slug(&item.title))
+    format!("{:02}-{}.md", item.num, slug(&item.title))
 }
 
 /// A short kebab slug from a title: up to the first six alphanumeric words.
@@ -708,6 +721,12 @@ fn rewrite_scope(scope: &str, root: Option<&Path>) -> String {
 /// Escapes a string for a double-quoted TOML value.
 fn toml_escape(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+/// A string as a double-quoted YAML scalar, so a title or path with a colon
+/// (or quotes) can never derail the frontmatter mapping.
+fn yaml_quote(s: &str) -> String {
+    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
 #[cfg(test)]
@@ -767,8 +786,12 @@ mod tests {
         ];
         let p = fill_prompt(&items);
         assert!(p.contains("FACT cards"));
-        // Fact cards get a `% at:` citation so the card can show its source.
-        assert!(p.contains("% at: file:start-end"));
+        // Fact cards get an `at:` citation so the card can show its source.
+        assert!(p.contains("<!-- at: file:start-end -->"));
+        // The L1 pin: no retired old-format syntax in the fill prompt.
+        assert!(!p.contains("% at:"));
+        assert!(!p.contains("% trace"));
+        assert!(!p.contains("TAB-indented"));
         assert!(p.contains("show its source on reveal"));
         // Every `% at:` path is pinned to one consistent root, so freezing resolves.
         assert!(p.contains("relative to the SAME root"));
@@ -788,7 +811,8 @@ mod tests {
         assert!(p.contains("SPINE")); // spine hop
         assert!(p.contains("CITE REAL STRUCTURAL EVIDENCE")); // grounded reveals
         assert!(p.contains("candidate traces")); // last hop lands on the menu
-        assert!(p.contains("% at:")); // standard trace locator format
+        assert!(p.contains("<!-- at:")); // standard trace locator format
+        assert!(!p.contains("% at:")); // the L1 pin: no retired syntax
         assert!(p.contains("Read, Glob")); // read-only local exploration
         assert!(!p.contains("WebFetch"));
     }
@@ -841,14 +865,14 @@ Spine   a -> b
         assert!(!manifest.contains("title ="));
         assert!(manifest.contains("[defaults]"));
 
-        let deck = fs::read_to_string(dir.join("01-the-deck-format.txt")).unwrap();
-        assert!(deck.contains("% title: The Deck Format")); // condensed + title-cased
-        assert!(deck.contains("% source: ")); // rewritten absolute
+        let deck = fs::read_to_string(dir.join("01-the-deck-format.md")).unwrap();
+        assert!(deck.contains("# The Deck Format")); // condensed + title-cased H1
+        assert!(deck.contains("source: ")); // rewritten absolute, in frontmatter
 
-        let trace = fs::read_to_string(dir.join("02-how-text-becomes-cards.txt")).unwrap();
-        assert!(trace.contains("% trace: How Text Becomes Cards"));
+        let trace = fs::read_to_string(dir.join("02-how-text-becomes-cards.md")).unwrap();
+        assert!(trace.contains("trace: \"How Text Becomes Cards\""));
         // requires 1 → the first item's file name
-        assert!(trace.contains("% requires: 01-the-deck-format.txt"));
+        assert!(trace.contains("- \"01-the-deck-format.md\""));
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -923,7 +947,7 @@ preamble ignored
         let mut filled = HashMap::new();
         filled.insert(
             2usize,
-            "# how does text become Cards?\n\tparse_str runs a state machine\n\t% at: src/parser.rs:1-9"
+            "## how does text become Cards?\nparse_str runs a state machine\n<!-- at: src/parser.rs:1-9 -->"
                 .to_string(),
         );
 
@@ -931,13 +955,13 @@ preamble ignored
         assert_eq!(1, report.filled); // only item 2 was filled
 
         // item 2 (a trace) keeps its header AND carries the filled checkpoint
-        let trace = fs::read_to_string(dir.join("02-how-text-becomes-cards.txt")).unwrap();
-        assert!(trace.contains("% trace: How Text Becomes Cards"));
-        assert!(trace.contains("# how does text become Cards?"));
-        assert!(trace.contains("% at: src/parser.rs:1-9"));
+        let trace = fs::read_to_string(dir.join("02-how-text-becomes-cards.md")).unwrap();
+        assert!(trace.contains("trace: \"How Text Becomes Cards\""));
+        assert!(trace.contains("## how does text become Cards?"));
+        assert!(trace.contains("<!-- at: src/parser.rs:1-9 -->"));
         // item 1 had no fill → still a stub
-        let deck = fs::read_to_string(dir.join("01-the-deck-format.txt")).unwrap();
-        assert!(deck.contains("% Stub from `alix generate`"));
+        let deck = fs::read_to_string(dir.join("01-the-deck-format.md")).unwrap();
+        assert!(deck.contains("Stub from `alix generate`"));
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -1060,21 +1084,24 @@ preamble ignored
         let src = dir.join("src");
         // a built trace citing src/a.rs (source = the dir)
         fs::write(
-            dir.join("01-t.txt"),
+            dir.join("01-t.md"),
             format!(
-                "% trace: t\n% source: {}\n# h\n\tp\n\t% at: a.rs:1-2\n",
+                "---\ntrace: t\nsource: {}\n---\n## h\np\n<!-- at: a.rs:1-2 -->\n",
                 src.display()
             ),
         )
         .unwrap();
-        // a fact deck citing the same source with `% at:` — also frozen
+        // a fact deck citing the same source with an `at:` — also frozen
         fs::write(
-            dir.join("02-d.txt"),
-            format!("% source: {}\n# q\n\ta\n\t% at: a.rs:3\n", src.display()),
+            dir.join("02-d.md"),
+            format!(
+                "---\nsource: {}\n---\n## q\na\n<!-- at: a.rs:3 -->\n",
+                src.display()
+            ),
         )
         .unwrap();
         // a fact deck with no citations — skipped
-        fs::write(dir.join("03-plain.txt"), "% title: d\n# q\n\ta\n").unwrap();
+        fs::write(dir.join("03-plain.md"), "# d\n## q\na\n").unwrap();
 
         let summary = snapshot_workspace(&dir).unwrap();
         assert_eq!((2, 2), (summary.decks, summary.files)); // trace + cited fact, one snippet each
@@ -1085,10 +1112,10 @@ preamble ignored
         assert!(dir.join("assets/02.rs").is_file());
         assert!(!dir.join("assets/a.rs").exists());
         // the fact deck was repointed off its live locator onto a frozen snippet
-        let fact = fs::read_to_string(dir.join("02-d.txt")).unwrap();
-        assert!(fact.contains("% source: assets\n"), "{fact}");
-        assert!(!fact.contains("% at: a.rs:3"), "{fact}");
-        assert!(fact.contains("% at: 0"), "{fact}");
+        let fact = fs::read_to_string(dir.join("02-d.md")).unwrap();
+        assert!(fact.contains("source: assets\n"), "{fact}");
+        assert!(!fact.contains("<!-- at: a.rs:3 -->"), "{fact}");
+        assert!(fact.contains("<!-- at: 0"), "{fact}");
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -1103,9 +1130,9 @@ preamble ignored
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("alix.toml"), "[defaults]\n").unwrap();
         fs::write(
-            dir.join("01-broken.txt"),
+            dir.join("01-broken.md"),
             format!(
-                "% source: {}/does-not-exist\n# q\n\ta\n\t% at: src/x.rs:1\n",
+                "---\nsource: {}/does-not-exist\n---\n## q\na\n<!-- at: src/x.rs:1 -->\n",
                 dir.display()
             ),
         )
@@ -1115,7 +1142,7 @@ preamble ignored
         assert_eq!(0, summary.decks); // nothing frozen
         assert_eq!(1, summary.failed.len(), "{:?}", summary.failed);
         assert!(
-            summary.failed[0].contains("01-broken.txt"),
+            summary.failed[0].contains("01-broken.md"),
             "{:?}",
             summary.failed
         );

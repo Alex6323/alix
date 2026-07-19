@@ -387,13 +387,14 @@ pub fn draft_card_prompt(card: &Card, transcript: &[Exchange]) -> String {
         "From the conversation below, write ONE focused flashcard that captures the \
          single most useful thing to remember. Output ONLY a card in this exact format, \
          with no fences, preamble, or commentary:\n\n\
-         # <the question>\n\t<the answer>\n\n\
-         Keep the question short and the answer to one or a few lines. Base it strictly \
-         on the conversation; do not invent facts.\n\n",
+         ## <the question>\n<the answer>\n\n\
+         The `## ` front is at column 0; the answer is the plain (unindented) line(s) \
+         below it. Keep the question short and the answer to one or a few lines. Base \
+         it strictly on the conversation; do not invent facts.\n\n",
     );
-    p.push_str(&format!("The card under review:\n# {}\n", card.front));
+    p.push_str(&format!("The card under review:\n## {}\n", card.front));
     for b in &card.back {
-        p.push_str(&format!("\t{b}\n"));
+        p.push_str(&format!("{b}\n"));
     }
     p.push_str("\nThe conversation:\n");
     for (q, a) in transcript {
@@ -412,7 +413,7 @@ pub fn parse_drafted_card(reply: &str) -> Result<DraftCard> {
         .trim_start_matches("```")
         .trim_end_matches("```")
         .trim();
-    let cards = crate::parser::parse_str("draft", body)
+    let cards = crate::l1::parse_str("draft", body)
         .map_err(|e| anyhow::anyhow!("the tutor's reply was not a valid card: {e}"))?;
     let [card] = cards.as_slice() else {
         bail!("the tutor did not return exactly one card");
@@ -1143,7 +1144,7 @@ mod tests {
 
     #[test]
     fn parse_drafted_card_reads_a_deck_format_block() {
-        let reply = "# what frees Dart memory?\n\tA generational garbage collector.\n";
+        let reply = "## what frees Dart memory?\nA generational garbage collector.\n";
         let card = parse_drafted_card(reply).unwrap();
         assert_eq!(card.front, "what frees Dart memory?");
         assert_eq!(
@@ -1154,7 +1155,7 @@ mod tests {
 
     #[test]
     fn parse_drafted_card_strips_markdown_fences() {
-        let reply = "```\n# term?\n\tdefinition\n```";
+        let reply = "```\n## term?\ndefinition\n```";
         let card = parse_drafted_card(reply).unwrap();
         assert_eq!(card.front, "term?");
     }
@@ -1177,7 +1178,7 @@ mod tests {
 
     #[test]
     fn parse_drafted_card_errors_on_two_cards() {
-        let reply = "# q1?\n\ta1\n# q2?\n\ta2\n";
+        let reply = "## q1?\na1\n## q2?\na2\n";
         assert!(parse_drafted_card(reply).is_err());
     }
 }

@@ -117,7 +117,7 @@ pub fn generate_questions(
     ask_cfg: &AskConfig,
 ) -> Result<Vec<ExamQuestion>> {
     if deck.sources.is_empty() {
-        bail!("the deck declares no `% source:` to examine against");
+        bail!("the deck declares no `source:` to examine against");
     }
     // The capability gate is enforced inside `generate_questions_from`, which
     // every caller (this fn, `spawn_questions`) routes through. The web
@@ -249,10 +249,10 @@ pub fn remediation_cards(gaps: &[String], cfg: &ExamConfig, ask_cfg: &AskConfig)
     cfg_run.allowed_tools.clear();
     let raw = ask::run(&cfg_run, &prompt, &[])?;
     let cards = clean_deck_output(&raw);
-    // Every card front starts with `#`; if the reply has none, the model
+    // Every card front starts with `## `; if the reply has none, the model
     // answered in prose instead of emitting cards — treat it as a failure rather
     // than appending the prose to the deck as a bogus "card".
-    if !cards.lines().any(|l| l.trim_start().starts_with('#')) {
+    if !cards.lines().any(|l| l.starts_with("## ")) {
         bail!("the model replied without any cards — try remediating again");
     }
     Ok(cards)
@@ -855,14 +855,14 @@ fn source_section(sources: &[String], base: Option<&Path>) -> Result<String> {
                     files.push((label, truncated_text));
                 }
                 Err(e) => eprintln!(
-                    "warning: skipping unreadable `% source:` {}: {e}",
+                    "warning: skipping unreadable `source:` {}: {e}",
                     path.display()
                 ),
             }
         }
     }
     if urls.is_empty() && files.is_empty() {
-        bail!("none of the deck's `% source:` paths could be read to examine against");
+        bail!("none of the deck's `source:` paths could be read to examine against");
     }
 
     let mut out = String::new();
@@ -1114,16 +1114,16 @@ fn remediation_prompt(gaps: &[String]) -> String {
          never drop a distinct idea.\n\n\
          CHOOSE THE CARD TYPE per gap, by what the gap actually is:\n\
          - A missed FACT or TERM (a definition, a value, what lives where) -> a \
-         cheap recall card. Prefer a cloze: a `# ` front with a short instruction, \
-         then a `% reveal: cloze` line, then an indented answer line that states \
-         the fact with each hidden span wrapped in {{double curly braces}} (a lone \
-         single brace is literal). If there is no natural word to blank out, use a \
-         plain `# ` card with the answer on the indented line below instead.\n\
+         cheap recall card. Prefer a cloze: a `## ` front with a short \
+         instruction, then an answer line that states the fact with each hidden \
+         span wrapped as `\\cloze{...}` (braces outside the marker are literal). \
+         If there is no natural word to blank out, use a plain `## ` card with \
+         the answer on the line below instead.\n\
          - A missed CONCEPT, MECHANISM or CONNECTION (a \"why\", \"how\" or \"what \
-         happens if\") -> an understanding card: a `# ` open prompt with indented \
-         key points a good answer covers. This forces the student to re-derive the \
-         idea, which is what the exam re-tests. When unsure, prefer the \
-         understanding card.\n\n\
+         happens if\") -> an understanding card: a `## ` open prompt with the \
+         key points a good answer covers, one per line below it. This forces the \
+         student to re-derive the idea, which is what the exam re-tests. When \
+         unsure, prefer the understanding card.\n\n\
          CONCEPTS THE STUDENT MISSED:\n",
     );
     for gap in gaps {
@@ -1132,22 +1132,22 @@ fn remediation_prompt(gaps: &[String]) -> String {
         prompt.push('\n');
     }
     prompt.push_str(
-        "\nFORMAT — a plain-text deck, cards one after another. A card's answer is \
-         on the indented (tab) line(s) below its front; an indented `! ` line after \
-         it adds an optional note (a caveat, example or why it matters). One \
-         example of each card type:\n\
-         # Recall how a String is laid out in memory.\n\
-         % reveal: cloze\n\
-         \tA String stores a {{pointer}}, {{length}} and {{capacity}} on the stack, \
-         and its bytes live on the {{heap}}.\n\
-         # What does `drop` do for a String, and when?\n\
-         \tIt returns the String's heap buffer to the allocator, at the end of the \
+        "\nFORMAT — a Markdown deck, cards one after another. A card is a `## ` \
+         front at column 0 (never indented); its answer is the plain \
+         (unindented) line(s) below it; a `> ` line after them adds an optional \
+         note (a caveat, example or why it matters). No frontmatter, no \
+         headings other than the `## ` fronts. One example of each card type:\n\
+         ## Recall how a String is laid out in memory.\n\
+         A String stores a \\cloze{pointer}, \\cloze{length} and \
+         \\cloze{capacity} on the stack, and its bytes live on the \\cloze{heap}.\n\
+         ## What does `drop` do for a String, and when?\n\
+         It returns the String's heap buffer to the allocator, at the end of the \
          owning scope.\n\
-         # Why does moving a String invalidate the original binding?\n\
-         \tBoth bindings would otherwise point at the same heap buffer.\n\
-         \tDropping both would free it twice (a double free).\n\
-         \tSo Rust invalidates the source instead of allowing two owners.\n\
-         \t! A move, not a shallow copy you can keep using.\n\n\
+         ## Why does moving a String invalidate the original binding?\n\
+         Both bindings would otherwise point at the same heap buffer.\n\
+         Dropping both would free it twice (a double free).\n\
+         So Rust invalidates the source instead of allowing two owners.\n\
+         > A move, not a shallow copy you can keep using.\n\n\
          Before finishing, re-read your cards as a set and merge any two that test \
          the same idea, so every card is distinct.\n\
          Output ONLY the deck text — no markdown code fences, no preamble, no \
@@ -1174,14 +1174,11 @@ fn parse_json<T: for<'de> Deserialize<'de>>(raw: &str) -> Result<T> {
 }
 
 /// Strips code fences / leading commentary from generated deck text, like
-/// [`crate::generate`] does: a deck starts with a `%` comment or a `#` card
+/// [`crate::generate`] does: remediation cards start at the first `## ` card
 /// front, and trailing blank/fence lines are dropped.
 fn clean_deck_output(raw: &str) -> String {
     let lines: Vec<&str> = raw.lines().collect();
-    let Some(start) = lines.iter().position(|l| {
-        let t = l.trim_start();
-        t.starts_with('%') || t.starts_with('#')
-    }) else {
+    let Some(start) = lines.iter().position(|l| l.starts_with("## ")) else {
         return raw.trim().to_string();
     };
     let mut end = lines.len();
@@ -1212,8 +1209,8 @@ mod tests {
 
     fn deck_with_sources(srcs: &[&str]) -> Deck {
         Deck {
-            path: std::path::PathBuf::from("/tmp/d.txt"),
-            subject: "d.txt".to_string(),
+            path: std::path::PathBuf::from("/tmp/d.md"),
+            subject: "d.md".to_string(),
             cards: Vec::new(),
             links: Vec::new(),
             requires: Vec::new(),
@@ -1319,9 +1316,13 @@ mod tests {
         // understanding card (plain prompt + key points).
         assert!(p.contains("missed FACT or TERM"));
         assert!(p.contains("missed CONCEPT"));
-        assert!(p.contains("% reveal: cloze")); // cloze declaration for facts
-        assert!(p.contains("double curly braces"));
+        assert!(p.contains("\\cloze{...}")); // the cloze marker for facts
         assert!(p.contains("understanding card")); // for concepts
+        // The L1 pin: no retired old-format syntax may sneak back in.
+        assert!(!p.contains("% reveal"));
+        assert!(!p.contains("{{"));
+        assert!(!p.contains("indented answer"));
+        assert!(p.contains("## "));
     }
 
     #[test]
@@ -1435,12 +1436,12 @@ mod tests {
 
     #[test]
     fn clean_deck_output_strips_fences() {
-        let raw = "```text\n# Q\n% reveal: line\n\tA\n```";
-        assert_eq!("# Q\n% reveal: line\n\tA", clean_deck_output(raw));
+        let raw = "```text\n## Q\nA\n```";
+        assert_eq!("## Q\nA", clean_deck_output(raw));
     }
 
     use crate::{
-        parser,
+        l1 as parser,
         session::is_retired_id,
         store::VirtualKind,
         testutil::{ask_config, exec_lock, fake_cli, fake_reply},
@@ -1462,7 +1463,7 @@ mod tests {
             &ask_config(std::path::Path::new("unused")),
         )
         .unwrap_err();
-        assert!(format!("{err:#}").contains("no `% source:`"));
+        assert!(format!("{err:#}").contains("no `source:`"));
     }
 
     /// The web exam path calls `spawn_questions` → `generate_questions_from`
@@ -1654,22 +1655,22 @@ mod tests {
         let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
         // A fenced deck; clean_deck_output must strip the fences.
-        let cli = fake_reply(dir.path(), "```text\n# Why?\n  point\n```\n");
+        let cli = fake_reply(dir.path(), "```text\n## Why?\npoint\n```\n");
         let cards = remediation_cards(
             &["the gap".to_string()],
             &ExamConfig::default(),
             &ask_config(&cli),
         )
         .unwrap();
-        assert_eq!("# Why?\n  point", cards);
+        assert_eq!("## Why?\npoint", cards);
     }
 
     #[test]
     fn remediation_cards_rejects_a_reply_without_cards() {
         let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
-        // The model answered in prose (no `#` card front) instead of emitting
-        // cards: a failure, not a silently-appended bogus "card".
+        // The model answered in prose (no `## ` card front) instead of
+        // emitting cards: a failure, not a silently-appended bogus "card".
         let cli = fake_reply(dir.path(), "Sure, here is some advice on those concepts.");
         let err = remediation_cards(
             &["the gap".to_string()],
@@ -1687,8 +1688,8 @@ mod tests {
         let src = dir.join("notes.md");
         std::fs::write(&src, "the ground truth text").unwrap();
         let deck = Deck {
-            path: dir.join("d.txt"),
-            subject: "d.txt".to_string(),
+            path: dir.join("d.md"),
+            subject: "d.md".to_string(),
             cards: Vec::new(),
             links: Vec::new(),
             requires: Vec::new(),
@@ -1741,15 +1742,19 @@ mod tests {
              case \"$input\" in\n\
              *'\"grades\"'*) printf '%s' '{grades}' ;;\n\
              *'\"questions\"'*) printf '%s' '{{\"questions\":[{{\"prompt\":\"Q1\",\"points\":[\"p1\"]}},{{\"prompt\":\"Q2\",\"points\":[\"p2\"]}}]}}' ;;\n\
-             *) printf '# Why does X?\\n\\tpoint one\\n' ;;\n\
+             *) printf '## Why does X?\\npoint one\\n' ;;\n\
              esac"
         );
         fake_cli(dir, &body)
     }
 
     fn sourced_deck(dir: &std::path::Path) -> Deck {
-        let path = dir.join("d.txt");
-        std::fs::write(&path, "% source: https://x\n# c\n\ta\n").unwrap();
+        let path = dir.join("d.md");
+        std::fs::write(
+            &path,
+            "---\nsource: https://x\n---\n## c <!-- id: qc -->\na\n",
+        )
+        .unwrap();
         Deck::load(&path).unwrap()
     }
 
@@ -1793,22 +1798,22 @@ mod tests {
         assert_eq!(&Phase::Results, s.phase());
         assert!(!s.result().unwrap().passed);
         assert_eq!(vec!["the move rule"], s.gaps());
-        assert!(!store.deck_mastered("d.txt")); // failed -> not mastered
+        assert!(!store.deck_mastered("d.md")); // failed -> not mastered
 
         assert!(s.can_remediate());
-        let snapshot = std::fs::read(dir.path().join("d.txt")).unwrap();
+        let snapshot = std::fs::read(dir.path().join("d.md")).unwrap();
         s.remediate();
         assert_eq!(&Phase::Remediating, s.phase());
         drain(&mut s, &mut store);
         assert_eq!(&Phase::Remediated, s.phase());
         // The remediation card became a virtual card in the store — the deck
         // file itself stays byte-unchanged.
-        assert_eq!(snapshot, std::fs::read(dir.path().join("d.txt")).unwrap());
-        let virtuals = store.virtual_cards_for("d.txt");
+        assert_eq!(snapshot, std::fs::read(dir.path().join("d.md")).unwrap());
+        let virtuals = store.virtual_cards_for("d.md");
         assert_eq!(1, virtuals.len());
         assert_eq!(VirtualKind::Remediation, virtuals[0].kind);
         // Content lives as the stored deck-format `text`; re-parse it to check.
-        let synth = parser::parse_str("d.txt", &virtuals[0].text).unwrap();
+        let synth = parser::parse_str("d.md", &virtuals[0].text).unwrap();
         assert_eq!("Why does X?", synth[0].front);
         assert_eq!(vec!["point one".to_string()], synth[0].back);
     }
@@ -1847,7 +1852,7 @@ mod tests {
 
         // The count the Sitting carries matches the remediation virtual cards
         // this failure actually produced for the subject.
-        let virtuals = store.virtual_cards_for("d.txt");
+        let virtuals = store.virtual_cards_for("d.md");
         assert_eq!(1, virtuals.len());
         assert_eq!(Some(virtuals.len()), s.remediated_count());
     }
@@ -1878,7 +1883,7 @@ mod tests {
         drain(&mut s, &mut store);
         assert_eq!(&Phase::Results, s.phase());
         assert!(s.result().unwrap().passed);
-        assert!(store.deck_mastered("d.txt")); // pass -> mastered + saved
+        assert!(store.deck_mastered("d.md")); // pass -> mastered + saved
         assert!(!s.can_remediate());
     }
 
@@ -1894,7 +1899,7 @@ mod tests {
              {\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]}]}",
         );
         let deck = sourced_deck(dir.path());
-        let deck_path = dir.path().join("d.txt");
+        let deck_path = dir.path().join("d.md");
         let before = std::fs::read(&deck_path).unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
 
@@ -1919,10 +1924,10 @@ mod tests {
         let after = std::fs::read(&deck_path).unwrap();
         assert_eq!(before, after, "remediation must never touch the deck file");
 
-        let virtuals = store.virtual_cards_for("d.txt");
+        let virtuals = store.virtual_cards_for("d.md");
         assert_eq!(1, virtuals.len());
         assert_eq!(VirtualKind::Remediation, virtuals[0].kind);
-        assert_eq!("d.txt", virtuals[0].parent);
+        assert_eq!("d.md", virtuals[0].parent);
     }
 
     #[test]
@@ -1955,7 +1960,7 @@ mod tests {
         s.remediate();
         drain(&mut s, &mut store);
         assert_eq!(&Phase::Remediated, s.phase());
-        assert!(!store.virtual_cards_for("d.txt").is_empty());
+        assert!(!store.virtual_cards_for("d.md").is_empty());
 
         // Re-sit and pass this time.
         let cli_dir2 = tempfile::tempdir().unwrap();
@@ -1977,9 +1982,9 @@ mod tests {
         s2.submit();
         drain(&mut s2, &mut store);
         assert!(s2.result().unwrap().passed);
-        assert!(store.deck_mastered("d.txt"));
+        assert!(store.deck_mastered("d.md"));
 
-        for vc in store.virtual_cards_for("d.txt") {
+        for vc in store.virtual_cards_for("d.md") {
             assert!(
                 !is_retired_id(
                     vc.id,
@@ -2028,7 +2033,7 @@ mod tests {
         let Some(Effect::RemediationCards(text)) = effect else {
             panic!("expected Some(Effect::RemediationCards(_)), got {effect:?}");
         };
-        let synth = parser::parse_str("d.txt", &text).unwrap();
+        let synth = parser::parse_str("d.md", &text).unwrap();
         assert_eq!("Why does X?", synth[0].front);
         assert_eq!(vec!["point one".to_string()], synth[0].back);
         assert_eq!(&Phase::Remediated, s.phase());

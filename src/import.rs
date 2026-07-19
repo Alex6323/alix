@@ -1,18 +1,19 @@
 //! Anki TSV import — turn a tab-separated `front<TAB>back` export into the
-//! alix plain-text deck format.
+//! alix L1 deck format.
 //!
 //! Aimed at Anki's "Notes in Plain Text" export (fields separated by a tab):
 //! the first field is the front, the second is the back, further fields are
 //! ignored. Anki's `#`-prefixed header lines (`#separator:tab`, `#html:true`,
 //! …) are skipped, `<br>` tags become answer-line breaks, a few common HTML
-//! entities are decoded, and a back line that would otherwise read as an alix
-//! comment (`%`) or note (`!`) is backslash-escaped. The result is plain text
-//! the caller validates with [`crate::parser::parse_str`] and writes — no card
-//! identity or scheduling is involved.
+//! entities are decoded, and a back line that would otherwise read as L1
+//! structure (a `## ` front, a `> ` note, a `---` divider, a `<!--` comment,
+//! a code fence) is backslash-escaped. The result is plain text the caller
+//! validates with [`crate::l1::parse_str`] and writes — no card identity or
+//! scheduling is involved (the placed deck is stamped by its creation path).
 
 use anyhow::{Result, bail};
 
-/// Converts Anki-style TSV `text` into alix deck format. Errors only when no
+/// Converts Anki-style TSV `text` into the L1 deck format. Errors only when no
 /// usable `front<TAB>back` row is found, so the caller never writes an empty
 /// deck.
 pub fn tsv_to_deck(text: &str) -> Result<String> {
@@ -32,21 +33,20 @@ pub fn tsv_to_deck(text: &str) -> Result<String> {
             continue;
         }
 
-        // The front is a single `#` line, so collapse any internal breaks
+        // The front is a single `## ` heading, so collapse any internal breaks
         // (a `<br>` became a newline) into spaces.
         let front_line = front.split_whitespace().collect::<Vec<_>>().join(" ");
-        out.push_str("# ");
+        out.push_str("## ");
         out.push_str(&front_line);
         out.push('\n');
-        // Each back line is indented (so a leading `#` is plain content) and a
-        // leading `%`/`!` — a comment/note at any indent — is escaped.
+        // Back lines are plain (unindented) under the front; anything that
+        // would read as structure is escaped so it stays literal content.
         for bl in back.lines() {
             let bl = bl.trim();
             if bl.is_empty() {
                 continue;
             }
-            out.push('\t');
-            out.push_str(&escape_leading_markup(bl));
+            out.push_str(&escape_structure(bl));
             out.push('\n');
         }
         out.push('\n');
@@ -79,28 +79,35 @@ fn clean_field(field: &str) -> String {
     s
 }
 
-/// Backslash-escapes a back line that would otherwise be read as an alix comment
-/// (`%`) or note (`!`). A leading `#` needs no escape: the line is indented, so
-/// it's answer content, not a card front (those only count at column 0).
+/// The line-leading markers the L1 parser treats as structure; a back line
+/// starting with one is escaped with a backslash so it stays literal content
+/// (mirrors the parser's escapable set).
+const STRUCTURAL: [&str; 6] = ["##", ">", "---", "<!--", "```", "~~~"];
+
+/// Escapes a back line so it can never be read as L1 structure: a leading
+/// structural marker gains a backslash, and any `\cloze` in the line doubles
+/// its backslash (the marker is active anywhere in answer content, and
+/// imported prose is never a deliberate hole).
 ///
 /// Only used within this module, by [`tsv_to_deck`].
-fn escape_leading_markup(line: &str) -> String {
-    if line.starts_with('%') || line.starts_with('!') {
+fn escape_structure(line: &str) -> String {
+    let line = line.replace("\\cloze", "\\\\cloze");
+    if STRUCTURAL.iter().any(|marker| line.starts_with(marker)) {
         format!("\\{line}")
     } else {
-        line.to_string()
+        line
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::parse_str;
+    use crate::l1::parse_str;
 
     #[test]
     fn one_row_becomes_one_card() {
         let deck = tsv_to_deck("bonjour\thello\n").unwrap();
-        assert_eq!("# bonjour\n\thello\n\n", deck);
+        assert_eq!("## bonjour\nhello\n\n", deck);
     }
 
     #[test]
@@ -109,35 +116,53 @@ mod tests {
         let deck = tsv_to_deck(tsv).unwrap();
         // Only the two complete rows survive (the header, blank, and the
         // front-only `lonely` row are dropped).
-        let cards = parse_str("fr.txt", &deck).unwrap();
+        let cards = parse_str("fr.md", &deck).unwrap();
         assert_eq!(2, cards.len());
     }
 
     #[test]
     fn br_tags_split_the_back_into_lines() {
         let deck = tsv_to_deck("q\tone<br>two<br/>three\n").unwrap();
-        assert_eq!("# q\n\tone\n\ttwo\n\tthree\n\n", deck);
+        assert_eq!("## q\none\ntwo\nthree\n\n", deck);
     }
 
     #[test]
     fn decodes_common_entities() {
         let deck = tsv_to_deck("a &amp; b\tx &lt; y\n").unwrap();
-        assert_eq!("# a & b\n\tx < y\n\n", deck);
+        assert_eq!("## a & b\nx < y\n\n", deck);
     }
 
     #[test]
-    fn escapes_a_back_line_that_starts_with_a_directive_char() {
-        let deck = tsv_to_deck("q\t% literal percent\n").unwrap();
-        assert_eq!("# q\n\t\\% literal percent\n\n", deck);
-        // And it round-trips: the escaped line is answer content, not a comment.
-        let cards = parse_str("d.txt", &deck).unwrap();
-        assert_eq!(vec!["% literal percent".to_string()], cards[0].back);
+    fn escapes_a_back_line_that_would_read_as_structure() {
+        // A decoded `>` at the start of a back line would otherwise become a
+        // note; the escape keeps it answer content.
+        let deck = tsv_to_deck("q\t&gt; quoted reply\n").unwrap();
+        assert_eq!("## q\n\\> quoted reply\n\n", deck);
+        let cards = parse_str("d.md", &deck).unwrap();
+        assert_eq!(vec!["> quoted reply".to_string()], cards[0].back);
+
+        // A `---` right under the front would otherwise divide front from
+        // answer; escaped, it stays a literal line.
+        let deck = tsv_to_deck("q\t--- dashes\n").unwrap();
+        assert_eq!("## q\n\\--- dashes\n\n", deck);
+        let cards = parse_str("d.md", &deck).unwrap();
+        assert_eq!(vec!["--- dashes".to_string()], cards[0].back);
+    }
+
+    #[test]
+    fn a_literal_cloze_marker_is_doubled_not_a_hole() {
+        // Imported prose mentioning `\cloze{x}` must not mint a gap-fill card.
+        let deck = tsv_to_deck("q\tthe \\cloze{x} marker\n").unwrap();
+        let cards = parse_str("d.md", &deck).unwrap();
+        assert_eq!(1, cards.len());
+        assert!(cards[0].hole.is_none(), "no hole from imported prose");
+        assert_eq!(vec!["the \\cloze{x} marker".to_string()], cards[0].back);
     }
 
     #[test]
     fn output_parses_back_into_the_original_cards() {
         let deck = tsv_to_deck("bonjour\thello\nmerci\tthank you\n").unwrap();
-        let cards = parse_str("fr.txt", &deck).unwrap();
+        let cards = parse_str("fr.md", &deck).unwrap();
         assert_eq!(2, cards.len());
         assert_eq!("bonjour", cards[0].front);
         assert_eq!(vec!["hello".to_string()], cards[0].back);

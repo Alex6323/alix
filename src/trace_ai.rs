@@ -32,11 +32,11 @@ pub fn build(deck: &Deck, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<Stri
     let description = deck
         .trace
         .as_deref()
-        .ok_or_else(|| anyhow!("{} declares no `% trace:` to build", deck.subject))?;
+        .ok_or_else(|| anyhow!("{} declares no `trace:` to build", deck.subject))?;
     let source = deck
         .sources
         .first()
-        .ok_or_else(|| anyhow!("{} declares no `% source:` scope to trace", deck.subject))?;
+        .ok_or_else(|| anyhow!("{} declares no `source:` scope to trace", deck.subject))?;
     let url = is_url(source);
     // Gate on backend capability before resolving the source or exploring it.
     ensure_source_reachable(ask_cfg, url)?;
@@ -104,7 +104,7 @@ pub(crate) fn snapshot(
     let source = deck
         .sources
         .first()
-        .ok_or_else(|| anyhow!("{} declares no `% source:` to snapshot", deck.subject))?;
+        .ok_or_else(|| anyhow!("{} declares no `source:` to snapshot", deck.subject))?;
     if is_url(source) {
         bail!("`{source}` is a URL — there are no local excerpts to snapshot");
     }
@@ -165,7 +165,7 @@ pub(crate) fn snapshot(
     }
     if copied.is_empty() {
         bail!(
-            "{} has no readable `% at:` excerpts to snapshot",
+            "{} has no readable `at:` excerpts to snapshot",
             deck.subject
         );
     }
@@ -337,19 +337,22 @@ fn build_prompt(description: &str, source: &str, url: bool, cfg: &TraceConfig) -
          SEQUENCE (a data flow, a control flow, or a derivation), not a grab-bag of \
          facts about the topic. Then write it as a series of CHECKPOINT cards, one \
          per hop.\n\n\
-         FORMAT — output ONLY the checkpoint cards: no header, no `% trace:` or \
-         `% source:` line, no preamble, no code fences. Each checkpoint is:\n\n    \
-         # <the question for this hop, asked plainly>\n    \t% given: <name> — <what \
-         it is>\n    \t<a key point a correct answer hits>\n    \t<another key \
-         point>\n    \t% at: <locator>\n    \t! <one connecting insight, shown after \
-         the reveal>\n\n\
-         The `# ` front (column 0) is the QUESTION. The `% given:` lines (repeatable, \
-         optional) name off-screen symbols the question leans on — alix lists them \
-         under the question before the learner predicts. The indented lines under it \
-         are the key points the revealed source makes (the rubric). `% at:` is the \
+         FORMAT — output ONLY the checkpoint cards: no frontmatter, no `trace:` or \
+         `source:` key, no preamble, no code fences. Each checkpoint is:\n\n\
+         ## <the question for this hop, asked plainly>\n\
+         <!-- given: <name> — <what it is> -->\n\
+         <a key point a correct answer hits>\n\
+         <another key point>\n\
+         <!-- at: <locator> -->\n\
+         > <one connecting insight, shown after the reveal>\n\n\
+         The `## ` front (column 0, never indented) is the QUESTION. The \
+         `<!-- given: ... -->` lines (repeatable, optional) name off-screen symbols \
+         the question leans on — alix lists them under the question before the \
+         learner predicts. The plain (unindented) lines under it are the key points \
+         the revealed source makes (the rubric). `<!-- at: ... -->` is the \
          locator: {locator} — it must point at the REAL lines/passage the key points \
          paraphrase, because alix reads them live at review time as the ground \
-         truth. Cite accurately. The indented `! ` line is an optional note.\n\n\
+         truth. Cite accurately. The `> ` line is an optional note.\n\n\
          SCOPE EACH HOP TO A SELF-CONTAINED UNIT, AND GLOSS WHAT YOU DON'T SHOW. The \
          reader sees ONLY the lines you cite, so an excerpt must read on its own. \
          Prefer hops that are a whole SMALL function/method — its inputs are its \
@@ -358,12 +361,12 @@ fn build_prompt(description: &str, source: &str, url: bool, cfg: &TraceConfig) -
          signature plus the load-bearing line(s) and describe what it does in the key \
          points; if its internals are themselves worth understanding, that is a \
          SEPARATE trace, not more hops here.\n\
-         The `% at:` is ONE CONTIGUOUS RANGE. NEVER stitch several ranges together \
+         The `at:` locator is ONE CONTIGUOUS RANGE. NEVER stitch several ranges together \
          (no commas): collapsing the gaps makes lines from different branches/places \
          look adjacent, which misleads. If a hop cannot be shown in one contiguous \
          span, it spans more than one region — that is the signal it is too big: \
          split it, or black-box the function. \n\
-         GLOSS — completely and correctly. A `% given:` names a free variable: a \
+         GLOSS — completely and correctly. A `given:` names a free variable: a \
          symbol the cited span USES but does NOT BIND within those lines — typically \
          a function PARAMETER (declared in the signature, above the body you cite) or \
          a value from an enclosing/earlier scope. Apply a mechanical test to each \
@@ -371,9 +374,10 @@ fn build_prompt(description: &str, source: &str, url: bool, cfg: &TraceConfig) -
          itself) is INSIDE the cited lines, it is NOT a given — the reader sees it, \
          do not gloss it; if the span uses it but its binding is OUTSIDE, it IS a \
          given. (E.g. for a function body excerpt, the parameters are givens; a \
-         `let x = …` on a cited line is not.) Name each given with a `% given:` line, \
-         one per symbol, `name — what it is` (e.g. `% given: defaults — the workspace \
-         directive defaults, a parameter`). Check BOTH directions: every \
+         `let x = …` on a cited line is not.) Name each given with a \
+         `<!-- given: ... -->` line, one per symbol, `name — what it is` (e.g. \
+         `<!-- given: defaults — the workspace directive defaults, a parameter -->`). \
+         Check BOTH directions: every \
          used-but-unbound symbol is a CANDIDATE given, and never gloss one the span \
          binds itself. But gloss only what the reader can't DERIVE: a given earns \
          its place when the symbol's meaning or origin is genuinely off-screen and \
@@ -510,7 +514,7 @@ fn suggest_prompt(source: &str, url: bool, cfg: &TraceConfig) -> String {
          Spine   <the single most central path, as arrow-joined nouns>\n\n\
          1. <the path-question, e.g. how a keypress becomes a saved grade>\n   \
          spine: <3–6 rough hop labels joined by arrows — NOT cited checkpoints>\n   \
-         % source: <{scope}>\n\
+         source: <{scope}>\n\
          2. …\n\n\
          Skipped (node-shaped — facts-deck material, not traces):\n  \
          - <subsystem> — <why it's facts, not a path>\n  \
@@ -532,13 +536,13 @@ fn suggest_prompt(source: &str, url: bool, cfg: &TraceConfig) -> String {
     p
 }
 
-/// Strips anything around the generated checkpoint cards: a leading code fence,
-/// commentary, or a stray header before the first `#` card front, and trailing
-/// blank/fence lines. Unlike a full deck, a built trace's output is only the
-/// cards, so everything before the first column-0 `#` is dropped.
+/// Strips anything around the generated checkpoint cards: a leading code
+/// fence, commentary, or a stray header before the first `## ` card front, and
+/// trailing blank/fence lines. Unlike a full deck, a built trace's output is
+/// only the cards, so everything before the first column-0 `## ` is dropped.
 pub(crate) fn clean_to_cards(raw: &str) -> String {
     let lines: Vec<&str> = raw.lines().collect();
-    let Some(start) = lines.iter().position(|l| l.starts_with('#')) else {
+    let Some(start) = lines.iter().position(|l| l.starts_with("## ")) else {
         return raw.trim().to_string();
     };
     let mut end = lines.len();
@@ -683,11 +687,15 @@ mod tests {
         assert!(p.contains("Read, Glob")); // local exploration tools
         assert!(p.contains("file:start-end")); // single-range local locator form
         assert!(p.contains("ONE CONTIGUOUS RANGE")); // no stitched multi-range excerpts
-        assert!(p.contains("# <the question")); // the checkpoint format
-        assert!(p.contains("% at:"));
+        assert!(p.contains("## <the question")); // the checkpoint format
+        assert!(p.contains("<!-- at:"));
         assert!(p.contains("black-box hop")); // big function = one black-box hop
         assert!(p.contains("free variable")); // gloss free variables as givens
-        assert!(p.contains("% given:")); // givens emitted as a directive, not crammed
+        assert!(p.contains("<!-- given:")); // givens emitted as a directive, not crammed
+        // The L1 pin: no retired old-format syntax in the build prompt.
+        assert!(!p.contains("% at:"));
+        assert!(!p.contains("% given:"));
+        assert!(!p.contains("% trace:"));
         assert!(p.contains("MUST be COMPLETE")); // every off-screen symbol glossed
         assert!(p.contains("does NOT BIND")); // a given is used-but-not-bound (free)
         assert!(p.contains("KEY POINTS MUST BE GROUNDED")); // no claims beyond the excerpt
@@ -801,8 +809,8 @@ mod tests {
 
     #[test]
     fn clean_to_cards_strips_fence_and_preamble() {
-        let raw = "Here is the trace:\n```text\n# Q1\n\tp\n\t% at: 1\n```";
-        assert_eq!("# Q1\n\tp\n\t% at: 1", clean_to_cards(raw));
+        let raw = "Here is the trace:\n```text\n## Q1\np\n<!-- at: 1 -->\n```";
+        assert_eq!("## Q1\np\n<!-- at: 1 -->", clean_to_cards(raw));
     }
 
     use crate::testutil::{ask_config, exec_lock, fake_reply};
@@ -811,14 +819,21 @@ mod tests {
     fn build_end_to_end_returns_cleaned_cards() {
         let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
-        let cli = fake_reply(dir.path(), "# Q1\n\tp1\n\t% at: 1\n# Q2\n\tp2\n\t% at: 2\n");
-        // A trace deck with `% source: .` (cwd resolves to the temp dir).
-        let path = write(dir.path(), "t.txt", "% trace: how it works\n% source: .\n");
+        let cli = fake_reply(
+            dir.path(),
+            "## Q1\np1\n<!-- at: 1 -->\n## Q2\np2\n<!-- at: 2 -->\n",
+        );
+        // A trace deck with a `source: .` (cwd resolves to the temp dir).
+        let path = write(
+            dir.path(),
+            "t.md",
+            "---\ntrace: how it works\nsource: .\n---\n",
+        );
         let deck = Deck::load(&path).unwrap();
         let cards = build(&deck, &TraceConfig::default(), &ask_config(&cli)).unwrap();
-        assert!(cards.starts_with("# Q1"));
-        assert!(cards.contains("# Q2"));
-        assert!(cards.contains("% at: 2"));
+        assert!(cards.starts_with("## Q1"));
+        assert!(cards.contains("## Q2"));
+        assert!(cards.contains("<!-- at: 2 -->"));
     }
 
     // ── snapshotting ────────────────────────────────────────────────────
@@ -837,11 +852,10 @@ mod tests {
         );
         write(
             &root.join("ws"),
-            "t.txt",
-            "% trace: how it works\n\
-             % source: ../src\n\
-             # hop 1\n\tit reads a\n\t% at: a.rs:2-3\n\
-             # hop 2\n\tit reads b\n\t% at: b.rs:1\n",
+            "t.md",
+            "---\ntrace: how it works\nsource: ../src\n---\n\
+             ## hop 1\nit reads a\n<!-- at: a.rs:2-3 -->\n\
+             ## hop 2\nit reads b\n<!-- at: b.rs:1 -->\n",
         )
     }
 
@@ -866,12 +880,15 @@ mod tests {
         );
 
         let text = std::fs::read_to_string(&deck_path).unwrap();
-        assert!(text.contains("% source: assets\n"), "{text}");
-        assert!(text.contains("% origin: "), "{text}"); // the live source root is recorded
-        // The provenance rides the `% at:` line, never a `!` note.
-        assert!(text.contains("% at: 01.rs from a.rs:2-3\n"), "{text}");
-        assert!(text.contains("% at: 02.rs from b.rs:1\n"), "{text}");
-        assert!(!text.contains("! from"), "{text}");
+        assert!(text.contains("source: assets\n"), "{text}");
+        assert!(text.contains("origin: "), "{text}"); // the live source root is recorded
+        // The provenance rides the `at:` directive, never a note.
+        assert!(
+            text.contains("<!-- at: 01.rs from a.rs:2-3 -->\n"),
+            "{text}"
+        );
+        assert!(text.contains("<!-- at: 02.rs from b.rs:1 -->\n"), "{text}");
+        assert!(!text.contains("> from"), "{text}");
 
         // the reloaded trace reads the re-based excerpt from the snippet
         let frozen = Deck::load(&deck_path).unwrap();
@@ -908,16 +925,19 @@ mod tests {
         write(&root.join("ws"), "alix.toml", "[defaults]\n");
         let deck_path = write(
             &root.join("ws"),
-            "t.txt",
-            "% trace: t\n% source: ../notes.md\n# hop\n\tp\n\t% at: 2\n",
+            "t.md",
+            "---\ntrace: t\nsource: ../notes.md\n---\n## hop\np\n<!-- at: 2 -->\n",
         );
         let report = snapshot(&Deck::load(&deck_path).unwrap(), 0, None).unwrap();
         assert_eq!(1, report.copied.len());
         assert!(root.join("ws/assets/01.md").is_file());
         let text = std::fs::read_to_string(&deck_path).unwrap();
-        assert!(text.contains("% source: assets\n"), "{text}");
-        assert!(text.contains("% at: 01.md from notes.md:2\n"), "{text}");
-        assert!(!text.contains("! from"), "{text}");
+        assert!(text.contains("source: assets\n"), "{text}");
+        assert!(
+            text.contains("<!-- at: 01.md from notes.md:2 -->\n"),
+            "{text}"
+        );
+        assert!(!text.contains("> from"), "{text}");
 
         let frozen = Deck::load(&deck_path).unwrap();
         let trace = Trace::from_deck(&frozen).unwrap();
@@ -939,10 +959,10 @@ mod tests {
         write(&root.join("ws"), "alix.toml", "[defaults]\n");
         let deck_path = write(
             &root.join("ws"),
-            "d.txt",
-            "% source: ../src/a.rs + b.rs\n\
-             # q1\n\tp\n\t% at: a.rs:2-3\n\
-             # q2\n\tp\n\t% at: b.rs:1\n",
+            "d.md",
+            "---\nsource: ../src/a.rs + b.rs\n---\n\
+             ## q1\np\n<!-- at: a.rs:2-3 -->\n\
+             ## q2\np\n<!-- at: b.rs:1 -->\n",
         );
         let report = snapshot(&Deck::load(&deck_path).unwrap(), 0, None).unwrap();
         assert_eq!(2, report.copied.len(), "both ` + ` files freeze");
@@ -958,8 +978,8 @@ mod tests {
         // not in a workspace (no alix.toml)
         let loose = write(
             root,
-            "t.txt",
-            "% trace: t\n% source: .\n# h\n\tp\n\t% at: x.rs:1\n",
+            "t.md",
+            "---\ntrace: t\nsource: .\n---\n## h\np\n<!-- at: x.rs:1 -->\n",
         );
         let err = snapshot(&Deck::load(&loose).unwrap(), 0, None).unwrap_err();
         assert!(format!("{err:#}").contains("not in a workspace"), "{err:#}");
@@ -969,8 +989,8 @@ mod tests {
         write(&root.join("ws"), "alix.toml", "[defaults]\n");
         let url = write(
             &root.join("ws"),
-            "u.txt",
-            "% trace: t\n% source: https://example.com/p\n# h\n\tp\n\t% at: 1\n",
+            "u.md",
+            "---\ntrace: t\nsource: https://example.com/p\n---\n## h\np\n<!-- at: 1 -->\n",
         );
         let err = snapshot(&Deck::load(&url).unwrap(), 0, None).unwrap_err();
         assert!(format!("{err:#}").contains("URL"), "{err:#}");
