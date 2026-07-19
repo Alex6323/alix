@@ -35,6 +35,108 @@ pub fn scan_dir(dir: &Path) -> DuplicateMap {
     scan(&crate::workspace::deck_files(dir))
 }
 
+/// scan_dir on a token-extracting line scan instead of full parses: the
+/// review-open hot path. Divergence from the parser is biased to missing a
+/// dup (no resolution, doctor still warns), never to inventing one.
+pub fn scan_dir_fast(dir: &Path) -> DuplicateMap {
+    let mut paths: Vec<PathBuf> = std::fs::read_dir(dir)
+        .map(|entries| {
+            entries
+                .filter_map(|r| r.ok().map(|e| e.path()))
+                .filter(|p| p.is_file() && p.extension().is_some_and(|e| e == "md"))
+                .filter(|p| {
+                    !p.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
+                        crate::workspace::is_conventional_non_deck(n)
+                            || crate::workspace::is_conflict_name(n)
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    paths.sort();
+    let mut parsed = Vec::new();
+    for path in paths {
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let (deck_token, cards) = extract_ids(&text);
+        parsed.push(Parsed {
+            path,
+            deck_token,
+            cards,
+        });
+    }
+    build_map(&parsed)
+}
+
+/// (deck token, per-card (token, 1-based heading line)) via a fence-aware
+/// line scan mirroring the parser's directive placement rules.
+fn extract_ids(text: &str) -> (Option<String>, Vec<(String, usize)>) {
+    let mut deck_token = None;
+    let mut cards = Vec::new();
+    let mut fence: Option<char> = None;
+    let mut in_frontmatter = false;
+    let mut heading_line = 0usize;
+    for (i, raw) in text.lines().enumerate() {
+        let n = i + 1;
+        let line = raw.strip_suffix('\r').unwrap_or(raw);
+        if i == 0 && line.trim_end() == "---" {
+            in_frontmatter = true;
+            continue;
+        }
+        if in_frontmatter {
+            if line.trim_end().trim_end_matches([' ', '\t']) == "---" {
+                in_frontmatter = false;
+            } else if deck_token.is_none()
+                && let Some(rest) = line.trim().strip_prefix("id:")
+            {
+                let v = rest.trim().trim_matches('"');
+                if crate::token::is_valid(v) {
+                    deck_token = Some(v.to_string());
+                }
+            }
+            continue;
+        }
+        let marker = line.chars().next();
+        if (line.starts_with("```") || line.starts_with("~~~")) && fence.is_none() {
+            fence = marker;
+            continue;
+        }
+        if let Some(f) = fence {
+            if line.starts_with(f) && line.trim_end().chars().all(|c| c == f) {
+                fence = None;
+            }
+            continue;
+        }
+        if line.starts_with("## ") {
+            heading_line = n;
+        }
+        let candidate = if line.trim().starts_with("<!--") {
+            line.trim()
+        } else if line.starts_with("## ")
+            && let Some(pos) = line.find("<!--")
+        {
+            line[pos..].trim()
+        } else {
+            continue;
+        };
+        if let Some(inner) = candidate
+            .strip_prefix("<!--")
+            .and_then(|s| s.strip_suffix("-->"))
+            && let Some(rest) = inner.trim().strip_prefix("id:")
+        {
+            let v = rest.trim();
+            if crate::token::is_valid(v) && heading_line > 0 {
+                let entry = (v.to_string(), heading_line);
+                if !cards.contains(&entry) {
+                    cards.push(entry);
+                }
+            }
+        }
+    }
+    (deck_token, cards)
+}
+
 struct Parsed {
     path: PathBuf,
     deck_token: Option<String>,
@@ -74,8 +176,12 @@ pub fn scan(deck_paths: &[PathBuf]) -> DuplicateMap {
         });
     }
 
-    let (excluded_decks, excluded) = deck_dupes(&parsed);
-    let card_dupes = card_dupes(&parsed, &excluded);
+    build_map(&parsed)
+}
+
+fn build_map(parsed: &[Parsed]) -> DuplicateMap {
+    let (excluded_decks, excluded) = deck_dupes(parsed);
+    let card_dupes = card_dupes(parsed, &excluded);
     DuplicateMap {
         excluded_decks,
         card_dupes,
@@ -204,6 +310,30 @@ mod tests {
         )
         .unwrap();
         path
+    }
+
+
+    #[test]
+    fn the_fast_scan_matches_the_full_scan_across_placements_and_fences() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("a.md"),
+            "---\nid: \"dtok1\"\n\n---\n# T\n\n## q1\nanswer\n<!-- id: shared1 -->\n\n## q2 <!-- id: samelinetok -->\nanswer\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("b.md"),
+            "## q3\n<!-- id: shared1 -->\nbelow front\n\n## q4\n```\n## fenced <!-- id: fencedtok -->\n<!-- id: alsofenced -->\n```\n<!-- id: realtok -->\n",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("notes.md"), "just prose, no cards\n").unwrap();
+        std::fs::write(dir.path().join("c.md.bak"), "## x\n<!-- id: shared1 -->\n").unwrap();
+
+        let full = scan_dir(dir.path());
+        let fast = scan_dir_fast(dir.path());
+        assert_eq!(full, fast);
+        assert_eq!(1, fast.card_dupes.len());
+        assert_eq!("shared1", fast.card_dupes[0].token);
     }
 
     #[test]

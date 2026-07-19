@@ -262,7 +262,7 @@ pub fn resolve_duplicates_at_open(path: &Path) {
     let Some(dir) = path.parent() else {
         return;
     };
-    for dupe in crate::dedup::scan_dir(dir).card_dupes {
+    for dupe in crate::dedup::scan_dir_fast(dir).card_dupes {
         if dupe.losers.iter().any(|(p, _)| p == path)
             && let Err(e) = stamp::replace_card_token(path, &dupe.token)
         {
