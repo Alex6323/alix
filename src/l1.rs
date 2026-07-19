@@ -124,6 +124,13 @@ pub enum LintKind {
         /// The offending value (or its YAML node kind).
         value: String,
     },
+    /// A known per-card directive key given an empty value (e.g.
+    /// `<!-- id: -->`): consumed silently otherwise, so a half-typed token
+    /// would vanish with no signal.
+    EmptyValue {
+        /// The key with the empty value.
+        key: String,
+    },
     /// A `reveal:` directive on a card with cloze holes: linted, not obeyed
     /// (the holes are the trigger, spec §3.4).
     RevealOnCloze,
@@ -134,6 +141,9 @@ pub enum LintKind {
     /// A `<!--` line that does not close with `-->`: directives are single
     /// line; the line stays content.
     UnclosedComment,
+    /// A fence opened but never closed by EOF: everything after it, cards
+    /// included, was swallowed as its verbatim content (spec §3.5).
+    UnclosedFence,
 }
 
 /// A hard parse failure, pointing at the offending line of the deck file.
@@ -369,6 +379,15 @@ fn closes_fence(line: &str, ch: char) -> bool {
 
 // ── Frontmatter ──
 
+/// Whether a line closes the frontmatter block (spec §3.1, amended): the
+/// exact `---` run, followed only by closed-set whitespace. A line with
+/// leading indentation (` ---`) does not match: content, not a closer, so a
+/// `---` inside a YAML block scalar can't accidentally end the frontmatter.
+fn closes_frontmatter(line: &str) -> bool {
+    line.strip_prefix("---")
+        .is_some_and(|rest| rest.chars().all(|c| WHITESPACE.contains(&c)))
+}
+
 /// Locates and loads the optional frontmatter (spec §3.1): it opens only if
 /// the file's first content line is exactly `---`, and a missing close is a
 /// hard error. Returns the frontmatter and the 0-based index scanning
@@ -385,7 +404,7 @@ fn parse_frontmatter(
     }
     let Some(close) = lines[open + 1..]
         .iter()
-        .position(|line| *line == "---")
+        .position(|line| closes_frontmatter(line))
         .map(|i| open + 1 + i)
     else {
         return Err(L1Error::UnclosedFrontmatter(open + 1));
@@ -597,7 +616,9 @@ fn scan(
     let mut title: Option<String> = None;
     let mut cards: Vec<RawCard> = Vec::new();
     let mut current: Option<RawCard> = None;
-    let mut fence: Option<char> = None;
+    // The fence character plus the opener's line number, so an EOF lint can
+    // name where a still-open fence began.
+    let mut fence: Option<(char, usize)> = None;
     // The divider rule looks at the physically previous line: blank, or the
     // card's heading.
     let mut prev_blank = false;
@@ -609,7 +630,7 @@ fn scan(
 
         // Inside a fence everything is verbatim content; only the matching
         // closer (column 0) ends it.
-        if let Some(ch) = fence {
+        if let Some((ch, _)) = fence {
             if closes_fence(raw, ch) {
                 fence = None;
             }
@@ -621,7 +642,7 @@ fn scan(
 
         // A fence opener (column 0) starts verbatim mode.
         if let Some(ch) = fence_opener(raw) {
-            fence = Some(ch);
+            fence = Some((ch, lineno));
             push_content(&mut current, lineno, raw.to_string());
             prev_blank = false;
             prev_heading = false;
@@ -744,6 +765,15 @@ fn scan(
         prev_heading = false;
     }
 
+    // A fence still open at EOF swallowed everything after it, including any
+    // later `## ` headings, as its content: surface that instead of letting
+    // cards vanish silently.
+    if let Some((_, open_line)) = fence {
+        lints.push(Lint {
+            line: open_line,
+            kind: LintKind::UnclosedFence,
+        });
+    }
     if let Some(card) = current.take() {
         cards.push(card);
     }
@@ -829,21 +859,40 @@ fn strip_trailing_hashes(text: &str) -> &str {
 }
 
 /// Parses a comment body as a `key: value` directive: lowercased key,
-/// trimmed value. `None` for anything else (a prose comment, an empty
-/// value), which is consumed as a plain comment.
+/// trimmed value (which may come back empty: the caller decides whether an
+/// empty value on a known key warrants a lint). `None` for anything without
+/// a `key:` shape at all (a prose comment), which is consumed as a plain
+/// comment.
 fn directive(body: &str) -> Option<(String, String)> {
     let (key, value) = trim_ws(body).split_once(':')?;
     let key = trim_ws(key).to_ascii_lowercase();
     if key.is_empty() || key.contains(char::is_whitespace) {
         return None;
     }
-    let value = trim_ws(value);
-    (!value.is_empty()).then(|| (key, value.to_string()))
+    Some((key, trim_ws(value).to_string()))
+}
+
+/// The §3.7 per-card directive keys that lint on an empty value, i.e. every
+/// match arm in [`apply_directive`] except the reserved and unknown keys.
+fn is_known_card_key(key: &str) -> bool {
+    matches!(
+        key,
+        "id" | "reveal"
+            | "input"
+            | "direction"
+            | "img"
+            | "img-back"
+            | "at"
+            | "origin"
+            | "given"
+            | "math"
+    )
 }
 
 /// Applies one directive to the card's set: the §3.7 closed keys, the
-/// reserved keys silently, anything else linted. A bad token is the one
-/// hard error here.
+/// reserved keys silently, anything else linted, and an empty value on a
+/// known key linted rather than dropped without a trace. A bad token is the
+/// one hard error here.
 fn apply_directive(
     directives: &mut CardDirectives,
     key: &str,
@@ -851,6 +900,15 @@ fn apply_directive(
     line: usize,
     lints: &mut Vec<Lint>,
 ) -> Result<(), L1Error> {
+    if value.is_empty() && is_known_card_key(key) {
+        lints.push(Lint {
+            line,
+            kind: LintKind::EmptyValue {
+                key: key.to_string(),
+            },
+        });
+        return Ok(());
+    }
     match key {
         "id" => {
             if !token::is_valid(&value) {
@@ -1205,6 +1263,21 @@ mod tests {
     }
 
     #[test]
+    fn a_frontmatter_closer_tolerates_trailing_whitespace() {
+        let deck = parse("---\ntrace: a walk\n--- \n## q\na\n");
+        assert_eq!(Some("a walk".to_string()), deck.frontmatter.trace);
+        assert_eq!(1, deck.cards.len());
+        assert_eq!("q", deck.cards[0].front);
+
+        // Leading indentation stays content (it protects a `---` inside a
+        // YAML block scalar), so this frontmatter never closes.
+        assert_eq!(
+            L1Error::UnclosedFrontmatter(1),
+            err("---\ntrace: a walk\n ---\n## q\na\n")
+        );
+    }
+
+    #[test]
     fn an_unquoted_numeric_id_is_a_hard_error_naming_the_line() {
         assert_eq!(
             L1Error::NonStringId {
@@ -1317,6 +1390,41 @@ mod tests {
         let deck = parse("## q\n---\n```\n## not a front\n```\n");
         assert_eq!(1, deck.cards.len());
         assert_eq!(vec!["```", "## not a front", "```"], deck.cards[0].back);
+    }
+
+    #[test]
+    fn an_unclosed_fence_at_eof_is_linted() {
+        // The trailing empty line from the final `\n` is itself inside the
+        // still-open fence, so it is swallowed as content too.
+        let deck = parse("## q\n---\na\n```\nb\n");
+        assert_eq!(vec!["a", "```", "b", ""], deck.cards[0].back);
+        assert_eq!(
+            vec![Lint {
+                line: 4,
+                kind: LintKind::UnclosedFence
+            }],
+            deck.lints
+        );
+    }
+
+    #[test]
+    fn a_fence_closer_with_trailing_text_stays_inside_the_fence() {
+        let deck = parse("## q\n---\nbefore\n```\n```rust\n## x\n```\nafter\n");
+        assert_eq!(1, deck.cards.len());
+        assert_eq!(
+            vec!["before", "```", "```rust", "## x", "```", "after"],
+            deck.cards[0].back
+        );
+        assert!(deck.lints.is_empty(), "{:?}", deck.lints);
+    }
+
+    #[test]
+    fn a_cloze_hole_on_a_fenced_line_is_still_a_hole() {
+        let deck = parse("## q\n---\n```\nlet x = \\cloze{5};\n```\n");
+        assert_eq!(1, deck.cards.len());
+        assert_eq!(Some(0), deck.cards[0].hole);
+        assert_eq!(vec!["5"], deck.cards[0].back);
+        assert_eq!(vec!["```", "let x = ____;", "```"], deck.cards[0].context);
     }
 
     #[test]
@@ -1454,6 +1562,19 @@ mod tests {
         assert_eq!(None, deck.cards[0].direction);
         assert_eq!(
             vec![bad(2, "reveal", "cloze"), bad(7, "direction", "sideways")],
+            deck.lints
+        );
+    }
+
+    #[test]
+    fn an_empty_valued_known_directive_key_is_linted() {
+        let deck = parse("## q\n---\na\n<!-- id: -->\n");
+        assert_eq!(None, deck.cards[0].token);
+        assert_eq!(
+            vec![Lint {
+                line: 4,
+                kind: LintKind::EmptyValue { key: "id".into() }
+            }],
             deck.lints
         );
     }
