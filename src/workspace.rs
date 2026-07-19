@@ -149,7 +149,9 @@ fn members(dir: &Path) -> io::Result<Vec<PathBuf>> {
 }
 
 pub fn is_workspace(path: &Path) -> bool {
-    has_decks(path) && path.join(MANIFEST).is_file()
+    // Manifest stat first: has_decks reads every member file, and the catalog
+    // probes is_workspace once per loose deck.
+    path.join(MANIFEST).is_file() && has_decks(path)
 }
 
 pub fn has_decks(path: &Path) -> bool {
