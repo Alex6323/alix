@@ -219,7 +219,7 @@ fn resolve_topology<'a>(
         Some(name) => match mine.into_iter().find(|t| t.name == name) {
             Some(topology) => Ok(Some(topology)),
             None => bail!(
-                "no topology named `{name}` is cached for this deck — run `alix deck augment <deck> --target topology`"
+                "no review order named `{name}` is cached for this deck; run `alix deck augment <deck> --target order`"
             ),
         },
         None => Ok(match mine.as_slice() {
@@ -412,11 +412,11 @@ pub fn select(
 
     if let Some(region_name) = region_sel {
         let Some(topology) = topology else {
-            bail!("--region needs a topology — pass --topology, or augment one for this deck");
+            bail!("a region needs a review order to sit in; none is selected for this deck");
         };
         let Some(region_ids) = topology.region_cards(region_name) else {
             bail!(
-                "no region named `{region_name}` in topology `{}`",
+                "no region named `{region_name}` in the review order `{}`",
                 topology.name
             );
         };
