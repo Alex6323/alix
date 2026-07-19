@@ -56,7 +56,7 @@ responsive while it thinks.
   that `requires:` this one. Source-less decks are unaffected: finishing them
   just means drilled (`done ✓`).
 - **Fail** lists the gaps and offers to turn them into **remediation cards**: a
-  `<!-- reveal: cloze -->` or plain card for a missed fact, an open understanding card (a
+  cloze card or a plain card for a missed fact, an open understanding card (a
   prompt plus key points) for a missed concept, with overlapping gaps merged.
   Re-drill those and re-sit. Once created, the screen reports how many remediation
   cards it added.

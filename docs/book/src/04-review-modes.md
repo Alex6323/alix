@@ -20,12 +20,13 @@ Three ways to uncover an answer. Set it deck-wide with a `reveal:` line in the
 frontmatter, or per card with a `<!-- reveal: ... -->` directive (default `flip`):
 
 - **flip** *(default)*: the whole answer is revealed at once.
-- **cloze**: the answer is shown with a gap to fill. A `\cloze{...}` span in the
-  answer marks each gap, and the card expands into one sub-card per gap. See
-  [cloze cards](06-cloze-direction-images.md).
 - **line**: the answer is revealed one line at a time, for ordered material
   (lyrics, a sequence of steps). Pair it with `order: sequential` in the
   frontmatter to walk the deck top to bottom.
+
+A card becomes **cloze** (a gap to fill) automatically when its answer contains
+`\cloze{...}` blanks; that is triggered by the markup, not set as a `reveal:`
+value. See [cloze cards](06-cloze-direction-images.md).
 
 ```
 ## Stage every change in git, including deletions?
