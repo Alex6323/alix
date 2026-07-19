@@ -1,101 +1,112 @@
 # 3 · The deck format
 
-A deck is a plain-text file, and the format is deliberately small — you can write
-one in any editor with no tooling, and read it back at a glance. It's loosely
-modeled on Markdown: a `#` heads each card the way it heads a Markdown section,
-and a note can hold a fenced code block — so the syntax is already familiar and
-most editors highlight it sensibly.
+A deck is a plain-text Markdown file. You can write one in any editor with no
+tooling, read it back at a glance, and because it's real Markdown, it renders
+sensibly anywhere else too: a preview pane, your file host, GitHub.
 
 ## Cards
 
-A card starts with a `#` at **column 0** — the front (the question). The indented
-lines beneath it are the answer (the back), and may span several lines:
+A card starts with `##` at **column 0**, the front (the question). The lines
+beneath it are the answer (the back), written plainly, and may span several
+lines:
 
 ```
-# What is the capital of France?
-    Paris.
+## What is the capital of France?
+Paris.
 
-# Name the three additive primary colors.
-    Red
-    Green
-    Blue
+## Name the three additive primary colors.
+Red
+Green
+Blue
 ```
 
-A `#` only starts a new card *at column 0*. An **indented** `#` is ordinary
-answer content — so shell comments, Rust attributes, or Dockerfile lines need no
-escaping:
+A `##` only starts a card *at column 0 and outside a code fence*. A `##` that is
+indented, or sits inside a fenced block, is ordinary answer content, so a Markdown
+heading in a sample, a shell comment, or a Dockerfile line needs no escaping:
+
+````
+## What does this script print?
+```bash
+echo hi
+## this line is just part of the answer, inside the fence
+```
+````
+
+## Multi-line fronts
+
+When the question itself spans more than one line, a `---` divider marks where it
+ends and the answer begins:
 
 ```
-# What does this script print?
-    echo hi
-    # this # is just part of the answer
+## What does `lo` control in this signature?
+def bisect_right(a, x, lo=0, hi=None)
+---
+The lowest index the search considers; entries below `lo` are ignored.
 ```
+
+Here the front is two lines (the prose question plus the code it's asking about),
+and without the `---` alix couldn't tell where the question stops and the answer
+starts. (A one-line question needs no divider: the answer just follows on the next
+line, as in the cards above.)
 
 ## Notes
 
-A line beginning with `!` is a **note** — shown *after* you answer, never part of
-what's tested:
+A line beginning with `>` is a **note**: shown *after* you answer, never part of
+what's tested. Consecutive `>` lines join into one note:
 
 ```
-# Why does TCP open with a three-way handshake?
-    To agree on initial sequence numbers in both directions.
-    ! SYN, SYN-ACK, ACK — each side learns the other's starting sequence.
+## Why does TCP open with a three-way handshake?
+To agree on initial sequence numbers in both directions.
+> SYN, SYN-ACK, ACK: each side learns the other's starting sequence.
 ```
 
-Notes render as a quoted block, one sentence per line. A fenced ` ``` ` code
-block inside a note is shown verbatim — indentation preserved, not reflowed — so
-code stays readable. Use notes generously: keep the *answer* to the thing you
-want to recall, and put the *why*, the example, or the mnemonic in the note.
+Keep the *answer* to the thing you want to recall, and put the *why*, the example,
+or the mnemonic in a note.
 
-## Comments
+## Title, and deck-wide settings
 
-A line beginning with `%` is a **comment** — ignored, unless it's one of the
-directives covered in later chapters. Use plain `%` lines to annotate a deck:
+A deck's title is a single-`#` heading. Deck-wide settings live in
+**frontmatter**: a `---`-fenced YAML block at the very top of the file, above the
+title.
 
 ```
-% Chapter 4 vocabulary. Reviewed weekly.
+---
+reveal: line
+order: sequential
+---
+
+# French vocabulary, chapter 4
 ```
+
+Frontmatter carries only what differs from the defaults, and a command-line flag
+always overrides it. Anything else you write before the first card is just prose
+(context, a reading order, whatever you like), so a deck can also read as a normal
+document. The full set of frontmatter and per-card keys gets its own *Directives
+reference* chapter.
 
 ## Escaping
 
-Lines are **trimmed**, so you never have to type indentation — it's purely for
-readability. Because `#`, `!`, and `%` are markers, an answer line that must
-*start* with one is escaped with a leading backslash:
+Because `##`, `>`, `---`, and the fence and cloze markers are structural, an answer
+line that must *start* with one literally is escaped with a leading backslash:
+`\##`, `\>`, `\---`. The backslash is consumed; the line displays without it.
 
 ```
-# How do you start a comment in Python?
-    \# like this
+## How do you write a second-level heading in Markdown?
+\## Section title
 ```
-
-The backslash is consumed; the line displays as `# like this`.
 
 ## Why editing a deck is safe
 
-A card's identity is derived from its **answer lines** (together with the deck's
-name) — *not* from its question, its notes, or its comments. Two consequences are
-worth knowing:
+Every card carries a stable identity: a short token alix writes into the file as an
+`<!-- id: ... -->` line the first time it sees the card. That token, not the card's
+text, is what your review history hangs on. You don't type or manage those lines;
+alix adds and maintains them.
 
-- You can freely edit comments, notes, and directives, reorder cards, and even
-  **reword a question** without losing any review history — none of those feed
-  the identity.
-- Changing an **answer line** makes a new card with fresh progress. Two cards
-  with identical answers in the same deck collide; `alix doctor` warns about
-  those.
+Because identity is the token and not the words, you can edit **anything** (reword
+the question, fix a typo in the answer, rewrite a note, reorder cards, even move a
+card to another deck) and its history follows. The only thing that starts a card's
+history over is deliberately replacing it. (`alix doctor` warns if an id line goes
+missing, for instance if an external tool stripped the HTML comments.)
 
-So a deck is safe to refactor: rephrase, annotate, reorder, add directives — your
-progress rides on the answers.
-
-## Deck directives, in one line
-
-A deck can set its own defaults — the reveal-method, the card order, and more — with
-`% key: value` lines in the **header** (before the first card):
-
-```
-% reveal: line
-% order: sequential
-```
-
-Because they're just comments, directives don't affect card identity, and an
-explicit command-line flag always overrides them. The full set gets its own
-*Directives reference* chapter; the next two chapters cover the ones you'll reach
-for first — how answers are **revealed** and **scheduled**.
+So a deck is safe to refactor freely: your progress rides on the token, not on the
+words.
