@@ -93,9 +93,9 @@ fn explore_prompt(source: &str, goal: &str, url: bool, cfg: &TraceConfig) -> Str
          Source  <one line: what this source is>\n\
          Spine   <the single most central path, arrow-joined nouns>\n\n\
          1. [deck]  <a short topic noun phrase, e.g. the deck format>\n   \
-         requires: none\n   % source: <{scope}>\n\
+         requires: none\n   @source: <{scope}>\n\
          2. [trace] <the path-question, e.g. how deck text becomes a list of Cards>\n   \
-         requires: 1\n   % source: <{scope}>\n\
+         requires: 1\n   @source: <{scope}>\n\
          3. …\n\n\
          Tag EVERY item [trace] or [deck]. Keep each title SHORT — one line, a \
          handful of words: a [deck] is a noun phrase naming the topic (`the crate \
@@ -105,10 +105,10 @@ fn explore_prompt(source: &str, goal: &str, url: bool, cfg: &TraceConfig) -> Str
          detail. Do not resolve line numbers or write cards/checkpoints — later \
          steps do that. Use as many items as the goal needs (stop at saturation), \
          ordered by prerequisite.\n\n\
-         `% source:` FORMAT: a [deck]'s source must be actual FILE path(s) (the \
+         `@source:` FORMAT: a [deck]'s source must be actual FILE path(s) (the \
          exam reads them) — never a bare directory. For several files, join them \
          with ` + `, writing the FIRST as a full path and the rest RELATIVE to its \
-         directory, e.g. `% source: <root>/README.md + src/lib.rs`. A [trace] may \
+         directory, e.g. `@source: <root>/README.md + src/lib.rs`. A [trace] may \
          use a single directory or file as its locator base."
     );
     if let Some(extra) = cfg
@@ -368,7 +368,7 @@ pub fn parse_plan(plan: &str) -> Vec<Item> {
                     .split(|c: char| !c.is_ascii_digit())
                     .filter_map(|p| p.parse().ok())
                     .collect();
-            } else if let Some(rest) = t.strip_prefix("% source:") {
+            } else if let Some(rest) = t.strip_prefix("@source:") {
                 item.source = rest.trim().to_string();
             }
         }
@@ -741,13 +741,13 @@ Spine   a -> b
 
 1. [deck]  The deck format: markers and directives
    requires: none
-   % source: README.md
+   @source: README.md
 2. [trace] How text becomes Cards
    requires: 1
-   % source: src/parser.rs
+   @source: src/parser.rs
 10. [trace] How a request is served
     requires: 1, 2
-    % source: src/serve.rs
+    @source: src/serve.rs
 ";
 
     #[test]

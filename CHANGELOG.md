@@ -112,6 +112,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   augment and the exam now show the `[ask] backend` you actually use, so a
   Gemini, Codex, or Copilot user no longer reads "Claude is working…"
   (`AskInfoDto` gained a `backend` field).
+- The CLI `--help` text is modernized to the L1 deck wording: a trace stub now
+  declares `trace:` in its frontmatter (no `% trace:`), replacing the stale
+  old-format references.
 
 ## [0.5.0] - 2026-07-15
 

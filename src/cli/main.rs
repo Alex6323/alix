@@ -83,8 +83,8 @@ enum Command {
     /// A web page or file source becomes one deck. A directory source is
     /// explored first: a one-item plan becomes a deck, a bigger plan becomes
     /// a workspace (shown and confirmed before building). `--plan` previews,
-    /// `--trace` authors a trace, and naming an existing `% trace:` stub
-    /// builds its checkpoints in place.
+    /// `--trace` authors a trace, and naming a deck that declares `trace:` in
+    /// its frontmatter builds its checkpoints in place.
     Generate(GenerateArgs),
     /// Show progress statistics for a deck, a folder, or a workspace.
     ///
@@ -111,14 +111,14 @@ enum Command {
     /// Create and grow workspaces.
     #[command(subcommand)]
     Workspace(WorkspaceAction),
-    /// Share a deck, folder, or workspace — over magic-wormhole, or as a .zip.
+    /// Share a deck, folder, or workspace: over magic-wormhole, or as a .zip.
     ///
     /// Either way, what travels is a staged copy without your personal state
     /// (progress, recent list, local pacing). The default sends through the
-    /// `wormhole` binary — tell the receiver the code it prints; `--zip`
+    /// `wormhole` binary. Tell the receiver the code it prints; `--zip`
     /// writes an archive to pass along however you like instead.
     Share(ShareArgs),
-    /// Receive a shared deck or folder — by wormhole code, or from a .zip.
+    /// Receive a shared deck or folder: by wormhole code, or from a .zip.
     ///
     /// A received deck lands in the decks directory (or `--workspace <dir>`);
     /// a received folder lands beside your other decks under its own name.
@@ -140,7 +140,7 @@ struct DoctorArgs {
     dir: Option<PathBuf>,
 
     /// Also probe the configured AI backend end to end. This sends one real
-    /// (tiny) request — the only reliable way to confirm login + reachability.
+    /// (tiny) request, the only reliable way to confirm login + reachability.
     #[arg(long)]
     backends: bool,
 
@@ -197,12 +197,12 @@ struct ShareArgs {
     /// What to send: a deck file, a plain decks folder, or a workspace.
     path: PathBuf,
 
-    /// Write a .zip archive instead of sending over wormhole — the offline
+    /// Write a .zip archive instead of sending over wormhole: the offline
     /// fallback (mail it, put it on a stick).
     #[arg(long)]
     zip: bool,
 
-    /// With --zip: where to write the archive — a file name, or a directory
+    /// With `--zip`, where to write the archive: a file name, or a directory
     /// to put `<name>.zip` in (default: the current directory).
     #[arg(long, requires = "zip")]
     output: Option<PathBuf>,
@@ -220,16 +220,16 @@ struct ReceiveArgs {
     workspace: Option<PathBuf>,
 
     /// Overwrite an existing deck file of the same name (folders never
-    /// overwrite — move the old one aside first).
+    /// overwrite; move the old one aside first).
     #[arg(long)]
     force: bool,
 }
 
 #[derive(Args)]
 struct GenerateArgs {
-    /// What to generate from: a web page URL, a local file, or a directory —
-    /// or an existing `% trace:` stub deck, whose checkpoints are then built
-    /// in place.
+    /// What to generate from: a web page URL, a local file, or a directory,
+    /// or a deck that declares `trace:` in its frontmatter, whose checkpoints
+    /// are then built in place.
     source: String,
 
     /// The learning goal that scopes what is generated (default: understand
@@ -238,7 +238,7 @@ struct GenerateArgs {
     goal: Option<String>,
 
     /// Print the plan (directory source) or the trace suggestions (--trace)
-    /// and stop — generate nothing.
+    /// and stop: generate nothing.
     #[arg(long)]
     plan: bool,
 
@@ -338,7 +338,7 @@ struct GenerateDeckArgs {
 /// The `alix deck` subcommands: create, augment, or validate a deck.
 #[derive(Subcommand)]
 enum DeckAction {
-    /// Augment an existing deck with Claude — multiple-choice distractors, or
+    /// Augment an existing deck with Claude: multiple-choice distractors, or
     /// trivia notes. Augmentations are deliberate and persisted, so review stays
     /// instant and fully offline.
     Augment(AugmentArgs),
@@ -353,7 +353,7 @@ struct AugmentArgs {
     /// The deck file to augment.
     deck: PathBuf,
 
-    /// What to augment — mirrors the review concepts: `choices` (distractors),
+    /// What to augment, mirroring the review concepts: `choices` (distractors),
     /// `notes` (trivia / mnemonics), `questions` (reworded phrasings rotated at
     /// review), or `topology` (a graph of how the cards relate + a suggested
     /// walk; experimental). All are cached beside your progress, never written
@@ -391,12 +391,12 @@ enum AugmentTarget {
     /// answers (nothing to decompose) are skipped.
     Keypoints,
     /// A deck-level topology: a graph of how the cards relate plus a suggested
-    /// walk, so review can present them in a connected order. Experimental —
+    /// walk, so review can present them in a connected order. Experimental:
     /// prints the walk so you can judge whether it lands. `--with` steers the
     /// organizing principle (e.g. "by module and type dependency").
     Topology,
-    /// A display-only reshape of a badly-shaped card — restructured front/answer/
-    /// note and a suggested mode — applied at review without touching the deck.
+    /// A display-only reshape of a badly-shaped card: restructured front/answer/
+    /// note and a suggested mode, applied at review without touching the deck.
     /// Plain (non-cloze) cards only.
     Format,
 }
@@ -431,7 +431,7 @@ struct ImportArgs {
 #[derive(Args)]
 struct DeckArgs {
     /// A path: one deck file (just that deck), or a folder/workspace
-    /// (every deck inside it) — e.g. `spanish.md` or `~/decks/flutter`.
+    /// (every deck inside it), e.g. `spanish.md` or `~/decks/flutter`.
     #[arg(value_name = "DECK|FOLDER|WORKSPACE")]
     target: PathBuf,
 
@@ -447,7 +447,7 @@ struct DeckArgs {
 #[derive(Args)]
 struct ResetArgs {
     /// What to clear, as a path: one deck file, or a folder/workspace
-    /// (every deck inside it) — e.g. `spanish.md` or `~/decks/flutter`.
+    /// (every deck inside it), e.g. `spanish.md` or `~/decks/flutter`.
     #[arg(value_name = "DECK|FOLDER|WORKSPACE")]
     target: Option<PathBuf>,
 
@@ -462,9 +462,9 @@ struct ResetArgs {
 
     /// Clear only ORPHANED progress: store keys matching no card or deck in the
     /// scanned decks (a stripped `<!-- id: -->` comment, a hand-deleted deck, a
-    /// double-mint). Orphans are never auto-pruned (they are evidence and the
-    /// reclaim pool), so this is the explicit opt-in. Scopes to a named
-    /// folder/workspace, else the decks-dir root store.
+    /// double-mint). Orphans are never auto-pruned (they are evidence), so this
+    /// is the explicit opt-in. Scopes to a named folder/workspace, else the
+    /// decks-dir root store.
     #[arg(long, conflicts_with_all = ["card", "all"])]
     orphans: bool,
 
