@@ -25,6 +25,7 @@ use crate::{
     answer::Input,
     card::{Card, Direction},
     cloze::{BLANK, HIDDEN},
+    config::Strictness,
     depth::Reveal,
     session::Order,
     token,
@@ -78,6 +79,17 @@ pub struct Frontmatter {
     pub input: Option<Input>,
     /// Deck-default review direction (`direction:`).
     pub direction: Option<Direction>,
+    /// Directory that card `img:` / `img-back:` filenames resolve against
+    /// (`img-dir:`). Absolute, or relative to the deck file's folder.
+    pub img_dir: Option<PathBuf>,
+    /// How strictly this deck's AI exam grades answers (`strictness:`). `None`
+    /// uses the `[exam]` config default.
+    pub strictness: Option<Strictness>,
+    /// The live source root a frozen deck's `at:` snapshots came from
+    /// (`origin:`). Cascades workspace `[defaults]` → deck → card; the tutor
+    /// grounds in it for context and drift detection reads it. `None` for a
+    /// non-frozen deck.
+    pub origin: Option<String>,
     /// True when frontmatter exists but is not a YAML block mapping (e.g. a
     /// flow mapping `{source: [a]}`): still loadable, but the stamp writer
     /// can never splice an `id:` line in and must exclude the deck loudly
@@ -464,6 +476,23 @@ fn load_frontmatter(
             "direction" => match value.as_str().and_then(Direction::parse) {
                 Some(direction) => frontmatter.direction = Some(direction),
                 None => lints.push(bad_value(line, key, describe(value))),
+            },
+            "img-dir" => match value {
+                Yaml::String(s) => frontmatter.img_dir = Some(PathBuf::from(s)),
+                other => lints.push(bad_value(line, key, yaml_kind(other).to_string())),
+            },
+            "strictness" => match value.as_str().and_then(Strictness::parse) {
+                Some(strictness) => frontmatter.strictness = Some(strictness),
+                None => lints.push(bad_value(line, key, describe(value))),
+            },
+            "origin" => match value {
+                Yaml::String(s) => {
+                    let v = trim_ws(s);
+                    if !v.is_empty() {
+                        frontmatter.origin = Some(v.to_string());
+                    }
+                }
+                other => lints.push(bad_value(line, key, yaml_kind(other).to_string())),
             },
             // Reserved for future deck metadata: ignored without a lint.
             "tags" | "license" | "author" | "language" | "revision" | "generated-by"
@@ -1429,6 +1458,30 @@ mod tests {
         );
     }
 
+    #[test]
+    fn img_dir_strictness_and_origin_follow_the_leniency_model_of_comparable_keys() {
+        // `strictness`, like `reveal`/`order`/`input`/`direction`, lints a
+        // value that fails to parse and leaves the field unset.
+        let deck = parse("---\nstrictness: extreme\n---\n## q\na\n");
+        assert_eq!(None, deck.frontmatter.strictness);
+        assert_eq!(vec![bad(2, "strictness", "extreme")], deck.lints);
+
+        // `img-dir`, like `trace`, lints a non-string value.
+        let deck = parse("---\nimg-dir: [a, b]\n---\n## q\na\n");
+        assert_eq!(None, deck.frontmatter.img_dir);
+        assert_eq!(vec![bad(2, "img-dir", "a sequence")], deck.lints);
+
+        // `origin` mirrors deck.rs's trim-and-ignore-empty: a blank value is
+        // silently ignored (no lint), but a non-string value still lints.
+        let deck = parse("---\norigin: \"   \"\n---\n## q\na\n");
+        assert_eq!(None, deck.frontmatter.origin);
+        assert!(deck.lints.is_empty(), "{:?}", deck.lints);
+
+        let deck = parse("---\norigin: 5\n---\n## q\na\n");
+        assert_eq!(None, deck.frontmatter.origin);
+        assert_eq!(vec![bad(2, "origin", "an integer")], deck.lints);
+    }
+
     // ── Escapes and bytes ──
 
     #[test]
@@ -1653,6 +1706,9 @@ reveal: line
 order: sequential
 input: draw
 direction: both
+img-dir: assets
+strictness: strict
+origin: /crate
 tags: [a, b]
 license: MIT
 author: someone
@@ -1694,6 +1750,9 @@ the answer
                 order: Some(Order::Sequential),
                 input: Some(Input::Draw),
                 direction: Some(Direction::Both),
+                img_dir: Some(PathBuf::from("assets")),
+                strictness: Some(Strictness::Strict),
+                origin: Some("/crate".into()),
                 unspliceable: false,
             },
             document.frontmatter
@@ -1704,7 +1763,7 @@ the answer
             CardDirectives {
                 token: Some("4jkya9q3m8z0tw5v9y2b4n6d8f".into()),
                 reveal: Some(Reveal::Flip),
-                reveal_line: Some(29),
+                reveal_line: Some(32),
                 input: Some(Input::Type),
                 direction: Some(Direction::Reverse),
                 img: Some("moon.png".into()),
