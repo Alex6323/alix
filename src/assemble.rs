@@ -351,12 +351,12 @@ pub fn selectable(path: &Path) -> bool {
     !workspace::has_decks(path)
 }
 
-/// Stamps `path` (mints identity tokens into any unstamped cards) at the
-/// review/session-open write site (spec §2.1; the listing/doctor/stats scans
-/// are read-only and never call this). A failure is loud but non-fatal: the
-/// deck still loads, and [`exclude_unstamped`] drops the cards the failed
-/// write left tokenless.
-fn stamp_for_session(path: &Path) {
+/// Stamps `path` (mints identity tokens into any unstamped cards) at an
+/// enumerated write site (spec §2.1: review/session open AND augment open; the
+/// listing/doctor/stats scans are read-only and never call this). A failure is
+/// loud but non-fatal: the deck still loads, and [`exclude_unstamped`] drops
+/// the cards the failed write left tokenless.
+pub fn stamp_for_session(path: &Path) {
     if let Err(e) = stamp::stamp_deck(path) {
         eprintln!(
             "warning: cannot stamp {}: {e}; its unstamped cards are excluded from this session",
@@ -365,10 +365,38 @@ fn stamp_for_session(path: &Path) {
     }
 }
 
+/// Stamp one deck file (an enumerated §2.1 write site), load it, and drop any
+/// cards the stamp left tokenless (loudly). Shared by review-open ([`select`])
+/// and augment-open (`/api/augment/open`, `alix deck augment`): both key the
+/// store / paid augment cache by card id, so an unstamped card (interim id 0)
+/// must never reach them — it would collapse the cache to a single key-0 entry
+/// and orphan the spend at the first real stamp. A load failure propagates (a
+/// broken deck must not half-open); a stamp failure is non-fatal and only its
+/// own cards drop.
+pub fn stamp_and_load_deck(path: &Path) -> Result<Deck> {
+    stamp_for_session(path);
+    let mut deck = Deck::load(path)?;
+    let cards = std::mem::take(&mut deck.cards);
+    deck.cards = exclude_unstamped(cards, &deck.subject);
+    Ok(deck)
+}
+
+/// Stamp and load every file in a selection, returning the union of their kept
+/// cards ([`stamp_and_load_deck`] per file). The augment-open shape: a plain
+/// deck is a one-member union, a workspace name unions its members' cards, and
+/// any member failing to load fails the whole open.
+pub fn stamp_and_load_cards(files: &[PathBuf]) -> Result<Vec<Card>> {
+    let mut cards = Vec::new();
+    for path in files {
+        cards.extend(stamp_and_load_deck(path)?.cards);
+    }
+    Ok(cards)
+}
+
 /// The session/store boundary filter: drops cards with no identity token (a
 /// failed stamp write) with a loud warning, so an unstamped card can never
 /// key the progress store through the interim id-0 sentinel.
-fn exclude_unstamped(cards: Vec<Card>, label: &str) -> Vec<Card> {
+pub fn exclude_unstamped(cards: Vec<Card>, label: &str) -> Vec<Card> {
     let before = cards.len();
     let kept: Vec<Card> = cards
         .into_iter()
@@ -711,6 +739,33 @@ mod tests {
         assert!(selectable(&file), "a deck file is selectable");
         assert!(!selectable(&ws), "a folder of decks is not selectable");
         assert!(selectable(&empty), "an empty folder has no decks to reject");
+    }
+
+    #[test]
+    fn augment_open_stamps_an_unstamped_deck() {
+        // The augment-open path (`stamp_and_load_cards`) mints identity tokens
+        // before the paid cache is keyed by card id, mirroring review-open. On a
+        // never-opened deck every card id is the interim 0 sentinel; after the
+        // open the file carries real tokens and every returned card has a
+        // derived (nonzero) id. Mutation sentinel: drop the stamp call in
+        // `stamp_and_load_deck` and the deck stays unstamped, so every card is
+        // excluded and the returned union is empty — this asserts otherwise.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.md");
+        std::fs::write(&path, "## q1\na1\n## q2\na2\n").unwrap();
+
+        let cards = stamp_and_load_cards(std::slice::from_ref(&path)).unwrap();
+
+        assert_eq!(2, cards.len(), "both cards survive with real ids");
+        assert!(
+            cards.iter().all(|c| c.id_string().is_some() && c.id() != 0),
+            "every returned card carries a minted token"
+        );
+
+        // The deck file gained a frontmatter deck id and a per-card token.
+        let stamped = std::fs::read_to_string(&path).unwrap();
+        assert!(stamped.contains("id: \""), "{stamped:?}");
+        assert_eq!(2, stamped.matches("<!-- id: ").count(), "{stamped:?}");
     }
 
     #[test]

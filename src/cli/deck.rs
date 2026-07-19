@@ -6,12 +6,11 @@
 use std::{path::Path, sync::Arc};
 
 use alix::{
-    assemble::{VIRTUAL_LINE_BASE, synthesize_virtual},
+    assemble::{self, VIRTUAL_LINE_BASE, synthesize_virtual},
     augment::{self, AugmentCache},
     augment_ai,
     card::Card,
     config::{self, Config},
-    deck::Deck,
     generate, import, l1, library, workspace,
 };
 use anyhow::{Context, Result, bail};
@@ -27,7 +26,12 @@ use crate::{
 /// any Claude error surfaces here rather than mid-review.
 pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
     let config = Config::load(args.config.as_deref())?;
-    let deck = Deck::load(&args.deck)?;
+    // Augment is an enumerated §2.1 stamp site: mint identity tokens (and drop
+    // any the stamp fails to write) before the paid cache below is keyed by
+    // `Card::id`. Without this an unstamped deck's cards all hash to id 0, the
+    // cache collapses to a single key, and the spend orphans at the first real
+    // stamp.
+    let deck = assemble::stamp_and_load_deck(&args.deck)?;
     let ask_cfg = augment_ai::run_config(&config.ai, &config.ask);
     let guidance = args.with.as_deref();
 

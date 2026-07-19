@@ -1468,14 +1468,14 @@ pub fn run_review(
                 if let Ok(s) = assemble::store_for(&files, cfg.instance_store.as_deref()) {
                     store = s;
                 }
-                // A plain deck is a one-member union; any member failing to load
-                // fails the open, so a broken deck never half-opens the screen.
-                let mut cards = Vec::new();
-                let loaded = files
-                    .iter()
-                    .try_for_each(|f| Deck::load(f).map(|d| cards.extend(d.cards)).map(|_| ()));
-                match loaded {
-                    Ok(()) => {
+                // Augment open is an enumerated §2.1 stamp site: mint identity
+                // tokens into each selected deck before the paid cache is keyed
+                // by card id (unstamped ids collapse the cache to key 0 and
+                // orphan the spend at the first real stamp). A plain deck is a
+                // one-member union; any member failing to load fails the open,
+                // so a broken deck never half-opens the screen.
+                match assemble::stamp_and_load_cards(&files) {
+                    Ok(cards) => {
                         let aug = Augmenting::open(
                             name,
                             cards,

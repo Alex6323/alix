@@ -520,8 +520,11 @@ fn fake_claude(dir: &Path, reply: &str) -> String {
 #[test]
 fn augment_target_format_caches_a_reshape() {
     // `deck augment --target format` reshapes a badly-shaped plain card and
-    // writes the result to the sidecar `augment.json` beside the store, without
-    // touching the deck file. The Claude call is faked by a config-wired CLI.
+    // writes the result to the sidecar `augment.json` beside the store, never
+    // rewriting the card TEXT. Augment open is an enumerated stamp site, so the
+    // deck's identity is minted (a frontmatter `id:` is added) — but the card's
+    // own line and its token are left exactly as they were. The Claude call is
+    // faked by a config-wired CLI.
     let dir = TempDir::new().unwrap();
     let deck = write(
         dir.path(),
@@ -557,10 +560,16 @@ fn augment_target_format_caches_a_reshape() {
     let cached = std::fs::read_to_string(dir.path().join("augment.json")).unwrap();
     assert!(cached.contains("\"A\""), "augment.json: {cached}");
     assert!(cached.contains("LineByLine"), "augment.json: {cached}");
+    // The card's own text and token are untouched (format is display-only), but
+    // the deck was stamped at augment open (a frontmatter `id:` was minted).
     let deck_after = std::fs::read_to_string(&deck).unwrap();
-    assert_eq!(
-        deck_after, "## List the parts <!-- id: parts1 -->\nA, B, C\n",
-        "deck untouched"
+    assert!(
+        deck_after.contains("## List the parts <!-- id: parts1 -->\nA, B, C\n"),
+        "card text and token preserved: {deck_after}"
+    );
+    assert!(
+        deck_after.starts_with("---\nid: \""),
+        "the deck gained a frontmatter id at augment open: {deck_after}"
     );
 }
 
