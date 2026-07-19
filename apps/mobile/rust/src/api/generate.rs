@@ -15,16 +15,16 @@ use anyhow::Result;
 
 /// Writes `text` into `decks_dir`, choosing a collision-free name from
 /// `filename`: strip a trailing `.txt` to get the base stem, then try
-/// `<stem>.txt`, `<stem>-2.txt`, `<stem>-3.txt`, ... until one is free. A
-/// single-user phone has no concurrent writer, so an exists-check loop
-/// followed by one `place_deck` call is enough; `place_deck` re-checks and
-/// still bails on a genuine TOCTOU race, which is left to propagate as an
-/// error rather than retried. Returns the actual written file name (never
-/// the pre-checked candidate) so Dart can show "saved as <name>" and refresh
-/// the picker. A freshly generated deck that fails to parse is still saved
-/// by `place_deck` (lenient by design, fixable by hand) -- this function
-/// does not fail or otherwise surface that case, matching the spec's plain
-/// `String` return.
+/// `<stem>`, `<stem>-2`, `<stem>-3`, ... until neither a `.md` nor a `.txt`
+/// file exists for that stem. A single-user phone has no concurrent writer,
+/// so an exists-check loop followed by one `place_deck` call is enough;
+/// `place_deck` re-checks and still bails on a genuine TOCTOU race, which is
+/// left to propagate as an error rather than retried. Returns the actual
+/// written file name (never the pre-checked candidate) so Dart can show
+/// "saved as <name>" and refresh the picker. A freshly generated deck that
+/// fails to parse is still saved by `place_deck` (lenient by design, fixable
+/// by hand) -- this function does not fail or otherwise surface that case,
+/// matching the spec's plain `String` return.
 #[flutter_rust_bridge::frb(sync)]
 pub fn apply_generated_deck(decks_dir: String, filename: String, text: String) -> Result<String> {
     let dir = Path::new(&decks_dir);
@@ -34,9 +34,18 @@ pub fn apply_generated_deck(decks_dir: String, filename: String, text: String) -
         .unwrap_or("deck");
     let stem = raw.strip_suffix(".txt").unwrap_or(raw);
 
+    // `place_deck` always writes `.md`, regardless of the suggested name's
+    // own suffix, but a phone's decks folder can still hold pre-migration
+    // `.txt` decks alongside post-migration `.md` ones -- so a name counts
+    // as taken if either extension exists for the candidate stem. Probing
+    // only `.md` (matching just the writer) would miss a same-named `.txt`
+    // deck and silently shadow it; probing only `.txt` (the old bug) misses
+    // every `.md` deck `place_deck` itself produced.
     let mut candidate = stem.to_string();
     let mut n = 2;
-    while dir.join(format!("{candidate}.txt")).exists() {
+    while dir.join(format!("{candidate}.md")).exists()
+        || dir.join(format!("{candidate}.txt")).exists()
+    {
         candidate = format!("{stem}-{n}");
         n += 1;
     }
@@ -72,18 +81,6 @@ mod tests {
         assert_eq!(deck.cards.len(), 2);
     }
 
-    // KNOWN BUG (not fixed here — production code, out of this task's scope):
-    // this function's own collision loop probes `<candidate>.txt` for an
-    // existing file (line 39), but the writer it delegates to
-    // (`alix::library::place_deck`) always writes `.md` (src/library.rs:35).
-    // Since every real deck on disk is `.md` today, the probe never sees a
-    // real collision; `place_deck`'s own `path.exists()` guard then hard-errors
-    // instead of the intended `-2`/`-3` fallback. The first collision below
-    // still resolves by accident (the pre-existing file is written directly
-    // as `foo.txt`, which the stale probe does see), but the second one hits
-    // the freshly-written `foo-2.md` and errors, so this test still fails
-    // after fixing only its fixture content/expectations. Left failing
-    // (not weakened) so it keeps pointing at the real gap.
     #[test]
     fn a_colliding_filename_stems_to_dash_2_leaving_the_original_untouched() {
         let dir = tempfile::tempdir().unwrap();
