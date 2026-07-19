@@ -558,4 +558,151 @@ mod tests {
         );
         assert_eq!(original, fs::read_to_string(&path).unwrap());
     }
+
+    #[test]
+    fn null_scalar_frontmatter_is_a_loud_write_fail_not_a_splice() {
+        let dir = tempfile::tempdir().unwrap();
+        let original = "---\nnull\n---\n## q\nb\n";
+        let path = write(&dir, "deck.md", original);
+
+        let result = stamp_deck(&path);
+        assert!(
+            matches!(result, Err(StampError::UnspliceableFrontmatter)),
+            "{result:?}"
+        );
+        // The whole deck is excluded: the file is untouched, `## q` unstamped.
+        assert_eq!(original, fs::read_to_string(&path).unwrap());
+    }
+
+    #[test]
+    fn prepending_frontmatter_reconstructs_the_original_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let original = "## q\na\n## r\nb\n";
+        let path = write(&dir, "deck.md", original);
+
+        let outcome = stamp_deck(&path).unwrap();
+        let stamped = fs::read_to_string(&path).unwrap();
+        let deck_tok = outcome.minted_deck.as_ref().unwrap();
+
+        // Delete exactly the inserted prepend block and the card insertions;
+        // what remains must be byte-identical to the original.
+        let prefix = format!("---\nid: \"{deck_tok}\"\n---\n");
+        assert!(stamped.starts_with(&prefix), "{stamped:?}");
+        let mut reconstructed = stamped[prefix.len()..].to_string();
+        for tok in &outcome.minted_cards {
+            let span = format!(" <!-- id: {tok} -->");
+            assert_eq!(1, reconstructed.matches(&span).count(), "span {span:?}");
+            reconstructed = reconstructed.replacen(&span, "", 1);
+        }
+
+        assert_eq!(original, reconstructed);
+    }
+
+    #[test]
+    fn stamping_a_crlf_deck_preserves_every_original_byte() {
+        let dir = tempfile::tempdir().unwrap();
+        let original = "---\r\nsource: notes.md\r\n---\r\n## q\r\na\r\n## r\r\nb\r\n";
+        let path = write(&dir, "deck.md", original);
+
+        let outcome = stamp_deck(&path).unwrap();
+        let stamped = fs::read_to_string(&path).unwrap();
+        let deck_tok = outcome.minted_deck.as_ref().unwrap();
+
+        // Card insertions land right before each front line's `\r\n`.
+        for tok in &outcome.minted_cards {
+            assert!(
+                stamped.contains(&format!(" <!-- id: {tok} -->\r\n")),
+                "{stamped:?}"
+            );
+        }
+
+        // Delete exactly the inserted deck-id line and the card insertions;
+        // what remains must be byte-identical to the original, CRs included.
+        let deck_span = format!("id: \"{deck_tok}\"\n");
+        assert_eq!(1, stamped.matches(&deck_span).count());
+        let mut reconstructed = stamped.replacen(&deck_span, "", 1);
+        for tok in &outcome.minted_cards {
+            let span = format!(" <!-- id: {tok} -->");
+            assert_eq!(1, reconstructed.matches(&span).count(), "span {span:?}");
+            reconstructed = reconstructed.replacen(&span, "", 1);
+        }
+
+        assert_eq!(original, reconstructed);
+    }
+
+    #[test]
+    fn a_front_with_a_trailing_directive_still_gets_its_id_appended() {
+        let dir = tempfile::tempdir().unwrap();
+        let original =
+            "---\nid: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## q <!-- reveal: line -->\na\n";
+        let path = write(&dir, "deck.md", original);
+
+        let outcome = stamp_deck(&path).unwrap();
+        let stamped = fs::read_to_string(&path).unwrap();
+        let tok = &outcome.minted_cards[0];
+
+        assert_eq!(
+            format!(
+                "---\nid: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n\
+                 ## q <!-- reveal: line --> <!-- id: {tok} -->\na\n"
+            ),
+            stamped
+        );
+
+        // Reconstruction: removing exactly the inserted span restores the
+        // original, directive comment and all.
+        let reconstructed = stamped.replacen(&format!(" <!-- id: {tok} -->"), "", 1);
+        assert_eq!(original, reconstructed);
+    }
+
+    #[test]
+    fn a_hash_run_front_gets_its_id_after_the_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let original = "---\nid: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## Foo ##\nbar\n";
+        let path = write(&dir, "deck.md", original);
+
+        let outcome = stamp_deck(&path).unwrap();
+        let stamped = fs::read_to_string(&path).unwrap();
+        let tok = &outcome.minted_cards[0];
+
+        assert_eq!(
+            format!(
+                "---\nid: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## Foo ## <!-- id: {tok} -->\nbar\n"
+            ),
+            stamped
+        );
+
+        let reconstructed = stamped.replacen(&format!(" <!-- id: {tok} -->"), "", 1);
+        assert_eq!(original, reconstructed);
+
+        // Re-parse: the hash run still strips, and the token is still found.
+        let parsed = l1::parse_l1("deck.md", &stamped).unwrap();
+        assert_eq!("Foo", parsed.cards[0].front);
+        assert_eq!(Some(tok.as_str()), parsed.cards[0].token.as_deref());
+    }
+
+    #[test]
+    fn identical_cloze_fronts_on_different_lines_each_get_their_own_token() {
+        let dir = tempfile::tempdir().unwrap();
+        let original = "---\nid: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## Foo\n---\nthe \\cloze{a} note\n\n\
+             ## Foo\n---\nthe \\cloze{b} note\n";
+        let path = write(&dir, "deck.md", original);
+
+        let outcome = stamp_deck(&path).unwrap();
+        let stamped = fs::read_to_string(&path).unwrap();
+
+        // Two distinct `## Foo` lines, byte-identical front text, each minted
+        // its own token: two mints, not deduped by content.
+        assert_eq!(2, outcome.minted_cards.len());
+        assert_ne!(outcome.minted_cards[0], outcome.minted_cards[1]);
+        for tok in &outcome.minted_cards {
+            assert_eq!(
+                1,
+                stamped
+                    .matches(&format!("## Foo <!-- id: {tok} -->"))
+                    .count(),
+                "{stamped:?}"
+            );
+        }
+    }
 }

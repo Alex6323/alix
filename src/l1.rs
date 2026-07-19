@@ -447,7 +447,12 @@ fn load_frontmatter(
     let Some(root) = docs.into_iter().next() else {
         return Ok(frontmatter);
     };
+    // A null-scalar root (`null` or `~`) loads, but is not a block mapping: a
+    // spliced `id:` line would land in front of the bare scalar, which
+    // yaml-rust2 hard-rejects ("simple key expected"). Exclude it from
+    // splicing the same way a flow mapping or non-mapping root is (spec §2.3).
     if root == Yaml::Null {
+        frontmatter.unspliceable = true;
         return Ok(frontmatter);
     }
     let Yaml::Hash(mapping) = root else {
@@ -1329,6 +1334,20 @@ mod tests {
     fn a_flow_mapping_frontmatter_parses_but_is_reported_unspliceable() {
         let deck = parse("---\n{source: [a]}\n---\n## q\nb\n");
         assert_eq!(vec!["a".to_string()], deck.frontmatter.source);
+        assert!(deck.frontmatter.unspliceable);
+    }
+
+    #[test]
+    fn a_null_scalar_frontmatter_is_unspliceable() {
+        // A hand-authored `null` scalar loads (an empty frontmatter, in
+        // effect), but is not a block mapping a stamp splice can key into.
+        let deck = parse("---\nnull\n---\n## q\na\n");
+        assert_eq!(None, deck.frontmatter.id);
+        assert!(deck.frontmatter.unspliceable);
+
+        // `~` is the other YAML null spelling; same outcome.
+        let deck = parse("---\n~\n---\n## q\na\n");
+        assert_eq!(None, deck.frontmatter.id);
         assert!(deck.frontmatter.unspliceable);
     }
 
