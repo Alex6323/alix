@@ -366,6 +366,32 @@ pub fn stamp_for_session(path: &Path) {
     }
 }
 
+/// Resolve any card-token collision the deck at `path` is the LOSER of, at the
+/// session-open write site (spec §2.4): the ONLY place this write happens.
+/// Recomputes the duplicate map for the containing folder (read-only) and, for
+/// each collision this file loses, swaps its token for a fresh mint via
+/// [`stamp::replace_card_token`]. The keeper deck is untouched and keeps the
+/// earned progress; this file's colliding card forks into a new, unreviewed
+/// card. Non-fatal: a scan or replace failure warns and leaves the file as-is.
+/// A standalone single-deck folder has no siblings to collide with, so this is
+/// a no-op there (dedup-blind by design, spec §2.4).
+pub fn resolve_duplicates_at_open(path: &Path) {
+    let Some(dir) = path.parent() else {
+        return;
+    };
+    for dupe in crate::dedup::scan_dir(dir).card_dupes {
+        if dupe.losers.iter().any(|(p, _)| p == path)
+            && let Err(e) = stamp::replace_card_token(path, &dupe.token)
+        {
+            eprintln!(
+                "warning: cannot resolve the duplicate token `{}` in {}: {e}",
+                dupe.token,
+                path.display()
+            );
+        }
+    }
+}
+
 /// Stamp one deck file (an enumerated §2.1 write site), load it, and drop any
 /// cards the stamp left tokenless (loudly). Shared by review-open ([`select`])
 /// and augment-open (`/api/augment/open`, `alix deck augment`): both key the
@@ -434,6 +460,11 @@ pub fn select(
         && path.is_file()
     {
         stamp_for_session(path);
+        // Resolve any duplicate card token this deck loses (spec §2.4): the
+        // session-open write site, and the only place resolution writes. The
+        // keeper deck keeps the earned progress; this file's colliding card
+        // forks fresh before it is loaded below.
+        resolve_duplicates_at_open(path);
     }
 
     // A single trace picked from the picker walks (predict → verify) rather
@@ -1500,6 +1531,70 @@ it reads line two\n\
         assert_eq!(2, text.matches("<!-- id: ").count(), "{text}");
         assert!(!build.session.cards().is_empty());
         assert!(build.session.cards().iter().all(|c| c.id().is_some()));
+    }
+
+    #[test]
+    fn duplicate_card_tokens_are_detected_read_only_and_resolved_at_review_open() {
+        // Two DISTINCT decks in one folder share a card token `cshared` (a card
+        // copied WITH its id comment). Detection is read-only: `dedup::scan_dir`
+        // names the keeper and loser without writing. Opening the LOSER re-mints
+        // its token; the keeper keeps the earned progress.
+        let dir = tempfile::tempdir().unwrap();
+        // `notes.md` is the undecorated base -> the keeper; `notes copy.md`
+        // is the decorated copy -> the loser.
+        let keeper = dir.path().join("notes.md");
+        std::fs::write(
+            &keeper,
+            "---\nid: \"dtoka\"\n---\n## q <!-- id: cshared -->\na\n",
+        )
+        .unwrap();
+        let loser = dir.path().join("notes copy.md");
+        std::fs::write(
+            &loser,
+            "---\nid: \"dtokb\"\n---\n## q <!-- id: cshared -->\nb\n",
+        )
+        .unwrap();
+
+        // Read-only detection: the scan names both, writes nothing.
+        let before = std::fs::read_to_string(&loser).unwrap();
+        let map = crate::dedup::scan_dir(dir.path());
+        assert_eq!(before, std::fs::read_to_string(&loser).unwrap());
+        assert_eq!(1, map.card_dupes.len());
+        assert_eq!("cshared", map.card_dupes[0].token);
+        assert_eq!(keeper.clone(), map.card_dupes[0].keeper.0);
+
+        // Seed progress under `cshared`, then open the LOSER.
+        let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
+        store.get_or_insert("cshared", 1_000);
+        store.save().unwrap();
+
+        let Selected::Review(build) = select(
+            vec![loser.clone()],
+            &mut store,
+            &test_config(),
+            &SelectOptions::default(),
+        )
+        .unwrap() else {
+            panic!("a fact deck must review");
+        };
+
+        // The loser's token was replaced; the keeper still carries `cshared`.
+        assert!(
+            !std::fs::read_to_string(&loser).unwrap().contains("cshared"),
+            "the loser deck's token must be re-minted"
+        );
+        assert!(
+            std::fs::read_to_string(&keeper)
+                .unwrap()
+                .contains("cshared")
+        );
+        // The keeper keeps the earned progress; the loser's forked card is new.
+        assert!(store.get("cshared").is_some());
+        let served = build.session.cards()[0].id().unwrap();
+        assert_ne!(
+            "cshared", served,
+            "the loser's card forked to a fresh token"
+        );
     }
 
     #[test]

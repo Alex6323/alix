@@ -42,6 +42,13 @@ decks dir for a loose deck file — > the global store).
 - `alix reset <target>` — clear progress (`--card`, `--all`; `-y` to
   skip the prompt). On a workspace it also clears the mastered flags and
   virtual cards in the workspace's own store, after one confirmation.
+- `alix reset --orphans [target]` clears only **orphaned** progress: store
+  keys that match no card or deck in the scanned decks (a stripped
+  `<!-- id: … -->` comment, a hand-deleted deck, a pre-1.0 numeric id).
+  Orphans are never removed automatically (they are evidence and a reclaim
+  pool), so this is the explicit opt-in. It scopes to a named folder/workspace
+  store, else the decks-dir root store. Run `alix doctor` first to see what it
+  would clear.
 
 Deck [dependencies](09-dependencies.md) (`% requires:`) are edited by hand in
 the deck file — there's no separate command for it.
@@ -111,8 +118,14 @@ notes it.
 - `alix doctor [dir-or-deck]` — environment health checks, a one-line remedy per
   problem: the config parses, the progress store is readable, the decks dir
   scans, and the backend CLI is on your PATH. Name a **deck file** to lint it
-  in depth (syntax, duplicate answers, trace `% at:` locators, and frozen cards
-  that have drifted from their `% origin:` source). `--backends` additionally
+  in depth (syntax, `at:` locators, and frozen cards that have drifted from
+  their `origin:` source). Over a **folder or workspace** it also reports
+  identity problems across the decks as a set: duplicate deck or card tokens
+  (naming which copy keeps the earned progress), store keys matching no live
+  card or deck (orphans, clear them with `alix reset --orphans`), a
+  non-canonical token, a frontmatter that can't be stamped, cards still
+  awaiting a token, and any stray pre-1.0 `.txt`-era file that no longer
+  parses. `--backends` additionally
   probes the configured AI backend end to end (one real, tiny request);
   `--all-backends` probes all four. `--grading` spot-checks the configured
   model's exam grading against the hand-labeled calibration probes (a few

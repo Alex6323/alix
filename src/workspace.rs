@@ -171,6 +171,34 @@ pub fn is_conventional_non_deck(name: &str) -> bool {
     stem.eq_ignore_ascii_case("readme") || stem.eq_ignore_ascii_case("license")
 }
 
+/// A name a file-syncing or backup tool produces for a conflicted/backup copy
+/// (spec §2.4), never a real deck: excluded from every deck scan (checked
+/// before the content predicate, cheaper, so a conflict copy never lists,
+/// stamps, or errors). A CLOSED list: Syncthing's `.sync-conflict-`, the
+/// `(conflicted copy` / `(Conflict` parenthetical of Dropbox / Nextcloud /
+/// ownCloud, and the `.bak` / `.orig` / `~` backup suffixes. The load-bearing
+/// entries still end in `.md` (`deck.sync-conflict-x.md`); the bare backup
+/// suffixes are already dropped by the `.md`-extension filter and sit here as
+/// documentation-by-code, so the one closed list answers "is this a conflict
+/// copy?" for both the scans and doctor.
+pub fn is_conflict_name(name: &str) -> bool {
+    name.contains(".sync-conflict-")
+        || name.contains(" (conflicted copy")
+        || name.contains(" (Conflict")
+        || name.ends_with(".bak")
+        || name.ends_with(".orig")
+        || name.ends_with('~')
+}
+
+/// The `.md` deck files directly in `dir` (one level), the shared enumeration
+/// behind the pickers, dedup, and doctor: `*.md`, sorted by name, with
+/// conventional non-deck names, conflict/backup copies, and prose files (no
+/// card, no frontmatter) excluded. An unreadable directory yields an empty
+/// list.
+pub fn deck_files(dir: &Path) -> Vec<PathBuf> {
+    members(dir).unwrap_or_default()
+}
+
 /// Whether the `.md` file at `path` enumerates as a deck (spec §3.1.3): a
 /// shared, content-aware predicate over the three deck-scan sites (this
 /// module's [`members`], the picker's `dir_candidates`, the listing's
@@ -195,7 +223,7 @@ fn members(dir: &Path) -> io::Result<Vec<PathBuf>> {
         .filter(|p| {
             !p.file_name()
                 .and_then(|n| n.to_str())
-                .is_some_and(is_conventional_non_deck)
+                .is_some_and(|n| is_conventional_non_deck(n) || is_conflict_name(n))
         })
         .filter(|p| file_is_deck(p))
         .collect();
@@ -604,6 +632,43 @@ mod tests {
             "clearing with no manifest must be a true no-op"
         );
     }
+    #[test]
+    fn sync_conflict_names_are_never_decks() {
+        // A file-syncing or backup tool drops conflicted/backup copies next to
+        // real decks. The closed name-pattern list keeps them out of every
+        // scan: they never list, never stamp, never error. The load-bearing
+        // entries still end in `.md` (a `.sync-conflict-` deck, a
+        // `(conflicted copy)` / `(Conflict)` deck); the bare `.bak`/`.orig`/`~`
+        // suffixes are already dropped by the extension filter.
+        assert!(is_conflict_name("deck.sync-conflict-20260101-abcdef.md"));
+        assert!(is_conflict_name("deck (conflicted copy 2026-01-01).md"));
+        assert!(is_conflict_name("deck (Conflict).md"));
+        assert!(is_conflict_name("deck.md.bak"));
+        assert!(is_conflict_name("deck.md.orig"));
+        assert!(is_conflict_name("deck.md~"));
+        assert!(!is_conflict_name("deck.md"));
+        assert!(!is_conflict_name("my-syncthing-notes.md"));
+
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("real.md"), "## q\na\n").unwrap();
+        std::fs::write(
+            dir.path().join("real.sync-conflict-20260101-abcdef.md"),
+            "## q\na\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("real (conflicted copy 2026).md"),
+            "## q\na\n",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("real.md.bak"), "## q\na\n").unwrap();
+        let names: Vec<String> = deck_files(dir.path())
+            .iter()
+            .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+            .collect();
+        assert_eq!(vec!["real.md".to_string()], names);
+    }
+
     #[test]
     fn readme_and_license_are_not_decks() {
         // A repo-adjacent decks folder carries conventional `.md` files that

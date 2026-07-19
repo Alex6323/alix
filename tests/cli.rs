@@ -366,6 +366,71 @@ fn reset_all_clears_virtual_cards() {
 }
 
 #[test]
+fn orphans_are_never_auto_pruned_and_reset_orphans_clears_them() {
+    // Orphaned progress: a store key matching no live card or deck (a stripped
+    // id comment, a hand-deleted deck) is evidence and the reclaim pool. A
+    // normal reset never sweeps it; only the explicit `reset --orphans` does.
+    let dir = TempDir::new().unwrap();
+    let deck = write(dir.path(), "math.md", VALID_DECK); // card id `math1`
+    let store_path = dir.path().join("progress.json");
+
+    let mut store = alix::store::Store::open(&store_path).unwrap();
+    store.get_or_insert("math1", 0); // the live card
+    store.get_or_insert("orphan1", 0); // an orphaned card key
+    store.set_last_depth("ghost.md", alix::depth::Depth::Recall); // an orphaned deck key
+    store.save().unwrap();
+
+    // A normal full-deck reset clears the live card but leaves the orphans,
+    // proof they are never auto-pruned.
+    let out = alix(&[
+        "reset",
+        &deck,
+        "--yes",
+        "--store",
+        store_path.to_str().unwrap(),
+    ]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let after = std::fs::read_to_string(&store_path).unwrap();
+    assert!(
+        !after.contains("math1"),
+        "the live card should be reset: {after}"
+    );
+    assert!(
+        after.contains("orphan1"),
+        "the orphan card must survive: {after}"
+    );
+    assert!(
+        after.contains("ghost.md"),
+        "the orphan deck key must survive: {after}"
+    );
+
+    // `reset --orphans` over the folder clears exactly the orphaned keys.
+    let out = alix(&[
+        "reset",
+        "--orphans",
+        dir.path().to_str().unwrap(),
+        "--yes",
+        "--store",
+        store_path.to_str().unwrap(),
+    ]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("Reset 2 orphaned key(s)."),
+        "stdout: {}",
+        stdout(&out)
+    );
+    let after = std::fs::read_to_string(&store_path).unwrap();
+    assert!(
+        !after.contains("orphan1"),
+        "orphan card not cleared: {after}"
+    );
+    assert!(
+        !after.contains("ghost.md"),
+        "orphan deck key not cleared: {after}"
+    );
+}
+
+#[test]
 fn deck_reset_drops_that_decks_virtual_cards() {
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.md", VALID_DECK);

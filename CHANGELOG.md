@@ -15,6 +15,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   "introduced" count, hiding the grade rows when nothing was graded.
 
 ### Added
+- **`alix doctor` now lints a decks folder for identity problems, and `alix
+  reset --orphans` clears the leftovers it finds.** Over a folder, doctor
+  reports duplicate deck and card tokens (naming which copy keeps the earned
+  progress), store keys matching no live card or deck (orphans, including
+  pre-1.0 numeric ids), a non-canonical token, an unspliceable frontmatter that
+  can't be stamped, the cards still awaiting a token, and any stray `.txt`-era
+  file that no longer parses. Orphans are never auto-pruned (they are evidence
+  and a reclaim pool); `alix reset --orphans` is the explicit opt-in that clears
+  them, scoped to a folder/workspace or the decks root.
 - **A quiet Support line in the About dialog, on both the web and mobile
   clients.** Leads with the free alternative (telling someone who studies),
   a sponsors link second; About only, never on a study surface.
@@ -68,6 +77,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   whole-answer cloze (`\cloze{…}` with no surrounding text) now parses, where the
   old format errored. There is no bundled converter: existing decks must be
   regenerated or hand-converted before opening.
+- **A copied deck no longer silently shares one card's progress across two
+  files.** When two decks in a folder claim the same identity token (a copied
+  file, or a card copied with its `<!-- id: … -->` comment), the undecorated
+  original keeps the progress and the copy is re-minted the next time it is
+  opened (`deck.md` beats `deck (1).md` / `deck copy.md`); unrelated same-token
+  files fall back to scan order. File-sync and backup copies
+  (`*.sync-conflict-*`, `* (conflicted copy…)`, `*.bak`/`*.orig`/`*~`) are
+  excluded from every deck scan, so they never list, stamp, or error.
 - **Breaking: a multiple-choice pick now requires a cached AI augmentation;
   options are never sampled from other cards.** Distractors were previously
   topped up by sampling the rest of the session's answers, which produced junk

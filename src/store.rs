@@ -4,7 +4,7 @@
 //! `~/.local/share/alix/progress.json`), created on first save.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
 };
 
@@ -660,6 +660,77 @@ impl Store {
     pub fn path(&self) -> &Path {
         &self.path
     }
+
+    /// The store keys with no matching id in the live workspace (spec §5): the
+    /// orphaned-key check. A card-family key is an orphan when no enumerated
+    /// deck card claims it AND it is not a virtual card's own schedule (those
+    /// are legitimate local cards with no deck file). A deck-family key
+    /// (subject) is an orphan when no enumerated deck carries that file name.
+    /// Both are sorted for a stable report. Orphans are evidence (a stripped
+    /// comment, a hand-deleted deck, a same-machine double-mint) and the reclaim
+    /// pool. This never removes them; [`prune_orphans`](Self::prune_orphans)
+    /// does, only under an explicit `alix reset --orphans`.
+    pub fn orphans(
+        &self,
+        known_card_ids: &HashSet<String>,
+        known_subjects: &HashSet<String>,
+    ) -> Orphans {
+        let mut cards: Vec<String> = self
+            .cards
+            .keys()
+            .filter(|k| !known_card_ids.contains(*k) && !self.virtual_cards.contains_key(*k))
+            .cloned()
+            .collect();
+        let mut decks: Vec<String> = self
+            .decks
+            .keys()
+            .filter(|k| !known_subjects.contains(*k))
+            .cloned()
+            .collect();
+        cards.sort();
+        decks.sort();
+        Orphans { cards, decks }
+    }
+
+    /// Removes exactly the orphaned keys in `orphans` (the `alix reset
+    /// --orphans` action), returning how many keys were dropped. Does not save.
+    pub fn prune_orphans(&mut self, orphans: &Orphans) -> usize {
+        let mut removed = 0;
+        for id in &orphans.cards {
+            if self.cards.remove(id).is_some() {
+                removed += 1;
+            }
+        }
+        for subject in &orphans.decks {
+            if self.decks.remove(subject).is_some() {
+                removed += 1;
+            }
+        }
+        removed
+    }
+}
+
+/// The store keys matching no known card/deck in the scanned workspace (spec
+/// §5): never auto-pruned (they are evidence and the reclaim pool), cleared
+/// only by an explicit `alix reset --orphans`.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Orphans {
+    /// Orphaned card-family keys (card ids), sorted.
+    pub cards: Vec<String>,
+    /// Orphaned deck-family keys (subjects), sorted.
+    pub decks: Vec<String>,
+}
+
+impl Orphans {
+    /// Whether there are no orphaned keys at all.
+    pub fn is_empty(&self) -> bool {
+        self.cards.is_empty() && self.decks.is_empty()
+    }
+
+    /// Total orphaned keys across both families.
+    pub fn len(&self) -> usize {
+        self.cards.len() + self.decks.len()
+    }
 }
 
 /// Milliseconds left on a failed trace exam's re-sit cooldown, or `None` if it
@@ -1086,6 +1157,43 @@ mod tests {
         let path = dir.path().join("progress.json");
         let store = Store::open(&path).unwrap();
         assert!(store.is_empty());
+    }
+
+    #[test]
+    fn orphans_are_the_keys_with_no_live_card_or_deck_and_prune_clears_them() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        // Live card + orphaned card key; a virtual card's schedule key is NOT
+        // an orphan (it is a legitimate local card with no deck file).
+        store.get_or_insert("live", 0);
+        store.get_or_insert("gone", 0);
+        store.insert_virtual(VirtualCard {
+            id: "vq".to_string(),
+            kind: VirtualKind::Remediation,
+            parent: "rust.md".to_string(),
+            text: "## v <!-- id: vq -->\nb\n".to_string(),
+            created_ms: 0,
+        });
+        store.get_or_insert("vq", 0); // the virtual card's own schedule
+        // Live deck subject + an orphaned one (a renamed/deleted deck file).
+        store.set_last_depth("rust.md", Depth::Recall);
+        store.set_last_depth("deleted.md", Depth::Recall);
+
+        let known_cards: HashSet<String> = ["live".to_string()].into_iter().collect();
+        let known_subjects: HashSet<String> = ["rust.md".to_string()].into_iter().collect();
+        let orphans = store.orphans(&known_cards, &known_subjects);
+        assert_eq!(vec!["gone".to_string()], orphans.cards);
+        assert_eq!(vec!["deleted.md".to_string()], orphans.decks);
+        assert_eq!(2, orphans.len());
+
+        // Pruning drops exactly the orphaned keys, leaving the live ones and
+        // the virtual schedule untouched.
+        assert_eq!(2, store.prune_orphans(&orphans));
+        assert!(store.get("live").is_some());
+        assert!(store.get("vq").is_some());
+        assert_eq!(Some(Depth::Recall), store.last_depth("rust.md"));
+        assert!(store.get("gone").is_none());
+        assert_eq!(None, store.last_depth("deleted.md"));
     }
 
     #[test]

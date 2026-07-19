@@ -38,6 +38,7 @@ pub mod card;
 pub mod choice;
 pub mod config;
 pub mod deck;
+pub mod dedup;
 pub mod depth;
 #[cfg(feature = "full")]
 pub mod doctor;

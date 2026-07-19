@@ -2,10 +2,14 @@
 //! and optional external CLIs — plus the per-deck lint (`check`) it shares
 //! with a deck-file target.
 
-use std::path::PathBuf;
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
 
 use alix::{
     deck::Deck,
+    store::Store,
     trace::{SourceBase, Trace},
     workspace,
 };
@@ -22,156 +26,460 @@ fn val_name<T: clap::ValueEnum>(value: T) -> String {
         .unwrap_or_default()
 }
 
+/// Doctor findings bucketed by severity (spec §5): an error fails the run;
+/// warnings and infos are advisory. Collected without printing so the CLI
+/// renders them and a test can assert on them.
+#[derive(Default)]
+struct Report {
+    errors: Vec<String>,
+    warnings: Vec<String>,
+    infos: Vec<String>,
+}
+
+impl Report {
+    fn error(&mut self, msg: impl Into<String>) {
+        self.errors.push(msg.into());
+    }
+    fn warn(&mut self, msg: impl Into<String>) {
+        self.warnings.push(msg.into());
+    }
+    fn info(&mut self, msg: impl Into<String>) {
+        self.infos.push(msg.into());
+    }
+    /// Prints findings with the CLI's `error:`/`warning:` prefixes (infos
+    /// plain) and a count summary. Returns whether any error was found.
+    fn render(&self) -> bool {
+        for e in &self.errors {
+            eprintln!("error: {e}");
+        }
+        for w in &self.warnings {
+            eprintln!("warning: {w}");
+        }
+        for i in &self.infos {
+            println!("{i}");
+        }
+        if !self.errors.is_empty() || !self.warnings.is_empty() {
+            eprintln!(
+                "{} error(s), {} warning(s)",
+                self.errors.len(),
+                self.warnings.len()
+            );
+        }
+        !self.errors.is_empty()
+    }
+}
+
+/// One deck file's §5 findings: the parse, the L1 lints (a bad directive value
+/// is an error, the rest warnings), non-canonical tokens, an
+/// unspliceable-frontmatter stamp block, the read-only unstamped-cards info,
+/// and the dangling image / `at:` / trace-locator / dead-prerequisite checks.
+/// `strict` is the explicit `deck check <file>` target: a deck that won't parse
+/// at all is an error there (the user asked to lint exactly that file). In the
+/// whole-folder scan (`strict` false), a non-charset parse failure only warns
+/// (a broken deck only breaks itself, spec §5); an invalid-charset token is an
+/// error in both.
+fn deck_findings(path: &Path, strict: bool, report: &mut Report) {
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("deck.md");
+    let text = match std::fs::read_to_string(path) {
+        Ok(t) => t,
+        Err(e) => {
+            report.error(format!("{}: {e}", path.display()));
+            return;
+        }
+    };
+    let deck = match alix::l1::parse_l1(name, &text) {
+        Ok(deck) => deck,
+        Err(e) => {
+            let charset = matches!(e, alix::l1::L1Error::InvalidToken { .. });
+            if strict || charset {
+                report.error(format!("{}: {e}", path.display()));
+            } else {
+                report.warn(format!("{}: {e}", path.display()));
+            }
+            return;
+        }
+    };
+
+    for lint in &deck.lints {
+        let msg = lint_message(path, lint);
+        if matches!(lint.kind, alix::l1::LintKind::BadValue { .. }) {
+            report.error(msg);
+        } else {
+            report.warn(msg);
+        }
+    }
+
+    // Valid-but-non-canonical tokens (accepted, warned; spec §1.6).
+    let mut tokens: Vec<String> = Vec::new();
+    if let Some(t) = &deck.deck_token {
+        tokens.push(t.clone());
+    }
+    for card in &deck.cards {
+        if let Some(t) = card.token.as_deref()
+            && !tokens.iter().any(|x| x == t)
+        {
+            tokens.push(t.to_string());
+        }
+    }
+    for tok in &tokens {
+        if alix::token::is_valid(tok) && !alix::token::is_canonical(tok) {
+            report.warn(format!(
+                "{}: token `{tok}` is valid but not canonical (not 26 base32 chars)",
+                path.display()
+            ));
+        }
+    }
+
+    // A deck needing an `id:` splice whose frontmatter is not a block mapping:
+    // the stamp writer excludes it loudly (spec §2.3), surfaced here per deck.
+    if deck.deck_token.is_none() && deck.frontmatter_span.is_some() && deck.frontmatter.unspliceable
+    {
+        report.warn(format!(
+            "{}: cannot stamp: frontmatter is not a block mapping, so no `id:` can be spliced in",
+            path.display()
+        ));
+    }
+
+    // The read-only unstamped report (spec §2.2): cards awaiting a token.
+    // Cloze holes and a reversed twin share one heading, so count distinct
+    // lines (what one open stamps).
+    let mut unstamped: Vec<usize> = deck
+        .cards
+        .iter()
+        .filter(|c| c.token.is_none())
+        .map(|c| c.line)
+        .collect();
+    unstamped.sort_unstable();
+    unstamped.dedup();
+    if !unstamped.is_empty() {
+        report.info(format!(
+            "{}: {} card(s) need a stamp (minted at next review open)",
+            path.display(),
+            unstamped.len()
+        ));
+    }
+
+    // The resolved-Deck advisory checks (paths resolved against `img-dir`, the
+    // source, etc.).
+    if let Ok(deck) = Deck::load(path) {
+        deck_resource_findings(&deck, report);
+    }
+}
+
+/// The resolved-Deck advisory checks (all warnings, the deck still works): a
+/// card citing a missing image, a frozen excerpt drifted from its source, a
+/// trace locator that no longer resolves, a fact-card `at:` citation that
+/// doesn't resolve, and a `% requires:` edge to a source-less deck that never
+/// gates.
+fn deck_resource_findings(deck: &Deck, report: &mut Report) {
+    // A resolved image path that doesn't exist (advisory: the deck still works,
+    // the web server just 404s the image).
+    for card in &deck.cards {
+        for image in [&card.image, &card.image_back].into_iter().flatten() {
+            if !image.exists() {
+                report.warn(format!(
+                    "{}: card at line {} references a missing image: {}",
+                    deck.subject,
+                    card.line,
+                    image.display()
+                ));
+            }
+        }
+    }
+    // Frozen decks: a card's snapshot no longer matches the live source.
+    for drift in alix::trace::drifted_cards(deck) {
+        let what = if drift.gone {
+            "source file is gone"
+        } else {
+            "no longer found in the source"
+        };
+        report.warn(format!(
+            "{}: card at line {}: frozen excerpt {} ({})",
+            deck.subject, drift.line, what, drift.at
+        ));
+    }
+    // Trace decks: each `at:` locator must resolve into the live `source:`.
+    if deck.is_trace() && !deck.cards.is_empty() {
+        match Trace::from_deck(deck) {
+            Ok(trace) => {
+                for issue in trace.lint_locators() {
+                    let line = deck.cards.get(issue.checkpoint).map_or(0, |c| c.line);
+                    report.warn(format!(
+                        "{}: checkpoint at line {}: {}",
+                        deck.subject, line, issue.message
+                    ));
+                }
+            }
+            Err(e) => report.warn(format!("{}: {e:#}", deck.subject)),
+        }
+    }
+    // Fact decks: a card's `at:` citation that doesn't resolve.
+    if !deck.is_trace() {
+        let base = SourceBase::for_deck(deck);
+        for card in &deck.cards {
+            if let Some(at) = card.at.as_deref()
+                && let Err(e) = base.excerpt(at)
+            {
+                report.warn(format!(
+                    "{}: card at line {}: `at: {at}`: {e:#}",
+                    deck.subject, card.line
+                ));
+            }
+        }
+    }
+    // A `% requires:` to a source-less deck never gates this deck's exam.
+    for prereq in alix::deck::nongating_prerequisites(deck) {
+        report.warn(format!(
+            "{}: requires source-less `{prereq}`: this edge doesn't gate its exam; \
+             add a `source:` to `{prereq}` to make it a real prerequisite",
+            deck.subject
+        ));
+    }
+}
+
+/// A one-line description of an L1 lint, prefixed with the deck path and line.
+fn lint_message(path: &Path, lint: &alix::l1::Lint) -> String {
+    use alix::l1::LintKind;
+    let detail = match &lint.kind {
+        LintKind::UnknownKey { key } => format!("unknown key `{key}` (ignored)"),
+        LintKind::BadValue { key, value } => format!("`{key}` has an invalid value `{value}`"),
+        LintKind::EmptyValue { key } => format!("`{key}` has an empty value"),
+        LintKind::RevealOnCloze => {
+            "`reveal:` on a cloze card is ignored (the holes are the reveal)".to_string()
+        }
+        LintKind::IndentedH2 => {
+            "an indented `##` line is content, not a card front (likely a mistype)".to_string()
+        }
+        LintKind::ClozeInHole => {
+            "a `\\cloze` inside a cloze hole is literal text, not a nested hole".to_string()
+        }
+        LintKind::UnclosedComment => {
+            "a `<!--` line that never closes with `-->` stays content".to_string()
+        }
+        LintKind::UnclosedFence => "a fence opened here never closes; everything after it \
+             (cards included) was swallowed as its content"
+            .to_string(),
+    };
+    format!("{}: line {}: {detail}", path.display(), lint.line)
+}
+
+/// The whole-workspace §5 check set for `dir`: every enumerated deck's
+/// [`deck_findings`], plus the cross-deck checks that need the folder as a unit
+/// duplicate deck/card tokens, orphaned store keys (with the coarse
+/// fresh-mint-while-orphans-exist tell), and the pre-1.0 `.txt`-era detection.
+/// Read-only: it opens files and the store but writes nothing.
+fn workspace_findings(dir: &Path) -> Report {
+    let mut report = Report::default();
+    let deck_files = alix::workspace::deck_files(dir);
+    for path in &deck_files {
+        deck_findings(path, false, &mut report);
+    }
+
+    // Duplicate identity tokens across the folder (spec §2.4).
+    let map = alix::dedup::scan_dir(dir);
+    for (kept, excluded, token) in &map.excluded_decks {
+        report.warn(format!(
+            "duplicate deck token `{token}`: {} is excluded (kept {}); delete the `id:` line in the copy",
+            excluded.display(),
+            kept.display()
+        ));
+    }
+    for dupe in &map.card_dupes {
+        let losers: Vec<String> = dupe
+            .losers
+            .iter()
+            .map(|(p, l)| format!("{}:{}", p.display(), l))
+            .collect();
+        report.warn(format!(
+            "duplicate card token `{}`: {}:{} keeps the progress; also at {}",
+            dupe.token,
+            dupe.keeper.0.display(),
+            dupe.keeper.1,
+            losers.join(", ")
+        ));
+    }
+
+    // Orphaned store keys + the coarse fresh-mint tell (spec §5).
+    let store_path = alix::workspace::root_store_path(dir);
+    if let Ok(store) = Store::open(&store_path) {
+        let mut known_cards: HashSet<String> = HashSet::new();
+        let mut known_subjects: HashSet<String> = HashSet::new();
+        let mut any_fresh = false;
+        for path in &deck_files {
+            if let Ok(deck) = Deck::load(path) {
+                known_subjects.insert(deck.subject.clone());
+                for card in &deck.cards {
+                    if let Some(id) = card.id() {
+                        if store.get(&id).is_none() {
+                            any_fresh = true;
+                        }
+                        known_cards.insert(id);
+                    }
+                }
+            }
+        }
+        let orphans = store.orphans(&known_cards, &known_subjects);
+        for key in &orphans.cards {
+            if is_pre_l1_leftover(key) {
+                report.warn(format!(
+                    "orphaned store key `{key}` is a pre-1.0 numeric id (from before token \
+                     identity); `alix reset --orphans` clears it"
+                ));
+            } else {
+                report.warn(format!(
+                    "orphaned store key (card) `{key}` matches no card in {}",
+                    dir.display()
+                ));
+            }
+        }
+        for key in &orphans.decks {
+            report.warn(format!(
+                "orphaned store key (deck) `{key}` matches no deck in {}",
+                dir.display()
+            ));
+        }
+        // The COARSE fresh-mint-while-orphans-exist tell (spec §5): orphaned
+        // card progress AND freshly-minted tokens both present. Task 8 refines
+        // this with content fingerprints; do not reach for them here.
+        if !orphans.cards.is_empty() && any_fresh {
+            report.warn(
+                "orphaned card progress exists and fresh tokens were minted: a card may have \
+                 lost its `<!-- id: -->` comment (e.g. a formatter stripped it) and been \
+                 re-stamped, orphaning its old progress; run `alix reset --orphans` once you've \
+                 confirmed"
+                    .to_string(),
+            );
+        }
+    }
+
+    txt_era_findings(dir, &deck_files, &mut report);
+    report
+}
+
+/// The pre-1.0 `.txt`-era detection (spec §5): every `.txt` file, and every
+/// `.md` that did NOT enumerate as an L1 deck (prose / old-format), whose lines
+/// look like old `# ` fronts. A conventional non-deck (`README.*`) and a
+/// conflict copy are excluded (they are not stray old decks).
+fn txt_era_findings(dir: &Path, deck_files: &[PathBuf], report: &mut Report) {
+    let deck_set: HashSet<&Path> = deck_files.iter().map(PathBuf::as_path).collect();
+    let mut entries: Vec<PathBuf> = std::fs::read_dir(dir)
+        .map(|rd| rd.flatten().map(|e| e.path()).collect())
+        .unwrap_or_default();
+    entries.sort();
+    for path in entries {
+        if !path.is_file() {
+            continue;
+        }
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if name.starts_with('.') {
+            continue;
+        }
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        let candidate = match ext {
+            "txt" => true,
+            "md" => {
+                !deck_set.contains(path.as_path())
+                    && !alix::workspace::is_conventional_non_deck(name)
+                    && !alix::workspace::is_conflict_name(name)
+            }
+            _ => false,
+        };
+        if candidate
+            && let Ok(text) = std::fs::read_to_string(&path)
+            && looks_txt_era(&text)
+        {
+            report.warn(format!(
+                "{}: pre-1.0 `.txt`-era format; no converter ships: regenerate or hand-convert",
+                path.display()
+            ));
+        }
+    }
+}
+
+/// Whether `text` looks like a pre-1.0 `.txt`-era deck (spec §5): no L1 `## `
+/// card fronts, but two or more column-0 `# ` lines shaped like the old front
+/// marker. The two-plus threshold keeps a single-heading prose file (`# Notes`)
+/// from tripping it.
+fn looks_txt_era(text: &str) -> bool {
+    let mut old_fronts = 0;
+    for line in text.lines() {
+        if line.starts_with("## ") {
+            return false;
+        }
+        if let Some(rest) = line.strip_prefix("# ")
+            && !rest.trim().is_empty()
+        {
+            old_fronts += 1;
+        }
+    }
+    old_fronts >= 2
+}
+
+/// Whether a store key is a pre-1.0 numeric (u64-era) id: all ASCII digits and
+/// not the 26-char canonical token length. A u64 is at most 20 digits, so a
+/// wrong-length all-decimal key is a leftover from before token identity, never
+/// a real token.
+fn is_pre_l1_leftover(key: &str) -> bool {
+    !key.is_empty()
+        && key.len() != alix::token::TOKEN_LEN
+        && key.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// Lints an explicit deck-file (or workspace-dir) target: the `deck check`
+/// path: prints each deck's card count and declared settings, then its §5
+/// findings, failing only on an error.
 fn check(decks: Vec<PathBuf>) -> Result<()> {
-    let mut errors = 0usize;
-    let mut warnings = 0usize;
+    let mut report = Report::default();
     for path in &decks {
-        // A workspace directory: validate its declared icon, then skip the
-        // deck-load (which would error on a directory).
+        // A workspace directory: validate its declared icon + review config,
+        // then skip the deck-load (which would error on a directory).
         if path.is_dir() && alix::workspace::is_workspace(path) {
             if let Some(rel) = alix::workspace::manifest_icon(path)
                 && !path.join(&rel).is_file()
             {
-                warnings += 1;
-                eprintln!(
-                    "warning: {}: `icon = \"{rel}\"` points at a missing file",
+                report.warn(format!(
+                    "{}: `icon = \"{rel}\"` points at a missing file",
                     path.display()
-                );
+                ));
             }
             for complaint in alix::config::local_review_lint(path) {
-                warnings += 1;
-                eprintln!("warning: {}: {complaint}", path.display());
+                report.warn(format!("{}: {complaint}", path.display()));
             }
             continue;
         }
-        match Deck::load(path) {
-            Err(e) => {
-                errors += 1;
-                eprintln!("error: {e}");
+        // The deck-info header (card count + declared settings), then findings.
+        if let Ok(deck) = Deck::load(path) {
+            println!("{}: {} cards", deck.subject, deck.cards.len());
+            let s = &deck.settings;
+            let declared: Vec<String> = [
+                s.reveal.map(|r| format!("reveal: {}", val_name(r))),
+                s.order.map(|o| format!("order: {}", val_name(o))),
+                s.exam_strictness
+                    .map(|v| format!("strictness: {}", val_name(v))),
+            ]
+            .into_iter()
+            .flatten()
+            .collect();
+            if !declared.is_empty() {
+                println!("  settings: {}", declared.join(", "));
             }
-            Ok(deck) => {
-                println!("{}: {} cards", deck.subject, deck.cards.len());
-                let s = &deck.settings;
-                let declared: Vec<String> = [
-                    s.reveal.map(|r| format!("reveal: {}", val_name(r))),
-                    s.order.map(|o| format!("order: {}", val_name(o))),
-                    s.exam_strictness
-                        .map(|v| format!("strictness: {}", val_name(v))),
-                ]
-                .into_iter()
-                .flatten()
-                .collect();
-                if !declared.is_empty() {
-                    println!("  settings: {}", declared.join(", "));
-                }
-                if !deck.requires.is_empty() {
-                    println!("  requires: {}", deck.requires.join(", "));
-                }
-                if !deck.sources.is_empty() {
-                    println!("  sources:  {}", deck.sources.join(", "));
-                }
-                if let Some(desc) = &deck.trace {
-                    println!("  trace:    {desc}");
-                }
-                // The duplicate-answer check is RETIRED with token identity:
-                // content no longer keys progress, so identical answers no
-                // longer collide. Duplicate-token checks land with the dedup
-                // task.
-                // Image paths are resolved but never checked at load time, so a
-                // missing file is reported here (advisory: the deck still works,
-                // the web server just 404s the image).
-                for card in &deck.cards {
-                    for image in [&card.image, &card.image_back].into_iter().flatten() {
-                        if !image.exists() {
-                            warnings += 1;
-                            eprintln!(
-                                "warning: {}: card at line {} references a missing image: {}",
-                                deck.subject,
-                                card.line,
-                                image.display()
-                            );
-                        }
-                    }
-                }
-
-                // Frozen decks: warn when a card's snapshot no longer matches the
-                // live source (the file changed or is gone), so the learner can
-                // update or drop that card.
-                for drift in alix::trace::drifted_cards(&deck) {
-                    warnings += 1;
-                    let what = if drift.gone {
-                        "source file is gone"
-                    } else {
-                        "no longer found in the source"
-                    };
-                    eprintln!(
-                        "warning: {}: card at line {} — frozen excerpt {} ({})",
-                        deck.subject, drift.line, what, drift.at
-                    );
-                }
-
-                // Trace decks: validate each `% at:` locator resolves into the
-                // live `% source:` — catches drift (a file that shrank or was
-                // renamed) before a walk hits it, like the duplicate/image checks.
-                if deck.is_trace() && !deck.cards.is_empty() {
-                    match Trace::from_deck(&deck) {
-                        Ok(trace) => {
-                            for issue in trace.lint_locators() {
-                                warnings += 1;
-                                let line = deck.cards.get(issue.checkpoint).map_or(0, |c| c.line);
-                                eprintln!(
-                                    "warning: {}: checkpoint at line {}: {}",
-                                    deck.subject, line, issue.message
-                                );
-                            }
-                        }
-                        Err(e) => {
-                            warnings += 1;
-                            eprintln!("warning: {}: {e:#}", deck.subject);
-                        }
-                    }
-                }
-
-                // Fact decks: a card may also cite its source with `% at:`; warn
-                // when a citation doesn't resolve (a moved/shrunk file), so a
-                // hand-written or generated citation is caught before review.
-                if !deck.is_trace() {
-                    let base = SourceBase::for_deck(&deck);
-                    for card in &deck.cards {
-                        if let Some(at) = card.at.as_deref()
-                            && let Err(e) = base.excerpt(at)
-                        {
-                            warnings += 1;
-                            eprintln!(
-                                "warning: {}: card at line {}: `at: {at}` — {e:#}",
-                                deck.subject, card.line
-                            );
-                        }
-                    }
-                }
-
-                // A `% requires:` to a source-less deck never gates this deck's exam
-                // (`is_locked` sees through an exam-less prerequisite), so a sourced
-                // deck listing one likely meant it to gate — flag the dead edge.
-                for prereq in alix::deck::nongating_prerequisites(&deck) {
-                    warnings += 1;
-                    eprintln!(
-                        "warning: {}: requires source-less `{prereq}` — this edge \
-                         doesn't gate its exam; add a `source:` to `{prereq}` to \
-                         make it a real prerequisite",
-                        deck.subject
-                    );
-                }
+            if !deck.requires.is_empty() {
+                println!("  requires: {}", deck.requires.join(", "));
+            }
+            if !deck.sources.is_empty() {
+                println!("  sources:  {}", deck.sources.join(", "));
+            }
+            if let Some(desc) = &deck.trace {
+                println!("  trace:    {desc}");
             }
         }
+        deck_findings(path, true, &mut report);
     }
-    // Warnings (e.g. duplicate answers) are advisory and don't fail the check;
-    // only a deck that won't parse is an error.
-    if errors > 0 || warnings > 0 {
-        eprintln!("{errors} error(s), {warnings} warning(s)");
-    }
-    if errors > 0 {
-        bail!("{errors} error(s) found");
+    if report.render() {
+        bail!("{} error(s) found", report.errors.len());
     }
     Ok(())
 }
@@ -231,6 +539,12 @@ pub(crate) fn doctor_cmd(args: DoctorArgs) -> Result<()> {
         if let Some(remedy) = &f.remedy {
             println!("  ↳ {remedy}");
         }
+    }
+    // The whole-folder §5 check set: per-deck lints/tokens plus the cross-deck
+    // duplicate-token, orphaned-key, and `.txt`-era checks (read-only; a
+    // standalone deck file returned above, staying dedup-blind by design).
+    if workspace_findings(&decks_dir).render() {
+        failed = true;
     }
     // The costed end-to-end probe is opt-in: one real (tiny) request to the
     // configured backend, or one per backend with --all-backends.
@@ -325,5 +639,154 @@ mod tests {
         .unwrap();
         std::fs::write(dir.path().join("a.md"), "## a\n1\n").unwrap();
         assert!(check(vec![dir.path().to_path_buf()]).is_ok());
+    }
+
+    fn w(dir: &Path, name: &str, content: &str) {
+        std::fs::write(dir.join(name), content).unwrap();
+    }
+
+    #[test]
+    fn doctor_flags_the_full_check_set() {
+        // ONE fixture workspace exercising every §5 check at once.
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        w(dir, "alix.toml", "title = \"Check Set\"\n");
+        // Errors: an invalid-charset token, and a known key with a bad value.
+        w(dir, "bad-token.md", "## q <!-- id: BAD1 -->\na\n");
+        w(
+            dir,
+            "bad-value.md",
+            "---\nreveal: bogus\n---\n## q <!-- id: bv1 -->\na\n",
+        );
+        // A duplicate DECK token (a whole-file copy): the decorated copy loses.
+        w(
+            dir,
+            "dup-deck.md",
+            "---\nid: dupdeck\n---\n## q <!-- id: dd1 -->\na\n",
+        );
+        w(
+            dir,
+            "dup-deck copy.md",
+            "---\nid: dupdeck\n---\n## q <!-- id: dd1 -->\na\n",
+        );
+        // A duplicate CARD token across two DISTINCT decks (a copied card).
+        w(
+            dir,
+            "card-dup.md",
+            "---\nid: cda\n---\n## q <!-- id: cshared -->\na\n",
+        );
+        w(
+            dir,
+            "card-dup copy.md",
+            "---\nid: cdb\n---\n## q <!-- id: cshared -->\nb\n",
+        );
+        // Unspliceable frontmatter (a flow mapping, no id) the stamp writer excludes.
+        w(
+            dir,
+            "unspliceable.md",
+            "---\n{source: [a]}\n---\n## q <!-- id: uq1 -->\nb\n",
+        );
+        // A `reveal:` on a cloze card (linted, not obeyed).
+        w(
+            dir,
+            "cloze.md",
+            "## Fill <!-- id: clz1 -->\n<!-- reveal: line -->\nthe \\cloze{a} gap\n",
+        );
+        // An indented `##` line (content, likely a mistype).
+        w(
+            dir,
+            "indented.md",
+            "## real <!-- id: ind1 -->\n  ## not a front\nanswer\n",
+        );
+        // A card citing a missing image.
+        w(
+            dir,
+            "imgcard.md",
+            "## pic <!-- id: img1 -->\n<!-- img: missing.png -->\nphoto\n",
+        );
+        // An unstamped deck (its card awaits a token).
+        w(dir, "fresh.md", "## q\na\n");
+        // A pre-1.0 `.txt`-era file (old `# ` fronts, never enumerated as L1).
+        w(dir, "old-deck.txt", "# q1\na1\n# q2\na2\n");
+
+        // Seed the workspace store with an orphaned card key and an orphaned
+        // deck key (matching no live card/deck).
+        let mut store = alix::store::Store::open(dir.join("progress.json")).unwrap();
+        store.get_or_insert("orphancard", 0);
+        store.set_last_depth("ghostdeck.md", alix::depth::Depth::Recall);
+        store.save().unwrap();
+
+        let report = workspace_findings(dir);
+        let errors = report.errors.join("\n");
+        let warnings = report.warnings.join("\n");
+        let infos = report.infos.join("\n");
+
+        // Errors.
+        assert!(
+            errors.contains("fails the charset"),
+            "invalid token: {errors}"
+        );
+        assert!(
+            errors.contains("invalid value"),
+            "bad directive value: {errors}"
+        );
+        // Warnings.
+        assert!(warnings.contains("duplicate deck token"), "{warnings}");
+        assert!(warnings.contains("duplicate card token"), "{warnings}");
+        assert!(
+            warnings.contains("not canonical"),
+            "non-canonical token: {warnings}"
+        );
+        assert!(warnings.contains("orphaned store key (card)"), "{warnings}");
+        assert!(warnings.contains("orphaned store key (deck)"), "{warnings}");
+        assert!(
+            warnings.contains("fresh tokens were minted"),
+            "coarse fresh-mint: {warnings}"
+        );
+        assert!(
+            warnings.contains("not a block mapping"),
+            "unspliceable: {warnings}"
+        );
+        assert!(
+            warnings.contains("cloze card is ignored"),
+            "reveal-on-cloze: {warnings}"
+        );
+        assert!(warnings.contains("indented `##`"), "{warnings}");
+        assert!(warnings.contains("missing image"), "{warnings}");
+        assert!(warnings.contains("`.txt`-era"), "txt-era: {warnings}");
+        // Info.
+        assert!(infos.contains("need a stamp"), "unstamped info: {infos}");
+    }
+
+    #[test]
+    fn all_decimal_wrong_length_store_keys_are_tagged_pre_l1_leftovers() {
+        // A pre-1.0 numeric (u64-era) id lingering in the store matches no live
+        // card and is tagged as a leftover, distinct from a generic orphan.
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        // A canonical (26-char) live card token, so it produces no
+        // non-canonical noise and any mention would be a false orphan flag.
+        let live = "abcdefghjkmnpqrstvwxyz2345";
+        w(
+            dir,
+            "deck.md",
+            &format!("---\nid: abcdefghjkmnpqrstvwxyz6789\n---\n## q <!-- id: {live} -->\na\n"),
+        );
+        let mut store = alix::store::Store::open(dir.join("progress.json")).unwrap();
+        store.get_or_insert(live, 0); // the live card, not an orphan
+        store.get_or_insert("1234567890123456", 0); // a u64-era numeric leftover
+        store.save().unwrap();
+
+        let report = workspace_findings(dir);
+        let warnings = report.warnings.join("\n");
+        assert!(
+            warnings.contains("pre-1.0 numeric id") && warnings.contains("1234567890123456"),
+            "the numeric leftover must be tagged as pre-1.0: {warnings}"
+        );
+        // The live card is canonical and matched: it is never flagged at all.
+        assert!(
+            !warnings.contains(live),
+            "the live card must not be flagged: {warnings}"
+        );
     }
 }

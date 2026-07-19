@@ -61,9 +61,11 @@ fn dir_candidates(decks_dir: &Path) -> Vec<Candidate> {
             // this only filters the directory *scan*.
             .filter(|path| !file_name(path).starts_with('.'))
             .filter_map(|path| {
+                let name = file_name(&path);
                 let is_deck = path.is_file()
                     && path.extension().is_some_and(|e| e == "md")
-                    && !workspace::is_conventional_non_deck(&file_name(&path))
+                    && !workspace::is_conventional_non_deck(&name)
+                    && !workspace::is_conflict_name(&name)
                     && workspace::file_is_deck(&path);
                 if is_deck {
                     Some((path, false))

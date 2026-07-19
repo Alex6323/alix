@@ -461,6 +461,14 @@ struct ResetArgs {
     #[arg(long, conflicts_with_all = ["target", "card"])]
     all: bool,
 
+    /// Clear only ORPHANED progress: store keys matching no card or deck in the
+    /// scanned decks (a stripped `<!-- id: -->` comment, a hand-deleted deck, a
+    /// double-mint). Orphans are never auto-pruned (they are evidence and the
+    /// reclaim pool), so this is the explicit opt-in. Scopes to a named
+    /// folder/workspace, else the decks-dir root store.
+    #[arg(long, conflicts_with_all = ["card", "all"])]
+    orphans: bool,
+
     /// Skip the confirmation prompt (for scripts / test loops).
     #[arg(short = 'y', long)]
     yes: bool,

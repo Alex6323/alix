@@ -2,7 +2,10 @@
 //! stored review state. Each command resolves its target (deck, folder, or
 //! workspace) to member decks and the store they actually use.
 
-use std::{collections::HashMap, path::Path};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+};
 
 use alix::{
     assemble::{load_decks, open_store, store_path_for},
@@ -15,7 +18,7 @@ use alix::{
     time::{humanize_ms, now_ms},
     workspace,
 };
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 
 use crate::{
     DeckArgs, ResetArgs,
@@ -194,6 +197,14 @@ fn select_reset_ids(cards: &[Card], card: Option<&str>) -> Vec<(String, String)>
 pub(crate) fn reset(args: ResetArgs) -> Result<()> {
     let config = Config::load(args.config.as_deref())?;
 
+    // `--orphans`: clear only the store keys matching no card or deck in the
+    // scanned decks. Never part of the auto-prune-free normal reset; its own
+    // explicit opt-in (spec §5). Scopes to a named folder/workspace's store and
+    // decks, else the decks-dir root store and its loose decks.
+    if args.orphans {
+        return reset_orphans(&args, &config);
+    }
+
     // `--all` / a numeric `--card` with no target operate on the decks-dir
     // root store (or `--store`) — the same store bare `alix` writes to; a
     // deck-scoped reset re-resolves to the deck's own root/workspace store
@@ -326,6 +337,62 @@ pub(crate) fn reset(args: ResetArgs) -> Result<()> {
         false,
         args.yes,
     )
+}
+
+/// Clears the store's orphaned keys (spec §5): card/deck-family keys matching
+/// no card or deck in the scanned decks. Resolves the store + the "known" deck
+/// set the same way the rest of `reset` does: a named folder/workspace, else
+/// the decks-dir root store and its loose decks.
+fn reset_orphans(args: &ResetArgs, config: &Config) -> Result<()> {
+    let (deck_paths, store_path) = match &args.target {
+        Some(target) => {
+            let target = expand_target(target, config)?;
+            let store = args
+                .store
+                .clone()
+                .or_else(|| store_path_for(&target.decks, None))
+                .or_else(|| target.default_store.clone());
+            (target.decks, store)
+        }
+        None => {
+            let dir = config.decks_dir().context("cannot determine ~/decks")?;
+            let store = args
+                .store
+                .clone()
+                .unwrap_or_else(|| workspace::root_store_path(&dir));
+            (workspace::deck_files(&dir), Some(store))
+        }
+    };
+
+    // The live ids/subjects the store keys are matched against: an unstamped
+    // card has no id (and no store entry), so it is neither known nor an orphan.
+    let mut known_cards: HashSet<String> = HashSet::new();
+    let mut known_subjects: HashSet<String> = HashSet::new();
+    for path in &deck_paths {
+        if let Ok(deck) = Deck::load(path) {
+            known_subjects.insert(deck.subject.clone());
+            known_cards.extend(deck.cards.iter().filter_map(Card::id));
+        }
+    }
+
+    let mut store = open_store(store_path)?;
+    let orphans = store.orphans(&known_cards, &known_subjects);
+    if orphans.is_empty() {
+        println!("No orphaned progress to reset.");
+        return Ok(());
+    }
+    let n = orphans.len();
+    if !confirm(
+        &format!("Reset {n} orphaned key(s) (matching no known card or deck)?"),
+        args.yes,
+    )? {
+        println!("Cancelled.");
+        return Ok(());
+    }
+    let removed = store.prune_orphans(&orphans);
+    store.save()?;
+    println!("Reset {removed} orphaned key(s).");
+    Ok(())
 }
 
 /// Removes the `(id, front)` targets that have stored progress, after a `y/N`
