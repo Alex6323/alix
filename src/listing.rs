@@ -113,8 +113,8 @@ pub struct DeckDeadline {
 }
 
 /// Lists a decks root: workspaces and plain deck folders as drillable
-/// entries, loose `*.md` files as decks (conventional non-deck names
-/// excluded), name-sorted, dot-names skipped.
+/// entries, loose `*.md` files as decks (conventional non-deck names and
+/// prose `.md` files excluded), name-sorted, dot-names skipped.
 /// A root that is itself a workspace collapses to that one entry. Unreadable
 /// entries degrade (stem title, `due: false`); they never error.
 pub fn list_root(root: &Path, review: &ReviewConfig, now_ms: u64) -> Vec<DeckSummary> {
@@ -141,6 +141,7 @@ pub fn list_root(root: &Path, review: &ReviewConfig, now_ms: u64) -> Vec<DeckSum
         } else if path.is_file()
             && path.extension().is_some_and(|e| e == "md")
             && !workspace::is_conventional_non_deck(name)
+            && workspace::file_is_deck(&path)
         {
             out.push(
                 deck_summary(

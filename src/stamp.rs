@@ -70,6 +70,15 @@ pub enum StampError {
         /// The offending path.
         path: PathBuf,
     },
+    /// The file has no cards and no frontmatter: it is not a deck (spec
+    /// §3.1.3), so it is never stamped. Refusing here defends a user's prose
+    /// file from gaining a frontmatter block on session open, even if it
+    /// somehow reaches this path (the enumeration scans already exclude it).
+    #[error("{path} is not a deck (no cards, no frontmatter); refusing to stamp")]
+    NotADeck {
+        /// The offending path.
+        path: PathBuf,
+    },
     /// A card's front line number pointed past the end of the file (should
     /// never happen: the parser guarantees it).
     #[error("line {0} is past the end of the file")]
@@ -129,6 +138,15 @@ pub fn stamp_deck(path: &Path) -> Result<StampOutcome, StampError> {
     let body = &original[bom.len()..];
 
     let deck = l1::parse_l1(subject, body)?;
+
+    // Defensive (spec §3.1.3): a file with neither cards nor frontmatter is not
+    // a deck. Refuse loudly rather than prepend a canonical frontmatter block
+    // into what is almost certainly a user's prose file.
+    if deck.cards.is_empty() && deck.frontmatter_span.is_none() {
+        return Err(StampError::NotADeck {
+            path: path.to_path_buf(),
+        });
+    }
 
     // Unstamped card front lines, deduped: a cloze card's holes expand to
     // several sub-cards sharing one `## ` line, but that line stamps once.
@@ -554,6 +572,23 @@ mod tests {
         let result = replace_card_token(&path, "zzzzzzzzzzzzzzzzzzzzzzzzzz");
         assert!(
             matches!(result, Err(StampError::TokenNotFound { .. })),
+            "{result:?}"
+        );
+        assert_eq!(original, fs::read_to_string(&path).unwrap());
+    }
+
+    #[test]
+    fn selecting_a_prose_file_refuses_loudly_and_never_writes() {
+        // A prose `.md` (no `## ` card, no frontmatter) is not a deck: the
+        // session-open stamp path refuses it instead of prepending a
+        // frontmatter block, and leaves the file byte-for-byte untouched.
+        let dir = tempfile::tempdir().unwrap();
+        let original = "# My notes\n\njust some prose, not a deck at all\n";
+        let path = write(&dir, "notes.md", original);
+
+        let result = stamp_deck(&path);
+        assert!(
+            matches!(result, Err(StampError::NotADeck { .. })),
             "{result:?}"
         );
         assert_eq!(original, fs::read_to_string(&path).unwrap());

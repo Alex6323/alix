@@ -35,7 +35,8 @@ struct Candidate {
 
 /// Every `*.md` deck and every workspace folder directly in `decks_dir`,
 /// sorted by name. Conventional non-deck names (`README.*`, `LICENSE.*`,
-/// any-case) are excluded.
+/// any-case) and prose `.md` files (no card, no frontmatter) are excluded
+/// ([`workspace::file_is_deck`]).
 fn dir_candidates(decks_dir: &Path) -> Vec<Candidate> {
     // A served root that is itself a workspace lists as that one workspace, so
     // `alix <workspace-dir>` opens the picker drilled into it — members keep
@@ -62,7 +63,8 @@ fn dir_candidates(decks_dir: &Path) -> Vec<Candidate> {
             .filter_map(|path| {
                 let is_deck = path.is_file()
                     && path.extension().is_some_and(|e| e == "md")
-                    && !workspace::is_conventional_non_deck(&file_name(&path));
+                    && !workspace::is_conventional_non_deck(&file_name(&path))
+                    && workspace::file_is_deck(&path);
                 if is_deck {
                     Some((path, false))
                 } else if workspace::has_decks(&path) {
@@ -484,5 +486,37 @@ mod tests {
             .map(|c| c.name)
             .collect();
         assert_eq!(vec!["real.md".to_string()], names);
+    }
+
+    #[test]
+    fn a_prose_md_file_never_lists_as_a_deck() {
+        // A `.md` with neither a `## ` card nor frontmatter is prose, not a
+        // deck: it must not list (and so is never selected and stamped).
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("real.md"), "## q\na\n").unwrap();
+        std::fs::write(
+            dir.path().join("notes.md"),
+            "# My notes\n\njust prose, no cards\n",
+        )
+        .unwrap();
+        let names: Vec<String> = dir_candidates(dir.path())
+            .into_iter()
+            .map(|c| c.name)
+            .collect();
+        assert_eq!(vec!["real.md".to_string()], names);
+    }
+
+    #[test]
+    fn a_header_only_stub_still_lists() {
+        // A trace stub (frontmatter, zero cards) has no `## ` card yet, but must
+        // still list so the user can select and build it — the frontmatter arm
+        // of the deck-ness predicate carries it.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("stub.md"), "---\ntrace: a walk\n---\n").unwrap();
+        let names: Vec<String> = dir_candidates(dir.path())
+            .into_iter()
+            .map(|c| c.name)
+            .collect();
+        assert_eq!(vec!["stub.md".to_string()], names);
     }
 }

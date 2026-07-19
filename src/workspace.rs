@@ -171,8 +171,23 @@ pub fn is_conventional_non_deck(name: &str) -> bool {
     stem.eq_ignore_ascii_case("readme") || stem.eq_ignore_ascii_case("license")
 }
 
+/// Whether the `.md` file at `path` enumerates as a deck (spec §3.1.3): a
+/// shared, content-aware predicate over the three deck-scan sites (this
+/// module's [`members`], the picker's `dir_candidates`, the listing's
+/// `list_root`). It reads and cheaply parses the file, so a prose `.md` with
+/// neither a `## ` card nor frontmatter never lists (nor gets stamped). A
+/// file it cannot read is treated as a deck, so a listing degrades a broken
+/// deck into a visible row rather than dropping it silently.
+pub fn file_is_deck(path: &Path) -> bool {
+    match std::fs::read_to_string(path) {
+        Ok(text) => crate::l1::is_deck_content(&text),
+        Err(_) => true,
+    }
+}
+
 /// The `*.md` decks directly inside `dir`, sorted by name (one level deep).
-/// Conventional non-deck names (`README.*`, `LICENSE.*`) are excluded.
+/// Conventional non-deck names (`README.*`, `LICENSE.*`) and prose `.md` files
+/// (no card, no frontmatter) are excluded.
 fn members(dir: &Path) -> io::Result<Vec<PathBuf>> {
     let mut paths: Vec<PathBuf> = std::fs::read_dir(dir)?
         .filter_map(|r| r.ok().map(|e| e.path()))
@@ -182,6 +197,7 @@ fn members(dir: &Path) -> io::Result<Vec<PathBuf>> {
                 .and_then(|n| n.to_str())
                 .is_some_and(is_conventional_non_deck)
         })
+        .filter(|p| file_is_deck(p))
         .collect();
     paths.sort();
     Ok(paths)
@@ -387,6 +403,35 @@ mod tests {
         write(&file, "## a\n1\n");
         assert!(!is_workspace(&file));
         assert!(!has_decks(&file));
+    }
+
+    #[test]
+    fn members_exclude_prose_but_keep_header_only_stubs() {
+        let dir = tempfile::tempdir().unwrap();
+        write(&dir.path().join("deck.md"), "## q\na\n");
+        write(&dir.path().join("stub.md"), "---\ntrace: a walk\n---\n");
+        write(&dir.path().join("notes.md"), "# Notes\n\njust prose\n");
+
+        let names: Vec<String> = members(dir.path())
+            .unwrap()
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        // The prose file is excluded; the real deck and the trace stub stay.
+        assert_eq!(vec!["deck.md".to_string(), "stub.md".to_string()], names);
+    }
+
+    #[test]
+    fn a_folder_of_only_prose_has_no_decks() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("prose");
+        std::fs::create_dir(&folder).unwrap();
+        write(
+            &folder.join("notes.md"),
+            "# Notes\n\njust prose, no cards\n",
+        );
+        // No `## ` card and no frontmatter anywhere: not a drillable folder.
+        assert!(!has_decks(&folder));
     }
 
     #[test]

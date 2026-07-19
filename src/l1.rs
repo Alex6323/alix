@@ -284,6 +284,32 @@ pub fn content_fingerprint(front: &str, back: &[String]) -> u64 {
     hasher.finish()
 }
 
+/// Whether `.md` file content enumerates as a deck (spec §3.1.3): it has at
+/// least one `## ` card front OR frontmatter. A prose `.md` with neither never
+/// lists as a deck (and so is never stamped: a user's notes file cannot gain a
+/// frontmatter block on session open). A header-only stub (frontmatter, zero
+/// cards, e.g. a trace stub) still enumerates through the frontmatter arm.
+///
+/// Content that fails to parse is treated as a deck: it is deck-shaped enough
+/// to trip the L1 parser's hard errors (a pure-prose file does not), and
+/// enumerating it lets a broken deck surface to doctor or a degraded listing
+/// row rather than vanish silently.
+pub fn is_deck_content(text: &str) -> bool {
+    match parse_l1("deck.md", text) {
+        Ok(deck) => !deck.cards.is_empty() || deck.frontmatter_span.is_some(),
+        Err(_) => true,
+    }
+}
+
+/// A string as a double-quoted YAML scalar for an L1 frontmatter value, so a
+/// title or path with a colon (or embedded quotes/backslashes) can never derail
+/// the mapping. The writer-side counterpart to the frontmatter parsing above;
+/// shared by every producer that emits an L1 `trace:`/`source:` line (the
+/// explore-walk builder and the CLI trace-walk writer).
+pub fn yaml_quote(s: &str) -> String {
+    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
 // ── Internal representation ──
 
 /// The scanned document before cards are built: what the directives
@@ -1452,6 +1478,27 @@ mod tests {
         let deck = parse("# Title\njust prose\n");
         assert!(deck.cards.is_empty());
         assert_eq!(Some("Title"), deck.title.as_deref());
+    }
+
+    #[test]
+    fn is_deck_content_requires_a_card_or_frontmatter() {
+        // A prose `.md` with neither a `## ` card nor frontmatter is not a deck.
+        assert!(!is_deck_content("# Notes\n\njust some prose here\n"));
+        // A `## ` heading buried inside a code fence is content, not a front —
+        // a naive line scan would be fooled, the fence-aware parser is not.
+        assert!(!is_deck_content("# Notes\n\n```\n## not a card\n```\n"));
+        // A real card front makes it a deck.
+        assert!(is_deck_content("## q\na\n"));
+    }
+
+    #[test]
+    fn a_header_only_stub_is_deck_content() {
+        // A trace stub (frontmatter, zero cards) MUST still enumerate — the
+        // frontmatter arm, not the card arm, carries it. This is the mutation
+        // sentinel: drop `|| deck.frontmatter_span.is_some()` and it fails.
+        assert!(is_deck_content("---\ntrace: a walk\n---\n"));
+        // An empty frontmatter block alone counts too.
+        assert!(is_deck_content("---\nsource: notes.md\n---\n"));
     }
 
     #[test]
