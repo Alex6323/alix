@@ -1137,6 +1137,18 @@ mod tests {
     }
 
     #[test]
+    fn a_blank_line_before_the_frontmatter_closer_is_accepted() {
+        let deck = parse("---\nid: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n\n---\n## q\na\n");
+        assert_eq!(
+            Some("9w2c7x4k1m8q3z5t0v6b2n4d8f"),
+            deck.deck_token.as_deref()
+        );
+        assert_eq!(Some((1, 4)), deck.frontmatter_span);
+        assert_eq!(1, deck.cards.len());
+        assert_eq!("q", deck.cards[0].front);
+    }
+
+    #[test]
     fn an_unquoted_numeric_id_is_a_hard_error_naming_the_line() {
         assert_eq!(
             L1Error::NonStringId {

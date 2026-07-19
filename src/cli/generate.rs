@@ -408,7 +408,7 @@ fn generate_trace_walk(args: &GenerateArgs, config: &Config, goal: &str) -> Resu
         "exploring {name} — what it is, its parts, and its spine"
     ));
     let deck_text = format!(
-        "---\ntrace: {trace}\nsource: {}\n---\n\n{checkpoints}\n",
+        "---\ntrace: {trace}\nsource: {}\n\n---\n\n{checkpoints}\n",
         l1::yaml_quote(&source)
     );
     let dir = deck_out_dir(args.workspace.as_deref(), config)?;

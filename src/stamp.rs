@@ -130,8 +130,16 @@ pub fn stamp_deck(path: &Path) -> Result<StampOutcome, StampError> {
     // offset is never shifted by a later insertion.
     let mut inserts: Vec<(usize, String)> = Vec::new();
     for (line, tok) in card_lines.iter().zip(&minted_cards) {
-        let offset = line_content_end(body, *line).ok_or(StampError::MissingLine(*line))?;
-        inserts.push((offset, format!(" <!-- id: {tok} -->")));
+        // A divided front's id goes below its `---`, never between the heading
+        // and the divider: an id line there stops the `---` from dividing.
+        let anchor = if next_line_is_divider(body, *line) {
+            line + 1
+        } else {
+            *line
+        };
+        let offset = line_start_of_next(body, anchor).ok_or(StampError::MissingLine(anchor))?;
+        let newline = line_terminator(body, anchor);
+        inserts.push((offset, format!("<!-- id: {tok} -->{newline}")));
     }
     let mut prepend = String::new();
     match (&deck_action, &deck_token) {
@@ -140,7 +148,7 @@ pub fn stamp_deck(path: &Path) -> Result<StampOutcome, StampError> {
             inserts.push((offset, format!("id: \"{tok}\"\n")));
         }
         (DeckAction::Prepend, Some(tok)) => {
-            prepend = format!("---\nid: \"{tok}\"\n---\n");
+            prepend = format!("---\nid: \"{tok}\"\n\n---\n");
         }
         _ => {}
     }
@@ -209,14 +217,27 @@ fn write_atomic(path: &Path, contents: &str) -> Result<(), StampError> {
     })
 }
 
-fn line_content_end(text: &str, line: usize) -> Option<usize> {
-    let start = nth_line_start(text, line)?;
+/// Whether the line after `line` is a bare `---` divider, mirroring the parser's
+/// exact `---` match, so a divided front's id lands below the divider.
+fn next_line_is_divider(text: &str, line: usize) -> bool {
+    let Some(start) = nth_line_start(text, line + 1) else {
+        return false;
+    };
     let rest = &text[start..];
-    let mut end = start + rest.find('\n').unwrap_or(rest.len());
-    if end > start && text.as_bytes()[end - 1] == b'\r' {
-        end -= 1;
+    let end = rest.find('\n').unwrap_or(rest.len());
+    rest[..end].trim_matches(&WS[..]) == "---"
+}
+
+/// The newline terminating `line` (`"\r\n"` or `"\n"`), so an inserted id line
+/// matches the file's convention.
+fn line_terminator(text: &str, line: usize) -> &'static str {
+    let Some(start) = nth_line_start(text, line) else {
+        return "\n";
+    };
+    match text[start..].find('\n') {
+        Some(rel) if rel > 0 && text.as_bytes()[start + rel - 1] == b'\r' => "\r\n",
+        _ => "\n",
     }
-    Some(end)
 }
 
 fn line_start_of_next(text: &str, line: usize) -> Option<usize> {
@@ -315,7 +336,7 @@ mod tests {
 
         let mut reconstructed = stamped;
         for tok in &outcome.minted_cards {
-            let span = format!(" <!-- id: {tok} -->");
+            let span = format!("<!-- id: {tok} -->\n");
             assert_eq!(1, reconstructed.matches(&span).count(), "span {span:?}");
             reconstructed = reconstructed.replacen(&span, "", 1);
         }
@@ -328,7 +349,7 @@ mod tests {
     }
 
     #[test]
-    fn stamping_a_deck_without_frontmatter_prepends_the_canonical_three_line_block() {
+    fn stamping_a_deck_without_frontmatter_prepends_the_canonical_four_line_block() {
         let dir = tempfile::tempdir().unwrap();
         let original = "## q\na\n## r\nb\n";
         let path = write(&dir, "deck.md", original);
@@ -338,7 +359,7 @@ mod tests {
         let deck_tok = outcome.minted_deck.as_ref().unwrap();
 
         assert!(
-            stamped.starts_with(&format!("---\nid: \"{deck_tok}\"\n---\n")),
+            stamped.starts_with(&format!("---\nid: \"{deck_tok}\"\n\n---\n")),
             "{stamped:?}"
         );
         let parsed = l1::parse_l1("deck.md", &stamped).unwrap();
@@ -358,7 +379,7 @@ mod tests {
 
         assert!(stamped.starts_with(BOM));
         assert!(!stamped[BOM.len()..].starts_with(BOM));
-        assert!(stamped.starts_with(&format!("{BOM}---\nid: \"{deck_tok}\"\n---\n")));
+        assert!(stamped.starts_with(&format!("{BOM}---\nid: \"{deck_tok}\"\n\n---\n")));
     }
 
     #[test]
@@ -425,7 +446,7 @@ mod tests {
         assert!(stamped.contains("4jkya9q3m8z0tw5v9y2b4n6d8f"));
         assert!(stamped.contains("9w2c7x4k1m8q3z5t0v6b2n4d8f"));
         let new_tok = &outcome.minted_cards[0];
-        assert!(stamped.contains(&format!("## missing <!-- id: {new_tok} -->")));
+        assert!(stamped.contains(&format!("## missing\n<!-- id: {new_tok} -->\n")));
     }
 
     #[test]
@@ -528,11 +549,11 @@ mod tests {
         let stamped = fs::read_to_string(&path).unwrap();
         let deck_tok = outcome.minted_deck.as_ref().unwrap();
 
-        let prefix = format!("---\nid: \"{deck_tok}\"\n---\n");
+        let prefix = format!("---\nid: \"{deck_tok}\"\n\n---\n");
         assert!(stamped.starts_with(&prefix), "{stamped:?}");
         let mut reconstructed = stamped[prefix.len()..].to_string();
         for tok in &outcome.minted_cards {
-            let span = format!(" <!-- id: {tok} -->");
+            let span = format!("<!-- id: {tok} -->\n");
             assert_eq!(1, reconstructed.matches(&span).count(), "span {span:?}");
             reconstructed = reconstructed.replacen(&span, "", 1);
         }
@@ -552,7 +573,7 @@ mod tests {
 
         for tok in &outcome.minted_cards {
             assert!(
-                stamped.contains(&format!(" <!-- id: {tok} -->\r\n")),
+                stamped.contains(&format!("<!-- id: {tok} -->\r\n")),
                 "{stamped:?}"
             );
         }
@@ -561,7 +582,7 @@ mod tests {
         assert_eq!(1, stamped.matches(&deck_span).count());
         let mut reconstructed = stamped.replacen(&deck_span, "", 1);
         for tok in &outcome.minted_cards {
-            let span = format!(" <!-- id: {tok} -->");
+            let span = format!("<!-- id: {tok} -->\r\n");
             assert_eq!(1, reconstructed.matches(&span).count(), "span {span:?}");
             reconstructed = reconstructed.replacen(&span, "", 1);
         }
@@ -570,7 +591,7 @@ mod tests {
     }
 
     #[test]
-    fn a_front_with_a_trailing_directive_still_gets_its_id_appended() {
+    fn a_front_with_a_trailing_directive_keeps_it_and_gets_an_id_line_below() {
         let dir = tempfile::tempdir().unwrap();
         let original =
             "---\nid: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## q <!-- reveal: line -->\na\n";
@@ -583,17 +604,17 @@ mod tests {
         assert_eq!(
             format!(
                 "---\nid: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n\
-                 ## q <!-- reveal: line --> <!-- id: {tok} -->\na\n"
+                 ## q <!-- reveal: line -->\n<!-- id: {tok} -->\na\n"
             ),
             stamped
         );
 
-        let reconstructed = stamped.replacen(&format!(" <!-- id: {tok} -->"), "", 1);
+        let reconstructed = stamped.replacen(&format!("<!-- id: {tok} -->\n"), "", 1);
         assert_eq!(original, reconstructed);
     }
 
     #[test]
-    fn a_hash_run_front_gets_its_id_after_the_run() {
+    fn a_hash_run_front_keeps_its_run_and_gets_an_id_line_below() {
         let dir = tempfile::tempdir().unwrap();
         let original = "---\nid: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## Foo ##\nbar\n";
         let path = write(&dir, "deck.md", original);
@@ -604,16 +625,40 @@ mod tests {
 
         assert_eq!(
             format!(
-                "---\nid: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## Foo ## <!-- id: {tok} -->\nbar\n"
+                "---\nid: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## Foo ##\n<!-- id: {tok} -->\nbar\n"
             ),
             stamped
         );
 
-        let reconstructed = stamped.replacen(&format!(" <!-- id: {tok} -->"), "", 1);
+        let reconstructed = stamped.replacen(&format!("<!-- id: {tok} -->\n"), "", 1);
         assert_eq!(original, reconstructed);
 
         let parsed = l1::parse_l1("deck.md", &stamped).unwrap();
         assert_eq!("Foo", parsed.cards[0].front);
+        assert_eq!(Some(tok.as_str()), parsed.cards[0].token.as_deref());
+    }
+
+    #[test]
+    fn a_divided_front_card_stamps_its_id_where_the_parser_binds_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let original = "---\nid: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## Q\n---\nthe answer\n";
+        let path = write(&dir, "deck.md", original);
+
+        let outcome = stamp_deck(&path).unwrap();
+        let stamped = fs::read_to_string(&path).unwrap();
+        let tok = &outcome.minted_cards[0];
+
+        assert_eq!(
+            format!(
+                "---\nid: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## Q\n---\n<!-- id: {tok} -->\nthe answer\n"
+            ),
+            stamped
+        );
+
+        let parsed = l1::parse_l1("deck.md", &stamped).unwrap();
+        assert_eq!(1, parsed.cards.len());
+        assert_eq!("Q", parsed.cards[0].front);
+        assert_eq!(vec!["the answer".to_string()], parsed.cards[0].back);
         assert_eq!(Some(tok.as_str()), parsed.cards[0].token.as_deref());
     }
 
@@ -633,10 +678,13 @@ mod tests {
             assert_eq!(
                 1,
                 stamped
-                    .matches(&format!("## Foo <!-- id: {tok} -->"))
+                    .matches(&format!("## Foo\n---\n<!-- id: {tok} -->\n"))
                     .count(),
                 "{stamped:?}"
             );
         }
+        let parsed = l1::parse_l1("deck.md", &stamped).unwrap();
+        assert!(parsed.cards.iter().all(|c| c.front == "Foo"));
+        assert!(parsed.cards.iter().all(|c| c.token.is_some()));
     }
 }

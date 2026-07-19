@@ -470,7 +470,7 @@ pub fn materialize(
                 body.push_str(&format!("  - {}\n", yaml_quote(dep)));
             }
         }
-        body.push_str("---\n");
+        body.push_str("\n---\n");
         if item.kind == Kind::Deck {
             body.push_str(&format!("# {}\n", item.title));
         }

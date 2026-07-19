@@ -48,6 +48,7 @@ code-fence marker, escape it with a leading backslash (e.g. `\\## `).
 Begin the file with exactly this frontmatter block:
 ---
 link: {url}
+
 ---
 The `link:` key lets the learner ask follow-up questions against the source.
 
@@ -131,6 +132,7 @@ code-fence marker, escape it with a leading backslash (e.g. `\\## `).
 Begin the file with exactly this frontmatter block:
 ---
 source: {source}
+
 ---
 The `source:` key ties the deck to its source, so `alix exam` can later grade \
 your understanding against it.
