@@ -344,6 +344,18 @@ to this codebase. When in doubt, mirror the surrounding code.
   experiment costs seconds, being wrong costs the build. (Worked example: `docs/API.md`
   promised `DeckItemDto.name` was always selectable; two agents "verified" it by reading,
   and the kids client shipped a dead button. One `curl` returned 400.)
+- **Always prove: reproduce the reported symptom itself, not a proxy, before claiming a
+  fix** (user rule, 2026-07-19). A reproduction that uses a *different mechanism or client*
+  than the bug report is a correlated sensor: if it goes green you have learned nothing about
+  the real fault, and if it *agrees* with your hypothesis you must be more suspicious, not
+  satisfied. Match the reproduction to the report: a browser bug is reproduced with a
+  browser, a mobile bug on the device, a specific-collection bug on that collection. The fix
+  is proven only when THAT reproduction goes red before the change and green after. Reach for
+  the faithful tool even when a cheaper proxy is at hand (Playwright was installed; a `curl`
+  probe was easier and flattered a wrong keep-alive hypothesis, so the "second reload"
+  stall was declared fixed twice while the real cause, a global lock held across the slow
+  cold listing, sat untouched). The pull toward the cheap green number is the relief-delivery
+  bias; the antidote is to make the symptom itself the gate.
 - **When blocked, stop — never build around the obstacle.** A wall the plan didn't anticipate
   (a cooldown, an unreachable fixture, an id you can't compute) means *report*, not improvise;
   a rule here won't survive one. Briefs must name the wall and the sanctioned route, or say
