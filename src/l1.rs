@@ -708,7 +708,8 @@ fn heading(
             apply_directive(&mut directives, &key, value, lineno, lints)?;
         }
     }
-    let front = strip_trailing_hashes(trim_ws(&text)).to_string();
+    // `\#` is a literal front-text hash; never part of a trailing closing run.
+    let front = strip_trailing_hashes(trim_ws(&text)).replace("\\#", "#");
     Ok((front, directives))
 }
 
@@ -1355,6 +1356,37 @@ mod tests {
     fn a_trailing_hash_run_is_stripped_from_the_front() {
         let deck = parse("## Foo ##\nbar\n");
         assert_eq!("Foo", deck.cards[0].front);
+    }
+
+    #[test]
+    fn an_unescaped_trailing_run_still_strips() {
+        let deck = parse("## Foo ##\nbar\n");
+        assert_eq!("Foo", deck.cards[0].front);
+    }
+
+    #[test]
+    fn an_escaped_trailing_hash_survives_in_the_front() {
+        let deck = parse("## delimited by a \\#\nbar\n");
+        assert_eq!("delimited by a #", deck.cards[0].front);
+    }
+
+    #[test]
+    fn escaped_and_unescaped_mixed() {
+        let deck = parse("## Foo \\# ##\nbar\n");
+        assert_eq!("Foo #", deck.cards[0].front);
+    }
+
+    #[test]
+    fn a_mid_line_escaped_hash_unescapes() {
+        let deck = parse("## use \\#tags here\nbar\n");
+        assert_eq!("use #tags here", deck.cards[0].front);
+    }
+
+    #[test]
+    fn an_escaped_trailing_hash_does_not_leak_into_the_fingerprint() {
+        let deck = parse("## delimited by a \\#\nanswer\n");
+        let expected = content_fingerprint("delimited by a #", &["answer".to_string()]);
+        assert_eq!(expected, deck.cards[0].content_fingerprint);
     }
 
     #[test]
