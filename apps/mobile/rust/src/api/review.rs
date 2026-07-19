@@ -297,7 +297,7 @@ impl ReviewSession {
         let deck_fingerprints: HashSet<u64> = loaded
             .cards
             .iter()
-            .map(|c| alix::l1::content_fingerprint(&c.front, &c.back))
+            .map(|c| c.content_fingerprint)
             .collect();
         // The lean, canonical predicate (`Deck::has_exam`, shared with the
         // server and the picker), equivalent here since this session only
@@ -480,7 +480,7 @@ impl ReviewSession {
             .session
             .cards()
             .iter()
-            .map(|c| alix::l1::content_fingerprint(&c.front, &c.back))
+            .map(|c| c.content_fingerprint)
             .collect();
         let id = alix::store::mint_tutor_card(
             &mut self.store,
@@ -750,7 +750,7 @@ impl WalkSession {
         let deck_fingerprints: HashSet<u64> = loaded
             .cards
             .iter()
-            .map(|c| alix::l1::content_fingerprint(&c.front, &c.back))
+            .map(|c| c.content_fingerprint)
             .collect();
         let has_exam = loaded.has_exam();
 
