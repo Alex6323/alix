@@ -833,18 +833,18 @@ Spine   a -> b
         let raw = "\
 preamble ignored
 === item 1 ===
-# front a
-\tback a
+## front a
+back a
 === item 2 ===
 # question
 \tkey point
-\t% at: src/x.rs:1-3
+<!-- at: src/x.rs:1-3 -->
 === item 3 ===
 ";
         let filled = parse_filled(raw);
         assert_eq!(2, filled.len());
-        assert!(filled[&1].contains("# front a"));
-        assert!(filled[&2].contains("% at: src/x.rs:1-3"));
+        assert!(filled[&1].contains("## front a"));
+        assert!(filled[&2].contains("<!-- at: src/x.rs:1-3 -->"));
         assert!(!filled.contains_key(&3));
     }
 

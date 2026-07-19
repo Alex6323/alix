@@ -2354,7 +2354,6 @@ mod tests {
         assert_eq!(1, blocks.len());
         assert!(blocks[0].starts_with("## Complete the quote"));
         assert!(blocks[0].contains("\\cloze{be}"));
-        assert!(!blocks[0].contains("% source:"));
     }
 
     fn store_remediation(

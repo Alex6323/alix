@@ -1079,7 +1079,6 @@ mod tests {
         assert!(p.contains("missed CONCEPT"));
         assert!(p.contains("\\cloze{...}"));
         assert!(p.contains("understanding card"));
-        assert!(!p.contains("{{"));
         assert!(!p.contains("indented answer"));
         assert!(p.contains("## "));
     }

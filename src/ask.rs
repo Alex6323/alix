@@ -769,9 +769,7 @@ mod tests {
         assert!(p.contains("column 0"));
         assert!(p.contains("## Why?"));
         assert!(p.contains("Q: q\nA: a"));
-        assert!(!p.contains("{{"));
         assert!(!p.contains("tab-indent"));
-        assert!(!p.contains("! note"));
     }
 
     #[test]

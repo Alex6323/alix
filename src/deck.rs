@@ -132,18 +132,18 @@ impl Deck {
             path: path.clone(),
             source,
         })?;
-        let l1deck = parser::parse(&subject, &text).map_err(|source| DeckError::Parse {
+        let parsed = parser::parse(&subject, &text).map_err(|source| DeckError::Parse {
             path: path.clone(),
             source,
         })?;
-        let links = l1deck.frontmatter.link.clone();
-        let requires = l1deck.frontmatter.requires.clone();
-        let sources = l1deck.frontmatter.source.clone();
-        let title = l1deck.title.clone();
-        let trace = l1deck.frontmatter.trace.clone();
-        let deck_token = l1deck.deck_token.clone();
-        let mut settings = DeckSettings::from_frontmatter(&l1deck.frontmatter);
-        let mut cards = l1deck.cards;
+        let links = parsed.frontmatter.link.clone();
+        let requires = parsed.frontmatter.requires.clone();
+        let sources = parsed.frontmatter.source.clone();
+        let title = parsed.title.clone();
+        let trace = parsed.frontmatter.trace.clone();
+        let deck_token = parsed.deck_token.clone();
+        let mut settings = DeckSettings::from_frontmatter(&parsed.frontmatter);
+        let mut cards = parsed.cards;
         settings.fill_from(defaults);
         for card in &mut cards {
             card.reveal = card.reveal.or(settings.reveal);
@@ -1193,7 +1193,7 @@ mod tests {
         let text = "---\nstrictness: strict\n---\n## f\nb\n";
         let path = write_deck(dir.path(), "d.md", text);
 
-        let l1deck = parser::parse("d.md", text).unwrap();
+        let parsed = parser::parse("d.md", text).unwrap();
         assert_eq!(
             vec![parser::Lint {
                 line: 2,
@@ -1201,7 +1201,7 @@ mod tests {
                     key: "strictness".to_string()
                 }
             }],
-            l1deck.lints
+            parsed.lints
         );
 
         let deck = Deck::load(&path).unwrap();
@@ -1211,9 +1211,9 @@ mod tests {
     #[test]
     fn workspace_defaults_strictness_still_reaches_deck_settings() {
         let text = "---\nstrictness: strict\n---\n## f\nb\n";
-        let l1deck = parser::parse("d.md", text).unwrap();
+        let parsed = parser::parse("d.md", text).unwrap();
 
-        let mut settings = DeckSettings::from_frontmatter(&l1deck.frontmatter);
+        let mut settings = DeckSettings::from_frontmatter(&parsed.frontmatter);
         settings.fill_from(&DeckSettings::from_directives(&[(
             "strictness".to_string(),
             "strict".to_string(),

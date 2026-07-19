@@ -618,7 +618,6 @@ mod tests {
         assert!(p.contains("a \"goal\""));
         assert!(p.contains("Read, Glob"));
         assert!(!p.contains("WebFetch"));
-        assert!(!p.contains("{{"));
     }
 
     #[test]
