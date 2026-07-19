@@ -148,7 +148,7 @@ coverage-lcov:
 calibrate:
 	cargo test --test calibrate -- --ignored --nocapture --test-threads=1
 
-# Run the binary, e.g. `make run ARGS="stats mydeck.txt"`.
+# Run the binary, e.g. `make run ARGS="stats mydeck.md"`.
 run:
 	cargo run -- $(ARGS)
 

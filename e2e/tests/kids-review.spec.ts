@@ -1,6 +1,6 @@
 // End-to-end smoke suite for the kids web client, run against the real
 // `alix` binary (see ../playwright.config.ts) over the frozen fixture deck in
-// ../fixtures/decks/animals/wild.txt. The fixture deck carries NO progress
+// ../fixtures/decks/animals/wild.md. The fixture deck carries NO progress
 // store (see ../fixtures/README.md) — every run starts from a deck nobody has
 // reviewed yet, so the suite always exercises a real kid's first session, the
 // never-seen (*acquire*) path included.

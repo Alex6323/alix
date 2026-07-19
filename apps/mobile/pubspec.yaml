@@ -85,11 +85,11 @@ flutter:
   # The sample decks copied into the app's data dir on first run
   # (bootstrap.dart carries the matching manifest list).
   assets:
-    - assets/decks/tutorial.txt
-    - assets/decks/basics.txt
+    - assets/decks/tutorial.md
+    - assets/decks/basics.md
     - assets/decks/sample-workspace/alix.toml
-    - assets/decks/sample-workspace/capitals.txt
-    - assets/decks/sample-workspace/steps.txt
+    - assets/decks/sample-workspace/capitals.md
+    - assets/decks/sample-workspace/steps.md
     - assets/icon/alix-192.png
 
   # IBM Plex (OFL, assets/fonts/OFL.txt): the web app's identity faces,

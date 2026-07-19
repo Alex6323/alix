@@ -98,25 +98,26 @@ where it is rather than fixed:
 - `fixtures/decks/animals/` is a tiny, deterministic workspace ("Animals"),
   shared by both clients:
   - `alix.toml` — makes the folder a workspace.
-  - `wild.txt` — a 2-card deck (tab-indented answers, `!` notes). Both cards
-    are always genuinely never-seen at the start of a run, so the suite
-    exercises a real first session, acquire path included.
-  - `cats.txt` — one card with a two-line answer ("Lion" / "Tiger"), in its
-    own file so editing it can never reshuffle `wild.txt`'s card ids. Exists
+  - `wild.md` — a 2-card L1 deck (`## ` fronts with literal `<!-- id: -->`
+    tokens, `> ` notes). Both cards are always genuinely never-seen at the
+    start of a run, so the suite exercises a real first session, acquire path
+    included.
+  - `cats.md` — one card with a two-line answer ("Lion" / "Tiger"), in its
+    own file so editing it can never disturb `wild.md`. Exists
     solely for the multi-line regression test (`tests/kids-multiline.spec.ts`).
   - `augment.json` — a **frozen** multiple-choice distractor cache for
-    `wild.txt`, generated once with a real Claude call:
+    `wild.md`, its distractors generated once with a real Claude call:
 
     ```sh
-    alix deck augment e2e/fixtures/decks/animals/wild.txt --target choices \
+    alix deck augment e2e/fixtures/decks/animals/wild.md --target choices \
       --store /tmp/alix-e2e-augment-seed/progress.json
     ```
 
     It's committed so the suite needs no AI backend and no network at test
     time — Recognize only renders tap-the-answer buttons when distractors are
-    cached. The cache is keyed by each card's id (`XxHash64(deck file name +
-    back lines)`), so it stays valid as long as `wild.txt`'s filename and
-    answer lines don't change; if you edit either, or add/remove a card in
+    cached. The cache is keyed by each card's interim id (the hash of its
+    `<!-- id: -->` token), so it stays valid as long as the tokens in
+    `wild.md` don't change; if you change a token, or add/remove a card in
     that file, regenerate `augment.json` with the command above and commit
     the new file.
 - `fixtures/kids.toml` / `fixtures/adult.toml` each set `[serve] audience`

@@ -1,0 +1,11 @@
+---
+reveal: line
+---
+# Tea Steps
+
+## How do you brew green tea, in order?
+boil water
+let it cool a little
+pour over the leaves
+wait two minutes
+strain and serve

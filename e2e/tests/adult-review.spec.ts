@@ -37,7 +37,7 @@ test("clicking a deck row fires POST /api/select, and a card front renders", asy
     page.getByRole("button", { name: "Learn" }).click(),
   ]);
 
-  expect(request.postDataJSON()).toEqual(expect.objectContaining({ deck: "animals/wild.txt" }));
+  expect(request.postDataJSON()).toEqual(expect.objectContaining({ deck: "animals/wild.md" }));
   expect(response.status(), await response.text().catch(() => "")).toBe(200);
 
   await expect(page.locator(".front-text")).toBeVisible();

@@ -10,10 +10,10 @@ import 'package:alix_mobile/server_client.dart';
 /// The bundled sample decks, copied into a fresh decks dir on first run.
 /// Keep in step with the `assets:` list in pubspec.yaml.
 const _samples = [
-  'decks/basics.txt',
+  'decks/basics.md',
   'decks/sample-workspace/alix.toml',
-  'decks/sample-workspace/capitals.txt',
-  'decks/sample-workspace/steps.txt',
+  'decks/sample-workspace/capitals.md',
+  'decks/sample-workspace/steps.md',
 ];
 
 /// What [prepare] resolved for this launch.
@@ -116,12 +116,12 @@ Future<String> _appPrivate(Directory support) async {
   // below, which re-seed per file): its last card says "delete me when
   // done", so a deletion must be final. Mirrors the desktop rule in the
   // core's `tutorial::seed_new_decks_dir`; the bundled copy is pinned to
-  // the canonical assets/decks/tutorial.txt by a core test.
+  // the canonical assets/decks/tutorial.md by a core test.
   final fresh = !await root.exists();
   await root.create(recursive: true);
   if (fresh) {
-    final content = await rootBundle.loadString('assets/decks/tutorial.txt');
-    await File('${root.path}/tutorial.txt').writeAsString(content);
+    final content = await rootBundle.loadString('assets/decks/tutorial.md');
+    await File('${root.path}/tutorial.md').writeAsString(content);
   }
   for (final sample in _samples) {
     final target = File('${support.path}/$sample');
