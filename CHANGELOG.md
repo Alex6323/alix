@@ -8,6 +8,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- promoting a remediation card to a real one no longer risks a duplicate: the promotion wrote the card into the deck file but the matching removal from the in-session store was not persisted, so the card could reappear as both a real and a virtual card; the store change is now saved with the rest of the session
 - the web listing no longer re-parses unchanged decks on every request: the server keeps a per-file cache keyed on (mtime, size) and re-reads only files that actually changed, so a warm `/api/decks` over a large collection stops re-reading every deck
 - parallel browser connections no longer starve the server: the web server now handles connections with a worker pool instead of one loop that a kept-alive socket could camp, so the picker's cold-cache font/css requests stop stalling the api calls (the empty-picker-until-reload symptom)
 - the deck listing was quadratic in collection size (each loose deck probed its parent folder as a workspace, and that probe read every sibling deck); a 325-deck folder took seconds per listing, now milliseconds
