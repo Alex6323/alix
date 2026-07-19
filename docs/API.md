@@ -638,7 +638,7 @@ clients use it to name who is answering), `model: string`, `effort: string`
 `front: string`, `back: [string]`, the learner's edited draft. It derives
 `Deserialize` only, so it is documented here but not snapshot-pinned (§8's
 "request bodies aren't snapshot-tested" note). `CreateCardResp`: `id: string`
-— the newly minted virtual card's identity token, matching how the store keys
+is the newly minted virtual card's identity token, matching how the store keys
 ids.
 
 **Card id format.** A card id is always a JSON **string** on the wire (it has

@@ -2144,7 +2144,7 @@ fn reset_all_on_an_empty_store_reports_nothing_to_reset() {
 }
 
 #[test]
-fn reset_by_numeric_card_id_without_a_target() {
+fn reset_by_token_card_id_without_a_target() {
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.md", VALID_DECK);
     let store_path = dir.path().join("progress.json");

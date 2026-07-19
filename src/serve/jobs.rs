@@ -938,8 +938,11 @@ impl Augmenting {
         workspace_dir: Option<PathBuf>,
     ) -> Self {
         let deck_ids = cards.iter().filter_map(Card::id).collect();
-        // A new topology is tagged with the first member's token (the sole deck's
-        // for a plain screen); the whole set scopes removals.
+        // Decision: a workspace-union topology is owner-tagged with the FIRST
+        // member deck's token (for a single-deck screen that is simply its own
+        // token). Deliberate and inherited by future catalog/topology work; the
+        // whole `deck_tokens` set scopes removals, so only the owner tag is a
+        // choice and first-member keeps it stable.
         let primary_token = deck_tokens.first().cloned().unwrap_or_default();
         let deck_tokens = deck_tokens.into_iter().collect();
         Self {

@@ -52,19 +52,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `requires:`, `link:`, `trace:`, `reveal:`, `direction:`, …) lives in a `---`
   YAML frontmatter block, and a cloze gap is `\cloze{…}`. The old `.txt` format
   (`# ` fronts, tab-indented answers, `! ` notes, `% key:` directives, `{{…}}`
-  clozes) is **removed** — `.txt` files no longer enumerate or parse. Every
+  clozes) is **removed**: `.txt` files no longer enumerate or parse. Every
   card and deck carries a minted identity token, written into the file the first
   time it is opened (a per-card `<!-- id: … -->`, a deck `id:` in frontmatter);
   a card's id **is** that token verbatim (`token`, `token-N` for cloze hole *N*,
   `token-r` for the reversed half), so editing a card's front, note, or answer
-  no longer changes its id — only re-stamping does. On the wire an id stays a
+  no longer changes its id (only re-stamping does). On the wire an id stays a
   JSON string (it always was); its value is now the token, never a decimal
-  number, so clients must treat it as opaque (`docs/API.md`). Consequences:
-  progress stores and the `augment.json` cache reset (pre-1.0, no migration —
-  old files are dropped and regenerated); the internal `% requires:` rewriter
-  (`set_requires`) is gone; and a lone whole-answer cloze (`\cloze{…}` with no
-  surrounding text) now parses, where the old format errored. Convert existing
-  decks with the bundled converter before opening them.
+  number, so clients must treat it as opaque (`docs/API.md`). Consequences
+  (pre-1.0, no migration): progress stores reset, since their old content-hash
+  keys are unreachable under the new token ids; an `augment.json` cache
+  regenerates, because a topology-carrying cache fails the stricter load and is
+  rebuilt while a topology-free one loads with now-unreachable keys (harmless);
+  the internal `% requires:` rewriter (`set_requires`) is gone; and a lone
+  whole-answer cloze (`\cloze{…}` with no surrounding text) now parses, where the
+  old format errored. There is no bundled converter: existing decks must be
+  regenerated or hand-converted before opening.
 - **Breaking: a multiple-choice pick now requires a cached AI augmentation;
   options are never sampled from other cards.** Distractors were previously
   topped up by sampling the rest of the session's answers, which produced junk
