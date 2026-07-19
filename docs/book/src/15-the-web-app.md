@@ -2,7 +2,7 @@
 
 alix is a web app: review, browse, and the exam all run here. `alix` opens a
 small local web server and shows you its URL, writing to the **same progress
-store** that `alix stats`/`alix list` read — what you grade here is exactly
+store** that `alix stats`/`alix list` read: what you grade here is exactly
 what they show. It's especially handy on a tablet or
 phone, where touch (and images) work naturally.
 
@@ -18,13 +18,13 @@ alix ~/decks-maria --lan --port 7781   # serve one folder as its own scoped root
 Run `alix` and the page opens the **deck-selection
 screen**. **Up / down** move between
 decks; a **search box in the header** filters the list (focus it with **`/`**).
-Focus a deck and **Learn** it with **Enter** — a facts deck opens a
-review, a [trace](13-trace-decks.md) opens a walk — one deck per session. **Browse**
-on **`b`** opens a read-only, in-page read-through instead — step the cards with
+Focus a deck and **Learn** it with **Enter** (a facts deck opens a
+review, a [trace](13-trace-decks.md) opens a walk) one deck per session. **Browse**
+on **`b`** opens a read-only, in-page read-through instead: step the cards with
 Prev/Next, Esc to leave. Selecting a deck that has a
 [topology](05-scheduling.md) opens an inline **focus drawer** beneath it: choose
-which topology orders the session, and pick a region to drill — click it or step
-through with **← / →** — its strength heatmap and the number of cards **due** in
+which topology orders the session, and pick a region to drill (click it or step
+through with **← / →**) its strength heatmap and the number of cards **due** in
 it shown as you go ("Whole deck" is the default). On a workspace row instead,
 ← / → enter and leave it. After a session, "Choose other decks" (on the summary)
 or **Esc** (also the footer's **Back** chip while inside a drill-in) returns
@@ -41,27 +41,27 @@ set, move, or clear it from an inline date prompt.
 
 ## Library actions
 
-The picker's **☰ menu** carries five actions that used to be terminal-only —
+The picker's **☰ menu** carries five actions that used to be terminal-only:
 everything below is an `/api/*` endpoint, so it's also on the wire for other
 clients (see `docs/API.md`):
 
-- **Add deck…** — one sheet, three ways in, all landing in a chosen
+- **Add deck…**: one sheet, three ways in, all landing in a chosen
   destination (the library root or a workspace): **generate** a deck from a
   URL (with optional guidance) the same way `alix generate` does, but URL
-  sources only — a local-file source stays CLI-only, since a LAN token holder
+  sources only, a local-file source stays CLI-only, since a LAN token holder
   must not be able to point the server's AI at the server's own filesystem;
-  **import** an Anki `.tsv` or an alix `.txt` file; or **receive** — paste a
+  **import** an Anki `.tsv` or an alix `.md` file; or **receive**: paste a
   wormhole code, or upload a `.zip`.
-- **Share…** — sends the focused row (deck, folder, or workspace; the served
+- **Share…**: sends the focused row (deck, folder, or workspace; the served
   root if nothing's focused) device-to-device over a wormhole code, or
   **download as .zip** as the offline fallback. Personal state (progress,
   recent list, local pacing) stays home either way.
-- **Reset…** — wipes a row's progress. Gated on typing the row's name back
+- **Reset…**: wipes a row's progress. Gated on typing the row's name back
   exactly, since this can't be undone; needs a focused row.
-- **Doctor** — the free environment checks (config, store, decks, backend,
+- **Doctor**: the free environment checks (config, store, decks, backend,
   share) as ✓/!/✗ rows, screenshot-able for handing to whoever set up the
   instance. The costed `--backends` probe stays CLI-only.
-- **Pair a device** — a QR of the pairing URL plus the URL itself, to scan
+- **Pair a device**: a QR of the pairing URL plus the URL itself, to scan
   from a phone or tablet. Needs `--lan`; a localhost-only instance shows a
   hint instead (nothing reachable to scan).
 
@@ -106,7 +106,7 @@ batch.
 The **format** target is a non-destructive reshaping pass: for each plain card
 whose answer is poorly shaped (a list crammed into prose, a run-on sentence that
 wants to be lines) it caches a tidier front, split answer lines, an optional
-note, and a suggested reveal-method — applied at display time without touching the deck
+note, and a suggested reveal-method: applied at display time without touching the deck
 file or card identity. Both review and browse show the reshape, so the two views
 match. It's an AI heuristic, so it can miss or produce an unhelpful reshape;
 **Remove** clears it with no lasting effect.
@@ -114,10 +114,10 @@ match. It's an AI heuristic, so it can miss or produce an unhelpful reshape;
 ## Every check, at every depth, plus the AI features
 
 Every [check](04-review-modes.md) works in the browser, at whichever session
-depth you picked — a flip or cloze reveal, a line reveal (it auto-scrolls to
+depth you picked: a flip or cloze reveal, a line reveal (it auto-scrolls to
 the newest line), a typing Reconstruct check (each line marked ✓/✗ with the
 correct answer shown, then you grade), an explain Reconstruct check, and the
-multiple-choice pick — a new card's attempt-first on-ramp, or a genuine
+multiple-choice pick: a new card's attempt-first on-ramp, or a genuine
 Recognize-session question (tap an option; a correct pick offers the quiet "I
 guessed" undo). Controls are big tap targets and
 follow *your* configured key bindings (the page reads them from the server).
@@ -125,7 +125,7 @@ A dim **"N left"** count in the header shows how many cards the session still
 holds; it can tick up when a card you missed cools back in for its retry. The
 **☰ menu** is context-aware: during review or a trace walk it holds **Ask
 Tutor**; on the deck picker, the library actions above plus **keyboard
-shortcuts**, **refresh decks**, and **about** — with **Theme…** and **Draw
+shortcuts**, **refresh decks**, and **about**, with **Theme…** and **Draw
 answers** (a per-device toggle, see below) in both. The ⟳ button (also key
 `r`) re-reads your config, so a changed `decks_dir` takes effect without
 restarting (scoped `alix <dir>` instances stay pinned to their folder), and
@@ -134,24 +134,24 @@ reload.
 
 The AI features come along too: the [tutor](10-tutor.md), the
 [AI exam](12-the-ai-exam.md), and [trace walks](13-trace-decks.md) all have a web
-surface, each running its model call on a background thread while the page polls —
+surface, each running its model call on a background thread while the page polls,
 so the single-threaded server never blocks.
 
 ## Draw input
 
-A [`% input: draw`](04-review-modes.md) card, or a `flip`/`explain` card with
+A [`input: draw`](04-review-modes.md) card, or a `flip`/`explain` card with
 the ☰ menu's **Draw answers** toggle switched on, swaps the usual typed/reveal
 input for a small canvas: **Pen** · **Eraser** · **Undo** · **Clear**, then
-**Reveal**. The drawing stays on screen — frozen, not editable — while you
+**Reveal**. The drawing stays on screen (frozen, not editable) while you
 self-grade against the card's normal reveal, then it's discarded; nothing you
 draw is saved or sent anywhere beyond rendering it in the browser. It's
 honored on `flip`/`explain` cards only, and there's no OCR or vision model
-reading it back — grading is on you, same as any other self-graded card.
+reading it back: grading is on you, same as any other self-graded card.
 
 ## Themes
 
-The web UI ships a **gallery** of colour themes — the alix **Dark**/**Light**
-originals and a **Kids** group (**Sunrise**, **Ocean**, and **Berry** — the
+The web UI ships a **gallery** of colour themes: the alix **Dark**/**Light**
+originals and a **Kids** group (**Sunrise**, **Ocean**, and **Berry**, the
 same three themes the [kids app](#kids-mode) offers, so a kid moving up to
 the grown-up app can keep the look they grew
 attached to), plus crowd-favourite editor/slide palettes
@@ -161,7 +161,7 @@ small bar button on the trace walk): a grid grouped Light / Dark that **previews
 on a sample card as you hover** and re-themes the whole app when you click one,
 remembering your choice in the browser (kept in `localStorage`, not the config).
 The palette lives in a shared `theme.css` the
-server hosts, so every screen — review, browse, and trace walks — themes together.
+server hosts, so every screen (review, browse, and trace walks) themes together.
 
 ## Kids mode
 
@@ -175,17 +175,17 @@ alix --config kids.toml ~/decks-family --lan --port 7781
 ```
 
 A **box** is a workspace: the home screen shows the boxes as a grid, tap one
-to see its decks and a ⭐ mastery indicator per deck (display-only — the row
-itself isn't tappable), then pick a depth for the whole box — **👆 Tap the
+to see its decks and a ⭐ mastery indicator per deck (display-only, the row
+itself isn't tappable), then pick a depth for the whole box: **👆 Tap the
 answer** (Recognize) or **🗣️ Say it yourself** (Recall); a caught-up choice
 disables itself instead of starting an empty session. Review works the same
-way underneath as the regular app — reveal, then the mascot says a short
-"why" instead of a bare note, then self-rate — with a **💬 Ask Alix** button
+way underneath as the regular app (reveal, then the mascot says a short
+"why" instead of a bare note, then self-rate) with a **💬 Ask Alix** button
 that opens a kid-safe tutor overlay scoped to the current card.
 
 v1 is consumption only: it covers reviewing pre-made boxes at Recognize and
 Recall depth, plus the tutor. Augmenting a deck, the AI exam, and traces stay
-adult-only for now — an adult prepares a box in the regular web app, then
+adult-only for now. An adult prepares a box in the regular web app, then
 hands the kid a `kids.toml` and the box to open. It's the same engine and the
 same `/api/*` contract underneath, just a different page: self-hosted Baloo 2
 type, warmer colours, and no keyboard required.
@@ -193,16 +193,16 @@ type, warmer colours, and no keyboard required.
 ## Building a client?
 
 The JSON API the web app itself speaks is a documented, client-agnostic
-contract: `docs/API.md` in the repository — endpoints, DTO field tables, the
-flows, and the stability rules — with every response shape pinned by snapshot
+contract: `docs/API.md` in the repository (endpoints, DTO field tables, the
+flows, and the stability rules) with every response shape pinned by snapshot
 tests. Native or alternative clients build against that file.
 
 ## Local by design
 
-The server is deliberately local-only — no accounts, no database. By default it
+The server is deliberately local-only: no accounts, no database. By default it
 binds to `127.0.0.1` (this machine only). `--lan` binds all interfaces so another
 device on your network can reach it: at startup it prints the pairing URL with
-the machine's real IP — plus a scannable QR code, right in the terminal. Serving
+the machine's real IP, plus a scannable QR code, right in the terminal. Serving
 with `--lan` auto-generates a **pairing token** and requires it on
 `/api/*`, so the network endpoint isn't wide open; pin your own with `--token` or
 `[serve] token`. Open the printed `…/?token=…` URL (or scan the QR) and the page
@@ -212,8 +212,8 @@ config section; `--port` overrides it.
 
 `alix <dir>` serves that folder as a **self-contained scoped root**: its own
 catalog, with its own `progress.json` and `recent.json` kept inside the folder.
-Several instances run happily side by side — one per family member, say:
+Several instances run happily side by side, one per family member, say:
 `alix ~/decks-maria --lan --port 7781`.
 
-If a launch misbehaves, `alix doctor` checks the setup — config, progress
-store, decks directory, backend CLI — and prints a one-line remedy per problem.
+If a launch misbehaves, `alix doctor` checks the setup (config, progress
+store, decks directory, backend CLI) and prints a one-line remedy per problem.

@@ -1,31 +1,31 @@
 # 5 · Scheduling, retirement & completion
 
 Spaced repetition is really just bookkeeping: each card remembers how well you
-know it and when to show it next. This chapter is that bookkeeping — the
+know it and when to show it next. This chapter is that bookkeeping: the
 scheduler, retirement, and how a whole deck reaches "done."
 
 ## FSRS
 
-alix schedules with **FSRS** — the Free Spaced Repetition Scheduler (FSRS-5, via
+alix schedules with **FSRS**, the Free Spaced Repetition Scheduler (FSRS-5, via
 the `rs-fsrs` crate). There's one scheduler and nothing to choose: FSRS keeps a
 small memory model per card (its *stability* and *difficulty*) and, from your
 grade, works out when the card is next due.
 
 Grading feeds FSRS a rating:
 
-- **failed** → *Again* — a lapse; the card comes back soon and its interval shrinks
-- **partly** → *Hard* — a weak success; a shorter next interval than a clean pass
-- **passed** → *Good* — the interval grows
+- **failed** → *Again*, a lapse; the card comes back soon and its interval shrinks
+- **partly** → *Hard*, a weak success; a shorter next interval than a clean pass
+- **passed** → *Good*, the interval grows
 
 So a card you keep getting right stretches to longer and longer intervals, a miss
-pulls it back in, and a **partly** — you got the gist but stumbled — lands in
+pulls it back in, and a **partly** (you got the gist but stumbled) lands in
 between. Early on the first successful reviews are minutes-to-hours apart (FSRS's
-short-term *learning* steps); a card **graduates** into the review phase — where
-intervals grow to days, then weeks — only after **two** spaced correct recalls,
+short-term *learning* steps); a card **graduates** into the review phase (where
+intervals grow to days, then weeks) only after **two** spaced correct recalls,
 and missing it resets that progress, so a slip doesn't shortcut it.
 
-A session shows each due card once. Miss one and it returns **spaced** — after its
-short step, interleaved behind other cards — not drilled again the instant you saw
+A session shows each due card once. Miss one and it returns **spaced** (after its
+short step, interleaved behind other cards) not drilled again the instant you saw
 the answer (which would test your working memory, not your recall). That gap is
 floored at the moment you actually move off the card, not when you first saw the
 answer, so time spent on the feedback screen or working the next card still counts
@@ -33,7 +33,7 @@ against a short retry interval. When nothing is due right now the session ends; 
 card still cooling is picked up the next session, or slots back in on its own if
 you leave the window open.
 
-One knob shapes the whole schedule: **`retention`** — the recall probability FSRS
+One knob shapes the whole schedule: **`retention`**, the recall probability FSRS
 aims for (0.70–0.99, default 0.9). Raise it to see cards more often, lower it to
 stretch the gaps. Set it in the `[review]` config section, or per workspace in an
 `alix.local.toml` (see [Configuration](16-configuration.md)).
@@ -50,8 +50,8 @@ scheduling releases back to your base pacing automatically.
 
 ### New cards: an attempt before they're tested
 
-A card you've never seen isn't quizzed cold — you can't reconstruct what you've
-never read — but it isn't simply handed to you either, whichever depth you're
+A card you've never seen isn't quizzed cold (you can't reconstruct what you've
+never read) but it isn't simply handed to you either, whichever depth you're
 reviewing at. The first encounter is a **low-stakes attempt**, then the answer,
 then one key (**Seen**) records it *without a grade*. Usually: the front shows
 first, you try, then reveal. On the web you can then **hide and show the answer
@@ -59,59 +59,59 @@ again** (`h`, or a tap on it) to self-test the fresh encoding before you press
 Seen; it flips only the answer's visibility, so the note, the buttons, and the
 layout stay put. If the deck has AI distractors (`alix deck augment
 --target choices`) and the card is **atomic** (single-line answer), it instead
-greets you as a **multiple-choice** question — pick one, see which was right.
+greets you as a **multiple-choice** question: pick one, see which was right.
 Either way a guess never marks it recognized or punishes it, and the first
-*graded* quiz then comes back **later in the same session** — once a settle
-gap passes it resurfaces, interleaved behind the other cards you're seeing,
+*graded* quiz then comes back **later in the same session** (once a settle
+gap passes it resurfaces, interleaved behind the other cards you're seeing),
 so seeing a deck flows straight into drilling it. That gap is
 **`acquire_cooldown`** in the `[review]` config (default `"5m"`); it also
 sets the floor before *any* just-seen card (a miss, a wrong pick) may return,
 so nothing you moved off comes straight back. `"0"` disables both gaps. Each session
 introduces up to 10 new cards (`[review] max_new` in the config changes that;
 `--new N` on the launch overrides it per instance); start another session for
-more. This is the first step of a card's life — *acquire*, then let its
+more. This is the first step of a card's life: *acquire*, then let its
 depth(s) schedule it.
 
-## Session depths — Recognize, Recall, Reconstruct
+## Session depths: Recognize, Recall, Reconstruct
 
 FSRS decides *when* a card is due; the **session depth** decides *how deeply*
 it's asked when it comes up. A session runs at one of three independent
 depths, picked when you start it (the web picker's Learn ▾
-menu) — see [Reveal & session depths](04-review-modes.md) for the full check
+menu). See [Reveal & session depths](04-review-modes.md) for the full check
 matrix. In short:
 
-- **Recognize** has no FSRS schedule at all — just a boolean *recognized* flag.
+- **Recognize** has no FSRS schedule at all: just a boolean *recognized* flag.
 - **Recall** and **Reconstruct** each keep their **own** FSRS schedule per
   card, so a card can be due for one and not the other; nothing
   cross-credits between them, with one downward exception below.
 
-Nothing climbs or descends between depths on its own — a card doesn't get
+Nothing climbs or descends between depths on its own. A card doesn't get
 harder over time just by surviving reviews. Which depth you exercise, and
 when, is entirely your call each session.
 
 The exception flows **downward, and only on a full pass**: get a card fully
 right at Reconstruct (in cram: only when it was due) and that also counts for its Recall
-schedule — if you can produce the answer, you can certainly recall it, so
+schedule: if you can produce the answer, you can certainly recall it, so
 alix won't re-ask the easier form days later. If recall was **due** at that
 moment, the pass stands in for that review: full schedule credit, recorded
 in the card's history and marked as *propagated*. If recall existed but
-wasn't due yet, only its due date is pushed out from now — memory untouched,
-nothing recorded, the same refresh a cram pass gets. A *partly* or a miss
+wasn't due yet, only its due date is pushed out from now (memory untouched,
+nothing recorded, the same refresh a cram pass gets). A *partly* or a miss
 never propagates, and a card drilled only at Reconstruct never gains a
-recall schedule from this. Separately, **any** full pass at any depth — cram
-included — marks the card *recognized* if it wasn't yet.
+recall schedule from this. Separately, **any** full pass at any depth (cram
+included) marks the card *recognized* if it wasn't yet.
 
 ## Badges
 
-A deck can earn a **badge** at each depth, shown in the picker — a quick read
+A deck can earn a **badge** at each depth, shown in the picker: a quick read
 on how solid it is, never a gate on anything (only passing the [AI
 exam](12-the-ai-exam.md) unlocks a dependent deck). A deck earns a depth's
 badge once *every* one of its cards is currently solid at that depth:
 recognized, for Recognize; at or past 21 days of FSRS stability, for
-Recall/Reconstruct — in practice a few weeks of regular drilling. Only the
+Recall/Reconstruct, in practice a few weeks of regular drilling. Only the
 highest badged depth shows: **solid** while the deck still clears the bar,
 **dotted** once a card has since lapsed below it (a badge, once earned, keeps
-its date — a high-water mark, not a live pass/fail). A deck that gains new
+its date, a high-water mark, not a live pass/fail). A deck that gains new
 cards after being badged shows a small "new" chip.
 
 ## Retiring cards
@@ -119,34 +119,34 @@ cards after being badged shows a small "new" chip.
 A card doesn't stay in rotation forever. Once its interval grows past
 **`retire_after`** (default one year), the card **retires**: it rests and is no
 longer scheduled, *not even under cram*, until you `alix reset` it. Set
-`retire_after = "never"` to keep drilling a deck forever — facts you never want to
-risk forgetting; a workspace can override it in its `alix.local.toml`.
+`retire_after = "never"` to keep drilling a deck forever (facts you never want to
+risk forgetting); a workspace can override it in its `alix.local.toml`.
 
 ## Completion states
 
 A deck's **state** is derived from how far its cards have progressed, and shown in
 the picker and `alix stats`:
 
-- **not started** — you haven't reviewed any card yet
-- **started** — somewhere in between
-- **finished** (`done ✓`) — every card has **graduated** (reached FSRS's review
+- **not started**: you haven't reviewed any card yet
+- **started**: somewhere in between
+- **finished** (`done ✓`): every card has **graduated** (reached FSRS's review
   phase, past the initial learning steps)
 
-A deck that declares a `% source:` adds one state in between — **exam due**. For
+A deck that declares a `source:` adds one state in between: **exam due**. For
 those decks, drilling the cards no longer finishes them: passing the **AI exam**
 does, which marks the deck *mastered*. That's the subject of a later chapter.
 
 ## Unlocks, in one line
 
 Completion also drives dependencies, with no extra syntax: a deck's **exam** is
-locked while any of its *sourced* prerequisites hasn't passed its own exam — the
+locked while any of its *sourced* prerequisites hasn't passed its own exam. The
 deck itself stays drillable throughout. Passing a foundation's exam unlocks the
-exams that build on it. The lock is advisory and recomputed live — the
+exams that build on it. The lock is advisory and recomputed live. The
 dependencies chapter covers it in full.
 
 ## Cramming
 
-Need to review everything now, schedule be damned — the night before an exam?
+Need to review everything now, schedule be damned, the night before an exam?
 **Cram** ignores due times and shows every card that isn't retired. It's a
 per-launch tick-box in the picker's Learn ▾ menu (key `c` while the menu is
 open); plain **Learn** never crams. At Recognize, cram is the repeatable quiz:
@@ -154,56 +154,56 @@ it serves *every* card, including the already-recognized ones a normal
 Recognize session would skip.
 
 Cram changes **which cards are queued, never how a due card is graded**: a
-card that was genuinely due grades exactly like a normal review — full
+card that was genuinely due grades exactly like a normal review: full
 schedule credit, recorded (a due Reconstruct pass even propagates to Recall
 as usual). Only a pass on a card that *wasn't due yet* is treated as the
 low-information event it is: its due date re-anchors by the current interval,
-memory untouched, nothing recorded — so a heavy grind can't inflate your
+memory untouched, nothing recorded, so a heavy grind can't inflate your
 long-term spacing. A card you *miss* under cram always lapses normally.
 Retired cards stay out (that's what retirement is for).
 
-## Topological order *(experimental)*
+## Topological order
 
-By default your due cards come up in scheduler order — soonest-due first. That's
+By default your due cards come up in scheduler order: soonest-due first. That's
 right for *retention*, but it can feel random: a card
 about parsing, then one about persistence, with no thread between them.
 
 A **topology** gives the session a thread. `alix deck augment <deck> --target
 topology` asks the model to read the deck and lay out a *graph* of how the cards
-relate — a suggested **walk** through them, plus a few coarse named **regions**
+relate: a suggested **walk** through them, plus a few coarse named **regions**
 (stages or themes). It's cached beside your progress like distractors and notes;
 a deck can hold several, one per `--with` principle:
 
 ```sh
-alix deck augment internals.txt --target topology
-alix deck augment capitals.txt --target topology --with "north to south"
-alix deck augment capitals.txt --target topology --with "by continent"
+alix deck augment internals.md --target topology
+alix deck augment capitals.md --target topology --with "north to south"
+alix deck augment capitals.md --target topology --with "by continent"
 ```
 
 Then review along it: select the deck in the **web picker** and an inline
-**focus drawer** opens beneath it — choose which topology orders the session
+**focus drawer** opens beneath it: choose which topology orders the session
 ("Whole deck" is the default), then start.
 
 The key thing: this changes only the **order**, never the schedule. SRS still
-decides *which* cards are due and how they advance — the topology just serves
+decides *which* cards are due and how they advance. The topology just serves
 that due set in walk order instead of shuffled, so each card is a natural
 follow-up to the last. Not-due cards are skipped, so the session stays as short
 as your due pile.
 
-As you go, a thin **region breadcrumb** sits above each card — e.g.
+As you go, a thin **region breadcrumb** sits above each card (e.g.
 `Ingestion · Review Engine · Persistence · Frontends`, the one you're in
-emphasized — so you see *where you are* in the material, not just what's in front
+emphasized) so you see *where you are* in the material, not just what's in front
 of you. The names are deliberately coarse: they orient without giving away any
 card's answer. Under each region is a **strength heatmap**: one small bar per
 card, red (weak) → green (learned), so a region visibly greens up as you master
-it — the breadcrumb doubles as a progress map.
+it. The breadcrumb doubles as a progress map.
 
 To **drill one weak region** on its own, tap its heatmap in the focus drawer to
 scope the launch to it.
 
-SRS still chooses what's due *within* that region — you've just narrowed the
+SRS still chooses what's due *within* that region. You've just narrowed the
 session to it.
 
 The choice is made *before* the session; the in-card breadcrumb itself stays
-read-only. This is experimental — the breadcrumb, the heatmap,
-and the ordering are in place; richer map views are still to come.
+read-only. The breadcrumb, the heatmap, and the ordering are all in place;
+richer map views are still to come.

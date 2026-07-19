@@ -2,38 +2,41 @@
 
 This is the feature the whole tool is built around. Drilling cards *loads* a
 deck's material into memory; the **AI exam** checks that you actually *understood*
-it — and passing the exam, not merely finishing the cards, is what marks a deck
+it, and passing the exam, not merely finishing the cards, is what marks a deck
 done and unlocks what depends on it.
 
 The reasoning: recall isn't understanding. You can drill every card and still not
 see how the ideas connect. So a deck can name a ground-truth **source** and require
 you to pass an exam *against that source* before it counts.
 
-## Declaring a source — `% source:`
+## Declaring a source: `source:`
 
-Name one or more sources in the deck header — a URL or a local file path,
+Name one or more sources in the deck's frontmatter, a URL or a local file path,
 repeatable:
 
 ```
-% source: https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html
-% source: notes/ownership.md
+---
+source:
+  - https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html
+  - notes/ownership.md
+---
 ```
 
-A URL `% source:` doubles as a [tutor](10-tutor.md) reference, so you
-needn't repeat it as a `% link:`. The reverse doesn't hold: a `% link:` stays
-tutor-only and never becomes exam ground truth — keep supplementary reading (a
-blog post, an SO answer) as `% link:` so the exam ignores it.
+A URL `source:` doubles as a [tutor](10-tutor.md) reference, so you
+needn't repeat it as a `link:`. The reverse doesn't hold: a `link:` stays
+tutor-only and never becomes exam ground truth: keep supplementary reading (a
+blog post, an SO answer) as `link:` so the exam ignores it.
 
-Once every card in a sourced deck has **graduated** — reached FSRS's review phase,
-past the initial learning steps — the deck is **exam due** rather than finished:
+Once every card in a sourced deck has **graduated** (reached FSRS's review phase,
+past the initial learning steps) the deck is **exam due** rather than finished:
 drilled, but not yet counted, so it doesn't unlock its dependents yet. (A
 source-less deck simply becomes *finished* when all its cards graduate, unlocking
 its dependents directly.)
 
 ## Sitting the exam
 
-The exam is a guided, one-question-at-a-time flow — answer, move Back/Next, then a
-per-question breakdown — in the browser. You reach it two ways:
+The exam is a guided, one-question-at-a-time flow (answer, move Back/Next, then a
+per-question breakdown) in the browser. You reach it two ways:
 
 - **From the picker:** choosing an `exam due` deck starts the exam instead of an
   empty review.
@@ -41,19 +44,19 @@ per-question breakdown — in the browser. You reach it two ways:
   the session-end summary offers it.
 
 `alix` asks the model to read the source (URLs via `WebFetch`, local files embedded)
-and write **fresh understanding questions** — application and connections, *not*
-the card facts — each with the key points a correct answer must hit. You type a
+and write **fresh understanding questions** (application and connections, *not*
+the card facts) each with the key points a correct answer must hit. You type a
 prose answer per question, and an examiner grades each **Pass / Partial / Fail
 against the source's rubric, never against your cards** (grading the cards would
 be circular). The model calls run on a background thread, so the UI stays
 responsive while it thinks.
 
-- **Pass** (every question by default — tune with `pass_threshold`) marks the deck
+- **Pass** (every question by default, tune with `pass_threshold`) marks the deck
   **mastered** (`mastered ✓`). Mastery, not mere drilling, is what unlocks decks
-  that `% requires:` this one. Source-less decks are unaffected: finishing them
+  that `requires:` this one. Source-less decks are unaffected: finishing them
   just means drilled (`done ✓`).
-- **Fail** lists the gaps and offers to turn them into **remediation cards** — a
-  `% reveal: cloze` or plain card for a missed fact, an open understanding card (a
+- **Fail** lists the gaps and offers to turn them into **remediation cards**: a
+  `<!-- reveal: cloze -->` or plain card for a missed fact, an open understanding card (a
   prompt plus key points) for a missed concept, with overlapping gaps merged.
   Re-drill those and re-sit. Once created, the screen reports how many remediation
   cards it added.
@@ -61,19 +64,19 @@ responsive while it thinks.
 Those remediation cards are **virtual**: they live in alix's store rather than in
 the deck file. While drilling one, the review screen's mode badge reads
 "remediation card" in place of the "new card" badge. A virtual card drills like
-any other — its first pass comes one acquire cooldown later, then FSRS schedules it
-— and it counts toward the deck's *due* total but not toward the deck's card
-count, and it never rewrites your `.txt`.
+any other (its first pass comes one acquire cooldown later, then FSRS schedules it)
+and it counts toward the deck's *due* total but not toward the deck's card
+count, and it never rewrites your `.md`.
 Regenerating the same gap won't duplicate it; once its interval reaches the
 retirement cap it's archived, and re-failing the gap brings it back. When a
 remediation card has earned a permanent place, **promote** it during review
 ("Promote to deck" in the browser's review menu): alix appends it to the
 deck file, removes the virtual copy, and carries over the card's review
-progress — it doesn't restart.
+progress. It doesn't restart.
 
 A **trace** deck is examined differently: instead of generated questions, its exam
-asks you to *retrace the whole path from memory* in a sentence or two — **the
-compression** — graded holistically against the checkpoints (no question
+asks you to *retrace the whole path from memory* in a sentence or two (**the
+compression**) graded holistically against the checkpoints (no question
 generation, no source read). Passing masters the trace; a fail sends you back to
 **re-walk** it. See [trace decks](13-trace-decks.md) for the full flow.
 
@@ -81,19 +84,19 @@ Resetting a whole deck (`alix reset <deck>`) also clears its mastered state, so 
 re-drilled deck must pass again; resetting only an individual card (`--card`)
 leaves mastery intact.
 
-## Strictness — match the rigor to the material
+## Strictness: match the rigor to the material
 
 How hard each answer is judged fits the *material*: a checklist topic (a procedure,
 exact syntax, a security drill) should fail you for omitting a step; a conceptual topic
 shouldn't. It's a learner setting, not per deck: the `[exam]` `strictness` config default,
 optionally overridden per workspace in `alix.toml`'s `[defaults]`. The levels:
 
-- **strict** — completeness required: every rubric point must be present, so
+- **strict**: completeness required: every rubric point must be present, so
   omitting one is a gap.
-- **balanced** *(default)* — judges *understanding*, not phrasing: a point counts
+- **balanced** *(default)*: judges *understanding*, not phrasing: a point counts
   if your answer shows you grasp it, even briefly; only a wrong or genuinely-absent
   idea is a gap.
-- **lenient** — benefit of the doubt: only clearly wrong or unanswered points are
+- **lenient**: benefit of the doubt: only clearly wrong or unanswered points are
   gaps.
 
 This dial (how hard each answer is judged) is independent of `pass_threshold` (how
@@ -105,7 +108,7 @@ config section.
 
 Everything else serves this. The drilling loads the facts; the exam is the gate
 that turns "I reviewed it" into "I understood it, and here's the check." It's also
-why *mastery* — not completion — drives [unlocks](09-dependencies.md): a curriculum
+why *mastery* (not completion) drives [unlocks](09-dependencies.md): a curriculum
 should open the next door only when you've genuinely passed through the last. The
 everyday, self-graded rehearsal for it is `explain` mode
 ([chapter 4](04-review-modes.md)); the exam is the real thing.

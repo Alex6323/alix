@@ -48,9 +48,9 @@ fixing the cause heals it on the next start.
 
 ## Workspace deadlines
 
-A workspace's personal "ready by" date shows on its row — date, days left,
+A workspace's personal "ready by" date shows on its row (date, days left,
 and ready percent, colored to flag urgency inside the last week or past
-due — and again once you drill in, the same readout as the web picker.
+due) and again once you drill in, the same readout as the web picker.
 **Long-press the workspace row** to set, move, or clear it. The date lives
 in the workspace's own `alix.local.toml` (see
 [Workspaces](08-workspaces.md)), so a synced folder carries it between

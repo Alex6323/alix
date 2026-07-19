@@ -2,7 +2,7 @@
 
 [Introduction](README.md)
 
-# Part I — Foundations
+# Part I: Foundations
 
 - [Why alix exists](01-why-alix.md)
 - [Getting started](02-getting-started.md)
@@ -10,25 +10,25 @@
 - [Reveal & session depths](04-review-modes.md)
 - [Scheduling, retirement & completion](05-scheduling.md)
 
-# Part II — Richer cards
+# Part II: Richer cards
 
 - [Cloze, dual-direction & image cards](06-cloze-direction-images.md)
 - [Directives reference](07-directives.md)
 
-# Part III — Structure
+# Part III: Structure
 
 - [Workspaces](08-workspaces.md)
 - [Dependencies & unlocks](09-dependencies.md)
 
-# Part IV — The AI layer
+# Part IV: The AI layer
 
 - [The Tutor](10-tutor.md)
 - [Generating decks](11-generating-decks.md)
 - [The AI exam](12-the-ai-exam.md)
 - [Trace decks](13-trace-decks.md)
-- [Generate a workspace — goals & curricula](14-explore.md)
+- [Generate a workspace: goals & curricula](14-explore.md)
 
-# Part V — Surface & reference
+# Part V: Surface & reference
 
 - [The web app](15-the-web-app.md)
 - [Pairing a device](19-pairing.md)

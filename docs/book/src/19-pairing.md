@@ -75,7 +75,7 @@ Once paired, review gains things it doesn't have offline:
   paired desktop on every turn (the server keeps no session of its own for a
   remote turn).
 - A **Take the exam** chip on the session summary, for any deck that
-  declares a `% source:`. It opens a full-screen exam: one question at a
+  declares a `source:`. It opens a full-screen exam: one question at a
   time, then a Pass/Partial/Fail breakdown per question and, on a fail, a
   **Turn the gaps into cards** button. A pass and any remediation cards it
   creates land in the phone's own progress store, exactly like an offline

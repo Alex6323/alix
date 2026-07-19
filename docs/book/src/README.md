@@ -7,7 +7,7 @@ material, and an exam that grades your understanding against the source.
 
 This book is the manual and reference: each feature is expanded with worked
 examples and the reasoning behind it, and the
-*[Directives reference](07-directives.md)* is the quick index to every `%`
+*[Directives reference](07-directives.md)* is the quick index to every
 directive.
 
 Start with **[Why `alix` exists](01-why-alix.md)** for the motivation, or jump
