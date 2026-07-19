@@ -44,8 +44,6 @@ pub mod parser;
 #[cfg(feature = "full")]
 pub mod picker;
 #[cfg(feature = "full")]
-pub mod preflight;
-#[cfg(feature = "full")]
 pub mod qr;
 #[cfg(feature = "full")]
 pub mod recent;
