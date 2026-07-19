@@ -1189,8 +1189,8 @@ impl Receiving {
             match ev {
                 share::ShareEvent::Code(_) => {} // receive never emits one
                 share::ShareEvent::Done => {
-                    // check-then-act is safe only because this server loop is
-                    // single-threaded; never add threads here
+                    // check-then-act is safe only because handlers are
+                    // serialized behind the state lock; never add threads here
                     self.outcome = Some(
                         share::land_received(self.tmp.path(), &self.dest)
                             .map_err(|e| format!("{e:#}")),

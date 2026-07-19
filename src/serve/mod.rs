@@ -7,7 +7,8 @@ use std::{
     collections::HashMap,
     net::SocketAddr,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex},
+    thread,
     time::Instant,
 };
 
@@ -126,10 +127,38 @@ pub fn bind(addr: SocketAddr) -> Result<Server> {
     })
 }
 
+// Connection workers pull parsed requests off tiny_http's queue in parallel,
+// so an idle kept-alive socket can't starve the rest (the old single loop did).
+const WORKERS: usize = 16;
+
+// Handler state, mutable across requests. One lock guards the whole struct:
+// workers receive connections in parallel, but each handler runs while holding
+// the lock, so behavior matches the old single-threaded loop.
+struct ServeState {
+    store: Store,
+    recent: RecentDecks,
+    decks_dir: PathBuf,
+    reviewing: Option<Reviewing>,
+    browsing: Option<Browsing>,
+    examining: Option<Examining>,
+    augmenting: Option<Augmenting>,
+    generating: Option<Generating>,
+    sharing: Option<Sharing>,
+    receiving: Option<Receiving>,
+    walking: Option<Walking>,
+    launcher_icons: HashMap<String, PathBuf>,
+    // Kept separate from `reviewing`/`examining` so a phone can never see or
+    // kill a browser session, and vice versa; nothing under `/api/remote/*`
+    // touches `store` (the phone owns its own state).
+    remote_ask: Option<RemoteAsk>,
+    remote_exam: Option<RemoteExamining>,
+    remote_generate: Option<RemoteGenerating>,
+}
+
 pub fn run_review(
-    mut store: Store,
-    mut recent: RecentDecks,
-    mut decks_dir: PathBuf,
+    store: Store,
+    recent: RecentDecks,
+    decks_dir: PathBuf,
     server: Arc<Server>,
     opts: ReviewOptions,
 ) -> Result<()> {
@@ -153,22 +182,56 @@ pub fn run_review(
     let picker_keys = PickerKeysDto::from(&picker_keys);
     let browse_keys = BrowseKeys::from(&browse_bindings);
     let ask_info = AskInfoDto::from(&ask_cfg);
-    let (mut reviewing, mut browsing): (Option<Reviewing>, Option<Browsing>) = (None, None);
-    let mut examining: Option<Examining> = None;
-    let mut augmenting: Option<Augmenting> = None;
-    let mut generating: Option<Generating> = None;
-    let mut sharing: Option<Sharing> = None;
-    let mut receiving: Option<Receiving> = None;
-    let mut walking: Option<Walking> = None;
-    let mut launcher_icons: HashMap<String, PathBuf> = HashMap::new();
-    // Kept separate from `reviewing`/`examining` so a phone can never see or
-    // kill a browser session, and vice versa; nothing under `/api/remote/*`
-    // touches `store` (the phone owns its own state).
-    let mut remote_ask: Option<RemoteAsk> = None;
-    let mut remote_exam: Option<RemoteExamining> = None;
-    let mut remote_generate: Option<RemoteGenerating> = None;
     let http_log = std::env::var_os("ALIX_HTTP_LOG").is_some();
-    for mut request in server.incoming_requests() {
+
+    let state = Mutex::new(ServeState {
+        store,
+        recent,
+        decks_dir,
+        reviewing: None,
+        browsing: None,
+        examining: None,
+        augmenting: None,
+        generating: None,
+        sharing: None,
+        receiving: None,
+        walking: None,
+        launcher_icons: HashMap::new(),
+        remote_ask: None,
+        remote_exam: None,
+        remote_generate: None,
+    });
+
+    thread::scope(|scope| {
+        for _ in 0..WORKERS {
+            scope.spawn(|| loop {
+                let mut request = match server.recv() {
+                    Ok(r) => r,
+                    // tiny_http's `unblock` wakes only one waiter, so relay it
+                    // onward; the chain drains every worker on shutdown.
+                    Err(_) => {
+                        server.unblock();
+                        break;
+                    }
+                };
+                let mut guard = state.lock().unwrap_or_else(|e| e.into_inner());
+                let ServeState {
+                    store,
+                    recent,
+                    decks_dir,
+                    reviewing,
+                    browsing,
+                    examining,
+                    augmenting,
+                    generating,
+                    sharing,
+                    receiving,
+                    walking,
+                    launcher_icons,
+                    remote_ask,
+                    remote_exam,
+                    remote_generate,
+                } = &mut *guard;
         let method = request.method().clone();
         let path = request_path(&request);
         if http_log {
@@ -215,7 +278,7 @@ pub fn run_review(
                 let rows = vec![
                     cfg,
                     doctor::check_store(Some(store.path().to_path_buf())),
-                    doctor::check_decks(&decks_dir),
+                    doctor::check_decks(decks_dir),
                     doctor::check_binary(
                         "backend",
                         &ask_cfg.command,
@@ -256,10 +319,10 @@ pub fn run_review(
                 let catalog = decks_list_dto(
                     scoped,
                     config_path.as_deref(),
-                    &mut decks_dir,
-                    &recent,
-                    &store,
-                    &mut launcher_icons,
+                    &mut *decks_dir,
+                    recent,
+                    store,
+                    &mut *launcher_icons,
                     review_cfg,
                 );
                 respond_json(request, &catalog)
@@ -271,7 +334,7 @@ pub fn run_review(
                 } else if let Some(b) = &browsing {
                     serve_image(request, &b.images, name)
                 } else {
-                    serve_image(request, &launcher_icons, name)
+                    serve_image(request, launcher_icons, name)
                 }
             }
             (Method::Get, "/api/state") => {
@@ -279,31 +342,31 @@ pub fn run_review(
                     respond_json(request, &browse_payload(Some(b)))
                 } else {
                     if let Some(r) = reviewing.as_mut() {
-                        r.session.poll(&store, now_ms());
+                        r.session.poll(store, now_ms());
                     }
-                    respond_json(request, &review_state(reviewing.as_ref(), &store))
+                    respond_json(request, &review_state(reviewing.as_ref(), store))
                 }
             }
             (Method::Post, "/api/select") => {
-                match read_selection(&mut request, &decks_dir, &recent) {
+                match read_selection(&mut request, decks_dir, recent) {
                     Some(sel) => {
                         let opts = sel.opts;
                         let paths = vec![sel.deck];
                         if let Err(e) = assemble::store_for(&paths, cfg.instance_store.as_deref())
-                            .map(|s| store = s)
+                            .map(|s| *store = s)
                         {
                             eprintln!("warning: could not open the progress store: {e}");
                             respond_status(request, 400);
                             continue;
                         }
                         let recorded_paths = paths.clone();
-                        match assemble::select(paths, &mut store, &cfg, &opts) {
+                        match assemble::select(paths, &mut *store, &cfg, &opts) {
                             Ok(assemble::Selected::Walk(wb)) => {
                                 let w = Walking::new(wb.walk, wb.grade);
                                 let dto = walk_dto(&w);
-                                walking = Some(w);
-                                reviewing = None;
-                                examining = None;
+                                *walking = Some(w);
+                                *reviewing = None;
+                                *examining = None;
                                 respond_json(request, &dto);
                             }
                             Ok(assemble::Selected::Review(b)) => {
@@ -314,9 +377,9 @@ pub fn run_review(
                                 let mut r = Reviewing::new(b);
                                 r.open_augment(store.path());
                                 r.rotate_variant();
-                                reviewing = Some(r);
-                                walking = None;
-                                respond_json(request, &review_state(reviewing.as_ref(), &store));
+                                *reviewing = Some(r);
+                                *walking = None;
+                                respond_json(request, &review_state(reviewing.as_ref(), store));
                             }
                             Err(e) => {
                                 eprintln!("warning: could not load the selected decks: {e}");
@@ -328,11 +391,11 @@ pub fn run_review(
                 }
             }
             (Method::Post, "/api/browse") => {
-                match read_selection(&mut request, &decks_dir, &recent) {
+                match read_selection(&mut request, decks_dir, recent) {
                     Some(sel) => {
                         let paths = vec![sel.deck];
                         if let Err(e) = assemble::store_for(&paths, cfg.instance_store.as_deref())
-                            .map(|s| store = s)
+                            .map(|s| *store = s)
                         {
                             eprintln!("warning: could not open the progress store: {e}");
                             respond_status(request, 400);
@@ -343,10 +406,10 @@ pub fn run_review(
                             Ok(b) => {
                                 recent.record(&recorded_paths, now_ms());
                                 let _ = recent.save();
-                                browsing = Some(Browsing::new(b));
-                                reviewing = None;
-                                walking = None;
-                                examining = None;
+                                *browsing = Some(Browsing::new(b));
+                                *reviewing = None;
+                                *walking = None;
+                                *examining = None;
                                 respond_json(request, &browse_payload(browsing.as_ref()));
                             }
                             Err(e) => {
@@ -359,7 +422,7 @@ pub fn run_review(
                 }
             }
             (Method::Post, "/api/deck-topology") => {
-                let dto = match read_selection(&mut request, &decks_dir, &recent) {
+                let dto = match read_selection(&mut request, decks_dir, recent) {
                     Some(sel) => {
                         match (
                             Deck::load(&sel.deck),
@@ -390,7 +453,7 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                let paths = match resolve_row(&body.deck, &decks_dir, &recent) {
+                let paths = match resolve_row(&body.deck, decks_dir, recent) {
                     Resolved::One(p) => vec![p],
                     Resolved::Many { files, .. } => files,
                     Resolved::Ambiguous | Resolved::Unknown => {
@@ -411,7 +474,7 @@ pub fn run_review(
                 match cleared {
                     Ok(n) => {
                         if let Ok(s) = assemble::store_for(&[], cfg.instance_store.as_deref()) {
-                            store = s;
+                            *store = s;
                         }
                         respond_json(
                             request,
@@ -460,7 +523,7 @@ pub fn run_review(
                         }
                     },
                 };
-                let dir = match resolve_row(&body.name, &decks_dir, &recent) {
+                let dir = match resolve_row(&body.name, decks_dir, recent) {
                     Resolved::Many { dir, .. } if crate::workspace::is_workspace(&dir) => dir,
                     _ => {
                         respond_status(request, 400);
@@ -475,10 +538,10 @@ pub fn run_review(
                 let catalog = decks_list_dto(
                     scoped,
                     config_path.as_deref(),
-                    &mut decks_dir,
-                    &recent,
-                    &store,
-                    &mut launcher_icons,
+                    &mut *decks_dir,
+                    recent,
+                    store,
+                    &mut *launcher_icons,
                     review_cfg,
                 );
                 respond_json(request, &catalog);
@@ -494,7 +557,7 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                let Some(dir) = resolve_dest(b.dest.as_deref(), &decks_dir, &recent) else {
+                let Some(dir) = resolve_dest(b.dest.as_deref(), decks_dir, recent) else {
                     respond_status(request, 400);
                     continue;
                 };
@@ -558,7 +621,7 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                let Some(dest) = resolve_dest(b.dest.as_deref(), &decks_dir, &recent) else {
+                let Some(dest) = resolve_dest(b.dest.as_deref(), decks_dir, recent) else {
                     respond_status(request, 400);
                     continue;
                 };
@@ -598,7 +661,7 @@ pub fn run_review(
                     outcome: None,
                 };
                 let dto = g.dto();
-                generating = Some(g);
+                *generating = Some(g);
                 respond_json(request, &dto);
             }
             (Method::Get, "/api/generate") => {
@@ -610,7 +673,7 @@ pub fn run_review(
                 respond_json(request, &g.dto());
             }
             (Method::Post, "/api/generate/close") => {
-                generating = None;
+                *generating = None;
                 respond_status(request, 200);
             }
             (Method::Post, "/api/share") => {
@@ -628,7 +691,7 @@ pub fn run_review(
                 let body: Option<Body> = serde_json::from_reader(request.as_reader()).ok();
                 let path = match body.and_then(|b| b.deck) {
                     None => Some(decks_dir.clone()),
-                    Some(name) => resolved_path(resolve_row(&name, &decks_dir, &recent)),
+                    Some(name) => resolved_path(resolve_row(&name, decks_dir, recent)),
                 };
                 let Some(path) = path else {
                     respond_status(request, 400);
@@ -650,7 +713,7 @@ pub fn run_review(
                 match started {
                     Ok(s) => {
                         let dto = s.dto();
-                        sharing = Some(s);
+                        *sharing = Some(s);
                         respond_json(request, &dto);
                     }
                     Err(e) => respond_json(
@@ -682,7 +745,7 @@ pub fn run_review(
                 let name = query_param(request.url(), "deck");
                 let path = match &name {
                     None => Some(decks_dir.clone()),
-                    Some(n) => resolved_path(resolve_row(n, &decks_dir, &recent)),
+                    Some(n) => resolved_path(resolve_row(n, decks_dir, recent)),
                 };
                 let Some(path) = path else {
                     respond_status(request, 400);
@@ -723,7 +786,7 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                let Some(dest) = resolve_dest(b.dest.as_deref(), &decks_dir, &recent) else {
+                let Some(dest) = resolve_dest(b.dest.as_deref(), decks_dir, recent) else {
                     respond_status(request, 400);
                     continue;
                 };
@@ -742,7 +805,7 @@ pub fn run_review(
                 match started {
                     Ok(r) => {
                         let dto = r.dto();
-                        receiving = Some(r);
+                        *receiving = Some(r);
                         respond_json(request, &dto);
                     }
                     Err(e) => respond_json(
@@ -779,8 +842,8 @@ pub fn run_review(
                 }
                 let Some(dest) = resolve_dest(
                     query_param(request.url(), "dest").as_deref(),
-                    &decks_dir,
-                    &recent,
+                    decks_dir,
+                    recent,
                 ) else {
                     respond_status(request, 400);
                     continue;
@@ -790,7 +853,7 @@ pub fn run_review(
                     continue;
                 };
                 // `land_received`'s collision check is check-then-act: safe
-                // only because this server loop is single-threaded.
+                // only because handlers are serialized behind the state lock.
                 let landed = tempfile::tempdir().ok().and_then(|tmp| {
                     let zip_path = tmp.path().join("got.zip");
                     std::fs::write(&zip_path, &bytes).ok()?;
@@ -814,13 +877,13 @@ pub fn run_review(
                 }
             }
             (Method::Post, "/api/deselect") => {
-                reviewing = None;
-                walking = None;
-                browsing = None;
+                *reviewing = None;
+                *walking = None;
+                *browsing = None;
                 if let Ok(s) = assemble::store_for(&[], cfg.instance_store.as_deref()) {
-                    store = s;
+                    *store = s;
                 }
-                respond_json(request, &review_state(reviewing.as_ref(), &store));
+                respond_json(request, &review_state(reviewing.as_ref(), store));
             }
             (Method::Post, "/api/grade") => {
                 let Some(r) = reviewing.as_mut() else {
@@ -830,15 +893,15 @@ pub fn run_review(
                 match read_grade(&mut request) {
                     Some(grade) => {
                         let now = now_ms();
-                        r.session.grade(&mut store, grade, now);
+                        r.session.grade(&mut *store, grade, now);
                         if let Some(subject) = r.files.paths.keys().next() {
-                            store::note_badges(&mut store, subject, r.session.cards(), now);
+                            store::note_badges(&mut *store, subject, r.session.cards(), now);
                         }
                         if let Err(e) = store.save() {
                             eprintln!("warning: could not save progress: {e}");
                         }
                         r.rotate_variant();
-                        respond_json(request, &review_state(reviewing.as_ref(), &store));
+                        respond_json(request, &review_state(reviewing.as_ref(), store));
                     }
                     None => respond_status(request, 400),
                 }
@@ -848,21 +911,21 @@ pub fn run_review(
                     respond_status(request, 409);
                     continue;
                 };
-                r.session.skip(&store, now_ms());
+                r.session.skip(store, now_ms());
                 r.rotate_variant();
-                respond_json(request, &review_state(reviewing.as_ref(), &store));
+                respond_json(request, &review_state(reviewing.as_ref(), store));
             }
             (Method::Post, "/api/acquire") => {
                 let Some(r) = reviewing.as_mut() else {
                     respond_status(request, 409);
                     continue;
                 };
-                r.session.acquire_current(&mut store, now_ms());
+                r.session.acquire_current(&mut *store, now_ms());
                 if let Err(e) = store.save() {
                     eprintln!("warning: could not save progress: {e}");
                 }
                 r.rotate_variant();
-                respond_json(request, &review_state(reviewing.as_ref(), &store));
+                respond_json(request, &review_state(reviewing.as_ref(), store));
             }
             (Method::Post, "/api/check") => {
                 let Some(r) = reviewing.as_ref() else {
@@ -886,7 +949,7 @@ pub fn run_review(
                     continue;
                 };
                 let picked = read_index(&mut request)
-                    .and_then(|chosen| review::choose(&r.session, &store, &r.augment, chosen));
+                    .and_then(|chosen| review::choose(&r.session, store, &r.augment, chosen));
                 match picked {
                     Some(f) => respond_json(request, &f),
                     None => respond_status(request, 400),
@@ -897,7 +960,7 @@ pub fn run_review(
                     respond_status(request, 409);
                     continue;
                 };
-                let dropped = r.session.remove_current(&store, now_ms());
+                let dropped = r.session.remove_current(store, now_ms());
                 if let Some(first) = dropped.first() {
                     let subject = first.subject.to_string();
                     let line = first.line;
@@ -909,14 +972,14 @@ pub fn run_review(
                     let _ = store.save();
                     r.files.remove_block(&subject, line);
                 }
-                respond_json(request, &review_state(reviewing.as_ref(), &store));
+                respond_json(request, &review_state(reviewing.as_ref(), store));
             }
             (Method::Post, "/api/promote") => {
                 let Some(r) = reviewing.as_mut() else {
                     respond_status(request, 409);
                     continue;
                 };
-                if !r.session.current_is_virtual(&store) {
+                if !r.session.current_is_virtual(store) {
                     respond_status(request, 400);
                     continue;
                 }
@@ -932,21 +995,21 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                if store::promote_virtual(&mut store, &id, &path).is_err() {
+                if store::promote_virtual(&mut *store, &id, &path).is_err() {
                     respond_status(request, 400);
                     continue;
                 }
-                r.session.poll(&store, now_ms());
-                respond_json(request, &review_state(reviewing.as_ref(), &store));
+                r.session.poll(store, now_ms());
+                respond_json(request, &review_state(reviewing.as_ref(), store));
             }
             (Method::Post, "/api/restart") => {
                 let Some(r) = reviewing.as_mut() else {
                     respond_status(request, 409);
                     continue;
                 };
-                r.session.restart(&store, now_ms());
+                r.session.restart(store, now_ms());
                 r.rotate_variant();
-                respond_json(request, &review_state(reviewing.as_ref(), &store));
+                respond_json(request, &review_state(reviewing.as_ref(), store));
             }
             (Method::Post, "/api/ask") => {
                 #[derive(Deserialize)]
@@ -1014,7 +1077,7 @@ pub fn run_review(
                     .collect();
                 let now = now_ms();
                 match store::mint_tutor_card(
-                    &mut store,
+                    &mut *store,
                     &subject,
                     &req.front,
                     &req.back,
@@ -1055,19 +1118,19 @@ pub fn run_review(
                 };
                 // A bare name duplicated across containers must 400, not
                 // guess: this endpoint gates progression on the result.
-                let Some(path) = resolved_path(resolve_row(&body.deck, &decks_dir, &recent)) else {
+                let Some(path) = resolved_path(resolve_row(&body.deck, decks_dir, recent)) else {
                     respond_status(request, 400);
                     continue;
                 };
                 if let Ok(s) =
                     assemble::store_for(std::slice::from_ref(&path), cfg.instance_store.as_deref())
                 {
-                    store = s;
+                    *store = s;
                 }
                 match Deck::load(&path) {
                     Ok(deck)
                         if deck.has_exam()
-                            && !deck::is_locked(&deck, Some(decks_dir.as_path()), &store) =>
+                            && !deck::is_locked(&deck, Some(decks_dir.as_path()), store) =>
                     {
                         let strictness =
                             deck.settings.exam_strictness.unwrap_or(exam_cfg.strictness);
@@ -1075,7 +1138,7 @@ pub fn run_review(
                             match trace::Trace::from_deck(&deck) {
                                 Ok(t) => {
                                     if let Some(ms) = exam::cooldown_remaining_ms(
-                                        &store,
+                                        store,
                                         &deck.subject,
                                         exam_cfg.retry_cooldown_secs,
                                         now_ms(),
@@ -1117,8 +1180,8 @@ pub fn run_review(
                             sitting,
                             deck_path: path,
                         };
-                        let dto = exam_dto(&ex, &decks_dir);
-                        examining = Some(ex);
+                        let dto = exam_dto(&ex, decks_dir);
+                        *examining = Some(ex);
                         respond_json(request, &dto);
                     }
                     _ => respond_status(request, 409),
@@ -1131,8 +1194,8 @@ pub fn run_review(
                 };
                 let parent = ex.deck_path.parent().unwrap_or_else(|| Path::new(""));
                 let retire_after_days = review_cfg.for_workspace(parent).retire_after_days;
-                ex.sitting.poll(&mut store, now_ms(), retire_after_days);
-                respond_json(request, &exam_dto(ex, &decks_dir));
+                ex.sitting.poll(&mut *store, now_ms(), retire_after_days);
+                respond_json(request, &exam_dto(ex, decks_dir));
             }
             (Method::Post, "/api/exam/answer") => {
                 #[derive(Deserialize)]
@@ -1151,7 +1214,7 @@ pub fn run_review(
                         ex.sitting.goto(i);
                     }
                 }
-                respond_json(request, &exam_dto(ex, &decks_dir));
+                respond_json(request, &exam_dto(ex, decks_dir));
             }
             (Method::Post, "/api/exam/grade") => {
                 #[derive(Deserialize)]
@@ -1167,7 +1230,7 @@ pub fn run_review(
                     ex.sitting.set_answer(b.text);
                 }
                 ex.sitting.submit();
-                respond_json(request, &exam_dto(ex, &decks_dir));
+                respond_json(request, &exam_dto(ex, decks_dir));
             }
             (Method::Post, "/api/exam/remediate") => {
                 let Some(ex) = examining.as_mut() else {
@@ -1175,14 +1238,14 @@ pub fn run_review(
                     continue;
                 };
                 ex.sitting.remediate();
-                respond_json(request, &exam_dto(ex, &decks_dir));
+                respond_json(request, &exam_dto(ex, decks_dir));
             }
             (Method::Post, "/api/exam/close") => {
-                examining = None;
+                *examining = None;
                 if let Ok(s) = assemble::store_for(&[], cfg.instance_store.as_deref()) {
-                    store = s;
+                    *store = s;
                 }
-                respond_json(request, &review_state(reviewing.as_ref(), &store));
+                respond_json(request, &review_state(reviewing.as_ref(), store));
             }
             (Method::Post, "/api/augment/open") => {
                 #[derive(Deserialize)]
@@ -1194,7 +1257,7 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                let (files, workspace_dir) = match resolve_row(&body.deck, &decks_dir, &recent) {
+                let (files, workspace_dir) = match resolve_row(&body.deck, decks_dir, recent) {
                     Resolved::One(p) => (vec![p], None),
                     Resolved::Many { dir, files } => (files, Some(dir)),
                     _ => {
@@ -1204,7 +1267,7 @@ pub fn run_review(
                 };
                 let name = body.deck;
                 if let Ok(s) = assemble::store_for(&files, cfg.instance_store.as_deref()) {
-                    store = s;
+                    *store = s;
                 }
                 // Stamp before loading: unstamped ids collapse the cache to
                 // key 0, orphaning the spend at the first real stamp.
@@ -1224,7 +1287,7 @@ pub fn run_review(
                             workspace_dir,
                         );
                         let dto = aug.dto();
-                        augmenting = Some(aug);
+                        *augmenting = Some(aug);
                         respond_json(request, &dto);
                     }
                     Err(_) => respond_status(request, 409),
@@ -1286,11 +1349,11 @@ pub fn run_review(
                 respond_json(request, &aug.dto());
             }
             (Method::Post, "/api/augment/close") => {
-                augmenting = None;
+                *augmenting = None;
                 if let Ok(s) = assemble::store_for(&[], cfg.instance_store.as_deref()) {
-                    store = s;
+                    *store = s;
                 }
-                respond_json(request, &review_state(reviewing.as_ref(), &store));
+                respond_json(request, &review_state(reviewing.as_ref(), store));
             }
             (Method::Get, "/api/walk") => {
                 let Some(w) = walking.as_mut() else {
@@ -1325,7 +1388,7 @@ pub fn run_review(
                 let delta = w.grade_result.as_ref().map(|(d, _)| *d).or(self_delta);
                 match delta {
                     Some(delta) => {
-                        w.walk.grade(&mut store, delta, now_ms());
+                        w.walk.grade(&mut *store, delta, now_ms());
                         if let Err(e) = store.save() {
                             eprintln!("warning: could not save progress: {e}");
                         }
@@ -1378,11 +1441,11 @@ pub fn run_review(
                 respond_json(request, &w.ask_dto(status, error));
             }
             (Method::Post, "/api/walk/leave") => {
-                walking = None;
+                *walking = None;
                 if let Ok(s) = assemble::store_for(&[], cfg.instance_store.as_deref()) {
-                    store = s;
+                    *store = s;
                 }
-                respond_json(request, &review_state(reviewing.as_ref(), &store));
+                respond_json(request, &review_state(reviewing.as_ref(), store));
             }
             (Method::Post, "/api/remote/ask") => {
                 if let Some(a) = remote_ask.as_mut() {
@@ -1414,7 +1477,7 @@ pub fn run_review(
                 }
                 let job = RemoteAsk::ask(&ask_cfg, &card, history, &question);
                 let dto = job.dto();
-                remote_ask = Some(job);
+                *remote_ask = Some(job);
                 respond_json(request, &dto);
             }
             (Method::Get, "/api/remote/ask") => {
@@ -1462,7 +1525,7 @@ pub fn run_review(
                 }
                 let job = RemoteAsk::draft(&ask_cfg, &card, history);
                 let dto = job.dto();
-                remote_ask = Some(job);
+                *remote_ask = Some(job);
                 respond_json(request, &dto);
             }
             (Method::Post, "/api/remote/ask/note") => {
@@ -1489,7 +1552,7 @@ pub fn run_review(
                 }
                 let job = RemoteAsk::note(&ask_cfg, &card, history);
                 let dto = job.dto();
-                remote_ask = Some(job);
+                *remote_ask = Some(job);
                 respond_json(request, &dto);
             }
             // The requires-lock and the trace re-sit cooldown are the
@@ -1511,7 +1574,7 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                let Some(path) = resolved_path(resolve_row(&body.deck, &decks_dir, &recent)) else {
+                let Some(path) = resolved_path(resolve_row(&body.deck, decks_dir, recent)) else {
                     respond_status(request, 400);
                     continue;
                 };
@@ -1551,7 +1614,7 @@ pub fn run_review(
                     cards: None,
                 };
                 let dto = ex.dto();
-                remote_exam = Some(ex);
+                *remote_exam = Some(ex);
                 respond_json(request, &dto);
             }
             // advance() only, never poll(): poll() writes the store, which
@@ -1614,7 +1677,7 @@ pub fn run_review(
             // Drop the slot; an in-flight thread just finds its receiver
             // gone and its send fails harmlessly.
             (Method::Post, "/api/remote/exam/close") => {
-                remote_exam = None;
+                *remote_exam = None;
                 respond_status(request, 200);
             }
             // No dest, no destination-collision check: this returns the
@@ -1657,7 +1720,7 @@ pub fn run_review(
                 }
                 let job = RemoteGenerating::start(body.url, cfg, ask_cfg.clone());
                 let dto = job.dto();
-                remote_generate = Some(job);
+                *remote_generate = Some(job);
                 respond_json(request, &dto);
             }
             (Method::Get, "/api/remote/generate") => {
@@ -1669,12 +1732,15 @@ pub fn run_review(
                 respond_json(request, &g.dto());
             }
             (Method::Post, "/api/remote/generate/close") => {
-                remote_generate = None;
+                *remote_generate = None;
                 respond_status(request, 200);
             }
             _ => respond_status(request, 404),
         }
-    }
+                }
+                );
+        }
+    });
     Ok(())
 }
 

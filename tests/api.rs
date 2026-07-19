@@ -3508,3 +3508,96 @@ fn remote_endpoints_never_write_the_server_store() {
         "no /api/remote/* call may place a file into the server's decks dir"
     );
 }
+
+/// Sends one keep-alive HTTP/1.1 GET (no `Connection: close`, so the socket
+/// stays open after the reply, exactly like a browser's parallel sockets) and
+/// reads the status line, headers, and `Content-Length` body back. Returns the
+/// status code, or an error string if the bounded read times out.
+fn keep_alive_get(base: &str, path: &str, timeout: Duration) -> Result<u16, String> {
+    let host = base.strip_prefix("http://").ok_or("base is http://")?;
+    let mut stream = TcpStream::connect(host).map_err(|e| format!("connect: {e}"))?;
+    stream
+        .set_read_timeout(Some(timeout))
+        .map_err(|e| format!("set_read_timeout: {e}"))?;
+    let req = format!("GET {path} HTTP/1.1\r\nHost: {host}\r\n\r\n");
+    stream
+        .write_all(req.as_bytes())
+        .map_err(|e| format!("write: {e}"))?;
+
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 2048];
+    loop {
+        if let Some(head_end) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+            let head = String::from_utf8_lossy(&buf[..head_end]);
+            let status = head
+                .lines()
+                .next()
+                .and_then(|l| l.split_whitespace().nth(1))
+                .and_then(|c| c.parse::<u16>().ok())
+                .ok_or("no status line")?;
+            let len: usize = head
+                .lines()
+                .find_map(|l| {
+                    let (k, v) = l.split_once(':')?;
+                    k.trim()
+                        .eq_ignore_ascii_case("content-length")
+                        .then(|| v.trim().parse().ok())?
+                })
+                .unwrap_or(0);
+            if buf.len() >= head_end + 4 + len {
+                return Ok(status);
+            }
+        }
+        match stream.read(&mut chunk) {
+            Ok(0) => return Err("eof before full response".to_string()),
+            Ok(n) => buf.extend_from_slice(&chunk[..n]),
+            Err(e) => return Err(format!("read: {e}")),
+        }
+    }
+}
+
+/// Regression for the keep-alive starvation bug: several browser-style parallel
+/// keep-alive sockets must not wedge the server. Pre-worker-pool (a single
+/// `recv()` consumer) this batch stalls far past the bound; the worker pool
+/// serves every one promptly. The 10s bound is generous so CI never flakes.
+#[test]
+fn parallel_keep_alive_requests_all_complete_promptly() {
+    let (base, _guard) = spawn_test_server();
+    let endpoints = [
+        "/api/version",
+        "/api/keys",
+        "/api/decks",
+        "/api/state",
+        "/api/pair",
+        "/api/browse-keys",
+        "/api/picker-keys",
+        "/api/ask-info",
+    ];
+    // All sockets fire at the same instant, so the connections really are
+    // in flight together rather than one-after-another.
+    let barrier = Arc::new(std::sync::Barrier::new(endpoints.len()));
+    let start = Instant::now();
+    let handles: Vec<_> = endpoints
+        .iter()
+        .map(|&ep| {
+            let base = base.clone();
+            let barrier = Arc::clone(&barrier);
+            thread::spawn(move || {
+                barrier.wait();
+                keep_alive_get(&base, ep, Duration::from_secs(10))
+            })
+        })
+        .collect();
+    for (ep, h) in endpoints.iter().zip(handles) {
+        let res = h.join().expect("keep-alive request thread panicked");
+        assert!(
+            matches!(res, Ok(200)),
+            "endpoint {ep} did not return 200 promptly: {res:?}"
+        );
+    }
+    assert!(
+        start.elapsed() < Duration::from_secs(10),
+        "parallel keep-alive requests wedged: took {:?}",
+        start.elapsed()
+    );
+}
