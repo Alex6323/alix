@@ -8,6 +8,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- the web listing no longer re-parses unchanged decks on every request: the server keeps a per-file cache keyed on (mtime, size) and re-reads only files that actually changed, so a warm `/api/decks` over a large collection stops re-reading every deck
 - parallel browser connections no longer starve the server: the web server now handles connections with a worker pool instead of one loop that a kept-alive socket could camp, so the picker's cold-cache font/css requests stop stalling the api calls (the empty-picker-until-reload symptom)
 - the deck listing was quadratic in collection size (each loose deck probed its parent folder as a workspace, and that probe read every sibling deck); a 325-deck folder took seconds per listing, now milliseconds
 - **The session summary no longer reads all zeros after a first pass.** A

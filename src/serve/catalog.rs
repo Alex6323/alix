@@ -15,9 +15,10 @@ use super::{SelectOptions, dto::*};
 use crate::{
     assemble,
     augment::{self, AugmentCache},
+    cache::DeckCache,
     card::Card,
     config::{Config, ReviewConfig},
-    deck::{self, Deck},
+    deck,
     depth::{Depth, depth_name},
     picker,
     recent::RecentDecks,
@@ -89,9 +90,10 @@ pub(super) fn deck_item_dto(
     with_lock: bool,
     augment: &AugmentCache,
     review: ReviewConfig,
+    cache: &mut DeckCache,
 ) -> DeckItemDto {
     let recent = e.last_used_ms.is_some();
-    match Deck::load(&e.path) {
+    match cache.load(&e.path) {
         Ok(deck) => {
             let s = picker::deck_status(&deck, store, augment, Some(decks_dir), with_lock, review);
             let deck_tokens: HashSet<String> = deck.deck_token.iter().cloned().collect();
@@ -175,9 +177,10 @@ pub(super) fn workspace_members(
     with_lock: bool,
     review: ReviewConfig,
     instance_store: &Store,
+    cache: &mut DeckCache,
 ) -> (Vec<MemberDto>, picker::WorkspaceReadiness) {
     let review = review.for_workspace(&e.path);
-    let is_ws = crate::workspace::is_workspace(&e.path);
+    let is_ws = cache.is_workspace(&e.path);
     let own_workspace_store = is_ws
         .then(|| Store::open(crate::workspace::store_path(&e.path)).ok())
         .flatten();
@@ -193,7 +196,7 @@ pub(super) fn workspace_members(
     let loaded: Vec<(Option<picker::DeckStatus>, bool, &'static str)> = paths
         .iter()
         .map(|p| {
-            let deck = Deck::load(p).ok();
+            let deck = cache.load(p).ok();
             // `augment` is `Some` exactly when `store` is, so gating on all
             // three keeps that pairing intact.
             let status = match (store, augment.as_ref(), deck.as_ref()) {
@@ -350,15 +353,17 @@ pub(super) fn deck_catalog(
     with_lock: bool,
     icons: &mut HashMap<String, PathBuf>,
     review: ReviewConfig,
+    cache: &mut DeckCache,
 ) -> DeckListDto {
     let mut workspaces = Vec::new();
     let mut recent_decks = Vec::new();
     let mut folders = Vec::new();
     let augment = AugmentCache::open(augment::augment_path_for(store.path()));
-    for e in picker::catalog(decks_dir, recent) {
+    for e in picker::catalog(decks_dir, recent, cache) {
         if e.is_workspace {
-            let is_ws = crate::workspace::is_workspace(&e.path);
-            let (members, readiness) = workspace_members(&e, decks_dir, with_lock, review, store);
+            let is_ws = cache.is_workspace(&e.path);
+            let (members, readiness) =
+                workspace_members(&e, decks_dir, with_lock, review, store, cache);
             // A deadline is a real workspace's own setting (`alix.local.toml`);
             // a plain folder never has one.
             let deadline = is_ws
@@ -428,11 +433,11 @@ pub(super) fn deck_catalog(
         }
         // A loose deck inside a workspace belongs to it (reached by opening
         // the workspace), so it's excluded from Recent.
-        if e.path.parent().is_some_and(crate::workspace::is_workspace) {
+        if e.path.parent().is_some_and(|p| cache.is_workspace(p)) {
             continue;
         }
         recent_decks.push(deck_item_dto(
-            &e, store, decks_dir, with_lock, &augment, review,
+            &e, store, decks_dir, with_lock, &augment, review, cache,
         ));
     }
     DeckListDto {
@@ -505,12 +510,18 @@ pub(super) enum Resolved {
     Unknown,
 }
 
+/// Name resolution stays parse-fresh: `ServeState::cache` serves the listing
+/// only, so each call here holds a throwaway one.
+fn parse_fresh_catalog(decks_dir: &Path, recent: &RecentDecks) -> Vec<picker::DeckEntry> {
+    picker::catalog(decks_dir, recent, &mut DeckCache::default())
+}
+
 /// A name seen more than once (bare row or qualified member) resolves to
 /// `Ambiguous`, never silently picking one of several same-named entries.
 pub(super) fn resolve_row(name: &str, decks_dir: &Path, recent: &RecentDecks) -> Resolved {
     let mut known: HashMap<String, Resolved> = HashMap::new();
     let mut seen: HashSet<String> = HashSet::new();
-    for e in picker::catalog(decks_dir, recent) {
+    for e in parse_fresh_catalog(decks_dir, recent) {
         for m in &e.members {
             if seen.insert(m.name.clone()) {
                 known.insert(m.name.clone(), Resolved::One(m.path.clone()));
@@ -555,7 +566,7 @@ pub(super) fn resolve_dest(
     let Some(name) = dest.filter(|d| !d.is_empty()) else {
         return Some(decks_dir.to_path_buf());
     };
-    let mut matches = picker::catalog(decks_dir, recent)
+    let mut matches = parse_fresh_catalog(decks_dir, recent)
         .into_iter()
         .filter(|e| e.name == name && e.path.is_dir());
     let first = matches.next()?;

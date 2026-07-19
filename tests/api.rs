@@ -659,6 +659,93 @@ fn get_api_decks_lists_a_workspace_with_its_member_decks() {
     }
 }
 
+// ── Decks catalog: the deck cache ────────────────────────────────────────
+
+/// A one-card deck whose H1 title is what `/api/decks` serves as the row's
+/// `label`, the field that proves whether the file was (re-)parsed.
+const TITLED_DECK: &str = "# Original Title\n\n## q <!-- id: ti1 -->\na\n";
+
+fn write_titled_deck(dir: &Path) {
+    std::fs::write(dir.join("titled.md"), TITLED_DECK).unwrap();
+}
+
+fn titled_row(base: &str) -> Option<serde_json::Value> {
+    let resp = http(base, "GET", "/api/decks", &[], &[]);
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    body["recent"]
+        .as_array()
+        .expect("recent is an array")
+        .iter()
+        .find(|d| d["name"] == "titled.md")
+        .cloned()
+}
+
+#[test]
+fn an_unchanged_deck_is_served_from_cache_not_reparsed() {
+    let (base, guard) = spawn_test_server_fixture(None, write_titled_deck);
+    let row = titled_row(&base).expect("titled.md lists before the overwrite");
+    assert_eq!("Original Title", row["label"], "row: {row}");
+
+    // Same-length garbage under the original mtime: (mtime, size) match the
+    // cached entry, so a correct cache must serve the old parse, while a
+    // re-read would find no title and no cards (the row would degrade or
+    // vanish from the listing).
+    let path = guard.dir().join("titled.md");
+    let meta = std::fs::metadata(&path).unwrap();
+    let (mtime, size) = (meta.modified().unwrap(), meta.len());
+    std::fs::write(&path, vec![b'z'; size as usize]).unwrap();
+    let file = std::fs::File::options().write(true).open(&path).unwrap();
+    file.set_modified(mtime).unwrap();
+    drop(file);
+    let meta = std::fs::metadata(&path).unwrap();
+    assert_eq!(size, meta.len(), "the garbage must keep the byte length");
+    assert_eq!(
+        mtime,
+        meta.modified().unwrap(),
+        "the original mtime must be restored exactly"
+    );
+
+    let row = titled_row(&base)
+        .expect("an unchanged (mtime, size) must be served from cache, not re-read");
+    assert_eq!("Original Title", row["label"], "row: {row}");
+}
+
+#[test]
+fn a_changed_deck_is_reparsed_on_the_next_listing() {
+    let (base, guard) = spawn_test_server_fixture(None, write_titled_deck);
+    let row = titled_row(&base).expect("titled.md lists initially");
+    assert_eq!("Original Title", row["label"], "row: {row}");
+
+    // A longer rewrite changes the size, which dodges mtime granularity.
+    std::fs::write(
+        guard.dir().join("titled.md"),
+        "# A Renamed Title Longer Than Before\n\n## q <!-- id: ti1 -->\na\n",
+    )
+    .unwrap();
+    std::fs::write(
+        guard.dir().join("fresh.md"),
+        "## new q <!-- id: fr1 -->\nb\n",
+    )
+    .unwrap();
+
+    let row = titled_row(&base).expect("titled.md still lists after the rewrite");
+    assert_eq!(
+        "A Renamed Title Longer Than Before", row["label"],
+        "row: {row}"
+    );
+    let resp = http(&base, "GET", "/api/decks", &[], &[]);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert!(
+        body["recent"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|d| d["name"] == "fresh.md"),
+        "a brand-new file must appear (the readdir stays fresh): body: {body}"
+    );
+}
+
 /// The invariant real clients depend on: every member `name` `/api/decks`
 /// reports must actually select (200, a review `StateDto`). This drives the
 /// real server end to end — the real name resolution (`resolve_row`,

@@ -61,7 +61,9 @@ impl Workspace {
 
 /// A missing or malformed manifest yields no title/description and default
 /// settings, never an error.
-fn read_manifest(path: &Path) -> (Option<String>, Option<String>, DeckSettings, Option<String>) {
+pub(crate) fn read_manifest(
+    path: &Path,
+) -> (Option<String>, Option<String>, DeckSettings, Option<String>) {
     let Ok(text) = std::fs::read_to_string(path) else {
         return (None, None, DeckSettings::default(), None);
     };
@@ -134,6 +136,13 @@ pub fn file_is_deck(path: &Path) -> bool {
 }
 
 fn members(dir: &Path) -> io::Result<Vec<PathBuf>> {
+    members_where(dir, file_is_deck)
+}
+
+pub(crate) fn members_where(
+    dir: &Path,
+    mut is_deck: impl FnMut(&Path) -> bool,
+) -> io::Result<Vec<PathBuf>> {
     let mut paths: Vec<PathBuf> = std::fs::read_dir(dir)?
         .filter_map(|r| r.ok().map(|e| e.path()))
         .filter(|p| p.is_file() && p.extension().is_some_and(|e| e == "md"))
@@ -142,7 +151,7 @@ fn members(dir: &Path) -> io::Result<Vec<PathBuf>> {
                 .and_then(|n| n.to_str())
                 .is_some_and(|n| is_conventional_non_deck(n) || is_conflict_name(n))
         })
-        .filter(|p| file_is_deck(p))
+        .filter(|p| is_deck(p))
         .collect();
     paths.sort();
     Ok(paths)

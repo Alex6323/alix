@@ -24,6 +24,7 @@ pub use crate::assemble::SelectOptions;
 use crate::{
     assemble::{self, CardsBuild, SessionBuild},
     augment::{self, AugmentCache},
+    cache::DeckCache,
     config::{
         AiConfig, Audience, Bindings, BrowseBindings, ExamConfig, GenerateDeckConfig, PickerKeys,
     },
@@ -137,6 +138,7 @@ struct ServeState {
     store: Store,
     recent: RecentDecks,
     decks_dir: PathBuf,
+    cache: DeckCache,
     reviewing: Option<Reviewing>,
     browsing: Option<Browsing>,
     examining: Option<Examining>,
@@ -187,6 +189,7 @@ pub fn run_review(
         store,
         recent,
         decks_dir,
+        cache: DeckCache::default(),
         reviewing: None,
         browsing: None,
         examining: None,
@@ -218,6 +221,7 @@ pub fn run_review(
                     store,
                     recent,
                     decks_dir,
+                    cache,
                     reviewing,
                     browsing,
                     examining,
@@ -323,6 +327,7 @@ pub fn run_review(
                     store,
                     &mut *launcher_icons,
                     review_cfg,
+                    &mut *cache,
                 );
                 respond_json(request, &catalog)
             }
@@ -542,6 +547,7 @@ pub fn run_review(
                     store,
                     &mut *launcher_icons,
                     review_cfg,
+                    &mut *cache,
                 );
                 respond_json(request, &catalog);
             }
@@ -1743,6 +1749,7 @@ pub fn run_review(
     Ok(())
 }
 
+#[expect(clippy::too_many_arguments)] // the listing entry point takes each piece of served state
 fn decks_list_dto(
     scoped: bool,
     config_path: Option<&Path>,
@@ -1751,12 +1758,21 @@ fn decks_list_dto(
     store: &Store,
     launcher_icons: &mut HashMap<String, PathBuf>,
     review_cfg: crate::config::ReviewConfig,
+    cache: &mut DeckCache,
 ) -> DeckListDto {
     let dir = effective_decks_dir(scoped, config_path, decks_dir);
     if dir != *decks_dir {
         *decks_dir = dir;
     }
-    deck_catalog(decks_dir, recent, store, true, launcher_icons, review_cfg)
+    deck_catalog(
+        decks_dir,
+        recent,
+        store,
+        true,
+        launcher_icons,
+        review_cfg,
+        cache,
+    )
 }
 
 #[cfg(test)]

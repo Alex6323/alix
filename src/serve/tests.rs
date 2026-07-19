@@ -249,7 +249,7 @@ fn resolve_row_resolves_a_manifest_only_dir_with_no_members_to_unknown() {
     std::fs::write(ws.join(crate::workspace::MANIFEST), "title = \"Empty\"\n").unwrap();
     let recent = RecentDecks::load(dir.path().join("recent.json"));
 
-    assert!(picker::catalog(dir.path(), &recent).is_empty());
+    assert!(picker::catalog(dir.path(), &recent, &mut DeckCache::default()).is_empty());
     assert_eq!(
         Resolved::Unknown,
         resolve_row("empty-ws", dir.path(), &recent)
@@ -465,6 +465,7 @@ fn a_group_row_aggregates_member_reviewability_instead_of_hardcoding_true() {
         true,
         &mut icons,
         ReviewConfig::default(),
+        &mut DeckCache::default(),
     );
 
     let animals = dto
@@ -515,6 +516,7 @@ fn a_plain_folders_member_badge_reads_the_served_instance_store_not_the_global_d
         true,
         &mut icons,
         ReviewConfig::default(),
+        &mut DeckCache::default(),
     );
 
     let letters = dto
@@ -537,7 +539,7 @@ fn a_deck_that_fails_to_load_reports_nothing_reviewable_but_stays_selectable() {
     // An unclosed cloze hole fails to parse: `Deck::load` errors.
     std::fs::write(dir.path().join("broken.md"), "## front\nbad \\cloze{oops\n").unwrap();
     let recent = RecentDecks::load(dir.path().join("recent.json"));
-    let entry = picker::catalog(dir.path(), &recent)
+    let entry = picker::catalog(dir.path(), &recent, &mut DeckCache::default())
         .into_iter()
         .find(|e| e.name == "broken.md")
         .expect("catalog lists the broken deck file even though it won't parse");
@@ -555,6 +557,7 @@ fn a_deck_that_fails_to_load_reports_nothing_reviewable_but_stays_selectable() {
         true,
         &augment,
         ReviewConfig::default(),
+        &mut DeckCache::default(),
     );
 
     assert!(dto.selectable, "row: {dto:?}");
