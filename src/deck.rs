@@ -12,7 +12,7 @@ use crate::{
     card::{Card, Direction},
     config::Strictness,
     depth::Reveal,
-    parser::{self, ParseError},
+    l1::{self, L1Error},
     session::{self, Order},
     store::Store,
 };
@@ -68,6 +68,21 @@ impl DeckSettings {
         settings
     }
 
+    /// Interprets the typed L1 frontmatter into per-deck settings. The
+    /// frontmatter equivalent of [`from_directives`](Self::from_directives),
+    /// which stays for the workspace manifest's string `[defaults]` table.
+    pub fn from_frontmatter(frontmatter: &l1::Frontmatter) -> Self {
+        Self {
+            reveal: frontmatter.reveal,
+            input: frontmatter.input,
+            order: frontmatter.order,
+            direction: frontmatter.direction,
+            img_dir: frontmatter.img_dir.clone(),
+            exam_strictness: frontmatter.strictness,
+            origin: frontmatter.origin.clone(),
+        }
+    }
+
     /// Fills each unset field from `defaults` (a workspace's shared settings),
     /// so the deck's own directives win and the workspace fills the gaps —
     /// precedence deck > workspace.
@@ -117,8 +132,8 @@ pub struct Deck {
     pub sources: Vec<String>,
     /// Per-deck defaults from `% key: value` directives.
     pub settings: DeckSettings,
-    /// Display title (`% title:`), independent of the file name. `None` falls
-    /// back to the file name (minus `.txt`). Display-only; not hashed.
+    /// Display title (the `# H1`), independent of the file name. `None` falls
+    /// back to the file name (minus `.md`). Display-only; not part of identity.
     pub title: Option<String>,
     /// What this deck traces (`% trace:`) — a path description, if any. Its
     /// presence makes the deck a **trace** — a predict-and-verify walk (see
@@ -141,7 +156,7 @@ pub enum DeckError {
     Parse {
         path: PathBuf,
         #[source]
-        source: ParseError,
+        source: L1Error,
     },
     #[error("{path}: file name is not valid UTF-8")]
     InvalidFileName { path: PathBuf },
@@ -172,16 +187,19 @@ impl Deck {
             path: path.clone(),
             source,
         })?;
-        let mut cards = parser::parse_str(&subject, &text).map_err(|source| DeckError::Parse {
+        let l1deck = l1::parse_l1(&subject, &text).map_err(|source| DeckError::Parse {
             path: path.clone(),
             source,
         })?;
-        let links = parser::parse_links(&text);
-        let requires = parser::parse_requires(&text);
-        let sources = parser::parse_sources(&text);
-        let title = parser::parse_title(&text);
-        let trace = parser::parse_trace(&text);
-        let mut settings = DeckSettings::from_directives(&parser::parse_directives(&text));
+        // Deck-level metadata now comes from the typed L1 frontmatter (and the
+        // `# H1` title) rather than the old header `%` directives.
+        let links = l1deck.frontmatter.link.clone();
+        let requires = l1deck.frontmatter.requires.clone();
+        let sources = l1deck.frontmatter.source.clone();
+        let title = l1deck.title.clone();
+        let trace = l1deck.frontmatter.trace.clone();
+        let mut settings = DeckSettings::from_frontmatter(&l1deck.frontmatter);
+        let mut cards = l1deck.cards;
         // Fold the workspace's shared directives in below the deck's own.
         settings.fill_from(defaults);
         // A card without its own `% reveal:` inherits the deck's reveal-method,
@@ -206,7 +224,11 @@ impl Deck {
         let mut expanded = Vec::with_capacity(cards.len());
         for card in cards {
             let direction = card.direction.or(settings.direction).unwrap_or_default();
-            if card.hash_lines.is_some() || direction == Direction::Forward {
+            // A cloze sub-card (`hole.is_some()`) never reverses, whatever the
+            // deck-level direction: it carries `direction: None`, so keying on
+            // the hole (not the direction) is what keeps a deck-wide
+            // `direction: both` from minting a bogus reversed cloze twin.
+            if card.hole.is_some() || direction == Direction::Forward {
                 expanded.push(card);
             } else {
                 let reversed = card.reversed();
@@ -252,16 +274,16 @@ impl Deck {
         self.is_trace() || !self.sources.is_empty()
     }
 
-    /// The deck's display name: its `% title:` if set, else — for a trace deck —
-    /// its `% trace:` path description (a trace's natural name), else the file
-    /// name with the `.txt` extension stripped.
+    /// The deck's display name: its `# H1` title if set, else — for a trace deck —
+    /// its `trace:` path description (a trace's natural name), else the file
+    /// name with the `.md` extension stripped.
     pub fn display_name(&self) -> String {
         self.title
             .clone()
             .or_else(|| self.trace.clone())
             .unwrap_or_else(|| {
                 self.subject
-                    .strip_suffix(".txt")
+                    .strip_suffix(".md")
                     .unwrap_or(&self.subject)
                     .to_string()
             })
@@ -349,42 +371,32 @@ impl Deck {
             .first()
             .is_some_and(|s| s == crate::trace::SNAPSHOT_DIR)
     }
-
-    /// Returns pairs of cards within this deck that share the same identity
-    /// hash (i.e. same back lines). Such cards are indistinguishable to the
-    /// progress store, so the `check` command warns about them.
-    pub fn duplicates(&self) -> Vec<(&Card, &Card)> {
-        let mut seen: std::collections::HashMap<u64, &Card> = Default::default();
-        let mut dups = Vec::new();
-        for card in &self.cards {
-            if let Some(first) = seen.insert(card.id(), card) {
-                dups.push((first, card));
-                // keep reporting against the first occurrence
-                seen.insert(card.id(), first);
-            }
-        }
-        dups
-    }
 }
 
-/// Finds the file a `% requires:` value refers to: as given, next to the
-/// requiring deck, or in the decks directory; with or without a `.txt` suffix.
+// `Deck::duplicates()` and its duplicate-answer doctor job are RETIRED with the
+// move to token identity: unstamped cards all share the id `0`, so a content
+// hash can no longer tell two cards apart. The surviving signal is duplicate
+// *token* handling (spec §2.4), which lands in a later task.
+
+/// Finds the file a `requires:` value refers to: as given, next to the
+/// requiring deck, or in the decks directory; with or without a `.md` suffix.
+/// Any explicit extension the value carries is stripped first, so a legacy
+/// `requires: basics.txt` still resolves the `basics.md` deck.
 pub fn resolve_dep(
     req: &str,
     decks_dir: Option<&Path>,
     requiring_dir: Option<&Path>,
 ) -> Option<PathBuf> {
-    let with_txt = |p: &Path| -> PathBuf {
-        if p.extension().is_some() {
-            p.to_path_buf()
-        } else {
-            p.with_extension("txt")
-        }
-    };
-    let mut candidates = vec![PathBuf::from(req), with_txt(Path::new(req))];
+    // Strip any extension the value carries, then match the deck extension.
+    let stem = Path::new(req)
+        .with_extension("")
+        .to_string_lossy()
+        .into_owned();
+    let with_md = |p: &Path| -> PathBuf { p.with_extension("md") };
+    let mut candidates = vec![PathBuf::from(req), with_md(Path::new(&stem))];
     for dir in [requiring_dir, decks_dir].into_iter().flatten() {
         candidates.push(dir.join(req));
-        candidates.push(with_txt(&dir.join(req)));
+        candidates.push(with_md(&dir.join(&stem)));
     }
     candidates.into_iter().find(|p| p.is_file())
 }
@@ -474,7 +486,7 @@ pub fn dependents(target: &Path, decks_dir: &Path) -> Vec<String> {
     };
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("txt") {
+        if path.extension().and_then(|e| e.to_str()) != Some("md") {
             continue;
         }
         let Ok(deck) = Deck::load(&path) else {
@@ -514,11 +526,34 @@ fn resolve_image(base: &Path, image: PathBuf) -> PathBuf {
     }
 }
 
-/// Appends `notes` as `!` lines to the card whose front is at the 1-based
-/// `front_line` of the deck file at `path`. The file is rewritten atomically
-/// (temp file + rename); on reload the parser merges the new lines into the
-/// card's (possibly multi-line) note. Card identities don't change — notes
-/// are not hashed.
+/// Atomically replaces the deck file at `path` with `text` (temp sibling +
+/// rename), the shared write tail of the file-surgery helpers below.
+fn write_deck_text(path: &Path, text: &str) -> Result<(), DeckError> {
+    let io_err = |source| DeckError::Io {
+        path: path.to_path_buf(),
+        source,
+    };
+    let tmp = path.with_extension("md.tmp");
+    std::fs::write(&tmp, text).map_err(io_err)?;
+    std::fs::rename(&tmp, path).map_err(io_err)?;
+    Ok(())
+}
+
+/// The deck's parsed `## ` card-front line numbers, for the surgery helpers:
+/// parse knowledge, so a fenced `## ` (content) can never be mistaken for a
+/// card boundary the way a naive line scan would.
+fn front_lines_of(path: &Path, text: &str) -> Result<Vec<usize>, DeckError> {
+    l1::card_front_lines(text).map_err(|source| DeckError::Parse {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
+/// Appends `notes` as `> ` note lines to the card whose front is at the
+/// 1-based `front_line` of the deck file at `path`. The file is rewritten
+/// atomically (temp file + rename); on reload the parser merges the new lines
+/// into the card's (possibly multi-line) note. Card identities don't change —
+/// notes are never identity.
 pub fn append_note(path: &Path, front_line: usize, notes: &[String]) -> Result<(), DeckError> {
     if notes.is_empty() {
         return Ok(());
@@ -527,21 +562,18 @@ pub fn append_note(path: &Path, front_line: usize, notes: &[String]) -> Result<(
         path: path.to_path_buf(),
         source,
     };
-
     let text = std::fs::read_to_string(path).map_err(io_err)?;
-    let new_text = insert_note_lines(&text, front_line, notes);
-
-    let tmp = path.with_extension("txt.tmp");
-    std::fs::write(&tmp, new_text).map_err(io_err)?;
-    std::fs::rename(&tmp, path).map_err(io_err)?;
-    Ok(())
+    let fronts = front_lines_of(path, &text)?;
+    let new_text = insert_note_lines(&text, &fronts, front_line, notes);
+    write_deck_text(path, &new_text)
 }
 
-/// Appends deck-format `cards` text to the end of the deck file at `path`,
-/// ensuring a blank line separates them from the existing content. Written
-/// atomically (temp + rename). Used to add AI exam remediation cards; the
-/// deck format is append-safe (a new `# ` front at column 0 starts a new
-/// card), so existing cards and their identities are untouched.
+/// Appends L1 `cards` text to the end of the deck file at `path`, ensuring a
+/// blank line separates them from the existing content. Written atomically
+/// (temp + rename). Used to add AI exam remediation cards; the deck format is
+/// append-safe (a new `## ` front at column 0 starts a new card), so existing
+/// cards and their identities are untouched. Callers pass already-stamped
+/// text (each card carries its `<!-- id: -->` token).
 pub fn append_cards(path: &Path, cards: &str) -> Result<(), DeckError> {
     let cards = cards.trim_end();
     if cards.is_empty() {
@@ -559,44 +591,38 @@ pub fn append_cards(path: &Path, cards: &str) -> Result<(), DeckError> {
     }
     new_text.push_str(cards);
     new_text.push('\n');
-
-    let tmp = path.with_extension("txt.tmp");
-    std::fs::write(&tmp, new_text).map_err(io_err)?;
-    std::fs::rename(&tmp, path).map_err(io_err)?;
-    Ok(())
+    write_deck_text(path, &new_text)
 }
 
 /// Replaces a trace deck's checkpoint cards with `cards`, keeping the header —
-/// every line before the first card front (the `% trace:`, `% source:` and any
-/// comment lines). Used by the trace build (`alix generate <stub>`) to write the discovered path
-/// back into the deck (overwriting a previous build), via an atomic temp-file
-/// rename. A deck with no card front yet is all header, so the cards are simply
-/// appended after it.
+/// everything before the first card front (the frontmatter with its `trace:`
+/// and `source:` keys, the `# H1`, any preamble prose). Used by the trace
+/// build (`alix generate <stub>`) to write the discovered path back into the
+/// deck (overwriting a previous build), via an atomic temp-file rename. A deck
+/// with no card front yet is all header, so the cards are simply appended
+/// after it.
 pub fn set_trace_checkpoints(path: &Path, cards: &str) -> Result<(), DeckError> {
     let io_err = |source| DeckError::Io {
         path: path.to_path_buf(),
         source,
     };
     let existing = std::fs::read_to_string(path).map_err(io_err)?;
-    let new_text = replace_after_header(&existing, cards);
-
-    let tmp = path.with_extension("txt.tmp");
-    std::fs::write(&tmp, new_text).map_err(io_err)?;
-    std::fs::rename(&tmp, path).map_err(io_err)?;
-    Ok(())
+    let fronts = front_lines_of(path, &existing)?;
+    let new_text = replace_after_header(&existing, &fronts, cards);
+    write_deck_text(path, &new_text)
 }
 
-/// Returns the header of `text` (every line up to the first column-0 `#` card
+/// Returns the header of `text` (every line before the first `## ` card
 /// front, trailing blanks trimmed) followed by `cards`, separated by a blank
-/// line. The header keeps the `% trace:`/`% source:`/comment lines a build must
-/// not lose.
-fn replace_after_header(text: &str, cards: &str) -> String {
+/// line. `fronts` is the parsed card-front list, so a fenced `## ` (content)
+/// never truncates the header.
+fn replace_after_header(text: &str, fronts: &[usize], cards: &str) -> String {
     let cards = cards.trim_end();
-    let header = text
-        .lines()
-        .take_while(|l| !l.starts_with('#'))
-        .collect::<Vec<_>>()
-        .join("\n");
+    let header: Vec<&str> = match fronts.first() {
+        Some(&first) => text.lines().take(first.saturating_sub(1)).collect(),
+        None => text.lines().collect(),
+    };
+    let header = header.join("\n");
     let header = header.trim_end();
     let mut out = String::new();
     if !header.is_empty() {
@@ -610,23 +636,23 @@ fn replace_after_header(text: &str, cards: &str) -> String {
     out
 }
 
-/// A snapshot's rewrite for one `% at:` line: the frozen asset locator and the
-/// origin-relative provenance (`src/caching.rs:46-66`) appended as ` from …` —
-/// so the original location survives on the locator line itself, not smuggled
-/// into a user `!` note.
+/// A snapshot's rewrite for one `<!-- at: -->` directive: the frozen asset
+/// locator and the origin-relative provenance (`src/caching.rs:46-66`)
+/// appended as ` from …` — so the original location survives on the locator
+/// itself, not smuggled into a user note.
 pub struct AtRewrite {
     pub at: String,
     pub origin: Option<String>,
 }
 
 /// Repoints a snapshotted trace in place (atomic temp + rename): replaces the
-/// first `% source:` value with `source` (and adds a `% origin:` header when
-/// `origin` is set — the live crate root this deck froze from), and each `% at:`
-/// line (in file order) with the matching `ats` entry — its frozen asset plus a
-/// ` from <origin-relative>:<lines>` suffix. The `% trace:`, key points, notes,
-/// and everything else are preserved verbatim, so card identities are unaffected
-/// (`% at:`/`% origin:` and notes are not hashed). Used when snapshotting into
-/// `assets/`.
+/// frontmatter's `source:` value with `source` (and adds an `origin:` key when
+/// `origin` is set — the live crate root this deck froze from), and each
+/// standalone `<!-- at: ... -->` directive line (in file order) with the
+/// matching `ats` entry — its frozen asset plus a ` from
+/// <origin-relative>:<lines>` suffix. The `trace:` key, key points, notes, and
+/// everything else are preserved verbatim; identity tokens are untouched, so
+/// card identities are unaffected. Used when snapshotting into `assets/`.
 pub fn set_trace_snapshot(
     path: &Path,
     source: &str,
@@ -638,54 +664,67 @@ pub fn set_trace_snapshot(
         source,
     };
     let existing = std::fs::read_to_string(path).map_err(io_err)?;
-    let new_text = rewrite_trace_snapshot(&existing, source, origin, ats);
-
-    let tmp = path.with_extension("txt.tmp");
-    std::fs::write(&tmp, new_text).map_err(io_err)?;
-    std::fs::rename(&tmp, path).map_err(io_err)?;
-    Ok(())
+    let span = l1::parse_l1("deck.md", &existing)
+        .map_err(|source| DeckError::Parse {
+            path: path.to_path_buf(),
+            source,
+        })?
+        .frontmatter_span;
+    let new_text = rewrite_trace_snapshot(&existing, span, source, origin, ats);
+    write_deck_text(path, &new_text)
 }
 
-/// Pure transform for [`set_trace_snapshot`]: replace the first header
-/// `% source:` value with `source` (adding a `% origin:` line after it when set),
-/// and each `% at:` value (in order) with `ats[i].at`, appending
+/// Pure transform for [`set_trace_snapshot`]: within the frontmatter `span`,
+/// replace the first `source:` key line's value with `source` (adding an
+/// `origin:` line after it when set); in the body, replace each standalone
+/// `<!-- at: ... -->` line's value (in order) with `ats[i].at`, appending
 /// ` from <ats[i].origin>` when present. Indentation is preserved; everything
-/// else is untouched.
+/// else is untouched. (A literal `<!-- at: -->` line inside a code fence would
+/// be misread as a directive here — tool-generated trace decks never carry
+/// one, and the parser-side card surgery is unaffected.)
 fn rewrite_trace_snapshot(
     text: &str,
+    frontmatter_span: Option<crate::l1::LineSpan>,
     source: &str,
     origin: Option<&str>,
     ats: &[AtRewrite],
 ) -> String {
-    let directive = |line: &str, key: &str| {
-        line.trim()
-            .strip_prefix('%')
-            .map(str::trim)
-            .is_some_and(|rest| rest.strip_prefix(key).is_some())
-    };
-    fn indent_of(line: &str) -> &str {
-        &line[..line.len() - line.trim_start().len()]
+    // A standalone `<!-- at: ... -->` directive line: its leading indentation,
+    // or `None` for anything else.
+    fn at_indent(line: &str) -> Option<&str> {
+        let trimmed = line.trim_start();
+        let body = trimmed.strip_prefix("<!--")?.strip_suffix("-->")?;
+        let (key, _value) = body.split_once(':')?;
+        key.trim()
+            .eq_ignore_ascii_case("at")
+            .then(|| &line[..line.len() - trimmed.len()])
+    }
+    // A frontmatter block-mapping `source:` key line.
+    fn is_source_key(line: &str) -> bool {
+        line.strip_prefix("source")
+            .is_some_and(|rest| rest.trim_start().starts_with(':'))
     }
 
     let mut source_replaced = false;
     let mut at_i = 0;
-    let mut in_header = true;
     let mut out: Vec<String> = Vec::new();
-    for line in text.lines() {
-        if in_header && line.starts_with('#') {
-            in_header = false;
-        }
-        if in_header && !source_replaced && directive(line, "source:") {
-            out.push(format!("% source: {source}"));
+    for (idx, line) in text.lines().enumerate() {
+        let lineno = idx + 1;
+        let in_frontmatter =
+            frontmatter_span.is_some_and(|(open, close)| lineno > open && lineno < close);
+        if in_frontmatter && !source_replaced && is_source_key(line) {
+            out.push(format!("source: {source}"));
             if let Some(origin) = origin {
-                out.push(format!("% origin: {origin}"));
+                out.push(format!("origin: {origin}"));
             }
             source_replaced = true;
-        } else if directive(line, "at:") && at_i < ats.len() {
-            let indent = indent_of(line);
+        } else if !in_frontmatter
+            && at_i < ats.len()
+            && let Some(indent) = at_indent(line)
+        {
             match &ats[at_i].origin {
-                Some(o) => out.push(format!("{indent}% at: {} from {o}", ats[at_i].at)),
-                None => out.push(format!("{indent}% at: {}", ats[at_i].at)),
+                Some(o) => out.push(format!("{indent}<!-- at: {} from {o} -->", ats[at_i].at)),
+                None => out.push(format!("{indent}<!-- at: {} -->", ats[at_i].at)),
             }
             at_i += 1;
         } else {
@@ -699,32 +738,19 @@ fn rewrite_trace_snapshot(
     joined
 }
 
-/// Rewrites a deck file's `% requires:` lines to exactly `deps` (deck names),
-/// grouped at the top of the file; any existing `% requires:` lines are
-/// removed first. Written atomically (temp + rename). Card identities are
-/// unaffected — comments are not hashed — so dependencies can be changed
-/// freely without disturbing progress. An empty `deps` clears them.
-pub fn set_requires(path: &Path, deps: &[String]) -> Result<(), DeckError> {
-    let io_err = |source| DeckError::Io {
-        path: path.to_path_buf(),
-        source,
-    };
-    let text = std::fs::read_to_string(path).map_err(io_err)?;
-    let new_text = rewrite_requires(&text, deps);
-
-    let tmp = path.with_extension("txt.tmp");
-    std::fs::write(&tmp, new_text).map_err(io_err)?;
-    std::fs::rename(&tmp, path).map_err(io_err)?;
-    Ok(())
-}
+// `set_requires`/`rewrite_requires` are DELETED with the flip: `requires` now
+// lives in YAML frontmatter, and the helper had no production caller. A
+// frontmatter-aware rewrite can be built when a real caller appears (pre-1.0,
+// no compat shim).
 
 /// Removes whole card blocks from a deck file: every card whose front sits at
-/// one of the 1-based `front_lines` is deleted along with its back lines, notes
-/// and trailing blank separator. The block runs from the front (a column-0 `#`
-/// line) to the next card's front, or the end of the file. Passing the front
-/// line of any cloze sub-card removes the whole `% reveal: cloze` source block,
-/// since all of its holes share that line. The file is rewritten atomically (temp + rename).
-/// An empty `front_lines` is a no-op.
+/// one of the 1-based `front_lines` is deleted along with its back lines,
+/// notes and trailing blank separator. The block runs from the `## ` front to
+/// the next card's front, or the end of the file, by parse knowledge, so a
+/// fenced `## ` never splits a block. Passing the front line of any cloze
+/// sub-card removes the whole source block, since all of its holes share that
+/// line. The file is rewritten atomically (temp + rename). An empty
+/// `front_lines` is a no-op.
 pub fn remove_cards(path: &Path, front_lines: &[usize]) -> Result<(), DeckError> {
     if front_lines.is_empty() {
         return Ok(());
@@ -734,12 +760,9 @@ pub fn remove_cards(path: &Path, front_lines: &[usize]) -> Result<(), DeckError>
         source,
     };
     let text = std::fs::read_to_string(path).map_err(io_err)?;
-    let new_text = remove_card_blocks(&text, front_lines);
-
-    let tmp = path.with_extension("txt.tmp");
-    std::fs::write(&tmp, new_text).map_err(io_err)?;
-    std::fs::rename(&tmp, path).map_err(io_err)?;
-    Ok(())
+    let fronts = front_lines_of(path, &text)?;
+    let new_text = remove_card_blocks(&text, &fronts, front_lines);
+    write_deck_text(path, &new_text)
 }
 
 /// Rewrites `path` to `original` with the card blocks at `front_lines` removed.
@@ -754,38 +777,35 @@ pub fn rewrite_without_cards(
     original: &str,
     front_lines: &[usize],
 ) -> Result<(), DeckError> {
-    let io_err = |source| DeckError::Io {
-        path: path.to_path_buf(),
-        source,
-    };
-    let new_text = remove_card_blocks(original, front_lines);
-    let tmp = path.with_extension("txt.tmp");
-    std::fs::write(&tmp, new_text).map_err(io_err)?;
-    std::fs::rename(&tmp, path).map_err(io_err)?;
-    Ok(())
+    let fronts = front_lines_of(path, original)?;
+    let new_text = remove_card_blocks(original, &fronts, front_lines);
+    write_deck_text(path, &new_text)
 }
 
 /// Returns `text` with the card blocks starting at the given 1-based front
-/// lines removed. A card front is a column-0 `#` line; its block extends to the
-/// next column-0 `#` (or end of file), so the front, back lines, notes and the
-/// blank line after it all go. A `front_line` that does not land on a card
-/// front is ignored, so a stale line number can never corrupt the file.
-fn remove_card_blocks(text: &str, front_lines: &[usize]) -> String {
+/// lines removed. `fronts` is the parsed card-front list: a block runs from
+/// its front to the line before the next parsed front (or EOF), so the front,
+/// back lines, notes and the blank line after it all go, and a fenced `## `
+/// (content, absent from `fronts`) can never end a block early. A
+/// `front_line` that is not a parsed card front is ignored, so a stale line
+/// number can never corrupt the file.
+fn remove_card_blocks(text: &str, fronts: &[usize], front_lines: &[usize]) -> String {
     let lines: Vec<&str> = text.lines().collect();
-    // A column-0 `#` starts a card; an indented `#` is back content, a `%` is a
-    // comment — neither starts a block.
-    let is_front = |line: &str| line.starts_with('#');
-    let targets: std::collections::HashSet<usize> =
-        front_lines.iter().map(|n| n.saturating_sub(1)).collect();
+    let targets: std::collections::HashSet<usize> = front_lines.iter().copied().collect();
 
     let mut drop = vec![false; lines.len()];
-    for (i, line) in lines.iter().enumerate() {
-        if targets.contains(&i) && is_front(line) {
-            drop[i] = true;
-            let mut j = i + 1;
-            while j < lines.len() && !is_front(lines[j]) {
-                drop[j] = true;
-                j += 1;
+    for (i, &front) in fronts.iter().enumerate() {
+        if !targets.contains(&front) {
+            continue;
+        }
+        // 1-based inclusive block end: the line before the next front, or EOF.
+        let end = fronts
+            .get(i + 1)
+            .map(|next| next.saturating_sub(1))
+            .unwrap_or(lines.len());
+        for lineno in front..=end.min(lines.len()) {
+            if lineno >= 1 {
+                drop[lineno - 1] = true;
             }
         }
     }
@@ -803,52 +823,32 @@ fn remove_card_blocks(text: &str, front_lines: &[usize]) -> String {
     result
 }
 
-/// `true` if `line` is a `% requires:` directive.
-fn is_requires_line(line: &str) -> bool {
-    line.trim()
-        .strip_prefix('%')
-        .is_some_and(|rest| rest.trim().strip_prefix("requires:").is_some())
-}
-
-/// Drops existing `% requires:` lines and prepends one per `dep`.
-fn rewrite_requires(text: &str, deps: &[String]) -> String {
-    let kept: Vec<&str> = text.lines().filter(|l| !is_requires_line(l)).collect();
-    let mut out = String::new();
-    for dep in deps {
-        out.push_str("% requires: ");
-        out.push_str(dep);
-        out.push('\n');
-    }
-    out.push_str(&kept.join("\n"));
-    if text.ends_with('\n') && !out.ends_with('\n') {
-        out.push('\n');
-    }
-    out
-}
-
-/// Inserts `notes` as tab-indented `!` lines after the last content line of
-/// the card whose front sits at the 1-based `front_line`.
-fn insert_note_lines(text: &str, front_line: usize, notes: &[String]) -> String {
+/// Inserts `notes` as `> ` note lines after the last content line of the card
+/// whose front sits at the 1-based `front_line`. `fronts` is the parsed
+/// card-front list; the card's block ends at the next parsed front (or EOF),
+/// so a fenced `## ` inside the answer never truncates the walk.
+fn insert_note_lines(text: &str, fronts: &[usize], front_line: usize, notes: &[String]) -> String {
     let lines: Vec<&str> = text.lines().collect();
 
-    // Walk from the line after the front to the next column-0 front (or
-    // EOF), remembering the last non-blank line that belongs to the card.
+    // The 0-based exclusive bound of the card's block: the next parsed front
+    // after `front_line`, or EOF.
+    let bound = fronts
+        .iter()
+        .find(|&&f| f > front_line)
+        .map(|&f| f.saturating_sub(1))
+        .unwrap_or(lines.len())
+        .min(lines.len());
     let front_index = front_line.saturating_sub(1);
     let mut last_content = front_index;
-    let mut i = front_index + 1;
-    while i < lines.len() {
-        if lines[i].starts_with('#') {
-            break;
-        }
-        if !lines[i].trim().is_empty() {
+    for (i, line) in lines.iter().enumerate().take(bound).skip(front_index + 1) {
+        if !line.trim().is_empty() {
             last_content = i;
         }
-        i += 1;
     }
 
     let mut out: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
     for (offset, note) in notes.iter().enumerate() {
-        out.insert(last_content + 1 + offset, format!("\t! {note}"));
+        out.insert(last_content + 1 + offset, format!("> {note}"));
     }
 
     let mut result = out.join("\n");
@@ -901,10 +901,19 @@ mod tests {
         });
     }
 
+    /// The parsed card-front lines of `text`, for the pure surgery helpers.
+    fn fronts(text: &str) -> Vec<usize> {
+        l1::card_front_lines(text).unwrap()
+    }
+
     #[test]
     fn deck_state_progresses_notstarted_started_finished() {
         let dir = tempfile::tempdir().unwrap();
-        let path = write_deck(dir.path(), "d.txt", "# a\n\t1\n# b\n\t2\n");
+        let path = write_deck(
+            dir.path(),
+            "d.md",
+            "## a <!-- id: q1 -->\n1\n## b <!-- id: q2 -->\n2\n",
+        );
         let deck = Deck::load(&path).unwrap();
         let (mut store, _s) = empty_store();
 
@@ -924,7 +933,11 @@ mod tests {
     #[test]
     fn sourced_deck_is_examdue_until_mastered() {
         let dir = tempfile::tempdir().unwrap();
-        let path = write_deck(dir.path(), "d.txt", "% source: https://x\n# a\n\t1\n");
+        let path = write_deck(
+            dir.path(),
+            "d.md",
+            "---\nsource: https://x\n---\n## a <!-- id: q1 -->\n1\n",
+        );
         let deck = Deck::load(&path).unwrap();
         let (mut store, _s) = empty_store();
 
@@ -942,8 +955,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = write_deck(
             dir.path(),
-            "d.txt",
-            "% source: https://x\n# a\n\t1\n# b\n\t2\n",
+            "d.md",
+            "---\nsource: https://x\n---\n## a <!-- id: q1 -->\n1\n## b <!-- id: q2 -->\n2\n",
         );
         let deck = Deck::load(&path).unwrap();
         let (mut store, _s) = empty_store();
@@ -961,11 +974,11 @@ mod tests {
     #[test]
     fn a_sourceless_deck_finishes_once_every_card_graduates() {
         let dir = tempfile::tempdir().unwrap();
-        let path = write_deck(dir.path(), "d.txt", "# a\n\t1\n");
+        let path = write_deck(dir.path(), "d.md", "## a <!-- id: q1 -->\n1\n");
         let deck = Deck::load(&path).unwrap();
         let (mut store, _s) = empty_store();
 
-        // No `% source:`, so graduating every card finishes it (unlocks deps).
+        // No `source:`, so graduating every card finishes it (unlocks deps).
         graduate(&mut store, deck.cards[0].id());
         assert_eq!(DeckState::Finished, deck.state(&store));
     }
@@ -973,7 +986,7 @@ mod tests {
     #[test]
     fn a_deck_still_learning_a_card_is_only_started() {
         let dir = tempfile::tempdir().unwrap();
-        let path = write_deck(dir.path(), "d.txt", "# a\n\t1\n");
+        let path = write_deck(dir.path(), "d.md", "## a <!-- id: q1 -->\n1\n");
         let deck = Deck::load(&path).unwrap();
         let (mut store, _s) = empty_store();
         // Seen but still in a learning step (not graduated) — only `Started`.
@@ -984,12 +997,12 @@ mod tests {
     #[test]
     fn nongating_prerequisites_flags_a_sourceless_required_deck() {
         let dir = tempfile::tempdir().unwrap();
-        write_deck(dir.path(), "a.txt", "# a\n\t1\n"); // source-less: no exam
-        write_deck(dir.path(), "c.txt", "% source: https://x\n# c\n\t1\n"); // sourced
+        write_deck(dir.path(), "a.md", "## a\n1\n"); // source-less: no exam
+        write_deck(dir.path(), "c.md", "---\nsource: https://x\n---\n## c\n1\n"); // sourced
         let b_path = write_deck(
             dir.path(),
-            "b.txt",
-            "% source: https://x\n% requires: a\n% requires: c\n# b\n\t1\n",
+            "b.md",
+            "---\nsource: https://x\nrequires:\n  - a\n  - c\n---\n## b\n1\n",
         );
         let b = Deck::load(&b_path).unwrap();
         // Only the source-less `a` is flagged; the sourced `c` gates fine.
@@ -999,15 +1012,15 @@ mod tests {
     #[test]
     fn nongating_prerequisites_empty_when_no_exam_or_prereq_missing() {
         let dir = tempfile::tempdir().unwrap();
-        write_deck(dir.path(), "a.txt", "# a\n\t1\n");
+        write_deck(dir.path(), "a.md", "## a\n1\n");
         // A source-less deck has no exam of its own — nothing to gate.
-        let b = write_deck(dir.path(), "b.txt", "% requires: a\n# b\n\t1\n");
+        let b = write_deck(dir.path(), "b.md", "---\nrequires: a\n---\n## b\n1\n");
         assert!(nongating_prerequisites(&Deck::load(&b).unwrap()).is_empty());
         // A sourced deck requiring a MISSING prereq: skipped (not a fixable edge).
         let c = write_deck(
             dir.path(),
-            "c.txt",
-            "% source: https://x\n% requires: nope\n# c\n\t1\n",
+            "c.md",
+            "---\nsource: https://x\nrequires: nope\n---\n## c\n1\n",
         );
         assert!(nongating_prerequisites(&Deck::load(&c).unwrap()).is_empty());
     }
@@ -1020,8 +1033,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = write_deck(
             dir.path(),
-            "d.txt",
-            "% source: https://x\n# a\n\t1\n# b\n\t2\n",
+            "d.md",
+            "---\nsource: https://x\n---\n## a <!-- id: q1 -->\n1\n## b <!-- id: q2 -->\n2\n",
         );
         let deck = Deck::load(&path).unwrap();
         let (mut store, _s) = empty_store();
@@ -1034,19 +1047,27 @@ mod tests {
     #[test]
     fn sourceless_deck_finishes_on_drill_alone() {
         let dir = tempfile::tempdir().unwrap();
-        let path = write_deck(dir.path(), "d.txt", "# a\n\t1\n");
+        let path = write_deck(dir.path(), "d.md", "## a <!-- id: q1 -->\n1\n");
         let deck = Deck::load(&path).unwrap();
         let (mut store, _s) = empty_store();
         retire(&mut store, deck.cards[0].id());
-        // No `% source:` -> no exam -> Finished as soon as it's fully drilled.
+        // No `source:` -> no exam -> Finished as soon as it's fully drilled.
         assert_eq!(DeckState::Finished, deck.state(&store));
     }
 
     #[test]
     fn dependent_stays_locked_until_sourced_prereq_mastered() {
         let dir = tempfile::tempdir().unwrap();
-        let basics = write_deck(dir.path(), "basics.txt", "% source: https://x\n# a\n\t1\n");
-        let adv = write_deck(dir.path(), "advanced.txt", "% requires: basics\n# x\n\ty\n");
+        let basics = write_deck(
+            dir.path(),
+            "basics.md",
+            "---\nsource: https://x\n---\n## a <!-- id: q1 -->\n1\n",
+        );
+        let adv = write_deck(
+            dir.path(),
+            "advanced.md",
+            "---\nrequires: basics\n---\n## x\ny\n",
+        );
         let advanced = Deck::load(&adv).unwrap();
         let basics = Deck::load(&basics).unwrap();
         let (mut store, _s) = empty_store();
@@ -1065,26 +1086,43 @@ mod tests {
     #[test]
     fn dependents_lists_requiring_decks() {
         let dir = tempfile::tempdir().unwrap();
-        let basics = write_deck(dir.path(), "basics.txt", "# a\n\t1\n");
-        write_deck(dir.path(), "advanced.txt", "% requires: basics\n# x\n\ty\n");
-        write_deck(dir.path(), "expert.txt", "% requires: advanced\n# z\n\tw\n");
-        write_deck(dir.path(), "unrelated.txt", "# q\n\tr\n");
+        let basics = write_deck(dir.path(), "basics.md", "## a\n1\n");
+        write_deck(
+            dir.path(),
+            "advanced.md",
+            "---\nrequires: basics\n---\n## x\ny\n",
+        );
+        write_deck(
+            dir.path(),
+            "expert.md",
+            "---\nrequires: advanced\n---\n## z\nw\n",
+        );
+        write_deck(dir.path(), "unrelated.md", "## q\nr\n");
 
         let deps = dependents(&basics, dir.path());
-        assert_eq!(vec!["advanced.txt"], deps);
+        assert_eq!(vec!["advanced.md"], deps);
     }
 
     #[test]
     fn append_cards_appends_with_separation_and_parses() {
         let dir = tempfile::tempdir().unwrap();
-        let path = write_deck(dir.path(), "d.txt", "# one\n\t1\n");
-        append_cards(&path, "# two\n% reveal: line\n\tkey point\n").unwrap();
+        let path = write_deck(dir.path(), "d.md", "## one <!-- id: q1 -->\n1\n");
+        // Callers pass already-stamped text.
+        append_cards(
+            &path,
+            "## two <!-- id: q2 --> <!-- reveal: line -->\nkey point\n",
+        )
+        .unwrap();
 
         let text = std::fs::read_to_string(&path).unwrap();
-        assert_eq!("# one\n\t1\n\n# two\n% reveal: line\n\tkey point\n", text);
+        assert_eq!(
+            "## one <!-- id: q1 -->\n1\n\n## two <!-- id: q2 --> <!-- reveal: line -->\nkey point\n",
+            text
+        );
         // The original card's identity survives; the new card is added.
-        let cards = crate::parser::parse_str("d.txt", &text).unwrap();
+        let cards = l1::parse_str("d.md", &text).unwrap();
         assert_eq!(2, cards.len());
+        assert_eq!(Some("q1"), cards[0].token.as_deref());
     }
 
     #[test]
@@ -1092,20 +1130,20 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = write_deck(
             dir.path(),
-            "t.txt",
-            "% trace: how it works\n% source: .\n\n# old question\n\told point\n\t% at: 1\n",
+            "t.md",
+            "---\ntrace: how it works\nsource: .\n---\n\n## old question\nold point\n<!-- at: 1 -->\n",
         );
         set_trace_checkpoints(
             &path,
-            "# new q1\n\tp1\n\t% at: 2\n# new q2\n\tp2\n\t% at: 3\n",
+            "## new q1\np1\n<!-- at: 2 -->\n## new q2\np2\n<!-- at: 3 -->\n",
         )
         .unwrap();
 
         let text = std::fs::read_to_string(&path).unwrap();
-        // The `% trace:`/`% source:` header is kept; the old checkpoint is gone.
-        assert!(text.starts_with("% trace: how it works\n% source: .\n"));
+        // The `trace:`/`source:` frontmatter is kept; the old checkpoint is gone.
+        assert!(text.starts_with("---\ntrace: how it works\nsource: .\n---\n"));
         assert!(!text.contains("old question"));
-        assert!(text.contains("# new q1"));
+        assert!(text.contains("## new q1"));
         // The header survives a reload; the new checkpoints parse.
         let deck = Deck::load(&path).unwrap();
         assert_eq!(Some("how it works".to_string()), deck.trace);
@@ -1115,15 +1153,16 @@ mod tests {
     #[test]
     fn replace_after_header_appends_when_no_cards_yet() {
         // A fresh trace (header only) gets the cards appended below the header.
-        let text = "% trace: how it works\n% source: .\n";
-        let out = replace_after_header(text, "# q\n\tp\n");
-        assert_eq!("% trace: how it works\n% source: .\n\n# q\n\tp\n", out);
+        let text = "---\ntrace: how it works\nsource: .\n---\n";
+        let out = replace_after_header(text, &fronts(text), "## q\np\n");
+        assert_eq!("---\ntrace: how it works\nsource: .\n---\n\n## q\np\n", out);
     }
 
     #[test]
     fn empty_deck_is_not_started() {
         let dir = tempfile::tempdir().unwrap();
-        let path = write_deck(dir.path(), "e.txt", "% only a comment\n");
+        // Prose only, zero `## ` fronts: a valid zero-card deck.
+        let path = write_deck(dir.path(), "e.md", "only a comment\n");
         let deck = Deck::load(&path).unwrap();
         let (store, _s) = empty_store();
         assert!(deck.cards.is_empty());
@@ -1133,9 +1172,13 @@ mod tests {
     #[test]
     fn source_less_prerequisite_never_locks() {
         let dir = tempfile::tempdir().unwrap();
-        // basics has no `% source:`, so no exam — it can never gate.
-        write_deck(dir.path(), "basics.txt", "# a\n\t1\n");
-        let adv = write_deck(dir.path(), "advanced.txt", "% requires: basics\n# x\n\ty\n");
+        // basics has no `source:`, so no exam — it can never gate.
+        write_deck(dir.path(), "basics.md", "## a\n1\n");
+        let adv = write_deck(
+            dir.path(),
+            "advanced.md",
+            "---\nrequires: basics\n---\n## x\ny\n",
+        );
         let advanced = Deck::load(&adv).unwrap();
         let (store, _s) = empty_store();
         let dd = Some(dir.path());
@@ -1150,16 +1193,20 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         // a (sourced) <- b (source-less) <- c (sourced): the gate is a's exam,
         // seen through b which never gates on its own.
-        write_deck(dir.path(), "a.txt", "% source: https://x\n# a\n\t1\n");
-        write_deck(dir.path(), "b.txt", "% requires: a\n# b\n\t2\n");
+        write_deck(dir.path(), "a.md", "---\nsource: https://x\n---\n## a\n1\n");
+        write_deck(
+            dir.path(),
+            "b.md",
+            "---\nrequires: a\n---\n## b <!-- id: q1 -->\n2\n",
+        );
         let cpath = write_deck(
             dir.path(),
-            "c.txt",
-            "% source: https://y\n% requires: b\n# c\n\t3\n",
+            "c.md",
+            "---\nsource: https://y\nrequires: b\n---\n## c\n3\n",
         );
         let c = Deck::load(&cpath).unwrap();
-        let a = Deck::load(dir.path().join("a.txt")).unwrap();
-        let b = Deck::load(dir.path().join("b.txt")).unwrap();
+        let a = Deck::load(dir.path().join("a.md")).unwrap();
+        let b = Deck::load(dir.path().join("b.md")).unwrap();
         let (mut store, _s) = empty_store();
         let dd = Some(dir.path());
 
@@ -1176,7 +1223,7 @@ mod tests {
     #[test]
     fn missing_prerequisite_does_not_lock() {
         let dir = tempfile::tempdir().unwrap();
-        let path = write_deck(dir.path(), "d.txt", "% requires: nope\n# a\n\t1\n");
+        let path = write_deck(dir.path(), "d.md", "---\nrequires: nope\n---\n## a\n1\n");
         let deck = Deck::load(&path).unwrap();
         let (store, _s) = empty_store();
         assert!(!is_locked(&deck, Some(dir.path()), &store));
@@ -1190,132 +1237,161 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         write_deck(
             dir.path(),
-            "a.txt",
-            "% source: https://x\n% requires: b\n# a\n\t1\n",
+            "a.md",
+            "---\nsource: https://x\nrequires: b\n---\n## a\n1\n",
         );
         write_deck(
             dir.path(),
-            "b.txt",
-            "% source: https://y\n% requires: a\n# b\n\t2\n",
+            "b.md",
+            "---\nsource: https://y\nrequires: a\n---\n## b\n2\n",
         );
-        let a = Deck::load(dir.path().join("a.txt")).unwrap();
+        let a = Deck::load(dir.path().join("a.md")).unwrap();
         let (store, _s) = empty_store();
         assert!(is_locked(&a, Some(dir.path()), &store));
     }
 
     #[test]
-    fn resolve_dep_keeps_an_existing_extension_instead_of_forcing_txt() {
+    fn resolve_dep_strips_any_extension_and_matches_md() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("notes.md"), "x").unwrap();
+        // As given.
         let found = resolve_dep("notes.md", Some(dir.path()), None).unwrap();
+        assert_eq!(dir.path().join("notes.md"), found);
+        // Bare name gains `.md`.
+        let found = resolve_dep("notes", Some(dir.path()), None).unwrap();
+        assert_eq!(dir.path().join("notes.md"), found);
+        // A legacy `.txt` value still resolves the `.md` deck (extension
+        // stripped, `.md` matched).
+        let found = resolve_dep("notes.txt", Some(dir.path()), None).unwrap();
         assert_eq!(dir.path().join("notes.md"), found);
     }
 
     #[test]
     fn load_deck_subject_is_file_name() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("mydeck.txt");
+        let path = dir.path().join("mydeck.md");
         let mut f = std::fs::File::create(&path).unwrap();
-        writeln!(f, "# front\nback").unwrap();
+        writeln!(f, "## front\nback").unwrap();
 
         let deck = Deck::load(&path).unwrap();
-        assert_eq!("mydeck.txt", deck.subject);
+        assert_eq!("mydeck.md", deck.subject);
         assert_eq!(1, deck.cards.len());
-        assert_eq!("mydeck.txt", &*deck.cards[0].subject);
+        assert_eq!("mydeck.md", &*deck.cards[0].subject);
     }
 
     #[test]
     fn insert_note_after_existing_card_content() {
-        let text = "# one\n\tback 1\n\t! old note\n\n# two\n\tback 2\n";
+        let text = "## one\nback 1\n> old note\n\n## two\nback 2\n";
         let notes = vec!["new a".to_string(), "new b".to_string()];
-        let result = insert_note_lines(text, 1, &notes);
+        let result = insert_note_lines(text, &fronts(text), 1, &notes);
         assert_eq!(
-            "# one\n\tback 1\n\t! old note\n\t! new a\n\t! new b\n\n# two\n\tback 2\n",
+            "## one\nback 1\n> old note\n> new a\n> new b\n\n## two\nback 2\n",
             result
         );
         // The result must still parse, with the note extended.
-        let cards = crate::parser::parse_str("s", &result).unwrap();
+        let cards = l1::parse_str("s.md", &result).unwrap();
         assert_eq!(Some("old note\nnew a\nnew b".to_string()), cards[0].note);
     }
 
     #[test]
     fn insert_note_on_last_card_without_note() {
-        let text = "# one\n\tback 1\n";
-        let result = insert_note_lines(text, 1, &["note".to_string()]);
-        assert_eq!("# one\n\tback 1\n\t! note\n", result);
-        let cards = crate::parser::parse_str("s", &result).unwrap();
+        let text = "## one\nback 1\n";
+        let result = insert_note_lines(text, &fronts(text), 1, &["note".to_string()]);
+        assert_eq!("## one\nback 1\n> note\n", result);
+        let cards = l1::parse_str("s.md", &result).unwrap();
         assert_eq!(Some("note".to_string()), cards[0].note);
     }
 
     #[test]
     fn insert_note_targets_the_right_card() {
-        let text = "# one\n\tback 1\n\n# two\n\tback 2\n\n# three\n\tback 3\n";
-        let result = insert_note_lines(text, 4, &["mid".to_string()]);
-        let cards = crate::parser::parse_str("s", &result).unwrap();
+        let text = "## one\nback 1\n\n## two\nback 2\n\n## three\nback 3\n";
+        let result = insert_note_lines(text, &fronts(text), 4, &["mid".to_string()]);
+        let cards = l1::parse_str("s.md", &result).unwrap();
         assert_eq!(None, cards[0].note);
         assert_eq!(Some("mid".to_string()), cards[1].note);
         assert_eq!(None, cards[2].note);
     }
 
     #[test]
+    fn insert_note_is_not_fooled_by_a_fenced_heading() {
+        // The card's answer holds a fenced `## `: the note must land after the
+        // fence (still inside card one), not inside it.
+        let text = "## one\n```\n## not a card\n```\ntail\n\n## two\nb\n";
+        let result = insert_note_lines(text, &fronts(text), 1, &["n".to_string()]);
+        assert_eq!(
+            "## one\n```\n## not a card\n```\ntail\n> n\n\n## two\nb\n",
+            result
+        );
+    }
+
+    #[test]
     fn append_note_rewrites_the_file_and_card_ids_survive() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("d.txt");
-        std::fs::write(&path, "# front\n\tanswer\n").unwrap();
+        let path = dir.path().join("d.md");
+        std::fs::write(&path, "## front <!-- id: q1 -->\nanswer\n").unwrap();
 
         let before = Deck::load(&path).unwrap();
         append_note(&path, 1, &["explained".to_string()]).unwrap();
         let after = Deck::load(&path).unwrap();
 
         assert_eq!(Some("explained".to_string()), after.cards[0].note);
-        // Notes are not hashed: progress stays attached.
+        // Notes are never identity: the token (and so the id) is unchanged.
         assert_eq!(before.cards[0].id(), after.cards[0].id());
     }
 
     #[test]
     fn remove_card_block_drops_front_back_and_trailing_blank() {
-        let text = "# one\n\tback 1\n\t! a note\n\n# two\n\tback 2\n";
+        let text = "## one\nback 1\n> a note\n\n## two\nback 2\n";
         // Removing the first card takes its note and the blank separator too.
-        assert_eq!("# two\n\tback 2\n", remove_card_blocks(text, &[1]));
+        assert_eq!(
+            "## two\nback 2\n",
+            remove_card_blocks(text, &fronts(text), &[1])
+        );
         // Removing the last card leaves the first intact.
         assert_eq!(
-            "# one\n\tback 1\n\t! a note\n",
-            remove_card_blocks(text, &[5])
+            "## one\nback 1\n> a note\n",
+            remove_card_blocks(text, &fronts(text), &[5])
         );
     }
 
     #[test]
     fn remove_card_block_keeps_header_and_neighbors() {
-        let text = "% requires: base\n% link: https://x\n# a\n\tx\n# b\n\ty\n# c\n\tz\n";
-        // The middle card goes; the header and the other two stay.
+        let text = "---\nrequires: base\nlink: https://x\n---\n## a\nx\n## b\ny\n## c\nz\n";
+        // The middle card goes; the frontmatter and the other two stay.
         assert_eq!(
-            "% requires: base\n% link: https://x\n# a\n\tx\n# c\n\tz\n",
-            remove_card_blocks(text, &[5])
+            "---\nrequires: base\nlink: https://x\n---\n## a\nx\n## c\nz\n",
+            remove_card_blocks(text, &fronts(text), &[7])
         );
     }
 
     #[test]
-    fn remove_card_block_handles_indented_hash_back_line() {
-        // An indented `#` is back content, not a new card, so it is part of the
-        // block and does not end it.
-        let text = "# q\n\t# answer with a hash\n# next\n\tb\n";
-        assert_eq!("# next\n\tb\n", remove_card_blocks(text, &[1]));
+    fn remove_card_block_is_not_fooled_by_a_fenced_heading() {
+        // A fenced `## ` is content, not a boundary: removing card one takes
+        // the whole fence with it.
+        let text = "## q\n```\n## not a card\n```\n## next\nb\n";
+        assert_eq!(
+            "## next\nb\n",
+            remove_card_blocks(text, &fronts(text), &[1])
+        );
     }
 
     #[test]
     fn remove_multiple_and_stale_line_is_ignored() {
-        let text = "# a\n\tx\n# b\n\ty\n# c\n\tz\n";
+        let text = "## a\nx\n## b\ny\n## c\nz\n";
         // Remove a and c; a line that isn't a front (2) is ignored.
-        assert_eq!("# b\n\ty\n", remove_card_blocks(text, &[1, 2, 5]));
+        assert_eq!(
+            "## b\ny\n",
+            remove_card_blocks(text, &fronts(text), &[1, 2, 5])
+        );
         // Removing everything yields an empty file (no stray newline).
-        assert_eq!("", remove_card_blocks(text, &[1, 3, 5]));
+        assert_eq!("", remove_card_blocks(text, &fronts(text), &[1, 3, 5]));
     }
 
     #[test]
     fn remove_cards_rewrites_the_file() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("d.txt");
-        std::fs::write(&path, "# one\n\tback 1\n\n# two\n\tback 2\n").unwrap();
+        let path = dir.path().join("d.md");
+        std::fs::write(&path, "## one\nback 1\n\n## two\nback 2\n").unwrap();
 
         remove_cards(&path, &[1]).unwrap();
         let deck = Deck::load(&path).unwrap();
@@ -1324,25 +1400,25 @@ mod tests {
     }
 
     #[test]
-    fn settings_parsed_from_directives() {
+    fn settings_parsed_from_frontmatter() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("d.txt");
+        let path = dir.path().join("d.md");
         std::fs::write(
             &path,
-            "% reveal: line\n% order: sequential\n% direction: bogus\n# f\n\tb\n",
+            "---\nreveal: line\norder: sequential\ndirection: bogus\n---\n## f\nb\n",
         )
         .unwrap();
 
         let deck = Deck::load(&path).unwrap();
         assert_eq!(Some(Reveal::Line), deck.settings.reveal);
         assert_eq!(Some(Order::Sequential), deck.settings.order);
-        // An unparseable value is ignored, not an error.
+        // An unparseable value is linted (doctor material), not an error.
         assert_eq!(None, deck.settings.direction);
     }
 
     #[test]
     fn origin_cascades_workspace_then_deck() {
-        // The deck's own `% origin:` wins over the workspace `[defaults]`.
+        // The deck's own `origin` wins over the workspace `[defaults]`.
         let mut deck =
             DeckSettings::from_directives(&[("origin".to_string(), "/deck".to_string())]);
         deck.fill_from(&DeckSettings::from_directives(&[(
@@ -1364,12 +1440,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = write_deck(
             dir.path(),
-            "d.txt",
-            "% link: https://a.example\n\
-             % source: https://b.example\n\
-             % source: notes.md\n\
-             % source: https://a.example\n\
-             # f\n\tb\n",
+            "d.md",
+            "---\nlink: https://a.example\nsource:\n  - https://b.example\n  - notes.md\n  - https://a.example\n---\n## f\nb\n",
         );
         let deck = Deck::load(&path).unwrap();
         // Links first, then URL sources not already present. The local-file
@@ -1383,81 +1455,50 @@ mod tests {
     #[test]
     fn strictness_directive_parses() {
         let dir = tempfile::tempdir().unwrap();
-        let path = write_deck(dir.path(), "d.txt", "% strictness: strict\n# f\n\tb\n");
+        let path = write_deck(
+            dir.path(),
+            "d.md",
+            "---\nstrictness: strict\n---\n## f\nb\n",
+        );
         let deck = Deck::load(&path).unwrap();
         assert_eq!(Some(Strictness::Strict), deck.settings.exam_strictness);
 
-        // Absent directive leaves it unset (the config default applies later).
-        let bare = write_deck(dir.path(), "e.txt", "# f\n\tb\n");
+        // Absent key leaves it unset (the config default applies later).
+        let bare = write_deck(dir.path(), "e.md", "## f\nb\n");
         assert_eq!(None, Deck::load(&bare).unwrap().settings.exam_strictness);
 
-        // An unparseable value is ignored, not an error.
-        let bad = write_deck(dir.path(), "g.txt", "% strictness: harsh\n# f\n\tb\n");
+        // An unparseable value is linted, not an error.
+        let bad = write_deck(dir.path(), "g.md", "---\nstrictness: harsh\n---\n## f\nb\n");
         assert_eq!(None, Deck::load(&bad).unwrap().settings.exam_strictness);
     }
 
     #[test]
     fn reveal_directive_parses_and_stamps_cards() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("u.txt");
-        std::fs::write(&path, "% reveal: line\n# steps?\n\tone\n\ttwo\n").unwrap();
+        let path = dir.path().join("u.md");
+        std::fs::write(&path, "---\nreveal: line\n---\n## steps?\none\ntwo\n").unwrap();
         let deck = Deck::load(&path).unwrap();
         assert_eq!(Some(Reveal::Line), deck.settings.reveal);
         assert_eq!(Some(Reveal::Line), deck.cards[0].reveal); // stamped onto the card
     }
 
     #[test]
-    fn rewrite_requires_replaces_block_at_top() {
-        let text = "% requires: old\n# a\n\tb\n";
-        let out = rewrite_requires(text, &["x.txt".to_string(), "y.txt".to_string()]);
-        assert_eq!("% requires: x.txt\n% requires: y.txt\n# a\n\tb\n", out);
-    }
-
-    #[test]
-    fn rewrite_requires_empty_clears_them_keeping_other_comments() {
-        let text = "% requires: old\n% reveal: line\n# a\n\tb\n";
-        assert_eq!("% reveal: line\n# a\n\tb\n", rewrite_requires(text, &[]));
-    }
-
-    #[test]
-    fn set_requires_roundtrips_via_load() {
+    fn requires_parsed_from_frontmatter() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("d.txt");
-        std::fs::write(&path, "# front\n\tanswer\n").unwrap();
-
-        let before = Deck::load(&path).unwrap();
-        set_requires(&path, &["basics.txt".to_string()]).unwrap();
-        let after = Deck::load(&path).unwrap();
-
-        assert_eq!(vec!["basics.txt".to_string()], after.requires);
-        // Comments aren't hashed, so the card's identity is unchanged.
-        assert_eq!(before.cards[0].id(), after.cards[0].id());
-
-        // Clearing removes the line again.
-        set_requires(&path, &[]).unwrap();
-        assert!(Deck::load(&path).unwrap().requires.is_empty());
-    }
-
-    #[test]
-    fn requires_parsed_from_header() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("d.txt");
-        std::fs::write(&path, "% requires: basics\n% requires: x.txt\n# f\n\tb\n").unwrap();
+        let path = dir.path().join("d.md");
+        std::fs::write(&path, "---\nrequires:\n  - basics\n  - x\n---\n## f\nb\n").unwrap();
 
         let deck = Deck::load(&path).unwrap();
-        assert_eq!(
-            vec!["basics".to_string(), "x.txt".to_string()],
-            deck.requires
-        );
+        assert_eq!(vec!["basics".to_string(), "x".to_string()], deck.requires);
     }
 
     #[test]
     fn card_reveal_is_card_override_else_deck_reveal() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("d.txt");
+        let path = dir.path().join("d.md");
         std::fs::write(
             &path,
-            "% reveal: flip\n# a\n% reveal: line\n\tx\n# b\n\ty\n",
+            "---\nreveal: flip\n---\n## a <!-- reveal: line -->\nx\n## b\ny\n",
         )
         .unwrap();
 
@@ -1469,8 +1510,12 @@ mod tests {
     #[test]
     fn card_input_is_card_override_else_deck_input() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("d.txt");
-        std::fs::write(&path, "% input: draw\n# a\n% input: type\n\tx\n# b\n\ty\n").unwrap();
+        let path = dir.path().join("d.md");
+        std::fs::write(
+            &path,
+            "---\ninput: draw\n---\n## a <!-- input: type -->\nx\n## b\ny\n",
+        )
+        .unwrap();
 
         let deck = Deck::load(&path).unwrap();
         assert_eq!(Some(Input::Type), deck.cards[0].input); // card override wins
@@ -1480,16 +1525,20 @@ mod tests {
     #[test]
     fn cards_have_no_reveal_without_directives() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("d.txt");
-        std::fs::write(&path, "# a\n\tx\n").unwrap();
+        let path = dir.path().join("d.md");
+        std::fs::write(&path, "## a\nx\n").unwrap();
         assert_eq!(None, Deck::load(&path).unwrap().cards[0].reveal);
     }
 
     #[test]
     fn direction_both_expands_to_forward_and_reverse() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("d.txt");
-        std::fs::write(&path, "# purported\n% direction: both\n\tangeblich\n").unwrap();
+        let path = dir.path().join("d.md");
+        std::fs::write(
+            &path,
+            "## purported <!-- id: q1 --> <!-- direction: both -->\nangeblich\n",
+        )
+        .unwrap();
         let deck = Deck::load(&path).unwrap();
         assert_eq!(2, deck.cards.len());
         assert_eq!("purported", deck.cards[0].front);
@@ -1497,14 +1546,17 @@ mod tests {
         assert_eq!("angeblich", deck.cards[1].front);
         assert_eq!(vec!["purported"], deck.cards[1].back);
         assert_eq!(deck.cards[0].line, deck.cards[1].line); // sibling group
+        // Distinct identities: `q1` forward, `q1-r` reversed.
+        assert_eq!(Some("q1".to_string()), deck.cards[0].id_string());
+        assert_eq!(Some("q1-r".to_string()), deck.cards[1].id_string());
         assert_ne!(deck.cards[0].id(), deck.cards[1].id());
     }
 
     #[test]
     fn direction_reverse_keeps_only_the_swapped_card() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("d.txt");
-        std::fs::write(&path, "# q\n% direction: reverse\n\ta\n").unwrap();
+        let path = dir.path().join("d.md");
+        std::fs::write(&path, "## q <!-- direction: reverse -->\na\n").unwrap();
         let deck = Deck::load(&path).unwrap();
         assert_eq!(1, deck.cards.len());
         assert_eq!("a", deck.cards[0].front);
@@ -1512,33 +1564,37 @@ mod tests {
     }
 
     #[test]
-    fn deck_depth_direction_applies_to_cards() {
+    fn deck_level_direction_applies_to_cards() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("d.txt");
-        std::fs::write(&path, "% direction: both\n# a\n\tb\n").unwrap();
+        let path = dir.path().join("d.md");
+        std::fs::write(&path, "---\ndirection: both\n---\n## a\nb\n").unwrap();
         assert_eq!(2, Deck::load(&path).unwrap().cards.len());
     }
 
     #[test]
     fn direction_does_not_apply_to_cloze() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("d.txt");
-        // Deck-level `both` must not reverse a cloze card (one hole -> one card).
+        let path = dir.path().join("d.md");
+        // Deck-level `both` must not reverse a cloze card (one hole -> one
+        // card): the never-reverse guard keys on the hole, not the direction.
         std::fs::write(
             &path,
-            "% direction: both\n# fill\n% reveal: cloze\n\tThe {{x}} thing.\n",
+            "---\ndirection: both\n---\n## fill\nThe \\cloze{x} thing.\n",
         )
         .unwrap();
-        assert_eq!(1, Deck::load(&path).unwrap().cards.len());
+        let deck = Deck::load(&path).unwrap();
+        assert_eq!(1, deck.cards.len());
+        assert_eq!(Some(0), deck.cards[0].hole);
+        assert!(!deck.cards[0].reversed);
     }
 
     #[test]
     fn image_resolves_against_img_dir() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("d.txt");
+        let path = dir.path().join("d.md");
         std::fs::write(
             &path,
-            "% img-dir: /assets/imgs\n# q\n% img: moon.png\n\tWaxing\n",
+            "---\nimg-dir: /assets/imgs\n---\n## q <!-- img: moon.png -->\nWaxing\n",
         )
         .unwrap();
         let deck = Deck::load(&path).unwrap();
@@ -1551,8 +1607,8 @@ mod tests {
     #[test]
     fn image_resolves_against_deck_dir_without_img_dir() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("d.txt");
-        std::fs::write(&path, "# q\n% img: moon.png\n\tWaxing\n").unwrap();
+        let path = dir.path().join("d.md");
+        std::fs::write(&path, "## q <!-- img: moon.png -->\nWaxing\n").unwrap();
         let deck = Deck::load(&path).unwrap();
         assert_eq!(Some(dir.path().join("moon.png")), deck.cards[0].image);
     }
@@ -1560,10 +1616,10 @@ mod tests {
     #[test]
     fn absolute_card_image_is_used_as_is() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("d.txt");
+        let path = dir.path().join("d.md");
         std::fs::write(
             &path,
-            "% img-dir: /assets\n# q\n% img: /elsewhere/moon.png\n\tWaxing\n",
+            "---\nimg-dir: /assets\n---\n## q <!-- img: /elsewhere/moon.png -->\nWaxing\n",
         )
         .unwrap();
         let deck = Deck::load(&path).unwrap();
@@ -1576,9 +1632,9 @@ mod tests {
     #[test]
     fn workspace_defaults_fill_unset_and_reach_cards() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("d.txt");
-        // Deck declares no direction/mode of its own.
-        std::fs::write(&path, "# purported\n\tangeblich\n").unwrap();
+        let path = dir.path().join("d.md");
+        // Deck declares no direction/reveal of its own.
+        std::fs::write(&path, "## purported\nangeblich\n").unwrap();
         let defaults = DeckSettings {
             direction: Some(Direction::Both),
             reveal: Some(Reveal::Line),
@@ -1594,8 +1650,8 @@ mod tests {
     #[test]
     fn deck_directive_overrides_workspace_default() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("d.txt");
-        std::fs::write(&path, "% direction: forward\n# a\n\tb\n").unwrap();
+        let path = dir.path().join("d.md");
+        std::fs::write(&path, "---\ndirection: forward\n---\n## a\nb\n").unwrap();
         let defaults = DeckSettings {
             direction: Some(Direction::Both),
             ..Default::default()
@@ -1608,15 +1664,19 @@ mod tests {
     #[test]
     fn display_name_uses_title_else_stripped_filename() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("Eng-Sayings.txt");
-        std::fs::write(&path, "# a\n\tb\n").unwrap();
+        let path = dir.path().join("Eng-Sayings.md");
+        std::fs::write(&path, "## a\nb\n").unwrap();
         assert_eq!("Eng-Sayings", Deck::load(&path).unwrap().display_name());
 
-        std::fs::write(&path, "% title: English Sayings\n# a\n\tb\n").unwrap();
+        std::fs::write(&path, "# English Sayings\n\n## a\nb\n").unwrap();
         assert_eq!("English Sayings", Deck::load(&path).unwrap().display_name());
 
-        // A trace deck with no `% title:` shows its `% trace:` description.
-        std::fs::write(&path, "% trace: how a keypress becomes a grade\n# a\n\tb\n").unwrap();
+        // A trace deck with no `# H1` shows its `trace:` description.
+        std::fs::write(
+            &path,
+            "---\ntrace: how a keypress becomes a grade\n---\n## a\nb\n",
+        )
+        .unwrap();
         assert_eq!(
             "how a keypress becomes a grade",
             Deck::load(&path).unwrap().display_name()
@@ -1626,8 +1686,8 @@ mod tests {
     #[test]
     fn no_directives_yields_empty_settings() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("d.txt");
-        std::fs::write(&path, "% just a comment\n# f\n\tb\n").unwrap();
+        let path = dir.path().join("d.md");
+        std::fs::write(&path, "just a comment\n\n## f\nb\n").unwrap();
 
         let deck = Deck::load(&path).unwrap();
         assert_eq!(None, deck.settings.reveal);
@@ -1636,21 +1696,9 @@ mod tests {
     }
 
     #[test]
-    fn duplicates_detected() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("d.txt");
-        std::fs::write(&path, "# one\nsame\n# two\nsame\n# three\nother\n").unwrap();
-
-        let deck = Deck::load(&path).unwrap();
-        let dups = deck.duplicates();
-        assert_eq!(1, dups.len());
-        assert_eq!("one", dups[0].0.front);
-        assert_eq!("two", dups[0].1.front);
-    }
-
-    #[test]
     fn rewrite_trace_snapshot_repoints_source_origin_and_each_at() {
-        let text = "% trace: how X\n% source: ..\n\n# q1\n\tp\n\t% at: a.rs:90-98\n# q2\n\tp\n\t% at: b.rs:1\n";
+        let text = "---\ntrace: how X\nsource: ..\n---\n\n## q1\np\n<!-- at: a.rs:90-98 -->\n## q2\np\n<!-- at: b.rs:1 -->\n";
+        let span = l1::parse_l1("t.md", text).unwrap().frontmatter_span;
         let ats = [
             AtRewrite {
                 at: "01.rs".into(),
@@ -1661,15 +1709,20 @@ mod tests {
                 origin: Some("src/b.rs:1".into()),
             },
         ];
-        let out = rewrite_trace_snapshot(text, "assets", Some("/crate"), &ats);
-        assert!(out.contains("% source: assets\n"), "{out}");
-        assert_eq!(1, out.matches("% source:").count()); // replaced, not added
-        assert!(out.contains("% origin: /crate\n"), "{out}"); // origin written after source
-        // The provenance rides the `% at:` line as ` from …`, not a `!` note.
-        assert!(out.contains("\t% at: 01.rs from src/a.rs:90-98\n"), "{out}");
-        assert!(out.contains("\t% at: 02.rs from src/b.rs:1\n"), "{out}");
-        assert!(!out.contains("! from"), "{out}"); // no note-abuse
-        assert!(out.contains("% trace: how X\n")); // the trace marker is kept
+        let out = rewrite_trace_snapshot(text, span, "assets", Some("/crate"), &ats);
+        assert!(out.contains("source: assets\n"), "{out}");
+        assert_eq!(1, out.matches("source:").count()); // replaced, not added
+        assert!(out.contains("origin: /crate\n"), "{out}"); // origin written after source
+        // The provenance rides the `at:` directive as ` from …`.
+        assert!(
+            out.contains("<!-- at: 01.rs from src/a.rs:90-98 -->\n"),
+            "{out}"
+        );
+        assert!(
+            out.contains("<!-- at: 02.rs from src/b.rs:1 -->\n"),
+            "{out}"
+        );
+        assert!(out.contains("trace: how X\n")); // the trace key is kept
         assert!(out.ends_with('\n'));
     }
 }
