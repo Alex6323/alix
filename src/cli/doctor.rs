@@ -24,7 +24,6 @@ fn val_name<T: clap::ValueEnum>(value: T) -> String {
 struct Report {
     errors: Vec<String>,
     warnings: Vec<String>,
-    infos: Vec<String>,
 }
 
 impl Report {
@@ -34,18 +33,12 @@ impl Report {
     fn warn(&mut self, msg: impl Into<String>) {
         self.warnings.push(msg.into());
     }
-    fn info(&mut self, msg: impl Into<String>) {
-        self.infos.push(msg.into());
-    }
     fn render(&self) -> bool {
         for e in &self.errors {
             eprintln!("error: {e}");
         }
         for w in &self.warnings {
             eprintln!("warning: {w}");
-        }
-        for i in &self.infos {
-            println!("{i}");
         }
         if !self.errors.is_empty() || !self.warnings.is_empty() {
             eprintln!(
@@ -131,8 +124,8 @@ fn deck_findings(path: &Path, strict: bool, report: &mut Report) {
     unstamped.sort_unstable();
     unstamped.dedup();
     if !unstamped.is_empty() {
-        report.info(format!(
-            "{}: {} card(s) need a stamp (minted at next review open)",
+        report.warn(format!(
+            "{}: {} entries are card content without ids; open the deck to assign them",
             path.display(),
             unstamped.len()
         ));
@@ -263,14 +256,14 @@ fn workspace_findings(dir: &Path) -> Report {
     if let Ok(store) = Store::open(&store_path) {
         let mut known_cards: HashSet<String> = HashSet::new();
         let mut known_subjects: HashSet<String> = HashSet::new();
-        let mut fresh_fps: HashSet<u64> = HashSet::new();
+        let mut any_fresh = false;
         for path in &deck_files {
             if let Ok(deck) = Deck::load(path) {
                 known_subjects.insert(deck.subject.clone());
                 for card in &deck.cards {
                     if let Some(id) = card.id() {
                         if store.get(&id).is_none() {
-                            fresh_fps.insert(card.content_fingerprint);
+                            any_fresh = true;
                         }
                         known_cards.insert(id);
                     }
@@ -297,28 +290,14 @@ fn workspace_findings(dir: &Path) -> Report {
                 dir.display()
             ));
         }
-        if !orphans.cards.is_empty() && !fresh_fps.is_empty() {
-            let reclaimable = orphans.cards.iter().any(|key| {
-                let base = alix::token::parse_card_id(key).map_or(key.as_str(), |(t, _, _)| t);
-                store
-                    .records(base)
-                    .is_some_and(|rec| fresh_fps.contains(&rec.content_fp))
-            });
-            if reclaimable {
-                report.warn(
-                    "a card lost its `<!-- id: -->` comment (e.g. a formatter stripped it): its \
-                     old progress can be reclaimed. Re-open the deck for review to re-adopt the \
-                     token, or `alix reset --orphans` to discard it"
-                        .to_string(),
-                );
-            } else {
-                report.warn(
-                    "orphaned card progress exists and fresh tokens were minted, but no \
-                     fingerprint matched: the old content likely changed too (a reformat), so the \
-                     progress cannot be reclaimed; `alix reset --orphans` clears it"
-                        .to_string(),
-                );
-            }
+        if !orphans.cards.is_empty() && any_fresh {
+            report.warn(
+                "orphaned card progress exists and fresh tokens were minted: a card may have \
+                 lost its `<!-- id: -->` comment (e.g. a formatter stripped it) and been \
+                 re-stamped, orphaning its old progress; the old progress stays until you run \
+                 `alix reset --orphans`"
+                    .to_string(),
+            );
         }
     }
 
@@ -669,7 +648,6 @@ mod tests {
         let report = workspace_findings(dir);
         let errors = report.errors.join("\n");
         let warnings = report.warnings.join("\n");
-        let infos = report.infos.join("\n");
 
         assert!(
             errors.contains("fails the charset"),
@@ -688,8 +666,8 @@ mod tests {
         assert!(warnings.contains("orphaned store key (card)"), "{warnings}");
         assert!(warnings.contains("orphaned store key (deck)"), "{warnings}");
         assert!(
-            warnings.contains("no fingerprint matched"),
-            "fresh-mint tell (no match): {warnings}"
+            warnings.contains("fresh tokens were minted"),
+            "coarse fresh-mint: {warnings}"
         );
         assert!(
             warnings.contains("not a block mapping"),
@@ -725,34 +703,9 @@ mod tests {
             warnings.contains("requires source-less") && warnings.contains("`sourceless`"),
             "dead `% requires:`: {warnings}"
         );
-        assert!(infos.contains("need a stamp"), "unstamped info: {infos}");
-    }
-
-    #[test]
-    fn a_freshly_minted_token_matching_an_orphans_content_is_reported_reclaimable() {
-        let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path();
-        w(
-            dir,
-            "deck.md",
-            "---\nid: abcdefghjkmnpqrstvwxyz6789\n---\n## Q <!-- id: newtoken -->\nA\n",
-        );
-        let mut store = alix::store::Store::open(dir.join("progress.json")).unwrap();
-        let fp = alix::l1::content_fingerprint("Q", &["A".to_string()]);
-        let orphan = "orphantoken0000000000000000";
-        store.ensure_records_raw(orphan, fp, &[]);
-        store.get_or_insert(orphan, 0);
-        store.save().unwrap();
-
-        let report = workspace_findings(dir);
-        let warnings = report.warnings.join("\n");
         assert!(
-            warnings.contains("can be reclaimed"),
-            "reclaimable tell expected: {warnings}"
-        );
-        assert!(
-            !warnings.contains("no fingerprint matched"),
-            "must not also print the no-match form: {warnings}"
+            warnings.contains("card content without ids"),
+            "unstamped warning: {warnings}"
         );
     }
 
