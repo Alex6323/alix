@@ -70,7 +70,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   A `strictness:` key in a deck's frontmatter is now an ordinary unknown-key
   lint, not a recognized directive; only the global config default and a
   workspace `alix.toml`'s `[defaults]` feed `exam_strictness`.
-- **Breaking: decks are now the L1 Markdown format (`.md`), and a card's
+- **Breaking: decks are now Markdown files (`.md`), and a card's
   identity is a minted token, not a content hash.** A card front is `## `, its
   answer lines follow plainly, a note is `> `, deck metadata (`source:`,
   `requires:`, `link:`, `trace:`, `reveal:`, `direction:`, …) lives in a `---`
@@ -123,7 +123,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   augment and the exam now show the `[ask] backend` you actually use, so a
   Gemini, Codex, or Copilot user no longer reads "Claude is working…"
   (`AskInfoDto` gained a `backend` field).
-- The CLI `--help` text is modernized to the L1 deck wording: a trace stub now
+- The CLI `--help` text is modernized to the Markdown deck wording: a trace
+  stub now
   declares `trace:` in its frontmatter (no `% trace:`), replacing the stale
   old-format references.
 
