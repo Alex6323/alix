@@ -123,9 +123,8 @@ notes it.
   identity problems across the decks as a set: duplicate deck or card tokens
   (naming which copy keeps the earned progress), store keys matching no live
   card or deck (orphans, clear them with `alix reset --orphans`), a
-  non-canonical token, a frontmatter that can't be stamped, cards still
-  awaiting a token, and any stray pre-1.0 `.txt`-era file that no longer
-  parses. `--backends` additionally
+  non-canonical token, a frontmatter that can't be stamped, and cards still
+  awaiting a token. `--backends` additionally
   probes the configured AI backend end to end (one real, tiny request);
   `--all-backends` probes all four. `--grading` spot-checks the configured
   model's exam grading against the hand-labeled calibration probes (a few

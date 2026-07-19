@@ -136,7 +136,8 @@ fallback when neither side has `wormhole` installed.
 
 ## Titles
 
-A `title` in the `alix.toml` (or a `% title:` directive on a single deck) gives
-a display name, shown in the picker, the session header, `alix list`, and `alix
-stats`, instead of the file name. It's display-only: you still refer to decks by
-file path on the command line, and a title never affects a card's identity.
+A single deck's display name is its `#` heading (the top-level Markdown title); a
+workspace's name comes from a `title` in its `alix.toml`. Either replaces the file
+name in the picker, the session header, `alix list`, and `alix stats`. It's
+display-only: you still refer to decks by file path on the command line, and a
+title never affects a card's identity.
