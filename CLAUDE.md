@@ -317,6 +317,15 @@ to this codebase. When in doubt, mirror the surrounding code.
   on the project's own gates (fit gate, north star, the NOT-list, soundness); then prosecute
   the rebuttals back (steelman the alternative). A spec isn't "locked" until it has survived
   one. Cheap, and it catches mis-founded designs before a build pays for them.
+- **A doc for fresh readers gets a context-free read before it's called delivered** (user
+  rule, 2026-07-19). Hand the doc ALONE to a fresh agent with one question: "list every
+  term or claim you cannot resolve from this document alone"; fix what it lists. The known
+  offender is session-born shorthand (spec codenames like "L1", `{#anchors}`, arc names):
+  from inside the session it reads as the thing's name, so the writer cannot see it, and an
+  "imagine a future reader" prose rule cannot trigger on what the writer cannot see. Only a
+  reader who actually lacks the context detects it. Applies to `docs/bugs/`,
+  `docs/product/`, `docs/results/`, the book, README; a codename grep is a cheap first pass,
+  the fresh read is the gate.
 - **An assumption is verified only when a command failed to refute it.** In specs/plans
   write `Assumption — falsification command · expected output · fallback`; never a bare
   "verify X". A step satisfiable by *reading* is not verification. Docs (including
