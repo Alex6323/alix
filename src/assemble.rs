@@ -374,7 +374,11 @@ pub fn stamp_for_session(path: &Path) {
 /// earned progress; this file's colliding card forks into a new, unreviewed
 /// card. Non-fatal: a scan or replace failure warns and leaves the file as-is.
 /// A standalone single-deck folder has no siblings to collide with, so this is
-/// a no-op there (dedup-blind by design, spec §2.4).
+/// a no-op there (dedup-blind by design, spec §2.4). A failed
+/// `replace_card_token` write (the loud warning above) leaves the loser still
+/// sharing the token with the keeper, by design, until a write succeeds — a
+/// later open just retries the same resolution; a review in between would
+/// still touch the keeper's store entry.
 pub fn resolve_duplicates_at_open(path: &Path) {
     let Some(dir) = path.parent() else {
         return;
@@ -399,7 +403,13 @@ pub fn resolve_duplicates_at_open(path: &Path) {
 /// must never reach them: it would collapse the cache to a single key-0 entry
 /// and orphan the spend at the first real stamp. A load failure propagates (a
 /// broken deck must not half-open); a stamp failure is non-fatal and only its
-/// own cards drop.
+/// own cards drop. Unlike review-open ([`select`]), this does NOT call
+/// [`resolve_duplicates_at_open`] — duplicate-card-token resolution is a
+/// review-open act only, so a duplicate-loser deck opened here for augment
+/// keeps sharing its token. Any augment spend cached under that
+/// soon-to-be-replaced token becomes stale once a review-open later resolves
+/// it (the loser forks a fresh token); the cache simply regenerates against
+/// the new id on next augment.
 pub fn stamp_and_load_deck(path: &Path) -> Result<Deck> {
     stamp_for_session(path);
     let mut deck = Deck::load(path)?;

@@ -175,15 +175,18 @@ pub fn is_conventional_non_deck(name: &str) -> bool {
 /// (spec §2.4), never a real deck: excluded from every deck scan (checked
 /// before the content predicate, cheaper, so a conflict copy never lists,
 /// stamps, or errors). A CLOSED list: Syncthing's `.sync-conflict-`, the
-/// `(conflicted copy` / `(Conflict` parenthetical of Dropbox / Nextcloud /
-/// ownCloud, and the `.bak` / `.orig` / `~` backup suffixes. The load-bearing
-/// entries still end in `.md` (`deck.sync-conflict-x.md`); the bare backup
-/// suffixes are already dropped by the `.md`-extension filter and sit here as
+/// `(Conflict` parenthetical of Nextcloud/ownCloud, any name containing
+/// `conflicted copy` (Dropbox interposes the syncing device's account name,
+/// e.g. `file (Alex's conflicted copy 2026-07-19).md` — a fixed `(conflicted
+/// copy` prefix misses that shape, so the match has to be substring-only),
+/// and the `.bak` / `.orig` / `~` backup suffixes. The load-bearing entries
+/// still end in `.md` (`deck.sync-conflict-x.md`); the bare backup suffixes
+/// are already dropped by the `.md`-extension filter and sit here as
 /// documentation-by-code, so the one closed list answers "is this a conflict
 /// copy?" for both the scans and doctor.
 pub fn is_conflict_name(name: &str) -> bool {
     name.contains(".sync-conflict-")
-        || name.contains(" (conflicted copy")
+        || name.contains("conflicted copy")
         || name.contains(" (Conflict")
         || name.ends_with(".bak")
         || name.ends_with(".orig")
@@ -642,6 +645,12 @@ mod tests {
         // suffixes are already dropped by the extension filter.
         assert!(is_conflict_name("deck.sync-conflict-20260101-abcdef.md"));
         assert!(is_conflict_name("deck (conflicted copy 2026-01-01).md"));
+        // Dropbox's real shape interposes the syncing account's name between
+        // the `(` and `conflicted copy` — a fixed `(conflicted copy` prefix
+        // would miss this.
+        assert!(is_conflict_name(
+            "deck (Alex's conflicted copy 2026-07-19).md"
+        ));
         assert!(is_conflict_name("deck (Conflict).md"));
         assert!(is_conflict_name("deck.md.bak"));
         assert!(is_conflict_name("deck.md.orig"));

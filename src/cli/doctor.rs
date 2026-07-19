@@ -377,14 +377,17 @@ fn txt_era_findings(dir: &Path, deck_files: &[PathBuf], report: &mut Report) {
         if name.starts_with('.') {
             continue;
         }
+        // A conventional non-deck name (`README.*`) or a sync/backup conflict
+        // copy is never a stray old deck, whichever extension it carries.
+        if alix::workspace::is_conventional_non_deck(name)
+            || alix::workspace::is_conflict_name(name)
+        {
+            continue;
+        }
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
         let candidate = match ext {
             "txt" => true,
-            "md" => {
-                !deck_set.contains(path.as_path())
-                    && !alix::workspace::is_conventional_non_deck(name)
-                    && !alix::workspace::is_conflict_name(name)
-            }
+            "md" => !deck_set.contains(path.as_path()),
             _ => false,
         };
         if candidate
@@ -647,7 +650,21 @@ mod tests {
 
     #[test]
     fn doctor_flags_the_full_check_set() {
-        // ONE fixture workspace exercising every §5 check at once.
+        // ONE fixture workspace exercising: both parse-error kinds (invalid
+        // charset token, a bad directive value); duplicate deck and card
+        // tokens; a non-canonical token; unspliceable frontmatter; the
+        // reveal-on-cloze and indented-`##` lints; a missing image; the
+        // unstamped-cards info; orphaned card/deck store keys plus the coarse
+        // fresh-mint tell; a dangling `at:` citation on a fact card; a trace
+        // deck whose `at:` locator no longer resolves; a `% requires:` to a
+        // source-less deck (never gates); the `.txt`-era detection on BOTH a
+        // `.txt` file and a prose `.md` with old `# ` fronts and no `## `
+        // cards; and that a conventional non-deck name (`README.*`) is
+        // excluded from the txt-era advisory on EITHER extension. NOT covered
+        // here: the `UnknownKey`/`EmptyValue`/
+        // `ClozeInHole`/`UnclosedComment`/`UnclosedFence` lints, and the
+        // frozen-excerpt drift check (`drifted_cards`) — those have no doctor-
+        // level test either, but are out of scope for this fixture.
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path();
         w(dir, "alix.toml", "title = \"Check Set\"\n");
@@ -708,6 +725,43 @@ mod tests {
         w(dir, "fresh.md", "## q\na\n");
         // A pre-1.0 `.txt`-era file (old `# ` fronts, never enumerated as L1).
         w(dir, "old-deck.txt", "# q1\na1\n# q2\na2\n");
+        // A conventional non-deck name carrying old-`#`-shaped lines, but as a
+        // `.txt` file: the txt-era check's `.txt` branch must apply the same
+        // conventional-non-deck exclusion the `.md` branch already does.
+        w(dir, "README.txt", "# q1\na1\n# q2\na2\n");
+        // The OTHER `.txt`-era shape: a prose `.md` (no `## ` card, no
+        // frontmatter, so it never enumerates as a deck) carrying old `# `
+        // fronts — the txt-era check's `.md` branch, distinct from its `.txt`
+        // branch above.
+        w(
+            dir,
+            "old-format.md",
+            "# First heading\nsome prose\n# Second heading\nmore prose\n",
+        );
+        // A trace deck whose one `at:` locator no longer resolves (the source
+        // shrank): the trace-locator check.
+        w(
+            dir,
+            "trace-bad.md",
+            "---\ntrace: a walk\nsource: trace-src.txt\n---\n## hop <!-- id: thop1 -->\nstep\n<!-- at: 5-6 -->\n",
+        );
+        w(dir, "trace-src.txt", "one\ntwo\n");
+        // A fact card whose `at:` citation doesn't resolve: the dangling-`at:`
+        // check (distinct code path from the trace-locator check above).
+        w(
+            dir,
+            "at-dangling.md",
+            "---\nsource: .\n---\n## cited <!-- id: atd1 -->\nb\n<!-- at: missing.rs:1-2 -->\n",
+        );
+        // A sourced deck (has an exam) requiring a source-less prerequisite
+        // (no exam of its own): the edge never gates, the dead-`% requires:`
+        // check.
+        w(dir, "sourceless.md", "## a <!-- id: sla1 -->\n1\n");
+        w(
+            dir,
+            "gated.md",
+            "---\nsource: https://example.test\nrequires: sourceless\n---\n## b <!-- id: gtd1 -->\n1\n",
+        );
 
         // Seed the workspace store with an orphaned card key and an orphaned
         // deck key (matching no live card/deck).
@@ -753,7 +807,30 @@ mod tests {
         );
         assert!(warnings.contains("indented `##`"), "{warnings}");
         assert!(warnings.contains("missing image"), "{warnings}");
-        assert!(warnings.contains("`.txt`-era"), "txt-era: {warnings}");
+        assert!(
+            warnings.contains("`.txt`-era") && warnings.contains("old-deck.txt"),
+            "txt-era (.txt branch): {warnings}"
+        );
+        assert!(
+            warnings.contains("`.txt`-era") && warnings.contains("old-format.md"),
+            "txt-era (.md branch, zero `##`): {warnings}"
+        );
+        assert!(
+            !warnings.contains("README.txt"),
+            "a conventional non-deck name must never trip the txt-era advisory, any extension: {warnings}"
+        );
+        assert!(
+            warnings.contains("checkpoint at line") && warnings.contains("has only 2 lines"),
+            "trace-locator: {warnings}"
+        );
+        assert!(
+            warnings.contains("cannot read the source"),
+            "dangling `at:` citation: {warnings}"
+        );
+        assert!(
+            warnings.contains("requires source-less") && warnings.contains("`sourceless`"),
+            "dead `% requires:`: {warnings}"
+        );
         // Info.
         assert!(infos.contains("need a stamp"), "unstamped info: {infos}");
     }

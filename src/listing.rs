@@ -82,11 +82,6 @@ pub struct DeckSummary {
     /// choice. Deck rows only; `false` for workspace/folder rows, an
     /// unreadable deck, or a missing store.
     pub locked: bool,
-    /// Cards in this deck still missing an identity token (spec §2.2): the
-    /// read-only scan's unstamped report, so a client can surface "these mint
-    /// at next open" without a scan writing to the file. Deck rows only; `0`
-    /// for workspace/folder rows or an unreadable deck.
-    pub unstamped: usize,
     /// The workspace's resolved picker icon file (manifest `icon`, else a
     /// conventional `assets/icon.*`). Workspace/folder rows only; `None` for
     /// deck rows and when nothing resolves.
@@ -330,7 +325,6 @@ fn folder_summary(root: &Path, dir: &Path, review: &ReviewConfig, now_ms: u64) -
         exam_due: false,
         has_exam: false,
         locked: false,
-        unstamped: 0,
         icon,
         indent: 0,
         tree: String::new(),
@@ -393,23 +387,6 @@ fn deck_summary(
             .unwrap_or_else(|| depth::default_depth(&d.cards, a)),
         _ => Depth::default(),
     };
-    // The read-only unstamped report (spec §2.2): count cards whose identity
-    // token has not been minted yet. Cloze holes and a reversed twin share one
-    // heading, so count distinct source lines, matching what one open stamps.
-    let unstamped = match &deck {
-        Some(d) => {
-            let mut lines: Vec<usize> = d
-                .cards
-                .iter()
-                .filter(|c| c.token.is_none())
-                .map(|c| c.line)
-                .collect();
-            lines.sort_unstable();
-            lines.dedup();
-            lines.len()
-        }
-        None => 0,
-    };
     let row = DeckSummary {
         title: if title.is_empty() { stem } else { title },
         path: path.to_path_buf(),
@@ -424,7 +401,6 @@ fn deck_summary(
         exam_due,
         has_exam,
         locked,
-        unstamped,
         icon: None,
         indent: 0,
         tree: String::new(),

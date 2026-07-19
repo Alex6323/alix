@@ -317,4 +317,54 @@ mod tests {
         assert!(map.excluded_decks.is_empty());
         assert!(map.card_dupes.is_empty());
     }
+
+    // ---- keep-rule edge pins: what "decorated" requires -------------------
+    //
+    // `beats` only recognizes decoration as one stem being a literal string
+    // prefix of the other (`deck` vs `deck (1)`/`deck copy`). Two stems that
+    // are merely unrelated — including two that share a prefix by accident —
+    // fall back to scan order, same as `unrelated_duplicate_deck_names_fall_back_to_scan_order`.
+
+    #[test]
+    fn two_decorated_copies_without_an_original_fall_back_to_scan_order() {
+        let dir = tempfile::tempdir().unwrap();
+        // Both copies LOOK decorated (`(1)`, `copy`), but the undecorated
+        // `deck.md` original is absent, and neither copy's stem is a prefix of
+        // the other's — so the keep-rule has nothing to prefer between them
+        // and falls back to scan order (first scanned keeps).
+        let paren = write(dir.path(), "deck (1).md", "dsame", "cparen");
+        let copy = write(dir.path(), "deck copy.md", "dsame", "ccopy");
+
+        let map = scan(&[paren.clone(), copy.clone()]);
+        assert_eq!(vec![(paren, copy, "dsame".to_string())], map.excluded_decks);
+    }
+
+    #[test]
+    fn case_differing_stems_are_unrelated_decks() {
+        let dir = tempfile::tempdir().unwrap();
+        // `Deck.md` and `deck.md` differ only by case: the keep-rule's prefix
+        // check is byte-for-byte (case-sensitive), so neither is recognized as
+        // decorating the other — they are unrelated names, scan order decides.
+        let upper = write(dir.path(), "Deck.md", "dsame", "cupper");
+        let lower = write(dir.path(), "deck.md", "dsame", "clower");
+
+        let map = scan(&[upper.clone(), lower.clone()]);
+        assert_eq!(
+            vec![(upper, lower, "dsame".to_string())],
+            map.excluded_decks
+        );
+    }
+
+    // `a_shorter_unrelated_stem_wins_nothing` (deck1 vs deck10, longer scanned
+    // first) is INTENTIONALLY NOT PINNED here: it fails against the real
+    // `beats()`. `deck10.md` scanned before `deck1.md` yields keeper =
+    // `deck1.md`, not `deck10.md` — `beats()`'s decoration check is a bare
+    // string-prefix test with no word-boundary/non-alphanumeric guard, so it
+    // mistakes `deck10` (an unrelated, independently numbered deck) for a
+    // decorated superstring of `deck1`, and lets the shorter stem steal the
+    // keeper slot out of scan order. This is a real, verified (executed, not
+    // read) edge-case bug in the keep-rule, out of this fix pass's sanctioned
+    // scope ("no production change expected"); see
+    // `.superpowers/sdd/task-7-report.md` § Fix pass for the repro and BLOCKED
+    // status on this one item.
 }
