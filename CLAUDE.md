@@ -227,6 +227,14 @@ to this codebase. When in doubt, mirror the surrounding code.
   silent: keep the cheap detection (a doctor line, an error) where silence would mislead.
   Enumerate every edge case somewhere durable; build almost none of them. Reviewers flag
   inline edge-case machinery as over-engineering.
+- **Performance is a core value; an inefficiency is never glossed over** (user rule,
+  2026-07-19). This is a Rust project: high performance is expected, it is part of what a
+  Rust tool represents, and marginal gains are still wanted. A known inefficiency (a
+  full-file rewrite for an O(1) change, re-parsing unchanged data, per-item work a cache
+  or batch removes) has exactly two dispositions: fixed now, or a NAMED roadmap item;
+  silent acceptance is not one of them. "Fast enough" claims must survive the 10x scale
+  counterfactual on real data, not fixtures; recurring offenders get an invariant-style
+  regression test (counters and scaling ratios, never wall-clock thresholds).
 - **Test-first for library logic.** Write the test before (or alongside) new
   `src/` behavior — above all the AI plumbing's error paths, where bugs hide and
   local runs can mask races (the `testutil` fake-CLI tests exist because one such
