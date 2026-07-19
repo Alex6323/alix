@@ -1963,7 +1963,7 @@ function augTopologyRow(d, row) {
     pill.appendChild(el("span", null, name));
     if (!d.busy) {
       const x = el("button", "aug-x", "✕");
-      x.title = "Remove this topology";
+      x.title = "Remove this order";
       x.addEventListener("click", () => augmentRemove("topology", name));
       pill.appendChild(x);
     }

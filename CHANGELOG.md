@@ -136,6 +136,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   stub now
   declares `trace:` in its frontmatter (no `% trace:`), replacing the stale
   old-format references.
+- **Breaking: the `alix deck augment --target` value `topology` is renamed to
+  `order`** (matches the web app's "Order" card); pre-1.0, no alias. This is a
+  user-facing rename only: the internal type/field names and the `/api/deck-
+  topology` endpoint are unchanged.
 
 ## [0.5.0] - 2026-07-15
 

@@ -38,7 +38,7 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
         AugmentTarget::Notes => "trivia / mnemonic notes",
         AugmentTarget::Questions => "reworded question variants",
         AugmentTarget::Keypoints => "answer key points",
-        AugmentTarget::Topology => "a topology",
+        AugmentTarget::Topology => "a review order",
         AugmentTarget::Format => "card formatting",
     };
     let model = config
@@ -126,7 +126,7 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
         AugmentTarget::Topology => {
             let items = warm_items(&deck.cards);
             if items.is_empty() {
-                bail!("the deck has no cards to build a topology over");
+                bail!("the deck has no cards to build an order over");
             }
             let total = items.len();
             let deck_token = deck.deck_token.clone().unwrap_or_default();
@@ -140,10 +140,10 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
                 deck.deck_token.iter().cloned().collect();
             let n = cache.topologies_for(&deck_tokens).len();
             println!(
-                "({n} topolog{} stored for this deck)",
-                if n == 1 { "y" } else { "ies" }
+                "({n} order{} stored for this deck)",
+                if n == 1 { "" } else { "s" }
             );
-            (walked, total, "a topology")
+            (walked, total, "a review order")
         }
         AugmentTarget::Format => {
             // Cloze, promoted, and retired cards are excluded (mirrors the
@@ -209,7 +209,7 @@ fn print_topology(topo: &augment::Topology, cards: &[Card]) {
     let unknown = "<card not in deck>".to_string();
 
     println!(
-        "\ntopology '{}': {}\n({} cards walked, {} edges)\n",
+        "\norder '{}': {}\n({} cards walked, {} edges)\n",
         topo.name,
         topo.principle,
         topo.walk.len(),

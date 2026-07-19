@@ -355,9 +355,9 @@ struct AugmentArgs {
 
     /// What to augment, mirroring the review concepts: `choices` (distractors),
     /// `notes` (trivia / mnemonics), `questions` (reworded phrasings rotated at
-    /// review), or `topology` (a graph of how the cards relate + a suggested
-    /// walk; experimental). All are cached beside your progress, never written
-    /// into the deck; review reads them.
+    /// review), or `order` (a graph of how the cards relate plus a suggested
+    /// walk that puts foundations first). All are cached beside your progress,
+    /// never written into the deck; review reads them.
     #[arg(long, value_enum)]
     target: AugmentTarget,
 
@@ -390,10 +390,11 @@ enum AugmentTarget {
     /// can check a reconstruction against them and derive the grade. Atomic
     /// answers (nothing to decompose) are skipped.
     Keypoints,
-    /// A deck-level topology: a graph of how the cards relate plus a suggested
-    /// walk, so review can present them in a connected order. Experimental:
-    /// prints the walk so you can judge whether it lands. `--with` steers the
-    /// organizing principle (e.g. "by module and type dependency").
+    /// A deck-level review order: a graph of how the cards relate plus a
+    /// suggested walk, so review presents the cards foundations-first.
+    /// `--with` steers the organizing principle (e.g. "by module and type
+    /// dependency").
+    #[value(name = "order")]
     Topology,
     /// A display-only reshape of a badly-shaped card: restructured front/answer/
     /// note and a suggested mode, applied at review without touching the deck.

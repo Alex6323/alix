@@ -2032,7 +2032,7 @@ fn augment_keypoints_caches_decomposed_claims() {
 }
 
 #[test]
-fn augment_topology_prints_and_caches_the_walk() {
+fn augment_order_prints_and_caches_the_walk() {
     let dir = TempDir::new().unwrap();
     let deck = write(
         dir.path(),
@@ -2054,7 +2054,7 @@ fn augment_topology_prints_and_caches_the_walk() {
         "augment",
         &deck,
         "--target",
-        "topology",
+        "order",
         "--store",
         store.to_str().unwrap(),
         "--config",
@@ -2062,9 +2062,9 @@ fn augment_topology_prints_and_caches_the_walk() {
     ]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     let text = stdout(&out);
-    assert!(text.contains("topology 'pedagogical order'"), "{text}");
+    assert!(text.contains("order 'pedagogical order'"), "{text}");
     assert!(text.contains("by difficulty"), "{text}");
-    assert!(text.contains("(1 topology stored for this deck)"), "{text}");
+    assert!(text.contains("(1 order stored for this deck)"), "{text}");
 }
 
 #[test]

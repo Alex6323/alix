@@ -22,8 +22,8 @@ Focus a deck and **Learn** it with **Enter** (a facts deck opens a
 review, a [trace](13-trace-decks.md) opens a walk) one deck per session. **Browse**
 on **`b`** opens a read-only, in-page read-through instead: step the cards with
 Prev/Next, Esc to leave. Selecting a deck that has a
-[topology](05-scheduling.md) opens an inline **focus drawer** beneath it: choose
-which topology orders the session, and pick a region to drill (click it or step
+[review order](05-scheduling.md) opens an inline **focus drawer** beneath it: choose
+which order runs the session, and pick a region to drill (click it or step
 through with **← / →**) its strength heatmap and the number of cards **due** in
 it shown as you go ("Whole deck" is the default). On a workspace row instead,
 ← / → enter and leave it. After a session, "Choose other decks" (on the summary)
@@ -70,11 +70,11 @@ clients (see `docs/API.md`):
 Focus a deck and press **`a`** (or its **Augment** button) to open the **Augment
 screen**: the browser face of `alix deck augment`. Each of six targets,
 [choices](04-review-modes.md), notes, questions, [key points](04-review-modes.md),
-format, and topology, gets its own card: a short, plain description of what
+format, and order, gets its own card: a short, plain description of what
 that augmentation does, a small neutral before/after preview, its coverage
 count, and its action. **Generate** fills only the cards a target is still
 missing, run as a background model call while the page polls (a spinner shows
-it working); **Remove** clears a target, and the topology card adds or drops
+it working); **Remove** clears a target, and the order card adds or drops
 named topologies. Each card has its own compact guidance input, feeding the
 same `--with` steer as the command line, with a kind-specific example as its
 placeholder so you can see what a steer is good for; a batch carries each

@@ -162,30 +162,30 @@ memory untouched, nothing recorded, so a heavy grind can't inflate your
 long-term spacing. A card you *miss* under cram always lapses normally.
 Retired cards stay out (that's what retirement is for).
 
-## Topological order
+## Review order
 
 By default your due cards come up in scheduler order: soonest-due first. That's
 right for *retention*, but it can feel random: a card
 about parsing, then one about persistence, with no thread between them.
 
-A **topology** gives the session a thread. `alix deck augment <deck> --target
-topology` asks the model to read the deck and lay out a *graph* of how the cards
+A **review order** gives the session a thread. `alix deck augment <deck> --target
+order` asks the model to read the deck and lay out a *graph* of how the cards
 relate: a suggested **walk** through them, plus a few coarse named **regions**
 (stages or themes). It's cached beside your progress like distractors and notes;
 a deck can hold several, one per `--with` principle:
 
 ```sh
-alix deck augment internals.md --target topology
-alix deck augment capitals.md --target topology --with "north to south"
-alix deck augment capitals.md --target topology --with "by continent"
+alix deck augment internals.md --target order
+alix deck augment capitals.md --target order --with "north to south"
+alix deck augment capitals.md --target order --with "by continent"
 ```
 
 Then review along it: select the deck in the **web picker** and an inline
-**focus drawer** opens beneath it: choose which topology orders the session
+**focus drawer** opens beneath it: choose which order runs the session
 ("Whole deck" is the default), then start.
 
 The key thing: this changes only the **order**, never the schedule. SRS still
-decides *which* cards are due and how they advance. The topology just serves
+decides *which* cards are due and how they advance. The order just serves
 that due set in walk order instead of shuffled, so each card is a natural
 follow-up to the last. Not-due cards are skipped, so the session stays as short
 as your due pile.

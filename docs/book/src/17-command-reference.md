@@ -20,7 +20,7 @@ are all reached from the web picker rather than as their own commands (see
 The launcher's flags, its only ones: `--lan` / `--port` / `--token`
 ([the web app](15-the-web-app.md)), `--new N` / `--limit N` (session pacing,
 overriding the `[review]` config), and `--config <path>`. The session depth is
-picked in the picker's split Learn ▾ menu, a topology or region in its focus
+picked in the picker's split Learn ▾ menu, an order or region in its focus
 drawer ([scheduling](05-scheduling.md)), and the card order is the deck's
 `order:` directive.
 How each card is checked comes from its `reveal:` combined with the
@@ -76,7 +76,7 @@ follows the source:
 The rest of the AI-and-deck surface:
 
 - `alix deck augment <deck> --target <...>`: precompute AI augmentations
-  (choices, notes, questions, keypoints, format, topology).
+  (choices, notes, questions, keypoints, format, order).
 - `alix deck import <file.tsv>`: import an Anki TSV export (no model CLI
   needed; `--workspace <dir>` imports into a workspace).
 - `alix workspace init <dir>`: scaffold an empty
