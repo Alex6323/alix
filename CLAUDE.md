@@ -218,6 +218,15 @@ to this codebase. When in doubt, mirror the surrounding code.
 
 ## Conventions
 
+- **KISS: edge cases default to the roadmap, not the build** (user rule, 2026-07-19). Build
+  the main flow. When design or review surfaces an edge case, the default disposition is a
+  named roadmap item or registry residual, not inline handling. Inline handling must clear
+  one of two bars: silence would corrupt data or break an invariant on a normal path, or the
+  corner sits on a frozen surface (id grammar, file format) where silence today becomes
+  permanent (decide those now, even if the decision is "reject"). Deferral is loud, never
+  silent: keep the cheap detection (a doctor line, an error) where silence would mislead.
+  Enumerate every edge case somewhere durable; build almost none of them. Reviewers flag
+  inline edge-case machinery as over-engineering.
 - **Test-first for library logic.** Write the test before (or alongside) new
   `src/` behavior — above all the AI plumbing's error paths, where bugs hide and
   local runs can mask races (the `testutil` fake-CLI tests exist because one such
