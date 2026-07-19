@@ -24,12 +24,19 @@ use yaml_rust2::{Yaml, YamlLoader};
 use crate::{
     answer::Input,
     card::{Card, Direction},
-    cloze::{BLANK, HIDDEN},
     config::Strictness,
     depth::Reveal,
     session::Order,
     token,
 };
+
+/// What a cloze hole is replaced with when it is the one being asked.
+pub const BLANK: &str = "____";
+
+/// What the other (sibling) holes are replaced with. Their content is never
+/// shown while answering, otherwise reviewing one sub-card would reveal the
+/// answers of its siblings.
+pub const HIDDEN: &str = "[…]";
 
 /// The closed six-char ASCII whitespace set prose is trimmed and collapsed
 /// over (spec §3.5): tab, LF, VT, FF, CR, space. Deliberately not Unicode
@@ -158,8 +165,6 @@ pub enum LintKind {
 /// A hard parse failure, pointing at the offending line of the deck file.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum L1Error {
-    #[error("no `## ` card fronts: not a deck")]
-    NotADeck,
     #[error("line {0}: frontmatter never closes (missing the terminating `---`)")]
     UnclosedFrontmatter(usize),
     #[error("line {line}: frontmatter is not valid yaml: {message}")]
@@ -187,9 +192,10 @@ pub enum L1Error {
 /// feeds the legacy identity hash).
 pub fn parse_l1(subject: &str, text: &str) -> Result<L1Deck, L1Error> {
     let document = parse_document(text)?;
-    if document.cards.is_empty() {
-        return Err(L1Error::NotADeck);
-    }
+    // Zero `## ` fronts is a VALID zero-card deck, not an error: a header-only
+    // trace stub (frontmatter, no cards yet) and a comment-only file must stay
+    // loadable; "not a deck" is an enumeration/doctor judgement, never a load
+    // failure.
     let subject: Arc<str> = Arc::from(subject);
     let mut lints = document.lints;
     let mut cards = Vec::new();
@@ -204,6 +210,29 @@ pub fn parse_l1(subject: &str, text: &str) -> Result<L1Deck, L1Error> {
         lints,
         frontmatter_span: document.frontmatter_span,
     })
+}
+
+/// Parses L1 deck text into cards, discarding the frontmatter, title, and
+/// lints. The thin adapter the tree calls where it only needs a deck's cards
+/// (the old `parser::parse_str` shape); [`parse_l1`] is the full entry point.
+/// `subject` is the deck's file name.
+pub fn parse_str(subject: &str, text: &str) -> Result<Vec<Card>, L1Error> {
+    Ok(parse_l1(subject, text)?.cards)
+}
+
+/// The 1-based line numbers of the file's `## ` card fronts, in document
+/// order, one per file card (a cloze card's sub-cards share one heading).
+/// Read-only parse knowledge for text surgery (note insertion, card-block
+/// removal): a fenced `## ` is content and never appears here, so a naive
+/// line scan can't be fooled by code blocks.
+pub fn card_front_lines(text: &str) -> Result<Vec<usize>, L1Error> {
+    let mut lines = Vec::new();
+    for card in parse_l1("deck.md", text)?.cards {
+        if lines.last() != Some(&card.line) {
+            lines.push(card.line);
+        }
+    }
+    Ok(lines)
 }
 
 /// The §7 canonical content of a card: front + answer, prose collapsed over
@@ -373,8 +402,10 @@ fn collapse(s: &str) -> String {
         .join(" ")
 }
 
-/// The fence a column-0 line opens (``` or ~~~), if any.
-fn fence_opener(line: &str) -> Option<char> {
+/// The fence a column-0 line opens (``` or ~~~), if any. Crate-shared: the
+/// deck-text splitters (remediation blocks, generate's card spacing) track
+/// fences with the same rule the parser applies.
+pub(crate) fn fence_opener(line: &str) -> Option<char> {
     if line.starts_with("```") {
         Some('`')
     } else if line.starts_with("~~~") {
@@ -385,8 +416,9 @@ fn fence_opener(line: &str) -> Option<char> {
 }
 
 /// Whether a column-0 line closes the open fence: a run of three or more of
-/// its character with only whitespace after.
-fn closes_fence(line: &str, ch: char) -> bool {
+/// its character with only whitespace after. Crate-shared like
+/// [`fence_opener`].
+pub(crate) fn closes_fence(line: &str, ch: char) -> bool {
     let run = line.chars().take_while(|c| *c == ch).count();
     run >= 3 && line.chars().skip(run).all(|c| WHITESPACE.contains(&c))
 }
@@ -1414,8 +1446,12 @@ mod tests {
     // ── Document structure ──
 
     #[test]
-    fn a_file_with_no_h2_fronts_is_not_a_deck() {
-        assert_eq!(L1Error::NotADeck, err("# Title\njust prose\n"));
+    fn a_file_with_no_h2_fronts_is_a_zero_card_deck() {
+        // Loadable, empty: a header-only stub or prose file parses to no cards
+        // (whether it lists as a deck is the enumeration layer's call).
+        let deck = parse("# Title\njust prose\n");
+        assert!(deck.cards.is_empty());
+        assert_eq!(Some("Title"), deck.title.as_deref());
     }
 
     #[test]
@@ -1682,8 +1718,9 @@ mod tests {
         assert_eq!(1, deck.cards.len());
         assert_eq!("q", deck.cards[0].front);
 
-        // Only one: a second BOM keeps the heading off column 0.
-        assert_eq!(L1Error::NotADeck, err("\u{feff}\u{feff}## q\n---\na\n"));
+        // Only one: a second BOM keeps the heading off column 0, so no card
+        // opens (the line is preamble prose).
+        assert!(parse("\u{feff}\u{feff}## q\n---\na\n").cards.is_empty());
     }
 
     #[test]

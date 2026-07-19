@@ -37,7 +37,6 @@ pub mod calibrate;
 pub mod card;
 pub mod cardid;
 pub mod choice;
-pub mod cloze;
 pub mod config;
 pub mod deck;
 pub mod depth;
@@ -56,7 +55,6 @@ pub mod import;
 pub mod l1;
 pub mod library;
 pub mod listing;
-pub mod parser;
 #[cfg(feature = "full")]
 pub mod picker;
 #[cfg(feature = "full")]

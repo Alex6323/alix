@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     card::Card,
-    cloze::{BLANK, HIDDEN},
+    l1::{BLANK, HIDDEN},
 };
 
 /// A note decomposed into ordered display units.

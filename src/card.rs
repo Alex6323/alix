@@ -1,10 +1,10 @@
-//! The flashcard model and its identity hash.
+//! The flashcard model and its identity.
 
 use std::{hash::Hasher, path::PathBuf, sync::Arc};
 
 use twox_hash::XxHash64;
 
-use crate::{answer::Input, depth::Reveal};
+use crate::{answer::Input, depth::Reveal, token};
 
 /// Which way a card is reviewed. Set per card (or per deck) with
 /// `% direction:`; `both` generates a forward and a reversed card.
@@ -37,7 +37,7 @@ impl Direction {
 #[derive(Clone, Debug)]
 pub struct Card {
     /// The subject this card belongs to. This is the file name of the deck it
-    /// was parsed from (e.g. `golang.txt`).
+    /// was parsed from (e.g. `golang.md`).
     pub subject: Arc<str>,
     /// The front side: the question or task description.
     pub front: String,
@@ -179,33 +179,34 @@ impl Card {
         card
     }
 
-    /// Returns the identity hash of this card.
+    /// The card's string identity: its minted token, with a suffix for a cloze
+    /// hole (`token-N`, 0-based document order) or the reversed half of a
+    /// dual-direction card (`token-r`). `None` until the deck is stamped (no
+    /// token yet). This is the token-based identity the whole tree moves onto in
+    /// the id-flip task; today only [`Card::id`] reads it.
+    pub fn id_string(&self) -> Option<String> {
+        self.token
+            .as_deref()
+            .map(|token| token::card_id(token, self.hole, self.reversed))
+    }
+
+    /// The identity key of this card for the progress store.
     ///
-    /// Plain cards hash the subject bytes followed by a whitespace-normalized
-    /// version of the answer (all back lines joined and collapsed to single
-    /// spaces), ignoring front and note, so progress survives rewording the
-    /// front, adding notes, or reformatting the answer across lines. Cloze
-    /// cards hash `hash_lines` instead — each line whitespace-normalized — so
-    /// restyling the `{{ }}` markup never reshuffles ids. A change in words
-    /// still changes the id. This value keys the progress store and must stay
-    /// stable across versions, or existing progress would be orphaned.
+    /// INTERIM (dies in the id-flip task): a `u64` hash of the string id
+    /// ([`Card::id_string`]), so `u64` consumers keep compiling while identity is
+    /// already token-based. An UNSTAMPED card has no token, so no string id and
+    /// no stable identity: it hashes to `0`, and the session/store boundary
+    /// excludes such cards (loudly) before they can key real progress, so the
+    /// sentinel never collides with a real card's schedule.
     pub fn id(&self) -> u64 {
-        let mut hasher = XxHash64::default();
-        hasher.write(self.subject.as_bytes());
-        match &self.hash_lines {
-            // Cloze: keep the per-line (per-hole) structure, but normalize each
-            // line's internal whitespace so restyling never reshuffles ids.
-            Some(lines) => {
-                for line in lines {
-                    hasher.write(normalize_ws(line).as_bytes());
-                }
+        match self.id_string() {
+            Some(id) => {
+                let mut hasher = XxHash64::default();
+                hasher.write(id.as_bytes());
+                hasher.finish()
             }
-            // Plain: hash the answer as one whitespace-normalized string, so the
-            // same words across any number of lines (or any indentation) give the
-            // same id, while a change in words still changes it.
-            None => hasher.write(normalize_ws(&self.back.join(" ")).as_bytes()),
+            None => 0,
         }
-        hasher.finish()
     }
 
     /// Appends freshly-saved note lines to this card's in-memory `note`, joined
@@ -224,13 +225,6 @@ impl Card {
             slot => *slot = Some(addition),
         }
     }
-}
-
-/// Collapses every run of whitespace (spaces, tabs, newlines) to a single space
-/// and trims the ends, so reformatting an answer's layout never changes its
-/// identity ([`Card::id`]) while a change in words still does.
-fn normalize_ws(s: &str) -> String {
-    s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 impl Eq for Card {}
@@ -254,16 +248,56 @@ mod tests {
         )
     }
 
+    /// A card carrying a literal token, so its identity is a real string id
+    /// rather than the unstamped `None`/`0` sentinel.
+    fn stamped(subject: &str, front: &str, back: &[&str], note: Option<&str>, token: &str) -> Card {
+        let mut c = card(subject, front, back, note);
+        c.token = Some(Arc::from(token));
+        c
+    }
+
+    #[test]
+    fn id_string_is_none_and_id_is_zero_until_stamped() {
+        // Identity is the token, so an unstamped card has neither a string id
+        // nor a stable u64; the session/store boundary excludes it before it
+        // keys any progress.
+        let c = card("subject1", "hello", &["world"], None);
+        assert_eq!(None, c.id_string());
+        assert_eq!(0, c.id());
+    }
+
+    #[test]
+    fn id_string_composes_token_hole_and_reversed() {
+        let mut plain = stamped("s", "f", &["b"], None, "q1");
+        assert_eq!(Some("q1".to_string()), plain.id_string());
+        plain.hole = Some(2);
+        assert_eq!(Some("q1-2".to_string()), plain.id_string());
+        plain.hole = None;
+        plain.reversed = true;
+        assert_eq!(Some("q1-r".to_string()), plain.id_string());
+    }
+
+    #[test]
+    fn id_hashes_the_string_id_so_distinct_ids_differ() {
+        // Different tokens hash apart; the same token hashes together.
+        let a = stamped("s", "f", &["b"], None, "q1");
+        let b = stamped("s", "f", &["b"], None, "q2");
+        let a2 = stamped("s", "different front", &["different back"], None, "q1");
+        assert_ne!(a.id(), b.id());
+        assert_eq!(a.id(), a2.id()); // identity is the token, not the content
+    }
+
     #[test]
     fn id_ignores_front_and_note() {
-        let a = card("subject1", "hello", &["world"], None);
-        let b = card("subject1", "hi there", &["world"], Some("a note"));
+        // Same token, so same identity regardless of front/note/back edits.
+        let a = stamped("subject1", "hello", &["world"], None, "q1");
+        let b = stamped("subject1", "hi there", &["world"], Some("a note"), "q1");
         assert_eq!(a.id(), b.id());
     }
 
     #[test]
     fn append_note_creates_then_joins_with_newlines() {
-        let mut c = card("d.txt", "front", &["back"], None);
+        let mut c = card("d.md", "front", &["back"], None);
         c.append_note(&[]); // nothing to add
         assert_eq!(None, c.note);
         c.append_note(&["first".to_string()]);
@@ -276,8 +310,8 @@ mod tests {
     fn id_ignores_reveal() {
         // The reveal-method is a review property, not content — it must not
         // change identity.
-        let mut a = card("subject1", "hello", &["world"], None);
-        let mut b = card("subject1", "hello", &["world"], None);
+        let mut a = stamped("subject1", "hello", &["world"], None, "q1");
+        let mut b = stamped("subject1", "hello", &["world"], None, "q1");
         a.reveal = Some(Reveal::Flip);
         b.reveal = Some(Reveal::Line);
         assert_eq!(a.id(), b.id());
@@ -285,7 +319,13 @@ mod tests {
 
     #[test]
     fn reversed_swaps_sides_keeps_note_and_line() {
-        let mut fwd = card("vocab.txt", "purported", &["angeblich"], Some("a note"));
+        let mut fwd = stamped(
+            "vocab.md",
+            "purported",
+            &["angeblich"],
+            Some("a note"),
+            "q1",
+        );
         fwd.reveal = Some(Reveal::Line);
         let rev = fwd.reversed();
         assert_eq!("angeblich", rev.front);
@@ -293,9 +333,13 @@ mod tests {
         assert_eq!(fwd.note, rev.note);
         assert_eq!(fwd.line, rev.line); // same source line -> sibling group
         assert_eq!(fwd.reveal, rev.reveal);
-        assert_ne!(fwd.id(), rev.id()); // distinct identity (hashes new back)
-        // The dormant identity fields: plain cards are unreversed, the swapped
-        // half is marked, and the (unset) token is carried over.
+        // Distinct identity: the reversed half carries the same token but the
+        // `-r` suffix (`q1` vs `q1-r`).
+        assert_ne!(fwd.id(), rev.id());
+        assert_eq!(Some("q1".to_string()), fwd.id_string());
+        assert_eq!(Some("q1-r".to_string()), rev.id_string());
+        // Plain cards are unreversed, the swapped half is marked, and the token
+        // is carried over.
         assert!(!fwd.reversed);
         assert!(rev.reversed);
         assert_eq!(fwd.token, rev.token);
@@ -303,7 +347,7 @@ mod tests {
 
     #[test]
     fn reversed_swaps_image_sides() {
-        let mut fwd = card("g.txt", "name this chord", &["G major"], None);
+        let mut fwd = card("g.md", "name this chord", &["G major"], None);
         fwd.image_back = Some(PathBuf::from("/tabs/g.png"));
         let rev = fwd.reversed();
         // The answer-side image becomes the question-side image and vice versa.
@@ -313,8 +357,8 @@ mod tests {
 
     #[test]
     fn id_ignores_image() {
-        let mut a = card("s", "f", &["b"], None);
-        let b = card("s", "f", &["b"], None);
+        let mut a = stamped("s", "f", &["b"], None, "q1");
+        let b = stamped("s", "f", &["b"], None, "q1");
         a.image = Some(PathBuf::from("/imgs/a.png"));
         a.at = Some("card.rs:1-9".to_string());
         a.givens = vec!["state — the parser position".to_string()];
@@ -322,81 +366,18 @@ mod tests {
     }
 
     #[test]
-    fn id_depends_on_subject() {
-        let a = card("subject1", "hello", &["world"], None);
-        let b = card("subject2", "hello", &["world"], None);
-        assert_ne!(a.id(), b.id());
-    }
-
-    #[test]
-    fn id_depends_on_back() {
-        let a = card("subject1", "hello", &["world"], None);
-        let b = card("subject1", "hello", &["worlds"], None);
-        let c = card("subject1", "hello", &["world", "again"], None);
-        assert_ne!(a.id(), b.id());
-        assert_ne!(a.id(), c.id());
-    }
-
-    #[test]
-    fn id_uses_hash_lines_when_present() {
-        let mut a = card("s", "front", &["typed answer"], None);
-        let b = card("s", "front", &["typed answer"], None);
-        a.hash_lines = Some(vec![
-            "raw {typed answer}".to_string(),
-            "#cloze:0".to_string(),
-        ]);
-        assert_ne!(a.id(), b.id());
-    }
-
-    /// Pins the identity hash to a known value so it stays stable across
-    /// versions — changing it would orphan everyone's stored progress.
-    #[test]
-    fn id_is_stable() {
-        let c = card(
-            "sample_box.txt",
-            "How to define an executable program",
-            &["main"],
-            None,
-        );
-        assert_eq!(9405983226316857161, c.id());
-    }
-
-    #[test]
-    fn id_is_whitespace_insensitive_across_lines() {
-        // The same answer as one line vs. split across several lines (the exact
-        // reshape the formatter and generate produce) must be the same card.
-        let one_line = card("d.txt", "f", &["A, B, C"], None);
-        let many_lines = card("d.txt", "f", &["A,", "B,", "C"], None);
-        assert_eq!(one_line.id(), many_lines.id());
-    }
-
-    #[test]
-    fn id_ignores_irregular_internal_whitespace() {
-        let a = card("d.txt", "f", &["foo bar"], None);
-        let b = card("d.txt", "f", &["foo    bar"], None);
-        assert_eq!(a.id(), b.id());
-    }
-
-    #[test]
-    fn id_still_changes_on_word_edit() {
-        let a = card("d.txt", "f", &["A, B, C"], None);
-        let b = card("d.txt", "f", &["A, B, D"], None);
-        assert_ne!(a.id(), b.id());
-    }
-
-    #[test]
     fn display_back_overrides_render_but_not_identity() {
-        let mut c = card("d.txt", "f", &["Chain, Version"], None);
+        let mut c = stamped("d.md", "f", &["Chain, Version"], None, "q1");
         let before = c.id();
         c.display_back = Some(vec!["Protocol: Chain".into(), "Version".into()]);
         assert_eq!(c.back_for_display(), ["Protocol: Chain", "Version"]);
-        assert_eq!(c.id(), before); // display_back never enters the hash
+        assert_eq!(c.id(), before); // display_back never enters the identity
     }
 
     #[test]
     fn input_does_not_affect_card_identity() {
-        let mut a = card("d.txt", "front", &["the answer"], None);
-        let mut b = card("d.txt", "front", &["the answer"], None);
+        let mut a = stamped("d.md", "front", &["the answer"], None, "q1");
+        let mut b = stamped("d.md", "front", &["the answer"], None, "q1");
         a.input = Some(Input::Draw);
         b.input = None;
         assert_eq!(a.id(), b.id()); // input is a review property, not content
