@@ -68,8 +68,10 @@ img-dir: ~/decks/img
 Waxing gibbous
 <!-- img: moon-waxing.png -->
 
-## Play this chord.
+## Play this chord:
 G major
+---
+The open-position shape.
 <!-- img-back: g-major-tab.png -->
 ```
 
